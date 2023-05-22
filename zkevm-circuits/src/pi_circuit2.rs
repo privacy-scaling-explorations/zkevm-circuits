@@ -13,17 +13,24 @@
 //! +----------+         +-----------+       +------------+
 //! ```
 
-use crate::evm_circuit::util::constraint_builder::BaseConstraintBuilder;
-use eth_types::{geth_types::BlockConstants, H256};
+use crate::evm_circuit::util::from_bytes::expr;
+use crate::evm_circuit::util::{
+    constraint_builder::BaseConstraintBuilder,
+    math_gadget::IsEqualGadget,
+};
+use crate::impl_expr;
+use eth_types::{geth_types::BlockConstants, H256, H160};
 use eth_types::{
     geth_types::Transaction, Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar,
     Word,
 };
 use eth_types::{sign_types::SignData, Bytes};
+use ethers_core::types::{Bloom, U256,};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Expression, Instance};
 use itertools::Itertools;
 use rlp::{Rlp, RlpStream};
+// use core::num::dec2flt::number;
 use std::marker::PhantomData;
 
 use crate::table::TxFieldTag;
@@ -32,7 +39,7 @@ use crate::table::{BlockTable, KeccakTable2};
 use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness;
 use gadgets::is_zero::IsZeroChip;
-use gadgets::util::{not, or, Expr};
+use gadgets::util::{not, or, and, Expr};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Selector},
@@ -53,7 +60,38 @@ lazy_static! {
     static ref OMMERS_HASH: H256 = H256::from_slice(
         &hex::decode("1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347").unwrap()
     );
+    static ref WITHDRAWALS_ROOT: H256 = H256::from_slice(
+        &hex::decode("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421").unwrap()
+    );
 }
+
+
+// #[derive(Debug, Eq, PartialEq)]
+// enum BlockheaderFieldType {
+//     ParentHashHi=1,
+//     ParentHashLo,
+//     Beneficiary,
+//     StateRootHi,
+//     StateRootLo,
+//     TransactionsRootHi,
+//     TransactionsRootLo,
+//     ReceiptsRootHi,
+//     ReceiptsRootLo,
+//     Number,
+//     GasLimitHi,
+//     GasLimitLo,
+//     GasUsedHi,
+//     GasUsedLo,
+//     TimestampHi,
+//     TimestampLo,
+//     MixHashHi,
+//     MixHashLo,
+//     BaseFeePerGasHi,
+//     BaseFeePerGasLo,
+//     WithdrawalsRootHi,
+//     WithdrawalsRootLo,
+// }
+// impl_expr!(BlockheaderFieldType);
 
 /// Values of the block table (as in the spec)
 #[derive(Clone, Default, Debug)]
@@ -110,6 +148,21 @@ pub struct PublicData<F: Field> {
 
     /// Prover address
     pub prover: Address,
+
+    /// The author
+    // pub beneficiary: Address,
+    /// Transactions Root
+    pub transactions_root: H256,
+    /// Receipts Root
+    pub receipts_root: H256,
+    /// Logs Bloom
+    pub logs_bloom: Bloom,
+    /// Gas Used
+    pub gas_used: U256,
+    /// Mix Hash
+    pub mix_hash: H256,
+
+    // pub withdrawalsRoot: H256,
 
     // private values
     block_rlp: Bytes,
@@ -187,12 +240,12 @@ impl<F: Field> PublicData<F> {
         rlp_opt(&mut stream, &block.eth_block.mix_hash);
         rlp_opt(&mut stream, &block.eth_block.nonce);
         // rlp_opt(&mut stream, &block.eth_block.base_fee_per_gas);
+        // append prover and txs_hash
         stream.append(&prover).append(&txs_hash);
         stream.finalize_unbounded_list();
         let out: bytes::Bytes = stream.out().into();
         let rlp = out.into();
         let hash = keccak256(&rlp);
-        // append prover and txs_hash
         let (hi, lo) = Self::split_hash(hash);
         (rlp, hash.into(), hi, lo)
     }
@@ -238,6 +291,13 @@ impl<F: Field> PublicData<F> {
             txs_hash_hi,
             txs_hash_lo,
             prover,
+            // beneficiary: block.eth_block.author.unwrap_or_else(H160::zero),
+            transactions_root: block.eth_block.transactions_root,
+            receipts_root: block.eth_block.receipts_root,
+            logs_bloom: block.eth_block.logs_bloom.unwrap_or_else(Bloom::zero),
+            gas_used: block.eth_block.gas_used,
+            mix_hash: block.eth_block.mix_hash.unwrap_or_else(H256::zero),
+            // withdrawalsRoot: block.eth_block.,
         }
     }
 
@@ -348,9 +408,12 @@ pub struct PiCircuitConfig<F: Field> {
     tx_id_inv: Column<Advice>,
     tx_value_inv: Column<Advice>,
     tx_id_diff_inv: Column<Advice>,
+    fixed_u8: Column<Fixed>,
     fixed_u16: Column<Fixed>,
     calldata_gas_cost: Column<Advice>,
     is_final: Column<Advice>,
+
+    blockhash_keccak_table: KeccakTable2,
 
     _marker: PhantomData<F>,
 }
@@ -371,6 +434,8 @@ pub struct PiCircuitConfigArgs<F: Field> {
     pub keccak_table: KeccakTable2,
     /// Challenges
     pub challenges: Challenges<Expression<F>>,
+    /// keccak table used for block hash calculation
+    pub blockhash_keccak_table: KeccakTable2,
 }
 
 impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
@@ -386,6 +451,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             tx_table,
             rlp_table,
             keccak_table,
+            blockhash_keccak_table,
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
@@ -393,7 +459,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let q_tx_table = meta.complex_selector();
         let q_tx_calldata = meta.complex_selector();
         let q_calldata_start = meta.complex_selector();
-
+        
         let rpi = meta.advice_column();
         let rpi_rlc_acc = meta.advice_column();
         let rpi_encoding = meta.advice_column();
@@ -413,9 +479,52 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         // lies in the interval [0, 2^16] if their tx_id both do not equal to zero.
         // We do not use 2^8 for the reason that a large block may have more than
         // 2^8 transfer transactions which have 21000*2^8 (~ 5.376M) gas.
+        let fixed_u8 = meta.fixed_column();
         let fixed_u16 = meta.fixed_column();
         let calldata_gas_cost = meta.advice_column();
         let is_final = meta.advice_column();
+
+        // Block hash
+        let blk_hdr_rlp = meta.advice_column();
+        let blk_hdr_rlp_inv = meta.advice_column();
+        let blk_hdr_rlp_const = meta.fixed_column();
+        let q_blk_hdr_rlp = meta.complex_selector();
+        let q_blk_hdr_rlp_const = meta.complex_selector();
+        // let q_blk_hdr_is_var_length = meta.complex_selector();
+
+        let blk_hdr_rlp_len_calc = meta.advice_column();
+        let blk_hdr_rlp_len_calc_inv = meta.advice_column();
+        // let q_blk_hdr_rlp_len_calc_start = meta.complex_selector();
+        // let q_blk_hdr_rlp_len_calc_not_end = meta.complex_selector();
+        let q_blk_hdr_total_len = meta.complex_selector();
+        let blk_hdr_reconstruct_value = meta.advice_column();
+        // let q_reconstruct_start = meta.complex_selector();
+        // let q_reconstruct_not_end = meta.complex_selector();
+
+        // Enum for selecting header fields. The cases are:
+        // let blk_hdr_field_select = meta.fixed_column();
+        // Selectors for each header field.
+        let q_parent_hash = meta.fixed_column();
+        let q_beneficiary = meta.fixed_column();
+        let q_state_root = meta.fixed_column();
+        let q_transactions_root = meta.fixed_column();
+        let q_receipts_root = meta.fixed_column();
+        let q_number = meta.fixed_column();
+        let q_gas_limit = meta.fixed_column();
+        let q_gas_used = meta.fixed_column();
+        let q_timestamp = meta.fixed_column();
+        let q_mix_hash = meta.fixed_column();
+        let q_base_fee_per_gas = meta.fixed_column();
+        let q_blk_hdr_withdrawals_root = meta.fixed_column();
+        // We use `q_hi` and `q_lo` to distinguish the 16 MSB from the 16 LSB for fields with length of 32 bytes
+        let q_hi = meta.complex_selector();
+        let q_lo = meta.fixed_column();
+
+        let q_blk_hdr_rlc_START = meta.complex_selector();
+        // TODO (George): This is equal to `q_block_header_rlp`
+        // let q_blk_hdr_rlc_not_end = meta.complex_selector(); 
+        let blk_hdr_rlc_acc = meta.advice_column();
+
 
         let pi = meta.instance_column();
 
@@ -723,6 +832,502 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             ]
         });
 
+
+        // Block hash checks in three parts:
+        // 1. RLP checks
+        // 2. RLC calculation
+        // 3. Keccak lookup
+
+        // 1. Block header RLP
+        meta.lookup_any("Block header RLP byte range checks", |meta| {
+            let block_header_rlp = meta.query_advice(blk_hdr_rlp, Rotation::cur());
+            let fixed_u8_table = meta.query_fixed(fixed_u8, Rotation::cur());
+
+            vec![(
+                block_header_rlp,
+                fixed_u8_table,
+            )]
+        });
+
+        meta.create_gate("Block header RLP: constant checks", |meta| {
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+
+            let q_blk_hdr_rlp = meta.query_selector(q_blk_hdr_rlp);
+            let q_blk_hdr_rlp_const = meta.query_selector(q_blk_hdr_rlp_const);
+            let blk_hdr_rlp = meta.query_advice(blk_hdr_rlp, Rotation::cur());
+            let blk_hdr_rlp_const = meta.query_fixed(blk_hdr_rlp_const, Rotation::cur());
+
+            cb.require_equal("RLP hdr costants are correct", blk_hdr_rlp, blk_hdr_rlp_const);
+            cb.gate(and::expr([q_blk_hdr_rlp, q_blk_hdr_rlp_const]))
+        });
+
+
+        // TODO(George): Optimization: combine all field selectors in one fixed column. Use IsZeroChip for equality checks.
+        /*
+        meta.create_gate("Block header RLP: check `number` length", |meta| {
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+
+            let q_blk_hdr_rlp = meta.query_selector(q_blk_hdr_rlp);
+            let blk_hdr_field_select_prev = meta.query_fixed(blk_hdr_field_select, Rotation::prev());
+            let blk_hdr_field_select = meta.query_fixed(blk_hdr_field_select, Rotation::cur());
+
+            let blk_hdr_rlp = meta.query_advice(blk_hdr_rlp, Rotation::prev());
+            let number_len_start = meta.query_advice(blk_hdr_rlp_len_calc, Rotation::cur());
+            let number_len = meta.query_advice(blk_hdr_rlp_len_calc, Rotation(7));
+
+            cb.require_zero("Length starts counting from 0", number_len_start);
+            cb.require_equal("Correct `number` length in RLP", blk_hdr_rlp, number_len);
+
+            
+            // Detects the start of the `number` field data. 
+            // This is when `blk_hdr_field_select` just changed from `0` to `BlockheaderFieldType::Number`
+            cb.gate(and::expr([q_blk_hdr_rlp,
+                1.expr()-blk_hdr_field_select_prev, 
+                1.expr()-(blk_hdr_field_select - BlockheaderFieldType::Number.expr()),
+                ]))
+        });
+
+        meta.create_gate("Block header RLP: check `gas_limit`, `gas_used`, `timestamp`, `base_fee` lengths", |meta| {
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+
+            let q_blk_hdr_rlp = meta.query_selector(q_blk_hdr_rlp);
+            let blk_hdr_field_select_prev = meta.query_fixed(blk_hdr_field_select, Rotation::prev());
+            let blk_hdr_field_select = meta.query_fixed(blk_hdr_field_select, Rotation::cur());
+
+            let blk_hdr_rlp = meta.query_advice(blk_hdr_rlp, Rotation::prev());
+            let len_start = meta.query_advice(blk_hdr_rlp_len_calc, Rotation::cur());
+            let field_len = meta.query_advice(blk_hdr_rlp_len_calc, Rotation(31));
+
+            cb.require_zero("Length starts counting from 0", len_start);
+            cb.require_equal("Correct length in RLP", blk_hdr_rlp, field_len);
+
+            // Detects the start of the fields' data. 
+            // This is when `blk_hdr_field_select` just changed from `0` to the corresponding `BlockheaderFieldType``
+            cb.gate(and::expr([
+                q_blk_hdr_rlp,
+                1.expr()-blk_hdr_field_select_prev, 
+                or::expr([
+                    1.expr() -(blk_hdr_field_select - BlockheaderFieldType::GasLimitHi.expr()),
+                    1.expr() -(blk_hdr_field_select - BlockheaderFieldType::GasUsedHi.expr()),
+                    1.expr() -(blk_hdr_field_select - BlockheaderFieldType::TimestampHi.expr()),
+                    1.expr() -(blk_hdr_field_select - BlockheaderFieldType::BaseFeePerGasHi.expr()),
+                ]),
+            ]))
+        });
+
+        meta.create_gate("Block header RLP: skip leading zeroes in field lengths", |meta| {
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+
+            let q_blk_hdr_rlp = meta.query_selector(q_blk_hdr_rlp);
+            let blk_hdr_field_select = meta.query_fixed(blk_hdr_field_select, Rotation::cur());
+            let blk_hdr_rlp = meta.query_advice(blk_hdr_rlp, Rotation::cur());
+            let blk_hdr_rlp_const = meta.query_fixed(blk_hdr_rlp_const, Rotation::cur());
+            let blk_hdr_rlp_len_calc_prev = meta.query_advice(blk_hdr_rlp_len_calc, Rotation::prev());
+            let blk_hdr_rlp_len_calc = meta.query_advice(blk_hdr_rlp_len_calc, Rotation::cur());
+
+            cb.require_zero("Skip leading zero", blk_hdr_rlp_len_calc);
+
+            cb.gate(and::expr([
+                q_blk_hdr_rlp,
+                1.expr() - blk_hdr_rlp,
+                1.expr() - blk_hdr_rlp_len_calc_prev,
+                or::expr([
+                    1.expr() - (blk_hdr_field_select - BlockheaderFieldType::Number.expr()),
+                    1.expr() - (blk_hdr_field_select - BlockheaderFieldType::GasLimitHi.expr()),
+                    1.expr() - (blk_hdr_field_select - BlockheaderFieldType::GasUsedHi.expr()),
+                    1.expr() - (blk_hdr_field_select - BlockheaderFieldType::TimestampHi.expr()),
+                    1.expr() - (blk_hdr_field_select - BlockheaderFieldType::BaseFeePerGasHi.expr()),
+                ]),
+            ]))
+        });
+
+        meta.create_gate("Block header RLP: length counting", |meta| {
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+
+            let q_blk_hdr_rlp = meta.query_selector(q_blk_hdr_rlp);
+            let blk_hdr_field_select = meta.query_fixed(blk_hdr_field_select, Rotation::cur());
+
+            let blk_hdr_rlp_len_calc_prev = meta.query_advice(blk_hdr_rlp_len_calc, Rotation::prev());
+            let blk_hdr_rlp_len_calc = meta.query_advice(blk_hdr_rlp_len_calc, Rotation::cur());
+
+
+            cb.gate(and::expr([
+                q_blk_hdr_rlp,
+                or::expr([
+                    1.expr() - (blk_hdr_field_select - BlockheaderFieldType::Number.expr()),
+                    1.expr() - (blk_hdr_field_select - BlockheaderFieldType::GasLimitHi.expr()),
+                    1.expr() - (blk_hdr_field_select - BlockheaderFieldType::GasUsedHi.expr()),
+                    1.expr() - (blk_hdr_field_select - BlockheaderFieldType::TimestampHi.expr()),
+                    1.expr() - (blk_hdr_field_select - BlockheaderFieldType::BaseFeePerGasHi.expr()),
+                ]),
+            ]))
+        });
+        */
+
+        let blk_hdr_rlp_is_zero = IsZeroChip::configure(
+            meta,
+            |meta| meta.query_selector(q_blk_hdr_rlp),
+            |meta| meta.query_advice(blk_hdr_rlp, Rotation::cur()),
+            blk_hdr_rlp_inv,
+        );
+
+        let blk_hdr_prev_len_is_zero = IsZeroChip::configure(
+            meta,
+            |meta| meta.query_selector(q_blk_hdr_rlp),
+            |meta| meta.query_advice(blk_hdr_rlp_len_calc, Rotation::prev()),
+            blk_hdr_rlp_len_calc_inv,
+        );
+
+        meta.create_gate("Block header RLP: constraints for inverse columns & boolean constraints for selectors", |meta| {
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+
+            let blk_hdr_rlp = meta.query_advice(blk_hdr_rlp, Rotation::cur());
+            let blk_hdr_rlp_inv = meta.query_advice(blk_hdr_rlp_inv, Rotation::cur());
+            let blk_hdr_rlp_len_calc = meta.query_advice(blk_hdr_rlp_len_calc, Rotation::cur());
+            let blk_hdr_rlp_len_calc_inv = meta.query_advice(blk_hdr_rlp_len_calc_inv, Rotation::cur());
+
+            cb.condition(not::expr(blk_hdr_rlp_is_zero.expr()),
+                |cb| {
+                    cb.require_equal("blk_hdr_rlp_inv * blk_hdr_rlp = 1, blk_hdr_rlp != 0 ", blk_hdr_rlp_inv * blk_hdr_rlp, 1.expr());
+            });
+            cb.condition(not::expr(blk_hdr_prev_len_is_zero.expr()),
+                |cb| {
+                    cb.require_equal("blk_hdr_rlp_len_calc_inv * blk_hdr_rlp_len_calc = 1, blk_hdr_rlp_len_calc != 0 ", blk_hdr_rlp_len_calc_inv * blk_hdr_rlp_len_calc, 1.expr());
+            });
+
+            cb.require_boolean("q_parent_hash is boolean", meta.query_fixed(q_parent_hash, Rotation::cur()));
+            cb.require_boolean("q_beneficiary is boolean", meta.query_fixed(q_beneficiary, Rotation::cur()));
+            cb.require_boolean("q_state_root is boolean", meta.query_fixed(q_state_root, Rotation::cur()));
+            cb.require_boolean("q_transactions_root is boolean", meta.query_fixed(q_transactions_root, Rotation::cur()));
+            cb.require_boolean("q_receipts_root is boolean", meta.query_fixed(q_receipts_root, Rotation::cur()));
+            cb.require_boolean("q_number is boolean", meta.query_fixed(q_number, Rotation::cur()));
+            cb.require_boolean("q_gas_limit is boolean", meta.query_fixed(q_gas_limit, Rotation::cur()));
+            cb.require_boolean("q_gas_used is boolean", meta.query_fixed(q_gas_used, Rotation::cur()));
+            cb.require_boolean("q_timestamp is boolean", meta.query_fixed(q_timestamp, Rotation::cur()));
+            cb.require_boolean("q_mix_hash is boolean", meta.query_fixed(q_mix_hash, Rotation::cur()));
+            cb.require_boolean("q_base_fee_per_gas is boolean", meta.query_fixed(q_base_fee_per_gas, Rotation::cur()));
+            cb.require_boolean("q_blk_hdr_withdrawals_root is boolean", meta.query_fixed(q_blk_hdr_withdrawals_root, Rotation::cur()));
+            cb.require_boolean("q_lo is boolean", meta.query_fixed(q_lo, Rotation::cur()));
+
+            cb.gate(meta.query_selector(q_blk_hdr_rlp))
+        });
+
+        // Make sure that `blk_hdr_rlp_len_calc` starts from 0 
+        meta.create_gate("Block header RLP: length default value = 0", |meta| {
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+
+            let length = meta.query_advice(blk_hdr_rlp_len_calc, Rotation::cur());
+            cb.require_zero("length default value is zero", length);
+
+            cb.gate(not::expr(or::expr([
+                meta.query_fixed(q_number, Rotation::cur()),
+                meta.query_fixed(q_gas_limit, Rotation::cur()),
+                meta.query_fixed(q_gas_used, Rotation::cur()),
+                meta.query_fixed(q_timestamp, Rotation::cur()),
+                meta.query_fixed(q_base_fee_per_gas, Rotation::cur()),
+            ])))
+        });
+
+        meta.create_gate("Block header RLP: calculate lengths for `number`, `gas_limit`, `gas_used`, `timestamp`, `base_fee`", |meta| {
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+
+            let length = meta.query_advice(blk_hdr_rlp_len_calc, Rotation::cur());
+            let prev_length = meta.query_advice(blk_hdr_rlp_len_calc, Rotation::prev());
+
+            cb.condition(
+                and::expr([
+                    blk_hdr_prev_len_is_zero.expr(),
+                    blk_hdr_rlp_is_zero.expr()
+                ]),
+                |cb| {
+                    cb.require_zero("Don't count leading zeroes in length", length.clone());
+                }
+            );
+
+            cb.condition(
+                not::expr(and::expr([
+                    blk_hdr_prev_len_is_zero.expr(),
+                    blk_hdr_rlp_is_zero.expr()
+                ])),
+                |cb| {
+                    cb.require_equal("length++", length, prev_length + 1.expr());
+                }
+            );
+
+            cb.gate(or::expr([
+                meta.query_fixed(q_number, Rotation::cur()),
+                meta.query_fixed(q_gas_limit, Rotation::cur()),
+                meta.query_fixed(q_gas_used, Rotation::cur()),
+                meta.query_fixed(q_timestamp, Rotation::cur()),
+                meta.query_fixed(q_base_fee_per_gas, Rotation::cur()),
+            ]))
+        });
+
+        meta.create_gate("Block header RLP: check lengths for `number`, `gas_limit`, `gas_used`, `timestamp`, `base_fee` & check reconstructed values", |meta| {
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+
+            let blk_hdr_rlp = meta.query_advice(blk_hdr_rlp, Rotation::cur());
+
+            let q_number_cur = meta.query_fixed(q_number, Rotation::cur());
+            let q_gas_limit_cur = meta.query_fixed(q_gas_limit, Rotation::cur());
+            let q_gas_used_cur = meta.query_fixed(q_gas_used, Rotation::cur());
+            let q_timestamp_cur = meta.query_fixed(q_timestamp, Rotation::cur());
+            let q_base_fee_per_gas_cur = meta.query_fixed(q_base_fee_per_gas, Rotation::cur());
+
+            let q_parent_hash_cur = meta.query_fixed(q_parent_hash, Rotation::cur());
+            let q_beneficiary_cur = meta.query_fixed(q_beneficiary, Rotation::cur());
+            let q_state_root_cur = meta.query_fixed(q_state_root, Rotation::cur());
+            let q_transactions_root_cur = meta.query_fixed(q_transactions_root, Rotation::cur());
+            let q_receipts_root_cur = meta.query_fixed(q_receipts_root, Rotation::cur());
+            let q_mix_hash_cur = meta.query_fixed(q_mix_hash, Rotation::cur());
+            let q_blk_hdr_withdrawals_root_cur = meta.query_fixed(q_blk_hdr_withdrawals_root, Rotation::cur());
+
+            let q_number_next = meta.query_fixed(q_number, Rotation::next());
+            let q_gas_limit_next = meta.query_fixed(q_gas_limit, Rotation::next());
+            let q_gas_used_next = meta.query_fixed(q_gas_used, Rotation::next());
+            let q_timestamp_next = meta.query_fixed(q_timestamp, Rotation::next());
+            let q_base_fee_per_gas_next = meta.query_fixed(q_base_fee_per_gas, Rotation::next());
+
+            let q_parent_hash_next = meta.query_fixed(q_parent_hash, Rotation::next());
+            let q_beneficiary_next = meta.query_fixed(q_beneficiary, Rotation::next());
+            let q_state_root_next = meta.query_fixed(q_state_root, Rotation::next());
+            let q_transactions_root_next = meta.query_fixed(q_transactions_root, Rotation::next());
+            let q_receipts_root_next = meta.query_fixed(q_receipts_root, Rotation::next());
+            let q_mix_hash_next = meta.query_fixed(q_mix_hash, Rotation::next());
+            let q_blk_hdr_withdrawals_root_next = meta.query_fixed(q_blk_hdr_withdrawals_root, Rotation::next());
+
+
+            // `number` has its length calculated 8 rows away
+            cb.condition(q_number_next.clone(),
+                |cb| {
+                    cb.require_equal("blk_hdr_rlp = 0x80 + Len(number)", blk_hdr_rlp.clone(), 0x80.expr() + meta.query_advice(blk_hdr_rlp_len_calc, Rotation(8)));
+                }
+            );
+
+            // All fields except `number` have their lengths calculated 32 rows away
+            cb.condition(or::expr([
+                    q_gas_limit_next.clone(),
+                    q_gas_used_next.clone(),
+                    q_timestamp_next.clone(),
+                    q_base_fee_per_gas_next.clone(),
+                ]),
+                |cb| {
+                    cb.require_equal("blk_hdr_rlp = 0x80 + Len(<field>)", blk_hdr_rlp, 0x80.expr() + meta.query_advice(blk_hdr_rlp_len_calc, Rotation(32)));
+                }
+            );
+
+
+            // TODO(George): Check reconstructed values match inputs
+            cb.condition(or::expr([
+                    q_parent_hash_next.clone(),
+                ]),
+                |cb| {
+                    // cb.require_equal("input parent hash = RLP parent hash", <input parent hash>, meta.query_advice(blk_hdr_reconstruct_value, Rotation::));
+            });
+
+            cb.condition(or::expr([
+                q_beneficiary_next.clone(),
+                ]),
+                |cb| {
+                    // cb.require_equal("input parent hash = RLP parent hash", <input parent hash>, meta.query_advice(blk_hdr_reconstruct_value, Rotation::));
+            });
+            cb.condition(or::expr([
+                q_state_root_next.clone(),
+                ]),
+                |cb| {
+                    // cb.require_equal("input parent hash = RLP parent hash", <input parent hash>, meta.query_advice(blk_hdr_reconstruct_value, Rotation::));
+            });
+            cb.condition(or::expr([
+                q_transactions_root_next.clone(),
+                ]),
+                |cb| {
+                    // cb.require_equal("input parent hash = RLP parent hash", <input parent hash>, meta.query_advice(blk_hdr_reconstruct_value, Rotation::));
+            });
+            cb.condition(or::expr([
+                q_receipts_root_next.clone(),
+                ]),
+                |cb| {
+                    // cb.require_equal("input parent hash = RLP parent hash", <input parent hash>, meta.query_advice(blk_hdr_reconstruct_value, Rotation::));
+            });
+            cb.condition(or::expr([
+                q_mix_hash_next.clone(),
+                ]),
+                |cb| {
+                    // cb.require_equal("input parent hash = RLP parent hash", <input parent hash>, meta.query_advice(blk_hdr_reconstruct_value, Rotation::));
+            });
+            cb.condition(or::expr([
+                q_blk_hdr_withdrawals_root_next.clone(),
+                ]),
+                |cb| {
+                    // cb.require_equal("input parent hash = RLP parent hash", <input parent hash>, meta.query_advice(blk_hdr_reconstruct_value, Rotation::));
+            });
+
+
+            // Enable when the selectors change from 0 to 1
+            cb.gate(or::expr([
+                and::expr([q_number_next, not::expr(q_number_cur)]),
+                and::expr([q_gas_limit_next, not::expr(q_gas_limit_cur)]),
+                and::expr([q_gas_used_next, not::expr(q_gas_used_cur)]),
+                and::expr([q_timestamp_next, not::expr(q_timestamp_cur)]),
+                and::expr([q_base_fee_per_gas_next, not::expr(q_base_fee_per_gas_cur)]),
+                and::expr([q_parent_hash_next, not::expr(q_parent_hash_cur)]),
+                and::expr([q_beneficiary_next, not::expr(q_beneficiary_cur)]),
+                and::expr([q_state_root_next, not::expr(q_state_root_cur)]),
+                and::expr([q_transactions_root_next, not::expr(q_transactions_root_cur)]),
+                and::expr([q_receipts_root_next, not::expr(q_receipts_root_cur)]),
+                and::expr([q_mix_hash_next, not::expr(q_mix_hash_cur)]),
+                and::expr([q_blk_hdr_withdrawals_root_next, not::expr(q_blk_hdr_withdrawals_root_cur)]),
+            ]))
+        });
+
+        // TODO(George): reconstruct field values
+        meta.create_gate("Block header RLP: reconstructing header field values from RLP", |meta| {
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+            
+            let q_hi = meta.query_selector(q_hi);
+            let q_lo_cur = meta.query_fixed(q_lo.clone(), Rotation::cur());
+            let q_lo_prev = meta.query_fixed(q_lo, Rotation::prev());
+
+            let q_parent_hash = meta.query_fixed(q_parent_hash, Rotation::cur());
+            let q_beneficiary = meta.query_fixed(q_beneficiary, Rotation::cur());
+            let q_state_root = meta.query_fixed(q_state_root, Rotation::cur());
+            let q_transactions_root = meta.query_fixed(q_transactions_root, Rotation::cur());
+            let q_receipts_root = meta.query_fixed(q_receipts_root, Rotation::cur());
+            let q_number = meta.query_fixed(q_number, Rotation::cur());
+            let q_gas_limit = meta.query_fixed(q_gas_limit, Rotation::cur());
+            let q_gas_used = meta.query_fixed(q_gas_used, Rotation::cur());
+            let q_timestamp = meta.query_fixed(q_timestamp, Rotation::cur());
+            let q_mix_hash = meta.query_fixed(q_mix_hash, Rotation::cur());
+            let q_base_fee_per_gas = meta.query_fixed(q_base_fee_per_gas, Rotation::cur());
+            let q_blk_hdr_withdrawals_root = meta.query_fixed(q_blk_hdr_withdrawals_root, Rotation::cur());
+
+            let blk_hdr_rlp = meta.query_advice(blk_hdr_rlp, Rotation::cur());
+            let blk_hdr_reconstruct_value_cur = meta.query_advice(blk_hdr_reconstruct_value, Rotation::cur());
+            let blk_hdr_reconstruct_value_prev = meta.query_advice(blk_hdr_reconstruct_value, Rotation::prev());
+
+
+            cb.condition(or::expr([
+                    and::expr([q_parent_hash, q_hi]),
+                    q_beneficiary,
+                    and::expr([q_state_root, q_hi]),
+                    and::expr([q_transactions_root, q_hi]),
+                    and::expr([q_receipts_root, q_hi]),
+                    q_number,
+                    and::expr([q_gas_limit, q_hi]),
+                    and::expr([q_gas_used, q_hi]),
+                    and::expr([q_timestamp, q_hi]),
+                    and::expr([q_mix_hash, q_hi]),
+                    and::expr([q_base_fee_per_gas, q_hi]),
+                    and::expr([q_blk_hdr_withdrawals_root, q_hi]),
+                ]),
+                |cb| {
+                    cb.require_equal("byte[n]*2^8 + byte[n+1]", blk_hdr_reconstruct_value_cur, blk_hdr_reconstruct_value_prev*256.expr() + blk_hdr_rlp)
+            });
+
+            // At the start of the value reconstruction for the lo parts, the previous value in `blk_hdr_reconstruct_value` is not zero.
+            // We need to explicitly set the first value here
+            cb.condition(and::expr([
+                    q_lo_cur, not::expr(q_lo_prev)
+                ]),
+                |cb| {
+                    cb.require_equal("byte_lo[0] == rlp_byte", blk_hdr_reconstruct_value_cur, blk_hdr_rlp)
+            });
+            cb.condition(and::expr([
+                q_lo_cur, q_lo_prev
+            ]),
+            |cb| {
+                cb.require_equal("byte[n]*2^8 + byte[n+1]", blk_hdr_reconstruct_value_cur, blk_hdr_reconstruct_value_prev*256.expr() + blk_hdr_rlp)
+        });
+
+            cb.gate(or::expr([
+                q_parent_hash,
+                q_beneficiary,
+                q_state_root,
+                q_transactions_root,
+                q_receipts_root,
+                q_number,
+                q_gas_limit,
+                q_gas_used,
+                q_timestamp,
+                q_mix_hash,
+                q_base_fee_per_gas,
+                q_blk_hdr_withdrawals_root,
+            ]))
+        });
+
+        meta.create_gate("Block header RLP: reconstructing value starts from 0", |meta| {
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+
+            cb.gate()
+        });
+
+        // TODO(George)
+        /*
+        // 2. Check RLC of RLP'd block header
+        meta.create_gate("block_header_rlp_rlc_acc_next = block_header_rlp_rlc_acc * r + block_header_rlp_next", |meta| {
+            // let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+
+            // let q_not_end = meta.query_selector(q_not_end);
+            
+            // let block_header_rlp_rlc_acc_next = meta.query_advice(rpi_rlc_acc, Rotation::next());
+            // let block_header_rlp_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::cur());
+            // let block_header_rlp_next = meta.query_advice(rpi, Rotation::next());
+            
+            // let r = challenges.evm_word();
+
+            // cb.require_equal("left=right", rpi_rlc_acc_next, rpi_rlc_acc * r + rpi_next);
+            // cb.gate(q_not_end)
+        });
+
+        meta.create_gate("block_header_rlp_rlc_acc[0] = block_header_rlp[0]", |meta| {
+            // let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+            // let q_start = meta.query_selector(q_start);
+            // let rpi_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::cur());
+            // let rpi = meta.query_advice(rpi, Rotation::cur());
+
+            // cb.require_equal("", rpi_rlc_acc, rpi);
+
+            // cb.gate(q_start)
+        });
+        */
+
+        // TODO(George)
+        /*
+        // 3. Check block header hash
+        meta.lookup_any("blockhash lookup keccak", |meta| {
+            let q_rpi_encoding = meta.query_selector();
+
+            let blockhash_rlp_rlc = meta.query_advice(, Rotation(1));
+            let blockhash_rlp_len = meta.query_advice(, Rotation(2));
+            let blockhash_hash_hi = meta.query_advice(, Rotation(3));
+            let blockhash_hash_lo = meta.query_advice(, Rotation(4));
+
+            vec![
+                (
+                    q_rpi_encoding.expr(),
+                    meta.query_advice(blockhash_keccak_table.is_enabled, Rotation::cur()),
+                ),
+                (
+                    q_rpi_encoding.expr() * blockhash_rlp_rlc,
+                    meta.query_advice(blockhash_keccak_table.input_rlc, Rotation::cur()),
+                ),
+                (
+                    q_rpi_encoding.expr() * blockhash_rlp_len,
+                    meta.query_advice(blockhash_keccak_table.input_len, Rotation::cur()),
+                ),
+                (
+                    q_rpi_encoding.expr() * blockhash_hash_hi,
+                    meta.query_advice(blockhash_keccak_table.output_hi, Rotation::cur()),
+                ),
+                (
+                    q_rpi_encoding * blockhash_hash_lo,
+                    meta.query_advice(blockhash_keccak_table.output_lo, Rotation::cur()),
+                ),
+            ]
+        });
+        */
+
+
         Self {
             max_txs,
             max_calldata,
@@ -735,6 +1340,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             tx_id_inv,
             tx_value_inv,
             tx_id_diff_inv,
+            fixed_u8,
             fixed_u16,
             calldata_gas_cost,
             is_final,
@@ -749,6 +1355,8 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
 
             rlp_table,
             keccak_table,
+            blockhash_keccak_table,
+
             _marker: PhantomData,
         }
     }
@@ -1258,6 +1866,24 @@ impl<F: Field> PiCircuitConfig<F> {
         Ok(())
     }
 
+    fn assign_fixed_u8(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_region(
+            || "fixed u8 table",
+            |mut region| {
+                for i in 0..(1 << 8) {
+                    region.assign_fixed(
+                        || format!("row_{}", i),
+                        self.fixed_u8,
+                        i,
+                        || Value::known(F::from(i as u64)),
+                    )?;
+                }
+
+                Ok(())
+            },
+        )
+    }
+
     fn assign_fixed_u16(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_region(
             || "fixed u16 table",
@@ -1276,12 +1902,28 @@ impl<F: Field> PiCircuitConfig<F> {
         )
     }
 
+    // TODO(George): Assigns all columns relevant to the blockhash checks
+    fn assign_block_hash_checks (&self, region: &mut Region<'_, F>,) {
+
+        // self.q_tx_table.enable(region, offset)?;
+
+        // region.assign_advice(
+        //     || "tx_id",
+        //     self.tx_table.tx_id,
+        //     offset,
+        //     || Value::known(tx_id),
+        // )?;
+
+        // region.assign_fixed(|| "tag", self.tx_table.tag, offset, || Value::known(tag))?;
+    }
+
     fn assign(
         &self,
         layouter: &mut impl Layouter<F>,
         public_data: &PublicData<F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
+        self.assign_fixed_u8(layouter)?;
         self.assign_fixed_u16(layouter)?;
         let (public_inputs, txs_rlc_acc, block_rlc_acc) = layouter.assign_region(
             || "region 0",
@@ -1563,6 +2205,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         let tx_table = TxTable::construct(meta);
         let rlp_table = array_init::array_init(|_| meta.advice_column());
         let keccak_table = KeccakTable2::construct(meta);
+        let blockhash_keccak_table = KeccakTable2::construct(meta);
         let challenges = Challenges::mock(100.expr(), 100.expr());
         PiCircuitConfig::new(
             meta,
@@ -1574,6 +2217,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 rlp_table,
                 keccak_table,
                 challenges,
+                blockhash_keccak_table,
             },
         )
     }
@@ -1592,6 +2236,15 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             vec![
                 &public_data.txs_rlp.to_vec(),
                 &public_data.block_rlp.to_vec(),
+            ],
+            &challenges,
+        )?;
+
+        // TODO(George)
+        config.blockhash_keccak_table.dev_load(
+            &mut layouter,
+            vec![
+                // &public_data.txs_rlp.to_vec(),
             ],
             &challenges,
         )?;
