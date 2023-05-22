@@ -79,6 +79,14 @@ impl<F: Field> BytecodeWitnessGen<F> {
                 .as_mut()
                 .zip(self.challenges.keccak_input())
                 .map(|(value_rlc, challenge)| *value_rlc = (*value_rlc * challenge) + row.value);
+
+            // This is useful to simulate evil prover.
+            if row.code_hash != self.bytecode.rows[self.idx - 1].code_hash {
+                self.code_hash = self
+                    .challenges
+                    .evm_word()
+                    .map(|challenge| rlc::value(&row.code_hash.to_le_bytes(), challenge));
+            }
         }
 
         self.idx += 1;

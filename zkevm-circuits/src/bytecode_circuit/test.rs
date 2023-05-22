@@ -192,6 +192,13 @@ fn bytecode_invalid_hash_data() {
         trace!("bytecode_invalid_hash_data: Change the code_hash on the first position");
         test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
     }
+    // Change the code_hash on the third position (byte row)
+    {
+        let mut invalid = unrolled;
+        invalid.rows[2].code_hash += Word::one();
+        trace!("bytecode_invalid_hash_data: Change the code_hash on the first position");
+        test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
+    }
     // TODO: other rows code_hash are ignored by the witness generation, to
     // test other rows invalid code_hash, we would need to inject an evil
     // witness.
