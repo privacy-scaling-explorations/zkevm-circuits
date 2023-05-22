@@ -5,7 +5,7 @@
 // - *_le: Little-Endian bytes
 
 use crate::{
-    evm_circuit::util::{from_bytes, not, rlc},
+    evm_circuit::util::{not, rlc},
     table::KeccakTable,
     util::{Challenges, Expr},
 };
@@ -123,7 +123,6 @@ pub(crate) struct SignVerifyConfig {
     rlc: Column<Advice>,
     // Keccak
     q_keccak: Selector,
-    output: Column<Advice>,
     keccak_table: KeccakTable,
 }
 
@@ -168,10 +167,9 @@ impl SignVerifyConfig {
             // msg_hash and signature which is not constrained to match msg_hash_rlc nor
             // the address.
             // Layout:
-            // | q_keccak |        a        |     rlc     |    output   |
-            // | -------- | --------------- | ----------- | ----------- |
-            // |     1    | is_address_zero |    pk_rlc   |             |
-            // |          |                 |  pk_hash_lo | pk_hash_hi  |
+            // | q_keccak |        a        |     rlc     |
+            // | -------- | --------------- | ----------- |
+            // |     1    | is_address_zero |    pk_rlc   |
             let q_keccak = meta.query_selector(q_keccak);
             let is_address_zero = meta.query_advice(main_gate_config.advices()[0], Rotation::cur());
             let is_enable = q_keccak * not::expr(is_address_zero);
@@ -180,8 +178,9 @@ impl SignVerifyConfig {
                 is_enable.clone(),
                 is_enable.clone() * meta.query_advice(rlc, Rotation::cur()),
                 is_enable.clone() * 64usize.expr(),
-                is_enable.clone() * meta.query_advice(rlc, Rotation::next()),
-                is_enable * meta.query_advice(output, Rotation::next()),
+                is_enable.clone()
+                    * meta.query_advice(main_gate_config.advices()[1], Rotation::cur()),
+                is_enable * meta.query_advice(main_gate_config.advices()[2], Rotation::cur()),
             ];
             let table = [
                 keccak_table.is_enabled,
@@ -202,7 +201,6 @@ impl SignVerifyConfig {
             q_rlc_keccak_input,
             rlc,
             q_keccak,
-            output,
         }
     }
 
@@ -419,8 +417,16 @@ impl<F: Field> SignVerifyChip<F> {
         name: &str,
         inputs_le: [Value<F>; 32],
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
-        let word_lo = ctx.assign_advice(|| "{name}_lo", config.rlc, inputs_le[16..])?;
-        let word_hi = ctx.assign_advice(|| "{name}_hi", config.output, inputs_le[..16])?;
+        let word_lo = ctx.assign_advice(
+            || "{name}_lo",
+            config.main_gate_config.advices()[1],
+            inputs_le[16..],
+        )?;
+        let word_hi = ctx.assign_advice(
+            || "{name}_hi",
+            config.main_gate_config.advices()[2],
+            inputs_le[..16],
+        )?;
         ctx.next();
         Ok(vec![word_lo, word_hi])
     }
@@ -490,8 +496,18 @@ impl<F: Field> SignVerifyChip<F> {
         copy(ctx, "is_address_zero", a, is_address_zero)?;
         copy(ctx, "pk_rlc", config.rlc, pk_rlc)?;
         ctx.next();
-        copy(ctx, "pk_hash_lo", config.rlc, pk_hash_lo)?;
-        copy(ctx, "pk_hash_hi", config.output, pk_hash_hi)?;
+        copy(
+            ctx,
+            "pk_hash_lo",
+            config.main_gate_config.advices()[1],
+            pk_hash_lo,
+        )?;
+        copy(
+            ctx,
+            "pk_hash_hi",
+            config.main_gate_config.advices()[2],
+            pk_hash_hi,
+        )?;
         ctx.next();
 
         Ok(())
