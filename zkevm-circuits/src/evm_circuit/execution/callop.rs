@@ -324,17 +324,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     );
                 });
 
-                let precompile_gadget = PrecompileGadget::construct(
-                    cb,
-                    call_gadget.is_success.expr(),
-                    call_gadget.callee_address_expr(),
-                    cb.curr.state.call_id.expr(),
-                    call_gadget.cd_address.offset(),
-                    call_gadget.cd_address.length(),
-                    call_gadget.rd_address.offset(),
-                    call_gadget.rd_address.length(),
-                );
-
                 // copy table lookup to verify the copying of bytes if the precompile call was
                 // successful.
                 // - from precompile call's memory (min(rd_length, precompile_return_length) bytes
@@ -364,7 +353,16 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     },
                 );
 
-                precompile_gadget
+                PrecompileGadget::construct(
+                    cb,
+                    call_gadget.is_success.expr(),
+                    call_gadget.callee_address_expr(),
+                    cb.curr.state.call_id.expr(),
+                    call_gadget.cd_address.offset(),
+                    call_gadget.cd_address.length(),
+                    call_gadget.rd_address.offset(),
+                    call_gadget.rd_address.length(),
+                )
             },
         );
 

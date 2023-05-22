@@ -342,16 +342,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     );
                 }
 
-                // TODO: when more precompiles are supported and each have their own different
-                // behaviour, we can separate out the logic specified here.
-                let precompile_call: PrecompileCalls = code_address.0[19].into();
-                let precompile_step = precompile_associated_ops(
-                    state,
-                    geth_steps[1].clone(),
-                    call.clone(),
-                    precompile_call,
-                )?;
-
                 // insert another copy event (output) for this step.
                 let rw_counter_start = state.block_ctx.rwc;
                 if call.is_success && call.call_data_length > 0 && length > 0 {
@@ -395,6 +385,16 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         },
                     );
                 }
+
+                // TODO: when more precompiles are supported and each have their own different
+                // behaviour, we can separate out the logic specified here.
+                let precompile_call: PrecompileCalls = code_address.0[19].into();
+                let precompile_step = precompile_associated_ops(
+                    state,
+                    geth_steps[1].clone(),
+                    call.clone(),
+                    precompile_call,
+                )?;
 
                 state.handle_return(&mut exec_step, geth_steps, false)?;
 
