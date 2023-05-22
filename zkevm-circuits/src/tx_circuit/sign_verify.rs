@@ -164,23 +164,23 @@ impl SignVerifyConfig {
         let q_keccak = meta.complex_selector();
         meta.lookup_any("keccak", |meta| {
             // When address is 0, we disable the signature verification by using a dummy pk,
-            // msg_hash and signature which is not constrained to match msg_hash_rlc nor
-            // the address.
+            // msg_hash and signature which is not constrained to match msg_hash nor the address.
             // Layout:
-            // | q_keccak |        a        |     rlc     |
-            // | -------- | --------------- | ----------- |
-            // |     1    | is_address_zero |    pk_rlc   |
+            // | q_keccak |        a        |     b     |     c     |     rlc     |
+            // | -------- | --------------- | --------- | --------- | ----------- |
+            // |     1    | is_address_zero |  word_lo  |  word_hi  |    pk_rlc   |
             let q_keccak = meta.query_selector(q_keccak);
             let is_address_zero = meta.query_advice(main_gate_config.advices()[0], Rotation::cur());
             let is_enable = q_keccak * not::expr(is_address_zero);
+            let word_lo = meta.query_advice(main_gate_config.advices()[1], Rotation::cur());
+            let word_hi = meta.query_advice(main_gate_config.advices()[2], Rotation::cur());
 
             let input = [
                 is_enable.clone(),
                 is_enable.clone() * meta.query_advice(rlc, Rotation::cur()),
                 is_enable.clone() * 64usize.expr(),
-                is_enable.clone()
-                    * meta.query_advice(main_gate_config.advices()[1], Rotation::cur()),
-                is_enable * meta.query_advice(main_gate_config.advices()[2], Rotation::cur()),
+                is_enable.clone() * word_lo,
+                is_enable * word_hi,
             ];
             let table = [
                 keccak_table.is_enabled,
