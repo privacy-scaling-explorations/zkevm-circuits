@@ -275,7 +275,7 @@ impl<F: Field> Word<Expression<F>> {
 
     // No overflow check
     pub fn expr_unchecked(&self) -> Expression<F> {
-        self.lo().clone() * (1 << 128).expr() + self.hi().clone()
+        self.lo().clone() + self.hi().clone() * (1 << 128).expr()
     }
 }
 
