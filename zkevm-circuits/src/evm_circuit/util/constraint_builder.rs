@@ -417,7 +417,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_byte(&mut self) -> Cell<F> {
-        self.query_cell_with_type(CellType::LookupByte)
+        self.query_cell_with_type(CellType::LookupU8)
     }
 
     // default query_word is 2 limbs. Each limb is not guaranteed to be 128 bits.
@@ -448,7 +448,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     /// query_word4_unchecked get word with 4 limbs. Each limb is not guaranteed to be 64 bits.
-    pub fn query_word4_unchecked<const N: usize, const N2: usize>(&mut self) -> Word4<Cell<F>> {
+    pub fn query_word4_unchecked<const N: usize>(&mut self) -> Word4<Cell<F>> {
         Word4::new(
             self.query_cells(CellType::StoragePhase1, N)
                 .try_into()
@@ -457,13 +457,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // each limb is 16 bits, and any conversion to smaller limbs inherits the type check.
-    // TODO implement 16bits range check
     pub(crate) fn query_word16<const N: usize>(&mut self) -> Word16<Cell<F>> {
-        Word16::new(
-            self.query_cells(CellType::StoragePhase1, N)
-                .try_into()
-                .unwrap(),
-        )
+        Word16::new(self.query_u16())
     }
 
     // query_word32 each limb is 8 bits, and any conversion to smaller limbs inherits the type
@@ -489,11 +484,19 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
-        self.query_bytes_dyn(N).try_into().unwrap()
+        self.query_u8_dyn(N).try_into().unwrap()
     }
 
-    pub(crate) fn query_bytes_dyn(&mut self, count: usize) -> Vec<Cell<F>> {
-        self.query_cells(CellType::LookupByte, count)
+    pub(crate) fn query_u8_dyn(&mut self, count: usize) -> Vec<Cell<F>> {
+        self.query_cells(CellType::LookupU8, count)
+    }
+
+    pub(crate) fn query_u16<const N: usize>(&mut self) -> [Cell<F>; N] {
+        self.query_u16_dyn(N).try_into().unwrap()
+    }
+
+    pub(crate) fn query_u16_dyn(&mut self, count: usize) -> Vec<Cell<F>> {
+        self.query_cells(CellType::LookupU16, count)
     }
 
     pub(crate) fn query_cell(&mut self) -> Cell<F> {

@@ -1,8 +1,8 @@
 use super::{
     param::{
         BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, EXP_TABLE_LOOKUPS,
-        FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
-        N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
+        FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_U16_LOOKUPS,
+        N_U8_LOOKUPS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
     step::HasExecutionState,
     util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
@@ -319,7 +319,8 @@ impl<F: Field> ExecutionConfig<F> {
         meta: &mut ConstraintSystem<F>,
         challenges: Challenges<Expression<F>>,
         fixed_table: &dyn LookupTable<F>,
-        byte_table: &dyn LookupTable<F>,
+        u8_table: &dyn LookupTable<F>,
+        u16_table: &dyn LookupTable<F>,
         tx_table: &dyn LookupTable<F>,
         rw_table: &dyn LookupTable<F>,
         bytecode_table: &dyn LookupTable<F>,
@@ -579,7 +580,8 @@ impl<F: Field> ExecutionConfig<F> {
         Self::configure_lookup(
             meta,
             fixed_table,
-            byte_table,
+            u8_table,
+            u16_table,
             tx_table,
             rw_table,
             bytecode_table,
@@ -795,7 +797,8 @@ impl<F: Field> ExecutionConfig<F> {
     fn configure_lookup(
         meta: &mut ConstraintSystem<F>,
         fixed_table: &dyn LookupTable<F>,
-        byte_table: &dyn LookupTable<F>,
+        u8_table: &dyn LookupTable<F>,
+        u16_table: &dyn LookupTable<F>,
         tx_table: &dyn LookupTable<F>,
         rw_table: &dyn LookupTable<F>,
         bytecode_table: &dyn LookupTable<F>,
@@ -829,10 +832,24 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
         for column in cell_manager.columns().iter() {
-            if let CellType::LookupByte = column.cell_type {
-                meta.lookup_any("Byte lookup", |meta| {
-                    let byte_table_expression = byte_table.table_exprs(meta)[0].clone();
-                    vec![(column.expr(), byte_table_expression)]
+            if let CellType::LookupU8 = column.cell_type {
+                meta.lookup_any("u8 lookup", |meta| {
+                    vec![column.expr()]
+                        .into_iter()
+                        .zip(u8_table.table_exprs(meta).into_iter())
+                        .map(|(expr, table)| (expr, table))
+                        .collect()
+                });
+            }
+        }
+        for column in cell_manager.columns().iter() {
+            if let CellType::LookupU16 = column.cell_type {
+                meta.lookup_any("u16 lookup", |meta| {
+                    vec![column.expr()]
+                        .into_iter()
+                        .zip(u16_table.table_exprs(meta).into_iter())
+                        .map(|(expr, table)| (expr, table))
+                        .collect()
                 });
             }
         }
@@ -1034,7 +1051,8 @@ impl<F: Field> ExecutionConfig<F> {
             ("EVM_lookup_exp", EXP_TABLE_LOOKUPS),
             ("EVM_adv_phase2", N_PHASE2_COLUMNS),
             ("EVM_copy", N_COPY_COLUMNS),
-            ("EVM_lookup_byte", N_BYTE_LOOKUPS),
+            ("EVM_lookup_u8", N_U8_LOOKUPS),
+            ("EVM_lookup_u16", N_U16_LOOKUPS),
             ("EVM_adv_phase1", N_PHASE1_COLUMNS),
         ];
         let mut group_index = 0;
