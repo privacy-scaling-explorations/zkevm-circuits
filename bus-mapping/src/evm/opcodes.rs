@@ -1,7 +1,7 @@
 //! Definition of each opcode of the EVM.
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep},
-    error::{ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
+    error::{ExecError, OogError},
     evm::OpcodeId,
     operation::TxAccessListAccountOp,
     Error,
