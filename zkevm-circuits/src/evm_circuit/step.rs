@@ -9,7 +9,7 @@ use crate::{
 };
 use bus_mapping::{
     circuit_input_builder::ExecState,
-    error::{ExecError, OogError},
+    error::{ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
     evm::OpcodeId,
 };
 use eth_types::{evm_unimplemented, Field, ToWord};
