@@ -3,7 +3,7 @@ use crate::{
     circuit_input_builder::{
         CallKind, CircuitInputStateRef, CodeSource, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
-    evm::opcodes::precompiles::identity::gen_associated_ops as precompile_identity_ops,
+    evm::opcodes::precompiles::gen_associated_ops as precompile_associated_ops,
     operation::{AccountField, CallContextField, MemoryOp, TxAccessListAccountOp, RW},
     precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
     state_db::CodeDB,
@@ -250,7 +250,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 let caller_ctx_mut = state.caller_ctx_mut()?;
                 caller_ctx_mut.return_data = result.clone();
                 let length = min(result.len(), ret_length);
-                if length != 0 {
+                if length > 0 {
                     caller_ctx_mut.memory.extend_at_least(ret_offset + length);
                     caller_ctx_mut.memory.0[ret_offset..ret_offset + length]
                         .copy_from_slice(&result[..length]);
@@ -298,7 +298,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
 
-                // insert a copy event for this step.
+                // insert a copy event (input) for this step
                 let rw_counter_start = state.block_ctx.rwc;
                 if call.is_success && call.call_data_length > 0 {
                     let bytes: Vec<(u8, bool)> = caller_memory
@@ -328,13 +328,13 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     state.push_copy(
                         &mut exec_step,
                         CopyEvent {
+                            src_id: NumberOrHash::Number(call.caller_id),
+                            src_type: CopyDataType::Memory,
                             src_addr: call.call_data_offset,
                             src_addr_end: call.call_data_offset + call.call_data_length,
-                            src_type: CopyDataType::Memory,
-                            src_id: NumberOrHash::Number(call.caller_id),
-                            dst_addr: 0,
-                            dst_type: CopyDataType::Memory,
                             dst_id: NumberOrHash::Number(call.call_id),
+                            dst_type: CopyDataType::Memory,
+                            dst_addr: 0,
                             log_id: None,
                             rw_counter_start,
                             bytes,
@@ -342,18 +342,59 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     );
                 }
 
-                let precompile_step = match code_address.0[19].into() {
-                    PrecompileCalls::Identity => precompile_identity_ops(
-                        state,
-                        geth_steps[1].clone(),
-                        call.clone(),
-                        caller_memory.as_slice(),
-                    )?,
-                    _ => {
-                        log::warn!("precompile not handled");
-                        todo!();
+                // TODO: when more precompiles are supported and each have their own different
+                // behaviour, we can separate out the logic specified here.
+                let precompile_call: PrecompileCalls = code_address.0[19].into();
+                let precompile_step = precompile_associated_ops(
+                    state,
+                    geth_steps[1].clone(),
+                    call.clone(),
+                    precompile_call,
+                )?;
+
+                // insert another copy event (output) for this step.
+                let rw_counter_start = state.block_ctx.rwc;
+                if call.is_success && call.call_data_length > 0 && length > 0 {
+                    let bytes: Vec<(u8, bool)> = caller_memory
+                        .iter()
+                        .skip(call.call_data_offset as usize)
+                        .take(length)
+                        .map(|b| (*b, false))
+                        .collect();
+                    for (i, &(byte, _is_code)) in bytes.iter().enumerate() {
+                        // push callee memory read
+                        state.push_op(
+                            &mut exec_step,
+                            RW::READ,
+                            MemoryOp::new(call.call_id, i.into(), byte),
+                        );
+                        // push caller memory write
+                        state.push_op(
+                            &mut exec_step,
+                            RW::WRITE,
+                            MemoryOp::new(
+                                call.caller_id,
+                                (call.return_data_offset + i as u64).into(),
+                                byte,
+                            ),
+                        );
                     }
-                };
+                    state.push_copy(
+                        &mut exec_step,
+                        CopyEvent {
+                            src_id: NumberOrHash::Number(call.call_id),
+                            src_type: CopyDataType::Memory,
+                            src_addr: 0,
+                            src_addr_end: length as u64,
+                            dst_id: NumberOrHash::Number(call.caller_id),
+                            dst_type: CopyDataType::Memory,
+                            dst_addr: call.return_data_offset,
+                            log_id: None,
+                            rw_counter_start,
+                            bytes,
+                        },
+                    );
+                }
 
                 state.handle_return(&mut exec_step, geth_steps, false)?;
 

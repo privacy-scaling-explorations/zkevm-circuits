@@ -23,10 +23,10 @@ impl<F: Field> PrecompileGadget<F> {
         is_success: Expression<F>,
         callee_address: Expression<F>,
         caller_id: Expression<F>,
-        call_data_offset: Expression<F>,
-        call_data_length: Expression<F>,
-        return_data_offset: Expression<F>,
-        return_data_length: Expression<F>,
+        cd_offset: Expression<F>,
+        cd_length: Expression<F>,
+        rd_offset: Expression<F>,
+        rd_length: Expression<F>,
     ) -> Self {
         let address = BinaryNumberGadget::construct(cb, callee_address.expr());
 
@@ -35,10 +35,10 @@ impl<F: Field> PrecompileGadget<F> {
                 let precomp_is_success = cb.query_cell();
                 let precomp_callee_address = cb.query_cell();
                 let precomp_caller_id = cb.query_cell();
-                let precomp_call_data_offset = cb.query_cell();
-                let precomp_call_data_length = cb.query_cell();
-                let precomp_return_data_offset = cb.query_cell();
-                let precomp_return_data_length = cb.query_cell();
+                let precomp_cd_offset = cb.query_cell();
+                let precomp_cd_length = cb.query_cell();
+                let precomp_rd_offset = cb.query_cell();
+                let precomp_rd_length = cb.query_cell();
                 cb.require_equal(
                     "precompile call is_success check",
                     is_success,
@@ -56,23 +56,23 @@ impl<F: Field> PrecompileGadget<F> {
                 );
                 cb.require_equal(
                     "precompile call call_data_offset check",
-                    call_data_offset,
-                    precomp_call_data_offset.expr(),
+                    cd_offset,
+                    precomp_cd_offset.expr(),
                 );
                 cb.require_equal(
                     "precompile call call_data_length check",
-                    call_data_length,
-                    precomp_call_data_length.expr(),
+                    cd_length,
+                    precomp_cd_length.expr(),
                 );
                 cb.require_equal(
                     "precompile call return_data_offset check",
-                    return_data_offset,
-                    precomp_return_data_offset.expr(),
+                    rd_offset,
+                    precomp_rd_offset.expr(),
                 );
                 cb.require_equal(
                     "precompile call return_data_length check",
-                    return_data_length,
-                    precomp_return_data_length.expr(),
+                    rd_length,
+                    precomp_rd_length.expr(),
                 );
             });
         });

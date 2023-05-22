@@ -1,6 +1,6 @@
-use bus_mapping::circuit_input_builder::{Call, CopyDataType};
+use bus_mapping::circuit_input_builder::Call;
 use eth_types::{evm_types::GasCost, Field, ToScalar};
-use gadgets::util::{and, not, Expr};
+use gadgets::util::Expr;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::{
@@ -8,8 +8,8 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            constraint_builder::EVMConstraintBuilder, math_gadget::IsZeroGadget,
-            memory_gadget::MemoryCopierGasGadget, CachedRegion, Cell,
+            constraint_builder::EVMConstraintBuilder, memory_gadget::MemoryCopierGasGadget,
+            CachedRegion, Cell,
         },
     },
     table::CallContextFieldTag,
@@ -25,8 +25,6 @@ pub struct IdentityGadget<F> {
     call_data_length: Cell<F>,
     return_data_offset: Cell<F>,
     return_data_length: Cell<F>,
-    call_data_length_zero: IsZeroGadget<F>,
-    return_data_length_zero: IsZeroGadget<F>,
     copier_gadget: MemoryCopierGasGadget<F, { GasCost::PRECOMPILE_IDENTITY_PER_WORD }>,
 }
 
@@ -61,36 +59,6 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
         );
         let _total_gas_cost = GasCost::PRECOMPILE_IDENTITY_BASE.expr() + copier_gadget.gas_cost();
 
-        let (call_data_length_zero, return_data_length_zero) = (
-            IsZeroGadget::construct(cb, call_data_length.expr()),
-            IsZeroGadget::construct(cb, return_data_length.expr()),
-        );
-
-        // copy table lookup to verify the copying of bytes if the precompile call was successful.
-        // - from precompile call's memory (`return_data_length` bytes starting at `0`)
-        // - to caller's memory (`return_data_length` bytes starting at `return_data_offset`).
-        cb.condition(
-            and::expr([
-                is_success.expr(),
-                not::expr(call_data_length_zero.expr()),
-                not::expr(return_data_length_zero.expr()),
-            ]),
-            |cb| {
-                cb.copy_table_lookup(
-                    cb.curr.state.call_id.expr(),
-                    CopyDataType::Memory.expr(),
-                    caller_id.expr(),
-                    CopyDataType::Memory.expr(),
-                    0.expr(),
-                    return_data_length.expr(),
-                    return_data_offset.expr(),
-                    return_data_length.expr(),
-                    0.expr(),
-                    2.expr() * return_data_length.expr(), // reads + writes
-                );
-            },
-        );
-
         Self {
             is_success,
             callee_address,
@@ -99,8 +67,6 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             call_data_length,
             return_data_offset,
             return_data_length,
-            call_data_length_zero,
-            return_data_length_zero,
             copier_gadget,
         }
     }
@@ -149,10 +115,6 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             offset,
             Value::known(F::from(call.return_data_length)),
         )?;
-        self.call_data_length_zero
-            .assign(region, offset, F::from(call.call_data_length))?;
-        self.return_data_length_zero
-            .assign(region, offset, F::from(call.return_data_length))?;
         self.copier_gadget
             .assign(region, offset, call.call_data_length, 0)?;
 
