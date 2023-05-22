@@ -51,7 +51,7 @@ pub struct CopyCircuitConfig<F> {
     /// The value copied in this copy step.
     pub value: Column<Advice>,
     /// Random linear combination accumulator value.
-    pub value_acc: Column<Advice>,
+    pub value_acc_rlc: Column<Advice>,
     /// Whether the row is padding.
     pub is_pad: Column<Advice>,
     /// In case of a bytecode tag, this denotes whether or not the copied byte
@@ -110,7 +110,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let q_step = meta.complex_selector();
         let is_last = meta.advice_column();
         let value = meta.advice_column_in(SecondPhase);
-        let value_acc = meta.advice_column_in(SecondPhase);
+        let value_acc_rlc = meta.advice_column_in(SecondPhase);
         let is_code = meta.advice_column();
         let is_pad = meta.advice_column();
         let is_first = copy_table.is_first;
@@ -233,42 +233,29 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         });
 
         meta.create_gate(
-            "Last Step (check value accumulator) Memory => Bytecode",
+            "Last Step (check value accumulator) Memory => Bytecode or RlcAcc",
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
 
                 cb.require_equal(
-                    "value_acc == rlc_acc on the last row",
-                    meta.query_advice(value_acc, Rotation::next()),
+                    "value_acc_rlc == rlc_acc on the last row",
+                    meta.query_advice(value_acc_rlc, Rotation::next()),
                     meta.query_advice(rlc_acc, Rotation::next()),
                 );
 
                 cb.gate(and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(is_last, Rotation::next()),
-                    and::expr([
-                        tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
-                        tag.value_equals(CopyDataType::Bytecode, Rotation::next())(meta),
+                    or::expr([
+                        and::expr([
+                            tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
+                            tag.value_equals(CopyDataType::Bytecode, Rotation::next())(meta),
+                        ]),
+                        tag.value_equals(CopyDataType::RlcAcc, Rotation::next())(meta),
                     ]),
                 ]))
             },
         );
-
-        meta.create_gate("Last Step (check value accumulator) RlcAcc", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            cb.require_equal(
-                "value_acc == rlc_acc on the last row",
-                meta.query_advice(value_acc, Rotation::next()),
-                meta.query_advice(rlc_acc, Rotation::next()),
-            );
-
-            cb.gate(and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                meta.query_advice(is_last, Rotation::next()),
-                tag.value_equals(CopyDataType::RlcAcc, Rotation::next())(meta),
-            ]))
-        });
 
         meta.create_gate("verify step (q_step == 1)", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -299,9 +286,9 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(value, Rotation::next()),
             );
             cb.require_equal(
-                "value_acc is same for read-write rows",
-                meta.query_advice(value_acc, Rotation::cur()),
-                meta.query_advice(value_acc, Rotation::next()),
+                "value_acc_rlc is same for read-write rows",
+                meta.query_advice(value_acc_rlc, Rotation::cur()),
+                meta.query_advice(value_acc_rlc, Rotation::next()),
             );
             cb.condition(
                 and::expr([
@@ -310,9 +297,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 ]),
                 |cb| {
                     cb.require_equal(
-                        "value_acc(2) == value_acc(0) * r + value(2)",
-                        meta.query_advice(value_acc, Rotation(2)),
-                        meta.query_advice(value_acc, Rotation::cur()) * challenges.keccak_input()
+                        "value_acc_rlc(2) == value_acc_rlc(0) * r + value(2)",
+                        meta.query_advice(value_acc_rlc, Rotation(2)),
+                        meta.query_advice(value_acc_rlc, Rotation::cur())
+                            * challenges.keccak_input()
                             + meta.query_advice(value, Rotation(2)),
                     );
                 },
@@ -422,7 +410,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             q_step,
             is_last,
             value,
-            value_acc,
+            value_acc_rlc,
             is_pad,
             is_code,
             q_enable,
@@ -487,7 +475,7 @@ impl<F: Field> CopyCircuitConfig<F> {
             for (column, &(value, label)) in [
                 self.is_last,
                 self.value,
-                self.value_acc,
+                self.value_acc_rlc,
                 self.is_pad,
                 self.is_code,
             ]
@@ -645,10 +633,10 @@ impl<F: Field> CopyCircuitConfig<F> {
             *offset,
             || Value::known(F::ZERO),
         )?;
-        // value_acc
+        // value_acc_rlc
         region.assign_advice(
-            || format!("assign value_acc {}", *offset),
-            self.value_acc,
+            || format!("assign value_acc_rlc {}", *offset),
+            self.value_acc_rlc,
             *offset,
             || Value::known(F::ZERO),
         )?;
