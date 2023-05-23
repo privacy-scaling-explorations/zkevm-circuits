@@ -3,7 +3,7 @@
 // - Limbs: An EVN word is 256 bits. Limbs N means split 256 into N limb. For example, N = 4, each
 //   limb is 256/4 = 64 bits
 
-use eth_types::{Field, ToLittleEndian};
+use eth_types::{Field, ToLittleEndian, H160};
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
     circuit::{AssignedCell, Value},
@@ -144,6 +144,22 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
         )
     }
 
+    pub fn assign_h160(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        h160: H160,
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+        let bytes = h160.clone().as_fixed_bytes().as_mut();
+        bytes.reverse();
+        self.assign_lo_hi(
+            region,
+            offset,
+            bytes[0..N_BYTES_HALF_WORD].try_into().ok(),
+            bytes[N_BYTES_HALF_WORD..].try_into().ok(),
+        )
+    }
+
     pub fn word_expr(&self) -> WordLimbs<Expression<F>, N> {
         return WordLimbs::new(self.limbs.map(|cell| cell.expr()));
     }
@@ -275,7 +291,7 @@ impl<F: Field> Word<Expression<F>> {
 
     // No overflow check
     pub fn expr_unchecked(&self) -> Expression<F> {
-        self.lo().clone() + self.hi().clone() * (1 << 128).expr()
+        self.lo().clone() + self.hi().clone() * (1 << (N_BYTES_HALF_WORD * 8)).expr()
     }
 }
 

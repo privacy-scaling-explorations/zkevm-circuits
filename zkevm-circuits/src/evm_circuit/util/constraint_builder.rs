@@ -1347,8 +1347,32 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 build_tx_log_expression(index, field_tag.expr(), log_id),
                 0.expr(),
                 Word::zero(),
-                // TODO assure range check since here is write
                 Word::from_lo_unchecked(value),
+                Word::zero(),
+                0.expr(),
+                Word::zero(),
+            ),
+        );
+    }
+
+    pub(crate) fn tx_log_lookup_word(
+        &mut self,
+        tx_id: Expression<F>,
+        log_id: Expression<F>,
+        field_tag: TxLogFieldTag,
+        index: Expression<F>,
+        value: Word<Expression<F>>,
+    ) {
+        self.rw_lookup(
+            "log data lookup",
+            1.expr(),
+            RwTableTag::TxLog,
+            RwValues::new(
+                tx_id,
+                build_tx_log_expression(index, field_tag.expr(), log_id),
+                0.expr(),
+                Word::zero(),
+                value,
                 Word::zero(),
                 0.expr(),
                 Word::zero(),
