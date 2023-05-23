@@ -7,7 +7,7 @@ use halo2_proofs::{
 
 use crate::evm_circuit::util::{from_bytes, pow_of_two};
 
-use super::{cell_manager::{Cell, TableType}, constraint_builder::ConstraintBuilder, cached_region::{CachedRegion, ChallengeSet}};
+use super::{cell_manager::{Cell, CellTypeTrait}, constraint_builder::ConstraintBuilder, cached_region::{CachedRegion, ChallengeSet}};
 
 /// Returns `1` when `value == 0`, and returns `0` otherwise.
 #[derive(Clone, Debug, Default)]
@@ -17,9 +17,9 @@ pub struct IsZeroGadget<F> {
 }
 
 impl<F: Field> IsZeroGadget<F> {
-    pub(crate) fn construct<T: TableType>(cb: &mut ConstraintBuilder<F, T>, value: Expression<F>) -> Self {
+    pub(crate) fn construct<C: CellTypeTrait>(cb: &mut ConstraintBuilder<F, C>, value: Expression<F>) -> Self {
         circuit!([meta, cb], {
-            let inverse = cb.query_cell();
+            let inverse = cb.query_default();
 
             let is_zero = 1.expr() - (value.expr() * inverse.expr());
             // `value != 0` => check `inverse = a.invert()`: value * (1 - value * inverse)
@@ -38,9 +38,9 @@ impl<F: Field> IsZeroGadget<F> {
         self.is_zero.as_ref().unwrap().clone()
     }
 
-    pub(crate) fn assign<C: ChallengeSet<F>>(
+    pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F, C>,
+        region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
         value: F,
     ) -> Result<F, Error> {
@@ -61,8 +61,8 @@ pub struct IsEqualGadget<F> {
 }
 
 impl<F: Field> IsEqualGadget<F> {
-    pub(crate) fn construct<T: TableType>(
-        cb: &mut ConstraintBuilder<F, T>,
+    pub(crate) fn construct<C: CellTypeTrait>(
+        cb: &mut ConstraintBuilder<F, C>,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
@@ -75,9 +75,9 @@ impl<F: Field> IsEqualGadget<F> {
         self.is_zero.expr()
     }
 
-    pub(crate) fn assign<C: ChallengeSet<F>>(
+    pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F, C>,
+        region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
         lhs: F,
         rhs: F,
@@ -104,8 +104,8 @@ pub struct LtGadget<F, const N_BYTES: usize> {
 }
 
 impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
-    pub(crate) fn construct<T: TableType>(
-        cb: &mut ConstraintBuilder<F, T>,
+    pub(crate) fn construct<C: CellTypeTrait>(
+        cb: &mut ConstraintBuilder<F, C>,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
@@ -131,9 +131,9 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
         self.lt.as_ref().unwrap().expr()
     }
 
-    pub(crate) fn assign<C: ChallengeSet<F>>(
+    pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F, C>,
+        region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
         lhs: F,
         rhs: F,

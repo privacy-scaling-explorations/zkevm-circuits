@@ -9,7 +9,7 @@ use halo2_proofs::{
 use crate::{
     circuit,
     circuit_tools::{
-        cell_manager::Cell,
+        cell_manager::{Cell, EvmCellType},
         constraint_builder::RLCChainable,
         gadgets::{IsEqualGadget, LtGadget}, cached_region::{CachedRegion, ChallengeSet},
     },
@@ -60,25 +60,25 @@ impl<F: Field> StorageLeafConfig<F> {
             .cell_manager
             .as_mut()
             .unwrap()
-            .reset(StorageRowType::Count as usize);
+            .reset(meta, StorageRowType::Count as usize);
         let mut config = StorageLeafConfig::default();
 
         circuit!([meta, cb.base], {
             let key_items = [
-                ctx.rlp_item(meta, &mut cb.base, StorageRowType::KeyS as usize),
-                ctx.rlp_item(meta, &mut cb.base, StorageRowType::KeyC as usize),
+                ctx.rlp_item(meta, cb, StorageRowType::KeyS as usize),
+                ctx.rlp_item(meta, cb, StorageRowType::KeyC as usize),
             ];
             config.value_rlp_bytes = [cb.base.query_bytes(), cb.base.query_bytes()];
             let value_item = [
-                ctx.rlp_item(meta, &mut cb.base, StorageRowType::ValueS as usize),
-                ctx.rlp_item(meta, &mut cb.base, StorageRowType::ValueC as usize),
+                ctx.rlp_item(meta, cb, StorageRowType::ValueS as usize),
+                ctx.rlp_item(meta, cb, StorageRowType::ValueC as usize),
             ];
-            let drifted_item = ctx.rlp_item(meta, &mut cb.base, StorageRowType::Drifted as usize);
-            let wrong_item = ctx.rlp_item(meta, &mut cb.base, StorageRowType::Wrong as usize);
+            let drifted_item = ctx.rlp_item(meta, cb, StorageRowType::Drifted as usize);
+            let wrong_item = ctx.rlp_item(meta, cb, StorageRowType::Wrong as usize);
 
             config.main_data = MainData::load(
                 "main storage",
-                &mut cb.base,
+                cb,
                 &ctx.memory[main_memory()],
                 0.expr(),
             );
@@ -94,23 +94,23 @@ impl<F: Field> StorageLeafConfig<F> {
                 let parent_data = &mut config.parent_data[is_s.idx()];
                 *parent_data = ParentData::load(
                     "leaf load",
-                    &mut cb.base,
+                    cb,
                     &ctx.memory[parent_memory(is_s)],
                     0.expr(),
                 );
                 // Key data
                 let key_data = &mut config.key_data[is_s.idx()];
-                *key_data = KeyData::load(&mut cb.base, &ctx.memory[key_memory(is_s)], 0.expr());
+                *key_data = KeyData::load(cb, &ctx.memory[key_memory(is_s)], 0.expr());
 
                 // Placeholder leaf checks
                 config.is_in_empty_trie[is_s.idx()] =
-                    IsEmptyTreeGadget::construct(&mut cb.base, parent_data.rlc.expr(), &r);
+                    IsEmptyTreeGadget::construct(cb, parent_data.rlc.expr(), &r);
                 let is_placeholder_leaf = config.is_in_empty_trie[is_s.idx()].expr();
 
                 let rlp_key = &mut config.rlp_key[is_s.idx()];
-                *rlp_key = ListKeyGadget::construct(&mut cb.base, &key_items[is_s.idx()]);
+                *rlp_key = ListKeyGadget::construct(cb, &key_items[is_s.idx()]);
                 config.rlp_value[is_s.idx()] = RLPValueGadget::construct(
-                    &mut cb.base,
+                    cb,
                     &config.value_rlp_bytes[is_s.idx()]
                         .iter()
                         .map(|c| c.expr())
@@ -142,7 +142,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 // Key
                 key_rlc[is_s.idx()] = key_data.rlc.expr()
                     + rlp_key.key.expr(
-                        &mut cb.base,
+                        cb,
                         rlp_key.key_value.clone(),
                         key_data.mult.expr(),
                         key_data.is_odd.expr(),
@@ -176,10 +176,10 @@ impl<F: Field> StorageLeafConfig<F> {
                 }}
 
                 // Key done, set the default values
-                KeyData::store_defaults(&mut cb.base, &ctx.memory[key_memory(is_s)]);
+                KeyData::store_defaults(cb, &ctx.memory[key_memory(is_s)]);
                 // Store the new parent
                 ParentData::store(
-                    &mut cb.base,
+                    cb,
                     &ctx.memory[parent_memory(is_s)],
                     0.expr(),
                     true.expr(),
@@ -257,9 +257,9 @@ impl<F: Field> StorageLeafConfig<F> {
         config
     }
 
-    pub fn assign<C: ChallengeSet<F>>(
+    pub fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F, C>,
+        region: &mut CachedRegion<'_, '_, F, S>,
         ctx: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,

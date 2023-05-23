@@ -6,7 +6,7 @@ use super::{
 use crate::{
     circuit,
     circuit_tools::{
-        cell_manager::Cell, cached_region::{CachedRegion, ChallengeSet},
+        cell_manager::{Cell, EvmCellType}, cached_region::{CachedRegion, ChallengeSet},
     },
     mpt_circuit::{
         helpers::{
@@ -37,16 +37,16 @@ impl<F: Field> StartConfig<F> {
             .cell_manager
             .as_mut()
             .unwrap()
-            .reset(StartRowType::Count as usize);
+            .reset(meta, StartRowType::Count as usize);
         let mut config = StartConfig::default();
 
-        circuit!([meta, cb.base], {
+        circuit!([meta, cb], {
             let root_items = [
-                ctx.rlp_item(meta, &mut cb.base, StartRowType::RootS as usize),
-                ctx.rlp_item(meta, &mut cb.base, StartRowType::RootC as usize),
+                ctx.rlp_item(meta, cb, StartRowType::RootS as usize),
+                ctx.rlp_item(meta, cb, StartRowType::RootC as usize),
             ];
 
-            config.proof_type = cb.base.query_cell();
+            config.proof_type = cb.query_cell();
 
             let mut root = vec![0.expr(); 2];
             for is_s in [true, false] {
@@ -54,7 +54,7 @@ impl<F: Field> StartConfig<F> {
             }
 
             MainData::store(
-                &mut cb.base,
+                cb,
                 &ctx.memory[main_memory()],
                 [
                     config.proof_type.expr(),
@@ -67,23 +67,23 @@ impl<F: Field> StartConfig<F> {
 
             for is_s in [true, false] {
                 ParentData::store(
-                    &mut cb.base,
+                    cb,
                     &ctx.memory[parent_memory(is_s)],
                     root[is_s.idx()].expr(),
                     true.expr(),
                     false.expr(),
                     root[is_s.idx()].expr(),
                 );
-                KeyData::store_defaults(&mut cb.base, &ctx.memory[key_memory(is_s)]);
+                KeyData::store_defaults(cb, &ctx.memory[key_memory(is_s)]);
             }
         });
 
         config
     }
 
-    pub fn assign<C: ChallengeSet<F>>(
+    pub fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F, C>,
+        region: &mut CachedRegion<'_, '_, F, S>,
         _ctx: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,

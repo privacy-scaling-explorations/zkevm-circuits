@@ -1,5 +1,5 @@
 use crate::{
-    circuit_tools::cell_manager::{Cell, CellType_},
+    circuit_tools::cell_manager::{Cell, EvmCellType},
 };
 use eth_types::{Field};
 use halo2_proofs::{
@@ -12,7 +12,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use super::cell_manager::TableType;
+use super::cell_manager::CellTypeTrait;
 
 pub trait ChallengeSet<F: Field> {
     fn indexed(&self) -> Vec<&Value<F>>;
@@ -24,20 +24,20 @@ impl<F: Field, V: AsRef<[Value<F>]>> ChallengeSet<F> for V {
     }
 }
 
-pub struct CachedRegion<'r, 'b, F: Field, C: ChallengeSet<F>> {
+pub struct CachedRegion<'r, 'b, F: Field, S: ChallengeSet<F>> {
     region: &'r mut Region<'b, F>,
     advice: Vec<Vec<F>>,
-    challenges: &'r C,
+    challenges: &'r S,
     advice_columns: Vec<Column<Advice>>,
     width_start: usize,
     height_start: usize,
 }
 
-impl<'r, 'b, F: Field, C: ChallengeSet<F>> CachedRegion<'r, 'b, F, C> {
+impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
     /// New cached region
     pub(crate) fn new(
         region: &'r mut Region<'b, F>,
-        challenges: &'r C,
+        challenges: &'r S,
         advice_columns: Vec<Column<Advice>>,
         height: usize,
         height_start: usize,
@@ -140,7 +140,7 @@ impl<'r, 'b, F: Field, C: ChallengeSet<F>> CachedRegion<'r, 'b, F, C> {
             [(((row_index - self.height_start) as i32) + rotation.0) as usize]
     }
 
-    pub fn challenges(&self) -> &C {
+    pub fn challenges(&self) -> &S {
         self.challenges
     }
 
@@ -172,25 +172,25 @@ impl<'r, 'b, F: Field, C: ChallengeSet<F>> CachedRegion<'r, 'b, F, C> {
 }
 
 #[derive(Debug, Clone)]
-pub struct StoredExpression<F, T: TableType> {
+pub struct StoredExpression<F, C: CellTypeTrait> {
     pub(crate) name: String,
     cell: Cell<F>,
-    cell_type: CellType_<T>,
+    cell_type: C,
     expr: Expression<F>,
     expr_id: String,
 }
 
-impl<F, T: TableType> Hash for StoredExpression<F, T> {
+impl<F, C: CellTypeTrait> Hash for StoredExpression<F, C> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.expr_id.hash(state);
         self.cell_type.hash(state);
     }
 }
 
-impl<F: Field, T: TableType> StoredExpression<F, T>  {
-    pub fn assign<C: ChallengeSet<F>>(
+impl<F: Field, C: CellTypeTrait> StoredExpression<F, C>  {
+    pub fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F, C>,
+        region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
     ) -> Result<Value<F>, Error> {
         let value = self.expr.evaluate(

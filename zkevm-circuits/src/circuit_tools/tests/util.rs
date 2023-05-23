@@ -2,11 +2,11 @@ use std::rc::Rc;
 use std::vec;
 
 use crate::circuit_tools::cached_region::{self, ChallengeSet};
-use crate::circuit_tools::cell_manager::{Cell, CellManager, PhaseConfig, SingleTable, TableType, CellType_};
+use crate::circuit_tools::cell_manager::{Cell, CellManager_, CellTypeTrait};
 use crate::circuit_tools::constraint_builder::ConstraintBuilder;
 use crate::circuit_tools::memory::Memory;
 use crate::util::{Expr, query_expression};
-use crate::circuit_tools::{table::LookupTable, cached_region::CachedRegion};
+use crate::circuit_tools::{table::LookupTable_, cached_region::CachedRegion};
 
 use eth_types::Field;
 use gadgets::util::Scalar;
@@ -39,10 +39,36 @@ pub struct TestTable {
     pub b: Column<Fixed>,
 }
 
-impl<F: Field> LookupTable<F, SingleTable> for TestTable {
-    fn get_type(&self) -> SingleTable {
-        SingleTable::Default
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CellType {
+    LookupTestTable,
+    PhaseOne,
+    PhaseTwo
+}
+
+impl Default for CellType {
+    fn default() -> Self {
+        CellType::PhaseOne
     }
+}
+
+impl CellTypeTrait for CellType {
+    fn byte_type() -> Option<Self> {
+        Some(CellType::PhaseOne)
+    }
+}
+
+impl<F: Field> LookupTable_<F> for TestTable {
+    type TableCellType = CellType;
+
+    fn get_type_(&self) -> CellType {
+        CellType::LookupTestTable
+    }
+
+    fn phase(&self) -> u8 {
+        1
+    }
+
     fn columns(&self) -> Vec<Column<Any>> {
         vec![self.a.into(), self.b.into()]
     }
@@ -85,9 +111,18 @@ impl<F: Field> TestConfig<F> {
             ).collect::<Vec<_>>();
 
         // Init cell manager and constraint builder
-        let phase_config: PhaseConfig<SingleTable> = PhaseConfig::new::<F>(3, 3, vec![&table]);
-        let mut cm = CellManager::new(meta, CM_HEIGHT,&cell_columns,0,phase_config,COPY_COL_NUM );
-        let mut cb: ConstraintBuilder<F, SingleTable> = ConstraintBuilder::new(MAX_DEG, Some(cm));
+        let mut cm = CellManager_::new(
+            meta,
+            vec![
+                (CellType::PhaseOne, 3, 0, false),
+                (CellType::PhaseTwo, 3, 0, false),
+                (CellType::LookupTestTable, 3, 0, false),
+            ],
+            vec![&table],
+            0,
+            10
+        );
+        let mut cb: ConstraintBuilder<F, CellType> = ConstraintBuilder::new(MAX_DEG, Some(cm));
 
         let mut cell_gadget = CellGadget::default();
         meta.create_gate("Test Gate", |meta| {
@@ -172,7 +207,7 @@ impl<F: Field> TestConfig<F> {
 #[derive(Clone, Debug, Default)]
 pub struct CellGadget<F> {
     // (a, b) in lookup
-    // a + r1 * b == c
+    // a, r1 * b == c
     //  where r1 is phase1 challenge
     // a == d
     a: Cell<F>,
@@ -183,12 +218,12 @@ pub struct CellGadget<F> {
 
 
 impl<F: Field> CellGadget<F> {
-    pub fn configure(cb: &mut ConstraintBuilder<F, SingleTable>, r1: Expression<F>) -> Self {
-        let a = cb.query_cell();
-        let b = cb.query_cell();
+    pub fn configure(cb: &mut ConstraintBuilder<F, CellType>, r1: Expression<F>) -> Self {
+        let a = cb.query_default();
+        let b = cb.query_default();
         // c depends on Phase1 Challenge r1
-        let c = cb.query_cell_with_type(CellType_::StoragePhase2);
-        let d = cb.query_cell();        
+        let c = cb.query_one(CellType::PhaseTwo);
+        let d = cb.query_default();        
         circuit!([meta, cb], {
             require!((a, b) => @format!("test_lookup"));
             require!(c => a.expr() + b.expr() * r1);
@@ -198,9 +233,9 @@ impl<F: Field> CellGadget<F> {
         CellGadget { a, b, c, d }
     }
 
-    pub fn assign<C: ChallengeSet<F>>(
+    pub fn assign<S: ChallengeSet<F>>(
         &self, 
-        region: &mut CachedRegion<'_, '_, F, C>, 
+        region: &mut CachedRegion<'_, '_, F, S>, 
         offset: usize, 
     ) -> Result<(), Error>{
 

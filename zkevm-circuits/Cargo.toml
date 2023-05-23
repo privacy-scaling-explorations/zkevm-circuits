@@ -57,8 +57,14 @@ serde_json = "1.0.78"
 
 
 [features]
-default = []
+default = ["test", "dev-graph"]
 test = ["ethers-signers", "mock"]
 test-circuits = []
 warn-unimplemented = ["eth-types/warn-unimplemented"]
 dev-graph = ["halo2_proofs/dev-graph", "plotters"]
+
+[[test]]
+name = "test_circuit_tools"
+path = "circuit_tools/tests/util.rs"
+required-features = ["test", "dev-graph"]
+

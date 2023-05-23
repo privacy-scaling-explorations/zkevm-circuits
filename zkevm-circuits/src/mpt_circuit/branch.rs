@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     circuit,
-    circuit_tools::{cell_manager::Cell, constraint_builder::RLCChainable, gadgets::LtGadget, cached_region::{CachedRegion, ChallengeSet}},
+    circuit_tools::{cell_manager::{Cell, EvmCellType}, constraint_builder::RLCChainable, gadgets::LtGadget, cached_region::{CachedRegion, ChallengeSet}},
     mpt_circuit::{
         helpers::{nibble_rlc, Indexable},
         param::{HASH_WIDTH, RLP_NIL},
@@ -61,17 +61,17 @@ impl<F: Field> BranchGadget<F> {
 
         let mut config = BranchGadget::default();
 
-        circuit!([meta, cb.base], {
+        circuit!([meta, cb], {
             // Data
             let children: [RLPItemView<F>; ARITY + 1] =
-                array_init::array_init(|i| ctx.rlp_item(meta, &mut cb.base, i));
+                array_init::array_init(|i| ctx.rlp_item(meta, cb, i));
 
             let mut num_bytes_left = vec![0.expr(); 2];
             let mut node_rlc = vec![0.expr(); 2];
             let mut mult = vec![1.expr(); 2];
             for is_s in [true, false] {
                 // Read the list
-                config.rlp_list[is_s.idx()] = RLPListDataGadget::construct(&mut cb.base);
+                config.rlp_list[is_s.idx()] = RLPListDataGadget::construct(cb);
                 // Start RLC encoding the RLP data starting with the list RLP bytes
                 (node_rlc[is_s.idx()], mult[is_s.idx()]) =
                     config.rlp_list[is_s.idx()].rlp_list.rlc_rlp_only(&r);
@@ -79,7 +79,7 @@ impl<F: Field> BranchGadget<F> {
                 // Keep track of how many bytes the branch contains to make sure it's correct.
                 num_bytes_left[is_s.idx()] = config.rlp_list[is_s.idx()].rlp_list.len();
 
-                config.mod_rlc[is_s.idx()] = cb.base.query_cell();
+                config.mod_rlc[is_s.idx()] = cb.query_cell();
 
                 // Check if the branch is hashed or not
                 config.is_not_hashed[is_s.idx()] = LtGadget::construct(
@@ -202,7 +202,7 @@ impl<F: Field> BranchGadget<F> {
 
             // Update the key RLC and multiplier for the branch nibble.
             let (key_rlc_post_branch, key_mult_post_branch) = nibble_rlc(
-                &mut cb.base,
+                cb,
                 key_rlc.expr(),
                 key_mult.expr(),
                 is_key_odd.expr(),
@@ -211,7 +211,7 @@ impl<F: Field> BranchGadget<F> {
             );
             // Also calculate the key RLC and multiplier for the drifted nibble.
             let (key_rlc_post_drifted, key_mult_post_drifted) = nibble_rlc(
-                &mut cb.base,
+                cb,
                 key_rlc.expr(),
                 key_mult.expr(),
                 is_key_odd.expr(),
@@ -269,9 +269,9 @@ impl<F: Field> BranchGadget<F> {
         self.post_state.as_ref().unwrap().clone()
     }
 
-    pub(crate) fn assign<C: ChallengeSet<F>>(
+    pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F, C>,
+        region: &mut CachedRegion<'_, '_, F, S>,
         _mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,

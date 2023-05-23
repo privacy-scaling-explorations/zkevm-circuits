@@ -28,12 +28,11 @@ use self::{
     account_leaf::AccountLeafConfig,
     helpers::{key_memory, RLPItemView},
     witness_row::{StartRowType,ExtensionBranchRowType, AccountRowType, StorageRowType,Node},
-    table::Table,
 };
 use crate::{
     assign, assignf, circuit,
     circuit_tools::{
-        constraint_builder::ConstraintBuilder, memory::Memory,
+        memory::Memory,
         cached_region::CachedRegion,
     },
     mpt_circuit::{
@@ -41,7 +40,7 @@ use crate::{
         start::StartConfig,
         storage_leaf::StorageLeafConfig,
     },
-    circuit_tools::{table::LookupTable, cell_manager::PhaseConfig},
+    circuit_tools::{table::LookupTable_, cell_manager::{CellManager_, CellTypeTrait, EvmCellType}},
     table::{KeccakTable, MPTProofType, MptTable},
     util::Challenges,
 };
@@ -102,7 +101,7 @@ impl<F: Field> MPTContext<F> {
     pub(crate) fn rlp_item(
         &self,
         meta: &mut VirtualCells<F>,
-        cb: &mut ConstraintBuilder<F, Table>,
+        cb: &mut MPTConstraintBuilder<F>,
         idx: usize,
     ) -> RLPItemView<F> {
         // TODO(Brecht): Add RLP limitations like max num bytes
@@ -112,7 +111,7 @@ impl<F: Field> MPTContext<F> {
     pub(crate) fn nibbles(
         &self,
         meta: &mut VirtualCells<F>,
-        cb: &mut ConstraintBuilder<F, Table>,
+        cb: &mut MPTConstraintBuilder<F>,
         idx: usize,
     ) -> RLPItemView<F> {
         self.rlp_item.create_view(meta, cb, idx, true)
@@ -214,13 +213,24 @@ impl<F: Field> MPTConfig<F> {
             memory: memory.clone(),
         };
 
-        let _phase_config = PhaseConfig::new::<F>(2, 2, vec![&keccak_table]);
-
-        let mut cb = MPTConstraintBuilder::new(33 + 10, None);
+        let mut cm = CellManager_::new(
+            meta,
+            vec![
+                (EvmCellType::StoragePhase1, 10, 0, false),
+                (EvmCellType::StoragePhase2, 10, 1, false),
+                (EvmCellType::LookupByte, 32, 0, false),
+            ],
+            vec![
+                &keccak_table, &fixed_table
+            ],
+            0,
+            32
+        );
+        let mut cb = MPTConstraintBuilder::new(33 + 10, Some(cm));
         meta.create_gate("MPT", |meta| {
             circuit!([meta, cb.base], {
                 // Populate lookup tables
-                require!(@"keccak" => <KeccakTable as LookupTable<F, Table>>::advice_columns(&keccak_table).iter().map(|table| a!(table)).collect());
+                require!(@"keccak" => <KeccakTable as LookupTable_<F>>::advice_columns(&keccak_table).iter().map(|table| a!(table)).collect());
                 require!(@"fixed" => fixed_table.iter().map(|table| f!(table)).collect());
 
                 ifx!{f!(q_enable) => {

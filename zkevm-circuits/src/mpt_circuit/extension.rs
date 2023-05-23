@@ -56,20 +56,20 @@ impl<F: Field> ExtensionGadget<F> {
 
         let mut config = ExtensionGadget::default();
 
-        circuit!([meta, cb.base], {
+        circuit!([meta, cb], {
             // Data
             let key_items = [
-                ctx.rlp_item(meta, &mut cb.base, ExtensionBranchRowType::KeyS as usize),
-                ctx.nibbles(meta, &mut cb.base, ExtensionBranchRowType::KeyC as usize),
+                ctx.rlp_item(meta,cb, ExtensionBranchRowType::KeyS as usize),
+                ctx.nibbles(meta, cb, ExtensionBranchRowType::KeyC as usize),
             ];
             let rlp_value = [
-                ctx.rlp_item(meta, &mut cb.base, ExtensionBranchRowType::ValueS as usize),
-                ctx.rlp_item(meta, &mut cb.base, ExtensionBranchRowType::ValueC as usize),
+                ctx.rlp_item(meta, cb, ExtensionBranchRowType::ValueS as usize),
+                ctx.rlp_item(meta, cb, ExtensionBranchRowType::ValueC as usize),
             ];
 
-            config.rlp_key = ListKeyGadget::construct(&mut cb.base, &key_items[0]);
+            config.rlp_key = ListKeyGadget::construct(cb, &key_items[0]);
             // TODO(Brecht): add lookup constraint
-            config.is_key_part_odd = cb.base.query_cell();
+            config.is_key_part_odd = cb.query_cell();
 
             let mut branch_rlp_rlc = vec![0.expr(); 2];
             for is_s in [true, false] {
@@ -138,7 +138,7 @@ impl<F: Field> ExtensionGadget<F> {
             // implemented.
             let key_rlc = key_data.rlc.expr()
                 + ext_key_rlc_expr(
-                    &mut cb.base,
+                    cb,
                     config.rlp_key.key_value.clone(),
                     key_data.mult.expr(),
                     config.is_key_part_odd.expr(),
@@ -158,7 +158,7 @@ impl<F: Field> ExtensionGadget<F> {
             let key_num_bytes_for_mult = key_len
                 - ifx! {not!(key_data.is_odd.expr() * config.is_key_part_odd.expr()) => { 1.expr() }};
             // Get the multiplier for this key length
-            config.mult_key = cb.base.query_cell();
+            config.mult_key = cb.query_cell();
             require!((FixedTableTag::RMult, key_num_bytes_for_mult, config.mult_key.expr()) => @"fixed");
 
             // Store the post ext state
@@ -178,9 +178,9 @@ impl<F: Field> ExtensionGadget<F> {
         self.post_state.as_ref().unwrap().clone()
     }
 
-    pub(crate) fn assign<C: ChallengeSet<F>>(
+    pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F, C>,
+        region: &mut CachedRegion<'_, '_, F, S>,
         _mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,

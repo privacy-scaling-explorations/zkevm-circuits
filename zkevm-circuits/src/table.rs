@@ -2,7 +2,7 @@
 
 use crate::{
     circuit,
-    circuit_tools::{constraint_builder::ConstraintBuilder, cell_manager::TableType, cached_region::{CachedRegion, ChallengeSet}},
+    circuit_tools::{constraint_builder::ConstraintBuilder, cell_manager::CellTypeTrait, cached_region::{CachedRegion, ChallengeSet}},
     copy_circuit::number_or_hash_to_field,
     evm_circuit::util::rlc,
     exp_circuit::{OFFSET_INCREMENT, ROWS_PER_STEP},
@@ -657,10 +657,10 @@ impl MptTable {
         }
     }
 
-    pub(crate) fn constrain<F: Field, T: TableType>(
+    pub(crate) fn constrain<F: Field, C: CellTypeTrait>(
         &self,
         meta: &mut VirtualCells<'_, F>,
-        cb: &mut ConstraintBuilder<F, T>,
+        cb: &mut ConstraintBuilder<F, C>,
         address_rlc: Expression<F>,
         proof_type: Expression<F>,
         key_rlc: Expression<F>,
@@ -695,9 +695,9 @@ impl MptTable {
         Ok(())
     }
 
-    pub(crate) fn assign_cached<F: Field, C: ChallengeSet<F>>(
+    pub(crate) fn assign_cached<F: Field, S: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F, C>,
+        region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
         row: &MptUpdateRow<Value<F>>,
     ) -> Result<(), Error> {

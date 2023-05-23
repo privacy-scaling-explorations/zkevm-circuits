@@ -7,7 +7,7 @@ use gadgets::util::{and, sum, Scalar};
 use halo2_proofs::plonk::{ConstraintSystem, Expression};
 use itertools::Itertools;
 
-use super::cell_manager::{Cell, CellManager, CellType_, TableType};
+use super::cell_manager::{Cell, CellManager_, CellTypeTrait, EvmCellType};
 
 /// Lookup data
 #[derive(Clone)]
@@ -24,7 +24,7 @@ pub struct LookupData<F> {
 
 /// Constraint builder
 #[derive(Clone)]
-pub struct ConstraintBuilder<F, T: TableType> {
+pub struct ConstraintBuilder<F, C: CellTypeTrait> {
     constraints: Vec<(&'static str, Expression<F>)>,
     max_degree: usize,
     conditions: Vec<Expression<F>>,
@@ -33,11 +33,11 @@ pub struct ConstraintBuilder<F, T: TableType> {
     /// The lookup tables
     pub lookup_tables: Vec<LookupData<F>>,
     /// CellManager
-    pub cell_manager: Option<CellManager<F, T>>,
+    pub cell_manager: Option<CellManager_<F, C>>,
 }
 
-impl<F: Field, T: TableType> ConstraintBuilder<F, T> {
-    pub(crate) fn new(max_degree: usize, cell_manager: Option<CellManager<F, T>>) -> Self {
+impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
+    pub(crate) fn new(max_degree: usize, cell_manager: Option<CellManager_<F, C>>) -> Self {
         ConstraintBuilder {
             constraints: Vec::new(),
             max_degree,
@@ -48,7 +48,7 @@ impl<F: Field, T: TableType> ConstraintBuilder<F, T> {
         }
     }
 
-    pub(crate) fn set_cell_manager(&mut self, cell_manager: CellManager<F, T>) {
+    pub(crate) fn set_cell_manager(&mut self, cell_manager: CellManager_<F, C>) {
         self.cell_manager = Some(cell_manager);
     }
 
@@ -119,40 +119,32 @@ impl<F: Field, T: TableType> ConstraintBuilder<F, T> {
     // Query
 
     pub(crate) fn query_bool(&mut self) -> Cell<F> {
-        let cell = self.query_cell();
+        let cell = self.query_default();
         self.require_boolean("Constrain cell to be a bool", cell.expr());
         cell
     }
 
-    pub(crate) fn query_byte(&mut self) -> Cell<F> {
-        // TODO(Brecht): fix
-        self.query_cell_with_type(CellType_::StoragePhase1)
+    pub(crate) fn query_default(&mut self) -> Cell<F> {
+        self.query_cells_dyn(C::default(), 1)
+            .get(0)
+            .expect("No cell found")
+            .clone()
     }
 
-    pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
-        self.query_bytes_dyn(N).try_into().unwrap()
-    }
-
-    pub(crate) fn query_bytes_dyn(&mut self, count: usize) -> Vec<Cell<F>> {
-        self.query_cells_dyn(CellType_::StoragePhase1, count)
-    }
-
-    pub(crate) fn query_cell(&mut self) -> Cell<F> {
-        self.query_cell_with_type(CellType_::StoragePhase1)
-    }
-
-    pub(crate) fn query_cells<const N: usize>(&mut self) -> [Cell<F>; N] {
-        self.query_cells_dyn(CellType_::StoragePhase1, N)
-            .try_into()
-            .unwrap()
-    }
-
-    pub(crate) fn query_cell_with_type(&mut self, cell_type: CellType_<T>) -> Cell<F> {
+    pub(crate) fn query_one(&mut self, cell_type: C) -> Cell<F> {
         self.query_cells_dyn(cell_type, 1).first().unwrap().clone()
     }
 
-    fn query_cells_dyn(&mut self, cell_type: CellType_<T>, count: usize) -> Vec<Cell<F>> {
-        // cb 对 cm 仅有一个调度接口，即 query_cells
+    pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
+        // Your own definition of CellType::Byte
+        self.query_cells_dyn(
+            C::byte_type().expect("No byte type for this CellManager"), 
+            N
+            ).try_into()
+            .unwrap()
+    }
+
+    pub(crate) fn query_cells_dyn(&mut self, cell_type: C, count: usize) -> Vec<Cell<F>> {
         self.cell_manager
             .as_mut()
             .expect("Cell manager not set")
@@ -327,8 +319,8 @@ impl<F: Field, T: TableType> ConstraintBuilder<F, T> {
     }
 }
 
-pub(crate) fn merge_lookups<F: Field, T: TableType>(
-    cb: &mut ConstraintBuilder<F, T>,
+pub(crate) fn merge_lookups<F: Field, C: CellTypeTrait>(
+    cb: &mut ConstraintBuilder<F, C>,
     lookups: Vec<LookupData<F>>,
 ) -> (Expression<F>, Vec<Expression<F>>) {
     merge_values(
@@ -340,8 +332,8 @@ pub(crate) fn merge_lookups<F: Field, T: TableType>(
     )
 }
 
-pub(crate) fn merge_values<F: Field, T: TableType>(
-    cb: &mut ConstraintBuilder<F, T>,
+pub(crate) fn merge_values<F: Field, C: CellTypeTrait>(
+    cb: &mut ConstraintBuilder<F, C>,
     values: Vec<(Expression<F>, Vec<Expression<F>>)>,
 ) -> (Expression<F>, Vec<Expression<F>>) {
     let selector = sum::expr(values.iter().map(|(condition, _)| condition.expr()));
