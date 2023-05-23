@@ -329,10 +329,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(is_pad, Rotation::next()),
             );
 
-            cb.gate(and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                meta.query_selector(q_step),
-            ]))
+            cb.gate(and::expr([meta.query_selector(q_step)]))
         });
 
         meta.lookup_any("Memory lookup", |meta| {
