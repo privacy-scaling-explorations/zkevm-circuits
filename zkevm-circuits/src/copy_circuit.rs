@@ -268,7 +268,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 ]),
             );
             cb.condition(
-                not::expr(and::expr([
+                not::expr(or::expr([
                     meta.query_advice(is_last, Rotation::next()),
                     tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta),
                 ])),
@@ -298,7 +298,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(value_acc_rlc, Rotation::next()),
             );
             cb.condition(
-                not::expr(and::expr([
+                not::expr(or::expr([
                     meta.query_advice(is_last, Rotation::next()),
                     meta.query_advice(is_pad, Rotation::cur()),
                 ])),
