@@ -268,10 +268,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 ]),
             );
             cb.condition(
-                not::expr(meta.query_advice(is_last, Rotation::next()))
-                    * (not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
-                        meta,
-                    ))),
+                not::expr(and::expr([
+                    meta.query_advice(is_last, Rotation::next()),
+                    tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta),
+                ])),
                 |cb| {
                     cb.require_equal(
                         "bytes_left == bytes_left_next + 1 for non-last step",
@@ -280,6 +280,13 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     );
                 },
             );
+            cb.condition(meta.query_advice(is_first, Rotation::cur()), |cb| {
+                cb.require_equal(
+                    "value == value_acc_rlc at every first copy event",
+                    meta.query_advice(value, Rotation::cur()),
+                    meta.query_advice(value_acc_rlc, Rotation::cur()),
+                );
+            });
             cb.require_equal(
                 "write value == read value",
                 meta.query_advice(value, Rotation::cur()),
@@ -291,10 +298,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(value_acc_rlc, Rotation::next()),
             );
             cb.condition(
-                and::expr([
-                    not::expr(meta.query_advice(is_last, Rotation::next())),
-                    not::expr(meta.query_advice(is_pad, Rotation::cur())),
-                ]),
+                not::expr(and::expr([
+                    meta.query_advice(is_last, Rotation::next()),
+                    meta.query_advice(is_pad, Rotation::cur()),
+                ])),
                 |cb| {
                     cb.require_equal(
                         "value_acc_rlc(2) == value_acc_rlc(0) * r + value(2)",
