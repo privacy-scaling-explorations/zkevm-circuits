@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 
 lazy_static! {
     static ref ACCOUNT_ZERO: Account = Account::zero();
+    /// Hash value for empty code hash.
     static ref EMPTY_CODE_HASH: Hash = CodeDB::hash(&[]);
     /// bytes of empty code hash, in little endian order.
     pub static ref EMPTY_CODE_HASH_LE: [u8; 32] = {
