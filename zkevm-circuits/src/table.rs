@@ -452,7 +452,7 @@ pub struct RwTable {
     /// Aux1
     pub aux1: Column<Advice>,
     /// Aux2 (Committed Value)
-    pub aux2: Column<Advice>,
+    pub aux2: word::Word<Column<Advice>>,
 }
 
 impl<F: Field> LookupTable<F> for RwTable {
@@ -471,7 +471,8 @@ impl<F: Field> LookupTable<F> for RwTable {
             self.value_prev.lo().clone().into(),
             self.value_prev.hi().clone().into(),
             self.aux1.into(),
-            self.aux2.into(),
+            self.aux2.lo().clone().into(),
+            self.aux2.hi().clone().into(),
         ]
     }
 
@@ -510,7 +511,7 @@ impl RwTable {
             // It seems that aux1 for the moment is not using randomness
             // TODO check in a future review
             aux1: meta.advice_column_in(SecondPhase),
-            aux2: meta.advice_column_in(SecondPhase),
+            aux2: word::Word::new([meta.advice_column_in(SecondPhase), meta.advice_column_in(SecondPhase)])
         }
     }
     fn assign<F: Field>(
@@ -526,14 +527,19 @@ impl RwTable {
             (self.id, row.id),
             (self.address, row.address),
             (self.field_tag, row.field_tag),
-            (self.storage_key, row.storage_key),
-            (self.value, row.value),
-            (self.value_prev, row.value_prev),
             (self.aux1, row.aux1),
-            (self.aux2, row.aux2),
         ] {
             region.assign_advice(|| "assign rw row on rw table", column, offset, || value)?;
         }
+        for (column, value) in [
+            (self.storage_key, row.storage_key),
+            (self.value, row.value),
+            (self.value_prev, row.value_prev),
+            (self.aux2, row.aux2),
+        ] {
+            value.assign_advice(region,|| "assign rw row on rw table", column, offset)?;
+        }
+ 
         Ok(())
     }
 
@@ -889,7 +895,7 @@ pub struct KeccakTable {
     /// Byte array input length
     pub input_len: Column<Advice>,
     /// RLC of the hash result
-    pub output: word::Word<Column<Advice>>, // RLC of hash of input bytes
+    pub output_rlc: Column<Advice>, // RLC of hash of input bytes
 }
 
 impl<F: Field> LookupTable<F> for KeccakTable {
@@ -898,8 +904,7 @@ impl<F: Field> LookupTable<F> for KeccakTable {
             self.is_enabled.into(),
             self.input_rlc.into(),
             self.input_len.into(),
-            self.output.lo().clone().into(),
-            self.output.hi().clone().into(),
+            self.output_rlc.into(),
         ]
     }
 
@@ -908,8 +913,7 @@ impl<F: Field> LookupTable<F> for KeccakTable {
             String::from("is_enabled"),
             String::from("input_rlc"),
             String::from("input_len"),
-            String::from("output_lo"),
-            String::from("output_hi"),
+            String::from("output_rlc"),
         ]
     }
 }
@@ -921,7 +925,7 @@ impl KeccakTable {
             is_enabled: meta.advice_column(),
             input_rlc: meta.advice_column_in(SecondPhase),
             input_len: meta.advice_column(),
-            output: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            output_rlc:meta.advice_column(),
         }
     }
 
@@ -1016,13 +1020,12 @@ impl KeccakTable {
         &self,
         value_rlc: Column<Advice>,
         length: Column<Advice>,
-        code_hash: word::Word<Column<Advice>>,
+        code_hash: Column<Advice>,
     ) -> Vec<(Column<Advice>, Column<Advice>)> {
         vec![
             (value_rlc, self.input_rlc),
             (length, self.input_len),
-            (code_hash.lo().clone(), self.output.lo().clone()),
-            (code_hash.hi().clone(), self.output.hi().clone()),
+            (code_hash, self.output_rlc),
         ]
     }
 }

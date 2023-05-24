@@ -63,7 +63,7 @@ impl RwMap {
                 key(prev_row) != key(row)
             };
             if !row.is_write() {
-                let value = row.value_assignment::<Fr>();
+                let value = row.value_assignment();
                 if is_first {
                     // value == init_value
                     let init_value = updates
@@ -256,11 +256,11 @@ pub struct RwRow<F> {
     pub(crate) value: word::Word<F>,
     pub(crate) value_prev: word::Word<F>,
     pub(crate) aux1: F,
-    pub(crate) aux2: F,
+    pub(crate) aux2: word::Word<F>,
 }
 
 impl<F: Field> RwRow<F> {
-    pub(crate) fn values(&self) -> [F; 14] {
+    pub(crate) fn values(&self) -> [F; 15] {
         [
             self.rw_counter,
             self.is_write,
@@ -275,7 +275,8 @@ impl<F: Field> RwRow<F> {
             self.value_prev.lo().clone(),
             self.value_prev.hi().clone(),
             self.aux1,
-            self.aux2,
+            self.aux2.lo().clone(),
+            self.aux2.hi().clone(),
         ]
     }
     pub(crate) fn rlc(&self, randomness: F) -> F {
@@ -387,7 +388,7 @@ impl Rw {
 
     // At this moment is a helper for the EVM circuit until EVM challange API is
     // applied
-    pub(crate) fn table_assignment_aux<F: Field>(&self, randomness: F) -> RwRow<F> {
+    pub(crate) fn table_assignment_aux<F: Field>(&self) -> RwRow<F> {
         RwRow {
             rw_counter: F::from(self.rw_counter() as u64),
             is_write: F::from(self.is_write() as u64),
@@ -397,7 +398,7 @@ impl Rw {
             field_tag: F::from(self.field_tag().unwrap_or_default()),
             storage_key: word::Word::from_u256(self.storage_key().unwrap_or_default()),
             value: word::Word::from_u256(self.value_assignment()),
-            value_prev: word::Word::from_u256(self.value_prev_assignment()).unwrap_or_default(),
+            value_prev: word::Word::from_u256(self.value_prev_assignment().unwrap_or_default()),
             aux1: F::ZERO, // only used for AccountStorage::tx_id, which moved to key1.
             aux2: word::Word::from_u256(self.committed_value_assignment().unwrap_or_default()),
         }
@@ -411,12 +412,12 @@ impl Rw {
             id: Value::known(F::from(self.id().unwrap_or_default() as u64)),
             address: Value::known(self.address().unwrap_or_default().to_scalar().unwrap()),
             field_tag: Value::known(F::from(self.field_tag().unwrap_or_default())),
-            storage_key: word::Word::from_u256(self.storage_key().unwrap_or_default()),
-            value: word::Word::from_u256(self.value_assignment()),
-            value_prev: word::Word::from_u256(self.value_prev_assignment()),
+            storage_key: word::Word::from_u256(self.storage_key().unwrap_or_default()).into_value(),
+            value: word::Word::from_u256(self.value_assignment()).into_value(),
+            value_prev: word::Word::from_u256(self.value_prev_assignment().unwrap_or_default()).into_value(),
             aux1: Value::known(F::ZERO), /* only used for AccountStorage::tx_id, which moved to
                                           * key1. */
-            aux2: Value::known(self.committed_value_assignment()),
+            aux2: word::Word::from_u256(self.committed_value_assignment().unwrap_or_default()).into_value(),
         }
     }
 
@@ -556,7 +557,7 @@ impl Rw {
             | Self::Account { value, .. }
             | Self::AccountStorage { value, .. }
             | Self::Stack { value, .. }
-            | Self::TxLog { value, .. } => value,
+            | Self::TxLog { value, .. } => *value,
             Self::TxAccessListAccount { is_warm, .. }
             | Self::TxAccessListAccountStorage { is_warm, .. } => U256::from(*is_warm as u64),
             Self::Memory { byte, .. } => U256::from(u64::from(*byte)),
@@ -567,7 +568,7 @@ impl Rw {
     pub(crate) fn value_prev_assignment(&self) -> Option<Word> {
         match self {
             Self::Account { value_prev, .. } | Self::AccountStorage { value_prev, .. } => {
-                Some(value_prev)
+                Some(*value_prev)
             }
             Self::TxAccessListAccount { is_warm_prev, .. }
             | Self::TxAccessListAccountStorage { is_warm_prev, .. } => {
@@ -587,7 +588,7 @@ impl Rw {
         match self {
             Self::AccountStorage {
                 committed_value, ..
-            } => Some(committed_value),
+            } => Some(*committed_value),
             _ => None,
         }
     }

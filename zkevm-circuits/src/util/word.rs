@@ -1,34 +1,35 @@
+#![allow(missing_docs)]
 //! Define generic Word type with utility functions
 // Naming Convesion
 // - Limbs: An EVN word is 256 bits. Limbs N means split 256 into N limb. For example, N = 4, each
 //   limb is 256/4 = 64 bits
 
-use eth_types::{Field, ToLittleEndian};
+use eth_types::{Field, ToLittleEndian, U256};
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
-    circuit::{AssignedCell, Value},
-    plonk::{Error, Expression},
+    circuit::{AssignedCell, Value, Region},
+    plonk::{Error, Expression, Column, Advice, Assigned},
 };
 use itertools::Itertools;
 
 use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell};
 
 #[derive(Clone, Debug, Copy)]
-pub(crate) struct WordLimbs<T, const N: usize> {
+pub  struct WordLimbs<T, const N: usize> {
     pub limbs: [T; N],
 }
 
-pub(crate) type Word2<T> = WordLimbs<T, 2>;
+pub  type Word2<T> = WordLimbs<T, 2>;
 
-pub(crate) type Word4<T> = WordLimbs<T, 4>;
+pub  type Word4<T> = WordLimbs<T, 4>;
 
-pub(crate) type Word16<T> = WordLimbs<T, 16>;
+pub  type Word16<T> = WordLimbs<T, 16>;
 
-pub(crate) type Word32<T> = WordLimbs<T, 32>;
+pub  type Word32<T> = WordLimbs<T, 32>;
 
-pub(crate) type WordCell<F> = Word<Cell<F>>;
+pub(crate)  type WordCell<F> = Word<Cell<F>>;
 
-pub(crate) type Word32Cell<F> = Word32<Cell<F>>;
+pub(crate)  type Word32Cell<F> = Word32<Cell<F>>;
 
 impl<T, const N: usize> WordLimbs<T, N> {
     pub fn new(limbs: [T; N]) -> Self {
@@ -48,7 +49,7 @@ impl<T: Default, const N: usize> Default for WordLimbs<T, N> {
     }
 }
 
-pub(crate) trait WordExpr<F> {
+pub  trait WordExpr<F> {
     fn to_word(&self) -> Word<Expression<F>>;
 }
 
@@ -71,7 +72,7 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
     }
 
     pub fn word_expr(&self) -> WordLimbs<Expression<F>, N> {
-        return WordLimbs::new(self.limbs.map(|cell| cell.expr()));
+        return WordLimbs::new(self.limbs.clone().map(|cell| cell.expr()))
     }
 }
 
@@ -115,6 +116,11 @@ impl<T: Clone> Word<T> {
         (lo,hi)
     }
 
+    pub fn into_value(self) -> Word<Value<T>> {
+        let [lo, hi] = self.0.limbs;
+        Word::new([Value::known(lo), Value::known(hi)])
+    }
+
 }
 
 impl<T> std::ops::Deref for Word<T> {
@@ -141,6 +147,10 @@ impl<F: Field> Word<F> {
     }
 }
 
+impl<F: Field> Into<Word<F>> for eth_types::Word {
+    fn into(self) -> Word<F> { Word::<F>::from_u256(self) }
+}
+
 impl<F: Field> Word<Cell<F>> {
     pub fn assign_lo(
         &self,
@@ -154,6 +164,27 @@ impl<F: Field> Word<Cell<F>> {
         ])
     }
 }
+
+impl<F: Field> Word<Value<F>> {
+   pub fn assign_advice<A, AR>(
+        &self,
+        region: &mut Region<'_, F>,
+        annotation: A,
+        column: Word<Column<Advice>>,
+        offset: usize,
+    ) -> Result<Word<AssignedCell<F, F>>, Error>
+    where
+        A: Fn() -> AR,
+        AR: Into<String>
+    {
+        let annotation : String = annotation().into();
+        let lo = region.assign_advice(|| &annotation, *column.lo(), offset, || *self.lo())?;
+        let hi = region.assign_advice(|| &annotation, *column.hi(), offset, || *self.hi())?;
+
+        Ok(Word::new([lo,hi]))
+    }
+}
+
 
 impl<F: Field> WordExpr<F> for Word<Cell<F>> {
     fn to_word(&self) -> Word<Expression<F>> {
@@ -177,14 +208,15 @@ impl<F: Field> Word<Expression<F>> {
         when_true: T,
         when_false: T,
     ) -> Word<Expression<F>> {
-        let (true_lo, true_hi) = when_true
+        let when_true_sel = 
+        when_true
             .to_word()
-            .mul_selector(selector.clone())
-            .to_lo_hi();
-        let (false_lo, false_hi) = when_false
-            .to_word()
-            .mul_selector(1.expr() - selector)
-            .to_lo_hi();
+            .mul_selector(selector.clone());
+            let (true_lo, true_hi) =  when_true_sel    .to_lo_hi();
+        let when_false_sel =     when_false
+        .to_word()
+        .mul_selector(1.expr() - selector);
+        let (false_lo, false_hi) = when_false_sel.to_lo_hi();
         Word::new([
             true_lo.clone() + false_lo.clone(),
             true_hi.clone() + false_hi.clone(),
@@ -193,7 +225,7 @@ impl<F: Field> Word<Expression<F>> {
 
     // Assume selector is 1/0 therefore no overflow check
     pub fn mul_selector(&self, selector: Expression<F>) -> Self {
-        Word::new([self.lo().clone() * selector, self.hi().clone() * selector])
+        Word::new([self.lo().clone() * selector.clone(), self.hi().clone() * selector])
     }
 
     // No overflow check on lo/hi limbs
@@ -244,7 +276,7 @@ impl<F: Field, const N1: usize> WordLimbs<Expression<F>, N1> {
             self.limbs
                 .chunks(N1 / N2)
                 .map(|chunk| from_bytes::expr(chunk))
-                .zip(others.limbs)
+                .zip(others.limbs.clone())
                 .map(|(expr1, expr2)| expr1 - expr2)
                 .collect_vec(),
         ))

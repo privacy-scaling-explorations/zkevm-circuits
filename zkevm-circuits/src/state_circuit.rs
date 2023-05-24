@@ -276,18 +276,11 @@ impl<F: Field> StateCircuitConfig<F> {
                     .unwrap_or_default(),
             );
 
-            region.assign_advice(
-                || "initial_value_lo",
-                *self.initial_value.lo(),
+            initial_value.into_value().assign_advice(
+                region,
+                || "initial_value",
+                self.initial_value,
                 offset,
-                || Value::known(*initial_value.lo()),
-            )?;
-
-            region.assign_advice(
-                || "initial_value_hi",
-                *self.initial_value.hi(),
-                offset,
-                || Value::known(*initial_value.hi()),
             )?;
 
             // Identify non-existing if both committed value and new value are zero.
@@ -346,19 +339,9 @@ impl<F: Field> StateCircuitConfig<F> {
             // State root assignment is at previous row (offset - 1) because the state root
             // changes on the last access row.
             if offset != 0 {
-                let (lo,hi) = word::Word::<F>::from_u256(state_root).to_lo_hi();
-                region.assign_advice(
-                    || "state_root hi",
-                    *self.state_root.hi(),
-                    offset - 1,
-                    || Value::known(*hi),
-                )?;
-                region.assign_advice(
-                    || "state_root lo",
-                    *self.state_root.lo(),
-                    offset - 1,
-                    || Value::known(*lo),
-                )?;
+                word::Word::<F>::from_u256(state_root)
+                    .into_value()
+                    .assign_advice(region, || "state root", self.state_root, offset - 1)?;
             }
 
             if offset == rows_len - 1 {
@@ -371,19 +354,9 @@ impl<F: Field> StateCircuitConfig<F> {
                         new_root
                     };
                 }
-                let (lo,hi) = word::Word::<F>::from_u256(state_root).to_lo_hi();
-                region.assign_advice(
-                    || "last row state_root hi",
-                    *self.state_root.hi(),
-                    offset,
-                    || Value::known(*hi),
-                )?;
-                region.assign_advice(
-                    || "last row state_root lo",
-                    *self.state_root.lo(),
-                    offset,
-                    || Value::known(*lo),
-                )?;
+                word::Word::<F>::from_u256(state_root)
+                    .into_value()
+                    .assign_advice(region, || "last row state_root", self.state_root, offset)?;
             }
         }
 
@@ -486,7 +459,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     fn synthesize_sub(
         &self,
         config: &Self::Config,
-        challenges: &Challenges<Value<F>>,
+        _challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         config.load_aux_tables(layouter)?;
@@ -536,11 +509,12 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         + meta.query_advice(first_different_limb.bits[4], Rotation::cur());
     let mpt_update_table_expressions = c.mpt_table.table_exprs(meta);
 
-    let mut meta_query_word = | word_column: word::Word::<Column<Advice>> ,  at: Rotation |
-        word::Word::new(
-           [ meta.query_advice(*word_column.lo(), at),
-            meta.query_advice(*word_column.hi(), at)],
-        );
+    let meta_query_word = |metap:&mut VirtualCells<'_, F>,  word_column: word::Word<Column<Advice>>, at: Rotation| {
+        word::Word::new([
+            metap.query_advice(*word_column.lo(), at),
+            metap.query_advice(*word_column.hi(), at),
+        ])
+    };
 
     Queries {
         selector: meta.query_fixed(c.selector, Rotation::cur()),
@@ -555,20 +529,35 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
             address: meta.query_advice(c.rw_table.address, Rotation::cur()),
             prev_address: meta.query_advice(c.rw_table.address, Rotation::prev()),
             field_tag: meta.query_advice(c.rw_table.field_tag, Rotation::cur()),
-            storage_key: meta_query_word(c.rw_table.storage_key, Rotation::cur()),
-            value: meta_query_word(c.rw_table.value, Rotation::cur()),
-            value_prev: meta_query_word(c.rw_table.value, Rotation::prev()),
-            value_prev_column: meta_query_word(c.rw_table.value_prev, Rotation::cur()),
+            storage_key: meta_query_word(meta, c.rw_table.storage_key, Rotation::cur()),
+            value: meta_query_word(meta, c.rw_table.value, Rotation::cur()),
+            value_prev: meta_query_word(meta, c.rw_table.value, Rotation::prev()),
+            value_prev_column: meta_query_word(meta, c.rw_table.value_prev, Rotation::cur()),
         },
         // TODO: clean this up
         mpt_update_table: MptUpdateTableQueries {
             address: mpt_update_table_expressions[0].clone(),
-            storage_key: word::Word::new([mpt_update_table_expressions[1].clone(), mpt_update_table_expressions[2].clone()]), 
+            storage_key: word::Word::new([
+                mpt_update_table_expressions[1].clone(),
+                mpt_update_table_expressions[2].clone(),
+            ]),
             proof_type: mpt_update_table_expressions[3].clone(),
-            new_root: word::Word::new([mpt_update_table_expressions[4].clone(),mpt_update_table_expressions[5].clone()]),
-            old_root: word::Word::new([mpt_update_table_expressions[6].clone(), mpt_update_table_expressions[7].clone()]),
-            new_value: word::Word::new([mpt_update_table_expressions[8].clone(), mpt_update_table_expressions[9].clone()]),
-            old_value: word::Word::new([mpt_update_table_expressions[10].clone(), mpt_update_table_expressions[11].clone()]),
+            new_root: word::Word::new([
+                mpt_update_table_expressions[4].clone(),
+                mpt_update_table_expressions[5].clone(),
+            ]),
+            old_root: word::Word::new([
+                mpt_update_table_expressions[6].clone(),
+                mpt_update_table_expressions[7].clone(),
+            ]),
+            new_value: word::Word::new([
+                mpt_update_table_expressions[8].clone(),
+                mpt_update_table_expressions[9].clone(),
+            ]),
+            old_value: word::Word::new([
+                mpt_update_table_expressions[10].clone(),
+                mpt_update_table_expressions[11].clone(),
+            ]),
         },
         lexicographic_ordering_selector: meta
             .query_fixed(c.lexicographic_ordering.selector, Rotation::cur()),
@@ -590,8 +579,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
             + final_bits_sum.clone() * (1.expr() - final_bits_sum),
         address: MpiQueries::new(meta, c.sort_keys.address),
         storage_key: MpiQueries::new(meta, c.sort_keys.storage_key),
-        initial_value: meta_query_word(c.initial_value, Rotation::cur()),
-        initial_value_prev: meta_query_word(c.initial_value, Rotation::prev()),
+        initial_value: meta_query_word(meta, c.initial_value, Rotation::cur()),
+        initial_value_prev: meta_query_word(meta, c.initial_value, Rotation::prev()),
         is_non_exist: meta.query_advice(c.is_non_exist.is_zero, Rotation::cur()),
         mpt_proof_type: meta.query_advice(c.mpt_proof_type, Rotation::cur()),
         lookups: LookupsQueries::new(meta, c.lookups),
@@ -600,11 +589,12 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
             .map(|idx| meta.query_advice(first_different_limb.bits[idx], Rotation::cur())),
         not_first_access: meta.query_advice(c.not_first_access, Rotation::cur()),
         last_access: 1.expr() - meta.query_advice(c.not_first_access, Rotation::next()),
-        state_root: meta_query_word(c.state_root, Rotation::cur()),
-        state_root_prev: meta_query_word(c.state_root, Rotation::prev()),
+        state_root: meta_query_word(meta, c.state_root, Rotation::cur()),
+        state_root_prev: meta_query_word(meta, c.state_root, Rotation::prev()),
     }
 }
 
+/* 
 #[cfg(test)]
 mod state_circuit_stats {
     use crate::{
@@ -641,3 +631,4 @@ mod state_circuit_stats {
         );
     }
 }
+*/

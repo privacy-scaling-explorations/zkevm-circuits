@@ -421,38 +421,11 @@ fn storage_key_mismatch() {
         tx_id: 4,
         committed_value: U256::from(34),
     }];
-    let overrides = HashMap::from([((AdviceColumn::StorageKeyByte1, 0), Fr::ONE)]);
+    let overrides = HashMap::from([((AdviceColumn::StorageKeyHi, 0), Fr::ONE)]);
 
     let result = verify_with_overrides(rows, overrides);
 
     assert_error_matches(result, "rlc encoded value matches bytes");
-}
-
-#[test]
-fn storage_key_byte_out_of_range() {
-    let rows = vec![Rw::AccountStorage {
-        rw_counter: 1,
-        is_write: false,
-        account_address: Address::default(),
-        storage_key: U256::from(256),
-        value: U256::from(500),
-        value_prev: U256::from(500),
-        tx_id: 4,
-        committed_value: U256::from(500),
-    }];
-    let overrides = HashMap::from([
-        ((AdviceColumn::StorageKeyByte0, 0), Fr::from(0xcafeu64)),
-        ((AdviceColumn::StorageKeyByte1, 0), Fr::ZERO),
-    ]);
-
-    // This will trigger two errors: an RLC encoding error and the "fit into u8", we
-    // remove the first one
-    let result = verify_with_overrides(rows, overrides).map_err(|mut err| {
-        err.remove(0);
-        err
-    });
-
-    assert_error_matches(result, "rlc bytes fit into u8");
 }
 
 #[test]
@@ -738,11 +711,14 @@ fn bad_initial_memory_value() {
 
     let v = Fr::from(200);
     let overrides = HashMap::from([
-        ((AdviceColumn::Value, 0), v),
-        ((AdviceColumn::ValuePrev, 0), v),
+        ((AdviceColumn::ValueHi, 0), v),
+        ((AdviceColumn::ValueLo, 0), v),
+        ((AdviceColumn::ValuePrevHi, 0), v),
+        ((AdviceColumn::ValuePrevLo, 0), v),
         ((AdviceColumn::IsZero, 0), Fr::ZERO),
         ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
-        ((AdviceColumn::InitialValue, 0), v),
+        ((AdviceColumn::InitialValueHi, 0), v),
+        ((AdviceColumn::InitialValueLo, 0), v),
     ]);
 
     let result = verify_with_overrides(rows, overrides);
@@ -761,7 +737,8 @@ fn invalid_memory_value() {
     }];
     let v = Fr::from(256);
     let overrides = HashMap::from([
-        ((AdviceColumn::Value, 0), v),
+        ((AdviceColumn::ValueHi, 0), v),
+        ((AdviceColumn::ValueLo, 0), v),
         ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
     ]);
 
@@ -855,8 +832,10 @@ fn bad_initial_stack_value() {
     }];
 
     let overrides = HashMap::from([
-        ((AdviceColumn::InitialValue, 0), Fr::from(10)),
-        ((AdviceColumn::ValuePrev, 0), Fr::from(10)),
+        ((AdviceColumn::InitialValueHi, 0), Fr::from(0)),
+        ((AdviceColumn::InitialValueLo, 0), Fr::from(10)),
+        ((AdviceColumn::ValuePrevHi, 0), Fr::from(0)),
+        ((AdviceColumn::ValuePrevLo, 0), Fr::from(10)),
     ]);
 
     assert_error_matches(
@@ -877,8 +856,10 @@ fn bad_initial_tx_access_list_account_value() {
     }];
 
     let overrides = HashMap::from([
-        ((AdviceColumn::InitialValue, 0), Fr::from(1)),
-        ((AdviceColumn::ValuePrev, 0), Fr::from(1)),
+        ((AdviceColumn::InitialValueHi, 0), Fr::from(0)),
+        ((AdviceColumn::InitialValueLo, 0), Fr::from(1)),
+        ((AdviceColumn::ValuePrevHi, 0), Fr::from(0)),
+        ((AdviceColumn::ValuePrevLo, 0), Fr::from(1)),
     ]);
 
     assert_error_matches(
@@ -899,11 +880,14 @@ fn bad_initial_tx_refund_value() {
     let v = Fr::from(10);
     let overrides = HashMap::from([
         ((AdviceColumn::IsWrite, 0), Fr::from(1)),
-        ((AdviceColumn::Value, 0), v),
-        ((AdviceColumn::ValuePrev, 0), v),
+        ((AdviceColumn::ValueHi, 0), Fr::ZERO),
+        ((AdviceColumn::ValueLo, 0), v),
+        ((AdviceColumn::ValuePrevHi, 0), Fr::ZERO),
+        ((AdviceColumn::ValuePrevLo, 0), v),
         ((AdviceColumn::IsZero, 0), Fr::ZERO),
         ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
-        ((AdviceColumn::InitialValue, 0), v),
+        ((AdviceColumn::InitialValueHi, 0), Fr::ZERO),
+        ((AdviceColumn::InitialValueLo, 0), v),
     ]);
 
     assert_error_matches(
@@ -925,8 +909,10 @@ fn bad_initial_tx_log_value() {
     }];
 
     let overrides = HashMap::from([
-        ((AdviceColumn::InitialValue, 0), Fr::from(10)),
-        ((AdviceColumn::ValuePrev, 0), Fr::from(10)),
+        ((AdviceColumn::InitialValueHi, 0), Fr::from(0)),
+        ((AdviceColumn::InitialValueLo, 0), Fr::from(10)),
+        ((AdviceColumn::ValuePrevHi, 0), Fr::from(0)),
+        ((AdviceColumn::ValuePrevLo, 0), Fr::from(10)),
     ]);
 
     assert_error_matches(
@@ -1009,8 +995,10 @@ fn bad_initial_tx_receipt_value() {
     }];
 
     let overrides = HashMap::from([
-        ((AdviceColumn::Value, 0), Fr::from(1900)),
-        ((AdviceColumn::InitialValue, 0), Fr::from(1900)),
+        ((AdviceColumn::ValueHi, 0), Fr::from(0)),
+        ((AdviceColumn::ValueLo, 0), Fr::from(1900)),
+        ((AdviceColumn::InitialValueHi, 0), Fr::from(0)),
+        ((AdviceColumn::InitialValueLo, 0), Fr::from(1900)),
     ]);
 
     assert_error_matches(

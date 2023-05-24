@@ -91,7 +91,7 @@ impl<F: Field> LookupBuilder<F> {
         self.0.push((e1.hi().clone(), e2.hi().clone()));
         self
     }
-    fn build(mut self) -> Vec<(Expression<F>, Expression<F>)> {
+    fn build(self) -> Vec<(Expression<F>, Expression<F>)> {
         self.0
     }
 }
@@ -241,7 +241,7 @@ impl<F: Field> ConstraintBuilder<F> {
         );
         // 2.1. First access for a set of all keys are 0 if READ
         self.condition(q.first_access() * q.is_read(), |cb| {
-            self.require_word_zero(
+            cb.require_word_zero(
                 "first access for a set of all keys are 0 if READ",
                 q.value(),
             );
@@ -583,7 +583,7 @@ impl<F: Field> ConstraintBuilder<F> {
     fn require_word_boolean(&mut self, name: &'static str, e: word::Word<Expression<F>>) {
         let (lo, hi) = e.into_lo_hi();
         self.require_zero(name, hi);
-        self.require_zero(name, lo * (1.expr() - lo));
+        self.require_zero(name, lo.clone() * (1.expr() - lo));
     }
 
     fn require_in_set(&mut self, name: &'static str, item: Expression<F>, set: Vec<Expression<F>>) {
