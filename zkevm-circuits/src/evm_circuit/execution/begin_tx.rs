@@ -492,7 +492,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         };
 
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id())))?;
+            .assign(region, offset, Value::known(F::from(tx.id)))?;
         self.tx_nonce
             .assign(region, offset, Value::known(F::from(tx.tx.nonce.as_u64())))?;
         self.tx_gas
@@ -545,7 +545,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             Value::known(F::from(tx.tx.call_data_gas_cost())),
         )?;
         self.tx_call_data_word_length
-            .assign(region, offset, tx.call_data_length as u128 + 31)?;
+            .assign(region, offset, tx.tx.call_data.len() as u128 + 31)?;
         self.reversion_info.assign(
             region,
             offset,

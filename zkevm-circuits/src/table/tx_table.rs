@@ -158,7 +158,7 @@ impl TxTable {
                     .map(|i| Transaction::padding_tx(i + 1))
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {
-                    let tx_id = Value::known(F::from(tx.id()));
+                    let tx_id = Value::known(F::from(tx.id));
                     let tx_data = vec![
                         (
                             TxContextFieldTag::Nonce,

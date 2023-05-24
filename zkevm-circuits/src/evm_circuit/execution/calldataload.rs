@@ -215,7 +215,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         // Assign to the buffer reader gadget.
         let (src_id, call_data_offset, call_data_length) = if call.is_root {
-            (tx.id(), 0, tx.tx.call_data.len() as u64)
+            (tx.id, 0, tx.tx.call_data.len() as u64)
         } else {
             (
                 call.caller_id as u64,

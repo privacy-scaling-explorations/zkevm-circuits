@@ -75,7 +75,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         let gas_price = block.get_rws(step, 1).stack_value();
 
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id())))?;
+            .assign(region, offset, Value::known(F::from(tx.id)))?;
 
         self.gas_price
             .assign(region, offset, region.word_rlc(gas_price))?;

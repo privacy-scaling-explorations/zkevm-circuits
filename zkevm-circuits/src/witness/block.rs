@@ -12,7 +12,6 @@ use bus_mapping::{
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::circuit::Value;
-use itertools::Itertools;
 
 use super::{Bytecode, ExecStep, Rw, RwMap, Transaction};
 
@@ -60,7 +59,7 @@ impl<F: Field> Block<F> {
     pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
         for (tx_idx, tx) in self.txs.iter().enumerate() {
             println!("tx {}", tx_idx);
-            for step in &tx.steps {
+            for step in tx.steps() {
                 println!(" step {:?} rwc: {}", step.exec_state, step.rwc.0);
                 for rw_idx in 0..step.bus_mapping_instance.len() {
                     println!("  - {:?}", self.get_rws(step, rw_idx));
@@ -242,12 +241,7 @@ pub fn block_convert<F: Field>(
         randomness: F::from(0xcafeu64),
         context: block.into(),
         rws,
-        txs: block
-            .txs()
-            .iter()
-            .enumerate()
-            .map(move |(idx, tx)| tx.clone().set_id(idx as u64 + 1).clone())
-            .collect_vec(),
+        txs: block.txs().to_vec(),
         end_block_not_last: block.block_steps.end_block_not_last.clone(),
         end_block_last: block.block_steps.end_block_last.clone(),
         bytecodes: code_db

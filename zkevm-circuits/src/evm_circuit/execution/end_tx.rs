@@ -207,7 +207,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             [3, 4].map(|index| block.get_rws(step, index).account_value_pair());
 
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id())))?;
+            .assign(region, offset, Value::known(F::from(tx.id)))?;
         self.tx_gas
             .assign(region, offset, Value::known(F::from(tx.gas())))?;
         let (max_refund, _) = self.max_refund.assign(region, offset, gas_used as u128)?;
@@ -278,14 +278,14 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             coinbase_balance,
         )?;
 
-        let current_cumulative_gas_used: u64 = if tx.id() == 1 {
+        let current_cumulative_gas_used: u64 = if tx.id == 1 {
             0
         } else {
             // first transaction needs TxReceiptFieldTag::COUNT(3) lookups to tx receipt,
             // while later transactions need 4 (with one extra cumulative gas read) lookups
             let rw = &block.rws[(
                 Target::TxReceipt,
-                (tx.id() as usize - 2) * (TxReceiptFieldTag::COUNT + 1) + 2,
+                (tx.id as usize - 2) * (TxReceiptFieldTag::COUNT + 1) + 2,
             )];
             rw.receipt_value()
         };
@@ -296,7 +296,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             Value::known(F::from(current_cumulative_gas_used)),
         )?;
         self.is_first_tx
-            .assign(region, offset, F::from(tx.id()), F::ONE)?;
+            .assign(region, offset, F::from(tx.id), F::ONE)?;
         self.is_persistent.assign(
             region,
             offset,

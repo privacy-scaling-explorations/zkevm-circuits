@@ -184,7 +184,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             .memory_address
             .assign(region, offset, memory_offset, length)?;
         let src_id = if call.is_root {
-            tx.id()
+            tx.id
         } else {
             call.caller_id as u64
         };

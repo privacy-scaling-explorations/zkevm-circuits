@@ -179,7 +179,8 @@ impl TransactionContext {
 #[derive(Debug, Clone, Default)]
 /// Result of the parsing of an Ethereum Transaction.
 pub struct Transaction {
-    id: Option<u64>,
+    /// The transaction id
+    pub id: u64,
     /// The raw transaction fields
     pub tx: geth_types::Transaction,
     /// Calls made in the transaction
@@ -191,6 +192,7 @@ pub struct Transaction {
 impl Transaction {
     /// Create a new Self.
     pub fn new(
+        id: u64,
         call_id: usize,
         sdb: &StateDB,
         code_db: &mut CodeDB,
@@ -245,22 +247,11 @@ impl Transaction {
         };
 
         Ok(Self {
-            id: None,
+            id,
             tx: eth_tx.into(),
             calls: vec![call],
             steps: Vec::new(),
         })
-    }
-
-    /// Set the tx id for this transaction
-    pub fn set_id(&mut self, id: u64) -> &Self {
-        self.id = Some(id);
-        self
-    }
-
-    /// Force get id
-    pub fn id(&self) -> u64 {
-        self.id.expect("We have id already")
     }
 
     /// Whether this [`Transaction`] is a create one
@@ -316,7 +307,7 @@ impl Transaction {
     /// Constructor for padding tx in tx circuit
     pub fn padding_tx(id: usize) -> Self {
         Self {
-            id: Some(id as u64),
+            id: id as u64,
             ..Default::default()
         }
     }

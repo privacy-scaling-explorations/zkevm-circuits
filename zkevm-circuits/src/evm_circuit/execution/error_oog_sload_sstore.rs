@@ -186,7 +186,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id())))?;
+            .assign(region, offset, Value::known(F::from(tx.id)))?;
         self.is_static
             .assign(region, offset, Value::known(F::from(call.is_static as u64)))?;
         self.callee_address.assign(
