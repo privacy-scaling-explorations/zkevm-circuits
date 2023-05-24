@@ -603,7 +603,7 @@ impl From<AccountFieldTag> for MPTProofType {
 
 /// The MptTable shared between MPT Circuit and State Circuit
 #[derive(Clone, Copy, Debug)]
-pub struct MptTable([Column<Advice>; 7]);
+pub struct MptTable([Column<Advice>; 12]);
 
 impl<F: Field> LookupTable<F> for MptTable {
     fn columns(&self) -> Vec<Column<Any>> {
@@ -628,12 +628,17 @@ impl MptTable {
     pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self([
             meta.advice_column(),               // Address
-            meta.advice_column_in(SecondPhase), // Storage key
+            meta.advice_column_in(SecondPhase), // Storage key lo
+            meta.advice_column_in(SecondPhase), // Storage key hi
             meta.advice_column(),               // Proof type
-            meta.advice_column_in(SecondPhase), // New root
-            meta.advice_column_in(SecondPhase), // Old root
-            meta.advice_column_in(SecondPhase), // New value
-            meta.advice_column_in(SecondPhase), // Old value
+            meta.advice_column_in(SecondPhase), // New root lo
+            meta.advice_column_in(SecondPhase), // New root hi
+            meta.advice_column_in(SecondPhase), // Old root lo
+            meta.advice_column_in(SecondPhase), // Old root hi
+            meta.advice_column_in(SecondPhase), // New value lo
+            meta.advice_column_in(SecondPhase), // New value hi
+            meta.advice_column_in(SecondPhase), // Old value lo
+            meta.advice_column_in(SecondPhase), // Old value hi
         ])
     }
 
