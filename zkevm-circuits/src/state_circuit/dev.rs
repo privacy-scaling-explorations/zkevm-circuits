@@ -51,8 +51,6 @@ where
         config
             .mpt_table
             .load(&mut layouter, &self.updates, 
-                // TODO CHECK MPT RANDOMNESS
-               Value::known(F::ONE)
             )?;
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
@@ -66,6 +64,8 @@ pub enum AdviceColumn {
     AddressLimb1,
     StorageKeyLo,
     StorageKeyHi,
+    StorageKeyLimb0,
+    StorageKeyLimb1,
     ValueLo,
     ValueHi,
     ValuePrevLo,
@@ -100,6 +100,8 @@ impl AdviceColumn {
             Self::AddressLimb1 => config.sort_keys.address.limbs[1],
             Self::StorageKeyLo => *config.rw_table.storage_key.lo(),
             Self::StorageKeyHi => *config.rw_table.storage_key.hi(),
+            Self::StorageKeyLimb0 => config.sort_keys.storage_key.limbs[0],
+            Self::StorageKeyLimb1 => config.sort_keys.storage_key.limbs[1],
             Self::ValueLo => *config.rw_table.value.lo(),
             Self::ValueHi => *config.rw_table.value.hi(),
             Self::ValuePrevLo => *config.rw_table.value_prev.lo(),

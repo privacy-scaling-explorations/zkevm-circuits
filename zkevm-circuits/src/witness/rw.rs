@@ -386,24 +386,6 @@ impl Rw {
         }
     }
 
-    // At this moment is a helper for the EVM circuit until EVM challange API is
-    // applied
-    pub(crate) fn table_assignment_aux<F: Field>(&self) -> RwRow<F> {
-        RwRow {
-            rw_counter: F::from(self.rw_counter() as u64),
-            is_write: F::from(self.is_write() as u64),
-            tag: F::from(self.tag() as u64),
-            id: F::from(self.id().unwrap_or_default() as u64),
-            address: self.address().unwrap_or_default().to_scalar().unwrap(),
-            field_tag: F::from(self.field_tag().unwrap_or_default()),
-            storage_key: word::Word::from_u256(self.storage_key().unwrap_or_default()),
-            value: word::Word::from_u256(self.value_assignment()),
-            value_prev: word::Word::from_u256(self.value_prev_assignment().unwrap_or_default()),
-            aux1: F::ZERO, // only used for AccountStorage::tx_id, which moved to key1.
-            aux2: word::Word::from_u256(self.committed_value_assignment().unwrap_or_default()),
-        }
-    }
-
     pub(crate) fn table_assignment<F: Field>(&self) -> RwRow<Value<F>> {
         RwRow {
             rw_counter: Value::known(F::from(self.rw_counter() as u64)),

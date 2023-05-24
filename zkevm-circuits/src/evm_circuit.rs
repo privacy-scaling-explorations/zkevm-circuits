@@ -427,7 +427,6 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             &mut layouter,
             &block.rws.table_assignments(),
             block.circuits_params.max_rws,
-            challenges.evm_word(),
         )?;
         config
             .bytecode_table

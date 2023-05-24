@@ -173,7 +173,6 @@ impl PublicData {
 /// Config for PiCircuit
 #[derive(Clone, Debug)]
 pub struct PiCircuitConfig<F: Field> {
-    /* 
     /// Max number of supported transactions
     max_txs: usize,
     /// Max number of supported calldata bytes
@@ -199,11 +198,10 @@ pub struct PiCircuitConfig<F: Field> {
 
     pi: Column<Instance>, // rpi_rand, rpi_rlc, chain_ID, state_root, prev_state_root
 
+    _marker: PhantomData<F>,
     // External tables
     block_table: BlockTable,
     tx_table: TxTable,
-    */
-    _marker: PhantomData<F>,
 }
 
 /// Circuit configuration arguments
@@ -231,7 +229,6 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             tx_table,
         }: Self::ConfigArgs,
     ) -> Self {
-        /* 
         let q_block_table = meta.selector();
 
         let q_tx_table = meta.complex_selector();
@@ -539,10 +536,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             ]
         });
 
-        */
-
         Self {
-            /* 
             max_txs,
             max_calldata,
             q_block_table,
@@ -563,7 +557,6 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             q_not_end,
             q_end,
             pi,
-            */
             _marker: PhantomData,
         }
     }
@@ -573,11 +566,10 @@ impl<F: Field> PiCircuitConfig<F> {
     /// Return the number of rows in the circuit
     #[inline]
     fn circuit_len(&self) -> usize {
-        0
         // +1 empty row in block table, +1 empty row in tx_table
-        // BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * self.max_txs + 1) + self.max_calldata
+        BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * self.max_txs + 1) + self.max_calldata
     }
-/* 
+
     fn assign_tx_empty_row(&self, region: &mut Region<'_, F>, offset: usize) -> Result<(), Error> {
         region.assign_advice(
             || "tx_id",
@@ -1139,7 +1131,7 @@ impl<F: Field> PiCircuit<F> {
         }
     }
 }
-*/
+
 impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     type Config = PiCircuitConfig<F>;
 
@@ -1454,10 +1446,8 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
         Ok(())
     }
-    
 }
 
-/* 
 /// Compute the raw_public_inputs column from the verifier's perspective.
 fn raw_public_inputs_col<F: Field>(
     max_txs: usize,
@@ -1585,4 +1575,3 @@ pub fn gen_rand_rpi<F: Field>(
     let rand_rpi = Word::from(keccak.digest().as_slice()) % F::MODULUS;
     rand_rpi.to_scalar().expect("rand_rpi.to_scalar")
 }
-*/

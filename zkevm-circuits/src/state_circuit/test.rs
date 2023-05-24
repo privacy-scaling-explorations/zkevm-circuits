@@ -60,7 +60,7 @@ fn test_state_circuit_ok(
 fn degree() {
     let mut meta = ConstraintSystem::<Fr>::default();
     StateCircuit::<Fr>::configure(&mut meta);
-    assert_eq!(meta.degree(), 9);
+    assert_eq!(meta.degree(), 10);
 }
 
 #[test]
@@ -281,6 +281,7 @@ fn diff_1_problem_repro() {
     assert_eq!(verify(rows), Ok(()));
 }
 
+#[ignore = "deprecated due RLC deprecation"]
 #[test]
 fn storage_key_rlc() {
     let rows = vec![Rw::AccountStorage {
@@ -409,6 +410,7 @@ fn address_limb_out_of_range() {
     assert_error_matches(result, "mpi limb fits into u16");
 }
 
+#[ignore = "deprecated due RLC deprecation"]
 #[test]
 fn storage_key_mismatch() {
     let rows = vec![Rw::AccountStorage {
@@ -421,7 +423,7 @@ fn storage_key_mismatch() {
         tx_id: 4,
         committed_value: U256::from(34),
     }];
-    let overrides = HashMap::from([((AdviceColumn::StorageKeyHi, 0), Fr::ONE)]);
+    let overrides = HashMap::from([((AdviceColumn::StorageKeyLimb0, 0), Fr::ONE)]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -710,15 +712,16 @@ fn bad_initial_memory_value() {
     }];
 
     let v = Fr::from(200);
+    let zero = Fr::from(0);
     let overrides = HashMap::from([
-        ((AdviceColumn::ValueHi, 0), v),
         ((AdviceColumn::ValueLo, 0), v),
-        ((AdviceColumn::ValuePrevHi, 0), v),
+        ((AdviceColumn::ValueHi, 0), zero),
         ((AdviceColumn::ValuePrevLo, 0), v),
+        ((AdviceColumn::ValuePrevHi, 0), zero),
         ((AdviceColumn::IsZero, 0), Fr::ZERO),
         ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
-        ((AdviceColumn::InitialValueHi, 0), v),
         ((AdviceColumn::InitialValueLo, 0), v),
+        ((AdviceColumn::InitialValueHi, 0), zero),
     ]);
 
     let result = verify_with_overrides(rows, overrides);
@@ -737,14 +740,14 @@ fn invalid_memory_value() {
     }];
     let v = Fr::from(256);
     let overrides = HashMap::from([
-        ((AdviceColumn::ValueHi, 0), v),
+        ((AdviceColumn::ValueHi, 0), Fr::ZERO),
         ((AdviceColumn::ValueLo, 0), v),
         ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
     ]);
 
     let result = verify_with_overrides(rows, overrides);
 
-    assert_error_matches(result, "memory value is a byte");
+    assert_error_matches(result, "memory value is a byte (lo is u8)");
 }
 
 #[test]

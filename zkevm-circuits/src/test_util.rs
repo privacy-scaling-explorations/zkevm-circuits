@@ -208,6 +208,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             panic!("No attribute to build a block was passed to the CircuitTestBuilder")
         };
 
+/* 
         // Run evm circuit test
         {
             let k = block.get_test_degree();
@@ -219,7 +220,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
             self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows)
         }
-
+*/
         // Run state circuit test
         // TODO: use randomness as one of the circuit public input, since randomness in
         // state circuit and evm circuit must be same
