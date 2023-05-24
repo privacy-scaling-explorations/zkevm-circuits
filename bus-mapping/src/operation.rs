@@ -121,7 +121,7 @@ impl_expr!(Target);
 
 impl From<Target> for usize {
     fn from(value: Target) -> usize {
-        value.into()
+        value as usize
     }
 }
 
