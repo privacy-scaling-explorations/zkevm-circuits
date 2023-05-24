@@ -88,6 +88,25 @@ impl Default for CircuitsParams {
     }
 }
 
+impl CircuitsParams {
+    // TODO Remove this func
+    /// Params from integration tests
+    pub fn dummy() -> Self {
+        CircuitsParams {
+            max_rws: 5888,
+            max_txs: 0,
+            max_calldata: 512,
+            // TODO: Check whether this value is correct or we should increase/decrease based on
+            // this lib tests
+            max_copy_rows: 5888,
+            max_exp_steps: 1000,
+            max_bytecode: 5000,
+            max_evm_rows: 10000,
+            max_keccak_rows: 0,
+        }
+    }
+}
+
 /// Builder to generate a complete circuit input from data gathered from a geth
 /// instance. This structure is the centre of the crate and is intended to be
 /// the only entry point to it. The `CircuitInputBuilder` works in several
@@ -209,7 +228,7 @@ impl<'a> CircuitInputBuilder {
     }
 
     fn set_end_block(&mut self) {
-        let max_rws = self.block.circuits_params.max_rws;
+        // let max_rws = self.block.circuits_params.max_rws;
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
         end_block_not_last.rwc = self.block_ctx.rwc;
@@ -234,6 +253,7 @@ impl<'a> CircuitInputBuilder {
         };
 
         let total_rws = state.block_ctx.rwc.0 - 1;
+        let max_rws = total_rws + 1;
         // We need at least 1 extra Start row
         #[allow(clippy::int_plus_one)]
         {
@@ -575,12 +595,16 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         history_hashes: Vec<Word>,
         prev_state_root: Word,
     ) -> Result<CircuitInputBuilder, Error> {
+        // Comput n of transactions
+        let n_tx = eth_block.transactions.len();
+        let mut params = CircuitsParams::dummy();
+        params.max_txs = n_tx;
         let block = Block::new(
             self.chain_id,
             history_hashes,
             prev_state_root,
             eth_block,
-            self.circuits_params,
+            params,
         )?;
         let mut builder = CircuitInputBuilder::new(sdb, code_db, block);
         builder.handle_block(eth_block, geth_traces)?;

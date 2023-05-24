@@ -333,7 +333,9 @@ async fn gen_inputs(
     eth_types::Block<eth_types::Transaction>,
 ) {
     let cli = get_client();
-    let cli = BuilderClient::new(cli, CIRCUITS_PARAMS).await.unwrap();
+    let cli = BuilderClient::new(cli, CircuitsParams::dummy())
+        .await
+        .unwrap();
 
     cli.gen_inputs(block_num).await.unwrap()
 }
