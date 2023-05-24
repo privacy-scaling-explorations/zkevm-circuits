@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::{util::rlc, witness::Rw},
-    table::{AccountFieldTag, MPTProofType},
+    table::{AccountFieldTag, MPTProofType}, util::word,
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::circuit::Value;
@@ -88,47 +88,39 @@ impl MptUpdates {
         &self,
         randomness: Value<F>,
     ) -> Vec<MptUpdateRow<Value<F>>> {
+        /* 
         self.updates
             .values()
             .map(|update| {
                 let (new_root, old_root) = randomness
-                    .map(|randomness| update.root_assignments(randomness))
+                    .map(|randomness| update.root_assignments())
                     .unzip();
                 let (new_value, old_value) = randomness
-                    .map(|randomness| update.value_assignments(randomness))
+                    .map(|randomness| update.value_assignments())
                     .unzip();
                 MptUpdateRow([
                     Value::known(update.key.address()),
                     randomness.map(|randomness| update.key.storage_key(randomness)),
                     Value::known(update.proof_type()),
-                    new_root,
+                    Value::known(word::Word::from_u64(1)),
                     old_root,
                     new_value,
                     old_value,
                 ])
             })
             .collect()
+        */
+        unimplemented!()
     }
 }
 
 impl MptUpdate {
-    pub(crate) fn value_assignments<F: Field>(&self, word_randomness: F) -> (F, F) {
-        let assign = |x: Word| match self.key {
-            Key::Account {
-                field_tag: AccountFieldTag::Nonce | AccountFieldTag::NonExisting,
-                ..
-            } => x.to_scalar().unwrap(),
-            _ => rlc::value(&x.to_le_bytes(), word_randomness),
-        };
-
-        (assign(self.new_value), assign(self.old_value))
+    pub(crate) fn value_assignments(&self) -> (Word, Word) {
+        unimplemented!();
     }
 
-    pub(crate) fn root_assignments<F: Field>(&self, word_randomness: F) -> (F, F) {
-        (
-            rlc::value(&self.new_root.to_le_bytes(), word_randomness),
-            rlc::value(&self.old_root.to_le_bytes(), word_randomness),
-        )
+    pub(crate) fn root_assignments(&self) -> (Word, Word) {
+        unimplemented!();
     }
 }
 

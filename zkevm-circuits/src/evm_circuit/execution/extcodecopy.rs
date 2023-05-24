@@ -10,11 +10,11 @@ use crate::{
             },
             from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
-            not, select, CachedRegion, Cell, Word,
+            not, select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{AccountFieldTag, CallContextFieldTag},
+    table::{AccountFieldTag, CallContextFieldTag}, util::word::Word,
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};

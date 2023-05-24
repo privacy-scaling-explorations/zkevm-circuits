@@ -6,11 +6,11 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{IsEqualGadget, IsZeroGadget},
-            sum, CachedRegion, Word,
+            sum, CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{Expr, word::Word},
 };
 use array_init::array_init;
 use bus_mapping::evm::OpcodeId;

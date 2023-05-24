@@ -14,7 +14,7 @@ use external_tracer::TraceConfig;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
-use zkevm_circuits::{super_circuit::SuperCircuit, test_util::CircuitTestBuilder, witness::Block};
+use zkevm_circuits::{test_util::CircuitTestBuilder, witness::Block};
 
 const MAX_TXS: usize = 1;
 const MAX_CALLDATA: usize = 32;
@@ -250,7 +250,6 @@ pub fn run_test(
 
     let mut builder;
 
-    if !circuits_config.super_circuit {
         let circuits_params = CircuitsParams {
             max_txs: 1,
             max_rws: 55000,
@@ -273,27 +272,7 @@ pub fn run_test(
                 .unwrap();
 
         CircuitTestBuilder::<1, 1>::new_from_block(block).run();
-    } else {
-        geth_data.sign(&wallets);
 
-        let circuits_params = CircuitsParams {
-            max_txs: MAX_TXS,
-            max_calldata: MAX_CALLDATA,
-            max_rws: 256,
-            max_copy_rows: 256,
-            max_exp_steps: 256,
-            max_bytecode: 512,
-            max_evm_rows: 0,
-            max_keccak_rows: 0,
-        };
-        let (k, circuit, instance, _builder) =
-            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, 0x100>::build(geth_data, circuits_params)
-                .unwrap();
-        builder = _builder;
-
-        let prover = MockProver::run(k, &circuit, instance).unwrap();
-        prover.assert_satisfied_par();
-    };
 
     check_post(&builder, &post)?;
 

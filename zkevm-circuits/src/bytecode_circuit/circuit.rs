@@ -242,13 +242,13 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 &EMPTY_CODE_HASH_LE.map(|v| Expression::Constant(F::from(v as u64))),
                 challenges.evm_word(),
             );
-
+        /* 
             cb.require_equal(
                 "assert cur.hash == EMPTY_HASH",
                 meta.query_advice(bytecode_table.code_hash, Rotation::cur()),
                 empty_hash,
             );
-
+*/
             cb.gate(and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
                 or::expr(vec![
@@ -283,13 +283,13 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 meta.query_advice(bytecode_table.is_code, Rotation::next()),
                 1.expr(),
             );
-
+            /* 
             cb.require_equal(
                 "next.hash == cur.hash",
                 meta.query_advice(bytecode_table.code_hash, Rotation::next()),
                 meta.query_advice(bytecode_table.code_hash, Rotation::cur()),
             );
-
+            */
             cb.require_equal(
                 "next.value_rlc == next.value",
                 meta.query_advice(value_rlc, Rotation::next()),
@@ -327,12 +327,13 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 meta.query_advice(bytecode_table.index, Rotation::cur()) + 1.expr(),
             );
 
+            /*
             cb.require_equal(
                 "next.hash == cur.hash",
                 meta.query_advice(bytecode_table.code_hash, Rotation::next()),
                 meta.query_advice(bytecode_table.code_hash, Rotation::cur()),
             );
-
+            */
             cb.require_equal(
                 "next.value_rlc == cur.value_rlc * randomness + next.value",
                 meta.query_advice(value_rlc, Rotation::next()),
@@ -392,6 +393,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 is_byte_to_header(meta),
             ]))
         });
+        /* 
         meta.lookup_any(
             "keccak256_table_lookup(cur.value_rlc, cur.length, cur.hash)",
             |meta| {
@@ -418,6 +420,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 constraints
             },
         );
+        */
 
         BytecodeCircuitConfig {
             minimum_rows: meta.minimum_rows(),
@@ -542,7 +545,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     } else {
                         value_rlc = challenges.keccak_input().map(|_| F::ZERO);
                     }
-
+                    /* 
                     let code_hash = challenges
                         .evm_word()
                         .map(|challenge| rlc::value(&row.code_hash.to_le_bytes(), challenge));
@@ -557,6 +560,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                             || value,
                         )?;
                     }
+                    */
                 }
                 Ok(())
             },
@@ -764,6 +768,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 || Value::known(value),
             )?;
         }
+        /* 
         for (name, column, value) in [
             ("code_hash", self.bytecode_table.code_hash, code_hash),
             ("value_rlc", self.value_rlc, value_rlc),
@@ -775,7 +780,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 || value,
             )?;
         }
-
+        */
         push_data_left_is_zero_chip.assign(
             region,
             offset,

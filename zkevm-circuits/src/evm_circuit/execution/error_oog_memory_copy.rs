@@ -9,12 +9,11 @@ use crate::{
             from_bytes,
             math_gadget::{IsZeroGadget, LtGadget},
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
-            select, CachedRegion, Cell, Word,
-        },
+            select, CachedRegion, Cell,         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{Expr, word::Word},
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},

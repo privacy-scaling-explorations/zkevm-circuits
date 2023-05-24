@@ -1,4 +1,4 @@
-use crate::evm_circuit::{
+use crate::{evm_circuit::{
     execution::ExecutionGadget,
     param::{N_BYTES_GAS, N_BYTES_U64},
     step::ExecutionState,
@@ -10,9 +10,9 @@ use crate::evm_circuit::{
             Transition::{Delta, To},
         },
         math_gadget::{ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget},
-        not, or, select, CachedRegion, Cell, Word,
+        not, or, select, CachedRegion, Cell,
     },
-};
+}, util::word::Word};
 
 use crate::{
     evm_circuit::witness::{Block, Call, ExecStep, Transaction},
@@ -49,7 +49,7 @@ pub(crate) struct CallOpGadget<F> {
     // current handling Call* opcode's caller balance
     caller_balance_word: Word<F>,
     // check if insufficient balance case
-    is_insufficient_balance: LtWordGadget<F>,
+    // is_insufficient_balance: LtWordGadget<F>,
     is_depth_ok: LtGadget<F, N_BYTES_U64>,
     one_64th_gas: ConstantDivisionGadget<F, N_BYTES_GAS>,
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
@@ -424,7 +424,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             callee_reversion_info,
             transfer,
             caller_balance_word,
-            is_insufficient_balance,
+            // is_insufficient_balance,
             is_depth_ok,
             one_64th_gas,
             capped_callee_gas_left,

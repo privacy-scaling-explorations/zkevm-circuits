@@ -11,7 +11,7 @@ use crate::{
         word::{Word, WordExpr},
         Challenges, Expr,
     },
-    witness::{Block, ExecStep, Rw, RwMap},
+    witness::{Block, Rw, RwMap},
 };
 use bus_mapping::state_db::CodeDB;
 use eth_types::{Address, Field, ToLittleEndian, ToWord, U256};
@@ -26,11 +26,11 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-pub(crate) mod common_gadget;
+// pub(crate) mod common_gadget;
 pub(crate) mod constraint_builder;
-pub(crate) mod instrumentation;
+// pub(crate) mod instrumentation;
 pub(crate) mod math_gadget;
-pub(crate) mod memory_gadget;
+// pub(crate) mod memory_gadget;
 
 pub use gadgets::util::{and, not, or, select, sum};
 
@@ -674,14 +674,15 @@ pub(crate) struct StepRws<'a> {
 
 impl<'a> StepRws<'a> {
     /// Create a new StateRws by taking the reference to a block and the step.
-    pub(crate) fn new<F>(block: &'a Block<F>, step: &'a ExecStep) -> Self {
+/*     pub(crate) fn new<F>(block: &'a Block<F>, step: &'a ExecStep) -> Self {
         Self {
             rws: &block.rws,
             rw_indices: &step.rw_indices,
             offset: 0,
         }
     }
-    /// Increment the step rw operation offset by `offset`.
+ */
+   /// Increment the step rw operation offset by `offset`.
     pub(crate) fn offset_add(&mut self, offset: usize) {
         self.offset = offset
     }

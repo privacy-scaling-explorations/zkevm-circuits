@@ -205,6 +205,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
         // The memory size needs to be updated if this memory access
         // requires expanding the memory.
         // `next_memory_word_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
+        /* 
         let curr_memory_word_size = cb.curr.state.memory_word_size.word_expr();
         let mut next_memory_word_size = curr_memory_word_size.clone();
         let max_memory_word_sizes = array_init(|idx| {
@@ -247,6 +248,8 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
             next_memory_word_size,
             gas_cost,
         }
+        */
+        unimplemented!()
     }
 
     pub(crate) fn next_memory_word_size(&self) -> Expression<F> {

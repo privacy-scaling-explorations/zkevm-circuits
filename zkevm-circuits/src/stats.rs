@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+/* 
 use crate::evm_circuit::step::ExecutionState;
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, ExecState},
@@ -274,3 +275,5 @@ pub(crate) fn print_circuit_stats_by_states(
 
     table.print();
 }
+
+*/

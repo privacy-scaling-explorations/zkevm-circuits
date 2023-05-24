@@ -3,7 +3,7 @@ use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
 use gadgets::util::{and, not, split_u256, sum, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
-use crate::evm_circuit::{
+use crate::{evm_circuit::{
     step::ExecutionState,
     util::{
         common_gadget::SameContextGadget,
@@ -12,10 +12,10 @@ use crate::evm_circuit::{
         },
         from_bytes,
         math_gadget::{ByteSizeGadget, IsEqualGadget, IsZeroGadget},
-        CachedRegion, Cell, Word,
+        CachedRegion, Cell,
     },
     witness::{Block, Call, ExecStep, Transaction},
-};
+}, util::word::Word};
 
 use super::ExecutionGadget;
 

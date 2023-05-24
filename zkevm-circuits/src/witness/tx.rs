@@ -4,7 +4,7 @@ use halo2_proofs::circuit::Value;
 
 use crate::{evm_circuit::util::rlc, table::TxContextFieldTag, util::Challenges};
 
-use super::{step::step_convert, Call, ExecStep};
+// use super::{step::step_convert, Call, ExecStep};
 
 /// Transaction in a witness block
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -30,11 +30,12 @@ pub struct Transaction {
     /// The call data length
     pub call_data_length: usize,
     /// The gas cost for transaction call data
-    pub call_data_gas_cost: u64,
     /// The calls made in the transaction
-    pub calls: Vec<Call>,
+///    pub calls: Vec<Call>,
     /// The steps executioned in the transaction
-    pub steps: Vec<ExecStep>,
+///    pub steps: Vec<ExecStep>,
+pub call_data_gas_cost: u64,
+
 }
 
 impl Transaction {
@@ -134,7 +135,7 @@ pub(super) fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> 
         call_data: tx.tx.call_data.to_vec(),
         call_data_length: tx.tx.call_data.len(),
         call_data_gas_cost: tx.tx.call_data_gas_cost(),
-        calls: tx.calls().to_vec(),
-        steps: tx.steps().iter().map(step_convert).collect(),
+        // calls: tx.calls().to_vec(),
+        // steps: tx.steps().iter().map(step_convert).collect(),
     }
 }

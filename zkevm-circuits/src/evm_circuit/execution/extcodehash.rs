@@ -8,12 +8,12 @@ use crate::{
             constraint_builder::{
                 EVMConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
-            from_bytes, select, CachedRegion, Cell, Word,
+            from_bytes, select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
-    util::Expr,
+    util::{Expr, word::Word},
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian};
 use halo2_proofs::{circuit::Value, plonk::Error};

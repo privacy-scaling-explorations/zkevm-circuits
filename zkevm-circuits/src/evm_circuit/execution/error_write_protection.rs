@@ -6,12 +6,12 @@ use crate::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::IsZeroGadget,
-            sum, CachedRegion, Cell, Word as RLCWord,
+            sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{Expr, word::Word},
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -20,9 +20,9 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 pub(crate) struct ErrorWriteProtectionGadget<F> {
     opcode: Cell<F>,
     is_call: IsZeroGadget<F>,
-    gas: RLCWord<F>,
-    code_address: RLCWord<F>,
-    value: RLCWord<F>,
+    gas: Word<F>,
+    code_address: Word<F>,
+    value: Word<F>,
     is_value_zero: IsZeroGadget<F>,
     common_error_gadget: CommonErrorGadget<F>,
 }

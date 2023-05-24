@@ -7,11 +7,10 @@ use crate::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{ByteSizeGadget, LtGadget},
-            CachedRegion, Cell, Word,
-        },
+            CachedRegion, Cell,         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{Expr, word::Word},
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},

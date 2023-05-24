@@ -76,8 +76,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let tag = tx_table.tag;
         let index = tx_table.index;
         let value = tx_table.value;
-        meta.enable_equality(value.to_lo_hi().lo());
-        meta.enable_equality(value.to_lo_hi().hi());
+        // meta.enable_equality(value.to_lo_hi().lo());
+        // meta.enable_equality(value.to_lo_hi().hi());
 
         let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone(), challenges);
 
@@ -127,8 +127,8 @@ impl<F: Field> TxCircuitConfig<F> {
             self.index,
             offset,
             || Value::known(F::from(index as u64)),
-        )?;
-        region.assign_advice(|| "value", self.value, offset, || value)
+        )
+        // region.assign_advice(|| "value", self.value, offset, || value)
     }
 
     /// Get number of rows required.

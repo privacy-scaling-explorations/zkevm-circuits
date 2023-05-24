@@ -1378,7 +1378,7 @@ impl<F: Field> ExecutionConfig<F> {
             .iter()
             .map(|rw_idx| block.rws[*rw_idx])
             .map(|rw| {
-                rw.table_assignment_aux(evm_randomness)
+                rw.table_assignment_aux(F::ONE) // TODO REMOVE RANDOMNESS HERE
                     .rlc(lookup_randomness)
             })
             .fold(BTreeSet::<F>::new(), |mut set, value| {

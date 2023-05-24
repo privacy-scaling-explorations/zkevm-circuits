@@ -3,7 +3,7 @@ use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use gadgets::util::{not, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
-use crate::evm_circuit::{
+use crate::{evm_circuit::{
     param::N_BYTES_MEMORY_WORD_SIZE,
     step::ExecutionState,
     util::{
@@ -12,10 +12,9 @@ use crate::evm_circuit::{
             ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
         },
         memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
-        rlc, CachedRegion, Cell, Word,
-    },
+        rlc, CachedRegion, Cell,     },
     witness::{Block, Call, ExecStep, Transaction},
-};
+}, util::word::Word};
 
 use super::ExecutionGadget;
 

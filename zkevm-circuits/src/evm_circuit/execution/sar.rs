@@ -12,11 +12,11 @@ use crate::{
             },
             from_bytes,
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
-            select, sum, CachedRegion, Cell, Word,
+            select, sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{Expr, word::Word},
 };
 use array_init::array_init;
 use bus_mapping::evm::OpcodeId;

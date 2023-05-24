@@ -45,7 +45,7 @@ pub(crate) struct AddModGadget<F> {
     sum_areduced_b_overflow: Word32Cell<F>,
     muladd_d_n_r: MulAddWords512Gadget<F>,
 
-    n_is_zero: IsZeroWordGadget<F>,
+    //n_is_zero: IsZeroWordGadget<F>,
     cmp_r_n: CmpWordsGadget<F, Word32Cell<F>, Word32Cell<F>>,
     cmp_areduced_n: CmpWordsGadget<F, Word32Cell<F>, Word32Cell<F>>,
 }
@@ -136,7 +136,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
             same_context,
             cmp_r_n,
             cmp_areduced_n,
-            n_is_zero,
+            //n_is_zero,
             sum_areduced_b,
             sum_areduced_b_overflow,
         }
@@ -220,8 +220,8 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         self.cmp_r_n.assign(region, offset, r, n)?;
         self.cmp_areduced_n.assign(region, offset, a_reduced, n)?;
 
-        self.n_is_zero
-            .assign_value(region, offset, Value::known(Word::from_u256(n)))?;
+        //self.n_is_zero
+        //    .assign_value(region, offset, Value::known(Word::from_u256(n)))?;
 
         Ok(())
     }

@@ -4,10 +4,10 @@ use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
-        util::{constraint_builder::EVMConstraintBuilder, CachedRegion, Word},
+        util::{constraint_builder::EVMConstraintBuilder, CachedRegion},
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{Expr, word::Word},
 };
 use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;

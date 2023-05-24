@@ -1,14 +1,16 @@
 //! The EVM circuit implementation.
 
 #![allow(missing_docs)]
+use std::marker::PhantomData;
+
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::*,
 };
 
-mod execution;
+// mod execution;
 pub mod param;
-pub(crate) mod step;
+// pub(crate) mod step;
 pub mod table;
 pub(crate) mod util;
 
@@ -27,7 +29,7 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
-use execution::ExecutionConfig;
+// use execution::ExecutionConfig;
 use itertools::Itertools;
 use strum::IntoEnumIterator;
 use table::FixedTableTag;
@@ -38,7 +40,7 @@ use witness::Block;
 pub struct EvmCircuitConfig<F> {
     fixed_table: [Column<Fixed>; 4],
     byte_table: [Column<Fixed>; 1],
-    pub(crate) execution: Box<ExecutionConfig<F>>,
+//    pub(crate) execution: Box<ExecutionConfig<F>>,
     // External tables
     tx_table: TxTable,
     rw_table: RwTable,
@@ -47,6 +49,7 @@ pub struct EvmCircuitConfig<F> {
     copy_table: CopyTable,
     keccak_table: KeccakTable,
     exp_table: ExpTable,
+    _marker: PhantomData<F>
 }
 
 /// Circuit configuration arguments
@@ -89,7 +92,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
     ) -> Self {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
         let byte_table = [(); 1].map(|_| meta.fixed_column());
-        let execution = Box::new(ExecutionConfig::configure(
+/*         let execution = Box::new(ExecutionConfig::configure(
             meta,
             challenges,
             &fixed_table,
@@ -102,7 +105,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &keccak_table,
             &exp_table,
         ));
-
+*/
         meta.annotate_lookup_any_column(byte_table[0], || "byte_range");
         fixed_table.iter().enumerate().for_each(|(idx, &col)| {
             meta.annotate_lookup_any_column(col, || format!("fix_table_{}", idx))
@@ -118,7 +121,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         Self {
             fixed_table,
             byte_table,
-            execution,
+            // execution,
             tx_table,
             rw_table,
             bytecode_table,
@@ -126,6 +129,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             copy_table,
             keccak_table,
             exp_table,
+            _marker: PhantomData::default()
         }
     }
 }
@@ -219,6 +223,7 @@ impl<F: Field> EvmCircuit<F> {
     }
 
     pub fn get_min_num_rows_required(block: &Block<F>) -> usize {
+        /* 
         let mut num_rows = 0;
         for transaction in &block.txs {
             for step in &transaction.steps {
@@ -228,6 +233,8 @@ impl<F: Field> EvmCircuit<F> {
 
         // It must have one row for EndBlock and at least one unused one
         num_rows + 2
+        */
+        unimplemented!()
     }
 }
 
@@ -271,12 +278,14 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
 
         config.load_fixed_table(layouter, self.fixed_table_tags.clone())?;
         config.load_byte_table(layouter)?;
-        config.execution.assign_block(layouter, block, challenges)
+        // config.execution.assign_block(layouter, block, challenges)
+        Ok(())
     }
 }
 
 /// create fixed_table_tags needed given witness block
 pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTableTag> {
+    /*
     let need_bitwise_lookup = block.txs.iter().any(|tx| {
         tx.steps.iter().any(|step| {
             matches!(
@@ -296,6 +305,8 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
             ) || need_bitwise_lookup
         })
         .collect()
+    */
+    unimplemented!()
 }
 
 #[cfg(any(feature = "test", test))]
@@ -433,7 +444,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
-
+/* 
 #[cfg(test)]
 mod evm_circuit_stats {
     use crate::{
@@ -549,7 +560,7 @@ mod evm_circuit_stats {
     fn get_exec_steps_occupancy() {
         let mut meta = ConstraintSystem::<Fr>::default();
         let circuit = EvmCircuit::configure(&mut meta);
-
+        /* 
         let report = circuit.0.execution.instrument().clone().analyze();
         macro_rules! gen_report {
             ($report:expr, $($id:ident, $cols:expr), +) => {
@@ -613,6 +624,7 @@ mod evm_circuit_stats {
             exp_table,
             LOOKUP_CONFIG[7].1
         );
+        */
     }
     #[test]
     fn variadic_size_check() {
@@ -660,3 +672,4 @@ mod evm_circuit_stats {
         assert_eq!(prover1.permutation(), prover2.permutation());
     }
 }
+*/

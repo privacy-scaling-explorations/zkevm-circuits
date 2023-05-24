@@ -32,7 +32,7 @@ pub(crate) struct MulModGadget<F> {
     mul512_left: MulAddWords512Gadget<F>,
     mul512_right: MulAddWords512Gadget<F>,
     n_is_zero: IsZeroGadget<F>,
-    lt: LtWordGadget<F>,
+    // lt: LtWordGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
@@ -97,7 +97,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
             mul512_left,
             mul512_right,
             n_is_zero,
-            lt,
+            //lt,
         }
     }
 

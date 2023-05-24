@@ -1,6 +1,6 @@
 pub use crate::table::TxContextFieldTag;
 use crate::{
-    evm_circuit::step::{ExecutionState, ResponsibleOp},
+//    evm_circuit::step::{ExecutionState, ResponsibleOp},
     impl_expr,
     util::word::Word,
 };
@@ -78,6 +78,8 @@ impl FixedTableTag {
             Self::BitwiseXor => Box::new((0..256).flat_map(move |lhs| {
                 (0..256).map(move |rhs| [tag, F::from(lhs), F::from(rhs), F::from(lhs ^ rhs)])
             })),
+            Self::ResponsibleOpcode  => unreachable!(),
+            /* 
             Self::ResponsibleOpcode => {
                 Box::new(ExecutionState::iter().flat_map(move |execution_state| {
                     execution_state.responsible_opcodes().into_iter().map(
@@ -98,6 +100,7 @@ impl FixedTableTag {
                     )
                 }))
             }
+            */
             Self::Pow2 => Box::new((0..256).map(move |value| {
                 let (pow_lo, pow_hi) = if value < 128 {
                     (F::from_u128(1_u128 << value), F::from(0))

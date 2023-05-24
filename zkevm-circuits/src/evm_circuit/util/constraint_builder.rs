@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         param::STACK_CAPACITY,
-        step::{ExecutionState, Step},
+        // step::{ExecutionState, Step},
         table::{FixedTableTag, Lookup, RwValues},
         util::{Cell, RandomLinearCombination},
     },
@@ -285,7 +285,7 @@ pub(crate) struct Constraints<F> {
     /// Enabled with q_step * not(q_step_last)
     pub(crate) not_step_last: Vec<(&'static str, Expression<F>)>,
 }
-
+/* 
 pub(crate) struct EVMConstraintBuilder<'a, F> {
     pub max_degree: usize,
     pub(crate) curr: Step<F>,
@@ -1685,3 +1685,4 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         }
     }
 }
+*/

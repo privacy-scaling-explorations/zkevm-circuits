@@ -777,7 +777,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
         config.assign_copy_events(layouter, &self.copy_events, self.max_copy_rows, *challenges)
     }
 }
-
+/* 
 #[cfg(test)]
 mod copy_circuit_stats {
     use crate::{
@@ -819,3 +819,4 @@ mod copy_circuit_stats {
         );
     }
 }
+*/

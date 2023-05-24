@@ -14,7 +14,7 @@ use bus_mapping::{
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::circuit::Value;
 
-use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
+use super::{tx::tx_convert, Bytecode, RwMap, Transaction};
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -27,9 +27,9 @@ pub struct Block<F> {
     pub txs: Vec<Transaction>,
     /// EndBlock step that is repeated after the last transaction and before
     /// reaching the last EVM row.
-    pub end_block_not_last: ExecStep,
+ ///   pub end_block_not_last: ExecStep,
     /// Last EndBlock step that appears in the last EVM row.
-    pub end_block_last: ExecStep,
+ ///   pub end_block_last: ExecStep,
     /// Read write events in the RwTable
     pub rws: RwMap,
     /// Bytecode used in the block
@@ -58,6 +58,7 @@ impl<F: Field> Block<F> {
     /// For each tx, for each step, print the rwc at the beginning of the step,
     /// and all the rw operations of the step.
     pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
+        /* 
         for (tx_idx, tx) in self.txs.iter().enumerate() {
             println!("tx {}", tx_idx);
             for step in &tx.steps {
@@ -67,6 +68,7 @@ impl<F: Field> Block<F> {
                 }
             }
         }
+        */
     }
 }
 
@@ -251,8 +253,8 @@ pub fn block_convert<F: Field>(
             .enumerate()
             .map(|(idx, tx)| tx_convert(tx, idx + 1))
             .collect(),
-        end_block_not_last: step_convert(&block.block_steps.end_block_not_last),
-        end_block_last: step_convert(&block.block_steps.end_block_last),
+        // end_block_not_last: step_convert(&block.block_steps.end_block_not_last),
+        // end_block_last: step_convert(&block.block_steps.end_block_last),
         bytecodes: code_db
             .0
             .values()

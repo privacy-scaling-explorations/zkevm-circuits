@@ -1,5 +1,5 @@
 use super::table::Table;
-use crate::evm_circuit::{step::ExecutionState, EvmCircuit};
+// use crate::evm_circuit::{step::ExecutionState, EvmCircuit};
 use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem},
@@ -105,6 +105,7 @@ pub(crate) const N_BYTES_GAS: usize = N_BYTES_U64;
 
 // Number of bytes that will be used for call data's size.
 pub(crate) const N_BYTES_CALLDATASIZE: usize = N_BYTES_U64;
+/* 
 
 lazy_static::lazy_static! {
     // Step slot height in evm circuit
@@ -116,3 +117,4 @@ fn get_step_height_map() -> HashMap<ExecutionState, usize> {
 
     circuit.0.execution.height_map
 }
+*/

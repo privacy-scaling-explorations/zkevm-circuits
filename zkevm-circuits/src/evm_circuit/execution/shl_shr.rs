@@ -16,7 +16,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{Expr, word::Word},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, U256};
@@ -29,12 +29,12 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct ShlShrGadget<F> {
     same_context: SameContextGadget<F>,
-    quotient: util::Word<F>,
-    divisor: util::Word<F>,
-    remainder: util::Word<F>,
-    dividend: util::Word<F>,
+    quotient: Word<F>,
+    divisor: Word<F>,
+    remainder: Word<F>,
+    dividend: Word<F>,
     /// Shift word
-    shift: util::Word<F>,
+    shift: Word<F>,
     /// First byte of shift word
     shf0: Cell<F>,
     /// Gadget that verifies quotient * divisor + remainder = dividend
@@ -45,8 +45,7 @@ pub(crate) struct ShlShrGadget<F> {
     divisor_is_zero: IsZeroGadget<F>,
     /// Check if remainder is zero
     remainder_is_zero: IsZeroGadget<F>,
-    /// Check if remainder < divisor when divisor != 0
-    remainder_lt_divisor: LtWordGadget<F>,
+    // remainder_lt_divisor: LtWordGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
@@ -149,7 +148,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
             shf_lt256,
             divisor_is_zero,
             remainder_is_zero,
-            remainder_lt_divisor,
+            // remainder_lt_divisor,
         }
     }
 
