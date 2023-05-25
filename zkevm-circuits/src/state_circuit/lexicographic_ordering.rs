@@ -59,14 +59,6 @@ pub enum LimbIndex {
     Address1,
     Address0,
     FieldTag,
-    StorageKey7,
-    StorageKey6,
-    StorageKey5,
-    StorageKey4,
-    StorageKey3,
-    StorageKey2,
-    StorageKey1,
-    StorageKey0,
     StorageKey15,
     StorageKey14,
     StorageKey13,
@@ -75,6 +67,14 @@ pub enum LimbIndex {
     StorageKey10,
     StorageKey9,
     StorageKey8,
+    StorageKey7,
+    StorageKey6,
+    StorageKey5,
+    StorageKey4,
+    StorageKey3,
+    StorageKey2,
+    StorageKey1,
+    StorageKey0,
     RwCounter1,
     RwCounter0,
 }
@@ -171,14 +171,14 @@ impl Config {
                 {
                     constraints.push(
                         selector.clone()
-                            * first_different_limb.value_equals(i, Rotation::cur())(meta)
-                            * (limb_difference.clone() - cur_limb + prev_limb),
+                           * first_different_limb.value_equals(i, Rotation::cur())(meta)
+                           * (limb_difference.clone() - cur_limb + prev_limb),
                     );
                 }
                 constraints
             },
         );
-
+        
         config
     }
 
@@ -200,7 +200,7 @@ impl Config {
         )?;
 
         let cur_be_limbs = rw_to_be_limbs(cur);
-        let prev_be_limbs = rw_to_be_limbs(prev);
+        let prev_be_limbs = rw_to_be_limbs(prev); 
 
         let find_result = LimbIndex::iter()
             .zip(&cur_be_limbs)
@@ -252,7 +252,7 @@ struct Queries<F: Field> {
     field_tag: Expression<F>, // 8 bits, so we can pack tag + field_tag into one limb.
     id_limbs: [Expression<F>; N_LIMBS_ID],
     address_limbs: [Expression<F>; N_LIMBS_ACCOUNT_ADDRESS],
-    storage_key_bytes: [Expression<F>; N_LIMBS_WORD],
+    storage_key_limbs: [Expression<F>; N_LIMBS_WORD],
     rw_counter_limbs: [Expression<F>; N_LIMBS_RW_COUNTER],
 }
 
@@ -265,17 +265,16 @@ impl<F: Field> Queries<F> {
             id_limbs: keys.id.limbs.map(&mut query_advice),
             address_limbs: keys.address.limbs.map(&mut query_advice),
             field_tag: query_advice(keys.field_tag),
-            storage_key_bytes: keys.storage_key.limbs.map(&mut query_advice),
+            storage_key_limbs: keys.storage_key.limbs.map(&mut query_advice),
             rw_counter_limbs: keys.rw_counter.limbs.map(query_advice),
         }
     }
 
     fn storage_key_be_limbs(&self) -> Vec<Expression<F>> {
-        self.storage_key_bytes
+        self.storage_key_limbs
             .iter()
             .rev()
-            .tuples()
-            .map(|(hi, lo)| (1u64 << 8).expr() * hi.clone() + lo.clone())
+            .cloned()
             .collect()
     }
 
