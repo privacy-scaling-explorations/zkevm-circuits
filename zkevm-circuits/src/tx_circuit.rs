@@ -76,8 +76,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let tag = tx_table.tag;
         let index = tx_table.index;
         let value = tx_table.value;
-        meta.enable_equality(value.to_lo_hi().lo());
-        meta.enable_equality(value.to_lo_hi().hi());
+        meta.enable_equality(*value.lo());
+        meta.enable_equality(*value.hi());
 
         let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone(), challenges);
 
@@ -110,6 +110,22 @@ impl<F: Field> TxCircuitConfig<F> {
         index: usize,
         value: Value<F>,
     ) -> Result<AssignedCell<F, F>, Error> {
+        let value_in_word = Word::new([value, Value::known(F::ZERO)]);
+        let cell = self.assign_row_word(region, offset, tx_id, tag, index, value_in_word)?;
+        Ok(*cell.lo())
+    }
+
+    /// Assigns a tx circuit row and returns the assigned cell of the value in `word` in
+    /// the row.
+    fn assign_row_word(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        tx_id: usize,
+        tag: TxFieldTag,
+        index: usize,
+        value: Word<Value<F>>,
+    ) -> Result<Word<AssignedCell<F, F>>, Error> {
         region.assign_advice(
             || "tx_id",
             self.tx_id,
@@ -128,7 +144,12 @@ impl<F: Field> TxCircuitConfig<F> {
             offset,
             || Value::known(F::from(index as u64)),
         )?;
-        region.assign_advice(|| "value", self.value, offset, || value)
+        let value_lo =
+            region.assign_advice(|| "value_lo", *self.value.lo(), offset, || *value.lo())?;
+        let value_hi =
+            region.assign_advice(|| "value_hi", *self.value.hi(), offset, || *value.hi())?;
+
+        Ok(Word::new([value_lo, value_hi]))
     }
 
     /// Get number of rows required.
@@ -242,10 +263,6 @@ impl<F: Field> TxCircuit<F> {
                             TxFieldTag::CallDataGasCost,
                             Value::known(F::from(tx.call_data_gas_cost())),
                         ),
-                        (
-                            TxFieldTag::TxSignHash,
-                            assigned_sig_verif.msg_hash_rlc.value().copied(),
-                        ),
                     ] {
                         let assigned_cell =
                             config.assign_row(&mut region, offset, i + 1, tag, 0, value)?;
@@ -258,13 +275,30 @@ impl<F: Field> TxCircuit<F> {
                                 assigned_cell.cell(),
                                 assigned_sig_verif.address.cell(),
                             )?,
-                            TxFieldTag::TxSignHash => region.constrain_equal(
-                                assigned_cell.cell(),
-                                assigned_sig_verif.msg_hash_rlc.cell(),
-                            )?,
                             _ => (),
                         }
                     }
+                    // TxFieldTag::TxSignHash
+                    let assigned_cell = config.assign_row_word(
+                        &mut region,
+                        offset,
+                        i + 1,
+                        TxFieldTag::TxSignHash,
+                        0,
+                        Word::new([
+                            assigned_sig_verif.msg_hash.lo().value().copied(),
+                            assigned_sig_verif.msg_hash.hi().value().copied(),
+                        ]),
+                    )?;
+                    offset += 1;
+                    region.constrain_equal(
+                        assigned_cell.lo().cell(),
+                        assigned_sig_verif.msg_hash.lo().cell(),
+                    )?;
+                    region.constrain_equal(
+                        assigned_cell.hi().cell(),
+                        assigned_sig_verif.msg_hash.hi().cell(),
+                    )?;
                 }
 
                 // Assign call data

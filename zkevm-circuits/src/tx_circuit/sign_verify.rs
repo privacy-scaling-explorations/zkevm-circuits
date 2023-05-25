@@ -5,9 +5,9 @@
 // - *_le: Little-Endian bytes
 
 use crate::{
-    evm_circuit::util::{not, rlc},
+    evm_circuit::util::{from_bytes, not, rlc},
     table::KeccakTable,
-    util::{Challenges, Expr},
+    util::{word::Word, Challenges, Expr},
 };
 use ecc::{maingate, EccConfig, GeneralEccChip};
 use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
@@ -157,7 +157,6 @@ impl SignVerifyConfig {
             challenges.keccak_input(),
         );
 
-        let output = meta.advice_column();
         // Ref. spec SignVerifyChip 1. Verify that keccak(pub_key_bytes) = pub_key_hash
         // by keccak table lookup, where pub_key_bytes is built from the pub_key
         // in the ecdsa_chip.
@@ -186,8 +185,8 @@ impl SignVerifyConfig {
                 keccak_table.is_enabled,
                 keccak_table.input_rlc,
                 keccak_table.input_len,
-                keccak_table.output.lo(),
-                keccak_table.output.hi(),
+                *keccak_table.output.lo(),
+                *keccak_table.output.hi(),
             ]
             .map(|column| meta.query_advice(column, Rotation::cur()));
 
@@ -301,8 +300,7 @@ pub(crate) struct AssignedECDSA<F: Field> {
 #[derive(Debug)]
 pub(crate) struct AssignedSignatureVerify<F: Field> {
     pub(crate) address: AssignedValue<F>,
-    pub(crate) msg_hash_lo: AssignedValue<F>,
-    pub(crate) msg_hash_hi: AssignedValue<F>,
+    pub(crate) msg_hash: Word<AssignedValue<F>>,
 }
 
 // Return an array of bytes that corresponds to the little endian representation
@@ -415,20 +413,23 @@ impl<F: Field> SignVerifyChip<F> {
         ctx: &mut RegionCtx<F>,
         chips: &ChipsRef<F, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         name: &str,
-        inputs_le: [Value<F>; 32],
-    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
-        let word_lo = ctx.assign_advice(
+        inputs_le: [u8; 32],
+    ) -> Result<Word<AssignedCell<F, F>>, Error> {
+        let input_word = Word::new([
+            Value::known(from_bytes::value(&inputs_le[..16])),
+            Value::known(from_bytes::value(&inputs_le[16..])),
+        ]);
+        let cell_word_lo = ctx.assign_advice(
             || "{name}_lo",
             config.main_gate_config.advices()[1],
-            inputs_le[16..],
+            *input_word.lo(),
         )?;
-        let word_hi = ctx.assign_advice(
+        let cell_word_hi = ctx.assign_advice(
             || "{name}_hi",
             config.main_gate_config.advices()[2],
-            inputs_le[..16],
+            *input_word.hi(),
         )?;
-        ctx.next();
-        Ok(vec![word_lo, word_hi])
+        Ok(Word::new([cell_word_lo, cell_word_hi]))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -482,8 +483,7 @@ impl<F: Field> SignVerifyChip<F> {
         ctx: &mut RegionCtx<F>,
         is_address_zero: &AssignedCell<F, F>,
         pk_rlc: &AssignedCell<F, F>,
-        pk_hash_lo: &AssignedCell<F, F>,
-        pk_hash_hi: &AssignedCell<F, F>,
+        pk_hash: &Word<AssignedCell<F, F>>,
     ) -> Result<(), Error> {
         let copy = |ctx: &mut RegionCtx<F>, name, column, assigned: &AssignedCell<F, F>| {
             let copied = ctx.assign_advice(|| name, column, assigned.value().copied())?;
@@ -500,13 +500,13 @@ impl<F: Field> SignVerifyChip<F> {
             ctx,
             "pk_hash_lo",
             config.main_gate_config.advices()[1],
-            pk_hash_lo,
+            pk_hash.lo(),
         )?;
         copy(
             ctx,
             "pk_hash_hi",
             config.main_gate_config.advices()[2],
-            pk_hash_hi,
+            pk_hash.hi(),
         )?;
         ctx.next();
 
@@ -539,8 +539,7 @@ impl<F: Field> SignVerifyChip<F> {
                 let hash: [_; 32] = keccak.digest().try_into().expect("vec to array of size 32");
                 hash
             })
-            .unwrap_or_default()
-            .map(|byte| Value::known(F::from(byte as u64)));
+            .unwrap_or_default();
 
         // Ref. spec SignVerifyChip 2. Verify that the first 20 bytes of the
         // pub_key_hash equal the address
@@ -551,9 +550,11 @@ impl<F: Field> SignVerifyChip<F> {
             let terms = pk_hash[12..]
                 .iter()
                 .zip(powers_of_256.into_iter().rev())
-                .map(|(byte, coeff)| maingate::Term::Unassigned(*byte, coeff))
+                .map(|(byte, coeff)| {
+                    maingate::Term::Unassigned(Value::known(F::from(*byte as u64)), coeff)
+                })
                 .collect_vec();
-            let (address,) = main_gate.decompose(ctx, &terms, F::ZERO, |_, _| Ok(()))?;
+            let (address, _) = main_gate.decompose(ctx, &terms, F::ZERO, |_, _| Ok(()))?;
 
             address
         };
@@ -561,7 +562,7 @@ impl<F: Field> SignVerifyChip<F> {
 
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
         // with RLC encoding corresponds to msg_hash
-        let (msg_hash_lo, msg_hash_hi) = {
+        let msg_hash = {
             let zero = main_gate.assign_constant(ctx, F::ZERO)?;
             let assigned_msg_hash_le = assigned_ecdsa
                 .msg_hash_le
@@ -570,11 +571,8 @@ impl<F: Field> SignVerifyChip<F> {
                 .collect::<Result<Vec<_>, _>>()?;
             let msg_hash_le = (!padding)
                 .then(|| sign_data.msg_hash.to_bytes())
-                .unwrap_or_default()
-                .map(|byte| Value::known(F::from(byte as u64)));
-            let msg_hash = self.assign_word(config, ctx, chips, "msg_hash", msg_hash_le);
-
-            (msg_hash[0], msg_hash[1])
+                .unwrap_or_default();
+            self.assign_word(config, ctx, chips, "msg_hash", msg_hash_le)?
         };
 
         let pk_rlc = {
@@ -598,21 +596,10 @@ impl<F: Field> SignVerifyChip<F> {
             )?
         };
 
-        let pk_hash_word = self.assign_word(config, ctx, chips, "pk_hash", pk_hash);
-        self.enable_keccak_lookup(
-            config,
-            ctx,
-            &is_address_zero,
-            &pk_rlc,
-            &pk_hash_word[0],
-            &pk_hash_word[1],
-        )?;
+        let pk_hash_word = self.assign_word(config, ctx, chips, "pk_hash", pk_hash)?;
+        self.enable_keccak_lookup(config, ctx, &is_address_zero, &pk_rlc, &pk_hash_word)?;
 
-        Ok(AssignedSignatureVerify {
-            address,
-            msg_hash_lo,
-            msg_hash_hi,
-        })
+        Ok(AssignedSignatureVerify { address, msg_hash })
     }
 
     pub(crate) fn assign(
