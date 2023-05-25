@@ -254,10 +254,10 @@ impl<F: Field> ConstraintBuilder<F> {
         }
         // 2.3. value is a byte
         self.add_lookup(
-            "memory value is a byte",
+            "memory value is a byte (lo is u8)",
             vec![(q.rw_table.value.lo().clone(), q.lookups.u8.clone())],
         );
-        self.require_zero("memory value is a byte", q.rw_table.value.hi().clone());
+        self.require_zero("memory value is a byte (hi is 0)", q.rw_table.value.hi().clone());
         // 2.4. Start initial value is 0
         self.require_word_zero("initial Memory value is 0", q.initial_value());
         // 2.5. state root does not change
