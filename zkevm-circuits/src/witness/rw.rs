@@ -255,12 +255,11 @@ pub struct RwRow<F> {
     pub(crate) storage_key: word::Word<F>,
     pub(crate) value: word::Word<F>,
     pub(crate) value_prev: word::Word<F>,
-    pub(crate) aux1: F,
-    pub(crate) aux2: word::Word<F>,
+    pub(crate) init_val: word::Word<F>,
 }
 
 impl<F: Field> RwRow<F> {
-    pub(crate) fn values(&self) -> [F; 15] {
+    pub(crate) fn values(&self) -> [F; 14] {
         [
             self.rw_counter,
             self.is_write,
@@ -274,9 +273,8 @@ impl<F: Field> RwRow<F> {
             self.value.hi().clone(),
             self.value_prev.lo().clone(),
             self.value_prev.hi().clone(),
-            self.aux1,
-            self.aux2.lo().clone(),
-            self.aux2.hi().clone(),
+            self.init_val.lo().clone(),
+            self.init_val.hi().clone(),
         ]
     }
     pub(crate) fn rlc(&self, randomness: F) -> F {
@@ -397,9 +395,7 @@ impl Rw {
             storage_key: word::Word::from_u256(self.storage_key().unwrap_or_default()).into_value(),
             value: word::Word::from_u256(self.value_assignment()).into_value(),
             value_prev: word::Word::from_u256(self.value_prev_assignment().unwrap_or_default()).into_value(),
-            aux1: Value::known(F::ZERO), /* only used for AccountStorage::tx_id, which moved to
-                                          * key1. */
-            aux2: word::Word::from_u256(self.committed_value_assignment().unwrap_or_default()).into_value(),
+            init_val: word::Word::from_u256(self.committed_value_assignment().unwrap_or_default()).into_value(),
         }
     }
 

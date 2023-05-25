@@ -449,10 +449,8 @@ pub struct RwTable {
     pub value: word::Word<Column<Advice>>,
     /// Value Previous
     pub value_prev: word::Word<Column<Advice>>,
-    /// Aux1
-    pub aux1: Column<Advice>,
-    /// Aux2 (Committed Value)
-    pub aux2: word::Word<Column<Advice>>,
+    /// InitVal (Committed Value)
+    pub init_val: word::Word<Column<Advice>>,
 }
 
 impl<F: Field> LookupTable<F> for RwTable {
@@ -470,9 +468,8 @@ impl<F: Field> LookupTable<F> for RwTable {
             self.value.hi().clone().into(),
             self.value_prev.lo().clone().into(),
             self.value_prev.hi().clone().into(),
-            self.aux1.into(),
-            self.aux2.lo().clone().into(),
-            self.aux2.hi().clone().into(),
+            self.init_val.lo().clone().into(),
+            self.init_val.hi().clone().into(),
         ]
     }
 
@@ -490,9 +487,8 @@ impl<F: Field> LookupTable<F> for RwTable {
             String::from("value_hi"),
             String::from("value_prev_lo"),
             String::from("value_prev_hi"),
-            String::from("aux1"),
-            String::from("aux2_lo"),
-            String::from("aux2_hi"),
+            String::from("init_val_lo"),
+            String::from("init_val_hi"),
         ]
     }
 }
@@ -509,10 +505,7 @@ impl RwTable {
             storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
             value: word::Word::new([meta.advice_column(), meta.advice_column()]),
             value_prev: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            // It seems that aux1 for the moment is not using randomness
-            // TODO check in a future review
-            aux1: meta.advice_column_in(SecondPhase),
-            aux2: word::Word::new([meta.advice_column(), meta.advice_column()])
+            init_val: word::Word::new([meta.advice_column(), meta.advice_column()])
         }
     }
     fn assign<F: Field>(
@@ -528,7 +521,6 @@ impl RwTable {
             (self.id, row.id),
             (self.address, row.address),
             (self.field_tag, row.field_tag),
-            (self.aux1, row.aux1),
         ] {
             region.assign_advice(|| "assign rw row on rw table", column, offset, || value)?;
         }
@@ -536,7 +528,7 @@ impl RwTable {
             (self.storage_key, row.storage_key),
             (self.value, row.value),
             (self.value_prev, row.value_prev),
-            (self.aux2, row.aux2),
+            (self.init_val, row.init_val),
         ] {
             value.assign_advice(region,|| "assign rw row on rw table", column, offset)?;
         }
