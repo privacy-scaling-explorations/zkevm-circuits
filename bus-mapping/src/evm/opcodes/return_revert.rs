@@ -211,19 +211,15 @@ fn handle_copy(
     let mut dst_chunk_index = dst_begin_slot;
 
     // memory word read from src 
-    for chunk in src_slot_bytes.chunks(32) {
-        let src_word = Word::from_big_endian(&chunk);
+    for (read_chunk, write_chunk) in src_slot_bytes.chunks(32).zip(dst_slot_bytes.chunks(32)) {
+        let src_word = Word::from_big_endian(&read_chunk);
         // read memory
         state.push_op(
             step,
             RW::READ,
             MemoryWordOp::new(source.id, src_chunk_index.into(), src_word),
         );
-        src_chunk_index  += 32;
-    }
-    // memory word write to destination
-    for chunk in dst_slot_bytes.chunks(32) {
-        let dest_word = Word::from_big_endian(&chunk);
+        let dest_word = Word::from_big_endian(&write_chunk);
         // write memory
         state.push_op(
             step,
@@ -231,8 +227,10 @@ fn handle_copy(
             MemoryWordOp::new(destination.id, dst_chunk_index.into(), dest_word),
         );
         dst_chunk_index  += 32;
+        src_chunk_index  += 32;
     }
 
+    // memory word write to destination
     let mut copy_steps = Vec::with_capacity(source.length as usize);
     let mut copy_start = 0u64;
     let mut first_set = true;
