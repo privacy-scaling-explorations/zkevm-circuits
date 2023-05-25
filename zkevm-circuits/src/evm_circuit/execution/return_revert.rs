@@ -27,6 +27,7 @@ pub(crate) struct ReturnRevertGadget<F> {
     opcode: Cell<F>,
 
     range: MemoryAddressGadget<F>,
+    deployed_code_rlc: Cell<F>,
 
     is_success: Cell<F>,
     restore_context: RestoreContextGadget<F>,
@@ -94,11 +95,12 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         let is_contract_deployment =
             is_create.clone() * is_success.expr() * not::expr(copy_rw_increase_is_zero.expr());
-        let (caller_id, address, reversion_info, code_hash) =
+        let (caller_id, address, reversion_info, code_hash, deployed_code_rlc) =
             cb.condition(is_contract_deployment.clone(), |cb| {
                 // We don't need to place any additional constraints on code_hash because the
                 // copy circuit enforces that it is the hash of the bytes in the copy lookup.
                 let code_hash = cb.query_cell_phase2();
+                let deployed_code_rlc = cb.query_cell_phase2();
                 cb.copy_table_lookup(
                     cb.curr.state.call_id.expr(),
                     CopyDataType::Memory.expr(),
@@ -108,7 +110,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                     range.address(),
                     0.expr(),
                     range.length(),
-                    0.expr(),
+                    deployed_code_rlc.expr(),
                     copy_rw_increase.expr(),
                 );
 
@@ -127,7 +129,13 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                     Some(&mut reversion_info),
                 );
 
-                (caller_id, address, reversion_info, code_hash)
+                (
+                    caller_id,
+                    address,
+                    reversion_info,
+                    code_hash,
+                    deployed_code_rlc,
+                )
             });
 
         // Case B in the specs.
@@ -218,6 +226,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         Self {
             opcode,
             range,
+            deployed_code_rlc,
             is_success,
             copy_length,
             copy_rw_increase,
@@ -279,6 +288,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             let values: Vec<_> = (3..3 + length.as_usize())
                 .map(|index| block.get_rws(step, index).memory_value())
                 .collect();
+            self.deployed_code_rlc.assign(
+                region,
+                offset,
+                region.keccak_rlc(&values.iter().rev().cloned().collect::<Vec<u8>>()),
+            )?;
             let mut code_hash = CodeDB::hash(&values).to_fixed_bytes();
             code_hash.reverse();
             self.code_hash.assign(
@@ -614,10 +628,8 @@ mod test {
             PUSH1(0) // dest offset
             RETURNDATACOPY
         });
-
-        let block: GethData = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode.clone())
-            .unwrap()
-            .into();
+        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode.clone()).unwrap();
+        let block: GethData = test_ctx.clone().into();
 
         // collect return opcode, retrieve next step, assure both contract create
         // successfully
@@ -648,8 +660,7 @@ mod test {
             .iter()
             .for_each(|size| assert_eq!(size, &Word::zero()));
 
-        let text_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
-        CircuitTestBuilder::new_from_test_ctx(text_ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(test_ctx).run();
     }
 
     #[test]
