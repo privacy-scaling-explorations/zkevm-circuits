@@ -166,9 +166,14 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     ))),
                 |cb| {
                     cb.require_equal(
-                        "rows[0].id == rows[2].id",
-                        meta.query_advice(id, Rotation::cur()),
-                        meta.query_advice(id, Rotation(2)),
+                        "rows[0].id_lo == rows[2].id_lo",
+                        meta.query_advice(id.lo(), Rotation::cur()),
+                        meta.query_advice(id.lo(), Rotation(2)),
+                    );
+                    cb.require_equal(
+                        "rows[0].id_hi == rows[2].id_hi",
+                        meta.query_advice(id.hi(), Rotation::cur()),
+                        meta.query_advice(id.hi(), Rotation(2)),
                     );
                     cb.require_equal(
                         "rows[0].tag == rows[2].tag",
@@ -328,7 +333,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(rw_counter, Rotation::cur()),
                 not::expr(meta.query_selector(q_step)),
                 RwTableTag::Memory.expr(),
-                meta.query_advice(id, Rotation::cur()), // call_id
+                meta.query_advice(id.lo(), Rotation::cur()), // call_id
+                meta.query_advice(id.hi(), Rotation::cur()),
                 meta.query_advice(addr, Rotation::cur()), // memory address
                 0.expr(),
                 0.expr(),
@@ -350,7 +356,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(rw_counter, Rotation::cur()),
                 1.expr(),
                 RwTableTag::TxLog.expr(),
-                meta.query_advice(id, Rotation::cur()), // tx_id
+                meta.query_advice(id.lo(), Rotation::cur()), // tx_id
+                meta.query_advice(id.hi(), Rotation::cur()),
                 meta.query_advice(addr, Rotation::cur()), // byte_index || field_tag || log_id
                 0.expr(),
                 0.expr(),
@@ -370,7 +377,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 * tag.value_equals(CopyDataType::Bytecode, Rotation::cur())(meta)
                 * not::expr(meta.query_advice(is_pad, Rotation::cur()));
             vec![
-                meta.query_advice(id, Rotation::cur()),
+                meta.query_advice(id.lo(), Rotation::cur()),
+                meta.query_advice(id.hi(), Rotation::cur()),
                 BytecodeFieldTag::Byte.expr(),
                 meta.query_advice(addr, Rotation::cur()),
                 meta.query_advice(is_code, Rotation::cur()),
@@ -387,7 +395,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 * tag.value_equals(CopyDataType::TxCalldata, Rotation::cur())(meta)
                 * not::expr(meta.query_advice(is_pad, Rotation::cur()));
             vec![
-                meta.query_advice(id, Rotation::cur()),
+                meta.query_advice(id.lo(), Rotation::cur()),
+                meta.query_advice(id.hi(), Rotation::cur()),
                 TxContextFieldTag::CallData.expr(),
                 meta.query_advice(addr, Rotation::cur()),
                 meta.query_advice(value, Rotation::cur()),
@@ -585,8 +594,14 @@ impl<F: Field> CopyCircuitConfig<F> {
         )?;
         // id
         region.assign_advice(
-            || format!("assign id {}", *offset),
-            self.copy_table.id,
+            || format!("assign id lo {}", *offset),
+            self.copy_table.id.lo(),
+            *offset,
+            || Value::known(F::ZERO),
+        )?;
+        region.assign_advice(
+            || format!("assign id hi {}", *offset),
+            self.copy_table.id.hi(),
             *offset,
             || Value::known(F::ZERO),
         )?;
