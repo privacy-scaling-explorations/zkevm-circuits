@@ -4,7 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -27,7 +27,7 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ISZERO;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let value = cb.query_cell_phase2();
@@ -64,7 +64,7 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let value = block.rws[step.rw_indices[0]].stack_value();
+        let value = block.get_rws(step, 0).stack_value();
         let value = region.word_rlc(value);
         self.value.assign(region, offset, value)?;
         self.is_zero.assign_value(region, offset, value)?;

@@ -6,7 +6,8 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
+                ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
+                Transition::Delta,
             },
             from_bytes,
             math_gadget::IsZeroGadget,
@@ -37,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BALANCE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let address_word = cb.query_word_rlc();
         let address = from_bytes::expr(&address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
         cb.stack_pop(address_word.expr());
@@ -108,7 +109,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let address = block.rws[step.rw_indices[0]].stack_value();
+        let address = block.get_rws(step, 0).stack_value();
         self.address_word
             .assign(region, offset, Some(address.to_le_bytes()))?;
 
@@ -122,11 +123,11 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             call.is_persistent,
         )?;
 
-        let (_, is_warm) = block.rws[step.rw_indices[4]].tx_access_list_value_pair();
+        let (_, is_warm) = block.get_rws(step, 4).tx_access_list_value_pair();
         self.is_warm
-            .assign(region, offset, Value::known(F::from(is_warm)))?;
+            .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let code_hash = block.rws[step.rw_indices[5]].account_value_pair().0;
+        let code_hash = block.get_rws(step, 5).account_value_pair().0;
         self.code_hash
             .assign(region, offset, region.word_rlc(code_hash))?;
         self.not_exists
@@ -134,7 +135,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         let balance = if code_hash.is_zero() {
             eth_types::Word::zero()
         } else {
-            block.rws[step.rw_indices[6]].account_value_pair().0
+            block.get_rws(step, 6).account_value_pair().0
         };
         self.balance
             .assign(region, offset, region.word_rlc(balance))?;
@@ -202,12 +203,12 @@ mod test {
         let mut code = Bytecode::default();
         if is_warm {
             code.append(&bytecode! {
-                .balance(address)
+                .op_balance(address)
                 POP
             });
         }
         code.append(&bytecode! {
-            .balance(address)
+            .op_balance(address)
             STOP
         });
 
@@ -253,12 +254,12 @@ mod test {
         let mut code_b = Bytecode::default();
         if is_warm {
             code_b.append(&bytecode! {
-                .balance(address)
+                .op_balance(address)
                 POP
             });
         }
         code_b.append(&bytecode! {
-            .balance(address)
+            .op_balance(address)
             STOP
         });
 

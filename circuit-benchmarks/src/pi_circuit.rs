@@ -24,7 +24,7 @@ mod tests {
     use rand_xorshift::XorShiftRng;
     use std::env::var;
     use zkevm_circuits::{
-        pi_circuit::{PiCircuit, PiTestCircuit, PublicData},
+        pi_circuit::{PiCircuit, PublicData},
         util::SubCircuit,
     };
 
@@ -48,15 +48,10 @@ mod tests {
         let mut rng = ChaCha20Rng::seed_from_u64(2);
         let randomness = Fr::random(&mut rng);
         let rand_rpi = Fr::random(&mut rng);
-        let public_data = generate_publicdata::<MAX_TXS, MAX_CALLDATA>();
-        let circuit = PiTestCircuit::<Fr, MAX_TXS, MAX_CALLDATA>(PiCircuit::<Fr>::new(
-            MAX_TXS,
-            MAX_CALLDATA,
-            randomness,
-            rand_rpi,
-            public_data,
-        ));
-        let public_inputs = circuit.0.instance();
+        let public_data = generate_publicdata(MAX_TXS);
+        let circuit =
+            PiCircuit::<Fr>::new(MAX_TXS, MAX_CALLDATA, randomness, rand_rpi, public_data);
+        let public_inputs = circuit.instance();
         let instance: Vec<&[Fr]> = public_inputs.iter().map(|input| &input[..]).collect();
         let instances = &[&instance[..]];
 
@@ -68,7 +63,7 @@ mod tests {
         // Bench setup generation
         let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
         let start1 = start_timer!(|| setup_message);
-        let general_params = ParamsKZG::<Bn256>::setup(degree as u32, &mut rng);
+        let general_params = ParamsKZG::<Bn256>::setup(degree, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
         end_timer!(start1);
 
@@ -90,7 +85,7 @@ mod tests {
             Challenge255<G1Affine>,
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            PiTestCircuit<Fr, MAX_TXS, MAX_CALLDATA>,
+            PiCircuit<Fr>,
         >(
             &general_params,
             &pk,
@@ -125,12 +120,12 @@ mod tests {
         end_timer!(start3);
     }
 
-    fn generate_publicdata<const MAX_TXS: usize, const MAX_CALLDATA: usize>() -> PublicData {
+    fn generate_publicdata(max_txs: usize) -> PublicData {
         let mut public_data = PublicData::default();
         let chain_id = 1337u64;
         public_data.chain_id = Word::from(chain_id);
 
-        let n_tx = MAX_TXS;
+        let n_tx = max_txs;
         for _ in 0..n_tx {
             let eth_tx = eth_types::Transaction::from(mock::CORRECT_MOCK_TXS[0].clone());
             public_data.transactions.push(eth_tx);

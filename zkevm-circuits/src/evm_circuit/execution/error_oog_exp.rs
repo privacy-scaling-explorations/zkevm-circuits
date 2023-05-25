@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{ByteSizeGadget, LtGadget},
             CachedRegion, Cell, Word,
         },
@@ -36,7 +36,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasEXP;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         cb.require_equal(
@@ -97,8 +97,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
-        let [base, exponent] = [0, 1].map(|idx| block.rws[step.rw_indices[idx]].stack_value());
+        let opcode = step.opcode().unwrap();
+        let [base, exponent] = [0, 1].map(|index| block.get_rws(step, index).stack_value());
 
         log::debug!(
             "ErrorOutOfGasEXP: gas_left = {}, gas_cost = {}",
@@ -115,8 +115,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
         self.insufficient_gas_cost.assign_value(
             region,
             offset,
-            Value::known(F::from(step.gas_left)),
-            Value::known(F::from(step.gas_cost)),
+            Value::known(F::from(step.gas_left.0)),
+            Value::known(F::from(step.gas_cost.0)),
         )?;
         self.common_error_gadget
             .assign(region, offset, block, call, step, 4)?;

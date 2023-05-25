@@ -4,7 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -29,7 +29,7 @@ impl<F: Field> ExecutionGadget<F> for CallValueGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLVALUE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let call_value = cb.query_cell_phase2();
 
         // Lookup rw_table -> call_context with call value
@@ -71,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for CallValueGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let call_value = block.rws[step.rw_indices[1]].stack_value();
+        let call_value = block.get_rws(step, 1).stack_value();
 
         self.call_value
             .assign(region, offset, region.word_rlc(call_value))?;

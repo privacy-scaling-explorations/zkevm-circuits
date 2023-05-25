@@ -3,7 +3,8 @@ use crate::evm_circuit::{
     step::ExecutionState,
     table::{FixedTableTag, Lookup},
     util::{
-        common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder, CachedRegion, Cell,
+        common_gadget::CommonErrorGadget, constraint_builder::EVMConstraintBuilder, CachedRegion,
+        Cell,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -24,7 +25,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorInvalidOpcode;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.add_lookup(
             "Responsible opcode lookup",
@@ -55,7 +56,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = F::from(step.opcode.unwrap().as_u64());
+        let opcode = F::from(step.opcode().unwrap().as_u64());
         self.opcode.assign(region, offset, Value::known(opcode))?;
 
         self.common_error_gadget

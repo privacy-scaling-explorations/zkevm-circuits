@@ -51,7 +51,7 @@ impl TryFrom<OpcodeId> for CallKind {
 }
 
 /// Circuit Input related to an Ethereum Call
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Call {
     /// Unique call identifier within the Block.
     pub call_id: usize,
@@ -107,6 +107,18 @@ impl Call {
     /// This call is call with op DELEGATECALL
     pub fn is_delegatecall(&self) -> bool {
         matches!(self.kind, CallKind::DelegateCall)
+    }
+
+    /// Get the code address if possible
+    pub fn code_address(&self) -> Option<Address> {
+        match self.kind {
+            CallKind::Call | CallKind::StaticCall => Some(self.address),
+            CallKind::CallCode | CallKind::DelegateCall => match self.code_source {
+                CodeSource::Address(address) => Some(address),
+                _ => None,
+            },
+            CallKind::Create | CallKind::Create2 => None,
+        }
     }
 }
 

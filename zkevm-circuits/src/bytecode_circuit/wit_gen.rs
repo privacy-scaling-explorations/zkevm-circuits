@@ -32,7 +32,7 @@ impl<F: Field> BytecodeWitnessGen<F> {
             next_push_data_left: 0,
             push_data_size: 0,
             length: bytecode.bytes.len(),
-            value_rlc: challenges.keccak_input().map(|_| F::zero()),
+            value_rlc: challenges.keccak_input().map(|_| F::ZERO),
             code_hash: challenges
                 .evm_word()
                 .map(|challenge| rlc::value(&bytecode.rows[0].code_hash.to_le_bytes(), challenge)),
@@ -52,7 +52,7 @@ impl<F: Field> BytecodeWitnessGen<F> {
             next_push_data_left: 0,
             push_data_size: 0,
             length: overwrite_len,
-            value_rlc: challenges.keccak_input().map(|_| F::zero()),
+            value_rlc: challenges.keccak_input().map(|_| F::ZERO),
             code_hash: challenges
                 .evm_word()
                 .map(|challenge| rlc::value(&bytecode.rows[0].code_hash.to_le_bytes(), challenge)),

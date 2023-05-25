@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes, CachedRegion, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -16,7 +16,6 @@ use crate::{
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToAddress, ToLittleEndian};
 use halo2_proofs::plonk::Error;
-use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AddressGadget<F> {
@@ -29,7 +28,7 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ADDRESS;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let address = cb.query_word_rlc();
 
         // Lookup callee address in call context.
@@ -70,8 +69,8 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let address = block.rws[step.rw_indices[1]].stack_value();
-        debug_assert_eq!(call.callee_address, address.to_address());
+        let address = block.get_rws(step, 1).stack_value();
+        debug_assert_eq!(call.address, address.to_address());
 
         self.address.assign(
             region,

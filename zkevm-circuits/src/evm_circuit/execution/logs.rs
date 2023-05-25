@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
@@ -14,7 +14,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
+    table::{CallContextFieldTag, TxLogFieldTag},
     util::{build_tx_log_expression, Expr},
 };
 use array_init::array_init;
@@ -46,7 +46,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::LOG;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let mstart = cb.query_cell_phase2();
         let msize = cb.query_word_rlc();
 
@@ -194,9 +194,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [memory_start, msize] =
-            [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
-
+        let [memory_start, msize] = [0, 1].map(|index| block.get_rws(step, index).stack_value());
         let memory_address = self
             .memory_address
             .assign(region, offset, memory_start, msize)?;
@@ -205,40 +203,45 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         self.memory_expansion
             .assign(region, offset, step.memory_word_size(), [memory_address])?;
 
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         let topic_count = opcode.postfix().expect("opcode with postfix") as usize;
         assert!(topic_count <= 4);
 
-        let is_persistent = call.is_persistent as u64;
-        let mut topic_stack_entry = if topic_count > 0 {
-            step.rw_indices[6 + call.is_persistent as usize]
-        } else {
-            // if topic_count == 0, this value will be no used anymore
-            (RwTableTag::Stack, 0usize)
-        };
-
+        let is_persistent = call.is_persistent as usize;
+        let mut topics = (0..topic_count).map(|topic| {
+            // We compute the index of the correct read-write record from
+            // bus-mapping/src/evm/opcodes/logs.rs::gen_log_step
+            // It takes 6 + is_persistent reads or writes to reach the topic stack write section.
+            // Each topic takes at least 1 stack read. They take an additional tx log write if the
+            // call is persistent.
+            block
+                .get_rws(step, 6 + is_persistent + topic * (1 + is_persistent))
+                .stack_value()
+        });
         for i in 0..4 {
-            let mut topic = region.word_rlc(U256::zero());
-            if i < topic_count {
-                topic = region.word_rlc(block.rws[topic_stack_entry].stack_value());
-                self.topic_selectors[i].assign(region, offset, Value::known(F::one()))?;
-                topic_stack_entry.1 += 1;
-            } else {
-                self.topic_selectors[i].assign(region, offset, Value::known(F::zero()))?;
-            }
-            self.phase2_topics[i].assign(region, offset, topic)?;
+            let topic = topics.next();
+            self.topic_selectors[i].assign(
+                region,
+                offset,
+                Value::known(F::from(topic.is_some().into())),
+            )?;
+            self.phase2_topics[i].assign(
+                region,
+                offset,
+                region.word_rlc(topic.unwrap_or_default()),
+            )?;
         }
 
         self.contract_address.assign(
             region,
             offset,
             Value::known(
-                call.callee_address
+                call.address
                     .to_scalar()
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-
+        let is_persistent = call.is_persistent as u64;
         self.is_static_call
             .assign(region, offset, Value::known(F::from(call.is_static as u64)))?;
         self.is_persistent
@@ -358,7 +361,7 @@ mod test {
         code.push(32, Word::from(mstart));
         code.write_op(cur_op_code);
         if is_persistent {
-            code.write_op(OpcodeId::STOP);
+            code.op_stop();
         } else {
             // make current call failed with false persistent
             code.write_op(OpcodeId::INVALID(0xfe));
@@ -415,7 +418,7 @@ mod test {
         code.push(32, Word::from(mstart));
         code.write_op(cur_op_code);
 
-        code.write_op(OpcodeId::STOP);
+        code.op_stop();
         code_prepare.append(&code);
 
         CircuitTestBuilder::new_from_test_ctx(
@@ -430,9 +433,7 @@ mod test {
         // prepare memory data
         let mut code = Bytecode::default();
         for (i, d) in data.chunks(32).enumerate() {
-            code.push(32, Word::from_big_endian(d));
-            code.push(32, Word::from(offset + i * 32));
-            code.write_op(OpcodeId::MSTORE);
+            code.op_mstore(offset + i * 32, Word::from_big_endian(d));
         }
         code
     }

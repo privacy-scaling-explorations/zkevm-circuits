@@ -130,12 +130,12 @@ mod extcodehash_tests {
             EXTCODEHASH
             STOP
         });
-        let mut nonce = Word::from(300u64);
+        let mut nonce = 300u64;
         let mut balance = Word::from(800u64);
         let mut code_ext = Bytes::from([34, 54, 56]);
 
         if !exists {
-            nonce = Word::zero();
+            nonce = 0;
             balance = Word::zero();
             code_ext = Bytes::default();
         }

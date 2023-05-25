@@ -51,11 +51,11 @@ impl<F: Field> IsZeroConfig<F> {
     }
 }
 
+#[derive(Debug, Clone)]
 /// Wrapper arround [`IsZeroConfig`] for which [`Chip`] is implemented.
 pub struct IsZeroChip<F> {
     config: IsZeroConfig<F>,
 }
-
 #[rustfmt::skip]
 impl<F: Field> IsZeroChip<F> {
     /// Sets up the configuration of the chip by creating the required columns
@@ -105,6 +105,11 @@ impl<F: Field> IsZeroChip<F> {
     pub fn construct(config: IsZeroConfig<F>) -> Self {
         IsZeroChip { config }
     }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region(&self, region: &mut Region<F>, prefix: &str) {
+      self.config.annotate_columns_in_region(region, prefix)
+    }
 }
 
 impl<F: Field> IsZeroInstruction<F> for IsZeroChip<F> {
@@ -115,7 +120,7 @@ impl<F: Field> IsZeroInstruction<F> for IsZeroChip<F> {
         value: Value<F>,
     ) -> Result<(), Error> {
         let config = self.config();
-        let value_invert = value.map(|value| value.invert().unwrap_or(F::zero()));
+        let value_invert = value.map(|value| value.invert().unwrap_or(F::ZERO));
         region.assign_advice(
             || "witness inverse of value",
             config.value_inv,
@@ -208,6 +213,7 @@ mod test {
         impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
+            type Params = ();
 
             fn without_witnesses(&self) -> Self {
                 Self::default()
@@ -335,6 +341,7 @@ mod test {
         impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
+            type Params = ();
 
             fn without_witnesses(&self) -> Self {
                 Self::default()

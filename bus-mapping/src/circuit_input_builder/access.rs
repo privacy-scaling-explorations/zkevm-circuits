@@ -95,7 +95,7 @@ impl From<Vec<Access>> for AccessSet {
 }
 
 /// Source of the code in the EVM execution.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodeSource {
     /// Code comes from a deployed contract at `Address`.
     Address(Address),
@@ -267,7 +267,7 @@ pub fn gen_state_access_trace<TX>(
             if call_stack.len() == 1 {
                 return Err(Error::InvalidGethExecStep(
                     "gen_state_access_trace: call stack will be empty",
-                    step.clone(),
+                    Box::new(step.clone()),
                 ));
             }
             call_stack.pop().expect("call stack is empty");

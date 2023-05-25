@@ -20,7 +20,7 @@ use eth_types::{
     evm_types::{
         gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
     },
-    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
+    Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use std::cmp::max;
@@ -60,7 +60,7 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn new_begin_tx_step(&self) -> ExecStep {
         ExecStep {
             exec_state: ExecState::BeginTx,
-            gas_left: Gas(self.tx.gas),
+            gas_left: Gas(self.tx.gas()),
             rwc: self.block_ctx.rwc,
             ..Default::default()
         }
@@ -276,7 +276,7 @@ impl<'a> CircuitInputStateRef<'a> {
         // accounts, but the corresponding account in the state DB is empty
         // (which means code_hash=EMPTY_HASH).
         let account_value_prev = match op.field {
-            AccountField::Nonce => account.nonce,
+            AccountField::Nonce => account.nonce.to_word(),
             AccountField::Balance => account.balance,
             AccountField::CodeHash => {
                 if account.is_empty() {
@@ -318,7 +318,7 @@ impl<'a> CircuitInputStateRef<'a> {
         // Perform the write to the account in the StateDB
         if matches!(rw, RW::WRITE) {
             match op.field {
-                AccountField::Nonce => account.nonce = op.value,
+                AccountField::Nonce => account.nonce = op.value.as_u64(),
                 AccountField::Balance => account.balance = op.value,
                 AccountField::CodeHash => account.code_hash = H256::from(op.value.to_be_bytes()),
             }
@@ -1225,7 +1225,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     _ => {
                         return Err(Error::UnexpectedExecStepError(
                             "call failure without return",
-                            step.clone(),
+                            Box::new(step.clone()),
                         ));
                     }
                 });
@@ -1246,13 +1246,13 @@ impl<'a> CircuitInputStateRef<'a> {
                     } else {
                         return Err(Error::UnexpectedExecStepError(
                             "failure in RETURN from {CREATE, CREATE2}",
-                            step.clone(),
+                            Box::new(step.clone()),
                         ));
                     }
                 } else {
                     return Err(Error::UnexpectedExecStepError(
                         "failure in RETURN",
-                        step.clone(),
+                        Box::new(step.clone()),
                     ));
                 }
             }
@@ -1272,7 +1272,7 @@ impl<'a> CircuitInputStateRef<'a> {
         {
             return Err(Error::UnexpectedExecStepError(
                 "success result without {RETURN, STOP, SELFDESTRUCT}",
-                step.clone(),
+                Box::new(step.clone()),
             ));
         }
 
@@ -1314,7 +1314,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
             return Err(Error::UnexpectedExecStepError(
                 "*CALL*/CREATE* code not executed",
-                step.clone(),
+                Box::new(step.clone()),
             ));
         }
 
@@ -1347,5 +1347,64 @@ impl<'a> CircuitInputStateRef<'a> {
             call_ctx.memory.extend_at_least(minimal_length);
         }
         Ok(())
+    }
+
+    /// Generate copy steps for bytecode.
+    pub(crate) fn gen_copy_steps_for_bytecode(
+        &mut self,
+        exec_step: &mut ExecStep,
+        bytecode: &Bytecode,
+        src_addr: u64,
+        dst_addr: u64,
+        src_addr_end: u64,
+        bytes_left: u64,
+    ) -> Result<Vec<(u8, bool)>, Error> {
+        let mut copy_steps = Vec::with_capacity(bytes_left as usize);
+        for idx in 0..bytes_left {
+            let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
+            let step = if addr < src_addr_end {
+                let code = bytecode.code.get(addr as usize).unwrap();
+                (code.value, code.is_code)
+            } else {
+                (0, false)
+            };
+            copy_steps.push(step);
+            self.memory_write(exec_step, (dst_addr + idx).into(), step.0)?;
+        }
+
+        Ok(copy_steps)
+    }
+
+    /// Generate copy steps for call data.
+    pub(crate) fn gen_copy_steps_for_call_data(
+        &mut self,
+        exec_step: &mut ExecStep,
+        src_addr: u64,
+        dst_addr: u64,
+        src_addr_end: u64,
+        bytes_left: u64,
+    ) -> Result<Vec<(u8, bool)>, Error> {
+        let mut copy_steps = Vec::with_capacity(bytes_left as usize);
+        for idx in 0..bytes_left {
+            let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
+            let value = if addr < src_addr_end {
+                let byte =
+                    self.call_ctx()?.call_data[(addr - self.call()?.call_data_offset) as usize];
+                if !self.call()?.is_root {
+                    self.push_op(
+                        exec_step,
+                        RW::READ,
+                        MemoryOp::new(self.call()?.caller_id, addr.into(), byte),
+                    );
+                }
+                byte
+            } else {
+                0
+            };
+            copy_steps.push((value, false));
+            self.memory_write(exec_step, (dst_addr + idx).into(), value)?;
+        }
+
+        Ok(copy_steps)
     }
 }

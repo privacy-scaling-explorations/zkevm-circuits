@@ -16,16 +16,16 @@ pub const MAX_STEP_HEIGHT: usize = 21;
 pub(crate) const STEP_STATE_HEIGHT: usize = 1;
 
 /// Number of Advice Phase2 columns in the EVM circuit
-pub(crate) const N_PHASE2_COLUMNS: usize = 4;
+pub const N_PHASE2_COLUMNS: usize = 4;
 
 /// Number of Advice Phase1 columns in the EVM circuit
-pub(crate) const N_PHASE1_COLUMNS: usize =
+pub const N_PHASE1_COLUMNS: usize =
     STEP_WIDTH - EVM_LOOKUP_COLS - N_PHASE2_COLUMNS - N_COPY_COLUMNS - N_BYTE_LOOKUPS;
 
 // Number of copy columns
-pub(crate) const N_COPY_COLUMNS: usize = 2;
+pub const N_COPY_COLUMNS: usize = 2;
 
-pub(crate) const N_BYTE_LOOKUPS: usize = 24;
+pub const N_BYTE_LOOKUPS: usize = 24;
 
 /// Amount of lookup columns in the EVM circuit dedicated to lookups.
 pub(crate) const EVM_LOOKUP_COLS: usize = FIXED_TABLE_LOOKUPS
@@ -38,7 +38,7 @@ pub(crate) const EVM_LOOKUP_COLS: usize = FIXED_TABLE_LOOKUPS
     + EXP_TABLE_LOOKUPS;
 
 /// Lookups done per row.
-pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
+pub const LOOKUP_CONFIG: &[(Table, usize)] = &[
     (Table::Fixed, FIXED_TABLE_LOOKUPS),
     (Table::Tx, TX_TABLE_LOOKUPS),
     (Table::Rw, RW_TABLE_LOOKUPS),

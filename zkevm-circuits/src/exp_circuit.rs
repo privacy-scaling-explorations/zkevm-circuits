@@ -25,6 +25,8 @@ use halo2_proofs::{
     plonk::{ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
+
+use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
 use param::*;
 use std::{marker::PhantomData, ops::Add};
 
@@ -380,14 +382,14 @@ impl<F: Field> ExpCircuitConfig<F> {
                 || format!("exp_circuit: {:?}: {}", self.exp_table.is_step, offset),
                 self.exp_table.is_step,
                 *offset,
-                || Value::known(F::one()),
+                || Value::known(F::ONE),
             )?;
             for i in 1..OFFSET_INCREMENT {
                 region.assign_fixed(
                     || format!("exp_circuit: {:?}: {}", self.exp_table.is_step, *offset + i),
                     self.exp_table.is_step,
                     *offset + i,
-                    || Value::known(F::zero()),
+                    || Value::known(F::ZERO),
                 )?;
             }
             // mul_chip has 7 rows, exp_table has 4 rows. So we increment the offset by
@@ -447,14 +449,14 @@ impl<F: Field> ExpCircuitConfig<F> {
                     || format!("unused rows: {}", offset + i),
                     *column,
                     offset + i,
-                    || Value::known(F::zero()),
+                    || Value::known(F::ZERO),
                 )?;
             }
             region.assign_fixed(
                 || format!("unused rows: {}", offset + i),
                 self.exp_table.is_step,
                 offset + i,
-                || Value::known(F::zero()),
+                || Value::known(F::ZERO),
             )?;
         }
 
@@ -493,6 +495,29 @@ impl<F: Field> ExpCircuit<F> {
 
 impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
     type Config = ExpCircuitConfig<F>;
+
+    fn unusable_rows() -> usize {
+        // Column base_limb of ExpTable is queried at 8 distinct rotations at
+        // - Rotation(0)
+        // - Rotation(1)
+        // - Rotation(2)
+        // - Rotation(3)
+        // - Rotation(7)
+        // - Rotation(8)
+        // - Rotation(9)
+        // - Rotation(10)
+        // Also column col2 and col3 of are queried at 8 distinct rotations at
+        // - Rotation(0)
+        // - Rotation(1)
+        // - Rotation(2)
+        // - Rotation(3)
+        // - Rotation(4)
+        // - Rotation(5)
+        // - Rotation(6)
+        // - Rotation(9)
+        // so returns 11 unusable rows.
+        11
+    }
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
         // Hardcoded to pass unit tests for now. In the future, insert:

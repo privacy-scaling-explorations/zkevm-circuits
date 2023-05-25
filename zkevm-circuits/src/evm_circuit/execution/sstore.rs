@@ -6,7 +6,8 @@ use crate::{
         util::{
             common_gadget::{SameContextGadget, SstoreGasGadget},
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
+                ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
+                Transition::Delta,
             },
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
             not, CachedRegion, Cell,
@@ -47,7 +48,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SSTORE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -177,30 +178,30 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             region,
             offset,
             Value::known(
-                call.callee_address
+                call.address
                     .to_scalar()
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
 
-        let [key, value] =
-            [step.rw_indices[5], step.rw_indices[6]].map(|idx| block.rws[idx].stack_value());
+        let key = block.get_rws(step, 5).stack_value();
+        let value = block.get_rws(step, 6).stack_value();
         self.phase2_key
             .assign(region, offset, region.word_rlc(key))?;
         self.phase2_value
             .assign(region, offset, region.word_rlc(value))?;
 
-        let (_, value_prev, _, original_value) = block.rws[step.rw_indices[7]].storage_value_aux();
+        let (_, value_prev, _, original_value) = block.get_rws(step, 7).storage_value_aux();
         self.phase2_value_prev
             .assign(region, offset, region.word_rlc(value_prev))?;
         self.phase2_original_value
             .assign(region, offset, region.word_rlc(original_value))?;
 
-        let (_, is_warm) = block.rws[step.rw_indices[8]].tx_access_list_value_pair();
+        let (_, is_warm) = block.get_rws(step, 8).tx_access_list_value_pair();
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let (tx_refund, tx_refund_prev) = block.rws[step.rw_indices[9]].tx_refund_value_pair();
+        let (tx_refund, tx_refund_prev) = block.get_rws(step, 9).tx_refund_value_pair();
         self.tx_refund_prev
             .assign(region, offset, Value::known(F::from(tx_refund_prev)))?;
 
@@ -208,7 +209,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             region,
             offset,
             Value::known(F::from(GasCost::SSTORE_SENTRY.0)),
-            Value::known(F::from(step.gas_left)),
+            Value::known(F::from(step.gas_left.into())),
         )?;
 
         self.gas_cost
@@ -244,7 +245,7 @@ pub(crate) struct SstoreTxRefundGadget<F> {
 
 impl<F: Field> SstoreTxRefundGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         tx_refund_old: Cell<F>,
         value: Cell<F>,
         value_prev: Cell<F>,

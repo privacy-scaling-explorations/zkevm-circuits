@@ -6,7 +6,10 @@ use crate::{
         util::{
             and,
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             math_gadget::{IsEqualGadget, IsZeroGadget},
             rlc, select, sum, CachedRegion, Cell, Word,
         },
@@ -35,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SIGNEXTEND;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let index = cb.query_word_rlc();
         let value = cb.query_word_rlc();
         let sign_byte = cb.query_cell();
@@ -163,8 +166,8 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         // Inputs/Outputs
-        let index = block.rws[step.rw_indices[0]].stack_value().to_le_bytes();
-        let value = block.rws[step.rw_indices[1]].stack_value().to_le_bytes();
+        let index = block.get_rws(step, 0).stack_value().to_le_bytes();
+        let value = block.get_rws(step, 1).stack_value().to_le_bytes();
         self.index.assign(region, offset, Some(index))?;
         self.value.assign(region, offset, Some(value))?;
 
@@ -192,7 +195,7 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
 
         // Set the sign byte
         let mut sign = 0u64;
-        if index[0] < 31 && msb_sum_zero == F::one() {
+        if index[0] < 31 && msb_sum_zero == F::ONE {
             sign = (value[index[0] as usize] >> 7) as u64;
         }
         self.sign_byte

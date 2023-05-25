@@ -1,13 +1,12 @@
-#![allow(unused_imports)]
-
 use crate::{
     copy_circuit::*,
     evm_circuit::{test::rand_bytes, witness::block_convert},
+    util::unusable_rows,
     witness::Block,
 };
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
-    evm::{gen_sha3_code, MemoryKind},
+    evm::Sha3CodeGen,
     mock::BlockData,
 };
 use eth_types::{bytecode, geth_types::GethData, ToWord, Word};
@@ -16,6 +15,14 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
 };
 use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS};
+
+#[test]
+fn copy_circuit_unusable_rows() {
+    assert_eq!(
+        CopyCircuit::<Fr>::unusable_rows(),
+        unusable_rows::<Fr, CopyCircuit::<Fr>>(()),
+    )
+}
 
 /// Test copy circuit from copy events and test data
 pub fn test_copy_circuit<F: Field>(
@@ -144,7 +151,7 @@ fn gen_extcodecopy_data() -> CircuitInputBuilder {
 }
 
 fn gen_sha3_data() -> CircuitInputBuilder {
-    let (code, _) = gen_sha3_code(0x20, 0x200, MemoryKind::EqualToSize);
+    let (code, _) = Sha3CodeGen::mem_eq_size(0x20, 0x200).gen_sha3_code();
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
     let mut builder = BlockData::new_from_geth_data_with_params(
