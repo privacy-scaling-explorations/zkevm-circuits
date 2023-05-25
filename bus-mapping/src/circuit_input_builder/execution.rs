@@ -243,6 +243,7 @@ pub struct CopyEvent {
     pub rw_counter_start: RWCounter,
     /// Represents the list of (bytes, is_code, mask) copied during this copy event
     pub bytes: Vec<(u8, bool, bool)>,
+    // todo: add aux_bytes here
 }
 
 impl CopyEvent {

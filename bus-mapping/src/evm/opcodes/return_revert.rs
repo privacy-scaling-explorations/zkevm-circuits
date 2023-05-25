@@ -1,8 +1,8 @@
-use super::Opcode;
+use super::{Opcode, MemoryKind};
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, CopyDataType, CopyEvent, NumberOrHash},
     evm::opcodes::ExecStep,
-    operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
+    operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW, MemoryWordOp},
     state_db::CodeDB,
     Error,
 };
@@ -175,6 +175,7 @@ struct Destination {
     length: usize,
 }
 
+// handle non root & non create case
 fn handle_copy(
     state: &mut CircuitInputStateRef,
     step: &mut ExecStep,
@@ -188,17 +189,70 @@ fn handle_copy(
         .collect();
 
     let rw_counter_start = state.block_ctx.rwc;
-    for (i, (byte, is_code, _)) in bytes.iter().enumerate() {
+    let (_, src_begin_slot) = state.get_addr_shift_slot(source.offset as u64).unwrap();
+    let (_, src_end_slot) = state.get_addr_shift_slot((source.offset + copy_length) as u64).unwrap();
+    let (_, dst_begin_slot) = state.get_addr_shift_slot(destination.offset as u64).unwrap();
+    let (_, dst_end_slot) = state.get_addr_shift_slot((destination.offset + copy_length) as u64).unwrap();
+    // callee‘s memory
+    let mut callee_memory = state.call_ctx_mut()?.memory.clone();
+    let mut minimal_length = src_end_slot as usize + 32;
+    callee_memory.extend_at_least(minimal_length);
+    // caller's memory
+    let mut caller_memory = state.caller_ctx_mut()?.memory.clone();
+     minimal_length = dst_end_slot as usize + 32;
+    caller_memory.extend_at_least(minimal_length);
+
+
+    let src_slot_bytes =
+        callee_memory.0[src_begin_slot as usize..(src_end_slot + 32) as usize].to_vec();
+    let dst_slot_bytes =
+        caller_memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
+    let mut src_chunk_index = src_begin_slot;
+    let mut dst_chunk_index = dst_begin_slot;
+
+    // memory word read from src 
+    for chunk in src_slot_bytes.chunks(32) {
+        let src_word = Word::from_big_endian(&chunk);
+        // read memory
         state.push_op(
             step,
             RW::READ,
-            MemoryOp::new(source.id, (source.offset + i).into(), *byte),
+            MemoryWordOp::new(source.id, src_chunk_index.into(), src_word),
         );
+        src_chunk_index  += 32;
+    }
+    // memory word write to destination
+    for chunk in dst_slot_bytes.chunks(32) {
+        let dest_word = Word::from_big_endian(&chunk);
+        // write memory
         state.push_op(
             step,
             RW::WRITE,
-            MemoryOp::new(destination.id, (destination.offset + i).into(), *byte),
+            MemoryWordOp::new(destination.id, dst_chunk_index.into(), dest_word),
         );
+        dst_chunk_index  += 32;
+    }
+
+    let mut copy_steps = Vec::with_capacity(source.length as usize);
+    let mut copy_start = 0u64;
+    let mut first_set = true;
+    for idx in 0..src_slot_bytes.len() {
+        let value = callee_memory.0[src_begin_slot as usize + idx];
+        if idx as u64 + src_begin_slot < source.offset as u64 {
+            // front mask byte
+            copy_steps.push((value, false, true));
+        } else if idx as u64 + src_begin_slot >= (source.offset + source.length) as u64 {
+            // back mask byte
+            copy_steps.push((value, false, true));
+        } else {
+            // real copy byte
+            if first_set {
+                copy_start = idx as u64;
+                first_set = false;
+            }
+
+            copy_steps.push(bytes[idx - copy_start as usize]);
+        }
     }
 
     state.push_copy(
@@ -213,7 +267,10 @@ fn handle_copy(
             dst_id: NumberOrHash::Number(destination.id),
             dst_addr: destination.offset.try_into().unwrap(),
             log_id: None,
-            bytes,
+            bytes: copy_steps,
+            // todo: add aux_bytes for writing bytes
+            // aux_bytes: dst_slot_bytes
+
         },
     );
 
@@ -272,7 +329,7 @@ fn handle_create(
         if idx as u64 + dst_begin_slot < source.offset as u64 {
             // front mask byte
             copy_steps.push((value, false, true));
-        } else if idx as u64 + dst_begin_slot >= (source.offset + source.offset) as u64 {
+        } else if idx as u64 + dst_begin_slot >= (source.offset + source.length) as u64 {
             // back mask byte
             copy_steps.push((value, false, true));
         } else {
