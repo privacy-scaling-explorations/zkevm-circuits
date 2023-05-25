@@ -109,7 +109,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
     ) -> Self {
         let q_step = meta.complex_selector();
         let is_last = meta.advice_column();
-        let value = meta.advice_column_in(SecondPhase);
+        let value = meta.advice_column();
         let value_acc_rlc = meta.advice_column_in(SecondPhase);
         let is_code = meta.advice_column();
         let is_pad = meta.advice_column();
