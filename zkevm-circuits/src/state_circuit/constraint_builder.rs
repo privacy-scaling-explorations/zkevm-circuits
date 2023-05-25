@@ -572,7 +572,7 @@ impl<F: Field> ConstraintBuilder<F> {
     ) {
         let (left_lo, left_hi) = left.into_lo_hi();
         let (right_lo, right_hi) = right.into_lo_hi();
-        self.require_zero(name, left_hi - right_hi); // TODO(amb): fix
+        self.require_zero(name, left_hi - right_hi);
         self.require_zero(name, left_lo - right_lo);
     }
 

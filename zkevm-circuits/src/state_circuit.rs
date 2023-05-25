@@ -349,7 +349,7 @@ impl<F: Field> StateCircuitConfig<F> {
                 if let Some(update) = updates.get(row) {
                     state_root = {
                         let (new_root, old_root) = update.root_assignments();
-                        // assert_eq!(state_root, old_root); TODO: re-enable when MPT hi/lo is implemented
+                        assert_eq!(state_root, old_root);
                         new_root
                     };
                 }

@@ -281,22 +281,6 @@ fn diff_1_problem_repro() {
     assert_eq!(verify(rows), Ok(()));
 }
 
-#[ignore = "deprecated due RLC deprecation"]
-#[test]
-fn storage_key_rlc() {
-    let rows = vec![Rw::AccountStorage {
-        rw_counter: 1,
-        is_write: false,
-        account_address: Address::default(),
-        storage_key: U256::from(256),
-        value: U256::from(300),
-        value_prev: U256::from(300),
-        tx_id: 4,
-        committed_value: U256::from(300),
-    }];
-    assert_eq!(verify(rows), Ok(()));
-}
-
 #[test]
 fn tx_log_ok() {
     let rows = vec![
@@ -410,7 +394,6 @@ fn address_limb_out_of_range() {
     assert_error_matches(result, "mpi limb fits into u16");
 }
 
-#[ignore = "deprecated due RLC deprecation"]
 #[test]
 fn storage_key_mismatch() {
     let rows = vec![Rw::AccountStorage {
@@ -427,7 +410,7 @@ fn storage_key_mismatch() {
 
     let result = verify_with_overrides(rows, overrides);
 
-    assert_error_matches(result, "rlc encoded value matches bytes");
+    assert_error_matches(result, "mpi value matches claimed limbs");
 }
 
 #[test]
@@ -712,16 +695,15 @@ fn bad_initial_memory_value() {
     }];
 
     let v = Fr::from(200);
-    let zero = Fr::from(0);
     let overrides = HashMap::from([
         ((AdviceColumn::ValueLo, 0), v),
-        ((AdviceColumn::ValueHi, 0), zero),
+        ((AdviceColumn::ValueHi, 0), Fr::ZERO),
         ((AdviceColumn::ValuePrevLo, 0), v),
-        ((AdviceColumn::ValuePrevHi, 0), zero),
+        ((AdviceColumn::ValuePrevHi, 0), Fr::ZERO),
         ((AdviceColumn::IsZero, 0), Fr::ZERO),
         ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
         ((AdviceColumn::InitialValueLo, 0), v),
-        ((AdviceColumn::InitialValueHi, 0), zero),
+        ((AdviceColumn::InitialValueHi, 0), Fr::ZERO),
     ]);
 
     let result = verify_with_overrides(rows, overrides);
@@ -835,9 +817,9 @@ fn bad_initial_stack_value() {
     }];
 
     let overrides = HashMap::from([
-        ((AdviceColumn::InitialValueHi, 0), Fr::from(0)),
+        ((AdviceColumn::InitialValueHi, 0), Fr::ZERO),
         ((AdviceColumn::InitialValueLo, 0), Fr::from(10)),
-        ((AdviceColumn::ValuePrevHi, 0), Fr::from(0)),
+        ((AdviceColumn::ValuePrevHi, 0), Fr::ZERO),
         ((AdviceColumn::ValuePrevLo, 0), Fr::from(10)),
     ]);
 
@@ -859,9 +841,9 @@ fn bad_initial_tx_access_list_account_value() {
     }];
 
     let overrides = HashMap::from([
-        ((AdviceColumn::InitialValueHi, 0), Fr::from(0)),
+        ((AdviceColumn::InitialValueHi, 0), Fr::ZERO),
         ((AdviceColumn::InitialValueLo, 0), Fr::from(1)),
-        ((AdviceColumn::ValuePrevHi, 0), Fr::from(0)),
+        ((AdviceColumn::ValuePrevHi, 0), Fr::ZERO),
         ((AdviceColumn::ValuePrevLo, 0), Fr::from(1)),
     ]);
 
@@ -912,9 +894,9 @@ fn bad_initial_tx_log_value() {
     }];
 
     let overrides = HashMap::from([
-        ((AdviceColumn::InitialValueHi, 0), Fr::from(0)),
+        ((AdviceColumn::InitialValueHi, 0), Fr::ZERO),
         ((AdviceColumn::InitialValueLo, 0), Fr::from(10)),
-        ((AdviceColumn::ValuePrevHi, 0), Fr::from(0)),
+        ((AdviceColumn::ValuePrevHi, 0), Fr::ZERO),
         ((AdviceColumn::ValuePrevLo, 0), Fr::from(10)),
     ]);
 
@@ -998,9 +980,9 @@ fn bad_initial_tx_receipt_value() {
     }];
 
     let overrides = HashMap::from([
-        ((AdviceColumn::ValueHi, 0), Fr::from(0)),
+        ((AdviceColumn::ValueHi, 0), Fr::ZERO),
         ((AdviceColumn::ValueLo, 0), Fr::from(1900)),
-        ((AdviceColumn::InitialValueHi, 0), Fr::from(0)),
+        ((AdviceColumn::InitialValueHi, 0), Fr::ZERO),
         ((AdviceColumn::InitialValueLo, 0), Fr::from(1900)),
     ]);
 
