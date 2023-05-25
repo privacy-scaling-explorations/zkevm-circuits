@@ -234,7 +234,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
         meta.create_gate(
             "Last Step (check value accumulator) Memory => Bytecode or RlcAcc",
-            |meta| {
+            |meta: &mut halo2_proofs::plonk::VirtualCells<F>| {
                 let mut cb = BaseConstraintBuilder::default();
 
                 cb.require_equal(
@@ -246,13 +246,14 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 cb.gate(and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(is_last, Rotation::next()),
-                    or::expr([
-                        and::expr([
-                            tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
-                            tag.value_equals(CopyDataType::Bytecode, Rotation::next())(meta),
-                        ]),
-                        tag.value_equals(CopyDataType::RlcAcc, Rotation::next())(meta),
-                    ]),
+                    // To build a selector expression just having 0 when false and != 0 when true
+                    // is enough, so we could replace the `or` by a `+`. This
+                    // would give 2 when both expressions are true
+                    // but it's fine.
+                    and::expr([
+                        tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
+                        tag.value_equals(CopyDataType::Bytecode, Rotation::next())(meta),
+                    ]) + tag.value_equals(CopyDataType::RlcAcc, Rotation::next())(meta),
                 ]))
             },
         );
@@ -298,10 +299,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(value_acc_rlc, Rotation::next()),
             );
             cb.condition(
-                not::expr(or::expr([
-                    meta.query_advice(is_last, Rotation::next()),
-                    meta.query_advice(is_pad, Rotation::cur()),
-                ])),
+                and::expr([
+                    not::expr(meta.query_advice(is_last, Rotation::next())),
+                    not::expr(meta.query_advice(is_pad, Rotation::cur())),
+                ]),
                 |cb| {
                     cb.require_equal(
                         "value_acc_rlc(2) == value_acc_rlc(0) * r + value(2)",
