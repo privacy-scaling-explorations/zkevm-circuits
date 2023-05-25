@@ -130,11 +130,16 @@ impl<F: FieldExt> Expr<F> for &Cell<F> {
 pub(crate) struct CellColumn {
     advice: Column<Advice>,
     pub cell_type: CellType,
+    pub idx: usize,
 }
 
 impl CellColumn {
-    pub fn new(advice: Column<Advice>, cell_type: CellType) -> CellColumn {
-        CellColumn { advice, cell_type }
+    pub fn new(advice: Column<Advice>, cell_type: CellType, idx: usize) -> CellColumn {
+        CellColumn {
+            advice,
+            cell_type,
+            idx,
+        }
     }
 
     pub fn expr<F: FieldExt>(&self, meta: &mut ConstraintSystem<F>) -> Expression<F> {
@@ -158,21 +163,24 @@ pub(crate) trait CellManagerStrategy {
     /// get_height
     fn get_height(&self) -> usize;
 
-    fn get_stats(&self) -> Self::Stats;
+    fn get_stats(&self, columns: &CellManagerColumns) -> Self::Stats;
 }
 
 #[derive(Default, Debug, Clone)]
 pub(crate) struct CellManagerColumns {
     columns: HashMap<CellType, Vec<CellColumn>>,
+    columns_list: Vec<CellColumn>,
 }
 
 impl CellManagerColumns {
     pub fn add_column(&mut self, cell_type: CellType, column: Column<Advice>) {
+        let idx = self.columns_list.len();
+        let cell_column = CellColumn::new(column, cell_type, idx);
+        self.columns_list.push(cell_column.clone());
         if let Some(columns) = self.columns.get_mut(&cell_type) {
-            columns.push(CellColumn::new(column, cell_type));
+            columns.push(cell_column);
         } else {
-            self.columns
-                .insert(cell_type, vec![CellColumn::new(column, cell_type)]);
+            self.columns.insert(cell_type, vec![cell_column]);
         }
     }
 
@@ -193,13 +201,7 @@ impl CellManagerColumns {
     }
 
     pub fn columns(&self) -> Vec<CellColumn> {
-        let mut acc = vec![];
-
-        for g in self.columns.values() {
-            acc.extend((*g).clone());
-        }
-
-        acc
+        self.columns_list.clone()
     }
 
     pub fn get_width(&self) -> usize {
@@ -261,7 +263,7 @@ impl<Stats, S: CellManagerStrategy<Stats = Stats>> CellManager<S> {
     }
 
     pub fn get_stats(&self) -> Stats {
-        todo!()
+        self.strategy.get_stats(&self.columns)
     }
 }
 
@@ -305,6 +307,27 @@ impl CMFixedWidthStrategy {
     fn set_next(&mut self, cell_type: &CellType, column_idx: usize, row: usize) {
         self.next.insert(*cell_type, (column_idx, row));
     }
+
+    fn cells_used(&self, cell_type: &CellType, columns: &CellManagerColumns) -> usize {
+        let (next_column_idx, next_row) = self.get_next(cell_type);
+        let current_row = if next_column_idx == 0 {
+            if next_row == 0 {
+                return 0;
+            }
+
+            next_row - 1
+        } else {
+            next_row
+        };
+
+        let filled_rows_cells = if current_row == 0 {
+            0
+        } else {
+            (current_row - 1) * columns.get_cell_type_width(*cell_type)
+        };
+
+        filled_rows_cells + next_column_idx
+    }
 }
 
 impl CellManagerStrategy for CMFixedWidthStrategy {
@@ -323,12 +346,18 @@ impl CellManagerStrategy for CMFixedWidthStrategy {
         cell_type: CellType,
     ) -> Cell<F> {
         let (mut column_idx, mut row) = self.get_next(&cell_type);
+        if cell_type == CellType::StoragePhase1 {
+            let (_, row_perm) = self.get_next(&CellType::StoragePermutation);
+            if row_perm < row {
+                return self.query_cell(columns, meta, CellType::StoragePermutation);
+            }
+        }
 
         let column = columns
             .get_column(cell_type, column_idx)
             .expect("column not found");
 
-        let cell = Cell::new_from_cs(meta, column.advice, column_idx, self.height_offset + row);
+        let cell = Cell::new_from_cs(meta, column.advice, column.idx, self.height_offset + row);
 
         column_idx += 1;
         if column_idx >= columns.get_cell_type_width(cell_type) {
@@ -337,6 +366,17 @@ impl CellManagerStrategy for CMFixedWidthStrategy {
         }
 
         self.set_next(&cell_type, column_idx, row);
+
+        // Replace a CellType::Storage by CellType::StoragePermutation if the later has
+        // better height
+        // if cell_type == CellType::StoragePhase1 {
+        // for column in self.columns.iter() {
+        // if column.cell_type == CellType::StoragePermutation && column.height < best_height {
+        // best_index = Some(column.index);
+        // best_height = column.height;
+        // }
+        // }
+        // }
 
         cell
     }
@@ -358,8 +398,21 @@ impl CellManagerStrategy for CMFixedWidthStrategy {
 
     type Stats = BTreeMap<CellType, (usize, usize, usize)>;
 
-    fn get_stats(&self) -> Self::Stats {
-        todo!()
+    fn get_stats(&self, columns: &CellManagerColumns) -> Self::Stats {
+        let mut data = BTreeMap::new();
+        for cell_type in self.next.keys() {
+            let next = self.get_next(cell_type);
+            let height = if next.0 == 0 { next.1 } else { next.1 + 1 };
+            data.insert(
+                *cell_type,
+                (
+                    columns.get_cell_type_width(*cell_type),
+                    height,
+                    self.cells_used(cell_type, columns),
+                ),
+            );
+        }
+        data
     }
 }
 
@@ -406,7 +459,7 @@ impl CellManagerStrategy for CMFixedHeigthStrategy {
 
     type Stats = ();
 
-    fn get_stats(&self) -> Self::Stats {
+    fn get_stats(&self, columns: &CellManagerColumns) -> Self::Stats {
         todo!()
     }
 }

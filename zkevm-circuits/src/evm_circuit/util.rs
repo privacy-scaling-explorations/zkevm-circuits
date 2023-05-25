@@ -397,7 +397,7 @@ pub(crate) fn evm_cm_distribute_advice<F: FieldExt>(
 // cell_type: CellType::StoragePhase1,
 // height: 0,
 // expr: cells[c * height].expr(),
-// });
+// });*/
 // }
 // });
 //
@@ -503,7 +503,7 @@ pub(crate) fn evm_cm_distribute_advice<F: FieldExt>(
 // data
 // }
 //
-// pub(crate) fn columns(&self) -> &[CellColumn<F>] {
+// pub(crate) fn columns(&self) -> &[CellColumn] {
 // &self.columns
 // }
 // }
