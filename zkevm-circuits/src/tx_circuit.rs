@@ -110,6 +110,8 @@ impl<F: Field> TxCircuitConfig<F> {
         index: usize,
         value: Value<F>,
     ) -> Result<AssignedCell<F, F>, Error> {
+        // TODO: what if `value` is an address, here are some discussion
+        // https://github.com/privacy-scaling-explorations/zkevm-circuits/pull/1418/commits/90526993c87c11e4f9d721623873c28a50d422a9
         let value_in_word = Word::new([value, Value::known(F::ZERO)]);
         let cell = self.assign_row_word(region, offset, tx_id, tag, index, value_in_word)?;
         Ok(*cell.lo())
@@ -249,6 +251,7 @@ impl<F: Field> TxCircuit<F> {
                             TxFieldTag::IsCreate,
                             Value::known(F::from(tx.is_create() as u64)),
                         ),
+                        // TODO: should change to word lo/hi
                         (
                             TxFieldTag::Value,
                             challenges
