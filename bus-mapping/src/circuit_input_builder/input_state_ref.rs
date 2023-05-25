@@ -1309,8 +1309,11 @@ impl<'a> CircuitInputStateRef<'a> {
                 })));
             }
 
-            //  Nonce Uint overflow
-            if account.nonce >= u64::MAX.into() {
+            // Nonce Uint overflow
+            // If user's nonce is equal u64::MAX, nonce will be overflow in this call
+            // Nonce is u64 so it's impossible to larger than u64::MAX, that's why we're using `==`
+            // here.
+            if account.nonce == u64::MAX {
                 return Ok(Some(ExecError::NonceUintOverflow(match step.op {
                     OpcodeId::CREATE => NonceUintOverflowError::Create,
                     OpcodeId::CREATE2 => NonceUintOverflowError::Create2,
