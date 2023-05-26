@@ -11,7 +11,6 @@ use crate::{
 };
 use eth_types::{Field, ToLittleEndian, Word};
 use halo2_proofs::{circuit::Value, plonk::Error};
-use itertools::Itertools;
 
 /// Constraints for the words a, n, r:
 /// a mod n = r, if n!=0

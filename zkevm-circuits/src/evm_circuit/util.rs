@@ -11,7 +11,6 @@ use crate::{
         table::Table,
     },
     table::RwTableTag,
-    util::word::Word32Cell,
     witness::{Block, ExecStep, Rw, RwMap},
 };
 use bus_mapping::state_db::CodeDB;

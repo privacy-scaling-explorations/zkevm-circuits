@@ -16,7 +16,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::{word::WordExpr, Expr},
+    util::Expr,
 };
 use array_init::array_init;
 use bus_mapping::evm::OpcodeId;

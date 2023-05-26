@@ -5,7 +5,7 @@ use crate::{
         pow_of_two_expr, split_u256, sum, CachedRegion, Cell,
     },
     util::{
-        word::{self, Word32Cell, WordExpr, WordLegacy},
+        word::{Word32Cell, WordExpr, WordLegacy},
         Expr,
     },
 };

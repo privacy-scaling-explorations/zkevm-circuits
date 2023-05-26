@@ -13,7 +13,7 @@ use crate::{
         },
     },
     util::{
-        word::{Word, Word32Cell, WordExpr},
+        word::{Word, Word32Cell},
         Expr,
     },
 };

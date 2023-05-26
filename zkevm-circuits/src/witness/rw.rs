@@ -9,7 +9,7 @@ use itertools::Itertools;
 use crate::{
     evm_circuit::util::rlc,
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
-    util::{build_tx_log_address, word},
+    util::build_tx_log_address,
 };
 
 use super::MptUpdates;
