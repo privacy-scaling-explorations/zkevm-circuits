@@ -55,16 +55,16 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         );
         let code_hash = cb.query_word32();
         // For non-existing accounts the code_hash must be 0 in the rw_table.
-        cb.account_read(
+        cb.account_read_word(
             address.expr(),
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
         );
-        let not_exists = IsZeroWordGadget::construct(cb, code_hash.to_word());
+        let not_exists = IsZeroGadget::construct(cb, code_hash.expr());
         let exists = not::expr(not_exists.expr());
         let balance = cb.query_word32();
         cb.condition(exists.expr(), |cb| {
-            cb.account_read(address.expr(), AccountFieldTag::Balance, balance.to_word());
+            cb.account_read_word(address.expr(), AccountFieldTag::Balance, balance.to_word());
         });
         cb.condition(not_exists.expr(), |cb| {
             cb.require_zero_word("balance is zero when non_exists", balance.to_word());

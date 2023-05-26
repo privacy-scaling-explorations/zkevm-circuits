@@ -47,12 +47,12 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::LOG;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let mstart = cb.query_word32();
-        let msize = cb.query_word32();
+        let mstart = cb.query_cell_phase2();
+        let msize = cb.query_word_rlc();
 
         // Pop mstart_address, msize from stack
-        cb.stack_pop(mstart.to_word());
-        cb.stack_pop(msize.to_word());
+        cb.stack_pop(mstart.expr());
+        cb.stack_pop(msize.expr());
         // read tx id
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         // constrain not in static call
@@ -80,7 +80,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let topic_selectors: [Cell<F>; 4] = array_init(|_| cb.query_cell());
         for (idx, topic) in phase2_topics.iter().enumerate() {
             cb.condition(topic_selectors[idx].expr(), |cb| {
-                cb.stack_pop(Word::from_lo_unchecked(topic.expr()));
+                cb.stack_pop_word(Word::from_lo_unchecked(topic.expr()));
             });
             cb.condition(topic_selectors[idx].expr() * is_persistent.expr(), |cb| {
                 cb.tx_log_lookup(

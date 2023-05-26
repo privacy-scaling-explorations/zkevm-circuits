@@ -11,7 +11,9 @@ use crate::{
     },
     util::{
         build_tx_log_expression,
-        word::{Word, Word16, Word32, Word32Cell, Word4, WordCell, WordExpr, WordLimbs},
+        word::{
+            Word, Word16, Word32, Word32Cell, Word4, WordCell, WordExpr, WordLegacy, WordLimbs,
+        },
         Challenges, Expr,
     },
 };
@@ -685,8 +687,18 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // Bytecode table
-
+    #[deprecated(note = "in fav of bytecode_lookup_word")]
     pub(crate) fn bytecode_lookup(
+        &mut self,
+        code_hash: Expression<F>,
+        index: Expression<F>,
+        is_code: Expression<F>,
+        value: Expression<F>,
+    ) {
+        self.bytecode_lookup_word(Word::from_lo_unchecked(code_hash), index, is_code, value)
+    }
+
+    pub(crate) fn bytecode_lookup_word(
         &mut self,
         code_hash: Word<Expression<F>>,
         index: Expression<F>,
@@ -1075,8 +1087,23 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             ),
         );
     }
-
+    #[deprecated(note = "infav of tx_refund_write_word")]
     pub(crate) fn tx_refund_write(
+        &mut self,
+        tx_id: Expression<F>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        reversion_info: Option<&mut ReversionInfo<F>>,
+    ) {
+        self.tx_refund_write_word(
+            tx_id,
+            Word::from_lo_unchecked(value),
+            Word::from_lo_unchecked(value_prev),
+            reversion_info,
+        )
+    }
+
+    pub(crate) fn tx_refund_write_word(
         &mut self,
         tx_id: Expression<F>,
         value: Word<Expression<F>>,
@@ -1291,6 +1318,16 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Word::from_lo_unchecked(cell.expr()), // lookup read, unchecked is safe
         );
         cell
+    }
+
+    pub(crate) fn call_context_read(
+        &mut self,
+        call_id: Option<Expression<F>>,
+        field_tag: CallContextFieldTag,
+    ) -> WordLegacy<F> {
+        let word = self.query_word_rlc();
+        self.call_context_lookup_read(call_id, field_tag, word.to_word());
+        word
     }
 
     pub(crate) fn call_context_read_as_word(
@@ -1652,7 +1689,17 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     // Keccak Table
 
+    #[deprecated(note = "keccak_table_lookup_word is fav")]
     pub(crate) fn keccak_table_lookup(
+        &mut self,
+        input_rlc: Expression<F>,
+        input_len: Expression<F>,
+        output: Expression<F>,
+    ) {
+        self.keccak_table_lookup_word(input_rlc, input_len, Word::from_lo_unchecked(output))
+    }
+
+    pub(crate) fn keccak_table_lookup_word(
         &mut self,
         input_rlc: Expression<F>,
         input_len: Expression<F>,

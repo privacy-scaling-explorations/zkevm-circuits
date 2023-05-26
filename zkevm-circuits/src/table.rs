@@ -683,7 +683,7 @@ impl_expr!(BytecodeFieldTag);
 #[derive(Clone, Debug)]
 pub struct BytecodeTable {
     /// Code Hash
-    pub code_hash: word::Word<Column<Advice>>,
+    pub code_hash: Column<Advice>,
     /// Tag
     pub tag: Column<Advice>,
     /// Index
@@ -698,7 +698,7 @@ impl BytecodeTable {
     /// Construct a new BytecodeTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         let [tag, index, is_code, value] = array::from_fn(|_| meta.advice_column());
-        let code_hash = word::Word::new([meta.advice_column(), meta.advice_column()]);
+        let code_hash = meta.advice_column();
         Self {
             code_hash,
             tag,
@@ -807,7 +807,7 @@ pub struct BlockTable {
     /// Index
     pub index: Column<Advice>,
     /// Value
-    pub value: word::Word<Column<Advice>>,
+    pub value: Column<Advice>,
 }
 
 impl BlockTable {
@@ -816,7 +816,7 @@ impl BlockTable {
         Self {
             tag: meta.advice_column(),
             index: meta.advice_column(),
-            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            value: meta.advice_column(),
         }
     }
 
@@ -890,7 +890,7 @@ pub struct KeccakTable {
     /// Byte array input length
     pub input_len: Column<Advice>,
     /// RLC of the hash result
-    pub output: word::Word<Column<Advice>>, // RLC of hash of input bytes
+    pub output: Column<Advice>, // RLC of hash of input bytes
 }
 
 impl<F: Field> LookupTable<F> for KeccakTable {
@@ -899,8 +899,7 @@ impl<F: Field> LookupTable<F> for KeccakTable {
             self.is_enabled.into(),
             self.input_rlc.into(),
             self.input_len.into(),
-            self.output.lo().clone().into(),
-            self.output.hi().clone().into(),
+            self.output.into(),
         ]
     }
 

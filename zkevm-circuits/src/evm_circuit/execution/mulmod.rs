@@ -4,9 +4,12 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             math_gadget::{IsZeroGadget, LtWordGadget, ModGadget, MulAddWords512Gadget},
-            sum, CachedRegion,
+            sum, CachedRegion, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -23,11 +26,11 @@ use halo2_proofs::plonk::Error;
 pub(crate) struct MulModGadget<F> {
     same_context: SameContextGadget<F>,
     // a, b, n, r
-    pub words: [Word32Cell<F>; 4],
-    k: Word32Cell<F>,
-    a_reduced: Word32Cell<F>,
-    d: Word32Cell<F>,
-    e: Word32Cell<F>,
+    pub words: [Word<F>; 4],
+    k: Word<F>,
+    a_reduced: Word<F>,
+    d: Word<F>,
+    e: Word<F>,
     modword: ModGadget<F>,
     mul512_left: MulAddWords512Gadget<F>,
     mul512_right: MulAddWords512Gadget<F>,

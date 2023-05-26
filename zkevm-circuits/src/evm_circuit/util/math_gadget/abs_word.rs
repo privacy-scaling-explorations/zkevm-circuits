@@ -1,5 +1,6 @@
 use crate::{
     evm_circuit::util::{
+        self,
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         math_gadget::*,
         CachedRegion,
@@ -88,16 +89,24 @@ impl<F: Field> AbsWordGadget<F> {
         self.add_words.assign(region, offset, [x, x_abs], sum)
     }
 
-    pub(crate) fn x(&self) -> &Word32Cell<F> {
-        &self.x
+    #[deprecated(note = "in fav of x_word")]
+    pub(crate) fn x(&self) -> &util::Word<F> {
+        todo!()
     }
-
-    pub(crate) fn x_abs(&self) -> &Word32Cell<F> {
-        &self.x_abs
+    #[deprecated(note = "in fav of x_abs_word")]
+    pub(crate) fn x_abs(&self) -> &util::Word<F> {
+        todo!()
     }
 
     pub(crate) fn is_neg(&self) -> &LtGadget<F, 1> {
         &self.is_neg
+    }
+
+    pub(crate) fn x_word(&self) -> &Word32Cell<F> {
+        &self.x
+    }
+    pub(crate) fn x_abs_word(&self) -> &Word32Cell<F> {
+        &self.x_abs
     }
 }
 

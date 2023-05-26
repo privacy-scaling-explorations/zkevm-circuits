@@ -60,9 +60,7 @@ impl<F: Field> MulAddWords512Gadget<F> {
         words: [&util::Word<F>; 4],
         addend: Option<&util::Word<F>>,
     ) -> Self {
-        let words = words.iter().map(|word| word::Word32Cell::new(word.cells));
-        let addend = addend.map(|word| word::Word32Cell::new(word.cells));
-        Self::construct(cb, words, addend)
+        todo!()
     }
 
     /// The words argument is: a, b, d, e

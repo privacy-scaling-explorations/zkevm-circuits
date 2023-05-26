@@ -85,7 +85,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let (current_caller_address, current_value) = cb.condition(is_delegatecall.expr(), |cb| {
             (
                 cb.call_context(None, CallContextFieldTag::CallerAddress),
-                cb.call_context_read_as_word(None, CallContextFieldTag::Value),
+                cb.call_context_read(None, CallContextFieldTag::Value),
             )
         });
 
@@ -358,7 +358,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     (CallContextFieldTag::IsCreate, 0.expr()),
                     (
                         CallContextFieldTag::CodeHash,
-                        call_gadget.phase2_callee_code_hash.expr(),
+                        call_gadget.callee_code_hash.expr(),
                     ),
                 ] {
                     cb.call_context_lookup(
@@ -395,7 +395,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     call_id: To(callee_call_id.expr()),
                     is_root: To(false.expr()),
                     is_create: To(false.expr()),
-                    code_hash: To(call_gadget.phase2_callee_code_hash.expr()),
+                    code_hash: To(call_gadget.callee_code_hash.expr()),
                     gas_left: To(callee_gas_left),
                     // For CALL opcode, `transfer` invocation has two account write if value is not
                     // zero.

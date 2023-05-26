@@ -58,15 +58,15 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         // access
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
-            [address.to_word().lo() + 1.expr() + (is_not_mstore8.clone() * 31.expr())],
+            [address.to_word().lo().clone() + 1.expr() + (is_not_mstore8.clone() * 31.expr())],
         );
 
         // Stack operations
         // Pop the address from the stack
-        cb.stack_pop(address.to_word());
+        cb.stack_pop_word(address.to_word());
         // For MLOAD push the value to the stack
         // FOR MSTORE pop the value from the stack
-        cb.stack_lookup(
+        cb.stack_lookup_word(
             is_mload.expr(),
             cb.stack_pointer_offset().expr() - is_mload.expr(),
             value.to_word(),
@@ -75,7 +75,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         cb.condition(is_mstore8.expr(), |cb| {
             cb.memory_lookup(
                 1.expr(),
-                address.to_word().lo(),
+                address.to_word().lo().clone(),
                 value.limbs[0].expr(),
                 None,
             );
@@ -85,7 +85,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             for idx in 0..32 {
                 cb.memory_lookup(
                     is_store.clone(),
-                    address.to_word().lo() + idx.expr(),
+                    address.to_word().lo().clone() + idx.expr(),
                     value.limbs[31 - idx].expr(),
                     None,
                 );
@@ -135,8 +135,11 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         // Inputs/Outputs
         let [address, value] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
-        self.address
-            .assign(region, offset, Some(address.to_le_bytes()))?;
+        self.address.assign(
+            region,
+            offset,
+            Some(address.to_le_bytes()[..5].try_into().unwrap()),
+        )?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 

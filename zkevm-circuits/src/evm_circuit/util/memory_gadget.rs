@@ -39,7 +39,7 @@ pub(crate) mod address_low {
 
     #[deprecated(note = "expr_word is fav")]
     pub(crate) fn expr<F: Field>(address: &WordLegacy<F>) -> Expression<F> {
-        from_bytes::expr(&address.limbs[..N_BYTES_MEMORY_ADDRESS])
+        from_bytes::expr(&address.cells[..N_BYTES_MEMORY_ADDRESS])
     }
 
     pub(crate) fn value(address: [u8; 32]) -> u64 {
@@ -54,13 +54,18 @@ pub(crate) mod address_low {
 pub(crate) mod address_high {
     use crate::{
         evm_circuit::{param::N_BYTES_MEMORY_ADDRESS, util::sum},
-        util::word::Word32Cell,
+        util::word::{Word32Cell, WordLegacy},
     };
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: Field>(address: &Word32Cell<F>) -> Expression<F> {
+    pub(crate) fn expr_word<F: Field>(address: &Word32Cell<F>) -> Expression<F> {
         sum::expr(&address.limbs[N_BYTES_MEMORY_ADDRESS..])
+    }
+
+    #[deprecated(note = "expr_word is fav")]
+    pub(crate) fn expr<F: Field>(address: &WordLegacy<F>) -> Expression<F> {
+        sum::expr(&address.cells[N_BYTES_MEMORY_ADDRESS..])
     }
 
     pub(crate) fn value<F: Field>(address: [u8; 32]) -> F {
@@ -219,7 +224,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
         // The memory size needs to be updated if this memory access
         // requires expanding the memory.
         // `next_memory_word_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
-        let curr_memory_word_size = cb.curr.state.memory_word_size.word_expr();
+        let curr_memory_word_size = cb.curr.state.memory_word_size.expr();
         let mut next_memory_word_size = curr_memory_word_size.clone();
         let max_memory_word_sizes = array_init(|idx| {
             let max_memory_word_size = MinMaxGadget::construct(

@@ -54,9 +54,9 @@ impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
         // ADD: Pop a and b from the stack, push c on the stack
         // SUB: Pop c and b from the stack, push a on the stack
 
-        cb.stack_pop(Word::select(is_sub.expr().0, c.to_word(), a.to_word()));
-        cb.stack_pop(b.to_word());
-        cb.stack_push(Word::select(is_sub.expr().0, a.to_word(), c.to_word()));
+        cb.stack_pop_word(Word::select(is_sub.expr().0, c.to_word(), a.to_word()));
+        cb.stack_pop_word(b.to_word());
+        cb.stack_push_word(Word::select(is_sub.expr().0, a.to_word(), c.to_word()));
 
         // State transition
         let step_state_transition = StepStateTransition {

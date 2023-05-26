@@ -669,7 +669,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         );
 
         let callee_code_hash = cb.query_word_unchecked();
-        cb.account_read(
+        cb.account_read_word(
             callee_address_word.expr(),
             AccountFieldTag::CodeHash,
             callee_code_hash.to_word(),
@@ -1173,6 +1173,11 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
 
     pub(crate) fn original(&self) -> Word<Expression<F>> {
         self.original.to_word()
+    }
+
+    #[deprecated(note="in fav of original")]
+    pub(crate) fn original_word(&self) -> Expression<F> {
+        todo!()
     }
 
     pub(crate) fn valid_value(&self) -> Expression<F> {

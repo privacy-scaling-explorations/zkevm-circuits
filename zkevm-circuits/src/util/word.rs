@@ -54,6 +54,12 @@ impl<F: Field> Expr<F> for WordCell<F> {
     }
 }
 
+impl<F: Field> Expr<F> for Word32Cell<F> {
+    fn expr(&self) -> Expression<F> {
+        todo!()
+    }
+}
+
 pub trait WordExpr<F> {
     fn to_word(&self) -> Word<Expression<F>>;
 }

@@ -233,9 +233,9 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
 
         Self {
             same_context,
-            shift: shift.to_word(),
-            a: a.to_word(),
-            b: b.to_word(),
+            shift,
+            a,
+            b,
             a64s_lo,
             a64s_hi,
             shf_div64,

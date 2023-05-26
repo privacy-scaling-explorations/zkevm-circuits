@@ -101,7 +101,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         let is_final = keccak_table.is_enabled;
         let length = keccak_table.input_len;
         let data_rlc = keccak_table.input_rlc;
-        let hash_rlc = keccak_table.output_rlc;
+        let hash_rlc = keccak_table.output;
 
         let normalize_3 = array_init::array_init(|_| meta.lookup_table_column());
         let normalize_4 = array_init::array_init(|_| meta.lookup_table_column());
