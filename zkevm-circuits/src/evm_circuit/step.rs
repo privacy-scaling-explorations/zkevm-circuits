@@ -671,7 +671,7 @@ impl<F: Field> Step<F> {
         offset: usize,
     ) -> Self {
         let cell_manager_strategy =
-            CMFixedWidthStrategy::new::<F>(evm_cm_distribute_advice::<F>(meta, &advices), offset)
+            CMFixedWidthStrategy::new(evm_cm_distribute_advice::<F>(meta, &advices), offset)
                 .with_perm_substitution();
 
         let mut cell_manager = CellManager::new(cell_manager_strategy);

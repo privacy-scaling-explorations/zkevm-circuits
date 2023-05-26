@@ -29,7 +29,7 @@ pub(crate) struct CMFixedWidthStrategy {
 }
 
 impl CMFixedWidthStrategy {
-    pub fn new<F: Field>(
+    pub fn new(
         advices: CMFixedWidthStrategyDistribution,
         height_offset: usize,
     ) -> CMFixedWidthStrategy {
@@ -48,7 +48,7 @@ impl CMFixedWidthStrategy {
     }
 
     fn get_next(&self, cell_type: &CellType) -> (usize, usize) {
-        *self.next.get(&cell_type).unwrap_or(&(0, 0))
+        *self.next.get(cell_type).unwrap_or(&(0, 0))
     }
 
     fn set_next(&mut self, cell_type: &CellType, column_idx: usize, row: usize) {

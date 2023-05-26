@@ -257,7 +257,6 @@ pub(crate) fn evm_cm_distribute_advice<F: Field>(
     // Mark columns used for for Phase1 constraints
     for _ in column_idx..advices.len() {
         dist.add(CellType::StoragePhase1, advices[column_idx]);
-        column_idx += 1;
     }
 
     dist
