@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
         );
 
         // Push the value to the stack
-        cb.stack_push(caller_address.expr());
+        cb.stack_push_legacy(caller_address.expr());
 
         // State transition
         let opcode = cb.query_cell();

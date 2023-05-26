@@ -7,7 +7,7 @@ use crate::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{ByteSizeGadget, LtGadget},
-            CachedRegion, Cell, Word,
+            CachedRegion, Cell, Word, WordLegacy,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -24,8 +24,8 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGExpGadget<F> {
     opcode: Cell<F>,
-    base: Word<F>,
-    exponent: Word<F>,
+    base: WordLegacy<F>,
+    exponent: WordLegacy<F>,
     exponent_byte_size: ByteSizeGadget<F>,
     insufficient_gas_cost: LtGadget<F, N_BYTES_GAS>,
     common_error_gadget: CommonErrorGadget<F>,
@@ -45,10 +45,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
             OpcodeId::EXP.expr(),
         );
 
-        let base = cb.query_word_32();
-        let exponent = cb.query_word_32();
-        cb.stack_pop(base.expr());
-        cb.stack_pop(exponent.expr());
+        let base = cb.query_word_rlc();
+        let exponent = cb.query_word_rlc();
+        cb.stack_pop_legacy(base.expr());
+        cb.stack_pop_legacy(exponent.expr());
 
         let exponent_byte_size = ByteSizeGadget::construct(
             cb,

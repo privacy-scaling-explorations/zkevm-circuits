@@ -11,6 +11,7 @@ use crate::{
         table::Table,
     },
     table::RwTableTag,
+    util::word::Word32Cell,
     witness::{Block, ExecStep, Rw, RwMap},
 };
 use bus_mapping::state_db::CodeDB;
@@ -510,6 +511,12 @@ pub(crate) type WordLegacy<F> = RandomLinearCombination<F, 32>;
 impl<F: Field> WordExpr<F> for WordLegacy<F> {
     fn to_word(&self) -> Word<Expression<F>> {
         Word::from_lo_unchecked(self.expr())
+    }
+}
+
+impl<F: Field> From<WordLegacy<F>> for Word32Cell<F> {
+    fn from(value: WordLegacy<F>) -> Self {
+        Word32Cell::new(value.cells)
     }
 }
 

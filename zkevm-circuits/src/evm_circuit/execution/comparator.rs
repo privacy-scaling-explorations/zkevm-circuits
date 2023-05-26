@@ -7,7 +7,7 @@ use crate::{
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes,
             math_gadget::{ComparisonGadget, IsEqualGadget},
-            select, CachedRegion, Cell, Word,
+            select, CachedRegion, Cell, WordLegacy,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -19,8 +19,8 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct ComparatorGadget<F> {
     same_context: SameContextGadget<F>,
-    a: Word<F>,
-    b: Word<F>,
+    a: WordLegacy<F>,
+    b: WordLegacy<F>,
     result: Cell<F>,
     comparison_lo: ComparisonGadget<F, 16>,
     comparison_hi: ComparisonGadget<F, 16>,
@@ -78,9 +78,9 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
         // When swap is enabled we swap stack places between a and b.
         // We can push result here directly because
         // it only uses the LSB of a word.
-        cb.stack_pop(select::expr(is_gt.expr(), b.expr(), a.expr()));
-        cb.stack_pop(select::expr(is_gt.expr(), a.expr(), b.expr()));
-        cb.stack_push(result.expr());
+        cb.stack_pop_legacy(select::expr(is_gt.expr(), b.expr(), a.expr()));
+        cb.stack_pop_legacy(select::expr(is_gt.expr(), a.expr(), b.expr()));
+        cb.stack_push_legacy(result.expr());
 
         // State transition
         let step_state_transition = StepStateTransition {

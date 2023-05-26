@@ -1181,7 +1181,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         if is_write {
             self.call_context_lookup_write_unchecked(call_id, field_tag, value)
         } else {
-            self.call_context_read(call_id, field_tag, value)
+            self.call_context_lookup_read(call_id, field_tag, value)
         }
     }
 

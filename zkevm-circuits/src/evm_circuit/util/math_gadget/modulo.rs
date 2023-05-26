@@ -2,7 +2,7 @@ use crate::{
     evm_circuit::util::{
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         math_gadget::{LtWordGadgetNew as LtWordGadget, *},
-        CachedRegion,
+        CachedRegion, WordLegacy,
     },
     util::{
         word::{self, Word32Cell},
@@ -11,6 +11,7 @@ use crate::{
 };
 use eth_types::{Field, ToLittleEndian, Word};
 use halo2_proofs::{circuit::Value, plonk::Error};
+use itertools::Itertools;
 
 /// Constraints for the words a, n, r:
 /// a mod n = r, if n!=0
@@ -32,6 +33,21 @@ pub(crate) struct ModGadget<F> {
     lt: LtWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
 }
 impl<F: Field> ModGadget<F> {
+    pub(crate) fn construct_legacy(
+        cb: &mut EVMConstraintBuilder<F>,
+        words: [&WordLegacy<F>; 3],
+    ) -> Self {
+        Self::construct(
+            cb,
+            words
+                .iter()
+                .map(|&&x| &Word32Cell::from(x))
+                .collect_vec()
+                .try_into()
+                .unwrap(),
+        )
+    }
+
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&Word32Cell<F>; 3]) -> Self {
         let (a, n, r) = (words[0], words[1], words[2]);
         let k = cb.query_word32();

@@ -4,7 +4,7 @@ use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
-        util::{constraint_builder::EVMConstraintBuilder, CachedRegion, Word},
+        util::{constraint_builder::EVMConstraintBuilder, CachedRegion, Word, WordLegacy},
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
@@ -14,8 +14,8 @@ use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct DummyGadget<F, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState> {
-    pops: [Word<F>; N_POP],
-    pushes: [Word<F>; N_PUSH],
+    pops: [WordLegacy<F>; N_POP],
+    pushes: [WordLegacy<F>; N_PUSH],
     _marker: PhantomData<F>,
 }
 
@@ -27,13 +27,13 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
     const EXECUTION_STATE: ExecutionState = S;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let pops: [Word<F>; N_POP] = [(); N_POP].map(|_| cb.query_word_rlc());
-        let pushes: [Word<F>; N_PUSH] = [(); N_PUSH].map(|_| cb.query_word_rlc());
+        let pops: [WordLegacy<F>; N_POP] = [(); N_POP].map(|_| cb.query_word_rlc());
+        let pushes: [WordLegacy<F>; N_PUSH] = [(); N_PUSH].map(|_| cb.query_word_rlc());
         for pop in pops.iter() {
-            cb.stack_pop(pop.expr());
+            cb.stack_pop_legacy(pop.expr());
         }
         for push in pushes.iter() {
-            cb.stack_push(push.expr());
+            cb.stack_push_legacy(push.expr());
         }
         Self {
             pops,
