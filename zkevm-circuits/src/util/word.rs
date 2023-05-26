@@ -66,7 +66,9 @@ impl<F: Field> Expr<F> for Word32Cell<F> {
     }
 }
 
+/// Get the word expression
 pub trait WordExpr<F> {
+    /// Get the word expression
     fn to_word(&self) -> Word<Expression<F>>;
 }
 
@@ -99,25 +101,31 @@ impl<F: Field, const N: usize> WordExpr<F> for WordLimbs<Cell<F>, N> {
     }
 }
 
-// `Word`, special alias for Word2.
+/// `Word`, special alias for Word2.
 #[derive(Clone, Debug, Copy, Default)]
 pub struct Word<T>(Word2<T>);
 
 impl<T: Clone> Word<T> {
+    /// Construct the word from 2 limbs
     pub fn new(limbs: [T; 2]) -> Self {
         Self(WordLimbs::<T, 2>::new(limbs))
     }
+
+    /// The high 128 bits limb
     pub fn hi(&self) -> &T {
         &self.0.limbs[1]
     }
+
+    /// the low 128 bits limb
     pub fn lo(&self) -> &T {
         &self.0.limbs[0]
     }
-
+    /// number of limbs
     pub fn n() -> usize {
         2
     }
 
+    /// word to low and high 128 bits
     pub fn to_lo_hi(&self) -> (&T, &T) {
         (&self.0.limbs[0], &self.0.limbs[1])
     }
@@ -132,6 +140,7 @@ impl<T> std::ops::Deref for Word<T> {
 }
 
 impl<F: Field> Word<F> {
+    /// Constrct the word from u256
     pub fn from_u256(value: eth_types::Word) -> Word<F> {
         let bytes = value.to_le_bytes();
         Word::new([
@@ -139,7 +148,7 @@ impl<F: Field> Word<F> {
             from_bytes::value(&bytes[16..]),
         ])
     }
-
+    /// Constrct the word from u64
     pub fn from_u64(value: u64) -> Word<F> {
         let bytes = value.to_le_bytes();
         Word::new([from_bytes::value(&bytes), F::from(0)])
@@ -147,6 +156,7 @@ impl<F: Field> Word<F> {
 }
 
 impl<F: Field> Word<Cell<F>> {
+    /// Assign low 128 bits for the word
     pub fn assign_lo(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -167,16 +177,17 @@ impl<F: Field> WordExpr<F> for Word<Cell<F>> {
 }
 
 impl<F: Field> Word<Expression<F>> {
-    // create word from lo limb with hi limb as 0. caller need to guaranteed to be 128 bits.
+    /// create word from lo limb with hi limb as 0. caller need to guaranteed to be 128 bits.
     pub fn from_lo_unchecked(lo: Expression<F>) -> Self {
         Self(WordLimbs::<Expression<F>, 2>::new([lo, 0.expr()]))
     }
 
+    /// zero word
     pub fn zero() -> Self {
         Self(WordLimbs::<Expression<F>, 2>::new([0.expr(), 0.expr()]))
     }
 
-    // select based on selector. Here assume selector is 1/0 therefore no overflow check
+    /// select based on selector. Here assume selector is 1/0 therefore no overflow check
     pub fn select<T: WordExpr<F>>(
         selector: Expression<F>,
         when_true: T,
@@ -192,7 +203,7 @@ impl<F: Field> Word<Expression<F>> {
         ])
     }
 
-    // Assume selector is 1/0 therefore no overflow check
+    /// Assume selector is 1/0 therefore no overflow check
     pub fn mul_selector(&self, selector: Expression<F>) -> Self {
         Word::new([
             self.lo().clone() * selector.clone(),
@@ -200,7 +211,7 @@ impl<F: Field> Word<Expression<F>> {
         ])
     }
 
-    // No overflow check on lo/hi limbs
+    /// No overflow check on lo/hi limbs
     pub fn add_unchecked(self, rhs: Self) -> Self {
         Word::new([
             self.lo().clone() + rhs.lo().clone(),
@@ -208,7 +219,7 @@ impl<F: Field> Word<Expression<F>> {
         ])
     }
 
-    // No underflow check on lo/hi limbs
+    /// No underflow check on lo/hi limbs
     pub fn sub_unchecked(self, rhs: Self) -> Self {
         Word::new([
             self.lo().clone() - rhs.lo().clone(),
@@ -262,6 +273,7 @@ impl<F: Field, const N1: usize> WordExpr<F> for WordLimbs<Expression<F>, N1> {
 }
 
 #[deprecated(note = "Word is preferred")]
+/// Support legacy type of RLC word
 pub type WordLegacy<F> = RandomLinearCombination<F, 32>;
 
 impl<F: Field> WordExpr<F> for WordLegacy<F> {
