@@ -171,14 +171,14 @@ impl Config {
                 {
                     constraints.push(
                         selector.clone()
-                           * first_different_limb.value_equals(i, Rotation::cur())(meta)
-                           * (limb_difference.clone() - cur_limb + prev_limb),
+                            * first_different_limb.value_equals(i, Rotation::cur())(meta)
+                            * (limb_difference.clone() - cur_limb + prev_limb),
                     );
                 }
                 constraints
             },
         );
-        
+
         config
     }
 
@@ -200,7 +200,7 @@ impl Config {
         )?;
 
         let cur_be_limbs = rw_to_be_limbs(cur);
-        let prev_be_limbs = rw_to_be_limbs(prev); 
+        let prev_be_limbs = rw_to_be_limbs(prev);
 
         let find_result = LimbIndex::iter()
             .zip(&cur_be_limbs)
@@ -271,11 +271,7 @@ impl<F: Field> Queries<F> {
     }
 
     fn storage_key_be_limbs(&self) -> Vec<Expression<F>> {
-        self.storage_key_limbs
-            .iter()
-            .rev()
-            .cloned()
-            .collect()
+        self.storage_key_limbs.iter().rev().cloned().collect()
     }
 
     fn be_limbs(&self) -> Vec<Expression<F>> {

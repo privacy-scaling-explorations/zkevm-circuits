@@ -507,7 +507,7 @@ impl RwTable {
             storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
             value: word::Word::new([meta.advice_column(), meta.advice_column()]),
             value_prev: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            init_val: word::Word::new([meta.advice_column(), meta.advice_column()])
+            init_val: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
     fn assign<F: Field>(
@@ -532,9 +532,9 @@ impl RwTable {
             (self.value_prev, row.value_prev),
             (self.init_val, row.init_val),
         ] {
-            value.assign_advice(region,|| "assign rw row on rw table", column, offset)?;
+            value.assign_advice(region, || "assign rw row on rw table", column, offset)?;
         }
- 
+
         Ok(())
     }
 
@@ -650,7 +650,12 @@ impl MptTable {
         row: &MptUpdateRow<F>,
     ) -> Result<(), Error> {
         for (column, value) in self.0.iter().zip_eq(row.values()) {
-            region.assign_advice(|| "assign mpt table row value", *column, offset, || Value::known(*value))?;
+            region.assign_advice(
+                || "assign mpt table row value",
+                *column,
+                offset,
+                || Value::known(*value),
+            )?;
         }
         Ok(())
     }
@@ -929,7 +934,7 @@ impl KeccakTable {
             is_enabled: meta.advice_column(),
             input_rlc: meta.advice_column_in(SecondPhase),
             input_len: meta.advice_column(),
-            output_rlc:meta.advice_column(),
+            output_rlc: meta.advice_column(),
         }
     }
 

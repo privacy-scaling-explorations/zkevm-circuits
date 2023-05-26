@@ -1,11 +1,8 @@
 use super::{
-    lookups::Queries as LookupsQueries, multiple_precision_integer::Queries as MpiQueries,
-    param::*
+    lookups::Queries as LookupsQueries, multiple_precision_integer::Queries as MpiQueries, param::*,
 };
 use crate::{
-    evm_circuit::{
-        util::{math_gadget::generate_lagrange_base_polynomial, not},
-    },
+    evm_circuit::util::{math_gadget::generate_lagrange_base_polynomial, not},
     table::{AccountFieldTag, MPTProofType, RwTableTag},
     util::{word, Expr},
 };
@@ -13,6 +10,8 @@ use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;
 use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;
+
+const POW_2_128_STR: &str = "340282366920938463463374607431768211456";
 
 #[derive(Clone)]
 pub struct RwTableQueries<F: Field> {
@@ -28,7 +27,7 @@ pub struct RwTableQueries<F: Field> {
     pub storage_key: word::Word<Expression<F>>,
     pub value: word::Word<Expression<F>>,
     pub value_prev: word::Word<Expression<F>>, // meta.query(value, Rotation::prev())
-    pub value_prev_column: word::Word<Expression<F>> /* meta.query(prev_value, Rotation::cur()) */
+    pub value_prev_column: word::Word<Expression<F>>, // meta.query(prev_value, Rotation::cur())
 }
 
 #[derive(Clone)]
@@ -255,7 +254,10 @@ impl<F: Field> ConstraintBuilder<F> {
             "memory value is a byte (lo is u8)",
             vec![(q.rw_table.value.lo().clone(), q.lookups.u8.clone())],
         );
-        self.require_zero("memory value is a byte (hi is 0)", q.rw_table.value.hi().clone());
+        self.require_zero(
+            "memory value is a byte (hi is 0)",
+            q.rw_table.value.hi().clone(),
+        );
         // 2.4. Start initial value is 0
         self.require_word_zero("initial Memory value is 0", q.initial_value());
         // 2.5. state root does not change
@@ -281,10 +283,9 @@ impl<F: Field> ConstraintBuilder<F> {
             q.first_access() * (1.expr() - q.is_write()),
         );
         // 3.2. stack_ptr in range
-        // TODO(amb) move to constant
         self.add_lookup(
             "stack address fits into 10 bits",
-            vec![(q.rw_table.address.lo().clone() , q.lookups.u10.clone())],
+            vec![(q.rw_table.address.lo().clone(), q.lookups.u10.clone())],
         );
         // 3.3. stack_ptr only increases by 0 or 1
         self.condition(q.is_tag_and_id_unchanged.clone(), |cb| {
@@ -477,7 +478,7 @@ impl<F: Field> ConstraintBuilder<F> {
                     .add_word(&q.state_root_prev(), &q.mpt_update_table.old_root)
                     .add_word(&q.value(), &q.mpt_update_table.new_value)
                     .add_word(&q.initial_value(), &q.mpt_update_table.old_value)
-                    .build()
+                    .build(),
             );
         });
 
@@ -553,10 +554,8 @@ impl<F: Field> ConstraintBuilder<F> {
 
     fn require_word_zero(&mut self, name: &'static str, e: word::Word<Expression<F>>) {
         let (lo, hi) = e.into_lo_hi();
-        self.constraints
-            .push((name, self.condition.clone() * hi));
-        self.constraints
-            .push((name, self.condition.clone() * lo));
+        self.constraints.push((name, self.condition.clone() * hi));
+        self.constraints.push((name, self.condition.clone() * lo));
     }
 
     fn require_equal(&mut self, name: &'static str, left: Expression<F>, right: Expression<F>) {
@@ -672,10 +671,10 @@ impl<F: Field> Queries<F> {
     }
 
     fn address_change(&self) -> Expression<F> {
-        let pow_2_128 = Expression::Constant(F::from_str_vartime("340282366920938463463374607431768211456").unwrap());
-        (self.rw_table.address.hi().clone() - self.rw_table.prev_address.hi().clone() ) *  pow_2_128 
-        +
-        (self.rw_table.address.lo().clone() - self.rw_table.prev_address.lo().clone() )
+        let pow_2_128 = Expression::Constant(F::from_str_vartime(POW_2_128_STR).unwrap());
+
+        (self.rw_table.address.hi().clone() - self.rw_table.prev_address.hi().clone()) * pow_2_128
+            + (self.rw_table.address.lo().clone() - self.rw_table.prev_address.lo().clone())
     }
 
     fn rw_counter_change(&self) -> Expression<F> {

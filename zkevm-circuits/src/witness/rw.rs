@@ -394,10 +394,12 @@ impl Rw {
             field_tag: Value::known(F::from(self.field_tag().unwrap_or_default())),
             storage_key: word::Word::from_u256(self.storage_key().unwrap_or_default()).into_value(),
             value: word::Word::from_u256(self.value_assignment()).into_value(),
-            value_prev: word::Word::from_u256(self.value_prev_assignment().unwrap_or_default()).into_value(),
-            init_val: word::Word::from_u256(self.committed_value_assignment().unwrap_or_default()).into_value(),
+            value_prev: word::Word::from_u256(self.value_prev_assignment().unwrap_or_default())
+                .into_value(),
+            init_val: word::Word::from_u256(self.committed_value_assignment().unwrap_or_default())
+                .into_value(),
         }
-    } 
+    }
 
     pub(crate) fn rw_counter(&self) -> usize {
         match self {
