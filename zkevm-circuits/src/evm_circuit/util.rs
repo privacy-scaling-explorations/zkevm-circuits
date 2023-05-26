@@ -1,3 +1,8 @@
+pub use crate::util::{
+    query_expression,
+    word::{Word, WordExpr},
+    Challenges, Expr,
+};
 use crate::{
     evm_circuit::{
         param::{
@@ -6,11 +11,6 @@ use crate::{
         table::Table,
     },
     table::RwTableTag,
-    util::{
-        query_expression,
-        word::{Word, WordExpr},
-        Challenges, Expr,
-    },
     witness::{Block, ExecStep, Rw, RwMap},
 };
 use bus_mapping::state_db::CodeDB;

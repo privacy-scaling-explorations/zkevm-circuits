@@ -48,7 +48,7 @@ impl<T: Default, const N: usize> Default for WordLimbs<T, N> {
     }
 }
 
-pub(crate) trait WordExpr<F> {
+pub trait WordExpr<F> {
     fn to_word(&self) -> Word<Expression<F>>;
 }
 
@@ -83,7 +83,7 @@ impl<F: Field, const N: usize> WordExpr<F> for WordLimbs<Cell<F>, N> {
 
 // `Word`, special alias for Word2.
 #[derive(Clone, Debug, Copy, Default)]
-pub(crate) struct Word<T>(Word2<T>);
+pub struct Word<T>(Word2<T>);
 
 impl<T: Clone> Word<T> {
     pub fn new(limbs: [T; 2]) -> Self {

@@ -45,7 +45,7 @@ pub(crate) struct AddModGadget<F> {
     sum_areduced_b_overflow: Word32Cell<F>,
     muladd_d_n_r: MulAddWords512Gadget<F>,
 
-    n_is_zero: IsZeroWordGadget<F>,
+    n_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
     cmp_r_n: CmpWordsGadget<F, Word32Cell<F>, Word32Cell<F>>,
     cmp_areduced_n: CmpWordsGadget<F, Word32Cell<F>, Word32Cell<F>>,
 }
