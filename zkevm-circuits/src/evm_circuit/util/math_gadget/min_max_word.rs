@@ -49,8 +49,8 @@ impl<F: Field, T: WordExpr<F> + Clone> MinMaxWordGadget<F, T> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        lhs: eth_types::Word,
-        rhs: eth_types::Word,
+        lhs: Word<F>,
+        rhs: Word<F>,
     ) -> Result<(F, F), Error> {
         let (lt, _) = self.lt.assign(region, offset, lhs, rhs)?;
         Ok(if lt.is_zero_vartime() {
