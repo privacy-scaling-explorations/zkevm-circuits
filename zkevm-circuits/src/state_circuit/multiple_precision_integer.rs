@@ -9,6 +9,7 @@ use halo2_proofs::{
 use itertools::Itertools;
 use std::marker::PhantomData;
 use eth_types::ToLittleEndian;
+use std::cmp::min;
 
 pub trait ToLimbs<const N: usize> {
     fn to_limbs(&self) -> [u16; N];
@@ -184,9 +185,8 @@ where
         lookup: lookups::Config,
     ) -> Config<T, N_LIMBS> {
 
-        assert_eq!(N_LIMBS & N_VALUES,0);
-        let limbs_per_value = N_LIMBS / N_VALUES;
-
+        let limbs_per_value = min(N_LIMBS, 8);
+        
         let limbs = [0; N_LIMBS].map(|_| meta.advice_column());        
 
         for &limb in &limbs {
@@ -199,7 +199,7 @@ where
             meta.create_gate("mpi value matches claimed limbs", |meta| {
                 let selector = meta.query_fixed(selector, Rotation::cur());
                 let value_expr = meta.query_advice(*value, Rotation::cur());
-                let value_limbs = &limbs[n*limbs_per_value..(n+1)*limbs_per_value]; 
+                let value_limbs = &limbs[n*limbs_per_value..min((n+1)*limbs_per_value, N_LIMBS)];
                 let limbs_expr = value_limbs.iter().map(|limb| meta.query_advice(*limb, Rotation::cur()));
                 vec![selector * (value_expr - value_from_limbs(&limbs_expr.collect::<Vec<_>>()))]
             });    

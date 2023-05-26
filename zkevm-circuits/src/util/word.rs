@@ -8,7 +8,7 @@ use eth_types::{Field, ToLittleEndian, U256};
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
     circuit::{AssignedCell, Value, Region},
-    plonk::{Error, Expression, Column, Advice, Assigned},
+    plonk::{Error, Expression, Column, Advice},
 };
 use itertools::Itertools;
 
@@ -72,7 +72,7 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
     }
 
     pub fn word_expr(&self) -> WordLimbs<Expression<F>, N> {
-        return WordLimbs::new(self.limbs.clone().map(|cell| cell.expr()))
+        WordLimbs::new(self.limbs.clone().map(|cell| cell.expr()))
     }
 }
 
@@ -141,14 +141,22 @@ impl<F: Field> Word<F> {
         ])
     }
 
+    pub fn from_address(value: eth_types::Address) -> Word<F> {
+        let bytes_le : Vec<u8> = value.to_fixed_bytes().into_iter().rev().collect();
+        Word::new([
+            from_bytes::value(&bytes_le[..16]),
+            from_bytes::value(&bytes_le[16..]),
+        ])
+    }
+
     pub fn from_u64(value: u64) -> Word<F> {
         let bytes = value.to_le_bytes();
         Word::new([from_bytes::value(&bytes), F::from(0)])
     }
 }
 
-impl<F: Field> Into<Word<F>> for eth_types::Word {
-    fn into(self) -> Word<F> { Word::<F>::from_u256(self) }
+impl<F: Field> From<U256> for Word<F> {
+    fn from(u256: U256) -> Self{ Word::<F>::from_u256(u256) }    
 }
 
 impl<F: Field> Word<Cell<F>> {

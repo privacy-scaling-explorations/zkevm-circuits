@@ -22,19 +22,18 @@ pub struct RwTableQueries<F: Field> {
     pub tag: Expression<F>,
     pub id: Expression<F>,
     pub prev_id: Expression<F>,
-    pub address: Expression<F>,
-    pub prev_address: Expression<F>,
+    pub address: word::Word<Expression<F>>,
+    pub prev_address: word::Word<Expression<F>>,
     pub field_tag: Expression<F>,
     pub storage_key: word::Word<Expression<F>>,
     pub value: word::Word<Expression<F>>,
     pub value_prev: word::Word<Expression<F>>, // meta.query(value, Rotation::prev())
-    pub value_prev_column: word::Word<Expression<F>>, /* meta.query(prev_value, Rotation::cur())
-                                                * TODO: aux1 and aux2 */
+    pub value_prev_column: word::Word<Expression<F>> /* meta.query(prev_value, Rotation::cur()) */
 }
 
 #[derive(Clone)]
 pub struct MptUpdateTableQueries<F: Field> {
-    pub address: Expression<F>,
+    pub address: word::Word<Expression<F>>,
     pub storage_key: word::Word<Expression<F>>,
     pub proof_type: Expression<F>,
     pub new_root: word::Word<Expression<F>>,
@@ -60,7 +59,6 @@ pub struct Queries<F: Field> {
     pub is_non_exist: Expression<F>,
     pub mpt_proof_type: Expression<F>,
     pub lookups: LookupsQueries<F>,
-    // pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     pub first_different_limb: [Expression<F>; 4],
     pub not_first_access: Expression<F>,
     pub last_access: Expression<F>,
@@ -209,7 +207,7 @@ impl<F: Field> ConstraintBuilder<F> {
     fn build_start_constraints(&mut self, q: &Queries<F>) {
         // 1.0. Unused keys are 0
         self.require_zero("field_tag is 0 for Start", q.field_tag());
-        self.require_zero("address is 0 for Start", q.rw_table.address.clone());
+        self.require_word_zero("address is 0 for Start", q.rw_table.address.clone());
         self.require_zero("id is 0 for Start", q.id());
         self.require_word_zero("storage_key is 0 for Start", q.rw_table.storage_key.clone());
         // 1.1. rw_counter increases by 1 for every non-first row
@@ -283,9 +281,10 @@ impl<F: Field> ConstraintBuilder<F> {
             q.first_access() * (1.expr() - q.is_write()),
         );
         // 3.2. stack_ptr in range
+        // TODO(amb) move to constant
         self.add_lookup(
             "stack address fits into 10 bits",
-            vec![(q.rw_table.address.clone(), q.lookups.u10.clone())],
+            vec![(q.rw_table.address.lo().clone() , q.lookups.u10.clone())],
         );
         // 3.3. stack_ptr only increases by 0 or 1
         self.condition(q.is_tag_and_id_unchanged.clone(), |cb| {
@@ -329,7 +328,7 @@ impl<F: Field> ConstraintBuilder<F> {
             cb.add_lookup(
                 "mpt_update exists in mpt circuit for AccountStorage last access",
                 LookupBuilder::new()
-                    .add(&q.rw_table.address, &q.mpt_update_table.address)
+                    .add_word(&q.rw_table.address, &q.mpt_update_table.address)
                     .add_word(&q.rw_table.storage_key, &q.mpt_update_table.storage_key)
                     .add(&q.mpt_proof_type(), &q.mpt_update_table.proof_type)
                     .add_word(&q.state_root(), &q.mpt_update_table.new_root)
@@ -404,7 +403,7 @@ impl<F: Field> ConstraintBuilder<F> {
 
     fn build_tx_refund_constraints(&mut self, q: &Queries<F>) {
         // 7.0. `address`, `field_tag` and `storage_key` are 0
-        self.require_zero("address is 0 for TxRefund", q.rw_table.address.clone());
+        self.require_word_zero("address is 0 for TxRefund", q.rw_table.address.clone());
         self.require_zero("field_tag is 0 for TxRefund", q.field_tag());
         self.require_word_zero(
             "storage_key is 0 for TxRefund",
@@ -471,7 +470,7 @@ impl<F: Field> ConstraintBuilder<F> {
             cb.add_lookup(
                 "mpt_update exists in mpt circuit for Account last access",
                 LookupBuilder::new()
-                    .add(&q.rw_table.address, &q.mpt_update_table.address)
+                    .add_word(&q.rw_table.address, &q.mpt_update_table.address)
                     .add_word(&q.rw_table.storage_key, &q.mpt_update_table.storage_key)
                     .add(&q.mpt_proof_type(), &q.mpt_update_table.proof_type)
                     .add_word(&q.state_root(), &q.mpt_update_table.new_root)
@@ -492,7 +491,7 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_call_context_constraints(&mut self, q: &Queries<F>) {
-        self.require_zero("address is 0 for CallContext", q.rw_table.address.clone());
+        self.require_word_zero("address is 0 for CallContext", q.rw_table.address.clone());
         self.require_word_zero(
             "storage_key is 0 for CallContext",
             q.rw_table.storage_key.clone(),
@@ -673,7 +672,10 @@ impl<F: Field> Queries<F> {
     }
 
     fn address_change(&self) -> Expression<F> {
-        self.rw_table.address.clone() - self.rw_table.prev_address.clone()
+        let pow_2_128 = Expression::Constant(F::from_str_vartime("340282366920938463463374607431768211456").unwrap());
+        (self.rw_table.address.hi().clone() - self.rw_table.prev_address.hi().clone() ) *  pow_2_128 
+        +
+        (self.rw_table.address.lo().clone() - self.rw_table.prev_address.lo().clone() )
     }
 
     fn rw_counter_change(&self) -> Expression<F> {

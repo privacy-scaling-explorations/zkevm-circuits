@@ -2,12 +2,11 @@
 use std::collections::HashMap;
 
 use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField};
-use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
-use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
+use eth_types::{Address, Field, ToAddress, Word, U256};
+use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 
 use crate::{
-    evm_circuit::util::rlc,
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
     util::{build_tx_log_address, word},
 };
@@ -250,7 +249,7 @@ pub struct RwRow<F> {
     pub(crate) is_write: F,
     pub(crate) tag: F,
     pub(crate) id: F,
-    pub(crate) address: F,
+    pub(crate) address: word::Word<F>,
     pub(crate) field_tag: F,
     pub(crate) storage_key: word::Word<F>,
     pub(crate) value: word::Word<F>,
@@ -259,22 +258,23 @@ pub struct RwRow<F> {
 }
 
 impl<F: Field> RwRow<F> {
-    pub(crate) fn values(&self) -> [F; 14] {
+    pub(crate) fn values(&self) -> [F; 15] {
         [
             self.rw_counter,
             self.is_write,
             self.tag,
             self.id,
-            self.address,
+            *self.address.lo(),
+            *self.address.hi(),
             self.field_tag,
-            self.storage_key.lo().clone(),
-            self.storage_key.hi().clone(),
-            self.value.lo().clone(),
-            self.value.hi().clone(),
-            self.value_prev.lo().clone(),
-            self.value_prev.hi().clone(),
-            self.init_val.lo().clone(),
-            self.init_val.hi().clone(),
+            *self.storage_key.lo(),
+            *self.storage_key.hi(),
+            *self.value.lo(),
+            *self.value.hi(),
+            *self.value_prev.lo(),
+            *self.value_prev.hi(),
+            *self.init_val.lo(),
+            *self.init_val.hi(),
         ]
     }
     pub(crate) fn rlc(&self, randomness: F) -> F {
@@ -390,14 +390,14 @@ impl Rw {
             is_write: Value::known(F::from(self.is_write() as u64)),
             tag: Value::known(F::from(self.tag() as u64)),
             id: Value::known(F::from(self.id().unwrap_or_default() as u64)),
-            address: Value::known(self.address().unwrap_or_default().to_scalar().unwrap()),
+            address: word::Word::from_address(self.address().unwrap_or_default()).into_value(),
             field_tag: Value::known(F::from(self.field_tag().unwrap_or_default())),
             storage_key: word::Word::from_u256(self.storage_key().unwrap_or_default()).into_value(),
             value: word::Word::from_u256(self.value_assignment()).into_value(),
             value_prev: word::Word::from_u256(self.value_prev_assignment().unwrap_or_default()).into_value(),
             init_val: word::Word::from_u256(self.committed_value_assignment().unwrap_or_default()).into_value(),
         }
-    }
+    } 
 
     pub(crate) fn rw_counter(&self) -> usize {
         match self {

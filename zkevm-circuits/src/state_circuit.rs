@@ -99,7 +99,13 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         let rw_counter = MpiChip::configure(meta, selector, [rw_table.rw_counter], lookups);
         let tag = BinaryNumberChip::configure(meta, selector, Some(rw_table.tag));
         let id = MpiChip::configure(meta, selector, [rw_table.id], lookups);
-        let address = MpiChip::configure(meta, selector, [rw_table.address], lookups);
+        
+        let address = MpiChip::configure(
+            meta,
+            selector,
+            [*rw_table.address.lo(), *rw_table.address.hi()],
+            lookups,
+        );
 
         let storage_key = MpiChip::configure(
             meta,
@@ -525,8 +531,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
             tag: meta.query_advice(c.rw_table.tag, Rotation::cur()),
             id: meta.query_advice(c.rw_table.id, Rotation::cur()),
             prev_id: meta.query_advice(c.rw_table.id, Rotation::prev()),
-            address: meta.query_advice(c.rw_table.address, Rotation::cur()),
-            prev_address: meta.query_advice(c.rw_table.address, Rotation::prev()),
+            address: meta_query_word(meta, c.rw_table.address, Rotation::cur()),
+            prev_address: meta_query_word(meta, c.rw_table.address, Rotation::prev()),
             field_tag: meta.query_advice(c.rw_table.field_tag, Rotation::cur()),
             storage_key: meta_query_word(meta, c.rw_table.storage_key, Rotation::cur()),
             value: meta_query_word(meta, c.rw_table.value, Rotation::cur()),
@@ -535,27 +541,30 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         },
         // TODO: clean this up
         mpt_update_table: MptUpdateTableQueries {
-            address: mpt_update_table_expressions[0].clone(),
-            storage_key: word::Word::new([
+            address: word::Word::new([
+                mpt_update_table_expressions[0].clone(),
                 mpt_update_table_expressions[1].clone(),
-                mpt_update_table_expressions[2].clone(),
             ]),
-            proof_type: mpt_update_table_expressions[3].clone(),
+            storage_key: word::Word::new([
+                mpt_update_table_expressions[2].clone(),
+                mpt_update_table_expressions[3].clone(),
+            ]),
+            proof_type: mpt_update_table_expressions[4].clone(),
             new_root: word::Word::new([
-                mpt_update_table_expressions[4].clone(),
                 mpt_update_table_expressions[5].clone(),
+                mpt_update_table_expressions[6].clone(),
             ]),
             old_root: word::Word::new([
-                mpt_update_table_expressions[6].clone(),
                 mpt_update_table_expressions[7].clone(),
+                mpt_update_table_expressions[8].clone(),
             ]),
             new_value: word::Word::new([
-                mpt_update_table_expressions[8].clone(),
                 mpt_update_table_expressions[9].clone(),
+                mpt_update_table_expressions[10].clone(),
             ]),
             old_value: word::Word::new([
-                mpt_update_table_expressions[10].clone(),
                 mpt_update_table_expressions[11].clone(),
+                mpt_update_table_expressions[12].clone(),
             ]),
         },
         lexicographic_ordering_selector: meta
@@ -583,7 +592,6 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         is_non_exist: meta.query_advice(c.is_non_exist.is_zero, Rotation::cur()),
         mpt_proof_type: meta.query_advice(c.mpt_proof_type, Rotation::cur()),
         lookups: LookupsQueries::new(meta, c.lookups),
-        // power_of_randomness: c.power_of_randomness.clone(),
         first_different_limb: [0, 1, 2, 3]
             .map(|idx| meta.query_advice(first_different_limb.bits[idx], Rotation::cur())),
         not_first_access: meta.query_advice(c.not_first_access, Rotation::cur()),
