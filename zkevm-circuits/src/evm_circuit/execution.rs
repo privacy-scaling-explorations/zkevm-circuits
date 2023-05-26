@@ -1280,9 +1280,6 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_stack)
             }
 
-            ExecutionState::ErrorInsufficientBalance => {
-                assign_exec_step!(self.call_op_gadget)
-            }
             ExecutionState::ErrorInvalidJump => {
                 assign_exec_step!(self.error_invalid_jump)
             }
@@ -1291,12 +1288,6 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorWriteProtection => {
                 assign_exec_step!(self.error_write_protection)
-            }
-            ExecutionState::ErrorDepth => {
-                assign_exec_step!(self.error_depth)
-            }
-            ExecutionState::ErrorContractAddressCollision => {
-                assign_exec_step!(self.error_contract_address_collision)
             }
             ExecutionState::ErrorInvalidCreationCode => {
                 assign_exec_step!(self.error_invalid_creation_code)
