@@ -785,7 +785,17 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // block
+    #[deprecated(note = "block_lookup_word is favored")]
     pub(crate) fn block_lookup(
+        &mut self,
+        tag: Expression<F>,
+        number: Option<Expression<F>>,
+        val: Expression<F>,
+    ) {
+        self.block_lookup_word(tag, number, Word::from_lo_unchecked(val))
+    }
+
+    pub(crate) fn block_lookup_word(
         &mut self,
         tag: Expression<F>,
         number: Option<Expression<F>>,
@@ -892,7 +902,25 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     // Access list
 
+    #[deprecated(note = "account_access_list_write_word is favored")]
     pub(crate) fn account_access_list_write(
+        &mut self,
+        tx_id: Expression<F>,
+        account_address: Expression<F>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        reversion_info: Option<&mut ReversionInfo<F>>,
+    ) {
+        self.account_access_list_write_word(
+            tx_id,
+            account_address,
+            Word::from_lo_unchecked(value),
+            Word::from_lo_unchecked(value_prev),
+            reversion_info,
+        )
+    }
+
+    pub(crate) fn account_access_list_write_word(
         &mut self,
         tx_id: Expression<F>,
         account_address: Expression<F>,
@@ -916,8 +944,17 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             reversion_info,
         );
     }
-
+    #[deprecated(note = "account_access_list_read_word is favored")]
     pub(crate) fn account_access_list_read(
+        &mut self,
+        tx_id: Expression<F>,
+        account_address: Expression<F>,
+        value: Expression<F>,
+    ) {
+        self.account_access_list_read_word(tx_id, account_address, Word::from_lo_unchecked(value));
+    }
+
+    pub(crate) fn account_access_list_read_word(
         &mut self,
         tx_id: Expression<F>,
         account_address: Expression<F>,
@@ -940,7 +977,27 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
+    #[deprecated(note = "account_storage_access_list_write_word is favored")]
     pub(crate) fn account_storage_access_list_write(
+        &mut self,
+        tx_id: Expression<F>,
+        account_address: Expression<F>,
+        storage_key: Expression<F>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        reversion_info: Option<&mut ReversionInfo<F>>,
+    ) {
+        self.account_storage_access_list_write_word(
+            tx_id,
+            account_address,
+            Word::from_lo_unchecked(storage_key),
+            Word::from_lo_unchecked(value),
+            Word::from_lo_unchecked(value_prev),
+            reversion_info,
+        )
+    }
+
+    pub(crate) fn account_storage_access_list_write_word(
         &mut self,
         tx_id: Expression<F>,
         account_address: Expression<F>,
@@ -1086,7 +1143,25 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     // Account Storage
 
+    #[deprecated(note = "account_storage_read_word is preferred")]
     pub(crate) fn account_storage_read(
+        &mut self,
+        account_address: Expression<F>,
+        key: Expression<F>,
+        value: Expression<F>,
+        tx_id: Expression<F>,
+        committed_value: Expression<F>,
+    ) {
+        self.account_storage_read_word(
+            account_address,
+            Word::from_lo_unchecked(key),
+            Word::from_lo_unchecked(value.clone()),
+            tx_id,
+            committed_value,
+        );
+    }
+
+    pub(crate) fn account_storage_read_word(
         &mut self,
         account_address: Expression<F>,
         key: Word<Expression<F>>,
@@ -1111,8 +1186,31 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
+    #[deprecated(note = "account_storage_write_word is preferred")]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn account_storage_write(
+        &mut self,
+        account_address: Expression<F>,
+        key: Expression<F>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        tx_id: Expression<F>,
+        committed_value: Expression<F>,
+        reversion_info: Option<&mut ReversionInfo<F>>,
+    ) {
+        self.account_storage_write_word(
+            account_address,
+            Word::from_lo_unchecked(key),
+            Word::from_lo_unchecked(value),
+            Word::from_lo_unchecked(value_prev),
+            tx_id,
+            committed_value,
+            reversion_info,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn account_storage_write_word(
         &mut self,
         account_address: Expression<F>,
         key: Word<Expression<F>>,
@@ -1177,12 +1275,21 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         field_tag: CallContextFieldTag,
         value: Expression<F>,
     ) {
-        let value = Word::from_lo_unchecked(value);
-        if is_write {
-            self.call_context_lookup_write_unchecked(call_id, field_tag, value)
-        } else {
-            self.call_context_lookup_read(call_id, field_tag, value)
-        }
+        self.rw_lookup(
+            "CallContext lookup",
+            is_write,
+            RwTableTag::CallContext,
+            RwValues::new(
+                call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
+                0.expr(),
+                field_tag.expr(),
+                Word::zero(),
+                Word::from_lo_unchecked(value),
+                Word::zero(),
+                0.expr(),
+                0.expr(),
+            ),
+        );
     }
 
     pub(crate) fn call_context_lookup_read(
@@ -1302,16 +1409,29 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn stack_pop_word(&mut self, value: Word<Expression<F>>) {
-        self.stack_lookup(false.expr(), self.stack_pointer_offset.clone(), value);
+        self.stack_lookup_word(false.expr(), self.stack_pointer_offset.clone(), value);
         self.stack_pointer_offset = self.stack_pointer_offset.clone() + self.condition_expr();
     }
 
     pub(crate) fn stack_push_word(&mut self, value: Word<Expression<F>>) {
         self.stack_pointer_offset = self.stack_pointer_offset.clone() - self.condition_expr();
-        self.stack_lookup(true.expr(), self.stack_pointer_offset.expr(), value);
+        self.stack_lookup_word(true.expr(), self.stack_pointer_offset.expr(), value);
+    }
+    #[deprecated(note = "stack_lookup_word is favored")]
+    pub(crate) fn stack_lookup(
+        &mut self,
+        is_write: Expression<F>,
+        stack_pointer_offset: Expression<F>,
+        value: Expression<F>,
+    ) {
+        self.stack_lookup_word(
+            is_write,
+            stack_pointer_offset,
+            Word::from_lo_unchecked(value),
+        )
     }
 
-    pub(crate) fn stack_lookup(
+    pub(crate) fn stack_lookup_word(
         &mut self,
         is_write: Expression<F>,
         stack_pointer_offset: Expression<F>,

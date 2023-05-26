@@ -31,13 +31,13 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let a = cb.query_word32();
-        let b = cb.query_word32();
-        let c = cb.query_word32();
+        let a = cb.query_word_rlc();
+        let b = cb.query_word_rlc();
+        let c = cb.query_word_rlc();
 
-        cb.stack_pop(a.to_word());
-        cb.stack_pop(b.to_word());
-        cb.stack_push(c.to_word());
+        cb.stack_pop(a);
+        cb.stack_pop(b);
+        cb.stack_push(c);
 
         // Because opcode AND, OR, and XOR are continuous, so we can make the
         // FixedTableTag of them also continuous, and use the opcode delta from

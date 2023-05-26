@@ -636,16 +636,18 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         // callee address is `current_callee_address`.
         // For both CALL and STATICCALL, caller address is
         // `current_callee_address` and callee address is `callee_address`.
-        cb.stack_pop(gas_word.to_word());
-        cb.stack_pop(callee_address_word.to_word());
+        cb.stack_pop_word(gas_word.to_word());
+        cb.stack_pop_word(callee_address_word.to_word());
 
         // `CALL` and `CALLCODE` opcodes have an additional stack pop `value`.
-        cb.condition(is_call + is_callcode, |cb| cb.stack_pop(value.to_word()));
-        cb.stack_pop(cd_offset.to_word());
-        cb.stack_pop(cd_length.to_word());
-        cb.stack_pop(rd_offset.to_word());
-        cb.stack_pop(rd_length.to_word());
-        cb.stack_push(if IS_SUCCESS_CALL {
+        cb.condition(is_call + is_callcode, |cb| {
+            cb.stack_pop_word(value.to_word())
+        });
+        cb.stack_pop_word(cd_offset.to_word());
+        cb.stack_pop_word(cd_length.to_word());
+        cb.stack_pop_word(rd_offset.to_word());
+        cb.stack_pop_word(rd_length.to_word());
+        cb.stack_push_word(if IS_SUCCESS_CALL {
             Word::from_lo_unchecked(is_success.expr()) // is_success is bool
         } else {
             Word::zero()
@@ -653,8 +655,8 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
 
         // Recomposition of random linear combination to integer
         let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.limbs[N_BYTES_GAS..]));
-        let cd_address = MemoryAddressGadget::construct(cb, cd_offset, cd_length);
-        let rd_address = MemoryAddressGadget::construct(cb, rd_offset, rd_length);
+        let cd_address = MemoryAddressGadget::construct_new(cb, cd_offset, cd_length);
+        let rd_address = MemoryAddressGadget::construct_new(cb, rd_offset, rd_length);
         let memory_expansion =
             MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
 

@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::util::{
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-        math_gadget::{LtWordGadgetNew as LtWordGadget, *},
+        math_gadget::{LtWordGadget, *},
         CachedRegion, Word as WordLegacy,
     },
     util::{
@@ -30,28 +30,20 @@ pub(crate) struct ModGadget<F> {
     n_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
     a_or_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
     eq: IsEqualWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
-    lt: LtWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
+    lt: LtWordGadget<F>,
 }
 impl<F: Field> ModGadget<F> {
-    pub(crate) fn construct_legacy(
+    pub(crate) fn construct_new(
         cb: &mut EVMConstraintBuilder<F>,
-        words: [&WordLegacy<F>; 3],
+        words: [&Word32Cell<F>; 3],
     ) -> Self {
-        Self::construct(
-            cb,
-            words
-                .iter()
-                .map(|&&x| &Word32Cell::from(x))
-                .collect_vec()
-                .try_into()
-                .unwrap(),
-        )
+        todo!()
     }
 
-    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&Word32Cell<F>; 3]) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&WordLegacy<F>; 3]) -> Self {
         let (a, n, r) = (words[0], words[1], words[2]);
-        let k = cb.query_word32();
-        let a_or_zero = cb.query_word32();
+        let k = cb.query_word_rlc();
+        let a_or_zero = cb.query_word_rlc();
         let n_is_zero = IsZeroWordGadget::construct(cb, n.clone());
         let a_or_is_zero = IsZeroWordGadget::construct(cb, a_or_zero.clone());
         let mul_add_words = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);

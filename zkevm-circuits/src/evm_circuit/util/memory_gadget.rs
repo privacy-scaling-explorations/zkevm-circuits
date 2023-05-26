@@ -1,4 +1,4 @@
-use super::{constraint_builder::ConstrainBuilderCommon, CachedRegion};
+use super::{constraint_builder::ConstrainBuilderCommon, CachedRegion, MemoryAddress};
 use crate::{
     evm_circuit::{
         param::{N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
@@ -13,7 +13,7 @@ use crate::{
         },
     },
     util::{
-        word::{Word, Word32Cell},
+        word::{Word, Word32Cell, WordExpr},
         Expr,
     },
 };
@@ -75,7 +75,16 @@ pub(crate) struct MemoryAddressGadget<F> {
 }
 
 impl<F: Field> MemoryAddressGadget<F> {
+    #[deprecated(note = "construct_new is favored")]
     pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        memory_offset: Cell<F>,
+        memory_length: MemoryAddress<F>,
+    ) -> Self {
+        todo!()
+    }
+
+    pub(crate) fn construct_new(
         cb: &mut EVMConstraintBuilder<F>,
         memory_offset: Word32Cell<F>,
         memory_length: Word32Cell<F>,

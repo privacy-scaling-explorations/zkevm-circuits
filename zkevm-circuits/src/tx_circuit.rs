@@ -16,7 +16,7 @@ pub use dev::TxCircuit as TestTxCircuit;
 use crate::{
     table::{KeccakTable, TxFieldTag, TxTable},
     util::{
-        random_linear_combine_word as rlc, word::Word, Challenges, SubCircuit, SubCircuitConfig,
+        random_linear_combine_word as rlc, word::WordNew, Challenges, SubCircuit, SubCircuitConfig,
     },
     witness,
 };
@@ -43,7 +43,7 @@ pub struct TxCircuitConfig<F: Field> {
     tx_id: Column<Advice>,
     tag: Column<Fixed>,
     index: Column<Advice>,
-    value: Word<Column<Advice>>,
+    value: WordNew<Column<Advice>>,
     sign_verify: SignVerifyConfig,
     _marker: PhantomData<F>,
     // External tables
