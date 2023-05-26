@@ -154,7 +154,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             caller_balance_word.expr(),
         );
         let is_insufficient_balance =
-            LtWordGadget::construct(cb, &caller_balance_word, &call_gadget.value);
+            LtWordGadget::construct(cb, &caller_balance_word, &call_gadget.value.into());
         // depth < 1025
         let is_depth_ok = LtGadget::construct(cb, depth.expr(), 1025.expr());
 
@@ -588,7 +588,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             rd_offset,
             rd_length,
             step.memory_word_size(),
-            region.word_rlc(callee_code_hash),
+            callee_code_hash,
         )?;
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;

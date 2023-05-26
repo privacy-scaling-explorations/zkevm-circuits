@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
         let a = cb.query_word32();
         let b = cb.query_word32();
         let c = cb.query_word32();
-        let add_words = AddWordsGadget::construct(cb, [a.clone(), b.clone()], c.clone());
+        let add_words = AddWordsGadget::construct_new(cb, [a.clone(), b.clone()], c.clone());
 
         // Swap a and c if opcode is SUB
         let is_sub = PairSelectGadget::construct(

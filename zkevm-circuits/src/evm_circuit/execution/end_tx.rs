@@ -20,7 +20,10 @@ use crate::{
     table::{
         BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag, TxReceiptFieldTag,
     },
-    util::{word::Word, Expr},
+    util::{
+        word::{Word, WordExpr},
+        Expr,
+    },
 };
 use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -94,11 +97,11 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             ),
             (BlockContextFieldTag::BaseFee, base_fee.to_word()),
         ] {
-            cb.block_lookup(tag.expr(), None, value);
+            cb.block_lookup_word(tag.expr(), None, value);
         }
         let effective_tip = cb.query_word32();
         let sub_gas_price_by_base_fee =
-            AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price);
+            AddWordsGadget::construct_new(cb, [effective_tip.clone(), base_fee], tx_gas_price);
         let mul_effective_tip_by_gas_used =
             MulWordByU64Gadget::construct(cb, effective_tip, gas_used.clone());
         let coinbase_reward = UpdateBalanceGadget::construct(

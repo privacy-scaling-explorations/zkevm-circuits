@@ -58,7 +58,7 @@ pub(crate) struct StepStateTransition<F: Field> {
     pub(crate) call_id: Transition<Expression<F>>,
     pub(crate) is_root: Transition<Expression<F>>,
     pub(crate) is_create: Transition<Expression<F>>,
-    pub(crate) code_hash: Transition<Word<Expression<F>>>,
+    pub(crate) code_hash: Transition<Expression<F>>,
     pub(crate) program_counter: Transition<Expression<F>>,
     pub(crate) stack_pointer: Transition<Expression<F>>,
     pub(crate) gas_left: Transition<Expression<F>>,
@@ -601,7 +601,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                     Transition::To(to) => self.require_equal_word(
                         concat!("State transition (to) constraint of ", stringify!($name)),
                         self.next.state.$name.to_word(),
-                        to,
+                        Word::from_lo_unchecked(to),
                     ),
                     _ => {}
                 }
@@ -752,14 +752,14 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.tx_context_lookup_word(id, field_tag, index, Word::from_lo_unchecked(cell.expr()));
         cell
     }
-
+    #[deprecated(note = "tx_context_as_word32 is favored")]
     pub(crate) fn tx_context_as_word(
         &mut self,
         id: Expression<F>,
         field_tag: TxContextFieldTag,
         index: Option<Expression<F>>,
-    ) -> Word<Cell<F>> {
-        let word = self.query_word_unchecked();
+    ) -> WordLegacy<F> {
+        let word = self.query_word_rlc();
         self.tx_context_lookup_word(id, field_tag, index, word.to_word());
         word
     }
@@ -1043,8 +1043,23 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             reversion_info,
         );
     }
-
+    #[deprecated(note = "account_storage_access_list_read_word is favored")]
     pub(crate) fn account_storage_access_list_read(
+        &mut self,
+        tx_id: Expression<F>,
+        account_address: Expression<F>,
+        storage_key: Expression<F>,
+        value: Expression<F>,
+    ) {
+        self.account_storage_access_list_read_word(
+            tx_id,
+            account_address,
+            Word::from_lo_unchecked(storage_key),
+            Word::from_lo_unchecked(value),
+        );
+    }
+
+    pub(crate) fn account_storage_access_list_read_word(
         &mut self,
         tx_id: Expression<F>,
         account_address: Expression<F>,
@@ -1335,7 +1350,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         call_id: Option<Expression<F>>,
         field_tag: CallContextFieldTag,
     ) -> Word<Cell<F>> {
-        let word = self.query_word_unchecked();
+        let word = self.query_word_unchecked::<2>();
         self.call_context_lookup_read(call_id, field_tag, word.to_word());
         word
     }

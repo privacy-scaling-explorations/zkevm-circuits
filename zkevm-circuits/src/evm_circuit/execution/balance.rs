@@ -9,7 +9,7 @@ use crate::{
                 Transition::Delta,
             },
             math_gadget::{IsZeroGadget, IsZeroWordGadget},
-            not, select, AccountAddress, CachedRegion, Cell,
+            not, select, AccountAddress, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -25,7 +25,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct BalanceGadget<F> {
     same_context: SameContextGadget<F>,
-    address: AccountAddress<F>,
+    address: Word<F>,
     reversion_info: ReversionInfo<F>,
     tx_id: Cell<F>,
     is_warm: Cell<F>,
@@ -40,7 +40,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::BALANCE;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let address = cb.query_account_address();
+        let address = cb.query_word_rlc();
         cb.stack_pop_word(address.to_word());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -98,7 +98,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             is_warm,
             code_hash,
             not_exists,
-            balance,
+            balance: balance.limbs[0],
         }
     }
 
@@ -114,7 +114,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let address = block.rws[step.rw_indices[0]].stack_value();
-        self.address_word
+        self.address
             .assign(region, offset, Some(address.to_le_bytes()))?;
 
         self.tx_id
@@ -133,7 +133,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
 
         let code_hash = block.rws[step.rw_indices[5]].account_value_pair().0;
         self.code_hash
-            .assign(region, offset, region.word_rlc(code_hash))?;
+            .assign(region, offset, Some(code_hash.to_le_bytes()))?;
         self.not_exists
             .assign_value(region, offset, region.word_rlc(code_hash))?;
         let balance = if code_hash.is_zero() {

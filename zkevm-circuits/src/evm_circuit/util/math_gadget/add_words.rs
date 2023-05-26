@@ -5,7 +5,7 @@ use crate::{
         pow_of_two_expr, split_u256, sum, CachedRegion, Cell,
     },
     util::{
-        word::{self, Word32Cell, WordExpr},
+        word::{self, Word32Cell, WordExpr, WordLegacy},
         Expr,
     },
 };
@@ -27,8 +27,8 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
 {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        addends: [word::Word<F>; N_ADDENDS],
-        sum: word::Word<F>,
+        addends: [WordLegacy<F>; N_ADDENDS],
+        sum: WordLegacy<F>,
     ) -> Self {
         todo!()
     }

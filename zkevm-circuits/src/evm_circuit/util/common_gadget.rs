@@ -197,7 +197,7 @@ impl<F: Field> RestoreContextGadget<F> {
             call_id: To(caller_id.expr()),
             is_root: To(caller_is_root.expr()),
             is_create: To(caller_is_create.expr()),
-            code_hash: To(caller_code_hash.to_word()),
+            code_hash: To(caller_code_hash.expr()),
             program_counter: To(caller_program_counter.expr()),
             stack_pointer: To(caller_stack_pointer.expr()),
             gas_left: To(gas_left),
@@ -681,7 +681,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
             1.expr() - value_is_zero.expr(),
         );
 
-        let callee_code_hash = cb.query_word_unchecked();
+        let callee_code_hash = cb.query_word_unchecked::<2>();
         cb.account_read_word(
             callee_address_word.expr(),
             AccountFieldTag::CodeHash,
@@ -1003,7 +1003,7 @@ impl<F: Field> CommonErrorGadget<F> {
     ) -> Self {
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        let rw_counter_end_of_reversion = cb.query_word_unchecked(); // rw_counter_end_of_reversion just used for read lookup, therefore skip range check
+        let rw_counter_end_of_reversion = cb.query_word_unchecked::<2>(); // rw_counter_end_of_reversion just used for read lookup, therefore skip range check
 
         // current call must be failed.
         cb.call_context_lookup_read(None, CallContextFieldTag::IsSuccess, Word::zero());

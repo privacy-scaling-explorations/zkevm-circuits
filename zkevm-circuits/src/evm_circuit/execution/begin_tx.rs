@@ -125,7 +125,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // transaction format)
         // Calculate transaction gas fee
         let mul_gas_fee_by_gas =
-            MulWordByU64Gadget::construct(cb, tx_gas_price.clone(), tx_gas.expr());
+            MulWordByU64Gadget::construct(cb, tx_gas_price.clone().into(), tx_gas.expr());
 
         // TODO: Take gas cost of access list (EIP 2930) into consideration.
         // Use intrinsic gas
@@ -178,13 +178,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         });
 
         // Transfer value from caller to callee, creating account if necessary.
-        let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
+        let transfer_with_gas_fee = TransferWithGasFeeGadget::construct_new(
             cb,
             tx_caller_address.expr(),
             tx_callee_address.expr(),
             not::expr(callee_not_exists.expr()),
             or::expr([tx_is_create.expr(), callee_not_exists.expr()]),
-            tx_value.clone(),
+            tx_value.clone().into(),
             mul_gas_fee_by_gas.product().clone(),
             &mut reversion_info,
         );
@@ -396,14 +396,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_id,
             tx_nonce,
             tx_gas,
-            tx_gas_price,
+            tx_gas_price: tx_gas_price.into(),
             mul_gas_fee_by_gas,
             tx_caller_address,
             tx_caller_address_is_zero,
             tx_callee_address,
             call_callee_address,
             tx_is_create,
-            tx_value,
+            tx_value: tx_value.into(),
             tx_call_data_length,
             tx_call_data_gas_cost,
             reversion_info,

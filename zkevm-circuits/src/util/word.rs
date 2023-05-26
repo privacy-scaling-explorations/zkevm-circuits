@@ -48,6 +48,12 @@ impl<T: Default, const N: usize> Default for WordLimbs<T, N> {
     }
 }
 
+impl<F: Field> From<Word32Cell<F>> for WordLegacy<F> {
+    fn from(value: Word32Cell<F>) -> Self {
+        todo!()
+    }
+}
+
 impl<F: Field> Expr<F> for WordCell<F> {
     fn expr(&self) -> Expression<F> {
         todo!()
