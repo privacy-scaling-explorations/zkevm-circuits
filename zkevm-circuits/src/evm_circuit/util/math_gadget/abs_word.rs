@@ -49,7 +49,7 @@ impl<F: Field> AbsWordGadget<F> {
 
         // When `is_neg`, constrain `sum == 0` and `carry == 1`. Since the final
         // result is `1 << 256`.
-        let add_words = AddWordsGadget::construct(cb, [x.clone(), x_abs.clone()], sum.clone());
+        let add_words = AddWordsGadget::construct_new(cb, [x.clone(), x_abs.clone()], sum.clone());
         cb.add_constraint(
             "sum == 0 when x < 0",
             is_neg.expr() * sum::expr(add_words.sum().word_expr().limbs),

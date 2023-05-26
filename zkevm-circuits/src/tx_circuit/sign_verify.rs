@@ -194,7 +194,7 @@ impl SignVerifyConfig {
                 keccak_table.is_enabled,
                 keccak_table.input_rlc,
                 keccak_table.input_len,
-                keccak_table.output_rlc,
+                keccak_table.output,
             ]
             .map(|column| meta.query_advice(column, Rotation::cur()));
 

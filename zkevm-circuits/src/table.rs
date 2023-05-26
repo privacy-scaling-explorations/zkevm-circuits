@@ -199,8 +199,7 @@ impl TxTable {
             || "tx table",
             |mut region| {
                 let mut offset = 0;
-                let advice_columns =
-                    [vec![self.tx_id, self.index], self.value.limbs.to_vec()].concat();
+                let advice_columns = [self.tx_id, self.index, self.value];
                 assign_row(
                     &mut region,
                     offset,
@@ -276,8 +275,7 @@ impl<F: Field> LookupTable<F> for TxTable {
             meta.query_advice(self.tx_id, Rotation::cur()),
             meta.query_fixed(self.tag, Rotation::cur()),
             meta.query_advice(self.index, Rotation::cur()),
-            meta.query_advice(self.value.lo().clone(), Rotation::cur()),
-            meta.query_advice(self.value.hi().clone(), Rotation::cur()),
+            meta.query_advice(self.value.clone(), Rotation::cur()),
         ]
     }
 }
@@ -750,8 +748,7 @@ impl BytecodeTable {
 impl<F: Field> LookupTable<F> for BytecodeTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.code_hash.lo().clone().into(),
-            self.code_hash.hi().clone().into(),
+            self.code_hash.into(),
             self.tag.into(),
             self.index.into(),
             self.is_code.into(),
@@ -858,12 +855,7 @@ impl BlockTable {
 
 impl<F: Field> LookupTable<F> for BlockTable {
     fn columns(&self) -> Vec<Column<Any>> {
-        vec![
-            self.tag.into(),
-            self.index.into(),
-            self.value.lo().clone().into(),
-            self.value.hi().clone().into(),
-        ]
+        vec![self.tag.into(), self.index.into(), self.value.into()]
     }
 
     fn annotations(&self) -> Vec<String> {
@@ -917,7 +909,7 @@ impl KeccakTable {
             is_enabled: meta.advice_column(),
             input_rlc: meta.advice_column_in(SecondPhase),
             input_len: meta.advice_column(),
-            output: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            output: meta.advice_column_in(SecondPhase),
         }
     }
 
@@ -1012,13 +1004,12 @@ impl KeccakTable {
         &self,
         value_rlc: Column<Advice>,
         length: Column<Advice>,
-        code_hash: word::Word<Column<Advice>>,
+        code_hash: Column<Advice>,
     ) -> Vec<(Column<Advice>, Column<Advice>)> {
         vec![
             (value_rlc, self.input_rlc),
             (length, self.input_len),
-            (code_hash.lo().clone(), self.output.lo().clone()),
-            (code_hash.hi().clone(), self.output.hi().clone()),
+            (code_hash, self.output),
         ]
     }
 }

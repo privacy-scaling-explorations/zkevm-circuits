@@ -45,15 +45,16 @@ impl<F: Field, T: WordExpr<F> + Clone> MinMaxWordGadget<F, T> {
         self.max.clone()
     }
 
-    pub(crate) fn assign(
+    fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        lhs: Word<F>,
-        rhs: Word<F>,
+        lhs: F,
+        rhs: F,
     ) -> Result<(F, F), Error> {
-        let (lt, _) = self.lt.assign(region, offset, lhs, rhs)?;
-        Ok(if lt.is_zero_vartime() {
+        todo!("lt assign");
+        let lt_says_greater = true;
+        Ok(if lt_says_greater {
             (rhs, lhs)
         } else {
             (lhs, rhs)

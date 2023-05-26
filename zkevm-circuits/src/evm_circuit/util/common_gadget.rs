@@ -370,8 +370,21 @@ pub(crate) struct TransferWithGasFeeGadget<F> {
 }
 
 impl<F: Field> TransferWithGasFeeGadget<F> {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        sender_address: Expression<F>,
+        receiver_address: Expression<F>,
+        receiver_exists: Expression<F>,
+        must_create: Expression<F>,
+        value: Word<F>,
+        gas_fee: Word<F>,
+        reversion_info: &mut ReversionInfo<F>,
+    ) -> Self {
+        todo!()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn construct_new(
         cb: &mut EVMConstraintBuilder<F>,
         sender_address: Expression<F>,
         receiver_address: Expression<F>,
