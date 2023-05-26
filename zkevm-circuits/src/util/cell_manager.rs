@@ -285,10 +285,12 @@ pub(crate) struct CMFixedWidthStrategy {
     height_offset: usize,
 
     next: HashMap<CellType, (usize, usize)>,
+
+    perm_substitution: bool,
 }
 
 impl CMFixedWidthStrategy {
-    pub fn new_from_advice<F: Field>(
+    pub fn new<F: Field>(
         advices: CMFixedWidthStrategyDistribution,
         height_offset: usize,
     ) -> CMFixedWidthStrategy {
@@ -296,7 +298,14 @@ impl CMFixedWidthStrategy {
             advices,
             height_offset,
             next: HashMap::default(),
+            perm_substitution: false,
         }
+    }
+
+    pub fn with_perm_substitution(mut self) -> Self {
+        self.perm_substitution = true;
+
+        self
     }
 
     fn get_next(&self, cell_type: &CellType) -> (usize, usize) {
@@ -345,7 +354,7 @@ impl CellManagerStrategy for CMFixedWidthStrategy {
         cell_type: CellType,
     ) -> Cell<F> {
         let (mut column_idx, mut row) = self.get_next(&cell_type);
-        if cell_type == CellType::StoragePhase1 {
+        if self.perm_substitution && cell_type == CellType::StoragePhase1 {
             let (_, row_perm) = self.get_next(&CellType::StoragePermutation);
             if row_perm < row {
                 return self.query_cell(columns, meta, CellType::StoragePermutation);
