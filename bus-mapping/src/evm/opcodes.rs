@@ -301,8 +301,8 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
         // call, callcode, create & create2 can encounter DepthError error,
         ExecError::Depth(DepthError::Call) => Some(CallOpcode::<7>::gen_associated_ops),
-        ExecError::Depth(DepthError::Create) => Some(DummyCreate::<false>::gen_associated_ops),
-        ExecError::Depth(DepthError::Create2) => Some(DummyCreate::<true>::gen_associated_ops),
+        ExecError::Depth(DepthError::Create) => Some(Create::<false>::gen_associated_ops),
+        ExecError::Depth(DepthError::Create2) => Some(Create::<true>::gen_associated_ops),
         // more future errors place here
         _ => {
             evm_unimplemented!("TODO: error state {:?} not implemented", error);

@@ -464,6 +464,24 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
+    /// Add address to access list for the current transaction.
+    pub fn tx_access_list_write(
+        &mut self,
+        step: &mut ExecStep,
+        address: Address,
+    ) -> Result<(), Error> {
+        let is_warm = self.sdb.check_account_in_access_list(&address);
+        self.push_op_reversible(
+            step,
+            TxAccessListAccountOp {
+                tx_id: self.tx_ctx.id(),
+                address,
+                is_warm: true,
+                is_warm_prev: is_warm,
+            },
+        )
+    }
+
     /// Push 2 reversible [`AccountOp`] to update `sender` and `receiver`'s
     /// balance by `value`. If `fee` is existing (not None), also need to push 1
     /// non-reversible [`AccountOp`] to update `sender` balance by `fee`.
@@ -689,6 +707,19 @@ impl<'a> CircuitInputStateRef<'a> {
             salt.to_be_bytes().to_vec(),
             init_code,
         ))
+    }
+
+    /// read reversion info
+    pub(crate) fn reversion_info_read(&mut self, step: &mut ExecStep, call: &Call) {
+        for (field, value) in [
+            (
+                CallContextField::RwCounterEndOfReversion,
+                call.rw_counter_end_of_reversion.to_word(),
+            ),
+            (CallContextField::IsPersistent, call.is_persistent.to_word()),
+        ] {
+            self.call_context_read(step, call.call_id, field, value);
+        }
     }
 
     /// Check if address is a precompiled or not.
