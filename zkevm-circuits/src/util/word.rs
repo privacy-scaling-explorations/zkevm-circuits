@@ -13,8 +13,10 @@ use itertools::Itertools;
 
 use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell, RandomLinearCombination};
 
+/// The EVM word for witness
 #[derive(Clone, Debug, Copy)]
 pub struct WordLimbs<T, const N: usize> {
+    /// The limbs of this word.
     pub limbs: [T; N],
 }
 
@@ -31,10 +33,11 @@ pub(crate) type WordCell<F> = Word<Cell<F>>;
 pub(crate) type Word32Cell<F> = Word32<Cell<F>>;
 
 impl<T, const N: usize> WordLimbs<T, N> {
+    /// Constructor
     pub fn new(limbs: [T; N]) -> Self {
         Self { limbs }
     }
-
+    /// The number of limbs
     pub fn n() -> usize {
         N
     }
@@ -73,6 +76,7 @@ pub trait WordExpr<F> {
 }
 
 impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
+    /// assign limbs
     pub fn assign<const N1: usize>(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -90,6 +94,8 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
         })
     }
 
+    #[deprecated(note = "in fav of to_word trait. Make this private")]
+    /// word expr
     pub fn word_expr(&self) -> WordLimbs<Expression<F>, N> {
         return WordLimbs::new(self.limbs.clone().map(|cell| cell.expr()));
     }
@@ -252,6 +258,7 @@ impl<F: Field, const N1: usize> WordLimbs<Expression<F>, N1> {
         WordLimbs::<Expression<F>, N2>::new(limbs)
     }
 
+    /// Equality expression
     // TODO static assertion. wordaround https://github.com/nvzqz/static-assertions-rs/issues/40
     pub fn eq<const N2: usize>(&self, others: &WordLimbs<Expression<F>, N2>) -> Expression<F> {
         assert_eq!(N1 % N2, 0);
