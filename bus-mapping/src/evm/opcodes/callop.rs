@@ -31,9 +31,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let args_offset = geth_step.stack.nth_last(N_ARGS - 4)?.as_usize();
+        // In offset and length are truncated to Uint64 for call opcodes as:
+        // <https://github.com/ethereum/go-ethereum/blob/84c3799e21d61d677965715fe09f8209660b4009/core/vm/instructions.go#L672>
+        let args_offset = geth_step.stack.nth_last(N_ARGS - 4)?.low_u64() as usize;
         let args_length = geth_step.stack.nth_last(N_ARGS - 3)?.as_usize();
-        let ret_offset = geth_step.stack.nth_last(N_ARGS - 2)?.as_usize();
+        let ret_offset = geth_step.stack.nth_last(N_ARGS - 2)?.low_u64() as usize;
         let ret_length = geth_step.stack.nth_last(N_ARGS - 1)?.as_usize();
 
         // we need to keep the memory until parse_call complete
@@ -144,11 +146,14 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
         let caller_balance = sender_account.balance;
         let is_call_or_callcode = call.kind == CallKind::Call || call.kind == CallKind::CallCode;
-        let insufficient_balance = call.value > caller_balance && is_call_or_callcode;
+
+        // Precheck is OK when depth is in range and caller balance is sufficient
+        let is_precheck_ok =
+            geth_step.depth < 1025 && (!is_call_or_callcode || caller_balance >= call.value);
 
         log::debug!(
-            "insufficient_balance: {}, call type: {:?}, sender_account: {:?} ",
-            insufficient_balance,
+            "is_precheck_ok: {}, call type: {:?}, sender_account: {:?} ",
+            is_precheck_ok,
             call.kind,
             call.caller_address
         );
@@ -169,8 +174,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             .map(|ref addr| is_precompiled(addr))
             .unwrap_or(false);
         // TODO: What about transfer for CALLCODE?
-        // Transfer value only for CALL opcode, insufficient_balance = false.
-        if call.kind == CallKind::Call && !insufficient_balance {
+        // Transfer value only for CALL opcode, is_precheck_ok = true.
+        if call.kind == CallKind::Call && is_precheck_ok {
             state.transfer(
                 &mut exec_step,
                 call.caller_address,
@@ -216,7 +221,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
         // There are 4 branches from here.
         // add failure case for insufficient balance or error depth in the future.
-        match (insufficient_balance, is_precompile, is_empty_code_hash) {
+        match (!is_precheck_ok, is_precompile, is_empty_code_hash) {
             // 1. Call to precompiled.
             (false, true, _) => {
                 assert!(call.is_success, "call to precompile should not fail");
@@ -739,7 +744,8 @@ mod tests {
                 assert_eq!(
                     *stack_value,
                     step.stack.nth_last(offset).expect("stack value not found"),
-                    "stack output mismatch"
+                    "stack output mismatch {}",
+                    test_call.name
                 );
             }
         }

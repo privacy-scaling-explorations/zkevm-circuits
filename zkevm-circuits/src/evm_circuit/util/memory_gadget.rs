@@ -512,7 +512,7 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
             // assign bound_dist and bound_dist_is_zero
             let oob = addr_start + idx as u64 >= addr_end;
             let bound_dist = if oob {
-                F::zero()
+                F::ZERO
             } else {
                 F::from(addr_end - addr_start - idx as u64)
             };

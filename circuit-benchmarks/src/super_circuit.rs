@@ -79,11 +79,9 @@ mod tests {
 
         block.sign(&wallets);
 
-        const MAX_TXS: usize = 1;
-        const MAX_CALLDATA: usize = 32;
         let circuits_params = CircuitsParams {
-            max_txs: MAX_TXS,
-            max_calldata: MAX_CALLDATA,
+            max_txs: 1,
+            max_calldata: 32,
             max_rws: 256,
             max_copy_rows: 256,
             max_exp_steps: 256,
@@ -92,7 +90,7 @@ mod tests {
             max_keccak_rows: 0,
         };
         let (_, circuit, instance, _) =
-            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, 0x100>::build(block, circuits_params).unwrap();
+            SuperCircuit::build(block, circuits_params, Fr::from(0x100)).unwrap();
         let instance_refs: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
 
         // Bench setup generation
@@ -120,7 +118,7 @@ mod tests {
             Challenge255<G1Affine>,
             ChaChaRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, 0x100>,
+            SuperCircuit<Fr>,
         >(
             &general_params,
             &pk,

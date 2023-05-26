@@ -2,14 +2,12 @@ use crate::{
     evm_circuit::param::{
         LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE2_COLUMNS,
     },
-    table::RwTableTag,
     util::{cell_manager::CMFixedWidthStrategyDistribution, Challenges, Expr},
     witness::{Block, ExecStep, Rw, RwMap},
 };
 use bus_mapping::state_db::CodeDB;
-use eth_types::{Address, ToLittleEndian, ToWord, U256};
+use eth_types::{Address, Field, ToLittleEndian, ToWord, U256};
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{AssignedCell, Region, Value},
     plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression},
     poly::Rotation,
@@ -25,9 +23,9 @@ pub(crate) mod memory_gadget;
 
 pub use gadgets::util::{and, not, or, select, sum};
 
-pub(crate) use crate::util::cell_manager::{Cell, CellColumn, CellType};
+pub(crate) use crate::util::cell_manager::{Cell, CellColumn, CellManager, CellType};
 
-pub struct CachedRegion<'r, 'b, F: FieldExt> {
+pub struct CachedRegion<'r, 'b, F: Field> {
     region: &'r mut Region<'b, F>,
     advice: Vec<Vec<F>>,
     challenges: &'r Challenges<Value<F>>,
@@ -36,7 +34,7 @@ pub struct CachedRegion<'r, 'b, F: FieldExt> {
     height_start: usize,
 }
 
-impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
+impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
     /// New cached region
     pub(crate) fn new(
         region: &'r mut Region<'b, F>,
@@ -47,7 +45,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     ) -> Self {
         Self {
             region,
-            advice: vec![vec![F::zero(); height]; advice_columns.len()],
+            advice: vec![vec![F::ZERO; height]; advice_columns.len()],
             challenges,
             width_start: advice_columns[0].index(),
             height_start,
@@ -135,8 +133,21 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
             .evm_word()
             .map(|r| rlc::value(&n.to_le_bytes(), r))
     }
+
+    pub fn keccak_rlc(&self, le_bytes: &[u8]) -> Value<F> {
+        self.challenges
+            .keccak_input()
+            .map(|r| rlc::value(le_bytes, r))
+    }
+
     pub fn empty_code_hash_rlc(&self) -> Value<F> {
         self.word_rlc(CodeDB::empty_code_hash().to_word())
+    }
+
+    pub fn code_hash(&self, n: U256) -> Value<F> {
+        self.challenges
+            .evm_word()
+            .map(|r| rlc::value(&n.to_le_bytes(), r))
     }
 
     /// Constrains a cell to have a constant value.
@@ -171,7 +182,7 @@ impl<F> Hash for StoredExpression<F> {
     }
 }
 
-impl<F: FieldExt> StoredExpression<F> {
+impl<F: Field> StoredExpression<F> {
     pub fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -206,7 +217,7 @@ impl<F: FieldExt> StoredExpression<F> {
     }
 }
 
-pub(crate) fn evm_cm_distribute_advice<F: FieldExt>(
+pub(crate) fn evm_cm_distribute_advice<F: Field>(
     meta: &mut ConstraintSystem<F>,
     advices: &[Column<Advice>],
 ) -> CMFixedWidthStrategyDistribution {
@@ -259,7 +270,7 @@ pub(crate) struct RandomLinearCombination<F, const N: usize> {
     pub(crate) cells: [Cell<F>; N],
 }
 
-impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
+impl<F: Field, const N: usize> RandomLinearCombination<F, N> {
     const N_BYTES: usize = N;
 
     pub(crate) fn new(cells: [Cell<F>; N], randomness: Expression<F>) -> Self {
@@ -287,7 +298,7 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
     }
 }
 
-impl<F: FieldExt, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
+impl<F: Field, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
     fn expr(&self) -> Expression<F> {
         self.expression.clone()
     }
@@ -299,15 +310,16 @@ pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADD
 /// Decodes a field element from its byte representation
 pub(crate) mod from_bytes {
     use crate::{evm_circuit::param::MAX_N_BYTES_INTEGER, util::Expr};
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
+    pub(crate) fn expr<F: Field, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
         debug_assert!(
             bytes.len() <= MAX_N_BYTES_INTEGER,
             "Too many bytes to compose an integer in field"
         );
         let mut value = 0.expr();
-        let mut multiplier = F::one();
+        let mut multiplier = F::ONE;
         for byte in bytes.iter() {
             value = value + byte.expr() * multiplier;
             multiplier *= F::from(256);
@@ -315,13 +327,13 @@ pub(crate) mod from_bytes {
         value
     }
 
-    pub(crate) fn value<F: FieldExt>(bytes: &[u8]) -> F {
+    pub(crate) fn value<F: Field>(bytes: &[u8]) -> F {
         debug_assert!(
             bytes.len() <= MAX_N_BYTES_INTEGER,
             "Too many bytes to compose an integer in field"
         );
-        let mut value = F::zero();
-        let mut multiplier = F::one();
+        let mut value = F::ZERO;
+        let mut multiplier = F::ONE;
         for byte in bytes.iter() {
             value += F::from(*byte as u64) * multiplier;
             multiplier *= F::from(256);
@@ -336,9 +348,10 @@ pub(crate) mod rlc {
     use std::ops::{Add, Mul};
 
     use crate::util::Expr;
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(expressions: &[E], randomness: E) -> Expression<F> {
+    pub(crate) fn expr<F: Field, E: Expr<F>>(expressions: &[E], randomness: E) -> Expression<F> {
         if !expressions.is_empty() {
             generic(expressions.iter().map(|e| e.expr()), randomness.expr())
         } else {
@@ -346,7 +359,7 @@ pub(crate) mod rlc {
         }
     }
 
-    pub(crate) fn value<'a, F: FieldExt, I>(values: I, randomness: F) -> F
+    pub(crate) fn value<'a, F: Field, I>(values: I, randomness: F) -> F
     where
         I: IntoIterator<Item = &'a u8>,
         <I as IntoIterator>::IntoIter: DoubleEndedIterator,
@@ -358,7 +371,7 @@ pub(crate) mod rlc {
         if !values.is_empty() {
             generic(values, randomness)
         } else {
-            F::zero()
+            F::ZERO
         }
     }
 
@@ -375,13 +388,13 @@ pub(crate) mod rlc {
     }
 }
 
-/// Returns 2**by as FieldExt
-pub(crate) fn pow_of_two<F: FieldExt>(by: usize) -> F {
-    F::from(2).pow(&[by as u64, 0, 0, 0])
+/// Returns 2**by as Field
+pub(crate) fn pow_of_two<F: Field>(by: usize) -> F {
+    F::from(2).pow([by as u64, 0, 0, 0])
 }
 
 /// Returns 2**by as Expression
-pub(crate) fn pow_of_two_expr<F: FieldExt>(by: usize) -> Expression<F> {
+pub(crate) fn pow_of_two_expr<F: Field>(by: usize) -> Expression<F> {
     Expression::Constant(pow_of_two(by))
 }
 
@@ -419,7 +432,7 @@ pub(crate) fn is_precompiled(address: &Address) -> bool {
 /// Helper struct to read rw operations from a step sequentially.
 pub(crate) struct StepRws<'a> {
     rws: &'a RwMap,
-    rw_indices: &'a Vec<(RwTableTag, usize)>,
+    step: &'a ExecStep,
     offset: usize,
 }
 
@@ -428,7 +441,7 @@ impl<'a> StepRws<'a> {
     pub(crate) fn new<F>(block: &'a Block<F>, step: &'a ExecStep) -> Self {
         Self {
             rws: &block.rws,
-            rw_indices: &step.rw_indices,
+            step,
             offset: 0,
         }
     }
@@ -438,7 +451,7 @@ impl<'a> StepRws<'a> {
     }
     /// Return the next rw operation from the step.
     pub(crate) fn next(&mut self) -> Rw {
-        let rw = self.rws[self.rw_indices[self.offset]];
+        let rw = self.rws[self.step.rw_index(self.offset)];
         self.offset += 1;
         rw
     }

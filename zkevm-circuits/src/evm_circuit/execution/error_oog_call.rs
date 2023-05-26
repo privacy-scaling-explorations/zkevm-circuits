@@ -120,37 +120,29 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         let is_call_or_callcode =
             usize::from([OpcodeId::CALL, OpcodeId::CALLCODE].contains(&opcode));
         let [tx_id, is_static] =
-            [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].call_context_value());
-        let stack_index = 2;
-        let [gas, callee_address] = [
-            step.rw_indices[stack_index],
-            step.rw_indices[stack_index + 1],
-        ]
-        .map(|idx| block.rws[idx].stack_value());
+            [0, 1].map(|index| block.get_rws(step, index).call_context_value());
+        let [gas, callee_address] = [2, 3].map(|index| block.get_rws(step, index).stack_value());
         let value = if is_call_or_callcode == 1 {
-            block.rws[step.rw_indices[stack_index + 2]].stack_value()
+            block.get_rws(step, 4).stack_value()
         } else {
             U256::zero()
         };
-        let [cd_offset, cd_length, rd_offset, rd_length] = [
-            step.rw_indices[stack_index + is_call_or_callcode + 2],
-            step.rw_indices[stack_index + is_call_or_callcode + 3],
-            step.rw_indices[stack_index + is_call_or_callcode + 4],
-            step.rw_indices[stack_index + is_call_or_callcode + 5],
-        ]
-        .map(|idx| block.rws[idx].stack_value());
+        let [cd_offset, cd_length, rd_offset, rd_length] =
+            [4, 5, 6, 7].map(|i| block.get_rws(step, is_call_or_callcode + i).stack_value());
 
-        let callee_code_hash = block.rws[step.rw_indices[9 + is_call_or_callcode]]
+        let callee_code_hash = block
+            .get_rws(step, 9 + is_call_or_callcode)
             .account_value_pair()
             .0;
         let callee_exists = !callee_code_hash.is_zero();
 
-        let (is_warm, is_warm_prev) =
-            block.rws[step.rw_indices[10 + is_call_or_callcode]].tx_access_list_value_pair();
+        let (is_warm, is_warm_prev) = block
+            .get_rws(step, 10 + is_call_or_callcode)
+            .tx_access_list_value_pair();
 
         let memory_expansion_gas_cost = self.call.assign(
             region,
@@ -212,7 +204,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         self.insufficient_gas.assign_value(
             region,
             offset,
-            Value::known(F::from(step.gas_left)),
+            Value::known(F::from(step.gas_left.0)),
             Value::known(F::from(gas_cost)),
         )?;
 
@@ -235,7 +227,7 @@ mod test {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{
         address, bytecode, bytecode::Bytecode, evm_types::OpcodeId, geth_types::Account, Address,
-        ToWord, Word,
+        ToWord, Word, U64,
     };
     use mock::TestContext;
     use std::default::Default;
@@ -296,7 +288,7 @@ mod test {
         Account {
             address: Address::repeat_byte(0xff),
             code: code.into(),
-            nonce: if is_empty { 0 } else { 1 }.into(),
+            nonce: U64::from(!is_empty as u64),
             balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
             ..Default::default()
         }
@@ -310,16 +302,8 @@ mod test {
                 accs[0]
                     .address(address!("0x000000000000000000000000000000000000cafe"))
                     .balance(Word::from(10u64.pow(19)));
-                accs[1]
-                    .address(caller.address)
-                    .code(caller.code.clone())
-                    .nonce(caller.nonce)
-                    .balance(caller.balance);
-                accs[2]
-                    .address(callee.address)
-                    .code(callee.code.clone())
-                    .nonce(callee.nonce)
-                    .balance(callee.balance);
+                accs[1].account(caller);
+                accs[2].account(callee);
             },
             |mut txs, accs| {
                 txs[0]

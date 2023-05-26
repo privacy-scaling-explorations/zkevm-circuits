@@ -1,4 +1,3 @@
-pub use crate::table::TxContextFieldTag;
 use crate::{
     evm_circuit::step::{ExecutionState, ResponsibleOp},
     impl_expr,
@@ -35,37 +34,37 @@ impl FixedTableTag {
     pub fn build<F: Field>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
         let tag = F::from(*self as u64);
         match self {
-            Self::Zero => Box::new((0..1).map(move |_| [tag, F::zero(), F::zero(), F::zero()])),
+            Self::Zero => Box::new((0..1).map(move |_| [tag, F::ZERO, F::ZERO, F::ZERO])),
             Self::Range5 => {
-                Box::new((0..5).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+                Box::new((0..5).map(move |value| [tag, F::from(value), F::ZERO, F::ZERO]))
             }
             Self::Range16 => {
-                Box::new((0..16).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+                Box::new((0..16).map(move |value| [tag, F::from(value), F::ZERO, F::ZERO]))
             }
             Self::Range32 => {
-                Box::new((0..32).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+                Box::new((0..32).map(move |value| [tag, F::from(value), F::ZERO, F::ZERO]))
             }
             Self::Range64 => {
-                Box::new((0..64).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+                Box::new((0..64).map(move |value| [tag, F::from(value), F::ZERO, F::ZERO]))
             }
             Self::Range128 => {
-                Box::new((0..128).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+                Box::new((0..128).map(move |value| [tag, F::from(value), F::ZERO, F::ZERO]))
             }
             Self::Range256 => {
-                Box::new((0..256).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+                Box::new((0..256).map(move |value| [tag, F::from(value), F::ZERO, F::ZERO]))
             }
             Self::Range512 => {
-                Box::new((0..512).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+                Box::new((0..512).map(move |value| [tag, F::from(value), F::ZERO, F::ZERO]))
             }
             Self::Range1024 => {
-                Box::new((0..1024).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+                Box::new((0..1024).map(move |value| [tag, F::from(value), F::ZERO, F::ZERO]))
             }
             Self::SignByte => Box::new((0..256).map(move |value| {
                 [
                     tag,
                     F::from(value),
                     F::from((value >> 7) * 0xFFu64),
-                    F::zero(),
+                    F::ZERO,
                 ]
             })),
             Self::BitwiseAnd => Box::new((0..256).flat_map(move |lhs| {
@@ -82,7 +81,7 @@ impl FixedTableTag {
                     execution_state.responsible_opcodes().into_iter().map(
                         move |responsible_opcode| {
                             let (op, aux) = match responsible_opcode {
-                                ResponsibleOp::Op(op) => (op, F::zero()),
+                                ResponsibleOp::Op(op) => (op, F::ZERO),
                                 ResponsibleOp::InvalidStackPtr(op, stack_ptr) => {
                                     (op, F::from(u64::from(stack_ptr)))
                                 }
@@ -113,7 +112,7 @@ impl FixedTableTag {
                             tag,
                             F::from(opcode.as_u64()),
                             F::from(opcode.constant_gas_cost().0),
-                            F::zero(),
+                            F::ZERO,
                         ]
                     }),
             ),
@@ -122,7 +121,7 @@ impl FixedTableTag {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
-pub(crate) enum Table {
+pub enum Table {
     Fixed,
     Tx,
     Rw,

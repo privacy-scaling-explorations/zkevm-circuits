@@ -64,11 +64,11 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
         self.lt.assign(
             region,
             offset,
-            Value::known(if lt { F::one() } else { F::zero() }),
+            Value::known(if lt { F::ONE } else { F::ZERO }),
         )?;
 
         // Set the bytes of diff
-        let diff = (lhs - rhs) + (if lt { self.range } else { F::zero() });
+        let diff = (lhs - rhs) + (if lt { self.range } else { F::ZERO });
         let diff_bytes = diff.to_repr();
         for (idx, diff) in self.diff.iter().enumerate() {
             diff.assign(
@@ -78,7 +78,7 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
             )?;
         }
 
-        Ok((if lt { F::one() } else { F::zero() }, diff_bytes.to_vec()))
+        Ok((if lt { F::ONE } else { F::ZERO }, diff_bytes.to_vec()))
     }
 
     pub(crate) fn diff_bytes(&self) -> Vec<Cell<F>> {

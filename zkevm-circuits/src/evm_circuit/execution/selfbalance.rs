@@ -72,13 +72,13 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
             region,
             offset,
             Value::known(
-                call.callee_address
+                call.address
                     .to_scalar()
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
 
-        let self_balance = block.rws[step.rw_indices[2]].stack_value();
+        let self_balance = block.get_rws(step, 2).stack_value();
         self.phase2_self_balance
             .assign(region, offset, region.word_rlc(self_balance))?;
 

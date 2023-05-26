@@ -63,9 +63,9 @@ impl<F: Field, const N: usize> BatchedIsZeroGadget<F, N> {
             if let Some(inverse) = values.iter().find_map(|value| Option::from(value.invert())) {
                 self.nonempty_witness
                     .assign(region, offset, Value::known(inverse))?;
-                F::zero()
+                F::ZERO
             } else {
-                F::one()
+                F::ONE
             };
         self.is_zero.assign(region, offset, Value::known(is_zero))?;
 

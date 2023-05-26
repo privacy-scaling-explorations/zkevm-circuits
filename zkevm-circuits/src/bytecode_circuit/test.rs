@@ -2,12 +2,20 @@
 use crate::{
     bytecode_circuit::{bytecode_unroller::*, circuit::BytecodeCircuit},
     table::BytecodeFieldTag,
-    util::{is_push, keccak, Challenges, SubCircuit},
+    util::{is_push, keccak, unusable_rows, Challenges, SubCircuit},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Bytecode, Field, Word};
-use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use halo2_proofs::{arithmetic::Field as Halo2Field, dev::MockProver, halo2curves::bn256::Fr};
 use log::error;
+
+#[test]
+fn bytecode_circuit_unusable_rows() {
+    assert_eq!(
+        BytecodeCircuit::<Fr>::unusable_rows(),
+        unusable_rows::<Fr, BytecodeCircuit::<Fr>>(()),
+    )
+}
 
 impl<F: Field> BytecodeCircuit<F> {
     /// Verify that the selected bytecode fulfills the circuit
@@ -102,8 +110,8 @@ fn bytecode_unrolling() {
         BytecodeRow {
             code_hash,
             tag: Fr::from(BytecodeFieldTag::Header as u64),
-            index: Fr::zero(),
-            is_code: Fr::zero(),
+            index: Fr::ZERO,
+            is_code: Fr::ZERO,
             value: Fr::from(bytecode.to_vec().len() as u64),
         },
     );
@@ -208,14 +216,14 @@ fn bytecode_invalid_index() {
     {
         let mut invalid = unrolled.clone();
         for row in invalid.rows.iter_mut() {
-            row.index += Fr::one();
+            row.index += Fr::ONE;
         }
         test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
     }
     // Don't increment an index once
     {
         let mut invalid = unrolled;
-        invalid.rows.last_mut().unwrap().index -= Fr::one();
+        invalid.rows.last_mut().unwrap().index -= Fr::ONE;
         test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
     }
 }
@@ -265,19 +273,19 @@ fn bytecode_invalid_is_code() {
     // Mark the 3rd byte as code (is push data from the first PUSH1)
     {
         let mut invalid = unrolled.clone();
-        invalid.rows[3].is_code = Fr::one();
+        invalid.rows[3].is_code = Fr::ONE;
         test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
     }
     // Mark the 4rd byte as data (is code)
     {
         let mut invalid = unrolled.clone();
-        invalid.rows[4].is_code = Fr::zero();
+        invalid.rows[4].is_code = Fr::ZERO;
         test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
     }
     // Mark the 7th byte as code (is data for the PUSH7)
     {
         let mut invalid = unrolled;
-        invalid.rows[7].is_code = Fr::one();
+        invalid.rows[7].is_code = Fr::ONE;
         test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
     }
 }
@@ -301,9 +309,9 @@ fn bytecode_soundness_bug_1() {
         if i >= unrolled_len {
             overwrite.rows.push(BytecodeRow {
                 code_hash: code_hash.clone(),
-                tag: Fr::one(),
+                tag: Fr::ONE,
                 index: Fr::from(index),
-                is_code: Fr::one(),
+                is_code: Fr::ONE,
                 value: Fr::from((i % 10 + 1) as u64),
             });
             index += 1;
