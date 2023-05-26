@@ -419,10 +419,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.query_cell_with_type(CellType::LookupByte)
     }
 
-    // TODO remove me
-    // pub(crate) fn query_word_rlc<const N: usize>(&mut self) -> RandomLinearCombination<F, N> {
-    //     RandomLinearCombination::<F, N>::new(self.query_bytes(), self.challenges.evm_word())
-    // }
+    #[deprecated(note="query_word* are favored")]
+    pub(crate) fn query_word_rlc<const N: usize>(&mut self) -> RandomLinearCombination<F, N> {
+        RandomLinearCombination::<F, N>::new(self.query_bytes(), self.challenges.evm_word())
+    }
 
     // default query_word is 2 limbs. Each limb is not guaranteed to be 128 bits.
     pub fn query_word_unchecked<const N: usize>(&mut self) -> WordCell<F> {
