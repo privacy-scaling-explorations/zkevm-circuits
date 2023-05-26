@@ -6,7 +6,7 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{IsEqualGadget, IsZeroGadget},
-            sum, CachedRegion, Word, WordLegacy,
+            sum, CachedRegion, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -20,8 +20,8 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct ByteGadget<F> {
     same_context: SameContextGadget<F>,
-    index: WordLegacy<F>,
-    value: WordLegacy<F>,
+    index: Word<F>,
+    value: Word<F>,
     is_msb_sum_zero: IsZeroGadget<F>,
     is_byte_selected: [IsEqualGadget<F>; 32],
 }

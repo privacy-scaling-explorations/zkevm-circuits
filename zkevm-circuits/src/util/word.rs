@@ -11,7 +11,7 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 
-use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell};
+use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell, RandomLinearCombination};
 
 #[derive(Clone, Debug, Copy)]
 pub(crate) struct WordLimbs<T, const N: usize> {
@@ -243,5 +243,21 @@ impl<F: Field, const N1: usize> WordExpr<F> for WordLimbs<Expression<F>, N1> {
         Word(self.to_word_n())
     }
 }
+
+#[deprecated(note = "Word is preferred")]
+pub type WordLegacy<F> = RandomLinearCombination<F, 32>;
+
+impl<F: Field> WordExpr<F> for WordLegacy<F> {
+    fn to_word(&self) -> Word<Expression<F>> {
+        Word::from_lo_unchecked(self.expr())
+    }
+}
+
+impl<F: Field> From<WordLegacy<F>> for Word32Cell<F> {
+    fn from(value: WordLegacy<F>) -> Self {
+        Word32Cell::new(value.cells)
+    }
+}
+
 
 // TODO unittest

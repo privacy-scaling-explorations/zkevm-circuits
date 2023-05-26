@@ -57,8 +57,8 @@ impl<F: Field> MulAddWords512Gadget<F> {
     #[deprecated(note = "construct is favored")]
     pub(crate) fn legacy_construct(
         cb: &mut EVMConstraintBuilder<F>,
-        words: [&util::WordLegacy<F>; 4],
-        addend: Option<&util::WordLegacy<F>>,
+        words: [&util::Word<F>; 4],
+        addend: Option<&util::Word<F>>,
     ) -> Self {
         let words = words.iter().map(|word| word::Word32Cell::new(word.cells));
         let addend = addend.map(|word| word::Word32Cell::new(word.cells));

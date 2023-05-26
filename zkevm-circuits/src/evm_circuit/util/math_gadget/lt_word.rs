@@ -22,8 +22,8 @@ pub struct LtWordGadgetLegacy<F> {
 impl<F: Field> LtWordGadgetLegacy<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        lhs: &util::WordLegacy<F>,
-        rhs: &util::WordLegacy<F>,
+        lhs: &util::Word<F>,
+        rhs: &util::Word<F>,
     ) -> Self {
         let comparison_hi = ComparisonGadget::construct(
             cb,

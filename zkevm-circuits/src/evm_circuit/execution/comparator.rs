@@ -7,7 +7,7 @@ use crate::{
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes,
             math_gadget::{ComparisonGadget, IsEqualGadget},
-            select, CachedRegion, Cell, WordLegacy,
+            select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -19,8 +19,8 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct ComparatorGadget<F> {
     same_context: SameContextGadget<F>,
-    a: WordLegacy<F>,
-    b: WordLegacy<F>,
+    a: Word<F>,
+    b: Word<F>,
     result: Cell<F>,
     comparison_lo: ComparisonGadget<F, 16>,
     comparison_hi: ComparisonGadget<F, 16>,

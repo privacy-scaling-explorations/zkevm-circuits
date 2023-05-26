@@ -1,6 +1,6 @@
 pub use crate::util::{
     query_expression,
-    word::{Word, WordExpr},
+    word::{Word as WordNew, WordExpr, WordLegacy as Word},
     Challenges, Expr,
 };
 use crate::{
@@ -505,34 +505,19 @@ impl<F: Field, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
     }
 }
 
-#[deprecated(note = "New word is preferred")]
-pub(crate) type WordLegacy<F> = RandomLinearCombination<F, 32>;
-
-impl<F: Field> WordExpr<F> for WordLegacy<F> {
-    fn to_word(&self) -> Word<Expression<F>> {
-        Word::from_lo_unchecked(self.expr())
-    }
-}
-
-impl<F: Field> From<WordLegacy<F>> for Word32Cell<F> {
-    fn from(value: WordLegacy<F>) -> Self {
-        Word32Cell::new(value.cells)
-    }
-}
-
 pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>;
 
 impl<F: Field> WordExpr<F> for MemoryAddress<F> {
-    fn to_word(&self) -> Word<Expression<F>> {
-        Word::from_lo_unchecked(self.expr())
+    fn to_word(&self) -> WordNew<Expression<F>> {
+        WordNew::from_lo_unchecked(self.expr())
     }
 }
 
 pub(crate) type AccountAddress<F> = RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>;
 
 impl<F: Field> WordExpr<F> for AccountAddress<F> {
-    fn to_word(&self) -> Word<Expression<F>> {
-        Word::new([
+    fn to_word(&self) -> WordNew<Expression<F>> {
+        WordNew::new([
             rlc::expr(
                 &self.cells[0..16]
                     .iter()
@@ -554,8 +539,8 @@ impl<F: Field> WordExpr<F> for AccountAddress<F> {
 pub(crate) type U64Cell<F> = RandomLinearCombination<F, N_BYTES_U64>;
 
 impl<F: Field> WordExpr<F> for U64Cell<F> {
-    fn to_word(&self) -> Word<Expression<F>> {
-        Word::from_lo_unchecked(self.expr())
+    fn to_word(&self) -> WordNew<Expression<F>> {
+        WordNew::from_lo_unchecked(self.expr())
     }
 }
 

@@ -7,7 +7,7 @@ use crate::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{ByteSizeGadget, LtGadget},
-            CachedRegion, Cell, Word, WordLegacy,
+            CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -24,8 +24,8 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGExpGadget<F> {
     opcode: Cell<F>,
-    base: WordLegacy<F>,
-    exponent: WordLegacy<F>,
+    base: Word<F>,
+    exponent: Word<F>,
     exponent_byte_size: ByteSizeGadget<F>,
     insufficient_gas_cost: LtGadget<F, N_BYTES_GAS>,
     common_error_gadget: CommonErrorGadget<F>,

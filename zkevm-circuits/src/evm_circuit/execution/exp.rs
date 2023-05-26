@@ -12,7 +12,7 @@ use crate::evm_circuit::{
         },
         from_bytes,
         math_gadget::{ByteSizeGadget, IsEqualGadget, IsZeroGadget},
-        CachedRegion, Cell, Word, WordLegacy,
+        CachedRegion, Cell, Word, Word,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -24,15 +24,15 @@ pub(crate) struct ExponentiationGadget<F> {
     /// Gadget to check that we stay within the same context.
     same_context: SameContextGadget<F>,
     /// RLC-encoded integer base that will be exponentiated.
-    base: WordLegacy<F>,
+    base: Word<F>,
     /// RLC-encoded representation for base * base, i.e. base^2
-    base_sq: WordLegacy<F>,
+    base_sq: Word<F>,
     /// RLC-encoded representation for zero.
-    zero_rlc: WordLegacy<F>,
+    zero_rlc: Word<F>,
     /// RLC-encoded exponent for the exponentiation operation.
-    exponent: WordLegacy<F>,
+    exponent: Word<F>,
     /// RLC-encoded result of the exponentiation.
-    exponentiation: WordLegacy<F>,
+    exponentiation: Word<F>,
     /// Gadget to check if low 128-bit part of exponent is zero or not.
     exponent_lo_is_zero: IsZeroGadget<F>,
     /// Gadget to check if high 128-bit part of exponent is zero or not.
