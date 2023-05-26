@@ -1233,7 +1233,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.account_storage_read_word(
             account_address,
             Word::from_lo_unchecked(key),
-            Word::from_lo_unchecked(value.clone()),
+            Word::from_lo_unchecked(value),
             tx_id,
             committed_value,
         );
@@ -1437,7 +1437,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         ]
         .map(|field_tag| {
             let cell = self.query_cell();
-            if is_write == true {
+            if is_write {
                 self.call_context_lookup_write_unchecked(
                     call_id.clone(),
                     field_tag,

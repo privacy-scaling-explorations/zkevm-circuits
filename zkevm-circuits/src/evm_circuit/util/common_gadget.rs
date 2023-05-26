@@ -370,6 +370,7 @@ pub(crate) struct TransferWithGasFeeGadget<F> {
 }
 
 impl<F: Field> TransferWithGasFeeGadget<F> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         _cb: &mut EVMConstraintBuilder<F>,
         _sender_address: Expression<F>,
@@ -685,7 +686,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         cb.account_read_word(
             callee_address_word.expr(),
             AccountFieldTag::CodeHash,
-            callee_code_hash.clone().to_word(),
+            callee_code_hash.to_word(),
         );
         let is_empty_code_hash =
             IsEqualWordGadget::construct(cb, callee_code_hash.clone(), cb.empty_code_hash_word());

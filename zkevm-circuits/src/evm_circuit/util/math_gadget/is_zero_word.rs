@@ -31,8 +31,8 @@ impl<F: Field, T: WordExpr<F>> IsZeroWordGadget<F, T> {
         let inverse_lo = cb.query_cell_with_type(CellType::storage_for_expr(word_lo));
         let inverse_hi = cb.query_cell_with_type(CellType::storage_for_expr(word_hi));
 
-        let is_zero_lo = 1.expr() - (word_lo.clone() * inverse_lo.expr().clone());
-        let is_zero_hi = 1.expr() - (word_hi.clone() * inverse_hi.expr().clone());
+        let is_zero_lo = 1.expr() - (word_lo.clone() * inverse_lo.expr());
+        let is_zero_hi = 1.expr() - (word_hi.clone() * inverse_hi.expr());
         // when `value != 0` check `inverse = a.invert()`: value * (1 - value *
         // inverse)
         cb.add_constraint(

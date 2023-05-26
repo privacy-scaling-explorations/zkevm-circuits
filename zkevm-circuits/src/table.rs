@@ -275,7 +275,7 @@ impl<F: Field> LookupTable<F> for TxTable {
             meta.query_advice(self.tx_id, Rotation::cur()),
             meta.query_fixed(self.tag, Rotation::cur()),
             meta.query_advice(self.index, Rotation::cur()),
-            meta.query_advice(self.value.clone(), Rotation::cur()),
+            meta.query_advice(self.value, Rotation::cur()),
         ]
     }
 }

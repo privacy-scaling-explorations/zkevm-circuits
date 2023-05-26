@@ -269,9 +269,9 @@ impl<F: Field> RwRow<F> {
             self.id,
             self.address,
             self.field_tag,
-            self.storage_key.clone(),
-            self.value.clone(),
-            self.value_prev.clone(),
+            self.storage_key,
+            self.value,
+            self.value_prev,
             self.aux1,
             self.aux2,
         ]

@@ -73,7 +73,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 
         // 1. check k * N + a_reduced == a without overflow
         let muladd_k_n_areduced =
-            MulAddWordsGadget::construct_new(cb, [&k, &n.clone(), &a_reduced.clone(), &a]);
+            MulAddWordsGadget::construct_new(cb, [&k, &n.clone(), &a_reduced, &a]);
         cb.require_zero(
             "k * N + a_reduced does not overflow",
             muladd_k_n_areduced.overflow(),

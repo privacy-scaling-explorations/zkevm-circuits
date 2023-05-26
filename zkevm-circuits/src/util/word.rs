@@ -97,7 +97,7 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
     #[deprecated(note = "in fav of to_word trait. Make this private")]
     /// word expr
     pub fn word_expr(&self) -> WordLimbs<Expression<F>, N> {
-        return WordLimbs::new(self.limbs.clone().map(|cell| cell.expr()));
+        WordLimbs::new(self.limbs.clone().map(|cell| cell.expr()))
     }
 }
 
