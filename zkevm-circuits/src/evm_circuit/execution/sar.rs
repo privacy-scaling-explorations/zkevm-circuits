@@ -81,9 +81,9 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         let a = cb.query_word_rlc();
         let b = cb.query_word_rlc();
 
-        cb.stack_pop_legacy(shift.expr());
-        cb.stack_pop_legacy(a.expr());
-        cb.stack_push_legacy(b.expr());
+        cb.stack_pop(shift.expr());
+        cb.stack_pop(a.expr());
+        cb.stack_push(b.expr());
 
         let a64s_lo = array_init(|_| cb.query_cell());
         let a64s_hi = array_init(|_| cb.query_cell());

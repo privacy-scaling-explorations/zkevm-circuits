@@ -43,7 +43,7 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
         );
 
         // Push the value to the stack
-        cb.stack_push_legacy(origin.expr());
+        cb.stack_push(origin.expr());
 
         // State transition
         let opcode = cb.query_cell();

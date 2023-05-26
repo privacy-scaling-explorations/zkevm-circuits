@@ -1287,26 +1287,26 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     // Stack
 
-    #[deprecated(note = "stack pop is favored")]
-    pub(crate) fn stack_pop_legacy(&mut self, value: Expression<F>) {
+    #[deprecated(note = "stack_pop_word is favored")]
+    pub(crate) fn stack_pop(&mut self, value: Expression<F>) {
         // This is definitely incorrct. The intention is to convert expression to word to fix build.
         let value = Word::from_lo_unchecked(value);
-        self.stack_pop(value)
+        self.stack_pop_word(value)
     }
 
-    #[deprecated(note = "stack push is favored")]
-    pub(crate) fn stack_push_legacy(&mut self, value: Expression<F>) {
+    #[deprecated(note = "stack_push_word is favored")]
+    pub(crate) fn stack_push(&mut self, value: Expression<F>) {
         // This is definitely incorrct. The intention is to convert expression to word to fix build.
         let value = Word::from_lo_unchecked(value);
-        self.stack_push(value)
+        self.stack_push_word(value)
     }
 
-    pub(crate) fn stack_pop(&mut self, value: Word<Expression<F>>) {
+    pub(crate) fn stack_pop_word(&mut self, value: Word<Expression<F>>) {
         self.stack_lookup(false.expr(), self.stack_pointer_offset.clone(), value);
         self.stack_pointer_offset = self.stack_pointer_offset.clone() + self.condition_expr();
     }
 
-    pub(crate) fn stack_push(&mut self, value: Word<Expression<F>>) {
+    pub(crate) fn stack_push_word(&mut self, value: Word<Expression<F>>) {
         self.stack_pointer_offset = self.stack_pointer_offset.clone() - self.condition_expr();
         self.stack_lookup(true.expr(), self.stack_pointer_offset.expr(), value);
     }

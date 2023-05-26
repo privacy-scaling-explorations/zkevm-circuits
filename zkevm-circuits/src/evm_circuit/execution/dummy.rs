@@ -30,10 +30,10 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
         let pops: [WordLegacy<F>; N_POP] = [(); N_POP].map(|_| cb.query_word_rlc());
         let pushes: [WordLegacy<F>; N_PUSH] = [(); N_PUSH].map(|_| cb.query_word_rlc());
         for pop in pops.iter() {
-            cb.stack_pop_legacy(pop.expr());
+            cb.stack_pop(pop.expr());
         }
         for push in pushes.iter() {
-            cb.stack_push_legacy(push.expr());
+            cb.stack_push(push.expr());
         }
         Self {
             pops,

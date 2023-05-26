@@ -65,9 +65,9 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
         // push the selected byte on the stack
         // We can push the selected byte here directly because
         // it only uses the LSB of a word.
-        cb.stack_pop_legacy(index.expr());
-        cb.stack_pop_legacy(value.expr());
-        cb.stack_push_legacy(selected_byte);
+        cb.stack_pop(index.expr());
+        cb.stack_pop(value.expr());
+        cb.stack_push(selected_byte);
 
         // State transition
         let step_state_transition = StepStateTransition {

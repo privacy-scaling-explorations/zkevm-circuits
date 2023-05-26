@@ -47,8 +47,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
 
         let base = cb.query_word_rlc();
         let exponent = cb.query_word_rlc();
-        cb.stack_pop_legacy(base.expr());
-        cb.stack_pop_legacy(exponent.expr());
+        cb.stack_pop(base.expr());
+        cb.stack_pop(exponent.expr());
 
         let exponent_byte_size = ByteSizeGadget::construct(
             cb,

@@ -65,7 +65,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         let call_data_offset = cb.query_cell();
 
         let data_offset = WordByteCapGadget::construct(cb, call_data_length.expr());
-        cb.stack_pop_legacy(data_offset.original_word());
+        cb.stack_pop(data_offset.original_word());
 
         cb.condition(
             and::expr([data_offset.not_overflow(), cb.curr.state.is_root.expr()]),
@@ -180,7 +180,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             data_offset.overflow() * calldata_word.expr(),
         );
 
-        cb.stack_push_legacy(calldata_word);
+        cb.stack_push(calldata_word);
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(cb.rw_counter_offset()),
