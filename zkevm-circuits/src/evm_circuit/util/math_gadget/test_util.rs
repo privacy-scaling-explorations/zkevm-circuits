@@ -124,8 +124,8 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
             .try_into()
             .unwrap();
 
-        let step_curr = Step::new(meta, advices, 0, false);
-        let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
+        let step_curr = Step::new(meta, advices, 0);
+        let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT);
         let mut cb = EVMConstraintBuilder::new(
             meta,
             step_curr.clone(),

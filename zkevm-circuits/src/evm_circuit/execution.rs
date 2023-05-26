@@ -23,7 +23,7 @@ use crate::{
     table::LookupTable,
     util::{
         cell_manager::{CMFixedWidthStrategy, CellManager, CellType},
-        query_expression, Challenges, Expr,
+        Challenges, Expr,
     },
 };
 use eth_types::{evm_unimplemented, Field};
@@ -358,7 +358,7 @@ impl<F: Field> ExecutionConfig<F> {
             .try_into()
             .unwrap();
 
-        let step_curr = Step::new(meta, advices, 0, false);
+        let step_curr = Step::new(meta, advices, 0);
         let mut height_map = HashMap::new();
 
         meta.create_gate("Constrain execution state", |meta| {
@@ -621,7 +621,7 @@ impl<F: Field> ExecutionConfig<F> {
         // Configure the gadget with the max height first so we can find out the actual
         // height
         let height = {
-            let dummy_step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
+            let dummy_step_next = Step::new(meta, advices, MAX_STEP_HEIGHT);
             let mut cb = EVMConstraintBuilder::new(
                 meta,
                 step_curr.clone(),
@@ -635,7 +635,7 @@ impl<F: Field> ExecutionConfig<F> {
         };
 
         // Now actually configure the gadget with the correct minimal height
-        let step_next = &Step::new(meta, advices, height, true);
+        let step_next = &Step::new(meta, advices, height);
         let mut cb = EVMConstraintBuilder::new(
             meta,
             step_curr.clone(),

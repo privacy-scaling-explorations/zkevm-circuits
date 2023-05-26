@@ -152,6 +152,7 @@ impl CellManagerStrategy for CMFixedWidthStrategy {
     }
 }
 
+// TODO: This strategy is unfinished.
 pub(crate) struct CMFixedHeigthStrategy {
     row_width: Vec<usize>,
     cell_type: CellType,
@@ -195,7 +196,7 @@ impl CellManagerStrategy for CMFixedHeigthStrategy {
 
     type Stats = ();
 
-    fn get_stats(&self, columns: &CellManagerColumns) -> Self::Stats {
+    fn get_stats(&self, _columns: &CellManagerColumns) -> Self::Stats {
         todo!()
     }
 }

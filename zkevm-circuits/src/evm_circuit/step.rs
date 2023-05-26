@@ -1,7 +1,7 @@
 use super::util::{evm_cm_distribute_advice, CachedRegion};
 use crate::{
     evm_circuit::{
-        param::{EXECUTION_STATE_HEIGHT_MAP, MAX_STEP_HEIGHT, STEP_STATE_HEIGHT, STEP_WIDTH},
+        param::{EXECUTION_STATE_HEIGHT_MAP, STEP_WIDTH},
         witness::{Block, Call, ExecStep},
     },
     util::{
@@ -669,7 +669,6 @@ impl<F: Field> Step<F> {
         meta: &mut ConstraintSystem<F>,
         advices: [Column<Advice>; STEP_WIDTH],
         offset: usize,
-        is_next: bool,
     ) -> Self {
         let cell_manager_strategy =
             CMFixedWidthStrategy::new::<F>(evm_cm_distribute_advice::<F>(meta, &advices), offset)
