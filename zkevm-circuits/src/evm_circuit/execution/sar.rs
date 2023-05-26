@@ -16,7 +16,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{word::WordExpr, Expr},
 };
 use array_init::array_init;
 use bus_mapping::evm::OpcodeId;
@@ -81,9 +81,9 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         let a = cb.query_word_rlc();
         let b = cb.query_word_rlc();
 
-        cb.stack_pop(shift.expr());
-        cb.stack_pop(a.expr());
-        cb.stack_push(b.expr());
+        cb.stack_pop_legacy(shift.expr());
+        cb.stack_pop_legacy(a.expr());
+        cb.stack_push_legacy(b.expr());
 
         let a64s_lo = array_init(|_| cb.query_cell());
         let a64s_hi = array_init(|_| cb.query_cell());
@@ -233,9 +233,9 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
 
         Self {
             same_context,
-            shift,
-            a,
-            b,
+            shift: shift.to_word(),
+            a: a.to_word(),
+            b: b.to_word(),
             a64s_lo,
             a64s_hi,
             shf_div64,

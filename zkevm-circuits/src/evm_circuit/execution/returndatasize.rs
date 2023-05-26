@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
         );
 
         // The returndatasize should be pushed to the top of the stack.
-        cb.stack_push(return_data_size.expr());
+        cb.stack_push_legacy(return_data_size.expr());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(2.expr()),

@@ -419,7 +419,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.query_cell_with_type(CellType::LookupByte)
     }
 
-    #[deprecated(note="query_word* are favored")]
+    #[deprecated(note = "query_word* are favored")]
     pub(crate) fn query_word_rlc<const N: usize>(&mut self) -> RandomLinearCombination<F, N> {
         RandomLinearCombination::<F, N>::new(self.query_bytes(), self.challenges.evm_word())
     }
@@ -752,6 +752,18 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         let word = self.query_word32();
         self.tx_context_lookup(id, field_tag, index, word.to_word());
         word
+    }
+
+    #[deprecated(note = "tx_context_lookup is favored")]
+    pub(crate) fn tx_context_lookup_legacy(
+        &mut self,
+        id: Expression<F>,
+        field_tag: TxContextFieldTag,
+        index: Option<Expression<F>>,
+        value: Expression<F>,
+    ) {
+        let value = Word::from_lo_unchecked(value);
+        self.tx_context_lookup(id, field_tag, index, value)
     }
 
     pub(crate) fn tx_context_lookup(
@@ -1157,6 +1169,22 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         word
     }
 
+    #[deprecated(note = "call_context_lookup_read is favored")]
+    pub(crate) fn call_context_lookup(
+        &mut self,
+        is_write: Expression<F>,
+        call_id: Option<Expression<F>>,
+        field_tag: CallContextFieldTag,
+        value: Expression<F>,
+    ) {
+        let value = Word::from_lo_unchecked(value);
+        if is_write {
+            self.call_context_lookup_write_unchecked(call_id, field_tag, value)
+        } else {
+            self.call_context_read(call_id, field_tag, value)
+        }
+    }
+
     pub(crate) fn call_context_lookup_read(
         &mut self,
         call_id: Option<Expression<F>>,
@@ -1258,6 +1286,20 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // Stack
+
+    #[deprecated(note = "stack pop is favored")]
+    pub(crate) fn stack_pop_legacy(&mut self, value: Expression<F>) {
+        // This is definitely incorrct. The intention is to convert expression to word to fix build.
+        let value = Word::from_lo_unchecked(value);
+        self.stack_pop(value)
+    }
+
+    #[deprecated(note = "stack push is favored")]
+    pub(crate) fn stack_push_legacy(&mut self, value: Expression<F>) {
+        // This is definitely incorrct. The intention is to convert expression to word to fix build.
+        let value = Word::from_lo_unchecked(value);
+        self.stack_push(value)
+    }
 
     pub(crate) fn stack_pop(&mut self, value: Word<Expression<F>>) {
         self.stack_lookup(false.expr(), self.stack_pointer_offset.clone(), value);

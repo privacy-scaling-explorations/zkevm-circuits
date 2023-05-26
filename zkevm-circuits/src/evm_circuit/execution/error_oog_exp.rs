@@ -45,8 +45,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
             OpcodeId::EXP.expr(),
         );
 
-        let base = cb.query_word_rlc();
-        let exponent = cb.query_word_rlc();
+        let base = cb.query_word_32();
+        let exponent = cb.query_word_32();
         cb.stack_pop(base.expr());
         cb.stack_pop(exponent.expr());
 

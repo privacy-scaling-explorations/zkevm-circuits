@@ -504,8 +504,14 @@ impl<F: Field, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
     }
 }
 
-#[deprecated(note="New word is preferred")]
+#[deprecated(note = "New word is preferred")]
 pub(crate) type WordLegacy<F> = RandomLinearCombination<F, 32>;
+
+impl<F: Field> WordExpr<F> for WordLegacy<F> {
+    fn to_word(&self) -> Word<Expression<F>> {
+        Word::from_lo_unchecked(self.expr())
+    }
+}
 
 pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>;
 
