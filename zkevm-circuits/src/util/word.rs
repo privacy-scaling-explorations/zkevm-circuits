@@ -7,29 +7,29 @@
 use eth_types::{Field, ToLittleEndian, U256};
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
-    circuit::{AssignedCell, Value, Region},
-    plonk::{Error, Expression, Column, Advice},
+    circuit::{AssignedCell, Region, Value},
+    plonk::{Advice, Column, Error, Expression},
 };
 use itertools::Itertools;
 
 use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell};
 
 #[derive(Clone, Debug, Copy)]
-pub  struct WordLimbs<T, const N: usize> {
+pub struct WordLimbs<T, const N: usize> {
     pub limbs: [T; N],
 }
 
-pub  type Word2<T> = WordLimbs<T, 2>;
+pub type Word2<T> = WordLimbs<T, 2>;
 
-pub  type Word4<T> = WordLimbs<T, 4>;
+pub type Word4<T> = WordLimbs<T, 4>;
 
-pub  type Word16<T> = WordLimbs<T, 16>;
+pub type Word16<T> = WordLimbs<T, 16>;
 
-pub  type Word32<T> = WordLimbs<T, 32>;
+pub type Word32<T> = WordLimbs<T, 32>;
 
-pub(crate)  type WordCell<F> = Word<Cell<F>>;
+pub(crate) type WordCell<F> = Word<Cell<F>>;
 
-pub(crate)  type Word32Cell<F> = Word32<Cell<F>>;
+pub(crate) type Word32Cell<F> = Word32<Cell<F>>;
 
 impl<T, const N: usize> WordLimbs<T, N> {
     pub fn new(limbs: [T; N]) -> Self {
@@ -49,7 +49,7 @@ impl<T: Default, const N: usize> Default for WordLimbs<T, N> {
     }
 }
 
-pub  trait WordExpr<F> {
+pub trait WordExpr<F> {
     fn to_word(&self) -> Word<Expression<F>>;
 }
 
@@ -82,7 +82,7 @@ impl<F: Field, const N: usize> WordExpr<F> for WordLimbs<Cell<F>, N> {
     }
 }
 
-impl<F: Field, const N: usize>  WordLimbs<F, N> {
+impl<F: Field, const N: usize> WordLimbs<F, N> {
     pub fn is_zero_vartime(&self) -> bool {
         self.limbs.iter().all(|limb| limb.is_zero_vartime())
     }
@@ -113,14 +113,13 @@ impl<T: Clone> Word<T> {
 
     pub fn into_lo_hi(self) -> (T, T) {
         let [lo, hi] = self.0.limbs;
-        (lo,hi)
+        (lo, hi)
     }
 
     pub fn into_value(self) -> Word<Value<T>> {
         let [lo, hi] = self.0.limbs;
         Word::new([Value::known(lo), Value::known(hi)])
     }
-
 }
 
 impl<T> std::ops::Deref for Word<T> {
@@ -132,7 +131,6 @@ impl<T> std::ops::Deref for Word<T> {
 }
 
 impl<F: Field> Word<F> {
-
     pub fn from_u256(value: eth_types::Word) -> Word<F> {
         let bytes = value.to_le_bytes();
         Word::new([
@@ -142,7 +140,7 @@ impl<F: Field> Word<F> {
     }
 
     pub fn from_address(value: eth_types::Address) -> Word<F> {
-        let bytes_le : Vec<u8> = value.to_fixed_bytes().into_iter().rev().collect();
+        let bytes_le: Vec<u8> = value.to_fixed_bytes().into_iter().rev().collect();
         Word::new([
             from_bytes::value(&bytes_le[..16]),
             from_bytes::value(&bytes_le[16..]),
@@ -156,7 +154,9 @@ impl<F: Field> Word<F> {
 }
 
 impl<F: Field> From<U256> for Word<F> {
-    fn from(u256: U256) -> Self{ Word::<F>::from_u256(u256) }    
+    fn from(u256: U256) -> Self {
+        Word::<F>::from_u256(u256)
+    }
 }
 
 impl<F: Field> Word<Cell<F>> {
@@ -174,7 +174,7 @@ impl<F: Field> Word<Cell<F>> {
 }
 
 impl<F: Field> Word<Value<F>> {
-   pub fn assign_advice<A, AR>(
+    pub fn assign_advice<A, AR>(
         &self,
         region: &mut Region<'_, F>,
         annotation: A,
@@ -183,16 +183,15 @@ impl<F: Field> Word<Value<F>> {
     ) -> Result<Word<AssignedCell<F, F>>, Error>
     where
         A: Fn() -> AR,
-        AR: Into<String>
+        AR: Into<String>,
     {
-        let annotation : String = annotation().into();
+        let annotation: String = annotation().into();
         let lo = region.assign_advice(|| &annotation, *column.lo(), offset, || *self.lo())?;
         let hi = region.assign_advice(|| &annotation, *column.hi(), offset, || *self.hi())?;
 
-        Ok(Word::new([lo,hi]))
+        Ok(Word::new([lo, hi]))
     }
 }
-
 
 impl<F: Field> WordExpr<F> for Word<Cell<F>> {
     fn to_word(&self) -> Word<Expression<F>> {
@@ -216,14 +215,9 @@ impl<F: Field> Word<Expression<F>> {
         when_true: T,
         when_false: T,
     ) -> Word<Expression<F>> {
-        let when_true_sel = 
-        when_true
-            .to_word()
-            .mul_selector(selector.clone());
-            let (true_lo, true_hi) =  when_true_sel    .to_lo_hi();
-        let when_false_sel =     when_false
-        .to_word()
-        .mul_selector(1.expr() - selector);
+        let when_true_sel = when_true.to_word().mul_selector(selector.clone());
+        let (true_lo, true_hi) = when_true_sel.to_lo_hi();
+        let when_false_sel = when_false.to_word().mul_selector(1.expr() - selector);
         let (false_lo, false_hi) = when_false_sel.to_lo_hi();
         Word::new([
             true_lo.clone() + false_lo.clone(),
@@ -233,7 +227,10 @@ impl<F: Field> Word<Expression<F>> {
 
     // Assume selector is 1/0 therefore no overflow check
     pub fn mul_selector(&self, selector: Expression<F>) -> Self {
-        Word::new([self.lo().clone() * selector.clone(), self.hi().clone() * selector])
+        Word::new([
+            self.lo().clone() * selector.clone(),
+            self.hi().clone() * selector,
+        ])
     }
 
     // No overflow check on lo/hi limbs

@@ -30,7 +30,8 @@ use gadgets::{
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells, FirstPhase,
+        Advice, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, SecondPhase,
+        VirtualCells,
     },
     poly::Rotation,
 };
@@ -99,7 +100,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         let rw_counter = MpiChip::configure(meta, selector, [rw_table.rw_counter], lookups);
         let tag = BinaryNumberChip::configure(meta, selector, Some(rw_table.tag));
         let id = MpiChip::configure(meta, selector, [rw_table.id], lookups);
-        
+
         let address = MpiChip::configure(
             meta,
             selector,
@@ -117,7 +118,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
 
         let is_non_exist = BatchedIsZeroChip::configure(
             meta,
-            (FirstPhase,FirstPhase),
+            (FirstPhase, FirstPhase),
             |meta| meta.query_fixed(selector, Rotation::cur()),
             |meta| {
                 [
@@ -514,12 +515,13 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         + meta.query_advice(first_different_limb.bits[4], Rotation::cur());
     let mpt_update_table_expressions = c.mpt_table.table_exprs(meta);
 
-    let meta_query_word = |metap:&mut VirtualCells<'_, F>,  word_column: word::Word<Column<Advice>>, at: Rotation| {
-        word::Word::new([
-            metap.query_advice(*word_column.lo(), at),
-            metap.query_advice(*word_column.hi(), at),
-        ])
-    };
+    let meta_query_word =
+        |metap: &mut VirtualCells<'_, F>, word_column: word::Word<Column<Advice>>, at: Rotation| {
+            word::Word::new([
+                metap.query_advice(*word_column.lo(), at),
+                metap.query_advice(*word_column.hi(), at),
+            ])
+        };
 
     Queries {
         selector: meta.query_fixed(c.selector, Rotation::cur()),
@@ -601,41 +603,39 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
     }
 }
 
-/* 
-#[cfg(test)]
-mod state_circuit_stats {
-    use crate::{
-        evm_circuit::step::ExecutionState,
-        stats::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states},
-    };
-
-    /// Prints the stats of State circuit per execution state.  See
-    /// `print_circuit_stats_by_states` for more details.
-    ///
-    /// Run with:
-    /// `cargo test -p zkevm-circuits --release --all-features
-    /// get_state_states_stats -- --nocapture --ignored`
-    #[ignore]
-    #[test]
-    pub fn get_state_states_stats() {
-        print_circuit_stats_by_states(
-            |state| {
-                // TODO: Enable CREATE/CREATE2 once they are supported
-                !matches!(
-                    state,
-                    ExecutionState::ErrorInvalidOpcode
-                        | ExecutionState::CREATE
-                        | ExecutionState::CREATE2
-                        | ExecutionState::SELFDESTRUCT
-                )
-            },
-            bytecode_prefix_op_big_rws,
-            |block, _, step_index| {
-                let step = &block.txs[0].steps()[step_index];
-                let step_next = &block.txs[0].steps()[step_index + 1];
-                step_next.rwc.0 - step.rwc.0
-            },
-        );
-    }
-}
-*/
+// #[cfg(test)]
+// mod state_circuit_stats {
+// use crate::{
+// evm_circuit::step::ExecutionState,
+// stats::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states},
+// };
+//
+// Prints the stats of State circuit per execution state.  See
+// `print_circuit_stats_by_states` for more details.
+//
+// Run with:
+// `cargo test -p zkevm-circuits --release --all-features
+// get_state_states_stats -- --nocapture --ignored`
+// #[ignore]
+// #[test]
+// pub fn get_state_states_stats() {
+// print_circuit_stats_by_states(
+// |state| {
+// TODO: Enable CREATE/CREATE2 once they are supported
+// !matches!(
+// state,
+// ExecutionState::ErrorInvalidOpcode
+// | ExecutionState::CREATE
+// | ExecutionState::CREATE2
+// | ExecutionState::SELFDESTRUCT
+// )
+// },
+// bytecode_prefix_op_big_rws,
+// |block, _, step_index| {
+// let step = &block.txs[0].steps()[step_index];
+// let step_next = &block.txs[0].steps()[step_index + 1];
+// step_next.rwc.0 - step.rwc.0
+// },
+// );
+// }
+// }

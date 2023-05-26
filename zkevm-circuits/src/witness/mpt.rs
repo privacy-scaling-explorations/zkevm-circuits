@@ -1,6 +1,7 @@
 use crate::{
     evm_circuit::witness::Rw,
-    table::{AccountFieldTag, MPTProofType}, util::word,
+    table::{AccountFieldTag, MPTProofType},
+    util::word,
 };
 use eth_types::{Address, Field, Word};
 use itertools::Itertools;
@@ -83,20 +84,22 @@ impl MptUpdates {
         }
     }
 
-    pub(crate) fn table_assignments<F: Field>(
-        &self,
-    ) -> Vec<MptUpdateRow<F>> {
-                self.updates
+    pub(crate) fn table_assignments<F: Field>(&self) -> Vec<MptUpdateRow<F>> {
+        self.updates
             .values()
             .map(|update| {
                 let (new_root, old_root) = update.root_assignments();
                 let (new_value, old_value) = update.value_assignments();
-                let (storage_key_lo, storage_key_hi) = word::Word::<F>::from_u256(update.key.storage_key()).into_lo_hi();
+                let (storage_key_lo, storage_key_hi) =
+                    word::Word::<F>::from_u256(update.key.storage_key()).into_lo_hi();
                 let (new_root_lo, new_root_hi) = word::Word::<F>::from_u256(new_root).into_lo_hi();
                 let (old_root_lo, old_root_hi) = word::Word::<F>::from_u256(old_root).into_lo_hi();
-                let (new_value_lo, new_value_hi) = word::Word::<F>::from_u256(new_value).into_lo_hi();
-                let (old_value_lo, old_value_hi) = word::Word::<F>::from_u256(old_value).into_lo_hi();
-                let (address_lo, address_hi) = word::Word::<F>::from_u256(update.key.address()).into_lo_hi();
+                let (new_value_lo, new_value_hi) =
+                    word::Word::<F>::from_u256(new_value).into_lo_hi();
+                let (old_value_lo, old_value_hi) =
+                    word::Word::<F>::from_u256(old_value).into_lo_hi();
+                let (address_lo, address_hi) =
+                    word::Word::<F>::from_u256(update.key.address()).into_lo_hi();
 
                 MptUpdateRow([
                     address_lo,
@@ -113,7 +116,6 @@ impl MptUpdates {
                     old_value_lo,
                     old_value_hi,
                 ])
-
             })
             .collect()
     }
