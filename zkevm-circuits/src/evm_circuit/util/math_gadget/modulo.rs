@@ -33,7 +33,10 @@ pub(crate) struct ModGadget<F> {
     lt: LtWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
 }
 impl<F: Field> ModGadget<F> {
-    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&WordLegacy<F>; 3]) -> Self {
+    pub(crate) fn construct(
+        _cb: &mut EVMConstraintBuilder<F>,
+        _words: [&WordLegacy<F>; 3],
+    ) -> Self {
         todo!()
     }
 
@@ -46,8 +49,8 @@ impl<F: Field> ModGadget<F> {
         let a_or_zero = cb.query_word32();
         let n_is_zero = IsZeroWordGadget::construct(cb, n.clone());
         let a_or_is_zero = IsZeroWordGadget::construct(cb, a_or_zero.clone());
-        let mul_add_words = MulAddWordsGadget::construct_new(cb, [&k, n, r, &a_or_zero]);
-        let eq = IsEqualWordGadget::construct(cb, a.clone(), a_or_zero);
+        let mul_add_words = MulAddWordsGadget::construct_new(cb, [&k, n, r, &a_or_zero.clone()]);
+        let eq = IsEqualWordGadget::construct(cb, a.clone(), a_or_zero.clone());
         let lt = LtWordGadget::construct(cb, r.clone(), n.clone());
         // Constrain the aux variable a_or_zero to be =a or =0 if n==0:
         // (a == a_or_zero) ^ (n == 0 & a_or_zero == 0)
@@ -92,7 +95,6 @@ impl<F: Field> ModGadget<F> {
         self.a_or_zero
             .assign(region, offset, Some(a_or_zero.to_le_bytes()))?;
         let n_sum = (0..32).fold(0, |acc, idx| acc + n.byte(idx) as u64);
-        let a_or_zero_sum = (0..32).fold(0, |acc, idx| acc + a_or_zero.byte(idx) as u64);
         self.n_is_zero
             .assign(region, offset, word::Word::from_u64(n_sum))?;
         self.a_or_is_zero

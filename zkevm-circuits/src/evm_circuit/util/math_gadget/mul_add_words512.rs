@@ -56,9 +56,9 @@ pub(crate) struct MulAddWords512Gadget<F> {
 impl<F: Field> MulAddWords512Gadget<F> {
     #[deprecated(note = "construct is favored")]
     pub(crate) fn legacy_construct(
-        cb: &mut EVMConstraintBuilder<F>,
-        words: [&util::Word<F>; 4],
-        addend: Option<&util::Word<F>>,
+        _cb: &mut EVMConstraintBuilder<F>,
+        _words: [&util::Word<F>; 4],
+        _addend: Option<&util::Word<F>>,
     ) -> Self {
         todo!()
     }
@@ -87,8 +87,10 @@ impl<F: Field> MulAddWords512Gadget<F> {
             b_limbs.push(word4_b.limbs[i].expr());
         }
 
-        let (d_lo, d_hi) = words[2].to_word().to_lo_hi();
-        let (e_lo, e_hi) = words[3].to_word().to_lo_hi();
+        let binding = words[2].to_word();
+        let (d_lo, d_hi) = binding.to_lo_hi();
+        let binding = words[3].to_word();
+        let (e_lo, e_hi) = binding.to_lo_hi();
 
         // Limb multiplication
         let t0 = a_limbs[0].clone() * b_limbs[0].clone();
@@ -107,7 +109,8 @@ impl<F: Field> MulAddWords512Gadget<F> {
         let t6 = a_limbs[3].clone() * b_limbs[3].clone();
 
         if let Some(c) = addend {
-            let (c_lo, c_hi) = c.to_word().to_lo_hi();
+            let c = c.to_word();
+            let (c_lo, c_hi) = c.to_lo_hi();
             cb.require_equal(
                 "(t0 + t1 ⋅ 2^64) + c_lo == e_lo + carry_0 ⋅ 2^128",
                 t0.expr() + t1.expr() * pow_of_two_expr(64) + c_lo.clone(),

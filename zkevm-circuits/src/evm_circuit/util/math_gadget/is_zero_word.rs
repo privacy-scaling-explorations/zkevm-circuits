@@ -26,7 +26,8 @@ pub struct IsZeroWordGadget<F, T> {
 
 impl<F: Field, T: WordExpr<F>> IsZeroWordGadget<F, T> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, word: T) -> Self {
-        let (word_lo, word_hi) = word.to_word().to_lo_hi();
+        let binding = word.to_word();
+        let (word_lo, word_hi) = binding.to_lo_hi();
         let inverse_lo = cb.query_cell_with_type(CellType::storage_for_expr(word_lo));
         let inverse_hi = cb.query_cell_with_type(CellType::storage_for_expr(word_hi));
 

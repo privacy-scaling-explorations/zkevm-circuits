@@ -44,7 +44,7 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
         // OpcodeId::AND as the delta to FixedTableTag::BitwiseAnd.
         let tag =
             FixedTableTag::BitwiseAnd.expr() + (opcode.expr() - OpcodeId::AND.as_u64().expr());
-        for idx in 0..32 {
+        for _ in 0..32 {
             cb.add_lookup(
                 "Bitwise lookup",
                 Lookup::Fixed {

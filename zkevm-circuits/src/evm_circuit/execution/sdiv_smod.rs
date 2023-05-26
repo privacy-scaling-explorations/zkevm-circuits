@@ -39,6 +39,7 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SDIV_SMOD;
 
+    #[allow(unused_variables)]
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         todo!();
         let opcode = cb.query_cell();

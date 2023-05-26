@@ -154,7 +154,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             caller_balance_word.expr(),
         );
         let is_insufficient_balance =
-            LtWordGadget::construct(cb, &caller_balance_word, &call_gadget.value.into());
+            LtWordGadget::construct(cb, &caller_balance_word, &call_gadget.value.clone().into());
         // depth < 1025
         let is_depth_ok = LtGadget::construct(cb, depth.expr(), 1025.expr());
 

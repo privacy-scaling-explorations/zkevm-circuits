@@ -47,17 +47,17 @@ impl<F: Field, T: WordExpr<F> + Clone> MinMaxWordGadget<F, T> {
 
     fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        lhs: F,
-        rhs: F,
+        _region: &mut CachedRegion<'_, '_, F>,
+        _offset: usize,
+        _lhs: F,
+        _rhs: F,
     ) -> Result<(F, F), Error> {
         todo!("lt assign");
         let lt_says_greater = true;
         Ok(if lt_says_greater {
-            (rhs, lhs)
+            (_rhs, _lhs)
         } else {
-            (lhs, rhs)
+            (_lhs, _rhs)
         })
     }
 

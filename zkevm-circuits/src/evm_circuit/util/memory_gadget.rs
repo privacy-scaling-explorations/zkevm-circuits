@@ -87,9 +87,9 @@ pub(crate) struct MemoryAddressGadget<F> {
 impl<F: Field> MemoryAddressGadget<F> {
     #[deprecated(note = "construct_new is favored")]
     pub(crate) fn construct(
-        cb: &mut EVMConstraintBuilder<F>,
-        memory_offset: Cell<F>,
-        memory_length: MemoryAddress<F>,
+        _cb: &mut EVMConstraintBuilder<F>,
+        _memory_offset: Cell<F>,
+        _memory_length: MemoryAddress<F>,
     ) -> Self {
         todo!()
     }
@@ -99,7 +99,7 @@ impl<F: Field> MemoryAddressGadget<F> {
         memory_offset: Word32Cell<F>,
         memory_length: Word32Cell<F>,
     ) -> Self {
-        let memory_length_is_zero = IsZeroWordGadget::construct(cb, memory_length);
+        let memory_length_is_zero = IsZeroWordGadget::construct(cb, memory_length.clone());
 
         Self {
             memory_offset,

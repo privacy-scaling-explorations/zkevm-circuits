@@ -52,7 +52,10 @@ pub(crate) struct MulAddWordsGadget<F> {
 }
 
 impl<F: Field> MulAddWordsGadget<F> {
-    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&WordLegacy<F>; 4]) -> Self {
+    pub(crate) fn construct(
+        _cb: &mut EVMConstraintBuilder<F>,
+        _words: [&WordLegacy<F>; 4],
+    ) -> Self {
         todo!()
     }
 

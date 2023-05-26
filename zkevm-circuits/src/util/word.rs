@@ -49,7 +49,7 @@ impl<T: Default, const N: usize> Default for WordLimbs<T, N> {
 }
 
 impl<F: Field> From<Word32Cell<F>> for WordLegacy<F> {
-    fn from(value: Word32Cell<F>) -> Self {
+    fn from(_: Word32Cell<F>) -> Self {
         todo!()
     }
 }
@@ -89,7 +89,7 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
     }
 
     pub fn word_expr(&self) -> WordLimbs<Expression<F>, N> {
-        return WordLimbs::new(self.limbs.map(|cell| cell.expr()));
+        return WordLimbs::new(self.limbs.clone().map(|cell| cell.expr()));
     }
 }
 
@@ -182,14 +182,10 @@ impl<F: Field> Word<Expression<F>> {
         when_true: T,
         when_false: T,
     ) -> Word<Expression<F>> {
-        let (true_lo, true_hi) = when_true
-            .to_word()
-            .mul_selector(selector.clone())
-            .to_lo_hi();
-        let (false_lo, false_hi) = when_false
-            .to_word()
-            .mul_selector(1.expr() - selector)
-            .to_lo_hi();
+        let binding = when_true.to_word().mul_selector(selector.clone());
+        let (true_lo, true_hi) = binding.to_lo_hi();
+        let binding = when_false.to_word().mul_selector(1.expr() - selector);
+        let (false_lo, false_hi) = binding.to_lo_hi();
         Word::new([
             true_lo.clone() + false_lo.clone(),
             true_hi.clone() + false_hi.clone(),
@@ -198,7 +194,10 @@ impl<F: Field> Word<Expression<F>> {
 
     // Assume selector is 1/0 therefore no overflow check
     pub fn mul_selector(&self, selector: Expression<F>) -> Self {
-        Word::new([self.lo().clone() * selector, self.hi().clone() * selector])
+        Word::new([
+            self.lo().clone() * selector.clone(),
+            self.hi().clone() * selector,
+        ])
     }
 
     // No overflow check on lo/hi limbs
@@ -249,7 +248,7 @@ impl<F: Field, const N1: usize> WordLimbs<Expression<F>, N1> {
             self.limbs
                 .chunks(N1 / N2)
                 .map(|chunk| from_bytes::expr(chunk))
-                .zip(others.limbs)
+                .zip(others.limbs.clone())
                 .map(|(expr1, expr2)| expr1 - expr2)
                 .collect_vec(),
         ))

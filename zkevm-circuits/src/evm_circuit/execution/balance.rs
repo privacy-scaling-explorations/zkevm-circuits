@@ -31,7 +31,7 @@ pub(crate) struct BalanceGadget<F> {
     is_warm: Cell<F>,
     code_hash: Word32Cell<F>,
     not_exists: IsZeroGadget<F>,
-    balance: Cell<F>,
+    balance: Word32Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
@@ -98,7 +98,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             is_warm,
             code_hash,
             not_exists,
-            balance: balance.limbs[0],
+            balance,
         }
     }
 
@@ -142,7 +142,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             block.rws[step.rw_indices[6]].account_value_pair().0
         };
         self.balance
-            .assign(region, offset, region.word_rlc(balance))?;
+            .assign(region, offset, Some(balance.to_le_bytes()))?;
 
         Ok(())
     }

@@ -157,7 +157,7 @@ pub(crate) trait ConstrainBuilderCommon<F: Field> {
     }
 
     fn require_zero_word(&mut self, name: &'static str, word: Word<Expression<F>>) {
-        self.require_equal_word("word zero equality", word, Word::zero());
+        self.require_equal_word(name, word, Word::zero());
     }
 
     fn require_equal_word(

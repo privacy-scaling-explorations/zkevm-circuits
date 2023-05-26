@@ -26,9 +26,9 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
     AddWordsGadget<F, N_ADDENDS, CHECK_OVERFLOW>
 {
     pub(crate) fn construct(
-        cb: &mut EVMConstraintBuilder<F>,
-        addends: [WordLegacy<F>; N_ADDENDS],
-        sum: WordLegacy<F>,
+        _cb: &mut EVMConstraintBuilder<F>,
+        _addends: [WordLegacy<F>; N_ADDENDS],
+        _sum: WordLegacy<F>,
     ) -> Self {
         todo!()
     }

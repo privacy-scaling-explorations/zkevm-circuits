@@ -371,14 +371,14 @@ pub(crate) struct TransferWithGasFeeGadget<F> {
 
 impl<F: Field> TransferWithGasFeeGadget<F> {
     pub(crate) fn construct(
-        cb: &mut EVMConstraintBuilder<F>,
-        sender_address: Expression<F>,
-        receiver_address: Expression<F>,
-        receiver_exists: Expression<F>,
-        must_create: Expression<F>,
-        value: Word<F>,
-        gas_fee: Word<F>,
-        reversion_info: &mut ReversionInfo<F>,
+        _cb: &mut EVMConstraintBuilder<F>,
+        _sender_address: Expression<F>,
+        _receiver_address: Expression<F>,
+        _receiver_exists: Expression<F>,
+        _must_create: Expression<F>,
+        _value: Word<F>,
+        _gas_fee: Word<F>,
+        _reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
         todo!()
     }
@@ -396,7 +396,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
     ) -> Self {
         let sender_sub_fee =
             UpdateBalanceGadget::construct(cb, sender_address.expr(), vec![gas_fee], None);
-        let value_is_zero = IsZeroWordGadget::construct(cb, value);
+        let value_is_zero = IsZeroWordGadget::construct(cb, value.clone());
         // If receiver doesn't exist, create it
         cb.condition(
             or::expr([
@@ -424,7 +424,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             let receiver = UpdateBalanceGadget::construct(
                 cb,
                 receiver_address,
-                vec![value],
+                vec![value.clone()],
                 Some(reversion_info),
             );
             (sender_sub_value, receiver)
@@ -523,7 +523,7 @@ impl<F: Field> TransferGadget<F> {
         value: Word32Cell<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let value_is_zero = IsZeroWordGadget::construct(cb, value);
+        let value_is_zero = IsZeroWordGadget::construct(cb, value.clone());
         // If receiver doesn't exist, create it
         cb.condition(
             not::expr(value_is_zero.expr()) * not::expr(receiver_exists),
@@ -542,7 +542,7 @@ impl<F: Field> TransferGadget<F> {
             let sender = UpdateBalanceGadget::construct(
                 cb,
                 sender_address,
-                vec![value],
+                vec![value.clone()],
                 Some(reversion_info),
             );
             let receiver = UpdateBalanceGadget::construct(
@@ -674,7 +674,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
             MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
 
         // construct common gadget
-        let value_is_zero = IsZeroWordGadget::construct(cb, value);
+        let value_is_zero = IsZeroWordGadget::construct(cb, value.clone());
         let has_value = select::expr(
             is_delegatecall.expr() + is_staticcall.expr(),
             0.expr(),
@@ -685,11 +685,11 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         cb.account_read_word(
             callee_address_word.expr(),
             AccountFieldTag::CodeHash,
-            callee_code_hash.to_word(),
+            callee_code_hash.clone().to_word(),
         );
         let is_empty_code_hash =
-            IsEqualWordGadget::construct(cb, callee_code_hash, cb.empty_code_hash_word());
-        let callee_not_exists = IsZeroWordGadget::construct(cb, callee_code_hash);
+            IsEqualWordGadget::construct(cb, callee_code_hash.clone(), cb.empty_code_hash_word());
+        let callee_not_exists = IsZeroWordGadget::construct(cb, callee_code_hash.clone());
 
         Self {
             is_success,
@@ -863,11 +863,11 @@ pub(crate) struct SstoreGasGadget<F> {
 
 impl<F: Field> SstoreGasGadget<F> {
     pub(crate) fn construct(
-        cb: &mut EVMConstraintBuilder<F>,
-        value: Cell<F>,
-        value_prev: Cell<F>,
-        original_value: Cell<F>,
-        is_warm: Cell<F>,
+        _cb: &mut EVMConstraintBuilder<F>,
+        _value: Cell<F>,
+        _value_prev: Cell<F>,
+        _original_value: Cell<F>,
+        _is_warm: Cell<F>,
     ) -> Self {
         todo!()
     }
@@ -879,9 +879,10 @@ impl<F: Field> SstoreGasGadget<F> {
         original_value: WordCell<F>,
         is_warm: Cell<F>,
     ) -> Self {
-        let value_eq_prev = IsEqualWordGadget::construct(cb, value, value_prev);
-        let original_eq_prev = IsEqualWordGadget::construct(cb, original_value, value_prev);
-        let original_is_zero = IsZeroWordGadget::construct(cb, original_value);
+        let value_eq_prev = IsEqualWordGadget::construct(cb, value.clone(), value_prev.clone());
+        let original_eq_prev =
+            IsEqualWordGadget::construct(cb, original_value.clone(), value_prev.clone());
+        let original_is_zero = IsZeroWordGadget::construct(cb, original_value.clone());
         let warm_case_gas = select::expr(
             value_eq_prev.expr(),
             GasCost::WARM_ACCESS.expr(),
@@ -1135,7 +1136,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
     }
 
     pub(crate) fn original_word_new(&self) -> Word32Cell<F> {
-        self.word.original
+        self.word.original.clone()
     }
 
     pub(crate) fn overflow(&self) -> Expression<F> {

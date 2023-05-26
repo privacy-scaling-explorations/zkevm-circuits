@@ -69,10 +69,11 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         let a_reduced = cb.query_word32();
         let d = cb.query_word32();
 
-        let n_is_zero = IsZeroWordGadget::construct(cb, n);
+        let n_is_zero = IsZeroWordGadget::construct(cb, n.clone());
 
         // 1. check k * N + a_reduced == a without overflow
-        let muladd_k_n_areduced = MulAddWordsGadget::construct_new(cb, [&k, &n, &a_reduced, &a]);
+        let muladd_k_n_areduced =
+            MulAddWordsGadget::construct_new(cb, [&k, &n.clone(), &a_reduced.clone(), &a]);
         cb.require_zero(
             "k * N + a_reduced does not overflow",
             muladd_k_n_areduced.overflow(),
@@ -93,12 +94,12 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         cb.require_equal_word(
             "check a_reduced + b 512 bit carry if n != 0",
             sum_areduced_b_overflow.to_word(),
-            Word::from_lo_unchecked(sum_areduced_b.carry().unwrap().expr())
+            Word::from_lo_unchecked(sum_areduced_b.carry().clone().unwrap().expr())
                 .mul_selector(not::expr(n_is_zero.expr())),
         );
 
-        let cmp_r_n = CmpWordsGadget::construct(cb, r, n);
-        let cmp_areduced_n = CmpWordsGadget::construct(cb, a_reduced, n);
+        let cmp_r_n = CmpWordsGadget::construct(cb, r.clone(), n.clone());
+        let cmp_areduced_n = CmpWordsGadget::construct(cb, a_reduced.clone(), n.clone());
 
         // 3. r < n and a_reduced < n if n > 0
         cb.require_zero(
@@ -110,8 +111,12 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         // take care that if n==0 pushed value for r should be zero also
         cb.stack_pop_word(a.to_word());
         cb.stack_pop_word(b.to_word());
-        cb.stack_pop_word(n.to_word());
-        cb.stack_push_word(r.to_word().mul_selector(not::expr(n_is_zero.expr())));
+        cb.stack_pop_word(n.clone().to_word());
+        cb.stack_push_word(
+            r.clone()
+                .to_word()
+                .mul_selector(not::expr(n_is_zero.expr())),
+        );
 
         // State transition
         let step_state_transition = StepStateTransition {
