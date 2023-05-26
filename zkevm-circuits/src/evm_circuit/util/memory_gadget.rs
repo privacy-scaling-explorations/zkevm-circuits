@@ -28,12 +28,17 @@ use halo2_proofs::{
 pub(crate) mod address_low {
     use crate::{
         evm_circuit::{param::N_BYTES_MEMORY_ADDRESS, util::from_bytes},
-        util::word::Word32Cell,
+        util::word::{Word32Cell, WordLegacy},
     };
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: Field>(address: &Word32Cell<F>) -> Expression<F> {
+    pub(crate) fn expr_word<F: Field>(address: &Word32Cell<F>) -> Expression<F> {
+        from_bytes::expr(&address.limbs[..N_BYTES_MEMORY_ADDRESS])
+    }
+
+    #[deprecated(note = "expr_word is fav")]
+    pub(crate) fn expr<F: Field>(address: &WordLegacy<F>) -> Expression<F> {
         from_bytes::expr(&address.limbs[..N_BYTES_MEMORY_ADDRESS])
     }
 

@@ -48,6 +48,12 @@ impl<T: Default, const N: usize> Default for WordLimbs<T, N> {
     }
 }
 
+impl<F: Field> Expr<F> for WordCell<F> {
+    fn expr(&self) -> Expression<F> {
+        todo!()
+    }
+}
+
 pub trait WordExpr<F> {
     fn to_word(&self) -> Word<Expression<F>>;
 }
@@ -258,6 +264,5 @@ impl<F: Field> From<WordLegacy<F>> for Word32Cell<F> {
         Word32Cell::new(value.cells)
     }
 }
-
 
 // TODO unittest

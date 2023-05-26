@@ -139,7 +139,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                         cb.curr.state.is_root.expr(),
                     ]),
                     |cb| {
-                        cb.tx_context_lookup_legacy(
+                        cb.tx_context_lookup(
                             src_id.expr(),
                             TxContextFieldTag::CallData,
                             Some(src_addr.expr() + idx.expr()),

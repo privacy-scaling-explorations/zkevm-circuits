@@ -705,7 +705,16 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         )
     }
 
-    pub(crate) fn bytecode_length(&mut self, code_hash: Word<Expression<F>>, value: Expression<F>) {
+    #[deprecated(note = "in fav of bytecode_length_word")]
+    pub(crate) fn bytecode_length(&mut self, code_hash: Expression<F>, value: Expression<F>) {
+        self.bytecode_length_word(Word::from_lo_unchecked(code_hash), value)
+    }
+
+    pub(crate) fn bytecode_length_word(
+        &mut self,
+        code_hash: Word<Expression<F>>,
+        value: Expression<F>,
+    ) {
         self.add_lookup(
             "Bytecode (length)",
             Lookup::Bytecode {

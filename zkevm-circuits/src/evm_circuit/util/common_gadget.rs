@@ -391,7 +391,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
                 must_create.clone(),
             ]),
             |cb| {
-                cb.account_write(
+                cb.account_write_word(
                     receiver_address.clone(),
                     AccountFieldTag::CodeHash,
                     cb.empty_code_hash_word(),

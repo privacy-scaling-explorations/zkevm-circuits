@@ -7,11 +7,11 @@ use crate::{
             constraint_builder::EVMConstraintBuilder,
             math_gadget::{IsEqualGadget, IsZeroGadget, RangeCheckGadget},
             memory_gadget::{address_high, address_low, MemoryExpansionGadget},
-            CachedRegion, Cell,
+            CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::{Expr, word::Word},
+    util::Expr,
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
