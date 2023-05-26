@@ -9,7 +9,7 @@ use crate::{
 };
 use bus_mapping::{
     circuit_input_builder::ExecState,
-    error::{ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
+    error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
     evm::OpcodeId,
 };
 use eth_types::{evm_unimplemented, Field, ToWord};
@@ -131,12 +131,18 @@ impl From<&ExecError> for ExecutionState {
             ExecError::InvalidOpcode => ExecutionState::ErrorInvalidOpcode,
             ExecError::StackOverflow | ExecError::StackUnderflow => ExecutionState::ErrorStack,
             ExecError::WriteProtection => ExecutionState::ErrorWriteProtection,
-            ExecError::Depth => ExecutionState::ErrorDepth,
-            ExecError::InsufficientBalance(insuff_balance_err) => match insuff_balance_err {
-                InsufficientBalanceError::Call => ExecutionState::CALL_OP,
-                InsufficientBalanceError::Create => ExecutionState::CREATE,
-                InsufficientBalanceError::Create2 => ExecutionState::CREATE2,
+            ExecError::Depth(depth_error) => match depth_error {
+                DepthError::Call => ExecutionState::CALL_OP,
+                DepthError::Create => ExecutionState::CREATE,
+                DepthError::Create2 => ExecutionState::CREATE2,
             },
+            ExecError::InsufficientBalance(insufficient_balance_err) => {
+                match insufficient_balance_err {
+                    InsufficientBalanceError::Call => ExecutionState::CALL_OP,
+                    InsufficientBalanceError::Create => ExecutionState::CREATE,
+                    InsufficientBalanceError::Create2 => ExecutionState::CREATE2,
+                }
+            }
             ExecError::NonceUintOverflow(nonce_overflow_err) => match nonce_overflow_err {
                 NonceUintOverflowError::Create => ExecutionState::CREATE,
                 NonceUintOverflowError::Create2 => ExecutionState::CREATE2,

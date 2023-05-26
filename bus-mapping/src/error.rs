@@ -118,6 +118,17 @@ pub enum NonceUintOverflowError {
     Create2,
 }
 
+/// Call depth errors by opcode/state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DepthError {
+    /// Call depth errors in CALL/CALLCODE opcode.
+    Call,
+    /// Call depth errors in CREATE opcode.
+    Create,
+    /// Call depth errors in CREATE2 opcode.
+    Create2,
+}
+
 /// EVM Execution Error
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExecError {
@@ -132,8 +143,8 @@ pub enum ExecError {
     /// For SSTORE, LOG0, LOG1, LOG2, LOG3, LOG4, CREATE, CALL, CREATE2,
     /// SELFDESTRUCT
     WriteProtection,
-    /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
-    Depth,
+    /// For CALL, CALLCODE, DELEGATECALL, STATICCALL, CREATE, CREATE2
+    Depth(DepthError),
     /// For CALL, CALLCODE, CREATE, CREATE2
     InsufficientBalance(InsufficientBalanceError),
     /// For CREATE2

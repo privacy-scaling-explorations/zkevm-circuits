@@ -1,7 +1,7 @@
 //! Definition of each opcode of the EVM.
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep},
-    error::{ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
+    error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
     evm::OpcodeId,
     operation::TxAccessListAccountOp,
     Error,
@@ -308,13 +308,10 @@ fn fn_gen_error_state_associated_ops(
         }
         ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
-        ExecError::Depth => {
-            let op = geth_step.op;
-            if !op.is_call() {
-                evm_unimplemented!("TODO: ErrDepth for CREATE is not implemented yet");
-            }
-            Some(fn_gen_associated_ops(&op))
-        }
+        // call, callcode, create & create2 can encounter DepthError error,
+        ExecError::Depth(DepthError::Call) => Some(CallOpcode::<7>::gen_associated_ops),
+        ExecError::Depth(DepthError::Create) => Some(DummyCreate::<false>::gen_associated_ops),
+        ExecError::Depth(DepthError::Create2) => Some(DummyCreate::<true>::gen_associated_ops),
         // more future errors place here
         _ => {
             evm_unimplemented!("TODO: error state {:?} not implemented", error);
