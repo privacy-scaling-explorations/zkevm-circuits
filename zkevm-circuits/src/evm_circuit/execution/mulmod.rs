@@ -58,10 +58,11 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let modword = ModGadget::construct(cb, [&a, &n, &a_reduced]);
 
         // 2.  a_reduced * b + 0 == d * 2^256 + e
-        let mul512_left = MulAddWords512Gadget::construct(cb, [&a_reduced, &b, &d, &e], None);
+        let mul512_left =
+            MulAddWords512Gadget::legacy_construct(cb, [&a_reduced, &b, &d, &e], None);
 
         // 3.  k2 * n + r == d * 2^256 + e
-        let mul512_right = MulAddWords512Gadget::construct(cb, [&k, &n, &d, &e], Some(&r));
+        let mul512_right = MulAddWords512Gadget::legacy_construct(cb, [&k, &n, &d, &e], Some(&r));
 
         // (r < n ) or n == 0
         let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));

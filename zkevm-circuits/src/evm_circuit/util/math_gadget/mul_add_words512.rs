@@ -1,5 +1,6 @@
 use crate::{
     evm_circuit::util::{
+        self,
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         from_bytes, pow_of_two_expr, split_u256, split_u256_limb64, CachedRegion, Cell,
     },
@@ -53,6 +54,17 @@ pub(crate) struct MulAddWords512Gadget<F> {
 }
 
 impl<F: Field> MulAddWords512Gadget<F> {
+    #[deprecated(note = "construct is favored")]
+    pub(crate) fn legacy_construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        words: [&util::WordLegacy<F>; 4],
+        addend: Option<&util::WordLegacy<F>>,
+    ) -> Self {
+        let words = words.iter().map(|word| word::Word32Cell::new(word.cells));
+        let addend = addend.map(|word| word::Word32Cell::new(word.cells));
+        Self::construct(cb, words, addend)
+    }
+
     /// The words argument is: a, b, d, e
     /// Addend is the optional c.
     pub(crate) fn construct(
