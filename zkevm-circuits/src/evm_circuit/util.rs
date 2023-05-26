@@ -464,7 +464,7 @@ impl<F: Field> CellManager<F> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct RandomLinearCombination<F, const N: usize> {
+pub struct RandomLinearCombination<F, const N: usize> {
     // random linear combination expression of cells
     expression: Expression<F>,
     // inner cells in little-endian for synthesis

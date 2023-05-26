@@ -14,7 +14,7 @@ use itertools::Itertools;
 use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell, RandomLinearCombination};
 
 #[derive(Clone, Debug, Copy)]
-pub(crate) struct WordLimbs<T, const N: usize> {
+pub struct WordLimbs<T, const N: usize> {
     pub limbs: [T; N],
 }
 
