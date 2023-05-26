@@ -728,7 +728,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     ) -> Cell<F> {
         let cell = self.query_cell();
         // lookup read, unchecked is safe
-        self.tx_context_lookup(id, field_tag, index, Word::from_lo_unchecked(cell.expr()));
+        self.tx_context_lookup_word(id, field_tag, index, Word::from_lo_unchecked(cell.expr()));
         cell
     }
 
@@ -739,7 +739,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         index: Option<Expression<F>>,
     ) -> Word<Cell<F>> {
         let word = self.query_word_unchecked();
-        self.tx_context_lookup(id, field_tag, index, word.to_word());
+        self.tx_context_lookup_word(id, field_tag, index, word.to_word());
         word
     }
 
@@ -750,12 +750,12 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         index: Option<Expression<F>>,
     ) -> Word32Cell<F> {
         let word = self.query_word32();
-        self.tx_context_lookup(id, field_tag, index, word.to_word());
+        self.tx_context_lookup_word(id, field_tag, index, word.to_word());
         word
     }
 
-    #[deprecated(note = "tx_context_lookup is favored")]
-    pub(crate) fn tx_context_lookup_legacy(
+    #[deprecated(note = "tx_context_lookup_word is favored")]
+    pub(crate) fn tx_context_lookup(
         &mut self,
         id: Expression<F>,
         field_tag: TxContextFieldTag,
@@ -763,10 +763,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         value: Expression<F>,
     ) {
         let value = Word::from_lo_unchecked(value);
-        self.tx_context_lookup(id, field_tag, index, value)
+        self.tx_context_lookup_word(id, field_tag, index, value)
     }
 
-    pub(crate) fn tx_context_lookup(
+    pub(crate) fn tx_context_lookup_word(
         &mut self,
         id: Expression<F>,
         field_tag: TxContextFieldTag,
@@ -1093,7 +1093,17 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     // Account
 
+    #[deprecated(note = "infav of account_read_word")]
     pub(crate) fn account_read(
+        &mut self,
+        account_address: Expression<F>,
+        field_tag: AccountFieldTag,
+        value: Expression<F>,
+    ) {
+        self.account_read_word(account_address, field_tag, Word::from_lo_unchecked(value));
+    }
+
+    pub(crate) fn account_read_word(
         &mut self,
         account_address: Expression<F>,
         field_tag: AccountFieldTag,
@@ -1115,8 +1125,25 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             ),
         );
     }
-
+    #[deprecated(note = "infav of account_write_word")]
     pub(crate) fn account_write(
+        &mut self,
+        account_address: Expression<F>,
+        field_tag: AccountFieldTag,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        reversion_info: Option<&mut ReversionInfo<F>>,
+    ) {
+        self.account_write_word(
+            account_address,
+            field_tag,
+            Word::from_lo_unchecked(value),
+            Word::from_lo_unchecked(value_prev),
+            reversion_info,
+        )
+    }
+
+    pub(crate) fn account_write_word(
         &mut self,
         account_address: Expression<F>,
         field_tag: AccountFieldTag,

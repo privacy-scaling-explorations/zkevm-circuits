@@ -12,7 +12,7 @@ use crate::evm_circuit::{
         },
         from_bytes,
         math_gadget::{ByteSizeGadget, IsEqualGadget, IsZeroGadget},
-        CachedRegion, Cell, Word, Word,
+        CachedRegion, Cell, Word,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };

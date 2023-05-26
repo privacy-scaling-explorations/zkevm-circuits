@@ -1106,7 +1106,12 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
         self.lt_cap.expr()
     }
 
-    pub(crate) fn original_word(&self) -> Word32Cell<F> {
+    #[deprecated(note = "in fav of original_word_new")]
+    pub(crate) fn original_word(&self) -> Expression<F> {
+        self.word.original.limbs[0].expr()
+    }
+
+    pub(crate) fn original_word_new(&self) -> Word32Cell<F> {
         self.word.original
     }
 

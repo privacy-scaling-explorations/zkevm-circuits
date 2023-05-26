@@ -444,11 +444,11 @@ pub struct RwTable {
     /// Key3 (FieldTag)
     pub field_tag: Column<Advice>,
     /// Key3 (StorageKey)
-    pub storage_key: word::WordNew<Column<Advice>>,
+    pub storage_key: word::Word<Column<Advice>>,
     /// Value
-    pub value: word::WordNew<Column<Advice>>,
+    pub value: word::Word<Column<Advice>>,
     /// Value Previous
-    pub value_prev: word::WordNew<Column<Advice>>,
+    pub value_prev: word::Word<Column<Advice>>,
     /// Aux1
     pub aux1: Column<Advice>,
     /// Aux2 (Committed Value)
@@ -504,9 +504,9 @@ impl RwTable {
             id: meta.advice_column(),
             address: meta.advice_column(),
             field_tag: meta.advice_column(),
-            storage_key: word::WordNew::new([meta.advice_column(), meta.advice_column()]),
+            storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
             value: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            value_prev: word::WordNew::new([meta.advice_column(), meta.advice_column()]),
+            value_prev: word::Word::new([meta.advice_column(), meta.advice_column()]),
             // It seems that aux1 for the moment is not using randomness
             // TODO check in a future review
             aux1: meta.advice_column_in(SecondPhase),

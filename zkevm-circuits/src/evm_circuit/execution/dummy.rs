@@ -4,7 +4,7 @@ use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
-        util::{constraint_builder::EVMConstraintBuilder, CachedRegion, Word, Word},
+        util::{constraint_builder::EVMConstraintBuilder, CachedRegion, Word},
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
