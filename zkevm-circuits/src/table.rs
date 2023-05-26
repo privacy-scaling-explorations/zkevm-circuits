@@ -257,8 +257,8 @@ impl<F: Field> LookupTable<F> for TxTable {
             self.tx_id.into(),
             self.tag.into(),
             self.index.into(),
-            self.value.lo().clone().into(),
-            self.value.hi().clone().into(),
+            (*self.value.lo()).into(),
+            (*self.value.hi()).into(),
         ]
     }
 
@@ -277,8 +277,8 @@ impl<F: Field> LookupTable<F> for TxTable {
             meta.query_advice(self.tx_id, Rotation::cur()),
             meta.query_fixed(self.tag, Rotation::cur()),
             meta.query_advice(self.index, Rotation::cur()),
-            meta.query_advice(self.value.lo().clone(), Rotation::cur()),
-            meta.query_advice(self.value.hi().clone(), Rotation::cur()),
+            meta.query_advice(*self.value.lo(), Rotation::cur()),
+            meta.query_advice(*self.value.hi(), Rotation::cur()),
         ]
     }
 }
@@ -440,7 +440,7 @@ pub struct RwTable {
     /// Key1 (Id)
     pub id: Column<Advice>,
     /// Key2 (Address)
-    pub address: Column<Advice>,
+    pub address: word::Word<Column<Advice>>,
     /// Key3 (FieldTag)
     pub field_tag: Column<Advice>,
     /// Key3 (StorageKey)
@@ -460,16 +460,17 @@ impl<F: Field> LookupTable<F> for RwTable {
             self.is_write.into(),
             self.tag.into(),
             self.id.into(),
-            self.address.into(),
+            (*self.address.lo()).into(),
+            (*self.address.hi()).into(),
             self.field_tag.into(),
-            self.storage_key.lo().clone().into(),
-            self.storage_key.hi().clone().into(),
-            self.value.lo().clone().into(),
-            self.value.hi().clone().into(),
-            self.value_prev.lo().clone().into(),
-            self.value_prev.hi().clone().into(),
-            self.init_val.lo().clone().into(),
-            self.init_val.hi().clone().into(),
+            (*self.storage_key.lo()).into(),
+            (*self.storage_key.hi()).into(),
+            (*self.value.lo()).into(),
+            (*self.value.hi()).into(),
+            (*self.value_prev.lo()).into(),
+            (*self.value_prev.hi()).into(),
+            (*self.init_val.lo()).into(),
+            (*self.init_val.hi()).into(),
         ]
     }
 
@@ -479,7 +480,8 @@ impl<F: Field> LookupTable<F> for RwTable {
             String::from("is_write"),
             String::from("tag"),
             String::from("id"),
-            String::from("address"),
+            String::from("address_lo"),
+            String::from("address_hi"),
             String::from("field_tag"),
             String::from("storage_key_lo"),
             String::from("storage_key_hi"),
@@ -500,7 +502,7 @@ impl RwTable {
             is_write: meta.advice_column(),
             tag: meta.advice_column(),
             id: meta.advice_column(),
-            address: meta.advice_column(),
+            address: word::Word::new([meta.advice_column(), meta.advice_column()]),
             field_tag: meta.advice_column(),
             storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
             value: word::Word::new([meta.advice_column(), meta.advice_column()]),
@@ -519,12 +521,12 @@ impl RwTable {
             (self.is_write, row.is_write),
             (self.tag, row.tag),
             (self.id, row.id),
-            (self.address, row.address),
             (self.field_tag, row.field_tag),
         ] {
             region.assign_advice(|| "assign rw row on rw table", column, offset, || value)?;
         }
         for (column, value) in [
+            (self.address, row.address),
             (self.storage_key, row.storage_key),
             (self.value, row.value),
             (self.value_prev, row.value_prev),
@@ -558,8 +560,6 @@ impl RwTable {
     ) -> Result<(), Error> {
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
         for (offset, row) in rows.iter().enumerate() {
-            // TODO(amb) 
-            let rwrow = row.table_assignment::<F>();
             self.assign(region, offset, &row.table_assignment())?;
         }
         Ok(())
@@ -597,7 +597,7 @@ impl From<AccountFieldTag> for MPTProofType {
 
 /// The MptTable shared between MPT Circuit and State Circuit
 #[derive(Clone, Copy, Debug)]
-pub struct MptTable([Column<Advice>; 12]);
+pub struct MptTable([Column<Advice>; 13]);
 
 impl<F: Field> LookupTable<F> for MptTable {
     fn columns(&self) -> Vec<Column<Any>> {
@@ -606,7 +606,8 @@ impl<F: Field> LookupTable<F> for MptTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
-            String::from("address"),
+            String::from("address_lo"),
+            String::from("address_hi"),
             String::from("storage_key_lo"),
             String::from("storage_key_hi"),
             String::from("proof_type"),
@@ -626,7 +627,8 @@ impl MptTable {
     /// Construct a new MptTable
     pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self([
-            meta.advice_column(), // Address
+            meta.advice_column(), // Address lo
+            meta.advice_column(), // Address hi
             meta.advice_column(), // Storage key lo
             meta.advice_column(), // Storage key hi
             meta.advice_column(), // Proof type
@@ -761,8 +763,8 @@ impl BytecodeTable {
 impl<F: Field> LookupTable<F> for BytecodeTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.code_hash.lo().clone().into(),
-            self.code_hash.hi().clone().into(),
+            (*self.code_hash.lo()).into(),
+            (*self.code_hash.hi()).into(),
             self.tag.into(),
             self.index.into(),
             self.is_code.into(),
@@ -872,8 +874,8 @@ impl<F: Field> LookupTable<F> for BlockTable {
         vec![
             self.tag.into(),
             self.index.into(),
-            self.value.lo().clone().into(),
-            self.value.hi().clone().into(),
+            (*self.value.lo()).into(),
+            (*self.value.hi()).into(),
         ]
     }
 

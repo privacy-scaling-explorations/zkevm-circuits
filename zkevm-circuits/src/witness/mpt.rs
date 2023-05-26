@@ -1,9 +1,8 @@
 use crate::{
-    evm_circuit::{util::rlc, witness::Rw},
+    evm_circuit::witness::Rw,
     table::{AccountFieldTag, MPTProofType}, util::word,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
-use halo2_proofs::circuit::Value;
+use eth_types::{Address, Field, Word};
 use itertools::Itertools;
 use std::collections::BTreeMap;
 
@@ -42,7 +41,7 @@ pub struct MptUpdates {
 
 /// The field element encoding of an MPT update, which is used by the MptTable
 #[derive(Debug, Clone, Copy)]
-pub struct MptUpdateRow<F>(pub(crate) [F; 12]);
+pub struct MptUpdateRow<F>(pub(crate) [F; 13]);
 
 impl MptUpdates {
     pub(crate) fn old_root(&self) -> Word {
@@ -97,9 +96,11 @@ impl MptUpdates {
                 let (old_root_lo, old_root_hi) = word::Word::<F>::from_u256(old_root).into_lo_hi();
                 let (new_value_lo, new_value_hi) = word::Word::<F>::from_u256(new_value).into_lo_hi();
                 let (old_value_lo, old_value_hi) = word::Word::<F>::from_u256(old_value).into_lo_hi();
-                
+                let (address_lo, address_hi) = word::Word::<F>::from_u256(update.key.address()).into_lo_hi();
+
                 MptUpdateRow([
-                    update.key.address(),
+                    address_lo,
+                    address_hi,
                     storage_key_lo,
                     storage_key_hi,
                     update.proof_type(),
@@ -174,10 +175,10 @@ impl Key {
             self
         }
     }
-    fn address<F: Field>(&self) -> F {
+    fn address(&self) -> Word {
         match self {
             Self::Account { address, .. } | Self::AccountStorage { address, .. } => {
-                address.to_scalar().unwrap()
+                Word::from_big_endian(address.as_bytes())
             }
         }
     }
