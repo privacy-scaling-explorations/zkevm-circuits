@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let address = cb.query_account_address();
-        cb.stack_pop(address.to_word());
+        cb.stack_pop_word(address.to_word());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
@@ -70,7 +70,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             cb.require_zero_word("balance is zero when non_exists", balance.to_word());
         });
 
-        cb.stack_push(balance.to_word());
+        cb.stack_push_word(balance.to_word());
 
         let gas_cost = select::expr(
             is_warm.expr(),
