@@ -293,7 +293,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
             [balance_addend.word_expr(), balance_sum.word_expr()]
         };
 
-        let add_words = AddWordsGadget::construct(
+        let add_words = AddWordsGadget::construct_new(
             cb,
             std::iter::once(balance_addend)
                 .chain(updates.to_vec())
@@ -303,7 +303,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
             balance_sum,
         );
 
-        cb.account_write(
+        cb.account_write_word(
             address,
             AccountFieldTag::Balance,
             value.to_word(),
@@ -515,7 +515,7 @@ impl<F: Field> TransferGadget<F> {
         cb.condition(
             not::expr(value_is_zero.expr()) * not::expr(receiver_exists),
             |cb| {
-                cb.account_write(
+                cb.account_write_word(
                     receiver_address.clone(),
                     AccountFieldTag::CodeHash,
                     cb.empty_code_hash_word(),
@@ -851,6 +851,16 @@ pub(crate) struct SstoreGasGadget<F> {
 impl<F: Field> SstoreGasGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
+        value: Cell<F>,
+        value_prev: Cell<F>,
+        original_value: Cell<F>,
+        is_warm: Cell<F>,
+    ) -> Self {
+        todo!()
+    }
+
+    pub(crate) fn construct_new(
+        cb: &mut EVMConstraintBuilder<F>,
         value: WordCell<F>,
         value_prev: WordCell<F>,
         original_value: WordCell<F>,
@@ -1175,7 +1185,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
         self.original.to_word()
     }
 
-    #[deprecated(note="in fav of original")]
+    #[deprecated(note = "in fav of original")]
     pub(crate) fn original_word(&self) -> Expression<F> {
         todo!()
     }

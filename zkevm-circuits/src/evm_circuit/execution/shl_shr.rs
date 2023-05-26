@@ -67,7 +67,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         let shf0 = cb.query_cell();
 
         let mul_add_words =
-            MulAddWordsGadget::construct_legacy(cb, [&quotient, &divisor, &remainder, &dividend]);
+            MulAddWordsGadget::construct(cb, [&quotient, &divisor, &remainder, &dividend]);
         let shf_lt256 = IsZeroGadget::construct(cb, sum::expr(&shift.cells[1..32]));
         let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&divisor.cells));
         let remainder_is_zero = IsZeroGadget::construct(cb, sum::expr(&remainder.cells));

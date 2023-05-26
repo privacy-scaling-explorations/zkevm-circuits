@@ -7,7 +7,7 @@ use crate::{
     },
     util::word::{Word, WordExpr},
 };
-use eth_types::Field;
+use eth_types::{self, Field};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -49,8 +49,8 @@ impl<F: Field, T: WordExpr<F> + Clone> MinMaxWordGadget<F, T> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        lhs: Word<F>,
-        rhs: Word<F>,
+        lhs: eth_types::Word,
+        rhs: eth_types::Word,
     ) -> Result<(F, F), Error> {
         let (lt, _) = self.lt.assign(region, offset, lhs, rhs)?;
         Ok(if lt.is_zero_vartime() {

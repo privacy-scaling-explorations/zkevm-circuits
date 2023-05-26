@@ -132,7 +132,7 @@ pub struct TxTable {
     /// Index for Tag = CallData
     pub index: Column<Advice>,
     /// Value
-    pub value: word::Word<Column<Advice>>,
+    pub value: Column<Advice>,
 }
 
 impl TxTable {
@@ -142,7 +142,7 @@ impl TxTable {
             tx_id: meta.advice_column(),
             tag: meta.fixed_column(),
             index: meta.advice_column(),
-            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            value: meta.advice_column(),
         }
     }
 
@@ -257,8 +257,7 @@ impl<F: Field> LookupTable<F> for TxTable {
             self.tx_id.into(),
             self.tag.into(),
             self.index.into(),
-            self.value.lo().clone().into(),
-            self.value.hi().clone().into(),
+            self.value.into(),
         ]
     }
 
@@ -444,11 +443,11 @@ pub struct RwTable {
     /// Key3 (FieldTag)
     pub field_tag: Column<Advice>,
     /// Key3 (StorageKey)
-    pub storage_key: word::Word<Column<Advice>>,
+    pub storage_key: Column<Advice>,
     /// Value
-    pub value: word::Word<Column<Advice>>,
+    pub value: Column<Advice>,
     /// Value Previous
-    pub value_prev: word::Word<Column<Advice>>,
+    pub value_prev: Column<Advice>,
     /// Aux1
     pub aux1: Column<Advice>,
     /// Aux2 (Committed Value)
@@ -464,12 +463,9 @@ impl<F: Field> LookupTable<F> for RwTable {
             self.id.into(),
             self.address.into(),
             self.field_tag.into(),
-            self.storage_key.lo().clone().into(),
-            self.storage_key.hi().clone().into(),
-            self.value.lo().clone().into(),
-            self.value.hi().clone().into(),
-            self.value_prev.lo().clone().into(),
-            self.value_prev.hi().clone().into(),
+            self.storage_key.into(),
+            self.value.into(),
+            self.value_prev.into(),
             self.aux1.into(),
             self.aux2.into(),
         ]
@@ -504,9 +500,9 @@ impl RwTable {
             id: meta.advice_column(),
             address: meta.advice_column(),
             field_tag: meta.advice_column(),
-            storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            value_prev: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            storage_key: meta.advice_column(),
+            value: meta.advice_column(),
+            value_prev: meta.advice_column(),
             // It seems that aux1 for the moment is not using randomness
             // TODO check in a future review
             aux1: meta.advice_column_in(SecondPhase),
