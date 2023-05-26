@@ -366,17 +366,6 @@ impl CellManagerStrategy for CMFixedWidthStrategy {
 
         self.set_next(&cell_type, column_idx, row);
 
-        // Replace a CellType::Storage by CellType::StoragePermutation if the later has
-        // better height
-        // if cell_type == CellType::StoragePhase1 {
-        // for column in self.columns.iter() {
-        // if column.cell_type == CellType::StoragePermutation && column.height < best_height {
-        // best_index = Some(column.index);
-        // best_height = column.height;
-        // }
-        // }
-        // }
-
         cell
     }
 
