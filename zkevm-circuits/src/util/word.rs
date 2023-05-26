@@ -53,19 +53,25 @@ impl<T: Default, const N: usize> Default for WordLimbs<T, N> {
 
 impl<F: Field> From<Word32Cell<F>> for WordLegacy<F> {
     fn from(_: Word32Cell<F>) -> Self {
-        todo!()
+        unreachable!(
+            "This function is meat to fix the build. Remove once we fixed the word lo-hi refactor"
+        )
     }
 }
 
 impl<F: Field> Expr<F> for WordCell<F> {
     fn expr(&self) -> Expression<F> {
-        todo!()
+        unreachable!(
+            "This function is meat to fix the build. Remove once we fixed the word lo-hi refactor"
+        )
     }
 }
 
 impl<F: Field> Expr<F> for Word32Cell<F> {
     fn expr(&self) -> Expression<F> {
-        todo!()
+        unreachable!(
+            "This function is meat to fix the build. Remove once we fixed the word lo-hi refactor"
+        )
     }
 }
 
