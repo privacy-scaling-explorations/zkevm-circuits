@@ -102,7 +102,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             1.expr(),
         );
 
-        let gas_cost: SstoreGasGadget<F> = SstoreGasGadget::construct(
+        let gas_cost = SstoreGasGadget::construct(
             cb,
             phase2_value.clone(),
             phase2_value_prev.clone(),
