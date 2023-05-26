@@ -2,7 +2,8 @@ use std::marker::PhantomData;
 
 use crate::{
     evm_circuit::util::{
-        constraint_builder::EVMConstraintBuilder, math_gadget::*, transpose_val_ret, CachedRegion,
+        constraint_builder::EVMConstraintBuilder, math_gadget::LtWordGadgetNew as LtWordGadget,
+        transpose_val_ret, CachedRegion,
     },
     util::word::{Word, WordExpr},
 };

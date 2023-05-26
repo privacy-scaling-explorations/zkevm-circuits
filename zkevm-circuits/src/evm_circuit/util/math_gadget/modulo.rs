@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::util::{
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-        math_gadget::*,
+        math_gadget::{LtWordGadgetNew as LtWordGadget, *},
         CachedRegion,
     },
     util::{
