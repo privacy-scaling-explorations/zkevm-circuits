@@ -16,6 +16,8 @@ pub use gadgets::util::Expr;
 
 /// Cell Manager
 pub mod cell_manager;
+/// Cell Manager strategies
+pub mod cell_manager_strategy;
 
 pub(crate) fn query_expression<F: Field, T>(
     meta: &mut ConstraintSystem<F>,
