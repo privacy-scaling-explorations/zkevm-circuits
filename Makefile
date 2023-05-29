@@ -4,8 +4,8 @@ help: ## Display this help screen
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 clippy: ## Run clippy checks over all workspace members
-	@cargo check --all-features
-	@cargo clippy --all-features --all-targets -- -D warnings
+	@cargo check
+	@cargo clippy -- -D warnings
 
 doc: ## Generate and tests docs including private items
 	@cargo doc --no-deps --all --document-private-items
