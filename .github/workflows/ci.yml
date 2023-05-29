@@ -172,3 +172,7 @@ jobs:
         with:
           command: fmt
           args: --all -- --check
+
+# TODO: We plan to bring the following Github action back when merge to main
+# test:
+# bitrot:
