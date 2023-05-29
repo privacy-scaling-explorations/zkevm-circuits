@@ -3,7 +3,7 @@ help: ## Display this help screen
 		-E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
-clippy: ## Run clippy checks over all workspace members
+clippy: ## Run clippy checks over all workspace members ## TODO: revert changes when merging back to main
 	@cargo check
 	@cargo clippy -- -D warnings
 
