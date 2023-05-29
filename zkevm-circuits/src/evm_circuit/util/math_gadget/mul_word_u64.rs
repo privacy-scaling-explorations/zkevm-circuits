@@ -35,23 +35,21 @@ impl<F: Field> MulWordByU64Gadget<F> {
             product: cb.query_word32(),
             carry_lo: cb.query_bytes(),
         };
-        let binding = gadget.multiplicand.to_word();
-        let (multiplicand_lo, multiplicand_hi) = binding.to_lo_hi();
-        let binding = gadget.product.to_word();
-        let (product_lo, product_hi) = binding.to_lo_hi();
+        let (multiplicand_lo, multiplicand_hi) = gadget.multiplicand.to_word().to_lo_hi();
+        let (product_lo, product_hi) = gadget.product.to_word().to_lo_hi();
 
         let carry_lo = from_bytes::expr(&gadget.carry_lo[..8]);
 
         cb.require_equal(
             "multiplicand_lo ⋅ multiplier == carry_lo ⋅ 2^128 + product_lo",
-            multiplicand_lo.clone() * multiplier.expr(),
-            carry_lo.clone() * pow_of_two_expr(128) + product_lo.clone(),
+            multiplicand_lo * multiplier.expr(),
+            carry_lo.clone() * pow_of_two_expr(128) + product_lo,
         );
 
         cb.require_equal(
             "multiplicand_hi ⋅ multiplier + carry_lo == product_hi",
-            multiplicand_hi.clone() * multiplier.expr() + carry_lo,
-            product_hi.clone(),
+            multiplicand_hi * multiplier.expr() + carry_lo,
+            product_hi,
         );
 
         gadget

@@ -168,8 +168,8 @@ pub(crate) trait ConstrainBuilderCommon<F: Field> {
     ) {
         let (lhs_lo, lhs_hi) = lhs.to_lo_hi();
         let (rhs_lo, rhs_hi) = rhs.to_lo_hi();
-        self.add_constraint(name, lhs_lo.clone() - rhs_lo.clone());
-        self.add_constraint(name, lhs_hi.clone() - rhs_hi.clone());
+        self.add_constraint(name, lhs_lo - rhs_lo);
+        self.add_constraint(name, lhs_hi - rhs_hi);
     }
 
     fn require_equal(&mut self, name: &'static str, lhs: Expression<F>, rhs: Expression<F>) {

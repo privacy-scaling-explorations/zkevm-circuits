@@ -87,10 +87,8 @@ impl<F: Field> MulAddWords512Gadget<F> {
             b_limbs.push(word4_b.limbs[i].expr());
         }
 
-        let binding = words[2].to_word();
-        let (d_lo, d_hi) = binding.to_lo_hi();
-        let binding = words[3].to_word();
-        let (e_lo, e_hi) = binding.to_lo_hi();
+        let (d_lo, d_hi) = words[2].to_word().to_lo_hi();
+        let (e_lo, e_hi) = words[3].to_word().to_lo_hi();
 
         // Limb multiplication
         let t0 = a_limbs[0].clone() * b_limbs[0].clone();
@@ -113,40 +111,36 @@ impl<F: Field> MulAddWords512Gadget<F> {
             let (c_lo, c_hi) = c.to_lo_hi();
             cb.require_equal(
                 "(t0 + t1 ⋅ 2^64) + c_lo == e_lo + carry_0 ⋅ 2^128",
-                t0.expr() + t1.expr() * pow_of_two_expr(64) + c_lo.clone(),
-                e_lo.clone() + carry_0_expr.clone() * pow_of_two_expr(128),
+                t0.expr() + t1.expr() * pow_of_two_expr(64) + c_lo,
+                e_lo + carry_0_expr.clone() * pow_of_two_expr(128),
             );
 
             cb.require_equal(
                 "(t2 + t3 ⋅ 2^64) + c_hi + carry_0 == e_hi + carry_1 ⋅ 2^128",
-                t2.expr() + t3.expr() * pow_of_two_expr(64) + c_hi.clone() + carry_0_expr,
-                e_hi.clone() + carry_1_expr.clone() * pow_of_two_expr(128),
+                t2.expr() + t3.expr() * pow_of_two_expr(64) + c_hi + carry_0_expr,
+                e_hi + carry_1_expr.clone() * pow_of_two_expr(128),
             );
         } else {
             cb.require_equal(
                 "(t0 + t1 ⋅ 2^64) == e_lo + carry_0 ⋅ 2^128",
                 t0.expr() + t1.expr() * pow_of_two_expr(64),
-                e_lo.clone() + carry_0_expr.clone() * pow_of_two_expr(128),
+                e_lo + carry_0_expr.clone() * pow_of_two_expr(128),
             );
 
             cb.require_equal(
                 "(t2 + t3 ⋅ 2^64) + carry_0 == e_hi + carry_1 ⋅ 2^128",
                 t2.expr() + t3.expr() * pow_of_two_expr(64) + carry_0_expr,
-                e_hi.clone() + carry_1_expr.clone() * pow_of_two_expr(128),
+                e_hi + carry_1_expr.clone() * pow_of_two_expr(128),
             );
         }
 
         cb.require_equal(
             "(t4 + t5 ⋅ 2^64) + carry_1 == d_lo + carry_2 ⋅ 2^128",
             t4.expr() + t5.expr() * pow_of_two_expr(64) + carry_1_expr,
-            d_lo.clone() + carry_2_expr.clone() * pow_of_two_expr(128),
+            d_lo + carry_2_expr.clone() * pow_of_two_expr(128),
         );
 
-        cb.require_equal(
-            "t6 + carry_2 == d_hi",
-            t6.expr() + carry_2_expr,
-            d_hi.clone(),
-        );
+        cb.require_equal("t6 + carry_2 == d_hi", t6.expr() + carry_2_expr, d_hi);
 
         Self {
             carry_0,

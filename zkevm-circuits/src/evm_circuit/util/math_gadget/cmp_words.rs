@@ -21,17 +21,15 @@ pub(crate) struct CmpWordsGadget<F, T1, T2> {
 
 impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> CmpWordsGadget<F, T1, T2> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, a: T1, b: T2) -> Self {
-        let binding = a.to_word();
-        let (a_lo, a_hi) = binding.to_lo_hi();
-        let binding = b.to_word();
-        let (b_lo, b_hi) = binding.to_lo_hi();
+        let (a_lo, a_hi) = a.to_word().to_lo_hi();
+        let (b_lo, b_hi) = b.to_word().to_lo_hi();
         // `a.lo <= b.lo`
-        let comparison_lo = ComparisonGadget::construct(cb, a_lo.clone(), b_lo.clone());
+        let comparison_lo = ComparisonGadget::construct(cb, a_lo, b_lo);
 
         let (lt_lo, eq_lo) = comparison_lo.expr();
 
         // `a.hi <= b.hi`
-        let comparison_hi = ComparisonGadget::construct(cb, a_hi.clone(), b_hi.clone());
+        let comparison_hi = ComparisonGadget::construct(cb, a_hi, b_hi);
         let (lt_hi, eq_hi) = comparison_hi.expr();
 
         // `a < b` when:

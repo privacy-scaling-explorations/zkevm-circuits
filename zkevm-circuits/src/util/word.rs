@@ -138,8 +138,8 @@ impl<T: Clone> Word<T> {
     }
 
     /// word to low and high 128 bits
-    pub fn to_lo_hi(&self) -> (&T, &T) {
-        (&self.0.limbs[0], &self.0.limbs[1])
+    pub fn to_lo_hi(&self) -> (T, T) {
+        (self.0.limbs[0].clone(), self.0.limbs[1].clone())
     }
 }
 
@@ -205,14 +205,16 @@ impl<F: Field> Word<Expression<F>> {
         when_true: T,
         when_false: T,
     ) -> Word<Expression<F>> {
-        let binding = when_true.to_word().mul_selector(selector.clone());
-        let (true_lo, true_hi) = binding.to_lo_hi();
-        let binding = when_false.to_word().mul_selector(1.expr() - selector);
-        let (false_lo, false_hi) = binding.to_lo_hi();
-        Word::new([
-            true_lo.clone() + false_lo.clone(),
-            true_hi.clone() + false_hi.clone(),
-        ])
+        let (true_lo, true_hi) = when_true
+            .to_word()
+            .mul_selector(selector.clone())
+            .to_lo_hi();
+
+        let (false_lo, false_hi) = when_false
+            .to_word()
+            .mul_selector(1.expr() - selector)
+            .to_lo_hi();
+        Word::new([true_lo + false_lo, true_hi + false_hi])
     }
 
     /// Assume selector is 1/0 therefore no overflow check
