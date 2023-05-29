@@ -427,9 +427,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // default query_word is 2 limbs. Each limb is not guaranteed to be 128 bits.
-    pub fn query_word_unchecked<const N: usize>(&mut self) -> WordCell<F> {
+    pub fn query_word_unchecked(&mut self) -> WordCell<F> {
         Word::new(
-            self.query_cells(CellType::StoragePhase1, N)
+            self.query_cells(CellType::StoragePhase1, 2)
                 .try_into()
                 .unwrap(),
         )
@@ -1350,7 +1350,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         call_id: Option<Expression<F>>,
         field_tag: CallContextFieldTag,
     ) -> Word<Cell<F>> {
-        let word = self.query_word_unchecked::<2>();
+        let word = self.query_word_unchecked();
         self.call_context_lookup_read(call_id, field_tag, word.to_word());
         word
     }

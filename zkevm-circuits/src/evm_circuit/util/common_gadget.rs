@@ -682,7 +682,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
             1.expr() - value_is_zero.expr(),
         );
 
-        let callee_code_hash = cb.query_word_unchecked::<2>();
+        let callee_code_hash = cb.query_word_unchecked();
         cb.account_read_word(
             callee_address_word.expr(),
             AccountFieldTag::CodeHash,
@@ -1005,7 +1005,7 @@ impl<F: Field> CommonErrorGadget<F> {
     ) -> Self {
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        let rw_counter_end_of_reversion = cb.query_word_unchecked::<2>(); // rw_counter_end_of_reversion just used for read lookup, therefore skip range check
+        let rw_counter_end_of_reversion = cb.query_word_unchecked(); // rw_counter_end_of_reversion just used for read lookup, therefore skip range check
 
         // current call must be failed.
         cb.call_context_lookup_read(None, CallContextFieldTag::IsSuccess, Word::zero());
