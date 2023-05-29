@@ -58,7 +58,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         // access
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
-            [address.to_word().lo().clone() + 1.expr() + (is_not_mstore8.clone() * 31.expr())],
+            [address.to_word().lo() + 1.expr() + (is_not_mstore8.clone() * 31.expr())],
         );
 
         // Stack operations
@@ -75,7 +75,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         cb.condition(is_mstore8.expr(), |cb| {
             cb.memory_lookup(
                 1.expr(),
-                address.to_word().lo().clone(),
+                address.to_word().lo(),
                 value.limbs[0].expr(),
                 None,
             );

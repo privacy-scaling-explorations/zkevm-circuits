@@ -84,9 +84,8 @@ impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> LtWordGadget<F, T1, T2> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, lhs: T1, rhs: T2) -> Self {
         let lhs_expr = lhs.to_word();
         let rhs_expr = rhs.to_word();
-        let comparison_hi =
-            ComparisonGadget::construct(cb, lhs_expr.hi().clone(), rhs_expr.hi().clone());
-        let lt_lo = LtGadget::construct(cb, lhs_expr.lo().clone(), rhs_expr.lo().clone());
+        let comparison_hi = ComparisonGadget::construct(cb, lhs_expr.hi(), rhs_expr.hi());
+        let lt_lo = LtGadget::construct(cb, lhs_expr.lo(), rhs_expr.lo());
         Self {
             comparison_hi,
             lt_lo,

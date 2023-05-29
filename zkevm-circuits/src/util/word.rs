@@ -124,13 +124,13 @@ impl<T: Clone> Word<T> {
     }
 
     /// The high 128 bits limb
-    pub fn hi(&self) -> &T {
-        &self.0.limbs[1]
+    pub fn hi(&self) -> T {
+        self.0.limbs[1].clone()
     }
 
     /// the low 128 bits limb
-    pub fn lo(&self) -> &T {
-        &self.0.limbs[0]
+    pub fn lo(&self) -> T {
+        self.0.limbs[0].clone()
     }
     /// number of limbs
     pub fn n() -> usize {
@@ -219,26 +219,17 @@ impl<F: Field> Word<Expression<F>> {
 
     /// Assume selector is 1/0 therefore no overflow check
     pub fn mul_selector(&self, selector: Expression<F>) -> Self {
-        Word::new([
-            self.lo().clone() * selector.clone(),
-            self.hi().clone() * selector,
-        ])
+        Word::new([self.lo() * selector.clone(), self.hi() * selector])
     }
 
     /// No overflow check on lo/hi limbs
     pub fn add_unchecked(self, rhs: Self) -> Self {
-        Word::new([
-            self.lo().clone() + rhs.lo().clone(),
-            self.hi().clone() + rhs.hi().clone(),
-        ])
+        Word::new([self.lo() + rhs.lo(), self.hi() + rhs.hi()])
     }
 
     /// No underflow check on lo/hi limbs
     pub fn sub_unchecked(self, rhs: Self) -> Self {
-        Word::new([
-            self.lo().clone() - rhs.lo().clone(),
-            self.hi().clone() - rhs.hi().clone(),
-        ])
+        Word::new([self.lo() - rhs.lo(), self.hi() - rhs.hi()])
     }
 }
 
