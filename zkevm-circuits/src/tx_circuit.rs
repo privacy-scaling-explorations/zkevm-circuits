@@ -73,7 +73,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let tx_id = tx_table.tx_id;
         let tag = tx_table.tag;
         let index = tx_table.index;
-        let value = tx_table.value;
+        let value = tx_table.value_legacy;
         meta.enable_equality(value);
 
         let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone(), challenges);

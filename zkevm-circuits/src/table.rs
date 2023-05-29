@@ -5,7 +5,7 @@ use crate::{
     evm_circuit::util::rlc,
     exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP},
     impl_expr,
-    util::{build_tx_log_address, Challenges},
+    util::{build_tx_log_address, word, Challenges},
     witness::{
         Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
     },
@@ -132,7 +132,10 @@ pub struct TxTable {
     /// Index for Tag = CallData
     pub index: Column<Advice>,
     /// Value
-    pub value: Column<Advice>,
+    pub value: word::Word<Column<Advice>>,
+    /// Value
+    #[deprecated(note = "value_word is fav")]
+    pub value_legacy: Column<Advice>,
 }
 
 impl TxTable {
@@ -142,7 +145,8 @@ impl TxTable {
             tx_id: meta.advice_column(),
             tag: meta.fixed_column(),
             index: meta.advice_column(),
-            value: meta.advice_column(),
+            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            value_legacy: meta.advice_column(),
         }
     }
 
@@ -199,7 +203,7 @@ impl TxTable {
             || "tx table",
             |mut region| {
                 let mut offset = 0;
-                let advice_columns = [self.tx_id, self.index, self.value];
+                let advice_columns = [self.tx_id, self.index, self.value_legacy];
                 assign_row(
                     &mut region,
                     offset,
@@ -256,7 +260,8 @@ impl<F: Field> LookupTable<F> for TxTable {
             self.tx_id.into(),
             self.tag.into(),
             self.index.into(),
-            self.value.into(),
+            self.value.lo().into(),
+            self.value.hi().into(),
         ]
     }
 
@@ -275,7 +280,8 @@ impl<F: Field> LookupTable<F> for TxTable {
             meta.query_advice(self.tx_id, Rotation::cur()),
             meta.query_fixed(self.tag, Rotation::cur()),
             meta.query_advice(self.index, Rotation::cur()),
-            meta.query_advice(self.value, Rotation::cur()),
+            meta.query_advice(self.value.lo().clone(), Rotation::cur()),
+            meta.query_advice(self.value.hi().clone(), Rotation::cur()),
         ]
     }
 }
