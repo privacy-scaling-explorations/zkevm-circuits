@@ -76,9 +76,9 @@ done
 
 docker_compose_cmd() {
     if [ -n "$ARG_SUDO" ]; then
-        sudo docker compose $@
+        sudo docker-compose $@
     else
-        docker compose $@
+        docker-compose $@
     fi
 }
 
