@@ -236,7 +236,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let q_calldata_start = meta.complex_selector();
         // Tx Table
         let tx_id = tx_table.tx_id;
-        let tx_value = tx_table.value_legacy;
+        let tx_value = tx_table.value;
         let tag = tx_table.tag;
         let index = tx_table.index;
         let tx_id_inv = meta.advice_column();
@@ -597,7 +597,7 @@ impl<F: Field> PiCircuitConfig<F> {
         )?;
         region.assign_advice(
             || "tx_value",
-            self.tx_table.value_legacy,
+            self.tx_table.value,
             offset,
             || Value::known(F::ZERO),
         )?;
@@ -665,7 +665,7 @@ impl<F: Field> PiCircuitConfig<F> {
         )?;
         region.assign_advice(
             || "tx_value",
-            self.tx_table.value_legacy,
+            self.tx_table.value,
             offset,
             || Value::known(tx_value),
         )?;
@@ -775,7 +775,7 @@ impl<F: Field> PiCircuitConfig<F> {
         )?;
         region.assign_advice(
             || "tx_value",
-            self.tx_table.value_legacy,
+            self.tx_table.value,
             calldata_offset,
             || Value::known(tx_value),
         )?;
