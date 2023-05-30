@@ -20,7 +20,7 @@ const N_BYTES_HALF_WORD: usize = 16;
 #[derive(Clone, Debug, Copy)]
 /// The EVM word for witness
 pub struct WordLimbs<T, const N: usize> {
-    /// word limbs
+    /// The limbs of this word.
     pub limbs: [T; N],
 }
 
