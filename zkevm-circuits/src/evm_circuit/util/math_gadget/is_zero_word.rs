@@ -27,20 +27,20 @@ pub struct IsZeroWordGadget<F, T> {
 impl<F: Field, T: WordExpr<F>> IsZeroWordGadget<F, T> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, word: T) -> Self {
         let (word_lo, word_hi) = word.to_word().to_lo_hi();
-        let inverse_lo = cb.query_cell_with_type(CellType::storage_for_expr(word_lo));
-        let inverse_hi = cb.query_cell_with_type(CellType::storage_for_expr(word_hi));
+        let inverse_lo = cb.query_cell_with_type(CellType::storage_for_expr(&word_lo));
+        let inverse_hi = cb.query_cell_with_type(CellType::storage_for_expr(&word_hi));
 
-        let is_zero_lo = 1.expr() - (word_lo.clone() * inverse_lo.expr().clone());
-        let is_zero_hi = 1.expr() - (word_hi.clone() * inverse_hi.expr().clone());
+        let is_zero_lo = 1.expr() - (word_lo.clone() * inverse_lo.expr());
+        let is_zero_hi = 1.expr() - (word_hi.clone() * inverse_hi.expr());
         // when `value != 0` check `inverse = a.invert()`: value * (1 - value *
         // inverse)
         cb.add_constraint(
             "word_lo ⋅ (1 - word_lo ⋅ word_lo_inv)",
-            word_lo.clone() * is_zero_lo.clone(),
+            word_lo * is_zero_lo.clone(),
         );
         cb.add_constraint(
             "word_hi ⋅ (1 - word_hi ⋅ word_hi_inv)",
-            word_hi.clone() * is_zero_hi.clone(),
+            word_hi * is_zero_hi.clone(),
         );
         // when `value == 0` check `inverse = 0`: `inverse ⋅ (1 - value *
         // inverse)`

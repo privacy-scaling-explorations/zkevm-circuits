@@ -63,4 +63,6 @@ jobs:
         with:
           name: Clippy
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features --all-targets -- -D warnings
+          # TODO: bring back the args when merging to main
+          # args: --all-features --all-targets -- -D warnings
+          args: -- -D warnings

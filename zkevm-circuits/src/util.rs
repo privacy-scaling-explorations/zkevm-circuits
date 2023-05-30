@@ -1,8 +1,6 @@
 //! Common utility traits and functions.
 pub mod word;
 
-use std::marker::PhantomData;
-
 use bus_mapping::evm::OpcodeId;
 use halo2_proofs::{
     circuit::{Layouter, Value},
@@ -18,7 +16,8 @@ use eth_types::{Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
 
-pub(crate) fn query_expression<F: Field, T>(
+/// Steal the expression from gate
+pub fn query_expression<F: Field, T>(
     meta: &mut ConstraintSystem<F>,
     mut f: impl FnMut(&mut VirtualCells<F>) -> T,
 ) -> T {
