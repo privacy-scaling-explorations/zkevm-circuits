@@ -1,6 +1,6 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, MaybeParams, NumberOrHash,
     },
     evm::Opcode,
     operation::{CallContextField, MemoryOp, RW},
@@ -12,8 +12,8 @@ use eth_types::GethExecStep;
 pub(crate) struct Returndatacopy;
 
 impl Opcode for Returndatacopy {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
+    fn gen_associated_ops<M: MaybeParams>(
+        state: &mut CircuitInputStateRef<M>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
@@ -38,8 +38,8 @@ impl Opcode for Returndatacopy {
     }
 }
 
-fn gen_returndatacopy_step(
-    state: &mut CircuitInputStateRef,
+fn gen_returndatacopy_step<M: MaybeParams>(
+    state: &mut CircuitInputStateRef<M>,
     geth_step: &GethExecStep,
 ) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_step(geth_step)?;
@@ -88,8 +88,8 @@ fn gen_returndatacopy_step(
     Ok(exec_step)
 }
 
-fn gen_copy_steps(
-    state: &mut CircuitInputStateRef,
+fn gen_copy_steps<M: MaybeParams>(
+    state: &mut CircuitInputStateRef<M>,
     exec_step: &mut ExecStep,
     src_addr: u64,
     dst_addr: u64,
@@ -119,8 +119,8 @@ fn gen_copy_steps(
     Ok(copy_steps)
 }
 
-fn gen_copy_event(
-    state: &mut CircuitInputStateRef,
+fn gen_copy_event<M: MaybeParams>(
+    state: &mut CircuitInputStateRef<M>,
     geth_step: &GethExecStep,
 ) -> Result<CopyEvent, Error> {
     // Get low Uint64 of destination offset to generate copy steps. Since it

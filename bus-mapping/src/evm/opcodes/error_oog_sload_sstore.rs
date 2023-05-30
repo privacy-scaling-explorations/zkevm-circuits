@@ -1,6 +1,6 @@
 use super::{Opcode, OpcodeId};
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    circuit_input_builder::{CircuitInputStateRef, ExecStep, MaybeParams},
     error::{ExecError, OogError},
     operation::{CallContextField, StorageOp, TxAccessListAccountStorageOp, RW},
     Error,
@@ -14,8 +14,8 @@ use eth_types::{GethExecStep, ToWord};
 pub(crate) struct OOGSloadSstore;
 
 impl Opcode for OOGSloadSstore {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
+    fn gen_associated_ops<M: MaybeParams>(
+        state: &mut CircuitInputStateRef<M>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];

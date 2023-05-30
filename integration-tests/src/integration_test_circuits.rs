@@ -508,7 +508,7 @@ fn get_general_params(degree: u32) -> ParamsKZG<Bn256> {
 async fn gen_inputs(
     block_num: u64,
 ) -> (
-    CircuitInputBuilder,
+    CircuitInputBuilder<CircuitsParams>,
     eth_types::Block<eth_types::Transaction>,
 ) {
     let cli = get_client();

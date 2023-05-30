@@ -214,8 +214,8 @@ impl BlockContext {
     }
 }
 
-impl From<&circuit_input_builder::Block> for BlockContext {
-    fn from(block: &circuit_input_builder::Block) -> Self {
+impl From<&circuit_input_builder::Block<CircuitsParams>> for BlockContext {
+    fn from(block: &circuit_input_builder::Block<CircuitsParams>) -> Self {
         Self {
             coinbase: block.coinbase,
             gas_limit: block.gas_limit,
@@ -231,7 +231,7 @@ impl From<&circuit_input_builder::Block> for BlockContext {
 
 /// Convert a block struct in bus-mapping to a witness block used in circuits
 pub fn block_convert<F: Field>(
-    block: &circuit_input_builder::Block,
+    block: &circuit_input_builder::Block<CircuitsParams>,
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Result<Block<F>, Error> {
     let rws = RwMap::from(&block.container);

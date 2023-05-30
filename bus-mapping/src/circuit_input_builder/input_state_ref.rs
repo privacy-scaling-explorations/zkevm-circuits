@@ -2,8 +2,8 @@
 
 use super::{
     get_call_memory_offset_length, get_create_init_code, Block, BlockContext, Call, CallContext,
-    CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, Transaction,
-    TransactionContext,
+    CallKind, CircuitsParams, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, MaybeParams,
+    Transaction, TransactionContext,
 };
 use crate::{
     error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError},
@@ -27,13 +27,13 @@ use std::cmp::max;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
 /// [`ExecStep`].
-pub struct CircuitInputStateRef<'a> {
+pub struct CircuitInputStateRef<'a, M: MaybeParams> {
     /// StateDB
     pub sdb: &'a mut StateDB,
     /// CodeDB
     pub code_db: &'a mut CodeDB,
     /// Block
-    pub block: &'a mut Block,
+    pub block: &'a mut Block<M>,
     /// Block Context
     pub block_ctx: &'a mut BlockContext,
     /// Transaction
@@ -42,7 +42,7 @@ pub struct CircuitInputStateRef<'a> {
     pub tx_ctx: &'a mut TransactionContext,
 }
 
-impl<'a> CircuitInputStateRef<'a> {
+impl<'a, M: MaybeParams> CircuitInputStateRef<'a, M> {
     /// Create a new step from a `GethExecStep`
     pub fn new_step(&self, geth_step: &GethExecStep) -> Result<ExecStep, Error> {
         let call_ctx = self.tx_ctx.call_ctx()?;

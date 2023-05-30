@@ -1,5 +1,5 @@
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep, ExpEvent, ExpStep},
+    circuit_input_builder::{CircuitInputStateRef, ExecStep, ExpEvent, ExpStep, MaybeParams},
     Error,
 };
 use eth_types::{GethExecStep, U256};
@@ -34,8 +34,8 @@ fn exp_by_squaring(base: U256, exponent: U256, steps: &mut Vec<ExpStep>) -> U256
 }
 
 impl Opcode for Exponentiation {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
+    fn gen_associated_ops<M: MaybeParams>(
+        state: &mut CircuitInputStateRef<M>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];

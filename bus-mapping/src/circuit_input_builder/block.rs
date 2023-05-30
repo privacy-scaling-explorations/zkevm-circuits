@@ -2,6 +2,7 @@
 
 use super::{
     execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep, ExpEvent,
+    MaybeParams, UnsetParams,
 };
 use crate::{
     operation::{OperationContainer, RWCounter},
@@ -11,7 +12,7 @@ use eth_types::{evm_unimplemented, Address, Word};
 use std::collections::HashMap;
 
 /// Context of a [`Block`] which can mutate in a [`Transaction`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockContext {
     /// Used to track the global counter in every operation in the block.
     /// Contains the next available value.
@@ -54,7 +55,7 @@ pub struct BlockSteps {
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Circuit Input related to a block.
 #[derive(Debug)]
-pub struct Block {
+pub struct Block<M: MaybeParams> {
     /// chain id
     pub chain_id: Word,
     /// history hashes contains most recent 256 block hashes in history, where
@@ -87,19 +88,19 @@ pub struct Block {
     /// Exponentiation events in the block.
     pub exp_events: Vec<ExpEvent>,
     /// Circuits Setup Paramteres
-    pub circuits_params: CircuitsParams,
+    pub circuits_params: M,
     /// Original block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
 }
 
-impl Block {
+impl<M: MaybeParams> Block<M> {
     /// Create a new block.
     pub fn new(
         chain_id: Word,
         history_hashes: Vec<Word>,
         prev_state_root: Word,
         eth_block: &eth_types::Block<eth_types::Transaction>,
-        circuits_params: CircuitsParams,
+        circuits_params: M,
     ) -> Result<Self, Error> {
         if eth_block.base_fee_per_gas.is_none() {
             // FIXME: resolve this once we have proper EIP-1559 support
@@ -155,7 +156,7 @@ impl Block {
     }
 }
 
-impl Block {
+impl<M: MaybeParams> Block<M> {
     /// Push a copy event to the block.
     pub fn add_copy_event(&mut self, event: CopyEvent) {
         self.copy_events.push(event);
@@ -163,5 +164,15 @@ impl Block {
     /// Push an exponentiation event to the block.
     pub fn add_exp_event(&mut self, event: ExpEvent) {
         self.exp_events.push(event);
+    }
+}
+
+impl Block<UnsetParams> {
+    /// Set Circuit Parameters
+    pub fn set_params(self, cp: CircuitsParams) -> Block<CircuitsParams> {
+        Block {
+            circuits_params: cp,
+            ..self
+        }
     }
 }
