@@ -10,7 +10,7 @@ use mpt_circuits::serde::{
     AccountData as SMTAccount, Hash as SMTHash, HexBytes, SMTNode, SMTPath, SMTTrace, StateData,
 };
 use std::collections::HashMap;
-use zktrie::{ZkTrie, ZkTrieNode};
+use zktrie::{Hash as ZkTrieHash, ZkTrie, ZkTrieNode};
 
 use num_bigint::BigUint;
 use std::io::{Error as IoError, Read};
@@ -79,7 +79,10 @@ impl From<&ZktrieState> for WitnessGenerator {
         let storages: HashMap<_, _> = state
             .accounts
             .iter()
-            .map(|(addr, storage_root)| (*addr, state.zk_db.borrow_mut().new_trie(storage_root)))
+            .map(|(addr, storage_root)| {
+                // dbg!(addr, storage_root);
+                (*addr, state.zk_db.borrow_mut().new_trie(storage_root))
+            })
             // if an account has no storage slot being touched in execution, they do not need
             // storage trie and would be filter out here
             .filter(|(_, storage_root)| storage_root.is_some())
@@ -112,6 +115,18 @@ impl WitnessGenerator {
             key.to_big_endian(word_buf.as_mut_slice());
             (hash_zktrie_key(&word_buf), HexBytes(word_buf))
         };
+
+        if !self.storages.contains_key(&address) {
+            self.storages.insert(
+                address,
+                ZktrieState::default()
+                    .zk_db
+                    .borrow_mut()
+                    .new_trie(&ZkTrieHash::default())
+                    .unwrap(),
+            );
+        }
+
         let trie = self.storages.get_mut(&address).unwrap();
 
         let store_before = {
@@ -222,6 +237,9 @@ impl WitnessGenerator {
             }
 
             self.accounts.insert(address, account_data_after);
+            // if account_data_before.is_none() {
+            //     self.storages.insert(address, ZkTrie::new());
+            // }
         } else if account_data_before.is_some() {
             log::warn!("trace update try delete account {address:?} trie while we have no SELFDESTRUCT yet");
             self.trie.delete(address.as_bytes());
