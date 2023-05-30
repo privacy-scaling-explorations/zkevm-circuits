@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    circuit_input_builder::{CircuitInputStateRef, ExecStep, MaybeParams},
     operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
     Error,
 };
@@ -14,8 +14,8 @@ use eth_types::{evm_types::OpcodeId, GethExecStep, ToAddress, ToWord, Word};
 pub(crate) struct OOGCall;
 
 impl Opcode for OOGCall {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
+    fn gen_associated_ops<M: MaybeParams>(
+        state: &mut CircuitInputStateRef<M>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];

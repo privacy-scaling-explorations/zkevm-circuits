@@ -1,7 +1,7 @@
 //! Definition of each opcode of the EVM.
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep},
-    error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
+    circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep, MaybeParams},
+    error::{ExecError, OogError},
     evm::OpcodeId,
     operation::TxAccessListAccountOp,
     Error,
@@ -110,8 +110,8 @@ pub trait Opcode: Debug {
     /// [`StackOp`](crate::operation::StackOp)s, and
     /// [`StorageOp`](crate::operation::StorageOp)s associated to the Opcode
     /// is implemented for.
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
+    fn gen_associated_ops<M: MaybeParams>(
+        state: &mut CircuitInputStateRef<M>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error>;
 }
@@ -119,8 +119,8 @@ pub trait Opcode: Debug {
 /// Generic trait for tx execution steps
 /// which only supports ExecState::BeginTx and ExecState:EndTx
 pub trait TxExecSteps: Debug {
-    fn gen_associated_steps(
-        state: &mut CircuitInputStateRef,
+    fn gen_associated_steps<M: MaybeParams>(
+        state: &mut CircuitInputStateRef<M>,
         execution_step: ExecState,
     ) -> Result<ExecStep, Error>;
 }
@@ -129,20 +129,20 @@ pub trait TxExecSteps: Debug {
 struct Dummy;
 
 impl Opcode for Dummy {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
+    fn gen_associated_ops<M: MaybeParams>(
+        state: &mut CircuitInputStateRef<M>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         Ok(vec![state.new_step(&geth_steps[0])?])
     }
 }
 
-type FnGenAssociatedOps = fn(
-    state: &mut CircuitInputStateRef,
+type FnGenAssociatedOps<M> = fn(
+    state: &mut CircuitInputStateRef<M>,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error>;
 
-fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
+fn fn_gen_associated_ops<M: MaybeParams>(opcode_id: &OpcodeId) -> FnGenAssociatedOps<M> {
     if opcode_id.is_push() {
         return StackOnlyOpcode::<0, 1>::gen_associated_ops;
     }
@@ -271,7 +271,10 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
     }
 }
 
-fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociatedOps> {
+fn fn_gen_error_state_associated_ops<M: MaybeParams>(
+    geth_step: &GethExecStep,
+    error: &ExecError,
+) -> Option<FnGenAssociatedOps<M>> {
     match error {
         ExecError::InvalidJump => Some(InvalidJump::gen_associated_ops),
         ExecError::InvalidOpcode => Some(ErrorSimple::gen_associated_ops),
@@ -319,9 +322,9 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
 #[allow(clippy::collapsible_else_if)]
 /// Generate the associated operations according to the particular
 /// [`OpcodeId`].
-pub fn gen_associated_ops(
+pub fn gen_associated_ops<M: MaybeParams>(
     opcode_id: &OpcodeId,
-    state: &mut CircuitInputStateRef,
+    state: &mut CircuitInputStateRef<M>,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
     let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
@@ -378,8 +381,8 @@ pub fn gen_associated_ops(
     fn_gen_associated_ops(state, geth_steps)
 }
 
-pub fn gen_associated_steps(
-    state: &mut CircuitInputStateRef,
+pub fn gen_associated_steps<M: MaybeParams>(
+    state: &mut CircuitInputStateRef<M>,
     execution_step: ExecState,
 ) -> Result<ExecStep, Error> {
     let fn_gen_associated_steps = match execution_step {
@@ -396,15 +399,15 @@ pub fn gen_associated_steps(
 struct DummySelfDestruct;
 
 impl Opcode for DummySelfDestruct {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
+    fn gen_associated_ops<M: MaybeParams>(
+        state: &mut CircuitInputStateRef<M>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         dummy_gen_selfdestruct_ops(state, geth_steps)
     }
 }
-fn dummy_gen_selfdestruct_ops(
-    state: &mut CircuitInputStateRef,
+fn dummy_gen_selfdestruct_ops<M: MaybeParams>(
+    state: &mut CircuitInputStateRef<M>,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
     let geth_step = &geth_steps[0];

@@ -58,7 +58,7 @@ pub fn test_copy_circuit_from_block<F: Field>(
     )
 }
 
-fn gen_calldatacopy_data() -> CircuitInputBuilder {
+fn gen_calldatacopy_data() -> CircuitInputBuilder<CircuitsParams> {
     let length = 0x0fffusize;
     let code = bytecode! {
         PUSH32(Word::from(length))
@@ -97,7 +97,7 @@ fn gen_calldatacopy_data() -> CircuitInputBuilder {
     builder
 }
 
-fn gen_codecopy_data() -> CircuitInputBuilder {
+fn gen_codecopy_data() -> CircuitInputBuilder<CircuitsParams> {
     let code = bytecode! {
         PUSH32(Word::from(0x20))
         PUSH32(Word::from(0x00))
@@ -107,14 +107,14 @@ fn gen_codecopy_data() -> CircuitInputBuilder {
     };
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-    builder
+    let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+    let builder = builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
     builder
 }
 
-fn gen_extcodecopy_data() -> CircuitInputBuilder {
+fn gen_extcodecopy_data() -> CircuitInputBuilder<CircuitsParams> {
     let external_address = MOCK_ACCOUNTS[0];
     let code = bytecode! {
         PUSH1(0x30usize)
@@ -143,17 +143,18 @@ fn gen_extcodecopy_data() -> CircuitInputBuilder {
     )
     .unwrap();
     let block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-    builder
+    let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+    let builder = builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
     builder
 }
 
-fn gen_sha3_data() -> CircuitInputBuilder {
+fn gen_sha3_data() -> CircuitInputBuilder<CircuitsParams> {
     let (code, _) = Sha3CodeGen::mem_eq_size(0x20, 0x200).gen_sha3_code();
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
+    // TODO Use dynamic params
     let mut builder = BlockData::new_from_geth_data_with_params(
         block.clone(),
         CircuitsParams {
@@ -169,7 +170,7 @@ fn gen_sha3_data() -> CircuitInputBuilder {
     builder
 }
 
-fn gen_tx_log_data() -> CircuitInputBuilder {
+fn gen_tx_log_data() -> CircuitInputBuilder<CircuitsParams> {
     let code = bytecode! {
         PUSH32(200)         // value
         PUSH32(0)           // offset
@@ -182,8 +183,8 @@ fn gen_tx_log_data() -> CircuitInputBuilder {
     };
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-    builder
+    let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+    let builder = builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
     builder

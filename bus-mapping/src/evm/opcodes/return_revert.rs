@@ -1,6 +1,8 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, CopyDataType, CopyEvent, NumberOrHash},
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyDataType, CopyEvent, MaybeParams, NumberOrHash,
+    },
     evm::opcodes::ExecStep,
     operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
     state_db::CodeDB,
@@ -13,8 +15,8 @@ pub(crate) struct ReturnRevert;
 
 // TODO: rename to indicate this handles REVERT (and maybe STOP)?
 impl Opcode for ReturnRevert {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
+    fn gen_associated_ops<M: MaybeParams>(
+        state: &mut CircuitInputStateRef<M>,
         steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let step = &steps[0];
@@ -151,8 +153,8 @@ struct Destination {
     length: usize,
 }
 
-fn handle_copy(
-    state: &mut CircuitInputStateRef,
+fn handle_copy<M: MaybeParams>(
+    state: &mut CircuitInputStateRef<M>,
     step: &mut ExecStep,
     source: Source,
     destination: Destination,
@@ -196,8 +198,8 @@ fn handle_copy(
     Ok(())
 }
 
-fn handle_create(
-    state: &mut CircuitInputStateRef,
+fn handle_create<M: MaybeParams>(
+    state: &mut CircuitInputStateRef<M>,
     step: &mut ExecStep,
     source: Source,
 ) -> Result<H256, Error> {

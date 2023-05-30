@@ -443,7 +443,8 @@ impl<F: Field> SuperCircuit<F> {
         geth_data: GethData,
         circuits_params: CircuitsParams,
         mock_randomness: F,
-    ) -> Result<(u32, Self, Vec<Vec<F>>, CircuitInputBuilder), bus_mapping::Error> {
+    ) -> Result<(u32, Self, Vec<Vec<F>>, CircuitInputBuilder<CircuitsParams>), bus_mapping::Error>
+    {
         let block_data =
             BlockData::new_from_geth_data_with_params(geth_data.clone(), circuits_params);
         let mut builder = block_data.new_circuit_input_builder();
@@ -461,7 +462,7 @@ impl<F: Field> SuperCircuit<F> {
     /// Also, return with it the minimum required SRS degree for the circuit and
     /// the Public Inputs needed.
     pub fn build_from_circuit_input_builder(
-        builder: &CircuitInputBuilder,
+        builder: &CircuitInputBuilder<CircuitsParams>,
         mock_randomness: F,
     ) -> Result<(u32, Self, Vec<Vec<F>>), bus_mapping::Error> {
         let mut block = block_convert(&builder.block, &builder.code_db).unwrap();

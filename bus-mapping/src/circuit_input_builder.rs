@@ -70,6 +70,16 @@ pub struct CircuitsParams {
     pub max_keccak_rows: usize,
 }
 
+/// TODO Complete
+#[derive(Debug, Clone, Copy)]
+pub struct UnsetParams {}
+
+/// TODO Complete
+pub trait MaybeParams: Copy {}
+
+impl MaybeParams for CircuitsParams {}
+impl MaybeParams for UnsetParams {}
+
 impl Default for CircuitsParams {
     /// Default values for most of the unit tests of the Circuit Parameters
     fn default() -> Self {
@@ -107,21 +117,21 @@ impl Default for CircuitsParams {
 /// the State Proof witnesses are already generated on a structured manner and
 /// ready to be added into the State circuit.
 #[derive(Debug)]
-pub struct CircuitInputBuilder {
+pub struct CircuitInputBuilder<M: MaybeParams> {
     /// StateDB key-value DB
     pub sdb: StateDB,
     /// Map of account codes by code hash
     pub code_db: CodeDB,
     /// Block
-    pub block: Block,
+    pub block: Block<M>,
     /// Block Context
     pub block_ctx: BlockContext,
 }
 
-impl<'a> CircuitInputBuilder {
+impl<'a, M: MaybeParams> CircuitInputBuilder<M> {
     /// Create a new CircuitInputBuilder from the given `eth_block` and
     /// `constants`.
-    pub fn new(sdb: StateDB, code_db: CodeDB, block: Block) -> Self {
+    pub fn new(sdb: StateDB, code_db: CodeDB, block: Block<M>) -> Self {
         Self {
             sdb,
             code_db,
@@ -137,7 +147,7 @@ impl<'a> CircuitInputBuilder {
         &'a mut self,
         tx: &'a mut Transaction,
         tx_ctx: &'a mut TransactionContext,
-    ) -> CircuitInputStateRef {
+    ) -> CircuitInputStateRef<M> {
         CircuitInputStateRef {
             sdb: &mut self.sdb,
             code_db: &mut self.code_db,
@@ -191,21 +201,67 @@ impl<'a> CircuitInputBuilder {
         }
     }
 
+    /// Handle a transaction with its corresponding execution trace to generate
+    /// all the associated operations.  Each operation is registered in
+    /// `self.block.container`, and each step stores the
+    /// [`OperationRef`](crate::exec_trace::OperationRef) to each of the
+    /// generated operations.
+    fn handle_tx(
+        &mut self,
+        eth_tx: &eth_types::Transaction,
+        geth_trace: &GethExecTrace,
+        is_last_tx: bool,
+    ) -> Result<(), Error> {
+        let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
+        let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
+
+        // Generate BeginTx step
+        let begin_tx_step = gen_associated_steps(
+            &mut self.state_ref(&mut tx, &mut tx_ctx),
+            ExecState::BeginTx,
+        )?;
+        tx.steps_mut().push(begin_tx_step);
+
+        for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
+            let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
+            log::trace!("handle {}th opcode {:?} ", index, geth_step.op);
+            let exec_steps = gen_associated_ops(
+                &geth_step.op,
+                &mut state_ref,
+                &geth_trace.struct_logs[index..],
+            )?;
+            tx.steps_mut().extend(exec_steps);
+        }
+
+        // Generate EndTx step
+        let end_tx_step =
+            gen_associated_steps(&mut self.state_ref(&mut tx, &mut tx_ctx), ExecState::EndTx)?;
+        tx.steps_mut().push(end_tx_step);
+
+        self.sdb.commit_tx();
+        self.block.txs.push(tx);
+
+        Ok(())
+    }
+}
+
+impl<'a> CircuitInputBuilder<CircuitsParams> {
     /// Handle a block by handling each transaction to generate all the
     /// associated operations.
     pub fn handle_block(
         &mut self,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
-    ) -> Result<(), Error> {
+    ) -> Result<&CircuitInputBuilder<CircuitsParams>, Error> {
         // accumulates gas across all txs in the block
         for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
             let geth_trace = &geth_traces[tx_index];
             self.handle_tx(tx, geth_trace, tx_index + 1 == eth_block.transactions.len())?;
         }
         self.set_value_ops_call_context_rwc_eor();
+        // TODO 2 different implementations. When unset params, here we compute the dynamic params.
         self.set_end_block();
-        Ok(())
+        Ok(self)
     }
 
     fn set_end_block(&mut self) {
@@ -255,54 +311,43 @@ impl<'a> CircuitInputBuilder {
         self.block.block_steps.end_block_not_last = end_block_not_last;
         self.block.block_steps.end_block_last = end_block_last;
     }
+}
+impl CircuitInputBuilder<UnsetParams> {
+    fn set_params(self, cp: CircuitsParams) -> CircuitInputBuilder<CircuitsParams> {
+        let block = self.block.set_params(cp);
+        CircuitInputBuilder { block, ..self }
+    }
+}
 
-    /// Handle a transaction with its corresponding execution trace to generate
-    /// all the associated operations.  Each operation is registered in
-    /// `self.block.container`, and each step stores the
-    /// [`OperationRef`](crate::exec_trace::OperationRef) to each of the
-    /// generated operations.
-    fn handle_tx(
-        &mut self,
-        eth_tx: &eth_types::Transaction,
-        geth_trace: &GethExecTrace,
-        is_last_tx: bool,
-    ) -> Result<(), Error> {
-        let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
-        let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
-
-        // Generate BeginTx step
-        let begin_tx_step = gen_associated_steps(
-            &mut self.state_ref(&mut tx, &mut tx_ctx),
-            ExecState::BeginTx,
-        )?;
-        tx.steps_mut().push(begin_tx_step);
-
-        for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
-            let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
-            log::trace!("handle {}th opcode {:?} ", index, geth_step.op);
-            let exec_steps = gen_associated_ops(
-                &geth_step.op,
-                &mut state_ref,
-                &geth_trace.struct_logs[index..],
-            )?;
-            tx.steps_mut().extend(exec_steps);
+impl<'a> CircuitInputBuilder<UnsetParams> {
+    /// Handle a block by handling each transaction to generate all the
+    /// associated operations.
+    pub fn handle_block(
+        mut self,
+        eth_block: &EthBlock,
+        geth_traces: &[eth_types::GethExecTrace],
+    ) -> Result<CircuitInputBuilder<CircuitsParams>, Error> {
+        // accumulates gas across all txs in the block
+        for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
+            let geth_trace = &geth_traces[tx_index];
+            self.handle_tx(tx, geth_trace, tx_index + 1 == eth_block.transactions.len())?;
         }
+        self.set_value_ops_call_context_rwc_eor();
+        let c_params = CircuitsParams::default();
+        let mut cib = self.set_params(c_params);
 
-        // Generate EndTx step
-        let end_tx_step =
-            gen_associated_steps(&mut self.state_ref(&mut tx, &mut tx_ctx), ExecState::EndTx)?;
-        tx.steps_mut().push(end_tx_step);
-
-        self.sdb.commit_tx();
-        self.block.txs.push(tx);
-
-        Ok(())
+        // TODO 2 different implementations. When unset params, here we compute the dynamic params.
+        cib.set_end_block();
+        Ok(cib)
     }
 }
 
 /// Return all the keccak inputs used during the processing of the current
 /// block.
-pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Error> {
+pub fn keccak_inputs(
+    block: &Block<CircuitsParams>,
+    code_db: &CodeDB,
+) -> Result<Vec<Vec<u8>>, Error> {
     let mut keccak_inputs = Vec::new();
     // Tx Circuit
     let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.tx.clone()).collect();
@@ -574,7 +619,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         geth_traces: &[eth_types::GethExecTrace],
         history_hashes: Vec<Word>,
         prev_state_root: Word,
-    ) -> Result<CircuitInputBuilder, Error> {
+    ) -> Result<CircuitInputBuilder<CircuitsParams>, Error> {
         let block = Block::new(
             self.chain_id,
             history_hashes,
@@ -593,7 +638,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         block_num: u64,
     ) -> Result<
         (
-            CircuitInputBuilder,
+            CircuitInputBuilder<CircuitsParams>,
             eth_types::Block<eth_types::Transaction>,
         ),
         Error,

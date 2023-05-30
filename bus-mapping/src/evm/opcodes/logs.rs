@@ -1,7 +1,8 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecState, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecState, ExecStep, MaybeParams,
+        NumberOrHash,
     },
     operation::{CallContextField, TxLogField},
     Error,
@@ -12,8 +13,8 @@ use eth_types::{GethExecStep, ToWord, Word};
 pub(crate) struct Log;
 
 impl Opcode for Log {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
+    fn gen_associated_ops<M: MaybeParams>(
+        state: &mut CircuitInputStateRef<M>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
@@ -39,8 +40,8 @@ impl Opcode for Log {
     }
 }
 
-fn gen_log_step(
-    state: &mut CircuitInputStateRef,
+fn gen_log_step<M: MaybeParams>(
+    state: &mut CircuitInputStateRef<M>,
     geth_step: &GethExecStep,
 ) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_step(geth_step)?;
@@ -129,8 +130,8 @@ fn gen_log_step(
     Ok(exec_step)
 }
 
-fn gen_copy_steps(
-    state: &mut CircuitInputStateRef,
+fn gen_copy_steps<M: MaybeParams>(
+    state: &mut CircuitInputStateRef<M>,
     exec_step: &mut ExecStep,
     src_addr: u64,
     bytes_left: usize,
@@ -164,8 +165,8 @@ fn gen_copy_steps(
     Ok(copy_steps)
 }
 
-fn gen_copy_event(
-    state: &mut CircuitInputStateRef,
+fn gen_copy_event<M: MaybeParams>(
+    state: &mut CircuitInputStateRef<M>,
     geth_step: &GethExecStep,
     exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {

@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep},
+    circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep, MaybeParams},
     operation::{AccountField, CallContextField, TxAccessListAccountOp},
     precompile::{execute_precompiled, is_precompiled},
     state_db::CodeDB,
@@ -24,8 +24,8 @@ use std::cmp::min;
 pub(crate) struct CallOpcode<const N_ARGS: usize>;
 
 impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
+    fn gen_associated_ops<M: MaybeParams>(
+        state: &mut CircuitInputStateRef<M>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];

@@ -55,7 +55,7 @@ pub struct CircuitsConfig {
 }
 
 fn check_post(
-    builder: &CircuitInputBuilder,
+    builder: &CircuitInputBuilder<CircuitsParams>,
     post: &HashMap<Address, AccountMatch>,
 ) -> Result<(), StateTestError> {
     // check if the generated account data is the expected one

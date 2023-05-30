@@ -220,6 +220,7 @@
 //#![deny(unsafe_code)] Allowed now until we find a
 // better way to handle downcasting from Operation into it's variants.
 #![allow(clippy::upper_case_acronyms)] // Too pedantic
+#![feature(type_changing_struct_update)]
 
 extern crate alloc;
 extern crate core;

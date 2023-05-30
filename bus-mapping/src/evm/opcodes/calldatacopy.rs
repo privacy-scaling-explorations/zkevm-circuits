@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, MaybeParams, NumberOrHash,
     },
     operation::CallContextField,
     Error,
@@ -12,8 +12,8 @@ use eth_types::GethExecStep;
 pub(crate) struct Calldatacopy;
 
 impl Opcode for Calldatacopy {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
+    fn gen_associated_ops<M: MaybeParams>(
+        state: &mut CircuitInputStateRef<M>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
@@ -34,8 +34,8 @@ impl Opcode for Calldatacopy {
     }
 }
 
-fn gen_calldatacopy_step(
-    state: &mut CircuitInputStateRef,
+fn gen_calldatacopy_step<M: MaybeParams>(
+    state: &mut CircuitInputStateRef<M>,
     geth_step: &GethExecStep,
 ) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_step(geth_step)?;
@@ -92,8 +92,8 @@ fn gen_calldatacopy_step(
     Ok(exec_step)
 }
 
-fn gen_copy_event(
-    state: &mut CircuitInputStateRef,
+fn gen_copy_event<M: MaybeParams>(
+    state: &mut CircuitInputStateRef<M>,
     geth_step: &GethExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;

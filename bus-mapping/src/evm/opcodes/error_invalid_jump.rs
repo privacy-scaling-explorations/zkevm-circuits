@@ -1,5 +1,5 @@
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    circuit_input_builder::{CircuitInputStateRef, ExecStep, MaybeParams},
     evm::{Opcode, OpcodeId},
     Error,
 };
@@ -9,8 +9,8 @@ use eth_types::{GethExecStep, Word};
 pub(crate) struct InvalidJump;
 
 impl Opcode for InvalidJump {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
+    fn gen_associated_ops<M: MaybeParams>(
+        state: &mut CircuitInputStateRef<M>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];

@@ -184,6 +184,8 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         let params = if let Some(block) = self.block.as_ref() {
             block.circuits_params
         } else {
+            // TODO Instead of default params it should compute the minimum needed (from ctx?)
+            // Test_ctx.into() -> Block
             self.circuits_params.unwrap_or_default()
         };
 
