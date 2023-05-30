@@ -811,6 +811,10 @@ impl<F: Field> MPTConstraintBuilder<F> {
             base: ConstraintBuilder::new(max_degree, cell_manager),
         }
     }
+
+    pub(crate) fn is_descr_disabled(&self) -> bool {
+        self.base.is_descr_disabled()
+    }
     
     pub(crate) fn query_bool(&mut self) -> Cell<F> {
         self.base.query_bool()
@@ -818,11 +822,11 @@ impl<F: Field> MPTConstraintBuilder<F> {
 
     pub(crate) fn query_byte(&mut self) -> Cell<F> {
         // TODO(Brecht): fix
-        self.base.query_one(EvmCellType::StoragePhase1)
+        self.base.query_one(EvmCellType::LookupByte)
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
-        self.base.query_cells_dyn(EvmCellType::StoragePhase1, N)
+        self.base.query_cells_dyn(EvmCellType::LookupByte, N)
             .try_into()
             .unwrap()
     }
@@ -841,7 +845,6 @@ impl<F: Field> MPTConstraintBuilder<F> {
             .unwrap()
     }
 
-    // Pass through to base
     pub(crate) fn require_equal(
         &mut self,
         name: &'static str,
@@ -871,6 +874,15 @@ impl<F: Field> MPTConstraintBuilder<F> {
         values: Vec<Expression<F>>
     ) {
         self.base.lookup(description, tag, values)
+    }
+
+    pub(crate) fn lookup_table<S: AsRef<str>>(
+        &mut self,
+        description: &'static str,
+        tag: S,
+        values: Vec<Expression<F>>
+    ) {
+        self.base.lookup_table(description, tag, values)
     }
 
     pub(crate) fn push_condition(&mut self, condition: Expression<F>) {
