@@ -10,6 +10,7 @@ use halo2_proofs::{
     plonk::{Error, Expression},
 };
 use itertools::Itertools;
+use to_vec::ToVec;
 
 use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell, RandomLinearCombination};
 
@@ -19,6 +20,7 @@ const N_BYTES_HALF_WORD: usize = 16;
 #[derive(Clone, Debug, Copy)]
 /// The EVM word for witness
 pub struct WordLimbs<T, const N: usize> {
+    /// word limbs
     pub limbs: [T; N],
 }
 
@@ -77,6 +79,12 @@ impl<F: Field> Expr<F> for Word32Cell<F> {
     }
 }
 
+/// Get word from Lo
+pub trait FromLo<T: Default> {
+    /// from lo generic type T unchecked
+    fn from_lo_unchecked(lo: T) -> Word<T>;
+}
+
 /// Get the word expression
 pub trait WordExpr<F> {
     /// Get the word expression
@@ -109,6 +117,7 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
         })
     }
 
+    /// assign bytes to wordlimbs first half/second half respectively
     // N_LO, N_HI are number of bytes to assign to first half and second half of size N limbs,
     // respectively N_LO and N_HI can be different size, the only requirement is N_LO % (N/2)
     // and N_HI % (N/2) [N/2] limbs will be assigned separately.
@@ -159,13 +168,14 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
         }
     }
 
+    /// assign u256 to wordlimbs
     pub fn assign_u256(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         word: eth_types::Word,
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
-        self.assign_lo_hi(
+        self.assign_lo_hi::<N_BYTES_HALF_WORD, N_BYTES_HALF_WORD>(
             region,
             offset,
             word.to_le_bytes()[0..N_BYTES_HALF_WORD].try_into().ok(),
@@ -173,15 +183,17 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
         )
     }
 
+    /// assign h160 to wordlimbs
     pub fn assign_h160(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         h160: H160,
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
-        let bytes = h160.clone().as_fixed_bytes().as_mut();
+        let mut bytes = *h160.as_fixed_bytes();
+        let bytes = bytes.as_mut();
         bytes.reverse();
-        self.assign_lo_hi(
+        self.assign_lo_hi::<N_BYTES_HALF_WORD, 4>(
             region,
             offset,
             bytes[0..N_BYTES_HALF_WORD].try_into().ok(),
@@ -203,7 +215,7 @@ impl<F: Field, const N: usize> WordExpr<F> for WordLimbs<Cell<F>, N> {
 }
 
 /// `Word`, special alias for Word2.
-#[derive(Clone, Debug, Copy, Default)]
+#[derive(Clone, Debug, Copy)]
 pub struct Word<T>(Word2<T>);
 
 impl<T: Clone> Word<T> {
@@ -213,11 +225,11 @@ impl<T: Clone> Word<T> {
     }
     /// The high 128 bits limb
     pub fn hi(&self) -> T {
-        self.0.limbs[1]
+        self.0.limbs[1].clone()
     }
     /// the low 128 bits limb
     pub fn lo(&self) -> T {
-        self.0.limbs[0]
+        self.0.limbs[0].clone()
     }
     /// number of limbs
     pub fn n() -> usize {
@@ -229,6 +241,18 @@ impl<T: Clone> Word<T> {
     }
 }
 
+impl<T: Default + Clone> ToVec<T> for Word<T> {
+    fn to_vec(self) -> Vec<T> {
+        self.limbs.to_vec()
+    }
+}
+
+impl<T: Default> Default for Word<T> {
+    fn default() -> Self {
+        Self(Word2::<T>::default())
+    }
+}
+
 impl<T> std::ops::Deref for Word<T> {
     type Target = WordLimbs<T, 2>;
 
@@ -237,19 +261,42 @@ impl<T> std::ops::Deref for Word<T> {
     }
 }
 
+impl<T: Clone + PartialEq> PartialEq for Word<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.lo() == other.lo() && self.hi() == other.hi()
+    }
+}
+
 impl<F: Field> Word<F> {
     /// Constrct the word from u256
     pub fn from_u256(value: eth_types::Word) -> Word<F> {
         let bytes = value.to_le_bytes();
         Word::new([
-            from_bytes::value(&bytes[..16]),
-            from_bytes::value(&bytes[16..]),
+            from_bytes::value(&bytes[..N_BYTES_HALF_WORD]),
+            from_bytes::value(&bytes[N_BYTES_HALF_WORD..]),
         ])
     }
     /// Constrct the word from u64
     pub fn from_u64(value: u64) -> Word<F> {
         let bytes = value.to_le_bytes();
         Word::new([from_bytes::value(&bytes), F::from(0)])
+    }
+
+    /// Constrct the word from h160
+    pub fn from_h160(value: H160) -> Word<F> {
+        let mut bytes = *value.as_fixed_bytes();
+        let bytes = bytes.as_mut();
+        bytes.reverse();
+        Word::new([
+            from_bytes::value(&bytes[..N_BYTES_HALF_WORD]),
+            from_bytes::value(&bytes[N_BYTES_HALF_WORD..]),
+        ])
+    }
+}
+
+impl<T: Default + Clone> FromLo<T> for Word<T> {
+    fn from_lo_unchecked(lo: T) -> Self {
+        Word::new([lo, T::default()])
     }
 }
 
@@ -276,7 +323,8 @@ impl<F: Field> WordExpr<F> for Word<Cell<F>> {
 
 impl<F: Field> Word<Expression<F>> {
     /// create word from lo limb with hi limb as 0. caller need to guaranteed to be 128 bits.
-    pub fn from_lo_unchecked(lo: Expression<F>) -> Self {
+    /// TODO integrate into `FromLo` trait if once `Expression` satisfied trait bound
+    pub fn from_loexpr_unchecked(lo: Expression<F>) -> Self {
         Self(WordLimbs::<Expression<F>, 2>::new([lo, 0.expr()]))
     }
     /// zero word
@@ -319,7 +367,7 @@ impl<F: Field> Word<Expression<F>> {
 
     /// No overflow check
     pub fn expr_unchecked(&self) -> Expression<F> {
-        self.lo().clone() + self.hi().clone() * (1 << (N_BYTES_HALF_WORD * 8)).expr()
+        self.lo() + self.hi() * (1 << (N_BYTES_HALF_WORD * 8)).expr()
     }
 }
 
@@ -374,7 +422,7 @@ pub type WordLegacy<F> = RandomLinearCombination<F, 32>;
 
 impl<F: Field> WordExpr<F> for WordLegacy<F> {
     fn to_word(&self) -> Word<Expression<F>> {
-        Word::from_lo_unchecked(self.expr())
+        Word::new([self.expr(), 0.expr()])
     }
 }
 
