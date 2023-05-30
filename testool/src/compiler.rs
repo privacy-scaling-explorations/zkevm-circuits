@@ -1,8 +1,7 @@
 #![allow(clippy::map_entry)]
 
 use anyhow::{bail, Context, Result};
-use eth_types::{bytecode, Bytecode, Bytes, H256};
-use keccak256::plain::Keccak;
+use eth_types::{bytecode, Bytecode, Bytes, Keccak, H256};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,

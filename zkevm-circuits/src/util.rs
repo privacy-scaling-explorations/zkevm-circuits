@@ -7,10 +7,9 @@ use halo2_proofs::{
         VirtualCells,
     },
 };
-use keccak256::plain::Keccak;
 
 use crate::{evm_circuit::util::rlc, table::TxLogFieldTag, witness};
-use eth_types::{Field, ToAddress, Word};
+use eth_types::{Field, Keccak, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
 

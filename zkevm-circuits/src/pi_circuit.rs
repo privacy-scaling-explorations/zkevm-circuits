@@ -9,10 +9,9 @@ mod test;
 use eth_types::{
     geth_types::{BlockConstants, Transaction},
     sign_types::SignData,
-    Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar, Word, H256,
+    Address, BigEndianHash, Field, Keccak, ToBigEndian, ToLittleEndian, ToScalar, Word, H256,
 };
 use halo2_proofs::plonk::{Instance, SecondPhase};
-use keccak256::plain::Keccak;
 use param::*;
 use std::marker::PhantomData;
 

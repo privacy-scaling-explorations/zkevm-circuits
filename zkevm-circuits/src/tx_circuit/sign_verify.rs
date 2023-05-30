@@ -14,7 +14,7 @@ use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
 use eth_types::{
     self,
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
-    Field,
+    Field, Keccak,
 };
 use halo2_proofs::{
     arithmetic::CurveAffine,
@@ -33,7 +33,6 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
 use itertools::Itertools;
-use keccak256::plain::Keccak;
 use log::error;
 use maingate::{
     AssignedValue, MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig,
