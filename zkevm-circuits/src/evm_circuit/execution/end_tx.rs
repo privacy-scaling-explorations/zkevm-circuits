@@ -70,7 +70,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             MAX_REFUND_QUOTIENT_OF_GAS_USED as u64,
         );
         let refund = cb.query_cell();
-        cb.tx_refund_read(tx_id.expr(), Word::from_lo_unchecked(refund.expr()));
+        cb.tx_refund_read(tx_id.expr(), Word::from_loexpr_unchecked(refund.expr()));
         let effective_refund = MinMaxGadget::construct(cb, max_refund.quotient(), refund.expr());
 
         // Add effective_refund * tx_gas_price back to caller's balance
@@ -93,7 +93,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         for (tag, value) in [
             (
                 BlockContextFieldTag::Coinbase,
-                Word::from_lo_unchecked(coinbase.expr()),
+                Word::from_loexpr_unchecked(coinbase.expr()),
             ),
             (BlockContextFieldTag::BaseFee, base_fee.to_word()),
         ] {
@@ -158,7 +158,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                     Some(cb.next.state.rw_counter.expr()),
                     CallContextFieldTag::TxId,
                     // tx_id has been lookup and range_check above
-                    Word::from_lo_unchecked(tx_id.expr() + 1.expr()),
+                    Word::from_loexpr_unchecked(tx_id.expr() + 1.expr()),
                 );
 
                 cb.require_step_state_transition(StepStateTransition {

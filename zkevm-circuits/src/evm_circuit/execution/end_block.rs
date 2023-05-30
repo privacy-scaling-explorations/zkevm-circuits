@@ -57,7 +57,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             cb.call_context_lookup_read(
                 None,
                 CallContextFieldTag::TxId,
-                Word::from_lo_unchecked(total_txs.expr()),
+                Word::from_loexpr_unchecked(total_txs.expr()),
             );
         });
 
