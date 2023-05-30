@@ -464,8 +464,11 @@ pub struct RwTable {
     pub value_prev: Column<Advice>,
     /// Aux1
     pub aux1: Column<Advice>,
+    #[deprecated]
     /// Aux2 (Committed Value)
     pub aux2: Column<Advice>,
+    /// Aux2 (Committed Value)
+    pub aux2_word: word::Word<Column<Advice>>,
 }
 
 impl<F: Field> LookupTable<F> for RwTable {
@@ -503,7 +506,8 @@ impl<F: Field> LookupTable<F> for RwTable {
             String::from("value_prev_lo"),
             String::from("value_prev_hi"),
             String::from("aux1"),
-            String::from("aux2"),
+            String::from("aux2_lo"),
+            String::from("aux2_hi"),
         ]
     }
 }
@@ -527,13 +531,14 @@ impl RwTable {
             // TODO check in a future review
             aux1: meta.advice_column_in(SecondPhase),
             aux2: meta.advice_column_in(SecondPhase),
+            aux2_word: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
     fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        row: &RwRow<Value<F>>,
+        row: &RwRow<Value<F>, Value<word::Word<F>>>,
     ) -> Result<(), Error> {
         for (column, value) in [
             (self.rw_counter, row.rw_counter),
@@ -542,13 +547,28 @@ impl RwTable {
             (self.id, row.id),
             (self.address, row.address),
             (self.field_tag, row.field_tag),
-            (self.storage_key, row.storage_key),
-            (self.value, row.value),
-            (self.value_prev, row.value_prev),
             (self.aux1, row.aux1),
-            (self.aux2, row.aux2),
         ] {
             region.assign_advice(|| "assign rw row on rw table", column, offset, || value)?;
+        }
+        for (column, value) in [
+            (self.storage_key_word, row.storage_key_word),
+            (self.value_word, row.value_word),
+            (self.value_prev_word, row.value_prev_word),
+            (self.aux2_word, row.aux2_word),
+        ] {
+            region.assign_advice(
+                || "assign rw row lo on rw table",
+                column.lo(),
+                offset,
+                || value.map(|v| v.lo()),
+            )?;
+            region.assign_advice(
+                || "assign rw row hi on rw table",
+                column.hi(),
+                offset,
+                || value.map(|v| v.hi()),
+            )?;
         }
         Ok(())
     }
@@ -573,11 +593,11 @@ impl RwTable {
         region: &mut Region<'_, F>,
         rws: &[Rw],
         n_rows: usize,
-        challenges: Value<F>,
+        _challenges: Value<F>,
     ) -> Result<(), Error> {
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
         for (offset, row) in rows.iter().enumerate() {
-            self.assign(region, offset, &row.table_assignment(challenges))?;
+            self.assign(region, offset, &row.table_assignment())?;
         }
         Ok(())
     }
