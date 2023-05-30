@@ -80,7 +80,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let topic_selectors: [Cell<F>; 4] = array_init(|_| cb.query_cell());
         for (idx, topic) in phase2_topics.iter().enumerate() {
             cb.condition(topic_selectors[idx].expr(), |cb| {
-                cb.stack_pop_word(Word::from_lo_unchecked(topic.expr()));
+                cb.stack_pop_word(Word::from_loexpr_unchecked(topic.expr()));
             });
             cb.condition(topic_selectors[idx].expr() * is_persistent.expr(), |cb| {
                 cb.tx_log_lookup(
