@@ -1,6 +1,6 @@
 [package]
 name = "testool"
-description="tools for doing tests"
+description = "tools for doing tests"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,10 +9,10 @@ anyhow = "1"
 bus-mapping = { path = "../bus-mapping" }
 clap = { version = "3.1", features = ["derive"] }
 env_logger = "0.9"
-eth-types = { path="../eth-types" }
-ethers-core = "0.17.0"
-ethers-signers = "0.17.0"
-external-tracer = { path="../external-tracer" }
+eth-types = { path = "../eth-types" }
+ethers-core = "=2.0.0"
+ethers-signers = "=2.0.0"
+external-tracer = { path = "../external-tracer" }
 glob = "0.3"
 handlebars = "4.3"
 hex = "0.4.3"
@@ -25,12 +25,12 @@ rayon = "1.5"
 regex = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-strum= "0.24"
+strum = "0.24"
 strum_macros = "0.24"
 thiserror = "1.0"
 toml = "0.5"
 yaml-rust = "0.4.5"
-zkevm-circuits = { path="../zkevm-circuits", features=["test"] }
+zkevm-circuits = { path = "../zkevm-circuits", features = ["test"] }
 rand_chacha = "0.3"
 rand = "0.8"
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_04_20" }
