@@ -218,6 +218,7 @@ impl<F: Field> StoredExpression<F> {
     }
 }
 
+#[allow(clippy::mut_range_bound)]
 pub(crate) fn evm_cm_distribute_advice<F: Field>(
     meta: &mut ConstraintSystem<F>,
     advices: &[Column<Advice>],
