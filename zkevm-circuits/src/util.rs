@@ -9,7 +9,7 @@ use halo2_proofs::{
 };
 
 use crate::{evm_circuit::util::rlc, table::TxLogFieldTag, witness};
-use eth_types::{Field, Keccak, ToAddress, Word};
+use eth_types::{keccak256, Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
 
@@ -199,9 +199,7 @@ pub fn log2_ceil(n: usize) -> u32 {
 }
 
 pub(crate) fn keccak(msg: &[u8]) -> Word {
-    let mut keccak = Keccak::default();
-    keccak.update(msg);
-    Word::from_big_endian(keccak.digest().as_slice())
+    Word::from_big_endian(keccak256(msg).as_slice())
 }
 
 pub(crate) fn is_push(byte: u8) -> bool {

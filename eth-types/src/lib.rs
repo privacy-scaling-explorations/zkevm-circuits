@@ -20,7 +20,7 @@ pub mod evm_types;
 pub mod geth_types;
 pub mod keccak;
 pub mod sign_types;
-pub use keccak::Keccak;
+pub use keccak::{keccak256, Keccak};
 
 pub use bytecode::Bytecode;
 pub use error::Error;

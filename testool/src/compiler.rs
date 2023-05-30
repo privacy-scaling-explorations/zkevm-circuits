@@ -1,7 +1,7 @@
 #![allow(clippy::map_entry)]
 
 use anyhow::{bail, Context, Result};
-use eth_types::{bytecode, Bytecode, Bytes, Keccak, H256};
+use eth_types::{bytecode, keccak256, Bytecode, Bytes, H256};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -59,9 +59,7 @@ impl Cache {
     }
 
     fn hash(src: &str) -> H256 {
-        let mut hash = Keccak::default();
-        hash.update(src.as_bytes());
-        H256::from_slice(&hash.digest())
+        H256::from_slice(&keccak256(src.as_bytes()))
     }
 }
 

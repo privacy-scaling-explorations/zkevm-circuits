@@ -252,25 +252,31 @@ impl Sponge {
         words
     }
 }
-#[cfg(test)]
-fn keccak256(msg: &[u8]) -> Vec<u8> {
+
+/// Convinient method to get 32 bytes digest
+pub fn keccak256(msg: &[u8]) -> [u8; 32] {
     let mut keccak = Keccak::default();
     keccak.update(msg);
-    let a = keccak.digest();
-
-    let mut keccak = Keccak::default();
-    for byte in msg {
-        keccak.update(&[*byte]);
-    }
-    let b = keccak.digest();
-
-    assert_eq!(a, b);
-
-    a
+    keccak.digest().try_into().expect("keccak outputs 32 bytes")
 }
 
 #[test]
 fn test_keccak256() {
+    fn keccak256(msg: &[u8]) -> Vec<u8> {
+        let mut keccak = Keccak::default();
+        keccak.update(msg);
+        let a = keccak.digest();
+
+        let mut keccak = Keccak::default();
+        for byte in msg {
+            keccak.update(&[*byte]);
+        }
+        let b = keccak.digest();
+
+        assert_eq!(a, b);
+
+        a
+    }
     let pairs = [
         (
             "",
