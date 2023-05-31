@@ -10,7 +10,6 @@ use halo2_proofs::{
     plonk::{Error, Expression},
 };
 use itertools::Itertools;
-use to_vec::ToVec;
 
 use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell, RandomLinearCombination};
 
@@ -245,11 +244,9 @@ impl<T: Clone> Word<T> {
     pub fn to_lo_hi(&self) -> (T, T) {
         (self.0.limbs[0].clone(), self.0.limbs[1].clone())
     }
-}
-
-impl<T: Default + Clone> ToVec<T> for Word<T> {
-    fn to_vec(self) -> Vec<T> {
-        self.limbs.to_vec()
+    /// Map the word to other types
+    pub fn map<T2: Clone>(&self, mut func: impl FnMut(T) -> T2) -> Word<T2> {
+        Word(WordLimbs::<T2, 2>::new([func(self.lo()), func(self.hi())]))
     }
 }
 

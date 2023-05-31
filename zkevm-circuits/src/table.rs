@@ -538,7 +538,7 @@ impl RwTable {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        row: &RwRow<Value<F>, Value<word::Word<F>>>,
+        row: &RwRow<Value<F>>,
     ) -> Result<(), Error> {
         for (column, value) in [
             (self.rw_counter, row.rw_counter),
@@ -561,13 +561,13 @@ impl RwTable {
                 || "assign rw row lo on rw table",
                 column.lo(),
                 offset,
-                || value.map(|v| v.lo()),
+                || value.lo(),
             )?;
             region.assign_advice(
                 || "assign rw row hi on rw table",
                 column.hi(),
                 offset,
-                || value.map(|v| v.hi()),
+                || value.hi(),
             )?;
         }
         Ok(())
