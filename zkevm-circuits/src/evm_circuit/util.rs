@@ -508,7 +508,7 @@ pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADD
 
 impl<F: Field> WordExpr<F> for MemoryAddress<F> {
     fn to_word(&self) -> WordNew<Expression<F>> {
-        WordNew::from_loexpr_unchecked(self.expr())
+        WordNew::from_lo_unchecked(self.expr())
     }
 }
 
@@ -539,7 +539,7 @@ pub(crate) type U64Cell<F> = RandomLinearCombination<F, N_BYTES_U64>;
 
 impl<F: Field> WordExpr<F> for U64Cell<F> {
     fn to_word(&self) -> WordNew<Expression<F>> {
-        WordNew::from_loexpr_unchecked(self.expr())
+        WordNew::from_lo_unchecked(self.expr())
     }
 }
 

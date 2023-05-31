@@ -591,11 +591,11 @@ impl Rw {
 
             Self::TxAccessListAccount { is_warm, .. }
             | Self::TxAccessListAccountStorage { is_warm, .. } => {
-                WordNew::new([F::from(*is_warm as u64), F::ZERO])
+                WordNew::from_u64(*is_warm as u64)
             }
-            Self::Memory { byte, .. } => WordNew::new([F::from(u64::from(*byte)), F::ZERO]),
+            Self::Memory { byte, .. } => WordNew::from_u64(u64::from(*byte)),
             Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => {
-                WordNew::new([F::from(*value), F::ZERO])
+                WordNew::from_u64(*value)
             }
         }
     }
@@ -606,11 +606,9 @@ impl Rw {
             Self::AccountStorage { value_prev, .. } => Some(WordNew::from_u256(*value_prev)),
             Self::TxAccessListAccount { is_warm_prev, .. }
             | Self::TxAccessListAccountStorage { is_warm_prev, .. } => {
-                Some(WordNew::new([F::from(*is_warm_prev as u64), F::ZERO]))
+                Some(WordNew::from_u64(*is_warm_prev as u64))
             }
-            Self::TxRefund { value_prev, .. } => {
-                Some(WordNew::new([F::from(*value_prev), F::ZERO]))
-            }
+            Self::TxRefund { value_prev, .. } => Some(WordNew::from_u64(*value_prev)),
             Self::Start { .. }
             | Self::Stack { .. }
             | Self::Memory { .. }

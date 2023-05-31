@@ -94,7 +94,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         cb.require_equal_word(
             "check a_reduced + b 512 bit carry if n != 0",
             sum_areduced_b_overflow.to_word(),
-            Word::from_loexpr_unchecked(sum_areduced_b.carry().clone().unwrap().expr())
+            Word::from_lo_unchecked(sum_areduced_b.carry().clone().unwrap().expr())
                 .mul_selector(not::expr(n_is_zero.expr())),
         );
 

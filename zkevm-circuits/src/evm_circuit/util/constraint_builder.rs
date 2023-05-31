@@ -601,7 +601,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                     Transition::To(to) => self.require_equal_word(
                         concat!("State transition (to) constraint of ", stringify!($name)),
                         self.next.state.$name.to_word(),
-                        Word::from_loexpr_unchecked(to),
+                        Word::from_lo_unchecked(to),
                     ),
                     _ => {}
                 }
@@ -695,12 +695,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         is_code: Expression<F>,
         value: Expression<F>,
     ) {
-        self.bytecode_lookup_word(
-            Word::from_loexpr_unchecked(code_hash),
-            index,
-            is_code,
-            value,
-        )
+        self.bytecode_lookup_word(Word::from_lo_unchecked(code_hash), index, is_code, value)
     }
 
     pub(crate) fn bytecode_lookup_word(
@@ -724,7 +719,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     #[deprecated(note = "in fav of bytecode_length_word")]
     pub(crate) fn bytecode_length(&mut self, code_hash: Expression<F>, value: Expression<F>) {
-        self.bytecode_length_word(Word::from_loexpr_unchecked(code_hash), value)
+        self.bytecode_length_word(Word::from_lo_unchecked(code_hash), value)
     }
 
     pub(crate) fn bytecode_length_word(
@@ -754,12 +749,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     ) -> Cell<F> {
         let cell = self.query_cell();
         // lookup read, unchecked is safe
-        self.tx_context_lookup_word(
-            id,
-            field_tag,
-            index,
-            Word::from_loexpr_unchecked(cell.expr()),
-        );
+        self.tx_context_lookup_word(id, field_tag, index, Word::from_lo_unchecked(cell.expr()));
         cell
     }
     #[deprecated(note = "tx_context_as_word32 is favored")]
@@ -793,7 +783,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         index: Option<Expression<F>>,
         value: Expression<F>,
     ) {
-        let value = Word::from_loexpr_unchecked(value);
+        let value = Word::from_lo_unchecked(value);
         self.tx_context_lookup_word(id, field_tag, index, value)
     }
 
@@ -823,7 +813,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         number: Option<Expression<F>>,
         val: Expression<F>,
     ) {
-        self.block_lookup_word(tag, number, Word::from_loexpr_unchecked(val))
+        self.block_lookup_word(tag, number, Word::from_lo_unchecked(val))
     }
 
     pub(crate) fn block_lookup_word(
@@ -945,8 +935,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.account_access_list_write_word(
             tx_id,
             account_address,
-            Word::from_loexpr_unchecked(value),
-            Word::from_loexpr_unchecked(value_prev),
+            Word::from_lo_unchecked(value),
+            Word::from_lo_unchecked(value_prev),
             reversion_info,
         )
     }
@@ -982,11 +972,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         account_address: Expression<F>,
         value: Expression<F>,
     ) {
-        self.account_access_list_read_word(
-            tx_id,
-            account_address,
-            Word::from_loexpr_unchecked(value),
-        );
+        self.account_access_list_read_word(tx_id, account_address, Word::from_lo_unchecked(value));
     }
 
     pub(crate) fn account_access_list_read_word(
@@ -1025,9 +1011,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.account_storage_access_list_write_word(
             tx_id,
             account_address,
-            Word::from_loexpr_unchecked(storage_key),
-            Word::from_loexpr_unchecked(value),
-            Word::from_loexpr_unchecked(value_prev),
+            Word::from_lo_unchecked(storage_key),
+            Word::from_lo_unchecked(value),
+            Word::from_lo_unchecked(value_prev),
             reversion_info,
         )
     }
@@ -1068,8 +1054,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.account_storage_access_list_read_word(
             tx_id,
             account_address,
-            Word::from_loexpr_unchecked(storage_key),
-            Word::from_loexpr_unchecked(value),
+            Word::from_lo_unchecked(storage_key),
+            Word::from_lo_unchecked(value),
         );
     }
 
@@ -1126,8 +1112,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     ) {
         self.tx_refund_write_word(
             tx_id,
-            Word::from_loexpr_unchecked(value),
-            Word::from_loexpr_unchecked(value_prev),
+            Word::from_lo_unchecked(value),
+            Word::from_lo_unchecked(value_prev),
             reversion_info,
         )
     }
@@ -1165,11 +1151,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         field_tag: AccountFieldTag,
         value: Expression<F>,
     ) {
-        self.account_read_word(
-            account_address,
-            field_tag,
-            Word::from_loexpr_unchecked(value),
-        );
+        self.account_read_word(account_address, field_tag, Word::from_lo_unchecked(value));
     }
 
     pub(crate) fn account_read_word(
@@ -1206,8 +1188,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.account_write_word(
             account_address,
             field_tag,
-            Word::from_loexpr_unchecked(value),
-            Word::from_loexpr_unchecked(value_prev),
+            Word::from_lo_unchecked(value),
+            Word::from_lo_unchecked(value_prev),
             reversion_info,
         )
     }
@@ -1250,8 +1232,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     ) {
         self.account_storage_read_word(
             account_address,
-            Word::from_loexpr_unchecked(key),
-            Word::from_loexpr_unchecked(value),
+            Word::from_lo_unchecked(key),
+            Word::from_lo_unchecked(value),
             tx_id,
             committed_value,
         );
@@ -1296,9 +1278,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     ) {
         self.account_storage_write_word(
             account_address,
-            Word::from_loexpr_unchecked(key),
-            Word::from_loexpr_unchecked(value),
-            Word::from_loexpr_unchecked(value_prev),
+            Word::from_lo_unchecked(key),
+            Word::from_lo_unchecked(value),
+            Word::from_lo_unchecked(value_prev),
             tx_id,
             committed_value,
             reversion_info,
@@ -1348,7 +1330,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.call_context_lookup_read(
             call_id,
             field_tag,
-            Word::from_loexpr_unchecked(cell.expr()), // lookup read, unchecked is safe
+            Word::from_lo_unchecked(cell.expr()), // lookup read, unchecked is safe
         );
         cell
     }
@@ -1390,7 +1372,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 0.expr(),
                 field_tag.expr(),
                 Word::zero(),
-                Word::from_loexpr_unchecked(value),
+                Word::from_lo_unchecked(value),
                 Word::zero(),
                 0.expr(),
                 0.expr(),
@@ -1460,13 +1442,13 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                     call_id.clone(),
                     field_tag,
                     // TODO assure range check since write=true also possible
-                    Word::from_loexpr_unchecked(cell.expr()),
+                    Word::from_lo_unchecked(cell.expr()),
                 );
             } else {
                 self.call_context_lookup_read(
                     call_id.clone(),
                     field_tag,
-                    Word::from_loexpr_unchecked(cell.expr()),
+                    Word::from_lo_unchecked(cell.expr()),
                 );
             }
 
@@ -1503,14 +1485,14 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     #[deprecated(note = "stack_pop_word is favored")]
     pub(crate) fn stack_pop(&mut self, value: Expression<F>) {
         // This is definitely incorrct. The intention is to convert expression to word to fix build.
-        let value = Word::from_loexpr_unchecked(value);
+        let value = Word::from_lo_unchecked(value);
         self.stack_pop_word(value)
     }
 
     #[deprecated(note = "stack_push_word is favored")]
     pub(crate) fn stack_push(&mut self, value: Expression<F>) {
         // This is definitely incorrct. The intention is to convert expression to word to fix build.
-        let value = Word::from_loexpr_unchecked(value);
+        let value = Word::from_lo_unchecked(value);
         self.stack_push_word(value)
     }
 
@@ -1533,7 +1515,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.stack_lookup_word(
             is_write,
             stack_pointer_offset,
-            Word::from_loexpr_unchecked(value),
+            Word::from_lo_unchecked(value),
         )
     }
 
@@ -1579,7 +1561,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 0.expr(),
                 Word::zero(),
                 // TODO assure range check since write=true also possible
-                Word::from_loexpr_unchecked(byte),
+                Word::from_lo_unchecked(byte),
                 Word::zero(),
                 0.expr(),
                 0.expr(),
@@ -1605,7 +1587,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 0.expr(),
                 Word::zero(),
                 // TODO assure range check since here is write
-                Word::from_loexpr_unchecked(value),
+                Word::from_lo_unchecked(value),
                 Word::zero(),
                 0.expr(),
                 0.expr(),
@@ -1632,7 +1614,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 tag.expr(),
                 Word::zero(),
                 // TODO assure range check since write=true also possible
-                Word::from_loexpr_unchecked(value),
+                Word::from_lo_unchecked(value),
                 Word::zero(),
                 0.expr(),
                 0.expr(),
@@ -1729,7 +1711,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         input_len: Expression<F>,
         output: Expression<F>,
     ) {
-        self.keccak_table_lookup_word(input_rlc, input_len, Word::from_loexpr_unchecked(output))
+        self.keccak_table_lookup_word(input_rlc, input_len, Word::from_lo_unchecked(output))
     }
 
     pub(crate) fn keccak_table_lookup_word(

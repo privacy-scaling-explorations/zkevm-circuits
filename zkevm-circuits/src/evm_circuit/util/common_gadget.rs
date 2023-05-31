@@ -162,7 +162,7 @@ impl<F: Field> RestoreContextGadget<F> {
             cb.call_context_lookup_write_unchecked(
                 Some(caller_id.expr()),
                 field_tag,
-                Word::from_loexpr_unchecked(value),
+                Word::from_lo_unchecked(value),
             );
         }
 
@@ -662,7 +662,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         cb.stack_pop_word(rd_offset.to_word());
         cb.stack_pop_word(rd_length.to_word());
         cb.stack_push_word(if IS_SUCCESS_CALL {
-            Word::from_loexpr_unchecked(is_success.expr()) // is_success is bool
+            Word::from_lo_unchecked(is_success.expr()) // is_success is bool
         } else {
             Word::zero()
         });

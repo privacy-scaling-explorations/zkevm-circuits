@@ -78,12 +78,6 @@ impl<F: Field> Expr<F> for Word32Cell<F> {
     }
 }
 
-/// Get word from Lo
-pub trait FromLo<T: Default> {
-    /// from lo generic type T unchecked
-    fn from_lo_unchecked(lo: T) -> Word<T>;
-}
-
 /// Get the word expression
 pub trait WordExpr<F> {
     /// Get the word expression
@@ -271,7 +265,7 @@ impl<T: Clone + PartialEq> PartialEq for Word<T> {
 }
 
 impl<F: Field> Word<F> {
-    /// Constrct the word from u256
+    /// Construct the word from u256
     pub fn from_u256(value: eth_types::Word) -> Word<F> {
         let bytes = value.to_le_bytes();
         Word::new([
@@ -279,13 +273,18 @@ impl<F: Field> Word<F> {
             from_bytes::value(&bytes[N_BYTES_HALF_WORD..]),
         ])
     }
-    /// Constrct the word from u64
+    /// Construct the word from u64
     pub fn from_u64(value: u64) -> Word<F> {
         let bytes = value.to_le_bytes();
         Word::new([from_bytes::value(&bytes), F::from(0)])
     }
 
-    /// Constrct the word from h160
+    /// Construct the word from u8
+    pub fn from_u8(value: u8) -> Word<F> {
+        Word::new([F::from(value as u64), F::from(0)])
+    }
+
+    /// Construct the word from h160
     pub fn from_h160(value: H160) -> Word<F> {
         let mut bytes = *value.as_fixed_bytes();
         bytes.reverse();
@@ -294,11 +293,10 @@ impl<F: Field> Word<F> {
             from_bytes::value(&bytes[N_BYTES_HALF_WORD..]),
         ])
     }
-}
 
-impl<T: Default + Clone> FromLo<T> for Word<T> {
-    fn from_lo_unchecked(lo: T) -> Self {
-        Word::new([lo, T::default()])
+    /// Construct the word from bool
+    pub fn from_bool(value: bool) -> Word<F> {
+        Word::new([F::from(value as u64), F::from(0)])
     }
 }
 
@@ -325,8 +323,7 @@ impl<F: Field> WordExpr<F> for Word<Cell<F>> {
 
 impl<F: Field> Word<Expression<F>> {
     /// create word from lo limb with hi limb as 0. caller need to guaranteed to be 128 bits.
-    /// TODO integrate into `FromLo` trait if once `Expression` satisfied trait bound
-    pub fn from_loexpr_unchecked(lo: Expression<F>) -> Self {
+    pub fn from_lo_unchecked(lo: Expression<F>) -> Self {
         Self(WordLimbs::<Expression<F>, 2>::new([lo, 0.expr()]))
     }
     /// zero word
