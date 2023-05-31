@@ -42,7 +42,7 @@ impl RwMap {
     /// Check value in the same way like StateCircuit
     pub fn check_value(&self) {
         let mock_rand = Fr::from(0x1000u64);
-        let _err_msg_first = "first access reads don't change value";
+        let err_msg_first = "first access reads don't change value";
         let err_msg_non_first = "non-first access reads don't change value";
         let rows = self.table_assignments();
         let updates = MptUpdates::mock_from(&rows);
@@ -71,7 +71,7 @@ impl RwMap {
                         .map(|u| u.value_assignments(mock_rand).1)
                         .unwrap_or_default();
                     if value != init_value {
-                        errs.push((idx, _err_msg_first, *row, *prev_row));
+                        errs.push((idx, err_msg_first, *row, *prev_row));
                     }
                 } else {
                     // value == prev_value
