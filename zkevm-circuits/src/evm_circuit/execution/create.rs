@@ -25,7 +25,9 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, state_db::CodeDB};
-use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToLittleEndian, ToScalar, U256};
+use eth_types::{
+    evm_types::GasCost, Field, ToBigEndian, ToLittleEndian, ToScalar, ToWord, H160, U256,
+};
 use ethers_core::utils::keccak256;
 use gadgets::util::{and, expr_from_bytes, or};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -40,6 +42,7 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     reversion_info: ReversionInfo<F>,
     depth: Cell<F>,
 
+    is_create2: IsZeroGadget<F>,
     is_success: Cell<F>,
     was_warm: Cell<F>,
     value: Word<F>,
@@ -80,6 +83,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             opcode.expr(),
             vec![OpcodeId::CREATE2.expr(), OpcodeId::CREATE.expr()],
         );
+        let is_create2 = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CREATE2.expr());
+
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
         let caller_call_id = cb.curr.state.call_id.clone();
@@ -88,12 +93,23 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         // read from call context
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let depth = cb.call_context(None, CallContextFieldTag::Depth);
-        let caller_address = cb.call_context(None, CallContextFieldTag::CallerAddress);
+        // create.caller_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
         let mut reversion_info = cb.reversion_info_read(None);
 
         let keccak_output = cb.query_word_rlc();
-        let contract_addr = expr_from_bytes(&keccak_output.cells[..N_BYTES_ACCOUNT_ADDRESS]);
         let create = ContractCreateGadget::construct(cb);
+        let contract_addr = expr_from_bytes(&keccak_output.cells[..N_BYTES_ACCOUNT_ADDRESS]);
+
+        let contract_addr_rlc = cb.word_rlc::<N_BYTES_ACCOUNT_ADDRESS>(
+            keccak_output
+                .cells
+                .iter()
+                .take(N_BYTES_ACCOUNT_ADDRESS)
+                .map(Expr::expr)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        );
 
         // stack operations
         let value = cb.query_word_rlc();
@@ -102,10 +118,10 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         cb.stack_pop(value.expr());
         cb.stack_pop(offset.expr());
         cb.stack_pop(length.expr());
-        cb.condition(IS_CREATE2.expr(), |cb| {
+        cb.condition(is_create2.expr(), |cb| {
             cb.stack_pop(create.salt_word_rlc(cb).expr());
         });
-        cb.stack_push(contract_addr.clone() * is_success.expr());
+        cb.stack_push(is_success.expr() * contract_addr_rlc.clone());
 
         let init_code = MemoryAddressGadget::construct(cb, offset, length);
 
@@ -113,12 +129,12 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let caller_nonce = create.caller_nonce();
         let caller_balance = cb.query_word_rlc();
         cb.account_read(
-            caller_address.expr(),
+            create.caller_address(),
             AccountFieldTag::Balance,
             caller_balance.expr(),
         );
         cb.account_read(
-            caller_address.expr(),
+            create.caller_address(),
             AccountFieldTag::Nonce,
             caller_nonce.expr(),
         );
@@ -155,7 +171,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let not_address_collision = cb.condition(is_precheck_ok.expr(), |cb| {
             // increase caller's nonce
             cb.account_write(
-                caller_address.expr(),
+                create.caller_address(),
                 AccountFieldTag::Nonce,
                 caller_nonce.expr() + 1.expr(),
                 caller_nonce.expr(),
@@ -178,25 +194,17 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 AccountFieldTag::CodeHash,
                 prev_code_hash.expr(),
             );
-            cb.account_read(
-                contract_addr.clone(),
-                AccountFieldTag::Nonce,
-                callee_nonce.expr(),
-            );
-            let is_zero_nonce = IsZeroGadget::construct(cb, callee_nonce.expr());
-            let is_new_account = IsZeroGadget::construct(cb, prev_code_hash.expr());
-            let is_empty_account =
-                IsEqualGadget::construct(cb, prev_code_hash.expr(), cb.empty_code_hash_rlc());
-            let no_collision = and::expr([
-                is_zero_nonce.expr(),
-                or::expr([is_new_account.expr(), is_empty_account.expr()]),
-            ]);
-            IsZeroGadget::construct(cb, not::expr(no_collision))
+
+            // TODO: add callee_nonce == 0
+            IsZeroGadget::construct(
+                cb,
+                prev_code_hash.expr() * (prev_code_hash.expr() - cb.empty_code_hash_rlc()),
+            )
         });
 
         let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
         let transfer = cb.condition(
-            and::expr([is_precheck_ok.expr(), not_address_collision.expr()]),
+            and::expr([is_precheck_ok.clone(), not_address_collision.expr()]),
             |cb| {
                 // keccak table lookup to verify contract address.
                 cb.keccak_table_lookup(
@@ -215,7 +223,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 // transfer
                 let transfer = TransferGadget::construct(
                     cb,
-                    caller_address.expr(),
+                    create.caller_address(),
                     contract_addr.clone(),
                     0.expr(),
                     1.expr(),
@@ -232,7 +240,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     Some(&mut callee_reversion_info),
                 );
 
-                cb.condition(init_code.has_length().expr(), |cb| {
+                cb.condition(init_code.has_length().clone(), |cb| {
                     // the init code is being copied from memory to bytecode, so a copy table lookup
                     // to verify that the associated fields for the copy event.
                     cb.copy_table_lookup(
@@ -278,7 +286,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                             callee_reversion_info.is_persistent(),
                         ),
                         (CallContextFieldTag::TxId, tx_id.expr()),
-                        (CallContextFieldTag::CallerAddress, caller_address.expr()),
+                        (CallContextFieldTag::CallerAddress, create.caller_address()),
                         (CallContextFieldTag::CalleeAddress, contract_addr),
                         (
                             CallContextFieldTag::RwCounterEndOfReversion,
@@ -299,14 +307,16 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     }
 
                     cb.require_step_state_transition(StepStateTransition {
-                        rw_counter: Delta(cb.rw_counter_offset()),
+                        // +1: move to new context
+                        rw_counter: Delta(cb.rw_counter_offset() + 1.expr()),
                         call_id: To(callee_call_id.expr()),
                         is_root: To(false.expr()),
                         is_create: To(true.expr()),
                         code_hash: To(create.code_hash_word_rlc(cb)),
                         gas_left: To(callee_gas_left),
-                        // `transfer` includes two balance updates
-                        reversible_write_counter: To(1.expr() + 2.expr()),
+                        reversible_write_counter: To(
+                            1.expr() + transfer.reversible_w_delta().expr()
+                        ),
                         ..StepStateTransition::new_context()
                     })
                 });
@@ -335,21 +345,24 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             },
         );
 
-        cb.condition(is_success.expr() * (1.expr() - reversion_info.is_persistent()), |cb| {
-            cb.require_equal(
-                "callee_rw_counter_end_of_reversion == rw_counter_end_of_reversion - (reversible_write_counter + 1)",
-                callee_reversion_info.rw_counter_end_of_reversion(),
-                reversion_info.rw_counter_of_reversion(1.expr()),
-            );
-        });
+        cb.condition(
+            is_success.expr() * (1.expr() - reversion_info.is_persistent()),
+            |cb| {
+                cb.require_equal(
+                    "callee_rw_counter_end_of_reversion == rw_counter_end_of_reversion-(reversible_write_counter + 1)",
+                    callee_reversion_info.rw_counter_end_of_reversion(),
+                    reversion_info.rw_counter_of_reversion(1.expr()),
+                );
+            },
+        );
 
         // Handle the case where an error of ErrDepth, ErrInsufficientBalance,
         // ErrNonceUintOverflow or ErrContractAddressCollision occurred.
         cb.condition(
-            not::expr(and::expr([
-                is_precheck_ok.expr(),
-                not_address_collision.expr(),
-            ])),
+            or::expr([
+                not::expr(is_precheck_ok),
+                not::expr(not_address_collision.expr()),
+            ]),
             |cb| {
                 // Save caller's call state
                 for field_tag in [
@@ -359,6 +372,16 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 ] {
                     cb.call_context_lookup(true.expr(), None, field_tag, 0.expr());
                 }
+
+                // TODO: ErrContractAddressCollision has diff context
+                // cb.require_step_state_transition(StepStateTransition {
+                //     rw_counter: Delta(cb.rw_counter_offset()),
+                //     program_counter: Delta(1.expr()),
+                //     stack_pointer: Delta(3.expr()),
+                //     gas_left: To(0.expr()),
+                //     reversible_write_counter: Delta(2.expr()),
+                //     ..Default::default()
+                // })
 
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(cb.rw_counter_offset()),
@@ -397,6 +420,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             is_success,
             prev_code_hash,
             callee_nonce,
+            is_create2,
         }
     }
 
@@ -413,23 +437,113 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let is_create2 = opcode == OpcodeId::CREATE2;
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
+        self.is_create2.assign(
+            region,
+            offset,
+            F::from(opcode.as_u64()) - F::from(OpcodeId::CREATE2.as_u64()),
+        )?;
 
+        // for i in 0..20{
+        //     println!("{}: {:?}", i, block.get_rws(step, i));
+        // }
+        // for i in 40..59{
+        //     println!("{}: {:?}", i, block.get_rws(step, i));
+        // }
+
+        // println!("8: {:?}", block.get_rws(step, 8));
+        // 0..3 : TxId, Depth, RwCounterEndOfReversion and IsPersistent
+        // stack value starts from 5
         let [value, init_code_start, init_code_length] =
-            [0, 1, 2].map(|idx| block.get_rws(step, idx).stack_value());
+            [4, 5, 6].map(|idx| block.get_rws(step, idx).stack_value());
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
         let salt = if is_create2 {
-            block.get_rws(step, 3).stack_value()
+            block.get_rws(step, 7).stack_value()
         } else {
             U256::zero()
         };
 
-        let values: Vec<_> = (4 + usize::from(is_create2)
-            ..4 + usize::from(is_create2) + init_code_length.as_usize())
+        let rw_offset = if is_create2 { 8 } else { 7 };
+        let (caller_balance, _) = block.get_rws(step, rw_offset + 1).account_value_pair();
+        let (caller_nonce, _) = block.get_rws(step, rw_offset + 2).account_value_pair();
+        let is_precheck_ok =
+            if call.depth < 1025 && caller_balance >= value && caller_nonce.as_u64() < u64::MAX {
+                1
+            } else {
+                0
+            };
+
+        let (callee_prev_code_hash, was_warm) = if is_precheck_ok == 1 {
+            let (_, was_warm) = block
+                .get_rws(step, rw_offset + 4)
+                .tx_access_list_value_pair();
+            let (callee_prev_code_hash, _) =
+                block.get_rws(step, rw_offset + 5).account_value_pair();
+            (callee_prev_code_hash, was_warm)
+        } else {
+            (U256::from(0), false)
+        };
+
+        let [callee_rw_counter_end_of_reversion, callee_is_persistent] =
+            [rw_offset + 6, rw_offset + 7].map(|i| block.get_rws(step, i).call_context_value());
+        println!(
+            "999999 {}, {}",
+            callee_rw_counter_end_of_reversion, callee_is_persistent
+        );
+        // retrieve code_hash for creating address
+        let is_address_collision = !callee_prev_code_hash.is_zero();
+        let code_hash_previous_rlc = if is_address_collision {
+            region.code_hash(callee_prev_code_hash)
+        } else {
+            Value::known(F::ZERO)
+        };
+        self.prev_code_hash
+            .assign(region, offset, code_hash_previous_rlc)?;
+        self.not_address_collision.assign(
+            region,
+            offset,
+            F::from((is_address_collision).into()),
+        )?;
+
+        // transfer
+        let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
+            [rw_offset + 9, rw_offset + 10].map(|i| block.get_rws(step, i).account_value_pair())
+        } else {
+            [(0.into(), 0.into()), (0.into(), 0.into())]
+        };
+        self.transfer.assign(
+            region,
+            offset,
+            caller_balance_pair,
+            callee_balance_pair,
+            value,
+        )?;
+
+        // copy_table_lookup
+
+        let values: Vec<_> = (rw_offset + 12..rw_offset + 12 + init_code_length.as_usize())
             .map(|i| block.get_rws(step, i).memory_value())
             .collect();
         let copy_rw_increase = init_code_length.as_usize();
         let code_hash = CodeDB::hash(&values);
+        let keccak_input: Vec<u8> = if is_create2 {
+            once(0xffu8)
+                .chain(call.address.to_fixed_bytes())
+                .chain(salt.to_be_bytes())
+                .chain(code_hash.to_fixed_bytes())
+                .collect()
+        } else {
+            let mut stream = ethers_core::utils::rlp::RlpStream::new();
+            stream.begin_list(2);
+            stream.append(&call.address);
+            stream.append(&U256::from(caller_nonce));
+            stream.out().to_vec()
+        };
+        let mut keccak_output = keccak256(keccak_input);
+        keccak_output.reverse();
+
+        self.keccak_output
+            .assign(region, offset, Some(keccak_output))?;
 
         let init_code_address =
             self.init_code
@@ -455,93 +569,18 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             call.is_persistent,
         )?;
 
-        let tx_access_rw = block.get_rws(step, 7 + usize::from(is_create2) + copy_rw_increase);
-        self.was_warm.assign(
-            region,
-            offset,
-            Value::known(
-                tx_access_rw
-                    .tx_access_list_value_pair()
-                    .1
-                    .to_scalar()
-                    .unwrap(),
-            ),
-        )?;
+        self.was_warm
+            .assign(region, offset, Value::known(F::from(was_warm.into())))?;
 
-        let caller_balance = block
-            .get_rws(step, 10 + usize::from(is_create2) + copy_rw_increase)
-            .account_value_pair()
-            .1;
-
-        let caller_nonce = block
-            .get_rws(step, 11 + usize::from(is_create2) + copy_rw_increase)
-            .account_value_pair()
-            .1
-            .low_u64();
-
-        let is_precheck_ok =
-            if call.depth < 1025 && caller_balance >= value && caller_nonce < u64::MAX {
-                1
-            } else {
-                0
-            };
-
-        let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [12, 13].map(|i| {
-            let rw = block.get_rws(
-                step,
-                i + usize::from(is_create2) + copy_rw_increase + is_precheck_ok,
-            );
-            rw.call_context_value()
-        });
-
+        // TODO: fix the assignment
+        self.callee_nonce
+            .assign(region, offset, Value::known(F::ZERO))?;
         self.callee_reversion_info.assign(
             region,
             offset,
-            callee_rw_counter_end_of_reversion
-                .low_u64()
-                .try_into()
-                .unwrap(),
+            callee_rw_counter_end_of_reversion.low_u64() as usize,
             callee_is_persistent.low_u64() != 0,
         )?;
-
-        // retrieve code_hash for creating address
-        let code_hash_previous = block
-            .get_rws(
-                step,
-                14 + usize::from(is_create2) + copy_rw_increase + is_precheck_ok,
-            )
-            .account_value_pair();
-        let code_hash_previous_rlc = region.code_hash(code_hash_previous.0);
-        self.prev_code_hash
-            .assign(region, offset, code_hash_previous_rlc)?;
-        self.not_address_collision
-            .assign_value(region, offset, code_hash_previous_rlc)?;
-        let is_address_collision = !code_hash_previous.0.is_zero();
-
-        let mut rw_offset = 0;
-        if is_precheck_ok == 1 && !is_address_collision {
-            let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
-                rw_offset += 2;
-                [16, 17].map(|i| {
-                    block
-                        .get_rws(
-                            step,
-                            i + usize::from(is_create2) + copy_rw_increase + is_precheck_ok,
-                        )
-                        .account_value_pair()
-                })
-            } else {
-                [(0.into(), 0.into()), (0.into(), 0.into())]
-            };
-
-            self.transfer.assign(
-                region,
-                offset,
-                caller_balance_pair,
-                callee_balance_pair,
-                value,
-            )?;
-        }
 
         let (_next_memory_word_size, memory_expansion_gas_cost) = self.memory_expansion.assign(
             region,
@@ -573,43 +612,18 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 F::ZERO
             } else {
                 block
-                    .get_rws(
-                        step,
-                        23 + rw_offset
-                            + usize::from(is_create2)
-                            + copy_rw_increase
-                            + is_precheck_ok,
-                    )
+                    .get_rws(step, 17 + rw_offset + copy_rw_increase)
                     .call_context_value()
                     .to_scalar()
                     .unwrap()
             }),
         )?;
 
-        let keccak_input: Vec<u8> = if is_create2 {
-            once(0xffu8)
-                .chain(call.address.to_fixed_bytes())
-                .chain(salt.to_be_bytes())
-                .chain(code_hash.to_fixed_bytes())
-                .collect()
-        } else {
-            let mut stream = ethers_core::utils::rlp::RlpStream::new();
-            stream.begin_list(2);
-            stream.append(&call.address);
-            stream.append(&U256::from(caller_nonce));
-            stream.out().to_vec()
-        };
-        let mut keccak_output = keccak256(keccak_input);
-        keccak_output.reverse();
-
-        self.keccak_output
-            .assign(region, offset, Some(keccak_output))?;
-
         self.create.assign(
             region,
             offset,
             call.address,
-            caller_nonce,
+            caller_nonce.as_u64(),
             Some(U256::from(code_hash.to_fixed_bytes())),
             Some(salt),
         )?;
@@ -617,11 +631,14 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             .assign(region, offset, Some(caller_balance.to_le_bytes()))?;
         self.is_insufficient_balance
             .assign(region, offset, caller_balance, value)?;
-
         self.is_depth_in_range
             .assign(region, offset, F::from(call.depth as u64), F::from(1025))?;
-        self.is_nonce_in_range
-            .assign(region, offset, F::from(caller_nonce), F::from(u64::MAX))?;
+        self.is_nonce_in_range.assign(
+            region,
+            offset,
+            F::from(caller_nonce.as_u64()),
+            F::from(u64::MAX),
+        )?;
 
         Ok(())
     }
@@ -762,15 +779,23 @@ mod test {
             .cartesian_product(&[true, false])
             .cartesian_product(&[true, false])
         {
+            // if is_success is false, is_persistent must be false
+            if !*is_success && *is_persistent {
+                continue;
+            }
+            // let (is_success, is_create2, is_persistent) = (true, true, true);
             let init_code = initialization_bytecode(*is_success);
             let root_code = creater_bytecode(init_code, 23414.into(), *is_create2, *is_persistent);
             let caller = Account {
                 address: *CALLER_ADDRESS,
                 code: root_code.into(),
-                nonce: Word::one(),
+                nonce: 1.into(),
                 balance: eth(10),
                 ..Default::default()
             };
+            println!("****");
+            println!("*** {}-{}-{} ***", is_success, is_create2, is_persistent);
+            println!("****");
             run_test_circuits(test_context(caller));
         }
     }
@@ -835,7 +860,7 @@ mod test {
         let caller = Account {
             address: *CALLER_ADDRESS,
             code: root_code.into(),
-            nonce: Word::one(),
+            nonce: 1.into(),
             balance: eth(10),
             ..Default::default()
         };
@@ -860,7 +885,7 @@ mod test {
         let caller = Account {
             address: *CALLER_ADDRESS,
             code,
-            nonce: Word::one(),
+            nonce: 1.into(),
             balance: eth(10),
             ..Default::default()
         };

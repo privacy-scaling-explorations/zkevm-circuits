@@ -722,6 +722,19 @@ impl<'a> CircuitInputStateRef<'a> {
         }
     }
 
+    /// write reversion info
+    pub(crate) fn reversion_info_write(&mut self, step: &mut ExecStep, call: &Call) {
+        for (field, value) in [
+            (
+                CallContextField::RwCounterEndOfReversion,
+                call.rw_counter_end_of_reversion.to_word(),
+            ),
+            (CallContextField::IsPersistent, call.is_persistent.to_word()),
+        ] {
+            self.call_context_write(step, call.call_id, field, value);
+        }
+    }
+
     /// Check if address is a precompiled or not.
     pub fn is_precompiled(&self, address: &Address) -> bool {
         address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
