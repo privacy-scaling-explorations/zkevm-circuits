@@ -84,8 +84,8 @@ impl<F: Field> LookupBuilder<F> {
         self
     }
     fn add_word(mut self, e1: &word::Word<Expression<F>>, e2: &word::Word<Expression<F>>) -> Self {
-        self.0.push((e1.lo().clone(), e2.lo().clone()));
-        self.0.push((e1.hi().clone(), e2.hi().clone()));
+        self.0.push((e1.lo(), e2.lo()));
+        self.0.push((e1.hi(), e2.hi()));
         self
     }
     fn build(self) -> Vec<(Expression<F>, Expression<F>)> {
@@ -169,11 +169,11 @@ impl<F: Field> ConstraintBuilder<F> {
         self.condition(q.first_access(), |cb| {
             cb.require_zero(
                 "first access reads don't change value (hi)",
-                q.is_read() * (q.rw_table.value.hi().clone() - q.initial_value().hi().clone()),
+                q.is_read() * (q.rw_table.value.hi() - q.initial_value().hi()),
             );
             cb.require_zero(
                 "first access reads don't change value (lo)",
-                q.is_read() * (q.rw_table.value.lo().clone() - q.initial_value().lo().clone()),
+                q.is_read() * (q.rw_table.value.lo() - q.initial_value().lo()),
             );
             cb.require_word_equal(
                 "value_prev column is initial_value for first access",
@@ -186,19 +186,19 @@ impl<F: Field> ConstraintBuilder<F> {
         self.condition(q.not_first_access.clone(), |cb| {
             cb.require_zero(
                 "non-first access reads don't change value (hi)",
-                q.is_read() * (q.rw_table.value.hi().clone() - q.rw_table.value_prev.hi().clone()),
+                q.is_read() * (q.rw_table.value.hi() - q.rw_table.value_prev.hi()),
             );
             cb.require_zero(
                 "non-first access reads don't change value (lo)",
-                q.is_read() * (q.rw_table.value.lo().clone() - q.rw_table.value_prev.lo().clone()),
+                q.is_read() * (q.rw_table.value.lo() - q.rw_table.value_prev.lo()),
             );
             cb.require_zero(
                 "initial value doesn't change in an access group (hi)",
-                q.initial_value.hi().clone() - q.initial_value_prev().hi().clone(),
+                q.initial_value.hi()- q.initial_value_prev().hi(),
             );
             cb.require_zero(
                 "initial value doesn't change in an access group (lo)",
-                q.initial_value.lo().clone() - q.initial_value_prev().lo().clone(),
+                q.initial_value.lo()- q.initial_value_prev().lo(),
             );
         });
     }
@@ -252,11 +252,11 @@ impl<F: Field> ConstraintBuilder<F> {
         // 2.3. value is a byte
         self.add_lookup(
             "memory value is a byte (lo is u8)",
-            vec![(q.rw_table.value.lo().clone(), q.lookups.u8.clone())],
+            vec![(q.rw_table.value.lo(),q.lookups.u8.clone())],
         );
         self.require_zero(
             "memory value is a byte (hi is 0)",
-            q.rw_table.value.hi().clone(),
+            q.rw_table.value.hi()
         );
         // 2.4. Start initial value is 0
         self.require_word_zero("initial Memory value is 0", q.initial_value());
@@ -285,7 +285,7 @@ impl<F: Field> ConstraintBuilder<F> {
         // 3.2. stack_ptr in range
         self.add_lookup(
             "stack address fits into 10 bits",
-            vec![(q.rw_table.address.lo().clone(), q.lookups.u10.clone())],
+            vec![(q.rw_table.address.lo(), q.lookups.u10.clone())],
         );
         // 3.3. stack_ptr only increases by 0 or 1
         self.condition(q.is_tag_and_id_unchanged.clone(), |cb| {
@@ -673,8 +673,8 @@ impl<F: Field> Queries<F> {
     fn address_change(&self) -> Expression<F> {
         let pow_2_128 = Expression::Constant(F::from_str_vartime(POW_2_128_STR).unwrap());
 
-        (self.rw_table.address.hi().clone() - self.rw_table.prev_address.hi().clone()) * pow_2_128
-            + (self.rw_table.address.lo().clone() - self.rw_table.prev_address.lo().clone())
+        (self.rw_table.address.hi() - self.rw_table.prev_address.hi()) * pow_2_128
+            + (self.rw_table.address.lo() - self.rw_table.prev_address.lo())
     }
 
     fn rw_counter_change(&self) -> Expression<F> {
