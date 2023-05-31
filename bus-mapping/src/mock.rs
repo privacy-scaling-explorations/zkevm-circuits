@@ -6,7 +6,7 @@ use crate::{
     },
     state_db::{self, CodeDB, StateDB},
 };
-use eth_types::{geth_types::GethData, Transaction, Word};
+use eth_types::{geth_types::GethData, Word};
 
 /// BlockData is a type that contains all the information from a block required
 /// to build the circuit inputs.
@@ -89,26 +89,6 @@ impl BlockData<UnsetParams> {
     /// Create a new block from the given Geth data with default CircuitsParams.
     pub fn new_from_geth_data(geth_data: GethData) -> Self {
         let (sdb, code_db) = Self::init_dbs(&geth_data);
-        // TODO This logic will be placed in handle_block
-        // Get params
-        // let max_txs = geth_data.eth_block.transactions.len();
-        // let max_bytecode = geth_data
-        //     .accounts
-        //     .iter()
-        //     .fold(0, |acc, a| acc + a.code.len());
-
-        // let max_calldata = geth_data
-        //     .eth_block
-        //     .transactions
-        //     .iter()
-        //     .fold(0, |acc, tx| acc + tx.input.len());
-
-        // Handled in handle_block
-        // let n_rws = 0;
-        // let n_exp_steps = 0;
-        // let n_copy_rows = 0;
-        // let n_evm_rows = 0;
-        // let n_keccak_rows = 0;
 
         Self {
             sdb,

@@ -233,7 +233,7 @@ pub(crate) mod sha3_tests {
             },
         )
         .new_circuit_input_builder();
-        builder
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 

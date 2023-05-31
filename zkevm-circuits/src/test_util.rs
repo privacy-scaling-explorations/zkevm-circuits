@@ -181,21 +181,12 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// into a [`Block`] and apply the default or provided block_modifiers or
     /// circuit checks to the provers generated for the State and EVM circuits.
     pub fn run(self) {
-        let params = if let Some(block) = self.block.as_ref() {
-            block.circuits_params
-        } else {
-            // TODO Instead of default params it should compute the minimum needed (from ctx?)
-            // Test_ctx.into() -> Block
-            self.circuits_params.unwrap_or_default()
-        };
-
         let block: Block<Fr> = if self.block.is_some() {
             self.block.unwrap()
         } else if self.test_ctx.is_some() {
             let block: GethData = self.test_ctx.unwrap().into();
-            let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
-                .new_circuit_input_builder();
-            builder
+            let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+            let builder = builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
             // Build a witness block from trace result.
@@ -209,6 +200,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         } else {
             panic!("No attribute to build a block was passed to the CircuitTestBuilder")
         };
+        let params = block.circuits_params;
 
         // Run evm circuit test
         {

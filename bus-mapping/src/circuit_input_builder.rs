@@ -75,7 +75,7 @@ pub struct CircuitsParams {
 pub struct UnsetParams {}
 
 /// TODO Complete
-pub trait MaybeParams: Copy {}
+pub trait MaybeParams: Debug + Copy {}
 
 impl MaybeParams for CircuitsParams {}
 impl MaybeParams for UnsetParams {}
@@ -259,7 +259,6 @@ impl<'a> CircuitInputBuilder<CircuitsParams> {
             self.handle_tx(tx, geth_trace, tx_index + 1 == eth_block.transactions.len())?;
         }
         self.set_value_ops_call_context_rwc_eor();
-        // TODO 2 different implementations. When unset params, here we compute the dynamic params.
         self.set_end_block();
         Ok(self)
     }
@@ -321,7 +320,8 @@ impl CircuitInputBuilder<UnsetParams> {
 
 impl<'a> CircuitInputBuilder<UnsetParams> {
     /// Handle a block by handling each transaction to generate all the
-    /// associated operations.
+    /// associated operations. From these operations, the optimal circuit parameters
+    /// are derived and set.
     pub fn handle_block(
         mut self,
         eth_block: &EthBlock,
@@ -333,10 +333,33 @@ impl<'a> CircuitInputBuilder<UnsetParams> {
             self.handle_tx(tx, geth_trace, tx_index + 1 == eth_block.transactions.len())?;
         }
         self.set_value_ops_call_context_rwc_eor();
-        let c_params = CircuitsParams::default();
+        let c_params = {
+            let max_txs = eth_block.transactions.len();
+            let max_bytecode = self.code_db.0.values().fold(0, |acc, a| acc + a.len() + 1);
+
+            let max_calldata = eth_block
+                .transactions
+                .iter()
+                .fold(0, |acc, tx| acc + tx.input.len());
+            let max_exp_steps = self.block.exp_events.len();
+            let max_copy_rows = self.block.copy_events.len();
+            let max_rws: usize = self.block_ctx.rwc.into();
+            let max_evm_rows = 0;
+            let max_keccak_rows = 0;
+            CircuitsParams {
+                max_rws: max_rws + 2,
+                max_txs,
+                max_calldata,
+                max_copy_rows,
+                max_exp_steps,
+                max_bytecode,
+                max_evm_rows,
+                max_keccak_rows,
+            }
+        };
+
         let mut cib = self.set_params(c_params);
 
-        // TODO 2 different implementations. When unset params, here we compute the dynamic params.
         cib.set_end_block();
         Ok(cib)
     }
