@@ -64,20 +64,19 @@ impl RwMap {
                 key(prev_row) != key(row)
             };
             if !row.is_write() {
-                let value = row.value_assignment::<Fr>();
+                let value = row.value_assignment::<Fr>(mock_rand);
                 if is_first {
                     // value == init_value
-                    let _init_value = updates
+                    let init_value = updates
                         .get(row)
                         .map(|u| u.value_assignments(mock_rand).1)
                         .unwrap_or_default();
-                    todo!("use word equal value == init_value instead");
-                    if value.lo() != _init_value {
+                    if value != init_value {
                         errs.push((idx, _err_msg_first, *row, *prev_row));
                     }
                 } else {
                     // value == prev_value
-                    let prev_value = prev_row.value_assignment::<Fr>();
+                    let prev_value = prev_row.value_assignment::<Fr>(mock_rand);
 
                     if value != prev_value {
                         errs.push((idx, err_msg_non_first, *row, *prev_row));
@@ -411,7 +410,7 @@ impl Rw {
             storage_key: F::ZERO,
             storage_key_word: WordNew::from_u256(self.storage_key().unwrap_or_default()),
             value: F::ZERO,
-            value_word: self.value_assignment(),
+            value_word: self.value_assignment_new(),
             value_prev: F::ZERO,
             value_prev_word: self.value_prev_assignment().unwrap_or_default(),
             aux1: F::ZERO, // only used for AccountStorage::tx_id, which moved to key1.
@@ -433,7 +432,7 @@ impl Rw {
                 self.storage_key().unwrap_or_default(),
             )),
             value: Value::known(F::ZERO),
-            value_word: Value::known(self.value_assignment()),
+            value_word: Value::known(self.value_assignment_new()),
             value_prev: Value::known(F::ZERO),
             value_prev_word: Value::known(self.value_prev_assignment().unwrap_or_default()),
             aux1: Value::known(F::ZERO), /* only used for AccountStorage::tx_id, which moved to
@@ -572,7 +571,12 @@ impl Rw {
         }
     }
 
-    pub(crate) fn value_assignment<F: Field>(&self) -> WordNew<F> {
+    #[deprecated(note = "in fav of value_assignment_new")]
+    pub(crate) fn value_assignment<F: Field>(&self, _randomness: F) -> F {
+        unimplemented!()
+    }
+
+    pub(crate) fn value_assignment_new<F: Field>(&self) -> WordNew<F> {
         match self {
             Self::Start { .. } => WordNew::default(),
             Self::CallContext { value, .. } => WordNew::from_u256(*value),

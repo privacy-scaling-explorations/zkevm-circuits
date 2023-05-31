@@ -276,9 +276,7 @@ impl<F: Field> StateCircuitConfig<F> {
                                 state_root = new_root;
                             }
                             if matches!(row.tag(), RwTableTag::CallContext) && !row.is_write() {
-                                // TODO assert_eq!(row.value_assignment(randomness), F::ZERO,
-                                // "{:?}", row);
-                                todo!()
+                                assert_eq!(row.value_assignment(randomness), F::ZERO, "{:?}", row);
                             }
                             state_root
                         });
@@ -301,13 +299,12 @@ impl<F: Field> StateCircuitConfig<F> {
 
             // Identify non-existing if both committed value and new value are zero.
             let committed_value_value = randomness.map(|randomness| {
-                let (_, _committed_value) = updates
+                let (_, committed_value) = updates
                     .get(row)
                     .map(|u| u.value_assignments(randomness))
                     .unwrap_or_default();
-                let _value = row.value_assignment();
-                todo!("handle Word type _value properly");
-                [_committed_value, _value.lo()]
+                let value = row.value_assignment(randomness);
+                [committed_value, value]
             });
             BatchedIsZeroChip::construct(self.is_non_exist.clone()).assign(
                 region,
