@@ -247,7 +247,7 @@ pub enum Rw {
 
 /// Rw table row assignment
 #[derive(Default, Clone, Copy, Debug)]
-pub struct RwRow<F, T> {
+pub struct RwRow<F> {
     pub(crate) rw_counter: F,
     pub(crate) is_write: F,
     pub(crate) tag: F,
@@ -256,21 +256,21 @@ pub struct RwRow<F, T> {
     pub(crate) field_tag: F,
     #[deprecated]
     pub(crate) storage_key: F,
-    pub(crate) storage_key_word: T,
+    pub(crate) storage_key_word: WordNew<F>,
     #[deprecated]
     pub(crate) value: F,
-    pub(crate) value_word: T,
+    pub(crate) value_word: WordNew<F>,
     #[deprecated]
     pub(crate) value_prev: F,
-    pub(crate) value_prev_word: T,
+    pub(crate) value_prev_word: WordNew<F>,
     pub(crate) aux1: F,
     #[deprecated]
     pub(crate) aux2: F,
-    pub(crate) aux2_word: T,
+    pub(crate) aux2_word: WordNew<F>,
 }
 
 // TODO figure out a better trait bound on T to support function word lo()/hi()
-impl<F: Field, T: ToVec<F> + Clone> RwRow<F, T> {
+impl<F: Field> RwRow<F> {
     pub(crate) fn values(&self) -> [F; 15] {
         [
             vec![
@@ -400,7 +400,7 @@ impl Rw {
 
     // At this moment is a helper for the EVM circuit until EVM challange API is
     // applied
-    pub(crate) fn table_assignment_aux<F: Field>(&self) -> RwRow<F, WordNew<F>> {
+    pub(crate) fn table_assignment_aux<F: Field>(&self) -> RwRow<F> {
         RwRow {
             rw_counter: F::from(self.rw_counter() as u64),
             is_write: F::from(self.is_write() as u64),
@@ -420,7 +420,7 @@ impl Rw {
         }
     }
 
-    pub(crate) fn table_assignment<F: Field>(&self) -> RwRow<Value<F>, Value<WordNew<F>>> {
+    pub(crate) fn table_assignment<F: Field>(&self) -> RwRow<Value<F>> {
         RwRow {
             rw_counter: Value::known(F::from(self.rw_counter() as u64)),
             is_write: Value::known(F::from(self.is_write() as u64)),
@@ -429,17 +429,22 @@ impl Rw {
             address: Value::known(self.address().unwrap_or_default().to_scalar().unwrap()),
             field_tag: Value::known(F::from(self.field_tag().unwrap_or_default())),
             storage_key: Value::known(F::ZERO),
-            storage_key_word: Value::known(WordNew::from_u256(
-                self.storage_key().unwrap_or_default(),
-            )),
+            storage_key_word: WordNew::from_u256(self.storage_key().unwrap_or_default())
+                .map(Value::known),
             value: Value::known(F::ZERO),
-            value_word: Value::known(self.value_assignment()),
+            value_word: self.value_assignment().map(Value::known),
             value_prev: Value::known(F::ZERO),
-            value_prev_word: Value::known(self.value_prev_assignment().unwrap_or_default()),
+            value_prev_word: self
+                .value_prev_assignment()
+                .unwrap_or_default()
+                .map(Value::known),
             aux1: Value::known(F::ZERO), /* only used for AccountStorage::tx_id, which moved to
                                           * key1. */
             aux2: Value::known(F::ZERO),
-            aux2_word: Value::known(self.committed_value_assignment().unwrap_or_default()),
+            aux2_word: self
+                .committed_value_assignment()
+                .unwrap_or_default()
+                .map(Value::known),
         }
     }
 

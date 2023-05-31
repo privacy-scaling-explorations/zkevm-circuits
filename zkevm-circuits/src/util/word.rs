@@ -191,7 +191,7 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
         h160: H160,
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
         let mut bytes = *h160.as_fixed_bytes();
-        let bytes = bytes.as_mut();
+
         bytes.reverse();
         self.assign_lo_hi::<N_BYTES_HALF_WORD, 4>(
             region,
@@ -222,6 +222,11 @@ impl<T: Clone> Word<T> {
     /// Construct the word from 2 limbs
     pub fn new(limbs: [T; 2]) -> Self {
         Self(WordLimbs::<T, 2>::new(limbs))
+    }
+
+    /// Map the word to other types
+    pub fn map<T2: Clone>(&self, mut func: impl FnMut(T) -> T2) -> Word<T2> {
+        Word(WordLimbs::<T2, 2>::new([func(self.lo()), func(self.hi())]))
     }
     /// The high 128 bits limb
     pub fn hi(&self) -> T {
