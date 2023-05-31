@@ -1,9 +1,9 @@
-use super::CachedRegion;
+use super::{constraint_builder::ConstrainBuilderCommon, CachedRegion};
 use crate::{
     evm_circuit::{
         param::{N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
         util::{
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::EVMConstraintBuilder,
             from_bytes,
             math_gadget::{ConstantDivisionGadget, IsZeroGadget, MinMaxGadget, RangeCheckGadget},
             select, sum, Cell, CellType, MemoryAddress,
@@ -71,7 +71,7 @@ pub(crate) struct MemoryAddressGadget<F> {
 
 impl<F: Field> MemoryAddressGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         memory_offset: Cell<F>,
         memory_length: MemoryAddress<F>,
     ) -> Self {
@@ -169,7 +169,7 @@ pub(crate) struct MemoryWordSizeGadget<F> {
 }
 
 impl<F: Field> MemoryWordSizeGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, address: Expression<F>) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, address: Expression<F>) -> Self {
         let memory_word_size = ConstantDivisionGadget::construct(cb, address + 31.expr(), 32);
 
         Self { memory_word_size }
@@ -216,7 +216,10 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
     /// Output ranges:
     /// - `next_memory_word_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
     /// - `gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES + 256**MAX_QUAD_COST_IN_BYTES`
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, addresses: [Expression<F>; N]) -> Self {
+    pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        addresses: [Expression<F>; N],
+    ) -> Self {
         // Calculate the memory size of the memory access
         // `address_memory_word_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
         let memory_word_sizes =
@@ -295,7 +298,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
             .collect::<Result<Vec<_>, _>>()?;
 
         // Calculate the next memory size
-        let mut next_memory_word_size = curr_memory_word_size as u64;
+        let mut next_memory_word_size = curr_memory_word_size;
         for (max_memory_word_sizes, memory_word_size) in self
             .max_memory_word_sizes
             .iter()
@@ -304,7 +307,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
             let (_, max) = max_memory_word_sizes.assign(
                 region,
                 offset,
-                F::from(next_memory_word_size as u64),
+                F::from(next_memory_word_size),
                 F::from(*memory_word_size),
             )?;
             next_memory_word_size = max.get_lower_128() as u64;
@@ -324,7 +327,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
 
         // Calculate the gas cost for the expansian
         let memory_cost = GasCost::MEMORY_EXPANSION_LINEAR_COEFF.as_u64()
-            * (next_memory_word_size - curr_memory_word_size as u64)
+            * (next_memory_word_size - curr_memory_word_size)
             + (next_quad_memory_cost - curr_quad_memory_cost) as u64;
 
         // Return the new memory size and the memory expansion gas cost
@@ -353,7 +356,7 @@ impl<F: Field, const GAS_COPY: GasCost> MemoryCopierGasGadget<F, GAS_COPY> {
     /// - `next_memory_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
     /// - `gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES + 256**MAX_QUAD_COST_IN_BYTES`
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         num_bytes: Expression<F>,
         memory_expansion_gas_cost: Expression<F>,
     ) -> Self {
@@ -414,7 +417,7 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
     BufferReaderGadget<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>
 {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         addr_start: Expression<F>,
         addr_end: Expression<F>,
     ) -> Self {
@@ -506,7 +509,7 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
             // assign bound_dist and bound_dist_is_zero
             let oob = addr_start + idx as u64 >= addr_end;
             let bound_dist = if oob {
-                F::zero()
+                F::ZERO
             } else {
                 F::from(addr_end - addr_start - idx as u64)
             };

@@ -9,7 +9,7 @@ use halo2_proofs::plonk::Expression;
 pub mod sum {
     use crate::util::Expr;
     use eth_types::Field;
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::plonk::Expression;
 
     /// Returns an expression for the sum of the list of expressions.
     pub fn expr<F: Field, E: Expr<F>, I: IntoIterator<Item = E>>(inputs: I) -> Expression<F> {
@@ -19,10 +19,10 @@ pub mod sum {
     }
 
     /// Returns the sum of the given list of values within the field.
-    pub fn value<F: FieldExt>(values: &[u8]) -> F {
+    pub fn value<F: Field>(values: &[u8]) -> F {
         values
             .iter()
-            .fold(F::zero(), |acc, value| acc + F::from(*value as u64))
+            .fold(F::ZERO, |acc, value| acc + F::from(*value as u64))
     }
 }
 
@@ -31,7 +31,7 @@ pub mod sum {
 pub mod and {
     use crate::util::Expr;
     use eth_types::Field;
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::plonk::Expression;
 
     /// Returns an expression that evaluates to 1 only if all the expressions in
     /// the given list are 1, else returns 0.
@@ -42,8 +42,8 @@ pub mod and {
     }
 
     /// Returns the product of all given values.
-    pub fn value<F: FieldExt>(inputs: Vec<F>) -> F {
-        inputs.iter().fold(F::one(), |acc, input| acc * input)
+    pub fn value<F: Field>(inputs: Vec<F>) -> F {
+        inputs.iter().fold(F::ONE, |acc, input| acc * input)
     }
 }
 
@@ -53,7 +53,7 @@ pub mod or {
     use super::{and, not};
     use crate::util::Expr;
     use eth_types::Field;
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::plonk::Expression;
 
     /// Returns an expression that evaluates to 1 if any expression in the given
     /// list is 1. Returns 0 if all the expressions were 0.
@@ -62,7 +62,7 @@ pub mod or {
     }
 
     /// Returns the value after passing all given values through the OR gate.
-    pub fn value<F: FieldExt>(inputs: Vec<F>) -> F {
+    pub fn value<F: Field>(inputs: Vec<F>) -> F {
         not::value(and::value(inputs.into_iter().map(not::value).collect()))
     }
 }
@@ -72,7 +72,7 @@ pub mod or {
 pub mod not {
     use crate::util::Expr;
     use eth_types::Field;
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::plonk::Expression;
 
     /// Returns an expression that represents the NOT of the given expression.
     pub fn expr<F: Field, E: Expr<F>>(b: E) -> Expression<F> {
@@ -80,8 +80,8 @@ pub mod not {
     }
 
     /// Returns a value that represents the NOT of the given value.
-    pub fn value<F: FieldExt>(b: F) -> F {
-        F::one() - b
+    pub fn value<F: Field>(b: F) -> F {
+        F::ONE - b
     }
 }
 
@@ -90,7 +90,7 @@ pub mod not {
 pub mod xor {
     use crate::util::Expr;
     use eth_types::Field;
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::plonk::Expression;
 
     /// Returns an expression that represents the XOR of the given expression.
     pub fn expr<F: Field, E: Expr<F>>(a: E, b: E) -> Expression<F> {
@@ -98,7 +98,7 @@ pub mod xor {
     }
 
     /// Returns a value that represents the XOR of the given value.
-    pub fn value<F: FieldExt>(a: F, b: F) -> F {
+    pub fn value<F: Field>(a: F, b: F) -> F {
         a + b - F::from(2u64) * a * b
     }
 }
@@ -123,7 +123,7 @@ pub mod select {
     /// Returns the `when_true` value when the selector is true, else returns
     /// the `when_false` value.
     pub fn value<F: Field>(selector: F, when_true: F, when_false: F) -> F {
-        selector * when_true + (F::one() - selector) * when_false
+        selector * when_true + (F::ONE - selector) * when_false
     }
 
     /// Returns the `when_true` word when selector is true, else returns the
@@ -133,7 +133,7 @@ pub mod select {
         when_true: [u8; 32],
         when_false: [u8; 32],
     ) -> [u8; 32] {
-        if selector == F::one() {
+        if selector == F::ONE {
             when_true
         } else {
             when_false
@@ -164,7 +164,7 @@ pub mod pow {
     pub fn value<F: Field>(value: F, exponent: usize) -> F {
         let mut result = 1.scalar();
         for _ in 0..exponent {
-            result = result * value;
+            result *= value;
         }
         result
     }
@@ -239,19 +239,14 @@ impl_expr!(GasCost, GasCost::as_u64);
 impl<F: Field> Scalar<F> for i32 {
     #[inline]
     fn scalar(&self) -> F {
-        F::from(self.unsigned_abs() as u64)
-            * if self.is_negative() {
-                -F::one()
-            } else {
-                F::one()
-            }
+        F::from(self.unsigned_abs() as u64) * if self.is_negative() { -F::ONE } else { F::ONE }
     }
 }
 
 impl<F: Field> Scalar<F> for &F {
     #[inline]
     fn scalar(&self) -> F {
-        *self.clone()
+        *(*self)
     }
 }
 
@@ -280,7 +275,7 @@ impl<F: Field> Expr<F> for &Expression<F> {
 /// single expression.
 pub fn expr_from_bytes<F: Field, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
     let mut value = 0.expr();
-    let mut multiplier = F::one();
+    let mut multiplier = F::ONE;
     for byte in bytes.iter() {
         value = value + byte.expr() * multiplier;
         multiplier *= F::from(256);
@@ -288,9 +283,9 @@ pub fn expr_from_bytes<F: Field, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
     value
 }
 
-/// Returns 2**by as FieldExt
+/// Returns 2**by as Field
 pub fn pow_of_two<F: Field>(by: usize) -> F {
-    F::from(2).pow(&[by as u64, 0, 0, 0])
+    F::from(2).pow([by as u64, 0, 0, 0])
 }
 
 /// Returns tuple consists of low and high part of U256

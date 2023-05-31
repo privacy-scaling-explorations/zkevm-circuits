@@ -67,11 +67,11 @@ impl<F: Field> RLPListGadget<F> {
             _ => is_string = true,
         }
 
-        self.is_short.assign(region, offset, F::from(is_short))?;
-        self.is_long.assign(region, offset, F::from(is_long))?;
+        self.is_short.assign(region, offset, is_short.scalar())?;
+        self.is_long.assign(region, offset, is_long.scalar())?;
         self.is_very_long
-            .assign(region, offset, F::from(is_very_long))?;
-        self.is_string.assign(region, offset, F::from(is_string))?;
+            .assign(region, offset, is_very_long.scalar())?;
+        self.is_string.assign(region, offset, is_string.scalar())?;
 
         Ok(RLPListWitness {
             is_short,
@@ -296,11 +296,11 @@ impl<F: Field> RLPValueGadget<F> {
             _ => is_list = true,
         }
 
-        self.is_short.assign(region, offset, F::from(is_short))?;
-        self.is_long.assign(region, offset, F::from(is_long))?;
+        self.is_short.assign(region, offset, is_short.scalar())?;
+        self.is_long.assign(region, offset, is_long.scalar())?;
         self.is_very_long
-            .assign(region, offset, F::from(is_very_long))?;
-        self.is_list.assign(region, offset, F::from(is_list))?;
+            .assign(region, offset, is_very_long.scalar())?;
+        self.is_list.assign(region, offset, is_list.scalar())?;
 
         Ok(RLPValueWitness {
             is_short,

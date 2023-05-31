@@ -4,7 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -28,7 +28,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::GASPRICE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         // Query gasprice value
         let gas_price = cb.query_cell_phase2();
 
@@ -72,7 +72,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let gas_price = block.rws[step.rw_indices[1]].stack_value();
+        let gas_price = block.get_rws(step, 1).stack_value();
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;

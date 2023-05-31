@@ -196,7 +196,7 @@ impl Key {
     }
     fn storage_key<F: Field>(&self, randomness: F) -> F {
         match self {
-            Self::Account { .. } => F::zero(),
+            Self::Account { .. } => F::ZERO,
             Self::AccountStorage { storage_key, .. } => {
                 rlc::value(&storage_key.to_le_bytes(), randomness)
             }

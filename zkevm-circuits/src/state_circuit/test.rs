@@ -1,7 +1,8 @@
-use super::{StateCircuit, StateCircuitConfig};
+#![allow(unused_imports)]
+pub use super::{dev::*, *};
 use crate::{
-    table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
-    util::SubCircuit,
+    table::{AccountFieldTag, CallContextFieldTag, TxLogFieldTag, TxReceiptFieldTag},
+    util::{unusable_rows, SubCircuit},
     witness::{MptUpdates, Rw, RwMap},
 };
 use bus_mapping::operation::{
@@ -15,6 +16,7 @@ use eth_types::{
 use gadgets::binary_number::AsBits;
 use halo2_proofs::{
     arithmetic::Field as Halo2Field,
+    circuit::SimpleFloorPlanner,
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::{Bn256, Fr},
     plonk::{keygen_vk, Advice, Circuit, Column, ConstraintSystem},
@@ -26,67 +28,12 @@ use strum::IntoEnumIterator;
 
 const N_ROWS: usize = 1 << 16;
 
-#[derive(Hash, Eq, PartialEq, Clone, Debug)]
-pub enum AdviceColumn {
-    IsWrite,
-    Address,
-    AddressLimb0,
-    AddressLimb1,
-    StorageKey,
-    StorageKeyByte0,
-    StorageKeyByte1,
-    Value,
-    ValuePrev,
-    RwCounter,
-    RwCounterLimb0,
-    RwCounterLimb1,
-    Tag,
-    TagBit0,
-    TagBit1,
-    TagBit2,
-    TagBit3,
-    LimbIndexBit0, // most significant bit
-    LimbIndexBit1,
-    LimbIndexBit2,
-    LimbIndexBit3,
-    LimbIndexBit4, // least significant bit
-    InitialValue,
-    IsZero, // committed_value and value are 0
-    // NonEmptyWitness is the BatchedIsZero chip witness that contains the
-    // inverse of the non-zero value if any in [committed_value, value]
-    NonEmptyWitness,
-}
-
-impl AdviceColumn {
-    pub fn value<F: Field>(&self, config: &StateCircuitConfig<F>) -> Column<Advice> {
-        match self {
-            Self::IsWrite => config.rw_table.is_write,
-            Self::Address => config.rw_table.address,
-            Self::AddressLimb0 => config.sort_keys.address.limbs[0],
-            Self::AddressLimb1 => config.sort_keys.address.limbs[1],
-            Self::StorageKey => config.rw_table.storage_key,
-            Self::StorageKeyByte0 => config.sort_keys.storage_key.bytes[0],
-            Self::StorageKeyByte1 => config.sort_keys.storage_key.bytes[1],
-            Self::Value => config.rw_table.value,
-            Self::ValuePrev => config.rw_table.value_prev,
-            Self::RwCounter => config.rw_table.rw_counter,
-            Self::RwCounterLimb0 => config.sort_keys.rw_counter.limbs[0],
-            Self::RwCounterLimb1 => config.sort_keys.rw_counter.limbs[1],
-            Self::Tag => config.rw_table.tag,
-            Self::TagBit0 => config.sort_keys.tag.bits[0],
-            Self::TagBit1 => config.sort_keys.tag.bits[1],
-            Self::TagBit2 => config.sort_keys.tag.bits[2],
-            Self::TagBit3 => config.sort_keys.tag.bits[3],
-            Self::LimbIndexBit0 => config.lexicographic_ordering.first_different_limb.bits[0],
-            Self::LimbIndexBit1 => config.lexicographic_ordering.first_different_limb.bits[1],
-            Self::LimbIndexBit2 => config.lexicographic_ordering.first_different_limb.bits[2],
-            Self::LimbIndexBit3 => config.lexicographic_ordering.first_different_limb.bits[3],
-            Self::LimbIndexBit4 => config.lexicographic_ordering.first_different_limb.bits[4],
-            Self::InitialValue => config.initial_value,
-            Self::IsZero => config.is_non_exist.is_zero,
-            Self::NonEmptyWitness => config.is_non_exist.nonempty_witness,
-        }
-    }
+#[test]
+fn state_circuit_unusable_rows() {
+    assert_eq!(
+        StateCircuit::<Fr>::unusable_rows(),
+        unusable_rows::<Fr, StateCircuit::<Fr>>(()),
+    )
 }
 
 fn test_state_circuit_ok(
@@ -435,7 +382,7 @@ fn address_limb_mismatch() {
         value: U256::zero(),
         value_prev: U256::zero(),
     }];
-    let overrides = HashMap::from([((AdviceColumn::AddressLimb0, 0), Fr::zero())]);
+    let overrides = HashMap::from([((AdviceColumn::AddressLimb0, 0), Fr::ZERO)]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -454,7 +401,7 @@ fn address_limb_out_of_range() {
     }];
     let overrides = HashMap::from([
         ((AdviceColumn::AddressLimb0, 0), Fr::from(1 << 16)),
-        ((AdviceColumn::AddressLimb1, 0), Fr::zero()),
+        ((AdviceColumn::AddressLimb1, 0), Fr::ZERO),
     ]);
 
     let result = verify_with_overrides(rows, overrides);
@@ -474,7 +421,7 @@ fn storage_key_mismatch() {
         tx_id: 4,
         committed_value: U256::from(34),
     }];
-    let overrides = HashMap::from([((AdviceColumn::StorageKeyByte1, 0), Fr::one())]);
+    let overrides = HashMap::from([((AdviceColumn::StorageKeyByte1, 0), Fr::ONE)]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -495,7 +442,7 @@ fn storage_key_byte_out_of_range() {
     }];
     let overrides = HashMap::from([
         ((AdviceColumn::StorageKeyByte0, 0), Fr::from(0xcafeu64)),
-        ((AdviceColumn::StorageKeyByte1, 0), Fr::zero()),
+        ((AdviceColumn::StorageKeyByte1, 0), Fr::ZERO),
     ]);
 
     // This will trigger two errors: an RLC encoding error and the "fit into u8", we
@@ -709,8 +656,8 @@ fn lexicographic_ordering_previous_limb_differences_nonzero() {
     // limb difference between the two rows here is still 1, so no additional
     // overrides are needed.
     let overrides = HashMap::from([
-        ((AdviceColumn::LimbIndexBit1, 1), Fr::one()),
-        ((AdviceColumn::LimbIndexBit2, 1), Fr::one()),
+        ((AdviceColumn::LimbIndexBit1, 1), Fr::ONE),
+        ((AdviceColumn::LimbIndexBit2, 1), Fr::ONE),
     ]);
 
     let result = verify_with_overrides(rows, overrides);
@@ -759,7 +706,7 @@ fn skipped_start_rw_counter() {
             // The original assignment is 1 << 16.
             Fr::from((1 << 16) + 1),
         ),
-        ((AdviceColumn::RwCounterLimb0, -1), Fr::one()),
+        ((AdviceColumn::RwCounterLimb0, -1), Fr::ONE),
     ]);
 
     let result = prover(vec![], overrides).verify_at_rows(N_ROWS - 1..N_ROWS, N_ROWS - 1..N_ROWS);
@@ -793,7 +740,7 @@ fn bad_initial_memory_value() {
     let overrides = HashMap::from([
         ((AdviceColumn::Value, 0), v),
         ((AdviceColumn::ValuePrev, 0), v),
-        ((AdviceColumn::IsZero, 0), Fr::zero()),
+        ((AdviceColumn::IsZero, 0), Fr::ZERO),
         ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
         ((AdviceColumn::InitialValue, 0), v),
     ]);
@@ -877,14 +824,12 @@ fn invalid_stack_address_change() {
 #[test]
 fn invalid_tags() {
     let first_row_offset = -isize::try_from(N_ROWS).unwrap();
-    let tags: BTreeSet<usize> = RwTableTag::iter().map(|x| x as usize).collect();
+    let tags: BTreeSet<usize> = Target::iter().map(|x| x as usize).collect();
     for i in 0..16 {
         if tags.contains(&i) {
             continue;
         }
-        let bits: [Fr; 4] = i
-            .as_bits()
-            .map(|bit| if bit { Fr::one() } else { Fr::zero() });
+        let bits: [Fr; 4] = i.as_bits().map(|bit| if bit { Fr::ONE } else { Fr::ZERO });
         let overrides = HashMap::from([
             ((AdviceColumn::TagBit0, first_row_offset), bits[0]),
             ((AdviceColumn::TagBit1, first_row_offset), bits[1]),
@@ -956,7 +901,7 @@ fn bad_initial_tx_refund_value() {
         ((AdviceColumn::IsWrite, 0), Fr::from(1)),
         ((AdviceColumn::Value, 0), v),
         ((AdviceColumn::ValuePrev, 0), v),
-        ((AdviceColumn::IsZero, 0), Fr::zero()),
+        ((AdviceColumn::IsZero, 0), Fr::ZERO),
         ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
         ((AdviceColumn::InitialValue, 0), v),
     ]);

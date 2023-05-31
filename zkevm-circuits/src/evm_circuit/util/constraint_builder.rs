@@ -6,12 +6,12 @@ use crate::{
         util::{Cell, RandomLinearCombination, Word},
     },
     table::{
-        AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
-        TxLogFieldTag, TxReceiptFieldTag,
+        AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, TxContextFieldTag, TxLogFieldTag,
+        TxReceiptFieldTag,
     },
     util::{build_tx_log_expression, Challenges, Expr},
 };
-use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
+use bus_mapping::{operation::Target, state_db::EMPTY_CODE_HASH_LE};
 use eth_types::Field;
 use gadgets::util::not;
 use halo2_proofs::{
@@ -88,7 +88,7 @@ impl<F: Field> StepStateTransition<F> {
 
 /// ReversionInfo counts `rw_counter` of reversion for gadgets, by tracking how
 /// many reversions that have been used. Gadgets should call
-/// [`ConstraintBuilder::reversion_info`] to get [`ReversionInfo`] with
+/// [`EVMConstraintBuilder::reversion_info`] to get [`ReversionInfo`] with
 /// `reversible_write_counter` initialized at current tracking one if no
 /// `call_id` is specified, then pass it as mutable reference when doing state
 /// write.
@@ -141,40 +141,22 @@ impl<F: Field> ReversionInfo<F> {
     }
 }
 
-#[derive(Default)]
-pub struct BaseConstraintBuilder<F> {
-    pub constraints: Vec<(&'static str, Expression<F>)>,
-    pub max_degree: usize,
-    pub condition: Option<Expression<F>>,
-}
+pub(crate) trait ConstrainBuilderCommon<F: Field> {
+    fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>);
 
-impl<F: Field> BaseConstraintBuilder<F> {
-    pub(crate) fn new(max_degree: usize) -> Self {
-        BaseConstraintBuilder {
-            constraints: Vec::new(),
-            max_degree,
-            condition: None,
-        }
-    }
-
-    pub(crate) fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
+    fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
         self.add_constraint(name, constraint);
     }
 
-    pub(crate) fn require_equal(
-        &mut self,
-        name: &'static str,
-        lhs: Expression<F>,
-        rhs: Expression<F>,
-    ) {
+    fn require_equal(&mut self, name: &'static str, lhs: Expression<F>, rhs: Expression<F>) {
         self.add_constraint(name, lhs - rhs);
     }
 
-    pub(crate) fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
+    fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
         self.add_constraint(name, value.clone() * (1.expr() - value));
     }
 
-    pub(crate) fn require_in_set(
+    fn require_in_set(
         &mut self,
         name: &'static str,
         value: Expression<F>,
@@ -185,6 +167,40 @@ impl<F: Field> BaseConstraintBuilder<F> {
             set.iter()
                 .fold(1.expr(), |acc, item| acc * (value.clone() - item.clone())),
         );
+    }
+
+    fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
+        for (name, constraint) in constraints {
+            self.add_constraint(name, constraint);
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct BaseConstraintBuilder<F> {
+    pub constraints: Vec<(&'static str, Expression<F>)>,
+    pub max_degree: usize,
+    pub condition: Option<Expression<F>>,
+}
+
+impl<F: Field> ConstrainBuilderCommon<F> for BaseConstraintBuilder<F> {
+    fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
+        let constraint = match &self.condition {
+            Some(condition) => condition.clone() * constraint,
+            None => constraint,
+        };
+        self.validate_degree(constraint.degree(), name);
+        self.constraints.push((name, constraint));
+    }
+}
+
+impl<F: Field> BaseConstraintBuilder<F> {
+    pub(crate) fn new(max_degree: usize) -> Self {
+        BaseConstraintBuilder {
+            constraints: Vec::new(),
+            max_degree,
+            condition: None,
+        }
     }
 
     pub(crate) fn condition<R>(
@@ -200,21 +216,6 @@ impl<F: Field> BaseConstraintBuilder<F> {
         let ret = constraint(self);
         self.condition = None;
         ret
-    }
-
-    pub(crate) fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
-        for (name, constraint) in constraints {
-            self.add_constraint(name, constraint);
-        }
-    }
-
-    pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
-        let constraint = match &self.condition {
-            Some(condition) => condition.clone() * constraint,
-            None => constraint,
-        };
-        self.validate_degree(constraint.degree(), name);
-        self.constraints.push((name, constraint));
     }
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
@@ -263,7 +264,7 @@ pub(crate) struct Constraints<F> {
     pub(crate) not_step_last: Vec<(&'static str, Expression<F>)>,
 }
 
-pub(crate) struct ConstraintBuilder<'a, F> {
+pub(crate) struct EVMConstraintBuilder<'a, F> {
     pub max_degree: usize,
     pub(crate) curr: Step<F>,
     pub(crate) next: Step<F>,
@@ -280,7 +281,20 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     stored_expressions: Vec<StoredExpression<F>>,
 }
 
-impl<'a, F: Field> ConstraintBuilder<'a, F> {
+impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
+    fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
+        let constraint = self.split_expression(
+            name,
+            constraint * self.condition_expr(),
+            MAX_DEGREE - IMPLICIT_DEGREE,
+        );
+
+        self.validate_degree(constraint.degree(), name);
+        self.push_constraint(name, constraint);
+    }
+}
+
+impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn new(
         curr: Step<F>,
         next: Step<F>,
@@ -441,38 +455,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
     pub(crate) fn empty_code_hash_rlc(&self) -> Expression<F> {
         self.word_rlc((*EMPTY_CODE_HASH_LE).map(|byte| byte.expr()))
-    }
-
-    // Common
-
-    pub(crate) fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
-        self.add_constraint(name, constraint);
-    }
-
-    pub(crate) fn require_equal(
-        &mut self,
-        name: &'static str,
-        lhs: Expression<F>,
-        rhs: Expression<F>,
-    ) {
-        self.add_constraint(name, lhs - rhs);
-    }
-
-    pub(crate) fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
-        self.add_constraint(name, value.clone() * (1.expr() - value));
-    }
-
-    pub(crate) fn require_in_set(
-        &mut self,
-        name: &'static str,
-        value: Expression<F>,
-        set: Vec<Expression<F>>,
-    ) {
-        self.add_constraint(
-            name,
-            set.iter()
-                .fold(1.expr(), |acc, item| acc * (value.clone() - item.clone())),
-        );
     }
 
     pub(crate) fn require_next_state(&mut self, execution_state: ExecutionState) {
@@ -695,7 +677,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         name: &str,
         counter: Expression<F>,
         is_write: Expression<F>,
-        tag: RwTableTag,
+        tag: Target,
         values: RwValues<F>,
     ) {
         let name = format!("rw lookup {}", name);
@@ -716,7 +698,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         &mut self,
         name: &'static str,
         is_write: Expression<F>,
-        tag: RwTableTag,
+        tag: Target,
         values: RwValues<F>,
     ) {
         self.rw_lookup_with_counter(
@@ -744,7 +726,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     fn reversible_write(
         &mut self,
         name: &'static str,
-        tag: RwTableTag,
+        tag: Target,
         values: RwValues<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
@@ -787,7 +769,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     ) {
         self.reversible_write(
             "TxAccessListAccount write",
-            RwTableTag::TxAccessListAccount,
+            Target::TxAccessListAccount,
             RwValues::new(
                 tx_id,
                 account_address,
@@ -811,7 +793,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.rw_lookup(
             "account access list read",
             false.expr(),
-            RwTableTag::TxAccessListAccount,
+            Target::TxAccessListAccount,
             RwValues::new(
                 tx_id,
                 account_address,
@@ -836,7 +818,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     ) {
         self.reversible_write(
             "TxAccessListAccountStorage write",
-            RwTableTag::TxAccessListAccountStorage,
+            Target::TxAccessListAccountStorage,
             RwValues::new(
                 tx_id,
                 account_address,
@@ -861,7 +843,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.rw_lookup(
             "TxAccessListAccountStorage read",
             false.expr(),
-            RwTableTag::TxAccessListAccountStorage,
+            Target::TxAccessListAccountStorage,
             RwValues::new(
                 tx_id,
                 account_address,
@@ -881,7 +863,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.rw_lookup(
             "TxRefund read",
             false.expr(),
-            RwTableTag::TxRefund,
+            Target::TxRefund,
             RwValues::new(
                 tx_id,
                 0.expr(),
@@ -904,7 +886,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     ) {
         self.reversible_write(
             "TxRefund write",
-            RwTableTag::TxRefund,
+            Target::TxRefund,
             RwValues::new(
                 tx_id,
                 0.expr(),
@@ -930,7 +912,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.rw_lookup(
             "Account read",
             false.expr(),
-            RwTableTag::Account,
+            Target::Account,
             RwValues::new(
                 0.expr(),
                 account_address,
@@ -954,7 +936,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     ) {
         self.reversible_write(
             "Account write",
-            RwTableTag::Account,
+            Target::Account,
             RwValues::new(
                 0.expr(),
                 account_address,
@@ -982,7 +964,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.rw_lookup(
             "account_storage_read",
             false.expr(),
-            RwTableTag::AccountStorage,
+            Target::Storage,
             RwValues::new(
                 tx_id,
                 account_address,
@@ -1009,7 +991,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     ) {
         self.reversible_write(
             "AccountStorage write",
-            RwTableTag::AccountStorage,
+            Target::Storage,
             RwValues::new(
                 tx_id,
                 account_address,
@@ -1060,7 +1042,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.rw_lookup(
             "CallContext lookup",
             is_write,
-            RwTableTag::CallContext,
+            Target::CallContext,
             RwValues::new(
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 0.expr(),
@@ -1135,7 +1117,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.rw_lookup(
             "Stack lookup",
             is_write,
-            RwTableTag::Stack,
+            Target::Stack,
             RwValues::new(
                 self.curr.state.call_id.expr(),
                 self.curr.state.stack_pointer.expr() + stack_pointer_offset,
@@ -1161,7 +1143,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.rw_lookup(
             "Memory lookup",
             is_write,
-            RwTableTag::Memory,
+            Target::Memory,
             RwValues::new(
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 memory_address,
@@ -1186,7 +1168,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.rw_lookup(
             "log data lookup",
             1.expr(),
-            RwTableTag::TxLog,
+            Target::TxLog,
             RwValues::new(
                 tx_id,
                 build_tx_log_expression(index, field_tag.expr(), log_id),
@@ -1212,7 +1194,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.rw_lookup(
             "tx receipt lookup",
             is_write,
-            RwTableTag::TxReceipt,
+            Target::TxReceipt,
             RwValues::new(
                 tx_id,
                 0.expr(),
@@ -1233,7 +1215,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             "Start lookup",
             counter,
             0.expr(),
-            RwTableTag::Start,
+            Target::Start,
             RwValues {
                 id: 0.expr(),
                 address: 0.expr(),
@@ -1376,23 +1358,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         };
         self.in_next_step = false;
         ret
-    }
-
-    pub(crate) fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
-        for (name, constraint) in constraints {
-            self.add_constraint(name, constraint);
-        }
-    }
-
-    pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
-        let constraint = self.split_expression(
-            name,
-            constraint * self.condition_expr(),
-            MAX_DEGREE - IMPLICIT_DEGREE,
-        );
-
-        self.validate_degree(constraint.degree(), name);
-        self.push_constraint(name, constraint);
     }
 
     /// TODO: Doc

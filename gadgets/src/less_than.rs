@@ -2,9 +2,8 @@
 
 use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
-    circuit::{Chip, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
+    circuit::{Chip, Layouter, Region, Value},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 
@@ -14,7 +13,7 @@ use super::{
 };
 
 /// Instruction that the Lt chip needs to implement.
-pub trait LtInstruction<F: FieldExt> {
+pub trait LtInstruction<F: Field> {
     /// Assign the lhs and rhs witnesses to the Lt chip's region.
     fn assign(
         &self,
@@ -23,6 +22,9 @@ pub trait LtInstruction<F: FieldExt> {
         lhs: F,
         rhs: F,
     ) -> Result<(), Error>;
+
+    /// Load the u8 lookup table.
+    fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
 }
 
 /// Config for the Lt chip.
@@ -31,8 +33,9 @@ pub struct LtConfig<F, const N_BYTES: usize> {
     /// Denotes the lt outcome. If lhs < rhs then lt == 1, otherwise lt == 0.
     pub lt: Column<Advice>,
     /// Denotes the bytes representation of the difference between lhs and rhs.
-    /// Note that the range of each byte is not checked by this config.
     pub diff: [Column<Advice>; N_BYTES],
+    /// Denotes the range within which each byte should lie.
+    pub u8: Column<Fixed>,
     /// Denotes the range within which both lhs and rhs lie.
     pub range: F,
 }
@@ -61,6 +64,7 @@ impl<F: Field, const N_BYTES: usize> LtChip<F, N_BYTES> {
         let lt = meta.advice_column();
         let diff = [(); N_BYTES].map(|_| meta.advice_column());
         let range = pow_of_two(N_BYTES * 8);
+        let u8 = meta.fixed_column();
 
         meta.create_gate("lt gate", |meta| {
             let q_enable = q_enable(meta);
@@ -81,7 +85,22 @@ impl<F: Field, const N_BYTES: usize> LtChip<F, N_BYTES> {
                 .map(move |poly| q_enable.clone() * poly)
         });
 
-        LtConfig { lt, diff, range }
+        meta.annotate_lookup_any_column(u8, || "LOOKUP_u8");
+
+        diff[0..N_BYTES].iter().for_each(|column| {
+            meta.lookup_any("range check for u8", |meta| {
+                let u8_cell = meta.query_advice(*column, Rotation::cur());
+                let u8_range = meta.query_fixed(u8, Rotation::cur());
+                vec![(u8_cell, u8_range)]
+            });
+        });
+
+        LtConfig {
+            lt,
+            diff,
+            range,
+            u8,
+        }
     }
 
     /// Constructs a Lt chip given a config.
@@ -108,7 +127,7 @@ impl<F: Field, const N_BYTES: usize> LtInstruction<F> for LtChip<F, N_BYTES> {
             || Value::known(F::from(lt as u64)),
         )?;
 
-        let diff = (lhs - rhs) + (if lt { config.range } else { F::zero() });
+        let diff = (lhs - rhs) + (if lt { config.range } else { F::ZERO });
         let diff_bytes = diff.to_repr();
         let diff_bytes = diff_bytes.as_ref();
         for (idx, diff_column) in config.diff.iter().enumerate() {
@@ -121,6 +140,25 @@ impl<F: Field, const N_BYTES: usize> LtInstruction<F> for LtChip<F, N_BYTES> {
         }
 
         Ok(())
+    }
+
+    fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        const RANGE: usize = 256;
+
+        layouter.assign_region(
+            || "load u8 range check table",
+            |mut region| {
+                for i in 0..RANGE {
+                    region.assign_fixed(
+                        || "assign cell in fixed column",
+                        self.config.u8,
+                        i,
+                        || Value::known(F::from(i as u64)),
+                    )?;
+                }
+                Ok(())
+            },
+        )
     }
 }
 
@@ -139,10 +177,9 @@ impl<F: Field, const N_BYTES: usize> Chip<F> for LtChip<F, N_BYTES> {
 
 #[cfg(test)]
 mod test {
-    use super::{LtChip, LtConfig, LtInstruction};
+    use super::*;
     use eth_types::Field;
     use halo2_proofs::{
-        arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
         halo2curves::bn256::Fr as Fp,
@@ -157,7 +194,7 @@ mod test {
 
             // TODO: remove zk blinding factors in halo2 to restore the
             // correct k (without the extra + 2).
-            let k = usize::BITS - $values.len().leading_zeros() + 2;
+            let k = 9;
             let circuit = TestCircuit::<Fp> {
                 values: Some($values),
                 checks: Some($checks),
@@ -174,7 +211,7 @@ mod test {
 
             // TODO: remove zk blinding factors in halo2 to restore the
             // correct k (without the extra + 2).
-            let k = usize::BITS - $values.len().leading_zeros() + 2;
+            let k = 9;
             let circuit = TestCircuit::<Fp> {
                 values: Some($values),
                 checks: Some($checks),
@@ -196,7 +233,7 @@ mod test {
         }
 
         #[derive(Default)]
-        struct TestCircuit<F: FieldExt> {
+        struct TestCircuit<F: Field> {
             values: Option<Vec<u64>>,
             // checks[i] = lt(values[i + 1], values[i])
             checks: Option<Vec<bool>>,
@@ -206,6 +243,7 @@ mod test {
         impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
+            type Params = ();
 
             fn without_witnesses(&self) -> Self {
                 Self::default()
@@ -257,6 +295,8 @@ mod test {
                 let checks = self.checks.as_ref().ok_or(Error::Synthesis)?;
                 let (first_value, values) = values.split_at(1);
                 let first_value = first_value[0];
+
+                chip.load(&mut layouter)?;
 
                 layouter.assign_region(
                     || "witness",
@@ -314,7 +354,7 @@ mod test {
         }
 
         #[derive(Default)]
-        struct TestCircuit<F: FieldExt> {
+        struct TestCircuit<F: Field> {
             values: Option<Vec<(u64, u64)>>,
             // checks[i] = lt(values[i].0 - values[i].1)
             checks: Option<Vec<bool>>,
@@ -324,6 +364,7 @@ mod test {
         impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
+            type Params = ();
 
             fn without_witnesses(&self) -> Self {
                 Self::default()
@@ -379,6 +420,8 @@ mod test {
                     })
                     .ok_or(Error::Synthesis)?;
                 let checks = self.checks.as_ref().ok_or(Error::Synthesis)?;
+
+                chip.load(&mut layouter)?;
 
                 layouter.assign_region(
                     || "witness",

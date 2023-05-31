@@ -319,11 +319,11 @@ impl<F: Field> StorageLeafConfig<F> {
                 region,
                 offset,
                 &mut pv.memory[key_memory(is_s)],
-                F::zero(),
-                F::one(),
+                F::ZERO,
+                F::ONE,
                 0,
-                F::zero(),
-                F::one(),
+                F::ZERO,
+                F::ONE,
                 0,
             )?;
 
@@ -357,10 +357,10 @@ impl<F: Field> StorageLeafConfig<F> {
                 region,
                 offset,
                 &mut pv.memory[parent_memory(is_s)],
-                F::zero(),
+                F::ZERO,
                 true,
                 false,
-                F::zero(),
+                F::ZERO,
             )?;
 
             self.is_in_empty_trie[is_s.idx()].assign(

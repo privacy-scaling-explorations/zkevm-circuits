@@ -4,7 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -28,7 +28,7 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SELFBALANCE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let callee_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
 
         let phase2_self_balance = cb.query_cell_phase2();
@@ -72,13 +72,13 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
             region,
             offset,
             Value::known(
-                call.callee_address
+                call.address
                     .to_scalar()
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
 
-        let self_balance = block.rws[step.rw_indices[2]].stack_value();
+        let self_balance = block.get_rws(step, 2).stack_value();
         self.phase2_self_balance
             .assign(region, offset, region.word_rlc(self_balance))?;
 

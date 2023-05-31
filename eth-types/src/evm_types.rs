@@ -15,7 +15,7 @@ pub use stack::{Stack, StackAddress};
 pub use storage::Storage;
 
 /// Wrapper type over `usize` which represents the program counter of the Evm.
-#[derive(Clone, Copy, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord)]
+#[derive(Clone, Copy, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord, Default)]
 pub struct ProgramCounter(pub usize);
 
 impl fmt::Debug for ProgramCounter {
@@ -54,9 +54,21 @@ impl ProgramCounter {
 #[derive(Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Gas(pub u64);
 
+impl fmt::Display for Gas {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("{}", self.0))
+    }
+}
+
 impl fmt::Debug for Gas {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!("{}", self.0))
+    }
+}
+
+impl From<Gas> for u64 {
+    fn from(value: Gas) -> Self {
+        value.0
     }
 }
 
@@ -66,8 +78,14 @@ pub const MAX_REFUND_QUOTIENT_OF_GAS_USED: usize = 5;
 pub const GAS_STIPEND_CALL_WITH_VALUE: u64 = 2300;
 
 /// Defines the gas consumption.
-#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 pub struct GasCost(pub u64);
+
+impl fmt::Display for GasCost {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("{}", self.0))
+    }
+}
 
 impl fmt::Debug for GasCost {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             from_bytes,
             math_gadget::{AddWordsGadget, IsZeroGadget, LtGadget},
             not, or, sum, CachedRegion, Cell,
@@ -38,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorReturnDataOutOfBound;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let memory_offset = cb.query_cell();
         let data_offset = cb.query_word_rlc();
@@ -123,13 +123,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
         let [dest_offset, data_offset, size] =
-            [0, 1, 2].map(|i| block.rws[step.rw_indices[i as usize]].stack_value());
+            [0, 1, 2].map(|index| block.get_rws(step, index).stack_value());
 
         self.memory_offset
             .assign(region, offset, Value::known(F::from(dest_offset.as_u64())))?;
@@ -138,7 +138,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         self.sum
             .assign(region, offset, [data_offset, size], remainder_end)?;
 
-        let return_data_length = block.rws[step.rw_indices[3]].call_context_value();
+        let return_data_length = block.get_rws(step, 3).call_context_value();
         self.return_data_length.assign(
             region,
             offset,
@@ -204,9 +204,7 @@ mod test {
 
         if is_root {
             code_b.append(&bytecode! {
-                PUSH32(return_data_size)
-                PUSH32(return_data_offset)
-                RETURN
+                .op_return(return_data_offset, return_data_size)
                 STOP
             });
         } else {
@@ -216,9 +214,7 @@ mod test {
                 PUSH32(dest_offset) // memory offset
                 RETURNDATACOPY
                 // end for internal
-                PUSH32(return_data_size)
-                PUSH32(return_data_offset)
-                RETURN
+                .op_return(return_data_offset, return_data_size)
                 STOP
             });
         }
@@ -246,9 +242,7 @@ mod test {
             });
         } else {
             code_a.append(&bytecode! {
-                PUSH32(return_data_size)
-                PUSH32(return_data_offset)
-                RETURN
+                .op_return(return_data_offset, return_data_size)
             });
         }
 

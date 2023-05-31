@@ -270,7 +270,7 @@ impl<F: Field> MPTConfig<F> {
             cb.base.generate_lookups(
                 meta,
                 &[
-                    vec!["fixed".to_string() /* , "keccak".to_string() */],
+                    vec!["fixed".to_string(), "keccak".to_string()],
                     ctx.memory.tags(),
                 ]
                 .concat(),
@@ -320,7 +320,7 @@ impl<F: Field> MPTConfig<F> {
         let mut height = 0;
         let mut memory = self.memory.clone();
 
-        let mut r = F::zero();
+        let mut r = F::ZERO;
         challenges.keccak_input().map(|v| r = v);
 
         layouter.assign_region(
@@ -420,7 +420,7 @@ impl<F: Field> MPTConfig<F> {
         layouter: &mut impl Layouter<F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        let mut r = F::zero();
+        let mut r = F::ZERO;
         challenges.keccak_input().map(|v| r = v);
 
         layouter.assign_region(
@@ -435,7 +435,7 @@ impl<F: Field> MPTConfig<F> {
                 offset += 1;
 
                 // Mult table
-                let mut mult = F::one();
+                let mut mult = F::ONE;
                 for ind in 0..(2 * HASH_WIDTH + 1) {
                     assignf!(region, (self.fixed_table[0], offset) => FixedTableTag::RMult.scalar())?;
                     assignf!(region, (self.fixed_table[1], offset) => ind.scalar())?;
@@ -471,8 +471,7 @@ impl<F: Field> MPTConfig<F> {
                     for n in -max_length..=max_length {
                         let range = if n <= 0 && range == 256 { 1 } else { range };
                         for idx in 0..range {
-                            let v = F::from(n.unsigned_abs() as u64)
-                                * if n.is_negative() { -F::one() } else { F::one() };
+                            let v = n.scalar();
                             assignf!(region, (self.fixed_table[0], offset) => tag.scalar())?;
                             assignf!(region, (self.fixed_table[1], offset) => idx.scalar())?;
                             assignf!(region, (self.fixed_table[2], offset) => v)?;
@@ -497,6 +496,7 @@ struct MPTCircuit<F> {
 impl<F: Field> Circuit<F> for MPTCircuit<F> {
     type Config = (MPTConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()
@@ -507,20 +507,14 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         // let challenges_expr = challenges.exprs(meta);
 
         let r = 2u64;
-        let challenges = Challenges::mock(
-            Value::known(F::from(r)),
-            Value::known(F::from(r)),
-            Value::known(F::from(r)),
-        );
+        // let challenges = Challenges::mock(
+        // Value::known(F::from(r)),
+        // Value::known(F::from(r)),
+        // Value::known(F::from(r)),
+        // );
         let challenges_expr = Challenges::mock(r.expr(), r.expr(), r.expr());
 
         let keccak_table = KeccakTable::construct(meta);
-        // let randomness: F = 123456789.scalar();
-        // Use a mock randomness instead of the randomness derived from the challange
-        // (either from mock or real prover) to help debugging assignments.
-        // let power_of_randomness: [Expression<F>; HASH_WIDTH] = array::from_fn(|i| {
-        //    Expression::Constant(randomness.pow(&[1 + i as u64, 0, 0, 0]))
-        //});
         let challenges = Challenges::construct(meta);
         (
             MPTConfig::configure(meta, challenges_expr, keccak_table),
@@ -530,7 +524,7 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
 
     fn synthesize(
         &self,
-        (config, challenges): Self::Config,
+        (config, _challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         // let challenges = challenges.values(&mut layouter);

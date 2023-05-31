@@ -7,7 +7,10 @@ use halo2_proofs::{
 
 use crate::evm_circuit::{
     param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
-    util::{constraint_builder::ConstraintBuilder, CachedRegion, Cell, RandomLinearCombination},
+    util::{
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        CachedRegion, Cell, RandomLinearCombination,
+    },
 };
 
 use super::IsZeroGadget;
@@ -26,7 +29,7 @@ pub struct RlpU64Gadget<F> {
 
 impl<F: Field> RlpU64Gadget<F> {
     /// Configure and construct a gadget for RLP-encoding of a U64 value.
-    fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let value_rlc = cb.query_keccak_rlc();
 
         let is_most_significant_byte = array_init::array_init(|_| cb.query_bool());
@@ -143,7 +146,7 @@ impl<F: Field> RlpU64Gadget<F> {
     }
 
     /// RLC for the RLP-encoding of the U64 value.
-    fn rlp_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    fn rlp_rlc(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
         select::expr(
             and::expr([
                 self.is_lt_128.expr(),
@@ -155,7 +158,7 @@ impl<F: Field> RlpU64Gadget<F> {
         )
     }
 
-    fn challenge_power_rlp_length(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    fn challenge_power_rlp_length(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
         cb.challenges().keccak_input()
             * select::expr(
                 self.is_lt_128.expr(),
@@ -164,7 +167,7 @@ impl<F: Field> RlpU64Gadget<F> {
             )
     }
 
-    fn challenge_power_n_bytes(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    fn challenge_power_n_bytes(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
         select::expr(
             self.most_significant_byte_is_zero.expr(),
             1.expr(),
@@ -196,7 +199,7 @@ pub struct ContractCreateGadget<F, const IS_CREATE2: bool> {
 
 impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     /// Configure and construct the gadget.
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let caller_address = cb.query_keccak_rlc();
         let nonce = RlpU64Gadget::construct(cb);
         let code_hash = array_init::array_init(|_| cb.query_byte());
@@ -254,7 +257,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     }
 
     /// Code hash word RLC.
-    pub(crate) fn code_hash_word_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    pub(crate) fn code_hash_word_rlc(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
         cb.word_rlc::<N_BYTES_WORD>(
             self.code_hash
                 .iter()
@@ -266,7 +269,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     }
 
     /// Code hash keccak RLC.
-    pub(crate) fn code_hash_keccak_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    pub(crate) fn code_hash_keccak_rlc(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
         cb.keccak_rlc::<N_BYTES_WORD>(
             self.code_hash
                 .iter()
@@ -308,7 +311,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     }
 
     /// RLC for the input data.
-    pub(crate) fn input_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    pub(crate) fn input_rlc(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
         let challenges = cb.challenges().keccak_powers_of_randomness::<21>();
         let challenge_power_20 = challenges[19].clone();
         if IS_CREATE2 {
@@ -344,7 +347,10 @@ mod test {
     use gadgets::util::{not, Expr};
     use halo2_proofs::halo2curves::bn256::Fr;
 
-    use crate::evm_circuit::util::{constraint_builder::ConstraintBuilder, CachedRegion, Cell};
+    use crate::evm_circuit::util::{
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        CachedRegion, Cell,
+    };
 
     #[derive(Clone)]
     struct ContractCreateGadgetContainer<F, const IS_CREATE2: bool> {
@@ -357,7 +363,7 @@ mod test {
     impl<F: Field, const IS_CREATE2: bool> MathGadgetContainer<F>
         for ContractCreateGadgetContainer<F, IS_CREATE2>
     {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let create_gadget = ContractCreateGadget::construct(cb);
             let input_len_expected = cb.query_cell();
             let create_input_rlc_expected = array_init::array_init(|_| cb.query_byte());
@@ -431,7 +437,7 @@ mod test {
                 .assign(region, offset, Value::known(F::from(input_len)))?;
             if IS_CREATE2 {
                 for c in self.create_input_rlc_expected.iter() {
-                    c.assign(region, offset, Value::known(F::zero()))?;
+                    c.assign(region, offset, Value::known(F::ZERO))?;
                 }
                 for (c, v) in self.create2_input_rlc_expected.iter().zip(
                     [
@@ -453,7 +459,7 @@ mod test {
                     c.assign(region, offset, Value::known(F::from(v as u64)))?;
                 }
                 for c in self.create2_input_rlc_expected.iter() {
-                    c.assign(region, offset, Value::known(F::zero()))?;
+                    c.assign(region, offset, Value::known(F::ZERO))?;
                 }
             }
 

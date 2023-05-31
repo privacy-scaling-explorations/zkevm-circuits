@@ -464,11 +464,11 @@ impl<F: Field> AccountLeafConfig<F> {
                 region,
                 offset,
                 &mut pv.memory[key_memory(is_s)],
-                F::zero(),
-                F::one(),
+                F::ZERO,
+                F::ONE,
                 0,
-                F::zero(),
-                F::one(),
+                F::ZERO,
+                F::ONE,
                 0,
             )?;
             ParentData::witness_store(

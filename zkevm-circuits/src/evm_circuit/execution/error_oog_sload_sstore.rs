@@ -9,7 +9,7 @@ use crate::{
                 cal_sload_gas_cost_for_assignment, cal_sstore_gas_cost_for_assignment,
                 CommonErrorGadget, SloadGasGadget, SstoreGasGadget,
             },
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{LtGadget, PairSelectGadget},
             or, select, CachedRegion, Cell,
         },
@@ -50,7 +50,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasSloadSstore;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let is_sstore = PairSelectGadget::construct(
@@ -159,15 +159,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         let is_sstore = opcode == OpcodeId::SSTORE;
-        let key = block.rws[step.rw_indices[3]].stack_value();
-        let (is_warm, _) = block.rws[step.rw_indices[4]].tx_access_list_value_pair();
+        let key = block.get_rws(step, 3).stack_value();
+        let (is_warm, _) = block.get_rws(step, 4).tx_access_list_value_pair();
 
         let (value, value_prev, original_value, gas_cost) = if is_sstore {
-            let value = block.rws[step.rw_indices[5]].stack_value();
-            let (_, value_prev, _, original_value) =
-                block.rws[step.rw_indices[6]].storage_value_aux();
+            let value = block.get_rws(step, 5).stack_value();
+            let (_, value_prev, _, original_value) = block.get_rws(step, 6).storage_value_aux();
             let gas_cost =
                 cal_sstore_gas_cost_for_assignment(value, value_prev, original_value, is_warm);
             (value, value_prev, original_value, gas_cost)
@@ -179,7 +178,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         log::debug!(
             "ErrorOutOfGasSloadSstore: is_sstore = {}, gas_left = {}, gas_cost = {}, gas_sentry = {}",
             is_sstore,
-            step.gas_left,
+            step.gas_left.0,
             gas_cost,
             if is_sstore { GasCost::SSTORE_SENTRY.0 } else { 0 },
         );
@@ -194,7 +193,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             region,
             offset,
             Value::known(
-                call.callee_address
+                call.address
                     .to_scalar()
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
@@ -222,13 +221,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         self.insufficient_gas_cost.assign_value(
             region,
             offset,
-            Value::known(F::from(step.gas_left)),
+            Value::known(F::from(step.gas_left.into())),
             Value::known(F::from(gas_cost)),
         )?;
         self.insufficient_gas_sentry.assign_value(
             region,
             offset,
-            Value::known(F::from(step.gas_left)),
+            Value::known(F::from(step.gas_left.into())),
             Value::known(F::from(GasCost::SSTORE_SENTRY.0.checked_add(1).unwrap())),
         )?;
 
@@ -256,9 +255,11 @@ mod test {
     use eth_types::{
         bytecode,
         evm_types::{GasCost, OpcodeId},
-        Bytecode, ToWord, U256,
+        Bytecode, U256,
     };
-    use mock::{eth, TestContext, MOCK_ACCOUNTS};
+    use mock::{
+        eth, generate_mock_call_bytecode, MockCallBytecodeParams, TestContext, MOCK_ACCOUNTS,
+    };
     use std::cmp::max;
 
     const TESTING_STORAGE_KEY: U256 = U256([0, 0, 0, 0x030201]);
@@ -491,24 +492,18 @@ mod test {
         let code_b = testing_data.bytecode.clone();
         let gas_cost_b = testing_data.gas_cost;
 
-        // Code A calls code B.
-        let code_a = bytecode! {
-            // populate memory in A's context.
-            PUSH8(U256::from_big_endian(&rand_bytes(8)))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call ADDR_B.
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH32(0x00) // argsLength
-            PUSH32(0x20) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            // Decrease expected gas cost (by 1) to trigger out of gas error.
-            PUSH32(gas_cost_b - 1) // gas
-            CALL
-            STOP
-        };
+        // code A calls code B.
+        // Decrease expected gas cost (by 1) to trigger out of gas error.
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
+            address: addr_b,
+            pushdata: rand_bytes(32),
+            return_data_offset: 0x00usize,
+            return_data_size: 0x00usize,
+            call_data_length: 0x20usize,
+            call_data_offset: 0x10usize,
+            gas: gas_cost_b - 1,
+            ..MockCallBytecodeParams::default()
+        });
 
         let ctx = TestContext::<3, 1>::new(
             None,

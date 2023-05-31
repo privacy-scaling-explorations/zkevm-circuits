@@ -83,7 +83,7 @@ impl<F: Field> StartConfig<F> {
     pub fn assign(
         &self,
         region: &mut Region<'_, F>,
-        ctx: &MPTConfig<F>,
+        _ctx: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
         node: &Node,
@@ -130,11 +130,11 @@ impl<F: Field> StartConfig<F> {
                 region,
                 offset,
                 &mut pv.memory[key_memory(is_s)],
-                F::zero(),
-                F::one(),
+                F::ZERO,
+                F::ONE,
                 0,
-                F::zero(),
-                F::one(),
+                F::ZERO,
+                F::ONE,
                 0,
             )?;
         }

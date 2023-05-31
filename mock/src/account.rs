@@ -11,7 +11,7 @@ pub struct MockAccount {
     /// Address
     pub address: Address,
     /// nonce
-    pub nonce: Word,
+    pub nonce: u64,
     /// Balance
     pub balance: Word,
     /// EVM Code
@@ -24,7 +24,7 @@ impl From<MockAccount> for Account {
     fn from(mock: MockAccount) -> Self {
         Account {
             address: mock.address,
-            nonce: mock.nonce,
+            nonce: mock.nonce.into(),
             balance: mock.balance,
             code: mock.code,
             storage: mock.storage,
@@ -40,7 +40,7 @@ impl MockAccount {
     }
 
     /// Set nonce field for the MockAccount.
-    pub fn nonce(&mut self, nonce: Word) -> &mut Self {
+    pub fn nonce(&mut self, nonce: u64) -> &mut Self {
         self.nonce = nonce;
         self
     }
@@ -69,7 +69,7 @@ impl MockAccount {
     /// Set all fields for the MockAccount based on their values in `account`.
     pub fn account(&mut self, account: &Account) -> &mut Self {
         self.address(account.address);
-        self.nonce(account.nonce);
+        self.nonce(account.nonce.as_u64());
         self.balance(account.balance);
         self.code(account.code.clone());
         self.storage(account.storage.iter().map(|(k, v)| (*k, *v)));

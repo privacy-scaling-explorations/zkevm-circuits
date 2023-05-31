@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes, CachedRegion, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -29,7 +29,7 @@ impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLER;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let caller_address = cb.query_word_rlc();
 
         // Lookup rw_table -> call_context with caller address
@@ -71,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let caller = block.rws[step.rw_indices[1]].stack_value();
+        let caller = block.get_rws(step, 1).stack_value();
 
         self.caller_address.assign(
             region,

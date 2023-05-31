@@ -4,6 +4,7 @@ use super::{
         FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
         N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
+    step::HasExecutionState,
     util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
 };
 use crate::{
@@ -12,7 +13,9 @@ use crate::{
         step::{ExecutionState, Step},
         table::Table,
         util::{
-            constraint_builder::{BaseConstraintBuilder, ConstraintBuilder},
+            constraint_builder::{
+                BaseConstraintBuilder, ConstrainBuilderCommon, EVMConstraintBuilder,
+            },
             rlc, CellType,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -65,6 +68,7 @@ mod error_oog_call;
 mod error_oog_constant;
 mod error_oog_exp;
 mod error_oog_log;
+mod error_oog_memory_copy;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
 mod error_return_data_oo_bound;
@@ -136,6 +140,7 @@ use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
 use error_oog_exp::ErrorOOGExpGadget;
 use error_oog_log::ErrorOOGLogGadget;
+use error_oog_memory_copy::ErrorOOGMemoryCopyGadget;
 use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
 use error_return_data_oo_bound::ErrorReturnDataOutOfBoundGadget;
 use error_stack::ErrorStackGadget;
@@ -179,7 +184,7 @@ pub(crate) trait ExecutionGadget<F: Field> {
 
     const EXECUTION_STATE: ExecutionState;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self;
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self;
 
     fn assign_exec_step(
         &self,
@@ -193,7 +198,7 @@ pub(crate) trait ExecutionGadget<F: Field> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ExecutionConfig<F> {
+pub struct ExecutionConfig<F> {
     // EVM Circuit selector, which enables all usable rows.  The rows where this selector is
     // disabled won't verify any constraint (they can be unused rows or rows with blinding
     // factors).
@@ -281,6 +286,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_call: Box<ErrorOOGCallGadget<F>>,
     error_oog_constant: Box<ErrorOOGConstantGadget<F>>,
     error_oog_exp: Box<ErrorOOGExpGadget<F>>,
+    error_oog_memory_copy: Box<ErrorOOGMemoryCopyGadget<F>>,
     error_oog_sload_sstore: Box<ErrorOOGSloadSstoreGadget<F>>,
     error_oog_static_memory_gadget:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasStaticMemoryExpansion }>>,
@@ -289,7 +295,6 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_dynamic_memory_gadget:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>>,
     error_oog_log: Box<ErrorOOGLogGadget<F>>,
-    error_oog_memory_copy: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasMemoryCopy }>>,
     error_oog_account_access:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasAccountAccess }>>,
     error_oog_sha3: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSHA3 }>>,
@@ -298,8 +303,6 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_self_destruct:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>>,
     error_oog_code_store: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>>,
-    error_insufficient_balance:
-        Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>>,
     error_invalid_jump: Box<ErrorInvalidJumpGadget<F>>,
     error_invalid_opcode: Box<ErrorInvalidOpcodeGadget<F>>,
     error_depth: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>>,
@@ -562,7 +565,6 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_create2: configure_gadget!(),
             error_oog_self_destruct: configure_gadget!(),
             error_oog_code_store: configure_gadget!(),
-            error_insufficient_balance: configure_gadget!(),
             error_invalid_jump: configure_gadget!(),
             error_invalid_opcode: configure_gadget!(),
             error_write_protection: configure_gadget!(),
@@ -594,7 +596,7 @@ impl<F: Field> ExecutionConfig<F> {
         config
     }
 
-    pub(crate) fn instrument(&self) -> &Instrument {
+    pub fn instrument(&self) -> &Instrument {
         &self.instrument
     }
 
@@ -617,7 +619,7 @@ impl<F: Field> ExecutionConfig<F> {
         // height
         let height = {
             let dummy_step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
-            let mut cb = ConstraintBuilder::new(
+            let mut cb = EVMConstraintBuilder::new(
                 step_curr.clone(),
                 dummy_step_next,
                 challenges,
@@ -630,7 +632,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         // Now actually configure the gadget with the correct minimal height
         let step_next = &Step::new(meta, advices, height, true);
-        let mut cb = ConstraintBuilder::new(
+        let mut cb = EVMConstraintBuilder::new(
             step_curr.clone(),
             step_next.clone(),
             challenges,
@@ -676,7 +678,7 @@ impl<F: Field> ExecutionConfig<F> {
         name: &'static str,
         execution_state: ExecutionState,
         height: usize,
-        mut cb: ConstraintBuilder<F>,
+        mut cb: EVMConstraintBuilder<F>,
     ) {
         // Enforce the step height for this opcode
         let num_rows_until_next_step_next = query_expression(meta, |meta| {
@@ -854,10 +856,10 @@ impl<F: Field> ExecutionConfig<F> {
                 || "step selector",
                 self.q_step,
                 offset,
-                || Value::known(if idx == 0 { F::one() } else { F::zero() }),
+                || Value::known(if idx == 0 { F::ONE } else { F::ZERO }),
             )?;
             let value = if idx == 0 {
-                F::zero()
+                F::ZERO
             } else {
                 F::from((height - idx) as u64)
             };
@@ -871,7 +873,7 @@ impl<F: Field> ExecutionConfig<F> {
                 || "step height inv",
                 self.num_rows_inv,
                 offset,
-                || Value::known(value.invert().unwrap_or(F::zero())),
+                || Value::known(value.invert().unwrap_or(F::ZERO)),
             )?;
         }
         Ok(())
@@ -926,7 +928,7 @@ impl<F: Field> ExecutionConfig<F> {
                     if next.is_none() {
                         break;
                     }
-                    let height = step.execution_state.get_step_height();
+                    let height = step.execution_state().get_step_height();
 
                     // Assign the step witness
                     self.assign_exec_step(
@@ -1009,13 +1011,13 @@ impl<F: Field> ExecutionConfig<F> {
                     || "step height",
                     self.num_rows_until_next_step,
                     offset,
-                    || Value::known(F::zero()),
+                    || Value::known(F::ZERO),
                 )?;
                 region.assign_advice(
                     || "step height inv",
                     self.q_step,
                     offset,
-                    || Value::known(F::zero()),
+                    || Value::known(F::ZERO),
                 )?;
 
                 Ok(())
@@ -1073,8 +1075,8 @@ impl<F: Field> ExecutionConfig<F> {
             return Ok(());
         }
         assert_eq!(height, 1);
-        assert!(step.rw_indices.is_empty());
-        assert!(matches!(step.execution_state, ExecutionState::EndBlock));
+        assert!(step.rw_indices_len() == 0);
+        assert!(matches!(step.execution_state(), ExecutionState::EndBlock));
 
         // Disable access to next step deliberately for "repeatable" step
         let region = &mut CachedRegion::<'_, '_, F>::new(
@@ -1087,7 +1089,7 @@ impl<F: Field> ExecutionConfig<F> {
         self.assign_exec_step_int(region, offset_begin, block, transaction, call, step)?;
 
         region.replicate_assignment_for_range(
-            || format!("repeat {:?} rows", step.execution_state),
+            || format!("repeat {:?} rows", step.execution_state()),
             offset_begin + 1,
             offset_end,
         )?;
@@ -1108,11 +1110,11 @@ impl<F: Field> ExecutionConfig<F> {
         next: Option<(&Transaction, &Call, &ExecStep)>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        if !matches!(step.execution_state, ExecutionState::EndBlock) {
+        if !matches!(step.execution_state(), ExecutionState::EndBlock) {
             log::trace!(
                 "assign_exec_step offset: {} state {:?} step: {:?} call: {:?}",
                 offset,
-                step.execution_state,
+                step.execution_state(),
                 step,
                 call
             );
@@ -1164,7 +1166,7 @@ impl<F: Field> ExecutionConfig<F> {
             };
         }
 
-        match step.execution_state {
+        match step.execution_state() {
             // internal states
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
@@ -1278,9 +1280,6 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_stack)
             }
 
-            ExecutionState::ErrorInsufficientBalance => {
-                assign_exec_step!(self.error_insufficient_balance)
-            }
             ExecutionState::ErrorInvalidJump => {
                 assign_exec_step!(self.error_invalid_jump)
             }
@@ -1290,12 +1289,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorWriteProtection => {
                 assign_exec_step!(self.error_write_protection)
             }
-            ExecutionState::ErrorDepth => {
-                assign_exec_step!(self.error_depth)
-            }
-            ExecutionState::ErrorContractAddressCollision => {
-                assign_exec_step!(self.error_contract_address_collision)
-            }
             ExecutionState::ErrorInvalidCreationCode => {
                 assign_exec_step!(self.error_invalid_creation_code)
             }
@@ -1303,7 +1296,7 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_return_data_out_of_bound)
             }
 
-            _ => evm_unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
+            unimpl_state => evm_unimplemented!("unimplemented ExecutionState: {:?}", unimpl_state),
         }
 
         // Fill in the witness values for stored expressions
@@ -1311,8 +1304,8 @@ impl<F: Field> ExecutionConfig<F> {
 
         // enable with `RUST_LOG=debug`
         if log::log_enabled!(log::Level::Debug) {
-            let is_padding_step = matches!(step.execution_state, ExecutionState::EndBlock)
-                && step.rw_indices.is_empty();
+            let is_padding_step = matches!(step.execution_state(), ExecutionState::EndBlock)
+                && step.rw_indices_len() == 0;
             if !is_padding_step {
                 // expensive function call
                 Self::check_rw_lookup(
@@ -1336,8 +1329,8 @@ impl<F: Field> ExecutionConfig<F> {
         let mut assigned_stored_expressions = Vec::new();
         for stored_expression in self
             .stored_expressions_map
-            .get(&step.execution_state)
-            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state))
+            .get(&step.execution_state())
+            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state()))
         {
             let assigned = stored_expression.assign(region, offset)?;
             assigned.map(|v| {
@@ -1354,9 +1347,9 @@ impl<F: Field> ExecutionConfig<F> {
         block: &Block<F>,
         challenges: &Challenges<Value<F>>,
     ) {
-        let mut evm_randomness = F::zero();
+        let mut evm_randomness = F::ZERO;
         challenges.evm_word().map(|v| evm_randomness = v);
-        let mut lookup_randomness = F::zero();
+        let mut lookup_randomness = F::ZERO;
         challenges.lookup_input().map(|v| lookup_randomness = v);
         if evm_randomness.is_zero_vartime() || lookup_randomness.is_zero_vartime() {
             // challenges not ready
@@ -1372,10 +1365,8 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
-        let rlc_assignments: BTreeSet<_> = step
-            .rw_indices
-            .iter()
-            .map(|rw_idx| block.rws[*rw_idx])
+        let rlc_assignments: BTreeSet<_> = (0..step.rw_indices_len())
+            .map(|index| block.get_rws(step, index))
             .map(|rw| {
                 rw.table_assignment_aux(evm_randomness)
                     .rlc(lookup_randomness)
@@ -1395,10 +1386,10 @@ impl<F: Field> ExecutionConfig<F> {
         // Check that the number of rw operations generated from the bus-mapping
         // correspond to the number of assigned rw lookups by the EVM Circuit
         // plus the number of rw lookups done by the copy circuit.
-        if step.rw_indices.len() != assigned_rw_values.len() + step.copy_rw_counter_delta as usize {
+        if step.rw_indices_len() != assigned_rw_values.len() + step.copy_rw_counter_delta as usize {
             log::error!(
                 "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} in step: {:?}", 
-                step.rw_indices.len(),
+                step.rw_indices_len(),
                 assigned_rw_values.len(),
                 step.copy_rw_counter_delta,
                 step
@@ -1422,23 +1413,21 @@ impl<F: Field> ExecutionConfig<F> {
             // corresponding rw lookup, but in the bus-mapping they are
             // generated at the end of the step.
             let idx = if is_rev {
-                step.rw_indices.len() - rev_count
+                step.rw_indices_len() - rev_count
             } else {
                 idx - rev_count
             };
-            let rw_idx = step.rw_indices[idx];
-            let rw = block.rws[rw_idx];
+            let rw = block.get_rws(step, idx);
             let table_assignments = rw.table_assignment_aux(evm_randomness);
             let rlc = table_assignments.rlc(lookup_randomness);
             if rlc != assigned_rw_value.1 {
                 log::error!(
-                    "incorrect rw witness. lookup input name: \"{}\"\nassigned={:?}\nrlc     ={:?}\nrw index: {:?}, {}th rw of step {:?}, rw: {:?}",
+                    "incorrect rw witness. lookup input name: \"{}\"\nassigned={:?}\nrlc     ={:?}\n{}th rw of step {:?}, rw: {:?}",
                     assigned_rw_value.0,
                     assigned_rw_value.1,
                     rlc,
-                    rw_idx,
                     idx,
-                    step.execution_state,
+                    step.execution_state(),
                     rw);
             }
         }

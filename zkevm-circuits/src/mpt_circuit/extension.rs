@@ -182,7 +182,7 @@ impl<F: Field> ExtensionGadget<F> {
     pub(crate) fn assign(
         &self,
         region: &mut Region<'_, F>,
-        mpt_config: &MPTConfig<F>,
+        _mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
         key_data: &KeyDataWitness<F>,

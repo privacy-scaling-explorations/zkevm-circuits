@@ -3,9 +3,12 @@
 use crate::{
     sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
     AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian,
-    Word, U64,
+    ToWord, Word, U64,
 };
-use ethers_core::types::{NameOrAddress, TransactionRequest};
+use ethers_core::{
+    types::{transaction::response, NameOrAddress, TransactionRequest},
+    utils::get_contract_address,
+};
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1};
 use num::Integer;
@@ -21,8 +24,9 @@ use std::collections::HashMap;
 pub struct Account {
     /// Address
     pub address: Address,
-    /// nonce
-    pub nonce: Word,
+    /// Nonce.
+    /// U64 type is required to serialize into proper hex with 0x prefix
+    pub nonce: U64,
     /// Balance
     pub balance: Word,
     /// EVM Code
@@ -61,7 +65,8 @@ pub struct BlockConstants {
     pub coinbase: Address,
     /// time
     pub timestamp: Word,
-    /// number
+    /// Block number
+    /// U64 type is required to serialize into proper hex with 0x prefix
     pub number: U64,
     /// difficulty
     pub difficulty: Word,
@@ -113,11 +118,14 @@ pub struct Transaction {
     /// Sender address
     pub from: Address,
     /// Recipient address (None for contract creation)
+    /// Avoid direct read from this field. We set this field public to construct the struct
     pub to: Option<Address>,
     /// Transaction nonce
-    pub nonce: Word,
+    /// U64 type is required to serialize into proper hex with 0x prefix
+    pub nonce: U64,
     /// Gas Limit / Supplied gas
-    pub gas_limit: Word,
+    /// U64 type is required to serialize into proper hex with 0x prefix
+    pub gas_limit: U64,
     /// Transfered value
     pub value: Word,
     /// Gas Price
@@ -146,8 +154,8 @@ impl From<&Transaction> for crate::Transaction {
         crate::Transaction {
             from: tx.from,
             to: tx.to,
-            nonce: tx.nonce,
-            gas: tx.gas_limit,
+            nonce: tx.nonce.to_word(),
+            gas: tx.gas_limit.to_word(),
             value: tx.value,
             gas_price: Some(tx.gas_price),
             max_priority_fee_per_gas: Some(tx.gas_fee_cap),
@@ -167,8 +175,8 @@ impl From<&crate::Transaction> for Transaction {
         Transaction {
             from: tx.from,
             to: tx.to,
-            nonce: tx.nonce,
-            gas_limit: tx.gas,
+            nonce: tx.nonce.as_u64().into(),
+            gas_limit: tx.gas.as_u64().into(),
             value: tx.value,
             gas_price: tx.gas_price.unwrap_or_default(),
             gas_fee_cap: tx.max_priority_fee_per_gas.unwrap_or_default(),
@@ -187,11 +195,11 @@ impl From<&Transaction> for TransactionRequest {
         TransactionRequest {
             from: Some(tx.from),
             to: tx.to.map(NameOrAddress::Address),
-            gas: Some(tx.gas_limit),
+            gas: Some(tx.gas_limit.to_word()),
             gas_price: Some(tx.gas_price),
             value: Some(tx.value),
             data: Some(tx.call_data.clone()),
-            nonce: Some(tx.nonce),
+            nonce: Some(tx.nonce.to_word()),
             ..Default::default()
         }
     }
@@ -236,6 +244,53 @@ impl Transaction {
             pk,
             msg_hash,
         })
+    }
+
+    /// Compute call data gas cost from call data
+    pub fn call_data_gas_cost(&self) -> u64 {
+        self.call_data
+            .iter()
+            .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 })
+    }
+
+    /// Get the "to" address. If `to` is None then zero adddress
+    pub fn to_or_zero(&self) -> Address {
+        self.to.unwrap_or_default()
+    }
+    /// Get the "to" address. If `to` is None then compute contract adddress
+    pub fn to_or_contract_addr(&self) -> Address {
+        self.to
+            .unwrap_or_else(|| get_contract_address(self.from, self.nonce.to_word()))
+    }
+    /// Determine if this transaction is a contract create transaction
+    pub fn is_create(&self) -> bool {
+        self.to.is_none()
+    }
+
+    /// Convert to transaction response
+    pub fn to_response(
+        &self,
+        transaction_index: U64,
+        chain_id: Word,
+        block_number: U64,
+    ) -> response::Transaction {
+        response::Transaction {
+            from: self.from,
+            to: self.to,
+            value: self.value,
+            input: self.call_data.clone(),
+            gas_price: Some(self.gas_price),
+            access_list: self.access_list.clone(),
+            nonce: self.nonce.to_word(),
+            gas: self.gas_limit.to_word(),
+            transaction_index: Some(transaction_index),
+            r: self.r,
+            s: self.s,
+            v: U64::from(self.v),
+            block_number: Some(block_number),
+            chain_id: Some(chain_id),
+            ..response::Transaction::default()
+        }
     }
 }
 

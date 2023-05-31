@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{ByteSizeGadget, LtGadget},
             CachedRegion, Cell, Word,
         },
@@ -36,7 +36,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasEXP;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         cb.require_equal(
@@ -97,8 +97,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
-        let [base, exponent] = [0, 1].map(|idx| block.rws[step.rw_indices[idx]].stack_value());
+        let opcode = step.opcode().unwrap();
+        let [base, exponent] = [0, 1].map(|index| block.get_rws(step, index).stack_value());
 
         log::debug!(
             "ErrorOutOfGasEXP: gas_left = {}, gas_cost = {}",
@@ -115,8 +115,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
         self.insufficient_gas_cost.assign_value(
             region,
             offset,
-            Value::known(F::from(step.gas_left)),
-            Value::known(F::from(step.gas_cost)),
+            Value::known(F::from(step.gas_left.0)),
+            Value::known(F::from(step.gas_cost.0)),
         )?;
         self.common_error_gadget
             .assign(region, offset, block, call, step, 4)?;
@@ -134,10 +134,11 @@ mod tests {
     use eth_types::{
         bytecode,
         evm_types::{GasCost, OpcodeId},
-        Bytecode, ToWord, U256,
+        Bytecode, U256,
     };
     use mock::{
-        eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
+        eth, generate_mock_call_bytecode, test_ctx::helpers::account_0_code_account_1_no_code,
+        MockCallBytecodeParams, TestContext, MOCK_ACCOUNTS,
     };
 
     #[test]
@@ -202,26 +203,17 @@ mod tests {
 
         // code B gets called by code A, so the call is an internal call.
         let code_b = testing_data.bytecode.clone();
-        let gas_cost_b = testing_data.gas_cost;
 
-        // Code A calls code B.
-        let code_a = bytecode! {
-            // populate memory in A's context.
-            PUSH8(U256::from_big_endian(&rand_bytes(8)))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call ADDR_B.
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH32(0x00) // argsLength
-            PUSH32(0x20) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            // Decrease expected gas cost (by 1) to trigger out of gas error.
-            PUSH32(gas_cost_b - 1) // gas
-            CALL
-            STOP
-        };
+        // code A calls code B.
+        // Decrease expected gas cost (by 1) to trigger out of gas error.
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
+            address: addr_b,
+            pushdata: rand_bytes(32),
+            call_data_length: 0x00usize,
+            call_data_offset: 0x20usize,
+            gas: testing_data.gas_cost - 1,
+            ..MockCallBytecodeParams::default()
+        });
 
         let ctx = TestContext::<3, 1>::new(
             None,

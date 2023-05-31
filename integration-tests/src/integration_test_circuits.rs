@@ -28,14 +28,14 @@ use rand_xorshift::XorShiftRng;
 use std::{collections::HashMap, marker::PhantomData, sync::Mutex};
 use tokio::sync::Mutex as TokioMutex;
 use zkevm_circuits::{
-    bytecode_circuit::circuit::BytecodeCircuit,
-    copy_circuit::CopyCircuit,
-    evm_circuit::EvmCircuit,
-    exp_circuit::ExpCircuit,
-    keccak_circuit::KeccakCircuit,
-    state_circuit::StateCircuit,
+    bytecode_circuit::TestBytecodeCircuit,
+    copy_circuit::TestCopyCircuit,
+    evm_circuit::TestEvmCircuit,
+    exp_circuit::TestExpCircuit,
+    keccak_circuit::TestKeccakCircuit,
+    state_circuit::TestStateCircuit,
     super_circuit::SuperCircuit,
-    tx_circuit::TxCircuit,
+    tx_circuit::TestTxCircuit,
     util::SubCircuit,
     witness::{block_convert, Block},
 };
@@ -95,35 +95,35 @@ lazy_static! {
 
 lazy_static! {
     /// Integration test for EVM circuit
-    pub static ref EVM_CIRCUIT_TEST: TokioMutex<IntegrationTest<EvmCircuit<Fr>>> =
+    pub static ref EVM_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestEvmCircuit<Fr>>> =
     TokioMutex::new(IntegrationTest::new("EVM", EVM_CIRCUIT_DEGREE));
 
     /// Integration test for State circuit
-    pub static ref STATE_CIRCUIT_TEST: TokioMutex<IntegrationTest<StateCircuit<Fr>>> =
+    pub static ref STATE_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestStateCircuit<Fr>>> =
     TokioMutex::new(IntegrationTest::new("State", STATE_CIRCUIT_DEGREE));
 
     /// Integration test for State circuit
-    pub static ref TX_CIRCUIT_TEST: TokioMutex<IntegrationTest<TxCircuit<Fr>>> =
+    pub static ref TX_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestTxCircuit<Fr>>> =
     TokioMutex::new(IntegrationTest::new("Tx", TX_CIRCUIT_DEGREE));
 
     /// Integration test for Bytecode circuit
-    pub static ref BYTECODE_CIRCUIT_TEST: TokioMutex<IntegrationTest<BytecodeCircuit<Fr>>> =
+    pub static ref BYTECODE_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestBytecodeCircuit<Fr>>> =
     TokioMutex::new(IntegrationTest::new("Bytecode", BYTECODE_CIRCUIT_DEGREE));
 
     /// Integration test for Copy circuit
-    pub static ref COPY_CIRCUIT_TEST: TokioMutex<IntegrationTest<CopyCircuit<Fr>>> =
+    pub static ref COPY_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestCopyCircuit<Fr>>> =
     TokioMutex::new(IntegrationTest::new("Copy", COPY_CIRCUIT_DEGREE));
 
     /// Integration test for Keccak circuit
-    pub static ref KECCAK_CIRCUIT_TEST: TokioMutex<IntegrationTest<KeccakCircuit<Fr>>> =
+    pub static ref KECCAK_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestKeccakCircuit<Fr>>> =
     TokioMutex::new(IntegrationTest::new("Keccak", KECCAK_CIRCUIT_DEGREE));
 
     /// Integration test for Copy circuit
-    pub static ref SUPER_CIRCUIT_TEST: TokioMutex<IntegrationTest<SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>>> =
+    pub static ref SUPER_CIRCUIT_TEST: TokioMutex<IntegrationTest<SuperCircuit::<Fr>>> =
     TokioMutex::new(IntegrationTest::new("Super", SUPER_CIRCUIT_DEGREE));
 
      /// Integration test for Exp circuit
-     pub static ref EXP_CIRCUIT_TEST: TokioMutex<IntegrationTest<ExpCircuit::<Fr>>> =
+     pub static ref EXP_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestExpCircuit::<Fr>>> =
      TokioMutex::new(IntegrationTest::new("Exp", EXP_CIRCUIT_DEGREE));
 }
 

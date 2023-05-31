@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             from_bytes,
@@ -36,7 +36,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::MEMORY;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         // In successful case the address must be in 5 bytes
@@ -128,11 +128,10 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
 
         // Inputs/Outputs
-        let [address, value] =
-            [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
+        let [address, value] = [0, 1].map(|index| block.get_rws(step, index).stack_value());
         self.address.assign(
             region,
             offset,
@@ -165,7 +164,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             region,
             offset,
             step.memory_word_size(),
-            [address.as_u64() + if is_mstore8 == F::one() { 1 } else { 32 }],
+            [address.as_u64() + if is_mstore8 == F::ONE { 1 } else { 32 }],
         )?;
 
         Ok(())

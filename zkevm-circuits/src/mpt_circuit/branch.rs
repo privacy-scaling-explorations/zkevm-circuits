@@ -273,7 +273,7 @@ impl<F: Field> BranchGadget<F> {
     pub(crate) fn assign(
         &self,
         region: &mut Region<'_, F>,
-        mpt_config: &MPTConfig<F>,
+        _mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
         is_placeholder: &[bool; 2],

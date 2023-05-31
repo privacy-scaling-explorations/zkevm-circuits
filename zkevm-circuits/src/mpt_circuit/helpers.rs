@@ -456,11 +456,11 @@ impl<F: Field> KeyData<F> {
             rlc: values[0],
             mult: values[1],
             num_nibbles: values[2].get_lower_32() as usize,
-            is_odd: values[3] != F::zero(),
+            is_odd: values[3] != F::ZERO,
             drifted_rlc: values[4],
             drifted_mult: values[5],
             drifted_num_nibbles: values[6].get_lower_32() as usize,
-            drifted_is_odd: values[7] != F::zero(),
+            drifted_is_odd: values[7] != F::ZERO,
         })
     }
 }

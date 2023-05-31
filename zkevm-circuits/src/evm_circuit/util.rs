@@ -5,14 +5,12 @@ use crate::{
         },
         table::Table,
     },
-    table::RwTableTag,
     util::{query_expression, Challenges, Expr},
     witness::{Block, ExecStep, Rw, RwMap},
 };
 use bus_mapping::state_db::CodeDB;
 use eth_types::{Address, Field, ToLittleEndian, ToWord, U256};
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{AssignedCell, Region, Value},
     plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
@@ -87,7 +85,6 @@ impl<F: Field> Expr<F> for &Cell<F> {
         self.expression.clone()
     }
 }
-
 pub struct CachedRegion<'r, 'b, F: Field> {
     region: &'r mut Region<'b, F>,
     advice: Vec<Vec<F>>,
@@ -108,7 +105,7 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
     ) -> Self {
         Self {
             region,
-            advice: vec![vec![F::zero(); height]; advice_columns.len()],
+            advice: vec![vec![F::ZERO; height]; advice_columns.len()],
             challenges,
             width_start: advice_columns[0].index(),
             height_start,
@@ -196,8 +193,21 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
             .evm_word()
             .map(|r| rlc::value(&n.to_le_bytes(), r))
     }
+
+    pub fn keccak_rlc(&self, le_bytes: &[u8]) -> Value<F> {
+        self.challenges
+            .keccak_input()
+            .map(|r| rlc::value(le_bytes, r))
+    }
+
     pub fn empty_code_hash_rlc(&self) -> Value<F> {
         self.word_rlc(CodeDB::empty_code_hash().to_word())
+    }
+
+    pub fn code_hash(&self, n: U256) -> Value<F> {
+        self.challenges
+            .evm_word()
+            .map(|r| rlc::value(&n.to_le_bytes(), r))
     }
 
     /// Constrains a cell to have a constant value.
@@ -278,7 +288,7 @@ pub(crate) enum CellType {
 
 impl CellType {
     // The phase that given `Expression` becomes evaluateable.
-    fn expr_phase<F: FieldExt>(expr: &Expression<F>) -> u8 {
+    fn expr_phase<F: Field>(expr: &Expression<F>) -> u8 {
         use Expression::*;
         match expr {
             Challenge(challenge) => challenge.phase() + 1,
@@ -290,7 +300,7 @@ impl CellType {
     }
 
     /// Return the storage phase of phase
-    pub(crate) fn storage_for_phase<F: FieldExt>(phase: u8) -> CellType {
+    pub(crate) fn storage_for_phase(phase: u8) -> CellType {
         match phase {
             0 => CellType::StoragePhase1,
             1 => CellType::StoragePhase2,
@@ -299,8 +309,8 @@ impl CellType {
     }
 
     /// Return the storage cell of the expression
-    pub(crate) fn storage_for_expr<F: FieldExt>(expr: &Expression<F>) -> CellType {
-        Self::storage_for_phase::<F>(Self::expr_phase::<F>(expr))
+    pub(crate) fn storage_for_expr<F: Field>(expr: &Expression<F>) -> CellType {
+        Self::storage_for_phase(Self::expr_phase::<F>(expr))
     }
 }
 
@@ -507,7 +517,7 @@ pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADD
 pub(crate) mod from_bytes {
     use crate::{evm_circuit::param::MAX_N_BYTES_INTEGER, util::Expr};
     use eth_types::Field;
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::plonk::Expression;
 
     pub(crate) fn expr<F: Field, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
         debug_assert!(
@@ -515,7 +525,7 @@ pub(crate) mod from_bytes {
             "Too many bytes to compose an integer in field"
         );
         let mut value = 0.expr();
-        let mut multiplier = F::one();
+        let mut multiplier = F::ONE;
         for byte in bytes.iter() {
             value = value + byte.expr() * multiplier;
             multiplier *= F::from(256);
@@ -523,13 +533,13 @@ pub(crate) mod from_bytes {
         value
     }
 
-    pub(crate) fn value<F: FieldExt>(bytes: &[u8]) -> F {
+    pub(crate) fn value<F: Field>(bytes: &[u8]) -> F {
         debug_assert!(
             bytes.len() <= MAX_N_BYTES_INTEGER,
             "Too many bytes to compose an integer in field"
         );
-        let mut value = F::zero();
-        let mut multiplier = F::one();
+        let mut value = F::ZERO;
+        let mut multiplier = F::ONE;
         for byte in bytes.iter() {
             value += F::from(*byte as u64) * multiplier;
             multiplier *= F::from(256);
@@ -567,7 +577,7 @@ pub(crate) mod rlc {
         if !values.is_empty() {
             generic(values, randomness)
         } else {
-            F::zero()
+            F::ZERO
         }
     }
 
@@ -584,13 +594,13 @@ pub(crate) mod rlc {
     }
 }
 
-/// Returns 2**by as FieldExt
-pub(crate) fn pow_of_two<F: FieldExt>(by: usize) -> F {
-    F::from(2).pow(&[by as u64, 0, 0, 0])
+/// Returns 2**by as Field
+pub(crate) fn pow_of_two<F: Field>(by: usize) -> F {
+    F::from(2).pow([by as u64, 0, 0, 0])
 }
 
 /// Returns 2**by as Expression
-pub(crate) fn pow_of_two_expr<F: FieldExt>(by: usize) -> Expression<F> {
+pub(crate) fn pow_of_two_expr<F: Field>(by: usize) -> Expression<F> {
     Expression::Constant(pow_of_two(by))
 }
 
@@ -628,7 +638,7 @@ pub(crate) fn is_precompiled(address: &Address) -> bool {
 /// Helper struct to read rw operations from a step sequentially.
 pub(crate) struct StepRws<'a> {
     rws: &'a RwMap,
-    rw_indices: &'a Vec<(RwTableTag, usize)>,
+    step: &'a ExecStep,
     offset: usize,
 }
 
@@ -637,7 +647,7 @@ impl<'a> StepRws<'a> {
     pub(crate) fn new<F>(block: &'a Block<F>, step: &'a ExecStep) -> Self {
         Self {
             rws: &block.rws,
-            rw_indices: &step.rw_indices,
+            step,
             offset: 0,
         }
     }
@@ -647,7 +657,7 @@ impl<'a> StepRws<'a> {
     }
     /// Return the next rw operation from the step.
     pub(crate) fn next(&mut self) -> Rw {
-        let rw = self.rws[self.rw_indices[self.offset]];
+        let rw = self.rws[self.step.rw_index(self.offset)];
         self.offset += 1;
         rw
     }

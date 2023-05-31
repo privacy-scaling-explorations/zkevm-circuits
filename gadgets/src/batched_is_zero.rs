@@ -99,9 +99,9 @@ impl<F: Field, const N: usize> BatchedIsZeroChip<F, N> {
                 .iter()
                 .find_map(|value| Option::<F>::from(value.invert()))
             {
-                (F::zero(), inverse)
+                (F::ZERO, inverse)
             } else {
-                (F::one(), F::zero())
+                (F::ONE, F::ZERO)
             }
         });
 
@@ -158,6 +158,7 @@ mod test {
     impl<F: Field, const N: usize> Circuit<F> for TestCircuit<F, N> {
         type Config = TestCircuitConfig<N>;
         type FloorPlanner = SimpleFloorPlanner;
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()
@@ -216,7 +217,7 @@ mod test {
                         || "expect_is_zero",
                         config.expect_is_zero,
                         0,
-                        || Value::known(F::from(*expect_is_zero)),
+                        || Value::known(F::from(*expect_is_zero as u64)),
                     )?;
                     for (value_column, value) in config.values.iter().zip(values.iter()) {
                         region.assign_advice(

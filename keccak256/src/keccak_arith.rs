@@ -254,7 +254,10 @@ mod tests {
             convert_b13_lane_to_b9(BigUint::from(170u64), 0),
             BigUint::from(82u64)
         );
-        assert_eq!(convert_b9_lane_to_b13(BigUint::from(82u64)), Zero::zero());
+        assert_eq!(
+            convert_b9_lane_to_b13(BigUint::from(82u64)),
+            BigUint::zero()
+        );
         assert_eq!(convert_b9_lane_to_b2(BigUint::from(82u64)), 0);
         assert_eq!(
             convert_b9_lane_to_b2(BigUint::from(9u64).pow(63) * 2u64),
