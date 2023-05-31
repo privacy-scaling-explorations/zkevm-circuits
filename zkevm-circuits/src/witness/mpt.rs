@@ -1215,4 +1215,135 @@ mod test {
 
         panic!();
     }
+
+    #[test]
+    fn empty_storage_proof_empty_trie() {
+        assert!(*HASH_SCHEME_DONE);
+
+        let mut updates = MptUpdates::default();
+        // Add precompile addresses in so MPT isn't too empty.
+        for precompile in 0..1u8 {
+            let mut address = Address::zero();
+            address.0[1] = precompile;
+            updates.insert(nonce_update(address));
+        }
+
+        let address = Address::zero();
+        updates.insert(MptUpdate {
+            key: Key::AccountStorage {
+                address,
+                tx_id: 11,
+                exists: false,
+                storage_key: Word::from(2000),
+            },
+            old_value: Word::zero(),
+            new_value: Word::zero(),
+            old_root: Word::zero(),
+            new_root: Word::zero(),
+        });
+
+        updates.fill_state_roots_from_generator(WitnessGenerator::from(&ZktrieState::default()));
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&updates.smt_traces.last().unwrap()).unwrap()
+        );
+
+        panic!();
+    }
+
+    #[test]
+    fn empty_storage_proof_singleton_trie() {
+        assert!(*HASH_SCHEME_DONE);
+
+        let mut updates = MptUpdates::default();
+        // Add precompile addresses in so MPT isn't too empty.
+        for precompile in 0..1u8 {
+            let mut address = Address::zero();
+            address.0[1] = precompile;
+            updates.insert(nonce_update(address));
+        }
+
+        let address = Address::zero();
+        updates.insert(MptUpdate {
+            key: Key::AccountStorage {
+                address,
+                tx_id: 10,
+                exists: false,
+                storage_key: Word::from(1000),
+            },
+            old_value: Word::zero(),
+            new_value: Word::one(),
+            old_root: Word::zero(),
+            new_root: Word::zero(),
+        });
+        updates.insert(MptUpdate {
+            key: Key::AccountStorage {
+                address,
+                tx_id: 11,
+                exists: false,
+                storage_key: Word::from(2000),
+            },
+            old_value: Word::zero(),
+            new_value: Word::zero(),
+            old_root: Word::zero(),
+            new_root: Word::zero(),
+        });
+
+        updates.fill_state_roots_from_generator(WitnessGenerator::from(&ZktrieState::default()));
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&updates.smt_traces.last().unwrap()).unwrap()
+        );
+
+        panic!();
+    }
+
+    #[test]
+    fn empty_storage_proof_type_1() {
+        assert!(*HASH_SCHEME_DONE);
+
+        let mut updates = MptUpdates::default();
+        // Add precompile addresses in so MPT isn't too empty.
+        for precompile in 0..1u8 {
+            let mut address = Address::zero();
+            address.0[1] = precompile;
+            updates.insert(nonce_update(address));
+        }
+
+        let address = Address::zero();
+        for i in 0..100u64 {
+            updates.insert(MptUpdate {
+                key: Key::AccountStorage {
+                    address,
+                    tx_id: 10,
+                    exists: false, // true causes an unwraprror?  nope....
+                    storage_key: Word::from(1000 * i),
+                },
+                old_value: Word::zero(),
+                new_value: Word::from(u32::MAX),
+                old_root: Word::zero(),
+                new_root: Word::zero(),
+            });
+        }
+        updates.insert(MptUpdate {
+            key: Key::AccountStorage {
+                address,
+                tx_id: 11,
+                exists: false,
+                storage_key: Word::from(3),
+            },
+            old_value: Word::zero(),
+            new_value: Word::zero(),
+            old_root: Word::zero(),
+            new_root: Word::zero(),
+        });
+
+        updates.fill_state_roots_from_generator(WitnessGenerator::from(&ZktrieState::default()));
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&updates.smt_traces.last().unwrap()).unwrap()
+        );
+
+        panic!();
+    }
 }
