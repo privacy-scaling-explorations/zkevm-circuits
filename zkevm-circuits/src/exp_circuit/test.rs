@@ -54,8 +54,10 @@ fn gen_code_multiple(args: Vec<(Word, Word)>) -> Bytecode {
 fn gen_data(code: Bytecode) -> CircuitInputBuilder<CircuitsParams> {
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
-    let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-    let builder = builder
+    let mut builder =
+        BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
+            .new_circuit_input_builder();
+    builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
     builder
