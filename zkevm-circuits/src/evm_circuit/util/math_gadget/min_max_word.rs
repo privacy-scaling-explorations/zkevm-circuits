@@ -2,11 +2,12 @@ use std::marker::PhantomData;
 
 use crate::{
     evm_circuit::util::{
-        constraint_builder::EVMConstraintBuilder, math_gadget::*, transpose_val_ret, CachedRegion,
+        constraint_builder::EVMConstraintBuilder, math_gadget::LtWordGadgetNew as LtWordGadget,
+        transpose_val_ret, CachedRegion,
     },
     util::word::{Word, WordExpr},
 };
-use eth_types::Field;
+use eth_types::{self, Field};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -44,18 +45,19 @@ impl<F: Field, T: WordExpr<F> + Clone> MinMaxWordGadget<F, T> {
         self.max.clone()
     }
 
-    pub(crate) fn assign(
+    fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        lhs: Word<F>,
-        rhs: Word<F>,
+        _region: &mut CachedRegion<'_, '_, F>,
+        _offset: usize,
+        _lhs: F,
+        _rhs: F,
     ) -> Result<(F, F), Error> {
-        let (lt, _) = self.lt.assign(region, offset, lhs, rhs)?;
-        Ok(if lt.is_zero_vartime() {
-            (rhs, lhs)
+        todo!("lt assign");
+        let lt_says_greater = true;
+        Ok(if lt_says_greater {
+            (_rhs, _lhs)
         } else {
-            (lhs, rhs)
+            (_lhs, _rhs)
         })
     }
 

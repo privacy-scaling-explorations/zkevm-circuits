@@ -16,6 +16,8 @@
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 #![deny(clippy::debug_assert_with_mut_call)]
+#![allow(deprecated)]
+#![allow(unreachable_code)]
 
 pub mod bytecode_circuit;
 pub mod copy_circuit;

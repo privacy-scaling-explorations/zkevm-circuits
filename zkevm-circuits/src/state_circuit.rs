@@ -104,14 +104,14 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         let address = MpiChip::configure(
             meta,
             selector,
-            [*rw_table.address.lo(), *rw_table.address.hi()],
+            [rw_table.address.lo(), rw_table.address.hi()],
             lookups,
         );
 
         let storage_key = MpiChip::configure(
             meta,
             selector,
-            [*rw_table.storage_key.lo(), *rw_table.storage_key.hi()],
+            [rw_table.storage_key.lo(), rw_table.storage_key.hi()],
             lookups,
         );
         let initial_value = word::Word::new([meta.advice_column(), meta.advice_column()]);
@@ -122,10 +122,10 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             |meta| meta.query_fixed(selector, Rotation::cur()),
             |meta| {
                 [
-                    meta.query_advice(*initial_value.lo(), Rotation::cur()),
-                    meta.query_advice(*initial_value.hi(), Rotation::cur()),
-                    meta.query_advice(*rw_table.value.lo(), Rotation::cur()),
-                    meta.query_advice(*rw_table.value.hi(), Rotation::cur()),
+                    meta.query_advice(initial_value.lo(), Rotation::cur()),
+                    meta.query_advice(initial_value.hi(), Rotation::cur()),
+                    meta.query_advice(rw_table.value.lo(), Rotation::cur()),
+                    meta.query_advice(rw_table.value.hi(), Rotation::cur()),
                 ]
             },
         );
@@ -306,10 +306,10 @@ impl<F: Field> StateCircuitConfig<F> {
                 region,
                 offset,
                 Value::known([
-                    *committed_value.hi(),
-                    *committed_value.lo(),
-                    *value.hi(),
-                    *value.lo(),
+                    committed_value.hi(),
+                    committed_value.lo(),
+                    value.hi(),
+                    value.lo(),
                 ]),
             )?;
 
@@ -379,11 +379,11 @@ impl<F: Field> StateCircuitConfig<F> {
         self.sort_keys.annotate_columns_in_region(region, "STATE");
         region.name_column(|| "STATE_selector", self.selector);
         region.name_column(|| "STATE_not_first_access", self.not_first_access);
-        region.name_column(|| "STATE_initial_value lo", *self.initial_value.lo());
-        region.name_column(|| "STATE_initial_value hi", *self.initial_value.hi());
+        region.name_column(|| "STATE_initial_value lo", self.initial_value.lo());
+        region.name_column(|| "STATE_initial_value hi", self.initial_value.hi());
         region.name_column(|| "STATE_mpt_proof_type", self.mpt_proof_type);
-        region.name_column(|| "STATE_state_root lo", *self.state_root.lo());
-        region.name_column(|| "STATE_state_root hi", *self.state_root.hi());
+        region.name_column(|| "STATE_state_root lo", self.state_root.lo());
+        region.name_column(|| "STATE_state_root hi", self.state_root.hi());
     }
 }
 
@@ -518,8 +518,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
     let meta_query_word =
         |metap: &mut VirtualCells<'_, F>, word_column: word::Word<Column<Advice>>, at: Rotation| {
             word::Word::new([
-                metap.query_advice(*word_column.lo(), at),
-                metap.query_advice(*word_column.hi(), at),
+                metap.query_advice(word_column.lo(), at),
+                metap.query_advice(word_column.hi(), at),
             ])
         };
 

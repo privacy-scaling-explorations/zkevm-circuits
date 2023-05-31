@@ -132,7 +132,10 @@ pub struct TxTable {
     /// Index for Tag = CallData
     pub index: Column<Advice>,
     /// Value
-    pub value: word::Word<Column<Advice>>,
+    pub value_word: word::Word<Column<Advice>>,
+    /// Value
+    #[deprecated(note = "value_word is fav")]
+    pub value: Column<Advice>,
 }
 
 impl TxTable {
@@ -142,7 +145,8 @@ impl TxTable {
             tx_id: meta.advice_column(),
             tag: meta.fixed_column(),
             index: meta.advice_column(),
-            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            value_word: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            value: meta.advice_column(),
         }
     }
 
@@ -200,7 +204,7 @@ impl TxTable {
             |mut region| {
                 let mut offset = 0;
                 let advice_columns =
-                    [vec![self.tx_id, self.index], self.value.limbs.to_vec()].concat();
+                    [vec![self.tx_id, self.index], self.value_word.limbs.to_vec()].concat();
                 assign_row(
                     &mut region,
                     offset,
@@ -257,8 +261,8 @@ impl<F: Field> LookupTable<F> for TxTable {
             self.tx_id.into(),
             self.tag.into(),
             self.index.into(),
-            (*self.value.lo()).into(),
-            (*self.value.hi()).into(),
+            self.value_word.lo().into(),
+            self.value_word.hi().into(),
         ]
     }
 
@@ -277,8 +281,8 @@ impl<F: Field> LookupTable<F> for TxTable {
             meta.query_advice(self.tx_id, Rotation::cur()),
             meta.query_fixed(self.tag, Rotation::cur()),
             meta.query_advice(self.index, Rotation::cur()),
-            meta.query_advice(*self.value.lo(), Rotation::cur()),
-            meta.query_advice(*self.value.hi(), Rotation::cur()),
+            meta.query_advice(self.value_word.lo(), Rotation::cur()),
+            meta.query_advice(self.value_word.hi(), Rotation::cur()),
         ]
     }
 }
@@ -460,17 +464,17 @@ impl<F: Field> LookupTable<F> for RwTable {
             self.is_write.into(),
             self.tag.into(),
             self.id.into(),
-            (*self.address.lo()).into(),
-            (*self.address.hi()).into(),
+            self.address.lo().into(),
+            self.address.hi().into(),
             self.field_tag.into(),
-            (*self.storage_key.lo()).into(),
-            (*self.storage_key.hi()).into(),
-            (*self.value.lo()).into(),
-            (*self.value.hi()).into(),
-            (*self.value_prev.lo()).into(),
-            (*self.value_prev.hi()).into(),
-            (*self.init_val.lo()).into(),
-            (*self.init_val.hi()).into(),
+            self.storage_key.lo().into(),
+            self.storage_key.hi().into(),
+            self.value.lo().into(),
+            self.value.hi().into(),
+            self.value_prev.lo().into(),
+            self.value_prev.hi().into(),
+            self.init_val.lo().into(),
+            self.init_val.hi().into(),
         ]
     }
 
@@ -514,7 +518,7 @@ impl RwTable {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        row: &RwRow<Value<F>>,
+        row: &RwRow<F>,
     ) -> Result<(), Error> {
         for (column, value) in [
             (self.rw_counter, row.rw_counter),
@@ -523,7 +527,7 @@ impl RwTable {
             (self.id, row.id),
             (self.field_tag, row.field_tag),
         ] {
-            region.assign_advice(|| "assign rw row on rw table", column, offset, || value)?;
+            region.assign_advice(|| "assign rw row on rw table", column, offset, || Value::known(value))?;
         }
         for (column, value) in [
             (self.address, row.address),
@@ -532,7 +536,7 @@ impl RwTable {
             (self.value_prev, row.value_prev),
             (self.init_val, row.init_val),
         ] {
-            value.assign_advice(region, || "assign rw row on rw table", column, offset)?;
+            value.into_value().assign_advice(region, || "assign rw row on rw table", column, offset)?;
         }
 
         Ok(())
@@ -697,7 +701,10 @@ impl_expr!(BytecodeFieldTag);
 #[derive(Clone, Debug)]
 pub struct BytecodeTable {
     /// Code Hash
-    pub code_hash: word::Word<Column<Advice>>,
+    pub code_hash_word: word::Word<Column<Advice>>,
+    #[deprecated]
+    /// Code Hash
+    pub code_hash: Column<Advice>,
     /// Tag
     pub tag: Column<Advice>,
     /// Index
@@ -712,8 +719,10 @@ impl BytecodeTable {
     /// Construct a new BytecodeTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         let [tag, index, is_code, value] = array::from_fn(|_| meta.advice_column());
-        let code_hash = word::Word::new([meta.advice_column(), meta.advice_column()]);
+        let code_hash_word = word::Word::new([meta.advice_column(), meta.advice_column()]);
+        let code_hash = meta.advice_column();
         Self {
+            code_hash_word,
             code_hash,
             tag,
             index,
@@ -768,8 +777,8 @@ impl BytecodeTable {
 impl<F: Field> LookupTable<F> for BytecodeTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            (*self.code_hash.lo()).into(),
-            (*self.code_hash.hi()).into(),
+            self.code_hash_word.lo().into(),
+            self.code_hash_word.hi().into(),
             self.tag.into(),
             self.index.into(),
             self.is_code.into(),
@@ -821,7 +830,10 @@ pub struct BlockTable {
     /// Index
     pub index: Column<Advice>,
     /// Value
-    pub value: word::Word<Column<Advice>>,
+    pub value_word: word::Word<Column<Advice>>,
+    #[deprecated]
+    /// Value
+    pub value: Column<Advice>,
 }
 
 impl BlockTable {
@@ -830,7 +842,8 @@ impl BlockTable {
         Self {
             tag: meta.advice_column(),
             index: meta.advice_column(),
-            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            value_word: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            value: meta.advice_column(),
         }
     }
 
@@ -879,8 +892,8 @@ impl<F: Field> LookupTable<F> for BlockTable {
         vec![
             self.tag.into(),
             self.index.into(),
-            (*self.value.lo()).into(),
-            (*self.value.hi()).into(),
+            self.value_word.lo().into(),
+            self.value_word.hi().into(),
         ]
     }
 
@@ -903,8 +916,11 @@ pub struct KeccakTable {
     pub input_rlc: Column<Advice>, // RLC of input bytes
     /// Byte array input length
     pub input_len: Column<Advice>,
+    /// Output hash word
+    pub output: word::Word<Column<Advice>>,
+    #[deprecated]
     /// RLC of the hash result
-    pub output_rlc: Column<Advice>, // RLC of hash of input bytes
+    pub output_rlc: Column<Advice>,
 }
 
 impl<F: Field> LookupTable<F> for KeccakTable {
@@ -913,7 +929,8 @@ impl<F: Field> LookupTable<F> for KeccakTable {
             self.is_enabled.into(),
             self.input_rlc.into(),
             self.input_len.into(),
-            self.output_rlc.into(),
+            self.output.lo().into(),
+            self.output.hi().into(),
         ]
     }
 
@@ -934,7 +951,8 @@ impl KeccakTable {
             is_enabled: meta.advice_column(),
             input_rlc: meta.advice_column_in(SecondPhase),
             input_len: meta.advice_column(),
-            output_rlc: meta.advice_column(),
+            output: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            output_rlc: meta.advice_column_in(SecondPhase),
         }
     }
 

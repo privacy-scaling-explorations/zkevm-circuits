@@ -28,8 +28,8 @@ impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> IsEqualWordGadget<F, T1, T2> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, lhs: T1, rhs: T2) -> Self {
         let (lhs_lo, lhs_hi) = lhs.to_word().to_lo_hi();
         let (rhs_lo, rhs_hi) = rhs.to_word().to_lo_hi();
-        let is_zero_lo = IsZeroGadget::construct(cb, lhs_lo.clone() - rhs_lo.clone());
-        let is_zero_hi = IsZeroGadget::construct(cb, lhs_hi.clone() - rhs_hi.clone());
+        let is_zero_lo = IsZeroGadget::construct(cb, lhs_lo - rhs_lo);
+        let is_zero_hi = IsZeroGadget::construct(cb, lhs_hi - rhs_hi);
 
         Self {
             is_zero_lo,
@@ -51,8 +51,8 @@ impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> IsEqualWordGadget<F, T1, T2> {
     ) -> Result<F, Error> {
         let (lhs_lo, lhs_hi) = lhs.to_lo_hi();
         let (rhs_lo, rhs_hi) = rhs.to_lo_hi();
-        self.is_zero_lo.assign(region, offset, *rhs_lo - *lhs_lo)?;
-        self.is_zero_hi.assign(region, offset, *rhs_hi - *lhs_hi)?;
+        self.is_zero_lo.assign(region, offset, rhs_lo - lhs_lo)?;
+        self.is_zero_hi.assign(region, offset, rhs_hi - lhs_hi)?;
         Ok(F::from(2))
     }
 

@@ -6,9 +6,11 @@ use eth_types::{Address, Field, ToAddress, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 
+use crate::util::word;
+
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
-    util::{build_tx_log_address, word},
+    util::build_tx_log_address,
 };
 
 use super::MptUpdates;
@@ -264,17 +266,17 @@ impl<F: Field> RwRow<F> {
             self.is_write,
             self.tag,
             self.id,
-            *self.address.lo(),
-            *self.address.hi(),
+            self.address.lo(),
+            self.address.hi(),
             self.field_tag,
-            *self.storage_key.lo(),
-            *self.storage_key.hi(),
-            *self.value.lo(),
-            *self.value.hi(),
-            *self.value_prev.lo(),
-            *self.value_prev.hi(),
-            *self.init_val.lo(),
-            *self.init_val.hi(),
+            self.storage_key.lo(),
+            self.storage_key.hi(),
+            self.value.lo(),
+            self.value.hi(),
+            self.value_prev.lo(),
+            self.value_prev.hi(),
+            self.init_val.lo(),
+            self.init_val.hi(),
         ]
     }
     pub(crate) fn rlc(&self, randomness: F) -> F {
@@ -384,20 +386,21 @@ impl Rw {
         }
     }
 
-    pub(crate) fn table_assignment<F: Field>(&self) -> RwRow<Value<F>> {
+
+    pub(crate) fn table_assignment<F: Field>(&self) -> RwRow<F> {
         RwRow {
-            rw_counter: Value::known(F::from(self.rw_counter() as u64)),
-            is_write: Value::known(F::from(self.is_write() as u64)),
-            tag: Value::known(F::from(self.tag() as u64)),
-            id: Value::known(F::from(self.id().unwrap_or_default() as u64)),
-            address: word::Word::from_address(self.address().unwrap_or_default()).into_value(),
-            field_tag: Value::known(F::from(self.field_tag().unwrap_or_default())),
-            storage_key: word::Word::from_u256(self.storage_key().unwrap_or_default()).into_value(),
-            value: word::Word::from_u256(self.value_assignment()).into_value(),
+            rw_counter: F::from(self.rw_counter() as u64),
+            is_write: F::from(self.is_write() as u64),
+            tag: F::from(self.tag() as u64),
+            id: F::from(self.id().unwrap_or_default() as u64),
+            address: word::Word::from_address(self.address().unwrap_or_default()),
+            field_tag: F::from(self.field_tag().unwrap_or_default()),
+            storage_key: word::Word::from_u256(self.storage_key().unwrap_or_default()),
+            value: word::Word::from_u256(self.value_assignment()),
             value_prev: word::Word::from_u256(self.value_prev_assignment().unwrap_or_default())
-                .into_value(),
+                ,
             init_val: word::Word::from_u256(self.committed_value_assignment().unwrap_or_default())
-                .into_value(),
+                ,
         }
     }
 

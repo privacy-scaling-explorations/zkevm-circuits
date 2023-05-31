@@ -33,7 +33,7 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
         // Lookup callee address in call context.
         cb.call_context_lookup_read(None, CallContextFieldTag::CalleeAddress, address.to_word());
 
-        cb.stack_push(address.to_word());
+        cb.stack_push_word(address.to_word());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(2.expr()),
@@ -66,8 +66,11 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
         let address = block.rws[step.rw_indices[1]].stack_value();
         debug_assert_eq!(call.address, address.to_address());
 
-        self.address
-            .assign(region, offset, Some(address.to_le_bytes()))?;
+        self.address.assign(
+            region,
+            offset,
+            Some(address.to_le_bytes()[..20].try_into().unwrap()),
+        )?;
 
         Ok(())
     }

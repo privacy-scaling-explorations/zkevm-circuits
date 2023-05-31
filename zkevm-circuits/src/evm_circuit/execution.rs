@@ -1378,7 +1378,7 @@ impl<F: Field> ExecutionConfig<F> {
             .iter()
             .map(|rw_idx| block.rws[*rw_idx])
             .map(|rw| {
-                rw.table_assignment_aux(evm_randomness)
+                rw.table_assignment()
                     .rlc(lookup_randomness)
             })
             .fold(BTreeSet::<F>::new(), |mut set, value| {
@@ -1429,7 +1429,7 @@ impl<F: Field> ExecutionConfig<F> {
             };
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];
-            let table_assignments = rw.table_assignment_aux(evm_randomness);
+            let table_assignments = rw.table_assignment();
             let rlc = table_assignments.rlc(lookup_randomness);
             if rlc != assigned_rw_value.1 {
                 log::error!(

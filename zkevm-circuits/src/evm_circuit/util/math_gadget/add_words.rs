@@ -5,7 +5,7 @@ use crate::{
         pow_of_two_expr, split_u256, sum, CachedRegion, Cell,
     },
     util::{
-        word::{Word32Cell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLegacy},
         Expr,
     },
 };
@@ -26,6 +26,13 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
     AddWordsGadget<F, N_ADDENDS, CHECK_OVERFLOW>
 {
     pub(crate) fn construct(
+        _cb: &mut EVMConstraintBuilder<F>,
+        _addends: [WordLegacy<F>; N_ADDENDS],
+        _sum: WordLegacy<F>,
+    ) -> Self {
+        todo!()
+    }
+    pub(crate) fn construct_new(
         cb: &mut EVMConstraintBuilder<F>,
         addends: [Word32Cell<F>; N_ADDENDS],
         sum: Word32Cell<F>,
@@ -39,14 +46,14 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
 
         let addends_lo = &addends
             .iter()
-            .map(|addend| addend.to_word().lo().clone())
+            .map(|addend| addend.to_word().lo())
             .collect::<Vec<_>>();
         let addends_hi = addends
             .iter()
-            .map(|addend| addend.to_word().hi().clone())
+            .map(|addend| addend.to_word().hi())
             .collect::<Vec<_>>();
-        let sum_lo = sum.to_word().lo().clone();
-        let sum_hi = sum.to_word().hi().clone();
+        let sum_lo = sum.to_word().lo();
+        let sum_hi = sum.to_word().hi();
 
         cb.require_equal(
             "sum(addends_lo) == sum_lo + carry_lo ⋅ 2^128",

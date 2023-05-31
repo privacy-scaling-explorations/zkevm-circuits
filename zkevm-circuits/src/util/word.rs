@@ -12,10 +12,12 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 
-use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell};
+use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell, RandomLinearCombination};
 
+/// The EVM word for witness
 #[derive(Clone, Debug, Copy)]
 pub struct WordLimbs<T, const N: usize> {
+    /// The limbs of this word.
     pub limbs: [T; N],
 }
 
@@ -32,10 +34,11 @@ pub(crate) type WordCell<F> = Word<Cell<F>>;
 pub(crate) type Word32Cell<F> = Word32<Cell<F>>;
 
 impl<T, const N: usize> WordLimbs<T, N> {
+    /// Constructor
     pub fn new(limbs: [T; N]) -> Self {
         Self { limbs }
     }
-
+    /// The number of limbs
     pub fn n() -> usize {
         N
     }
@@ -49,11 +52,38 @@ impl<T: Default, const N: usize> Default for WordLimbs<T, N> {
     }
 }
 
+impl<F: Field> From<Word32Cell<F>> for WordLegacy<F> {
+    fn from(_: Word32Cell<F>) -> Self {
+        unreachable!(
+            "This function is meat to fix the build. Remove once we fixed the word lo-hi refactor"
+        )
+    }
+}
+
+impl<F: Field> Expr<F> for WordCell<F> {
+    fn expr(&self) -> Expression<F> {
+        unreachable!(
+            "This function is meat to fix the build. Remove once we fixed the word lo-hi refactor"
+        )
+    }
+}
+
+impl<F: Field> Expr<F> for Word32Cell<F> {
+    fn expr(&self) -> Expression<F> {
+        unreachable!(
+            "This function is meat to fix the build. Remove once we fixed the word lo-hi refactor"
+        )
+    }
+}
+
+/// Get the word expression
 pub trait WordExpr<F> {
+    /// Get the word expression
     fn to_word(&self) -> Word<Expression<F>>;
 }
 
 impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
+    /// assign limbs
     pub fn assign<const N1: usize>(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -71,6 +101,8 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
         })
     }
 
+    #[deprecated(note = "in fav of to_word trait. Make this private")]
+    /// word expr
     pub fn word_expr(&self) -> WordLimbs<Expression<F>, N> {
         WordLimbs::new(self.limbs.clone().map(|cell| cell.expr()))
     }
@@ -88,27 +120,33 @@ impl<F: Field, const N: usize> WordLimbs<F, N> {
     }
 }
 
-// `Word`, special alias for Word2.
+/// `Word`, special alias for Word2.
 #[derive(Clone, Debug, Copy, Default)]
 pub struct Word<T>(Word2<T>);
 
 impl<T: Clone> Word<T> {
+    /// Construct the word from 2 limbs
     pub fn new(limbs: [T; 2]) -> Self {
         Self(WordLimbs::<T, 2>::new(limbs))
     }
-    pub fn hi(&self) -> &T {
-        &self.0.limbs[1]
-    }
-    pub fn lo(&self) -> &T {
-        &self.0.limbs[0]
+
+    /// The high 128 bits limb
+    pub fn hi(&self) -> T {
+        self.0.limbs[1].clone()
     }
 
+    /// the low 128 bits limb
+    pub fn lo(&self) -> T {
+        self.0.limbs[0].clone()
+    }
+    /// number of limbs
     pub fn n() -> usize {
         2
     }
 
-    pub fn to_lo_hi(&self) -> (&T, &T) {
-        (&self.0.limbs[0], &self.0.limbs[1])
+    /// word to low and high 128 bits
+    pub fn to_lo_hi(&self) -> (T, T) {
+        (self.0.limbs[0].clone(), self.0.limbs[1].clone())
     }
 
     pub fn into_lo_hi(self) -> (T, T) {
@@ -131,6 +169,7 @@ impl<T> std::ops::Deref for Word<T> {
 }
 
 impl<F: Field> Word<F> {
+    /// Constrct the word from u256
     pub fn from_u256(value: eth_types::Word) -> Word<F> {
         let bytes = value.to_le_bytes();
         Word::new([
@@ -139,6 +178,7 @@ impl<F: Field> Word<F> {
         ])
     }
 
+    /// Construct word from Address
     pub fn from_address(value: eth_types::Address) -> Word<F> {
         let bytes_le: Vec<u8> = value.to_fixed_bytes().into_iter().rev().collect();
         Word::new([
@@ -147,6 +187,7 @@ impl<F: Field> Word<F> {
         ])
     }
 
+    /// Constrct the word from u64
     pub fn from_u64(value: u64) -> Word<F> {
         let bytes = value.to_le_bytes();
         Word::new([from_bytes::value(&bytes), F::from(0)])
@@ -160,6 +201,7 @@ impl<F: Field> From<U256> for Word<F> {
 }
 
 impl<F: Field> Word<Cell<F>> {
+    /// Assign low 128 bits for the word
     pub fn assign_lo(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -186,8 +228,8 @@ impl<F: Field> Word<Value<F>> {
         AR: Into<String>,
     {
         let annotation: String = annotation().into();
-        let lo = region.assign_advice(|| &annotation, *column.lo(), offset, || *self.lo())?;
-        let hi = region.assign_advice(|| &annotation, *column.hi(), offset, || *self.hi())?;
+        let lo = region.assign_advice(|| &annotation, column.lo(), offset, || self.lo())?;
+        let hi = region.assign_advice(|| &annotation, column.hi(), offset, || self.hi())?;
 
         Ok(Word::new([lo, hi]))
     }
@@ -200,53 +242,47 @@ impl<F: Field> WordExpr<F> for Word<Cell<F>> {
 }
 
 impl<F: Field> Word<Expression<F>> {
-    // create word from lo limb with hi limb as 0. caller need to guaranteed to be 128 bits.
+    /// create word from lo limb with hi limb as 0. caller need to guaranteed to be 128 bits.
     pub fn from_lo_unchecked(lo: Expression<F>) -> Self {
         Self(WordLimbs::<Expression<F>, 2>::new([lo, 0.expr()]))
     }
 
+    /// zero word
     pub fn zero() -> Self {
         Self(WordLimbs::<Expression<F>, 2>::new([0.expr(), 0.expr()]))
     }
 
-    // select based on selector. Here assume selector is 1/0 therefore no overflow check
+    /// select based on selector. Here assume selector is 1/0 therefore no overflow check
     pub fn select<T: WordExpr<F>>(
         selector: Expression<F>,
         when_true: T,
         when_false: T,
     ) -> Word<Expression<F>> {
-        let when_true_sel = when_true.to_word().mul_selector(selector.clone());
-        let (true_lo, true_hi) = when_true_sel.to_lo_hi();
-        let when_false_sel = when_false.to_word().mul_selector(1.expr() - selector);
-        let (false_lo, false_hi) = when_false_sel.to_lo_hi();
-        Word::new([
-            true_lo.clone() + false_lo.clone(),
-            true_hi.clone() + false_hi.clone(),
-        ])
+        let (true_lo, true_hi) = when_true
+            .to_word()
+            .mul_selector(selector.clone())
+            .to_lo_hi();
+
+        let (false_lo, false_hi) = when_false
+            .to_word()
+            .mul_selector(1.expr() - selector)
+            .to_lo_hi();
+        Word::new([true_lo + false_lo, true_hi + false_hi])
     }
 
-    // Assume selector is 1/0 therefore no overflow check
+    /// Assume selector is 1/0 therefore no overflow check
     pub fn mul_selector(&self, selector: Expression<F>) -> Self {
-        Word::new([
-            self.lo().clone() * selector.clone(),
-            self.hi().clone() * selector,
-        ])
+        Word::new([self.lo() * selector.clone(), self.hi() * selector])
     }
 
-    // No overflow check on lo/hi limbs
+    /// No overflow check on lo/hi limbs
     pub fn add_unchecked(self, rhs: Self) -> Self {
-        Word::new([
-            self.lo().clone() + rhs.lo().clone(),
-            self.hi().clone() + rhs.hi().clone(),
-        ])
+        Word::new([self.lo() + rhs.lo(), self.hi() + rhs.hi()])
     }
 
-    // No underflow check on lo/hi limbs
+    /// No underflow check on lo/hi limbs
     pub fn sub_unchecked(self, rhs: Self) -> Self {
-        Word::new([
-            self.lo().clone() - rhs.lo().clone(),
-            self.hi().clone() - rhs.hi().clone(),
-        ])
+        Word::new([self.lo() - rhs.lo(), self.hi() - rhs.hi()])
     }
 }
 
@@ -274,6 +310,7 @@ impl<F: Field, const N1: usize> WordLimbs<Expression<F>, N1> {
         WordLimbs::<Expression<F>, N2>::new(limbs)
     }
 
+    /// Equality expression
     // TODO static assertion. wordaround https://github.com/nvzqz/static-assertions-rs/issues/40
     pub fn eq<const N2: usize>(&self, others: &WordLimbs<Expression<F>, N2>) -> Expression<F> {
         assert_eq!(N1 % N2, 0);
@@ -291,6 +328,22 @@ impl<F: Field, const N1: usize> WordLimbs<Expression<F>, N1> {
 impl<F: Field, const N1: usize> WordExpr<F> for WordLimbs<Expression<F>, N1> {
     fn to_word(&self) -> Word<Expression<F>> {
         Word(self.to_word_n())
+    }
+}
+
+#[deprecated(note = "Word is preferred")]
+/// Support legacy type of RLC word
+pub type WordLegacy<F> = RandomLinearCombination<F, 32>;
+
+impl<F: Field> WordExpr<F> for WordLegacy<F> {
+    fn to_word(&self) -> Word<Expression<F>> {
+        Word::from_lo_unchecked(self.expr())
+    }
+}
+
+impl<F: Field> From<WordLegacy<F>> for Word32Cell<F> {
+    fn from(value: WordLegacy<F>) -> Self {
+        Word32Cell::new(value.cells)
     }
 }
 
