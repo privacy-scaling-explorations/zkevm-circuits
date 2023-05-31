@@ -2,8 +2,8 @@
 
 use super::{
     get_call_memory_offset_length, get_create_init_code, Block, BlockContext, Call, CallContext,
-    CallKind, CircuitsParams, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, MaybeParams,
-    Transaction, TransactionContext,
+    CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, MaybeParams, Transaction,
+    TransactionContext,
 };
 use crate::{
     error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError},
