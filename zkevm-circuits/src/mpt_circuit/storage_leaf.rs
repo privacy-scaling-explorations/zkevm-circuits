@@ -1,7 +1,7 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::{
-    circuit::{Value},
+    circuit::{Value, Region},
     plonk::{Error, VirtualCells},
     poly::Rotation,
 };
@@ -259,13 +259,18 @@ impl<F: Field> StorageLeafConfig<F> {
 
     pub fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
-        ctx: &MPTConfig<F>,
+        region: &mut Region<F>,
+        challenges: &S,
+        mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
         node: &Node,
         rlp_values: &[RLPItemWitness],
     ) -> Result<(), Error> {
+        let mut region = CachedRegion::new(
+            region,
+            challenges
+        );
         let storage = &node.storage.clone().unwrap();
 
         let key_items = [
@@ -281,7 +286,7 @@ impl<F: Field> StorageLeafConfig<F> {
 
         let main_data =
             self.main_data
-                .witness_load(region, offset, &pv.memory[main_memory()], 0)?;
+                .witness_load(&mut region, offset, &pv.memory[main_memory()], 0)?;
 
         let mut key_data = vec![KeyDataWitness::default(); 2];
         let mut parent_data = vec![ParentDataWitness::default(); 2];
@@ -289,34 +294,34 @@ impl<F: Field> StorageLeafConfig<F> {
         let mut value_rlc = vec![0.scalar(); 2];
         for is_s in [true, false] {
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
-                region,
+                &mut region,
                 offset,
                 &mut pv.memory[parent_memory(is_s)],
                 0,
             )?;
 
             let rlp_key_witness = self.rlp_key[is_s.idx()].assign(
-                region,
+                &mut region,
                 offset,
                 &storage.list_rlp_bytes[is_s.idx()],
                 &key_items[is_s.idx()],
             )?;
 
             self.is_not_hashed[is_s.idx()].assign(
-                region,
+                &mut region,
                 offset,
                 rlp_key_witness.rlp_list.num_bytes().scalar(),
                 32.scalar(),
             )?;
 
             key_data[is_s.idx()] = self.key_data[is_s.idx()].witness_load(
-                region,
+                &mut region,
                 offset,
                 &mut pv.memory[key_memory(is_s)],
                 0,
             )?;
             KeyData::witness_store(
-                region,
+                &mut region,
                 offset,
                 &mut pv.memory[key_memory(is_s)],
                 F::zero(),
@@ -340,10 +345,10 @@ impl<F: Field> StorageLeafConfig<F> {
                 .iter()
                 .zip(storage.value_rlp_bytes[is_s.idx()].iter())
             {
-                cell.assign(region, offset, byte.scalar())?;
+                cell.assign(&mut region, offset, byte.scalar())?;
             }
             let value_witness = self.rlp_value[is_s.idx()].assign(
-                region,
+                &mut region,
                 offset,
                 &storage.value_rlp_bytes[is_s.idx()],
             )?;
@@ -354,7 +359,7 @@ impl<F: Field> StorageLeafConfig<F> {
             };
 
             ParentData::witness_store(
-                region,
+                &mut region,
                 offset,
                 &mut pv.memory[parent_memory(is_s)],
                 F::zero(),
@@ -364,7 +369,7 @@ impl<F: Field> StorageLeafConfig<F> {
             )?;
 
             self.is_in_empty_trie[is_s.idx()].assign(
-                region,
+                &mut region,
                 offset,
                 parent_data[is_s.idx()].rlc,
                 pv.r,
@@ -372,13 +377,13 @@ impl<F: Field> StorageLeafConfig<F> {
         }
 
         let is_storage_mod_proof = self.is_storage_mod_proof.assign(
-            region,
+            &mut region,
             offset,
             main_data.proof_type.scalar(),
             MPTProofType::StorageChanged.scalar(),
         )? == true.scalar();
         let is_non_existing_proof = self.is_non_existing_storage_proof.assign(
-            region,
+            &mut region,
             offset,
             main_data.proof_type.scalar(),
             MPTProofType::StorageDoesNotExist.scalar(),
@@ -386,7 +391,7 @@ impl<F: Field> StorageLeafConfig<F> {
 
         // Drifted leaf handling
         self.drifted.assign(
-            region,
+            &mut region,
             offset,
             &parent_data,
             &storage.drifted_rlp_bytes,
@@ -396,7 +401,7 @@ impl<F: Field> StorageLeafConfig<F> {
 
         // Wrong leaf handling
         let key_rlc = self.wrong.assign(
-            region,
+            &mut region,
             offset,
             is_non_existing_proof,
             &key_rlc,
@@ -415,8 +420,8 @@ impl<F: Field> StorageLeafConfig<F> {
         } else {
             MPTProofType::Disabled
         };
-        ctx.mpt_table.assign_cached(
-            region,
+        mpt_config.mpt_table.assign_cached(
+            &mut region,
             offset,
             &MptUpdateRow {
                 address_rlc: Value::known(main_data.address_rlc),

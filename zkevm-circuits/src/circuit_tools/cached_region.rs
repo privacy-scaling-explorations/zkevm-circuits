@@ -9,7 +9,7 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use std::{
-    hash::{Hash, Hasher},
+    hash::{Hash, Hasher}, collections::HashMap,
 };
 
 use super::cell_manager::CellTypeTrait;
@@ -24,160 +24,139 @@ impl<F: Field, V: AsRef<[Value<F>]>> ChallengeSet<F> for V {
     }
 }
 
+pub trait MacroDescr {
+    fn is_descr_disabled(&self) -> bool;
+}
+
+impl<'r, F: Field> MacroDescr for Region<'r, F> {
+    fn is_descr_disabled(&self) -> bool {
+        false
+    }
+}
+
+
 pub struct CachedRegion<'r, 'b, F: Field, S: ChallengeSet<F>> {
     region: &'r mut Region<'b, F>,
-    advice: Vec<Vec<F>>,
+    advice: HashMap<(usize, usize), F>,
     challenges: &'r S,
-    advice_columns: Vec<Column<Advice>>,
-    width_start: usize,
-    height_start: usize,
+    disable_description: bool,
 }
 
 impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
-    /// New cached region
     pub(crate) fn new(
         region: &'r mut Region<'b, F>,
         challenges: &'r S,
-        advice_columns: Vec<Column<Advice>>,
-        height: usize,
-        height_start: usize,
     ) -> Self {
         Self {
             region,
-            advice: vec![vec![F::zero(); height]; advice_columns.len()],
+            advice: HashMap::new(),
             challenges,
-            width_start: advice_columns[0].index(),
-            height_start,
-            advice_columns,
+            disable_description: false,
         }
     }
 
-    /// This method replicates the assignment of 1 row at height_start (which
-    /// must be already assigned via the CachedRegion) into a range of rows
-    /// indicated by offset_begin, offset_end. It can be used as a "quick"
-    /// path for assignment for repeated padding rows.
-    pub fn replicate_assignment_for_range<A, AR>(
-        &mut self,
-        annotation: A,
-        offset_begin: usize,
-        offset_end: usize,
-    ) -> Result<(), Error>
-    where
-        A: Fn() -> AR,
-        AR: Into<String>,
-    {
-        for (v, column) in self
-            .advice
-            .iter()
-            .map(|values| values[0])
-            .zip_eq(self.advice_columns.iter())
+    pub(crate) fn disable_description(&mut self) {
+        self.disable_description = true;
+    }
+
+    pub(crate) fn is_descr_disabled(&self) -> bool {
+        self.disable_description
+    }
+
+        /// Assign an advice column value (witness).
+        pub fn assign_advice<'v, V, VR, A, AR>(
+            &'v mut self,
+            annotation: A,
+            column: Column<Advice>,
+            offset: usize,
+            to: V,
+        ) -> Result<AssignedCell<VR, F>, Error>
+        where
+            V: Fn() -> Value<VR> + 'v,
+            for<'vr> Assigned<F>: From<&'vr VR>,
+            A: Fn() -> AR,
+            AR: Into<String>,
         {
-            if v.is_zero_vartime() {
-                continue;
+            // Actually set the value
+            let res = self.region.assign_advice(annotation, column, offset, &to);
+            // Cache the value
+            // Note that the `value_field` in `AssignedCell` might be `Value::unkonwn` if
+            // the column has different phase than current one, so we call to `to`
+            // again here to cache the value.
+            if res.is_ok() {
+                to().map(|f: VR| {
+                    self.advice.insert((column.index(), offset),  Assigned::from(&f).evaluate());
+                });
             }
-            let annotation: &String = &annotation().into();
-            for offset in offset_begin..offset_end {
-                self.region
-                    .assign_advice(|| annotation, *column, offset, || Value::known(v))?;
-            }
+            res
         }
 
-        Ok(())
-    }
-
-    /// Assign an advice column value (witness).
-    pub fn assign_advice<'v, V, VR, A, AR>(
-        &'v mut self,
-        annotation: A,
-        column: Column<Advice>,
-        offset: usize,
-        to: V,
-    ) -> Result<AssignedCell<VR, F>, Error>
-    where
-        V: Fn() -> Value<VR> + 'v,
-        for<'vr> Assigned<F>: From<&'vr VR>,
-        A: Fn() -> AR,
-        AR: Into<String>,
-    {
-        // Actually set the value
-        let res = self.region.assign_advice(annotation, column, offset, &to);
-        // Cache the value
-        // Note that the `value_field` in `AssignedCell` might be `Value::unkonwn` if
-        // the column has different phase than current one, so we call to `to`
-        // again here to cache the value.
-        if res.is_ok() {
-            to().map(|f| {
-                self.advice[column.index() - self.width_start][offset - self.height_start] =
-                    Assigned::from(&f).evaluate();
-            });
+        pub fn assign_fixed<'v, V, VR, A, AR>(
+            &'v mut self,
+            annotation: A,
+            column: Column<Fixed>,
+            offset: usize,
+            to: V,
+        ) -> Result<AssignedCell<VR, F>, Error>
+        where
+            V: Fn() -> Value<VR> + 'v,
+            for<'vr> Assigned<F>: From<&'vr VR>,
+            A: Fn() -> AR,
+            AR: Into<String>,
+        {
+            self.region.assign_fixed(annotation, column, offset, &to)
         }
-        res
+    
+        pub fn get_fixed(&self, _row_index: usize, _column_index: usize, _rotation: Rotation) -> F {
+            unimplemented!("fixed column");
+        }
+    
+        // StoreExpression 里面调，拿 F 出去 evaluate
+        pub fn get_advice(&self, row_index: usize, column_index: usize, rotation: Rotation) -> F {
+            self.advice.get(&(column_index, row_index + rotation.0 as usize))
+                .expect("Advice not found")
+                .clone()
+        }
+    
+        pub fn challenges(&self) -> &S {
+            self.challenges
+        }
+    
+    
+        // pub fn word_rlc(&self, n: U256) -> Value<F> {
+        //     self.challenges
+        //         .evm_word()
+        //         .map(|r| rlc::value(&n.to_le_bytes(), r))
+        // }
+        // pub fn empty_code_hash_rlc(&self) -> Value<F> {
+        //     self.word_rlc(CodeDB::empty_code_hash().to_word())
+        // }
+    
+    
+        /// Constrains a cell to have a constant value.
+        ///
+        /// Returns an error if the cell is in a column where equality has not been
+        /// enabled.
+        pub fn constrain_constant<VR>(
+            &mut self,
+            cell: AssignedCell<F, F>,
+            constant: VR,
+        ) -> Result<(), Error>
+        where
+            VR: Into<Assigned<F>>,
+        {
+            self.region.constrain_constant(cell.cell(), constant.into())
+        }
     }
 
-    pub fn assign_fixed<'v, V, VR, A, AR>(
-        &'v mut self,
-        annotation: A,
-        column: Column<Fixed>,
-        offset: usize,
-        to: V,
-    ) -> Result<AssignedCell<VR, F>, Error>
-    where
-        V: Fn() -> Value<VR> + 'v,
-        for<'vr> Assigned<F>: From<&'vr VR>,
-        A: Fn() -> AR,
-        AR: Into<String>,
-    {
-        self.region.assign_fixed(annotation, column, offset, &to)
-    }
-
-    pub fn get_fixed(&self, _row_index: usize, _column_index: usize, _rotation: Rotation) -> F {
-        unimplemented!("fixed column");
-    }
-
-    // StoreExpression 里面调，拿 F 出去 evaluate
-    pub fn get_advice(&self, row_index: usize, column_index: usize, rotation: Rotation) -> F {
-        self.advice[column_index - self.width_start]
-            [(((row_index - self.height_start) as i32) + rotation.0) as usize]
-    }
-
-    pub fn challenges(&self) -> &S {
-        self.challenges
-    }
-
-
-    // pub fn word_rlc(&self, n: U256) -> Value<F> {
-    //     self.challenges
-    //         .evm_word()
-    //         .map(|r| rlc::value(&n.to_le_bytes(), r))
-    // }
-    // pub fn empty_code_hash_rlc(&self) -> Value<F> {
-    //     self.word_rlc(CodeDB::empty_code_hash().to_word())
-    // }
-
-
-    /// Constrains a cell to have a constant value.
-    ///
-    /// Returns an error if the cell is in a column where equality has not been
-    /// enabled.
-    pub fn constrain_constant<VR>(
-        &mut self,
-        cell: AssignedCell<F, F>,
-        constant: VR,
-    ) -> Result<(), Error>
-    where
-        VR: Into<Assigned<F>>,
-    {
-        self.region.constrain_constant(cell.cell(), constant.into())
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct StoredExpression<F, C: CellTypeTrait> {
     pub(crate) name: String,
-    cell: Cell<F>,
-    cell_type: C,
-    expr: Expression<F>,
-    expr_id: String,
+    pub(crate) cell: Cell<F>,
+    pub(crate) cell_type: C,
+    pub(crate) expr: Expression<F>,
+    pub(crate) expr_id: String,
 }
 
 impl<F, C: CellTypeTrait> Hash for StoredExpression<F, C> {

@@ -1,7 +1,7 @@
 use eth_types::Field;
 use gadgets::util::{pow, Scalar};
 use halo2_proofs::{
-    circuit::{Value},
+    circuit::{Value, Region},
     plonk::{Error, VirtualCells},
     poly::Rotation,
 };
@@ -360,13 +360,18 @@ impl<F: Field> AccountLeafConfig<F> {
 
     pub fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
-        ctx: &MPTConfig<F>,
+        region: &mut Region<F>,
+        challenges: &S,
+        mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
         node: &Node,
         rlp_values: &[RLPItemWitness],
     ) -> Result<(), Error> {
+        let mut region = CachedRegion::new(
+            region,
+            challenges
+        );
         let account = &node.account.clone().unwrap();
 
         let key_items = [
@@ -394,7 +399,7 @@ impl<F: Field> AccountLeafConfig<F> {
 
         let main_data =
             self.main_data
-                .witness_load(region, offset, &pv.memory[main_memory()], 0)?;
+                .witness_load(&mut region, offset, &pv.memory[main_memory()], 0)?;
 
         // Key
         let mut key_rlc = vec![0.scalar(); 2];
@@ -409,39 +414,39 @@ impl<F: Field> AccountLeafConfig<F> {
                 .iter()
                 .zip(account.value_rlp_bytes[is_s.idx()].iter())
             {
-                cell.assign(region, offset, byte.scalar())?;
+                cell.assign(&mut region, offset, byte.scalar())?;
             }
 
             for (cell, byte) in self.value_list_rlp_bytes[is_s.idx()]
                 .iter()
                 .zip(account.value_list_rlp_bytes[is_s.idx()].iter())
             {
-                cell.assign(region, offset, byte.scalar())?;
+                cell.assign(&mut region, offset, byte.scalar())?;
             }
 
             key_data[is_s.idx()] = self.key_data[is_s.idx()].witness_load(
-                region,
+                &mut region,
                 offset,
                 &mut pv.memory[key_memory(is_s)],
                 0,
             )?;
 
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
-                region,
+                &mut region,
                 offset,
                 &mut pv.memory[parent_memory(is_s)],
                 0,
             )?;
 
             self.is_in_empty_trie[is_s.idx()].assign(
-                region,
+                &mut region,
                 offset,
                 parent_data[is_s.idx()].rlc,
                 pv.r,
             )?;
 
             let rlp_key_witness = self.rlp_key[is_s.idx()].assign(
-                region,
+                &mut region,
                 offset,
                 &account.list_rlp_bytes[is_s.idx()],
                 &key_items[is_s.idx()],
@@ -462,7 +467,7 @@ impl<F: Field> AccountLeafConfig<F> {
 
             // Update key and parent state
             KeyData::witness_store(
-                region,
+                &mut region,
                 offset,
                 &mut pv.memory[key_memory(is_s)],
                 F::zero(),
@@ -473,7 +478,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 0,
             )?;
             ParentData::witness_store(
-                region,
+                &mut region,
                 offset,
                 &mut pv.memory[parent_memory(is_s)],
                 storage_rlc[is_s.idx()],
@@ -485,7 +490,7 @@ impl<F: Field> AccountLeafConfig<F> {
 
         // Anything following this node is below the account
         MainData::witness_store(
-            region,
+            &mut region,
             offset,
             &mut pv.memory[main_memory()],
             main_data.proof_type,
@@ -497,37 +502,37 @@ impl<F: Field> AccountLeafConfig<F> {
 
         // Proof types
         let is_non_existing_proof = self.is_non_existing_account_proof.assign(
-            region,
+            &mut region,
             offset,
             main_data.proof_type.scalar(),
             MPTProofType::AccountDoesNotExist.scalar(),
         )? == true.scalar();
         let is_account_delete_mod = self.is_account_delete_mod.assign(
-            region,
+            &mut region,
             offset,
             main_data.proof_type.scalar(),
             MPTProofType::AccountDestructed.scalar(),
         )? == true.scalar();
         let is_nonce_mod = self.is_nonce_mod.assign(
-            region,
+            &mut region,
             offset,
             main_data.proof_type.scalar(),
             MPTProofType::NonceChanged.scalar(),
         )? == true.scalar();
         let is_balance_mod = self.is_balance_mod.assign(
-            region,
+            &mut region,
             offset,
             main_data.proof_type.scalar(),
             MPTProofType::BalanceChanged.scalar(),
         )? == true.scalar();
         let is_storage_mod = self.is_storage_mod.assign(
-            region,
+            &mut region,
             offset,
             main_data.proof_type.scalar(),
             MPTProofType::StorageChanged.scalar(),
         )? == true.scalar();
         let is_codehash_mod = self.is_codehash_mod.assign(
-            region,
+            &mut region,
             offset,
             main_data.proof_type.scalar(),
             MPTProofType::CodeHashExists.scalar(),
@@ -535,7 +540,7 @@ impl<F: Field> AccountLeafConfig<F> {
 
         // Drifted leaf handling
         self.drifted.assign(
-            region,
+            &mut region,
             offset,
             &parent_data,
             &account.drifted_rlp_bytes,
@@ -545,7 +550,7 @@ impl<F: Field> AccountLeafConfig<F> {
 
         // Wrong leaf handling
         self.wrong.assign(
-            region,
+            &mut region,
             offset,
             is_non_existing_proof,
             &key_rlc,
@@ -572,8 +577,8 @@ impl<F: Field> AccountLeafConfig<F> {
         } else {
             (MPTProofType::Disabled, vec![0.scalar(); 2])
         };
-        ctx.mpt_table.assign_cached(
-            region,
+        mpt_config.mpt_table.assign_cached(
+            &mut region,
             offset,
             &MptUpdateRow {
                 address_rlc: Value::known(account.address.rlc_value(pv.r)),

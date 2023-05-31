@@ -6,7 +6,7 @@ use crate::circuit_tools::cell_manager::{Cell, CellManager_, CellTypeTrait};
 use crate::circuit_tools::constraint_builder::ConstraintBuilder;
 use crate::circuit_tools::memory::Memory;
 use crate::util::{Expr, query_expression};
-use crate::circuit_tools::{table::LookupTable_, cached_region::CachedRegion};
+use crate::circuit_tools::{table::LookupTable_, cached_region::{CachedRegion, MacroDescr}};
 
 use eth_types::Field;
 use gadgets::util::Scalar;
@@ -55,6 +55,14 @@ impl Default for CellType {
 impl CellTypeTrait for CellType {
     fn byte_type() -> Option<Self> {
         Some(CellType::PhaseOne)
+    }
+
+    fn storage_for_phase(phase: u8) -> Self {
+        match phase {
+            0 => CellType::PhaseOne,
+            1 => CellType::PhaseTwo,
+            _ => unreachable!(),
+        }
     }
 }
 
@@ -176,7 +184,7 @@ impl<F: Field> TestConfig<F> {
                 // We query it once during synthesis and
                 // make it accessable across Config through CachedRegion. 
                 let challenges = [r1];
-                let mut cached_region = cached_region::CachedRegion::new(&mut region, &challenges, self.cell_columns.clone(), REGION_HEIGHT, 0);
+                let mut cached_region = cached_region::CachedRegion::new(&mut region, &challenges);
                 self.cell_gadget.assign(&mut cached_region, 0)
             },
         )

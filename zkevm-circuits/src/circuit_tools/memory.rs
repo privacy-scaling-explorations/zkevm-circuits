@@ -55,6 +55,10 @@ impl<F: Field> Memory<F> {
         unreachable!()
     }
 
+    pub(crate) fn get_columns(&self) -> Vec<Column<Advice>> {
+        self.columns.clone()
+    }
+
     pub(crate) fn generate_constraints<C: CellTypeTrait>(
         &self,
         cb: &mut ConstraintBuilder<F, C>,
