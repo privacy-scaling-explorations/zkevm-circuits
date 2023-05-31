@@ -129,21 +129,22 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
         assert_eq!(N % 2, 0); // TODO use static_assertion instead
         assert_eq!(N_LO % (N / 2), 0);
         assert_eq!(N_HI % (N / 2), 0);
+        let half_limb_size = N / 2;
 
         // assign lo
         let bytes_lo_assigned = bytes_lo_le
-            .chunks(N_LO / (N / 2)) // chunk in little endian
+            .chunks(N_LO / half_limb_size) // chunk in little endian
             .map(|chunk| from_bytes::value(chunk))
-            .zip(self.limbs[0..(N / 2)].iter())
+            .zip(self.limbs[0..half_limb_size].iter())
             .map(|(value, cell)| cell.assign(region, offset, Value::known(value)))
             .collect::<Result<Vec<AssignedCell<F, F>>, _>>()?;
 
         // assign hi
         let bytes_hi_assigned = bytes_hi_le.map(|bytes| {
             bytes
-                .chunks(N_HI / (N / 2)) // chunk in little endian
+                .chunks(N_HI / half_limb_size) // chunk in little endian
                 .map(|chunk| from_bytes::value(chunk))
-                .zip(self.limbs[(N / 2)..].iter())
+                .zip(self.limbs[half_limb_size..].iter())
                 .map(|(value, cell)| cell.assign(region, offset, Value::known(value)))
                 .collect::<Result<Vec<AssignedCell<F, F>>, _>>()
         });
