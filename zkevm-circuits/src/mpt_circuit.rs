@@ -285,11 +285,11 @@ impl<F: Field> MPTConfig<F> {
                     }}
 
                     // Memory banks
-                    ctx.memory.generate_constraints(&mut cb.base, f!(q_first));
+                    ctx.memory.build_constraints(&mut cb.base, f!(q_first));
                 }}
             });
 
-            cb.base.generate_constraints()
+            cb.base.build_constraints()
         });
 
         let disable_lookups: usize = var("DISABLE_LOOKUPS")
@@ -297,7 +297,7 @@ impl<F: Field> MPTConfig<F> {
             .parse()
             .expect("Cannot parse DISABLE_LOOKUPS env var as usize");
         if disable_lookups == 0 {
-            cb.base.generate_lookups(
+            cb.base.build_dynamic_lookups(
                 meta,
                 &[
                     vec!["fixed".to_string() /* , "keccak".to_string() */],
@@ -306,17 +306,17 @@ impl<F: Field> MPTConfig<F> {
                 .concat(),
             );
         } else if disable_lookups == 1 {
-            cb.base.generate_lookups(
+            cb.base.build_dynamic_lookups(
                 meta,
                 &[vec!["keccak".to_string()], ctx.memory.tags()].concat(),
             );
         } else if disable_lookups == 2 {
-            cb.base.generate_lookups(meta, &ctx.memory.tags());
+            cb.base.build_dynamic_lookups(meta, &ctx.memory.tags());
         } else if disable_lookups == 3 {
             cb.base
-                .generate_lookups(meta, &["fixed".to_string(), "keccak".to_string()]);
+                .build_dynamic_lookups(meta, &["fixed".to_string(), "keccak".to_string()]);
         } else if disable_lookups == 4 {
-            cb.base.generate_lookups(meta, &["keccak".to_string()]);
+            cb.base.build_dynamic_lookups(meta, &["keccak".to_string()]);
         }
 
         println!("num lookups: {}", meta.lookups().len());

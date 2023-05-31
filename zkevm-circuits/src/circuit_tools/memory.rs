@@ -59,13 +59,13 @@ impl<F: Field> Memory<F> {
         self.columns.clone()
     }
 
-    pub(crate) fn generate_constraints<C: CellTypeTrait>(
+    pub(crate) fn build_constraints<C: CellTypeTrait>(
         &self,
         cb: &mut ConstraintBuilder<F, C>,
         is_first_row: Expression<F>,
     ) {
         for bank in self.banks.iter() {
-            bank.generate_constraints(cb, is_first_row.expr());
+            bank.build_constraints(cb, is_first_row.expr());
             cb.generate_lookup_table_checks(bank.tag());
         }
     }
@@ -171,7 +171,7 @@ impl<F: Field> MemoryBank<F> {
         key: Expression<F>,
         values: &[Expression<F>],
     ) {
-        cb.lookup(description, self.tag(), self.insert_key(key, values));
+        cb.add_dynamic_lookup(description, self.tag(), self.insert_key(key, values));
     }
 
     pub(crate) fn store<C: CellTypeTrait>(
@@ -190,7 +190,7 @@ impl<F: Field> MemoryBank<F> {
         key: Expression<F>,
         values: &[Expression<F>],
     ) {
-        cb.lookup_table("memory store", self.tag(), self.insert_key(key, values));
+        cb.store_dynamic_table("memory store", self.tag(), self.insert_key(key, values));
     }
 
     pub(crate) fn witness_store(&mut self, offset: usize, values: &[F]) {
@@ -206,12 +206,12 @@ impl<F: Field> MemoryBank<F> {
         self.store_offsets.clear();
     }
 
-    pub(crate) fn generate_constraints<C: CellTypeTrait>(
+    pub(crate) fn build_constraints<C: CellTypeTrait>(
         &self,
         cb: &mut ConstraintBuilder<F, C>,
         is_first_row: Expression<F>,
     ) {
-        let lookup_table = cb.get_lookup_table(self.tag());
+        let lookup_table = cb.get_dynamic_table(self.tag());
         crate::circuit!([meta, cb], {
             ifx! {is_first_row => {
                 require!(self.cur.expr() => 0);

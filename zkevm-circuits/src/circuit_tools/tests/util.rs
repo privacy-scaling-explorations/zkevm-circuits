@@ -150,7 +150,7 @@ impl<F: Field> TestConfig<F> {
                     );
                 })
             });
-            cb.generate_constraints()
+            cb.build_constraints()
         });
 
         Self {

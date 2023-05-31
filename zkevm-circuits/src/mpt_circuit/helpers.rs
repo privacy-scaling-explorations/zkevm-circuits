@@ -867,22 +867,22 @@ impl<F: Field> MPTConstraintBuilder<F> {
         self.base.require_boolean(name, value)
     }
 
-    pub(crate) fn lookup<S: AsRef<str>>(
+    pub(crate) fn add_dynamic_lookup<S: AsRef<str>>(
         &mut self,
         description: &'static str,
         tag: S,
         values: Vec<Expression<F>>
     ) {
-        self.base.lookup(description, tag, values)
+        self.base.add_dynamic_lookup(description, tag, values)
     }
 
-    pub(crate) fn lookup_table<S: AsRef<str>>(
+    pub(crate) fn store_dynamic_table<S: AsRef<str>>(
         &mut self,
         description: &'static str,
         tag: S,
         values: Vec<Expression<F>>
     ) {
-        self.base.lookup_table(description, tag, values)
+        self.base.store_dynamic_table(description, tag, values)
     }
 
     pub(crate) fn push_condition(&mut self, condition: Expression<F>) {
