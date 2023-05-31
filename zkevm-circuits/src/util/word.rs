@@ -17,8 +17,8 @@ use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell, RandomLinearCombi
 /// evm word 32 bytes, half word 16 bytes
 const N_BYTES_HALF_WORD: usize = 16;
 
-#[derive(Clone, Debug, Copy)]
 /// The EVM word for witness
+#[derive(Clone, Debug, Copy)]
 pub struct WordLimbs<T, const N: usize> {
     /// The limbs of this word.
     pub limbs: [T; N],
@@ -94,7 +94,7 @@ pub trait WordExpr<F> {
 impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
     /// assign limbs
     /// N1 is number of bytes to assign, while N is number of limbs.
-    /// N1 % N = 0 (also implies N1 >= N)
+    /// N1 % N = 0 (also implies N1 >= N, assuming N1 and N are not 0)
     /// If N1 > N, then N1 will be chunk into N1 / N size then aggregate to single expression
     /// then assign to N limbs respectively.
     /// e.g. N1 = 4 bytes, [b1, b2, b3, b4], and N = 2 limbs [l1, l2]
@@ -126,46 +126,43 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
     // N = 2 => [l1, l2]
     // it equivalent l1.assign(nl1.expr() + nl2.expr() * 256 + nl3.expr() * 256^2 +  nl3.expr() *
     // 256^3) and l2.assign(nh1.expr() + nh2.expr() * 256)
-    pub fn assign_lo_hi<const N_LO: usize, const N_HI: usize>(
+    fn assign_lo_hi<const N_LO: usize, const N_HI: usize>(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        bytes_lo: Option<[u8; N_LO]>,
-        bytes_hi: Option<[u8; N_HI]>,
+        bytes_lo_le: [u8; N_LO],
+        bytes_hi_le: Option<[u8; N_HI]>,
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
         assert_eq!(N % 2, 0); // TODO use static_assertion instead
         assert_eq!(N_LO % (N / 2), 0);
         assert_eq!(N_HI % (N / 2), 0);
+
         // assign lo
-        let bytes_lo_assigned: Result<Vec<AssignedCell<F, F>>, Error> =
-            bytes_lo.map_or(Err(Error::Synthesis), |bytes| {
-                bytes
-                    .chunks(N_LO / (N / 2)) // chunk in little endian
-                    .map(|chunk| from_bytes::value(chunk))
-                    .zip(self.limbs[0..(N / 2)].iter())
-                    .map(|(value, cell)| cell.assign(region, offset, Value::known(value)))
-                    .collect()
-            });
+        let bytes_lo_assigned = bytes_lo_le
+            .chunks(N_LO / (N / 2)) // chunk in little endian
+            .map(|chunk| from_bytes::value(chunk))
+            .zip(self.limbs[0..(N / 2)].iter())
+            .map(|(value, cell)| cell.assign(region, offset, Value::known(value)))
+            .collect::<Result<Vec<AssignedCell<F, F>>, _>>()?;
 
         // assign hi
-        let bytes_hi_assigned: Result<Vec<AssignedCell<F, F>>, Error> =
-            bytes_hi.map_or(Err(Error::Synthesis), |bytes| {
-                bytes
-                    .chunks(N_HI / (N / 2)) // chunk in little endian
-                    .map(|chunk| from_bytes::value(chunk))
-                    .zip(self.limbs[N / 2..].iter())
-                    .map(|(value, cell)| cell.assign(region, offset, Value::known(value)))
-                    .collect()
-            });
+        let bytes_hi_assigned = bytes_hi_le.map(|bytes| {
+            bytes
+                .chunks(N_HI / (N / 2)) // chunk in little endian
+                .map(|chunk| from_bytes::value(chunk))
+                .zip(self.limbs[(N / 2)..].iter())
+                .map(|(value, cell)| cell.assign(region, offset, Value::known(value)))
+                .collect::<Result<Vec<AssignedCell<F, F>>, _>>()
+        });
 
-        match (bytes_lo_assigned, bytes_hi_assigned) {
-            (Ok(bytes_lo_assignedcells), Ok(bytes_hi_assignedcells)) => Ok([
-                bytes_lo_assignedcells.to_vec(),
-                bytes_hi_assignedcells.to_vec(),
-            ]
-            .concat()),
-            _ => Err(Error::Synthesis),
-        }
+        Ok([
+            bytes_lo_assigned.to_vec(),
+            match bytes_hi_assigned {
+                Some(hi_assigned) => hi_assigned?.to_vec(),
+                None => vec![],
+            },
+        ]
+        .concat())
     }
 
     /// assign u256 to wordlimbs
@@ -178,7 +175,7 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
         self.assign_lo_hi::<N_BYTES_HALF_WORD, N_BYTES_HALF_WORD>(
             region,
             offset,
-            word.to_le_bytes()[0..N_BYTES_HALF_WORD].try_into().ok(),
+            word.to_le_bytes()[0..N_BYTES_HALF_WORD].try_into().unwrap(),
             word.to_le_bytes()[N_BYTES_HALF_WORD..].try_into().ok(),
         )
     }
@@ -191,14 +188,23 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
         h160: H160,
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
         let mut bytes = *h160.as_fixed_bytes();
-        let bytes = bytes.as_mut();
         bytes.reverse();
         self.assign_lo_hi::<N_BYTES_HALF_WORD, 4>(
             region,
             offset,
-            bytes[0..N_BYTES_HALF_WORD].try_into().ok(),
+            bytes[0..N_BYTES_HALF_WORD].try_into().unwrap(),
             bytes[N_BYTES_HALF_WORD..].try_into().ok(),
         )
+    }
+
+    /// assign u64 to wordlimbs
+    pub fn assign_u64(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        value: u64,
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+        self.assign_lo_hi(region, offset, value.to_le_bytes(), Option::<[u8; 0]>::None)
     }
 
     #[deprecated(note = "in fav of to_word trait. Make this private")]
@@ -285,7 +291,6 @@ impl<F: Field> Word<F> {
     /// Constrct the word from h160
     pub fn from_h160(value: H160) -> Word<F> {
         let mut bytes = *value.as_fixed_bytes();
-        let bytes = bytes.as_mut();
         bytes.reverse();
         Word::new([
             from_bytes::value(&bytes[..N_BYTES_HALF_WORD]),
