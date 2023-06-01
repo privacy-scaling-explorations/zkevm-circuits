@@ -103,7 +103,7 @@ impl<F: Field> ModGadget<F> {
 #[cfg(test)]
 mod tests {
     use super::{test_util::*, *};
-    use eth_types::{Word, U256, U512};
+    use eth_types::{eth_core::abi::ethereum_types::U512, Word, U256};
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]

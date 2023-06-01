@@ -9,9 +9,10 @@ mod test;
 pub use dev::PiCircuit as TestPiCircuit;
 
 use eth_types::{
+    eth_core::abi::ethereum_types::BigEndianHash,
     geth_types::{BlockConstants, Transaction},
     sign_types::SignData,
-    Address, BigEndianHash, Field, Keccak, ToBigEndian, ToLittleEndian, ToScalar, Word, H256,
+    Address, Field, Keccak, ToBigEndian, ToLittleEndian, ToScalar, Word, H256,
 };
 use halo2_proofs::plonk::{Instance, SecondPhase};
 use param::*;
