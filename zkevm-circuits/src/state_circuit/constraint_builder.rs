@@ -154,10 +154,10 @@ impl<F: Field> ConstraintBuilder<F> {
         // in the current row differs from the previous row.
         self.condition(q.first_access(), |cb| {
             // TODO: update it
-            // cb.require_zero(
-            //     "first access reads don't change value",
-            //     q.is_read() * (q.rw_table.value.clone() - q.initial_value()),
-            // );
+            cb.require_zero(
+                "first access reads don't change value",
+                q.is_read() * (q.rw_table.value.clone() - q.initial_value()),
+            );
             // FIXME
             // precompile should be warm
             // https://github.com/scroll-tech/zkevm-circuits/issues/343
@@ -180,7 +180,6 @@ impl<F: Field> ConstraintBuilder<F> {
 
         // When all the keys in the current row and previous row are equal.
         self.condition(q.not_first_access.clone(), |cb| {
-            // TODO: this causes evm_circuit::execution::callop::test::test_precompiled_call failure
             cb.require_zero(
                 "non-first access reads don't change value",
                 q.is_read() * (q.rw_table.value.clone() - q.rw_table.value_prev.clone()),
@@ -227,10 +226,10 @@ impl<F: Field> ConstraintBuilder<F> {
         );
         // TODO: update it later
         // 2.1. First access for a set of all keys are 0 if READ
-        // self.require_zero(
-        //     "first access for a set of all keys are 0 if READ",
-        //     q.first_access() * q.is_read() * q.value(),
-        // );
+        self.require_zero(
+            "first access for a set of all keys are 0 if READ",
+            q.first_access() * q.is_read() * q.value(),
+        );
         // 2.2. mem_addr in range
         for limb in &q.address.limbs[2..] {
             self.require_zero("memory address fits into 2 limbs", limb.clone());
@@ -264,10 +263,10 @@ impl<F: Field> ConstraintBuilder<F> {
         );
         // TODO: update it later
         // 2.1. First access for a set of all keys are 0 if READ
-        // self.require_zero(
-        //     "first access for a set of all keys are 0 if READ",
-        //     q.first_access() * q.is_read() * q.value(),
-        // );
+        self.require_zero(
+            "first access for a set of all keys are 0 if READ",
+            q.first_access() * q.is_read() * q.value(),
+        );
         // could do this more efficiently by just asserting address = limb0 + 2^16 *
         // limb1?
         // 2.2. mem_addr in range

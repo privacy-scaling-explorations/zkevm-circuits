@@ -288,6 +288,7 @@ struct AccountCodeInfo {
     size: usize,
 }
 
+// handle return in create.
 fn handle_create(
     state: &mut CircuitInputStateRef,
     step: &mut ExecStep,

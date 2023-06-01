@@ -251,7 +251,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 
         let src_begin = (return_data_offset + data_offset).low_u64();
         let src_end = src_begin + size.low_u64();
-        assert!(src_end <= (return_data_offset + return_data_size).low_u64(), "should not happen copy out of bound");
+        assert!(
+            src_end <= (return_data_offset + return_data_size).low_u64(),
+            "should not happen copy out of bound"
+        );
         let src_begin_slot = src_begin - src_begin % 32;
         let src_end_slot = src_end - src_end % 32;
 

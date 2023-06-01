@@ -1360,7 +1360,7 @@ impl CopyTable {
         let mut rlc_acc_read = Value::known(F::zero());
         let mut rlc_acc_write = Value::known(F::zero());
 
-        let mut non_mask_pos = copy_event
+        let non_mask_pos = copy_event
             .bytes
             .iter()
             .position(|&step| !step.2)
@@ -1532,14 +1532,14 @@ impl CopyTable {
             // );
 
             println!(
-                "{}\t{}\t{}\t{}\t{:?}\t{:?}",
+                "log: {}\t{} \t{} \t{:?}\t{}\t{:?}\t{:?}",
                 step_idx,
                 is_read_step,
                 copy_step_addr,
-                //id,
-                bytes_left,
-                rw_count,
-                rwc_inc_left,
+                id,
+                copy_step.is_code.unwrap_or(false),
+                copy_step.value,
+                copy_step.mask,
             );
 
             assignments.push((
@@ -1602,7 +1602,6 @@ impl CopyTable {
         rlc_acc_read
             .zip(rlc_acc_write)
             .assert_if_known(|(r, w)| r == w);
-        //println!("assign copy steps: {:?} ", assignments);
         assignments
     }
 
