@@ -5,8 +5,10 @@ use crate::{
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
-use mpt_zktrie::{serde::SMTTrace, state, state::witness::WitnessGenerator, MPTProofType};
+use mpt_circuits::serde::SMTTrace;
+use mpt_zktrie::{state, state::witness::WitnessGenerator};
 use std::collections::BTreeMap;
+use mpt_circuits::MPTProofType;
 
 pub use state::ZktrieState;
 
@@ -25,9 +27,9 @@ impl MptUpdate {
         match self.key {
             Key::AccountStorage { .. } => {
                 if self.old_value.is_zero() && self.new_value.is_zero() {
-                    ProofType::NonExistingStorageProof
+                    ProofType::StorageDoesNotExist
                 } else {
-                    ProofType::StorageMod
+                    ProofType::StorageChanged
                 }
             }
             Key::Account { field_tag, .. } => field_tag.into(),

@@ -17,7 +17,7 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use log::trace;
-use mpt_zktrie::hash::HASHABLE_DOMAIN_SPEC;
+use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
 use std::vec;
 
 use super::{

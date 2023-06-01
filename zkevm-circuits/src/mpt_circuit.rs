@@ -8,51 +8,59 @@ use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Circuit, ConstraintSystem, Error, Expression},
+    halo2curves::bn256::Fr,
 };
-use mpt_zktrie::{hash::Hashable, operation::AccountOp, EthTrie, EthTrieCircuit, EthTrieConfig};
+use hash_circuit::{hash::Hashable};
+use itertools::Itertools;
+use mpt_circuits::{gadgets::{
+    byte_representation::{BytesLookup, RlcLookup, ByteRepresentationConfig},
+    is_zero::IsZeroGadget,
+    key_bit::{KeyBitLookup, KeyBitConfig},
+    one_hot::OneHot,
+    poseidon::PoseidonLookup, 
+    mpt_update::{MptUpdateConfig, byte_representations, key_bit_lookups, mpt_update_keys, hash_traces}, 
+    canonical_representation::CanonicalRepresentationConfig, byte_bit::ByteBitGadget, rlc_randomness::RlcRandomness,
+}, constraint_builder::SelectorColumn, serde::SMTTrace, MPTProofType, types::Proof};
 
 /// re-wrapping for mpt circuit
-#[derive(Default, Clone, Debug)]
-pub struct MptCircuit<F: Field>(pub(crate) EthTrieCircuit<F, false>);
+#[derive(Clone)]
+pub struct MptCircuitConfig{
+    pub mpt_update:        MptUpdateConfig,
+    pub canonical_representation:        CanonicalRepresentationConfig,
+    pub key_bit:        KeyBitConfig,
+    pub byte_bit:        ByteBitGadget,
+    pub byte_representation:        ByteRepresentationConfig,
+    /// PoseidonTable
+    pub poseidon_table: PoseidonTable,
+}
 
-/// Circuit configuration argument ts
-pub struct MptCircuitConfigArgs<F: Field> {
+
+/// Circuit configuration arguments
+pub struct MptCircuitConfigArgs {
     /// PoseidonTable
     pub poseidon_table: PoseidonTable,
     /// MptTable
     pub mpt_table: MptTable,
     /// Challenges
-    pub challenges: Challenges<Expression<F>>,
+    pub challenges: Challenges,
 }
 
-/// re-wrapping for mpt config
-#[derive(Debug, Clone)]
-pub struct MptCircuitConfig(pub(crate) EthTrieConfig);
-
-impl<F: Field> SubCircuitConfig<F> for MptCircuitConfig {
-    type ConfigArgs = MptCircuitConfigArgs<F>;
+impl SubCircuitConfig<Fr> for MptCircuitConfig {
+    type ConfigArgs = MptCircuitConfigArgs;
 
     fn new(
-        meta: &mut ConstraintSystem<F>,
+        cs: &mut ConstraintSystem<Fr>,
         Self::ConfigArgs {
             poseidon_table,
             mpt_table,
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
-        let poseidon_table = (
-            poseidon_table.q_enable,
-            [
-                poseidon_table.hash_id,
-                poseidon_table.input0,
-                poseidon_table.input1,
-                poseidon_table.control,
-                poseidon_table.heading_mark,
-            ],
-        );
+        // TODO: connect mpt_table with mpt_circuit?
         let mpt_table = (
             mpt_table.q_enable,
             [
+                
                 mpt_table.address,
                 mpt_table.storage_key,
                 mpt_table.proof_type,
@@ -62,48 +70,66 @@ impl<F: Field> SubCircuitConfig<F> for MptCircuitConfig {
                 mpt_table.old_value,
             ],
         );
+        let rlc_randomness = RlcRandomness(challenges.evm_word());
+        let mut cb = mpt_circuits::constraint_builder::ConstraintBuilder::new(SelectorColumn(mpt_table.0));
 
-        let conf =
-            EthTrieConfig::configure_sub(meta, mpt_table, poseidon_table, challenges.evm_word());
-        Self(conf)
+        let byte_bit = ByteBitGadget::configure(cs, &mut cb);
+        let byte_representation =
+            ByteRepresentationConfig::configure(cs, &mut cb, &byte_bit, &rlc_randomness);
+        let canonical_representation =
+            CanonicalRepresentationConfig::configure(cs, &mut cb, &byte_bit);
+        let key_bit = KeyBitConfig::configure(
+            cs,
+            &mut cb,
+            &canonical_representation,
+            &byte_bit,
+            &byte_bit,
+            &byte_bit,
+        );
+
+        let mpt_update = MptUpdateConfig::configure(
+            cs,
+            &mut cb,
+            &poseidon_table,
+            &key_bit,
+            &byte_representation,
+            &byte_representation,
+            &rlc_randomness,
+        );
+
+        cb.build(cs);
+
+        Self {
+            mpt_update,
+            key_bit,
+            byte_bit,
+            canonical_representation,
+            byte_representation,
+            poseidon_table,
+        }
     }
 }
 
+/// ...
+#[derive(Clone, Debug, Default)]
+pub struct MptCircuit {
+    traces: Vec<(MPTProofType, SMTTrace)>,
+}
+
 #[cfg(any(feature = "test", test))]
-impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
+impl SubCircuit<Fr> for MptCircuit {
     type Config = MptCircuitConfig;
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
-        let mut eth_trie: EthTrie<F> = Default::default();
-        eth_trie.add_ops(
-            block
-                .mpt_updates
-                .smt_traces
-                .iter()
-                .map(|tr| AccountOp::try_from(tr).unwrap()),
-        );
-        let (circuit, _) = eth_trie.to_circuits(
-            (
-                // notice we do not use the accompanied hash circuit so just assign any size
-                100usize,
-                Some(block.circuits_params.max_mpt_rows),
-            ),
-            &block.mpt_updates.proof_types,
-        );
-        MptCircuit(circuit)
+    fn new_from_block(block: &witness::Block<Fr>) -> Self {
+        Self {
+            traces: block.mpt_updates.proof_types.iter().cloned().zip_eq(block.mpt_updates.smt_traces.iter().cloned()).collect(),
+        }
+
     }
 
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        let mut eth_trie: EthTrie<F> = Default::default();
-        eth_trie.add_ops(
-            block
-                .mpt_updates
-                .smt_traces
-                .iter()
-                .map(|tr| AccountOp::try_from(tr).unwrap()),
-        );
-        let (mpt_rows, _) = eth_trie.use_rows();
-        (mpt_rows, block.circuits_params.max_rws.max(mpt_rows))
+    fn min_num_rows_block(block: &witness::Block<Fr>) -> (usize, usize) {
+        // FIXME
+        (block.circuits_params.max_mpt_rows, block.circuits_params.max_mpt_rows)
     }
 
     /// Make the assignments to the MptCircuit, notice it fill mpt table
@@ -111,46 +137,53 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
     fn synthesize_sub(
         &self,
         config: &Self::Config,
-        challenges: &Challenges<Value<F>>,
-        layouter: &mut impl Layouter<F>,
+        challenges: &Challenges<Value<Fr>>,
+        layouter: &mut impl Layouter<Fr>,
     ) -> Result<(), Error> {
-        config.0.load_mpt_table(
-            layouter,
-            crate::test_util::escape_value(challenges.evm_word()),
-            self.0.ops.as_slice(),
-            self.0.mpt_table.iter().copied(),
-            self.0.calcs,
-        )?;
-        config
-            .0
-            .synthesize_core(layouter, self.0.ops.iter(), self.0.calcs)?;
+        let proofs: Vec<Proof> = self.traces.into_iter().map(Proof::from).collect();
+            
+        let (u64s, u128s, frs) = byte_representations(&proofs);
+
+            layouter.assign_region(
+                || "",
+                |mut region| {
+                    // TODO: selector?
+                    config.mpt_update.assign(&mut region, &proofs, challenges.evm_word());
+                    config.canonical_representation.assign(&mut region, &mpt_update_keys(&proofs));
+                    config.key_bit.assign(&mut region, &key_bit_lookups(&proofs));
+                    config.byte_bit.assign(&mut region);
+                    config.byte_representation.assign(&mut region, &u64s, &u128s, &frs, challenges.evm_word());
+                    Ok(())
+                },
+            )?;
+            
         Ok(())
     }
 
     /// powers of randomness for instance columns
-    fn instance(&self) -> Vec<Vec<F>> {
+    fn instance(&self) -> Vec<Vec<Fr>> {
         vec![]
     }
 }
 
 #[cfg(any(feature = "test", test))]
-impl<F: Field + Hashable> Circuit<F> for MptCircuit<F> {
+impl Circuit<Fr> for MptCircuit {
     type Config = (MptCircuitConfig, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
-        let mut out = Self::default();
-        out.0.calcs = self.0.calcs;
-        out
+        Self {
+            traces: vec![],
+        }
     }
 
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+    fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         let challenges = Challenges::construct(meta);
         let poseidon_table = PoseidonTable::dev_construct(meta);
         let mpt_table = MptTable::construct(meta);
 
         let config = {
-            let challenges = challenges.exprs(meta);
+            //let challenges = challenges.exprs(meta);
 
             MptCircuitConfig::new(
                 meta,
@@ -168,14 +201,11 @@ impl<F: Field + Hashable> Circuit<F> for MptCircuit<F> {
     fn synthesize(
         &self,
         (config, challenges): Self::Config,
-        mut layouter: impl Layouter<F>,
+        mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
+        let proofs: Vec<Proof> = self.traces.into_iter().map(Proof::from).collect();
         let challenges = challenges.values(&layouter);
-        config.0.dev_load_hash_table(
-            &mut layouter,
-            self.0.ops.iter().flat_map(|op| op.hash_traces()),
-            self.0.calcs,
-        )?;
+        //config.poseidon_table.dev_load(&mut layouter, &hash_traces(&proofs));
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }

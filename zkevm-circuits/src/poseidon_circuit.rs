@@ -10,8 +10,11 @@ use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Circuit, ConstraintSystem, Error},
+    halo2curves::bn256::Fr,
 };
-use mpt_zktrie::hash::{Hashable, PoseidonHashChip, PoseidonHashConfig, PoseidonHashTable};
+use hash_circuit::{hash::{Hashable, PoseidonHashChip, PoseidonHashConfig, PoseidonHashTable}, Bn256Fr};
+use itertools::Itertools;
+use mpt_circuits::{types::Proof, gadgets::mpt_update::hash_traces, MPTProofType, serde::SMTTrace};
 
 /// re-wrapping for mpt circuit
 #[derive(Default, Clone, Debug)]
@@ -58,20 +61,19 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
     fn new_from_block(block: &witness::Block<F>) -> Self {
         let max_hashes = block.circuits_params.max_evm_rows / F::hash_block_size();
         #[allow(unused_mut)]
-        let mut poseidon_table_data = PoseidonHashTable::default();
+        let mut poseidon_table_data: PoseidonHashTable<F> = PoseidonHashTable::default();
         // without any feature we just synthesis an empty poseidon circuit
         #[cfg(feature = "zktrie")]
         {
-            use mpt_zktrie::{operation::AccountOp, EthTrie};
-            let mut eth_trie: EthTrie<F> = Default::default();
-            eth_trie.add_ops(
-                block
-                    .mpt_updates
-                    .smt_traces
-                    .iter()
-                    .map(|tr| AccountOp::try_from(tr).unwrap()),
-            );
-            poseidon_table_data.constant_inputs_with_check(eth_trie.hash_traces());
+            
+            // TODO: check here to avoid duplicate calculation
+            let traces: Vec<(MPTProofType, SMTTrace)> = block.mpt_updates.proof_types.iter().cloned().zip_eq(block.mpt_updates.smt_traces.iter().cloned()).collect();
+            let proofs: Vec<Proof> = traces.into_iter().map(Proof::from).collect();
+            let triples: Vec<(Fr, Fr, Fr)> = hash_traces(&proofs);
+            let triples: Vec<(F, F, F)> = triples.into_iter().map(|(a, b, c)| {
+                (a.into(), b.into(), c.into())
+            }).collect();
+            poseidon_table_data.constant_inputs_with_check(&triples);
         }
         #[cfg(feature = "poseidon-codehash")]
         {
@@ -79,8 +81,9 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
             for bytecode in block.bytecodes.values() {
                 // must skip empty bytecode
                 if !bytecode.bytes.is_empty() {
+                    let unrolled_inputs = unroll_to_hash_input_default::<F>(bytecode.bytes.iter().copied());
                     poseidon_table_data.stream_inputs(
-                        &unroll_to_hash_input_default::<F>(bytecode.bytes.iter().copied()),
+                        &unrolled_inputs,
                         bytecode.bytes.len() as u64,
                         HASH_BLOCK_STEP_SIZE,
                     );
@@ -96,16 +99,9 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
         #[cfg(feature = "zktrie")]
         let acc = {
             let mut cnt = acc;
-            use mpt_zktrie::{operation::AccountOp, EthTrie};
-            let mut eth_trie: EthTrie<F> = Default::default();
-            eth_trie.add_ops(
-                block
-                    .mpt_updates
-                    .smt_traces
-                    .iter()
-                    .map(|tr| AccountOp::try_from(tr).unwrap()),
-            );
-            cnt += eth_trie.hash_traces().count();
+            let traces: Vec<_> = block.mpt_updates.proof_types.iter().cloned().zip_eq(block.mpt_updates.smt_traces.iter().cloned()).collect();
+            let proofs: Vec<Proof> = traces.into_iter().map(Proof::from).collect();
+            cnt += hash_traces(&proofs).len();
             cnt
         };
         #[cfg(feature = "poseidon-codehash")]

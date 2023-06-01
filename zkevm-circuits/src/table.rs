@@ -12,6 +12,7 @@ use crate::{
     },
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
+use mpt_circuits::{gadgets::poseidon::PoseidonLookup, constraint_builder::{AdviceColumn, FixedColumn}};
 use core::iter::once;
 use eth_types::{Field, ToLittleEndian, ToScalar, ToWord, Word, U256};
 use gadgets::{
@@ -639,7 +640,7 @@ impl RwTable {
         Ok(())
     }
 }
-
+/* 
 /// The types of proofs in the MPT table
 #[derive(Clone, Copy, Debug)]
 pub enum MPTProofType {
@@ -660,16 +661,50 @@ pub enum MPTProofType {
     /// Storage does not exist
     NonExistingStorageProof,
 }
-impl_expr!(MPTProofType);
+*/
+pub use mpt_circuits::MPTProofType;
+/* 
+impl<F: halo2_proofs::arithmetic::FieldExt> crate::util::Expr<F> for MPTProofType {
+    #[inline]
+    fn expr(&self) -> Expression<F> {
+        Expression::Constant(F::from(*self as u64))
+    }
+}
+*/
+
+/* 
+/// The defination is greped from state-circuit
+#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter, Hash)]
+pub enum MPTProofType {
+    /// non exist proof for account
+    AccountDoesNotExist = 0, // we want this to be zero so the default assigment of 0 everywhere is valid.
+    /// nonce
+    NonceChanged,
+    /// balance
+    BalanceChanged,
+    /// keccak codehash updated
+    CodeHashExists,
+    /// poseidon codehash updated
+    PoseidonCodeHashExists,
+    /// code size updated
+    CodeSizeExists,
+    /// account destructed
+    AccountDestructed,
+    /// storage
+    StorageChanged,
+    /// non exist proof for storage
+    StorageDoesNotExist,
+}
+*/
 
 impl From<AccountFieldTag> for MPTProofType {
     fn from(tag: AccountFieldTag) -> Self {
         match tag {
-            AccountFieldTag::Nonce => Self::NonceMod,
-            AccountFieldTag::Balance => Self::BalanceMod,
-            AccountFieldTag::KeccakCodeHash => Self::KeccakCodeHashExists,
+            AccountFieldTag::Nonce => Self::NonceChanged,
+            AccountFieldTag::Balance => Self::BalanceChanged,
+            AccountFieldTag::KeccakCodeHash => Self::CodeHashExists,
             AccountFieldTag::CodeHash => Self::PoseidonCodeHashExists,
-            AccountFieldTag::NonExisting => Self::NonExistingAccountProof,
+            AccountFieldTag::NonExisting => Self::StorageDoesNotExist,
             AccountFieldTag::CodeSize => Self::CodeSizeExists,
         }
     }
@@ -812,6 +847,20 @@ pub struct PoseidonTable {
     pub heading_mark: Column<Advice>,
 }
 
+impl PoseidonLookup for PoseidonTable {
+    fn lookup(&self) -> (FixedColumn, [AdviceColumn; 5]) {
+        (FixedColumn(self.q_enable),
+            [
+                AdviceColumn(self.hash_id),
+                    AdviceColumn(self.input0),
+                        AdviceColumn(self.input1),
+                            AdviceColumn(self.control),
+                                AdviceColumn(self.heading_mark),
+            ])
+
+    }
+}
+
 impl<F: Field> LookupTable<F> for PoseidonTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
@@ -926,7 +975,7 @@ impl PoseidonTable {
             unroll_to_hash_input_default, HASHBLOCK_BYTES_IN_FIELD,
         };
         use bus_mapping::state_db::CodeDB;
-        use mpt_zktrie::hash::HASHABLE_DOMAIN_SPEC;
+        use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
 
         layouter.assign_region(
             || "poseidon table",

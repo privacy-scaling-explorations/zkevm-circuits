@@ -48,6 +48,7 @@ use std::{collections::HashMap, fmt, str::FromStr};
 /// trait and its repr.
 pub trait Field:
     FieldExt + Halo2Field + PrimeField<Repr = [u8; 32]> + poseidon_circuit::hash::Hashable
+    + std::convert::From<Fr>
 {
 }
 

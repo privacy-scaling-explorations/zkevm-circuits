@@ -346,9 +346,9 @@ impl<F: Field> StateCircuitConfig<F> {
                 F::from(match row {
                     Rw::AccountStorage { .. } => {
                         if committed_value.is_zero_vartime() && value.is_zero_vartime() {
-                            MPTProofType::NonExistingStorageProof as u64
+                            MPTProofType::StorageDoesNotExist as u64
                         } else {
-                            MPTProofType::StorageMod as u64
+                            MPTProofType::StorageChanged as u64
                         }
                     }
                     Rw::Account { field_tag, .. } => {
@@ -356,7 +356,7 @@ impl<F: Field> StateCircuitConfig<F> {
                             && value.is_zero_vartime()
                             && matches!(field_tag, AccountFieldTag::CodeHash)
                         {
-                            MPTProofType::NonExistingAccountProof as u64
+                            MPTProofType::AccountDoesNotExist as u64
                         } else {
                             *field_tag as u64
                         }

@@ -13,7 +13,7 @@ use eth_types::{address, bytecode, geth_types::GethData, Bytecode, Word};
 #[test]
 fn super_circuit_degree() {
     let mut cs = ConstraintSystem::<Fr>::default();
-    SuperCircuit::<_, 1, 32, 64, 0x100>::configure(&mut cs);
+    SuperCircuit::<1, 32, 64, 0x100>::configure(&mut cs);
     log::info!("super circuit degree: {}", cs.degree());
     log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
     assert!(cs.degree() <= 9);
@@ -36,7 +36,7 @@ fn test_super_circuit<
     set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
 
     let (k, circuit, instance, _) =
-        SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS>::build(
+        SuperCircuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS>::build(
             block,
             circuits_params,
         )

@@ -6,12 +6,11 @@ use std::{
     io::{Error, ErrorKind, Read},
 };
 
-use bus_mapping::util::{KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO};
 use halo2_proofs::{
     arithmetic::FieldExt,
     halo2curves::{bn256::Fr, group::ff::PrimeField},
 };
-use mpt_circuits::hash::Hashable;
+use hash_circuit::hash::Hashable;
 
 use lazy_static::lazy_static;
 
@@ -236,4 +235,5 @@ pub(crate) fn verify_proof_leaf<T: Default>(inp: TrieProof<T>, key_buf: &[u8; 32
     } else {
         inp
     }
+    
 }
