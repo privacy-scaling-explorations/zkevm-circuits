@@ -20,7 +20,6 @@ pub const MAX_REFUND_QUOTIENT_OF_GAS_USED: usize = 5;
 pub const GAS_STIPEND_CALL_WITH_VALUE: u64 = 2300;
 
 /// Defines the gas consumption.
-// #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 pub struct GasCost;
 
 impl GasCost {
