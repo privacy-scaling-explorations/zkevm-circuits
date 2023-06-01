@@ -1,30 +1,28 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::{
-    circuit::Region,
+    circuit::{Region, Value},
     plonk::{Error, VirtualCells},
     poly::Rotation,
 };
 
-use crate::mpt_circuit::helpers::{num_nibbles, IsEmptyTreeGadget};
-use crate::table::ProofType;
 use crate::{
     circuit,
-    mpt_circuit::MPTContext,
-    mpt_circuit::{
-        helpers::{key_memory, parent_memory, KeyData, MPTConstraintBuilder, ParentData},
-        param::KEY_LEN_IN_NIBBLES,
+    circuit_tools::{
+        cell_manager::Cell,
+        constraint_builder::RLCChainable,
+        gadgets::{IsEqualGadget, LtGadget},
     },
-    mpt_circuit::{MPTConfig, MPTState},
-};
-use crate::{
-    circuit_tools::cell_manager::Cell,
-    mpt_circuit::helpers::{DriftedGadget, ParentDataWitness},
-};
-use crate::{circuit_tools::gadgets::LtGadget, witness::MptUpdateRow};
-use crate::{
-    circuit_tools::{constraint_builder::RLCChainable, gadgets::IsEqualGadget},
-    mpt_circuit::helpers::{main_memory, MainData},
+    mpt_circuit::{
+        helpers::{
+            key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, IsEmptyTreeGadget,
+            KeyData, MPTConstraintBuilder, MainData, ParentData, ParentDataWitness,
+        },
+        param::KEY_LEN_IN_NIBBLES,
+        MPTConfig, MPTContext, MPTState,
+    },
+    table::MPTProofType,
+    witness::MptUpdateRow,
 };
 
 use super::{
@@ -131,7 +129,7 @@ impl<F: Field> StorageLeafConfig<F> {
                     config.rlp_value[is_s.idx()].rlc(&r)
                 } elsex {
                     let value_rlc = value_item[is_s.idx()].rlc_content();
-                    let value_rlp_rlc = (config.rlp_value[is_s.idx()].rlc_rlp(&r), r[0].clone()).rlc_chain(
+                    let value_rlp_rlc = (config.rlp_value[is_s.idx()].rlc_rlp(&r), r.expr()).rlc_chain(
                         value_item[is_s.idx()].rlc_rlp()
                     );
                     require!(config.rlp_value[is_s.idx()].num_bytes() => value_item[is_s.idx()].num_bytes() + 1.expr());
@@ -194,12 +192,12 @@ impl<F: Field> StorageLeafConfig<F> {
             config.is_storage_mod_proof = IsEqualGadget::construct(
                 &mut cb.base,
                 config.main_data.proof_type.expr(),
-                ProofType::StorageChanged.expr(),
+                MPTProofType::StorageChanged.expr(),
             );
             config.is_non_existing_storage_proof = IsEqualGadget::construct(
                 &mut cb.base,
                 config.main_data.proof_type.expr(),
-                ProofType::StorageDoesNotExist.expr(),
+                MPTProofType::StorageDoesNotExist.expr(),
             );
 
             // Drifted leaf handling
@@ -234,9 +232,9 @@ impl<F: Field> StorageLeafConfig<F> {
 
             // Put the data in the lookup table
             let proof_type = matchx! {
-                config.is_storage_mod_proof => ProofType::StorageChanged.expr(),
-                config.is_non_existing_storage_proof => ProofType::StorageDoesNotExist.expr(),
-                _ => ProofType::Disabled.expr(),
+                config.is_storage_mod_proof => MPTProofType::StorageChanged.expr(),
+                config.is_non_existing_storage_proof => MPTProofType::StorageDoesNotExist.expr(),
+                _ => MPTProofType::Disabled.expr(),
             };
             let key_rlc = ifx! {config.is_non_existing_storage_proof => {
                 a!(ctx.mpt_table.key_rlc)
@@ -321,11 +319,11 @@ impl<F: Field> StorageLeafConfig<F> {
                 region,
                 offset,
                 &mut pv.memory[key_memory(is_s)],
-                F::zero(),
-                F::one(),
+                F::ZERO,
+                F::ONE,
                 0,
-                F::zero(),
-                F::one(),
+                F::ZERO,
+                F::ONE,
                 0,
             )?;
 
@@ -334,7 +332,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 rlp_key_witness.key_item.clone(),
                 key_data[is_s.idx()].rlc,
                 key_data[is_s.idx()].mult,
-                ctx.r,
+                pv.r,
             );
 
             // Value
@@ -350,26 +348,26 @@ impl<F: Field> StorageLeafConfig<F> {
                 &storage.value_rlp_bytes[is_s.idx()],
             )?;
             value_rlc[is_s.idx()] = if value_witness.is_short() {
-                value_witness.rlc_value(ctx.r)
+                value_witness.rlc_value(pv.r)
             } else {
-                value_item[is_s.idx()].rlc_content(ctx.r)
+                value_item[is_s.idx()].rlc_content(pv.r)
             };
 
             ParentData::witness_store(
                 region,
                 offset,
                 &mut pv.memory[parent_memory(is_s)],
-                F::zero(),
+                F::ZERO,
                 true,
                 false,
-                F::zero(),
+                F::ZERO,
             )?;
 
             self.is_in_empty_trie[is_s.idx()].assign(
                 region,
                 offset,
                 parent_data[is_s.idx()].rlc,
-                ctx.r,
+                pv.r,
             )?;
         }
 
@@ -377,13 +375,13 @@ impl<F: Field> StorageLeafConfig<F> {
             region,
             offset,
             main_data.proof_type.scalar(),
-            ProofType::StorageChanged.scalar(),
+            MPTProofType::StorageChanged.scalar(),
         )? == true.scalar();
         let is_non_existing_proof = self.is_non_existing_storage_proof.assign(
             region,
             offset,
             main_data.proof_type.scalar(),
-            ProofType::StorageDoesNotExist.scalar(),
+            MPTProofType::StorageDoesNotExist.scalar(),
         )? == true.scalar();
 
         // Drifted leaf handling
@@ -393,7 +391,7 @@ impl<F: Field> StorageLeafConfig<F> {
             &parent_data,
             &storage.drifted_rlp_bytes,
             &drifted_item,
-            ctx.r,
+            pv.r,
         )?;
 
         // Wrong leaf handling
@@ -406,28 +404,28 @@ impl<F: Field> StorageLeafConfig<F> {
             &wrong_item,
             false,
             key_data[true.idx()].clone(),
-            ctx.r,
+            pv.r,
         )?;
 
         // Put the data in the lookup table
         let proof_type = if is_storage_mod_proof {
-            ProofType::StorageChanged
+            MPTProofType::StorageChanged
         } else if is_non_existing_proof {
-            ProofType::StorageDoesNotExist
+            MPTProofType::StorageDoesNotExist
         } else {
-            ProofType::Disabled
+            MPTProofType::Disabled
         };
         ctx.mpt_table.assign(
             region,
             offset,
             &MptUpdateRow {
-                address_rlc: main_data.address_rlc,
-                proof_type: proof_type.scalar(),
-                key_rlc: key_rlc,
-                value_prev: value_rlc[true.idx()],
-                value: value_rlc[false.idx()],
-                root_prev: main_data.root_prev,
-                root: main_data.root,
+                address_rlc: Value::known(main_data.address_rlc),
+                proof_type: Value::known(proof_type.scalar()),
+                key_rlc: Value::known(key_rlc),
+                value_prev: Value::known(value_rlc[true.idx()]),
+                value: Value::known(value_rlc[false.idx()]),
+                root_prev: Value::known(main_data.root_prev),
+                root: Value::known(main_data.root),
             },
         )?;
 

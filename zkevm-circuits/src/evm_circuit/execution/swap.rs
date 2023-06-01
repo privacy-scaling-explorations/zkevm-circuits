@@ -4,20 +4,20 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Cell, Word,
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use eth_types::{evm_types::OpcodeId, Field};
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct SwapGadget<F> {
     same_context: SameContextGadget<F>,
-    values: [Cell<F>; 2],
+    phase2_values: [Cell<F>; 2],
 }
 
 impl<F: Field> ExecutionGadget<F> for SwapGadget<F> {
@@ -25,23 +25,23 @@ impl<F: Field> ExecutionGadget<F> for SwapGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SWAP;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let values = [cb.query_cell(), cb.query_cell()];
+        let phase2_values = [cb.query_cell_phase2(), cb.query_cell_phase2()];
 
         // The stack index we have to peek, deduced from the 'x' value of
         // 'swapx' The offset starts at 1 for SWAP1
         let swap_offset = opcode.expr() - (OpcodeId::SWAP1.as_u64() - 1).expr();
 
         // Peek the value at `swap_offset`
-        cb.stack_lookup(false.expr(), swap_offset.clone(), values[0].expr());
+        cb.stack_lookup(false.expr(), swap_offset.clone(), phase2_values[0].expr());
         // Peek the value at the top of the stack
-        cb.stack_lookup(false.expr(), 0.expr(), values[1].expr());
+        cb.stack_lookup(false.expr(), 0.expr(), phase2_values[1].expr());
         // Write the value previously at the top of the stack to `swap_offset`
-        cb.stack_lookup(true.expr(), swap_offset, values[1].expr());
+        cb.stack_lookup(true.expr(), swap_offset, phase2_values[1].expr());
         // Write the value previously at `swap_offset` to the top of the stack
-        cb.stack_lookup(true.expr(), 0.expr(), values[0].expr());
+        cb.stack_lookup(true.expr(), 0.expr(), phase2_values[0].expr());
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -54,7 +54,7 @@ impl<F: Field> ExecutionGadget<F> for SwapGadget<F> {
 
         Self {
             same_context,
-            values,
+            phase2_values,
         }
     }
 
@@ -69,19 +69,12 @@ impl<F: Field> ExecutionGadget<F> for SwapGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        for (cell, value) in self.values.iter().zip(
-            [step.rw_indices[0], step.rw_indices[1]]
-                .map(|idx| block.rws[idx].stack_value())
+        for (cell, value) in self.phase2_values.iter().zip(
+            [0, 1]
+                .map(|index| block.get_rws(step, index).stack_value())
                 .iter(),
         ) {
-            cell.assign(
-                region,
-                offset,
-                Value::known(Word::random_linear_combine(
-                    value.to_le_bytes(),
-                    block.randomness,
-                )),
-            )?;
+            cell.assign(region, offset, region.word_rlc(*value))?;
         }
 
         Ok(())
@@ -90,9 +83,8 @@ impl<F: Field> ExecutionGadget<F> for SwapGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::{bytecode, Word};
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
+    use eth_types::{bytecode, evm_types::OpcodeId, Word};
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, lhs: Word, rhs: Word) {
@@ -102,7 +94,7 @@ mod test {
             PUSH32(lhs)
         };
         for _ in 0..n - 1 {
-            bytecode.write_op(OpcodeId::DUP1);
+            bytecode.op_dup1();
         }
         bytecode.append(&bytecode! {
             PUSH32(rhs)
@@ -110,13 +102,10 @@ mod test {
             STOP
         });
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

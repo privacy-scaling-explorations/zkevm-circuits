@@ -2,18 +2,17 @@ use eth_types::Field;
 use num_enum::TryFromPrimitive;
 use std::{convert::TryFrom, marker::PhantomData};
 
-use crate::mpt_circuit::param::{
-    ARITY, BRANCH_0_KEY_POS, DRIFTED_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_BALANCE_MOD_POS,
-    IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, IS_CODEHASH_MOD_POS,
-    IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
-    IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_NONCE_MOD_POS,
-    IS_NON_EXISTING_ACCOUNT_POS, IS_STORAGE_MOD_POS, RLP_LIST_LONG, RLP_LIST_SHORT,
-};
 use crate::{
     mpt_circuit::param::{
-        COUNTER_WITNESS_LEN, HASH_WIDTH, IS_NON_EXISTING_STORAGE_POS, NOT_FIRST_LEVEL_POS,
+        ARITY, BRANCH_0_KEY_POS, COUNTER_WITNESS_LEN, DRIFTED_POS, HASH_WIDTH,
+        IS_ACCOUNT_DELETE_MOD_POS, IS_BALANCE_MOD_POS, IS_BRANCH_C_PLACEHOLDER_POS,
+        IS_BRANCH_S_PLACEHOLDER_POS, IS_CODEHASH_MOD_POS, IS_EXT_LONG_EVEN_C16_POS,
+        IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
+        IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_NONCE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
+        IS_NON_EXISTING_STORAGE_POS, IS_STORAGE_MOD_POS, NOT_FIRST_LEVEL_POS, RLP_LIST_LONG,
+        RLP_LIST_SHORT,
     },
-    table::ProofType,
+    table::MPTProofType,
 };
 
 use super::helpers::Indexable;
@@ -93,7 +92,7 @@ pub struct ExtensionNode {
 
 #[derive(Clone, Debug)]
 pub struct StartNode {
-    pub(crate) proof_type: ProofType,
+    pub(crate) proof_type: MPTProofType,
 }
 
 #[derive(Clone, Debug)]
@@ -163,7 +162,7 @@ pub struct MptWitnessRow<F> {
     pub(crate) is_placeholder: [bool; 2],
     pub(crate) modified_index: usize,
     pub(crate) drifted_index: usize,
-    pub(crate) proof_type: ProofType,
+    pub(crate) proof_type: MPTProofType,
     pub(crate) address: Vec<u8>,
     _marker: PhantomData<F>,
 }
@@ -177,7 +176,7 @@ impl<F: Field> MptWitnessRow<F> {
             is_placeholder: [false; 2],
             modified_index: 0,
             drifted_index: 0,
-            proof_type: ProofType::Disabled,
+            proof_type: MPTProofType::Disabled,
             address: Vec::new(),
             _marker: PhantomData,
         }
@@ -253,29 +252,29 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
     {
         // Get the proof type directly
         if row.get_byte_rev(IS_STORAGE_MOD_POS) == 1 {
-            row.proof_type = ProofType::StorageChanged;
+            row.proof_type = MPTProofType::StorageChanged;
         }
         if row.get_byte_rev(IS_NONCE_MOD_POS) == 1 {
-            row.proof_type = ProofType::NonceChanged;
+            row.proof_type = MPTProofType::NonceChanged;
         }
         if row.get_byte_rev(IS_BALANCE_MOD_POS) == 1 {
-            row.proof_type = ProofType::BalanceChanged;
+            row.proof_type = MPTProofType::BalanceChanged;
         }
         if row.get_byte_rev(IS_CODEHASH_MOD_POS) == 1 {
-            row.proof_type = ProofType::CodeHashExists;
+            row.proof_type = MPTProofType::CodeHashExists;
         }
         if row.get_byte_rev(IS_ACCOUNT_DELETE_MOD_POS) == 1 {
-            row.proof_type = ProofType::AccountDestructed;
+            row.proof_type = MPTProofType::AccountDestructed;
         }
         if row.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) == 1 {
-            row.proof_type = ProofType::AccountDoesNotExist;
+            row.proof_type = MPTProofType::AccountDoesNotExist;
         }
         if row.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) == 1 {
-            row.proof_type = ProofType::StorageDoesNotExist;
+            row.proof_type = MPTProofType::StorageDoesNotExist;
         }
 
         if row.get_type() == MptWitnessRowType::BranchChild {
-            //println!("- {:?}", row.bytes);
+            // println!("- {:?}", row.bytes);
             let mut child_s_bytes = row.bytes[0..34].to_owned();
             if child_s_bytes[1] == 160 {
                 child_s_bytes[0] = 0;
@@ -302,13 +301,13 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
                 row.bytes[68..].to_owned(),
             ]
             .concat();
-            //println!("+ {:?}", row.bytes);
+            // println!("+ {:?}", row.bytes);
         }
 
         if row.get_type() == MptWitnessRowType::ExtensionNodeS
             || row.get_type() == MptWitnessRowType::ExtensionNodeC
         {
-            //println!("- {:?}", row.bytes);
+            // println!("- {:?}", row.bytes);
             let mut value_bytes = row.bytes[34..68].to_owned();
             if value_bytes[1] == 160 {
                 value_bytes[0] = 0;
@@ -324,7 +323,7 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
                 row.bytes[68..].to_owned(),
             ]
             .concat();
-            //println!("+ {:?}", row.bytes);
+            // println!("+ {:?}", row.bytes);
         }
 
         // Separate the list rlp bytes from the key bytes
@@ -382,7 +381,7 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
                 }
             };
 
-            //println!("bytes: {:?}", key_bytes);
+            // println!("bytes: {:?}", key_bytes);
             row.rlp_bytes = key_bytes[..num_rlp_bytes].to_vec();
             for byte in key_bytes[..num_rlp_bytes].iter_mut() {
                 *byte = 0;
@@ -396,8 +395,8 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
                 key_rlp_bytes = row.rlp_bytes.clone();
             }
 
-            //println!("list : {:?}", row.rlp_bytes);
-            //println!("key  : {:?}", row.bytes);
+            // println!("list : {:?}", row.rlp_bytes);
+            // println!("key  : {:?}", row.bytes);
         }
 
         // Separate the RLP bytes and shift the value bytes to the start of the row
@@ -487,7 +486,7 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
         .collect::<Vec<_>>();
     let mut offset = 0;
     while offset < witness.len() {
-        //println!("offset: {}", offset);
+        // println!("offset: {}", offset);
         let mut new_proof = offset == 0;
         if offset > 0 {
             let row_prev = witness[offset - 1].clone();
@@ -660,7 +659,7 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
 
     // Dummy end state
     let start_node = StartNode {
-        proof_type: ProofType::Disabled,
+        proof_type: MPTProofType::Disabled,
     };
     let mut node = Node::default();
     node.start = Some(start_node);

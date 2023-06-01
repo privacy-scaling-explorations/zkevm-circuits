@@ -11,23 +11,82 @@ mod tracer_tests;
 mod transaction;
 
 use self::access::gen_state_access_trace;
-use crate::error::Error;
-use crate::evm::opcodes::{gen_associated_ops, gen_begin_tx_ops, gen_end_tx_ops};
-use crate::operation::{CallContextField, RW};
-use crate::rpc::GethClient;
-use crate::state_db::{self, CodeDB, StateDB};
+use crate::{
+    error::Error,
+    evm::opcodes::{gen_associated_ops, gen_associated_steps},
+    operation::{CallContextField, Operation, RWCounter, StartOp, RW},
+    rpc::GethClient,
+    state_db::{self, CodeDB, StateDB},
+};
 pub use access::{Access, AccessSet, AccessValue, CodeSource};
 pub use block::{Block, BlockContext};
 pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
-use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
-use eth_types::{self, geth_types, Address, GethExecStep, GethExecTrace, Word};
+use eth_types::{
+    self, geth_types,
+    sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
+    Address, GethExecStep, GethExecTrace, ToWord, Word,
+};
 use ethers_providers::JsonRpcClient;
-pub use execution::{CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, NumberOrHash};
+pub use execution::{
+    CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
+};
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
+use log::warn;
 use std::collections::HashMap;
 pub use transaction::{Transaction, TransactionContext};
+
+/// Circuit Setup Parameters
+#[derive(Debug, Clone, Copy)]
+pub struct CircuitsParams {
+    /// Maximum number of rw operations in the state circuit (RwTable length /
+    /// nummber of rows). This must be at least the number of rw operations
+    /// + 1, in order to allocate at least a Start row.
+    pub max_rws: usize,
+    // TODO: evm_rows: Maximum number of rows in the EVM Circuit
+    /// Maximum number of txs in the Tx Circuit
+    pub max_txs: usize,
+    /// Maximum number of bytes from all txs calldata in the Tx Circuit
+    pub max_calldata: usize,
+    /// Max ammount of rows that the CopyCircuit can have.
+    pub max_copy_rows: usize,
+    /// Max number of steps that the ExpCircuit can have. Each step is further
+    /// expressed in 7 rows
+    pub max_exp_steps: usize,
+    /// Maximum number of bytes supported in the Bytecode Circuit
+    pub max_bytecode: usize,
+    /// Pad evm circuit number of rows.
+    /// When 0, the EVM circuit number of rows will be dynamically calculated,
+    /// so the same circuit will not be able to proof different witnesses.
+    /// In this case it will contain as many rows for all steps + 1 row
+    /// for EndBlock.
+    pub max_evm_rows: usize,
+    /// Pad the keccak circuit with this number of invocations to a static
+    /// capacity.  Number of keccak_f that the Keccak circuit will support.
+    /// When 0, the Keccak circuit number of rows will be dynamically
+    /// calculated, so the same circuit will not be able to prove different
+    /// witnesses.
+    pub max_keccak_rows: usize,
+}
+
+impl Default for CircuitsParams {
+    /// Default values for most of the unit tests of the Circuit Parameters
+    fn default() -> Self {
+        CircuitsParams {
+            max_rws: 1000,
+            max_txs: 1,
+            max_calldata: 256,
+            // TODO: Check whether this value is correct or we should increase/decrease based on
+            // this lib tests
+            max_copy_rows: 1000,
+            max_exp_steps: 1000,
+            max_bytecode: 512,
+            max_evm_rows: 0,
+            max_keccak_rows: 0,
+        }
+    }
+}
 
 /// Builder to generate a complete circuit input from data gathered from a geth
 /// instance. This structure is the centre of the crate and is intended to be
@@ -145,7 +204,56 @@ impl<'a> CircuitInputBuilder {
             self.handle_tx(tx, geth_trace, tx_index + 1 == eth_block.transactions.len())?;
         }
         self.set_value_ops_call_context_rwc_eor();
+        self.set_end_block();
         Ok(())
+    }
+
+    fn set_end_block(&mut self) {
+        let max_rws = self.block.circuits_params.max_rws;
+        let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
+        let mut end_block_last = self.block.block_steps.end_block_last.clone();
+        end_block_not_last.rwc = self.block_ctx.rwc;
+        end_block_last.rwc = self.block_ctx.rwc;
+
+        let mut dummy_tx = Transaction::default();
+        let mut dummy_tx_ctx = TransactionContext::default();
+        let mut state = self.state_ref(&mut dummy_tx, &mut dummy_tx_ctx);
+
+        if let Some(call_id) = state.block.txs.last().map(|tx| tx.calls[0].call_id) {
+            state.call_context_read(
+                &mut end_block_last,
+                call_id,
+                CallContextField::TxId,
+                Word::from(state.block.txs.len() as u64),
+            );
+        }
+
+        let mut push_op = |step: &mut ExecStep, rwc: RWCounter, rw: RW, op: StartOp| {
+            let op_ref = state.block.container.insert(Operation::new(rwc, rw, op));
+            step.bus_mapping_instance.push(op_ref);
+        };
+
+        let total_rws = state.block_ctx.rwc.0 - 1;
+        // We need at least 1 extra Start row
+        #[allow(clippy::int_plus_one)]
+        {
+            assert!(
+                total_rws + 1 <= max_rws,
+                "total_rws + 1 <= max_rws, total_rws={}, max_rws={}",
+                total_rws,
+                max_rws
+            );
+        }
+        push_op(&mut end_block_last, RWCounter(1), RW::READ, StartOp {});
+        push_op(
+            &mut end_block_last,
+            RWCounter(max_rws - total_rws),
+            RW::READ,
+            StartOp {},
+        );
+
+        self.block.block_steps.end_block_not_last = end_block_not_last;
+        self.block.block_steps.end_block_last = end_block_last;
     }
 
     /// Handle a transaction with its corresponding execution trace to generate
@@ -162,11 +270,11 @@ impl<'a> CircuitInputBuilder {
         let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
         let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
 
-        // TODO: Move into gen_associated_steps with
-        // - execution_state: BeginTx
-        // - op: None
         // Generate BeginTx step
-        let begin_tx_step = gen_begin_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
+        let begin_tx_step = gen_associated_steps(
+            &mut self.state_ref(&mut tx, &mut tx_ctx),
+            ExecState::BeginTx,
+        )?;
         tx.steps_mut().push(begin_tx_step);
 
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
@@ -180,11 +288,9 @@ impl<'a> CircuitInputBuilder {
             tx.steps_mut().extend(exec_steps);
         }
 
-        // TODO: Move into gen_associated_steps with
-        // - execution_state: EndTx
-        // - op: None
         // Generate EndTx step
-        let end_tx_step = gen_end_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
+        let end_tx_step =
+            gen_associated_steps(&mut self.state_ref(&mut tx, &mut tx_ctx), ExecState::EndTx)?;
         tx.steps_mut().push(end_tx_step);
 
         self.sdb.commit_tx();
@@ -192,27 +298,24 @@ impl<'a> CircuitInputBuilder {
 
         Ok(())
     }
+}
 
-    /// Return all the keccak inputs used during the processing of the current
-    /// block.
-    pub fn keccak_inputs(&self) -> Result<Vec<Vec<u8>>, Error> {
-        let mut keccak_inputs = Vec::new();
-        // Tx Circuit
-        let txs: Vec<geth_types::Transaction> = self.block.txs.iter().map(|tx| tx.into()).collect();
-        keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(
-            &txs,
-            self.block.chain_id.as_u64(),
-        )?);
-        // Bytecode Circuit
-        for bytecode in self.code_db.0.values() {
-            keccak_inputs.push(bytecode.clone());
-        }
-        // EVM Circuit
-        keccak_inputs.extend_from_slice(&self.block.sha3_inputs);
-        // MPT Circuit
-        // TODO https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/696
-        Ok(keccak_inputs)
+/// Return all the keccak inputs used during the processing of the current
+/// block.
+pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Error> {
+    let mut keccak_inputs = Vec::new();
+    // Tx Circuit
+    let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.tx.clone()).collect();
+    keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs, block.chain_id.as_u64())?);
+    // Bytecode Circuit
+    for bytecode in code_db.0.values() {
+        keccak_inputs.push(bytecode.clone());
     }
+    // EVM Circuit
+    keccak_inputs.extend_from_slice(&block.sha3_inputs);
+    // MPT Circuit
+    // TODO https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/696
+    Ok(keccak_inputs)
 }
 
 /// Generate the keccak inputs required by the SignVerify Chip from the
@@ -237,7 +340,19 @@ pub fn keccak_inputs_tx_circuit(
     chain_id: u64,
 ) -> Result<Vec<Vec<u8>>, Error> {
     let mut inputs = Vec::new();
-    let sign_datas: Vec<SignData> = txs.iter().map(|tx| tx.sign_data(chain_id)).try_collect()?;
+    let sign_datas: Vec<SignData> = txs
+        .iter()
+        .enumerate()
+        .filter(|(i, tx)| {
+            if tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
+                warn!("tx {} is not signed, skipping tx circuit keccak input", i);
+                false
+            } else {
+                true
+            }
+        })
+        .map(|(_, tx)| tx.sign_data(chain_id))
+        .try_collect()?;
     // Keccak inputs from SignVerify Chip
     let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
     inputs.extend_from_slice(&sign_verify_inputs);
@@ -247,14 +362,21 @@ pub fn keccak_inputs_tx_circuit(
 }
 
 /// Retrieve the init_code from memory for {CREATE, CREATE2}
-pub fn get_create_init_code<'a, 'b>(
+pub fn get_create_init_code<'a>(
     call_ctx: &'a CallContext,
-    step: &'b GethExecStep,
+    step: &GethExecStep,
 ) -> Result<&'a [u8], Error> {
-    let offset = step.stack.nth_last(1)?;
-    let length = step.stack.nth_last(2)?;
-    Ok(&call_ctx.memory.0
-        [offset.low_u64() as usize..(offset.low_u64() + length.low_u64()) as usize])
+    let offset = step.stack.nth_last(1)?.low_u64() as usize;
+    let length = step.stack.nth_last(2)?.as_usize();
+
+    let mem_len = call_ctx.memory.0.len();
+    if offset >= mem_len {
+        return Ok(&[]);
+    }
+
+    let offset_end = offset.checked_add(length).unwrap_or(mem_len);
+
+    Ok(&call_ctx.memory.0[offset..offset_end])
 }
 
 /// Retrieve the memory offset and length of call.
@@ -276,55 +398,126 @@ type EthBlock = eth_types::Block<eth_types::Transaction>;
 pub struct BuilderClient<P: JsonRpcClient> {
     cli: GethClient<P>,
     chain_id: Word,
-    history_hashes: Vec<Word>,
+    circuits_params: CircuitsParams,
+}
+
+/// Get State Accesses from TxExecTraces
+pub fn get_state_accesses(
+    eth_block: &EthBlock,
+    geth_traces: &[eth_types::GethExecTrace],
+) -> Result<AccessSet, Error> {
+    let mut block_access_trace = vec![Access::new(
+        None,
+        RW::WRITE,
+        AccessValue::Account {
+            address: eth_block
+                .author
+                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
+        },
+    )];
+    for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
+        let geth_trace = &geth_traces[tx_index];
+        let tx_access_trace = gen_state_access_trace(eth_block, tx, geth_trace)?;
+        block_access_trace.extend(tx_access_trace);
+    }
+
+    Ok(AccessSet::from(block_access_trace))
+}
+
+/// Build a partial StateDB from step 3
+pub fn build_state_code_db(
+    proofs: Vec<eth_types::EIP1186ProofResponse>,
+    codes: HashMap<Address, Vec<u8>>,
+) -> (StateDB, CodeDB) {
+    let mut sdb = StateDB::new();
+    for proof in proofs {
+        let mut storage = HashMap::new();
+        for storage_proof in proof.storage_proof {
+            storage.insert(storage_proof.key, storage_proof.value);
+        }
+        sdb.set_account(
+            &proof.address,
+            state_db::Account {
+                nonce: proof.nonce.as_u64(),
+                balance: proof.balance,
+                storage,
+                code_hash: proof.code_hash,
+            },
+        )
+    }
+
+    let mut code_db = CodeDB::new();
+    for (_address, code) in codes {
+        code_db.insert(code.clone());
+    }
+    (sdb, code_db)
 }
 
 impl<P: JsonRpcClient> BuilderClient<P> {
     /// Create a new BuilderClient
-    pub async fn new(client: GethClient<P>) -> Result<Self, Error> {
+    pub async fn new(
+        client: GethClient<P>,
+        circuits_params: CircuitsParams,
+    ) -> Result<Self, Error> {
         let chain_id = client.get_chain_id().await?;
 
         Ok(Self {
             cli: client,
             chain_id: chain_id.into(),
-            // TODO: Get history hashes
-            history_hashes: Vec::new(),
+            circuits_params,
         })
     }
 
-    /// Step 1. Query geth for Block, Txs and TxExecTraces
+    /// Step 1. Query geth for Block, Txs, TxExecTraces, history block hashes
+    /// and previous state root.
     pub async fn get_block(
         &self,
         block_num: u64,
-    ) -> Result<(EthBlock, Vec<eth_types::GethExecTrace>), Error> {
+    ) -> Result<(EthBlock, Vec<eth_types::GethExecTrace>, Vec<Word>, Word), Error> {
         let eth_block = self.cli.get_block_by_number(block_num.into()).await?;
         let geth_traces = self.cli.trace_block_by_number(block_num.into()).await?;
 
-        Ok((eth_block, geth_traces))
+        // fetch up to 256 blocks
+        let mut n_blocks = std::cmp::min(256, block_num as usize);
+        let mut next_hash = eth_block.parent_hash;
+        let mut prev_state_root: Option<Word> = None;
+        let mut history_hashes = vec![Word::default(); n_blocks];
+        while n_blocks > 0 {
+            n_blocks -= 1;
+
+            // TODO: consider replacing it with `eth_getHeaderByHash`, it's faster
+            let header = self.cli.get_block_by_hash(next_hash).await?;
+
+            // set the previous state root
+            if prev_state_root.is_none() {
+                prev_state_root = Some(header.state_root.to_word());
+            }
+
+            // latest block hash is the last item
+            let block_hash = header
+                .hash
+                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?
+                .to_word();
+            history_hashes[n_blocks] = block_hash;
+
+            // continue
+            next_hash = header.parent_hash;
+        }
+
+        Ok((
+            eth_block,
+            geth_traces,
+            history_hashes,
+            prev_state_root.unwrap_or_default(),
+        ))
     }
 
     /// Step 2. Get State Accesses from TxExecTraces
     pub fn get_state_accesses(
-        &self,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<AccessSet, Error> {
-        let mut block_access_trace = vec![Access::new(
-            None,
-            RW::WRITE,
-            AccessValue::Account {
-                address: eth_block
-                    .author
-                    .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
-            },
-        )];
-        for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
-            let geth_trace = &geth_traces[tx_index];
-            let tx_access_trace = gen_state_access_trace(eth_block, tx, geth_trace)?;
-            block_access_trace.extend(tx_access_trace);
-        }
-
-        Ok(AccessSet::from(block_access_trace))
+        get_state_accesses(eth_block, geth_traces)
     }
 
     /// Step 3. Query geth for all accounts, storage keys, and codes from
@@ -365,32 +558,10 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 
     /// Step 4. Build a partial StateDB from step 3
     pub fn build_state_code_db(
-        &self,
         proofs: Vec<eth_types::EIP1186ProofResponse>,
         codes: HashMap<Address, Vec<u8>>,
     ) -> (StateDB, CodeDB) {
-        let mut sdb = StateDB::new();
-        for proof in proofs {
-            let mut storage = HashMap::new();
-            for storage_proof in proof.storage_proof {
-                storage.insert(storage_proof.key, storage_proof.value);
-            }
-            sdb.set_account(
-                &proof.address,
-                state_db::Account {
-                    nonce: proof.nonce,
-                    balance: proof.balance,
-                    storage,
-                    code_hash: proof.code_hash,
-                },
-            )
-        }
-
-        let mut code_db = CodeDB::new();
-        for (_address, code) in codes {
-            code_db.insert(code.clone());
-        }
-        (sdb, code_db)
+        build_state_code_db(proofs, codes)
     }
 
     /// Step 5. For each step in TxExecTraces, gen the associated ops and state
@@ -401,8 +572,16 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         code_db: CodeDB,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
+        history_hashes: Vec<Word>,
+        prev_state_root: Word,
     ) -> Result<CircuitInputBuilder, Error> {
-        let block = Block::new(self.chain_id, self.history_hashes.clone(), eth_block)?;
+        let block = Block::new(
+            self.chain_id,
+            history_hashes,
+            prev_state_root,
+            eth_block,
+            self.circuits_params,
+        )?;
         let mut builder = CircuitInputBuilder::new(sdb, code_db, block);
         builder.handle_block(eth_block, geth_traces)?;
         Ok(builder)
@@ -419,11 +598,19 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         ),
         Error,
     > {
-        let (eth_block, geth_traces) = self.get_block(block_num).await?;
-        let access_set = self.get_state_accesses(&eth_block, &geth_traces)?;
+        let (eth_block, geth_traces, history_hashes, prev_state_root) =
+            self.get_block(block_num).await?;
+        let access_set = Self::get_state_accesses(&eth_block, &geth_traces)?;
         let (proofs, codes) = self.get_state(block_num, access_set).await?;
-        let (state_db, code_db) = self.build_state_code_db(proofs, codes);
-        let builder = self.gen_inputs_from_state(state_db, code_db, &eth_block, &geth_traces)?;
+        let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
+        let builder = self.gen_inputs_from_state(
+            state_db,
+            code_db,
+            &eth_block,
+            &geth_traces,
+            history_hashes,
+            prev_state_root,
+        )?;
         Ok((builder, eth_block))
     }
 }

@@ -4,8 +4,8 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Cell, Word,
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -13,8 +13,8 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use eth_types::Field;
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CallValueGadget<F> {
@@ -29,8 +29,8 @@ impl<F: Field> ExecutionGadget<F> for CallValueGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLVALUE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let call_value = cb.query_cell();
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let call_value = cb.query_cell_phase2();
 
         // Lookup rw_table -> call_context with call value
         cb.call_context_lookup(
@@ -71,16 +71,10 @@ impl<F: Field> ExecutionGadget<F> for CallValueGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let call_value = block.rws[step.rw_indices[1]].stack_value();
+        let call_value = block.get_rws(step, 1).stack_value();
 
-        self.call_value.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(
-                call_value.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
+        self.call_value
+            .assign(region, offset, region.word_rlc(call_value))?;
 
         Ok(())
     }
@@ -88,7 +82,7 @@ impl<F: Field> ExecutionGadget<F> for CallValueGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::bytecode;
     use mock::TestContext;
 
@@ -99,12 +93,9 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 }

@@ -15,9 +15,11 @@ use super::{
 use crate::{
     circuit,
     circuit_tools::{cell_manager::Cell, constraint_builder::RLCChainable, gadgets::LtGadget},
-    mpt_circuit::{helpers::nibble_rlc, param::HASH_WIDTH},
-    mpt_circuit::{helpers::Indexable, param::RLP_NIL},
-    mpt_circuit::{MPTConfig, MPTState},
+    mpt_circuit::{
+        helpers::{nibble_rlc, Indexable},
+        param::{HASH_WIDTH, RLP_NIL},
+        MPTConfig, MPTState,
+    },
 };
 
 #[derive(Clone, Debug)]
@@ -271,8 +273,8 @@ impl<F: Field> BranchGadget<F> {
     pub(crate) fn assign(
         &self,
         region: &mut Region<'_, F>,
-        mpt_config: &MPTConfig<F>,
-        _pv: &mut MPTState<F>,
+        _mpt_config: &MPTConfig<F>,
+        pv: &mut MPTState<F>,
         offset: usize,
         is_placeholder: &[bool; 2],
         key_rlc: &mut F,
@@ -324,7 +326,7 @@ impl<F: Field> BranchGadget<F> {
         } else {
             // The nibble will be added as the least significant nibble, the multiplier
             // needs to advance
-            (1.scalar(), mpt_config.r)
+            (1.scalar(), pv.r)
         };
         let key_rlc_post_branch =
             *key_rlc + F::from(branch.modified_index as u64) * nibble_mult * *key_mult;
@@ -336,12 +338,12 @@ impl<F: Field> BranchGadget<F> {
         let mut mod_node_hash_rlc = [0.scalar(); 2];
         for is_s in [true, false] {
             mod_node_hash_rlc[is_s.idx()] = if is_placeholder[is_s.idx()] {
-                rlp_values[1 + branch.drifted_index].rlc_content(mpt_config.r)
+                rlp_values[1 + branch.drifted_index].rlc_content(pv.r)
             } else {
                 if is_s {
-                    rlp_values[1 + branch.modified_index].rlc_content(mpt_config.r)
+                    rlp_values[1 + branch.modified_index].rlc_content(pv.r)
                 } else {
-                    rlp_values[0].rlc_content(mpt_config.r)
+                    rlp_values[0].rlc_content(pv.r)
                 }
             };
             self.mod_rlc[is_s.idx()].assign(region, offset, mod_node_hash_rlc[is_s.idx()])?;

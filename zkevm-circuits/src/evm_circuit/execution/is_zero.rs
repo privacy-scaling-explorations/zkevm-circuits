@@ -4,16 +4,16 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            math_gadget, CachedRegion, Cell, Word,
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
+            math_gadget, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use eth_types::Field;
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct IsZeroGadget<F> {
@@ -27,10 +27,10 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ISZERO;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let value = cb.query_cell();
+        let value = cb.query_cell_phase2();
         let is_zero = math_gadget::IsZeroGadget::construct(cb, value.expr());
 
         cb.stack_pop(value.expr());
@@ -64,10 +64,10 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let value = block.rws[step.rw_indices[0]].stack_value();
-        let value = Word::random_linear_combine(value.to_le_bytes(), block.randomness);
-        self.value.assign(region, offset, Value::known(value))?;
-        self.is_zero.assign(region, offset, value)?;
+        let value = block.get_rws(step, 0).stack_value();
+        let value = region.word_rlc(value);
+        self.value.assign(region, offset, value)?;
+        self.is_zero.assign_value(region, offset, value)?;
 
         Ok(())
     }
@@ -75,7 +75,7 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
@@ -86,13 +86,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

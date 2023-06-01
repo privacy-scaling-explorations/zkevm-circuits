@@ -4,8 +4,8 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Cell, Word,
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -13,7 +13,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
+use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -28,9 +28,9 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::GASPRICE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         // Query gasprice value
-        let gas_price = cb.query_cell();
+        let gas_price = cb.query_cell_phase2();
 
         // Lookup in call_ctx the TxId
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -72,19 +72,13 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let gas_price = block.rws[step.rw_indices[1]].stack_value();
+        let gas_price = block.get_rws(step, 1).stack_value();
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
 
-        self.gas_price.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(
-                gas_price.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
+        self.gas_price
+            .assign(region, offset, region.word_rlc(gas_price))?;
 
         self.same_context.assign_exec_step(region, offset, step)?;
 
@@ -94,7 +88,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{bytecode, Word};
     use mock::test_ctx::{helpers::*, TestContext};
 
@@ -122,6 +116,6 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }

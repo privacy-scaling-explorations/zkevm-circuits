@@ -1,7 +1,7 @@
 //! Mock types and functions to generate mock data useful for tests
 
 use crate::{
-    circuit_input_builder::{Block, CircuitInputBuilder},
+    circuit_input_builder::{get_state_accesses, Block, CircuitInputBuilder, CircuitsParams},
     state_db::{self, CodeDB, StateDB},
 };
 use eth_types::{geth_types::GethData, Word};
@@ -23,6 +23,8 @@ pub struct BlockData {
     pub eth_block: eth_types::Block<eth_types::Transaction>,
     /// Execution Trace from geth
     pub geth_traces: Vec<eth_types::GethExecTrace>,
+    /// Circuits setup parameters
+    pub circuits_params: CircuitsParams,
 }
 
 impl BlockData {
@@ -32,37 +34,34 @@ impl BlockData {
         CircuitInputBuilder::new(
             self.sdb.clone(),
             self.code_db.clone(),
-            Block::new(self.chain_id, self.history_hashes.clone(), &self.eth_block).unwrap(),
+            Block::new(
+                self.chain_id,
+                self.history_hashes.clone(),
+                Word::default(),
+                &self.eth_block,
+                self.circuits_params,
+            )
+            .unwrap(),
         )
     }
-
     /// Create a new block from the given Geth data.
-    pub fn new_from_geth_data(geth_data: GethData) -> Self {
+    pub fn new_from_geth_data_with_params(
+        geth_data: GethData,
+        circuits_params: CircuitsParams,
+    ) -> Self {
         let mut sdb = StateDB::new();
         let mut code_db = CodeDB::new();
 
-        sdb.set_account(
-            &geth_data.eth_block.author.expect("Block.author"),
-            state_db::Account::zero(),
-        );
-        for tx in geth_data.eth_block.transactions.iter() {
-            sdb.set_account(&tx.from, state_db::Account::zero());
-            if let Some(to) = tx.to.as_ref() {
-                sdb.set_account(to, state_db::Account::zero());
-            }
+        let access_set = get_state_accesses(&geth_data.eth_block, &geth_data.geth_traces)
+            .expect("state accesses");
+        // Initialize all accesses accounts to zero
+        for addr in access_set.state.keys() {
+            sdb.set_account(addr, state_db::Account::zero());
         }
 
         for account in geth_data.accounts {
-            let code_hash = code_db.insert(account.code.to_vec());
-            sdb.set_account(
-                &account.address,
-                state_db::Account {
-                    nonce: account.nonce,
-                    balance: account.balance,
-                    storage: account.storage,
-                    code_hash,
-                },
-            );
+            code_db.insert(account.code.to_vec());
+            sdb.set_account(&account.address, state_db::Account::from(account.clone()));
         }
 
         Self {
@@ -72,6 +71,12 @@ impl BlockData {
             history_hashes: geth_data.history_hashes,
             eth_block: geth_data.eth_block,
             geth_traces: geth_data.geth_traces,
+            circuits_params,
         }
+    }
+
+    /// Create a new block from the given Geth data with default CircuitsParams.
+    pub fn new_from_geth_data(geth_data: GethData) -> Self {
+        Self::new_from_geth_data_with_params(geth_data, CircuitsParams::default())
     }
 }

@@ -587,12 +587,12 @@ impl_expr_result!(
 /// Trait around RLC
 pub trait RLCable<F: Field> {
     /// Returns the RLC of itself
-    fn rlc(&self, r: &[Expression<F>]) -> Expression<F>;
+    fn rlc(&self, r: &Expression<F>) -> Expression<F>;
 }
 
 impl<F: Field, E: ExprVec<F> + ?Sized> RLCable<F> for E {
-    fn rlc(&self, r: &[Expression<F>]) -> Expression<F> {
-        rlc::expr(&self.to_expr_vec(), r)
+    fn rlc(&self, r: &Expression<F>) -> Expression<F> {
+        rlc::expr(&self.to_expr_vec(), r.expr())
     }
 }
 
@@ -998,6 +998,16 @@ macro_rules! circuit {
             }};
             ($column:expr) => {{
                 $meta.query_advice($column.clone(), Rotation::cur())
+            }};
+        }
+
+        #[allow(unused_macros)]
+        macro_rules! x {
+            ($column:expr, $rot:expr) => {{
+                $meta.query_any($column.clone(), Rotation($rot as i32))
+            }};
+            ($column:expr) => {{
+                $meta.query_any($column.clone(), Rotation::cur())
             }};
         }
 

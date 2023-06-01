@@ -1,25 +1,19 @@
 //! Definition of each opcode of the EVM.
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep},
+    error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
     evm::OpcodeId,
-    operation::{
-        AccountField, CallContextField, TxAccessListAccountOp, TxReceiptField, TxRefundOp, RW,
-    },
+    operation::TxAccessListAccountOp,
     Error,
 };
 use core::fmt::Debug;
-use eth_types::{
-    evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
-    GethExecStep, ToAddress, ToWord, Word,
-};
-use keccak256::EMPTY_HASH;
-use log::warn;
+use eth_types::{evm_unimplemented, GethExecStep, ToAddress};
 
-#[cfg(any(feature = "test", test))]
-pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
+pub use self::sha3::Sha3CodeGen;
 
 mod address;
 mod balance;
+mod begin_end_tx;
 mod calldatacopy;
 mod calldataload;
 mod calldatasize;
@@ -31,6 +25,7 @@ mod codecopy;
 mod codesize;
 mod create;
 mod dup;
+mod exp;
 mod extcodecopy;
 mod extcodehash;
 mod extcodesize;
@@ -40,8 +35,9 @@ mod mload;
 mod mstore;
 mod number;
 mod origin;
-mod r#return;
+mod return_revert;
 mod returndatacopy;
+mod returndatasize;
 mod selfbalance;
 mod sha3;
 mod sload;
@@ -50,12 +46,23 @@ mod stackonlyop;
 mod stop;
 mod swap;
 
+mod error_invalid_jump;
+mod error_oog_call;
+mod error_oog_exp;
+mod error_oog_log;
+mod error_oog_memory_copy;
+mod error_oog_sload_sstore;
+mod error_return_data_outofbound;
+mod error_simple;
+mod error_write_protection;
+
 #[cfg(test)]
 mod memory_expansion_test;
 
 use self::sha3::Sha3;
 use address::Address;
 use balance::Balance;
+use begin_end_tx::BeginEndTx;
 use calldatacopy::Calldatacopy;
 use calldataload::Calldataload;
 use calldatasize::Calldatasize;
@@ -66,6 +73,16 @@ use codecopy::Codecopy;
 use codesize::Codesize;
 use create::DummyCreate;
 use dup::Dup;
+use error_invalid_jump::InvalidJump;
+use error_oog_call::OOGCall;
+use error_oog_exp::OOGExp;
+use error_oog_log::ErrorOOGLog;
+use error_oog_memory_copy::OOGMemoryCopy;
+use error_oog_sload_sstore::OOGSloadSstore;
+use error_return_data_outofbound::ErrorReturnDataOutOfBound;
+use error_simple::ErrorSimple;
+use error_write_protection::ErrorWriteProtection;
+use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
 use extcodesize::Extcodesize;
@@ -74,8 +91,9 @@ use logs::Log;
 use mload::Mload;
 use mstore::Mstore;
 use origin::Origin;
-use r#return::Return;
+use return_revert::ReturnRevert;
 use returndatacopy::Returndatacopy;
+use returndatasize::Returndatasize;
 use selfbalance::Selfbalance;
 use sload::Sload;
 use sstore::Sstore;
@@ -96,6 +114,15 @@ pub trait Opcode: Debug {
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error>;
+}
+
+/// Generic trait for tx execution steps
+/// which only supports ExecState::BeginTx and ExecState:EndTx
+pub trait TxExecSteps: Debug {
+    fn gen_associated_steps(
+        state: &mut CircuitInputStateRef,
+        execution_step: ExecState,
+    ) -> Result<ExecStep, Error>;
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -131,7 +158,6 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SMOD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::ADDMOD => StackOnlyOpcode::<3, 1>::gen_associated_ops,
         OpcodeId::MULMOD => StackOnlyOpcode::<3, 1>::gen_associated_ops,
-        OpcodeId::EXP => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SIGNEXTEND => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::LT => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::GT => StackOnlyOpcode::<2, 1>::gen_associated_ops,
@@ -159,9 +185,10 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::GASPRICE => GasPrice::gen_associated_ops,
         OpcodeId::CODECOPY => Codecopy::gen_associated_ops,
         OpcodeId::CODESIZE => Codesize::gen_associated_ops,
+        OpcodeId::EXP => Exponentiation::gen_associated_ops,
         OpcodeId::EXTCODESIZE => Extcodesize::gen_associated_ops,
         OpcodeId::EXTCODECOPY => Extcodecopy::gen_associated_ops,
-        OpcodeId::RETURNDATASIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::RETURNDATASIZE => Returndatasize::gen_associated_ops,
         OpcodeId::RETURNDATACOPY => Returndatacopy::gen_associated_ops,
         OpcodeId::EXTCODEHASH => Extcodehash::gen_associated_ops,
         OpcodeId::BLOCKHASH => StackOnlyOpcode::<1, 1>::gen_associated_ops,
@@ -222,34 +249,73 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::LOG2 => Log::gen_associated_ops,
         OpcodeId::LOG3 => Log::gen_associated_ops,
         OpcodeId::LOG4 => Log::gen_associated_ops,
-        OpcodeId::CALL => CallOpcode::<7>::gen_associated_ops,
-        OpcodeId::STATICCALL => CallOpcode::<6>::gen_associated_ops,
-        OpcodeId::RETURN => Return::gen_associated_ops,
-        // REVERT is almost the same as RETURN
-        OpcodeId::REVERT => Return::gen_associated_ops,
+        OpcodeId::CALL | OpcodeId::CALLCODE => CallOpcode::<7>::gen_associated_ops,
+        OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => CallOpcode::<6>::gen_associated_ops,
+        OpcodeId::RETURN | OpcodeId::REVERT => ReturnRevert::gen_associated_ops,
         OpcodeId::SELFDESTRUCT => {
-            warn!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
+            evm_unimplemented!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
             DummySelfDestruct::gen_associated_ops
         }
-        OpcodeId::CALLCODE | OpcodeId::DELEGATECALL => {
-            warn!("Using dummy gen_call_ops for opcode {:?}", opcode_id);
-            DummyCall::gen_associated_ops
-        }
         OpcodeId::CREATE => {
-            warn!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
+            evm_unimplemented!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
             DummyCreate::<false>::gen_associated_ops
         }
         OpcodeId::CREATE2 => {
-            warn!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
+            evm_unimplemented!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
             DummyCreate::<true>::gen_associated_ops
         }
         _ => {
-            warn!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
+            evm_unimplemented!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
             Dummy::gen_associated_ops
         }
     }
 }
 
+fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociatedOps> {
+    match error {
+        ExecError::InvalidJump => Some(InvalidJump::gen_associated_ops),
+        ExecError::InvalidOpcode => Some(ErrorSimple::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Constant) => Some(ErrorSimple::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Exp) => Some(OOGExp::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
+        ExecError::OutOfGas(OogError::MemoryCopy) => Some(OOGMemoryCopy::gen_associated_ops),
+        ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
+        ExecError::StackOverflow => Some(ErrorSimple::gen_associated_ops),
+        ExecError::StackUnderflow => Some(ErrorSimple::gen_associated_ops),
+        // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
+        ExecError::InsufficientBalance(InsufficientBalanceError::Call) => {
+            Some(CallOpcode::<7>::gen_associated_ops)
+        }
+        // create & create2 can encounter insufficient balance.
+        ExecError::InsufficientBalance(InsufficientBalanceError::Create) => {
+            Some(DummyCreate::<false>::gen_associated_ops)
+        }
+        ExecError::InsufficientBalance(InsufficientBalanceError::Create2) => {
+            Some(DummyCreate::<true>::gen_associated_ops)
+        }
+        // only create2 may cause ContractAddressCollision error, so use DummyCreate::<true>.
+        ExecError::ContractAddressCollision => Some(DummyCreate::<true>::gen_associated_ops),
+        // create & create2 can encounter nonce uint overflow.
+        ExecError::NonceUintOverflow(NonceUintOverflowError::Create) => {
+            Some(DummyCreate::<false>::gen_associated_ops)
+        }
+        ExecError::NonceUintOverflow(NonceUintOverflowError::Create2) => {
+            Some(DummyCreate::<true>::gen_associated_ops)
+        }
+        ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
+        ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
+        // call, callcode, create & create2 can encounter DepthError error,
+        ExecError::Depth(DepthError::Call) => Some(CallOpcode::<7>::gen_associated_ops),
+        ExecError::Depth(DepthError::Create) => Some(DummyCreate::<false>::gen_associated_ops),
+        ExecError::Depth(DepthError::Create2) => Some(DummyCreate::<true>::gen_associated_ops),
+        // more future errors place here
+        _ => {
+            evm_unimplemented!("TODO: error state {:?} not implemented", error);
+            None
+        }
+    }
+}
 #[allow(clippy::collapsible_else_if)]
 /// Generate the associated operations according to the particular
 /// [`OpcodeId`].
@@ -258,8 +324,6 @@ pub fn gen_associated_ops(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
-    let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
-
     let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
     if memory_enabled {
         assert_eq!(
@@ -280,372 +344,52 @@ pub fn gen_associated_ops(
     };
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
         log::warn!(
-            "geth error {:?} occurred in  {:?}",
+            "geth error {:?} occurred in  {:?} at pc {:?}",
             exec_error,
-            geth_step.op
+            geth_step.op,
+            geth_step.pc,
         );
 
-        exec_step.error = Some(exec_error);
-        // for `oog_or_stack_error` error message will be returned by geth_step error
-        // field, when this kind of error happens, no more proceeding
-        if geth_step.op.is_call_or_create() && !exec_step.oog_or_stack_error() {
-            let call = state.parse_call(geth_step)?;
-            // Switch to callee's call context
-            state.push_call(call);
-        }
+        exec_step.error = Some(exec_error.clone());
+        // TODO: after more error state handled, refactor all error handling in
+        // fn_gen_error_state_associated_ops method
+        // For exceptions that have been implemented
+        if let Some(fn_gen_error_ops) = fn_gen_error_state_associated_ops(&exec_error) {
+            return fn_gen_error_ops(state, geth_steps);
+        } else {
+            // For exceptions that fail to enter next call context, we need
+            // to restore call context of current caller
+            let mut need_restore = true;
 
-        state.handle_return(geth_step)?;
-        return Ok(vec![exec_step]);
+            // For exceptions that already enter next call context, but fail immediately
+            // (e.g. Depth, InsufficientBalance), we still need to parse the call.
+            if geth_step.op.is_call_or_create() {
+                let call = state.parse_call(geth_step)?;
+                state.push_call(call);
+                need_restore = false;
+            }
+
+            state.handle_return(&mut exec_step, geth_steps, need_restore)?;
+            return Ok(vec![exec_step]);
+        }
     }
     // if no errors, continue as normal
+    let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
     fn_gen_associated_ops(state, geth_steps)
 }
 
-pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
-    let mut exec_step = state.new_begin_tx_step();
-    let call = state.call()?.clone();
-
-    for (field, value) in [
-        (CallContextField::TxId, state.tx_ctx.id().into()),
-        (
-            CallContextField::RwCounterEndOfReversion,
-            call.rw_counter_end_of_reversion.into(),
-        ),
-        (
-            CallContextField::IsPersistent,
-            (call.is_persistent as usize).into(),
-        ),
-        (CallContextField::IsSuccess, call.is_success.to_word()),
-    ] {
-        state.call_context_write(&mut exec_step, call.call_id, field, value);
-    }
-
-    // Increase caller's nonce
-    let caller_address = call.caller_address;
-    let nonce_prev = state.sdb.increase_nonce(&caller_address);
-    state.account_write(
-        &mut exec_step,
-        caller_address,
-        AccountField::Nonce,
-        (nonce_prev + 1).into(),
-        nonce_prev.into(),
-    )?;
-
-    // Add caller and callee into access list
-    for address in [call.caller_address, call.address] {
-        state.sdb.add_account_to_access_list(address);
-        state.tx_accesslist_account_write(
-            &mut exec_step,
-            state.tx_ctx.id(),
-            address,
-            true,
-            false,
-        )?;
-    }
-
-    // Calculate intrinsic gas cost
-    let call_data_gas_cost = state
-        .tx
-        .input
-        .iter()
-        .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 });
-    let intrinsic_gas_cost = if state.tx.is_create() {
-        GasCost::CREATION_TX.as_u64()
-    } else {
-        GasCost::TX.as_u64()
-    } + call_data_gas_cost;
-    exec_step.gas_cost = GasCost(intrinsic_gas_cost);
-
-    // Transfer with fee
-    state.transfer_with_fee(
-        &mut exec_step,
-        call.caller_address,
-        call.address,
-        call.value,
-        state.tx.gas_price * state.tx.gas,
-    )?;
-
-    // Get code_hash of callee
-    let (_, callee_account) = state.sdb.get_account(&call.address);
-    let code_hash = callee_account.code_hash;
-
-    // There are 4 branches from here.
-    match (
-        call.is_create(),
-        state.is_precompiled(&call.address),
-        code_hash.to_fixed_bytes() == *EMPTY_HASH,
-    ) {
-        // 1. Creation transaction.
-        (true, _, _) => {
-            state.account_read(
-                &mut exec_step,
-                call.address,
-                AccountField::CodeHash,
-                call.code_hash.to_word(),
-                call.code_hash.to_word(),
-            )?;
-            for (field, value) in [
-                (CallContextField::Depth, call.depth.into()),
-                (
-                    CallContextField::CallerAddress,
-                    call.caller_address.to_word(),
-                ),
-                (CallContextField::CalleeAddress, call.address.to_word()),
-                (
-                    CallContextField::CallDataOffset,
-                    call.call_data_offset.into(),
-                ),
-                (
-                    CallContextField::CallDataLength,
-                    state.tx.input.len().into(),
-                ),
-                (CallContextField::Value, call.value),
-                (CallContextField::IsStatic, (call.is_static as usize).into()),
-                (CallContextField::LastCalleeId, 0.into()),
-                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-                (CallContextField::LastCalleeReturnDataLength, 0.into()),
-                (CallContextField::IsRoot, 1.into()),
-                (CallContextField::IsCreate, 1.into()),
-                (CallContextField::CodeHash, call.code_hash.to_word()),
-            ] {
-                state.call_context_write(&mut exec_step, call.call_id, field, value);
-            }
-            Ok(exec_step)
-        }
-        // 2. Call to precompiled.
-        (_, true, _) => {
-            warn!("Call to precompiled is left unimplemented");
-            Ok(exec_step)
-        }
-        (_, _, is_empty_code_hash) => {
-            state.account_read(
-                &mut exec_step,
-                call.address,
-                AccountField::CodeHash,
-                code_hash.to_word(),
-                code_hash.to_word(),
-            )?;
-
-            // 3. Call to account with empty code.
-            if is_empty_code_hash {
-                warn!("Call to account with empty code is left unimplemented");
-                return Ok(exec_step);
-            }
-
-            // 4. Call to account with non-empty code.
-            for (field, value) in [
-                (CallContextField::Depth, call.depth.into()),
-                (
-                    CallContextField::CallerAddress,
-                    call.caller_address.to_word(),
-                ),
-                (CallContextField::CalleeAddress, call.address.to_word()),
-                (
-                    CallContextField::CallDataOffset,
-                    call.call_data_offset.into(),
-                ),
-                (
-                    CallContextField::CallDataLength,
-                    call.call_data_length.into(),
-                ),
-                (CallContextField::Value, call.value),
-                (CallContextField::IsStatic, (call.is_static as usize).into()),
-                (CallContextField::LastCalleeId, 0.into()),
-                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-                (CallContextField::LastCalleeReturnDataLength, 0.into()),
-                (CallContextField::IsRoot, 1.into()),
-                (CallContextField::IsCreate, 0.into()),
-                (CallContextField::CodeHash, code_hash.to_word()),
-            ] {
-                state.call_context_write(&mut exec_step, call.call_id, field, value);
-            }
-
-            Ok(exec_step)
-        }
-    }
-}
-
-pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
-    let mut exec_step = state.new_end_tx_step();
-    let call = state.tx.calls()[0].clone();
-
-    state.call_context_read(
-        &mut exec_step,
-        call.call_id,
-        CallContextField::TxId,
-        state.tx_ctx.id().into(),
-    );
-    state.call_context_read(
-        &mut exec_step,
-        call.call_id,
-        CallContextField::IsPersistent,
-        Word::from(call.is_persistent as u8),
-    );
-
-    let refund = state.sdb.refund();
-    state.push_op(
-        &mut exec_step,
-        RW::READ,
-        TxRefundOp {
-            tx_id: state.tx_ctx.id(),
-            value: refund,
-            value_prev: refund,
-        },
-    );
-
-    let effective_refund =
-        refund.min((state.tx.gas - exec_step.gas_left.0) / MAX_REFUND_QUOTIENT_OF_GAS_USED as u64);
-    let (found, caller_account) = state.sdb.get_account_mut(&call.caller_address);
-    if !found {
-        return Err(Error::AccountNotFound(call.caller_address));
-    }
-    let caller_balance_prev = caller_account.balance;
-    let caller_balance =
-        caller_balance_prev + state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
-    caller_account.balance = caller_balance;
-
-    state.account_write(
-        &mut exec_step,
-        call.caller_address,
-        AccountField::Balance,
-        caller_balance,
-        caller_balance_prev,
-    )?;
-
-    let effective_tip = state.tx.gas_price - state.block.base_fee;
-    let (found, coinbase_account) = state.sdb.get_account_mut(&state.block.coinbase);
-    if !found {
-        return Err(Error::AccountNotFound(state.block.coinbase));
-    }
-    let coinbase_balance_prev = coinbase_account.balance;
-    let coinbase_balance =
-        coinbase_balance_prev + effective_tip * (state.tx.gas - exec_step.gas_left.0);
-    coinbase_account.balance = coinbase_balance;
-    state.account_write(
-        &mut exec_step,
-        state.block.coinbase,
-        AccountField::Balance,
-        coinbase_balance,
-        coinbase_balance_prev,
-    )?;
-
-    // handle tx receipt tag
-    state.tx_receipt_write(
-        &mut exec_step,
-        state.tx_ctx.id(),
-        TxReceiptField::PostStateOrStatus,
-        call.is_persistent as u64,
-    )?;
-
-    let log_id = exec_step.log_id;
-    state.tx_receipt_write(
-        &mut exec_step,
-        state.tx_ctx.id(),
-        TxReceiptField::LogLength,
-        log_id as u64,
-    )?;
-
-    if state.tx_ctx.id() > 1 {
-        // query pre tx cumulative gas
-        state.tx_receipt_read(
-            &mut exec_step,
-            state.tx_ctx.id() - 1,
-            TxReceiptField::CumulativeGasUsed,
-            state.block_ctx.cumulative_gas_used,
-        )?;
-    }
-
-    state.block_ctx.cumulative_gas_used += state.tx.gas - exec_step.gas_left.0;
-    state.tx_receipt_write(
-        &mut exec_step,
-        state.tx_ctx.id(),
-        TxReceiptField::CumulativeGasUsed,
-        state.block_ctx.cumulative_gas_used,
-    )?;
-
-    if !state.tx_ctx.is_last_tx() {
-        state.call_context_read(
-            &mut exec_step,
-            state.block_ctx.rwc.0 + 1,
-            CallContextField::TxId,
-            (state.tx_ctx.id() + 1).into(),
-        );
-    }
-
-    Ok(exec_step)
-}
-
-#[derive(Debug, Copy, Clone)]
-struct DummyCall;
-
-impl Opcode for DummyCall {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
-        geth_steps: &[GethExecStep],
-    ) -> Result<Vec<ExecStep>, Error> {
-        dummy_gen_call_ops(state, geth_steps)
-    }
-}
-
-fn dummy_gen_call_ops(
+pub fn gen_associated_steps(
     state: &mut CircuitInputStateRef,
-    geth_steps: &[GethExecStep],
-) -> Result<Vec<ExecStep>, Error> {
-    let geth_step = &geth_steps[0];
-    let mut exec_step = state.new_step(geth_step)?;
-
-    let (args_offset, args_length, ret_offset, ret_length) = {
-        // CALLCODE    (gas, addr, value, argsOffset, argsLength, retOffset, retLength)
-        // DELEGATECALL(gas, addr,        argsOffset, argsLength, retOffset, retLength)
-        // STATICCALL  (gas, addr,        argsOffset, argsLength, retOffset, retLength)
-        let pos = match geth_step.op {
-            OpcodeId::CALLCODE => (3, 4, 5, 6),
-            OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => (2, 3, 4, 5),
-            _ => unreachable!("opcode is not of call type"),
-        };
-        (
-            geth_step.stack.nth_last(pos.0)?.as_usize(),
-            geth_step.stack.nth_last(pos.1)?.as_usize(),
-            geth_step.stack.nth_last(pos.2)?.as_usize(),
-            geth_step.stack.nth_last(pos.3)?.as_usize(),
-        )
-    };
-    state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
-
-    let tx_id = state.tx_ctx.id();
-    let call = state.parse_call(geth_step)?;
-
-    let (_, account) = state.sdb.get_account(&call.address);
-    let callee_code_hash = account.code_hash;
-
-    let is_warm = state.sdb.check_account_in_access_list(&call.address);
-    state.push_op_reversible(
-        &mut exec_step,
-        RW::WRITE,
-        TxAccessListAccountOp {
-            tx_id,
-            address: call.address,
-            is_warm: true,
-            is_warm_prev: is_warm,
-        },
-    )?;
-
-    state.push_call(call.clone());
-
-    match (
-        state.is_precompiled(&call.address),
-        callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
-    ) {
-        // 1. Call to precompiled.
-        (true, _) => Ok(vec![exec_step]),
-        // 2. Call to account with empty code.
-        (_, true) => {
-            state.handle_return(geth_step)?;
-            Ok(vec![exec_step])
+    execution_step: ExecState,
+) -> Result<ExecStep, Error> {
+    let fn_gen_associated_steps = match execution_step {
+        ExecState::BeginTx | ExecState::EndTx => BeginEndTx::gen_associated_steps,
+        _ => {
+            unreachable!()
         }
-        // 3. Call to account with non-empty code.
-        (_, false) => Ok(vec![exec_step]),
-    }
+    };
+
+    fn_gen_associated_steps(state, execution_step)
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -671,7 +415,6 @@ fn dummy_gen_selfdestruct_ops(
     let is_warm = state.sdb.check_account_in_access_list(&receiver);
     state.push_op_reversible(
         &mut exec_step,
-        RW::WRITE,
         TxAccessListAccountOp {
             tx_id: state.tx_ctx.id(),
             address: receiver,
@@ -689,12 +432,14 @@ fn dummy_gen_selfdestruct_ops(
         return Err(Error::AccountNotFound(sender));
     }
     let value = sender_account.balance;
-    state.transfer(&mut exec_step, sender, receiver, value)?;
+    // NOTE: In this dummy implementation we assume that the receiver already
+    // exists.
+    state.transfer(&mut exec_step, sender, receiver, true, false, value)?;
 
     if state.call()?.is_persistent {
         state.sdb.destruct_account(sender);
     }
 
-    state.handle_return(geth_step)?;
+    state.handle_return(&mut exec_step, geth_steps, false)?;
     Ok(vec![exec_step])
 }

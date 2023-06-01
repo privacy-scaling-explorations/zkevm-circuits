@@ -1,42 +1,35 @@
 use eth_types::Field;
-use gadgets::util::Scalar;
+use gadgets::util::{pow, Scalar};
 use halo2_proofs::{
-    circuit::Region,
+    circuit::{Region, Value},
     plonk::{Error, VirtualCells},
     poly::Rotation,
 };
 
 use super::{
-    helpers::ParentDataWitness,
+    helpers::{KeyDataWitness, ListKeyGadget, MainData, ParentDataWitness},
+    param::HASH_WIDTH,
     rlp_gadgets::RLPItemWitness,
     witness_row::{AccountRowType, Node},
 };
-use super::{
-    helpers::{KeyDataWitness, ListKeyGadget, MainData},
-    param::HASH_WIDTH,
-};
 use crate::{
     circuit,
-    circuit_tools::cell_manager::Cell,
-    circuit_tools::constraint_builder::RLCable,
-    mpt_circuit::MPTContext,
+    circuit_tools::{
+        cell_manager::Cell,
+        constraint_builder::{RLCChainable, RLCable, RLCableValue},
+        gadgets::IsEqualGadget,
+    },
     mpt_circuit::{
         helpers::{
-            key_memory, num_nibbles, parent_memory, KeyData, MPTConstraintBuilder, ParentData,
+            key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, Indexable,
+            IsEmptyTreeGadget, KeyData, MPTConstraintBuilder, ParentData, WrongGadget,
         },
         param::{KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
+        MPTConfig, MPTContext, MPTState,
     },
-    mpt_circuit::{MPTConfig, MPTState},
+    table::MPTProofType,
+    witness::MptUpdateRow,
 };
-use crate::{
-    circuit_tools::constraint_builder::RLCChainable,
-    mpt_circuit::helpers::{DriftedGadget, WrongGadget},
-};
-use crate::{
-    circuit_tools::{constraint_builder::RLCableValue, gadgets::IsEqualGadget},
-    mpt_circuit::helpers::{main_memory, Indexable, IsEmptyTreeGadget},
-};
-use crate::{table::ProofType, witness::MptUpdateRow};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct AccountLeafConfig<F> {
@@ -155,16 +148,18 @@ impl<F: Field> AccountLeafConfig<F> {
                 // Calculate the leaf RLC
                 let value_rlp_bytes = config.value_rlp_bytes[is_s.idx()].to_expr_vec();
                 let value_list_rlp_bytes = config.value_list_rlp_bytes[is_s.idx()].to_expr_vec();
-                leaf_no_key_rlc[is_s.idx()] = (value_rlp_bytes.rlc(&r), r[1].expr()).rlc_chain(
-                    (value_list_rlp_bytes.rlc(&r), r[1].expr()).rlc_chain(
-                        (nonce_rlp_rlc.expr(), nonce_items[is_s.idx()].mult()).rlc_chain(
-                            (balance_rlp_rlc.expr(), balance_items[is_s.idx()].mult()).rlc_chain(
-                                (storage_rlp_rlc.expr(), r[32].expr())
-                                    .rlc_chain(codehash_rlp_rlc.expr()),
+                leaf_no_key_rlc[is_s.idx()] = (value_rlp_bytes.rlc(&r), pow::expr(r.expr(), 2))
+                    .rlc_chain(
+                        (value_list_rlp_bytes.rlc(&r), pow::expr(r.expr(), 2)).rlc_chain(
+                            (nonce_rlp_rlc.expr(), nonce_items[is_s.idx()].mult()).rlc_chain(
+                                (balance_rlp_rlc.expr(), balance_items[is_s.idx()].mult())
+                                    .rlc_chain(
+                                        (storage_rlp_rlc.expr(), pow::expr(r.expr(), 33))
+                                            .rlc_chain(codehash_rlp_rlc.expr()),
+                                    ),
                             ),
                         ),
-                    ),
-                );
+                    );
                 let leaf_rlc =
                     (rlp_key.rlc(&r), mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
 
@@ -236,32 +231,32 @@ impl<F: Field> AccountLeafConfig<F> {
             config.is_non_existing_account_proof = IsEqualGadget::construct(
                 &mut cb.base,
                 config.main_data.proof_type.expr(),
-                ProofType::AccountDoesNotExist.expr(),
+                MPTProofType::AccountDoesNotExist.expr(),
             );
             config.is_account_delete_mod = IsEqualGadget::construct(
                 &mut cb.base,
                 config.main_data.proof_type.expr(),
-                ProofType::AccountDestructed.expr(),
+                MPTProofType::AccountDestructed.expr(),
             );
             config.is_nonce_mod = IsEqualGadget::construct(
                 &mut cb.base,
                 config.main_data.proof_type.expr(),
-                ProofType::NonceChanged.expr(),
+                MPTProofType::NonceChanged.expr(),
             );
             config.is_balance_mod = IsEqualGadget::construct(
                 &mut cb.base,
                 config.main_data.proof_type.expr(),
-                ProofType::BalanceChanged.expr(),
+                MPTProofType::BalanceChanged.expr(),
             );
             config.is_storage_mod = IsEqualGadget::construct(
                 &mut cb.base,
                 config.main_data.proof_type.expr(),
-                ProofType::StorageChanged.expr(),
+                MPTProofType::StorageChanged.expr(),
             );
             config.is_codehash_mod = IsEqualGadget::construct(
                 &mut cb.base,
                 config.main_data.proof_type.expr(),
-                ProofType::CodeHashExists.expr(),
+                MPTProofType::CodeHashExists.expr(),
             );
 
             // Drifted leaf handling
@@ -329,13 +324,13 @@ impl<F: Field> AccountLeafConfig<F> {
 
             // Put the data in the lookup table
             let (proof_type, value_prev, value) = _matchx! {cb.base,
-                config.is_nonce_mod => (ProofType::NonceChanged.expr(), nonce_rlc[true.idx()].expr(), nonce_rlc[false.idx()].expr()),
-                config.is_balance_mod => (ProofType::BalanceChanged.expr(), balance_rlc[true.idx()].expr(), balance_rlc[false.idx()].expr()),
-                config.is_storage_mod => (ProofType::StorageChanged.expr(), storage_rlc[true.idx()].expr(), storage_rlc[false.idx()].expr()),
-                config.is_codehash_mod => (ProofType::CodeHashExists.expr(), codehash_rlc[true.idx()].expr(), codehash_rlc[false.idx()].expr()),
-                config.is_account_delete_mod => (ProofType::AccountDestructed.expr(), 0.expr(), 0.expr()),
-                config.is_non_existing_account_proof => (ProofType::AccountDoesNotExist.expr(), 0.expr(), 0.expr()),
-                _ => (ProofType::Disabled.expr(), 0.expr(), 0.expr()),
+                config.is_nonce_mod => (MPTProofType::NonceChanged.expr(), nonce_rlc[true.idx()].expr(), nonce_rlc[false.idx()].expr()),
+                config.is_balance_mod => (MPTProofType::BalanceChanged.expr(), balance_rlc[true.idx()].expr(), balance_rlc[false.idx()].expr()),
+                config.is_storage_mod => (MPTProofType::StorageChanged.expr(), storage_rlc[true.idx()].expr(), storage_rlc[false.idx()].expr()),
+                config.is_codehash_mod => (MPTProofType::CodeHashExists.expr(), codehash_rlc[true.idx()].expr(), codehash_rlc[false.idx()].expr()),
+                config.is_account_delete_mod => (MPTProofType::AccountDestructed.expr(), 0.expr(), 0.expr()),
+                config.is_non_existing_account_proof => (MPTProofType::AccountDoesNotExist.expr(), 0.expr(), 0.expr()),
+                _ => (MPTProofType::Disabled.expr(), 0.expr(), 0.expr()),
             };
             let address_rlc = ifx! {config.is_non_existing_account_proof => {
                 a!(ctx.mpt_table.address_rlc)
@@ -441,7 +436,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 region,
                 offset,
                 parent_data[is_s.idx()].rlc,
-                ctx.r,
+                pv.r,
             )?;
 
             let rlp_key_witness = self.rlp_key[is_s.idx()].assign(
@@ -451,17 +446,17 @@ impl<F: Field> AccountLeafConfig<F> {
                 &key_items[is_s.idx()],
             )?;
 
-            nonce_rlc[is_s.idx()] = nonce_items[is_s.idx()].rlc_content(ctx.r);
-            balance_rlc[is_s.idx()] = balance_items[is_s.idx()].rlc_content(ctx.r);
-            storage_rlc[is_s.idx()] = storage_items[is_s.idx()].rlc_content(ctx.r);
-            codehash_rlc[is_s.idx()] = codehash_items[is_s.idx()].rlc_content(ctx.r);
+            nonce_rlc[is_s.idx()] = nonce_items[is_s.idx()].rlc_content(pv.r);
+            balance_rlc[is_s.idx()] = balance_items[is_s.idx()].rlc_content(pv.r);
+            storage_rlc[is_s.idx()] = storage_items[is_s.idx()].rlc_content(pv.r);
+            codehash_rlc[is_s.idx()] = codehash_items[is_s.idx()].rlc_content(pv.r);
 
             // Key
             (key_rlc[is_s.idx()], _) = rlp_key_witness.key.key(
                 rlp_key_witness.key_item.clone(),
                 key_data[is_s.idx()].rlc,
                 key_data[is_s.idx()].mult,
-                ctx.r,
+                pv.r,
             );
 
             // Update key and parent state
@@ -469,11 +464,11 @@ impl<F: Field> AccountLeafConfig<F> {
                 region,
                 offset,
                 &mut pv.memory[key_memory(is_s)],
-                F::zero(),
-                F::one(),
+                F::ZERO,
+                F::ONE,
                 0,
-                F::zero(),
-                F::one(),
+                F::ZERO,
+                F::ONE,
                 0,
             )?;
             ParentData::witness_store(
@@ -494,7 +489,7 @@ impl<F: Field> AccountLeafConfig<F> {
             &mut pv.memory[main_memory()],
             main_data.proof_type,
             true,
-            account.address.rlc_value(ctx.r),
+            account.address.rlc_value(pv.r),
             main_data.root_prev,
             main_data.root,
         )?;
@@ -504,37 +499,37 @@ impl<F: Field> AccountLeafConfig<F> {
             region,
             offset,
             main_data.proof_type.scalar(),
-            ProofType::AccountDoesNotExist.scalar(),
+            MPTProofType::AccountDoesNotExist.scalar(),
         )? == true.scalar();
         let is_account_delete_mod = self.is_account_delete_mod.assign(
             region,
             offset,
             main_data.proof_type.scalar(),
-            ProofType::AccountDestructed.scalar(),
+            MPTProofType::AccountDestructed.scalar(),
         )? == true.scalar();
         let is_nonce_mod = self.is_nonce_mod.assign(
             region,
             offset,
             main_data.proof_type.scalar(),
-            ProofType::NonceChanged.scalar(),
+            MPTProofType::NonceChanged.scalar(),
         )? == true.scalar();
         let is_balance_mod = self.is_balance_mod.assign(
             region,
             offset,
             main_data.proof_type.scalar(),
-            ProofType::BalanceChanged.scalar(),
+            MPTProofType::BalanceChanged.scalar(),
         )? == true.scalar();
         let is_storage_mod = self.is_storage_mod.assign(
             region,
             offset,
             main_data.proof_type.scalar(),
-            ProofType::StorageChanged.scalar(),
+            MPTProofType::StorageChanged.scalar(),
         )? == true.scalar();
         let is_codehash_mod = self.is_codehash_mod.assign(
             region,
             offset,
             main_data.proof_type.scalar(),
-            ProofType::CodeHashExists.scalar(),
+            MPTProofType::CodeHashExists.scalar(),
         )? == true.scalar();
 
         // Drifted leaf handling
@@ -544,7 +539,7 @@ impl<F: Field> AccountLeafConfig<F> {
             &parent_data,
             &account.drifted_rlp_bytes,
             &drifted_item,
-            ctx.r,
+            pv.r,
         )?;
 
         // Wrong leaf handling
@@ -557,36 +552,36 @@ impl<F: Field> AccountLeafConfig<F> {
             &wrong_item,
             true,
             key_data[true.idx()].clone(),
-            ctx.r,
+            pv.r,
         )?;
 
         // Put the data in the lookup table
         let (proof_type, value) = if is_nonce_mod {
-            (ProofType::NonceChanged, nonce_rlc)
+            (MPTProofType::NonceChanged, nonce_rlc)
         } else if is_balance_mod {
-            (ProofType::BalanceChanged, balance_rlc)
+            (MPTProofType::BalanceChanged, balance_rlc)
         } else if is_storage_mod {
-            (ProofType::StorageChanged, storage_rlc)
+            (MPTProofType::StorageChanged, storage_rlc)
         } else if is_codehash_mod {
-            (ProofType::CodeHashExists, codehash_rlc)
+            (MPTProofType::CodeHashExists, codehash_rlc)
         } else if is_account_delete_mod {
-            (ProofType::AccountDestructed, vec![0.scalar(); 2])
+            (MPTProofType::AccountDestructed, vec![0.scalar(); 2])
         } else if is_non_existing_proof {
-            (ProofType::AccountDoesNotExist, vec![0.scalar(); 2])
+            (MPTProofType::AccountDoesNotExist, vec![0.scalar(); 2])
         } else {
-            (ProofType::Disabled, vec![0.scalar(); 2])
+            (MPTProofType::Disabled, vec![0.scalar(); 2])
         };
         ctx.mpt_table.assign(
             region,
             offset,
             &MptUpdateRow {
-                address_rlc: account.address.rlc_value(ctx.r),
-                proof_type: proof_type.scalar(),
-                key_rlc: 0.scalar(),
-                value_prev: value[true.idx()],
-                value: value[false.idx()],
-                root_prev: main_data.root_prev,
-                root: main_data.root,
+                address_rlc: Value::known(account.address.rlc_value(pv.r)),
+                proof_type: Value::known(proof_type.scalar()),
+                key_rlc: Value::known(0.scalar()),
+                value_prev: Value::known(value[true.idx()]),
+                value: Value::known(value[false.idx()]),
+                root_prev: Value::known(main_data.root_prev),
+                root: Value::known(main_data.root),
             },
         )?;
 

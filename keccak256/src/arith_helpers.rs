@@ -1,6 +1,7 @@
 use crate::common::State;
 use eth_types::Field;
 use itertools::Itertools;
+use log::debug;
 use num_bigint::BigUint;
 use num_traits::Zero;
 use std::ops::{Index, IndexMut};
@@ -192,13 +193,13 @@ pub fn inspect(x: BigUint, name: &str, base: u8) {
     let mut chunks = x.to_radix_le(base.into());
     chunks.resize(65, 0);
     let info: Vec<(usize, u8)> = (0..65).zip(chunks.iter().copied()).collect_vec();
-    println!("inspect {} {} info {:?}", name, x, info);
+    debug!("inspect {} {} info {:?}", name, x, info);
 }
 
 pub fn f_from_radix_be<F: Field>(buf: &[u8], base: u8) -> F {
     let base = F::from(base as u64);
     buf.iter()
-        .fold(F::zero(), |acc, &x| acc * base + F::from(x as u64))
+        .fold(F::ZERO, |acc, &x| acc * base + F::from(x as u64))
 }
 
 #[cfg(test)]

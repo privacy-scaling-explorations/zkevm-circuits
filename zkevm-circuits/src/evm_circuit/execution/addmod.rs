@@ -4,7 +4,10 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             math_gadget::{
                 AddWordsGadget, CmpWordsGadget, IsZeroGadget, MulAddWords512Gadget,
                 MulAddWordsGadget,
@@ -49,19 +52,19 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ADDMOD;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         // values got from stack (original r is modified if n==0)
-        let a = cb.query_word();
-        let b = cb.query_word();
-        let n = cb.query_word();
-        let r = cb.query_word();
+        let a = cb.query_word_rlc();
+        let b = cb.query_word_rlc();
+        let n = cb.query_word_rlc();
+        let r = cb.query_word_rlc();
 
         // auxiliar witness
-        let k = cb.query_word();
-        let a_reduced = cb.query_word();
-        let d = cb.query_word();
+        let k = cb.query_word_rlc();
+        let a_reduced = cb.query_word_rlc();
+        let d = cb.query_word_rlc();
 
         let n_is_zero = IsZeroGadget::construct(cb, n.clone().expr());
 
@@ -74,10 +77,10 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 
         // 2. check d * N + r == a_reduced + b, only checking carry if n != 0
         let sum_areduced_b = {
-            let sum = cb.query_word();
+            let sum = cb.query_word_rlc();
             AddWordsGadget::construct(cb, [a_reduced.clone(), b.clone()], sum)
         };
-        let sum_areduced_b_overflow = cb.query_word();
+        let sum_areduced_b_overflow = cb.query_word_rlc();
         let muladd_d_n_r = MulAddWords512Gadget::construct(
             cb,
             [&d, &n, &sum_areduced_b_overflow, sum_areduced_b.sum()],
@@ -147,9 +150,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         // get stack values
-        let [mut r, n, b, a] = [3, 2, 1, 0]
-            .map(|idx| step.rw_indices[idx])
-            .map(|idx| block.rws[idx].stack_value());
+        let [mut r, n, b, a] = [3, 2, 1, 0].map(|index| block.get_rws(step, index).stack_value());
 
         // assing a,b & n stack values
         self.a.assign(region, offset, Some(a.to_le_bytes()))?;
@@ -213,11 +214,8 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         self.cmp_r_n.assign(region, offset, r, n)?;
         self.cmp_areduced_n.assign(region, offset, a_reduced, n)?;
 
-        self.n_is_zero.assign(
-            region,
-            offset,
-            Word::random_linear_combine(n.to_le_bytes(), block.randomness),
-        )?;
+        self.n_is_zero
+            .assign_value(region, offset, region.word_rlc(n))?;
 
         Ok(())
     }
@@ -225,17 +223,11 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
-    use eth_types::evm_types::Stack;
-    use eth_types::{bytecode, Word};
+    use crate::test_util::CircuitTestBuilder;
+    use eth_types::{bytecode, evm_types::Stack, Word};
     use mock::TestContext;
 
-    fn test(
-        a: Word,
-        b: Word,
-        n: Word,
-        r: Option<Word>,
-    ) -> Result<(), Vec<halo2_proofs::dev::VerifyFailure>> {
+    fn test(a: Word, b: Word, n: Word, r: Option<Word>, ok: bool) {
         let bytecode = bytecode! {
             PUSH32(n)
             PUSH32(b)
@@ -255,55 +247,63 @@ mod test {
                 .unwrap();
             last.stack = Stack::from_vec(vec![r]);
         }
-        run_test_circuits(ctx, None)
+        let mut ctb = CircuitTestBuilder::new_from_test_ctx(ctx);
+        if !ok {
+            ctb = ctb.evm_checks(Box::new(|prover, gate_rows, lookup_rows| {
+                assert!(prover
+                    .verify_at_rows_par(gate_rows.iter().cloned(), lookup_rows.iter().cloned())
+                    .is_err())
+            }));
+        };
+        ctb.run()
     }
-    fn test_u32(
-        a: u32,
-        b: u32,
-        c: u32,
-        r: Option<u32>,
-    ) -> Result<(), Vec<halo2_proofs::dev::VerifyFailure>> {
-        test(a.into(), b.into(), c.into(), r.map(Word::from))
+
+    fn test_ok_u32(a: u32, b: u32, c: u32, r: Option<u32>) {
+        test(a.into(), b.into(), c.into(), r.map(Word::from), true)
+    }
+
+    fn test_ko_u32(a: u32, b: u32, c: u32, r: Option<u32>) {
+        test(a.into(), b.into(), c.into(), r.map(Word::from), false)
     }
 
     #[test]
     fn addmod_simple() {
-        assert_eq!(test_u32(1, 1, 10, None), Ok(()));
-        assert_eq!(test_u32(1, 1, 11, None), Ok(()));
+        test_ok_u32(1, 1, 10, None);
+        test_ok_u32(1, 1, 11, None);
     }
 
     #[test]
     fn addmod_limits() {
-        assert_eq!(test(Word::MAX, Word::MAX, 0.into(), None), Ok(()));
-        assert_eq!(test(Word::MAX, Word::MAX, 1.into(), None), Ok(()));
-        assert_eq!(test(Word::MAX - 1, Word::MAX, Word::MAX, None), Ok(()));
-        assert_eq!(test(Word::MAX, Word::MAX, Word::MAX, None), Ok(()));
-        assert_eq!(test(Word::MAX, 1.into(), 0.into(), None), Ok(()));
-        assert_eq!(test(Word::MAX, 1.into(), 1.into(), None), Ok(()));
-        assert_eq!(test(Word::MAX, 1.into(), Word::MAX, None), Ok(()));
-        assert_eq!(test(Word::MAX, 0.into(), 0.into(), None), Ok(()));
-        assert_eq!(test(Word::MAX, 0.into(), 1.into(), None), Ok(()));
-        assert_eq!(test(Word::MAX, 0.into(), Word::MAX, None), Ok(()));
-        assert_eq!(test(0.into(), 0.into(), 0.into(), None), Ok(()));
-        assert_eq!(test(0.into(), 0.into(), 1.into(), None), Ok(()));
-        assert_eq!(test(0.into(), 0.into(), Word::MAX, None), Ok(()));
+        test(Word::MAX, Word::MAX, 0.into(), None, true);
+        test(Word::MAX, Word::MAX, 1.into(), None, true);
+        test(Word::MAX - 1, Word::MAX, Word::MAX, None, true);
+        test(Word::MAX, Word::MAX, Word::MAX, None, true);
+        test(Word::MAX, 1.into(), 0.into(), None, true);
+        test(Word::MAX, 1.into(), 1.into(), None, true);
+        test(Word::MAX, 1.into(), Word::MAX, None, true);
+        test(Word::MAX, 0.into(), 0.into(), None, true);
+        test(Word::MAX, 0.into(), 1.into(), None, true);
+        test(Word::MAX, 0.into(), Word::MAX, None, true);
+        test(0.into(), 0.into(), 0.into(), None, true);
+        test(0.into(), 0.into(), 1.into(), None, true);
+        test(0.into(), 0.into(), Word::MAX, None, true);
     }
 
     #[test]
     fn addmod_bad_r_on_nonzero_n() {
-        assert_eq!(test_u32(7, 18, 10, Some(5)), Ok(()));
-        assert_ne!(test_u32(7, 18, 10, Some(6)), Ok(()));
+        test_ok_u32(7, 18, 10, Some(5));
+        test_ko_u32(7, 18, 10, Some(6))
     }
 
     #[test]
     fn addmod_bad_r_on_zero_n() {
-        assert_eq!(test_u32(2, 3, 0, Some(0)), Ok(()));
-        assert_ne!(test_u32(2, 3, 0, Some(1)), Ok(()));
+        test_ok_u32(2, 3, 0, Some(0));
+        test_ko_u32(2, 3, 0, Some(1))
     }
 
     #[test]
     fn addmod_bad_r_bigger_n() {
-        assert_eq!(test_u32(2, 3, 4, Some(1)), Ok(()));
-        assert_ne!(test_u32(2, 3, 4, Some(5)), Ok(()));
+        test_ok_u32(2, 3, 4, Some(1));
+        test_ko_u32(2, 3, 4, Some(5))
     }
 }

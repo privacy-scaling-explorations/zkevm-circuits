@@ -4,7 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes,
             math_gadget::{ComparisonGadget, IsEqualGadget, LtGadget},
             select, CachedRegion, Cell, Word,
@@ -39,11 +39,11 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SCMP;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let a = cb.query_word();
-        let b = cb.query_word();
+        let a = cb.query_word_rlc();
+        let b = cb.query_word_rlc();
 
         // The Signed Comparator gadget is used for both opcodes SLT and SGT.
         // Depending on whether the opcode is SLT or SGT, we
@@ -153,7 +153,7 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
 
         // SLT opcode is the default check in the SCMP gadget. Swap rw for SGT.
         self.is_sgt.assign(
@@ -163,11 +163,11 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
             F::from(OpcodeId::SGT.as_u8() as u64),
         )?;
         let indices = if opcode == OpcodeId::SGT {
-            [step.rw_indices[1], step.rw_indices[0]]
+            [1, 0]
         } else {
-            [step.rw_indices[0], step.rw_indices[1]]
+            [0, 1]
         };
-        let [a, b] = indices.map(|idx| block.rws[idx].stack_value());
+        let [a, b] = indices.map(|idx| block.get_rws(step, idx).stack_value());
         let a_le_bytes = a.to_le_bytes();
         let b_le_bytes = b.to_le_bytes();
 
@@ -206,7 +206,7 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
         self.a_lt_b.assign(
             region,
             offset,
-            Value::known(if a < b { F::one() } else { F::zero() }),
+            Value::known(if a < b { F::ONE } else { F::ZERO }),
         )?;
 
         self.a.assign(region, offset, Some(a_le_bytes))?;
@@ -218,12 +218,10 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use eth_types::bytecode;
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::Word;
+    use eth_types::{bytecode, evm_types::OpcodeId, Word};
     use mock::TestContext;
 
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
 
     fn test_ok(pairs: Vec<(OpcodeId, Word, Word)>) {
         let mut bytecode = bytecode! {};
@@ -232,15 +230,12 @@ mod test {
             bytecode.push(32, a);
             bytecode.write_op(opcode);
         }
-        bytecode.write_op(OpcodeId::STOP);
+        bytecode.op_stop();
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

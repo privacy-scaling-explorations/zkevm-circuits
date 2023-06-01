@@ -1,5 +1,8 @@
-use crate::evm_circuit::step::ExecutionState;
-use crate::impl_expr;
+use crate::{
+    evm_circuit::step::{ExecutionState, ResponsibleOp},
+    impl_expr,
+};
+use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
@@ -13,6 +16,7 @@ pub enum FixedTableTag {
     Range16,
     Range32,
     Range64,
+    Range128,
     Range256,
     Range512,
     Range1024,
@@ -22,6 +26,7 @@ pub enum FixedTableTag {
     BitwiseXor,
     ResponsibleOpcode,
     Pow2,
+    ConstantGasCost,
 }
 impl_expr!(FixedTableTag);
 
@@ -29,34 +34,37 @@ impl FixedTableTag {
     pub fn build<F: Field>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
         let tag = F::from(*self as u64);
         match self {
-            Self::Zero => Box::new((0..1).map(move |_| [tag, F::zero(), F::zero(), F::zero()])),
+            Self::Zero => Box::new((0..1).map(move |_| [tag, F::ZERO, F::ZERO, F::ZERO])),
             Self::Range5 => {
-                Box::new((0..5).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+                Box::new((0..5).map(move |value| [tag, F::from(value), F::ZERO, F::ZERO]))
             }
             Self::Range16 => {
-                Box::new((0..16).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+                Box::new((0..16).map(move |value| [tag, F::from(value), F::ZERO, F::ZERO]))
             }
             Self::Range32 => {
-                Box::new((0..32).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+                Box::new((0..32).map(move |value| [tag, F::from(value), F::ZERO, F::ZERO]))
             }
             Self::Range64 => {
-                Box::new((0..64).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+                Box::new((0..64).map(move |value| [tag, F::from(value), F::ZERO, F::ZERO]))
+            }
+            Self::Range128 => {
+                Box::new((0..128).map(move |value| [tag, F::from(value), F::ZERO, F::ZERO]))
             }
             Self::Range256 => {
-                Box::new((0..256).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+                Box::new((0..256).map(move |value| [tag, F::from(value), F::ZERO, F::ZERO]))
             }
             Self::Range512 => {
-                Box::new((0..512).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+                Box::new((0..512).map(move |value| [tag, F::from(value), F::ZERO, F::ZERO]))
             }
             Self::Range1024 => {
-                Box::new((0..1024).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
+                Box::new((0..1024).map(move |value| [tag, F::from(value), F::ZERO, F::ZERO]))
             }
             Self::SignByte => Box::new((0..256).map(move |value| {
                 [
                     tag,
                     F::from(value),
                     F::from((value >> 7) * 0xFFu64),
-                    F::zero(),
+                    F::ZERO,
                 ]
             })),
             Self::BitwiseAnd => Box::new((0..256).flat_map(move |lhs| {
@@ -70,17 +78,22 @@ impl FixedTableTag {
             })),
             Self::ResponsibleOpcode => {
                 Box::new(ExecutionState::iter().flat_map(move |execution_state| {
-                    execution_state
-                        .responsible_opcodes()
-                        .into_iter()
-                        .map(move |opcode| {
+                    execution_state.responsible_opcodes().into_iter().map(
+                        move |responsible_opcode| {
+                            let (op, aux) = match responsible_opcode {
+                                ResponsibleOp::Op(op) => (op, F::ZERO),
+                                ResponsibleOp::InvalidStackPtr(op, stack_ptr) => {
+                                    (op, F::from(u64::from(stack_ptr)))
+                                }
+                            };
                             [
                                 tag,
                                 F::from(execution_state.as_u64()),
-                                F::from(opcode.as_u64()),
-                                F::zero(),
+                                F::from(op.as_u64()),
+                                aux,
                             ]
-                        })
+                        },
+                    )
                 }))
             }
             Self::Pow2 => Box::new((0..256).map(move |value| {
@@ -91,20 +104,32 @@ impl FixedTableTag {
                 };
                 [tag, F::from(value), pow_lo, pow_hi]
             })),
+            Self::ConstantGasCost => Box::new(
+                OpcodeId::iter()
+                    .filter(move |opcode| opcode.constant_gas_cost().0 > 0)
+                    .map(move |opcode| {
+                        [
+                            tag,
+                            F::from(opcode.as_u64()),
+                            F::from(opcode.constant_gas_cost().0),
+                            F::ZERO,
+                        ]
+                    }),
+            ),
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
-pub(crate) enum Table {
+pub enum Table {
     Fixed,
     Tx,
     Rw,
     Bytecode,
     Block,
-    Byte,
     Copy,
     Keccak,
+    Exp,
 }
 
 #[derive(Clone, Debug)]
@@ -206,11 +231,6 @@ pub(crate) enum Lookup<F> {
         /// Value of the field.
         value: Expression<F>,
     },
-    /// Lookup to byte value.
-    Byte {
-        /// Value of the field.
-        value: Expression<F>,
-    },
     /// Lookup to copy table.
     CopyTable {
         /// Whether the row is the first row of the copy event.
@@ -251,6 +271,14 @@ pub(crate) enum Lookup<F> {
         /// the final output keccak256 hash of the input.
         output_rlc: Expression<F>,
     },
+    /// Lookup to exponentiation table.
+    ExpTable {
+        identifier: Expression<F>,
+        is_last: Expression<F>,
+        base_limbs: [Expression<F>; 4],
+        exponent_lo_hi: [Expression<F>; 2],
+        exponentiation_lo_hi: [Expression<F>; 2],
+    },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
 }
@@ -267,9 +295,9 @@ impl<F: Field> Lookup<F> {
             Self::Rw { .. } => Table::Rw,
             Self::Bytecode { .. } => Table::Bytecode,
             Self::Block { .. } => Table::Block,
-            Self::Byte { .. } => Table::Byte,
             Self::CopyTable { .. } => Table::Copy,
             Self::KeccakTable { .. } => Table::Keccak,
+            Self::ExpTable { .. } => Table::Exp,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -325,9 +353,6 @@ impl<F: Field> Lookup<F> {
             } => {
                 vec![field_tag.clone(), number.clone(), value.clone()]
             }
-            Self::Byte { value } => {
-                vec![value.clone()]
-            }
             Self::CopyTable {
                 is_first,
                 src_id,
@@ -364,6 +389,25 @@ impl<F: Field> Lookup<F> {
                 input_rlc.clone(),
                 input_len.clone(),
                 output_rlc.clone(),
+            ],
+            Self::ExpTable {
+                identifier,
+                is_last,
+                base_limbs,
+                exponent_lo_hi,
+                exponentiation_lo_hi,
+            } => vec![
+                1.expr(), // is_step
+                identifier.clone(),
+                is_last.clone(),
+                base_limbs[0].clone(),
+                base_limbs[1].clone(),
+                base_limbs[2].clone(),
+                base_limbs[3].clone(),
+                exponent_lo_hi[0].clone(),
+                exponent_lo_hi[1].clone(),
+                exponentiation_lo_hi[0].clone(),
+                exponentiation_lo_hi[1].clone(),
             ],
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()

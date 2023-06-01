@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes, CachedRegion, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -14,8 +14,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::Field;
-use eth_types::ToLittleEndian;
+use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -25,8 +24,8 @@ pub(crate) struct BlockCtxGadget<F, const N_BYTES: usize> {
 }
 
 impl<F: Field, const N_BYTES: usize> BlockCtxGadget<F, N_BYTES> {
-    fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
-        let value = cb.query_rlc();
+    fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let value = cb.query_word_rlc();
 
         // Push the const generic parameter N_BYTES value to the stack
         cb.stack_push(value.expr());
@@ -72,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU64Gadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BLOCKCTXU64;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let value_u64 = BlockCtxGadget::construct(cb);
 
         Self { value_u64 }
@@ -91,7 +90,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU64Gadget<F> {
             .same_context
             .assign_exec_step(region, offset, step)?;
 
-        let value = block.rws[step.rw_indices[0]].stack_value();
+        let value = block.get_rws(step, 0).stack_value();
 
         self.value_u64.value.assign(
             region,
@@ -113,7 +112,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BLOCKCTXU160;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let value_u160 = BlockCtxGadget::construct(cb);
 
         Self { value_u160 }
@@ -132,7 +131,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
             .same_context
             .assign_exec_step(region, offset, step)?;
 
-        let value = block.rws[step.rw_indices[0]].stack_value();
+        let value = block.get_rws(step, 0).stack_value();
 
         self.value_u160.value.assign(
             region,
@@ -158,7 +157,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BLOCKCTXU256;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let value_u256 = BlockCtxGadget::construct(cb);
 
         Self { value_u256 }
@@ -177,7 +176,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
             .same_context
             .assign_exec_step(region, offset, step)?;
 
-        let value = block.rws[step.rw_indices[0]].stack_value();
+        let value = block.get_rws(step, 0).stack_value();
 
         self.value_u256
             .value
@@ -189,18 +188,15 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::bytecode;
     use mock::TestContext;
 
     fn test_ok(bytecode: bytecode::Bytecode) {
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run()
     }
 
     #[test]

@@ -13,6 +13,7 @@ impl fmt::Debug for OperationRef {
         f.write_fmt(format_args!(
             "OperationRef{{ {}, {} }}",
             match self.0 {
+                Target::Start => "Start",
                 Target::Memory => "Memory",
                 Target::Stack => "Stack",
                 Target::Storage => "Storage",
@@ -20,7 +21,6 @@ impl fmt::Debug for OperationRef {
                 Target::TxAccessListAccountStorage => "TxAccessListAccountStorage",
                 Target::TxRefund => "TxRefund",
                 Target::Account => "Account",
-                Target::AccountDestructed => "AccountDestructed",
                 Target::CallContext => "CallContext",
                 Target::TxReceipt => "TxReceipt",
                 Target::TxLog => "TxLog",

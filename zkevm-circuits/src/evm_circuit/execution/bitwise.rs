@@ -5,16 +5,14 @@ use crate::{
         table::{FixedTableTag, Lookup},
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             CachedRegion, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::evm_types::OpcodeId;
-use eth_types::Field;
-use eth_types::ToLittleEndian;
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -30,12 +28,12 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BITWISE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let a = cb.query_word();
-        let b = cb.query_word();
-        let c = cb.query_word();
+        let a = cb.query_word_rlc();
+        let b = cb.query_word_rlc();
+        let c = cb.query_word_rlc();
 
         cb.stack_pop(a.expr());
         cb.stack_pop(b.expr());
@@ -89,8 +87,7 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [a, b, c] = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
-            .map(|idx| block.rws[idx].stack_value());
+        let [a, b, c] = [0, 1, 2].map(|index| block.get_rws(step, index).stack_value());
         self.a.assign(region, offset, Some(a.to_le_bytes()))?;
         self.b.assign(region, offset, Some(b.to_le_bytes()))?;
         self.c.assign(region, offset, Some(c.to_le_bytes()))?;
@@ -101,7 +98,7 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
@@ -121,13 +118,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

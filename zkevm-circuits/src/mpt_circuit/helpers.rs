@@ -16,7 +16,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::Field;
-use gadgets::util::{or, Scalar};
+use gadgets::util::{or, pow, Scalar};
 use halo2_proofs::{
     circuit::Region,
     plonk::{Error, Expression, VirtualCells},
@@ -73,7 +73,7 @@ impl<F: Field> LeafKeyGadget<F> {
         rlp_key: RLPItemView<F>,
         key_mult_prev: Expression<F>,
         is_key_odd: Expression<F>,
-        r: &[Expression<F>],
+        r: &Expression<F>,
     ) -> Expression<F> {
         circuit!([meta, cb], {
             let calc_rlc = |cb: &mut ConstraintBuilder<F>,
@@ -149,7 +149,7 @@ pub(crate) fn ext_key_rlc_expr<F: Field>(
     is_key_part_odd: Expression<F>,
     is_key_odd: Expression<F>,
     data: [Vec<Expression<F>>; 2],
-    r: &[Expression<F>],
+    r: &Expression<F>,
 ) -> Expression<F> {
     circuit!([meta, cb], {
         let (is_short, is_long) = (key_value.is_short(), key_value.is_long());
@@ -180,12 +180,12 @@ pub(crate) fn ext_key_rlc_expr<F: Field>(
                     // Check that `nibble_hi` is correct.
                     require!(byte => nibble_lo.expr() * 16.expr() + nibble_hi.expr());
                     // Collect bytes
-                    (nibble_hi.expr() * 16.expr() * r[0].expr()) + nibble_lo.expr()
+                    (nibble_hi.expr() * 16.expr() * r.expr()) + nibble_lo.expr()
                 }).collect::<Vec<_>>());
                 calc_rlc(cb, &key_bytes, 1.expr())
             },
             and::expr(&[is_long.expr(), is_key_odd.expr()]) => {
-                let additional_mult = ifx! {is_key_part_odd => { r[0].expr() } elsex { 1.expr() }};
+                let additional_mult = ifx! {is_key_part_odd => { r.expr() } elsex { 1.expr() }};
                 calc_rlc(cb, &data[0][1..], additional_mult)
             },
             is_short => {
@@ -288,9 +288,9 @@ impl<F: Field> ListKeyGadget<F> {
         })
     }
 
-    pub(crate) fn rlc(&self, r: &[Expression<F>]) -> Expression<F> {
+    pub(crate) fn rlc(&self, r: &Expression<F>) -> Expression<F> {
         self.rlp_list
-            .rlc_rlp_only(&r)
+            .rlc_rlp_only(r)
             .rlc_chain(self.key_value.rlc_rlp())
     }
 }
@@ -456,11 +456,11 @@ impl<F: Field> KeyData<F> {
             rlc: values[0],
             mult: values[1],
             num_nibbles: values[2].get_lower_32() as usize,
-            is_odd: values[3] != F::zero(),
+            is_odd: values[3] != F::ZERO,
             drifted_rlc: values[4],
             drifted_mult: values[5],
             drifted_num_nibbles: values[6].get_lower_32() as usize,
-            drifted_is_odd: values[7] != F::zero(),
+            drifted_is_odd: values[7] != F::ZERO,
         })
     }
 }
@@ -676,12 +676,12 @@ pub(crate) fn nibble_rlc<F: Field>(
     key_mult_prev: Expression<F>,
     is_key_odd: Expression<F>,
     nibble: Expression<F>,
-    r: &[Expression<F>],
+    r: &Expression<F>,
 ) -> (Expression<F>, Expression<F>) {
     circuit!([meta, cb], {
         let (nibble_mult, mult) = ifx! {is_key_odd => {
             // The nibble will be added as the least significant nibble, the multiplier needs to advance
-            (1.expr(), r[0].expr())
+            (1.expr(), r.expr())
         } elsex {
             // The nibble will be added as the most significant nibble, the multiplier needs to stay the same
             (16.expr(), 1.expr())
@@ -698,12 +698,12 @@ pub(crate) fn leaf_key_rlc<F: Field>(
     bytes: &[Expression<F>],
     key_mult_prev: Expression<F>,
     is_key_odd: Expression<F>,
-    r: &[Expression<F>],
+    r: &Expression<F>,
 ) -> Expression<F> {
     circuit!([meta, cb], {
         // Add the odd nibble first if we have one.
         let (rlc, mult) = ifx! {is_key_odd => {
-            (get_terminal_odd_nibble(bytes[0].expr()) * key_mult_prev.expr(), r[0].expr())
+            (get_terminal_odd_nibble(bytes[0].expr()) * key_mult_prev.expr(), r.expr())
         } elsex {
             require!(bytes[0] => KEY_TERMINAL_PREFIX_EVEN);
             (0.expr(), 1.expr())
@@ -719,7 +719,7 @@ pub(crate) fn ext_key_rlc<F: Field>(
     is_odd: Expression<F>,
     rlc_mult_first_odd: Expression<F>,
     key_mult_first_odd: Expression<F>,
-    r: &[Expression<F>],
+    r: &Expression<F>,
 ) -> Expression<F> {
     circuit!([meta, cb], {
         // Add the odd nibble first if we have one.
@@ -757,8 +757,7 @@ pub(crate) fn ext_key_rlc_value<F: Field>(
 
 // Returns the number of nibbles stored in a key value
 pub(crate) mod num_nibbles {
-    use crate::circuit_tools::constraint_builder::ConstraintBuilder;
-    use crate::{_cb, circuit};
+    use crate::{_cb, circuit, circuit_tools::constraint_builder::ConstraintBuilder};
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
@@ -781,16 +780,6 @@ pub(crate) mod num_nibbles {
             (key_len - 1) * 2
         }
     }
-}
-
-pub(crate) fn extend_rand<F: Field>(r: &[Expression<F>]) -> Vec<Expression<F>> {
-    [
-        r.to_vec(),
-        r.iter()
-            .map(|v| r.last().unwrap().expr() * v.clone())
-            .collect::<Vec<_>>(),
-    ]
-    .concat()
 }
 
 pub(crate) fn parent_memory(is_s: bool) -> String {
@@ -830,7 +819,7 @@ impl<F: Field> IsEmptyTreeGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         parent_rlc: Expression<F>,
-        r: &[Expression<F>],
+        r: &Expression<F>,
     ) -> Self {
         circuit!([meta, cb], {
             let empty_root_rlc = EMPTY_TRIE_HASH
@@ -882,7 +871,7 @@ impl<F: Field> DriftedGadget<F> {
         expected_key_rlc: &[Expression<F>],
         leaf_no_key_rlc: &[Expression<F>],
         drifted_item: &RLPItemView<F>,
-        r: &[Expression<F>],
+        r: &Expression<F>,
     ) -> Self {
         let mut config = DriftedGadget::default();
         circuit!([meta, cb.base], {
@@ -966,7 +955,7 @@ impl<F: Field> WrongGadget<F> {
         wrong_item: &RLPItemView<F>,
         is_in_empty_tree: Expression<F>,
         key_data: KeyData<F>,
-        r: &[Expression<F>],
+        r: &Expression<F>,
     ) -> Self {
         let mut config = WrongGadget::default();
         circuit!([meta, cb.base], {
@@ -1048,7 +1037,7 @@ pub struct MainRLPGadget<F> {
 }
 
 impl<F: Field> MainRLPGadget<F> {
-    pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>, r: &[Expression<F>]) -> Self {
+    pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>, r: &Expression<F>) -> Self {
         let mut config = MainRLPGadget::default();
         config.bytes = cb.base.query_cells::<34>().to_vec();
         circuit!([meta, cb.base], {
@@ -1066,9 +1055,9 @@ impl<F: Field> MainRLPGadget<F> {
             config.len = cb.base.query_cell();
             require!(config.len => config.rlp.len());
             config.rlc_content = cb.base.query_cell();
-            require!(config.rlc_content => config.rlp.rlc_content(&r));
+            require!(config.rlc_content => config.rlp.rlc_content(r));
             config.rlc_rlp = cb.base.query_cell();
-            require!(config.rlc_rlp => config.rlp.rlc_rlp(&mut cb.base, &r));
+            require!(config.rlc_rlp => config.rlp.rlc_rlp(&mut cb.base, r));
             config.mult_diff = cb.base.query_cell();
             let mult_diff = config.mult_diff.expr();
             require!((FixedTableTag::RMult, config.rlp.num_bytes(), mult_diff) => @format!("fixed"));
@@ -1111,11 +1100,8 @@ impl<F: Field> MainRLPGadget<F> {
         self.len
             .assign(region, offset, rlp_witness.len().scalar())?;
 
-        let mut node_mult_diff = F::one();
-        for _ in 0..rlp_witness.num_bytes() {
-            node_mult_diff *= r;
-        }
-        self.mult_diff.assign(region, offset, node_mult_diff)?;
+        self.mult_diff
+            .assign(region, offset, pow::value(r, rlp_witness.num_bytes()))?;
 
         self.rlc_content
             .assign(region, offset, rlp_witness.rlc_content(r))?;

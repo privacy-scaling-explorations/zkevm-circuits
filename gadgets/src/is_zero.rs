@@ -6,7 +6,6 @@
 
 use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Chip, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
@@ -16,10 +15,9 @@ use crate::util::Expr;
 
 /// Trait that needs to be implemented for any gadget or circuit that wants to
 /// implement `IsZero`.
-pub trait IsZeroInstruction<F: FieldExt> {
+pub trait IsZeroInstruction<F: Field> {
     /// Given a `value` to be checked if it is zero:
-    ///   - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0, and
-    ///     `1/x` otherwise
+    ///   - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0, and `1/x` otherwise
     fn assign(
         &self,
         region: &mut Region<'_, F>,
@@ -39,18 +37,25 @@ pub struct IsZeroConfig<F> {
     pub is_zero_expression: Expression<F>,
 }
 
-impl<F: FieldExt> IsZeroConfig<F> {
+impl<F: Field> IsZeroConfig<F> {
     /// Returns the is_zero expression
     pub fn expr(&self) -> Expression<F> {
         self.is_zero_expression.clone()
     }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region(&self, region: &mut Region<F>, prefix: &str) {
+        [(self.value_inv, "GADGETS_IS_ZERO_inverse_witness")]
+            .iter()
+            .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+    }
 }
 
+#[derive(Debug, Clone)]
 /// Wrapper arround [`IsZeroConfig`] for which [`Chip`] is implemented.
 pub struct IsZeroChip<F> {
     config: IsZeroConfig<F>,
 }
-
 #[rustfmt::skip]
 impl<F: Field> IsZeroChip<F> {
     /// Sets up the configuration of the chip by creating the required columns
@@ -100,9 +105,14 @@ impl<F: Field> IsZeroChip<F> {
     pub fn construct(config: IsZeroConfig<F>) -> Self {
         IsZeroChip { config }
     }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region(&self, region: &mut Region<F>, prefix: &str) {
+      self.config.annotate_columns_in_region(region, prefix)
+    }
 }
 
-impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
+impl<F: Field> IsZeroInstruction<F> for IsZeroChip<F> {
     fn assign(
         &self,
         region: &mut Region<'_, F>,
@@ -110,8 +120,7 @@ impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
         value: Value<F>,
     ) -> Result<(), Error> {
         let config = self.config();
-
-        let value_invert = value.map(|value| value.invert().unwrap_or(F::zero()));
+        let value_invert = value.map(|value| value.invert().unwrap_or(F::ZERO));
         region.assign_advice(
             || "witness inverse of value",
             config.value_inv,
@@ -123,7 +132,7 @@ impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
     }
 }
 
-impl<F: FieldExt> Chip<F> for IsZeroChip<F> {
+impl<F: Field> Chip<F> for IsZeroChip<F> {
     type Config = IsZeroConfig<F>;
     type Loaded = ();
 
@@ -150,7 +159,7 @@ mod test {
     use std::marker::PhantomData;
 
     macro_rules! try_test_circuit {
-        ($values:expr, $checks:expr, $result:expr) => {{
+        ($values:expr, $checks:expr) => {{
             // let k = usize::BITS - $values.len().leading_zeros();
 
             // TODO: remove zk blinding factors in halo2 to restore the
@@ -162,7 +171,7 @@ mod test {
                 _marker: PhantomData,
             };
             let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
-            assert_eq!(prover.verify(), $result);
+            prover.assert_satisfied_par()
         }};
     }
 
@@ -179,7 +188,7 @@ mod test {
                 _marker: PhantomData,
             };
             let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
-            assert!(prover.verify().is_err());
+            assert!(prover.verify_par().is_err());
         }};
     }
 
@@ -204,6 +213,7 @@ mod test {
         impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
+            type Params = ();
 
             fn without_witnesses(&self) -> Self {
                 Self::default()
@@ -299,15 +309,10 @@ mod test {
         }
 
         // ok
-        try_test_circuit!(
-            vec![1, 2, 3, 4, 5],
-            vec![false, false, false, false],
-            Ok(())
-        );
+        try_test_circuit!(vec![1, 2, 3, 4, 5], vec![false, false, false, false]);
         try_test_circuit!(
             vec![1, 2, 2, 3, 3], //
-            vec![false, true, false, true],
-            Ok(())
+            vec![false, true, false, true]
         );
         // error
         try_test_circuit_error!(vec![1, 2, 3, 4, 5], vec![true, true, true, true]);
@@ -336,6 +341,7 @@ mod test {
         impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
+            type Params = ();
 
             fn without_witnesses(&self) -> Self {
                 Self::default()
@@ -433,16 +439,8 @@ mod test {
         }
 
         // ok
-        try_test_circuit!(
-            vec![(1, 2), (3, 4), (5, 6)],
-            vec![false, false, false],
-            Ok(())
-        );
-        try_test_circuit!(
-            vec![(1, 1), (3, 4), (6, 6)],
-            vec![true, false, true],
-            Ok(())
-        );
+        try_test_circuit!(vec![(1, 2), (3, 4), (5, 6)], vec![false, false, false]);
+        try_test_circuit!(vec![(1, 1), (3, 4), (6, 6)], vec![true, false, true]);
         // error
         try_test_circuit_error!(vec![(1, 2), (3, 4), (5, 6)], vec![true, true, true]);
         try_test_circuit_error!(vec![(1, 1), (3, 4), (6, 6)], vec![false, true, false]);

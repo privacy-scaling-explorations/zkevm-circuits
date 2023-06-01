@@ -5,7 +5,10 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             from_bytes, CachedRegion, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -27,8 +30,8 @@ impl<F: Field> ExecutionGadget<F> for PcGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::PC;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let value = cb.query_rlc();
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let value = cb.query_word_rlc();
 
         // program_counter is limited to 64 bits so we only consider 8 bytes
         cb.require_equal(
@@ -69,7 +72,7 @@ impl<F: Field> ExecutionGadget<F> for PcGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         self.value
-            .assign(region, offset, Some(step.program_counter.to_le_bytes()))?;
+            .assign(region, offset, Some(step.program_counter().to_le_bytes()))?;
 
         Ok(())
     }
@@ -77,7 +80,7 @@ impl<F: Field> ExecutionGadget<F> for PcGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::bytecode;
     use mock::TestContext;
 
@@ -88,13 +91,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

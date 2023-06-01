@@ -1,5 +1,4 @@
-use crate::arith_helpers::*;
-use crate::common::*;
+use crate::{arith_helpers::*, common::*};
 use itertools::Itertools;
 
 #[derive(Default)]
@@ -231,9 +230,11 @@ impl Sponge {
 }
 #[cfg(test)]
 mod tests {
-    use crate::arith_helpers::*;
-    use crate::keccak_arith::{Keccak, KeccakFArith, State};
-    use crate::plain::KeccakF;
+    use crate::{
+        arith_helpers::*,
+        keccak_arith::{Keccak, KeccakFArith, State},
+        plain::KeccakF,
+    };
     use itertools::Itertools;
     use num_bigint::BigUint;
     use num_traits::Zero;
@@ -253,7 +254,10 @@ mod tests {
             convert_b13_lane_to_b9(BigUint::from(170u64), 0),
             BigUint::from(82u64)
         );
-        assert_eq!(convert_b9_lane_to_b13(BigUint::from(82u64)), Zero::zero());
+        assert_eq!(
+            convert_b9_lane_to_b13(BigUint::from(82u64)),
+            BigUint::zero()
+        );
         assert_eq!(convert_b9_lane_to_b2(BigUint::from(82u64)), 0);
         assert_eq!(
             convert_b9_lane_to_b2(BigUint::from(9u64).pow(63) * 2u64),

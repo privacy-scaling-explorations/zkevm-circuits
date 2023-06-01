@@ -1,7 +1,9 @@
 use super::CodeSource;
 use crate::{exec_trace::OperationRef, Error};
-use eth_types::evm_types::Memory;
-use eth_types::{evm_types::OpcodeId, Address, Hash, Word};
+use eth_types::{
+    evm_types::{Memory, OpcodeId},
+    Address, Hash, Word,
+};
 
 /// Type of a *CALL*/CREATE* Function.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,12 +51,14 @@ impl TryFrom<OpcodeId> for CallKind {
 }
 
 /// Circuit Input related to an Ethereum Call
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Call {
     /// Unique call identifier within the Block.
     pub call_id: usize,
     /// Caller's id.
     pub caller_id: usize,
+    /// Last Callee's id.
+    pub last_callee_id: usize,
     /// Type of call
     pub kind: CallKind,
     /// This call is being executed without write access (STATIC)
@@ -87,6 +91,10 @@ pub struct Call {
     pub return_data_offset: u64,
     /// Return data length
     pub return_data_length: u64,
+    /// last callee's return data offset
+    pub last_callee_return_data_offset: u64,
+    /// last callee's return data length
+    pub last_callee_return_data_length: u64,
 }
 
 impl Call {
@@ -94,6 +102,23 @@ impl Call {
     /// CREATE2
     pub fn is_create(&self) -> bool {
         self.kind.is_create()
+    }
+
+    /// This call is call with op DELEGATECALL
+    pub fn is_delegatecall(&self) -> bool {
+        matches!(self.kind, CallKind::DelegateCall)
+    }
+
+    /// Get the code address if possible
+    pub fn code_address(&self) -> Option<Address> {
+        match self.kind {
+            CallKind::Call | CallKind::StaticCall => Some(self.address),
+            CallKind::CallCode | CallKind::DelegateCall => match self.code_source {
+                CodeSource::Address(address) => Some(address),
+                _ => None,
+            },
+            CallKind::Create | CallKind::Create2 => None,
+        }
     }
 }
 

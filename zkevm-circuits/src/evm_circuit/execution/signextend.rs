@@ -6,9 +6,12 @@ use crate::{
         util::{
             and,
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             math_gadget::{IsEqualGadget, IsZeroGadget},
-            select, sum, CachedRegion, Cell, Word,
+            rlc, select, sum, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -35,9 +38,9 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SIGNEXTEND;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let index = cb.query_word();
-        let value = cb.query_word();
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let index = cb.query_word_rlc();
+        let value = cb.query_word_rlc();
         let sign_byte = cb.query_cell();
         let selectors = array_init(|_| cb.query_bool());
 
@@ -108,8 +111,8 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
         // enabled need to be changed to the sign byte.
         // When a byte was selected all the **following** bytes need to be
         // replaced (hence the `selectors[idx - 1]`).
-        let result = Word::random_linear_combine_expr(
-            array_init(|idx| {
+        let result = rlc::expr(
+            &array_init::<_, _, 32>(|idx| {
                 if idx == 0 {
                     value.cells[idx].expr()
                 } else {
@@ -120,7 +123,7 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
                     )
                 }
             }),
-            cb.power_of_randomness(),
+            cb.challenges().evm_word(),
         );
 
         // Pop the byte index and the value from the stack, push the result on
@@ -163,8 +166,8 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         // Inputs/Outputs
-        let index = block.rws[step.rw_indices[0]].stack_value().to_le_bytes();
-        let value = block.rws[step.rw_indices[1]].stack_value().to_le_bytes();
+        let index = block.get_rws(step, 0).stack_value().to_le_bytes();
+        let value = block.get_rws(step, 1).stack_value().to_le_bytes();
         self.index.assign(region, offset, Some(index))?;
         self.value.assign(region, offset, Some(value))?;
 
@@ -192,7 +195,7 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
 
         // Set the sign byte
         let mut sign = 0u64;
-        if index[0] < 31 && msb_sum_zero == F::one() {
+        if index[0] < 31 && msb_sum_zero == F::ONE {
             sign = (value[index[0] as usize] >> 7) as u64;
         }
         self.sign_byte
@@ -205,7 +208,7 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, ToLittleEndian, Word};
     use mock::TestContext;
 
@@ -217,13 +220,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

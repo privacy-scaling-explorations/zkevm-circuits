@@ -4,7 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{AddWordsGadget, PairSelectGadget},
             select, CachedRegion,
         },
@@ -32,12 +32,12 @@ impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ADD_SUB;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let a = cb.query_word();
-        let b = cb.query_word();
-        let c = cb.query_word();
+        let a = cb.query_word_rlc();
+        let b = cb.query_word_rlc();
+        let c = cb.query_word_rlc();
         let add_words = AddWordsGadget::construct(cb, [a.clone(), b.clone()], c.clone());
 
         // Swap a and c if opcode is SUB
@@ -82,13 +82,13 @@ impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         let indices = if opcode == OpcodeId::SUB {
-            [step.rw_indices[2], step.rw_indices[1], step.rw_indices[0]]
+            [2, 1, 0]
         } else {
-            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
+            [0, 1, 2]
         };
-        let [a, b, c] = indices.map(|idx| block.rws[idx].stack_value());
+        let [a, b, c] = indices.map(|index| block.get_rws(step, index).stack_value());
         self.add_words.assign(region, offset, [a, b], c)?;
         self.is_sub.assign(
             region,
@@ -104,10 +104,9 @@ impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::rand_word;
-    use crate::test_util::run_test_circuits;
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::{bytecode, Word};
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
+    use eth_types::{bytecode, evm_types::OpcodeId, Word};
+
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, a: Word, b: Word) {
@@ -118,13 +117,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run()
     }
 
     #[test]

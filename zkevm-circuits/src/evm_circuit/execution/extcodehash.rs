@@ -6,32 +6,26 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
+                EVMConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
-            from_bytes,
-            math_gadget::BatchedIsZeroGadget,
-            CachedRegion, Cell, RandomLinearCombination, Word,
+            from_bytes, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToAddress};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian};
 use halo2_proofs::{circuit::Value, plonk::Error};
-use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExtcodehashGadget<F> {
     same_context: SameContextGadget<F>,
-    external_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
+    address_word: Word<F>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
     is_warm: Cell<F>,
-    nonce: Cell<F>,
-    balance: Cell<F>,
     code_hash: Cell<F>,
-    is_empty: BatchedIsZeroGadget<F, 3>, // boolean for if the external account is empty
 }
 
 impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
@@ -39,9 +33,10 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EXTCODEHASH;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let external_address = cb.query_rlc();
-        cb.stack_pop(external_address.expr());
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let address_word = cb.query_word_rlc();
+        let address = from_bytes::expr(&address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
+        cb.stack_pop(address_word.expr());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
@@ -49,52 +44,22 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         let is_warm = cb.query_bool();
         cb.account_access_list_write(
             tx_id.expr(),
-            from_bytes::expr(&external_address.cells),
+            address.expr(),
             1.expr(),
             is_warm.expr(),
             Some(&mut reversion_info),
         );
 
-        let nonce = cb.query_cell();
-        cb.account_read(
-            from_bytes::expr(&external_address.cells),
-            AccountFieldTag::Nonce,
-            nonce.expr(),
-        );
-        let balance = cb.query_cell();
-        cb.account_read(
-            from_bytes::expr(&external_address.cells),
-            AccountFieldTag::Balance,
-            balance.expr(),
-        );
-        let code_hash = cb.query_cell();
-        cb.account_read(
-            from_bytes::expr(&external_address.cells),
-            AccountFieldTag::CodeHash,
-            code_hash.expr(),
-        );
+        let code_hash = cb.query_cell_phase2();
+        // For non-existing accounts the code_hash must be 0 in the rw_table.
+        cb.account_read(address, AccountFieldTag::CodeHash, code_hash.expr());
+        cb.stack_push(code_hash.expr());
 
-        let empty_code_hash_rlc = Word::random_linear_combine_expr(
-            (*EMPTY_HASH_LE).map(|byte| byte.expr()),
-            cb.power_of_randomness(),
+        let gas_cost = select::expr(
+            is_warm.expr(),
+            GasCost::WARM_ACCESS.expr(),
+            GasCost::COLD_ACCOUNT_ACCESS.expr(),
         );
-        // Note that balance is RLC encoded, but RLC(x) = 0 iff x = 0, so we don't need
-        // go to the work of writing out the RLC expression
-        let is_empty = BatchedIsZeroGadget::construct(
-            cb,
-            [
-                nonce.expr(),
-                balance.expr(),
-                code_hash.expr() - empty_code_hash_rlc,
-            ],
-        );
-
-        // The stack push is 0 if the external account is empty. Otherwise, it's the
-        // code hash
-        cb.stack_push((1.expr() - is_empty.expr()) * code_hash.expr());
-
-        let gas_cost = is_warm.expr() * GasCost::WARM_ACCESS.expr()
-            + (1.expr() - is_warm.expr()) * GasCost::COLD_ACCOUNT_ACCESS.expr();
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(cb.rw_counter_offset()),
             program_counter: Delta(1.expr()),
@@ -109,14 +74,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
         Self {
             same_context,
-            external_address,
+            address_word,
             tx_id,
             reversion_info,
             is_warm,
-            nonce,
-            balance,
             code_hash,
-            is_empty,
         }
     }
 
@@ -131,11 +93,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let external_address = block.rws[step.rw_indices[0]].stack_value().to_address();
-        let mut le_bytes = external_address.0;
-        le_bytes.reverse();
-        self.external_address
-            .assign(region, offset, Some(le_bytes))?;
+        let address = block.get_rws(step, 0).stack_value();
+        self.address_word
+            .assign(region, offset, Some(address.to_le_bytes()))?;
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
@@ -146,31 +106,13 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             call.is_persistent,
         )?;
 
-        let is_warm = match GasCost::from(step.gas_cost) {
-            GasCost::COLD_ACCOUNT_ACCESS => 0,
-            GasCost::WARM_ACCESS => 1,
-            _ => unreachable!(),
-        };
+        let (_, is_warm) = block.get_rws(step, 4).tx_access_list_value_pair();
         self.is_warm
-            .assign(region, offset, Value::known(F::from(is_warm)))?;
+            .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let [nonce, balance, code_hash] = [5, 6, 7].map(|i| {
-            block.rws[step.rw_indices[i]]
-                .table_assignment(block.randomness)
-                .value
-        });
-
-        self.nonce.assign(region, offset, Value::known(nonce))?;
-        self.balance.assign(region, offset, Value::known(balance))?;
+        let code_hash = block.get_rws(step, 5).account_value_pair().0;
         self.code_hash
-            .assign(region, offset, Value::known(code_hash))?;
-
-        let empty_code_hash_rlc = Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness);
-        self.is_empty.assign(
-            region,
-            offset,
-            [nonce, balance, code_hash - empty_code_hash_rlc],
-        )?;
+            .assign(region, offset, region.word_rlc(code_hash))?;
 
         Ok(())
     }
@@ -178,15 +120,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        evm_circuit::witness::block_convert,
-        test_util::{test_circuits_using_witness_block, BytecodeTestConfig},
-    };
-    use bus_mapping::mock::BlockData;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{
-        address, bytecode,
-        geth_types::{Account, GethData},
-        Address, Bytecode, Bytes, ToWord, Word, U256,
+        address, bytecode, geth_types::Account, Address, Bytecode, Bytes, ToWord, Word, U256, U64,
     };
     use lazy_static::lazy_static;
     use mock::TestContext;
@@ -198,7 +134,7 @@ mod test {
 
     fn test_ok(external_account: Option<Account>, is_warm: bool) {
         let external_address = external_account
-            .as_ref()
+            .clone()
             .map(|a| a.address)
             .unwrap_or(*EXTERNAL_ADDRESS);
 
@@ -220,7 +156,7 @@ mod test {
         });
 
         // Execute the bytecode and get trace
-        let block: GethData = TestContext::<3, 1>::new(
+        let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -230,10 +166,7 @@ mod test {
 
                 accs[1].address(external_address);
                 if let Some(external_account) = external_account {
-                    accs[1]
-                        .balance(external_account.balance)
-                        .nonce(external_account.nonce)
-                        .code(external_account.code);
+                    accs[1].account(&external_account);
                 }
                 accs[2]
                     .address(address!("0x0000000000000000000000000000000000000010"))
@@ -244,19 +177,9 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
-
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .expect("could not handle block tx");
-
-        test_circuits_using_witness_block(
-            block_convert(&builder.block, &builder.code_db),
-            BytecodeTestConfig::default(),
-        )
         .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]
@@ -274,7 +197,7 @@ mod test {
         test_ok(
             Some(Account {
                 address: *EXTERNAL_ADDRESS,
-                nonce: U256::from(259),
+                nonce: U64::from(259),
                 code: Bytes::from([3]),
                 ..Default::default()
             }),
@@ -301,7 +224,7 @@ mod test {
         // code = [].
         let nonce_only_account = Account {
             address: *EXTERNAL_ADDRESS,
-            nonce: U256::from(200),
+            nonce: U64::from(200),
             ..Default::default()
         };
         // This account state is possible if another account sends ETH to a previously
@@ -312,7 +235,7 @@ mod test {
             ..Default::default()
         };
         // This account state should no longer be possible because contract nonces start
-        // at 1, per EIP-161. However, the requirement that the code be emtpy is still
+        // at 1, per EIP-161. However, the requirement that the code be empty is still
         // in the yellow paper and our constraints, so we test this case
         // anyways.
         let contract_only_account = Account {

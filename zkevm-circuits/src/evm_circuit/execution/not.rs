@@ -5,15 +5,14 @@ use crate::{
         table::{FixedTableTag, Lookup},
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             CachedRegion, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::evm_types::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -28,11 +27,11 @@ impl<F: Field> ExecutionGadget<F> for NotGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::NOT;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let input = cb.query_word();
-        let output = cb.query_word();
+        let input = cb.query_word_rlc();
+        let output = cb.query_word_rlc();
 
         cb.stack_pop(input.expr());
         cb.stack_push(output.expr());
@@ -75,8 +74,7 @@ impl<F: Field> ExecutionGadget<F> for NotGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [input, output] =
-            [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
+        let [input, output] = [0, 1].map(|index| block.get_rws(step, index).stack_value());
         self.input
             .assign(region, offset, Some(input.to_le_bytes()))?;
         self.output
@@ -88,7 +86,7 @@ impl<F: Field> ExecutionGadget<F> for NotGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
@@ -99,13 +97,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<1, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

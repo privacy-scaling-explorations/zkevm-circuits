@@ -5,7 +5,10 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::UpdateBalanceGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::{Delta, Same},
+            },
             math_gadget::{
                 AddWordsGadget, ConstantDivisionGadget, IsEqualGadget, MinMaxGadget,
                 MulWordByU64Gadget,
@@ -14,11 +17,10 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{
-        BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag, TxReceiptFieldTag,
-    },
+    table::{BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag, TxReceiptFieldTag},
     util::Expr,
 };
+use bus_mapping::operation::Target;
 use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use strum::EnumCount;
@@ -47,7 +49,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EndTx;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
 
@@ -82,14 +84,14 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         // Add gas_used * effective_tip to coinbase's balance
         let coinbase = cb.query_cell();
-        let base_fee = cb.query_word();
+        let base_fee = cb.query_word_rlc();
         for (tag, value) in [
             (BlockContextFieldTag::Coinbase, coinbase.expr()),
             (BlockContextFieldTag::BaseFee, base_fee.expr()),
         ] {
             cb.block_lookup(tag.expr(), None, value);
         }
-        let effective_tip = cb.query_word();
+        let effective_tip = cb.query_word_rlc();
         let sub_gas_price_by_base_fee =
             AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price);
         let mul_effective_tip_by_gas_used =
@@ -145,7 +147,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             cb.next.execution_state_selector([ExecutionState::BeginTx]),
             |cb| {
                 cb.call_context_lookup(
-                    false.expr(),
+                    true.expr(),
                     Some(cb.next.state.rw_counter.expr()),
                     CallContextFieldTag::TxId,
                     tx_id.expr() + 1.expr(),
@@ -163,6 +165,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             |cb| {
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(9.expr() - is_first_tx.expr()),
+                    // We propagate call_id so that EndBlock can get the last tx_id
+                    // in order to count processed txs.
+                    call_id: Same,
                     ..StepStateTransition::any()
                 });
             },
@@ -196,10 +201,10 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let gas_used = tx.gas - step.gas_left;
-        let (refund, _) = block.rws[step.rw_indices[2]].tx_refund_value_pair();
+        let gas_used = tx.gas - step.gas_left.0;
+        let (refund, _) = block.get_rws(step, 2).tx_refund_value_pair();
         let [(caller_balance, caller_balance_prev), (coinbase_balance, coinbase_balance_prev)] =
-            [step.rw_indices[3], step.rw_indices[4]].map(|idx| block.rws[idx].account_value_pair());
+            [3, 4].map(|index| block.get_rws(step, index).account_value_pair());
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
@@ -215,12 +220,12 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             F::from(refund),
         )?;
         let effective_refund = refund.min(max_refund as u64);
-        let gas_fee_refund = tx.gas_price * (effective_refund + step.gas_left);
+        let gas_fee_refund = tx.gas_price * (effective_refund + step.gas_left.0);
         self.mul_gas_price_by_refund.assign(
             region,
             offset,
             tx.gas_price,
-            effective_refund + step.gas_left,
+            effective_refund + step.gas_left.0,
             gas_fee_refund,
         )?;
         self.tx_caller_address.assign(
@@ -278,7 +283,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             // first transaction needs TxReceiptFieldTag::COUNT(3) lookups to tx receipt,
             // while later transactions need 4 (with one extra cumulative gas read) lookups
             let rw = &block.rws[(
-                RwTableTag::TxReceipt,
+                Target::TxReceipt,
                 (tx.id - 2) * (TxReceiptFieldTag::COUNT + 1) + 2,
             )];
             rw.receipt_value()
@@ -290,7 +295,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             Value::known(F::from(current_cumulative_gas_used)),
         )?;
         self.is_first_tx
-            .assign(region, offset, F::from(tx.id as u64), F::one())?;
+            .assign(region, offset, F::from(tx.id as u64), F::ONE)?;
         self.is_persistent.assign(
             region,
             offset,
@@ -303,19 +308,19 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{test::run_test_circuit, witness::block_convert};
-    use eth_types::{self, bytecode, geth_types::GethData};
+    use crate::test_util::CircuitTestBuilder;
+    use bus_mapping::circuit_input_builder::CircuitsParams;
+    use eth_types::{self, bytecode};
+
     use mock::{eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
 
-    fn test_ok(block: GethData) {
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
-            .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db);
-
-        assert_eq!(run_test_circuit(block), Ok(()));
+    fn test_ok<const NACC: usize, const NTX: usize>(ctx: TestContext<NACC, NTX>) {
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_txs: 5,
+                ..Default::default()
+            })
+            .run();
     }
 
     #[test]
@@ -356,8 +361,7 @@ mod test {
                 },
                 |block, _tx| block.number(0xcafeu64),
             )
-            .unwrap()
-            .into(),
+            .unwrap(),
         );
     }
 }

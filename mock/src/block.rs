@@ -1,9 +1,8 @@
 //! Mock Block definition and builder related methods.
 
-use crate::{MockTransaction, MOCK_CHAIN_ID};
+use crate::{MockTransaction, MOCK_BASEFEE, MOCK_CHAIN_ID, MOCK_DIFFICULTY, MOCK_GASLIMIT};
 use eth_types::{Address, Block, Bytes, Hash, Transaction, Word, H64, U64};
-use ethers_core::types::Bloom;
-use ethers_core::types::OtherFields;
+use ethers_core::types::{Bloom, OtherFields};
 
 #[derive(Clone, Debug)]
 /// Mock structure which represents an Ethereum Block and can be used for tests.
@@ -50,12 +49,12 @@ impl Default for MockBlock {
             receipts_root: Hash::zero(),
             number: U64([0u64]),
             gas_used: Word::zero(),
-            gas_limit: Word::from(0x2386f26fc10000u64),
-            base_fee_per_gas: Word::zero(),
+            gas_limit: *MOCK_GASLIMIT,
+            base_fee_per_gas: *MOCK_BASEFEE,
             extra_data: Bytes::default(),
             logs_bloom: None,
             timestamp: Word::from(123456789u64),
-            difficulty: Word::from(0x200000u64),
+            difficulty: *MOCK_DIFFICULTY,
             total_difficulty: Word::zero(),
             seal_fields: Vec::new(),
             uncles: Vec::new(),

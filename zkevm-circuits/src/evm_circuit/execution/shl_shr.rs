@@ -6,7 +6,10 @@ use crate::{
         util::{
             self,
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             from_bytes,
             math_gadget::{IsZeroGadget, LtWordGadget, MulAddWordsGadget},
             sum, CachedRegion, Cell,
@@ -36,6 +39,8 @@ pub(crate) struct ShlShrGadget<F> {
     shf0: Cell<F>,
     /// Gadget that verifies quotient * divisor + remainder = dividend
     mul_add_words: MulAddWordsGadget<F>,
+    /// Identify if `shift` is less than 256 or not
+    shf_lt256: IsZeroGadget<F>,
     /// Check if divisor is zero
     divisor_is_zero: IsZeroGadget<F>,
     /// Check if remainder is zero
@@ -49,20 +54,21 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SHL_SHR;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let is_shl = OpcodeId::SHR.expr() - opcode.expr();
         let is_shr = 1.expr() - is_shl.expr();
 
-        let quotient = cb.query_word();
-        let divisor = cb.query_word();
-        let remainder = cb.query_word();
-        let dividend = cb.query_word();
-        let shift = cb.query_word();
+        let quotient = cb.query_word_rlc();
+        let divisor = cb.query_word_rlc();
+        let remainder = cb.query_word_rlc();
+        let dividend = cb.query_word_rlc();
+        let shift = cb.query_word_rlc();
         let shf0 = cb.query_cell();
 
         let mul_add_words =
             MulAddWordsGadget::construct(cb, [&quotient, &divisor, &remainder, &dividend]);
+        let shf_lt256 = IsZeroGadget::construct(cb, sum::expr(&shift.cells[1..32]));
         let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&divisor.cells));
         let remainder_is_zero = IsZeroGadget::construct(cb, sum::expr(&remainder.cells));
         let remainder_lt_divisor = LtWordGadget::construct(cb, &remainder, &divisor);
@@ -78,8 +84,18 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         );
 
         cb.require_zero(
+            "shf0 == shift.cells[0]",
+            shf0.expr() - shift.cells[0].expr(),
+        );
+
+        cb.require_zero(
             "shift == shift.cells[0] when divisor != 0",
             (1.expr() - divisor_is_zero.expr()) * (shift.expr() - shift.cells[0].expr()),
+        );
+
+        cb.require_zero(
+            "shift < 256 when divisor != 0 or shift >= 256 when divisor == 0",
+            1.expr() - divisor_is_zero.expr() - shf_lt256.expr(),
         );
 
         cb.require_zero(
@@ -130,6 +146,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
             shift,
             shf0,
             mul_add_words,
+            shf_lt256,
             divisor_is_zero,
             remainder_is_zero,
             remainder_lt_divisor,
@@ -146,16 +163,23 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
-        let [pop1, pop2, push] = indices.map(|idx| block.rws[idx].stack_value());
-        let shf0 = pop1.to_le_bytes()[0];
-        let divisor = if U256::from(shf0) == pop1 {
+        let [pop1, pop2, push] = [0, 1, 2].map(|idx| block.get_rws(step, idx).stack_value());
+        let shf0 = u64::from(pop1.to_le_bytes()[0]);
+        let shf_lt256 = pop1
+            .to_le_bytes()
+            .iter()
+            .fold(Some(0_u64), |acc, val| {
+                acc.and_then(|acc| acc.checked_add(u64::from(*val)))
+            })
+            .unwrap()
+            - shf0;
+        let divisor = if shf_lt256 == 0 {
             U256::from(1) << shf0
         } else {
             U256::from(0)
         };
 
-        let (quotient, remainder, dividend) = match step.opcode.unwrap() {
+        let (quotient, remainder, dividend) = match step.opcode().unwrap() {
             OpcodeId::SHL => (pop2, U256::from(0), push),
             OpcodeId::SHR => (push, pop2 - push * divisor, pop2),
             _ => unreachable!(),
@@ -171,9 +195,10 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         self.shift
             .assign(region, offset, Some(pop1.to_le_bytes()))?;
         self.shf0
-            .assign(region, offset, Value::known(u64::from(shf0).into()))?;
+            .assign(region, offset, Value::known(F::from(shf0)))?;
         self.mul_add_words
             .assign(region, offset, [quotient, divisor, remainder, dividend])?;
+        self.shf_lt256.assign(region, offset, F::from(shf_lt256))?;
         let divisor_sum = (0..32).fold(0, |acc, idx| acc + divisor.byte(idx) as u64);
         self.divisor_is_zero
             .assign(region, offset, F::from(divisor_sum))?;
@@ -187,9 +212,8 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::{bytecode, Word};
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
+    use eth_types::{bytecode, evm_types::OpcodeId, Word};
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, pop1: Word, pop2: Word) {
@@ -201,13 +225,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

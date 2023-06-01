@@ -5,7 +5,10 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             from_bytes, CachedRegion, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -27,8 +30,8 @@ impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::MSIZE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let value = cb.query_rlc();
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let value = cb.query_word_rlc();
 
         // memory_size is limited to 64 bits so we only consider 8 bytes
         cb.require_equal(
@@ -67,11 +70,8 @@ impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        self.value.assign(
-            region,
-            offset,
-            Some((step.memory_size as u64).to_le_bytes()),
-        )?;
+        self.value
+            .assign(region, offset, Some((step.memory_size).to_le_bytes()))?;
 
         Ok(())
     }
@@ -79,7 +79,7 @@ impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
@@ -95,12 +95,9 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 }
