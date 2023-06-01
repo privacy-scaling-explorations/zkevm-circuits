@@ -361,9 +361,16 @@ impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
     }
 
     pub(crate) fn get_typed_columns(&self, cell_type: C) -> Vec<CellColumn_<F, C>> {
-        let (start_width, _) = self.cells.get(&cell_type).expect("Cell type not found");
-        let window = self.get_config(cell_type).num_columns;
-        self.columns[*start_width..*start_width + window].to_owned()
+        // let (start_width, _) = self.cells.get(&cell_type).expect("Cell type not found");
+        // let window = self.get_config(cell_type).num_columns;
+        // self.columns[*start_width..*start_width + window].to_owned()
+
+        if let Some((start_width, _)) = self.cells.get(&cell_type) {
+            let window = self.get_config(cell_type).num_columns;
+            return self.columns[*start_width..*start_width + window].to_owned();
+        } else {
+            return Vec::new();
+        }
     }
 
     /// Clears columns record and set new height in cells array
@@ -379,21 +386,6 @@ impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
             .get(&cell_type)
             .expect(&format!("Cell type {:?} not found", cell_type));
         let window = self.get_config(cell_type).num_columns;        
-        
-        //println!("querying {:?} {} cells", cell_type, count);
-
-        if cell_list.len() == 2 || cell_list.len() == 21 {
-            //println!("\n fucked up place, start_width {} window {}", start_width, window);
-            self.cells
-                .iter()
-                .for_each(|(c, (start, l))| print!("{:?}: {} |", c, l.len()) );
-
-            //// println!(
-            //     "columns {:?}", self.columns[*start_width..start_width + window].to_vec()
-            // )
-        }
-
-
 
         while targets.len() < count {
             // Search best cell in window of columns designated for this CellType

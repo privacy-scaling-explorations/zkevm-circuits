@@ -246,13 +246,13 @@ impl<F: Field> MPTConfig<F> {
 
                 ifx!{f!(q_enable) => {
                     // RLP item decoding unit
-                    cb.base.set_cell_manager(rlp_cm);
+                    cb.base.set_cell_manager(rlp_cm.clone());
                     rlp_item = MainRLPGadget::construct(&mut cb, &ctx.r);
                     ctx.rlp_item = rlp_item.clone();
 
                     // Main MPT circuit
                     // State machine
-                    cb.base.set_cell_manager(state_cm);
+                    cb.base.set_cell_manager(state_cm.clone());
                     ifx! {f!(q_first) + f!(q_last) => {
                         require!(a!(state_machine.is_start) => true);
                     }};
@@ -305,6 +305,7 @@ impl<F: Field> MPTConfig<F> {
             cb.base.build_static_lookups(
                 meta,
                 challenges.lookup_input(), 
+                vec![rlp_cm, state_cm],
                 vec![&keccak_table, &fixed_table]
             );
             cb.base.build_dynamic_lookups(

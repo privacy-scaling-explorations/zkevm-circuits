@@ -5,6 +5,8 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
+use crate::evm_circuit::table::Table;
+
 use super::{cell_manager::{CellTypeTrait, EvmCellType}};
 
 
@@ -14,7 +16,7 @@ impl<F: Field, CA: Into<Column<Any>> + Copy, const W: usize> LookupTable_<F> for
     type TableCellType = EvmCellType;
 
     fn get_type_(&self) -> EvmCellType {
-        EvmCellType::default()
+        EvmCellType::Lookup(Table::Fixed)
     }
 
     fn phase(&self) -> u8 {

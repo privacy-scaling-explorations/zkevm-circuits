@@ -191,19 +191,24 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         &self,
         meta: &mut ConstraintSystem<F>,
         challenge: Expression<F>,
+        cell_managers: Vec<CellManager_<F, C>>,
         tables: Vec<&dyn LookupTable_<F, TableCellType = C>>
     ) {
         println!("____ build_static_lookups ____ \n challen {:?}", challenge);
-        let cm = self.cell_manager.as_ref().expect("CellManager unset!");
-        for table in tables {
-            let cell_type = table.get_type_();
-            for col in cm.get_typed_columns(cell_type) {
-                meta.lookup_any(
-                    "static lookup",
-                    |meta| {
-                        vec![(col.expr, rlc::expr(&table.table_exprs(meta), challenge.clone()))]
-                    }
-                );
+        // let cm = self.cell_manager.as_ref().expect("CellManager unset!");
+        for cm in cell_managers {
+            for table in &tables {
+                let cell_type = table.get_type_();
+                println!("cell_type {:?}: ", cell_type);
+                for col in cm.get_typed_columns(cell_type) {
+                    print!("col: {:?} ", col.expr.identifier());
+                    meta.lookup_any(
+                        "static lookup",
+                        |meta| {
+                            vec![(col.expr, rlc::expr(&table.table_exprs(meta), challenge.clone()))]
+                        }
+                    );
+                }
             }
         }
     }
