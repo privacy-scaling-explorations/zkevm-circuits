@@ -27,9 +27,7 @@ use halo2_proofs::halo2curves::{
     ff::{Field as Halo2Field, FromUniformBytes, PrimeField},
 };
 
-use crate::evm_types::{
-    memory::Memory, stack::Stack, storage::Storage, Gas, GasCost, OpcodeId, ProgramCounter,
-};
+use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage, Gas, GasCost, OpcodeId};
 use ethers_core::types;
 pub use ethers_core::{
     abi::ethereum_types::{BigEndianHash, U512},
@@ -314,7 +312,7 @@ pub struct EIP1186ProofResponse {
 #[derive(Deserialize)]
 #[doc(hidden)]
 struct GethExecStepInternal {
-    pc: ProgramCounter,
+    pc: u64,
     op: OpcodeId,
     gas: Gas,
     #[serde(default)]
@@ -338,7 +336,7 @@ struct GethExecStepInternal {
 #[derive(Clone, Eq, PartialEq, Serialize)]
 #[doc(hidden)]
 pub struct GethExecStep {
-    pub pc: ProgramCounter,
+    pub pc: u64,
     pub op: OpcodeId,
     pub gas: Gas,
     pub gas_cost: GasCost,
@@ -375,7 +373,7 @@ impl<'a> fmt::Debug for DebugWord<'a> {
 impl fmt::Debug for GethExecStep {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Step")
-            .field("pc", &format_args!("0x{:04x}", self.pc.0))
+            .field("pc", &format_args!("0x{:04x}", self.pc))
             .field("op", &self.op)
             .field("gas", &format_args!("{}", self.gas.0))
             .field("gas_cost", &format_args!("{}", self.gas_cost.0))
@@ -564,7 +562,7 @@ mod tests {
                 return_value: "".to_owned(),
                 struct_logs: vec![
                     GethExecStep {
-                        pc: ProgramCounter(0),
+                        pc: 0,
                         op: OpcodeId::PUSH1,
                         gas: Gas(22705),
                         refund: Gas(0),
@@ -576,7 +574,7 @@ mod tests {
                         memory: Memory::new(),
                     },
                     GethExecStep {
-                        pc: ProgramCounter(163),
+                        pc: 163,
                         op: OpcodeId::SLOAD,
                         gas: Gas(5217),
                         refund: Gas(0),
@@ -588,7 +586,7 @@ mod tests {
                         memory: Memory::from(vec![word!("0x0"), word!("0x0"), word!("0x080")]),
                     },
                     GethExecStep {
-                        pc: ProgramCounter(189),
+                        pc: 189,
                         op: OpcodeId::SHA3,
                         gas: Gas(178805),
                         refund: Gas(0),

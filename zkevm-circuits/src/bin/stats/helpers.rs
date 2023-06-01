@@ -213,7 +213,7 @@ pub(crate) fn print_circuit_stats_by_states(
                 .steps()
                 .iter()
                 .enumerate()
-                .find(|(_, s)| s.call_index == 1 && s.pc.0 == opcode_pc)
+                .find(|(_, s)| s.call_index == 1 && s.pc == (opcode_pc as u64))
                 .unwrap();
             assert_eq!(ExecState::Op(opcode), step.exec_state);
             let height = fn_height(&builder.block, state, step_index);

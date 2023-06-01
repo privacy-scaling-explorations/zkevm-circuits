@@ -5,7 +5,7 @@ use crate::{
     operation::RWCounter,
 };
 use eth_types::{
-    evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
+    evm_types::{Gas, GasCost, OpcodeId},
     GethExecStep, Word, H256,
 };
 use gadgets::impl_expr;
@@ -18,7 +18,7 @@ pub struct ExecStep {
     /// Execution state
     pub exec_state: ExecState,
     /// Program Counter
-    pub pc: ProgramCounter,
+    pub pc: u64,
     /// Stack size
     pub stack_size: usize,
     /// Memory size
@@ -119,11 +119,6 @@ impl ExecStep {
         // Thus, the memory size must be a multiple of 32 bytes.
         assert_eq!(memory_size % n_bytes_word, 0);
         memory_size / n_bytes_word
-    }
-
-    /// Get program counter
-    pub fn program_counter(&self) -> u64 {
-        self.pc.0.try_into().expect("program counter can fit u64")
     }
 }
 

@@ -116,7 +116,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         self.is_out_of_range.assign(
             region,
             offset,
-            F::from(code.bytes.len() as u64) - F::from(step.program_counter()),
+            F::from(code.bytes.len() as u64) - F::from(step.pc),
         )?;
 
         let opcode = step.opcode().unwrap();

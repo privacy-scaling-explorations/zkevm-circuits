@@ -289,10 +289,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             // 3. Call to account with non-empty code.
             (false, _, false) => {
                 for (field, value) in [
-                    (
-                        CallContextField::ProgramCounter,
-                        (geth_step.pc.0 + 1).into(),
-                    ),
+                    (CallContextField::ProgramCounter, (geth_step.pc + 1).into()),
                     (
                         CallContextField::StackPointer,
                         (geth_step.stack.stack_pointer().0 + N_ARGS - 1).into(),

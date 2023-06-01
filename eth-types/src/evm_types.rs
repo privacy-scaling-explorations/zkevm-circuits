@@ -14,42 +14,6 @@ pub use opcode_ids::OpcodeId;
 pub use stack::{Stack, StackAddress};
 pub use storage::Storage;
 
-/// Wrapper type over `usize` which represents the program counter of the Evm.
-#[derive(Clone, Copy, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord, Default)]
-pub struct ProgramCounter(pub usize);
-
-impl fmt::Debug for ProgramCounter {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("0x{:06x}", self.0))
-    }
-}
-
-impl From<ProgramCounter> for usize {
-    fn from(addr: ProgramCounter) -> usize {
-        addr.0
-    }
-}
-
-impl From<usize> for ProgramCounter {
-    fn from(pc: usize) -> Self {
-        ProgramCounter(pc)
-    }
-}
-
-impl ProgramCounter {
-    /// Increase Self by one
-    pub fn inc(&mut self) {
-        self.0 += 1;
-    }
-
-    /// Increase Self by one and return the value before the increase.
-    pub fn inc_pre(&mut self) -> Self {
-        let pre = *self;
-        self.inc();
-        pre
-    }
-}
-
 /// Defines the gas left to perate.
 #[derive(Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Gas(pub u64);

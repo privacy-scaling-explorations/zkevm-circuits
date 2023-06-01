@@ -1095,7 +1095,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 (caller.is_create() as u64).into(),
             ),
             (CallContextField::CodeHash, caller.code_hash.to_word()),
-            (CallContextField::ProgramCounter, geth_step_next.pc.0.into()),
+            (CallContextField::ProgramCounter, geth_step_next.pc.into()),
             (
                 CallContextField::StackPointer,
                 geth_step_next.stack.stack_pointer().0.into(),
@@ -1280,7 +1280,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         // The *CALL*/CREATE* code was not executed
-        let next_pc = next_step.map(|s| s.pc.0).unwrap_or(1);
+        let next_pc = next_step.map(|s| s.pc).unwrap_or(1);
         if matches!(
             step.op,
             OpcodeId::CALL

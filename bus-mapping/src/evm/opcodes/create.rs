@@ -137,10 +137,7 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             (geth_step.gas.0 - geth_step.gas_cost.0 - memory_expansion_gas_cost) / 64;
 
         for (field, value) in [
-            (
-                CallContextField::ProgramCounter,
-                (geth_step.pc.0 + 1).into(),
-            ),
+            (CallContextField::ProgramCounter, (geth_step.pc + 1).into()),
             (
                 CallContextField::StackPointer,
                 geth_step.stack.nth_last_filled(n_pop - 1).0.into(),
