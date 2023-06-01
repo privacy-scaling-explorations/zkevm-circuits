@@ -29,12 +29,6 @@ use ethers_core::utils::{get_contract_address, keccak256};
 use gadgets::util::expr_from_bytes;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
-// For Shanghai, EIP-3651 (Warm COINBASE) adds 1 write op for coinbase.
-#[cfg(feature = "shanghai")]
-const SHANGHAI_RW_DELTA: u8 = 1;
-#[cfg(not(feature = "shanghai"))]
-const SHANGHAI_RW_DELTA: u8 = 0;
-
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
     tx_id: Cell<F>,
@@ -60,7 +54,7 @@ pub(crate) struct BeginTxGadget<F> {
     create: ContractCreateGadget<F, false>,
     callee_not_exists: IsZeroGadget<F>,
     is_caller_callee_equal: Cell<F>,
-    // EIP-3651 (Warm COINBASE) for Shanghai
+    // EIP-3651 (Warm COINBASE)
     coinbase: Cell<F>,
     // Caller, callee and a list addresses are added to the access list before
     // coinbase, and may be duplicate.
@@ -145,16 +139,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let tx_call_data_word_length =
             ConstantDivisionGadget::construct(cb, tx_call_data_length.expr() + 31.expr(), 32);
 
-        // Calculate gas cost of init code only for EIP-3860 of Shanghai.
-        #[cfg(feature = "shanghai")]
+        // Calculate gas cost of init code for EIP-3860.
         let init_code_gas_cost = select::expr(
             tx_is_create.expr(),
             tx_call_data_word_length.quotient().expr()
                 * eth_types::evm_types::INIT_CODE_WORD_GAS.expr(),
             0.expr(),
         );
-        #[cfg(not(feature = "shanghai"))]
-        let init_code_gas_cost = 0.expr();
 
         // TODO: Take gas cost of access list (EIP 2930) into consideration.
         // Use intrinsic gas
@@ -192,8 +183,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let coinbase = cb.query_cell();
         let is_coinbase_warm = cb.query_bool();
         cb.block_lookup(BlockContextFieldTag::Coinbase.expr(), None, coinbase.expr());
-
-        #[cfg(feature = "shanghai")]
         cb.account_access_list_write(
             tx_id.expr(),
             coinbase.expr(),
@@ -308,7 +297,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write Account (Caller) Nonce
                 //   - Write TxAccessListAccount (Caller)
                 //   - Write TxAccessListAccount (Callee)
-                //   - Write TxAccessListAccount (Coinbase) only for EIP-3651 of Shanghai
+                //   - Write TxAccessListAccount (Coinbase) for EIP-3651
                 //   - a TransferWithGasFeeGadget
                 //   - Write Account (Callee) Nonce (Reversible)
                 //   - Write CallContext Depth
@@ -324,9 +313,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsRoot
                 //   - Write CallContext IsCreate
                 //   - Write CallContext CodeHash
-                rw_counter: Delta(
-                    21.expr() + transfer_with_gas_fee.rw_delta() + SHANGHAI_RW_DELTA.expr(),
-                ),
+                rw_counter: Delta(22.expr() + transfer_with_gas_fee.rw_delta()),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
                 is_create: To(tx_is_create.expr()),
@@ -367,12 +354,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write Account Nonce
                     //   - Write TxAccessListAccount (Caller)
                     //   - Write TxAccessListAccount (Callee)
-                    //   - Write TxAccessListAccount (Coinbase) only for EIP-3651 of Shanghai
+                    //   - Write TxAccessListAccount (Coinbase) for EIP-3651
                     //   - Read Account CodeHash
                     //   - a TransferWithGasFeeGadget
-                    rw_counter: Delta(
-                        8.expr() + transfer_with_gas_fee.rw_delta() + SHANGHAI_RW_DELTA.expr(),
-                    ),
+                    rw_counter: Delta(9.expr() + transfer_with_gas_fee.rw_delta()),
                     call_id: To(call_id.expr()),
                     ..StepStateTransition::any()
                 });
@@ -414,7 +399,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write Account Nonce
                     //   - Write TxAccessListAccount (Caller)
                     //   - Write TxAccessListAccount (Callee)
-                    //   - Write TxAccessListAccount (Coinbase) only for EIP-3651 of Shanghai
+                    //   - Write TxAccessListAccount (Coinbase) for EIP-3651
                     //   - Read Account CodeHash
                     //   - a TransferWithGasFeeGadget
                     //   - Write CallContext Depth
@@ -430,9 +415,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsRoot
                     //   - Write CallContext IsCreate
                     //   - Write CallContext CodeHash
-                    rw_counter: Delta(
-                        21.expr() + transfer_with_gas_fee.rw_delta() + SHANGHAI_RW_DELTA.expr(),
-                    ),
+                    rw_counter: Delta(22.expr() + transfer_with_gas_fee.rw_delta()),
                     call_id: To(call_id.expr()),
                     is_root: To(true.expr()),
                     is_create: To(tx_is_create.expr()),
@@ -489,11 +472,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let mut rws = StepRws::new(block, step);
         rws.offset_add(7);
 
-        #[cfg(feature = "shanghai")]
         let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
-        #[cfg(not(feature = "shanghai"))]
-        let is_coinbase_warm = false;
-
         let mut callee_code_hash = zero;
         if !is_precompiled(&tx.callee_address) && !tx.is_create {
             callee_code_hash = rws.next().account_value_pair().1;

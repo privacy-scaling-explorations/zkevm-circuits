@@ -54,8 +54,6 @@ test = ["ethers-signers", "mock", "bus-mapping/test"]
 test-circuits = []
 warn-unimplemented = ["eth-types/warn-unimplemented"]
 stats = ["warn-unimplemented", "dep:cli-table"]
-# Enable shanghai feature of mock only if mock is enabled (by test).
-shanghai = ["bus-mapping/shanghai", "mock?/shanghai"]
 
 [[bin]]
 name = "stats"
