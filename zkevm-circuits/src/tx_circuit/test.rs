@@ -6,7 +6,7 @@ use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
 };
-use mock::AddrOrWallet;
+use mock::{AddrOrWallet, MockTransaction};
 
 #[test]
 fn tx_circuit_unusable_rows() {
@@ -95,6 +95,38 @@ fn tx_circuit_bad_address() {
         MAX_CALLDATA
     )
     .is_err(),);
+}
+
+#[test]
+fn tx_circuit_invalid_signature() {
+    let tx0 = mock::CORRECT_MOCK_TXS[0].clone();
+
+    let mut tx1 = mock::CORRECT_MOCK_TXS[1].clone();
+    tx1.r = tx1.s;
+    tx1.enable_skipping_invalid_signature = true;
+
+    let mut tx2 = mock::CORRECT_MOCK_TXS[2].clone();
+    tx2.s = tx2.r;
+    tx2.enable_skipping_invalid_signature = true;
+
+    invalid_signature(vec![tx0.clone()], 1);
+    invalid_signature(vec![tx1.clone()], 1);
+    invalid_signature(vec![tx2.clone()], 1);
+}
+
+fn invalid_signature(mock_txs: Vec<MockTransaction>, max_txs: usize) {
+    const MAX_CALLDATA: usize = 32;
+    
+    let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
+
+    let txs = mock_txs.iter().map(|tx| Transaction::from(tx.clone())).collect();
+    let result = run::<Fr>(
+        txs,
+        chain_id,
+        max_txs,
+        MAX_CALLDATA
+    );
+    assert_eq!(result, Ok(()));
 }
 
 #[test]

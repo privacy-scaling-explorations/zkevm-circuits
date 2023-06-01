@@ -13,6 +13,8 @@ use ecc::{maingate, EccConfig, GeneralEccChip};
 use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
 use eth_types::{
     self,
+    address,
+    geth_types::Transaction,
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
     Field,
 };
@@ -36,8 +38,8 @@ use itertools::Itertools;
 use keccak256::plain::Keccak;
 use log::error;
 use maingate::{
-    AssignedValue, MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig,
-    RangeInstructions, RegionCtx,
+    AssignedCondition, AssignedValue, MainGate, MainGateConfig, MainGateInstructions, RangeChip,
+    RangeConfig, RangeInstructions, RegionCtx,
 };
 use num::Integer;
 use std::{iter, marker::PhantomData};
@@ -304,12 +306,14 @@ pub(crate) struct AssignedECDSA<F: Field> {
     pk_x_le: [AssignedValue<F>; 32],
     pk_y_le: [AssignedValue<F>; 32],
     msg_hash_le: [AssignedValue<F>; 32],
+    is_valid: AssignedCondition<F>,
 }
 
 #[derive(Debug)]
 pub(crate) struct AssignedSignatureVerify<F: Field> {
     pub(crate) address: AssignedValue<F>,
     pub(crate) msg_hash_rlc: AssignedValue<F>,
+    pub(crate) is_invalid: AssignedValue<F>,
 }
 
 // Return an array of bytes that corresponds to the little endian representation
@@ -362,6 +366,7 @@ impl<F: Field> SignVerifyChip<F> {
         ctx: &mut RegionCtx<F>,
         chips: &ChipsRef<F, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         sign_data: &SignData,
+        enable_skipping_invalid_signature: bool,
     ) -> Result<AssignedECDSA<F>, Error> {
         let SignData {
             signature,
@@ -403,7 +408,7 @@ impl<F: Field> SignVerifyChip<F> {
         let pk_y_le = integer_to_bytes_le(ctx, range_chip, pk_y)?;
 
         // Ref. spec SignVerifyChip 4. Verify the ECDSA signature
-        ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)?;
+        let is_ecdsa_signature_valid = ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash, true)?;
 
         // TODO: Update once halo2wrong suports the following methods:
         // - `IntegerChip::assign_integer_from_bytes_le`
@@ -413,6 +418,7 @@ impl<F: Field> SignVerifyChip<F> {
             pk_x_le,
             pk_y_le,
             msg_hash_le,
+            is_valid: is_ecdsa_signature_valid,
         })
     }
 
@@ -495,6 +501,7 @@ impl<F: Field> SignVerifyChip<F> {
         sign_data: Option<&SignData>,
         assigned_ecdsa: &AssignedECDSA<F>,
         challenges: &Challenges<Value<F>>,
+        tx: &Transaction,
     ) -> Result<AssignedSignatureVerify<F>, Error> {
         let main_gate = chips.main_gate;
 
@@ -537,6 +544,25 @@ impl<F: Field> SignVerifyChip<F> {
                     .collect_vec(),
             )
         };
+        let zero_address = {
+            let zero_zddress = address!("0x0000000000000000000000000000000000000000");
+            let tx_from_fixed_bytes = zero_zddress.to_fixed_bytes().map(|byte| Value::known(F::from(byte as u64)));
+            let powers_of_256 =
+                iter::successors(Some(F::ONE), |coeff| Some(F::from(256) * coeff))
+                    .take(20)
+                    .collect_vec();
+            let terms = tx_from_fixed_bytes
+                .iter()
+                .zip(powers_of_256.into_iter().rev())
+                .map(|(byte, coeff)| maingate::Term::Unassigned(*byte, coeff))
+                .collect_vec();
+            let (address, _) =
+                main_gate.decompose(ctx, &terms, F::ZERO, |_, _| Ok(()))?;
+            address
+        };
+
+        let enable_skipping_invalid_signature = main_gate.assign_constant(ctx, F::from(tx.enable_skipping_invalid_signature as u64))?;
+        let address_returned: AssignedCell<F, F> = main_gate.select(ctx, &zero_address, &address, &enable_skipping_invalid_signature)?;
         let is_address_zero = main_gate.is_zero(ctx, &address)?;
 
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
@@ -602,8 +628,9 @@ impl<F: Field> SignVerifyChip<F> {
         self.enable_keccak_lookup(config, ctx, &is_address_zero, &pk_rlc, &pk_hash_rlc)?;
 
         Ok(AssignedSignatureVerify {
-            address,
+            address: address_returned,
             msg_hash_rlc,
+            is_invalid: main_gate.not(ctx, &assigned_ecdsa.is_valid)?,
         })
     }
 
@@ -613,6 +640,7 @@ impl<F: Field> SignVerifyChip<F> {
         layouter: &mut impl Layouter<F>,
         signatures: &[SignData],
         challenges: &Challenges<Value<F>>,
+        txs: &Vec<Transaction>,
     ) -> Result<Vec<AssignedSignatureVerify<F>>, Error> {
         if signatures.len() > self.max_verif {
             error!(
@@ -662,7 +690,8 @@ impl<F: Field> SignVerifyChip<F> {
                         // padding (enabled when address == 0)
                         SignData::default()
                     };
-                    let assigned_ecdsa = self.assign_ecdsa(&mut ctx, &chips, &signature)?;
+                    let tx = txs.get(i).unwrap();
+                    let assigned_ecdsa = self.assign_ecdsa(&mut ctx, &chips, &signature, tx.enable_skipping_invalid_signature)?;
                     assigned_ecdsas.push(assigned_ecdsa);
                 }
                 log::debug!("ecdsa chip verification: {} rows", ctx.offset());
@@ -677,6 +706,7 @@ impl<F: Field> SignVerifyChip<F> {
                 let mut ctx = RegionCtx::new(region, 0);
                 for (i, assigned_ecdsa) in assigned_ecdsas.iter().enumerate() {
                     let sign_data = signatures.get(i); // None when padding (enabled when address == 0)
+                    let tx = txs.get(i).unwrap();
                     let assigned_sig_verif = self.assign_signature_verify(
                         config,
                         &mut ctx,
@@ -684,6 +714,7 @@ impl<F: Field> SignVerifyChip<F> {
                         sign_data,
                         assigned_ecdsa,
                         challenges,
+                        tx,
                     )?;
                     assigned_sig_verifs.push(assigned_sig_verif);
                 }
@@ -769,12 +800,13 @@ mod sign_verify_tests {
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
             let challenges = config.challenges.values(&mut layouter);
-
+            let tx_default = Transaction::default();
             self.sign_verify.assign(
                 &config.sign_verify,
                 &mut layouter,
                 &self.signatures,
                 &challenges,
+                &vec![tx_default],
             )?;
             config.sign_verify.keccak_table.dev_load(
                 &mut layouter,
@@ -804,7 +836,10 @@ mod sign_verify_tests {
 
         let prover = match MockProver::run(k, &circuit, vec![vec![]]) {
             Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
+            Err(e) => {
+                eprintln!("Error: {:#?}", e); // Print error to standard error stream
+                panic!("Failed to create prover");
+            }
         };
         assert_eq!(prover.verify(), Ok(()));
     }

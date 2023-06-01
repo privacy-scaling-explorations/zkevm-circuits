@@ -27,10 +27,10 @@ lazy_static = "1.4"
 keccak256 = { path = "../keccak256"}
 log = "0.4"
 env_logger = "0.9"
-ecdsa = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_04_20" }
-ecc =       { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_04_20" }
-maingate =  { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_04_20" }
-integer =   { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_04_20" }
+ecdsa = { git = "https://github.com/xiaodino/halo2wrong", rev = "1438e67" }
+ecc = { git = "https://github.com/xiaodino/halo2wrong", rev = "1438e67" }
+maingate = { git = "https://github.com/xiaodino/halo2wrong", rev = "1438e67" }
+integer = { git = "https://github.com/xiaodino/halo2wrong", rev = "1438e67" }
 libsecp256k1 = "0.7"
 num-bigint = { version = "0.4" }
 rand_chacha = "0.3"

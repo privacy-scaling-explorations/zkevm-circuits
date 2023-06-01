@@ -29,6 +29,8 @@ pub enum TxFieldTag {
     TxSignHash,
     /// CallData
     CallData,
+    /// Invalid tx
+    TxInvalid,
 }
 impl_expr!(TxFieldTag);
 

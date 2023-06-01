@@ -25,7 +25,9 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use log::error;
+use log;
 use sign_verify::{AssignedSignatureVerify, SignVerifyChip, SignVerifyConfig};
+use std::fmt::{self, Debug};
 use std::marker::PhantomData;
 
 /// Number of static fields per tx: [nonce, gas, gas_price,
@@ -243,6 +245,10 @@ impl<F: Field> TxCircuit<F> {
                             TxFieldTag::TxSignHash,
                             assigned_sig_verif.msg_hash_rlc.value().copied(),
                         ),
+                        (
+                            TxFieldTag::TxInvalid,
+                            assigned_sig_verif.is_invalid.value().copied(),
+                        ),
                     ] {
                         let assigned_cell =
                             config.assign_row(&mut region, offset, i + 1, tag, 0, value)?;
@@ -357,7 +363,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         config.load_aux_tables(layouter)?;
         let assigned_sig_verifs =
             self.sign_verify
-                .assign(&config.sign_verify, layouter, &sign_datas, challenges)?;
+                .assign(&config.sign_verify, layouter, &sign_datas, challenges, &self.txs)?;
         self.assign_tx_table(config, challenges, layouter, assigned_sig_verifs)?;
         Ok(())
     }

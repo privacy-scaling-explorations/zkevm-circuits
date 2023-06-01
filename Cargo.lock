@@ -1179,7 +1179,20 @@ name = "ecc"
 version = "0.1.0"
 source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20#f72db265aa3cebe297c9b9816e940d0e1d400886"
 dependencies = [
- "integer",
+ "integer 0.1.0 (git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20)",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand",
+ "subtle",
+]
+
+[[package]]
+name = "ecc"
+version = "0.1.0"
+source = "git+https://github.com/xiaodino/halo2wrong?rev=1438e67#1438e678dace67dde66392a893f6496adba67067"
+dependencies = [
+ "integer 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=1438e67)",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -1190,9 +1203,9 @@ dependencies = [
 [[package]]
 name = "ecdsa"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20#f72db265aa3cebe297c9b9816e940d0e1d400886"
+source = "git+https://github.com/xiaodino/halo2wrong?rev=1438e67#1438e678dace67dde66392a893f6496adba67067"
 dependencies = [
- "ecc",
+ "ecc 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=1438e67)",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -1401,6 +1414,7 @@ dependencies = [
  "itertools",
  "lazy_static",
  "libsecp256k1",
+ "log",
  "num",
  "num-bigint",
  "regex",
@@ -2198,6 +2212,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "halo2wrong"
+version = "0.1.0"
+source = "git+https://github.com/xiaodino/halo2wrong?rev=1438e67#1438e678dace67dde66392a893f6496adba67067"
+dependencies = [
+ "halo2_proofs 0.2.0",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
 name = "handlebars"
 version = "4.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2528,7 +2553,20 @@ name = "integer"
 version = "0.1.0"
 source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20#f72db265aa3cebe297c9b9816e940d0e1d400886"
 dependencies = [
- "maingate",
+ "maingate 0.1.0 (git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20)",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand",
+ "subtle",
+]
+
+[[package]]
+name = "integer"
+version = "0.1.0"
+source = "git+https://github.com/xiaodino/halo2wrong?rev=1438e67#1438e678dace67dde66392a893f6496adba67067"
+dependencies = [
+ "maingate 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=1438e67)",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -2831,7 +2869,20 @@ name = "maingate"
 version = "0.1.0"
 source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20#f72db265aa3cebe297c9b9816e940d0e1d400886"
 dependencies = [
- "halo2wrong",
+ "halo2wrong 0.1.0 (git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20)",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand",
+ "subtle",
+]
+
+[[package]]
+name = "maingate"
+version = "0.1.0"
+source = "git+https://github.com/xiaodino/halo2wrong?rev=1438e67#1438e678dace67dde66392a893f6496adba67067"
+dependencies = [
+ "halo2wrong 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=1438e67)",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -4328,7 +4379,7 @@ name = "snark-verifier"
 version = "0.1.0"
 source = "git+https://github.com/privacy-scaling-explorations/snark-verifier?tag=v2023_04_20#e5d5e4a6ccff2bba71baf77ab7a12b124d6364a1"
 dependencies = [
- "ecc",
+ "ecc 0.1.0 (git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20)",
  "halo2_proofs 0.2.0",
  "halo2curves",
  "hex",
@@ -5309,7 +5360,7 @@ dependencies = [
  "bus-mapping",
  "cli-table",
  "ctor",
- "ecc",
+ "ecc 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=1438e67)",
  "ecdsa 0.1.0",
  "env_logger",
  "eth-types",
@@ -5318,13 +5369,13 @@ dependencies = [
  "gadgets",
  "halo2_proofs 0.2.0",
  "hex",
- "integer",
+ "integer 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=1438e67)",
  "itertools",
  "keccak256",
  "lazy_static",
  "libsecp256k1",
  "log",
- "maingate",
+ "maingate 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=1438e67)",
  "mock",
  "num",
  "num-bigint",
