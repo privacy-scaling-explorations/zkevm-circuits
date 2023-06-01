@@ -8,4 +8,3 @@
 
 /// the state modules include structures represent zktrie and witness generator
 pub mod state;
-

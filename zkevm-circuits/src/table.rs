@@ -12,7 +12,6 @@ use crate::{
     },
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
-use mpt_circuits::{gadgets::poseidon::PoseidonLookup, constraint_builder::{AdviceColumn, FixedColumn}};
 use core::iter::once;
 use eth_types::{Field, ToLittleEndian, ToScalar, ToWord, Word, U256};
 use gadgets::{
@@ -24,6 +23,10 @@ use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
+};
+use mpt_circuits::{
+    constraint_builder::{AdviceColumn, FixedColumn},
+    gadgets::poseidon::PoseidonLookup,
 };
 use std::iter::repeat;
 
@@ -640,7 +643,7 @@ impl RwTable {
         Ok(())
     }
 }
-/* 
+/*
 /// The types of proofs in the MPT table
 #[derive(Clone, Copy, Debug)]
 pub enum MPTProofType {
@@ -663,7 +666,7 @@ pub enum MPTProofType {
 }
 */
 pub use mpt_circuits::MPTProofType;
-/* 
+/*
 impl<F: halo2_proofs::arithmetic::FieldExt> crate::util::Expr<F> for MPTProofType {
     #[inline]
     fn expr(&self) -> Expression<F> {
@@ -672,7 +675,7 @@ impl<F: halo2_proofs::arithmetic::FieldExt> crate::util::Expr<F> for MPTProofTyp
 }
 */
 
-/* 
+/*
 /// The defination is greped from state-circuit
 #[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter, Hash)]
 pub enum MPTProofType {
@@ -849,15 +852,16 @@ pub struct PoseidonTable {
 
 impl PoseidonLookup for PoseidonTable {
     fn lookup(&self) -> (FixedColumn, [AdviceColumn; 5]) {
-        (FixedColumn(self.q_enable),
+        (
+            FixedColumn(self.q_enable),
             [
                 AdviceColumn(self.hash_id),
-                    AdviceColumn(self.input0),
-                        AdviceColumn(self.input1),
-                            AdviceColumn(self.control),
-                                AdviceColumn(self.heading_mark),
-            ])
-
+                AdviceColumn(self.input0),
+                AdviceColumn(self.input1),
+                AdviceColumn(self.control),
+                AdviceColumn(self.heading_mark),
+            ],
+        )
     }
 }
 

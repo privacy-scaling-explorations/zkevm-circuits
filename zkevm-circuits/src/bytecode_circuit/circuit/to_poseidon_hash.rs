@@ -15,9 +15,9 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
+use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
 use itertools::Itertools;
 use log::trace;
-use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
 use std::vec;
 
 use super::{

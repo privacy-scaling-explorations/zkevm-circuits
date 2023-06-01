@@ -235,5 +235,4 @@ pub(crate) fn verify_proof_leaf<T: Default>(inp: TrieProof<T>, key_buf: &[u8; 32
     } else {
         inp
     }
-    
 }

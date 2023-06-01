@@ -92,8 +92,8 @@ use bus_mapping::{
 use eth_types::{geth_types::GethData, Field};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error, Expression},
     halo2curves::bn256::Fr,
+    plonk::{Circuit, ConstraintSystem, Error, Expression},
 };
 use itertools::Itertools;
 use snark_verifier_sdk::CircuitExt;
@@ -191,7 +191,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig {
             meta,
             KeccakCircuitConfigArgs {
                 keccak_table: keccak_table.clone(),
-                challenges: challenges_expr,
+                challenges: challenges_expr.clone(),
             },
         );
         log_circuit_info(meta, "keccak circuit");
@@ -212,7 +212,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig {
                 block_table: block_table.clone(),
                 keccak_table: keccak_table.clone(),
                 tx_table: tx_table.clone(),
-                challenges: challenges_expr,
+                challenges: challenges_expr.clone(),
             },
         );
         log_circuit_info(meta, "pi circuit");
@@ -224,7 +224,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig {
                 tx_table: tx_table.clone(),
                 keccak_table: keccak_table.clone(),
                 rlp_table,
-                challenges: challenges_expr,
+                challenges: challenges_expr.clone(),
             },
         );
         log_circuit_info(meta, "tx circuit");
@@ -245,7 +245,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig {
                 base_args: BytecodeCircuitConfigArgs {
                     bytecode_table: bytecode_table.clone(),
                     keccak_table: keccak_table.clone(),
-                    challenges: challenges_expr,
+                    challenges: challenges_expr.clone(),
                 },
                 poseidon_table,
             },
@@ -261,7 +261,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig {
                 bytecode_table: bytecode_table.clone(),
                 copy_table,
                 q_enable: q_copy_table,
-                challenges: challenges_expr,
+                challenges: challenges_expr.clone(),
             },
         );
         log_circuit_info(meta, "copy circuit");
@@ -283,7 +283,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig {
             StateCircuitConfigArgs {
                 rw_table,
                 mpt_table,
-                challenges: challenges_expr,
+                challenges: challenges_expr.clone(),
             },
         );
         log_circuit_info(meta, "state circuit");
@@ -294,7 +294,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig {
         let evm_circuit = EvmCircuitConfig::new(
             meta,
             EvmCircuitConfigArgs {
-                challenges: challenges_expr,
+                challenges: challenges_expr.clone(),
                 tx_table: tx_table.clone(),
                 rw_table,
                 bytecode_table,

@@ -5,10 +5,9 @@ use crate::{
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
-use mpt_circuits::serde::SMTTrace;
+use mpt_circuits::{serde::SMTTrace, MPTProofType};
 use mpt_zktrie::{state, state::witness::WitnessGenerator};
 use std::collections::BTreeMap;
-use mpt_circuits::MPTProofType;
 
 pub use state::ZktrieState;
 

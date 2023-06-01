@@ -7,33 +7,42 @@ use crate::{
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error, Expression},
     halo2curves::bn256::Fr,
+    plonk::{Circuit, ConstraintSystem, Error, Expression},
 };
-use hash_circuit::{hash::Hashable};
+use hash_circuit::hash::Hashable;
 use itertools::Itertools;
-use mpt_circuits::{gadgets::{
-    byte_representation::{BytesLookup, RlcLookup, ByteRepresentationConfig},
-    is_zero::IsZeroGadget,
-    key_bit::{KeyBitLookup, KeyBitConfig},
-    one_hot::OneHot,
-    poseidon::PoseidonLookup, 
-    mpt_update::{MptUpdateConfig, byte_representations, key_bit_lookups, mpt_update_keys, hash_traces}, 
-    canonical_representation::CanonicalRepresentationConfig, byte_bit::ByteBitGadget, rlc_randomness::RlcRandomness,
-}, constraint_builder::SelectorColumn, serde::SMTTrace, MPTProofType, types::Proof};
+use mpt_circuits::{
+    constraint_builder::SelectorColumn,
+    gadgets::{
+        byte_bit::ByteBitGadget,
+        byte_representation::{ByteRepresentationConfig, BytesLookup, RlcLookup},
+        canonical_representation::CanonicalRepresentationConfig,
+        is_zero::IsZeroGadget,
+        key_bit::{KeyBitConfig, KeyBitLookup},
+        mpt_update::{
+            byte_representations, hash_traces, key_bit_lookups, mpt_update_keys, MptUpdateConfig,
+        },
+        one_hot::OneHot,
+        poseidon::PoseidonLookup,
+        rlc_randomness::RlcRandomness,
+    },
+    serde::SMTTrace,
+    types::Proof,
+    MPTProofType,
+};
 
 /// re-wrapping for mpt circuit
 #[derive(Clone)]
-pub struct MptCircuitConfig{
-    pub mpt_update:        MptUpdateConfig,
-    pub canonical_representation:        CanonicalRepresentationConfig,
-    pub key_bit:        KeyBitConfig,
-    pub byte_bit:        ByteBitGadget,
-    pub byte_representation:        ByteRepresentationConfig,
+pub struct MptCircuitConfig {
+    pub mpt_update: MptUpdateConfig,
+    pub canonical_representation: CanonicalRepresentationConfig,
+    pub key_bit: KeyBitConfig,
+    pub byte_bit: ByteBitGadget,
+    pub byte_representation: ByteRepresentationConfig,
     /// PoseidonTable
     pub poseidon_table: PoseidonTable,
 }
-
 
 /// Circuit configuration arguments
 pub struct MptCircuitConfigArgs {
@@ -60,7 +69,6 @@ impl SubCircuitConfig<Fr> for MptCircuitConfig {
         let mpt_table = (
             mpt_table.q_enable,
             [
-                
                 mpt_table.address,
                 mpt_table.storage_key,
                 mpt_table.proof_type,
@@ -71,7 +79,8 @@ impl SubCircuitConfig<Fr> for MptCircuitConfig {
             ],
         );
         let rlc_randomness = RlcRandomness(challenges.evm_word());
-        let mut cb = mpt_circuits::constraint_builder::ConstraintBuilder::new(SelectorColumn(mpt_table.0));
+        let mut cb =
+            mpt_circuits::constraint_builder::ConstraintBuilder::new(SelectorColumn(mpt_table.0));
 
         let byte_bit = ByteBitGadget::configure(cs, &mut cb);
         let byte_representation =
@@ -122,14 +131,22 @@ impl SubCircuit<Fr> for MptCircuit {
 
     fn new_from_block(block: &witness::Block<Fr>) -> Self {
         Self {
-            traces: block.mpt_updates.proof_types.iter().cloned().zip_eq(block.mpt_updates.smt_traces.iter().cloned()).collect(),
+            traces: block
+                .mpt_updates
+                .proof_types
+                .iter()
+                .cloned()
+                .zip_eq(block.mpt_updates.smt_traces.iter().cloned())
+                .collect(),
         }
-
     }
 
     fn min_num_rows_block(block: &witness::Block<Fr>) -> (usize, usize) {
         // FIXME
-        (block.circuits_params.max_mpt_rows, block.circuits_params.max_mpt_rows)
+        (
+            block.circuits_params.max_mpt_rows,
+            block.circuits_params.max_mpt_rows,
+        )
     }
 
     /// Make the assignments to the MptCircuit, notice it fill mpt table
@@ -140,23 +157,35 @@ impl SubCircuit<Fr> for MptCircuit {
         challenges: &Challenges<Value<Fr>>,
         layouter: &mut impl Layouter<Fr>,
     ) -> Result<(), Error> {
-        let proofs: Vec<Proof> = self.traces.into_iter().map(Proof::from).collect();
-            
+        let proofs: Vec<Proof> = self.traces.iter().cloned().map(Proof::from).collect();
+
         let (u64s, u128s, frs) = byte_representations(&proofs);
 
-            layouter.assign_region(
-                || "",
-                |mut region| {
-                    // TODO: selector?
-                    config.mpt_update.assign(&mut region, &proofs, challenges.evm_word());
-                    config.canonical_representation.assign(&mut region, &mpt_update_keys(&proofs));
-                    config.key_bit.assign(&mut region, &key_bit_lookups(&proofs));
-                    config.byte_bit.assign(&mut region);
-                    config.byte_representation.assign(&mut region, &u64s, &u128s, &frs, challenges.evm_word());
-                    Ok(())
-                },
-            )?;
-            
+        layouter.assign_region(
+            || "",
+            |mut region| {
+                // TODO: selector?
+                config
+                    .mpt_update
+                    .assign(&mut region, &proofs, challenges.evm_word());
+                config
+                    .canonical_representation
+                    .assign(&mut region, &mpt_update_keys(&proofs));
+                config
+                    .key_bit
+                    .assign(&mut region, &key_bit_lookups(&proofs));
+                config.byte_bit.assign(&mut region);
+                config.byte_representation.assign(
+                    &mut region,
+                    &u64s,
+                    &u128s,
+                    &frs,
+                    challenges.evm_word(),
+                );
+                Ok(())
+            },
+        )?;
+
         Ok(())
     }
 
@@ -172,9 +201,7 @@ impl Circuit<Fr> for MptCircuit {
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
-        Self {
-            traces: vec![],
-        }
+        Self { traces: vec![] }
     }
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
@@ -203,8 +230,8 @@ impl Circuit<Fr> for MptCircuit {
         (config, challenges): Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
-        let proofs: Vec<Proof> = self.traces.into_iter().map(Proof::from).collect();
         let challenges = challenges.values(&layouter);
+        //let proofs: Vec<Proof> = self.traces.iter().map(Proof::from).collect();
         //config.poseidon_table.dev_load(&mut layouter, &hash_traces(&proofs));
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
