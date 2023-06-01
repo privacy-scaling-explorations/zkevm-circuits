@@ -51,7 +51,10 @@ impl<F: Field> RlpU64Gadget<F> {
         let value = expr_from_bytes(&value_rlc.cells);
         cb.condition(most_significant_byte_is_zero.expr(), |cb| {
             cb.require_zero("if most significant byte is 0, value is 0", value.clone());
-            cb.require_zero("if most significant byte is 0, value is less than 128", 1.expr() - is_lt_128.clone());
+            cb.require_zero(
+                "if most significant byte is 0, value is less than 128",
+                1.expr() - is_lt_128.expr(),
+            );
         });
 
         for (i, is_most_significant) in is_most_significant_byte.iter().enumerate() {
@@ -73,19 +76,14 @@ impl<F: Field> RlpU64Gadget<F> {
 
         // Otherwise, then value >= 128, checked as follows:
         // - Either the first byte is not the most significant, and there is a more significant one;
-        // - Or the first byte is the most significant, and it is >= 128.
-        //      value ∈ [128, 256)
-        //      (value - 128) ∈ [0, 128)
+        // - Or the first byte is the most significant, and it is >= 128. value ∈ [128, 256) (value
+        //   - 128) ∈ [0, 128)
         let byte_128 = value_rlc.cells[0].expr() - 128.expr();
         let is_first = is_most_significant_byte[0].expr();
-        cb.require_boolean("is_first", is_first);
+        cb.require_boolean("is_first", is_first.clone());
         let byte_128_or_zero = byte_128 * is_first;
 
-        let value_lt_128 = select::expr(
-            is_lt_128.expr(),
-            value,
-            byte_128_or_zero,
-        );
+        let value_lt_128 = select::expr(is_lt_128.expr(), value, byte_128_or_zero);
         cb.range_lookup(value_lt_128, 128);
 
         Self {
