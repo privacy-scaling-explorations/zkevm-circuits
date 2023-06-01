@@ -181,7 +181,7 @@ mod tests {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let addends = [(); N_ADDENDS].map(|_| cb.query_word32());
             let sum = cb.query_word32();
-            let addwords_gadget = AddWordsGadget::<F, N_ADDENDS, CHECK_OVERFLOW>::construct(
+            let addwords_gadget = AddWordsGadget::<F, N_ADDENDS, CHECK_OVERFLOW>::construct_new(
                 cb,
                 addends.clone(),
                 sum.clone(),

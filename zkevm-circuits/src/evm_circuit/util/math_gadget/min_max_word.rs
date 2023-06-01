@@ -77,10 +77,19 @@ impl<F: Field, T: WordExpr<F> + Clone> MinMaxWordGadget<F, T> {
 
 #[cfg(test)]
 mod tests {
-    use super::{test_util::*, *};
-    use crate::evm_circuit::util::{constraint_builder::ConstrainBuilderCommon, Cell};
-    use eth_types::{ToScalar, Word};
-    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
+    use crate::evm_circuit::util::{
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        math_gadget::{
+            test_util::{try_test, MathGadgetContainer, WORD_LOW_MAX},
+            MinMaxGadget,
+        },
+        CachedRegion, Cell,
+    };
+
+    use super::{super::test_util::*, *};
+    use eth_types::{Field, ToScalar, Word};
+    use gadgets::util::Expr;
+    use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// MinMaxTestContainer: require(min(a, b) == (a if MIN_IS_A else b))
