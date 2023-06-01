@@ -25,7 +25,7 @@ pub use external_tracer::LoggerConfig;
 ///
 /// ## Example
 /// ```rust
-/// use eth_types::evm_types::{stack::Stack, Gas, OpcodeId};
+/// use eth_types::evm_types::{stack::Stack, OpcodeId};
 /// use eth_types::{address, bytecode, geth_types::GethData, word, Bytecode, ToWord, Word};
 /// use lazy_static::lazy_static;
 /// use mock::test_ctx::{helpers::*, TestContext};

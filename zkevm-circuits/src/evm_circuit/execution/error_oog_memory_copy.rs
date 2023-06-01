@@ -212,7 +212,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         self.insufficient_gas.assign_value(
             region,
             offset,
-            Value::known(F::from(step.gas_left.into())),
+            Value::known(F::from(step.gas_left)),
             Value::known(F::from(constant_gas_cost.0 + memory_copier_gas)),
         )?;
         self.is_extcodecopy.assign(

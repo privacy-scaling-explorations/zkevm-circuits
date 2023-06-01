@@ -129,7 +129,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         self.insufficient_gas.assign(
             region,
             offset,
-            F::from(step.gas_left.0),
+            F::from(step.gas_left),
             F::from(step.gas_cost.0),
         )?;
         self.common_error_gadget

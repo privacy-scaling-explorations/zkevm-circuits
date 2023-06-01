@@ -178,7 +178,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         log::debug!(
             "ErrorOutOfGasSloadSstore: is_sstore = {}, gas_left = {}, gas_cost = {}, gas_sentry = {}",
             is_sstore,
-            step.gas_left.0,
+            step.gas_left,
             gas_cost,
             if is_sstore { GasCost::SSTORE_SENTRY.0 } else { 0 },
         );
@@ -221,13 +221,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         self.insufficient_gas_cost.assign_value(
             region,
             offset,
-            Value::known(F::from(step.gas_left.into())),
+            Value::known(F::from(step.gas_left)),
             Value::known(F::from(gas_cost)),
         )?;
         self.insufficient_gas_sentry.assign_value(
             region,
             offset,
-            Value::known(F::from(step.gas_left.into())),
+            Value::known(F::from(step.gas_left)),
             Value::known(F::from(GasCost::SSTORE_SENTRY.0.checked_add(1).unwrap())),
         )?;
 

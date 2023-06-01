@@ -127,7 +127,7 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
         table.add_row(row![
             format!("{}", step.pc),
             format!("{:?}", step.op),
-            format!("{}", step.gas.0),
+            format!("{}", step.gas),
             format!("{}", step.gas_cost.0),
             format!("{}", step.depth),
             step.error.unwrap_or_default(),

@@ -209,7 +209,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             region,
             offset,
             Value::known(F::from(GasCost::SSTORE_SENTRY.0)),
-            Value::known(F::from(step.gas_left.into())),
+            Value::known(F::from(step.gas_left)),
         )?;
 
         self.gas_cost

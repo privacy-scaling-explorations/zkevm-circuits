@@ -743,7 +743,7 @@ impl<F: Field> Step<F> {
         )?;
         self.state
             .gas_left
-            .assign(region, offset, Value::known(F::from(step.gas_left.0)))?;
+            .assign(region, offset, Value::known(F::from(step.gas_left)))?;
         self.state.memory_word_size.assign(
             region,
             offset,

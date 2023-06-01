@@ -21,7 +21,7 @@ use crate::{
 };
 use eth_types::{
     evm_types::{
-        gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
+        gas_utils::memory_expansion_gas_cost, GasCost, MemoryAddress, OpcodeId, StackAddress,
     },
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
@@ -63,7 +63,7 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn new_begin_tx_step(&self) -> ExecStep {
         ExecStep {
             exec_state: ExecState::BeginTx,
-            gas_left: Gas(self.tx.gas()),
+            gas_left: self.tx.gas(),
             rwc: self.block_ctx.rwc,
             ..Default::default()
         }
@@ -79,10 +79,10 @@ impl<'a> CircuitInputStateRef<'a> {
         ExecStep {
             exec_state: ExecState::EndTx,
             gas_left: if prev_step.error.is_none() {
-                Gas(prev_step.gas_left.0 - prev_step.gas_cost.0)
+                prev_step.gas_left - prev_step.gas_cost.0
             } else {
                 // consume all remaining gas when non revert err happens
-                Gas(0)
+                0
             },
             rwc: self.block_ctx.rwc,
             // For tx without code execution
@@ -1080,12 +1080,12 @@ impl<'a> CircuitInputStateRef<'a> {
         } else {
             0
         };
-        let gas_refund = geth_step.gas.0 - memory_expansion_gas_cost - code_deposit_cost;
+        let gas_refund = geth_step.gas - memory_expansion_gas_cost - code_deposit_cost;
 
         let caller_gas_left = if is_return_revert || call.is_success {
-            geth_step_next.gas.0 - gas_refund
+            geth_step_next.gas - gas_refund
         } else {
-            geth_step_next.gas.0
+            geth_step_next.gas
         };
 
         for (field, value) in [
@@ -1244,7 +1244,7 @@ impl<'a> CircuitInputStateRef<'a> {
                         && call_ctx.memory.0.get(offset.low_u64() as usize) == Some(&0xef)
                     {
                         return Ok(Some(ExecError::InvalidCreationCode));
-                    } else if Word::from(200u64) * length > Word::from(step.gas.0) {
+                    } else if Word::from(200u64) * length > Word::from(step.gas) {
                         return Ok(Some(ExecError::CodeStoreOutOfGas));
                     } else {
                         return Err(Error::UnexpectedExecStepError(

@@ -217,7 +217,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             0
         } + memory_expansion_gas_cost;
         let gas_specified = geth_step.stack.last()?;
-        let callee_gas_left = eip150_gas(geth_step.gas.0 - gas_cost, gas_specified);
+        let callee_gas_left = eip150_gas(geth_step.gas - gas_cost, gas_specified);
 
         // There are 4 branches from here.
         // add failure case for insufficient balance or error depth in the future.
@@ -262,7 +262,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 log::warn!("missing circuit part of precompile");
                 state.handle_return(&mut exec_step, geth_steps, false)?;
 
-                let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
+                let real_cost = geth_steps[0].gas - geth_steps[1].gas;
                 if real_cost != exec_step.gas_cost.0 {
                     log::warn!(
                         "precompile gas fixed from {} to {}, step {:?}",
@@ -296,7 +296,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     ),
                     (
                         CallContextField::GasLeft,
-                        (geth_step.gas.0 - gas_cost - callee_gas_left).into(),
+                        (geth_step.gas - gas_cost - callee_gas_left).into(),
                     ),
                     (CallContextField::MemorySize, next_memory_word_size.into()),
                     (

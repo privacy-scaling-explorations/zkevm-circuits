@@ -27,7 +27,7 @@ use halo2_proofs::halo2curves::{
     ff::{Field as Halo2Field, FromUniformBytes, PrimeField},
 };
 
-use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage, Gas, GasCost, OpcodeId};
+use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage, GasCost, OpcodeId};
 use ethers_core::types;
 pub use ethers_core::{
     abi::ethereum_types::{BigEndianHash, U512},
@@ -314,9 +314,9 @@ pub struct EIP1186ProofResponse {
 struct GethExecStepInternal {
     pc: u64,
     op: OpcodeId,
-    gas: Gas,
+    gas: u64,
     #[serde(default)]
-    refund: Gas,
+    refund: u64,
     #[serde(rename = "gasCost")]
     gas_cost: GasCost,
     depth: u16,
@@ -338,9 +338,9 @@ struct GethExecStepInternal {
 pub struct GethExecStep {
     pub pc: u64,
     pub op: OpcodeId,
-    pub gas: Gas,
+    pub gas: u64,
     pub gas_cost: GasCost,
-    pub refund: Gas,
+    pub refund: u64,
     pub depth: u16,
     pub error: Option<String>,
     // stack is in hex 0x prefixed
@@ -375,7 +375,7 @@ impl fmt::Debug for GethExecStep {
         f.debug_struct("Step")
             .field("pc", &format_args!("0x{:04x}", self.pc))
             .field("op", &self.op)
-            .field("gas", &format_args!("{}", self.gas.0))
+            .field("gas", &format_args!("{}", self.gas))
             .field("gas_cost", &format_args!("{}", self.gas_cost.0))
             .field("depth", &self.depth)
             .field("error", &self.error)
@@ -441,7 +441,7 @@ pub struct ResultGethExecTrace {
 #[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq)]
 pub struct GethExecTrace {
     /// Used gas
-    pub gas: Gas,
+    pub gas: u64,
     /// True when the transaction has failed.
     pub failed: bool,
     /// Return value of execution which is a hex encoded byte array
@@ -557,15 +557,15 @@ mod tests {
         assert_eq!(
             trace,
             GethExecTrace {
-                gas: Gas(26809),
+                gas: 26809,
                 failed: false,
                 return_value: "".to_owned(),
                 struct_logs: vec![
                     GethExecStep {
                         pc: 0,
                         op: OpcodeId::PUSH1,
-                        gas: Gas(22705),
-                        refund: Gas(0),
+                        gas: 22705,
+                        refund: 0,
                         gas_cost: GasCost(3),
                         depth: 1,
                         error: None,
@@ -576,8 +576,8 @@ mod tests {
                     GethExecStep {
                         pc: 163,
                         op: OpcodeId::SLOAD,
-                        gas: Gas(5217),
-                        refund: Gas(0),
+                        gas: 5217,
+                        refund: 0,
                         gas_cost: GasCost(2100),
                         depth: 1,
                         error: None,
@@ -588,8 +588,8 @@ mod tests {
                     GethExecStep {
                         pc: 189,
                         op: OpcodeId::SHA3,
-                        gas: Gas(178805),
-                        refund: Gas(0),
+                        gas: 178805,
+                        refund: 0,
                         gas_cost: GasCost(42),
                         depth: 1,
                         error: None,

@@ -14,28 +14,6 @@ pub use opcode_ids::OpcodeId;
 pub use stack::{Stack, StackAddress};
 pub use storage::Storage;
 
-/// Defines the gas left to perate.
-#[derive(Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct Gas(pub u64);
-
-impl fmt::Display for Gas {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("{}", self.0))
-    }
-}
-
-impl fmt::Debug for Gas {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("{}", self.0))
-    }
-}
-
-impl From<Gas> for u64 {
-    fn from(value: Gas) -> Self {
-        value.0
-    }
-}
-
 /// Quotient for max refund of gas used
 pub const MAX_REFUND_QUOTIENT_OF_GAS_USED: usize = 5;
 /// Gas stipend when CALL or CALLCODE is attached with value.

@@ -5,7 +5,7 @@ use crate::{
     operation::RWCounter,
 };
 use eth_types::{
-    evm_types::{Gas, GasCost, OpcodeId},
+    evm_types::{GasCost, OpcodeId},
     GethExecStep, Word, H256,
 };
 use gadgets::impl_expr;
@@ -24,13 +24,13 @@ pub struct ExecStep {
     /// Memory size
     pub memory_size: usize,
     /// Gas left
-    pub gas_left: Gas,
+    pub gas_left: u64,
     /// Gas cost of the step.  If the error is OutOfGas caused by a "gas uint64
     /// overflow", this value will **not** be the actual Gas cost of the
     /// step.
     pub gas_cost: GasCost,
     /// Accumulated gas refund
-    pub gas_refund: Gas,
+    pub gas_refund: u64,
     /// Call index within the Transaction.
     pub call_index: usize,
     /// The global counter when this step was executed.

@@ -115,7 +115,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
         self.insufficient_gas_cost.assign_value(
             region,
             offset,
-            Value::known(F::from(step.gas_left.0)),
+            Value::known(F::from(step.gas_left)),
             Value::known(F::from(step.gas_cost.0)),
         )?;
         self.common_error_gadget
