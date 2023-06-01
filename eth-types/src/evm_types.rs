@@ -23,18 +23,6 @@ pub const GAS_STIPEND_CALL_WITH_VALUE: u64 = 2300;
 // #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 pub struct GasCost;
 
-// impl fmt::Display for GasCost {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         f.write_fmt(format_args!("{}", self.0))
-//     }
-// }
-
-// impl fmt::Debug for GasCost {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         f.write_fmt(format_args!("{}", self.0))
-//     }
-// }
-
 impl GasCost {
     /// Constant cost for free step
     pub const ZERO: u64 = 0;
@@ -98,29 +86,3 @@ impl GasCost {
     /// it from 10 to 50.
     pub const EXP_BYTE_TIMES: u64 = 50;
 }
-
-// impl GasCost {
-//     /// Returns the `GasCost` as a `u64`.
-//     #[inline]
-//     pub const fn as_u64(&self) -> u64 {
-//         self.0
-//     }
-
-//     /// Returns the `GasCost` as a `usize`.
-//     #[inline]
-//     pub const fn as_usize(&self) -> usize {
-//         self.0 as usize
-//     }
-// }
-
-// impl From<u8> for GasCost {
-//     fn from(cost: u8) -> Self {
-//         GasCost(cost as u64)
-//     }
-// }
-
-// impl From<u64> for GasCost {
-//     fn from(cost: u64) -> Self {
-//         GasCost(cost)
-//     }
-// }
