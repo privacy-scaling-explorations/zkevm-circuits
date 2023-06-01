@@ -1,7 +1,8 @@
 //! Mock types and functions to generate GethData used for tests
 
-use eth_types::{address, bytecode, bytecode::Bytecode, word, Address, Bytes, Word};
-use ethers_signers::LocalWallet;
+use eth_types::{
+    address, bytecode, bytecode::Bytecode, eth_core::LocalWallet, word, Address, Bytes, Word,
+};
 use lazy_static::lazy_static;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;

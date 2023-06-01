@@ -2397,8 +2397,6 @@ name = "mock"
 version = "0.1.0"
 dependencies = [
  "eth-types",
- "ethers-core",
- "ethers-signers",
  "external-tracer",
  "itertools",
  "lazy_static",

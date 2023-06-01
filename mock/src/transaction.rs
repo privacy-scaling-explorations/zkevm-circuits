@@ -2,14 +2,14 @@
 
 use super::{MOCK_ACCOUNTS, MOCK_CHAIN_ID, MOCK_GASPRICE};
 use eth_types::{
-    geth_types::Transaction as GethTransaction, word, AccessList, Address, Bytes, Hash,
-    Transaction, Word, U64,
+    eth_core::{
+        rand::{CryptoRng, RngCore},
+        types::{OtherFields, TransactionRequest},
+        LocalWallet, Signer,
+    },
+    geth_types::Transaction as GethTransaction,
+    word, AccessList, Address, Bytes, Hash, Transaction, Word, U64,
 };
-use ethers_core::{
-    rand::{CryptoRng, RngCore},
-    types::{OtherFields, TransactionRequest},
-};
-use ethers_signers::{LocalWallet, Signer};
 use lazy_static::lazy_static;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
