@@ -6,10 +6,10 @@ use crate::{
     Error,
 };
 use eth_types::{
+    eth_core::utils::{get_contract_address, rlp::RlpStream},
     evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
     evm_unimplemented, ToWord, Word,
 };
-use ethers_core::utils::get_contract_address;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct BeginEndTx;
@@ -127,7 +127,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     // Keccak table and verify the contract address.
     if state.tx.is_create() {
         state.block.sha3_inputs.push({
-            let mut stream = ethers_core::utils::rlp::RlpStream::new();
+            let mut stream = RlpStream::new();
             stream.begin_list(2);
             stream.append(&caller_address);
             stream.append(&nonce_prev);

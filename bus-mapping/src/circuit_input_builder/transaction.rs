@@ -2,8 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use eth_types::{evm_types::Memory, geth_types, GethExecTrace};
-use ethers_core::utils::get_contract_address;
+use eth_types::{
+    eth_core::utils::get_contract_address, evm_types::Memory, geth_types, GethExecTrace,
+};
 
 use crate::{
     state_db::{CodeDB, StateDB},

@@ -5,8 +5,7 @@ use crate::{
     },
     Error,
 };
-use eth_types::{bytecode, Bytecode, GethExecStep, Word, U256};
-use ethers_core::utils::keccak256;
+use eth_types::{bytecode, keccak256, Bytecode, GethExecStep, Word, U256};
 use rand::{rngs::ThreadRng, Rng};
 
 #[derive(Clone, Copy, Debug)]

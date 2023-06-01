@@ -3,10 +3,9 @@
 
 use crate::Error;
 use eth_types::{
-    Address, Block, Bytes, EIP1186ProofResponse, GethExecTrace, Hash, ResultGethExecTraces,
-    Transaction, Word, U64,
+    eth_core::types::BlockNumber, Address, Block, Bytes, EIP1186ProofResponse, GethExecTrace, Hash,
+    ResultGethExecTraces, Transaction, Word, U64,
 };
-pub use ethers_core::types::BlockNumber;
 use ethers_providers::JsonRpcClient;
 use serde::Serialize;
 
