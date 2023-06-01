@@ -191,7 +191,7 @@ mod test {
         };
 
         let gas_limit =
-            GasCost::TX.as_u64() + OpcodeId::PUSH32.as_u64() + OpcodeId::PUSH32.as_u64() + gas_cost;
+            GasCost::TX + OpcodeId::PUSH32.as_u64() + OpcodeId::PUSH32.as_u64() + gas_cost;
 
         let ctx = TestContext::<2, 1>::new(
             None,
@@ -249,7 +249,7 @@ mod test {
                 + 31;
             let memory_size = memory_address / 32;
 
-            GasCost::FASTEST.as_u64() + 3 * memory_size + memory_size * memory_size / 512
+            GasCost::FASTEST + 3 * memory_size + memory_size * memory_size / 512
         };
 
         for opcode in [OpcodeId::MSTORE, OpcodeId::MLOAD, OpcodeId::MSTORE8] {

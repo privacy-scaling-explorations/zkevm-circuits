@@ -71,14 +71,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         // Inputs/Outputs
         self.gas_required
-            .assign(region, offset, Value::known(F::from(step.gas_cost.0)))?;
+            .assign(region, offset, Value::known(F::from(step.gas_cost)))?;
         // Gas insufficient check
         // Get `gas_available` variable here once it's available
         self.insufficient_gas.assign(
             region,
             offset,
             F::from(step.gas_left),
-            F::from(step.gas_cost.0),
+            F::from(step.gas_cost),
         )?;
 
         self.common_error_gadget
@@ -104,8 +104,8 @@ mod test {
 
     fn gas(call_data: &[u8]) -> Word {
         Word::from(
-            GasCost::TX.as_u64()
-                + 2 * OpcodeId::PUSH32.constant_gas_cost().as_u64()
+            GasCost::TX
+                + 2 * OpcodeId::PUSH32.constant_gas_cost()
                 + call_data
                     .iter()
                     .map(|&x| if x == 0 { 4 } else { 16 })

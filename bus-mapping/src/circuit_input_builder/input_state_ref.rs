@@ -79,7 +79,7 @@ impl<'a> CircuitInputStateRef<'a> {
         ExecStep {
             exec_state: ExecState::EndTx,
             gas_left: if prev_step.error.is_none() {
-                prev_step.gas_left - prev_step.gas_cost.0
+                prev_step.gas_left - prev_step.gas_cost
             } else {
                 // consume all remaining gas when non revert err happens
                 0
@@ -1076,7 +1076,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
         let code_deposit_cost = if call.is_create() && call.is_success {
-            GasCost::CODE_DEPOSIT_BYTE_COST.as_u64() * last_callee_return_data_length.as_u64()
+            GasCost::CODE_DEPOSIT_BYTE_COST * last_callee_return_data_length.as_u64()
         } else {
             0
         };

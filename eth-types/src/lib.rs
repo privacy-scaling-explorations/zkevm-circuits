@@ -27,7 +27,7 @@ use halo2_proofs::halo2curves::{
     ff::{Field as Halo2Field, FromUniformBytes, PrimeField},
 };
 
-use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage, GasCost, OpcodeId};
+use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage, OpcodeId};
 use ethers_core::types;
 pub use ethers_core::{
     abi::ethereum_types::{BigEndianHash, U512},
@@ -318,7 +318,7 @@ struct GethExecStepInternal {
     #[serde(default)]
     refund: u64,
     #[serde(rename = "gasCost")]
-    gas_cost: GasCost,
+    gas_cost: u64,
     depth: u16,
     error: Option<String>,
     // stack is in hex 0x prefixed
@@ -339,7 +339,7 @@ pub struct GethExecStep {
     pub pc: u64,
     pub op: OpcodeId,
     pub gas: u64,
-    pub gas_cost: GasCost,
+    pub gas_cost: u64,
     pub refund: u64,
     pub depth: u16,
     pub error: Option<String>,
@@ -376,7 +376,7 @@ impl fmt::Debug for GethExecStep {
             .field("pc", &format_args!("0x{:04x}", self.pc))
             .field("op", &self.op)
             .field("gas", &format_args!("{}", self.gas))
-            .field("gas_cost", &format_args!("{}", self.gas_cost.0))
+            .field("gas_cost", &format_args!("{}", self.gas_cost))
             .field("depth", &self.depth)
             .field("error", &self.error)
             .field("stack", &self.stack)
@@ -566,7 +566,7 @@ mod tests {
                         op: OpcodeId::PUSH1,
                         gas: 22705,
                         refund: 0,
-                        gas_cost: GasCost(3),
+                        gas_cost: 3,
                         depth: 1,
                         error: None,
                         stack: Stack::new(),
@@ -578,7 +578,7 @@ mod tests {
                         op: OpcodeId::SLOAD,
                         gas: 5217,
                         refund: 0,
-                        gas_cost: GasCost(2100),
+                        gas_cost: 2100,
                         depth: 1,
                         error: None,
                         stack: Stack(vec![word!("0x1003e2d2"), word!("0x2a"), word!("0x0")]),
@@ -590,7 +590,7 @@ mod tests {
                         op: OpcodeId::SHA3,
                         gas: 178805,
                         refund: 0,
-                        gas_cost: GasCost(42),
+                        gas_cost: 42,
                         depth: 1,
                         error: None,
                         stack: Stack(vec![

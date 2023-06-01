@@ -4,10 +4,7 @@ use crate::{
     circuit_input_builder::CallContext, error::ExecError, exec_trace::OperationRef,
     operation::RWCounter,
 };
-use eth_types::{
-    evm_types::{GasCost, OpcodeId},
-    GethExecStep, Word, H256,
-};
+use eth_types::{evm_types::OpcodeId, GethExecStep, Word, H256};
 use gadgets::impl_expr;
 use halo2_proofs::plonk::Expression;
 use strum_macros::EnumIter;
@@ -28,7 +25,7 @@ pub struct ExecStep {
     /// Gas cost of the step.  If the error is OutOfGas caused by a "gas uint64
     /// overflow", this value will **not** be the actual Gas cost of the
     /// step.
-    pub gas_cost: GasCost,
+    pub gas_cost: u64,
     /// Accumulated gas refund
     pub gas_refund: u64,
     /// Call index within the Transaction.

@@ -72,11 +72,11 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     }
 
     let intrinsic_gas_cost = if state.tx.is_create() {
-        GasCost::CREATION_TX.as_u64()
+        GasCost::CREATION_TX
     } else {
-        GasCost::TX.as_u64()
+        GasCost::TX
     } + state.tx.tx.call_data_gas_cost();
-    exec_step.gas_cost = GasCost(intrinsic_gas_cost);
+    exec_step.gas_cost = intrinsic_gas_cost;
 
     // Get code_hash of callee
     let (_, callee_account) = state.sdb.get_account(&call.address);

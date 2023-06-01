@@ -203,13 +203,13 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
         let gas_cost = if is_warm {
-            GasCost::WARM_ACCESS.as_u64()
+            GasCost::WARM_ACCESS
         } else {
-            GasCost::COLD_ACCOUNT_ACCESS.as_u64()
+            GasCost::COLD_ACCOUNT_ACCESS
         } + if has_value {
-            GasCost::CALL_WITH_VALUE.as_u64()
+            GasCost::CALL_WITH_VALUE
                 + if call.kind == CallKind::Call && !callee_exists {
-                    GasCost::NEW_ACCOUNT.as_u64()
+                    GasCost::NEW_ACCOUNT
                 } else {
                     0
                 }
@@ -263,15 +263,15 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 state.handle_return(&mut exec_step, geth_steps, false)?;
 
                 let real_cost = geth_steps[0].gas - geth_steps[1].gas;
-                if real_cost != exec_step.gas_cost.0 {
+                if real_cost != exec_step.gas_cost {
                     log::warn!(
                         "precompile gas fixed from {} to {}, step {:?}",
-                        exec_step.gas_cost.0,
+                        exec_step.gas_cost,
                         real_cost,
                         geth_steps[0]
                     );
                 }
-                exec_step.gas_cost = GasCost(real_cost);
+                exec_step.gas_cost = real_cost;
                 Ok(vec![exec_step])
             }
             // 2. Call to account with empty code.

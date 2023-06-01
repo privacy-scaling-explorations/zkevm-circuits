@@ -93,7 +93,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         // Constrain for SSTORE reentrancy sentry.
         let sufficient_gas_sentry = LtGadget::construct(
             cb,
-            GasCost::SSTORE_SENTRY.0.expr(),
+            GasCost::SSTORE_SENTRY.expr(),
             cb.curr.state.gas_left.expr(),
         );
         cb.require_equal(
@@ -208,7 +208,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.sufficient_gas_sentry.assign_value(
             region,
             offset,
-            Value::known(F::from(GasCost::SSTORE_SENTRY.0)),
+            Value::known(F::from(GasCost::SSTORE_SENTRY)),
             Value::known(F::from(step.gas_left)),
         )?;
 
@@ -397,11 +397,11 @@ fn calc_expected_tx_refund(
         if !original_value.is_zero() {
             if value_prev.is_zero() {
                 // recreate slot (2.2.1.1)
-                tx_refund_new -= GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
+                tx_refund_new -= GasCost::SSTORE_CLEARS_SCHEDULE
             }
             if value.is_zero() {
                 // delete slot (2.2.1.2)
-                tx_refund_new += GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
+                tx_refund_new += GasCost::SSTORE_CLEARS_SCHEDULE
             }
         }
 
@@ -409,10 +409,10 @@ fn calc_expected_tx_refund(
         if original_value == value {
             if original_value.is_zero() {
                 // reset to original inexistent slot (2.2.2.1)
-                tx_refund_new += GasCost::SSTORE_SET.as_u64() - GasCost::WARM_ACCESS.as_u64();
+                tx_refund_new += GasCost::SSTORE_SET - GasCost::WARM_ACCESS;
             } else {
                 // reset to original existing slot (2.2.2.2)
-                tx_refund_new += GasCost::SSTORE_RESET.as_u64() - GasCost::WARM_ACCESS.as_u64();
+                tx_refund_new += GasCost::SSTORE_RESET - GasCost::WARM_ACCESS;
             }
         }
     }

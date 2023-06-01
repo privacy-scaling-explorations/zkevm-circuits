@@ -80,11 +80,8 @@ impl<F: Field> SameContextGadget<F> {
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        self.sufficient_gas_left.assign(
-            region,
-            offset,
-            F::from(step.gas_left - step.gas_cost.0),
-        )?;
+        self.sufficient_gas_left
+            .assign(region, offset, F::from(step.gas_left - step.gas_cost))?;
 
         Ok(())
     }
@@ -775,14 +772,14 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         is_empty_account: bool,
     ) -> Result<u64, Error> {
         let gas_cost = if is_warm_prev {
-            GasCost::WARM_ACCESS.as_u64()
+            GasCost::WARM_ACCESS
         } else {
-            GasCost::COLD_ACCOUNT_ACCESS.as_u64()
+            GasCost::COLD_ACCOUNT_ACCESS
         } + if has_value {
-            GasCost::CALL_WITH_VALUE.as_u64()
+            GasCost::CALL_WITH_VALUE
                 // Only CALL opcode could invoke transfer to make empty account into non-empty.
                 + if is_call && is_empty_account {
-                    GasCost::NEW_ACCOUNT.as_u64()
+                    GasCost::NEW_ACCOUNT
                 } else {
                     0
                 }
@@ -911,13 +908,11 @@ impl<F: Field> SstoreGasGadget<F> {
 }
 
 pub(crate) fn cal_sload_gas_cost_for_assignment(is_warm: bool) -> u64 {
-    let gas_cost = if is_warm {
+    if is_warm {
         GasCost::WARM_ACCESS
     } else {
         GasCost::COLD_SLOAD
-    };
-
-    gas_cost.0
+    }
 }
 
 pub(crate) fn cal_sstore_gas_cost_for_assignment(
@@ -938,9 +933,9 @@ pub(crate) fn cal_sstore_gas_cost_for_assignment(
         GasCost::WARM_ACCESS
     };
     if is_warm {
-        warm_case_gas.0
+        warm_case_gas
     } else {
-        warm_case_gas.0 + GasCost::COLD_SLOAD.0
+        warm_case_gas + GasCost::COLD_SLOAD
     }
 }
 

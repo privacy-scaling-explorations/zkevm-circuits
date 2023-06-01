@@ -115,7 +115,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         let insufficient_gas_sentry = LtGadget::construct(
             cb,
             cb.curr.state.gas_left.expr(),
-            (GasCost::SSTORE_SENTRY.0 + 1).expr(),
+            (GasCost::SSTORE_SENTRY + 1).expr(),
         );
         cb.require_equal(
             "Gas left is less than gas cost or gas sentry (only for SSTORE)",
@@ -180,7 +180,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             is_sstore,
             step.gas_left,
             gas_cost,
-            if is_sstore { GasCost::SSTORE_SENTRY.0 } else { 0 },
+            if is_sstore { GasCost::SSTORE_SENTRY } else { 0 },
         );
 
         self.opcode
@@ -228,7 +228,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             region,
             offset,
             Value::known(F::from(step.gas_left)),
-            Value::known(F::from(GasCost::SSTORE_SENTRY.0.checked_add(1).unwrap())),
+            Value::known(F::from(GasCost::SSTORE_SENTRY.checked_add(1).unwrap())),
         )?;
 
         // Additional one stack pop and one account storage read for SSTORE.
@@ -389,14 +389,14 @@ mod test {
                 SLOAD
             };
             let mut gas_cost =
-                OpcodeId::PUSH32.constant_gas_cost().0 + cal_sload_gas_cost_for_assignment(false);
+                OpcodeId::PUSH32.constant_gas_cost() + cal_sload_gas_cost_for_assignment(false);
             if is_warm {
                 bytecode.append(&bytecode! {
                     PUSH32(key)
                     SLOAD
                 });
-                gas_cost += OpcodeId::PUSH32.constant_gas_cost().0
-                    + cal_sload_gas_cost_for_assignment(true);
+                gas_cost +=
+                    OpcodeId::PUSH32.constant_gas_cost() + cal_sload_gas_cost_for_assignment(true);
             }
 
             Self {
@@ -424,10 +424,10 @@ mod test {
                 original_value,
                 false,
             );
-            let mut gas_cost = 2 * OpcodeId::PUSH32.constant_gas_cost().0
+            let mut gas_cost = 2 * OpcodeId::PUSH32.constant_gas_cost()
                 + max(
                     sstore_gas_cost,
-                    GasCost::SSTORE_SENTRY.0.checked_add(1).unwrap(),
+                    GasCost::SSTORE_SENTRY.checked_add(1).unwrap(),
                 );
             if is_warm {
                 bytecode.append(&bytecode! {
@@ -441,10 +441,10 @@ mod test {
                     original_value,
                     true,
                 );
-                gas_cost += 2 * OpcodeId::PUSH32.constant_gas_cost().0
+                gas_cost += 2 * OpcodeId::PUSH32.constant_gas_cost()
                     + max(
                         sstore_gas_cost,
-                        GasCost::SSTORE_SENTRY.0.checked_add(1).unwrap(),
+                        GasCost::SSTORE_SENTRY.checked_add(1).unwrap(),
                     );
             }
 
@@ -476,7 +476,7 @@ mod test {
                 txs[0]
                     .from(accs[1].address)
                     .to(accs[0].address)
-                    .gas((GasCost::TX.0 + testing_data.gas_cost - 1).into());
+                    .gas((GasCost::TX + testing_data.gas_cost - 1).into());
             },
             |block, _tx| block.number(0xcafe_u64),
         )
