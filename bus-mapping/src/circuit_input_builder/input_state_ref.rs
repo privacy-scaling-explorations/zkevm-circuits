@@ -20,7 +20,7 @@ use crate::{
     Error,
 };
 use eth_types::{
-    eth_core::utils::{get_contract_address, get_create2_address},
+    eth_core::{get_contract_address, get_create2_address},
     evm_types::{
         gas_utils::memory_expansion_gas_cost, GasCost, MemoryAddress, OpcodeId, StackAddress,
     },

@@ -3,7 +3,7 @@
 
 use crate::Error;
 use eth_types::{
-    eth_core::types::BlockNumber, Address, Block, Bytes, EIP1186ProofResponse, GethExecTrace, Hash,
+    eth_core::BlockNumber, Address, Block, Bytes, EIP1186ProofResponse, GethExecTrace, Hash,
     ResultGethExecTraces, Transaction, Word, U64,
 };
 use ethers_providers::JsonRpcClient;

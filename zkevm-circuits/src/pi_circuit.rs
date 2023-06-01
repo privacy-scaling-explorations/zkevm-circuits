@@ -9,7 +9,7 @@ mod test;
 pub use dev::PiCircuit as TestPiCircuit;
 
 use eth_types::{
-    eth_core::abi::ethereum_types::BigEndianHash,
+    eth_core::BigEndianHash,
     geth_types::{BlockConstants, Transaction},
     sign_types::SignData,
     Address, Field, Keccak, ToBigEndian, ToLittleEndian, ToScalar, Word, H256,

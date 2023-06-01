@@ -2,11 +2,7 @@
 
 use super::{MOCK_ACCOUNTS, MOCK_CHAIN_ID, MOCK_GASPRICE};
 use eth_types::{
-    eth_core::{
-        rand::{CryptoRng, RngCore},
-        types::{OtherFields, TransactionRequest},
-        LocalWallet, Signer,
-    },
+    eth_core::{CryptoRng, LocalWallet, OtherFields, RngCore, Signer, TransactionRequest},
     geth_types::Transaction as GethTransaction,
     word, AccessList, Address, Bytes, Hash, Transaction, Word, U64,
 };

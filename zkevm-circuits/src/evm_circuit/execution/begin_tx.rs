@@ -25,9 +25,9 @@ use crate::{
     util::Expr,
 };
 use eth_types::{
-    eth_core::utils::{get_contract_address, keccak256, rlp::RlpStream},
+    eth_core::{get_contract_address, RlpStream},
     evm_types::GasCost,
-    Field, ToLittleEndian, ToScalar,
+    keccak256, Field, ToLittleEndian, ToScalar,
 };
 use gadgets::util::expr_from_bytes;
 use halo2_proofs::{circuit::Value, plonk::Error};

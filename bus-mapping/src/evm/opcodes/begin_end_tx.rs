@@ -6,7 +6,7 @@ use crate::{
     Error,
 };
 use eth_types::{
-    eth_core::utils::{get_contract_address, rlp::RlpStream},
+    eth_core::{get_contract_address, RlpStream},
     evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
     evm_unimplemented, ToWord, Word,
 };

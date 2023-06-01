@@ -1,6 +1,6 @@
 use anyhow::Result;
 use eth_types::{
-    eth_core::abi::{Function, Param, ParamType, StateMutability, Token},
+    eth_core::{Function, Param, ParamType, StateMutability, Token},
     Bytes, U256,
 };
 

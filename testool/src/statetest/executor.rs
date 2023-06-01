@@ -5,10 +5,7 @@ use bus_mapping::{
     mock::BlockData,
 };
 use eth_types::{
-    eth_core::{
-        k256::ecdsa::SigningKey,
-        types::{transaction::eip2718::TypedTransaction, TransactionRequest},
-    },
+    eth_core::{SigningKey, TransactionRequest, TypedTransaction},
     geth_types, Address, Bytes, GethExecTrace, U256, U64,
 };
 use ethers_signers::{LocalWallet, Signer};

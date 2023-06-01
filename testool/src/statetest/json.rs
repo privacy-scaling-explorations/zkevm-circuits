@@ -5,7 +5,7 @@ use super::{
 use crate::{compiler::Compiler, utils::MainnetFork};
 use anyhow::{bail, Result};
 use eth_types::{
-    eth_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address},
+    eth_core::{secret_key_to_address, SigningKey},
     geth_types::Account,
     Address, U256,
 };

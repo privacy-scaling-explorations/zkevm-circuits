@@ -10,7 +10,7 @@ use halo2_proofs::{
 
 use crate::{evm_circuit::util::rlc, table::TxLogFieldTag, witness};
 use eth_types::{
-    eth_core::types::{Address, U256},
+    eth_core::{Address, U256},
     keccak256, Field, ToAddress, Word,
 };
 pub use gadgets::util::Expr;

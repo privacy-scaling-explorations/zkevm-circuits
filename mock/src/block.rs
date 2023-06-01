@@ -2,7 +2,7 @@
 
 use crate::{MockTransaction, MOCK_BASEFEE, MOCK_CHAIN_ID, MOCK_DIFFICULTY, MOCK_GASLIMIT};
 use eth_types::{
-    eth_core::types::{Bloom, OtherFields},
+    eth_core::{Bloom, OtherFields},
     Address, Block, Bytes, Hash, Transaction, Word, H64, U64,
 };
 
