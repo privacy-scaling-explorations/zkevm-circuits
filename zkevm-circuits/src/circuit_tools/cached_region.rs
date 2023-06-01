@@ -4,7 +4,7 @@ use crate::{
 use eth_types::{Field};
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
-    plonk::{Advice, Assigned, Column, Error, Expression, Fixed},
+    plonk::{Advice, Assigned, Column, Error, Expression, Fixed, Any},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -37,7 +37,7 @@ impl<'r, F: Field> MacroDescr for Region<'r, F> {
 
 pub struct CachedRegion<'r, 'b, F: Field, S: ChallengeSet<F>> {
     region: &'r mut Region<'b, F>,
-    advice: HashMap<(usize, usize), F>,
+    pub advice: HashMap<(usize, usize), F>,
     challenges: &'r S,
     disable_description: bool,
 }
@@ -63,91 +63,102 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
         self.disable_description
     }
 
-        /// Assign an advice column value (witness).
-        pub fn assign_advice<'v, V, VR, A, AR>(
-            &'v mut self,
-            annotation: A,
-            column: Column<Advice>,
-            offset: usize,
-            to: V,
-        ) -> Result<AssignedCell<VR, F>, Error>
-        where
-            V: Fn() -> Value<VR> + 'v,
-            for<'vr> Assigned<F>: From<&'vr VR>,
-            A: Fn() -> AR,
-            AR: Into<String>,
-        {
-            // Actually set the value
-            let res = self.region.assign_advice(annotation, column, offset, &to);
-            // Cache the value
-            // Note that the `value_field` in `AssignedCell` might be `Value::unkonwn` if
-            // the column has different phase than current one, so we call to `to`
-            // again here to cache the value.
-            if res.is_ok() {
-                to().map(|f: VR| {
-                    self.advice.insert((column.index(), offset),  Assigned::from(&f).evaluate());
-                });
-            }
-            res
+    /// Assign an advice column value (witness).
+    pub fn assign_advice<'v, V, VR, A, AR>(
+        &'v mut self,
+        annotation: A,
+        column: Column<Advice>,
+        offset: usize,
+        to: V,
+    ) -> Result<AssignedCell<VR, F>, Error>
+    where
+        V: Fn() -> Value<VR> + 'v,
+        for<'vr> Assigned<F>: From<&'vr VR>,
+        A: Fn() -> AR,
+        AR: Into<String>,
+    {
+        // Actually set the value
+        let res = self.region.assign_advice(annotation, column, offset, &to);
+        // Cache the value
+        // Note that the `value_field` in `AssignedCell` might be `Value::unkonwn` if
+        // the column has different phase than current one, so we call to `to`
+        // again here to cache the value.
+        if res.is_ok() {
+            to().map(|f: VR| {
+                self.advice.insert((column.index(), offset),  Assigned::from(&f).evaluate());
+            });
         }
-
-        pub fn assign_fixed<'v, V, VR, A, AR>(
-            &'v mut self,
-            annotation: A,
-            column: Column<Fixed>,
-            offset: usize,
-            to: V,
-        ) -> Result<AssignedCell<VR, F>, Error>
-        where
-            V: Fn() -> Value<VR> + 'v,
-            for<'vr> Assigned<F>: From<&'vr VR>,
-            A: Fn() -> AR,
-            AR: Into<String>,
-        {
-            self.region.assign_fixed(annotation, column, offset, &to)
-        }
-    
-        pub fn get_fixed(&self, _row_index: usize, _column_index: usize, _rotation: Rotation) -> F {
-            unimplemented!("fixed column");
-        }
-    
-        // StoreExpression 里面调，拿 F 出去 evaluate
-        pub fn get_advice(&self, row_index: usize, column_index: usize, rotation: Rotation) -> F {
-            self.advice.get(&(column_index, row_index + rotation.0 as usize))
-                .expect("Advice not found")
-                .clone()
-        }
-    
-        pub fn challenges(&self) -> &S {
-            self.challenges
-        }
-    
-    
-        // pub fn word_rlc(&self, n: U256) -> Value<F> {
-        //     self.challenges
-        //         .evm_word()
-        //         .map(|r| rlc::value(&n.to_le_bytes(), r))
-        // }
-        // pub fn empty_code_hash_rlc(&self) -> Value<F> {
-        //     self.word_rlc(CodeDB::empty_code_hash().to_word())
-        // }
-    
-    
-        /// Constrains a cell to have a constant value.
-        ///
-        /// Returns an error if the cell is in a column where equality has not been
-        /// enabled.
-        pub fn constrain_constant<VR>(
-            &mut self,
-            cell: AssignedCell<F, F>,
-            constant: VR,
-        ) -> Result<(), Error>
-        where
-            VR: Into<Assigned<F>>,
-        {
-            self.region.constrain_constant(cell.cell(), constant.into())
-        }
+        res
     }
+
+    pub fn name_column<A, AR, T>(&mut self, annotation: A, column: T)
+    where
+        A: Fn() -> AR,
+        AR: Into<String>,
+        T: Into<Column<Any>>,
+    {
+        self.region
+            .name_column(&|| annotation().into(), column.into());
+    }
+
+    pub fn assign_fixed<'v, V, VR, A, AR>(
+        &'v mut self,
+        annotation: A,
+        column: Column<Fixed>,
+        offset: usize,
+        to: V,
+    ) -> Result<AssignedCell<VR, F>, Error>
+    where
+        V: Fn() -> Value<VR> + 'v,
+        for<'vr> Assigned<F>: From<&'vr VR>,
+        A: Fn() -> AR,
+        AR: Into<String>,
+    {
+        self.region.assign_fixed(annotation, column, offset, &to)
+    }
+
+    pub fn get_fixed(&self, _row_index: usize, _column_index: usize, _rotation: Rotation) -> F {
+        unimplemented!("fixed column");
+    }
+
+    // StoreExpression 里面调，拿 F 出去 evaluate
+    pub fn get_advice(&self, row_index: usize, column_index: usize, rotation: Rotation) -> F {
+        println!("\t get_advice: [{}][{}]", column_index, rotation.0 as usize + row_index);
+        self.advice.get(&(column_index, row_index + rotation.0 as usize))
+            .expect("Advice not found")
+            .clone()
+    }
+
+    pub fn challenges(&self) -> &S {
+        self.challenges
+    }
+
+
+    // pub fn word_rlc(&self, n: U256) -> Value<F> {
+    //     self.challenges
+    //         .evm_word()
+    //         .map(|r| rlc::value(&n.to_le_bytes(), r))
+    // }
+    // pub fn empty_code_hash_rlc(&self) -> Value<F> {
+    //     self.word_rlc(CodeDB::empty_code_hash().to_word())
+    // }
+
+
+    /// Constrains a cell to have a constant value.
+    ///
+    /// Returns an error if the cell is in a column where equality has not been
+    /// enabled.
+    pub fn constrain_constant<VR>(
+        &mut self,
+        cell: AssignedCell<F, F>,
+        constant: VR,
+    ) -> Result<(), Error>
+    where
+        VR: Into<Assigned<F>>,
+    {
+        self.region.constrain_constant(cell.cell(), constant.into())
+    }
+}
 
 
 #[derive(Debug, Clone)]
@@ -172,6 +183,9 @@ impl<F: Field, C: CellTypeTrait> StoredExpression<F, C>  {
         region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
     ) -> Result<Value<F>, Error> {
+
+        //println!("____ StoredExpression::assign ____ \n\t {:?} -> {:?}", self.expr_id, self.cell.identifier());
+        
         let value = self.expr.evaluate(
             &|scalar| Value::known(scalar),
             &|_| unimplemented!("selector column"),
@@ -197,6 +211,7 @@ impl<F: Field, C: CellTypeTrait> StoredExpression<F, C>  {
             &|a, scalar| a * Value::known(scalar),
         );
         self.cell.assign_value(region, offset, value)?;
+        println!("evaluated value: {:?}", value);
         Ok(value)
     }
 }

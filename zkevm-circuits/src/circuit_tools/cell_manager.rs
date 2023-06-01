@@ -21,9 +21,9 @@ use strum_macros::EnumIter;
 pub(crate) struct Cell<F> {
     // expression for constraint
     expression: Option<Expression<F>>,
-    column: Option<Column<Advice>>,
+    pub column: Option<Column<Advice>>,
     // relative position to selector for synthesis
-    rotation: usize,
+    pub rotation: usize,
 }
 
 
@@ -90,6 +90,10 @@ impl<F: Field> Cell<F> {
     pub(crate) fn rot(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
         meta.query_advice(self.column.unwrap(), Rotation((self.rotation + rot) as i32))
     }
+
+    pub(crate) fn identifier(&self) -> String {
+        self.expr().identifier()
+    }
 }
 
 impl<F: Field> Expr<F> for Cell<F> {
@@ -135,10 +139,10 @@ impl CellTypeTrait for EvmCellType {
 
 #[derive(Clone, Debug)]
 pub struct CellConfig<C: CellTypeTrait> {
-    cell_type: C,
-    num_columns: usize,
-    phase: u8,
-    is_permute: bool,
+    pub cell_type: C,
+    pub num_columns: usize,
+    pub phase: u8,
+    pub is_permute: bool,
 }
 
 impl<C: CellTypeTrait> From<(C, usize, u8, bool)> for CellConfig<C> {
@@ -207,9 +211,9 @@ pub trait CellTypeTrait:
 pub(crate) struct CellColumn_<F, C> {
     column: Column<Advice>,
     index: usize,
-    cell_type: C,
+    pub(crate) cell_type: C,
     height: usize,
-    expr: Expression<F>,
+    pub(crate) expr: Expression<F>,
 }
 
 
@@ -251,14 +255,14 @@ impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
             });
         };
 
-        println!("\nInitiating cm:");
+        //println!("\nInitiating cm:");
         cell_configs
             .iter()
             .for_each(|c| {
                 let cols = c.init_columns(meta);
                 let mut cell_list = Vec::with_capacity(cols.len() * max_height);
                 query_expression(meta, |meta| {
-                    println!("cols.len() init {} * {}", cols.len(), max_height);
+                    //println!("cols.len() init {} * {}", cols.len(), max_height);
                     for w in 0..cols.len() {
                         for h in 0..max_height {
                             let cell: Cell<_> = Cell::new(meta, cols[w], offset + h);
@@ -274,7 +278,7 @@ impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
                     }
                 });
                 cells.insert(c.cell_type, (total_width, cell_list.clone()));
-                println!("cell type {:?} start with {} for window {}, cell_list {}", c.cell_type, total_width, c.num_columns, cell_list.len());
+                //println!("cell type {:?} start with {} for window {}, cell_list {}", c.cell_type, total_width, c.num_columns, cell_list.len());
                 total_width += cols.len();
             });
 
@@ -293,6 +297,10 @@ impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
             .iter()
             .map(|c| c.column.clone())
             .collect()
+    }
+
+    pub(crate) fn cell_columns(&self) -> &Vec<CellColumn_<F, C>> {
+        &self.columns
     }
 
     pub(crate) fn get_width(&self) -> usize {
@@ -316,21 +324,21 @@ impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
                 let mut tmp = Vec::with_capacity(window * max_height);
                 for w in 0..window {
                     if max_height < self.max_height {
-                        println!("\n-- set_max_height: {} -> {}", self.max_height, max_height);
+                        //println!("\n-- set_max_height: {} -> {}", self.max_height, max_height);
                         tmp.extend_from_slice(&cells[w * self.max_height..w * self.max_height + max_height]);
                     } else {
-                        println!("\n++ set_max_height: {} -> {}", self.max_height, max_height);
+                        //println!("\n++ set_max_height: {} -> {}", self.max_height, max_height);
                         tmp.extend_from_slice(&cells[w * self.max_height..w * self.max_height + self.max_height]);
-                        print!("    tmp.len() {} -> ", tmp.len());
+                        //print!("    tmp.len() {} -> ", tmp.len());
                         let col = tmp.last().unwrap().column();
                         tmp.extend(
                                 (self.max_height..max_height)
                                 .map(|h| Cell::new(meta, col, self.offset + h))
                             );
-                        print!("{} ", tmp.len());
+                        //print!("{} ", tmp.len());
                     }
                 }
-                println!("added cells for {:?} to {}", cell_type, tmp.len());
+                //println!("added cells for {:?} to {}", cell_type, tmp.len());
                 new_cells.insert(*cell_type, (*start_width, tmp));
             });
             self.cells = new_cells;
@@ -355,7 +363,7 @@ impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
     pub(crate) fn get_typed_columns(&self, cell_type: C) -> Vec<CellColumn_<F, C>> {
         let (start_width, _) = self.cells.get(&cell_type).expect("Cell type not found");
         let window = self.get_config(cell_type).num_columns;
-        self.columns[*start_width..window].to_owned()
+        self.columns[*start_width..*start_width + window].to_owned()
     }
 
     /// Clears columns record and set new height in cells array
@@ -372,15 +380,15 @@ impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
             .expect(&format!("Cell type {:?} not found", cell_type));
         let window = self.get_config(cell_type).num_columns;        
         
-        println!("querying {:?} {} cells", cell_type, count);
+        //println!("querying {:?} {} cells", cell_type, count);
 
         if cell_list.len() == 2 || cell_list.len() == 21 {
-            println!("\n fucked up place, start_width {} window {}", start_width, window);
+            //println!("\n fucked up place, start_width {} window {}", start_width, window);
             self.cells
                 .iter()
                 .for_each(|(c, (start, l))| print!("{:?}: {} |", c, l.len()) );
 
-            // println!(
+            //// println!(
             //     "columns {:?}", self.columns[*start_width..start_width + window].to_vec()
             // )
         }
@@ -391,7 +399,7 @@ impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
             // Search best cell in window of columns designated for this CellType
             let (index, height) = self.next_column(cell_type, &self.columns[*start_width..start_width + window]);
             targets.push(cell_list[index * self.max_height + height].clone());
-            // println!("at ({} * {} + {})", index, self.max_height, height);
+            //// println!("at ({} * {} + {})", index, self.max_height, height);
             self.columns[start_width + index].height += 1;
         }
         targets
@@ -411,7 +419,7 @@ impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
                 best_height = column.height;
             }
         }
-        println!("best pos: {:?}", best_pos);
+        //println!("best pos: {:?}", best_pos);
         match best_pos {
             Some(pos) => pos,
             // If we reach this case, it means that all the columns of cell_type have assignments

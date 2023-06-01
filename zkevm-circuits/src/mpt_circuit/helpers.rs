@@ -13,7 +13,7 @@ use crate::{
         param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN},
         rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble},
     },
-    util::Expr,
+    util::{Expr, Challenges}, evm_circuit::table::Table,
 };
 use eth_types::Field;
 use gadgets::util::{or, pow, Scalar};
@@ -768,7 +768,7 @@ pub(crate) mod num_nibbles {
         key_len: Expression<F>,
         is_key_odd: Expression<F>,
     ) -> Expression<F> {
-        let mut cb = MPTConstraintBuilder::<F>::new(0, None);
+        let mut cb = MPTConstraintBuilder::<F>::new(0, None, None);
         circuit!([meta, cb.base], {
             ifx! {is_key_odd => {
                 key_len.expr() * 2.expr() - 1.expr()
@@ -802,13 +802,19 @@ pub(crate) fn main_memory() -> String {
 #[derive(Clone)]
 pub struct MPTConstraintBuilder<F> {
     pub base: ConstraintBuilder<F, EvmCellType>,
+    pub challenges: Option<Challenges<Expression<F>>>,
 }
 
 impl<F: Field> MPTConstraintBuilder<F> {
 
-    pub(crate) fn new(max_degree: usize, cell_manager: Option<CellManager_<F, EvmCellType>>) -> Self {
+    pub(crate) fn new(
+        max_degree: usize, 
+        challenges: Option<Challenges<Expression<F>>>,
+        cell_manager: Option<CellManager_<F, EvmCellType>>
+    ) -> Self {
         MPTConstraintBuilder {
             base: ConstraintBuilder::new(max_degree, cell_manager),
+            challenges,
         }
     }
 
@@ -816,6 +822,14 @@ impl<F: Field> MPTConstraintBuilder<F> {
         self.base.is_descr_disabled()
     }
     
+    pub(crate) fn push_condition(&mut self, condition: Expression<F>) {
+        self.base.push_condition(condition)
+    }
+
+    pub(crate) fn pop_condition(&mut self) {
+        self.base.pop_condition()
+    }
+
     pub(crate) fn query_bool(&mut self) -> Cell<F> {
         self.base.query_bool()
     }
@@ -885,14 +899,36 @@ impl<F: Field> MPTConstraintBuilder<F> {
         self.base.store_dynamic_table(description, tag, values)
     }
 
-    pub(crate) fn push_condition(&mut self, condition: Expression<F>) {
-        self.base.push_condition(condition)
+    // MPT specific static lookups
+
+    pub(crate) fn lookup_keccak(
+        &mut self,
+        is_enabled: Expression<F>,
+        input_rlc: Expression<F>,
+        input_len: Expression<F>,
+        output_rlc: Expression<F>
+    ) {
+        let chellenge = self.challenges.as_ref().expect("Challenges unset!");
+        self.base.add_static_lookup(
+            "keccak", 
+            chellenge.lookup_input(), 
+            EvmCellType::Lookup(Table::Keccak), 
+            vec![is_enabled, input_rlc, input_len, output_rlc]);
     }
 
-    pub(crate) fn pop_condition(&mut self) {
-        self.base.pop_condition()
+    pub(crate) fn lookup_fixed(
+        &mut self,
+        tag: Expression<F>,
+        val_1: Expression<F>,
+        val_2: Expression<F>,
+    ) {
+        let chellenge = self.challenges.as_ref().expect("Challenges unset!");
+        self.base.add_static_lookup(
+            "fixed", 
+            chellenge.lookup_input(), 
+            EvmCellType::Lookup(Table::Fixed), 
+            vec![tag, val_1, val_2]);
     }
-
 }
 
 /// Returns `1` when `value == 0`, and returns `0` otherwise.
@@ -1125,6 +1161,7 @@ pub struct MainRLPGadget<F> {
 
 impl<F: Field> MainRLPGadget<F> {
     pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>, r: &Expression<F>) -> Self {
+        println!("_________ MainRLPGadget ________");
         let mut config = MainRLPGadget::default();
         config.bytes = cb.query_cells::<34>().to_vec();
         circuit!([meta, cb], {
@@ -1147,7 +1184,13 @@ impl<F: Field> MainRLPGadget<F> {
             require!(config.rlc_rlp => config.rlp.rlc_rlp(cb, r));
             config.mult_diff = cb.query_cell();
             let mult_diff = config.mult_diff.expr();
-            require!((FixedTableTag::RMult, config.rlp.num_bytes(), mult_diff) => @format!("fixed"));
+
+            println!("cb.lookup_fixed: \n\tFixedTableTag::RLen.expr(): {:?}\n\tconfig.rlp.len(): {:?}\n\tmult_diff: {:?}", 
+                <FixedTableTag as Expr<F>>::expr(&FixedTableTag::RMult).identifier(), config.rlp.len().identifier(), mult_diff.identifier());
+
+
+            cb.lookup_fixed(FixedTableTag::RMult.expr(), config.rlp.num_bytes(), mult_diff.clone());
+            require!((FixedTableTag::RMult, config.rlp.num_bytes(), mult_diff) => @"fixed");
 
             // "free" input that needs to be constrained externally!
             config.tag = cb.query_cell();

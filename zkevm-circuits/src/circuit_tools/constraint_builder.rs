@@ -1,13 +1,13 @@
 //! Circuit utilities
-use std::{ops::{Add, Mul}, collections::HashMap};
+use std::{ops::{Add, Mul}, collections::HashMap, vec};
 
-use crate::{evm_circuit::util::rlc, util::Expr};
+use crate::{evm_circuit::util::rlc, util::{Expr, Challenges}};
 use eth_types::Field;
 use gadgets::util::{and, sum, Scalar};
 use halo2_proofs::plonk::{ConstraintSystem, Expression};
 use itertools::Itertools;
 
-use super::{cell_manager::{Cell, CellManager_, CellTypeTrait, EvmCellType}, cached_region::StoredExpression};
+use super::{cell_manager::{Cell, CellManager_, CellTypeTrait, EvmCellType}, cached_region::StoredExpression, table::LookupTable_};
 
 /// Data for dynamic lookup
 #[derive(Clone)]
@@ -41,6 +41,7 @@ pub struct ConstraintBuilder<F, C: CellTypeTrait> {
     /// CellManager
     pub cell_manager: Option<CellManager_<F, C>>,
     /// Disable macro-generated description for constraints & lookups
+    /// for graph display
     pub disable_description: bool,
 }
 
@@ -186,6 +187,27 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         self.constraints.clone()
     }
 
+    pub(crate) fn build_static_lookups(
+        &self,
+        meta: &mut ConstraintSystem<F>,
+        challenge: Expression<F>,
+        tables: Vec<&dyn LookupTable_<F, TableCellType = C>>
+    ) {
+        println!("____ build_static_lookups ____ \n challen {:?}", challenge);
+        let cm = self.cell_manager.as_ref().expect("CellManager unset!");
+        for table in tables {
+            let cell_type = table.get_type_();
+            for col in cm.get_typed_columns(cell_type) {
+                meta.lookup_any(
+                    "static lookup",
+                    |meta| {
+                        vec![(col.expr, rlc::expr(&table.table_exprs(meta), challenge.clone()))]
+                    }
+                );
+            }
+        }
+    }
+
     pub(crate) fn build_dynamic_lookups<S: AsRef<str>>(
         &self,
         meta: &mut ConstraintSystem<F>,
@@ -284,41 +306,30 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         }
     }
 
+
+    // Todo(Cecilia): incorperate the challenge into CB
+    //                then remove from MPT ctx
     pub(crate) fn add_static_lookup(
         &mut self,
         description: &str,
+        challenge: Expression<F>,
+        cell_type: C,
         values: Vec<Expression<F>>,
     ) {
-        // let lookup = match self.condition_expr_opt() {
-        //     Some(condition) => lookup.conditional(condition),
-        //     None => lookup,
-        // };
-        // let compressed_expr = self.split_expression(
-        //     "Lookup compression",
-        //     rlc::expr(&lookup.input_exprs(), self.challenges.lookup_input()),
-        //     MAX_DEGREE - IMPLICIT_DEGREE,
-        // );
-        // self.static_lookups.push(StaticData {
-        //     description,
-        //     tag: tag.as_ref().to_owned(),
-        //     values,
-        // });
+        println!("________ add_static_lookup ________ \nchallenge: {:?}", challenge);
+        let compressed_expr = self.split_expression(
+            "Lookup compression",
+            rlc::expr(&values, challenge),
+        );
+        println!("compressed_expr: {:?}", compressed_expr.identifier());
+        self.store_expression(description, compressed_expr, cell_type);
     }
 
-    // pub(crate) fn get_dynamic_lookups<S: AsRef<str>>(&self, tags: &[S]) -> Vec<DynamicData<F>> {
-    //     self.dynamic_lookups
-    //         .iter()
-    //         .cloned()
-    //         .filter(|lookup| tags.iter().any(|tag| lookup.tag == tag.as_ref()))
-    //         .collect::<Vec<_>>()
-    // }
 
-    // pub(crate) fn consume_dynamic_lookups<S: AsRef<str>>(&mut self, tags: &[S]) -> Vec<DynamicData<F>> {
-    //     let lookups = self.get_dynamic_lookups(tags);
-    //     self.dynamic_lookups
-    //         .retain(|lookup| tags.iter().any(|tag| lookup.tag != tag.as_ref()));
-    //     lookups
-    // }
+    pub(crate) fn get_static_lookups(&self) -> Vec<StoredExpression<F, C>> {
+        self.static_lookups.clone()
+    }
+
 
     pub(crate) fn get_dynamic_table<S: AsRef<str>>(
         &self,
@@ -374,6 +385,9 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         expr: Expression<F>,
         cell_type: C,
     ) -> Expression<F> {
+
+        println!("\t ____ store_expression ____");
+
         // Check if we already stored the expression somewhere
         let stored_expression = self.find_stored_expression(&expr, cell_type);
 
@@ -385,11 +399,11 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
                 // Require the stored value to equal the value of the expression
                 let cell = self.query_one(cell_type);
                 let name = format!("{} (stored expression)", name);
-                self.add_constraint(
-                    Box::leak(name.clone().into_boxed_str()),
-                    cell.expr() - expr.clone(),
-                );
-
+                // self.add_constraint(
+                //     Box::leak(name.clone().into_boxed_str()),
+                //     cell.expr() - expr.clone(),
+                // );
+                println!("\n pushing in cell {:?}: {:?}", cell.identifier(), expr.identifier());
                 self.static_lookups.push(StoredExpression {
                     name,
                     cell: cell.clone(),
@@ -417,27 +431,26 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         &mut self,
         name: &'static str,
         expr: Expression<F>,
-        max_degree: usize,
     ) -> Expression<F> {
-        if expr.degree() > max_degree {
+        if expr.degree() > self.max_degree {
             match expr {
                 Expression::Negated(poly) => {
-                    Expression::Negated(Box::new(self.split_expression(name, *poly, max_degree)))
+                    Expression::Negated(Box::new(self.split_expression(name, *poly)))
                 }
                 Expression::Scaled(poly, v) => {
-                    Expression::Scaled(Box::new(self.split_expression(name, *poly, max_degree)), v)
+                    Expression::Scaled(Box::new(self.split_expression(name, *poly)), v)
                 }
                 Expression::Sum(a, b) => {
-                    let a = self.split_expression(name, *a, max_degree);
-                    let b = self.split_expression(name, *b, max_degree);
+                    let a = self.split_expression(name, *a);
+                    let b = self.split_expression(name, *b);
                     a + b
                 }
                 Expression::Product(a, b) => {
                     let (mut a, mut b) = (*a, *b);
-                    while a.degree() + b.degree() > max_degree {
+                    while a.degree() + b.degree() > self.max_degree {
                         let mut split = |expr: Expression<F>| {
-                            if expr.degree() > max_degree {
-                                self.split_expression(name, expr, max_degree)
+                            if expr.degree() > self.max_degree {
+                                self.split_expression(name, expr)
                             } else {
                                 let cell_type = C::storage_for_expr(&expr);
                                 self.store_expression(name, expr, cell_type)

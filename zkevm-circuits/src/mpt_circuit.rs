@@ -21,28 +21,29 @@ mod param;
 mod rlp_gadgets;
 mod start;
 mod storage_leaf;
-mod witness_row;
 mod table;
+mod witness_row;
 
 use self::{
     account_leaf::AccountLeafConfig,
     helpers::{key_memory, RLPItemView},
-    witness_row::{StartRowType,ExtensionBranchRowType, AccountRowType, StorageRowType,Node},
+    witness_row::{AccountRowType, ExtensionBranchRowType, Node, StartRowType, StorageRowType},
 };
 use crate::{
     assign, assignf, circuit,
     circuit_tools::{
+        cached_region::{CachedRegion, MacroDescr, ChallengeSet},
+        cell_manager::{CellManager_, CellTypeTrait, EvmCellType},
         memory::Memory,
-        cached_region::{CachedRegion, MacroDescr},
+        table::LookupTable_,
     },
     mpt_circuit::{
         helpers::{main_memory, parent_memory, MPTConstraintBuilder, MainRLPGadget},
         start::StartConfig,
         storage_leaf::StorageLeafConfig,
     },
-    circuit_tools::{table::LookupTable_, cell_manager::{CellManager_, CellTypeTrait, EvmCellType}},
     table::{KeccakTable, MPTProofType, MptTable},
-    util::Challenges,
+    util::Challenges, evm_circuit::table::Table,
 };
 use extension_branch::ExtensionBranchConfig;
 use param::HASH_WIDTH;
@@ -134,7 +135,7 @@ pub struct MPTConfig<F> {
     state_machine: StateMachineConfig<F>,
     pub(crate) mpt_table: MptTable,
     cb: MPTConstraintBuilder<F>,
-} 
+}
 
 /// Enumerator to determine the type of row in the fixed table.
 #[derive(Clone, Copy, Debug)]
@@ -210,29 +211,33 @@ impl<F: Field> MPTConfig<F> {
             memory: memory.clone(),
         };
 
-
         let rlp_cm = CellManager_::new(
             meta,
             // Type, #cols, phase, permutable
-            vec![(EvmCellType::StoragePhase1, 50, 0, false)],
+            vec![
+                (EvmCellType::StoragePhase1, 50, 0, false),
+                (EvmCellType::Lookup(Table::Fixed), 5, 0, false)
+            ],
             Vec::new(),
             0,
-            1
+            1,
         );
         let rlp_columns = rlp_cm.get_columns();
         let state_cm = CellManager_::new(
             meta,
             // Type, #cols, phase, permutable
             vec![
-                (EvmCellType::StoragePhase1, 15, 0, false), 
-                (EvmCellType::LookupByte, 5, 0, false)
+                (EvmCellType::StoragePhase1, 15, 0, false),
+                (EvmCellType::LookupByte, 5, 0, false),
+                (EvmCellType::Lookup(Table::Keccak), 5, 0, false)
             ],
             Vec::new(),
             0,
-            1
+            1,
         );
         let state_columns = state_cm.get_columns();
-        let mut cb = MPTConstraintBuilder::new(33 + 10, None);
+        let mut cb = MPTConstraintBuilder::new(33 + 10, Some(challenges.clone()), None);
+        println!("_________ create_gate ________");
         meta.create_gate("MPT", |meta| {
             circuit!([meta, cb], {
                 // Populate lookup tables
@@ -297,6 +302,11 @@ impl<F: Field> MPTConfig<F> {
             .parse()
             .expect("Cannot parse DISABLE_LOOKUPS env var as usize");
         if disable_lookups == 0 {
+            cb.base.build_static_lookups(
+                meta,
+                challenges.lookup_input(), 
+                vec![&keccak_table, &fixed_table]
+            );
             cb.base.build_dynamic_lookups(
                 meta,
                 &[
@@ -352,7 +362,7 @@ impl<F: Field> MPTConfig<F> {
 
         let mut r = F::zero();
         challenges.keccak_input().map(|v| r = v);
-
+        println!("________ MPT::assign ________");
         layouter.assign_region(
             || "MPT",
             |mut region| {
@@ -362,34 +372,35 @@ impl<F: Field> MPTConfig<F> {
 
                 let mut offset = 0;
                 for node in nodes.iter() {
-                    // Assign bytes
-                    let mut rlp_values = Vec::new();
-                    let mut cahced_region = CachedRegion::new(
+                    let mut cached_region = CachedRegion::new(
                         &mut region,
                         challenges
                     );
+                    // Assign bytes
+                    let mut rlp_values = Vec::new();
                     // Decompose RLP
                     for (idx, bytes) in node.values.iter().enumerate() {
                         let is_nibbles = node.extension_branch.is_some()
                             && idx == ExtensionBranchRowType::KeyC as usize;
                         let rlp_value = self.rlp_item.assign(
-                            &mut cahced_region,
+                            &mut cached_region,
                             offset + idx,
                             bytes,
                             r,
                             is_nibbles,
                         )?;
                         rlp_values.push(rlp_value);
-                        assignf!(cahced_region, (self.rows_left_in_state, offset + idx) => (node.values.len() - idx).scalar())?;
+                        assignf!(cached_region, (self.rows_left_in_state, offset + idx) => (node.values.len() - idx).scalar())?;
                     }
+                    //println!("{} mainRLP ====> cached_region.advice\n {:?}", offset, cached_region.advice);
 
 
                     // Assign nodes
                     if node.start.is_some() {
-                        // println!("{}: start", offset);
-                        assign!(region, (self.state_machine.is_start, offset) => "is_start", true.scalar())?;
+                        println!("{}: start", offset);
+                        assign!(cached_region, (self.state_machine.is_start, offset) => "is_start", true.scalar())?;
                         self.state_machine.start_config.assign(
-                            &mut region,
+                            &mut cached_region,
                             challenges,
                             self,
                             &mut pv,
@@ -398,10 +409,10 @@ impl<F: Field> MPTConfig<F> {
                             &rlp_values,
                         )?;
                     } else if node.extension_branch.is_some() {
-                        // println!("{}: branch", offset);
-                        assign!(region, (self.state_machine.is_branch, offset) => "is_branch", true.scalar())?;
+                        println!("{}: branch", offset);
+                        assign!(cached_region, (self.state_machine.is_branch, offset) => "is_branch", true.scalar())?;
                         self.state_machine.branch_config.assign(
-                            &mut region,
+                            &mut cached_region,
                             challenges,
                             self,
                             &mut pv,
@@ -410,10 +421,10 @@ impl<F: Field> MPTConfig<F> {
                             &rlp_values,
                         )?;
                     } else if node.storage.is_some() {
-                        // println!("{}: storage", offset);
-                        assign!(region, (self.state_machine.is_storage, offset) => "is_storage", true.scalar())?;
+                        println!("{}: storage", offset);
+                        assign!(cached_region, (self.state_machine.is_storage, offset) => "is_storage", true.scalar())?;
                         self.state_machine.storage_config.assign(
-                            &mut region,
+                            &mut cached_region,
                             challenges,
                             self,
                             &mut pv,
@@ -422,10 +433,10 @@ impl<F: Field> MPTConfig<F> {
                             &rlp_values,
                         )?;
                     } else if node.account.is_some() {
-                        // println!("{}: account", offset);
-                        assign!(region, (self.state_machine.is_account, offset) => "is_account", true.scalar())?;
+                        println!("{}: account", offset);
+                        assign!(cached_region, (self.state_machine.is_account, offset) => "is_account", true.scalar())?;
                         self.state_machine.account_config.assign(
-                            &mut region,
+                            &mut cached_region,
                             challenges,
                             self,
                             &mut pv,
@@ -434,7 +445,7 @@ impl<F: Field> MPTConfig<F> {
                             &rlp_values,
                         )?;
                     }
-
+                    self.assign_static_lookups(&mut cached_region, offset);
                     offset += node.values.len();
                 }
 
@@ -446,15 +457,31 @@ impl<F: Field> MPTConfig<F> {
                     assignf!(region, (self.q_first, offset) => (offset == 0).scalar())?;
                     assignf!(region, (self.q_last, offset) => (offset == height - 2).scalar())?;
                 }
+                
 
                 Ok(())
             },
         )?;
-
+        
         memory.assign(layouter, height)?;
 
         Ok(())
     }
+
+    fn assign_static_lookups<S: ChallengeSet<F>>(
+        &self,
+        region: &mut CachedRegion<'_, '_, F, S>,
+        offset: usize,
+    ) {
+        //println!("_________ assign_static_lookups ________ \nstatic_lookups: {:?}\n", self.cb.base.get_static_lookups());
+
+        self.cb.base.get_static_lookups()
+            .iter()
+            .for_each(|stored_expr| {
+                stored_expr.assign(region, offset).expect("static lookup assignment failed");
+            });
+   }
+
 
     fn load_fixed_table(
         &self,
@@ -680,6 +707,8 @@ mod tests {
             keccak_data,
             randomness,
         };
+        let prover = MockProver::run(9 /* 9 */, &circuit, vec![]).unwrap();
+                assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
 
         println!("Start graphing");
 
@@ -695,8 +724,6 @@ mod tests {
         // Generate the DOT graph string.
         let dot_string = halo2_proofs::dev::circuit_dot_graph(&circuit);
         print!("{}", dot_string);
-
-
     }
 }
 

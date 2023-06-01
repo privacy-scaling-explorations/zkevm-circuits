@@ -83,7 +83,7 @@ impl<F: Field> StartConfig<F> {
 
     pub fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut Region<F>,
+        cached_region: &mut CachedRegion<'_, '_, F, S>,
         challenges: &S,
         mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
@@ -92,10 +92,6 @@ impl<F: Field> StartConfig<F> {
         rlp_values: &[RLPItemWitness],
     ) -> Result<(), Error> {
 
-        let mut region = CachedRegion::new(
-            region,
-            challenges
-        );
         let start = &node.start.clone().unwrap();
 
         let _root_items = [
@@ -104,7 +100,7 @@ impl<F: Field> StartConfig<F> {
         ];
 
         self.proof_type
-            .assign(&mut region, offset, start.proof_type.scalar())?;
+            .assign(cached_region, offset, start.proof_type.scalar())?;
 
         let mut root = vec![0.scalar(); 2];
         for is_s in [true, false] {
@@ -113,7 +109,7 @@ impl<F: Field> StartConfig<F> {
         }
 
         MainData::witness_store(
-            &mut region,
+            cached_region,
             offset,
             &mut pv.memory[main_memory()],
             start.proof_type as usize,
@@ -125,7 +121,7 @@ impl<F: Field> StartConfig<F> {
 
         for is_s in [true, false] {
             ParentData::witness_store(
-                &mut region,
+                cached_region,
                 offset,
                 &mut pv.memory[parent_memory(is_s)],
                 root[is_s.idx()],
@@ -134,7 +130,7 @@ impl<F: Field> StartConfig<F> {
                 root[is_s.idx()],
             )?;
             KeyData::witness_store(
-                &mut region,
+                cached_region,
                 offset,
                 &mut pv.memory[key_memory(is_s)],
                 F::zero(),
@@ -145,6 +141,8 @@ impl<F: Field> StartConfig<F> {
                 0,
             )?;
         }
+        //println!("{} start ====> cahced_region.advice\n {:?}", offset, cached_region.advice);
+        //mpt_config.assign_static_lookups(cached_region, offset);
 
         Ok(())
     }
