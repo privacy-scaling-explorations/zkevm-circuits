@@ -50,7 +50,7 @@ pub struct Block<F> {
     /// Keccak inputs
     pub keccak_inputs: Vec<Vec<u8>>,
     /// Original Block from geth
-    pub eth_block: eth_types::Block<eth_types::Transaction>,
+    pub eth_block: eth_types::Block<eth_types::eth_core::Transaction>,
 }
 
 impl<F: Field> Block<F> {

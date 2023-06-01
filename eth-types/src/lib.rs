@@ -33,10 +33,7 @@ use halo2_proofs::halo2curves::{
 };
 
 use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage, OpcodeId};
-pub use ethers_core::types::{
-    transaction::{eip2930::AccessList, response::Transaction},
-    Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
-};
+pub use ethers_core::types::{Address, Block, Bytes, Signature, H160, H256, H64, U256, U64};
 
 use serde::{de, Deserialize, Serialize};
 use std::{collections::HashMap, fmt, str::FromStr};

@@ -1,14 +1,11 @@
 //! Types needed for generating Ethereum traces
 
 use crate::{
+    eth_core::{get_contract_address, response, AccessList, NameOrAddress, TransactionRequest},
     keccak256,
     sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
-    AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian,
-    ToWord, Word, U64,
-};
-use ethers_core::{
-    types::{transaction::response, NameOrAddress, TransactionRequest},
-    utils::get_contract_address,
+    Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian, ToWord, Word,
+    U64,
 };
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1};
@@ -149,9 +146,9 @@ pub struct Transaction {
     pub s: Word,
 }
 
-impl From<&Transaction> for crate::Transaction {
-    fn from(tx: &Transaction) -> crate::Transaction {
-        crate::Transaction {
+impl From<&Transaction> for crate::eth_core::Transaction {
+    fn from(tx: &Transaction) -> crate::eth_core::Transaction {
+        crate::eth_core::Transaction {
             from: tx.from,
             to: tx.to,
             nonce: tx.nonce.to_word(),
@@ -170,8 +167,8 @@ impl From<&Transaction> for crate::Transaction {
     }
 }
 
-impl From<&crate::Transaction> for Transaction {
-    fn from(tx: &crate::Transaction) -> Transaction {
+impl From<&crate::eth_core::Transaction> for Transaction {
+    fn from(tx: &crate::eth_core::Transaction) -> Transaction {
         Transaction {
             from: tx.from,
             to: tx.to,
@@ -299,7 +296,7 @@ pub struct GethData {
     /// the lastest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// Block from geth
-    pub eth_block: Block<crate::Transaction>,
+    pub eth_block: Block<crate::eth_core::Transaction>,
     /// Execution Trace from geth
     pub geth_traces: Vec<GethExecTrace>,
     /// Accounts

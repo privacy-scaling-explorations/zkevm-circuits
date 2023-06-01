@@ -89,7 +89,7 @@ pub struct Block {
     /// Circuits Setup Paramteres
     pub circuits_params: CircuitsParams,
     /// Original block from geth
-    pub eth_block: eth_types::Block<eth_types::Transaction>,
+    pub eth_block: eth_types::Block<eth_types::eth_core::Transaction>,
 }
 
 impl Block {
@@ -98,7 +98,7 @@ impl Block {
         chain_id: Word,
         history_hashes: Vec<Word>,
         prev_state_root: Word,
-        eth_block: &eth_types::Block<eth_types::Transaction>,
+        eth_block: &eth_types::Block<eth_types::eth_core::Transaction>,
         circuits_params: CircuitsParams,
     ) -> Result<Self, Error> {
         if eth_block.base_fee_per_gas.is_none() {

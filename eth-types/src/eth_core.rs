@@ -7,8 +7,11 @@ pub use ethers_core::{
     k256::ecdsa::SigningKey,
     rand::{CryptoRng, RngCore},
     types::{
-        transaction::eip2718::TypedTransaction, Address, BlockNumber, Bloom, OtherFields,
-        TransactionRequest, H256, I256, U256,
+        transaction::{
+            eip2718::TypedTransaction, eip2930::AccessList, response, response::Transaction,
+        },
+        Address, BlockNumber, Bloom, NameOrAddress, OtherFields, TransactionRequest, H256, I256,
+        U256,
     },
     utils::{get_contract_address, get_create2_address, rlp::RlpStream, secret_key_to_address},
 };

@@ -35,7 +35,7 @@ pub struct TransactionContext {
 impl TransactionContext {
     /// Create a new Self.
     pub fn new(
-        eth_tx: &eth_types::Transaction,
+        eth_tx: &eth_types::eth_core::Transaction,
         geth_trace: &GethExecTrace,
         is_last_tx: bool,
     ) -> Result<Self, Error> {
@@ -192,7 +192,7 @@ impl Transaction {
         call_id: usize,
         sdb: &StateDB,
         code_db: &mut CodeDB,
-        eth_tx: &eth_types::Transaction,
+        eth_tx: &eth_types::eth_core::Transaction,
         is_success: bool,
     ) -> Result<Self, Error> {
         let (found, _) = sdb.get_account(&eth_tx.from);

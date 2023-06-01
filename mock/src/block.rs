@@ -2,8 +2,8 @@
 
 use crate::{MockTransaction, MOCK_BASEFEE, MOCK_CHAIN_ID, MOCK_DIFFICULTY, MOCK_GASLIMIT};
 use eth_types::{
-    eth_core::{Bloom, OtherFields},
-    Address, Block, Bytes, Hash, Transaction, Word, H64, U64,
+    eth_core::{Bloom, OtherFields, Transaction},
+    Address, Block, Bytes, Hash, Word, H64, U64,
 };
 
 #[derive(Clone, Debug)]

@@ -151,7 +151,7 @@ impl<'a> CircuitInputBuilder {
     /// Create a new Transaction from a [`eth_types::Transaction`].
     pub fn new_tx(
         &mut self,
-        eth_tx: &eth_types::Transaction,
+        eth_tx: &eth_types::eth_core::Transaction,
         is_success: bool,
     ) -> Result<Transaction, Error> {
         let call_id = self.block_ctx.rwc.0;
@@ -263,7 +263,7 @@ impl<'a> CircuitInputBuilder {
     /// generated operations.
     fn handle_tx(
         &mut self,
-        eth_tx: &eth_types::Transaction,
+        eth_tx: &eth_types::eth_core::Transaction,
         geth_trace: &GethExecTrace,
         is_last_tx: bool,
     ) -> Result<(), Error> {
@@ -390,7 +390,7 @@ pub fn get_call_memory_offset_length(step: &GethExecStep, nth: usize) -> Result<
     }
 }
 
-type EthBlock = eth_types::Block<eth_types::Transaction>;
+type EthBlock = eth_types::Block<eth_types::eth_core::Transaction>;
 
 /// Struct that wraps a GethClient and contains methods to perform all the steps
 /// necessary to generate the circuit inputs for a block by querying geth for
@@ -594,7 +594,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     ) -> Result<
         (
             CircuitInputBuilder,
-            eth_types::Block<eth_types::Transaction>,
+            eth_types::Block<eth_types::eth_core::Transaction>,
         ),
         Error,
     > {

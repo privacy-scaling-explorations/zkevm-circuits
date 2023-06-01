@@ -336,7 +336,7 @@ async fn gen_inputs(
     block_num: u64,
 ) -> (
     CircuitInputBuilder,
-    eth_types::Block<eth_types::Transaction>,
+    eth_types::Block<eth_types::eth_core::Transaction>,
 ) {
     let cli = get_client();
     let cli = BuilderClient::new(cli, CIRCUITS_PARAMS).await.unwrap();

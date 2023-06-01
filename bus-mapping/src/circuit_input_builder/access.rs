@@ -118,7 +118,7 @@ impl Default for CodeSource {
 /// sections.
 pub fn gen_state_access_trace<TX>(
     _block: &eth_types::Block<TX>,
-    tx: &eth_types::Transaction,
+    tx: &eth_types::eth_core::Transaction,
     geth_trace: &GethExecTrace,
 ) -> Result<Vec<Access>, Error> {
     let mut call_stack: Vec<(Address, CodeSource)> = Vec::new();

@@ -20,7 +20,7 @@ pub struct BlockData {
     /// the lastest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// Block from geth
-    pub eth_block: eth_types::Block<eth_types::Transaction>,
+    pub eth_block: eth_types::Block<eth_types::eth_core::Transaction>,
     /// Execution Trace from geth
     pub geth_traces: Vec<eth_types::GethExecTrace>,
     /// Circuits setup parameters

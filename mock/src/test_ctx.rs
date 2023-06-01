@@ -2,8 +2,9 @@
 
 use crate::{eth, MockAccount, MockBlock, MockTransaction};
 use eth_types::{
+    eth_core::Transaction,
     geth_types::{Account, BlockConstants, GethData},
-    Block, Bytecode, Error, GethExecTrace, Transaction, Word,
+    Block, Bytecode, Error, GethExecTrace, Word,
 };
 use external_tracer::{trace, TraceConfig};
 use helpers::*;
@@ -86,7 +87,7 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
     /// the lastest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// Block from geth
-    pub eth_block: eth_types::Block<eth_types::Transaction>,
+    pub eth_block: eth_types::Block<Transaction>,
     /// Execution Trace from geth
     pub geth_traces: Vec<eth_types::GethExecTrace>,
 }
