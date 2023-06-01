@@ -386,7 +386,6 @@ impl Rw {
         }
     }
 
-
     pub(crate) fn table_assignment<F: Field>(&self) -> RwRow<F> {
         RwRow {
             rw_counter: F::from(self.rw_counter() as u64),
@@ -397,10 +396,8 @@ impl Rw {
             field_tag: F::from(self.field_tag().unwrap_or_default()),
             storage_key: word::Word::from_u256(self.storage_key().unwrap_or_default()),
             value: word::Word::from_u256(self.value_assignment()),
-            value_prev: word::Word::from_u256(self.value_prev_assignment().unwrap_or_default())
-                ,
-            init_val: word::Word::from_u256(self.committed_value_assignment().unwrap_or_default())
-                ,
+            value_prev: word::Word::from_u256(self.value_prev_assignment().unwrap_or_default()),
+            init_val: word::Word::from_u256(self.committed_value_assignment().unwrap_or_default()),
         }
     }
 

@@ -408,10 +408,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
             Value::known(block.randomness),
         )?;
 
-        config.mpt_table.load(
-            &mut layouter,
-            &MptUpdates::mock_from(rws),
-        )?;
+        config
+            .mpt_table
+            .load(&mut layouter, &MptUpdates::mock_from(rws))?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }

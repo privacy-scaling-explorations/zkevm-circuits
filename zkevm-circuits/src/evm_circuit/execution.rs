@@ -1377,10 +1377,7 @@ impl<F: Field> ExecutionConfig<F> {
             .rw_indices
             .iter()
             .map(|rw_idx| block.rws[*rw_idx])
-            .map(|rw| {
-                rw.table_assignment()
-                    .rlc(lookup_randomness)
-            })
+            .map(|rw| rw.table_assignment().rlc(lookup_randomness))
             .fold(BTreeSet::<F>::new(), |mut set, value| {
                 set.insert(value);
                 set

@@ -527,7 +527,12 @@ impl RwTable {
             (self.id, row.id),
             (self.field_tag, row.field_tag),
         ] {
-            region.assign_advice(|| "assign rw row on rw table", column, offset, || Value::known(value))?;
+            region.assign_advice(
+                || "assign rw row on rw table",
+                column,
+                offset,
+                || Value::known(value),
+            )?;
         }
         for (column, value) in [
             (self.address, row.address),
@@ -536,7 +541,12 @@ impl RwTable {
             (self.value_prev, row.value_prev),
             (self.init_val, row.init_val),
         ] {
-            value.into_value().assign_advice(region, || "assign rw row on rw table", column, offset)?;
+            value.into_value().assign_advice(
+                region,
+                || "assign rw row on rw table",
+                column,
+                offset,
+            )?;
         }
 
         Ok(())

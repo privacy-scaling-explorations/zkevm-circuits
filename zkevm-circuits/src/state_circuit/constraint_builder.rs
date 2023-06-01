@@ -194,11 +194,11 @@ impl<F: Field> ConstraintBuilder<F> {
             );
             cb.require_zero(
                 "initial value doesn't change in an access group (hi)",
-                q.initial_value.hi()- q.initial_value_prev().hi(),
+                q.initial_value.hi() - q.initial_value_prev().hi(),
             );
             cb.require_zero(
                 "initial value doesn't change in an access group (lo)",
-                q.initial_value.lo()- q.initial_value_prev().lo(),
+                q.initial_value.lo() - q.initial_value_prev().lo(),
             );
         });
     }
@@ -252,12 +252,9 @@ impl<F: Field> ConstraintBuilder<F> {
         // 2.3. value is a byte
         self.add_lookup(
             "memory value is a byte (lo is u8)",
-            vec![(q.rw_table.value.lo(),q.lookups.u8.clone())],
+            vec![(q.rw_table.value.lo(), q.lookups.u8.clone())],
         );
-        self.require_zero(
-            "memory value is a byte (hi is 0)",
-            q.rw_table.value.hi()
-        );
+        self.require_zero("memory value is a byte (hi is 0)", q.rw_table.value.hi());
         // 2.4. Start initial value is 0
         self.require_word_zero("initial Memory value is 0", q.initial_value());
         // 2.5. state root does not change
