@@ -12,13 +12,15 @@ use std::collections::BTreeMap;
 pub use state::ZktrieState;
 
 /// An MPT update whose validity is proved by the MptCircuit
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct MptUpdate {
     key: Key,
     old_value: Word,
     new_value: Word,
     old_root: Word,
     new_root: Word,
+    // for debugging
+    original_rws: Vec<Rw>,
 }
 
 impl MptUpdate {
@@ -60,7 +62,12 @@ impl MptUpdates {
     }
 
     pub(crate) fn get(&self, row: &Rw) -> Option<MptUpdate> {
-        key(row).map(|key| *self.updates.get(&key).expect("missing key in mpt updates"))
+        key(row).map(|key| {
+            self.updates
+                .get(&key)
+                .expect("missing key in mpt updates")
+                .clone()
+        })
     }
 
     pub(crate) fn fill_state_roots(&mut self, init_trie: &ZktrieState) {
@@ -143,9 +150,10 @@ impl MptUpdates {
             .into_iter()
             .filter_map(|(key, rows)| key.map(|key| (key, rows)))
             .enumerate()
-            .map(|(i, (key, mut rows))| {
-                let first = rows.next().unwrap();
-                let last = rows.last().unwrap_or(first);
+            .map(|(i, (key, rows))| {
+                let rows: Vec<Rw> = rows.copied().collect_vec();
+                let first = &rows[0];
+                let last = rows.iter().last().unwrap_or(first);
                 let key_exists = key;
                 let key = key.set_non_exists(value_prev(first), value(last));
                 (
@@ -160,6 +168,7 @@ impl MptUpdates {
                         },
                         old_value: value_prev(first),
                         new_value: value(last),
+                        original_rws: rows,
                     },
                 )
             })
@@ -204,6 +213,10 @@ impl MptUpdates {
 }
 
 impl MptUpdate {
+    pub(crate) fn values(&self) -> (Word, Word) {
+        (self.new_value, self.old_value)
+    }
+
     pub(crate) fn value_assignments<F: Field>(&self, word_randomness: F) -> (F, F) {
         let assign = |x: Word| match self.key {
             Key::Account {
