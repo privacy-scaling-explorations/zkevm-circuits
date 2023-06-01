@@ -3876,7 +3876,6 @@ dependencies = [
  "clap",
  "env_logger",
  "eth-types",
- "ethers-core",
  "ethers-signers",
  "external-tracer",
  "glob",

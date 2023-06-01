@@ -22,6 +22,9 @@ pub mod keccak;
 pub mod sign_types;
 pub use keccak::{keccak256, Keccak};
 
+#[cfg(feature = "ethers-core")]
+pub mod eth_core;
+
 pub use bytecode::Bytecode;
 pub use error::Error;
 use halo2_proofs::halo2curves::{

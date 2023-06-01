@@ -4,8 +4,11 @@ use super::{
 };
 use crate::{utils::MainnetFork, Compiler};
 use anyhow::{bail, Context, Result};
-use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
-use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
+use eth_types::{
+    eth_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address},
+    geth_types::Account,
+    Address, Bytes, H256, U256,
+};
 use std::{collections::HashMap, convert::TryInto, str::FromStr};
 use yaml_rust::Yaml;
 

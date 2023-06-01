@@ -1,10 +1,11 @@
 use anyhow::Result;
-use eth_types::{Bytes, U256};
+use eth_types::{
+    eth_core::abi::{Function, Param, ParamType, StateMutability, Token},
+    Bytes, U256,
+};
 
 /// encodes an abi call (e.g. "f(uint) 1")
 pub fn encode_funccall(spec: &str) -> Result<Bytes> {
-    use ethers_core::abi::{Function, Param, ParamType, StateMutability, Token};
-
     // split parts into `func_name` ([`func_params`]) `args`
 
     let tokens: Vec<_> = spec.split(' ').collect();

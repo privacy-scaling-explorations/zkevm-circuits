@@ -26,3 +26,4 @@ strum = "0.24"
 
 [features]
 warn-unimplemented = []
+ethers-core = []

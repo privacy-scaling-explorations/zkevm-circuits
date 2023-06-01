@@ -4,10 +4,12 @@ use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
     mock::BlockData,
 };
-use eth_types::{geth_types, Address, Bytes, GethExecTrace, U256, U64};
-use ethers_core::{
-    k256::ecdsa::SigningKey,
-    types::{transaction::eip2718::TypedTransaction, TransactionRequest},
+use eth_types::{
+    eth_core::{
+        k256::ecdsa::SigningKey,
+        types::{transaction::eip2718::TypedTransaction, TransactionRequest},
+    },
+    geth_types, Address, Bytes, GethExecTrace, U256, U64,
 };
 use ethers_signers::{LocalWallet, Signer};
 use external_tracer::TraceConfig;

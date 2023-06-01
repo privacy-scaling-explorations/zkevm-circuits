@@ -4,8 +4,11 @@ use super::{
 };
 use crate::{compiler::Compiler, utils::MainnetFork};
 use anyhow::{bail, Result};
-use eth_types::{geth_types::Account, Address, U256};
-use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
+use eth_types::{
+    eth_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address},
+    geth_types::Account,
+    Address, U256,
+};
 use serde::Deserialize;
 use std::collections::HashMap;
 
