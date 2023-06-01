@@ -188,8 +188,7 @@ impl Sha3CodeGen {
 #[cfg(test)]
 pub(crate) mod sha3_tests {
     use super::Sha3CodeGen;
-    use eth_types::{evm_types::OpcodeId, geth_types::GethData, Word};
-    use ethers_core::utils::keccak256;
+    use eth_types::{evm_types::OpcodeId, geth_types::GethData, keccak256, Word};
     use mock::{
         test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
         TestContext,

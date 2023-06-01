@@ -356,7 +356,9 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
 #[cfg(test)]
 mod test {
     use super::{super::test_util::*, ContractCreateGadget};
-    use eth_types::{Field, ToAddress, ToLittleEndian, ToWord, Word};
+    use eth_types::{
+        eth_core::utils::rlp::RlpStream, Field, ToAddress, ToLittleEndian, ToWord, Word,
+    };
     use gadgets::util::{not, Expr};
     use halo2_proofs::halo2curves::bn256::Fr;
 
@@ -497,7 +499,7 @@ mod test {
             (mock::MOCK_ACCOUNTS[1], 0xffffffffffffffffu64),
         ] {
             let (rlp_word, rlp_len) = {
-                let mut stream = ethers_core::utils::rlp::RlpStream::new();
+                let mut stream = RlpStream::new();
                 stream.begin_list(2);
                 stream.append(&caller_address);
                 stream.append(&caller_nonce);

@@ -366,8 +366,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
-    use eth_types::{bytecode, U256};
-    use ethers_core::types::I256;
+    use eth_types::{bytecode, eth_core::types::I256, U256};
     use lazy_static::lazy_static;
     use mock::TestContext;
     use rand::Rng;
