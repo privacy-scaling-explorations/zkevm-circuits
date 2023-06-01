@@ -24,8 +24,11 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
-use ethers_core::utils::{get_contract_address, keccak256};
+use eth_types::{
+    eth_core::utils::{get_contract_address, keccak256, rlp::RlpStream},
+    evm_types::GasCost,
+    Field, ToLittleEndian, ToScalar,
+};
 use gadgets::util::expr_from_bytes;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -576,7 +579,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign_value(region, offset, region.word_rlc(callee_code_hash))?;
 
         let untrimmed_contract_addr = {
-            let mut stream = ethers_core::utils::rlp::RlpStream::new();
+            let mut stream = RlpStream::new();
             stream.begin_list(2);
             stream.append(&tx.caller_address);
             stream.append(&eth_types::U256::from(tx.nonce));

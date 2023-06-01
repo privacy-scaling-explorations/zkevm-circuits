@@ -9,8 +9,10 @@ use halo2_proofs::{
 };
 
 use crate::{evm_circuit::util::rlc, table::TxLogFieldTag, witness};
-use eth_types::{keccak256, Field, ToAddress, Word};
-pub use ethers_core::types::{Address, U256};
+use eth_types::{
+    eth_core::types::{Address, U256},
+    keccak256, Field, ToAddress, Word,
+};
 pub use gadgets::util::Expr;
 
 pub(crate) fn query_expression<F: Field, T>(

@@ -4541,7 +4541,6 @@ dependencies = [
  "ecdsa 0.1.0",
  "env_logger",
  "eth-types",
- "ethers-core",
  "ethers-signers",
  "gadgets",
  "halo2_proofs",

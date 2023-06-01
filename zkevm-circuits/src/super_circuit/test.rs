@@ -1,5 +1,4 @@
 pub use super::*;
-use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use log::error;
 use mock::{TestContext, MOCK_CHAIN_ID};
@@ -7,7 +6,12 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use std::collections::HashMap;
 
-use eth_types::{address, bytecode, geth_types::GethData, Word};
+use eth_types::{
+    address, bytecode,
+    eth_core::{LocalWallet, Signer},
+    geth_types::GethData,
+    Word,
+};
 
 #[test]
 fn super_circuit_degree() {
