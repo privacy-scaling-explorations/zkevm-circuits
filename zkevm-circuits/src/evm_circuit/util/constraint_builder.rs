@@ -6,12 +6,12 @@ use crate::{
         util::{Cell, RandomLinearCombination, Word},
     },
     table::{
-        AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
-        TxLogFieldTag, TxReceiptFieldTag,
+        AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, TxContextFieldTag, TxLogFieldTag,
+        TxReceiptFieldTag,
     },
     util::{build_tx_log_expression, Challenges, Expr},
 };
-use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
+use bus_mapping::{operation::Target, state_db::EMPTY_CODE_HASH_LE};
 use eth_types::Field;
 use gadgets::util::not;
 use halo2_proofs::{
@@ -677,7 +677,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         name: &str,
         counter: Expression<F>,
         is_write: Expression<F>,
-        tag: RwTableTag,
+        tag: Target,
         values: RwValues<F>,
     ) {
         let name = format!("rw lookup {}", name);
@@ -698,7 +698,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         &mut self,
         name: &'static str,
         is_write: Expression<F>,
-        tag: RwTableTag,
+        tag: Target,
         values: RwValues<F>,
     ) {
         self.rw_lookup_with_counter(
@@ -726,7 +726,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     fn reversible_write(
         &mut self,
         name: &'static str,
-        tag: RwTableTag,
+        tag: Target,
         values: RwValues<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
@@ -769,7 +769,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     ) {
         self.reversible_write(
             "TxAccessListAccount write",
-            RwTableTag::TxAccessListAccount,
+            Target::TxAccessListAccount,
             RwValues::new(
                 tx_id,
                 account_address,
@@ -793,7 +793,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_lookup(
             "account access list read",
             false.expr(),
-            RwTableTag::TxAccessListAccount,
+            Target::TxAccessListAccount,
             RwValues::new(
                 tx_id,
                 account_address,
@@ -818,7 +818,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     ) {
         self.reversible_write(
             "TxAccessListAccountStorage write",
-            RwTableTag::TxAccessListAccountStorage,
+            Target::TxAccessListAccountStorage,
             RwValues::new(
                 tx_id,
                 account_address,
@@ -843,7 +843,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_lookup(
             "TxAccessListAccountStorage read",
             false.expr(),
-            RwTableTag::TxAccessListAccountStorage,
+            Target::TxAccessListAccountStorage,
             RwValues::new(
                 tx_id,
                 account_address,
@@ -863,7 +863,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_lookup(
             "TxRefund read",
             false.expr(),
-            RwTableTag::TxRefund,
+            Target::TxRefund,
             RwValues::new(
                 tx_id,
                 0.expr(),
@@ -886,7 +886,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     ) {
         self.reversible_write(
             "TxRefund write",
-            RwTableTag::TxRefund,
+            Target::TxRefund,
             RwValues::new(
                 tx_id,
                 0.expr(),
@@ -912,7 +912,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_lookup(
             "Account read",
             false.expr(),
-            RwTableTag::Account,
+            Target::Account,
             RwValues::new(
                 0.expr(),
                 account_address,
@@ -936,7 +936,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     ) {
         self.reversible_write(
             "Account write",
-            RwTableTag::Account,
+            Target::Account,
             RwValues::new(
                 0.expr(),
                 account_address,
@@ -964,7 +964,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_lookup(
             "account_storage_read",
             false.expr(),
-            RwTableTag::AccountStorage,
+            Target::Storage,
             RwValues::new(
                 tx_id,
                 account_address,
@@ -991,7 +991,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     ) {
         self.reversible_write(
             "AccountStorage write",
-            RwTableTag::AccountStorage,
+            Target::Storage,
             RwValues::new(
                 tx_id,
                 account_address,
@@ -1042,7 +1042,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_lookup(
             "CallContext lookup",
             is_write,
-            RwTableTag::CallContext,
+            Target::CallContext,
             RwValues::new(
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 0.expr(),
@@ -1117,7 +1117,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_lookup(
             "Stack lookup",
             is_write,
-            RwTableTag::Stack,
+            Target::Stack,
             RwValues::new(
                 self.curr.state.call_id.expr(),
                 self.curr.state.stack_pointer.expr() + stack_pointer_offset,
@@ -1143,7 +1143,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_lookup(
             "Memory lookup",
             is_write,
-            RwTableTag::Memory,
+            Target::Memory,
             RwValues::new(
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 memory_address,
@@ -1168,7 +1168,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_lookup(
             "log data lookup",
             1.expr(),
-            RwTableTag::TxLog,
+            Target::TxLog,
             RwValues::new(
                 tx_id,
                 build_tx_log_expression(index, field_tag.expr(), log_id),
@@ -1194,7 +1194,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_lookup(
             "tx receipt lookup",
             is_write,
-            RwTableTag::TxReceipt,
+            Target::TxReceipt,
             RwValues::new(
                 tx_id,
                 0.expr(),
@@ -1215,7 +1215,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             "Start lookup",
             counter,
             0.expr(),
-            RwTableTag::Start,
+            Target::Start,
             RwValues {
                 id: 0.expr(),
                 address: 0.expr(),

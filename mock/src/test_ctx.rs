@@ -76,7 +76,7 @@ pub use external_tracer::LoggerConfig;
 /// // Now we can start generating the traces and items we need to inspect
 /// // the behaviour of the generated env.
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TestContext<const NACC: usize, const NTX: usize> {
     /// chain id
     pub chain_id: Word,

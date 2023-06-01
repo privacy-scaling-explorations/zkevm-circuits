@@ -1,6 +1,7 @@
 //! Types needed for generating Ethereum traces
 
 use crate::{
+    keccak256,
     sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
     AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian,
     ToWord, Word, U64,
@@ -15,7 +16,6 @@ use num::Integer;
 use num_bigint::BigUint;
 use serde::{Serialize, Serializer};
 use serde_with::serde_as;
-use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 
 /// Definition of all of the data related to an account.
@@ -221,11 +221,7 @@ impl Transaction {
         // msg = rlp([nonce, gasPrice, gas, to, value, data, sig_v, r, s])
         let req: TransactionRequest = self.into();
         let msg = req.chain_id(chain_id).rlp();
-        let msg_hash: [u8; 32] = Keccak256::digest(&msg)
-            .as_slice()
-            .to_vec()
-            .try_into()
-            .expect("hash length isn't 32 bytes");
+        let msg_hash: [u8; 32] = keccak256(&msg);
         let v = self
             .v
             .checked_sub(35 + chain_id * 2)
