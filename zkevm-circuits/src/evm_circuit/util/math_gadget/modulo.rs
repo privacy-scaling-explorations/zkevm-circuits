@@ -132,7 +132,7 @@ mod tests {
             let a = cb.query_word32();
             let n = cb.query_word32();
             let r = cb.query_word32();
-            let mod_gadget = ModGadget::<F>::construct(cb, [&a, &n, &r]);
+            let mod_gadget = ModGadget::<F>::construct_new(cb, [&a, &n, &r]);
             ModGadgetTestContainer {
                 mod_gadget,
                 a,

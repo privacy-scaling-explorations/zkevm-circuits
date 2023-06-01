@@ -184,7 +184,7 @@ mod tests {
             let c = cb.query_word32();
             let d = cb.query_word32();
             let carry = cb.query_cell();
-            let math_gadget = MulAddWordsGadget::<F>::construct(cb, [&a, &b, &c, &d]);
+            let math_gadget = MulAddWordsGadget::<F>::construct_new(cb, [&a, &b, &c, &d]);
             cb.require_equal("carry is correct", math_gadget.overflow(), carry.expr());
             MulAddGadgetContainer {
                 muladd_words_gadget: math_gadget,
