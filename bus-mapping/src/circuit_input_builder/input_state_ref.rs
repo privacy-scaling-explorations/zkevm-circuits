@@ -6,7 +6,10 @@ use super::{
     TransactionContext,
 };
 use crate::{
-    error::{get_step_reported_error, ExecError},
+    error::{
+        get_step_reported_error, DepthError, ExecError, InsufficientBalanceError,
+        NonceUintOverflowError,
+    },
     exec_trace::OperationRef,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
@@ -1290,7 +1293,14 @@ impl<'a> CircuitInputStateRef<'a> {
             && next_pc != 0
         {
             if step.depth == 1025 {
-                return Ok(Some(ExecError::Depth));
+                return Ok(Some(ExecError::Depth(match step.op {
+                    OpcodeId::CALL | OpcodeId::CALLCODE => DepthError::Call,
+                    OpcodeId::CREATE => DepthError::Create,
+                    OpcodeId::CREATE2 => DepthError::Create2,
+                    op => {
+                        unreachable!("Depth error unexpected for opcode: {:?}", op)
+                    }
+                })));
             }
 
             let sender = self.call()?.address;
@@ -1299,7 +1309,26 @@ impl<'a> CircuitInputStateRef<'a> {
                 return Err(Error::AccountNotFound(sender));
             }
             if account.balance < value {
-                return Ok(Some(ExecError::InsufficientBalance));
+                return Ok(Some(ExecError::InsufficientBalance(match step.op {
+                    OpcodeId::CALL | OpcodeId::CALLCODE => InsufficientBalanceError::Call,
+                    OpcodeId::CREATE => InsufficientBalanceError::Create,
+                    OpcodeId::CREATE2 => InsufficientBalanceError::Create2,
+                    op => {
+                        unreachable!("insufficient balance error unexpected for opcode: {:?}", op)
+                    }
+                })));
+            }
+
+            // Nonce Uint overflow
+            // If user's nonce is equal u64::MAX, nonce will be overflow in this call
+            // Nonce is u64 so it's impossible to larger than u64::MAX, that's why we're using `==`
+            // here.
+            if account.nonce == u64::MAX {
+                return Ok(Some(ExecError::NonceUintOverflow(match step.op {
+                    OpcodeId::CREATE => NonceUintOverflowError::Create,
+                    OpcodeId::CREATE2 => NonceUintOverflowError::Create2,
+                    op => unreachable!("Nonce Uint overflow error unexpected for opcode: {:?}", op),
+                })));
             }
 
             // Address collision

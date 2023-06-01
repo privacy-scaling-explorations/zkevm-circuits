@@ -98,6 +98,37 @@ pub enum OogError {
     SelfDestruct,
 }
 
+/// Insufficient balance errors by opcode/state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InsufficientBalanceError {
+    /// Insufficient balance during CALL/CALLCODE opcode.
+    Call,
+    /// Insufficient balance during CREATE opcode.
+    Create,
+    /// Insufficient balance during CREATE2 opcode.
+    Create2,
+}
+
+/// Nonce uint overflow errors by opcode/state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NonceUintOverflowError {
+    /// Nonce uint overflow during CREATE opcode.
+    Create,
+    /// Nonce uint overflow during CREATE2 opcode.
+    Create2,
+}
+
+/// Call depth errors by opcode/state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DepthError {
+    /// Call depth errors in CALL/CALLCODE opcode.
+    Call,
+    /// Call depth errors in CREATE opcode.
+    Create,
+    /// Call depth errors in CREATE2 opcode.
+    Create2,
+}
+
 /// EVM Execution Error
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExecError {
@@ -112,11 +143,11 @@ pub enum ExecError {
     /// For SSTORE, LOG0, LOG1, LOG2, LOG3, LOG4, CREATE, CALL, CREATE2,
     /// SELFDESTRUCT
     WriteProtection,
-    /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
-    Depth,
-    /// For CALL, CALLCODE
-    InsufficientBalance,
-    /// For CREATE, CREATE2
+    /// For CALL, CALLCODE, DELEGATECALL, STATICCALL, CREATE, CREATE2
+    Depth(DepthError),
+    /// For CALL, CALLCODE, CREATE, CREATE2
+    InsufficientBalance(InsufficientBalanceError),
+    /// For CREATE2
     ContractAddressCollision,
     /// contract must not begin with 0xef due to EIP #3541 EVM Object Format
     /// (EOF)
@@ -129,6 +160,8 @@ pub enum ExecError {
     CodeStoreOutOfGas,
     /// For RETURN in a CREATE, CREATE2
     MaxCodeSizeExceeded,
+    /// For CREATE, CREATE2
+    NonceUintOverflow(NonceUintOverflowError),
 }
 
 // TODO: Move to impl block.

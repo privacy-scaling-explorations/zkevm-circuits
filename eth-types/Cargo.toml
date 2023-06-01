@@ -19,7 +19,6 @@ uint = "0.9.1"
 itertools = "0.10"
 libsecp256k1 = "0.7"
 subtle = "2.4"
-sha3 = "0.10"
 num = "0.4"
 num-bigint = { version = "0.4" }
 strum_macros = "0.24"

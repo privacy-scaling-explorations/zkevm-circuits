@@ -54,6 +54,20 @@ pub struct Block<F> {
 }
 
 impl<F: Field> Block<F> {
+    /// For each tx, for each step, print the rwc at the beginning of the step,
+    /// and all the rw operations of the step.
+    pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
+        for (tx_idx, tx) in self.txs.iter().enumerate() {
+            println!("tx {}", tx_idx);
+            for step in &tx.steps {
+                println!(" step {:?} rwc: {}", step.exec_state, step.rwc.0);
+                for rw_idx in 0..step.bus_mapping_instance.len() {
+                    println!("  - {:?}", self.get_rws(step, rw_idx));
+                }
+            }
+        }
+    }
+
     /// Get a read-write record
     pub(crate) fn get_rws(&self, step: &ExecStep, index: usize) -> Rw {
         self.rws[step.rw_index(index)]
