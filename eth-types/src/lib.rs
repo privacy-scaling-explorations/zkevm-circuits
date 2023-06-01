@@ -33,7 +33,6 @@ use halo2_proofs::halo2curves::{
 };
 
 use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage, OpcodeId};
-use ethers_core::types;
 pub use ethers_core::{
     abi::ethereum_types::{BigEndianHash, U512},
     types::{
@@ -187,7 +186,7 @@ impl ToAddress for U256 {
 }
 
 /// Ethereum Hash (256 bits).
-pub type Hash = types::H256;
+pub type Hash = H256;
 
 impl ToWord for Hash {
     fn to_word(&self) -> Word {
