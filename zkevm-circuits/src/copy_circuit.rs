@@ -82,6 +82,10 @@ pub struct CopyCircuitConfig<F> {
     pub word_index: Column<Advice>,
     /// address for slot memory src or dest, review if can reuse `addr` .
     pub addr_slot: Column<Advice>,
+    /// Random linear combination of the read value
+    pub rlc_acc_read: Column<Advice>,
+    /// Random linear combination of the write value
+    pub rlc_acc_write: Column<Advice>,
     /// mask indicates the byte is actual coped or padding to memory word
     pub mask: Column<Advice>,
     /// Random linear combination accumulator value.
@@ -149,6 +153,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let is_last = meta.advice_column();
         let value = meta.advice_column_in(SecondPhase);
         let value_wrod_rlc = meta.advice_column_in(SecondPhase);
+        let rlc_acc_read = meta.advice_column_in(SecondPhase);
+        let rlc_acc_write = meta.advice_column_in(SecondPhase);
 
         let value_acc = meta.advice_column_in(SecondPhase);
         let is_code = meta.advice_column();
@@ -323,6 +329,25 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             ]))
         });
 
+        meta.create_gate("Last Step (check read and write rlc) Memory => Memory", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "rlc_acc_read == rlc_acc_write on the last row",
+                meta.query_advice(rlc_acc_read, Rotation::next()),
+                meta.query_advice(rlc_acc_write, Rotation::next()),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(is_last, Rotation::next()),
+                and::expr([
+                    tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
+                    tag.value_equals(CopyDataType::Memory, Rotation::next())(meta),
+                ]),
+            ]))
+        });
+
         meta.create_gate("verify step (q_step == 1)", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -346,11 +371,12 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     );
                 },
             );
-            cb.require_equal(
-                "write value == read value",
-                meta.query_advice(value, Rotation::cur()),
-                meta.query_advice(value, Rotation::next()),
-            );
+            // we use rlc to constraint the write == read now
+            // cb.require_equal(
+            //     "write value == read value",
+            //     meta.query_advice(value, Rotation::cur()),
+            //     meta.query_advice(value, Rotation::next()),
+            // );
             cb.require_equal(
                 "value_acc is same for read-write rows",
                 meta.query_advice(value_acc, Rotation::cur()),
@@ -371,14 +397,17 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     // );
                 },
             );
-            cb.require_zero(
-                "value == 0 when is_pad == 1 for read",
-                and::expr([
-                    meta.query_advice(is_pad, Rotation::cur()),
-                    meta.query_advice(value, Rotation::cur()),
-                    meta.query_advice(mask, Rotation::cur()),
-                ]),
-            );
+            cb.condition(not::expr(meta.query_advice(mask, Rotation::cur())), |cb| {
+                cb.require_zero(
+                    "value == 0 when is_pad == 1 for read",
+                    and::expr([
+                        meta.query_advice(is_pad, Rotation::cur()),
+                        meta.query_advice(value, Rotation::cur()),
+                        meta.query_advice(mask, Rotation::cur()),
+                    ]),
+                );
+            });
+
             cb.require_equal(
                 "is_pad == 1 - (src_addr < src_addr_end) for read row",
                 1.expr() - addr_lt_addr_end.is_lt(meta, None),
@@ -487,6 +516,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             is_last,
             value,
             value_wrod_rlc,
+            rlc_acc_read,
+            rlc_acc_write,
             word_index,
             addr_slot,
             mask,
@@ -558,6 +589,8 @@ impl<F: Field> CopyCircuitConfig<F> {
                 self.is_last,
                 self.value,
                 self.value_wrod_rlc,
+                self.rlc_acc_read,
+                self.rlc_acc_write,
                 self.value_acc,
                 self.is_pad,
                 self.is_code,
@@ -1139,6 +1172,66 @@ mod tests {
         builder
     }
 
+    fn gen_returndatacopy_data() -> CircuitInputBuilder {
+        let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
+
+        let pushdata = (0..32).collect::<Vec<u8>>();
+        let code_b = bytecode! {
+            PUSH32(Word::from_big_endian(&pushdata))
+            PUSH32(0x0)
+            MSTORE
+
+            PUSH32(0x10)
+            PUSH32(0x0)
+            RETURN
+            STOP
+        };
+
+        let memdata = (0..32).rev().collect::<Vec<u8>>();
+        let code_a = bytecode! {
+            PUSH32(Word::from_big_endian(&memdata))
+            PUSH32(0x20)
+            MSTORE
+
+            PUSH32(0x10) // retLength
+            PUSH32(0x0) // retOffset
+            PUSH1(0x00) // argsLength
+            PUSH1(0x00) // argsOffset
+            PUSH1(0x00) // value
+            PUSH32(addr_b.to_word()) // addr
+            PUSH32(0x1_0000) // gas
+            CALL
+            PUSH32(0x10) // size
+            PUSH32(0x0) // offset
+            PUSH32(0x20) // dest_offset
+            RETURNDATACOPY
+            STOP
+        };
+
+        let test_ctx = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(addr_a).code(code_a);
+                accs[1].address(addr_b).code(code_b);
+                accs[2]
+                    .address(mock::MOCK_ACCOUNTS[2])
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+            },
+            |block, _tx| block,
+        )
+        .unwrap();
+
+        let block: GethData = test_ctx.into();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        builder
+    }
+
     fn gen_extcodecopy_data() -> CircuitInputBuilder {
         let external_address = MOCK_ACCOUNTS[0];
         let code = bytecode! {
@@ -1266,6 +1359,13 @@ mod tests {
     #[test]
     fn copy_circuit_valid_codecopy() {
         let builder = gen_codecopy_data();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
+    }
+
+    #[test]
+    fn copy_circuit_valid_returndatacopy() {
+        let builder = gen_returndatacopy_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
     }

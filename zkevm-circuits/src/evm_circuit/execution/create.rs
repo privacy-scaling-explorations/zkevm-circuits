@@ -819,8 +819,8 @@ mod test {
             code.append(&bytecode! {PUSH1(45)}); // salt;
         }
         code.append(&bytecode! {
-            PUSH1(initialization_bytes.len()) // size
-            PUSH1(32 - initialization_bytes.len()) // length
+            PUSH1(initialization_bytes.len()) // length
+            PUSH1(32 - initialization_bytes.len()) // offset
             PUSH2(value) // value
         });
         code.write_op(if is_create2 {
@@ -894,28 +894,23 @@ mod test {
 
     #[test]
     fn test_create() {
-        // for ((is_success, is_create2), is_persistent) in [true, false]
-        //     .iter()
-        //     .cartesian_product(&[true, false])
-        //     .cartesian_product(&[true, false])
-        // {
-        let is_success = true;
-        let is_persistent = true;
-        let is_create2 = true;
-        //let init_code = initialization_bytecode(*is_success);
-        let init_code = initialization_bytecode(is_success);
-        //let root_code = creater_bytecode(init_code, 23414.into(), *is_create2, *is_persistent);
-        let root_code = creater_bytecode(init_code, 23414.into(), is_create2, is_persistent);
+        for ((is_success, is_create2), is_persistent) in [true, false]
+            .iter()
+            .cartesian_product(&[true, false])
+            .cartesian_product(&[true, false])
+        {
+            let init_code = initialization_bytecode(*is_success);
+            let root_code = creater_bytecode(init_code, 23414.into(), *is_create2, *is_persistent);
 
-        let caller = Account {
-            address: *CALLER_ADDRESS,
-            code: root_code.into(),
-            nonce: Word::one(),
-            balance: eth(10),
-            ..Default::default()
-        };
-        run_test_circuits(test_context(caller));
-        //}
+            let caller = Account {
+                address: *CALLER_ADDRESS,
+                code: root_code.into(),
+                nonce: Word::one(),
+                balance: eth(10),
+                ..Default::default()
+            };
+            run_test_circuits(test_context(caller));
+        }
     }
 
     #[test]

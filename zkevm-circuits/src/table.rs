@@ -1311,7 +1311,7 @@ pub struct CopyTable {
 }
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 8];
-type CopyCircuitRow<F> = [(Value<F>, &'static str); 9];
+type CopyCircuitRow<F> = [(Value<F>, &'static str); 11];
 
 impl CopyTable {
     /// Construct a new CopyTable
@@ -1354,8 +1354,11 @@ impl CopyTable {
         };
 
         println!("rlc_acc of bytecode bytes {:?} ", rlc_acc);
-        let mut value_word_rlc = Value::known(F::zero());
+        let mut value_word_read_rlc = Value::known(F::zero());
+        let mut value_word_write_rlc = Value::known(F::zero());
         let mut value_acc = Value::known(F::zero());
+        let mut rlc_acc_read = Value::known(F::zero());
+        let mut rlc_acc_write = Value::known(F::zero());
 
         let mut non_mask_pos = copy_event
             .bytes
@@ -1363,32 +1366,41 @@ impl CopyTable {
             .position(|&step| !step.2)
             .unwrap_or(0);
         let mut word_index = 0u64;
-        let mut addr_slot = if copy_event.dst_type == CopyDataType::Memory {
-            copy_event.dst_addr - copy_event.dst_addr % 32
-        } else if copy_event.src_type == CopyDataType::Memory {
+        let mut read_addr_slot = if copy_event.src_type == CopyDataType::Memory {
             copy_event.src_addr - copy_event.src_addr % 32
         } else {
             0
         };
 
-        for (step_idx, (is_read_step, copy_step)) in copy_event
-            .bytes
-            .iter()
-            .flat_map(|(value, is_code, mask)| {
+        let mut write_addr_slot = if copy_event.dst_type == CopyDataType::Memory {
+            copy_event.dst_addr - copy_event.dst_addr % 32
+        } else {
+            0
+        };
+
+        let read_steps = copy_event.bytes.iter();
+        let copy_steps = if let Some(ref write_steps) = copy_event.aux_bytes {
+            read_steps.zip(write_steps.iter())
+        } else {
+            read_steps.zip(copy_event.bytes.iter())
+        };
+
+        for (step_idx, (is_read_step, copy_step)) in copy_steps
+            .flat_map(|(read_step, write_step)| {
                 let read_step = CopyStep {
-                    value: *value,
-                    mask: *mask,
+                    value: read_step.0,
+                    mask: read_step.2,
                     is_code: if copy_event.src_type == CopyDataType::Bytecode {
-                        Some(*is_code)
+                        Some(read_step.1)
                     } else {
                         None
                     },
                 };
                 let write_step = CopyStep {
-                    value: *value,
-                    mask: *mask,
+                    value: write_step.0,
+                    mask: write_step.2,
                     is_code: if copy_event.dst_type == CopyDataType::Bytecode {
-                        Some(*is_code)
+                        Some(write_step.1)
                     } else {
                         None
                     },
@@ -1410,20 +1422,40 @@ impl CopyTable {
             // assume copy events bytes is already word aligned for copy steps.
             // only change by skip 32
 
-            if is_read_step
-                && (copy_event.dst_type == CopyDataType::Memory
-                    || copy_event.src_type == CopyDataType::Memory)
+            if copy_event.dst_type == CopyDataType::Memory
+                || copy_event.src_type == CopyDataType::Memory
             {
-                if (step_idx / 2) % 32 == 0 && step_idx != 0 {
-                    // reset
-                    value_word_rlc = Value::known(F::zero());
-                    value_word_rlc = value_word_rlc * challenges.evm_word()
-                        + Value::known(F::from(copy_step.value as u64));
+                if is_read_step {
+                    if !copy_step.mask {
+                        rlc_acc_read = rlc_acc_read * challenges.evm_word()
+                            + Value::known(F::from(copy_step.value as u64));
+                    }
+                    if step_idx / 64 > 0 && step_idx % 64 == 0 {
+                        // reset
+                        value_word_read_rlc = Value::known(F::zero());
+                        value_word_read_rlc = value_word_read_rlc * challenges.evm_word()
+                            + Value::known(F::from(copy_step.value as u64));
 
-                    addr_slot += 32;
+                        read_addr_slot += 32;
+                    } else {
+                        value_word_read_rlc = value_word_read_rlc * challenges.evm_word()
+                            + Value::known(F::from(copy_step.value as u64));
+                    }
                 } else {
-                    value_word_rlc = value_word_rlc * challenges.evm_word()
-                        + Value::known(F::from(copy_step.value as u64));
+                    if !copy_step.mask {
+                        rlc_acc_write = rlc_acc_write * challenges.evm_word()
+                            + Value::known(F::from(copy_step.value as u64));
+                    }
+                    if step_idx / 64 > 0 && step_idx % 64 == 1 {
+                        // reset
+                        value_word_write_rlc = Value::known(F::zero());
+                        value_word_write_rlc = value_word_write_rlc * challenges.evm_word()
+                            + Value::known(F::from(copy_step.value as u64));
+                        write_addr_slot += 32;
+                    } else {
+                        value_word_write_rlc = value_word_write_rlc * challenges.evm_word()
+                            + Value::known(F::from(copy_step.value as u64));
+                    }
                 }
             }
 
@@ -1452,7 +1484,7 @@ impl CopyTable {
             let addr = if tag == CopyDataType::TxLog {
                 Value::known(
                     build_tx_log_address(
-                        addr_slot,
+                        read_addr_slot,
                         TxLogFieldTag::Data,
                         copy_event.log_id.unwrap(),
                     )
@@ -1495,9 +1527,20 @@ impl CopyTable {
             let rw_count = F::from(copy_event.rw_counter_step(step_idx));
             let rwc_inc_left = F::from(copy_event.rw_counter_increase_left(step_idx));
             // println!(
-            //     "step_idx: {}, rw_count {:?}, tag {:?}, addr {:?} id {:?} mask
-            // {:?}, is_code {:?}",     step_idx, rw_count, tag, addr,
-            // id, is_mask, is_code, );
+            //     "step_idx: {}, rw_count {:?}, tag {:?}, addr {:?} id {:?} mask {:?}, is_code
+            // {:?}",     step_idx, rw_count, tag, addr, id, is_mask, is_code,
+            // );
+
+            println!(
+                "{}\t{}\t{}\t{}\t{:?}\t{:?}",
+                step_idx,
+                is_read_step,
+                copy_step_addr,
+                //id,
+                bytes_left,
+                rw_count,
+                rwc_inc_left,
+            );
 
             assignments.push((
                 tag,
@@ -1530,16 +1573,35 @@ impl CopyTable {
                 [
                     (is_last, "is_last"),
                     (value, "value"),
-                    (value_word_rlc, "value_word_rlc"),
+                    (
+                        if is_read_step {
+                            value_word_read_rlc
+                        } else {
+                            value_word_write_rlc
+                        },
+                        "value_word_rlc",
+                    ),
+                    (rlc_acc_read, "rlc_acc_read"),
+                    (rlc_acc_write, "rlc_acc_write"),
                     (value_acc, "value_acc"),
                     (is_pad, "is_pad"),
                     (is_code, "is_code"),
                     (is_mask, "mask"),
                     (Value::known(F::from(word_index)), "word_index"),
-                    (Value::known(F::from(addr_slot)), "addr_slot"),
+                    (
+                        Value::known(F::from(if is_read_step {
+                            read_addr_slot
+                        } else {
+                            write_addr_slot
+                        })),
+                        "addr_slot",
+                    ),
                 ],
             ));
         }
+        rlc_acc_read
+            .zip(rlc_acc_write)
+            .assert_if_known(|(r, w)| r == w);
         //println!("assign copy steps: {:?} ", assignments);
         assignments
     }

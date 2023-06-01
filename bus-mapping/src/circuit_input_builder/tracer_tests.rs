@@ -11,7 +11,7 @@ use crate::{
 };
 use eth_types::{
     address, bytecode,
-    evm_types::{stack::Stack, Gas, OpcodeId},
+    evm_types::{stack::Stack, Gas, Memory, OpcodeId},
     geth_types::GethData,
     word, Bytecode, Hash, ToAddress, ToWord, Word,
 };
@@ -105,6 +105,7 @@ fn mock_internal_create() -> Call {
         return_data_length: 0,
         last_callee_return_data_offset: 0,
         last_callee_return_data_length: 0,
+        last_callee_memory: Memory::default(),
     }
 }
 
@@ -131,6 +132,7 @@ fn mock_root_create() -> Call {
         return_data_length: 0,
         last_callee_return_data_offset: 0,
         last_callee_return_data_length: 0,
+        last_callee_memory: Memory::default(),
     }
 }
 
@@ -1551,6 +1553,7 @@ fn tracer_err_write_protection(is_call: bool) {
         return_data_length: 0,
         last_callee_return_data_offset: 0,
         last_callee_return_data_length: 0,
+        last_callee_memory: Memory::default(),
     });
 
     assert_eq!(

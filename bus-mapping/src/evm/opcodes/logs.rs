@@ -162,6 +162,7 @@ fn gen_copy_event(
         log_id: Some(state.tx_ctx.log_id as u64 + 1),
         rw_counter_start,
         bytes: steps,
+        aux_bytes: None,
     })
 }
 

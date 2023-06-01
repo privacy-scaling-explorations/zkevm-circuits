@@ -21,7 +21,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, state_db::CodeDB};
-use eth_types::{evm_types::GasCost, Field, ToScalar, ToLittleEndian,  U256};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -95,11 +95,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         // Case A in the specs.
         cb.condition(is_create.clone() * is_success.expr(), |cb| {
-            cb.require_equal(
-                "increase rw counter once for each memory to bytecode byte copied",
-                copy_rw_increase.expr(),
-                range.length(),
-            );
+            // cb.require_equal(
+            //     "increase rw counter once for each memory to bytecode byte copied",
+            //     copy_rw_increase.expr(),
+            //     range.length(),
+            // );
         });
 
         let is_contract_deployment =
@@ -133,7 +133,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 range.offset(),
                 range.address(),
                 0.expr(),
-                range.length(),
+                //range.length(),
+                bytes_length_word.expr(),
                 init_code_rlc.expr(),
                 copy_rw_increase.expr(),
             );
@@ -261,8 +262,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                     return_data_offset.expr(),
                     //copy_length.min(),
                     bytes_length_word.expr(),
+                    //64.expr(),
                     0.expr(),
                     copy_rw_increase.expr(),
+                    //4.expr(),
                 );
             },
         );
@@ -303,7 +306,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction,
+        _tx: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -341,7 +344,13 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let memory_start_slot = memory_offset.low_u64() - shift;
         let memory_end = memory_offset.low_u64() + length.low_u64();
         let memory_end_slot = memory_end - memory_end % 32;
-        let copy_rwc_inc = if length.low_u64() == 0 {
+        let valid_length = if call.is_root || (call.is_create && call.is_success) {
+            length.as_u64()
+        } else {
+            std::cmp::min(call.return_data_length, length.as_u64())
+        };
+
+        let copy_rwc_inc = if valid_length == 0 {
             0
         } else {
             (memory_end_slot - memory_start_slot) / 32 + 1
@@ -355,18 +364,18 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                         .memory_word_value()
                         .to_le_bytes();
                     bytes.reverse();
-                        bytes
+                    bytes
                 })
                 .into_iter()
                 .flat_map(|byte| byte)
                 .collect();
 
-                let values: Vec<u8> = if length.is_zero() {
-                    vec![0; 0]
-                } else {
-                    padded_bytes[shift as usize..shift as usize + length.as_usize()].to_vec()
-                };
-           
+            let values: Vec<u8> = if valid_length == 0 {
+                vec![0; 0]
+            } else {
+                padded_bytes[shift as usize..shift as usize + valid_length as usize].to_vec()
+            };
+
             self.init_code_rlc.assign(
                 region,
                 offset,
@@ -399,7 +408,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             copy_rwc_inc
         } else if !call.is_root {
             copy_rwc_inc * 2
-            //2 * std::cmp::min(call.return_data_length, length.as_u64())
         } else {
             0
         };
@@ -407,7 +415,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             .assign(region, offset, Value::known(F::from(copy_rw_increase)))?;
         self.copy_rw_increase_is_zero
             .assign(region, offset, F::from(copy_rw_increase))?;
-        
+        self.bytes_length_word
+            .assign(region, offset, Value::known(F::from(copy_rwc_inc * 32)))?;
 
         let is_contract_deployment = call.is_create && call.is_success && !length.is_zero();
         if !call.is_root {
@@ -518,14 +527,14 @@ mod test {
     #[test]
     fn test_return_nonroot_noncreate() {
         let test_parameters = [
-            //((0, 0), (0, 0)),
+            ((0, 0), (0, 0)),
             ((0, 10), (0, 10)),
-            // ((0, 10), (0, 20)),
-            // ((0, 20), (0, 10)),
-            // ((64, 1), (0, 10)), // Expands memory in RETURN/REVERT opcode
-            // ((0, 10), (1000, 0)),
-            // ((1000, 0), (0, 10)),
-            // ((1000, 0), (1000, 0)),
+            ((0, 10), (0, 20)),
+            ((0, 20), (0, 10)),
+            ((64, 1), (0, 10)), // Expands memory in RETURN/REVERT opcode
+            ((0, 10), (1000, 0)),
+            ((1000, 0), (0, 10)),
+            ((1000, 0), (1000, 0)),
         ];
         for (((callee_offset, callee_length), (caller_offset, caller_length)), is_return) in
             test_parameters.iter().cartesian_product(&[true, false])

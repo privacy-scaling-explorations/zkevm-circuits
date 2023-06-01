@@ -377,6 +377,7 @@ fn handle_copy(
             dst_addr: 0,
             log_id: None,
             bytes: copy_steps,
+            aux_bytes: None,
         },
     );
 

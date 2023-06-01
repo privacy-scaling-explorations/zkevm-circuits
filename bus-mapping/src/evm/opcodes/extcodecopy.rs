@@ -168,6 +168,7 @@ fn gen_copy_event(
         log_id: None,
         rw_counter_start,
         bytes: copy_steps,
+        aux_bytes: None,
     })
 }
 

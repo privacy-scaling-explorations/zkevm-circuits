@@ -7,6 +7,7 @@ use crate::{
     Error,
 };
 use eth_types::GethExecStep;
+use std::cmp::min;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Calldatacopy;
@@ -98,73 +99,68 @@ fn gen_copy_event(
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
-    let memory_offset = geth_step.stack.nth_last(0)?;
+    let memory_offset = geth_step.stack.nth_last(0)?.low_u64();
     let data_offset = geth_step.stack.nth_last(1)?;
     let length = geth_step.stack.nth_last(2)?.as_u64();
 
     let call_data_offset = state.call()?.call_data_offset;
     let call_data_length = state.call()?.call_data_length;
 
-    // Get low Uint64 of offset.
-    let dst_addr = memory_offset.low_u64();
     let src_addr_end = call_data_offset.checked_add(call_data_length).unwrap();
-
-    // Reset offset to call_data_length if overflow, and set source start to the
-    // minimum value of offset and call_data_length.
     let src_addr = u64::try_from(data_offset)
         .ok()
-        .and_then(|offset| offset.checked_add(call_data_offset))
+        .and_then(|s| s.checked_add(call_data_offset))
         .unwrap_or(src_addr_end)
         .min(src_addr_end);
+    let dst_addr = memory_offset;
 
     let mut exec_step = state.new_step(geth_step)?;
-    let is_root = state.call()?.is_root;
-    let end_slot_shift = (dst_addr + length) % 32;
-    // dest memory slot
-    let end_slot = (dst_addr + length) - end_slot_shift;
-    let begin_slot = if is_root {
-        src_addr
-    } else {
-        src_addr - src_addr % 32
-    };
-    let src_addr_end_slot = if is_root {
-        src_addr_end
-    } else {
-        src_addr_end - src_addr_end % 32
-    };
 
-    let bytes_to_copy = if is_root {
-        length
+    if state.call()?.is_root {
+        let copy_steps = state.gen_copy_steps_for_call_data_root(
+            &mut exec_step,
+            src_addr,
+            dst_addr,
+            src_addr_end,
+            length,
+        )?;
+
+        Ok(CopyEvent {
+            src_type: CopyDataType::TxCalldata,
+            src_id: NumberOrHash::Number(state.tx_ctx.id()),
+            src_addr,
+            src_addr_end,
+            dst_type: CopyDataType::Memory,
+            dst_id: NumberOrHash::Number(state.call()?.call_id),
+            dst_addr,
+            log_id: None,
+            rw_counter_start,
+            bytes: copy_steps,
+            aux_bytes: None,
+        })
     } else {
-        src_addr_end_slot - begin_slot
-    };
+        let (read_steps, write_steps) = state.gen_copy_steps_for_call_data_non_root(
+            &mut exec_step,
+            src_addr,
+            src_addr_end,
+            dst_addr,
+            length,
+        )?;
 
-    let copy_steps = state.gen_copy_steps_for_call_data(
-        &mut exec_step,
-        src_addr,
-        dst_addr,
-        src_addr_end,
-        length,
-    )?;
-
-    let (src_type, src_id) = if state.call()?.is_root {
-        (CopyDataType::TxCalldata, state.tx_ctx.id())
-    } else {
-        (CopyDataType::Memory, state.call()?.caller_id)
-    };
-
-    Ok(CopyEvent {
-        src_type,
-        src_id: NumberOrHash::Number(src_id),
-        src_addr,
-        src_addr_end,
-        dst_type: CopyDataType::Memory,
-        dst_id: NumberOrHash::Number(state.call()?.call_id),
-        dst_addr,
-        log_id: None,
-        rw_counter_start,
-        bytes: copy_steps,
-    })
+        Ok(CopyEvent {
+            src_type: CopyDataType::Memory,
+            src_id: NumberOrHash::Number(state.call()?.caller_id),
+            src_addr,
+            src_addr_end,
+            dst_type: CopyDataType::Memory,
+            dst_id: NumberOrHash::Number(state.call()?.call_id),
+            dst_addr,
+            log_id: None,
+            rw_counter_start,
+            bytes: read_steps,
+            aux_bytes: Some(write_steps),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -339,7 +335,11 @@ mod calldatacopy_tests {
         assert_eq!(copy_events[0].dst_addr as usize, dst_offset);
 
         for (idx, (value, is_code, mask)) in copy_events[0].bytes.iter().enumerate() {
-            assert_eq!(Some(value), memory_a.get(idx));
+            if idx < memory_a.len() {
+                assert_eq!(*value, memory_a[idx]);
+            } else {
+                assert_eq!(*value, 0);
+            }
             assert!(!is_code);
         }
     }

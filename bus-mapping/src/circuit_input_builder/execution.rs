@@ -243,7 +243,8 @@ pub struct CopyEvent {
     pub rw_counter_start: RWCounter,
     /// Represents the list of (bytes, is_code, mask) copied during this copy event
     pub bytes: Vec<(u8, bool, bool)>,
-    // todo: add aux_bytes here
+    /// Represents the list of (bytes, is_code, mask) read to copy during this copy event
+    pub aux_bytes: Option<Vec<(u8, bool, bool)>>,
 }
 
 impl CopyEvent {
@@ -293,6 +294,12 @@ impl CopyEvent {
 
     // increase in rw counter from the start of the copy event to step index
     fn rw_counter_increase(&self, step_index: usize) -> u64 {
+        match (self.src_type, self.dst_type) {
+            (CopyDataType::Memory, CopyDataType::Memory) => {
+                return step_index as u64 % 2 + 2 * (step_index as f32 / 64.0).floor() as u64;
+            }
+            _ => {}
+        }
         let source_rw_increase = match self.src_type {
             CopyDataType::Bytecode | CopyDataType::TxCalldata => 0,
             CopyDataType::Memory => (step_index as u64 / 2) / 32,
