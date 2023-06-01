@@ -2163,6 +2163,7 @@ dependencies = [
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=feat/refactor_nonce-debugging#9b41fec12d40116c5a9fc623d6d03b91c92b5f16"
 dependencies = [
  "ethers-core",
  "halo2_proofs",
@@ -5374,7 +5375,6 @@ dependencies = [
  "gadgets",
  "halo2-base",
  "halo2-ecc",
- "halo2-mpt-circuits",
  "halo2_proofs",
  "hex",
  "itertools",

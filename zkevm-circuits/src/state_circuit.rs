@@ -12,6 +12,7 @@ mod dev;
 mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::StateCircuit as TestStateCircuit;
+use mpt_zktrie::mpt_circuits::MPTProofType;
 
 use self::{
     constraint_builder::{MptUpdateTableQueries, RwTableQueries},
@@ -19,7 +20,7 @@ use self::{
 };
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::rlc},
-    table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable, RwTableTag},
+    table::{AccountFieldTag, LookupTable, MptTable, RwTable, RwTableTag},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness::{self, MptUpdates, Rw, RwMap},
 };
@@ -296,7 +297,11 @@ impl<F: Field> StateCircuitConfig<F> {
                         .map(|(randomness, mut state_root)| {
                             if let Some(update) = updates.get(prev_row) {
                                 let (new_root, old_root) = update.root_assignments(randomness);
-                                assert_eq!(state_root, old_root);
+                                if state_root != old_root {
+                                    log::error!("invalid root randomness {:?}, state_root {:?}, prev_row {:?} update {:?}", 
+                                    randomness, state_root, prev_row, update);
+                                    assert_eq!(state_root, old_root);
+                                }
                                 state_root = new_root;
                             }
                             if matches!(row.tag(), RwTableTag::CallContext)

@@ -116,16 +116,13 @@ impl WitnessGenerator {
             (hash_zktrie_key(&word_buf), HexBytes(word_buf))
         };
 
-        if !self.storages.contains_key(&address) {
-            self.storages.insert(
-                address,
-                ZktrieState::default()
-                    .zk_db
-                    .borrow_mut()
-                    .new_trie(&ZkTrieHash::default())
-                    .unwrap(),
-            );
-        }
+        self.storages.entry(address).or_insert_with(|| {
+            ZktrieState::default()
+                .zk_db
+                .borrow_mut()
+                .new_trie(&ZkTrieHash::default())
+                .unwrap()
+        });
 
         let trie = self.storages.get_mut(&address).unwrap();
 
@@ -303,6 +300,8 @@ impl WitnessGenerator {
                 let mut acc_data = *acc_before;
                 match proof_type {
                     MPTProofType::NonceChanged => {
+                        assert!(old_val < u64::MAX.into());
+                        assert!(new_val < u64::MAX.into());
                         assert_eq!(old_val.as_u64(), acc_data.nonce);
                         acc_data.nonce = new_val.as_u64();
                     }
@@ -344,6 +343,8 @@ impl WitnessGenerator {
                         acc_data.poseidon_code_hash = H256::from(code_hash);
                     }
                     MPTProofType::CodeSizeExists => {
+                        assert!(old_val < u64::MAX.into());
+                        assert!(new_val < u64::MAX.into());
                         // code size can only change from 0
                         debug_assert_eq!(old_val.as_u64(), acc_data.code_size);
                         debug_assert!(

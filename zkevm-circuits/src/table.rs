@@ -24,7 +24,7 @@ use halo2_proofs::{
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use mpt_circuits::{
+use mpt_zktrie::mpt_circuits::{
     constraint_builder::{AdviceColumn, FixedColumn},
     gadgets::poseidon::PoseidonLookup,
 };
@@ -667,7 +667,7 @@ pub enum MPTProofType {
     NonExistingStorageProof,
 }
 */
-pub use mpt_circuits::MPTProofType;
+pub use mpt_zktrie::mpt_circuits::MPTProofType;
 /*
 impl<F: halo2_proofs::arithmetic::FieldExt> crate::util::Expr<F> for MPTProofType {
     #[inline]

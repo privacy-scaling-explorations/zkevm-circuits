@@ -2,7 +2,7 @@
 //
 #![deny(missing_docs)]
 
-// pub use mpt_circuits::hash;
+pub use mpt_circuits;
 // use mpt_circuits::{hash::Hashable, operation::AccountOp, EthTrie,
 // EthTrieCircuit, HashCircuit, MPTProofType};
 

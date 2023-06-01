@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 //! wrapping of mpt-circuit
 use crate::{
     table::{MptTable, PoseidonTable},
@@ -12,7 +13,7 @@ use halo2_proofs::{
 };
 use hash_circuit::hash::Hashable;
 use itertools::Itertools;
-use mpt_circuits::{
+use mpt_zktrie::mpt_circuits::{
     constraint_builder::SelectorColumn,
     gadgets::{
         byte_bit::ByteBitGadget,
@@ -79,8 +80,9 @@ impl SubCircuitConfig<Fr> for MptCircuitConfig {
             ],
         );
         let rlc_randomness = RlcRandomness(challenges.evm_word());
-        let mut cb =
-            mpt_circuits::constraint_builder::ConstraintBuilder::new(SelectorColumn(mpt_table.0));
+        let mut cb = mpt_zktrie::mpt_circuits::constraint_builder::ConstraintBuilder::new(
+            SelectorColumn(mpt_table.0),
+        );
 
         let byte_bit = ByteBitGadget::configure(cs, &mut cb);
         let byte_representation =

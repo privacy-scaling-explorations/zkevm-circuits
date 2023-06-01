@@ -355,7 +355,7 @@ pub fn run_test(
             max_inner_blocks: 64,
         };
         let (k, circuit, instance, _builder) =
-            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, 64, 0x100>::build(geth_data, circuits_params)
+            SuperCircuit::<MAX_TXS, MAX_CALLDATA, 64, 0x100>::build(geth_data, circuits_params)
                 .unwrap();
         builder = _builder;
 

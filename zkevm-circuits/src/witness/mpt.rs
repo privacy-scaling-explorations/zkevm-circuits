@@ -1,12 +1,15 @@
 use crate::{
     evm_circuit::{util::rlc, witness::Rw},
-    table::{AccountFieldTag, MPTProofType as ProofType},
+    table::AccountFieldTag,
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
-use mpt_circuits::{serde::SMTTrace, MPTProofType};
-use mpt_zktrie::{state, state::witness::WitnessGenerator};
+use mpt_zktrie::{
+    mpt_circuits::{serde::SMTTrace, MPTProofType as ProofType, MPTProofType},
+    state,
+    state::witness::WitnessGenerator,
+};
 use std::collections::BTreeMap;
 
 pub use state::ZktrieState;
@@ -101,7 +104,8 @@ impl MptUpdates {
         for (key, update) in &mut self.updates {
             log::trace!("apply update {:?} {:#?}", key, update);
             let key = key.set_non_exists(update.old_value, update.new_value);
-            let proof_tip = state::as_proof_type(update.proof_type() as i32);
+            //let proof_tip = state::as_proof_type(update.proof_type() as i32);
+            let proof_tip = update.proof_type();
             let smt_trace = wit_gen.handle_new_state(
                 proof_tip,
                 match key {
@@ -250,16 +254,16 @@ impl MptUpdate {
 
 #[derive(Eq, PartialEq, Hash, Clone, Debug, Copy, PartialOrd, Ord)]
 enum Key {
-    Account {
-        address: Address,
-        field_tag: AccountFieldTag,
-    },
     AccountStorage {
         // god what are these fields,t even?
         tx_id: usize,
         address: Address,
         storage_key: Word,
         exists: bool,
+    },
+    Account {
+        address: Address,
+        field_tag: AccountFieldTag,
     },
 }
 
@@ -381,6 +385,7 @@ mod test {
             new_value: Word::zero(),
             old_root: Word::zero(),
             new_root: Word::one(),
+            original_rws: Default::default(),
         };
 
         let mut updates = MptUpdates::default();
@@ -406,6 +411,7 @@ mod test {
             new_value: Word::zero(),
             old_root: Word::zero(),
             new_root: Word::one(),
+            original_rws: Default::default(),
         };
 
         let mut updates = MptUpdates::default();
@@ -430,6 +436,7 @@ mod test {
             new_value: Word::one(),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         }
     }
 
@@ -526,6 +533,7 @@ mod test {
             new_value: Word::from(u64::MAX),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         }
     }
 
@@ -640,6 +648,7 @@ mod test {
             new_value: Word::from(23412341231u64),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         };
         updates.insert(update);
 
@@ -680,6 +689,7 @@ mod test {
             new_value: Word::from(234123124231231u64),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         };
         updates.insert(update);
 
@@ -720,6 +730,7 @@ mod test {
             new_value: U256([u64::MAX; 4]),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         };
         updates.insert(update);
 
@@ -759,6 +770,7 @@ mod test {
                 new_value: Word::from(u32::MAX),
                 old_root: Word::zero(),
                 new_root: Word::zero(),
+                original_rws: Default::default(),
             });
         }
         updates.insert(MptUpdate {
@@ -772,6 +784,7 @@ mod test {
             new_value: Word::from(u32::MAX),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
         updates.insert(MptUpdate {
             key: Key::AccountStorage {
@@ -784,6 +797,7 @@ mod test {
             new_value: Word::MAX - Word::from(u64::MAX),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
 
         updates.fill_state_roots_from_generator(WitnessGenerator::from(&ZktrieState::default()));
@@ -820,6 +834,7 @@ mod test {
             new_value: Word::from(u32::MAX),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
         updates.insert(MptUpdate {
             key: Key::AccountStorage {
@@ -832,6 +847,7 @@ mod test {
             new_value: Word::from(24),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
         updates.insert(MptUpdate {
             key: Key::AccountStorage {
@@ -844,6 +860,7 @@ mod test {
             new_value: Word::from(u32::MAX),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
         updates.insert(MptUpdate {
             key: Key::AccountStorage {
@@ -856,6 +873,7 @@ mod test {
             new_value: Word::from(24),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
 
         updates.fill_state_roots_from_generator(WitnessGenerator::from(&ZktrieState::default()));
@@ -933,6 +951,7 @@ mod test {
             new_value: Word::zero(),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         };
         updates.insert(update);
 
@@ -969,6 +988,7 @@ mod test {
             new_value: Word::from(u32::MAX),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         };
         updates.insert(update);
 
@@ -1005,6 +1025,7 @@ mod test {
             new_value: Word::from(u32::MAX),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
         updates.insert(MptUpdate {
             key: Key::AccountStorage {
@@ -1017,6 +1038,7 @@ mod test {
             new_value: Word::zero(),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
 
         updates.fill_state_roots_from_generator(WitnessGenerator::from(&ZktrieState::default()));
@@ -1052,6 +1074,7 @@ mod test {
             new_value: Word::from(u32::MAX),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
         updates.insert(MptUpdate {
             key: Key::AccountStorage {
@@ -1064,6 +1087,7 @@ mod test {
             new_value: Word::one(),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
 
         updates.fill_state_roots_from_generator(WitnessGenerator::from(&ZktrieState::default()));
@@ -1099,6 +1123,7 @@ mod test {
             new_value: Word::from(u32::MAX),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
         updates.insert(MptUpdate {
             key: Key::AccountStorage {
@@ -1111,6 +1136,7 @@ mod test {
             new_value: Word::zero(),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
 
         updates.fill_state_roots_from_generator(WitnessGenerator::from(&ZktrieState::default()));
@@ -1146,6 +1172,7 @@ mod test {
             new_value: Word::MAX - Word::from(43),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
         updates.insert(MptUpdate {
             key: Key::AccountStorage {
@@ -1158,6 +1185,7 @@ mod test {
             new_value: Word::from(u64::MAX),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
         updates.insert(MptUpdate {
             key: Key::AccountStorage {
@@ -1170,6 +1198,7 @@ mod test {
             new_value: Word::zero(),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
 
         updates.fill_state_roots_from_generator(WitnessGenerator::from(&ZktrieState::default()));
@@ -1206,6 +1235,7 @@ mod test {
                 new_value: Word::from(u32::MAX),
                 old_root: Word::zero(),
                 new_root: Word::zero(),
+                original_rws: Default::default(),
             });
         }
         updates.insert(MptUpdate {
@@ -1219,6 +1249,7 @@ mod test {
             new_value: Word::zero(),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
 
         updates.fill_state_roots_from_generator(WitnessGenerator::from(&ZktrieState::default()));
@@ -1254,6 +1285,7 @@ mod test {
             new_value: Word::zero(),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
 
         updates.fill_state_roots_from_generator(WitnessGenerator::from(&ZktrieState::default()));
@@ -1289,6 +1321,7 @@ mod test {
             new_value: Word::one(),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
         updates.insert(MptUpdate {
             key: Key::AccountStorage {
@@ -1301,6 +1334,7 @@ mod test {
             new_value: Word::zero(),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
 
         updates.fill_state_roots_from_generator(WitnessGenerator::from(&ZktrieState::default()));
@@ -1337,6 +1371,7 @@ mod test {
                 new_value: Word::from(u32::MAX),
                 old_root: Word::zero(),
                 new_root: Word::zero(),
+                original_rws: Default::default(),
             });
         }
         updates.insert(MptUpdate {
@@ -1350,6 +1385,7 @@ mod test {
             new_value: Word::zero(),
             old_root: Word::zero(),
             new_root: Word::zero(),
+            original_rws: Default::default(),
         });
 
         updates.fill_state_roots_from_generator(WitnessGenerator::from(&ZktrieState::default()));

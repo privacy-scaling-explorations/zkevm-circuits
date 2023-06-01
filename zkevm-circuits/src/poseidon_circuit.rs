@@ -17,7 +17,9 @@ use hash_circuit::{
     Bn256Fr,
 };
 use itertools::Itertools;
-use mpt_circuits::{gadgets::mpt_update::hash_traces, serde::SMTTrace, types::Proof, MPTProofType};
+use mpt_zktrie::mpt_circuits::{
+    gadgets::mpt_update::hash_traces, serde::SMTTrace, types::Proof, MPTProofType,
+};
 
 /// re-wrapping for mpt circuit
 #[derive(Default, Clone, Debug)]
@@ -82,6 +84,11 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
                 .into_iter()
                 .map(|(a, b, c)| (a.into(), b.into(), c.into()))
                 .collect();
+            for elems in &triples {
+                if elems.2.is_zero_vartime() {
+                    log::info!("zero hash {:?}", elems);
+                }
+            }
             poseidon_table_data.constant_inputs_with_check(&triples);
         }
         #[cfg(feature = "poseidon-codehash")]
