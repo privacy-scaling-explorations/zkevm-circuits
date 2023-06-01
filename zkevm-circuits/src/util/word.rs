@@ -365,7 +365,10 @@ impl<F: Field> Word<Expression<F>> {
         Word::new([self.lo() - rhs.lo(), self.hi() - rhs.hi()])
     }
 
-    /// No overflow check
+    /// Compress the lo and hi limbs into an expression without checking the overflow.
+    /// So far only use it for address.
+    /// TODO We should remove it before merging to the main branch.
+    #[deprecated(note = "no overflow check and unsafe. please consider keep word type")]
     pub fn expr_unchecked(&self) -> Expression<F> {
         self.lo() + self.hi() * (1 << (N_BYTES_HALF_WORD * 8)).expr()
     }
