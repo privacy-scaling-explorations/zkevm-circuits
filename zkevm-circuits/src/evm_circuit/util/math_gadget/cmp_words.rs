@@ -100,8 +100,7 @@ mod tests {
             let a_word = cb.query_word_unchecked();
             let b_word = cb.query_word_unchecked();
 
-            let cmp_gadget =
-                CmpWordsGadget::<F, WordCell<F>, WordCell<F>>::construct(cb, a_word, b_word);
+            let cmp_gadget = CmpWordsGadget::construct(cb, a_word.clone(), b_word.clone());
             cb.require_equal(
                 "(a < b) * (a == b) == 0",
                 cmp_gadget.eq.clone() * cmp_gadget.lt.clone(),
