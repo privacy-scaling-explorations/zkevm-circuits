@@ -757,9 +757,9 @@ pub(crate) fn ext_key_rlc_value<F: Field>(
 // Returns the number of nibbles stored in a key value
 pub(crate) mod num_nibbles {
     use crate::{
+        _cb,
         circuit,
         circuit_tools::{constraint_builder::ConstraintBuilder, cell_manager::EvmCellType}, 
-        mpt_circuit::helpers::MPTConstraintBuilder,
     };
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
@@ -768,8 +768,7 @@ pub(crate) mod num_nibbles {
         key_len: Expression<F>,
         is_key_odd: Expression<F>,
     ) -> Expression<F> {
-        let mut cb = MPTConstraintBuilder::<F>::new(0, None, None);
-        circuit!([meta, cb.base], {
+        circuit!([meta, _cb!()], {
             ifx! {is_key_odd => {
                 key_len.expr() * 2.expr() - 1.expr()
             } elsex {
@@ -890,6 +889,23 @@ impl<F: Field> MPTConstraintBuilder<F> {
         self.base.add_dynamic_lookup(description, tag, values)
     }
 
+    pub(crate) fn add_static_lookup<S: AsRef<str>>(
+        &mut self,
+        description: &'static str,
+        tag: S,
+        values: Vec<Expression<F>>
+    ) {
+        self.base.add_dynamic_lookup(description, tag, values)
+        /*let cell_type = if tag.as_ref() == "keccak" {
+            EvmCellType::Lookup(Table::Keccak)
+        } else if tag.as_ref() == "fixed" {
+            EvmCellType::Lookup(Table::Fixed)
+        } else {
+            unreachable!()
+        };
+        self.base.add_static_lookup(description, cell_type, values)*/
+    }
+
     pub(crate) fn store_dynamic_table<S: AsRef<str>>(
         &mut self,
         description: &'static str,
@@ -897,37 +913,6 @@ impl<F: Field> MPTConstraintBuilder<F> {
         values: Vec<Expression<F>>
     ) {
         self.base.store_dynamic_table(description, tag, values)
-    }
-
-    // MPT specific static lookups
-
-    pub(crate) fn lookup_keccak(
-        &mut self,
-        is_enabled: Expression<F>,
-        input_rlc: Expression<F>,
-        input_len: Expression<F>,
-        output_rlc: Expression<F>
-    ) {
-        let chellenge = self.challenges.as_ref().expect("Challenges unset!");
-        self.base.add_static_lookup(
-            "keccak", 
-            chellenge.lookup_input(), 
-            EvmCellType::Lookup(Table::Keccak), 
-            vec![is_enabled, input_rlc, input_len, output_rlc]);
-    }
-
-    pub(crate) fn lookup_fixed(
-        &mut self,
-        tag: Expression<F>,
-        val_1: Expression<F>,
-        val_2: Expression<F>,
-    ) {
-        let chellenge = self.challenges.as_ref().expect("Challenges unset!");
-        self.base.add_static_lookup(
-            "fixed", 
-            chellenge.lookup_input(), 
-            EvmCellType::Lookup(Table::Fixed), 
-            vec![tag, val_1, val_2]);
     }
 }
 
@@ -997,7 +982,7 @@ impl<F: Field> DriftedGadget<F> {
         r: &Expression<F>,
     ) -> Self {
         let mut config = DriftedGadget::default();
-        circuit!([meta, cb.base], {
+        circuit!([meta, cb], {
             ifx! {parent_data[true.idx()].is_placeholder.expr() + parent_data[false.idx()].is_placeholder.expr() => {
                 config.drifted_rlp_key = ListKeyGadget::construct(cb, drifted_item);
                 for is_s in [true, false] {
@@ -1161,7 +1146,7 @@ pub struct MainRLPGadget<F> {
 
 impl<F: Field> MainRLPGadget<F> {
     pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>, r: &Expression<F>) -> Self {
-        println!("_________ MainRLPGadget ________");
+        //println!("_________ MainRLPGadget ________");
         let mut config = MainRLPGadget::default();
         config.bytes = cb.query_cells::<34>().to_vec();
         circuit!([meta, cb], {
@@ -1184,13 +1169,7 @@ impl<F: Field> MainRLPGadget<F> {
             require!(config.rlc_rlp => config.rlp.rlc_rlp(cb, r));
             config.mult_diff = cb.query_cell();
             let mult_diff = config.mult_diff.expr();
-
-            println!("cb.lookup_fixed: \n\tFixedTableTag::RLen.expr(): {:?}\n\tconfig.rlp.len(): {:?}\n\tmult_diff: {:?}", 
-                <FixedTableTag as Expr<F>>::expr(&FixedTableTag::RMult).identifier(), config.rlp.len().identifier(), mult_diff.identifier());
-
-
-            cb.lookup_fixed(FixedTableTag::RMult.expr(), config.rlp.num_bytes(), mult_diff.clone());
-            require!((FixedTableTag::RMult, config.rlp.num_bytes(), mult_diff) => @"fixed");
+            //require!((FixedTableTag::RMult, config.rlp.num_bytes(), mult_diff) => @"fixed");
 
             // "free" input that needs to be constrained externally!
             config.tag = cb.query_cell();
@@ -1201,7 +1180,7 @@ impl<F: Field> MainRLPGadget<F> {
             // the byte index >= num_bytes.
             // TODO(Brecht): do 2 bytes/lookup when circuit height >= 2**21
             for (idx, byte) in config.bytes.iter().enumerate() {
-                require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()) => @"fixed");
+                //require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()) => @"fixed");
             }
 
             config

@@ -1,6 +1,7 @@
 
 
 use crate::{
+    _cb,
     circuit,
     circuit_tools::{
         cell_manager::{Cell, EvmCellType},
@@ -105,8 +106,7 @@ impl<F: Field> RLPListGadget<F> {
 
     /// Number of RLP bytes
     pub(crate) fn num_rlp_bytes(&self) -> Expression<F> {
-        let mut cb = MPTConstraintBuilder::<F>::new(0, None, None);
-        circuit!([meta, cb], {
+        circuit!([meta, _cb!()], {
             matchx! {
                 self.is_short() => 1.expr(),
                 self.is_long() => 2.expr(),
@@ -122,8 +122,7 @@ impl<F: Field> RLPListGadget<F> {
 
     /// Returns the length of the list (excluding RLP bytes)
     pub(crate) fn len(&self) -> Expression<F> {
-        let mut cb = MPTConstraintBuilder::<F>::new(0, None, None);
-        circuit!([meta, cb], {
+        circuit!([meta, _cb!()], {
             matchx! {
                 self.is_short() => get_len_list_short::expr(self.bytes[0].expr()),
                 self.is_long() => self.bytes[1].expr(),
@@ -139,8 +138,7 @@ impl<F: Field> RLPListGadget<F> {
 
     /// Returns the rlc of only the RLP bytes
     pub(crate) fn rlc_rlp_only(&self, r: &Expression<F>) -> (Expression<F>, Expression<F>) {
-        let mut cb = MPTConstraintBuilder::<F>::new(0, None, None);
-        circuit!([meta, cb], {
+        circuit!([meta, _cb!()], {
             matchx! {
                 self.is_short() => (self.bytes[..1].rlc(r), pow::expr(r.expr(), 1)),
                 self.is_long() => (self.bytes[..2].rlc(r), pow::expr(r.expr(), 2)),
@@ -224,7 +222,7 @@ pub(crate) struct RLPListDataGadget<F> {
 
 impl<F: Field> RLPListDataGadget<F> {
     pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>) -> Self {
-        let rlp_list_bytes = cb.query_bytes::<3>();
+        let rlp_list_bytes = cb.query_bytes();
         let rlp_list_bytes_expr = rlp_list_bytes.iter().map(|c| c.expr()).collect::<Vec<_>>();
         RLPListDataGadget {
             rlp_list: RLPListGadget::construct(cb, &rlp_list_bytes_expr),
@@ -338,8 +336,7 @@ impl<F: Field> RLPValueGadget<F> {
 
     /// Number of RLP bytes
     pub(crate) fn num_rlp_bytes(&self) -> Expression<F> {
-        let mut cb = MPTConstraintBuilder::<F>::new(0, None, None);
-        circuit!([meta, cb], {
+        circuit!([meta, _cb!()], {
             matchx! {
                 self.is_short() => 0.expr(),
                 self.is_long() => 1.expr(),
@@ -350,8 +347,7 @@ impl<F: Field> RLPValueGadget<F> {
 
     /// Number of bytes in total (including RLP bytes)
     pub(crate) fn num_bytes(&self) -> Expression<F> {
-        let mut cb = MPTConstraintBuilder::<F>::new(0, None, None);
-        circuit!([meta, cb], {
+        circuit!([meta, _cb!()], {
             matchx! {
                 self.is_short() => 1.expr(),
                 self.is_long() => get_num_bytes_short::expr(self.bytes[0].expr()),
@@ -365,8 +361,7 @@ impl<F: Field> RLPValueGadget<F> {
 
     /// Length of the value (excluding RLP bytes)
     pub(crate) fn len(&self) -> Expression<F> {
-        let mut cb = MPTConstraintBuilder::<F>::new(0, None, None);
-        circuit!([meta, cb], {
+        circuit!([meta, _cb!()], {
             matchx! {
                 self.is_short() => 1.expr(),
                 self.is_long() => get_len_short::expr(self.bytes[0].expr()),
@@ -388,8 +383,7 @@ impl<F: Field> RLPValueGadget<F> {
     }
 
     pub(crate) fn rlc_value(&self, r: &Expression<F>) -> Expression<F> {
-        let mut cb = MPTConstraintBuilder::<F>::new(0, None, None);
-        circuit!([meta, cb], {
+        circuit!([meta, _cb!()], {
             matchx! {
                 self.is_short() => {
                     self.bytes[0].expr()
@@ -592,8 +586,7 @@ impl<F: Field> RLPItemGadget<F> {
 
     // Single RLP byte containing the byte value
     pub(crate) fn is_short(&self) -> Expression<F> {
-        let mut cb = MPTConstraintBuilder::<F>::new(0, None, None);
-        circuit!([meta, cb], {
+        circuit!([meta, _cb!()], {
             matchx! {
                 self.value.is_string() => self.value.is_short(),
                 self.list.is_list() => self.list.is_short(),
@@ -603,8 +596,7 @@ impl<F: Field> RLPItemGadget<F> {
 
     // Single RLP byte containing the length of the value
     pub(crate) fn is_long(&self) -> Expression<F> {
-        let mut cb = MPTConstraintBuilder::<F>::new(0, None, None);
-        circuit!([meta, cb], {
+        circuit!([meta, _cb!()], {
             matchx! {
                 self.value.is_string() => self.value.is_long(),
                 self.list.is_list() => self.list.is_long(),
@@ -615,8 +607,7 @@ impl<F: Field> RLPItemGadget<F> {
     // RLP byte containing the lenght of the length,
     // followed by the length, followed by the actual data
     pub(crate) fn is_very_long(&self) -> Expression<F> {
-        let mut cb = MPTConstraintBuilder::<F>::new(0, None, None);
-        circuit!([meta, cb], {
+        circuit!([meta, _cb!()], {
             matchx! {
                 self.value.is_string() => self.value.is_very_long(),
                 self.list.is_list() => self.list.is_very_long(),
@@ -626,8 +617,7 @@ impl<F: Field> RLPItemGadget<F> {
 
     /// Number of RLP bytes
     pub(crate) fn num_rlp_bytes(&self) -> Expression<F> {
-        let mut cb = MPTConstraintBuilder::<F>::new(0, None, None);
-        circuit!([meta, cb], {
+        circuit!([meta, _cb!()], {
             matchx! {
                 self.value.is_string() => self.value.num_rlp_bytes(),
                 self.list.is_list() => self.list.num_rlp_bytes(),
@@ -637,8 +627,7 @@ impl<F: Field> RLPItemGadget<F> {
 
     /// Number of bytes in total (including RLP bytes)
     pub(crate) fn num_bytes(&self) -> Expression<F> {
-        let mut cb = MPTConstraintBuilder::<F>::new(0, None, None);
-        circuit!([meta, cb], {
+        circuit!([meta, _cb!()], {
             matchx! {
                 self.value.is_string() => self.value.num_bytes(),
                 self.list.is_list() => self.list.num_bytes(),
@@ -648,8 +637,7 @@ impl<F: Field> RLPItemGadget<F> {
 
     /// Length of the value (excluding RLP bytes)
     pub(crate) fn len(&self) -> Expression<F> {
-        let mut cb = MPTConstraintBuilder::<F>::new(0, None, None);
-        circuit!([meta, cb], {
+        circuit!([meta, _cb!()], {
             matchx! {
                 self.value.is_string() => self.value.len(),
                 self.list.is_list() => self.list.len(),
@@ -673,8 +661,7 @@ impl<F: Field> RLPItemGadget<F> {
     // Returns the RLC of the value if the RLP is a string,
     // returns the RLC of the full string if the RLP is a list.
     pub(crate) fn rlc_content(&self, r: &Expression<F>) -> Expression<F> {
-        let mut cb = MPTConstraintBuilder::<F>::new(0, None, None);
-        circuit!([meta, cb], {
+        circuit!([meta, _cb!()], {
             matchx! {
                 self.value.is_string() => self.value.rlc_value(r),
                 self.list.is_list() => self.list.rlc_rlp(r),

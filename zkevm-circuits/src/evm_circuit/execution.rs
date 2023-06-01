@@ -832,8 +832,6 @@ impl<F: Field> ExecutionConfig<F> {
         for column in cell_manager.columns().iter() {
             if let CellType::LookupByte = column.cell_type {
                 meta.lookup_any("Byte lookup", |meta| {
-                    // 只取第一位，其他都是rlc with challenge
-                    // 😯 这里本来就只有一列range lookup
                     let byte_table_expression = byte_table.table_exprs(meta)[0].clone();
                     vec![(column.expr(), byte_table_expression)]
                 });

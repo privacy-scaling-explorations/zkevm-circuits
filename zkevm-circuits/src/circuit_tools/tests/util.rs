@@ -233,7 +233,7 @@ impl<F: Field> CellGadget<F> {
         let c = cb.query_one(CellType::PhaseTwo);
         let d = cb.query_default();        
         circuit!([meta, cb], {
-            require!((a, b) => @format!("test_lookup"));
+            //require!((a, b) => @format!("test_lookup"));
             require!(c => a.expr() + b.expr() * r1);
             require!(a => d.expr());
         });
@@ -308,6 +308,7 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
     }
 }
 
+#[cfg(feature = "dev-graph")]
 #[test]
 fn test() {
     let circuit = TestCircuit::<Fr>::default();

@@ -9,6 +9,15 @@ use itertools::Itertools;
 
 use super::{cell_manager::{Cell, CellManager_, CellTypeTrait, EvmCellType}, cached_region::StoredExpression, table::LookupTable_};
 
+
+fn get_condition_expr<F: Field>(conditions: &Vec<Expression<F>>) -> Expression<F> {
+    if conditions.is_empty() {
+        1.expr()
+    } else {
+        and::expr(conditions)
+    }
+}
+
 /// Data for dynamic lookup
 #[derive(Clone)]
 pub struct DynamicData<F> {
@@ -37,12 +46,20 @@ pub struct ConstraintBuilder<F, C: CellTypeTrait> {
     pub dynamic_tables: HashMap<String, Vec<DynamicData<F>>>,
     /// Lookups to the preloaded tables with rlc (e.g. kecceck) 
     /// StoredExpression splits high-degree constraints
-    pub static_lookups: Vec<StoredExpression<F, C>>,
+    pub static_lookups: [Vec<StoredExpression<F, C>>; 4],
     /// CellManager
     pub cell_manager: Option<CellManager_<F, C>>,
     /// Disable macro-generated description for constraints & lookups
     /// for graph display
     pub disable_description: bool,
+    /// state idx
+    pub state_idx: usize,
+    /// lookup input challenge
+    pub lookup_input_challenge: Expression<F>,
+    /// state contect
+    pub state_context: Vec<Expression<F>>,
+    /// state constraints start
+    pub state_constraints_start: usize,
 }
 
 impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
@@ -55,13 +72,31 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
             dynamic_tables: HashMap::new(),
             cell_manager,
             disable_description: false,
-            static_lookups: Vec::new(),
+            static_lookups: [vec![], vec![], vec![], vec![]],
+            state_idx: 0,
+            lookup_input_challenge: 2.expr(),
+            state_context: Vec::new(),
+            state_constraints_start: 0,
         }
     }
 
     pub(crate) fn set_cell_manager(&mut self, cell_manager: CellManager_<F, C>) {
-        println!("set_cell_manager!!");
+        //println!("set_cell_manager!!");
         self.cell_manager = Some(cell_manager);
+    }
+
+    pub(crate) fn push_state(&mut self, state_idx: usize) {
+        self.state_idx = state_idx;
+        self.state_context = self.conditions.clone();
+        self.conditions.clear();
+        self.state_constraints_start = self.constraints.len();
+    }
+
+    pub(crate) fn pop_state(&mut self) {
+        for idx in self.state_constraints_start..self.constraints.len() {
+            self.constraints[idx].1 = get_condition_expr(&self.state_context) * self.constraints[idx].1.clone();
+        }
+        self.conditions = self.state_context.clone();
     }
 
     pub(crate) fn disable_description(&mut self) {
@@ -128,11 +163,22 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
     }
 
     pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
+        if self.max_degree == 0 {
+            return;
+        }
+
+        //println!("add constraint: {}", name);
+
         let constraint = match self.get_condition() {
             Some(condition) => condition * constraint,
             None => constraint,
         };
-        self.validate_degree(constraint.degree(), name);
+        let constraint = self.split_expression(
+            name,
+            constraint,
+        );
+        
+        //self.validate_degree(constraint.degree(), name);
         self.constraints.push((name, constraint));
     }
 
@@ -194,14 +240,10 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         cell_managers: Vec<CellManager_<F, C>>,
         tables: Vec<&dyn LookupTable_<F, TableCellType = C>>
     ) {
-        println!("____ build_static_lookups ____ \n challen {:?}", challenge);
-        // let cm = self.cell_manager.as_ref().expect("CellManager unset!");
         for cm in cell_managers {
             for table in &tables {
                 let cell_type = table.get_type_();
-                println!("cell_type {:?}: ", cell_type);
                 for col in cm.get_typed_columns(cell_type) {
-                    print!("col: {:?} ", col.expr.identifier());
                     meta.lookup_any(
                         "static lookup",
                         |meta| {
@@ -317,22 +359,23 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
     pub(crate) fn add_static_lookup(
         &mut self,
         description: &str,
-        challenge: Expression<F>,
         cell_type: C,
         values: Vec<Expression<F>>,
     ) {
-        println!("________ add_static_lookup ________ \nchallenge: {:?}", challenge);
+        //let condition = self.get_condition_expr();
+        //let values = values.iter().map(|value| condition.expr() * value.expr()).collect_vec();
+        //println!("________ add_static_lookup ________ \nchallenge: {:?}", challenge);
         let compressed_expr = self.split_expression(
             "Lookup compression",
-            rlc::expr(&values, challenge),
+            rlc::expr(&values, self.lookup_input_challenge.expr()),
         );
         println!("compressed_expr: {:?}", compressed_expr.identifier());
         self.store_expression(description, compressed_expr, cell_type);
     }
 
 
-    pub(crate) fn get_static_lookups(&self) -> Vec<StoredExpression<F, C>> {
-        self.static_lookups.clone()
+    pub(crate) fn get_static_lookups(&self, state_idx: usize) -> Vec<StoredExpression<F, C>> {
+        self.static_lookups[state_idx].clone()
     }
 
 
@@ -390,9 +433,6 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         expr: Expression<F>,
         cell_type: C,
     ) -> Expression<F> {
-
-        println!("\t ____ store_expression ____");
-
         // Check if we already stored the expression somewhere
         let stored_expression = self.find_stored_expression(&expr, cell_type);
 
@@ -404,12 +444,17 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
                 // Require the stored value to equal the value of the expression
                 let cell = self.query_one(cell_type);
                 let name = format!("{} (stored expression)", name);
-                // self.add_constraint(
-                //     Box::leak(name.clone().into_boxed_str()),
-                //     cell.expr() - expr.clone(),
-                // );
-                println!("\n pushing in cell {:?}: {:?}", cell.identifier(), expr.identifier());
-                self.static_lookups.push(StoredExpression {
+                /*self.add_constraint(
+                    Box::leak(name.clone().into_boxed_str()),
+                    cell.expr() - expr.clone(),
+                );*/
+                self.constraints.push((
+                    Box::leak(name.clone().into_boxed_str()),
+                    cell.expr() - expr.clone(),
+                ));
+                //println!("\n pushing in cell {:?}: {:?}", cell.identifier(), expr.identifier());
+                println!("store {}", name);
+                self.static_lookups[self.state_idx].push(StoredExpression {
                     name,
                     cell: cell.clone(),
                     cell_type,
@@ -426,10 +471,11 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         expr: &Expression<F>,
         cell_type: C,
     ) -> Option<&StoredExpression<F, C>> {
-        let expr_id = expr.identifier();
-        self.static_lookups
+        None
+        /*let expr_id = expr.identifier();
+        self.static_lookups[self.state_idx]
             .iter()
-            .find(|&e| e.cell_type == cell_type && e.expr_id == expr_id)
+            .find(|&e| e.cell_type == cell_type && e.expr_id == expr_id)*/
     }
 
     fn split_expression(
@@ -438,6 +484,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         expr: Expression<F>,
     ) -> Expression<F> {
         if expr.degree() > self.max_degree {
+            //println!("split {}: {} > {}", name, expr.degree(), self.max_degree);
             match expr {
                 Expression::Negated(poly) => {
                     Expression::Negated(Box::new(self.split_expression(name, *poly)))
@@ -481,7 +528,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         let mut expressions = self.constraints.clone();
         expressions.sort_by(|a, b| a.1.degree().cmp(&b.1.degree()));
         for (name, expr) in expressions.iter() {
-            println!("'{}': {}", name, expr.degree());
+            //println!("'{}': {}", name, expr.degree());
         }
     }
 }
@@ -667,10 +714,10 @@ pub trait ExprResult<F> {
 
 impl<F: Field> ExprResult<F> for () {
     fn add(&self, _other: &Self) -> Self {
-        
+        ()
     }
     fn mul(&self, _other: &Expression<F>) -> Self {
-        
+        ()
     }
 }
 
@@ -813,12 +860,12 @@ macro_rules! require_parser {
         rest = (== $($rhs:tt)*)
     } => {
         let description = match $cb.is_descr_disabled() {
-            true => $crate::concat_with_preamble!(
+            false => $crate::concat_with_preamble!(
                 stringify!($($lhs)*),
                 " == ",
                 stringify!($($rhs)*)
             ),
-            false => ""
+            true => ""
         };
         $crate::_require!($cb, description, $($lhs)* => $($rhs)*)
     };
@@ -852,7 +899,7 @@ macro_rules! _require2 {
 #[macro_export]
 macro_rules! _cb {
     () => {{
-        ConstraintBuilder::<F>::new(0, None)
+        ConstraintBuilder::<F, EvmCellType>::new(0, None)
     }};
 }
 
@@ -877,14 +924,14 @@ macro_rules! concat_with_preamble {
 macro_rules! _unreachablex {
     ($cb:expr $(,$descr:expr)?) => {{
         let descr = match $cb.is_descr_disabled() {
-            true => concat_with_preamble!(
+            false => concat_with_preamble!(
                 "unreachable executed",
                 $(
                     ": ",
                     $descr,
                 )*
             ),
-            false => "",
+            true => "",
         };
         _require!($cb, descr, true => false)
     }};
@@ -895,24 +942,24 @@ macro_rules! _unreachablex {
 macro_rules! _require {
     ($cb:expr, $lhs:expr => bool) => {{
         let description = match $cb.is_descr_disabled() {
-            true => concat_with_preamble!(
+            false => concat_with_preamble!(
                 stringify!($lhs),
                 " => ",
                 "bool",
             ),
-            false => ""
+            true => ""
         };
         $cb.require_boolean(description, $lhs.expr());
     }};
 
     ($cb:expr, $lhs:expr => $rhs:expr) => {{
         let description = match $cb.is_descr_disabled() {
-            true => concat_with_preamble!(
+            false => concat_with_preamble!(
                 stringify!($lhs),
                 " => ",
                 stringify!($rhs)
             ),
-            false => ""
+            true => ""
         };
         _require!($cb, description, $lhs => $rhs)
     }};
@@ -937,7 +984,7 @@ macro_rules! _require {
     // Lookup using a tuple
     ($cb:expr, ($($v:expr),+) => @$tag:expr) => {{
         let description = match $cb.is_descr_disabled() {
-            true => concat_with_preamble!(
+            false => concat_with_preamble!(
                 "(",
                 $(
                     stringify!($v),
@@ -946,16 +993,16 @@ macro_rules! _require {
                 ") => @",
                 stringify!($tag),
             ),
-            false => ""
+            true => ""
         };
-        $cb.add_dynamic_lookup(
+        $cb.add_static_lookup(
             description,
             $tag.to_string(),
             vec![$($v.expr(),)*],
         );
     }};
     ($cb:expr, $descr:expr, ($($v:expr),+)  => @$tag:expr) => {{
-        $cb.add_dynamic_lookup(
+        $cb.add_static_lookup(
             Box::leak($descr.into_boxed_str()),
             $tag.to_string(),
             vec![$($v.expr(),)*],
@@ -965,21 +1012,21 @@ macro_rules! _require {
     // Lookup using an array
     ($cb:expr, $values:expr => @$tag:expr) => {{
         let description = match $cb.is_descr_disabled() {
-            true => concat_with_preamble!(
+            false => concat_with_preamble!(
                 stringify!($values),
                 " => @",
                 stringify!($tag),
             ),
-            false => ""
+            true => ""
         };
-        $cb.add_dynamic_lookup(
+        $cb.add_static_lookup(
             description,
             $tag.to_string(),
             $values.clone(),
         );
     }};
     ($cb:expr, $descr:expr, $values:expr => @$tag:expr) => {{
-        $cb.add_dynamic_lookup(
+        $cb.add_static_lookup(
             Box::leak($descr.to_string().into_boxed_str()),
             $tag.to_string(),
             $values.clone(),
@@ -989,7 +1036,7 @@ macro_rules! _require {
     // Put values in a lookup table using a tuple
     ($cb:expr, @$tag:expr => ($($v:expr),+)) => {{
         let description = match $cb.is_descr_disabled() {
-            true => concat_with_preamble!(
+            false => concat_with_preamble!(
                 "@",
                 stringify!($tag),
                 " => (",
@@ -999,7 +1046,7 @@ macro_rules! _require {
                 )*
                 ")",
             ),
-            false => "",
+            true => "",
         };
         $cb.store_dynamic_table(
             description,
@@ -1010,14 +1057,14 @@ macro_rules! _require {
     // Put values in a lookup table using an array
     ($cb:expr, @$tag:expr => $values:expr) => {{
         let description = match $cb.is_descr_disabled() {
-            true => concat_with_preamble!(
+            false => concat_with_preamble!(
                 "@",
                 stringify!($tag),
                 " => (",
                 stringify!($values),
                 ")",
             ),
-            false => "",
+            true => "",
         };
         $cb.store_dynamic_table(
             description,
@@ -1124,8 +1171,8 @@ macro_rules! assign {
     ($region:expr, ($column:expr, $offset:expr) => $value:expr) => {{
         use halo2_proofs::circuit::Value;  
         let description = match $region.is_descr_disabled() {
-            true => $crate::concat_with_preamble!(stringify!($column), " => ", stringify!($value)),
-            false => ""
+            false => $crate::concat_with_preamble!(stringify!($column), " => ", stringify!($value)),
+            true => ""
         };
         let value: F = $value;
         $region.assign_advice(|| description, $column, $offset, || Value::known(value))
@@ -1140,8 +1187,8 @@ macro_rules! assign {
     ($region:expr, $cell:expr, $offset:expr => $value:expr) => {{
         use halo2_proofs::circuit::Value;
         let description = match $region.is_descr_disabled() {
-            true => $crate::concat_with_preamble!(stringify!($cell), " => ", stringify!($value)),
-            false => ""
+            false => $crate::concat_with_preamble!(stringify!($cell), " => ", stringify!($value)),
+            true => ""
         };
         let value: F = $value;
         $region.assign_advice(

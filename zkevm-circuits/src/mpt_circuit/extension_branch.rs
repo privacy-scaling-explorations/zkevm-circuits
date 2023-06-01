@@ -183,8 +183,8 @@ impl<F: Field> ExtensionBranchConfig<F> {
 
     pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
-        cached_region: &mut CachedRegion<'_, '_, F, S>,
-        challenges: &S,
+        region: &mut CachedRegion<'_, '_, F, S>,
+        _challenges: &S,
         mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
@@ -194,21 +194,21 @@ impl<F: Field> ExtensionBranchConfig<F> {
         let extension_branch = &node.extension_branch.clone().unwrap();
 
         self.is_extension
-            .assign(cached_region, offset, extension_branch.is_extension.scalar())?;
+            .assign(region, offset, extension_branch.is_extension.scalar())?;
 
         let key_data =
             self.key_data
-                .witness_load(cached_region, offset, &pv.memory[key_memory(true)], 0)?;
+                .witness_load(region, offset, &pv.memory[key_memory(true)], 0)?;
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         for is_s in [true, false] {
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
-                cached_region,
+                region,
                 offset,
                 &mut pv.memory[parent_memory(is_s)],
                 0,
             )?;
             self.is_placeholder[is_s.idx()].assign(
-                cached_region,
+                region,
                 offset,
                 extension_branch.is_placeholder[is_s.idx()].scalar(),
             )?;
@@ -222,7 +222,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
         // Extension
         if extension_branch.is_extension {
             self.extension.assign(
-                cached_region,
+                region,
                 mpt_config,
                 pv,
                 offset,
@@ -239,7 +239,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
         // Branch
         let (key_rlc_post_branch, key_rlc_post_drifted, key_mult_post_branch, mod_node_hash_rlc) =
             self.branch.assign(
-                cached_region,
+                region,
                 mpt_config,
                 pv,
                 offset,
@@ -256,7 +256,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
         for is_s in [true, false] {
             if !extension_branch.is_placeholder[is_s.idx()] {
                 KeyData::witness_store(
-                    cached_region,
+                    region,
                     offset,
                     &mut pv.memory[key_memory(is_s)],
                     key_rlc_post_branch,
@@ -267,7 +267,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     0,
                 )?;
                 ParentData::witness_store(
-                    cached_region,
+                    region,
                     offset,
                     &mut pv.memory[parent_memory(is_s)],
                     mod_node_hash_rlc[is_s.idx()],
@@ -277,7 +277,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 )?;
             } else {
                 KeyData::witness_store(
-                    cached_region,
+                    region,
                     offset,
                     &mut pv.memory[key_memory(is_s)],
                     key_data.rlc,
@@ -288,7 +288,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     num_nibbles,
                 )?;
                 ParentData::witness_store(
-                    cached_region,
+                    region,
                     offset,
                     &mut pv.memory[parent_memory(is_s)],
                     parent_data[is_s.idx()].rlc,
@@ -298,8 +298,6 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 )?;
             }
         }
-        //println!("{} branch ====> cahced_region.advice\n {:?}", offset, cached_region.advice);
-        //mpt_config.assign_static_lookups(cached_region, offset);
 
         Ok(())
     }

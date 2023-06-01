@@ -371,12 +371,14 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
                 2
             } else if is_very_long {
                 3
-            } else if row.get_type() == MptWitnessRowType::ExtensionNodeS {
-                0
-            } else if is_string {
-                unreachable!()
             } else {
-                unreachable!()
+                if row.get_type() == MptWitnessRowType::ExtensionNodeS {
+                    0
+                } else if is_string {
+                    unreachable!()
+                } else {
+                    unreachable!()
+                }
             };
 
             // println!("bytes: {:?}", key_bytes);
