@@ -1,3 +1,4 @@
+pub use super::PiCircuit;
 use super::*;
 
 /// Public Input Circuit configuration parameters

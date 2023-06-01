@@ -33,6 +33,7 @@ use zkevm_circuits::{
     evm_circuit::TestEvmCircuit,
     exp_circuit::TestExpCircuit,
     keccak_circuit::TestKeccakCircuit,
+    pi_circuit::TestPiCircuit,
     state_circuit::TestStateCircuit,
     super_circuit::SuperCircuit,
     tx_circuit::TestTxCircuit,
@@ -79,6 +80,7 @@ const COPY_CIRCUIT_DEGREE: u32 = 16;
 const KECCAK_CIRCUIT_DEGREE: u32 = 16;
 const SUPER_CIRCUIT_DEGREE: u32 = 20;
 const EXP_CIRCUIT_DEGREE: u32 = 16;
+const PI_CIRCUIT_DEGREE: u32 = 17;
 
 lazy_static! {
     /// Data generation.
@@ -125,6 +127,10 @@ lazy_static! {
      /// Integration test for Exp circuit
      pub static ref EXP_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestExpCircuit::<Fr>>> =
      TokioMutex::new(IntegrationTest::new("Exp", EXP_CIRCUIT_DEGREE));
+
+     /// Integration test for Pi circuit
+     pub static ref PI_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestPiCircuit::<Fr>>> =
+     TokioMutex::new(IntegrationTest::new("Pi", PI_CIRCUIT_DEGREE));
 }
 
 /// Generic implementation for integration tests
