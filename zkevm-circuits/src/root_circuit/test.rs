@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 pub use super::*;
 use crate::super_circuit::{test::block_1tx, SuperCircuit};
-use bus_mapping::circuit_input_builder::CircuitsParams;
+use bus_mapping::circuit_input_builder::ConcreteCP;
 use halo2_proofs::{
     circuit::Value,
     dev::MockProver,
@@ -21,7 +21,7 @@ fn test_root_circuit() {
     let (params, protocol, proof, instance) = {
         // Preprocess
         const TEST_MOCK_RANDOMNESS: u64 = 0x100;
-        let circuits_params = CircuitsParams {
+        let circuits_params = ConcreteCP {
             max_txs: 1,
             max_calldata: 32,
             max_rws: 256,

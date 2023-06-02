@@ -1,6 +1,6 @@
 use super::{Opcode, OpcodeId};
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep, MaybeParams},
+    circuit_input_builder::{CircuitInputStateRef, CircuitsParams, ExecStep},
     error::{ExecError, OogError},
     Error,
 };
@@ -12,8 +12,8 @@ use eth_types::GethExecStep;
 pub(crate) struct OOGExp;
 
 impl Opcode for OOGExp {
-    fn gen_associated_ops<M: MaybeParams>(
-        state: &mut CircuitInputStateRef<M>,
+    fn gen_associated_ops<C: CircuitsParams>(
+        state: &mut CircuitInputStateRef<C>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];

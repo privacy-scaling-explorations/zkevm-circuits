@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, MaybeParams, NumberOrHash,
+        CircuitInputStateRef, CircuitsParams, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     Error,
 };
@@ -13,8 +13,8 @@ use rand::{rngs::ThreadRng, Rng};
 pub(crate) struct Sha3;
 
 impl Opcode for Sha3 {
-    fn gen_associated_ops<M: MaybeParams>(
-        state: &mut CircuitInputStateRef<M>,
+    fn gen_associated_ops<C: CircuitsParams>(
+        state: &mut CircuitInputStateRef<C>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
@@ -197,7 +197,7 @@ pub(crate) mod sha3_tests {
     };
 
     use crate::{
-        circuit_input_builder::{CircuitsParams, ExecState},
+        circuit_input_builder::{ConcreteCP, ExecState},
         mock::BlockData,
         operation::{MemoryOp, StackOp, RW},
     };
@@ -227,7 +227,7 @@ pub(crate) mod sha3_tests {
 
         let mut builder = BlockData::new_from_geth_data_with_params(
             block.clone(),
-            CircuitsParams {
+            ConcreteCP {
                 max_rws: 2048,
                 ..Default::default()
             },

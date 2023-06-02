@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, MaybeParams, NumberOrHash,
+        CircuitInputStateRef, CircuitsParams, CopyDataType, CopyEvent, NumberOrHash,
     },
     evm::opcodes::ExecStep,
     operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
@@ -15,8 +15,8 @@ pub(crate) struct ReturnRevert;
 
 // TODO: rename to indicate this handles REVERT (and maybe STOP)?
 impl Opcode for ReturnRevert {
-    fn gen_associated_ops<M: MaybeParams>(
-        state: &mut CircuitInputStateRef<M>,
+    fn gen_associated_ops<C: CircuitsParams>(
+        state: &mut CircuitInputStateRef<C>,
         steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let step = &steps[0];
@@ -153,8 +153,8 @@ struct Destination {
     length: usize,
 }
 
-fn handle_copy<M: MaybeParams>(
-    state: &mut CircuitInputStateRef<M>,
+fn handle_copy<C: CircuitsParams>(
+    state: &mut CircuitInputStateRef<C>,
     step: &mut ExecStep,
     source: Source,
     destination: Destination,
@@ -198,8 +198,8 @@ fn handle_copy<M: MaybeParams>(
     Ok(())
 }
 
-fn handle_create<M: MaybeParams>(
-    state: &mut CircuitInputStateRef<M>,
+fn handle_create<C: CircuitsParams>(
+    state: &mut CircuitInputStateRef<C>,
     step: &mut ExecStep,
     source: Source,
 ) -> Result<H256, Error> {
@@ -282,7 +282,7 @@ mod return_tests {
         .into();
 
         let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        let builder = builder
+        builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
     }

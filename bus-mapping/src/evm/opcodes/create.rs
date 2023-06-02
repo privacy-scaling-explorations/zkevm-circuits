@@ -1,5 +1,5 @@
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep, MaybeParams},
+    circuit_input_builder::{CircuitInputStateRef, CircuitsParams, ExecStep},
     evm::Opcode,
     operation::{AccountField, AccountOp, CallContextField, TxAccessListAccountOp},
     state_db::CodeDB,
@@ -11,8 +11,8 @@ use eth_types::{evm_types::gas_utils::memory_expansion_gas_cost, GethExecStep, T
 pub struct DummyCreate<const IS_CREATE2: bool>;
 
 impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
-    fn gen_associated_ops<M: MaybeParams>(
-        state: &mut CircuitInputStateRef<M>,
+    fn gen_associated_ops<C: CircuitsParams>(
+        state: &mut CircuitInputStateRef<C>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         // TODO: replace dummy create here

@@ -1,5 +1,5 @@
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep, MaybeParams},
+    circuit_input_builder::{CircuitInputStateRef, CircuitsParams, ExecStep},
     evm::{Opcode, OpcodeId},
     operation::CallContextField,
     Error,
@@ -10,8 +10,8 @@ use eth_types::{GethExecStep, Word};
 pub(crate) struct ErrorOOGLog;
 
 impl Opcode for ErrorOOGLog {
-    fn gen_associated_ops<M: MaybeParams>(
-        state: &mut CircuitInputStateRef<M>,
+    fn gen_associated_ops<C: CircuitsParams>(
+        state: &mut CircuitInputStateRef<C>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];

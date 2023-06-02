@@ -2,7 +2,7 @@
 
 use crate::{
     circuit_input_builder::{
-        get_state_accesses, Block, CircuitInputBuilder, CircuitsParams, MaybeParams, UnsetParams,
+        get_state_accesses, Block, CircuitInputBuilder, CircuitsParams, ConcreteCP, DynamicCP,
     },
     state_db::{self, CodeDB, StateDB},
 };
@@ -11,7 +11,7 @@ use eth_types::{geth_types::GethData, Word};
 /// BlockData is a type that contains all the information from a block required
 /// to build the circuit inputs.
 #[derive(Debug)]
-pub struct BlockData<M: MaybeParams> {
+pub struct BlockData<C: CircuitsParams> {
     /// StateDB
     pub sdb: StateDB,
     /// CodeDB
@@ -26,13 +26,13 @@ pub struct BlockData<M: MaybeParams> {
     /// Execution Trace from geth
     pub geth_traces: Vec<eth_types::GethExecTrace>,
     /// Circuits setup parameters
-    pub circuits_params: M,
+    pub circuits_params: C,
 }
 
-impl<M: MaybeParams> BlockData<M> {
+impl<C: CircuitsParams> BlockData<C> {
     /// Generate a new CircuitInputBuilder initialized with the context of the
     /// BlockData.
-    pub fn new_circuit_input_builder(&self) -> CircuitInputBuilder<M> {
+    pub fn new_circuit_input_builder(&self) -> CircuitInputBuilder<C> {
         CircuitInputBuilder::new(
             self.sdb.clone(),
             self.code_db.clone(),
@@ -65,11 +65,11 @@ impl<M: MaybeParams> BlockData<M> {
         (sdb, code_db)
     }
 }
-impl BlockData<CircuitsParams> {
+impl BlockData<ConcreteCP> {
     /// Create a new block from the given Geth data.
     pub fn new_from_geth_data_with_params(
         geth_data: GethData,
-        circuits_params: CircuitsParams,
+        circuits_params: ConcreteCP,
     ) -> Self {
         let (sdb, code_db) = Self::init_dbs(&geth_data);
 
@@ -85,7 +85,7 @@ impl BlockData<CircuitsParams> {
     }
 }
 
-impl BlockData<UnsetParams> {
+impl BlockData<DynamicCP> {
     /// Create a new block from the given Geth data with default CircuitsParams.
     pub fn new_from_geth_data(geth_data: GethData) -> Self {
         let (sdb, code_db) = Self::init_dbs(&geth_data);
@@ -97,7 +97,7 @@ impl BlockData<UnsetParams> {
             history_hashes: geth_data.history_hashes,
             eth_block: geth_data.eth_block,
             geth_traces: geth_data.geth_traces,
-            circuits_params: UnsetParams {},
+            circuits_params: DynamicCP {},
         }
     }
 }

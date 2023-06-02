@@ -157,7 +157,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 #[cfg(test)]
 mod tests {
     use crate::test_util::CircuitTestBuilder;
-    use bus_mapping::{circuit_input_builder::CircuitsParams, evm::Sha3CodeGen};
+    use bus_mapping::{circuit_input_builder::ConcreteCP, evm::Sha3CodeGen};
     use eth_types::{bytecode, U256};
     use mock::TestContext;
 
@@ -166,7 +166,7 @@ mod tests {
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
         )
-        .params(CircuitsParams {
+        .params(ConcreteCP {
             max_rws: 5500,
             ..Default::default()
         })

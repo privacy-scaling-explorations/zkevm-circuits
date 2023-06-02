@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep, MaybeParams},
+    circuit_input_builder::{CallKind, CircuitInputStateRef, CircuitsParams, CodeSource, ExecStep},
     operation::{AccountField, CallContextField, TxAccessListAccountOp},
     precompile::{execute_precompiled, is_precompiled},
     state_db::CodeDB,
@@ -24,8 +24,8 @@ use std::cmp::min;
 pub(crate) struct CallOpcode<const N_ARGS: usize>;
 
 impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
-    fn gen_associated_ops<M: MaybeParams>(
-        state: &mut CircuitInputStateRef<M>,
+    fn gen_associated_ops<C: CircuitsParams>(
+        state: &mut CircuitInputStateRef<C>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
@@ -366,7 +366,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{circuit_input_builder::CircuitsParams, mock::BlockData};
+    use crate::{circuit_input_builder::ConcreteCP, mock::BlockData};
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, word, Bytecode, Word};
     use mock::{
         test_ctx::{
@@ -722,7 +722,7 @@ mod tests {
 
             let mut builder = BlockData::new_from_geth_data_with_params(
                 block.clone(),
-                CircuitsParams {
+                ConcreteCP {
                     max_rws: test_call.max_rws,
                     ..Default::default()
                 },
