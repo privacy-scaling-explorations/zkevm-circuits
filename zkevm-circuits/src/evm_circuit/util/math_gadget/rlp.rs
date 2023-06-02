@@ -80,7 +80,6 @@ impl<F: Field> RlpU64Gadget<F> {
         //   - 128) ∈ [0, 128)
         let byte_128 = value_rlc.cells[0].expr() - 128.expr();
         let is_first = is_most_significant_byte[0].expr();
-        cb.require_boolean("is_first", is_first.clone());
         let byte_128_or_zero = byte_128 * is_first;
 
         let value_lt_128 = select::expr(is_lt_128.expr(), value, byte_128_or_zero);
