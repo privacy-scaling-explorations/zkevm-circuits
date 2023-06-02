@@ -151,8 +151,8 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             );
         });
 
-        let gas_cost = GasCost::LOG.as_u64().expr()
-            + GasCost::LOG.as_u64().expr() * topic_count.clone()
+        let gas_cost = GasCost::LOG.expr()
+            + GasCost::LOG.expr() * topic_count.clone()
             + 8.expr() * memory_address.length()
             + memory_expansion.gas_cost();
         // State transition

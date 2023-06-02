@@ -10,7 +10,7 @@ use crate::{
 };
 use eth_types::{
     address, bytecode,
-    evm_types::{stack::Stack, Gas, OpcodeId},
+    evm_types::{stack::Stack, OpcodeId},
     geth_types::GethData,
     word, Bytecode, Hash, ToAddress, ToWord, Word,
 };
@@ -42,7 +42,7 @@ impl CircuitInputBuilderTx {
         let tx_ctx = TransactionContext::new(
             &block.eth_block.transactions[0],
             &GethExecTrace {
-                gas: Gas(0),
+                gas: 0,
                 failed: false,
                 return_value: "".to_owned(),
                 struct_logs: vec![geth_step.clone()],
@@ -593,7 +593,7 @@ fn check_err_code_store_out_of_gas(step: &GethExecStep, next_step: Option<&GethE
     step.op == OpcodeId::RETURN
         && step.error.is_none()
         && result(next_step).is_zero()
-        && Word::from(200) * length > Word::from(step.gas.0)
+        && Word::from(200) * length > Word::from(step.gas)
 }
 
 #[test]

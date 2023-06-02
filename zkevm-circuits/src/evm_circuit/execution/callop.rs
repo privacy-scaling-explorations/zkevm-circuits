@@ -596,7 +596,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             has_value,
             !callee_exists,
         )?;
-        let gas_available: u64 = step.gas_left.0 - gas_cost;
+        let gas_available: u64 = step.gas_left - gas_cost;
 
         self.one_64th_gas
             .assign(region, offset, gas_available.into())?;

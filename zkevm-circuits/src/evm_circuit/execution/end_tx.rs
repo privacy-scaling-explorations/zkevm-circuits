@@ -201,7 +201,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let gas_used = tx.gas - step.gas_left.0;
+        let gas_used = tx.gas - step.gas_left;
         let (refund, _) = block.get_rws(step, 2).tx_refund_value_pair();
         let [(caller_balance, caller_balance_prev), (coinbase_balance, coinbase_balance_prev)] =
             [3, 4].map(|index| block.get_rws(step, index).account_value_pair());
@@ -220,12 +220,12 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             F::from(refund),
         )?;
         let effective_refund = refund.min(max_refund as u64);
-        let gas_fee_refund = tx.gas_price * (effective_refund + step.gas_left.0);
+        let gas_fee_refund = tx.gas_price * (effective_refund + step.gas_left);
         self.mul_gas_price_by_refund.assign(
             region,
             offset,
             tx.gas_price,
-            effective_refund + step.gas_left.0,
+            effective_refund + step.gas_left,
             gas_fee_refund,
         )?;
         self.tx_caller_address.assign(

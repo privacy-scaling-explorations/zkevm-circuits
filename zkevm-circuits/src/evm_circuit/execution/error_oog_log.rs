@@ -67,8 +67,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         // access
         let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
 
-        let gas_cost = GasCost::LOG.as_u64().expr()
-            + GasCost::LOG.as_u64().expr() * topic_count
+        let gas_cost = GasCost::LOG.expr()
+            + GasCost::LOG.expr() * topic_count
             + 8.expr() * memory_address.length()
             + memory_expansion.gas_cost();
 
@@ -129,8 +129,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         self.insufficient_gas.assign(
             region,
             offset,
-            F::from(step.gas_left.0),
-            F::from(step.gas_cost.0),
+            F::from(step.gas_left),
+            F::from(step.gas_cost),
         )?;
         self.common_error_gadget
             .assign(region, offset, block, call, step, 5)?;
@@ -154,8 +154,8 @@ mod test {
 
     fn gas(call_data: &[u8]) -> Word {
         Word::from(
-            GasCost::TX.as_u64()
-                + 2 * OpcodeId::PUSH32.constant_gas_cost().as_u64()
+            GasCost::TX
+                + 2 * OpcodeId::PUSH32.constant_gas_cost()
                 + call_data
                     .iter()
                     .map(|&x| if x == 0 { 4 } else { 16 })

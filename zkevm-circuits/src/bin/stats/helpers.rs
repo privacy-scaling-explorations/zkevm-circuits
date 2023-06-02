@@ -213,7 +213,7 @@ pub(crate) fn print_circuit_stats_by_states(
                 .steps()
                 .iter()
                 .enumerate()
-                .find(|(_, s)| s.call_index == 1 && s.pc.0 == opcode_pc)
+                .find(|(_, s)| s.call_index == 1 && s.pc == (opcode_pc as u64))
                 .unwrap();
             assert_eq!(ExecState::Op(opcode), step.exec_state);
             let height = fn_height(&builder.block, state, step_index);
@@ -222,7 +222,7 @@ pub(crate) fn print_circuit_stats_by_states(
             // in the geth trace.
             let geth_step = &block.geth_traces[0].struct_logs[step_index - 1];
             assert_eq!(opcode, geth_step.op);
-            let gas_cost = geth_step.gas_cost.0;
+            let gas_cost = geth_step.gas_cost;
             rows.push(Row {
                 state,
                 opcode,
