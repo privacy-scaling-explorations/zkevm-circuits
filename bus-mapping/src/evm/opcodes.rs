@@ -1,7 +1,7 @@
 //! Definition of each opcode of the EVM.
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, CircuitsParams, ExecState, ExecStep},
-    error::{ExecError, OogError},
+    error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
     evm::OpcodeId,
     operation::TxAccessListAccountOp,
     Error,
@@ -272,7 +272,6 @@ fn fn_gen_associated_ops<C: CircuitsParams>(opcode_id: &OpcodeId) -> FnGenAssoci
 }
 
 fn fn_gen_error_state_associated_ops<C: CircuitsParams>(
-    geth_step: &GethExecStep,
     error: &ExecError,
 ) -> Option<FnGenAssociatedOps<C>> {
     match error {
