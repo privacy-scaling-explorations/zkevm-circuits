@@ -86,7 +86,12 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
         // again here to cache the value.
         if res.is_ok() {
             to().map(|f: VR| {
-                self.advice.insert((column.index(), offset),  Assigned::from(&f).evaluate());
+                let existing = self.advice.insert((column.index(), offset),  Assigned::from(&f).evaluate());
+                /*if existing != None {
+                    println!("\t assign_advice: [{}][{}]", column.index(), offset);
+                }*/
+                assert!(existing == None);
+                existing
             });
         }
         res
@@ -125,9 +130,11 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
     // StoreExpression 里面调，拿 F 出去 evaluate
     pub fn get_advice(&self, row_index: usize, column_index: usize, rotation: Rotation) -> F {
         //println!("\t get_advice: [{}][{}]", column_index, rotation.0 as usize + row_index);
-        self.advice.get(&(column_index, row_index + rotation.0 as usize))
-            .expect("Advice not found")
-            .clone()
+        //self.advice.get(&(column_index, row_index + rotation.0 as usize))
+        //    .expect("Advice not found")
+        //   .clone()
+        let zero = F::zero();
+        *self.advice.get(&(column_index, row_index + rotation.0 as usize)).unwrap_or_else(|| &zero)
     }
 
     pub fn challenges(&self) -> &S {
@@ -187,7 +194,7 @@ impl<F: Field, C: CellTypeTrait> StoredExpression<F, C>  {
 
         //println!("____ StoredExpression::assign ____ \n\t {:?} -> {:?}", self.expr_id, self.cell.identifier());
 
-        println!("assign stored: {}", self.name);
+        //println!("assign stored: {} [{}][{}]", self.name, self.cell.column().index(), offset);
         
         let value = self.expr.evaluate(
             &|scalar| Value::known(scalar),

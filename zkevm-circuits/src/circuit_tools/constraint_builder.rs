@@ -27,6 +27,8 @@ pub struct DynamicData<F> {
     pub condition: Expression<F>,
     /// The values to lookup
     pub values: Vec<Expression<F>>,
+    /// state
+    pub state_idx: usize,
 }
 
 /// Constraint builder
@@ -44,9 +46,8 @@ pub struct ConstraintBuilder<F, C: CellTypeTrait> {
     /// The tables written during synthesis
     /// write to RAM
     pub dynamic_tables: HashMap<String, Vec<DynamicData<F>>>,
-    /// Lookups to the preloaded tables with rlc (e.g. kecceck) 
-    /// StoredExpression splits high-degree constraints
-    pub static_lookups: [Vec<StoredExpression<F, C>>; 4],
+    /// All stored expressions
+    pub stored_expressions: [Vec<StoredExpression<F, C>>; 4],
     /// CellManager
     pub cell_manager: Option<CellManager_<F, C>>,
     /// Disable macro-generated description for constraints & lookups
@@ -72,7 +73,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
             dynamic_tables: HashMap::new(),
             cell_manager,
             disable_description: false,
-            static_lookups: [vec![], vec![], vec![], vec![]],
+            stored_expressions: [vec![], vec![], vec![], vec![]],
             state_idx: 0,
             lookup_input_challenge: 2.expr(),
             state_context: Vec::new(),
@@ -81,8 +82,11 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
     }
 
     pub(crate) fn set_cell_manager(&mut self, cell_manager: CellManager_<F, C>) {
-        //println!("set_cell_manager!!");
         self.cell_manager = Some(cell_manager);
+    }
+
+    pub(crate) fn set_max_degree(&mut self, max_degree: usize) {
+        self.max_degree = max_degree;
     }
 
     pub(crate) fn push_state(&mut self, state_idx: usize) {
@@ -93,8 +97,23 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
     }
 
     pub(crate) fn pop_state(&mut self) {
+        let condition = get_condition_expr(&self.state_context);
         for idx in self.state_constraints_start..self.constraints.len() {
-            self.constraints[idx].1 = get_condition_expr(&self.state_context) * self.constraints[idx].1.clone();
+            self.constraints[idx].1 = condition.expr() * self.constraints[idx].1.clone();
+        }
+        for (_, values) in self.dynamic_lookups.iter_mut() {
+            for value in values {
+                if value.state_idx == self.state_idx {
+                    value.condition = condition.expr() * value.condition.expr();
+                }
+            }
+        }
+        for (_, values) in self.dynamic_tables.iter_mut() {
+            for value in values {
+                if value.state_idx == self.state_idx {
+                    value.condition = condition.expr() * value.condition.expr();
+                }
+            }
         }
         self.conditions = self.state_context.clone();
     }
@@ -166,9 +185,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         if self.max_degree == 0 {
             return;
         }
-
         //println!("add constraint: {}", name);
-
         let constraint = match self.get_condition() {
             Some(condition) => condition * constraint,
             None => constraint,
@@ -177,8 +194,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
             name,
             constraint,
         );
-        
-        //self.validate_degree(constraint.degree(), name);
+        self.validate_degree(constraint.degree(), name);
         self.constraints.push((name, constraint));
     }
 
@@ -303,6 +319,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         tag: S,
         values: Vec<Expression<F>>,
     ) {
+        //println!("table: {} -> {}", description, tag.as_ref());
         let condition = self.get_condition_expr();
         let key = tag.as_ref().to_owned();
         if let Some(table_data) = self.dynamic_tables.get_mut(&key) {
@@ -311,6 +328,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
                     description,
                     condition,
                     values,
+                    state_idx: self.state_idx,
                 });
         } else {
             self.dynamic_tables.insert(
@@ -320,6 +338,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
                         description,
                         condition,
                         values,
+                        state_idx: self.state_idx,
                     }
                 ]);
         }
@@ -339,6 +358,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
                     description,
                     condition,
                     values,
+                    state_idx: self.state_idx,
                 });
         } else {
             self.dynamic_lookups.insert(
@@ -348,11 +368,11 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
                         description,
                         condition,
                         values,
+                        state_idx: self.state_idx,
                     }
                 ]);
         }
     }
-
 
     // Todo(Cecilia): incorperate the challenge into CB
     //                then remove from MPT ctx
@@ -362,22 +382,22 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         cell_type: C,
         values: Vec<Expression<F>>,
     ) {
-        //let condition = self.get_condition_expr();
-        //let values = values.iter().map(|value| condition.expr() * value.expr()).collect_vec();
+        //println!("store lookup: {:?}: {}", cell_type, description);
+        let condition = self.get_condition_expr();
+        let values = values.iter().map(|value| condition.expr() * value.expr()).collect_vec();
         //println!("________ add_static_lookup ________ \nchallenge: {:?}", challenge);
         let compressed_expr = self.split_expression(
             "Lookup compression",
             rlc::expr(&values, self.lookup_input_challenge.expr()),
         );
-        println!("compressed_expr: {:?}", compressed_expr.identifier());
+        //println!("compressed_expr: {:?}", compressed_expr.identifier());
         self.store_expression(description, compressed_expr, cell_type);
     }
 
 
-    pub(crate) fn get_static_lookups(&self, state_idx: usize) -> Vec<StoredExpression<F, C>> {
-        self.static_lookups[state_idx].clone()
+    pub(crate) fn get_stored_expressions(&self, state_idx: usize) -> Vec<StoredExpression<F, C>> {
+        self.stored_expressions[state_idx].clone()
     }
-
 
     pub(crate) fn get_dynamic_table<S: AsRef<str>>(
         &self,
@@ -444,17 +464,13 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
                 // Require the stored value to equal the value of the expression
                 let cell = self.query_one(cell_type);
                 let name = format!("{} (stored expression)", name);
-                /*self.add_constraint(
-                    Box::leak(name.clone().into_boxed_str()),
-                    cell.expr() - expr.clone(),
-                );*/
                 self.constraints.push((
                     Box::leak(name.clone().into_boxed_str()),
                     cell.expr() - expr.clone(),
                 ));
                 //println!("\n pushing in cell {:?}: {:?}", cell.identifier(), expr.identifier());
-                println!("store {}", name);
-                self.static_lookups[self.state_idx].push(StoredExpression {
+                //println!("store {} ({}) [{}][{}]", name, self.state_idx, cell.column.unwrap().index(), cell.rotation());
+                self.stored_expressions[self.state_idx].push(StoredExpression {
                     name,
                     cell: cell.clone(),
                     cell_type,

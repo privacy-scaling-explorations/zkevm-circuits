@@ -226,6 +226,7 @@ pub struct CellManager_<F, C: CellTypeTrait> {
     offset: usize,
     max_height: usize,
     total_width: usize,
+    cell_history: Vec<Cell<F>>,
 }
 
 impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
@@ -289,6 +290,7 @@ impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
             offset,
             max_height,
             total_width,
+            cell_history: Vec::new(),
         }
     }
 
@@ -378,6 +380,7 @@ impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
     pub(crate) fn reset(&mut self, meta: &mut VirtualCells<F>, new_height: usize) {
         self.columns.iter_mut().for_each(|c| c.height = 0);
         self.set_max_height(meta, new_height);
+        self.cell_history.clear();
     }
 
     pub(crate) fn query_cells(&mut self, cell_type: C, count: usize) -> Vec<Cell<F>> {
@@ -393,6 +396,14 @@ impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
             targets.push(cell_list[index * self.max_height + height].clone());
             //// println!("at ({} * {} + {})", index, self.max_height, height);
             self.columns[start_width + index].height += 1;
+        }
+        for target in targets.iter() {
+            for history in self.cell_history.iter() {
+                if history.column().index() == target.column().index() && history.rotation() == target.rotation() {
+                    unreachable!("test");
+                }
+            }
+            self.cell_history.push(target.clone());
         }
         targets
     }

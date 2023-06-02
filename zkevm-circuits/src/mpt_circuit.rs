@@ -127,7 +127,7 @@ pub struct MPTConfig<F> {
     pub(crate) q_last: Column<Fixed>,
     pub(crate) rows_left_in_state: Column<Fixed>,
     pub(crate) rlp_columns: Vec<Column<Advice>>,
-    pub(crate) state_columns: Vec<Column<Advice>>,
+    //pub(crate) state_columns: Vec<Column<Advice>>,
     pub(crate) memory: Memory<F>,
     keccak_table: KeccakTable,
     fixed_table: [Column<Fixed>; 3],
@@ -234,11 +234,10 @@ impl<F: Field> MPTConfig<F> {
             ],
             Vec::new(),
             0,
-            1,
+            50,
         );
-        let state_columns = state_cm.get_columns();
-        let mut cb = MPTConstraintBuilder::new(20, Some(challenges.clone()), None);
-        //println!("_________ create_gate ________");
+
+        let mut cb = MPTConstraintBuilder::new(100, Some(challenges.clone()), None);
         meta.create_gate("MPT", |meta| {
             circuit!([meta, cb], {
                 // Populate lookup tables
@@ -267,7 +266,7 @@ impl<F: Field> MPTConfig<F> {
                         },
                         a!(state_machine.is_branch) => {
                             cb.base.push_state(1);
-                            require!(f!(rows_left_in_state) => (ExtensionBranchRowType::Count as usize ).expr());
+                            require!(f!(rows_left_in_state) => (ExtensionBranchRowType::Count as usize).expr());
                             state_machine.branch_config = ExtensionBranchConfig::configure(meta, &mut cb, ctx.clone());
                             cb.base.pop_state();
                         },
@@ -291,7 +290,7 @@ impl<F: Field> MPTConfig<F> {
                     }}
 
                     // Memory banks
-                    //ctx.memory.build_constraints(&mut cb.base, f!(q_first));
+                    ctx.memory.build_constraints(&mut cb.base, f!(q_first));
                 }}
             });
 
@@ -312,7 +311,7 @@ impl<F: Field> MPTConfig<F> {
             cb.base.build_dynamic_lookups(
                 meta,
                 &[
-                    vec!["fixed".to_string() /* , "keccak".to_string() */],
+                    vec!["fixed".to_string(), "keccak".to_string()],
                     ctx.memory.tags(),
                 ]
                 .concat(),
@@ -331,6 +330,7 @@ impl<F: Field> MPTConfig<F> {
             cb.base.build_dynamic_lookups(meta, &["keccak".to_string()]);
         }
 
+        println!("degree: {}", meta.degree());
         println!("num lookups: {}", meta.lookups().len());
         println!("num advices: {}", meta.num_advice_columns());
         println!("num fixed: {}", meta.num_fixed_columns());
@@ -341,7 +341,6 @@ impl<F: Field> MPTConfig<F> {
             q_last,
             rows_left_in_state,
             rlp_columns,
-            state_columns,
             memory,
             keccak_table,
             fixed_table,
@@ -364,7 +363,6 @@ impl<F: Field> MPTConfig<F> {
 
         let mut r = F::zero();
         challenges.keccak_input().map(|v| r = v);
-        //println!("________ MPT::assign ________");
         layouter.assign_region(
             || "MPT",
             |mut region| {
@@ -426,7 +424,7 @@ impl<F: Field> MPTConfig<F> {
                             &rlp_values,
                         )?;
                     } else if node.storage.is_some() {
-                        state_idx = 2;
+                        state_idx = 3;
                         //println!("{}: storage", offset);
                         assign!(cached_region, (self.state_machine.is_storage, offset) => "is_storage", true.scalar())?;
                         self.state_machine.storage_config.assign(
@@ -439,7 +437,7 @@ impl<F: Field> MPTConfig<F> {
                             &rlp_values,
                         )?;
                     } else if node.account.is_some() {
-                        state_idx = 3;
+                        state_idx = 2;
                         //println!("{}: account", offset);
                         assign!(cached_region, (self.state_machine.is_account, offset) => "is_account", true.scalar())?;
                         self.state_machine.account_config.assign(
@@ -452,6 +450,7 @@ impl<F: Field> MPTConfig<F> {
                             &rlp_values,
                         )?;
                     }
+                    //println!("Stored expressions");
                     if state_idx < 4 {
                         self.assign_static_lookups(&mut cached_region, offset, state_idx);
                     }
@@ -484,7 +483,8 @@ impl<F: Field> MPTConfig<F> {
         offset: usize,
         state_idx: usize,
     ) {
-        self.cb.base.get_static_lookups(state_idx)
+        //println!("store state idx {}", state_idx);
+        self.cb.base.get_stored_expressions(state_idx)
             .iter()
             .for_each(|stored_expr| {
                 //println!("store {}", state_idx);

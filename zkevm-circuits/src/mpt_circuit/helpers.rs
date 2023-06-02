@@ -895,15 +895,15 @@ impl<F: Field> MPTConstraintBuilder<F> {
         tag: S,
         values: Vec<Expression<F>>
     ) {
-        self.base.add_dynamic_lookup(description, tag, values)
-        /*let cell_type = if tag.as_ref() == "keccak" {
+        let cell_type = if tag.as_ref() == "keccak" {
             EvmCellType::Lookup(Table::Keccak)
         } else if tag.as_ref() == "fixed" {
             EvmCellType::Lookup(Table::Fixed)
         } else {
             unreachable!()
         };
-        self.base.add_static_lookup(description, cell_type, values)*/
+        self.base.add_static_lookup(description, cell_type, values)
+        //self.base.add_dynamic_lookup(description, tag, values)
     }
 
     pub(crate) fn store_dynamic_table<S: AsRef<str>>(
@@ -1169,6 +1169,7 @@ impl<F: Field> MainRLPGadget<F> {
             require!(config.rlc_rlp => config.rlp.rlc_rlp(cb, r));
             config.mult_diff = cb.query_cell();
             let mult_diff = config.mult_diff.expr();
+            // TODO(Brecht): fix
             //require!((FixedTableTag::RMult, config.rlp.num_bytes(), mult_diff) => @"fixed");
 
             // "free" input that needs to be constrained externally!
@@ -1180,6 +1181,7 @@ impl<F: Field> MainRLPGadget<F> {
             // the byte index >= num_bytes.
             // TODO(Brecht): do 2 bytes/lookup when circuit height >= 2**21
             for (idx, byte) in config.bytes.iter().enumerate() {
+                // TODO(Brecht): in-place lookup
                 //require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()) => @"fixed");
             }
 
