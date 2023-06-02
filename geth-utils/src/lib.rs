@@ -152,8 +152,7 @@ mod test {
                 ]
             }"#,
         ] {
-            let _trace = trace(config);
-            assert!(_trace.is_err())
+            assert!(trace(config).is_err())
         }
     }
 }

@@ -286,7 +286,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
     /// account_0_code_account_1_no_code`]. Extra accounts, txs and/or block
     /// configs are set as [`Default`].
     pub fn simple_ctx_with_bytecode(bytecode: Bytecode) -> Result<TestContext<2, 1>, Error> {
-        TestContext::<2, 1>::new(
+        TestContext::new(
             None,
             account_0_code_account_1_no_code(bytecode),
             tx_from_1_to_0,

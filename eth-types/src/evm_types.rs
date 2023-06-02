@@ -72,6 +72,8 @@ impl From<Gas> for u64 {
     }
 }
 
+/// Once per word of the init code when creating a contract.
+pub const INIT_CODE_WORD_GAS: u64 = 2;
 /// Quotient for max refund of gas used
 pub const MAX_REFUND_QUOTIENT_OF_GAS_USED: usize = 5;
 /// Gas stipend when CALL or CALLCODE is attached with value.
