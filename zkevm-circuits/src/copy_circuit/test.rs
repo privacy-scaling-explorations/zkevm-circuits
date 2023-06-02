@@ -5,7 +5,8 @@ use crate::{
     witness::Block,
 };
 use bus_mapping::{
-    circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+    circuit_input_builder::{CircuitInputBuilder, ConcreteCP},
+    evm::Sha3CodeGen,
     mock::BlockData,
 };
 use eth_types::{bytecode, geth_types::GethData, ToWord, Word};
@@ -59,7 +60,7 @@ pub fn test_copy_circuit_from_block<F: Field>(
     )
 }
 
-fn gen_calldatacopy_data() -> CircuitInputBuilder<CircuitsParams> {
+fn gen_calldatacopy_data() -> CircuitInputBuilder<ConcreteCP> {
     let length = 0x0fffusize;
     let code = bytecode! {
         PUSH32(Word::from(length))
@@ -88,7 +89,7 @@ fn gen_calldatacopy_data() -> CircuitInputBuilder<CircuitsParams> {
         .unwrap()
 }
 
-fn gen_codecopy_data() -> CircuitInputBuilder<CircuitsParams> {
+fn gen_codecopy_data() -> CircuitInputBuilder<ConcreteCP> {
     let code = bytecode! {
         PUSH32(Word::from(0x20))
         PUSH32(Word::from(0x00))
@@ -99,13 +100,12 @@ fn gen_codecopy_data() -> CircuitInputBuilder<CircuitsParams> {
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
     let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-    let builder = builder
-        .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
     builder
+        .handle_block(&block.eth_block, &block.geth_traces)
+        .unwrap()
 }
 
-fn gen_extcodecopy_data() -> CircuitInputBuilder<CircuitsParams> {
+fn gen_extcodecopy_data() -> CircuitInputBuilder<ConcreteCP> {
     let external_address = MOCK_ACCOUNTS[0];
     let code = bytecode! {
         PUSH1(0x30usize)
@@ -135,13 +135,12 @@ fn gen_extcodecopy_data() -> CircuitInputBuilder<CircuitsParams> {
     .unwrap();
     let block: GethData = test_ctx.into();
     let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-    let builder = builder
-        .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
     builder
+        .handle_block(&block.eth_block, &block.geth_traces)
+        .unwrap()
 }
 
-fn gen_sha3_data() -> CircuitInputBuilder<CircuitsParams> {
+fn gen_sha3_data() -> CircuitInputBuilder<ConcreteCP> {
     let (code, _) = Sha3CodeGen::mem_eq_size(0x20, 0x200).gen_sha3_code();
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
@@ -151,7 +150,7 @@ fn gen_sha3_data() -> CircuitInputBuilder<CircuitsParams> {
         .unwrap()
 }
 
-fn gen_tx_log_data() -> CircuitInputBuilder<CircuitsParams> {
+fn gen_tx_log_data() -> CircuitInputBuilder<ConcreteCP> {
     let code = bytecode! {
         PUSH32(200)         // value
         PUSH32(0)           // offset
@@ -166,7 +165,7 @@ fn gen_tx_log_data() -> CircuitInputBuilder<CircuitsParams> {
     let block: GethData = test_ctx.into();
     // Needs default params for variadic check
     let mut builder =
-        BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
+        BlockData::new_from_geth_data_with_params(block.clone(), ConcreteCP::default())
             .new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
@@ -298,7 +297,7 @@ fn variadic_size_check() {
         .unwrap()
         .into();
     let mut builder =
-        BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
+        BlockData::new_from_geth_data_with_params(block.clone(), ConcreteCP::default())
             .new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)

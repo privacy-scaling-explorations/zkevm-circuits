@@ -3,7 +3,7 @@
 // as `block` and run via `cargo test -p zkevm-circuits --features test
 // prover_error -- --nocapture --ignored`. Change any circuit parameters like
 // `max_txs` to suit your needs.
-use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+use bus_mapping::{circuit_input_builder::ConcreteCP, mock::BlockData};
 use env_logger::Env;
 use eth_types::{
     geth_types::{Account, GethData},
@@ -39,7 +39,8 @@ fn prover_error() {
     const MOCK_RANDOMNESS: u64 = 0x100;
     let k = 19;
     let chain_id = Word::from(99);
-    let circuit_params = CircuitsParams {
+    // TODO Change to dynamic?
+    let circuit_params = ConcreteCP {
         max_txs: 1,
         max_calldata: 256,
         max_rws: 16388,

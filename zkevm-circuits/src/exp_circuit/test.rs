@@ -5,7 +5,7 @@ use crate::{
     util::{unusable_rows, SubCircuit},
 };
 use bus_mapping::{
-    circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+    circuit_input_builder::{CircuitInputBuilder, ConcreteCP},
     evm::OpcodeId,
     mock::BlockData,
 };
@@ -51,11 +51,11 @@ fn gen_code_multiple(args: Vec<(Word, Word)>) -> Bytecode {
     code
 }
 
-fn gen_data(code: Bytecode) -> CircuitInputBuilder<CircuitsParams> {
+fn gen_data(code: Bytecode) -> CircuitInputBuilder<ConcreteCP> {
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
     let mut builder =
-        BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
+        BlockData::new_from_geth_data_with_params(block.clone(), ConcreteCP::default())
             .new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
@@ -118,14 +118,9 @@ fn variadic_size_check() {
     let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
         .unwrap()
         .into();
-    let mut builder = BlockData::new_from_geth_data_with_params(
-        block.clone(),
-        CircuitsParams {
-            max_exp_steps: 1000,
-            ..CircuitsParams::default()
-        },
-    )
-    .new_circuit_input_builder();
+    let mut builder =
+        BlockData::new_from_geth_data_with_params(block.clone(), ConcreteCP::default())
+            .new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();

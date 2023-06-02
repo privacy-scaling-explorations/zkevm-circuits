@@ -72,7 +72,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
 mod test {
 
     use crate::test_util::CircuitTestBuilder;
-    use bus_mapping::{circuit_input_builder::CircuitsParams, evm::OpcodeId};
+    use bus_mapping::{circuit_input_builder::ConcreteCP, evm::OpcodeId};
     use eth_types::{
         self, address, bytecode, bytecode::Bytecode, geth_types::Account, Address, ToWord, Word,
         U64,
@@ -137,7 +137,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
         )
-        .params(CircuitsParams {
+        .params(ConcreteCP {
             max_rws: 2048,
             ..Default::default()
         })

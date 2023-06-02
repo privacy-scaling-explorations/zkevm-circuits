@@ -253,7 +253,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use bus_mapping::circuit_input_builder::CircuitsParams;
+    use bus_mapping::circuit_input_builder::ConcreteCP;
     use eth_types::{bytecode, Word};
     use mock::{
         generate_mock_call_bytecode,
@@ -292,9 +292,9 @@ mod test {
         .unwrap();
 
         CircuitTestBuilder::new_from_test_ctx(ctx)
-            .params(CircuitsParams {
+            .params(ConcreteCP {
                 max_calldata: 600,
-                ..CircuitsParams::default()
+                ..ConcreteCP::default()
             })
             .run();
     }

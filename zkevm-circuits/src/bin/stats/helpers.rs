@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use bus_mapping::{
-    circuit_input_builder::{self, CircuitsParams, ExecState},
+    circuit_input_builder::{self, ConcreteCP, ExecState},
     mock::BlockData,
 };
 use cli_table::{
@@ -113,7 +113,7 @@ pub(crate) fn print_circuit_stats_by_states(
     // Function that calculates the circuit height used by an opcode.  This function takes the
     // circuit input builder Block, the current execution state, and the step index in circuit
     // input builder tx.
-    fn_height: impl Fn(&circuit_input_builder::Block, ExecutionState, usize) -> usize,
+    fn_height: impl Fn(&circuit_input_builder::Block<ConcreteCP>, ExecutionState, usize) -> usize,
 ) {
     let mut implemented_states = Vec::new();
     for state in ExecutionState::iter() {
@@ -197,10 +197,10 @@ pub(crate) fn print_circuit_stats_by_states(
             .into();
             let mut builder = BlockData::new_from_geth_data_with_params(
                 block.clone(),
-                CircuitsParams {
+                ConcreteCP {
                     max_rws: 16_000,
                     max_copy_rows: 8_000,
-                    ..CircuitsParams::default()
+                    ..ConcreteCP::default()
                 },
             )
             .new_circuit_input_builder();

@@ -7,7 +7,7 @@ use crate::{
     util::{log2_ceil, SubCircuit},
 };
 use bus_mapping::{
-    circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
+    circuit_input_builder::{self, ConcreteCP, CopyEvent, ExpEvent},
     Error,
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
@@ -42,7 +42,7 @@ pub struct Block<F> {
     /// Pad exponentiation circuit to make selectors fixed.
     pub exp_circuit_pad_to: usize,
     /// Circuit Setup Parameters
-    pub circuits_params: CircuitsParams,
+    pub circuits_params: ConcreteCP,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
     /// State root of the previous block
@@ -214,8 +214,8 @@ impl BlockContext {
     }
 }
 
-impl From<&circuit_input_builder::Block<CircuitsParams>> for BlockContext {
-    fn from(block: &circuit_input_builder::Block<CircuitsParams>) -> Self {
+impl From<&circuit_input_builder::Block<ConcreteCP>> for BlockContext {
+    fn from(block: &circuit_input_builder::Block<ConcreteCP>) -> Self {
         Self {
             coinbase: block.coinbase,
             gas_limit: block.gas_limit,
@@ -231,7 +231,7 @@ impl From<&circuit_input_builder::Block<CircuitsParams>> for BlockContext {
 
 /// Convert a block struct in bus-mapping to a witness block used in circuits
 pub fn block_convert<F: Field>(
-    block: &circuit_input_builder::Block<CircuitsParams>,
+    block: &circuit_input_builder::Block<ConcreteCP>,
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Result<Block<F>, Error> {
     let rws = RwMap::from(&block.container);

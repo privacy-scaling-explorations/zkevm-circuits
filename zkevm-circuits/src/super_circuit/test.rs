@@ -23,7 +23,7 @@ fn super_circuit_degree() {
     assert!(cs.degree() <= 9);
 }
 
-fn test_super_circuit(block: GethData, circuits_params: CircuitsParams, mock_randomness: Fr) {
+fn test_super_circuit(block: GethData, circuits_params: ConcreteCP, mock_randomness: Fr) {
     let (k, circuit, instance, _) =
         SuperCircuit::<Fr>::build(block, circuits_params, mock_randomness).unwrap();
     let prover = MockProver::run(k, &circuit, instance).unwrap();
@@ -128,7 +128,7 @@ const TEST_MOCK_RANDOMNESS: u64 = 0x100;
 #[test]
 fn serial_test_super_circuit_1tx_1max_tx() {
     let block = block_1tx();
-    let circuits_params = CircuitsParams {
+    let circuits_params = ConcreteCP {
         max_txs: 1,
         max_calldata: 32,
         max_rws: 256,
@@ -144,7 +144,7 @@ fn serial_test_super_circuit_1tx_1max_tx() {
 #[test]
 fn serial_test_super_circuit_1tx_2max_tx() {
     let block = block_1tx();
-    let circuits_params = CircuitsParams {
+    let circuits_params = ConcreteCP {
         max_txs: 2,
         max_calldata: 32,
         max_rws: 256,
@@ -160,7 +160,7 @@ fn serial_test_super_circuit_1tx_2max_tx() {
 #[test]
 fn serial_test_super_circuit_2tx_2max_tx() {
     let block = block_2tx();
-    let circuits_params = CircuitsParams {
+    let circuits_params = ConcreteCP {
         max_txs: 2,
         max_calldata: 32,
         max_rws: 256,
