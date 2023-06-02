@@ -25,7 +25,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         let tx_id = state.tx_ctx.id();
         let callee = state.parse_call(geth_step)?;
         let caller = state.call()?.clone();
-        println!("** {:?}, {}", caller.is_persistent, callee.is_persistent);
 
         state.call_context_read(
             &mut exec_step,
@@ -75,14 +74,13 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         let callee_account = &state.sdb.get_account(&address).1.clone();
         let callee_exists = !callee_account.is_empty();
-
         state.stack_write(
             &mut exec_step,
             geth_step.stack.nth_last_filled(n_pop - 1),
             if callee.is_success {
                 address.to_word()
             } else {
-                Word::one()
+                Word::zero()
             },
         )?;
         // stack end
@@ -107,7 +105,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         // ErrNonceUintOverflow occurred.
         let is_precheck_ok =
             depth < 1025 && caller_balance >= callee.value && caller_nonce < u64::MAX;
-
         if is_precheck_ok {
             // Increase caller's nonce
             state.push_op_reversible(
@@ -144,14 +141,44 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             );
         }
 
+        // Per EIP-150, all but one 64th of the caller's gas is sent to the
+        // initialization call.
+        let caller_gas_left = (geth_step.gas.0 - geth_step.gas_cost.0) / 64;
+        for (field, value) in [
+            (
+                CallContextField::ProgramCounter,
+                (geth_step.pc.0 + 1).into(),
+            ),
+            (
+                CallContextField::StackPointer,
+                geth_step.stack.nth_last_filled(n_pop - 1).0.into(),
+            ),
+            (CallContextField::GasLeft, caller_gas_left.into()),
+            (CallContextField::MemorySize, next_memory_word_size.into()),
+            (
+                CallContextField::ReversibleWriteCounter,
+                (exec_step.reversible_write_counter + 2).into(),
+            ),
+        ] {
+            state.call_context_write(&mut exec_step, caller.call_id, field, value);
+        }
+
         state.push_call(callee.clone());
         state.reversion_info_write(&mut exec_step, &callee);
 
         if is_precheck_ok && !callee_exists {
+            let (initialization_code, code_hash) = if length > 0 {
+                handle_copy(
+                    state,
+                    &mut exec_step,
+                    state.caller()?.call_id,
+                    offset,
+                    length,
+                )?
+            } else {
+                (vec![], CodeDB::empty_code_hash())
+            };
             // handle keccak_table_lookup
-            let initialization_code =
-                state.caller_ctx()?.memory.0[offset..offset + length].to_vec();
-            let code_hash = CodeDB::hash(&initialization_code);
             let keccak_input = if IS_CREATE2 {
                 let salt = geth_step.stack.nth_last(3)?;
                 assert_eq!(
@@ -179,7 +206,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 address,
                 H160(keccak256(&keccak_input)[12..].try_into().unwrap())
             );
-
             state.block.sha3_inputs.push(keccak_input);
             state.block.sha3_inputs.push(initialization_code);
 
@@ -201,37 +227,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 },
             )?;
             if length > 0 {
-                let (_, code_hash) = handle_copy(
-                    state,
-                    &mut exec_step,
-                    state.caller()?.call_id,
-                    offset,
-                    length,
-                )?;
-
-                // Per EIP-150, all but one 64th of the caller's gas is sent to the
-                // initialization call.
-                let caller_gas_left = (geth_step.gas.0 - geth_step.gas_cost.0) / 64;
-
-                for (field, value) in [
-                    (
-                        CallContextField::ProgramCounter,
-                        (geth_step.pc.0 + 1).into(),
-                    ),
-                    (
-                        CallContextField::StackPointer,
-                        geth_step.stack.nth_last_filled(n_pop - 1).0.into(),
-                    ),
-                    (CallContextField::GasLeft, caller_gas_left.into()),
-                    (CallContextField::MemorySize, next_memory_word_size.into()),
-                    (
-                        CallContextField::ReversibleWriteCounter,
-                        (exec_step.reversible_write_counter + 2).into(),
-                    ),
-                ] {
-                    state.call_context_write(&mut exec_step, caller.call_id, field, value);
-                }
-
                 for (field, value) in [
                     (CallContextField::CallerId, caller.call_id.into()),
                     (CallContextField::IsSuccess, callee.is_success.to_word()),

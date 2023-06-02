@@ -13,8 +13,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{
-                ConstantDivisionGadget, ContractCreateGadget, IsEqualGadget, IsZeroGadget,
-                LtGadget, LtWordGadget,
+                ConstantDivisionGadget, ContractCreateGadget, IsZeroGadget, LtGadget, LtWordGadget,
             },
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
             not, CachedRegion, Cell, Word,
@@ -25,9 +24,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, state_db::CodeDB};
-use eth_types::{
-    evm_types::GasCost, Field, ToBigEndian, ToLittleEndian, ToScalar, ToWord, H160, U256,
-};
+use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToLittleEndian, ToScalar, U256};
 use ethers_core::utils::keccak256;
 use gadgets::util::{and, expr_from_bytes, or};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -93,13 +90,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         // read from call context
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let depth = cb.call_context(None, CallContextFieldTag::Depth);
-        // create.caller_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
         let mut reversion_info = cb.reversion_info_read(None);
 
         let keccak_output = cb.query_word_rlc();
         let create = ContractCreateGadget::construct(cb);
         let contract_addr = expr_from_bytes(&keccak_output.cells[..N_BYTES_ACCOUNT_ADDRESS]);
-
         let contract_addr_rlc = cb.word_rlc::<N_BYTES_ACCOUNT_ADDRESS>(
             keccak_output
                 .cells
@@ -122,8 +117,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             cb.stack_pop(create.salt_word_rlc(cb).expr());
         });
         cb.stack_push(is_success.expr() * contract_addr_rlc.clone());
-
-        let init_code = MemoryAddressGadget::construct(cb, offset, length);
 
         // read caller's balance and nonce
         let caller_nonce = create.caller_nonce();
@@ -150,6 +143,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         ]);
 
         // verify gas cost
+        let init_code = MemoryAddressGadget::construct(cb, offset, length);
         let memory_expansion = MemoryExpansionGadget::construct(cb, [init_code.address()]);
         let init_code_word_size = ConstantDivisionGadget::construct(
             cb,
@@ -157,8 +151,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             N_BYTES_WORD as u64,
         );
         let keccak_gas_cost =
-            GasCost::COPY_SHA3.expr() * IS_CREATE2.expr() * init_code_word_size.quotient();
-
+            GasCost::COPY_SHA3.expr() * is_create2.expr() * init_code_word_size.quotient();
         let gas_cost = GasCost::CREATE.expr() + memory_expansion.gas_cost() + keccak_gas_cost;
         let gas_remaining = cb.curr.state.gas_left.expr() - gas_cost.clone();
         let gas_left = ConstantDivisionGadget::construct(cb, gas_remaining.clone(), 64);
@@ -202,10 +195,49 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             )
         });
 
+        for (field_tag, value) in [
+            (
+                CallContextFieldTag::ProgramCounter,
+                cb.curr.state.program_counter.expr() + 1.expr(),
+            ),
+            (
+                CallContextFieldTag::StackPointer,
+                cb.curr.state.stack_pointer.expr() + 2.expr() + is_create2.expr(),
+            ),
+            (CallContextFieldTag::GasLeft, gas_left.quotient()),
+            (
+                CallContextFieldTag::MemorySize,
+                memory_expansion.next_memory_word_size(),
+            ),
+            (
+                CallContextFieldTag::ReversibleWriteCounter,
+                cb.curr.state.reversible_write_counter.expr() + 2.expr(),
+            ),
+        ] {
+            cb.call_context_lookup(true.expr(), None, field_tag, value);
+        }
+
         let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
         let transfer = cb.condition(
             and::expr([is_precheck_ok.clone(), not_address_collision.expr()]),
             |cb| {
+                cb.condition(init_code.has_length().clone(), |cb| {
+                    // the init code is being copied from memory to bytecode, so a copy table lookup
+                    // to verify that the associated fields for the copy event.
+                    cb.copy_table_lookup(
+                        caller_call_id.expr(),
+                        CopyDataType::Memory.expr(),
+                        create.code_hash_word_rlc(cb),
+                        CopyDataType::Bytecode.expr(),
+                        init_code.offset(),
+                        init_code.address(),
+                        0.expr(),             // dst_addr
+                        init_code.length(),   // length
+                        init_code_rlc.expr(), // rlc_acc
+                        init_code.length(),   // rwc_inc
+                    );
+                });
+
                 // keccak table lookup to verify contract address.
                 cb.keccak_table_lookup(
                     create.input_rlc(cb),
@@ -241,43 +273,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 );
 
                 cb.condition(init_code.has_length().clone(), |cb| {
-                    // the init code is being copied from memory to bytecode, so a copy table lookup
-                    // to verify that the associated fields for the copy event.
-                    cb.copy_table_lookup(
-                        caller_call_id.expr(),
-                        CopyDataType::Memory.expr(),
-                        create.code_hash_word_rlc(cb),
-                        CopyDataType::Bytecode.expr(),
-                        init_code.offset(),
-                        init_code.address(),
-                        0.expr(),             // dst_addr
-                        init_code.length(),   // length
-                        init_code_rlc.expr(), // rlc_acc
-                        init_code.length(),   // rwc_inc
-                    );
-
-                    for (field_tag, value) in [
-                        (
-                            CallContextFieldTag::ProgramCounter,
-                            cb.curr.state.program_counter.expr() + 1.expr(),
-                        ),
-                        (
-                            CallContextFieldTag::StackPointer,
-                            cb.curr.state.stack_pointer.expr() + 2.expr() + IS_CREATE2.expr(),
-                        ),
-                        (CallContextFieldTag::GasLeft, gas_left.quotient()),
-                        (
-                            CallContextFieldTag::MemorySize,
-                            memory_expansion.next_memory_word_size(),
-                        ),
-                        (
-                            CallContextFieldTag::ReversibleWriteCounter,
-                            cb.curr.state.reversible_write_counter.expr() + 2.expr(),
-                        ),
-                    ] {
-                        cb.call_context_lookup(true.expr(), None, field_tag, value);
-                    }
-
                     for (field_tag, value) in [
                         (CallContextFieldTag::CallerId, caller_call_id.expr()),
                         (CallContextFieldTag::IsSuccess, is_success.expr()),
@@ -333,10 +328,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     cb.require_step_state_transition(StepStateTransition {
                         rw_counter: Delta(cb.rw_counter_offset()),
                         program_counter: Delta(1.expr()),
-                        stack_pointer: Delta(2.expr() + IS_CREATE2.expr()),
+                        stack_pointer: Delta(2.expr() + is_create2.expr()),
                         gas_left: Delta(-gas_cost.expr()),
-                        // `transfer` includes two balance updates
-                        reversible_write_counter: Delta(3.expr() + 2.expr()),
+                        reversible_write_counter: Delta(
+                            3.expr() + transfer.reversible_w_delta().expr(),
+                        ),
                         ..Default::default()
                     })
                 });
@@ -373,23 +369,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     cb.call_context_lookup(true.expr(), None, field_tag, 0.expr());
                 }
 
-                // TODO: ErrContractAddressCollision has diff context
-                // cb.require_step_state_transition(StepStateTransition {
-                //     rw_counter: Delta(cb.rw_counter_offset()),
-                //     program_counter: Delta(1.expr()),
-                //     stack_pointer: Delta(3.expr()),
-                //     gas_left: To(0.expr()),
-                //     reversible_write_counter: Delta(2.expr()),
-                //     ..Default::default()
-                // })
-
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(cb.rw_counter_offset()),
                     program_counter: Delta(1.expr()),
-                    stack_pointer: Delta(2.expr() + IS_CREATE2.expr()),
+                    stack_pointer: Delta(2.expr() + is_create2.expr()),
                     memory_word_size: To(memory_expansion.next_memory_word_size()),
-                    // - (Reversible) Write TxAccessListAccount (Contract Address)
-                    reversible_write_counter: Delta(1.expr()),
                     gas_left: Delta(-gas_cost.expr()),
                     ..StepStateTransition::default()
                 });
@@ -443,14 +427,20 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             F::from(opcode.as_u64()) - F::from(OpcodeId::CREATE2.as_u64()),
         )?;
 
-        // for i in 0..20{
-        //     println!("{}: {:?}", i, block.get_rws(step, i));
-        // }
-        // for i in 40..59{
-        //     println!("{}: {:?}", i, block.get_rws(step, i));
-        // }
+        self.tx_id
+            .assign(region, offset, Value::known(tx.id.to_scalar().unwrap()))?;
+        self.depth.assign(
+            region,
+            offset,
+            Value::known(call.depth.to_scalar().unwrap()),
+        )?;
+        self.reversion_info.assign(
+            region,
+            offset,
+            call.rw_counter_end_of_reversion,
+            call.is_persistent,
+        )?;
 
-        // println!("8: {:?}", block.get_rws(step, 8));
         // 0..3 : TxId, Depth, RwCounterEndOfReversion and IsPersistent
         // stack value starts from 5
         let [value, init_code_start, init_code_length] =
@@ -473,6 +463,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 0
             };
 
+        self.caller_balance
+            .assign(region, offset, Some(caller_balance.to_le_bytes()))?;
+
         let (callee_prev_code_hash, was_warm) = if is_precheck_ok == 1 {
             let (_, was_warm) = block
                 .get_rws(step, rw_offset + 4)
@@ -483,13 +476,12 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         } else {
             (U256::from(0), false)
         };
+        let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [
+            rw_offset + 11 - (1 - is_precheck_ok) * 3,
+            rw_offset + 12 - (1 - is_precheck_ok) * 3,
+        ]
+        .map(|i| block.get_rws(step, i).call_context_value());
 
-        let [callee_rw_counter_end_of_reversion, callee_is_persistent] =
-            [rw_offset + 6, rw_offset + 7].map(|i| block.get_rws(step, i).call_context_value());
-        println!(
-            "999999 {}, {}",
-            callee_rw_counter_end_of_reversion, callee_is_persistent
-        );
         // retrieve code_hash for creating address
         let is_address_collision = !callee_prev_code_hash.is_zero();
         let code_hash_previous_rlc = if is_address_collision {
@@ -505,96 +497,22 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             F::from((is_address_collision).into()),
         )?;
 
-        // transfer
-        let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
-            [rw_offset + 9, rw_offset + 10].map(|i| block.get_rws(step, i).account_value_pair())
-        } else {
-            [(0.into(), 0.into()), (0.into(), 0.into())]
-        };
-        self.transfer.assign(
-            region,
-            offset,
-            caller_balance_pair,
-            callee_balance_pair,
-            value,
-        )?;
-
-        // copy_table_lookup
-
-        let values: Vec<_> = (rw_offset + 12..rw_offset + 12 + init_code_length.as_usize())
-            .map(|i| block.get_rws(step, i).memory_value())
-            .collect();
-        let copy_rw_increase = init_code_length.as_usize();
-        let code_hash = CodeDB::hash(&values);
-        let keccak_input: Vec<u8> = if is_create2 {
-            once(0xffu8)
-                .chain(call.address.to_fixed_bytes())
-                .chain(salt.to_be_bytes())
-                .chain(code_hash.to_fixed_bytes())
-                .collect()
-        } else {
-            let mut stream = ethers_core::utils::rlp::RlpStream::new();
-            stream.begin_list(2);
-            stream.append(&call.address);
-            stream.append(&U256::from(caller_nonce));
-            stream.out().to_vec()
-        };
-        let mut keccak_output = keccak256(keccak_input);
-        keccak_output.reverse();
-
-        self.keccak_output
-            .assign(region, offset, Some(keccak_output))?;
-
+        // gas cost of memory expansion
         let init_code_address =
             self.init_code
                 .assign(region, offset, init_code_start, init_code_length)?;
-        self.init_code_rlc.assign(
-            region,
-            offset,
-            region.keccak_rlc(&values.iter().rev().cloned().collect::<Vec<u8>>()),
-        )?;
 
-        self.tx_id
-            .assign(region, offset, Value::known(tx.id.to_scalar().unwrap()))?;
-        self.depth.assign(
-            region,
-            offset,
-            Value::known(call.depth.to_scalar().unwrap()),
-        )?;
-
-        self.reversion_info.assign(
-            region,
-            offset,
-            call.rw_counter_end_of_reversion,
-            call.is_persistent,
-        )?;
-
-        self.was_warm
-            .assign(region, offset, Value::known(F::from(was_warm.into())))?;
-
-        // TODO: fix the assignment
-        self.callee_nonce
-            .assign(region, offset, Value::known(F::ZERO))?;
-        self.callee_reversion_info.assign(
-            region,
-            offset,
-            callee_rw_counter_end_of_reversion.low_u64() as usize,
-            callee_is_persistent.low_u64() != 0,
-        )?;
-
-        let (_next_memory_word_size, memory_expansion_gas_cost) = self.memory_expansion.assign(
+        let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(
             region,
             offset,
             step.memory_word_size(),
             [init_code_address],
         )?;
-
-        let (init_code_word_size, _remainder) = self.init_code_word_size.assign(
+        let (init_code_word_size, _) = self.init_code_word_size.assign(
             region,
             offset,
             (31u64 + init_code_length.as_u64()).into(),
         )?;
-
         let gas_left = step.gas_left.0
             - GasCost::CREATE.as_u64()
             - memory_expansion_gas_cost
@@ -605,19 +523,72 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             };
         self.gas_left.assign(region, offset, gas_left.into())?;
 
-        self.is_success.assign(
+        self.callee_reversion_info.assign(
             region,
             offset,
-            Value::known(if is_precheck_ok == 0 || is_address_collision {
-                F::ZERO
-            } else {
-                block
-                    .get_rws(step, 17 + rw_offset + copy_rw_increase)
-                    .call_context_value()
-                    .to_scalar()
-                    .unwrap()
-            }),
+            callee_rw_counter_end_of_reversion.low_u64() as usize,
+            callee_is_persistent.low_u64() != 0,
         )?;
+
+        let copy_rw_increase = init_code_length.as_usize();
+        let code_hash = if is_precheck_ok == 1 {
+            // transfer
+            let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
+                [
+                    rw_offset + copy_rw_increase + 14,
+                    rw_offset + copy_rw_increase + 15,
+                ]
+                .map(|i| block.get_rws(step, i).account_value_pair())
+            } else {
+                [(0.into(), 0.into()), (0.into(), 0.into())]
+            };
+            self.transfer.assign(
+                region,
+                offset,
+                caller_balance_pair,
+                callee_balance_pair,
+                value,
+            )?;
+
+            // copy_table_lookup
+            let values: Vec<_> = (rw_offset + 13..rw_offset + 13 + copy_rw_increase)
+                .map(|i| block.get_rws(step, i).memory_value())
+                .collect();
+            let code_hash = CodeDB::hash(&values);
+            let keccak_input: Vec<u8> = if is_create2 {
+                once(0xffu8)
+                    .chain(call.address.to_fixed_bytes())
+                    .chain(salt.to_be_bytes())
+                    .chain(code_hash.to_fixed_bytes())
+                    .collect()
+            } else {
+                let mut stream = ethers_core::utils::rlp::RlpStream::new();
+                stream.begin_list(2);
+                stream.append(&call.address);
+                stream.append(&U256::from(caller_nonce));
+                stream.out().to_vec()
+            };
+            let mut keccak_output = keccak256(keccak_input);
+            keccak_output.reverse();
+
+            self.keccak_output
+                .assign(region, offset, Some(keccak_output))?;
+            self.init_code_rlc.assign(
+                region,
+                offset,
+                region.keccak_rlc(&values.iter().rev().cloned().collect::<Vec<u8>>()),
+            )?;
+            self.was_warm
+                .assign(region, offset, Value::known(F::from(was_warm.into())))?;
+
+            // TODO: fix the assignment
+            self.callee_nonce
+                .assign(region, offset, Value::known(F::ZERO))?;
+
+            code_hash
+        } else {
+            CodeDB::empty_code_hash()
+        };
 
         self.create.assign(
             region,
@@ -627,8 +598,22 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             Some(U256::from(code_hash.to_fixed_bytes())),
             Some(salt),
         )?;
-        self.caller_balance
-            .assign(region, offset, Some(caller_balance.to_le_bytes()))?;
+
+        self.is_success.assign(
+            region,
+            offset,
+            Value::known(if is_precheck_ok == 0 || is_address_collision {
+                F::ZERO
+            } else if init_code_length.as_usize() == 0 {
+                F::ONE
+            } else {
+                block
+                    .get_rws(step, 18 + rw_offset + copy_rw_increase)
+                    .call_context_value()
+                    .to_scalar()
+                    .unwrap()
+            }),
+        )?;
         self.is_insufficient_balance
             .assign(region, offset, caller_balance, value)?;
         self.is_depth_in_range
@@ -779,11 +764,6 @@ mod test {
             .cartesian_product(&[true, false])
             .cartesian_product(&[true, false])
         {
-            // if is_success is false, is_persistent must be false
-            if !*is_success && *is_persistent {
-                continue;
-            }
-            // let (is_success, is_create2, is_persistent) = (true, true, true);
             let init_code = initialization_bytecode(*is_success);
             let root_code = creater_bytecode(init_code, 23414.into(), *is_create2, *is_persistent);
             let caller = Account {
@@ -867,7 +847,7 @@ mod test {
         run_test_circuits(test_context(caller));
     }
 
-    // Ignore this test case. It could run successfully but slow for CI.
+    // Ignore this test case. It hits our max_rws.
     #[ignore]
     #[test]
     fn test_create_error_depth() {
@@ -916,40 +896,20 @@ mod test {
         // function has a check for nonce uint overflow. So there are two nested
         // CREATE (or CREATE2) in bytecode, which could increase nonce from
         // `u64::MAX - 1` to `u64::MAX` in the internal loop.
-        let bytecodes = [
-            bytecode! {
-                PUSH1(2) // size
-                PUSH1(0) // offset
-                PUSH1(1) // value
-                CREATE
-                PUSH1(2) // size
-                PUSH1(2) // offset
-                PUSH1(1) // value
-                CREATE
-            },
-            bytecode! {
-                PUSH1(0) // salt
-                PUSH1(2) // size
-                PUSH1(0) // offset
-                PUSH1(1) // value
-                CREATE2
-                PUSH1(0) // salt
-                PUSH1(2) // size
-                PUSH1(2) // offset
-                PUSH1(1) // value
-                CREATE2
-            },
-        ];
+        for is_create2 in [true, false] {
+            let init_code = initialization_bytecode(true);
+            let mut root_code = creater_bytecode(init_code.clone(), 23414.into(), is_create2, true);
+            root_code.append(&root_code.clone());
 
-        bytecodes.into_iter().for_each(|code| {
+            // bytecodes.into_iter().for_each(|code| {
             let caller = Account {
                 address: *CALLER_ADDRESS,
-                code: code.into(),
+                code: root_code.into(),
                 nonce: (u64::MAX - 1).into(),
                 balance: eth(10),
                 ..Default::default()
             };
             run_test_circuits(test_context(caller));
-        });
+        }
     }
 }
