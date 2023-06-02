@@ -59,8 +59,8 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         nonce_prev.into(),
     )?;
 
-    // Add caller and callee into access list
-    for address in [call.caller_address, call.address] {
+    // Add caller, callee and coinbase (for EIP-3651) to access list.
+    for address in [call.caller_address, call.address, state.block.coinbase] {
         let is_warm_prev = !state.sdb.add_account_to_access_list(address);
         state.tx_accesslist_account_write(
             &mut exec_step,
@@ -71,11 +71,19 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         )?;
     }
 
+    let init_code_gas_cost = if state.tx.is_create() {
+        // Calculate gas cost of init code for EIP-3860.
+        (state.tx.tx.call_data.len() as u64 + 31) / 32 * eth_types::evm_types::INIT_CODE_WORD_GAS
+    } else {
+        0
+    };
+
     let intrinsic_gas_cost = if state.tx.is_create() {
         GasCost::CREATION_TX
     } else {
         GasCost::TX
-    } + state.tx.tx.call_data_gas_cost();
+    } + state.tx.tx.call_data_gas_cost()
+        + init_code_gas_cost;
     exec_step.gas_cost = intrinsic_gas_cost;
 
     // Get code_hash of callee
