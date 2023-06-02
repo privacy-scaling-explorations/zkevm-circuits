@@ -1152,8 +1152,8 @@ impl<'a> CircuitInputStateRef<'a> {
         step: &GethExecStep,
         next_step: Option<&GethExecStep>,
     ) -> Result<Option<ExecError>, Error> {
-        if let Some(error) = &step.error {
-            return Ok(Some(ExecError::get_step_reported_error(&step.op, error)));
+        if step.error.is_some() {
+            return Ok(Some(ExecError::from(step)));
         }
 
         if matches!(step.op, OpcodeId::INVALID(_)) {

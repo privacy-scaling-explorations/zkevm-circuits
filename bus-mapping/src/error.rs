@@ -197,16 +197,18 @@ pub enum ExecError {
     NonceUintOverflow(NonceUintOverflowError),
 }
 
-impl ExecError {
+// Returns a GethExecStep's error if present, else panic.
+impl From<&GethExecStep> for ExecError {
     /// Given an OpcodeId and error message, returns an ExecError.
-    pub fn get_step_reported_error(op: &OpcodeId, error: &str) -> Self {
-        match error {
+    fn from(step: &GethExecStep) -> Self {
+        // let error: String = step.error.clone().unwrap();
+        match step.error.clone().unwrap().as_str() {
             GETH_ERR_OUT_OF_GAS | GETH_ERR_GAS_UINT_OVERFLOW => {
                 // NOTE: We report a GasUintOverflow error as an OutOfGas error
-                let oog_err = OogError::from(op);
+                let oog_err = OogError::from(&step.op);
                 ExecError::OutOfGas(oog_err)
             }
-            _ => {
+            error => {
                 if error.starts_with(GETH_ERR_STACK_OVERFLOW) {
                     ExecError::StackOverflow
                 } else if error.starts_with(GETH_ERR_STACK_UNDERFLOW) {
