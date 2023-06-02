@@ -54,7 +54,6 @@
 //!     self, address, Address, Word, Hash, U64, GethExecTrace, GethExecStep, geth_types::GethData, bytecode
 //! };
 //! use mock::test_ctx::{TestContext, helpers::*};
-//! use eth_types::evm_types::Gas;
 //! use bus_mapping::circuit_input_builder::{Block, CircuitInputBuilder};
 //!
 //! let input_trace = r#"
@@ -139,7 +138,7 @@
 //! let geth_steps: Vec<GethExecStep> = serde_json::from_str(input_trace).unwrap();
 //! let geth_trace = GethExecTrace {
 //!     return_value: "".to_string(),
-//!     gas: Gas(block.eth_block.transactions[0].gas.as_u64()),
+//!     gas: block.eth_block.transactions[0].gas.as_u64(),
 //!     failed: false,
 //!     struct_logs: geth_steps,
 //! };

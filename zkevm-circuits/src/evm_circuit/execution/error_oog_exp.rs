@@ -67,7 +67,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
             // static_gas = 10
             // dynamic_gas = exponent_byte_size * 50
             // gas_cost = dynamic_gas + static_gas
-            exponent_byte_size.byte_size() * GasCost::EXP_BYTE_TIMES.0.expr()
+            exponent_byte_size.byte_size() * GasCost::EXP_BYTE_TIMES.expr()
                 + OpcodeId::EXP.constant_gas_cost().expr(),
         );
 
@@ -115,8 +115,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
         self.insufficient_gas_cost.assign_value(
             region,
             offset,
-            Value::known(F::from(step.gas_left.0)),
-            Value::known(F::from(step.gas_cost.0)),
+            Value::known(F::from(step.gas_left)),
+            Value::known(F::from(step.gas_cost)),
         )?;
         self.common_error_gadget
             .assign(region, offset, block, call, step, 4)?;
@@ -172,9 +172,9 @@ mod tests {
                 EXP
             };
 
-            let gas_cost = OpcodeId::PUSH32.constant_gas_cost().0 * 2
-                + OpcodeId::EXP.constant_gas_cost().0
-                + ((exponent.bits() as u64 + 7) / 8) * GasCost::EXP_BYTE_TIMES.0;
+            let gas_cost = OpcodeId::PUSH32.constant_gas_cost() * 2
+                + OpcodeId::EXP.constant_gas_cost()
+                + ((exponent.bits() as u64 + 7) / 8) * GasCost::EXP_BYTE_TIMES;
 
             Self { bytecode, gas_cost }
         }
@@ -189,7 +189,7 @@ mod tests {
                 txs[0]
                     .from(accs[1].address)
                     .to(accs[0].address)
-                    .gas((GasCost::TX.0 + testing_data.gas_cost - 1).into());
+                    .gas((GasCost::TX + testing_data.gas_cost - 1).into());
             },
             |block, _tx| block.number(0xcafe_u64),
         )

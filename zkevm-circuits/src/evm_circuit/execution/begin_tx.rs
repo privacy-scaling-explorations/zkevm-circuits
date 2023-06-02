@@ -554,7 +554,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             call.is_persistent,
         )?;
         self.sufficient_gas_left
-            .assign(region, offset, F::from(tx.gas - step.gas_cost.0))?;
+            .assign(region, offset, F::from(tx.gas - step.gas_cost))?;
         self.transfer_with_gas_fee.assign(
             region,
             offset,
@@ -633,8 +633,8 @@ mod test {
 
     fn gas(call_data: &[u8]) -> Word {
         Word::from(
-            GasCost::TX.as_u64()
-                + 2 * OpcodeId::PUSH32.constant_gas_cost().as_u64()
+            GasCost::TX
+                + 2 * OpcodeId::PUSH32.constant_gas_cost()
                 + call_data
                     .iter()
                     .map(|&x| if x == 0 { 4 } else { 16 })

@@ -131,7 +131,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         // Gas insufficient check
         // Get `gas_available` variable here once it's available
         self.insufficient_gas
-            .assign(region, offset, F::from(step.gas_cost.0 - step.gas_left.0))?;
+            .assign(region, offset, F::from(step.gas_cost - step.gas_left))?;
 
         Ok(())
     }
