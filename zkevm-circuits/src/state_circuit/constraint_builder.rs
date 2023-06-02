@@ -153,7 +153,6 @@ impl<F: Field> ConstraintBuilder<F> {
         // When at least one of the keys (tag, id, address, field_tag, or storage_key)
         // in the current row differs from the previous row.
         self.condition(q.first_access(), |cb| {
-            // TODO: update it
             cb.require_zero(
                 "first access reads don't change value",
                 q.is_read() * (q.rw_table.value.clone() - q.initial_value()),
@@ -224,7 +223,7 @@ impl<F: Field> ConstraintBuilder<F> {
             "storage_key is 0 for Memory",
             q.rw_table.storage_key.clone(),
         );
-        // TODO: update it later
+
         // 2.1. First access for a set of all keys are 0 if READ
         self.require_zero(
             "first access for a set of all keys are 0 if READ",
@@ -256,12 +255,12 @@ impl<F: Field> ConstraintBuilder<F> {
 
     fn build_memory_word_constraints(&mut self, q: &Queries<F>) {
         // 2.0. Unused keys are 0
-        self.require_zero("field_tag is 0 for Memory", q.field_tag());
+        self.require_zero("field_tag is 0 for MemoryWord", q.field_tag());
         self.require_zero(
             "storage_key is 0 for Memory",
             q.rw_table.storage_key.clone(),
         );
-        // TODO: update it later
+
         // 2.1. First access for a set of all keys are 0 if READ
         self.require_zero(
             "first access for a set of all keys are 0 if READ",
@@ -273,8 +272,8 @@ impl<F: Field> ConstraintBuilder<F> {
         for limb in &q.address.limbs[2..] {
             self.require_zero("memory address fits into 2 limbs", limb.clone());
         }
-        // 2.3. value is a word
 
+        // 2.3. value is a word
         // 2.4. Start initial value is 0
         self.require_zero("initial Memory value is 0", q.initial_value());
         // 2.5. state root does not change
