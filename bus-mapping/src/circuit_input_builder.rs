@@ -342,12 +342,22 @@ impl<'a> CircuitInputBuilder<UnsetParams> {
                 .iter()
                 .fold(0, |acc, tx| acc + tx.input.len());
             let max_exp_steps = self.block.exp_events.len();
-            let max_copy_rows = self.block.copy_events.len();
+            // The `+ 2` is used to take into account the two extra empty copy rows needed
+            // to satisfy the query at `Rotation(2)` performed inside of the
+            // `rows[2].value == rows[0].value * r + rows[1].value` requirement in the RLC
+            // Accumulation gate.
+            let max_copy_rows = self
+                .block
+                .copy_events
+                .iter()
+                .fold(0, |acc, c| acc + c.bytes.len())
+                * 2
+                + 2;
             let max_rws: usize = self.block_ctx.rwc.into();
             let max_evm_rows = 0;
             let max_keccak_rows = 0;
             CircuitsParams {
-                max_rws: max_rws + 2,
+                max_rws: max_rws + 3,
                 max_txs,
                 max_calldata,
                 max_copy_rows,

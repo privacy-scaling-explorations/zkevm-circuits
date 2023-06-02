@@ -82,20 +82,10 @@ fn gen_calldatacopy_data() -> CircuitInputBuilder<CircuitsParams> {
     )
     .unwrap();
     let block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data_with_params(
-        block.clone(),
-        CircuitsParams {
-            max_rws: 8192,
-            max_copy_rows: 8192 + 2,
-            max_calldata: 5000,
-            ..Default::default()
-        },
-    )
-    .new_circuit_input_builder();
+    let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
-    builder
+        .unwrap()
 }
 
 fn gen_codecopy_data() -> CircuitInputBuilder<CircuitsParams> {
@@ -155,20 +145,10 @@ fn gen_sha3_data() -> CircuitInputBuilder<CircuitsParams> {
     let (code, _) = Sha3CodeGen::mem_eq_size(0x20, 0x200).gen_sha3_code();
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
-    // TODO Use dynamic params
-    let mut builder = BlockData::new_from_geth_data_with_params(
-        block.clone(),
-        CircuitsParams {
-            max_rws: 2000,
-            max_copy_rows: 0x200 * 2 + 2,
-            ..Default::default()
-        },
-    )
-    .new_circuit_input_builder();
+    let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
-    builder
+        .unwrap()
 }
 
 fn gen_tx_log_data() -> CircuitInputBuilder<CircuitsParams> {
@@ -184,6 +164,7 @@ fn gen_tx_log_data() -> CircuitInputBuilder<CircuitsParams> {
     };
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
+    // Needs default params for variadic check
     let mut builder =
         BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
             .new_circuit_input_builder();
