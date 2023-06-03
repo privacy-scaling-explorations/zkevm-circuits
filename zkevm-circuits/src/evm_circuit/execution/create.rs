@@ -84,7 +84,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
-        let caller_call_id = cb.curr.state.call_id.clone();
+        let current_call_id = cb.curr.state.call_id.clone();
         let is_success = cb.query_bool();
 
         // read from call context
@@ -188,10 +188,10 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 prev_code_hash.expr(),
             );
 
-            // TODO: add callee_nonce == 0
             IsZeroGadget::construct(
                 cb,
-                prev_code_hash.expr() * (prev_code_hash.expr() - cb.empty_code_hash_rlc()),
+                callee_nonce.expr()
+                    + prev_code_hash.expr() * (prev_code_hash.expr() - cb.empty_code_hash_rlc()),
             )
         });
 
@@ -225,7 +225,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     // the init code is being copied from memory to bytecode, so a copy table lookup
                     // to verify that the associated fields for the copy event.
                     cb.copy_table_lookup(
-                        caller_call_id.expr(),
+                        current_call_id.expr(),
                         CopyDataType::Memory.expr(),
                         create.code_hash_word_rlc(cb),
                         CopyDataType::Bytecode.expr(),
@@ -274,7 +274,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
                 cb.condition(init_code.has_length().clone(), |cb| {
                     for (field_tag, value) in [
-                        (CallContextFieldTag::CallerId, caller_call_id.expr()),
+                        (CallContextFieldTag::CallerId, current_call_id.expr()),
                         (CallContextFieldTag::IsSuccess, is_success.expr()),
                         (
                             CallContextFieldTag::IsPersistent,
@@ -442,7 +442,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         )?;
 
         // 0..3 : TxId, Depth, RwCounterEndOfReversion and IsPersistent
-        // stack value starts from 5
+        // stack value starts from 4
         let [value, init_code_start, init_code_length] =
             [4, 5, 6].map(|idx| block.get_rws(step, idx).stack_value());
         self.value
@@ -476,6 +476,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         } else {
             (U256::from(0), false)
         };
+
+        // 3 RWs while is_precheck_ok is true
+        // account_write(caller), tx_access_list_write(callee) and  account_read(callee)
         let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [
             rw_offset + 11 - (1 - is_precheck_ok) * 3,
             rw_offset + 12 - (1 - is_precheck_ok) * 3,
@@ -522,7 +525,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 0
             };
         self.gas_left.assign(region, offset, gas_left.into())?;
-
         self.callee_reversion_info.assign(
             region,
             offset,
@@ -580,8 +582,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             )?;
             self.was_warm
                 .assign(region, offset, Value::known(F::from(was_warm.into())))?;
-
-            // TODO: fix the assignment
             self.callee_nonce
                 .assign(region, offset, Value::known(F::ZERO))?;
 

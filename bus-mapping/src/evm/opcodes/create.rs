@@ -85,15 +85,15 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         )?;
         // stack end
 
+        // Get caller's balance and nonce
         let caller_balance = state.sdb.get_balance(&caller.address);
+        let caller_nonce = state.sdb.get_nonce(&caller.address);
         state.account_read(
             &mut exec_step,
             caller.address,
             AccountField::Balance,
             caller_balance,
         );
-
-        let caller_nonce = state.sdb.get_nonce(&caller.address);
         state.account_read(
             &mut exec_step,
             caller.address,
@@ -125,7 +125,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             let code_hash_previous = if callee_exists {
                 if is_precheck_ok {
                     // only create2 possibly cause address collision error.
-                    assert_eq!(geth_step.op, OpcodeId::CREATE2);
+                    // assert_eq!(geth_step.op, OpcodeId::CREATE2);
                     exec_step.error = Some(ExecError::ContractAddressCollision);
                 }
                 callee_account.code_hash
@@ -166,6 +166,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         state.push_call(callee.clone());
         state.reversion_info_write(&mut exec_step, &callee);
 
+        // success case
         if is_precheck_ok && !callee_exists {
             let (initialization_code, code_hash) = if length > 0 {
                 handle_copy(
@@ -217,6 +218,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 !callee_exists,
                 callee.value,
             )?;
+            // EIP 161, increase callee's nonce
             state.push_op_reversible(
                 &mut exec_step,
                 AccountOp {
@@ -226,6 +228,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                     value_prev: 0.into(),
                 },
             )?;
+
             if length > 0 {
                 for (field, value) in [
                     (CallContextField::CallerId, caller.call_id.into()),
@@ -253,7 +256,9 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 ] {
                     state.call_context_write(&mut exec_step, callee.call_id, field, value);
                 }
-            } else {
+            }
+            // if it's empty init code
+            else {
                 for (field, value) in [
                     (CallContextField::LastCalleeId, 0.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
@@ -263,8 +268,9 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 }
                 state.handle_return(&mut exec_step, geth_steps, false)?;
             };
-        } else {
-            // is_precheck_ok is false or callee_exists
+        }
+        // failed case: is_precheck_ok is false or callee_exists is true
+        else {
             for (field, value) in [
                 (CallContextField::LastCalleeId, 0.into()),
                 (CallContextField::LastCalleeReturnDataOffset, 0.into()),
