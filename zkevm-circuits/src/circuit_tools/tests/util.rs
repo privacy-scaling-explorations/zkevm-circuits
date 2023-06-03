@@ -26,7 +26,7 @@ use halo2_proofs::{
 ///    1. Constrain advices with cells
 ///    2. Lookup (advices <--> advices) with cells (RAM)
 ///    3. Lookup (advices <--> fixed) with cells (ROM)
-/// 
+///
 
 const MAX_DEG: usize = 5;
 const CM_HEIGHT: usize = 10;
@@ -98,17 +98,17 @@ pub struct TestConfig<F> {
 
 impl<F: Field> TestConfig<F> {
     pub fn new(
-        meta: &mut ConstraintSystem<F>, 
-        table: TestTable, 
+        meta: &mut ConstraintSystem<F>,
+        table: TestTable,
         r1: Challenge
     ) -> Self {
-        
+
         // Get columns
         let sel = meta.selector();
         let q_enable = meta.fixed_column();
         let q_count = meta.advice_column();
         let cell_columns = (0..10)
-            .map(|i| 
+            .map(|i|
                 match i {
                     0..=2 => meta.advice_column_in(FirstPhase),
                     3..=5 => meta.advice_column_in(SecondPhase),
@@ -130,7 +130,7 @@ impl<F: Field> TestConfig<F> {
             0,
             10
         );
-        let mut cb: ConstraintBuilder<F, CellType> = ConstraintBuilder::new(MAX_DEG, Some(cm));
+        let mut cb: ConstraintBuilder<F, CellType> = ConstraintBuilder::new(MAX_DEG, Some(cm), None);
 
         let mut cell_gadget = CellGadget::default();
         meta.create_gate("Test Gate", |meta| {
@@ -144,7 +144,7 @@ impl<F: Field> TestConfig<F> {
                     require!(a!(q_count, 1) => a!(q_count) + 1.expr());
                     // Init Gadgets
                     cell_gadget = CellGadget::configure(
-                        &mut cb, 
+                        &mut cb,
                         // Convert Challenge into Expression<F>
                         meta.query_challenge(r1),
                     );
@@ -164,7 +164,7 @@ impl<F: Field> TestConfig<F> {
     }
 
     pub fn assign(
-        &self, 
+        &self,
         layouter: &mut impl Layouter<F>,
         r1: Value<F>,
     ) -> Result<(), Error> {
@@ -173,7 +173,7 @@ impl<F: Field> TestConfig<F> {
             |mut region| {
 
                 self.sel.enable(&mut region, 0);
-                
+
                 for offset in 0..20 {
                     assignf!(region, (self.q_enable, offset) => 1.scalar())?;
                     assign!(region, (self.q_count, offset) => offset.scalar())?;
@@ -182,7 +182,7 @@ impl<F: Field> TestConfig<F> {
 
                 // Value of challenge is obtained from layouter.
                 // We query it once during synthesis and
-                // make it accessable across Config through CachedRegion. 
+                // make it accessable across Config through CachedRegion.
                 let challenges = [r1];
                 let mut cached_region = cached_region::CachedRegion::new(&mut region, &challenges);
                 self.cell_gadget.assign(&mut cached_region, 0)
@@ -231,7 +231,7 @@ impl<F: Field> CellGadget<F> {
         let b = cb.query_default();
         // c depends on Phase1 Challenge r1
         let c = cb.query_one(CellType::PhaseTwo);
-        let d = cb.query_default();        
+        let d = cb.query_default();
         circuit!([meta, cb], {
             //require!((a, b) => @format!("test_lookup"));
             require!(c => a.expr() + b.expr() * r1);
@@ -242,9 +242,9 @@ impl<F: Field> CellGadget<F> {
     }
 
     pub fn assign<S: ChallengeSet<F>>(
-        &self, 
-        region: &mut CachedRegion<'_, '_, F, S>, 
-        offset: usize, 
+        &self,
+        region: &mut CachedRegion<'_, '_, F, S>,
+        offset: usize,
     ) -> Result<(), Error>{
 
         // All challenges are returned as defined struct or Vec<&Value<F>>,
@@ -256,7 +256,7 @@ impl<F: Field> CellGadget<F> {
         self.a.assign(region, offset, 2u64.scalar())?;
         self.b.assign(region, offset, 3u64.scalar())?;
         self.c.assign(
-            region, 
+            region,
             offset,
             F::from(2u64) + F::from(3u64) * r
         )?;
@@ -292,14 +292,14 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
         };
         let _dummy_phase1 = meta.advice_column_in(FirstPhase);
         let r1 = meta.challenge_usable_after(FirstPhase);
-        
+
         let config = TestConfig::new(meta, table, r1);
         (config, r1)
     }
 
     fn synthesize(
-        &self, 
-        (config, r1): Self::Config, 
+        &self,
+        (config, r1): Self::Config,
         mut layouter: impl halo2_proofs::circuit::Layouter<F>
     ) -> Result<(), Error> {
         let r1 = layouter.get_challenge(r1);

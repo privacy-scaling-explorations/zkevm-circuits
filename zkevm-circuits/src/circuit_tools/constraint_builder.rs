@@ -56,7 +56,7 @@ pub struct ConstraintBuilder<F, C: CellTypeTrait> {
     /// state idx
     pub state_idx: usize,
     /// lookup input challenge
-    pub lookup_input_challenge: Expression<F>,
+    pub lookup_input_challenge: Option<Expression<F>>,
     /// state contect
     pub state_context: Vec<Expression<F>>,
     /// state constraints start
@@ -64,7 +64,7 @@ pub struct ConstraintBuilder<F, C: CellTypeTrait> {
 }
 
 impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
-    pub(crate) fn new(max_degree: usize, cell_manager: Option<CellManager_<F, C>>) -> Self {
+    pub(crate) fn new(max_degree: usize, cell_manager: Option<CellManager_<F, C>>, lookup_input_challenge: Option<Expression<F>>) -> Self {
         ConstraintBuilder {
             constraints: Vec::new(),
             max_degree,
@@ -75,7 +75,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
             disable_description: false,
             stored_expressions: [vec![], vec![], vec![], vec![]],
             state_idx: 0,
-            lookup_input_challenge: 2.expr(),
+            lookup_input_challenge,
             state_context: Vec::new(),
             state_constraints_start: 0,
         }
@@ -108,10 +108,12 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
                 }
             }
         }
-        for (_, values) in self.dynamic_tables.iter_mut() {
-            for value in values {
-                if value.state_idx == self.state_idx {
-                    value.condition = condition.expr() * value.condition.expr();
+        for (key, values) in self.dynamic_tables.iter_mut() {
+            if key != "keccak" && key != "fixed" {
+                for value in values {
+                    if value.state_idx == self.state_idx {
+                        value.condition = condition.expr() * value.condition.expr();
+                    }
                 }
             }
         }
@@ -388,7 +390,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         //println!("________ add_static_lookup ________ \nchallenge: {:?}", challenge);
         let compressed_expr = self.split_expression(
             "Lookup compression",
-            rlc::expr(&values, self.lookup_input_challenge.expr()),
+            rlc::expr(&values, self.lookup_input_challenge.clone().unwrap().expr()),
         );
         //println!("compressed_expr: {:?}", compressed_expr.identifier());
         self.store_expression(description, compressed_expr, cell_type);
@@ -915,7 +917,7 @@ macro_rules! _require2 {
 #[macro_export]
 macro_rules! _cb {
     () => {{
-        ConstraintBuilder::<F, EvmCellType>::new(0, None)
+        ConstraintBuilder::<F, EvmCellType>::new(0, None, None)
     }};
 }
 

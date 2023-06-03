@@ -489,8 +489,6 @@ impl<F: Field> MPTConfig<F> {
 
         memory.assign(layouter, height)?;
 
-        println!("done");
-
         Ok(())
     }
 
@@ -615,7 +613,7 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         // let challenges = Challenges::construct(meta);
         // let challenges_expr = challenges.exprs(meta);
 
-        let r = 2u64;
+        let r = 123456u64;
         let _challenges = Challenges::mock(
             Value::known(F::from(r)),
             Value::known(F::from(r)),
@@ -692,7 +690,7 @@ mod tests {
                 let reader = std::io::BufReader::new(file.unwrap());
                 let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
 
-                let randomness: Fr = 2.scalar();
+                let randomness: Fr = 123456.scalar();
 
                 let mut keccak_data = vec![];
                 let mut witness_rows = vec![];

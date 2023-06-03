@@ -812,7 +812,7 @@ impl<F: Field> MPTConstraintBuilder<F> {
         cell_manager: Option<CellManager_<F, EvmCellType>>
     ) -> Self {
         MPTConstraintBuilder {
-            base: ConstraintBuilder::new(max_degree, cell_manager),
+            base: ConstraintBuilder::new(max_degree, cell_manager, Some(challenges.clone().unwrap().lookup_input.expr())),
             challenges,
         }
     }
