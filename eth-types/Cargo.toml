@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 ethers-core = "0.17.0"
 ethers-signers = "0.17.0"
+ethers-providers = "0.17.0"
 hex = "0.4"
 lazy_static = "1.4"
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_04_20" }

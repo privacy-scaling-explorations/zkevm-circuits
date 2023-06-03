@@ -1,8 +1,9 @@
 //! Error module for the bus-mapping crate
 
 use core::fmt::{Display, Formatter, Result as FmtResult};
-use eth_types::{evm_types::OpcodeId, Address, GethExecStep, Word, H256};
-use ethers_providers::ProviderError;
+use eth_types::{
+    eth_providers::ProviderError, evm_types::OpcodeId, Address, GethExecStep, Word, H256,
+};
 use std::error::Error as StdError;
 
 use crate::geth_errors::{

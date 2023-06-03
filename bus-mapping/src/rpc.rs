@@ -4,10 +4,10 @@
 use crate::Error;
 use eth_types::{
     eth_core::{BlockNumber, Transaction},
+    eth_providers::JsonRpcClient,
     Address, Block, Bytes, EIP1186ProofResponse, GethExecTrace, Hash, ResultGethExecTraces, Word,
     U64,
 };
-use ethers_providers::JsonRpcClient;
 use serde::Serialize;
 
 /// Serialize a type.

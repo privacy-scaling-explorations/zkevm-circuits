@@ -28,6 +28,7 @@ mod third_party;
 pub use third_party::eth_core;
 #[cfg(feature = "ethers-core")]
 pub use third_party::eth_signer;
+pub use third_party::eth_providers;
 
 pub use eth_core::{Address, Block, Bytes, H256, H64, U256, U64};
 
