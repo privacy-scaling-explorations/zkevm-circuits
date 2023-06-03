@@ -25,6 +25,8 @@ pub use keccak::{keccak256, Keccak};
 #[cfg(feature = "ethers-core")]
 pub mod eth_core;
 
+pub use eth_core::{Address, Block, Bytes, H256, H64, U256, U64};
+
 pub use bytecode::Bytecode;
 pub use error::Error;
 use halo2_proofs::halo2curves::{
@@ -33,7 +35,6 @@ use halo2_proofs::halo2curves::{
 };
 
 use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage, OpcodeId};
-pub use ethers_core::types::{Address, Block, Bytes, Signature, H160, H256, H64, U256, U64};
 
 use serde::{de, Deserialize, Serialize};
 use std::{collections::HashMap, fmt, str::FromStr};
