@@ -99,6 +99,8 @@ impl From<MockBlock> for Block<Transaction> {
             nonce: Some(mock.nonce),
             base_fee_per_gas: Some(mock.base_fee_per_gas),
             other: OtherFields::default(),
+            withdrawals: None,
+            withdrawals_root: None,
         }
     }
 }
@@ -129,6 +131,8 @@ impl From<MockBlock> for Block<()> {
             nonce: Some(mock.nonce),
             base_fee_per_gas: Some(mock.base_fee_per_gas),
             other: OtherFields::default(),
+            withdrawals: None,
+            withdrawals_root: None,
         }
     }
 }

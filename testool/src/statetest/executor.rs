@@ -119,7 +119,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
     }
     let tx: TypedTransaction = tx.into();
 
-    let sig = wallet.sign_transaction_sync(&tx);
+    let sig = wallet.sign_transaction_sync(&tx).unwrap();
 
     (
         st.id,
@@ -228,7 +228,7 @@ pub fn run_test(
         ..eth_types::Block::default()
     };
 
-    let wallet: LocalWallet = SigningKey::from_bytes(&st.secret_key).unwrap().into();
+    let wallet: LocalWallet = SigningKey::from_slice(&st.secret_key).unwrap().into();
     let mut wallets = HashMap::new();
     wallets.insert(
         wallet.address(),
