@@ -22,8 +22,10 @@ pub mod keccak;
 pub mod sign_types;
 pub use keccak::{keccak256, Keccak};
 
+mod third_party;
+
 #[cfg(feature = "ethers-core")]
-pub mod eth_core;
+pub use third_party::eth_core;
 
 pub use eth_core::{Address, Block, Bytes, H256, H64, U256, U64};
 
