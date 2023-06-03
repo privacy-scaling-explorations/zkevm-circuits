@@ -16,7 +16,6 @@ rand = "0.8"
 itertools = "0.10"
 eth-types = { path = "../eth-types" }
 env_logger = "0.9"
-ethers-signers = "0.17.0"
 mock = { path="../mock" }
 rand_chacha = "0.3"
 

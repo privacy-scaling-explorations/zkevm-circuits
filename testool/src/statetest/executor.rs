@@ -6,9 +6,9 @@ use bus_mapping::{
 };
 use eth_types::{
     eth_core::{SigningKey, TransactionRequest, TypedTransaction},
+    eth_signer::{LocalWallet, Signer},
     geth_types, Address, Bytes, GethExecTrace, U256, U64,
 };
-use ethers_signers::{LocalWallet, Signer};
 use external_tracer::TraceConfig;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};

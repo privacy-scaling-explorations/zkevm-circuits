@@ -37,7 +37,6 @@ cli-table = { version = "0.4", optional = true }
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }
 ctor = "0.1.22"
-ethers-signers = "0.17.0"
 hex = "0.4.3"
 itertools = "0.10.1"
 mock = { path = "../mock" }

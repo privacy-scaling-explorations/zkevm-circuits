@@ -2,12 +2,12 @@
 
 use crate::{
     eth_core::{get_contract_address, response, AccessList, NameOrAddress, TransactionRequest},
+    eth_signer::{LocalWallet, Signer},
     keccak256,
     sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
     Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian, ToWord, Word,
     U64,
 };
-use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1};
 use num::Integer;
 use num_bigint::BigUint;
