@@ -86,6 +86,25 @@ impl<F: Field> StateMachineConfig<F> {
             self.is_storage,
         ]
     }
+
+    pub(crate) fn step_constraints(
+        &self,
+        meta: &mut VirtualCells<'_, F>,
+        cb: &mut MPTConstraintBuilder<F>,
+        height: usize
+    ) {
+        circuit!([meta, cb], {
+            let mut sum = 0.expr();
+            for rot in 1..height {
+                for state_selector in self.state_selectors() {
+                    sum = sum + a!(state_selector, rot);
+                }
+            }
+            require!(sum => 0);
+            // It should not be necessary to force the next row to have a state enabled
+            // because we never use relative offsets between state machine states.
+        })
+    }
 }
 
 /// Merkle Patricia Trie context
@@ -125,7 +144,6 @@ pub struct MPTConfig<F> {
     pub(crate) q_enable: Column<Fixed>,
     pub(crate) q_first: Column<Fixed>,
     pub(crate) q_last: Column<Fixed>,
-    pub(crate) rows_left_in_state: Column<Fixed>,
     pub(crate) rlp_columns: Vec<Column<Advice>>,
     //pub(crate) state_columns: Vec<Column<Advice>>,
     pub(crate) memory: Memory<F>,
@@ -181,7 +199,6 @@ impl<F: Field> MPTConfig<F> {
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
         let q_last = meta.fixed_column();
-        let rows_left_in_state = meta.fixed_column();
 
         let mpt_table = MptTable::construct(meta);
 
@@ -259,30 +276,30 @@ impl<F: Field> MPTConfig<F> {
                     // Main state machine
                     matchx! {
                         a!(state_machine.is_start) => {
+                            state_machine.step_constraints(meta, &mut cb, StartRowType::Count as usize);
                             cb.base.push_state(0);
-                            require!(f!(rows_left_in_state) => (StartRowType::Count as usize).expr());
                             state_machine.start_config = StartConfig::configure(meta, &mut cb, ctx.clone());
                             cb.base.pop_state();
                         },
                         a!(state_machine.is_branch) => {
+                            state_machine.step_constraints(meta, &mut cb, ExtensionBranchRowType::Count as usize);
                             cb.base.push_state(1);
-                            require!(f!(rows_left_in_state) => (ExtensionBranchRowType::Count as usize).expr());
                             state_machine.branch_config = ExtensionBranchConfig::configure(meta, &mut cb, ctx.clone());
                             cb.base.pop_state();
                         },
                         a!(state_machine.is_account) => {
+                            state_machine.step_constraints(meta, &mut cb, AccountRowType::Count as usize);
                             cb.base.push_state(2);
-                            require!(f!(rows_left_in_state) => (AccountRowType::Count as usize).expr());
                             state_machine.account_config = AccountLeafConfig::configure(meta, &mut cb, ctx.clone());
                             cb.base.pop_state();
                         },
                         a!(state_machine.is_storage) => {
+                            state_machine.step_constraints(meta, &mut cb, StorageRowType::Count as usize);
                             cb.base.push_state(3);
-                            require!(f!(rows_left_in_state) => (StorageRowType::Count as usize).expr());
                             state_machine.storage_config = StorageLeafConfig::configure(meta, &mut cb, ctx.clone());
                             cb.base.pop_state();
                         },
-                        _ =>  (),
+                        _ => (),
                     };
                     // Only account and storage rows can have lookups, disable lookups on all other rows
                     ifx! {not!(a!(state_machine.is_account) + a!(state_machine.is_storage)) => {
@@ -304,7 +321,7 @@ impl<F: Field> MPTConfig<F> {
         if disable_lookups == 0 {
             cb.base.build_static_lookups(
                 meta,
-                challenges.lookup_input(), 
+                challenges.lookup_input(),
                 vec![rlp_cm, state_cm],
                 vec![&keccak_table, &fixed_table]
             );
@@ -339,7 +356,6 @@ impl<F: Field> MPTConfig<F> {
             q_enable,
             q_first,
             q_last,
-            rows_left_in_state,
             rlp_columns,
             memory,
             keccak_table,
@@ -390,7 +406,6 @@ impl<F: Field> MPTConfig<F> {
                             is_nibbles,
                         )?;
                         rlp_values.push(rlp_value);
-                        assignf!(cached_region, (self.rows_left_in_state, offset + idx) => (node.values.len() - idx).scalar())?;
                     }
                     //println!("{} mainRLP ====> cached_region.advice\n {:?}", offset, cached_region.advice);
 
@@ -465,11 +480,11 @@ impl<F: Field> MPTConfig<F> {
                     assignf!(region, (self.q_first, offset) => (offset == 0).scalar())?;
                     assignf!(region, (self.q_last, offset) => (offset == height - 2).scalar())?;
                 }
-                
+
                 Ok(())
             },
         )?;
-        
+
         memory.assign(layouter, height)?;
 
         println!("done");
