@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use eth_types::{
     address, bytecode,
-    eth_core::{LocalWallet, Signer},
+    eth_signer::{LocalWallet, Signer},
     geth_types::GethData,
     Word,
 };

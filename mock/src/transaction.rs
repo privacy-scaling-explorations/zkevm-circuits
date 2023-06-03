@@ -2,10 +2,8 @@
 
 use super::{MOCK_ACCOUNTS, MOCK_CHAIN_ID, MOCK_GASPRICE};
 use eth_types::{
-    eth_core::{
-        AccessList, CryptoRng, LocalWallet, OtherFields, RngCore, Signer, Transaction,
-        TransactionRequest,
-    },
+    eth_core::{AccessList, CryptoRng, OtherFields, RngCore, Transaction, TransactionRequest},
+    eth_signer::{LocalWallet, Signer},
     geth_types::Transaction as GethTransaction,
     word, Address, Bytes, Hash, Word, U64,
 };

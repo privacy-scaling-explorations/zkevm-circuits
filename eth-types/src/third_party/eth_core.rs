@@ -15,5 +15,3 @@ pub use ethers_core::{
     },
     utils::{get_contract_address, get_create2_address, rlp::RlpStream, secret_key_to_address},
 };
-
-pub use ethers_signers::{LocalWallet, Signer};
