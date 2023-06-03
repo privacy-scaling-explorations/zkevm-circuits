@@ -1,8 +1,11 @@
-use eth_types::eth_ethers::{
-    abi::{self, Tokenize},
-    Address, Contract, ContractCall, ContractFactory, Middleware, PendingTransaction, Signer,
-    SignerMiddleware, Solc, TransactionReceipt, TransactionRequest, TypedTransaction, U256, U64,
-    WEI_IN_ETHER,
+use eth_types::{
+    eth_core::{
+        abi, Address, Tokenize, TransactionReceipt, TransactionRequest, TypedTransaction, U256,
+        U64, WEI_IN_ETHER,
+    },
+    eth_ethers::{Contract, ContractCall, ContractFactory, SignerMiddleware, Solc},
+    eth_providers::{Middleware, PendingTransaction},
+    eth_signer::Signer,
 };
 use integration_tests::{
     get_client, get_provider, get_wallet, log_init, CompiledContract, GenDataOutput, CONTRACTS,

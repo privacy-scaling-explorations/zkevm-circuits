@@ -6,9 +6,9 @@
 use bus_mapping::rpc::GethClient;
 use env_logger::Env;
 use eth_types::{
-    eth_ethers::{
-        abi, Bytes, English, Http, MnemonicBuilder, Provider, Signer, SigningKey, Wallet,
-    },
+    eth_core::{Bytes, Contract, SigningKey},
+    eth_providers::{Http, Provider},
+    eth_signer::{English, MnemonicBuilder, Signer, Wallet},
     Address,
 };
 use lazy_static::lazy_static;
@@ -131,7 +131,7 @@ pub struct CompiledContract {
     /// Contract name
     pub name: String,
     /// ABI
-    pub abi: abi::Contract,
+    pub abi: Contract,
     /// Bytecode
     pub bin: Bytes,
     /// Runtime Bytecode
