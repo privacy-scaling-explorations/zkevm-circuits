@@ -220,7 +220,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
         // Your own definition of CellType::Byte
         self.query_cells_dyn(
-            C::byte_type().expect("No byte type for this CellManager"), 
+            C::byte_type().expect("No byte type for this CellManager"),
             N
             ).try_into()
             .unwrap()
@@ -414,7 +414,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
     }
 
     pub(crate) fn get_dynamic_table_values<S: AsRef<str>>(
-        &self, 
+        &self,
         tag: S
     ) -> Vec<Expression<F>> {
         let condition_and_values = self.get_dynamic_table(tag);
@@ -1185,7 +1185,7 @@ macro_rules! matchw {
 macro_rules! assign {
     // Column
     ($region:expr, ($column:expr, $offset:expr) => $value:expr) => {{
-        use halo2_proofs::circuit::Value;  
+        use halo2_proofs::circuit::Value;
         let description = match $region.is_descr_disabled() {
             false => $crate::concat_with_preamble!(stringify!($column), " => ", stringify!($value)),
             true => ""

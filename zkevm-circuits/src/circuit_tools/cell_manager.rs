@@ -176,8 +176,8 @@ impl<C: CellTypeTrait> CellConfig<C> {
 }
 
 
-pub trait CellTypeTrait: 
-    Clone + Copy + Debug + PartialEq + Eq + PartialOrd + Ord + Hash + Default 
+pub trait CellTypeTrait:
+    Clone + Copy + Debug + PartialEq + Eq + PartialOrd + Ord + Hash + Default
 {
     fn byte_type() -> Option<Self>;
 
@@ -230,7 +230,7 @@ pub struct CellManager_<F, C: CellTypeTrait> {
 }
 
 impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
-    
+
     pub(crate) fn new(
         meta: &mut ConstraintSystem<F>,
         cell_configs: Vec<(C, usize, u8, bool)>,
@@ -274,7 +274,7 @@ impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
                             index: w,
                             cell_type: c.cell_type,
                             height: 0,
-                            expr: cell_list[cell_list.len()-1].expr().clone(),
+                            expr: cell_list[w * max_height].expr(),
                         });
                     }
                 });
@@ -388,7 +388,7 @@ impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
         let (start_width, cell_list) = self.cells
             .get(&cell_type)
             .expect(&format!("Cell type {:?} not found", cell_type));
-        let window = self.get_config(cell_type).num_columns;        
+        let window = self.get_config(cell_type).num_columns;
 
         while targets.len() < count {
             // Search best cell in window of columns designated for this CellType

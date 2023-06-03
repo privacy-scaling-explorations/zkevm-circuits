@@ -170,6 +170,8 @@ pub enum FixedTableTag {
     RangeKeyLen256,
     /// For checking there are 0s after the RLP stream ends
     RangeKeyLen16,
+    /// Extesion key odd key
+    ExtOddKey,
 }
 
 impl_expr!(FixedTableTag);
@@ -572,6 +574,20 @@ impl<F: Field> MPTConfig<F> {
                             offset += 1;
                         }
                     }
+                }
+
+                // Compact encoding of the extension key, find out if the key is odd or not.
+                // Even - The full byte is simply 0.
+                assignf!(region, (self.fixed_table[0], offset) => FixedTableTag::ExtOddKey.scalar())?;
+                assignf!(region, (self.fixed_table[1], offset) => 0.scalar())?;
+                assignf!(region, (self.fixed_table[2], offset) => false.scalar())?;
+                offset += 1;
+                // Odd - First nibble is 1, the second nibble can be any value.
+                for idx in 0..16 {
+                    assignf!(region, (self.fixed_table[0], offset) => FixedTableTag::ExtOddKey.scalar())?;
+                    assignf!(region, (self.fixed_table[1], offset) => ((0b1_0000) + idx).scalar())?;
+                    assignf!(region, (self.fixed_table[2], offset) => true.scalar())?;
+                    offset += 1;
                 }
 
                 Ok(())

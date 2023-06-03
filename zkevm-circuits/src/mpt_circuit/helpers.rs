@@ -16,7 +16,7 @@ use crate::{
     util::{Expr, Challenges}, evm_circuit::table::Table,
 };
 use eth_types::Field;
-use gadgets::util::{or, pow, Scalar};
+use gadgets::util::{or, pow, Scalar, not};
 use halo2_proofs::{
     plonk::{Error, Expression, VirtualCells},
 };
@@ -759,7 +759,7 @@ pub(crate) mod num_nibbles {
     use crate::{
         _cb,
         circuit,
-        circuit_tools::{constraint_builder::ConstraintBuilder, cell_manager::EvmCellType}, 
+        circuit_tools::{constraint_builder::ConstraintBuilder, cell_manager::EvmCellType},
     };
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
@@ -807,7 +807,7 @@ pub struct MPTConstraintBuilder<F> {
 impl<F: Field> MPTConstraintBuilder<F> {
 
     pub(crate) fn new(
-        max_degree: usize, 
+        max_degree: usize,
         challenges: Option<Challenges<Expression<F>>>,
         cell_manager: Option<CellManager_<F, EvmCellType>>
     ) -> Self {
@@ -820,7 +820,7 @@ impl<F: Field> MPTConstraintBuilder<F> {
     pub(crate) fn is_descr_disabled(&self) -> bool {
         self.base.is_descr_disabled()
     }
-    
+
     pub(crate) fn push_condition(&mut self, condition: Expression<F>) {
         self.base.push_condition(condition)
     }
@@ -1303,5 +1303,9 @@ impl<F: Field> RLPItemView<F> {
 
     pub(crate) fn is_long(&self) -> Expression<F> {
         self.is_long.clone().unwrap()
+    }
+
+    pub(crate) fn is_very_long(&self) -> Expression<F> {
+        not::expr(self.is_short() + self.is_long())
     }
 }
