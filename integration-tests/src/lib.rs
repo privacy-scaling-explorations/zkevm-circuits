@@ -5,12 +5,11 @@
 
 use bus_mapping::rpc::GethClient;
 use env_logger::Env;
-use eth_types::Address;
-use ethers::{
-    abi,
-    core::{k256::ecdsa::SigningKey, types::Bytes},
-    providers::{Http, Provider},
-    signers::{coins_bip39::English, MnemonicBuilder, Signer, Wallet},
+use eth_types::{
+    eth_ethers::{
+        abi, Bytes, English, Http, MnemonicBuilder, Provider, Signer, SigningKey, Wallet,
+    },
+    Address,
 };
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};

@@ -25,10 +25,7 @@ pub use keccak::{keccak256, Keccak};
 mod third_party;
 
 #[cfg(feature = "ethers-core")]
-pub use third_party::eth_core;
-#[cfg(feature = "ethers-core")]
-pub use third_party::eth_signer;
-pub use third_party::eth_providers;
+pub use third_party::{eth_core, eth_ethers, eth_providers, eth_signer};
 
 pub use eth_core::{Address, Block, Bytes, H256, H64, U256, U64};
 

@@ -1,17 +1,8 @@
-use ethers::{
+use eth_types::eth_ethers::{
     abi::{self, Tokenize},
-    contract::{builders::ContractCall, Contract, ContractFactory},
-    core::{
-        types::{
-            transaction::eip2718::TypedTransaction, Address, TransactionReceipt,
-            TransactionRequest, U256, U64,
-        },
-        utils::WEI_IN_ETHER,
-    },
-    middleware::SignerMiddleware,
-    providers::{Middleware, PendingTransaction},
-    signers::Signer,
-    solc::Solc,
+    Address, Contract, ContractCall, ContractFactory, Middleware, PendingTransaction, Signer,
+    SignerMiddleware, Solc, TransactionReceipt, TransactionRequest, TypedTransaction, U256, U64,
+    WEI_IN_ETHER,
 };
 use integration_tests::{
     get_client, get_provider, get_wallet, log_init, CompiledContract, GenDataOutput, CONTRACTS,
