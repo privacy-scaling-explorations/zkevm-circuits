@@ -18,7 +18,7 @@ use crate::{
     util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
-use eth_types::{geth_types::Transaction, sign_types::SignData, Field, ToLittleEndian, ToScalar};
+use eth_types::{address, geth_types::Transaction, sign_types::SignData, Field, ToLittleEndian, ToScalar};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed},
@@ -29,6 +29,7 @@ use log;
 use sign_verify::{AssignedSignatureVerify, SignVerifyChip, SignVerifyConfig};
 use std::fmt::{self, Debug};
 use std::marker::PhantomData;
+use gadgets::util::{and, not, select, sum, Expr};
 
 /// Number of static fields per tx: [nonce, gas, gas_price,
 /// caller_address, callee_address, is_create, value, call_data_length,
@@ -257,10 +258,19 @@ impl<F: Field> TxCircuit<F> {
                         // Ref. spec 0. Copy constraints using fixed offsets between the tx rows and
                         // the SignVerifyChip
                         match tag {
-                            TxFieldTag::CallerAddress => region.constrain_equal(
-                                assigned_cell.cell(),
-                                assigned_sig_verif.address.cell(),
-                            )?,
+                            TxFieldTag::CallerAddress => {
+                                println!("Ref. spec 0. Copy constraints using fixed offsets between the tx rows and the SignVerifyChip");
+                                // region.constrain_equal(
+                                //     assigned_cell.cell(),
+                                //     assigned_sig_verif.address.cell(),
+                                // )?
+                                if !tx.enable_skipping_invalid_signature {
+                                    region.constrain_equal(
+                                        assigned_cell.cell(),
+                                        assigned_sig_verif.address.cell(),
+                                    )?
+                                }
+                            },
                             TxFieldTag::TxSignHash => region.constrain_equal(
                                 assigned_cell.cell(),
                                 assigned_sig_verif.msg_hash_rlc.cell(),

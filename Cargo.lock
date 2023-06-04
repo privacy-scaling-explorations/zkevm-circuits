@@ -1190,9 +1190,9 @@ dependencies = [
 [[package]]
 name = "ecc"
 version = "0.1.0"
-source = "git+https://github.com/xiaodino/halo2wrong?rev=1438e67#1438e678dace67dde66392a893f6496adba67067"
+source = "git+https://github.com/xiaodino/halo2wrong?rev=0abd5b9c059eefd502e3f723cbf7b29af4c5cad4#0abd5b9c059eefd502e3f723cbf7b29af4c5cad4"
 dependencies = [
- "integer 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=1438e67)",
+ "integer 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=0abd5b9c059eefd502e3f723cbf7b29af4c5cad4)",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -1203,9 +1203,9 @@ dependencies = [
 [[package]]
 name = "ecdsa"
 version = "0.1.0"
-source = "git+https://github.com/xiaodino/halo2wrong?rev=1438e67#1438e678dace67dde66392a893f6496adba67067"
+source = "git+https://github.com/xiaodino/halo2wrong?rev=0abd5b9c059eefd502e3f723cbf7b29af4c5cad4#0abd5b9c059eefd502e3f723cbf7b29af4c5cad4"
 dependencies = [
- "ecc 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=1438e67)",
+ "ecc 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=0abd5b9c059eefd502e3f723cbf7b29af4c5cad4)",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -2214,7 +2214,7 @@ dependencies = [
 [[package]]
 name = "halo2wrong"
 version = "0.1.0"
-source = "git+https://github.com/xiaodino/halo2wrong?rev=1438e67#1438e678dace67dde66392a893f6496adba67067"
+source = "git+https://github.com/xiaodino/halo2wrong?rev=0abd5b9c059eefd502e3f723cbf7b29af4c5cad4#0abd5b9c059eefd502e3f723cbf7b29af4c5cad4"
 dependencies = [
  "halo2_proofs 0.2.0",
  "num-bigint",
@@ -2564,9 +2564,9 @@ dependencies = [
 [[package]]
 name = "integer"
 version = "0.1.0"
-source = "git+https://github.com/xiaodino/halo2wrong?rev=1438e67#1438e678dace67dde66392a893f6496adba67067"
+source = "git+https://github.com/xiaodino/halo2wrong?rev=0abd5b9c059eefd502e3f723cbf7b29af4c5cad4#0abd5b9c059eefd502e3f723cbf7b29af4c5cad4"
 dependencies = [
- "maingate 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=1438e67)",
+ "maingate 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=0abd5b9c059eefd502e3f723cbf7b29af4c5cad4)",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -2880,9 +2880,9 @@ dependencies = [
 [[package]]
 name = "maingate"
 version = "0.1.0"
-source = "git+https://github.com/xiaodino/halo2wrong?rev=1438e67#1438e678dace67dde66392a893f6496adba67067"
+source = "git+https://github.com/xiaodino/halo2wrong?rev=0abd5b9c059eefd502e3f723cbf7b29af4c5cad4#0abd5b9c059eefd502e3f723cbf7b29af4c5cad4"
 dependencies = [
- "halo2wrong 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=1438e67)",
+ "halo2wrong 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=0abd5b9c059eefd502e3f723cbf7b29af4c5cad4)",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -5360,7 +5360,7 @@ dependencies = [
  "bus-mapping",
  "cli-table",
  "ctor",
- "ecc 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=1438e67)",
+ "ecc 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=0abd5b9c059eefd502e3f723cbf7b29af4c5cad4)",
  "ecdsa 0.1.0",
  "env_logger",
  "eth-types",
@@ -5369,13 +5369,13 @@ dependencies = [
  "gadgets",
  "halo2_proofs 0.2.0",
  "hex",
- "integer 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=1438e67)",
+ "integer 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=0abd5b9c059eefd502e3f723cbf7b29af4c5cad4)",
  "itertools",
  "keccak256",
  "lazy_static",
  "libsecp256k1",
  "log",
- "maingate 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=1438e67)",
+ "maingate 0.1.0 (git+https://github.com/xiaodino/halo2wrong?rev=0abd5b9c059eefd502e3f723cbf7b29af4c5cad4)",
  "mock",
  "num",
  "num-bigint",

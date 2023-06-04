@@ -36,7 +36,7 @@ use rand_chacha::ChaCha20Rng;
 
 use itertools::Itertools;
 use keccak256::plain::Keccak;
-use log::error;
+use log::{error, info};
 use maingate::{
     AssignedCondition, AssignedValue, MainGate, MainGateConfig, MainGateInstructions, RangeChip,
     RangeConfig, RangeInstructions, RegionCtx,
@@ -408,7 +408,8 @@ impl<F: Field> SignVerifyChip<F> {
         let pk_y_le = integer_to_bytes_le(ctx, range_chip, pk_y)?;
 
         // Ref. spec SignVerifyChip 4. Verify the ECDSA signature
-        let is_ecdsa_signature_valid = ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash, true)?;
+        println!("enable_skipping_invalid_signature {:?}", enable_skipping_invalid_signature);
+        let is_ecdsa_signature_valid = ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash, enable_skipping_invalid_signature)?;
 
         // TODO: Update once halo2wrong suports the following methods:
         // - `IntegerChip::assign_integer_from_bytes_le`
@@ -522,6 +523,9 @@ impl<F: Field> SignVerifyChip<F> {
             .unwrap_or_default()
             .map(|byte| Value::known(F::from(byte as u64)));
         let pk_hash_hi = pk_hash[..12].to_vec();
+
+        log::error!("assign_signature_verify part 1 at the end: {} rows", ctx.offset());
+
         // Ref. spec SignVerifyChip 2. Verify that the first 20 bytes of the
         // pub_key_hash equal the address
         let (address, pk_hash_lo) = {
@@ -564,6 +568,8 @@ impl<F: Field> SignVerifyChip<F> {
         let enable_skipping_invalid_signature = main_gate.assign_constant(ctx, F::from(tx.enable_skipping_invalid_signature as u64))?;
         let address_returned: AssignedCell<F, F> = main_gate.select(ctx, &zero_address, &address, &enable_skipping_invalid_signature)?;
         let is_address_zero = main_gate.is_zero(ctx, &address)?;
+
+        log::error!("assign_signature_verify part 2 at the end: {} rows", ctx.offset());
 
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
         // with RLC encoding corresponds to msg_hash_rlc
@@ -630,7 +636,7 @@ impl<F: Field> SignVerifyChip<F> {
         Ok(AssignedSignatureVerify {
             address: address_returned,
             msg_hash_rlc,
-            is_invalid: main_gate.not(ctx, &assigned_ecdsa.is_valid)?,
+            is_invalid: assigned_ecdsa.is_valid.clone(),
         })
     }
 
@@ -690,11 +696,15 @@ impl<F: Field> SignVerifyChip<F> {
                         // padding (enabled when address == 0)
                         SignData::default()
                     };
-                    let tx = txs.get(i).unwrap();
+                    let tx = if i < txs.len() {
+                        txs.get(i).unwrap().clone()
+                    } else {
+                        Transaction::default()
+                    };
                     let assigned_ecdsa = self.assign_ecdsa(&mut ctx, &chips, &signature, tx.enable_skipping_invalid_signature)?;
                     assigned_ecdsas.push(assigned_ecdsa);
                 }
-                log::debug!("ecdsa chip verification: {} rows", ctx.offset());
+                log::error!("ecdsa chip verification: {} rows", ctx.offset());
                 Ok(assigned_ecdsas)
             },
         )?;
@@ -706,7 +716,11 @@ impl<F: Field> SignVerifyChip<F> {
                 let mut ctx = RegionCtx::new(region, 0);
                 for (i, assigned_ecdsa) in assigned_ecdsas.iter().enumerate() {
                     let sign_data = signatures.get(i); // None when padding (enabled when address == 0)
-                    let tx = txs.get(i).unwrap();
+                    let tx = if i < txs.len() {
+                        txs.get(i).unwrap().clone()
+                    } else {
+                        Transaction::default()
+                    };
                     let assigned_sig_verif = self.assign_signature_verify(
                         config,
                         &mut ctx,
@@ -714,11 +728,11 @@ impl<F: Field> SignVerifyChip<F> {
                         sign_data,
                         assigned_ecdsa,
                         challenges,
-                        tx,
+                        &tx,
                     )?;
                     assigned_sig_verifs.push(assigned_sig_verif);
                 }
-                log::debug!("signature address verify: {} rows", ctx.offset());
+                log::error!("signature address verify: {} rows, txs.len {}, assigned_sig_verifs.len() {}", ctx.offset(), txs.len(), assigned_sig_verifs.len());
                 Ok(assigned_sig_verifs)
             },
         )
