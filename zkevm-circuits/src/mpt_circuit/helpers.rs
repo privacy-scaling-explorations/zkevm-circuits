@@ -802,6 +802,7 @@ pub(crate) fn main_memory() -> String {
 pub struct MPTConstraintBuilder<F> {
     pub base: ConstraintBuilder<F, EvmCellType>,
     pub challenges: Option<Challenges<Expression<F>>>,
+    pub use_dynamic_lookup: bool,
 }
 
 impl<F: Field> MPTConstraintBuilder<F> {
@@ -814,11 +815,16 @@ impl<F: Field> MPTConstraintBuilder<F> {
         MPTConstraintBuilder {
             base: ConstraintBuilder::new(max_degree, cell_manager, Some(challenges.clone().unwrap().lookup_input.expr())),
             challenges,
+            use_dynamic_lookup: false,
         }
     }
 
     pub(crate) fn is_descr_disabled(&self) -> bool {
         self.base.is_descr_disabled()
+    }
+
+    pub(crate) fn set_use_dynamic_lookup(&mut self, use_dynamic_lookup: bool) {
+        self.use_dynamic_lookup = use_dynamic_lookup;
     }
 
     pub(crate) fn push_condition(&mut self, condition: Expression<F>) {
@@ -895,15 +901,18 @@ impl<F: Field> MPTConstraintBuilder<F> {
         tag: S,
         values: Vec<Expression<F>>
     ) {
-        let cell_type = if tag.as_ref() == "keccak" {
-            EvmCellType::Lookup(Table::Keccak)
-        } else if tag.as_ref() == "fixed" {
-            EvmCellType::Lookup(Table::Fixed)
+        if self.use_dynamic_lookup {
+            self.base.add_dynamic_lookup(description, tag, values)
         } else {
-            unreachable!()
-        };
-        self.base.add_static_lookup(description, cell_type, values)
-        //self.base.add_dynamic_lookup(description, tag, values)
+            let cell_type = if tag.as_ref() == "keccak" {
+                EvmCellType::Lookup(Table::Keccak)
+            } else if tag.as_ref() == "fixed" {
+                EvmCellType::Lookup(Table::Fixed)
+            } else {
+                unreachable!()
+            };
+            self.base.add_static_lookup(description, cell_type, values)
+        }
     }
 
     pub(crate) fn store_dynamic_table<S: AsRef<str>>(
@@ -1178,10 +1187,11 @@ impl<F: Field> MainRLPGadget<F> {
             // value. These lookups also enforce the byte value to be zero when
             // the byte index >= num_bytes.
             // TODO(Brecht): do 2 bytes/lookup when circuit height >= 2**21
+            cb.set_use_dynamic_lookup(true);
             for (idx, byte) in config.bytes.iter().enumerate() {
-                // TODO(Brecht): in-place lookup
-                //require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()) => @"fixed");
+                require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()) => @"fixed");
             }
+            cb.set_use_dynamic_lookup(false);
 
             config
         })
