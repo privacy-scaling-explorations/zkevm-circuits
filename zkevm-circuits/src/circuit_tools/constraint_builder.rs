@@ -47,7 +47,7 @@ pub struct ConstraintBuilder<F, C: CellTypeTrait> {
     /// write to RAM
     pub dynamic_tables: HashMap<String, Vec<DynamicData<F>>>,
     /// All stored expressions
-    pub stored_expressions: [Vec<StoredExpression<F, C>>; 4],
+    pub stored_expressions: [Vec<StoredExpression<F, C>>; 5],
     /// CellManager
     pub cell_manager: Option<CellManager_<F, C>>,
     /// Disable macro-generated description for constraints & lookups
@@ -73,7 +73,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
             dynamic_tables: HashMap::new(),
             cell_manager,
             disable_description: false,
-            stored_expressions: [vec![], vec![], vec![], vec![]],
+            stored_expressions: [vec![], vec![], vec![], vec![], vec![]],
             state_idx: 0,
             lookup_input_challenge,
             state_context: Vec::new(),
@@ -220,7 +220,6 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
-        // Your own definition of CellType::Byte
         self.query_cells_dyn(
             C::byte_type().expect("No byte type for this CellManager"),
             N

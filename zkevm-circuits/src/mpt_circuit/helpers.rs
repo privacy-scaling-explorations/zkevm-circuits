@@ -1146,7 +1146,6 @@ pub struct MainRLPGadget<F> {
 
 impl<F: Field> MainRLPGadget<F> {
     pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>, r: &Expression<F>) -> Self {
-        //println!("_________ MainRLPGadget ________");
         let mut config = MainRLPGadget::default();
         config.bytes = cb.query_cells::<34>().to_vec();
         circuit!([meta, cb], {
@@ -1169,8 +1168,7 @@ impl<F: Field> MainRLPGadget<F> {
             require!(config.rlc_rlp => config.rlp.rlc_rlp(cb, r));
             config.mult_diff = cb.query_cell();
             let mult_diff = config.mult_diff.expr();
-            // TODO(Brecht): fix
-            //require!((FixedTableTag::RMult, config.rlp.num_bytes(), mult_diff) => @"fixed");
+            require!((FixedTableTag::RMult, config.rlp.num_bytes(), mult_diff) => @"fixed");
 
             // "free" input that needs to be constrained externally!
             config.tag = cb.query_cell();

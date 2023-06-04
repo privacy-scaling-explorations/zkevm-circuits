@@ -27,7 +27,7 @@ mod witness_row;
 use self::{
     account_leaf::AccountLeafConfig,
     helpers::{key_memory, RLPItemView},
-    witness_row::{AccountRowType, ExtensionBranchRowType, Node, StartRowType, StorageRowType},
+    witness_row::{AccountRowType, ExtensionBranchRowType, Node, StartRowType, StorageRowType}, rlp_gadgets::decode_rlp,
 };
 use crate::{
     assign, assignf, circuit,
@@ -94,6 +94,9 @@ impl<F: Field> StateMachineConfig<F> {
         height: usize
     ) {
         circuit!([meta, cb], {
+            // Because the state machine state is this height, we're already querying cells
+            // at all of these rotations, so may as well keep things simple.
+            // State selectors are already enforced to be boolean on each row.
             let mut sum = 0.expr();
             for rot in 1..height {
                 for state_selector in self.state_selectors() {
@@ -144,11 +147,9 @@ pub struct MPTConfig<F> {
     pub(crate) q_enable: Column<Fixed>,
     pub(crate) q_first: Column<Fixed>,
     pub(crate) q_last: Column<Fixed>,
-    pub(crate) rlp_columns: Vec<Column<Advice>>,
-    //pub(crate) state_columns: Vec<Column<Advice>>,
     pub(crate) memory: Memory<F>,
     keccak_table: KeccakTable,
-    fixed_table: [Column<Fixed>; 3],
+    fixed_table: [Column<Fixed>; 6],
     rlp_item: MainRLPGadget<F>,
     state_machine: StateMachineConfig<F>,
     pub(crate) mpt_table: MptTable,
@@ -172,6 +173,8 @@ pub enum FixedTableTag {
     RangeKeyLen16,
     /// Extesion key odd key
     ExtOddKey,
+    /// RLP decoding
+    RLP,
 }
 
 impl_expr!(FixedTableTag);
@@ -204,7 +207,7 @@ impl<F: Field> MPTConfig<F> {
 
         let mpt_table = MptTable::construct(meta);
 
-        let fixed_table: [Column<Fixed>; 3] = (0..3)
+        let fixed_table: [Column<Fixed>; 6] = (0..6)
             .map(|_| meta.fixed_column())
             .collect::<Vec<_>>()
             .try_into()
@@ -241,7 +244,6 @@ impl<F: Field> MPTConfig<F> {
             0,
             1,
         );
-        let rlp_columns = rlp_cm.get_columns();
         let state_cm = CellManager_::new(
             meta,
             // Type, #cols, phase, permutable
@@ -266,7 +268,9 @@ impl<F: Field> MPTConfig<F> {
                 ifx!{f!(q_enable) => {
                     // RLP item decoding unit
                     cb.base.set_cell_manager(rlp_cm.clone());
+                    cb.base.push_state(4);
                     rlp_item = MainRLPGadget::construct(&mut cb, &ctx.r);
+                    cb.base.pop_state();
                     ctx.rlp_item = rlp_item.clone();
 
                     // Main MPT circuit
@@ -358,7 +362,6 @@ impl<F: Field> MPTConfig<F> {
             q_enable,
             q_first,
             q_last,
-            rlp_columns,
             memory,
             keccak_table,
             fixed_table,
@@ -394,6 +397,8 @@ impl<F: Field> MPTConfig<F> {
                         &mut region,
                         challenges
                     );
+                    let mut state_idx = 4;
+
                     // Assign bytes
                     let mut rlp_values = Vec::new();
                     // Decompose RLP
@@ -408,10 +413,9 @@ impl<F: Field> MPTConfig<F> {
                             is_nibbles,
                         )?;
                         rlp_values.push(rlp_value);
+                        self.assign_static_lookups(&mut cached_region, offset + idx, state_idx);
                     }
                     //println!("{} mainRLP ====> cached_region.advice\n {:?}", offset, cached_region.advice);
-
-                    let mut state_idx = 8;
 
                     // Assign nodes
                     if node.start.is_some() {
@@ -585,6 +589,18 @@ impl<F: Field> MPTConfig<F> {
                     assignf!(region, (self.fixed_table[0], offset) => FixedTableTag::ExtOddKey.scalar())?;
                     assignf!(region, (self.fixed_table[1], offset) => ((0b1_0000) + idx).scalar())?;
                     assignf!(region, (self.fixed_table[2], offset) => true.scalar())?;
+                    offset += 1;
+                }
+
+                // RLP
+                for byte in 0..255 {
+                    let (is_list, is_short, is_long, is_very_long) = decode_rlp(byte);
+                    assignf!(region, (self.fixed_table[0], offset) => FixedTableTag::RLP.scalar())?;
+                    assignf!(region, (self.fixed_table[1], offset) => byte.scalar())?;
+                    assignf!(region, (self.fixed_table[2], offset) => is_list.scalar())?;
+                    assignf!(region, (self.fixed_table[3], offset) => is_short.scalar())?;
+                    assignf!(region, (self.fixed_table[4], offset) => is_long.scalar())?;
+                    assignf!(region, (self.fixed_table[5], offset) => is_very_long.scalar())?;
                     offset += 1;
                 }
 
