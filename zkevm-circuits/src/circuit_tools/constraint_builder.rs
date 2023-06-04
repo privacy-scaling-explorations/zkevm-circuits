@@ -323,25 +323,17 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         //println!("table: {} -> {}", description, tag.as_ref());
         let condition = self.get_condition_expr();
         let key = tag.as_ref().to_owned();
+        //let values = values.into_iter().map(|value| self.split_expression(description, condition.expr() * value.expr())).collect_vec();
+        let lookup = DynamicData {
+            description,
+            condition/*: 1.expr()*/,
+            values,
+            state_idx: self.state_idx,
+        };
         if let Some(table_data) = self.dynamic_tables.get_mut(&key) {
-            table_data.push(
-                DynamicData {
-                    description,
-                    condition,
-                    values,
-                    state_idx: self.state_idx,
-                });
+            table_data.push(lookup);
         } else {
-            self.dynamic_tables.insert(
-                key,
-                vec![
-                    DynamicData {
-                        description,
-                        condition,
-                        values,
-                        state_idx: self.state_idx,
-                    }
-                ]);
+            self.dynamic_tables.insert(key,vec![lookup]);
         }
     }
 
@@ -353,25 +345,17 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
     ) {
         let condition = self.get_condition_expr();
         let key = tag.as_ref().to_owned();
+        //let values = values.into_iter().map(|value| self.split_expression(description, condition.expr() * value.expr())).collect_vec();
+        let lookup = DynamicData {
+            description,
+            condition/*: 1.expr()*/,
+            values,
+            state_idx: self.state_idx,
+        };
         if let Some(lookup_data) = self.dynamic_lookups.get_mut(&key) {
-            lookup_data.push(
-                DynamicData {
-                    description,
-                    condition,
-                    values,
-                    state_idx: self.state_idx,
-                });
+            lookup_data.push(lookup);
         } else {
-            self.dynamic_lookups.insert(
-                key,
-                vec![
-                    DynamicData {
-                        description,
-                        condition,
-                        values,
-                        state_idx: self.state_idx,
-                    }
-                ]);
+            self.dynamic_lookups.insert(key,vec![lookup]);
         }
     }
 
@@ -488,11 +472,10 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         expr: &Expression<F>,
         cell_type: C,
     ) -> Option<&StoredExpression<F, C>> {
-        None
-        /*let expr_id = expr.identifier();
-        self.static_lookups[self.state_idx]
+        let expr_id = expr.identifier();
+        self.stored_expressions[self.state_idx]
             .iter()
-            .find(|&e| e.cell_type == cell_type && e.expr_id == expr_id)*/
+            .find(|&e| e.cell_type == cell_type && e.expr_id == expr_id)
     }
 
     fn split_expression(
