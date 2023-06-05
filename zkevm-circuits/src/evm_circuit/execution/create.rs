@@ -187,14 +187,15 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 Some(&mut reversion_info),
             );
 
-            // ErrContractAddressCollision, if any one of following criteria meets.
-            // Nonce is not zero or account code hash is not either 0 or EMPTY_CODE_HASH.
+            // read contract's previous hash
             cb.account_read(
                 contract_addr.clone(),
                 AccountFieldTag::CodeHash,
                 prev_code_hash.expr(),
             );
 
+            // ErrContractAddressCollision, if any one of following criteria meets.
+            // Nonce is not zero or account code hash is not either 0 or EMPTY_CODE_HASH.
             IsZeroGadget::construct(
                 cb,
                 callee_nonce.expr()
@@ -459,8 +460,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         } else {
             U256::zero()
         };
-
         let rw_offset = if is_create2 { 8 } else { 7 };
+
+        // Pre-check: call depth, user's nonce and user's balance
         let (caller_balance, _) = block.get_rws(step, rw_offset + 1).account_value_pair();
         let (caller_nonce, _) = block.get_rws(step, rw_offset + 2).account_value_pair();
         let is_precheck_ok =
@@ -472,7 +474,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         self.caller_balance
             .assign(region, offset, Some(caller_balance.to_le_bytes()))?;
-
         let (callee_prev_code_hash, was_warm) = if is_precheck_ok == 1 {
             let (_, was_warm) = block
                 .get_rws(step, rw_offset + 4)
@@ -511,7 +512,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let init_code_address =
             self.init_code
                 .assign(region, offset, init_code_start, init_code_length)?;
-
         let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(
             region,
             offset,
@@ -540,6 +540,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             callee_is_persistent.low_u64() != 0,
         )?;
 
+        // assign witness while pre-check is okay
         let copy_rw_increase = init_code_length.as_usize();
         let code_hash = if is_precheck_ok == 1 {
             // transfer

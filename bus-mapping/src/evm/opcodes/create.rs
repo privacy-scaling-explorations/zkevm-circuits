@@ -117,6 +117,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 },
             )?;
 
+            // add contract address to access list
             state.tx_access_list_write(&mut exec_step, address)?;
 
             // this could be good place for checking callee_exists = true, since above
@@ -124,8 +125,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             // ErrContractAddressCollision
             let code_hash_previous = if callee_exists {
                 if is_precheck_ok {
-                    // only create2 possibly cause address collision error.
-                    // assert_eq!(geth_step.op, OpcodeId::CREATE2);
                     exec_step.error = Some(ExecError::ContractAddressCollision);
                 }
                 callee_account.code_hash
@@ -163,7 +162,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         state.push_call(callee.clone());
         state.reversion_info_write(&mut exec_step, &callee);
 
-        // success case
+        // successful contract creation
         if is_precheck_ok && !callee_exists {
             let (initialization_code, code_hash) = if length > 0 {
                 handle_copy(
@@ -176,6 +175,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             } else {
                 (vec![], CodeDB::empty_code_hash())
             };
+
             // handle keccak_table_lookup
             let keccak_input = if IS_CREATE2 {
                 let salt = geth_step.stack.nth_last(3)?;
@@ -199,14 +199,15 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 stream.append(&Word::from(caller_nonce));
                 stream.out().to_vec()
             };
-
             assert_eq!(
                 address,
                 H160(keccak256(&keccak_input)[12..].try_into().unwrap())
             );
+
             state.block.sha3_inputs.push(keccak_input);
             state.block.sha3_inputs.push(initialization_code);
 
+            // Transfer function will skip transfer if the value is zero
             state.transfer(
                 &mut exec_step,
                 caller.address,
@@ -215,6 +216,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 !callee_exists,
                 callee.value,
             )?;
+
             // EIP 161, increase callee's nonce
             state.push_op_reversible(
                 &mut exec_step,
