@@ -516,11 +516,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             offset,
             (31u64 + init_code_length.as_u64()).into(),
         )?;
-        let gas_left = step.gas_left.0
-            - GasCost::CREATE.as_u64()
+        let gas_left = step.gas_left
+            - GasCost::CREATE
             - memory_expansion_gas_cost
             - if is_create2 {
-                u64::try_from(init_code_word_size).unwrap() * GasCost::COPY_SHA3.as_u64()
+                u64::try_from(init_code_word_size).unwrap() * GasCost::COPY_SHA3
             } else {
                 0
             };

@@ -143,7 +143,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         // Per EIP-150, all but one 64th of the caller's gas is sent to the
         // initialization call.
-        let caller_gas_left = (geth_step.gas.0 - geth_step.gas_cost.0) / 64;
+        let caller_gas_left = (geth_step.gas - geth_step.gas_cost) / 64;
         for (field, value) in [
             (CallContextField::ProgramCounter, (geth_step.pc + 1).into()),
             (
