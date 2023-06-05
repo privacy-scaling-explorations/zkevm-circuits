@@ -333,9 +333,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(rw_counter, Rotation::cur()),
                 not::expr(meta.query_selector(q_step)),
                 RwTableTag::Memory.expr(),
-                meta.query_advice(id.lo(), Rotation::cur()), // call_id
-                meta.query_advice(id.hi(), Rotation::cur()),
-                meta.query_advice(addr, Rotation::cur()), // memory address
+                meta.query_advice(id.lo(), Rotation::cur()), // For call_id we use lo limb only
+                meta.query_advice(addr, Rotation::cur()),    // memory address
                 0.expr(),
                 0.expr(),
                 meta.query_advice(value, Rotation::cur()),
@@ -356,8 +355,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(rw_counter, Rotation::cur()),
                 1.expr(),
                 RwTableTag::TxLog.expr(),
-                meta.query_advice(id.lo(), Rotation::cur()), // tx_id
-                meta.query_advice(id.hi(), Rotation::cur()),
+                meta.query_advice(id.lo(), Rotation::cur()), /* For transaction ID we use lo
+                                                              * limb only */
                 meta.query_advice(addr, Rotation::cur()), // byte_index || field_tag || log_id
                 0.expr(),
                 0.expr(),
@@ -395,8 +394,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 * tag.value_equals(CopyDataType::TxCalldata, Rotation::cur())(meta)
                 * not::expr(meta.query_advice(is_pad, Rotation::cur()));
             vec![
-                meta.query_advice(id.lo(), Rotation::cur()),
-                meta.query_advice(id.hi(), Rotation::cur()),
+                meta.query_advice(id.lo(), Rotation::cur()), /* For transaction ID we use lo
+                                                              * limb only */
                 TxContextFieldTag::CallData.expr(),
                 meta.query_advice(addr, Rotation::cur()),
                 meta.query_advice(value, Rotation::cur()),
