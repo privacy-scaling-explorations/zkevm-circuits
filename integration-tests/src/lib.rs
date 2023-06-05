@@ -5,11 +5,14 @@
 
 use bus_mapping::rpc::GethClient;
 use env_logger::Env;
-use eth_types::{
-    eth_core::{Bytes, Contract, SigningKey},
-    eth_providers::{Http, Provider},
-    eth_signer::{English, MnemonicBuilder, Signer, Wallet},
-    Address,
+use ethers::{
+    abi,
+    core::{
+        k256::ecdsa::SigningKey,
+        types::{Address, Bytes},
+    },
+    providers::{Http, Provider},
+    signers::{coins_bip39::English, MnemonicBuilder, Signer, Wallet},
 };
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
@@ -131,7 +134,7 @@ pub struct CompiledContract {
     /// Contract name
     pub name: String,
     /// ABI
-    pub abi: Contract,
+    pub abi: abi::Contract,
     /// Bytecode
     pub bin: Bytes,
     /// Runtime Bytecode

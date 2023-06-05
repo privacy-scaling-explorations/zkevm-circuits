@@ -23,12 +23,11 @@ pub use block::{Block, BlockContext};
 pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
 use eth_types::{
-    self,
-    eth_providers::JsonRpcClient,
-    geth_types,
+    self, geth_types,
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
     Address, GethExecStep, GethExecTrace, ToWord, Word,
 };
+use ethers_providers::JsonRpcClient;
 pub use execution::{
     CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
 };

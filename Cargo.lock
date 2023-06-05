@@ -304,6 +304,7 @@ name = "bus-mapping"
 version = "0.1.0"
 dependencies = [
  "eth-types",
+ "ethers-providers",
  "gadgets",
  "halo2_proofs",
  "hex",
@@ -1056,9 +1057,7 @@ dependencies = [
 name = "eth-types"
 version = "0.1.0"
 dependencies = [
- "ethers",
  "ethers-core",
- "ethers-providers",
  "ethers-signers",
  "halo2_proofs",
  "hex",
@@ -2050,6 +2049,7 @@ dependencies = [
  "bus-mapping",
  "env_logger",
  "eth-types",
+ "ethers",
  "halo2_proofs",
  "lazy_static",
  "log",
