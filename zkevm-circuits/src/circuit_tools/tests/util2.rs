@@ -39,10 +39,10 @@ pub struct TestConfig<F> {
 
 impl<F: Field> TestConfig<F> {
     pub fn new(
-        meta: &mut ConstraintSystem<F>, 
+        meta: &mut ConstraintSystem<F>,
         // r1: Challenge
     ) -> Self {
-        
+
         // Get columns
         let q_usable = meta.selector();
         let a = meta.advice_column();
@@ -52,7 +52,7 @@ impl<F: Field> TestConfig<F> {
         let e = meta.advice_column();
 
         meta.create_gate("Test Gate", |meta: &mut VirtualCells<F>| {
-            
+
             let mut exprs = Vec::new();
             let q = meta.query_selector(q_usable);
 
@@ -60,12 +60,12 @@ impl<F: Field> TestConfig<F> {
             let b1 = meta.query_advice(b, Rotation(0));
             let c1 = meta.query_advice(c, Rotation(0));
             exprs.push((a1*b1 - c1) * q.clone());
-            
+
             let b2 = meta.query_advice(b, Rotation(1));
             let c2 = meta.query_advice(c, Rotation(1));
             let d2 = meta.query_advice(d, Rotation(1));
             exprs.push((b2*c2 - d2) * q.clone());
-            
+
             let c3 = meta.query_advice(c, Rotation(2));
             let d3 = meta.query_advice(d, Rotation(2));
             let e3 = meta.query_advice(e, Rotation(2));
@@ -82,7 +82,7 @@ impl<F: Field> TestConfig<F> {
     }
 
     pub fn assign(
-        &self, 
+        &self,
         layouter: &mut impl Layouter<F>,
         // r1: Value<F>,
     ) -> Result<(), Error> {
@@ -90,7 +90,7 @@ impl<F: Field> TestConfig<F> {
             || "Test Region",
             |mut region| {
                 self.q_usable.enable(&mut region, "q_usable_0", 0);
-                
+
                 region.name_column(|| "a", self.a);
                 region.name_column(|| "b", self.b);
                 region.name_column(|| "c", self.c);
@@ -129,6 +129,7 @@ struct TestCircuit<F> {
 impl<F: Field> Circuit<F> for TestCircuit<F> {
     type Config = TestConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
 
     fn without_witnesses(&self) -> Self {
@@ -138,14 +139,14 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let _dummy_phase1 = meta.advice_column();
         let r1 = meta.challenge_usable_after(FirstPhase);
-        
+
         let config = TestConfig::new(meta);
         config
     }
 
     fn synthesize(
-        &self, 
-        config: Self::Config, 
+        &self,
+        config: Self::Config,
         mut layouter: impl halo2_proofs::circuit::Layouter<F>
     ) -> Result<(), Error> {
         // let r1 = layouter.get_challenge(r1);

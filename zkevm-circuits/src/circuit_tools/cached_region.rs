@@ -1,5 +1,5 @@
 use crate::{
-    circuit_tools::cell_manager::{Cell, EvmCellType},
+    circuit_tools::cell_manager::{Cell},
 };
 use eth_types::{Field};
 use halo2_proofs::{
@@ -7,7 +7,6 @@ use halo2_proofs::{
     plonk::{Advice, Assigned, Column, Error, Expression, Fixed, Any},
     poly::Rotation,
 };
-use itertools::Itertools;
 use std::{
     hash::{Hash, Hasher}, collections::HashMap,
 };
@@ -127,30 +126,14 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
         unimplemented!("fixed column");
     }
 
-    // StoreExpression 里面调，拿 F 出去 evaluate
     pub fn get_advice(&self, row_index: usize, column_index: usize, rotation: Rotation) -> F {
-        //println!("\t get_advice: [{}][{}]", column_index, rotation.0 as usize + row_index);
-        //self.advice.get(&(column_index, row_index + rotation.0 as usize))
-        //    .expect("Advice not found")
-        //   .clone()
-        let zero = F::zero();
+        let zero = F::ZERO;
         *self.advice.get(&(column_index, row_index + rotation.0 as usize)).unwrap_or_else(|| &zero)
     }
 
     pub fn challenges(&self) -> &S {
         self.challenges
     }
-
-
-    // pub fn word_rlc(&self, n: U256) -> Value<F> {
-    //     self.challenges
-    //         .evm_word()
-    //         .map(|r| rlc::value(&n.to_le_bytes(), r))
-    // }
-    // pub fn empty_code_hash_rlc(&self) -> Value<F> {
-    //     self.word_rlc(CodeDB::empty_code_hash().to_word())
-    // }
-
 
     /// Constrains a cell to have a constant value.
     ///
@@ -195,7 +178,7 @@ impl<F: Field, C: CellTypeTrait> StoredExpression<F, C>  {
         //println!("____ StoredExpression::assign ____ \n\t {:?} -> {:?}", self.expr_id, self.cell.identifier());
 
         //println!("assign stored: {} [{}][{}]", self.name, self.cell.column().index(), offset);
-        
+
         let value = self.expr.evaluate(
             &|scalar| Value::known(scalar),
             &|_| unimplemented!("selector column"),
@@ -255,7 +238,7 @@ pub(crate) mod rlc {
         if !values.is_empty() {
             generic(values, randomness)
         } else {
-            F::zero()
+            F::ZERO
         }
     }
 

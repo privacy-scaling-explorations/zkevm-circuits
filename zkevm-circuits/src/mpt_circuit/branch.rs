@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     circuit,
-    circuit_tools::{cell_manager::{Cell, EvmCellType}, constraint_builder::RLCChainable, gadgets::LtGadget, cached_region::{CachedRegion, ChallengeSet}},
+    circuit_tools::{cell_manager::{Cell}, constraint_builder::RLCChainable, gadgets::LtGadget, cached_region::{CachedRegion, ChallengeSet}},
     mpt_circuit::{
         helpers::{nibble_rlc, Indexable},
         param::{HASH_WIDTH, RLP_NIL},

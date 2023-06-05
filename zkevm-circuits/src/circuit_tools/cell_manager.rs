@@ -4,18 +4,15 @@ use crate::util::{Expr, query_expression};
 use crate::circuit_tools::{table::LookupTable_, cached_region::{CachedRegion, ChallengeSet}};
 
 use eth_types::Field;
-use halo2_proofs::plonk::{Any, SecondPhase, ThirdPhase, FirstPhase, Phase};
+use halo2_proofs::plonk::{SecondPhase, ThirdPhase, FirstPhase};
 use halo2_proofs::{
     circuit::{AssignedCell, Value},
     plonk::{ConstraintSystem, Advice, Column, Error, Expression, VirtualCells},
     poly::Rotation,
 };
-use halo2_proofs::arithmetic::FieldExt;
-use std::cell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{HashMap};
 use std::fmt::Debug;
 use std::hash::Hash;
-use strum_macros::EnumIter;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Cell<F> {
@@ -25,7 +22,6 @@ pub(crate) struct Cell<F> {
     // relative position to selector for synthesis
     pub rotation: usize,
 }
-
 
 impl<F: Field> Cell<F> {
     pub(crate) fn new(
@@ -39,7 +35,6 @@ impl<F: Field> Cell<F> {
             rotation,
         }
     }
-
 
     pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
@@ -175,14 +170,13 @@ impl<C: CellTypeTrait> CellConfig<C> {
     }
 }
 
-
 pub trait CellTypeTrait:
     Clone + Copy + Debug + PartialEq + Eq + PartialOrd + Ord + Hash + Default
 {
     fn byte_type() -> Option<Self>;
 
     // The phase that given `Expression` becomes evaluateable.
-    fn expr_phase<F: FieldExt>(expr: &Expression<F>) -> u8 {
+    fn expr_phase<F: Field>(expr: &Expression<F>) -> u8 {
         use Expression::*;
         match expr {
             Challenge(challenge) => challenge.phase() + 1,
@@ -197,15 +191,10 @@ pub trait CellTypeTrait:
     fn storage_for_phase(phase: u8) -> Self;
 
     /// Return the storage cell of the expression
-    fn storage_for_expr<F: FieldExt>(expr: &Expression<F>) -> Self {
+    fn storage_for_expr<F: Field>(expr: &Expression<F>) -> Self {
         Self::storage_for_phase(Self::expr_phase::<F>(expr))
     }
 }
-
-
-
-/// this new cell manager has been in the planning for some time https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/1203
-/// Chiquito has a cell manager that is more abstracted out even: https://github.com/privacy-scaling-explorations/chiquito/blob/main/src/compiler/cell_manager.rs
 
 #[derive(Clone, Debug)]
 pub(crate) struct CellColumn_<F, C> {

@@ -7,7 +7,7 @@ use halo2_proofs::{
 
 use crate::evm_circuit::table::Table;
 
-use super::{cell_manager::{CellTypeTrait, EvmCellType}};
+use super::{cell_manager::{EvmCellType}};
 
 
 /// LookupTable impl for raw columns.
@@ -43,7 +43,7 @@ impl<F: Field, CA: Into<Column<Any>> + Copy, const W: usize> LookupTable_<F> for
 /// Trait used to define lookup tables
 pub trait LookupTable_<F: Field> {
     type TableCellType;
-    
+
     fn get_type_(&self) -> Self::TableCellType;
 
     fn phase(&self) -> u8;

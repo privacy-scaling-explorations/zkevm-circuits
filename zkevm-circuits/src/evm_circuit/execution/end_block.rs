@@ -3,7 +3,9 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Same},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition::Same,
+            },
             math_gadget::{IsEqualGadget, IsZeroGadget},
             not, CachedRegion, Cell,
         },
@@ -31,7 +33,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EndBlock;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let max_txs = cb.query_copy_cell();
         let max_rws = cb.query_copy_cell();
         let total_txs = cb.query_cell();
@@ -118,7 +120,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.is_empty_block
-            .assign(region, offset, F::from(step.rw_counter as u64 - 1))?;
+            .assign(region, offset, F::from(u64::from(step.rwc) - 1))?;
         let max_rws = F::from(block.circuits_params.max_rws as u64);
         let max_rws_assigned = self.max_rws.assign(region, offset, Value::known(max_rws))?;
 
@@ -131,7 +133,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let max_txs_assigned = self.max_txs.assign(region, offset, Value::known(max_txs))?;
         // When rw_indices is not empty, we're at the last row (at a fixed offset),
         // where we need to access the max_rws and max_txs constant.
-        if !step.rw_indices.is_empty() {
+        if !step.rw_indices_len() == 0 {
             region.constrain_constant(max_rws_assigned, max_rws)?;
             region.constrain_constant(max_txs_assigned, max_txs)?;
         }

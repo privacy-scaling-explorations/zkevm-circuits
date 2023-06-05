@@ -4,7 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes,
             math_gadget::{ComparisonGadget, IsEqualGadget},
             select, CachedRegion, Cell, Word,
@@ -33,7 +33,7 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CMP;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let a = cb.query_word_rlc();
@@ -115,7 +115,7 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
 
         // EQ op check
         self.is_eq.assign(
@@ -133,13 +133,9 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
             F::from(OpcodeId::GT.as_u8() as u64),
         )?;
 
-        let indices = if is_gt == F::one() {
-            [step.rw_indices[1], step.rw_indices[0]]
-        } else {
-            [step.rw_indices[0], step.rw_indices[1]]
-        };
-        let [a, b] = indices.map(|idx| block.rws[idx].stack_value().to_le_bytes());
-        let result = block.rws[step.rw_indices[2]].stack_value();
+        let indices = if is_gt == F::ONE { [1, 0] } else { [0, 1] };
+        let [a, b] = indices.map(|index| block.get_rws(step, index).stack_value().to_le_bytes());
+        let result = block.get_rws(step, 2).stack_value();
 
         // `a[0..16] <= b[0..16]`
         self.comparison_lo.assign(

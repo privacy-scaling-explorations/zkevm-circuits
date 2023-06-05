@@ -1,7 +1,7 @@
 use eth_types::Field;
 use gadgets::util::{pow, Scalar};
 use halo2_proofs::{
-    circuit::{Value, Region},
+    circuit::{Value},
     plonk::{Error, VirtualCells},
     poly::Rotation,
 };
@@ -15,7 +15,7 @@ use super::{
 use crate::{
     circuit,
     circuit_tools::{
-        cell_manager::{Cell, EvmCellType},
+        cell_manager::{Cell},
         constraint_builder::{RLCChainable, RLCable, RLCableValue},
         gadgets::IsEqualGadget, cached_region::{CachedRegion, ChallengeSet},
     },
@@ -466,11 +466,11 @@ impl<F: Field> AccountLeafConfig<F> {
                 region,
                 offset,
                 &mut pv.memory[key_memory(is_s)],
-                F::zero(),
-                F::one(),
+                F::ZERO,
+                F::ONE,
                 0,
-                F::zero(),
-                F::one(),
+                F::ZERO,
+                F::ONE,
                 0,
             )?;
             ParentData::witness_store(

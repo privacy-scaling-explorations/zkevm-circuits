@@ -1,7 +1,7 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::{
-    plonk::{Error, VirtualCells}, circuit::Region,
+    plonk::{Error, VirtualCells},
 };
 
 use super::{
@@ -14,7 +14,7 @@ use super::{
 };
 use crate::{
     circuit,
-    circuit_tools::{cell_manager::{Cell, EvmCellType}, cached_region::{CachedRegion, ChallengeSet}},
+    circuit_tools::{cell_manager::{Cell}, cached_region::{CachedRegion, ChallengeSet}},
     mpt_circuit::{
         helpers::{key_memory, parent_memory, Indexable, KeyData, ParentData},
         witness_row::ExtensionBranchRowType,

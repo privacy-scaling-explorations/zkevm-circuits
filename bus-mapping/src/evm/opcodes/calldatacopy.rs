@@ -3,7 +3,7 @@ use crate::{
     circuit_input_builder::{
         CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
-    operation::{CallContextField, MemoryOp, RW},
+    operation::CallContextField,
     Error,
 };
 use eth_types::GethExecStep;
@@ -20,13 +20,13 @@ impl Opcode for Calldatacopy {
         let mut exec_steps = vec![gen_calldatacopy_step(state, geth_step)?];
 
         // reconstruction
-        let memory_offset = geth_step.stack.nth_last(0)?.as_u64();
-        let data_offset = geth_step.stack.nth_last(1)?.as_u64();
-        let length = geth_step.stack.nth_last(2)?.as_usize();
+        let memory_offset = geth_step.stack.nth_last(0)?;
+        let data_offset = geth_step.stack.nth_last(1)?;
+        let length = geth_step.stack.nth_last(2)?;
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
 
-        memory.copy_from(memory_offset, &call_ctx.call_data, data_offset, length);
+        memory.copy_from(memory_offset, data_offset, length, &call_ctx.call_data);
 
         let copy_event = gen_copy_event(state, geth_step)?;
         state.push_copy(&mut exec_steps[0], copy_event);
@@ -92,64 +92,38 @@ fn gen_calldatacopy_step(
     Ok(exec_step)
 }
 
-fn gen_copy_steps(
-    state: &mut CircuitInputStateRef,
-    exec_step: &mut ExecStep,
-    src_addr: u64,
-    dst_addr: u64,
-    src_addr_end: u64,
-    bytes_left: u64,
-    is_root: bool,
-) -> Result<Vec<(u8, bool)>, Error> {
-    let mut copy_steps = Vec::with_capacity(bytes_left as usize);
-    for idx in 0..bytes_left {
-        let addr = src_addr + idx;
-        let value = if addr < src_addr_end {
-            let byte =
-                state.call_ctx()?.call_data[(addr - state.call()?.call_data_offset) as usize];
-            if !is_root {
-                state.push_op(
-                    exec_step,
-                    RW::READ,
-                    MemoryOp::new(state.call()?.caller_id, addr.into(), byte),
-                );
-            }
-            byte
-        } else {
-            0
-        };
-        copy_steps.push((value, false));
-        state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
-    }
-
-    Ok(copy_steps)
-}
-
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
-    let memory_offset = geth_step.stack.nth_last(0)?.as_u64();
-    let data_offset = geth_step.stack.nth_last(1)?.as_u64();
+
+    let memory_offset = geth_step.stack.nth_last(0)?;
+    let data_offset = geth_step.stack.nth_last(1)?;
     let length = geth_step.stack.nth_last(2)?.as_u64();
 
     let call_data_offset = state.call()?.call_data_offset;
     let call_data_length = state.call()?.call_data_length;
-    let (src_addr, src_addr_end) = (
-        call_data_offset + data_offset,
-        call_data_offset + call_data_length,
-    );
+
+    // Get low Uint64 of memory offset to generate copy steps. Since memory
+    // offset could be Uint64 overflow if memory length is zero.
+    let dst_addr = memory_offset.low_u64();
+    let src_addr_end = call_data_offset.checked_add(call_data_length).unwrap();
+
+    // Reset start offset to end offset if overflow.
+    let src_addr = u64::try_from(data_offset)
+        .ok()
+        .and_then(|offset| offset.checked_add(call_data_offset))
+        .unwrap_or(src_addr_end)
+        .min(src_addr_end);
 
     let mut exec_step = state.new_step(geth_step)?;
-    let copy_steps = gen_copy_steps(
-        state,
+    let copy_steps = state.gen_copy_steps_for_call_data(
         &mut exec_step,
         src_addr,
-        memory_offset,
+        dst_addr,
         src_addr_end,
         length,
-        state.call()?.is_root,
     )?;
 
     let (src_type, src_id) = if state.call()?.is_root {
@@ -165,7 +139,7 @@ fn gen_copy_event(
         src_addr_end,
         dst_type: CopyDataType::Memory,
         dst_id: NumberOrHash::Number(state.call()?.call_id),
-        dst_addr: memory_offset,
+        dst_addr,
         log_id: None,
         rw_counter_start,
         bytes: copy_steps,
@@ -183,10 +157,14 @@ mod calldatacopy_tests {
         bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
-        ToWord, Word,
+        Word,
     };
 
-    use mock::test_ctx::{helpers::*, TestContext};
+    use mock::{
+        generate_mock_call_bytecode,
+        test_ctx::{helpers::*, TestContext},
+        MockCallBytecodeParams,
+    };
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -198,10 +176,7 @@ mod calldatacopy_tests {
         let offset = 0x00usize;
         let copy_size = 0x10usize;
         let code_b = bytecode! {
-            PUSH32(copy_size)  // size
-            PUSH32(offset)     // offset
-            PUSH32(dst_offset) // dst_offset
-            CALLDATACOPY
+            .op_calldatacopy(dst_offset, offset, copy_size)
             STOP
         };
 
@@ -211,24 +186,16 @@ mod calldatacopy_tests {
             .take(24)
             .chain(pushdata.clone())
             .collect::<Vec<u8>>();
+
         let call_data_length = 0x20usize;
         let call_data_offset = 0x10usize;
-        let code_a = bytecode! {
-            // populate memory in A's context.
-            PUSH8(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call addr_b.
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH1(call_data_length) // argsLength
-            PUSH1(call_data_offset) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
-            STOP
-        };
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
+            address: addr_b,
+            pushdata,
+            call_data_length,
+            call_data_offset,
+            ..MockCallBytecodeParams::default()
+        });
 
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<3, 1>::new(
@@ -384,14 +351,8 @@ mod calldatacopy_tests {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         // code B gets called by code A, so the call is an internal call.
-        let dst_offset = 0x00usize;
-        let offset = 0x00usize;
-        let copy_size = 0x50usize;
         let code_b = bytecode! {
-            PUSH32(copy_size)  // size
-            PUSH32(offset)     // offset
-            PUSH32(dst_offset) // dst_offset
-            CALLDATACOPY
+            .op_calldatacopy(0x00usize, 0x00usize, 0x50usize)
             STOP
         };
 
@@ -401,24 +362,13 @@ mod calldatacopy_tests {
             .take(24)
             .chain(pushdata.clone())
             .collect::<Vec<u8>>();
-        let call_data_length = 0x20usize;
-        let call_data_offset = 0x10usize;
-        let code_a = bytecode! {
-            // populate memory in A's context.
-            PUSH8(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call addr_b.
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH1(call_data_length) // argsLength
-            PUSH1(call_data_offset) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
-            STOP
-        };
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
+            address: addr_b,
+            pushdata,
+            call_data_length: 0x20usize,
+            call_data_offset: 0x10usize,
+            ..MockCallBytecodeParams::default()
+        });
 
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<3, 1>::new(
@@ -452,10 +402,7 @@ mod calldatacopy_tests {
         let calldata = vec![1, 3, 5, 7, 9, 2, 4, 6, 8];
         let calldata_len = calldata.len();
         let code = bytecode! {
-            PUSH32(size)
-            PUSH32(offset)
-            PUSH32(dst_offset)
-            CALLDATACOPY
+            .op_calldatacopy(dst_offset, offset, size)
             STOP
         };
 
@@ -567,7 +514,7 @@ mod calldatacopy_tests {
         assert_eq!(copy_events[0].bytes.len(), size);
 
         for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
-            assert_eq!(value, calldata.get(offset as usize + idx).unwrap_or(&0));
+            assert_eq!(value, calldata.get(offset + idx).unwrap_or(&0));
             assert!(!is_code);
         }
     }

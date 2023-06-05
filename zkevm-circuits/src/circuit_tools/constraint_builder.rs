@@ -1,13 +1,13 @@
 //! Circuit utilities
 use std::{ops::{Add, Mul}, collections::HashMap, vec};
 
-use crate::{evm_circuit::util::rlc, util::{Expr, Challenges}};
+use crate::{evm_circuit::util::rlc, util::{Expr}};
 use eth_types::Field;
 use gadgets::util::{and, sum, Scalar};
 use halo2_proofs::plonk::{ConstraintSystem, Expression};
 use itertools::Itertools;
 
-use super::{cell_manager::{Cell, CellManager_, CellTypeTrait, EvmCellType}, cached_region::StoredExpression, table::LookupTable_};
+use super::{cell_manager::{Cell, CellManager_, CellTypeTrait}, cached_region::StoredExpression, table::LookupTable_};
 
 
 fn get_condition_expr<F: Field>(conditions: &Vec<Expression<F>>) -> Expression<F> {
@@ -528,7 +528,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         let mut expressions = self.constraints.clone();
         expressions.sort_by(|a, b| a.1.degree().cmp(&b.1.degree()));
         for (name, expr) in expressions.iter() {
-            //println!("'{}': {}", name, expr.degree());
+            println!("'{}': {}", name, expr.degree());
         }
     }
 }

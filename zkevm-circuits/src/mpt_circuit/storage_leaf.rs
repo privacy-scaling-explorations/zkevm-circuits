@@ -1,7 +1,7 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::{
-    circuit::{Value, Region},
+    circuit::{Value},
     plonk::{Error, VirtualCells},
     poly::Rotation,
 };
@@ -9,7 +9,7 @@ use halo2_proofs::{
 use crate::{
     circuit,
     circuit_tools::{
-        cell_manager::{Cell, EvmCellType},
+        cell_manager::{Cell},
         constraint_builder::RLCChainable,
         gadgets::{IsEqualGadget, LtGadget}, cached_region::{CachedRegion, ChallengeSet},
     },
@@ -320,11 +320,11 @@ impl<F: Field> StorageLeafConfig<F> {
                 region,
                 offset,
                 &mut pv.memory[key_memory(is_s)],
-                F::zero(),
-                F::one(),
+                F::ZERO,
+                F::ONE,
                 0,
-                F::zero(),
-                F::one(),
+                F::ZERO,
+                F::ONE,
                 0,
             )?;
 
@@ -358,10 +358,10 @@ impl<F: Field> StorageLeafConfig<F> {
                 region,
                 offset,
                 &mut pv.memory[parent_memory(is_s)],
-                F::zero(),
+                F::ZERO,
                 true,
                 false,
-                F::zero(),
+                F::ZERO,
             )?;
 
             self.is_in_empty_trie[is_s.idx()].assign(

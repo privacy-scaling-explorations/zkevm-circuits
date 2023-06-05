@@ -1,9 +1,7 @@
 
 use eth_types::Field;
 use halo2_proofs::{plonk::{Column, Any}, circuit::Value};
-use strum_macros::EnumIter;
 use crate::{
-    circuit_tools::cell_manager::CellTypeTrait, 
     circuit_tools::{table::LookupTable_, cached_region::ChallengeSet, cell_manager::EvmCellType},
     table::KeccakTable, evm_circuit::table::Table
 };
@@ -11,7 +9,7 @@ use crate::{
 
 impl<F: Field> LookupTable_<F> for KeccakTable {
     type TableCellType = EvmCellType;
-    
+
     fn get_type_(&self) -> EvmCellType {
         EvmCellType::Lookup(Table::Keccak)
     }

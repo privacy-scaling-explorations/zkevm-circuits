@@ -6,7 +6,7 @@ use super::{
 use crate::{
     circuit,
     circuit_tools::{
-        cell_manager::{Cell, EvmCellType}, cached_region::{CachedRegion, ChallengeSet},
+        cell_manager::{Cell}, cached_region::{CachedRegion, ChallengeSet},
     },
     mpt_circuit::{
         helpers::{
@@ -19,7 +19,7 @@ use crate::{
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::{
-    plonk::{Error, VirtualCells}, circuit::Region,
+    plonk::{Error, VirtualCells},
 };
 
 #[derive(Clone, Debug, Default)]
@@ -132,11 +132,11 @@ impl<F: Field> StartConfig<F> {
                 region,
                 offset,
                 &mut pv.memory[key_memory(is_s)],
-                F::zero(),
-                F::one(),
+                F::ZERO,
+                F::ONE,
                 0,
-                F::zero(),
-                F::one(),
+                F::ZERO,
+                F::ONE,
                 0,
             )?;
         }

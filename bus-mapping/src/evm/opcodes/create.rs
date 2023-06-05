@@ -18,7 +18,9 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         // TODO: replace dummy create here
         let geth_step = &geth_steps[0];
 
-        let offset = geth_step.stack.nth_last(1)?.as_usize();
+        // Get low Uint64 of offset to generate copy steps. Since offset could
+        // be Uint64 overflow if length is zero.
+        let offset = geth_step.stack.nth_last(1)?.low_u64() as usize;
         let length = geth_step.stack.nth_last(2)?.as_usize();
 
         let curr_memory_word_size = (state.call_ctx()?.memory.len() as u64) / 32;
@@ -131,14 +133,10 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
 
         // EIP-150: all but one 64th of the caller's gas is sent to the callee.
-        let caller_gas_left =
-            (geth_step.gas.0 - geth_step.gas_cost.0 - memory_expansion_gas_cost) / 64;
+        let caller_gas_left = (geth_step.gas - geth_step.gas_cost - memory_expansion_gas_cost) / 64;
 
         for (field, value) in [
-            (
-                CallContextField::ProgramCounter,
-                (geth_step.pc.0 + 1).into(),
-            ),
+            (CallContextField::ProgramCounter, (geth_step.pc + 1).into()),
             (
                 CallContextField::StackPointer,
                 geth_step.stack.nth_last_filled(n_pop - 1).0.into(),
@@ -176,7 +174,7 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
 
         if call.code_hash == CodeDB::empty_code_hash() {
             // 1. Create with empty initcode.
-            state.handle_return(geth_step)?;
+            state.handle_return(&mut exec_step, geth_steps, false)?;
             Ok(vec![exec_step])
         } else {
             // 2. Create with non-empty initcode.

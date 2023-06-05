@@ -44,12 +44,12 @@ impl<F: Field> IsZeroGadget<F> {
         offset: usize,
         value: F,
     ) -> Result<F, Error> {
-        let inverse = value.invert().unwrap_or(F::zero());
+        let inverse = value.invert().unwrap_or(F::ZERO);
         self.inverse.as_ref().unwrap().assign(region, offset, inverse)?;
         Ok(if value.is_zero().into() {
-            F::one()
+            F::ONE
         } else {
-            F::zero()
+            F::ZERO
         })
     }
 }
@@ -141,16 +141,16 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
         // Set `lt`
         let lt = lhs < rhs;
         self.lt.as_ref().unwrap()
-            .assign(region, offset, if lt { F::one() } else { F::zero() })?;
+            .assign(region, offset, if lt { F::ONE } else { F::ZERO })?;
 
         // Set the bytes of diff
-        let diff = (lhs - rhs) + (if lt { self.range } else { F::zero() });
+        let diff = (lhs - rhs) + (if lt { self.range } else { F::ZERO });
         let diff_bytes = diff.to_repr();
         for (idx, diff) in self.diff.as_ref().unwrap().iter().enumerate() {
             diff.assign(region, offset, F::from(diff_bytes[idx] as u64))?;
         }
 
-        Ok((if lt { F::one() } else { F::zero() }, diff_bytes.to_vec()))
+        Ok((if lt { F::ONE } else { F::ZERO }, diff_bytes.to_vec()))
     }
 
     pub(crate) fn diff_bytes(&self) -> Vec<Cell<F>> {

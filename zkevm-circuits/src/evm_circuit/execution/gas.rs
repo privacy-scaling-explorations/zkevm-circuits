@@ -5,7 +5,10 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             from_bytes, CachedRegion, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -26,7 +29,7 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::GAS;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         // The gas passed to a transaction is a 64-bit number.
         let gas_left = cb.query_word_rlc();
 
@@ -75,7 +78,7 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
             offset,
             Some(
                 step.gas_left
-                    .saturating_sub(OpcodeId::GAS.constant_gas_cost().as_u64())
+                    .saturating_sub(OpcodeId::GAS.constant_gas_cost())
                     .to_le_bytes(),
             ),
         )?;

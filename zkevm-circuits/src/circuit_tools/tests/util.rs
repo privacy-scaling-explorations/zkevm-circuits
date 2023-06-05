@@ -1,22 +1,17 @@
-use std::rc::Rc;
 use std::vec;
 
 use crate::circuit_tools::cached_region::{self, ChallengeSet};
 use crate::circuit_tools::cell_manager::{Cell, CellManager_, CellTypeTrait};
 use crate::circuit_tools::constraint_builder::ConstraintBuilder;
-use crate::circuit_tools::memory::Memory;
-use crate::util::{Expr, query_expression};
 use crate::circuit_tools::{table::LookupTable_, cached_region::{CachedRegion, MacroDescr}};
 
 use eth_types::Field;
 use gadgets::util::Scalar;
-use halo2_proofs::circuit::{SimpleFloorPlanner, layouter, Layouter, Region};
-use halo2_proofs::dev::MockProver;
-use halo2_proofs::halo2curves::bn256::Fr;
+use halo2_proofs::circuit::{SimpleFloorPlanner, Layouter};
 use halo2_proofs::plonk::{Any, Circuit, FirstPhase, Challenge, SecondPhase, ThirdPhase, Fixed, Selector};
 use halo2_proofs::{
-    circuit::{AssignedCell, Value},
-    plonk::{ConstraintSystem, Advice, Column, Error, Expression, VirtualCells},
+    circuit::{Value},
+    plonk::{ConstraintSystem, Advice, Column, Error, Expression},
     poly::Rotation,
 };
 
@@ -119,7 +114,7 @@ impl<F: Field> TestConfig<F> {
             ).collect::<Vec<_>>();
 
         // Init cell manager and constraint builder
-        let mut cm = CellManager_::new(
+        let cm = CellManager_::new(
             meta,
             vec![
                 (CellType::PhaseOne, 3, 0, false),
@@ -172,7 +167,7 @@ impl<F: Field> TestConfig<F> {
             || "cell gadget",
             |mut region| {
 
-                self.sel.enable(&mut region, 0);
+                self.sel.enable(&mut region, 0)?;
 
                 for offset in 0..20 {
                     assignf!(region, (self.q_enable, offset) => 1.scalar())?;
@@ -249,7 +244,7 @@ impl<F: Field> CellGadget<F> {
 
         // All challenges are returned as defined struct or Vec<&Value<F>>,
         // we map them to Vec<F> for calculations.
-        let mut r = F::one();
+        let mut r = F::ONE;
         region.challenges().indexed()[0].map(|r_val| r = r_val);
 
         // Assign values to cells
@@ -276,7 +271,7 @@ struct TestCircuit<F> {
 impl<F: Field> Circuit<F> for TestCircuit<F> {
     type Config = (TestConfig<F>, Challenge);
     type FloorPlanner = SimpleFloorPlanner;
-
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         unimplemented!()
