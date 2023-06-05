@@ -390,13 +390,12 @@ mod tests {
 
         assert_eq!(step.error, Some(ExecError::ContractAddressCollision));
 
-        // TODO: fix it
-        // let container = builder.block.container.clone();
-        // println!("{:?}", container.stack);
-        // println!("-----");
-        // println!("{:?}", step.bus_mapping_instance);
-        // println!("-----");
-        // let operation = &container.stack[step.bus_mapping_instance[0].as_usize()];
-        // assert_eq!(operation.rw(), RW::READ);
+        let container = builder.block.container.clone();
+        println!("{:?}", container.stack);
+        println!("-----");
+        println!("{:?}", step.bus_mapping_instance);
+        println!("-----");
+        let operation = &container.stack[step.bus_mapping_instance[5].as_usize()];
+        assert_eq!(operation.rw(), RW::READ);
     }
 }
