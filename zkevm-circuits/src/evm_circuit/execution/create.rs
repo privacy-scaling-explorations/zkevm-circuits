@@ -119,7 +119,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         cb.condition(is_create2.expr(), |cb| {
             cb.stack_pop(create.salt_word_rlc(cb).expr());
         });
-        cb.stack_push(is_success.expr() * contract_addr_rlc.clone());
+        cb.stack_push(is_success.expr() * contract_addr_rlc);
 
         // read caller's balance and nonce
         let caller_nonce = create.caller_nonce();
@@ -228,7 +228,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let transfer = cb.condition(
             and::expr([is_precheck_ok.clone(), not_address_collision.expr()]),
             |cb| {
-                cb.condition(init_code.has_length().clone(), |cb| {
+                cb.condition(init_code.has_length(), |cb| {
                     // the init code is being copied from memory to bytecode, so a copy table lookup
                     // to verify that the associated fields for the copy event.
                     cb.copy_table_lookup(
@@ -279,7 +279,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     Some(&mut callee_reversion_info),
                 );
 
-                cb.condition(init_code.has_length().clone(), |cb| {
+                cb.condition(init_code.has_length(), |cb| {
                     for (field_tag, value) in [
                         (CallContextFieldTag::CallerId, current_call_id.expr()),
                         (CallContextFieldTag::IsSuccess, is_success.expr()),
@@ -575,7 +575,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 let mut stream = ethers_core::utils::rlp::RlpStream::new();
                 stream.begin_list(2);
                 stream.append(&call.address);
-                stream.append(&U256::from(caller_nonce));
+                stream.append(&caller_nonce);
                 stream.out().to_vec()
             };
             let mut keccak_output = keccak256(keccak_input);

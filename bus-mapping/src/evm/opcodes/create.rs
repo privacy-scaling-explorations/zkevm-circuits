@@ -3,7 +3,7 @@ use crate::{
         CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     error::ExecError,
-    evm::{Opcode, OpcodeId},
+    evm::Opcode,
     operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
     state_db::CodeDB,
     Error,
