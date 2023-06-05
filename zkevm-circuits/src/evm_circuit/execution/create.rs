@@ -24,9 +24,12 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, state_db::CodeDB};
-use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToLittleEndian, ToScalar, U256};
+use eth_types::{
+    evm_types::{GasCost, INIT_CODE_WORD_GAS},
+    Field, ToBigEndian, ToLittleEndian, ToScalar, U256,
+};
 use ethers_core::utils::keccak256;
-use gadgets::util::{and, expr_from_bytes, or};
+use gadgets::util::{and, expr_from_bytes, or, select};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use std::iter::once;
@@ -150,8 +153,12 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             init_code.length() + (N_BYTES_WORD - 1).expr(),
             N_BYTES_WORD as u64,
         );
-        let keccak_gas_cost =
-            GasCost::COPY_SHA3.expr() * is_create2.expr() * init_code_word_size.quotient();
+        let keccak_gas_cost = init_code_word_size.quotient()
+            * select::expr(
+                is_create2.expr(),
+                (INIT_CODE_WORD_GAS + GasCost::COPY_SHA3).expr(),
+                INIT_CODE_WORD_GAS.expr(),
+            );
         let gas_cost = GasCost::CREATE.expr() + memory_expansion.gas_cost() + keccak_gas_cost;
         let gas_remaining = cb.curr.state.gas_left.expr() - gas_cost.clone();
         let gas_left = ConstantDivisionGadget::construct(cb, gas_remaining.clone(), 64);
@@ -519,11 +526,12 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let gas_left = step.gas_left
             - GasCost::CREATE
             - memory_expansion_gas_cost
-            - if is_create2 {
-                u64::try_from(init_code_word_size).unwrap() * GasCost::COPY_SHA3
-            } else {
-                0
-            };
+            - u64::try_from(init_code_word_size).unwrap()
+                * if is_create2 {
+                    INIT_CODE_WORD_GAS + GasCost::COPY_SHA3
+                } else {
+                    INIT_CODE_WORD_GAS
+                };
         self.gas_left.assign(region, offset, gas_left.into())?;
         self.callee_reversion_info.assign(
             region,
@@ -847,7 +855,7 @@ mod test {
         run_test_circuits(test_context(caller));
     }
 
-    // Ignore this test case. It hits our max_rws.
+    // Ignore this test case. It could run successfully but slow for CI.
     #[ignore]
     #[test]
     fn test_create_error_depth() {
