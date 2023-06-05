@@ -2,13 +2,14 @@
 use std::collections::HashMap;
 
 use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField};
-use eth_types::{Address, Field, ToAddress, ToScalar, Word, U256};
+use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
 
 use crate::{
+    evm_circuit::util::rlc,
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
-    util::{build_tx_log_address, word::Word as WordNew},
+    util::build_tx_log_address,
 };
 
 use super::MptUpdates;
@@ -252,24 +253,15 @@ pub struct RwRow<F> {
     pub(crate) id: F,
     pub(crate) address: F,
     pub(crate) field_tag: F,
-    #[deprecated]
     pub(crate) storage_key: F,
-    pub(crate) storage_key_word: WordNew<F>,
-    #[deprecated]
     pub(crate) value: F,
-    pub(crate) value_word: WordNew<F>,
-    #[deprecated]
     pub(crate) value_prev: F,
-    pub(crate) value_prev_word: WordNew<F>,
     pub(crate) aux1: F,
-    #[deprecated]
     pub(crate) aux2: F,
-    pub(crate) aux2_word: WordNew<F>,
 }
 
-// TODO figure out a better trait bound on T to support function word lo()/hi()
 impl<F: Field> RwRow<F> {
-    pub(crate) fn values(&self) -> [F; 15] {
+    pub(crate) fn values(&self) -> [F; 11] {
         [
             self.rw_counter,
             self.is_write,
@@ -277,15 +269,11 @@ impl<F: Field> RwRow<F> {
             self.id,
             self.address,
             self.field_tag,
-            self.storage_key_word.lo(),
-            self.storage_key_word.hi(),
-            self.value_word.lo(),
-            self.value_word.hi(),
-            self.value_prev_word.lo(),
-            self.value_prev_word.hi(),
+            self.storage_key,
+            self.value,
+            self.value_prev,
             self.aux1,
-            self.aux2_word.lo(),
-            self.aux2_word.hi(),
+            self.aux2,
         ]
     }
     pub(crate) fn rlc(&self, randomness: F) -> F {
@@ -397,7 +385,7 @@ impl Rw {
 
     // At this moment is a helper for the EVM circuit until EVM challange API is
     // applied
-    pub(crate) fn table_assignment_aux<F: Field>(&self) -> RwRow<F> {
+    pub(crate) fn table_assignment_aux<F: Field>(&self, randomness: F) -> RwRow<F> {
         RwRow {
             rw_counter: F::from(self.rw_counter() as u64),
             is_write: F::from(self.is_write() as u64),
@@ -405,19 +393,20 @@ impl Rw {
             id: F::from(self.id().unwrap_or_default() as u64),
             address: self.address().unwrap_or_default().to_scalar().unwrap(),
             field_tag: F::from(self.field_tag().unwrap_or_default()),
-            storage_key: F::ZERO,
-            storage_key_word: WordNew::from_u256(self.storage_key().unwrap_or_default()),
-            value: F::ZERO,
-            value_word: self.value_assignment_new(),
-            value_prev: F::ZERO,
-            value_prev_word: self.value_prev_assignment().unwrap_or_default(),
+            storage_key: rlc::value(
+                &self.storage_key().unwrap_or_default().to_le_bytes(),
+                randomness,
+            ),
+            value: self.value_assignment(randomness),
+            value_prev: self.value_prev_assignment(randomness).unwrap_or_default(),
             aux1: F::ZERO, // only used for AccountStorage::tx_id, which moved to key1.
-            aux2: F::ZERO,
-            aux2_word: self.committed_value_assignment().unwrap_or_default(),
+            aux2: self
+                .committed_value_assignment(randomness)
+                .unwrap_or_default(),
         }
     }
 
-    pub(crate) fn table_assignment<F: Field>(&self) -> RwRow<Value<F>> {
+    pub(crate) fn table_assignment<F: Field>(&self, randomness: Value<F>) -> RwRow<Value<F>> {
         RwRow {
             rw_counter: Value::known(F::from(self.rw_counter() as u64)),
             is_write: Value::known(F::from(self.is_write() as u64)),
@@ -425,23 +414,21 @@ impl Rw {
             id: Value::known(F::from(self.id().unwrap_or_default() as u64)),
             address: Value::known(self.address().unwrap_or_default().to_scalar().unwrap()),
             field_tag: Value::known(F::from(self.field_tag().unwrap_or_default())),
-            storage_key: Value::known(F::ZERO),
-            storage_key_word: WordNew::from_u256(self.storage_key().unwrap_or_default())
-                .map(Value::known),
-            value: Value::known(F::ZERO),
-            value_word: self.value_assignment_new().map(Value::known),
-            value_prev: Value::known(F::ZERO),
-            value_prev_word: self
-                .value_prev_assignment()
-                .unwrap_or_default()
-                .map(Value::known),
+            storage_key: randomness.map(|randomness| {
+                rlc::value(
+                    &self.storage_key().unwrap_or_default().to_le_bytes(),
+                    randomness,
+                )
+            }),
+            value: randomness.map(|randomness| self.value_assignment(randomness)),
+            value_prev: randomness
+                .map(|randomness| self.value_prev_assignment(randomness).unwrap_or_default()),
             aux1: Value::known(F::ZERO), /* only used for AccountStorage::tx_id, which moved to
                                           * key1. */
-            aux2: Value::known(F::ZERO),
-            aux2_word: self
-                .committed_value_assignment()
-                .unwrap_or_default()
-                .map(Value::known),
+            aux2: randomness.map(|randomness| {
+                self.committed_value_assignment(randomness)
+                    .unwrap_or_default()
+            }),
         }
     }
 
@@ -574,41 +561,69 @@ impl Rw {
         }
     }
 
-    #[deprecated(note = "in fav of value_assignment_new")]
-    pub(crate) fn value_assignment<F: Field>(&self, _randomness: F) -> F {
-        unimplemented!()
-    }
-
-    pub(crate) fn value_assignment_new<F: Field>(&self) -> WordNew<F> {
+    pub(crate) fn value_assignment<F: Field>(&self, randomness: F) -> F {
         match self {
-            Self::Start { .. } => WordNew::default(),
-            Self::CallContext { value, .. } => WordNew::from_u256(*value),
-            Self::Account { value, .. } => WordNew::from_u256(*value),
-            Self::AccountStorage { value, .. } | Self::Stack { value, .. } => {
-                WordNew::from_u256(*value)
+            Self::Start { .. } => F::ZERO,
+            Self::CallContext {
+                field_tag, value, ..
+            } => {
+                match field_tag {
+                    // Only these two tags have values that may not fit into a scalar, so we need to
+                    // RLC.
+                    CallContextFieldTag::CodeHash | CallContextFieldTag::Value => {
+                        rlc::value(&value.to_le_bytes(), randomness)
+                    }
+                    _ => value.to_scalar().unwrap(),
+                }
             }
-            Self::TxLog { value, .. } => WordNew::from_u256(*value),
+            Self::Account {
+                value, field_tag, ..
+            } => match field_tag {
+                AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
+                    rlc::value(&value.to_le_bytes(), randomness)
+                }
+                AccountFieldTag::Nonce | AccountFieldTag::NonExisting => value.to_scalar().unwrap(),
+            },
+            Self::AccountStorage { value, .. } | Self::Stack { value, .. } => {
+                rlc::value(&value.to_le_bytes(), randomness)
+            }
+
+            Self::TxLog {
+                field_tag, value, ..
+            } => match field_tag {
+                TxLogFieldTag::Topic => rlc::value(&value.to_le_bytes(), randomness),
+                _ => value.to_scalar().unwrap(),
+            },
 
             Self::TxAccessListAccount { is_warm, .. }
-            | Self::TxAccessListAccountStorage { is_warm, .. } => {
-                WordNew::from_u64(*is_warm as u64)
-            }
-            Self::Memory { byte, .. } => WordNew::from_u64(u64::from(*byte)),
-            Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => {
-                WordNew::from_u64(*value)
-            }
+            | Self::TxAccessListAccountStorage { is_warm, .. } => F::from(*is_warm as u64),
+            Self::Memory { byte, .. } => F::from(u64::from(*byte)),
+            Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => F::from(*value),
         }
     }
 
-    pub(crate) fn value_prev_assignment<F: Field>(&self) -> Option<WordNew<F>> {
+    pub(crate) fn value_prev_assignment<F: Field>(&self, randomness: F) -> Option<F> {
         match self {
-            Self::Account { value_prev, .. } => Some(WordNew::from_u256(*value_prev)),
-            Self::AccountStorage { value_prev, .. } => Some(WordNew::from_u256(*value_prev)),
+            Self::Account {
+                value_prev,
+                field_tag,
+                ..
+            } => Some(match field_tag {
+                AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
+                    rlc::value(&value_prev.to_le_bytes(), randomness)
+                }
+                AccountFieldTag::Nonce | AccountFieldTag::NonExisting => {
+                    value_prev.to_scalar().unwrap()
+                }
+            }),
+            Self::AccountStorage { value_prev, .. } => {
+                Some(rlc::value(&value_prev.to_le_bytes(), randomness))
+            }
             Self::TxAccessListAccount { is_warm_prev, .. }
             | Self::TxAccessListAccountStorage { is_warm_prev, .. } => {
-                Some(WordNew::from_u64(*is_warm_prev as u64))
+                Some(F::from(*is_warm_prev as u64))
             }
-            Self::TxRefund { value_prev, .. } => Some(WordNew::from_u64(*value_prev)),
+            Self::TxRefund { value_prev, .. } => Some(F::from(*value_prev)),
             Self::Start { .. }
             | Self::Stack { .. }
             | Self::Memory { .. }
@@ -618,11 +633,11 @@ impl Rw {
         }
     }
 
-    fn committed_value_assignment<F: Field>(&self) -> Option<WordNew<F>> {
+    fn committed_value_assignment<F: Field>(&self, randomness: F) -> Option<F> {
         match self {
             Self::AccountStorage {
                 committed_value, ..
-            } => Some(WordNew::from_u256(*committed_value)),
+            } => Some(rlc::value(&committed_value.to_le_bytes(), randomness)),
             _ => None,
         }
     }
