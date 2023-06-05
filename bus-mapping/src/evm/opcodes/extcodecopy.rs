@@ -190,6 +190,7 @@ mod extcodecopy_tests {
         Bytecode, Bytes, ToWord, Word, U256,
     };
     use mock::TestContext;
+    use crate::operation::MemoryWordOp;
 
     fn test_ok(
         code_ext: Bytes,
@@ -404,29 +405,35 @@ mod extcodecopy_tests {
 
         let expected_call_id = transaction.calls()[step.call_index].call_id;
 
-        // TODO: update to memory word
-        // assert_eq!(
-        //     (0..copy_size)
-        //         .map(|idx| &builder.block.container.memory[idx])
-        //         .map(|op| (op.rw(), op.op().clone()))
-        //         .collect::<Vec<(RW, MemoryOp)>>(),
-        //     (0..copy_size)
-        //         .map(|idx| {
-        //             (
-        //                 RW::WRITE,
-        //                 MemoryOp::new(
-        //                     expected_call_id,
-        //                     MemoryAddress::from(memory_offset + idx),
-        //                     if data_offset + idx < bytecode_ext.to_vec().len() {
-        //                         bytecode_ext.to_vec()[data_offset + idx]
-        //                     } else {
-        //                         0
-        //                     },
-        //                 ),
-        //             )
-        //         })
-        //         .collect::<Vec<(RW, MemoryOp)>>(),
-        // );
+        let length = memory_offset + copy_size;
+        let copy_start = memory_offset - memory_offset % 32;
+        let copy_end = length - length % 32;
+        let word_ops = (copy_end + 32 - copy_start) / 32;
+        let copied_bytes = builder.block.copy_events[0]
+            .bytes
+            .iter()
+            .map(|(b, _, _)| *b)
+            .collect::<Vec<_>>();
+        assert_eq!(builder.block.container.memory_word.len(), word_ops);
+
+        assert_eq!(
+            (0..word_ops)
+                .map(|idx| &builder.block.container.memory_word[idx])
+                .map(|op| (op.rw(), op.op().clone()))
+                .collect::<Vec<(RW, MemoryWordOp)>>(),
+            (0..word_ops)
+                .map(|idx| {
+                    (
+                        RW::WRITE,
+                        MemoryWordOp {
+                            call_id,
+                            address: MemoryAddress(copy_start + idx * 32),
+                            value: Word::from(&copied_bytes[idx * 32..(idx + 1) * 32]),
+                        }
+                    )
+                })
+                .collect::<Vec<(RW, MemoryWordOp)>>(),
+        );
 
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
