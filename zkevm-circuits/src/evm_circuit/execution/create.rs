@@ -444,8 +444,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         self.reversion_info.assign(
             region,
             offset,
-            call.rw_counter_end_of_reversion,
-            call.is_persistent,
+            block.get_rws(step, 2).call_context_value().as_usize(),
+            block.get_rws(step, 3).call_context_value().as_usize() != 0,
         )?;
 
         // 0..3 : TxId, Depth, RwCounterEndOfReversion and IsPersistent
@@ -607,6 +607,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             Some(salt),
         )?;
 
+        // If transfer value is zero, there is no balance update
+        let transfer_offset = if value.is_zero() { 2 } else { 0 };
         self.is_success.assign(
             region,
             offset,
@@ -616,12 +618,13 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 F::ONE
             } else {
                 block
-                    .get_rws(step, 18 + rw_offset + copy_rw_increase)
+                    .get_rws(step, 18 + rw_offset + copy_rw_increase - transfer_offset)
                     .call_context_value()
                     .to_scalar()
                     .unwrap()
             }),
         )?;
+
         self.is_insufficient_balance
             .assign(region, offset, caller_balance, value)?;
         self.is_depth_in_range
@@ -781,9 +784,6 @@ mod test {
                 balance: eth(10),
                 ..Default::default()
             };
-            println!("****");
-            println!("*** {}-{}-{} ***", is_success, is_create2, is_persistent);
-            println!("****");
             run_test_circuits(test_context(caller));
         }
     }

@@ -498,7 +498,7 @@ mod test {
         {
             let initializer = callee_bytecode(*is_return, *offset, *length).code();
 
-            let root_code = bytecode! {
+            let mut root_code = bytecode! {
                 PUSH32(Word::from_big_endian(&initializer))
                 PUSH1(0)
                 MSTORE
@@ -509,6 +509,13 @@ mod test {
 
                 CREATE
             };
+            if !is_return {
+                root_code.append(&bytecode! {
+                    PUSH1(0)
+                    PUSH1(0)
+                    REVERT
+                });
+            }
 
             let ctx = TestContext::<2, 1>::new(
                 None,
