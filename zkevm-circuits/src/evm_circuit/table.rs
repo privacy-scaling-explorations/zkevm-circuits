@@ -106,12 +106,12 @@ impl FixedTableTag {
             })),
             Self::ConstantGasCost => Box::new(
                 OpcodeId::iter()
-                    .filter(move |opcode| opcode.constant_gas_cost().0 > 0)
+                    .filter(move |opcode| opcode.constant_gas_cost() > 0)
                     .map(move |opcode| {
                         [
                             tag,
                             F::from(opcode.as_u64()),
-                            F::from(opcode.constant_gas_cost().0),
+                            F::from(opcode.constant_gas_cost()),
                             F::ZERO,
                         ]
                     }),

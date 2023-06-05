@@ -1,8 +1,5 @@
 //! Utility traits, functions used in the crate.
-use eth_types::{
-    evm_types::{GasCost, OpcodeId},
-    Field, U256,
-};
+use eth_types::{evm_types::OpcodeId, Field, U256};
 use halo2_proofs::plonk::Expression;
 
 /// Returns the sum of the passed in cells
@@ -234,7 +231,6 @@ impl_expr!(u64);
 impl_expr!(usize);
 impl_expr!(isize);
 impl_expr!(OpcodeId, OpcodeId::as_u8);
-impl_expr!(GasCost, GasCost::as_u64);
 
 impl<F: Field> Scalar<F> for i32 {
     #[inline]

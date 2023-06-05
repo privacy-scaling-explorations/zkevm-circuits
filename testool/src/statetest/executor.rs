@@ -201,8 +201,8 @@ pub fn run_test(
         ));
     }
 
-    if suite.max_gas > 0 && geth_traces[0].gas.0 > suite.max_gas {
-        return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas.0));
+    if suite.max_gas > 0 && geth_traces[0].gas > suite.max_gas {
+        return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas));
     }
 
     let transactions = trace_config

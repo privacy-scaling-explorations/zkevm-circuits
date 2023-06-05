@@ -733,11 +733,9 @@ impl<F: Field> Step<F> {
         self.state
             .code_hash
             .assign(region, offset, region.word_rlc(call.code_hash.to_word()))?;
-        self.state.program_counter.assign(
-            region,
-            offset,
-            Value::known(F::from(step.program_counter())),
-        )?;
+        self.state
+            .program_counter
+            .assign(region, offset, Value::known(F::from(step.pc)))?;
         self.state.stack_pointer.assign(
             region,
             offset,
@@ -745,7 +743,7 @@ impl<F: Field> Step<F> {
         )?;
         self.state
             .gas_left
-            .assign(region, offset, Value::known(F::from(step.gas_left.0)))?;
+            .assign(region, offset, Value::known(F::from(step.gas_left)))?;
         self.state.memory_word_size.assign(
             region,
             offset,
