@@ -93,8 +93,8 @@ mod test {
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::evm::OpcodeId;
     use eth_types::{
-        self, address, bytecode, bytecode::Bytecode, evm_types::GasCost, geth_types::Account,
-        Address, ToWord, Word, U64,
+        self, address, bytecode, bytecode::Bytecode, eth_core, evm_types::GasCost,
+        geth_types::Account, Address, ToWord, Word, U64,
     };
 
     use mock::{
@@ -113,7 +113,7 @@ mod test {
         )
     }
 
-    fn test_oog_constant(tx: eth_types::Transaction, is_success: bool) {
+    fn test_oog_constant(tx: eth_core::Transaction, is_success: bool) {
         let code = if is_success {
             bytecode! {
                 PUSH1(0)
@@ -147,7 +147,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_types::Transaction {
+    fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_core::Transaction {
         let from = MOCK_ACCOUNTS[1];
         let to = MOCK_ACCOUNTS[0];
 
@@ -159,7 +159,7 @@ mod test {
             .gas_price(gas_price)
             .input(calldata.into())
             .build();
-        eth_types::Transaction::from(mock_transaction)
+        eth_core::Transaction::from(mock_transaction)
     }
 
     #[test]

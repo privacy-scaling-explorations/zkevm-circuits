@@ -127,7 +127,7 @@ mod tests {
 
         let n_tx = max_txs;
         for _ in 0..n_tx {
-            let eth_tx = eth_types::Transaction::from(mock::CORRECT_MOCK_TXS[0].clone());
+            let eth_tx = eth_types::eth_core::Transaction::from(mock::CORRECT_MOCK_TXS[0].clone());
             public_data.transactions.push(eth_tx);
         }
         public_data

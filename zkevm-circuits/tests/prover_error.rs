@@ -6,8 +6,9 @@
 use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
 use env_logger::Env;
 use eth_types::{
+    eth_core::{Transaction, H160},
     geth_types::{Account, GethData},
-    Block, Bytes, Error, Transaction, Word, H160, U256,
+    Block, Bytes, Error, Word, U256,
 };
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use mock::test_ctx::{gen_geth_traces, LoggerConfig};

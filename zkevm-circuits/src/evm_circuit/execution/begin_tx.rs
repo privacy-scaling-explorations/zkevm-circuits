@@ -630,7 +630,7 @@ mod test {
 
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{self, bytecode, evm_types::GasCost, word, Bytecode, Word};
+    use eth_types::{self, bytecode, eth_core, evm_types::GasCost, word, Bytecode, Word};
 
     use mock::{eth, gwei, MockTransaction, TestContext, MOCK_ACCOUNTS};
 
@@ -661,7 +661,7 @@ mod test {
         }
     }
 
-    fn test_ok(tx: eth_types::Transaction, code: Option<Bytecode>) {
+    fn test_ok(tx: eth_types::eth_core::Transaction, code: Option<Bytecode>) {
         // Get the execution steps from the external tracer
         let ctx = TestContext::<2, 1>::new(
             None,
@@ -688,7 +688,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_types::Transaction {
+    fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_core::Transaction {
         let from = MOCK_ACCOUNTS[1];
         let to = MOCK_ACCOUNTS[0];
 
@@ -701,7 +701,7 @@ mod test {
             .input(calldata.into())
             .build();
 
-        eth_types::Transaction::from(mock_transaction)
+        eth_core::Transaction::from(mock_transaction)
     }
 
     #[test]
