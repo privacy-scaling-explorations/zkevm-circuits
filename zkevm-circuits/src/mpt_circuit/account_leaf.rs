@@ -1,7 +1,7 @@
 use eth_types::Field;
 use gadgets::util::{pow, Scalar};
 use halo2_proofs::{
-    circuit::{Value},
+    circuit::Value,
     plonk::{Error, VirtualCells},
     poly::Rotation,
 };
@@ -15,9 +15,10 @@ use super::{
 use crate::{
     circuit,
     circuit_tools::{
-        cell_manager::{Cell},
+        cached_region::{CachedRegion, ChallengeSet},
+        cell_manager::Cell,
         constraint_builder::{RLCChainable, RLCable, RLCableValue},
-        gadgets::IsEqualGadget, cached_region::{CachedRegion, ChallengeSet},
+        gadgets::IsEqualGadget,
     },
     mpt_circuit::{
         helpers::{
@@ -58,8 +59,7 @@ impl<F: Field> AccountLeafConfig<F> {
     ) -> Self {
         let r = ctx.r.clone();
 
-        cb
-            .base
+        cb.base
             .cell_manager
             .as_mut()
             .unwrap()
@@ -92,12 +92,8 @@ impl<F: Field> AccountLeafConfig<F> {
             let drifted_bytes = ctx.rlp_item(meta, cb, AccountRowType::Drifted as usize);
             let wrong_bytes = ctx.rlp_item(meta, cb, AccountRowType::Wrong as usize);
 
-            config.main_data = MainData::load(
-                "main storage",
-                cb,
-                &ctx.memory[main_memory()],
-                0.expr(),
-            );
+            config.main_data =
+                MainData::load("main storage", cb, &ctx.memory[main_memory()], 0.expr());
 
             // Don't allow an account node to follow an account node
             require!(config.main_data.is_below_account => false);
@@ -358,6 +354,7 @@ impl<F: Field> AccountLeafConfig<F> {
         config
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn assign<S: ChallengeSet<F>>(
         &self,
         region: &mut CachedRegion<'_, '_, F, S>,
@@ -423,14 +420,14 @@ impl<F: Field> AccountLeafConfig<F> {
             key_data[is_s.idx()] = self.key_data[is_s.idx()].witness_load(
                 region,
                 offset,
-                &mut pv.memory[key_memory(is_s)],
+                &pv.memory[key_memory(is_s)],
                 0,
             )?;
 
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
                 region,
                 offset,
-                &mut pv.memory[parent_memory(is_s)],
+                &pv.memory[parent_memory(is_s)],
                 0,
             )?;
 

@@ -27,23 +27,25 @@ mod witness_row;
 use self::{
     account_leaf::AccountLeafConfig,
     helpers::{key_memory, RLPItemView},
-    witness_row::{AccountRowType, ExtensionBranchRowType, Node, StartRowType, StorageRowType}, rlp_gadgets::decode_rlp,
+    rlp_gadgets::decode_rlp,
+    witness_row::{AccountRowType, ExtensionBranchRowType, Node, StartRowType, StorageRowType},
 };
 use crate::{
     assign, assignf, circuit,
     circuit_tools::{
         cached_region::{CachedRegion, ChallengeSet},
-        cell_manager::{CellManager_, EvmCellType},
+        cell_manager::{CellManager, EvmCellType},
         memory::Memory,
-        table::LookupTable_,
+        table::LookupTable,
     },
+    evm_circuit::table::Table,
     mpt_circuit::{
         helpers::{main_memory, parent_memory, MPTConstraintBuilder, MainRLPGadget},
         start::StartConfig,
         storage_leaf::StorageLeafConfig,
     },
     table::{KeccakTable, MPTProofType, MptTable},
-    util::Challenges, evm_circuit::table::Table,
+    util::Challenges,
 };
 use extension_branch::ExtensionBranchConfig;
 use param::HASH_WIDTH;
@@ -91,7 +93,7 @@ impl<F: Field> StateMachineConfig<F> {
         &self,
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
-        height: usize
+        height: usize,
     ) {
         circuit!([meta, cb], {
             // Because the state machine state is this height, we're already querying cells
@@ -233,7 +235,7 @@ impl<F: Field> MPTConfig<F> {
             memory: memory.clone(),
         };
 
-        let rlp_cm = CellManager_::new(
+        let rlp_cm = CellManager::new(
             meta,
             // Type, #cols, phase, permutable
             vec![
@@ -244,7 +246,7 @@ impl<F: Field> MPTConfig<F> {
             0,
             1,
         );
-        let state_cm = CellManager_::new(
+        let state_cm = CellManager::new(
             meta,
             // Type, #cols, phase, permutable
             vec![
@@ -262,7 +264,7 @@ impl<F: Field> MPTConfig<F> {
         meta.create_gate("MPT", |meta| {
             circuit!([meta, cb], {
                 // Populate lookup tables
-                require!(@"keccak" => <KeccakTable as LookupTable_<F>>::advice_columns(&keccak_table).iter().map(|table| a!(table)).collect());
+                require!(@"keccak" => <KeccakTable as LookupTable<F>>::advice_columns(&keccak_table).iter().map(|table| a!(table)).collect());
                 require!(@"fixed" => fixed_table.iter().map(|table| f!(table)).collect());
 
                 ifx!{f!(q_enable) => {
@@ -329,7 +331,7 @@ impl<F: Field> MPTConfig<F> {
                 meta,
                 challenges.lookup_input(),
                 vec![rlp_cm, state_cm],
-                vec![&keccak_table, &fixed_table]
+                vec![&keccak_table, &fixed_table],
             );
             cb.base.build_dynamic_lookups(
                 meta,
@@ -504,15 +506,18 @@ impl<F: Field> MPTConfig<F> {
         offset: usize,
         state_idx: usize,
     ) {
-        //println!("store state idx {}", state_idx);
-        self.cb.base.get_stored_expressions(state_idx)
+        // println!("store state idx {}", state_idx);
+        self.cb
+            .base
+            .get_stored_expressions(state_idx)
             .iter()
             .for_each(|stored_expr| {
-                //println!("store {}", state_idx);
-                stored_expr.assign(region, offset).expect("static lookup assignment failed");
+                // println!("store {}", state_idx);
+                stored_expr
+                    .assign(region, offset)
+                    .expect("static lookup assignment failed");
             });
-   }
-
+    }
 
     fn load_fixed_table(
         &self,

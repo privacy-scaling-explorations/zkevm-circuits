@@ -1,8 +1,6 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
-use halo2_proofs::{
-    plonk::{Error, VirtualCells},
-};
+use halo2_proofs::plonk::{Error, VirtualCells};
 
 use super::{
     branch::BranchGadget,
@@ -14,7 +12,10 @@ use super::{
 };
 use crate::{
     circuit,
-    circuit_tools::{cell_manager::{Cell}, cached_region::{CachedRegion, ChallengeSet}},
+    circuit_tools::{
+        cached_region::{CachedRegion, ChallengeSet},
+        cell_manager::Cell,
+    },
     mpt_circuit::{
         helpers::{key_memory, parent_memory, Indexable, KeyData, ParentData},
         witness_row::ExtensionBranchRowType,
@@ -181,6 +182,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
         config
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
         region: &mut CachedRegion<'_, '_, F, S>,
@@ -204,7 +206,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
                 region,
                 offset,
-                &mut pv.memory[parent_memory(is_s)],
+                &pv.memory[parent_memory(is_s)],
                 0,
             )?;
             self.is_placeholder[is_s.idx()].assign(

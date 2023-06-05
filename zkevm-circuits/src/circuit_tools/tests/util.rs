@@ -1,27 +1,27 @@
 use std::vec;
 
-use crate::circuit_tools::cached_region::{self, ChallengeSet};
-use crate::circuit_tools::cell_manager::{Cell, CellManager_, CellTypeTrait};
-use crate::circuit_tools::constraint_builder::ConstraintBuilder;
-use crate::circuit_tools::{table::LookupTable_, cached_region::{CachedRegion, MacroDescr}};
+use crate::circuit_tools::{
+    cached_region::{self, CachedRegion, ChallengeSet, MacroDescr},
+    cell_manager::{Cell, CellManager, CellTypeTrait},
+    constraint_builder::ConstraintBuilder,
+    table::LookupTable,
+};
 
 use eth_types::Field;
 use gadgets::util::Scalar;
-use halo2_proofs::circuit::{SimpleFloorPlanner, Layouter};
-use halo2_proofs::plonk::{Any, Circuit, FirstPhase, Challenge, SecondPhase, ThirdPhase, Fixed, Selector};
 use halo2_proofs::{
-    circuit::{Value},
-    plonk::{ConstraintSystem, Advice, Column, Error, Expression},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
+    plonk::{
+        Advice, Any, Challenge, Circuit, Column, ConstraintSystem, Error, Expression, FirstPhase,
+        Fixed, SecondPhase, Selector, ThirdPhase,
+    },
     poly::Rotation,
 };
-
-
 
 /// To Test:
 ///    1. Constrain advices with cells
 ///    2. Lookup (advices <--> advices) with cells (RAM)
 ///    3. Lookup (advices <--> fixed) with cells (ROM)
-///
 
 const MAX_DEG: usize = 5;
 const CM_HEIGHT: usize = 10;
@@ -34,17 +34,12 @@ pub struct TestTable {
     pub b: Column<Fixed>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CellType {
     LookupTestTable,
+    #[default]
     PhaseOne,
-    PhaseTwo
-}
-
-impl Default for CellType {
-    fn default() -> Self {
-        CellType::PhaseOne
-    }
+    PhaseTwo,
 }
 
 impl CellTypeTrait for CellType {
@@ -61,10 +56,10 @@ impl CellTypeTrait for CellType {
     }
 }
 
-impl<F: Field> LookupTable_<F> for TestTable {
+impl<F: Field> LookupTable<F> for TestTable {
     type TableCellType = CellType;
 
-    fn get_type_(&self) -> CellType {
+    fn get_type(&self) -> CellType {
         CellType::LookupTestTable
     }
 
@@ -90,31 +85,24 @@ pub struct TestConfig<F> {
     pub(crate) table: TestTable,
 }
 
-
 impl<F: Field> TestConfig<F> {
-    pub fn new(
-        meta: &mut ConstraintSystem<F>,
-        table: TestTable,
-        r1: Challenge
-    ) -> Self {
-
+    pub fn new(meta: &mut ConstraintSystem<F>, table: TestTable, r1: Challenge) -> Self {
         // Get columns
         let sel = meta.selector();
         let q_enable = meta.fixed_column();
         let q_count = meta.advice_column();
         let cell_columns = (0..10)
-            .map(|i|
-                match i {
-                    0..=2 => meta.advice_column_in(FirstPhase),
-                    3..=5 => meta.advice_column_in(SecondPhase),
-                    6..=9 => meta.advice_column_in(ThirdPhase),
-                    10 => meta.advice_column_in(FirstPhase), // Copy
-                    _ => unreachable!(),
-                }
-            ).collect::<Vec<_>>();
+            .map(|i| match i {
+                0..=2 => meta.advice_column_in(FirstPhase),
+                3..=5 => meta.advice_column_in(SecondPhase),
+                6..=9 => meta.advice_column_in(ThirdPhase),
+                10 => meta.advice_column_in(FirstPhase), // Copy
+                _ => unreachable!(),
+            })
+            .collect::<Vec<_>>();
 
         // Init cell manager and constraint builder
-        let cm = CellManager_::new(
+        let cm = CellManager::new(
             meta,
             vec![
                 (CellType::PhaseOne, 3, 0, false),
@@ -123,18 +111,19 @@ impl<F: Field> TestConfig<F> {
             ],
             vec![&table],
             0,
-            10
+            10,
         );
-        let mut cb: ConstraintBuilder<F, CellType> = ConstraintBuilder::new(MAX_DEG, Some(cm), None);
+        let mut cb: ConstraintBuilder<F, CellType> =
+            ConstraintBuilder::new(MAX_DEG, Some(cm), None);
 
         let mut cell_gadget = CellGadget::default();
         meta.create_gate("Test Gate", |meta| {
             // Config row counts
             circuit!([meta, cb], {
                 // All configuration of inner gadgets must be wrapped in ifx!
-                // it pushes a condition into cb, which is gonna be multiplied with the upcoming constraints.
-                // then if you turn off q_enable, your inner gadgets will be disabled.
-                // otherwise you'll see missing selector error.
+                // it pushes a condition into cb, which is gonna be multiplied with the upcoming
+                // constraints. then if you turn off q_enable, your inner gadgets
+                // will be disabled. otherwise you'll see missing selector error.
                 ifx!(f!(q_enable) => {
                     require!(a!(q_count, 1) => a!(q_count) + 1.expr());
                     // Init Gadgets
@@ -158,15 +147,10 @@ impl<F: Field> TestConfig<F> {
         }
     }
 
-    pub fn assign(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        r1: Value<F>,
-    ) -> Result<(), Error> {
+    pub fn assign(&self, layouter: &mut impl Layouter<F>, r1: Value<F>) -> Result<(), Error> {
         layouter.assign_region(
             || "cell gadget",
             |mut region| {
-
                 self.sel.enable(&mut region, 0)?;
 
                 for offset in 0..20 {
@@ -185,10 +169,7 @@ impl<F: Field> TestConfig<F> {
         )
     }
 
-    fn load_fixed_table(
-        &self,
-        layouter: &mut impl Layouter<F>,
-    ) -> Result<(), Error> {
+    fn load_fixed_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         // We can use different region for lookup tables,
         // since they are not related to cell gadgets.
         layouter.assign_region(
@@ -203,8 +184,6 @@ impl<F: Field> TestConfig<F> {
             },
         )
     }
-
-
 }
 
 #[derive(Clone, Debug, Default)]
@@ -219,7 +198,6 @@ pub struct CellGadget<F> {
     d: Cell<F>,
 }
 
-
 impl<F: Field> CellGadget<F> {
     pub fn configure(cb: &mut ConstraintBuilder<F, CellType>, r1: Expression<F>) -> Self {
         let a = cb.query_default();
@@ -228,7 +206,7 @@ impl<F: Field> CellGadget<F> {
         let c = cb.query_one(CellType::PhaseTwo);
         let d = cb.query_default();
         circuit!([meta, cb], {
-            //require!((a, b) => @format!("test_lookup"));
+            // require!((a, b) => @format!("test_lookup"));
             require!(c => a.expr() + b.expr() * r1);
             require!(a => d.expr());
         });
@@ -240,8 +218,7 @@ impl<F: Field> CellGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
-    ) -> Result<(), Error>{
-
+    ) -> Result<(), Error> {
         // All challenges are returned as defined struct or Vec<&Value<F>>,
         // we map them to Vec<F> for calculations.
         let mut r = F::ONE;
@@ -250,11 +227,8 @@ impl<F: Field> CellGadget<F> {
         // Assign values to cells
         self.a.assign(region, offset, 2u64.scalar())?;
         self.b.assign(region, offset, 3u64.scalar())?;
-        self.c.assign(
-            region,
-            offset,
-            F::from(2u64) + F::from(3u64) * r
-        )?;
+        self.c
+            .assign(region, offset, F::from(2u64) + F::from(3u64) * r)?;
         self.d.assign(region, offset, 2u64.scalar())?;
         Ok(())
     }
@@ -278,7 +252,6 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-
         // Build the table and challenge outside
         // since zkevm use them accross circuits
         let table = TestTable {
@@ -295,7 +268,7 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
     fn synthesize(
         &self,
         (config, r1): Self::Config,
-        mut layouter: impl halo2_proofs::circuit::Layouter<F>
+        mut layouter: impl halo2_proofs::circuit::Layouter<F>,
     ) -> Result<(), Error> {
         let r1 = layouter.get_challenge(r1);
         config.load_fixed_table(&mut layouter)?;
@@ -313,9 +286,7 @@ fn test() {
     use plotters::prelude::*;
     let root = BitMapBackend::new("test.png", (1024, 768)).into_drawing_area();
     root.fill(&WHITE).unwrap();
-    let root = root
-        .titled("Test Layout", ("sans-serif", 60))
-        .unwrap();
+    let root = root.titled("Test Layout", ("sans-serif", 60)).unwrap();
 
     halo2_proofs::dev::CircuitLayout::default()
         // Render the circuit onto your area!
@@ -324,5 +295,4 @@ fn test() {
         .region_by_name("cell gadget")
         .render(6, &circuit.clone(), &root)
         .unwrap();
-
 }

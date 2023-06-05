@@ -1,16 +1,18 @@
-
-use eth_types::Field;
-use halo2_proofs::{plonk::{Column, Any}, circuit::Value};
 use crate::{
-    circuit_tools::{table::LookupTable_, cached_region::ChallengeSet, cell_manager::EvmCellType},
-    table::KeccakTable, evm_circuit::table::Table
+    circuit_tools::{cached_region::ChallengeSet, cell_manager::EvmCellType, table::LookupTable},
+    evm_circuit::table::Table,
+    table::KeccakTable,
+};
+use eth_types::Field;
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Any, Column},
 };
 
-
-impl<F: Field> LookupTable_<F> for KeccakTable {
+impl<F: Field> LookupTable<F> for KeccakTable {
     type TableCellType = EvmCellType;
 
-    fn get_type_(&self) -> EvmCellType {
+    fn get_type(&self) -> EvmCellType {
         EvmCellType::Lookup(Table::Keccak)
     }
 
@@ -35,7 +37,6 @@ impl<F: Field> LookupTable_<F> for KeccakTable {
             String::from("output_rlc"),
         ]
     }
-
 }
 
 impl<F: Field> ChallengeSet<F> for crate::util::Challenges<Value<F>> {

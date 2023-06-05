@@ -1,8 +1,6 @@
 use eth_types::Field;
 use gadgets::util::{pow, Scalar};
-use halo2_proofs::{
-    plonk::{Error, Expression, VirtualCells},
-};
+use halo2_proofs::plonk::{Error, Expression, VirtualCells};
 
 use super::{
     helpers::{KeyDataWitness, ListKeyGadget, MPTConstraintBuilder},
@@ -12,7 +10,12 @@ use super::{
 };
 use crate::{
     circuit,
-    circuit_tools::{cell_manager::Cell, constraint_builder::RLCChainable, gadgets::LtGadget, cached_region::{CachedRegion, ChallengeSet}},
+    circuit_tools::{
+        cached_region::{CachedRegion, ChallengeSet},
+        cell_manager::Cell,
+        constraint_builder::RLCChainable,
+        gadgets::LtGadget,
+    },
     mpt_circuit::{
         helpers::{
             ext_key_rlc_calc_value, ext_key_rlc_expr, num_nibbles, Indexable, KeyData, ParentData,
@@ -59,7 +62,7 @@ impl<F: Field> ExtensionGadget<F> {
         circuit!([meta, cb], {
             // Data
             let key_items = [
-                ctx.rlp_item(meta,cb, ExtensionBranchRowType::KeyS as usize),
+                ctx.rlp_item(meta, cb, ExtensionBranchRowType::KeyS as usize),
                 ctx.nibbles(meta, cb, ExtensionBranchRowType::KeyC as usize),
             ];
             let rlp_value = [
@@ -184,6 +187,7 @@ impl<F: Field> ExtensionGadget<F> {
         self.post_state.as_ref().unwrap().clone()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
         region: &mut CachedRegion<'_, '_, F, S>,

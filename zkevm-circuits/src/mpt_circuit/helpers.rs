@@ -1,25 +1,25 @@
 use crate::{
     assign, circuit,
     circuit_tools::{
-        cell_manager::{Cell, CellManager_, EvmCellType},
+        cached_region::{CachedRegion, ChallengeSet},
+        cell_manager::{Cell, CellManager, EvmCellType},
         constraint_builder::{
             ConstraintBuilder, RLCChainable, RLCChainableValue, RLCable, RLCableValue,
         },
         gadgets::IsEqualGadget,
-        memory::MemoryBank, cached_region::{CachedRegion, ChallengeSet},
+        memory::MemoryBank,
     },
+    evm_circuit::table::Table,
     matchw,
     mpt_circuit::{
         param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN},
         rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble},
     },
-    util::{Expr, Challenges}, evm_circuit::table::Table,
+    util::{Challenges, Expr},
 };
 use eth_types::Field;
-use gadgets::util::{or, pow, Scalar, not};
-use halo2_proofs::{
-    plonk::{Error, Expression, VirtualCells},
-};
+use gadgets::util::{not, or, pow, Scalar};
+use halo2_proofs::plonk::{Error, Expression, VirtualCells};
 
 use super::{
     rlp_gadgets::{
@@ -363,6 +363,7 @@ impl<F: Field> KeyData<F> {
         key_data
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn store(
         cb: &mut MPTConstraintBuilder<F>,
         memory: &MemoryBank<F>,
@@ -407,6 +408,7 @@ impl<F: Field> KeyData<F> {
         ]
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn witness_store<S: ChallengeSet<F>>(
         _region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
@@ -517,7 +519,10 @@ impl<F: Field> ParentData<F> {
         is_placeholder: Expression<F>,
         drifted_parent_rlc: Expression<F>,
     ) {
-        memory.store(&mut cb.base, &[rlc, is_root, is_placeholder, drifted_parent_rlc]);
+        memory.store(
+            &mut cb.base,
+            &[rlc, is_root, is_placeholder, drifted_parent_rlc],
+        );
     }
 
     pub(crate) fn witness_store<S: ChallengeSet<F>>(
@@ -621,6 +626,7 @@ impl<F: Field> MainData<F> {
         memory.store(&mut cb.base, &values);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn witness_store<S: ChallengeSet<F>>(
         _region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
@@ -750,16 +756,14 @@ pub(crate) fn ext_key_rlc_value<F: Field>(
         assert!(bytes[0] == KEY_PREFIX_EVEN.scalar());
         (0.scalar(), 1.scalar())
     };
-    (rlc, key_mult_prev * mult)
-        .rlc_chain_value(bytes[1..].iter().collect::<Vec<&F>>(), r)
+    (rlc, key_mult_prev * mult).rlc_chain_value(bytes[1..].iter().collect::<Vec<&F>>(), r)
 }
 
 // Returns the number of nibbles stored in a key value
 pub(crate) mod num_nibbles {
     use crate::{
-        _cb,
-        circuit,
-        circuit_tools::{constraint_builder::ConstraintBuilder, cell_manager::EvmCellType},
+        _cb, circuit,
+        circuit_tools::{cell_manager::EvmCellType, constraint_builder::ConstraintBuilder},
     };
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
@@ -806,14 +810,17 @@ pub struct MPTConstraintBuilder<F> {
 }
 
 impl<F: Field> MPTConstraintBuilder<F> {
-
     pub(crate) fn new(
         max_degree: usize,
         challenges: Option<Challenges<Expression<F>>>,
-        cell_manager: Option<CellManager_<F, EvmCellType>>
+        cell_manager: Option<CellManager<F, EvmCellType>>,
     ) -> Self {
         MPTConstraintBuilder {
-            base: ConstraintBuilder::new(max_degree, cell_manager, Some(challenges.clone().unwrap().lookup_input.expr())),
+            base: ConstraintBuilder::new(
+                max_degree,
+                cell_manager,
+                Some(challenges.clone().unwrap().lookup_input.expr()),
+            ),
             challenges,
             use_dynamic_lookup: false,
         }
@@ -845,7 +852,8 @@ impl<F: Field> MPTConstraintBuilder<F> {
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
-        self.base.query_cells_dyn(EvmCellType::LookupByte, N)
+        self.base
+            .query_cells_dyn(EvmCellType::LookupByte, N)
             .try_into()
             .unwrap()
     }
@@ -859,7 +867,8 @@ impl<F: Field> MPTConstraintBuilder<F> {
     }
 
     pub(crate) fn query_cells<const N: usize>(&mut self) -> [Cell<F>; N] {
-        self.base.query_cells_dyn(EvmCellType::default(), N)
+        self.base
+            .query_cells_dyn(EvmCellType::default(), N)
             .try_into()
             .unwrap()
     }
@@ -890,7 +899,7 @@ impl<F: Field> MPTConstraintBuilder<F> {
         &mut self,
         description: &'static str,
         tag: S,
-        values: Vec<Expression<F>>
+        values: Vec<Expression<F>>,
     ) {
         self.base.add_dynamic_lookup(description, tag, values)
     }
@@ -899,7 +908,7 @@ impl<F: Field> MPTConstraintBuilder<F> {
         &mut self,
         description: &'static str,
         tag: S,
-        values: Vec<Expression<F>>
+        values: Vec<Expression<F>>,
     ) {
         if self.use_dynamic_lookup {
             self.base.add_dynamic_lookup(description, tag, values)
@@ -919,7 +928,7 @@ impl<F: Field> MPTConstraintBuilder<F> {
         &mut self,
         description: &'static str,
         tag: S,
-        values: Vec<Expression<F>>
+        values: Vec<Expression<F>>,
     ) {
         self.base.store_dynamic_table(description, tag, values)
     }
@@ -946,7 +955,8 @@ impl<F: Field> IsEmptyTreeGadget<F> {
                 .rlc(r);
             let is_in_empty_trie =
                 IsEqualGadget::construct(&mut cb.base, parent_rlc.expr(), empty_root_rlc.expr());
-            let is_in_empty_branch = IsEqualGadget::construct(&mut cb.base, parent_rlc.expr(), 0.expr());
+            let is_in_empty_branch =
+                IsEqualGadget::construct(&mut cb.base, parent_rlc.expr(), 0.expr());
 
             Self {
                 is_in_empty_trie,
@@ -1063,6 +1073,7 @@ pub struct WrongGadget<F> {
 }
 
 impl<F: Field> WrongGadget<F> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut MPTConstraintBuilder<F>,
         expected_address: Expression<F>,
@@ -1104,6 +1115,7 @@ impl<F: Field> WrongGadget<F> {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
         region: &mut CachedRegion<'_, '_, F, S>,
@@ -1155,9 +1167,17 @@ pub struct MainRLPGadget<F> {
 
 impl<F: Field> MainRLPGadget<F> {
     pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>, r: &Expression<F>) -> Self {
-        let mut config = MainRLPGadget::default();
-        config.bytes = cb.query_cells::<34>().to_vec();
         circuit!([meta, cb], {
+            let mut config = MainRLPGadget {
+                bytes: cb.query_cells::<34>().to_vec(),
+                rlp: RLPItemGadget::default(),
+                num_bytes: cb.query_cell(),
+                len: cb.query_cell(),
+                mult_diff: cb.query_cell(),
+                rlc_content: cb.query_cell(),
+                rlc_rlp: cb.query_cell(),
+                tag: cb.query_cell(),
+            };
             config.rlp = RLPItemGadget::construct(
                 cb,
                 &config
@@ -1167,20 +1187,13 @@ impl<F: Field> MainRLPGadget<F> {
                     .collect::<Vec<_>>(),
             );
 
-            config.num_bytes = cb.query_cell();
             require!(config.num_bytes => config.rlp.num_bytes());
-            config.len = cb.query_cell();
             require!(config.len => config.rlp.len());
-            config.rlc_content = cb.query_cell();
             require!(config.rlc_content => config.rlp.rlc_content(r));
-            config.rlc_rlp = cb.query_cell();
             require!(config.rlc_rlp => config.rlp.rlc_rlp(cb, r));
-            config.mult_diff = cb.query_cell();
             let mult_diff = config.mult_diff.expr();
             require!((FixedTableTag::RMult, config.rlp.num_bytes(), mult_diff) => @"fixed");
-
-            // "free" input that needs to be constrained externally!
-            config.tag = cb.query_cell();
+            // `tag` is a "free" input that needs to be constrained externally!
 
             // Range/zero checks
             // These range checks ensure that the value in the RLP columns are all byte

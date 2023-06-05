@@ -1,14 +1,13 @@
-use crate::{
-    circuit_tools::cell_manager::{Cell},
-};
-use eth_types::{Field};
+use crate::circuit_tools::cell_manager::Cell;
+use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
-    plonk::{Advice, Assigned, Column, Error, Expression, Fixed, Any},
+    plonk::{Advice, Any, Assigned, Column, Error, Expression, Fixed},
     poly::Rotation,
 };
 use std::{
-    hash::{Hash, Hasher}, collections::HashMap,
+    collections::HashMap,
+    hash::{Hash, Hasher},
 };
 
 use super::cell_manager::CellTypeTrait;
@@ -33,7 +32,6 @@ impl<'r, F: Field> MacroDescr for Region<'r, F> {
     }
 }
 
-
 pub struct CachedRegion<'r, 'b, F: Field, S: ChallengeSet<F>> {
     region: &'r mut Region<'b, F>,
     pub advice: HashMap<(usize, usize), F>,
@@ -42,10 +40,7 @@ pub struct CachedRegion<'r, 'b, F: Field, S: ChallengeSet<F>> {
 }
 
 impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
-    pub(crate) fn new(
-        region: &'r mut Region<'b, F>,
-        challenges: &'r S,
-    ) -> Self {
+    pub(crate) fn new(region: &'r mut Region<'b, F>, challenges: &'r S) -> Self {
         Self {
             region,
             advice: HashMap::new(),
@@ -76,7 +71,7 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
         A: Fn() -> AR,
         AR: Into<String>,
     {
-        //println!("\t assign_advice: [{}][{}]", column.index(), offset);
+        // println!("\t assign_advice: [{}][{}]", column.index(), offset);
         // Actually set the value
         let res = self.region.assign_advice(annotation, column, offset, &to);
         // Cache the value
@@ -85,11 +80,10 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
         // again here to cache the value.
         if res.is_ok() {
             to().map(|f: VR| {
-                let existing = self.advice.insert((column.index(), offset),  Assigned::from(&f).evaluate());
-                /*if existing != None {
-                    println!("\t assign_advice: [{}][{}]", column.index(), offset);
-                }*/
-                assert!(existing == None);
+                let existing = self
+                    .advice
+                    .insert((column.index(), offset), Assigned::from(&f).evaluate());
+                assert!(existing.is_none());
                 existing
             });
         }
@@ -103,7 +97,7 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
         T: Into<Column<Any>>,
     {
         self.region
-            .name_column(&|| annotation().into(), column.into());
+            .name_column(|| annotation().into(), column.into());
     }
 
     pub fn assign_fixed<'v, V, VR, A, AR>(
@@ -128,7 +122,10 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
 
     pub fn get_advice(&self, row_index: usize, column_index: usize, rotation: Rotation) -> F {
         let zero = F::ZERO;
-        *self.advice.get(&(column_index, row_index + rotation.0 as usize)).unwrap_or_else(|| &zero)
+        *self
+            .advice
+            .get(&(column_index, row_index + rotation.0 as usize))
+            .unwrap_or(&zero)
     }
 
     pub fn challenges(&self) -> &S {
@@ -151,7 +148,6 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub struct StoredExpression<F, C: CellTypeTrait> {
     pub(crate) name: String,
@@ -168,16 +164,16 @@ impl<F, C: CellTypeTrait> Hash for StoredExpression<F, C> {
     }
 }
 
-impl<F: Field, C: CellTypeTrait> StoredExpression<F, C>  {
+impl<F: Field, C: CellTypeTrait> StoredExpression<F, C> {
     pub fn assign<S: ChallengeSet<F>>(
         &self,
         region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
     ) -> Result<Value<F>, Error> {
+        // println!("____ StoredExpression::assign ____ \n\t {:?} -> {:?}", self.expr_id,
+        // self.cell.identifier());
 
-        //println!("____ StoredExpression::assign ____ \n\t {:?} -> {:?}", self.expr_id, self.cell.identifier());
-
-        //println!("assign stored: {} [{}][{}]", self.name, self.cell.column().index(), offset);
+        // println!("assign stored: {} [{}][{}]", self.name, self.cell.column().index(), offset);
 
         let value = self.expr.evaluate(
             &|scalar| Value::known(scalar),
@@ -204,7 +200,7 @@ impl<F: Field, C: CellTypeTrait> StoredExpression<F, C>  {
             &|a, scalar| a * Value::known(scalar),
         );
         self.cell.assign_value(region, offset, value)?;
-        //println!("evaluated value: {:?}", value);
+        // println!("evaluated value: {:?}", value);
         Ok(value)
     }
 }

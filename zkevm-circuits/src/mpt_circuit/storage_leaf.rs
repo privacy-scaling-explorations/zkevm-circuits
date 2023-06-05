@@ -1,7 +1,7 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::{
-    circuit::{Value},
+    circuit::Value,
     plonk::{Error, VirtualCells},
     poly::Rotation,
 };
@@ -9,9 +9,10 @@ use halo2_proofs::{
 use crate::{
     circuit,
     circuit_tools::{
-        cell_manager::{Cell},
+        cached_region::{CachedRegion, ChallengeSet},
+        cell_manager::Cell,
         constraint_builder::RLCChainable,
-        gadgets::{IsEqualGadget, LtGadget}, cached_region::{CachedRegion, ChallengeSet},
+        gadgets::{IsEqualGadget, LtGadget},
     },
     mpt_circuit::{
         helpers::{
@@ -76,12 +77,8 @@ impl<F: Field> StorageLeafConfig<F> {
             let drifted_item = ctx.rlp_item(meta, cb, StorageRowType::Drifted as usize);
             let wrong_item = ctx.rlp_item(meta, cb, StorageRowType::Wrong as usize);
 
-            config.main_data = MainData::load(
-                "main storage",
-                cb,
-                &ctx.memory[main_memory()],
-                0.expr(),
-            );
+            config.main_data =
+                MainData::load("main storage", cb, &ctx.memory[main_memory()], 0.expr());
 
             // Storage leaves always need to be below accounts
             require!(config.main_data.is_below_account => true);
@@ -92,12 +89,8 @@ impl<F: Field> StorageLeafConfig<F> {
             for is_s in [true, false] {
                 // Parent data
                 let parent_data = &mut config.parent_data[is_s.idx()];
-                *parent_data = ParentData::load(
-                    "leaf load",
-                    cb,
-                    &ctx.memory[parent_memory(is_s)],
-                    0.expr(),
-                );
+                *parent_data =
+                    ParentData::load("leaf load", cb, &ctx.memory[parent_memory(is_s)], 0.expr());
                 // Key data
                 let key_data = &mut config.key_data[is_s.idx()];
                 *key_data = KeyData::load(cb, &ctx.memory[key_memory(is_s)], 0.expr());
@@ -257,6 +250,7 @@ impl<F: Field> StorageLeafConfig<F> {
         config
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn assign<S: ChallengeSet<F>>(
         &self,
         region: &mut CachedRegion<'_, '_, F, S>,
@@ -292,7 +286,7 @@ impl<F: Field> StorageLeafConfig<F> {
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
                 region,
                 offset,
-                &mut pv.memory[parent_memory(is_s)],
+                &pv.memory[parent_memory(is_s)],
                 0,
             )?;
 
@@ -313,7 +307,7 @@ impl<F: Field> StorageLeafConfig<F> {
             key_data[is_s.idx()] = self.key_data[is_s.idx()].witness_load(
                 region,
                 offset,
-                &mut pv.memory[key_memory(is_s)],
+                &pv.memory[key_memory(is_s)],
                 0,
             )?;
             KeyData::witness_store(

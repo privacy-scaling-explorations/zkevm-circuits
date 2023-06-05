@@ -11,7 +11,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use super::{constraint_builder::ConstraintBuilder, cell_manager::CellTypeTrait};
+use super::{cell_manager::CellTypeTrait, constraint_builder::ConstraintBuilder};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Memory<F> {
@@ -232,9 +232,8 @@ impl<F: Field> MemoryBank<F> {
                 let mut store_offsets = self.store_offsets.clone();
                 store_offsets.push(height);
 
-                let mut store_index = 0;
                 let mut offset = 0;
-                for &stored_offset in store_offsets.iter() {
+                for (store_index, &stored_offset) in store_offsets.iter().enumerate() {
                     while offset <= stored_offset {
                         region.assign_advice(
                             || "assign memory index".to_string(),
@@ -244,7 +243,6 @@ impl<F: Field> MemoryBank<F> {
                         )?;
                         offset += 1;
                     }
-                    store_index += 1;
                 }
                 Ok(())
             },

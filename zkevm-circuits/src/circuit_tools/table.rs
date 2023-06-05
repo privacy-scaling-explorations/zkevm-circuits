@@ -7,15 +7,14 @@ use halo2_proofs::{
 
 use crate::evm_circuit::table::Table;
 
-use super::{cell_manager::{EvmCellType}};
-
+use super::cell_manager::EvmCellType;
 
 /// LookupTable impl for raw columns.
 /// Must define a existing CellType to instantiate this impelmentation
-impl<F: Field, CA: Into<Column<Any>> + Copy, const W: usize> LookupTable_<F> for [CA; W] {
+impl<F: Field, CA: Into<Column<Any>> + Copy, const W: usize> LookupTable<F> for [CA; W] {
     type TableCellType = EvmCellType;
 
-    fn get_type_(&self) -> EvmCellType {
+    fn get_type(&self) -> EvmCellType {
         EvmCellType::Lookup(Table::Fixed)
     }
 
@@ -39,12 +38,11 @@ impl<F: Field, CA: Into<Column<Any>> + Copy, const W: usize> LookupTable_<F> for
     }
 }
 
-
 /// Trait used to define lookup tables
-pub trait LookupTable_<F: Field> {
+pub trait LookupTable<F: Field> {
     type TableCellType;
 
-    fn get_type_(&self) -> Self::TableCellType;
+    fn get_type(&self) -> Self::TableCellType;
 
     fn phase(&self) -> u8;
 
@@ -89,4 +87,3 @@ pub trait LookupTable_<F: Field> {
             .for_each(|(&col, ann)| region.name_column(|| ann, col))
     }
 }
-

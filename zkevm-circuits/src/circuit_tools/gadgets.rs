@@ -1,13 +1,15 @@
 //! Circuit gadgets
 use eth_types::Field;
 use gadgets::util::Expr;
-use halo2_proofs::{
-    plonk::{Error, Expression},
-};
+use halo2_proofs::plonk::{Error, Expression};
 
 use crate::evm_circuit::util::{from_bytes, pow_of_two};
 
-use super::{cell_manager::{Cell, CellTypeTrait}, constraint_builder::ConstraintBuilder, cached_region::{CachedRegion, ChallengeSet}};
+use super::{
+    cached_region::{CachedRegion, ChallengeSet},
+    cell_manager::{Cell, CellTypeTrait},
+    constraint_builder::ConstraintBuilder,
+};
 
 /// Returns `1` when `value == 0`, and returns `0` otherwise.
 #[derive(Clone, Debug, Default)]
@@ -17,7 +19,10 @@ pub struct IsZeroGadget<F> {
 }
 
 impl<F: Field> IsZeroGadget<F> {
-    pub(crate) fn construct<C: CellTypeTrait>(cb: &mut ConstraintBuilder<F, C>, value: Expression<F>) -> Self {
+    pub(crate) fn construct<C: CellTypeTrait>(
+        cb: &mut ConstraintBuilder<F, C>,
+        value: Expression<F>,
+    ) -> Self {
         circuit!([meta, cb], {
             let inverse = cb.query_default();
 
@@ -45,7 +50,10 @@ impl<F: Field> IsZeroGadget<F> {
         value: F,
     ) -> Result<F, Error> {
         let inverse = value.invert().unwrap_or(F::ZERO);
-        self.inverse.as_ref().unwrap().assign(region, offset, inverse)?;
+        self.inverse
+            .as_ref()
+            .unwrap()
+            .assign(region, offset, inverse)?;
         Ok(if value.is_zero().into() {
             F::ONE
         } else {
@@ -98,8 +106,8 @@ impl<F: Field> IsEqualGadget<F> {
 pub struct LtGadget<F, const N_BYTES: usize> {
     lt: Option<Cell<F>>, // `1` when `lhs < rhs`, `0` otherwise.
     diff: Option<[Cell<F>; N_BYTES]>, /* The byte values of `diff`.
-                  * `diff` equals `lhs - rhs` if `lhs >= rhs`,
-                  * `lhs - rhs + range` otherwise. */
+                          * `diff` equals `lhs - rhs` if `lhs >= rhs`,
+                          * `lhs - rhs + range` otherwise. */
     range: F, // The range of the inputs, `256**N_BYTES`
 }
 
@@ -140,7 +148,9 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
     ) -> Result<(F, Vec<u8>), Error> {
         // Set `lt`
         let lt = lhs < rhs;
-        self.lt.as_ref().unwrap()
+        self.lt
+            .as_ref()
+            .unwrap()
             .assign(region, offset, if lt { F::ONE } else { F::ZERO })?;
 
         // Set the bytes of diff

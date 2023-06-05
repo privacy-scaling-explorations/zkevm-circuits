@@ -1,14 +1,21 @@
 //! Circuit utilities
-use std::{ops::{Add, Mul}, collections::HashMap, vec};
+use std::{
+    collections::HashMap,
+    ops::{Add, Mul},
+    vec,
+};
 
-use crate::{evm_circuit::util::rlc, util::{Expr}};
+use crate::{evm_circuit::util::rlc, util::Expr};
 use eth_types::Field;
 use gadgets::util::{and, sum, Scalar};
 use halo2_proofs::plonk::{ConstraintSystem, Expression};
 use itertools::Itertools;
 
-use super::{cell_manager::{Cell, CellManager_, CellTypeTrait}, cached_region::StoredExpression, table::LookupTable_};
-
+use super::{
+    cached_region::StoredExpression,
+    cell_manager::{Cell, CellManager, CellTypeTrait},
+    table::LookupTable,
+};
 
 fn get_condition_expr<F: Field>(conditions: &Vec<Expression<F>>) -> Expression<F> {
     if conditions.is_empty() {
@@ -49,7 +56,7 @@ pub struct ConstraintBuilder<F, C: CellTypeTrait> {
     /// All stored expressions
     pub stored_expressions: [Vec<StoredExpression<F, C>>; 5],
     /// CellManager
-    pub cell_manager: Option<CellManager_<F, C>>,
+    pub cell_manager: Option<CellManager<F, C>>,
     /// Disable macro-generated description for constraints & lookups
     /// for graph display
     pub disable_description: bool,
@@ -64,7 +71,11 @@ pub struct ConstraintBuilder<F, C: CellTypeTrait> {
 }
 
 impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
-    pub(crate) fn new(max_degree: usize, cell_manager: Option<CellManager_<F, C>>, lookup_input_challenge: Option<Expression<F>>) -> Self {
+    pub(crate) fn new(
+        max_degree: usize,
+        cell_manager: Option<CellManager<F, C>>,
+        lookup_input_challenge: Option<Expression<F>>,
+    ) -> Self {
         ConstraintBuilder {
             constraints: Vec::new(),
             max_degree,
@@ -81,7 +92,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         }
     }
 
-    pub(crate) fn set_cell_manager(&mut self, cell_manager: CellManager_<F, C>) {
+    pub(crate) fn set_cell_manager(&mut self, cell_manager: CellManager<F, C>) {
         self.cell_manager = Some(cell_manager);
     }
 
@@ -187,15 +198,12 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         if self.max_degree == 0 {
             return;
         }
-        //println!("add constraint: {}", name);
+        // println!("add constraint: {}", name);
         let constraint = match self.get_condition() {
             Some(condition) => condition * constraint,
             None => constraint,
         };
-        let constraint = self.split_expression(
-            name,
-            constraint,
-        );
+        let constraint = self.split_expression(name, constraint);
         self.validate_degree(constraint.degree(), name);
         self.constraints.push((name, constraint));
     }
@@ -222,9 +230,10 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
         self.query_cells_dyn(
             C::byte_type().expect("No byte type for this CellManager"),
-            N
-            ).try_into()
-            .unwrap()
+            N,
+        )
+        .try_into()
+        .unwrap()
     }
 
     pub(crate) fn query_cells_dyn(&mut self, cell_type: C, count: usize) -> Vec<Cell<F>> {
@@ -254,19 +263,19 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         &self,
         meta: &mut ConstraintSystem<F>,
         challenge: Expression<F>,
-        cell_managers: Vec<CellManager_<F, C>>,
-        tables: Vec<&dyn LookupTable_<F, TableCellType = C>>
+        cell_managers: Vec<CellManager<F, C>>,
+        tables: Vec<&dyn LookupTable<F, TableCellType = C>>,
     ) {
         for cm in cell_managers {
             for table in &tables {
-                let cell_type = table.get_type_();
+                let cell_type = table.get_type();
                 for col in cm.get_typed_columns(cell_type) {
-                    meta.lookup_any(
-                        "static lookup",
-                        |meta| {
-                            vec![(col.expr, rlc::expr(&table.table_exprs(meta), challenge.clone()))]
-                        }
-                    );
+                    meta.lookup_any("static lookup", |meta| {
+                        vec![(
+                            col.expr,
+                            rlc::expr(&table.table_exprs(meta), challenge.clone()),
+                        )]
+                    });
                 }
             }
         }
@@ -278,7 +287,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         lookup_names: &[S],
     ) {
         for lookup_name in lookup_names.iter() {
-            if let Some(lookups) = self.dynamic_lookups.get(lookup_name.as_ref()){
+            if let Some(lookups) = self.dynamic_lookups.get(lookup_name.as_ref()) {
                 for lookup in lookups.iter() {
                     meta.lookup_any(lookup.description, |_meta| {
                         let table = self.get_dynamic_table_values(lookup_name);
@@ -320,20 +329,21 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         tag: S,
         values: Vec<Expression<F>>,
     ) {
-        //println!("table: {} -> {}", description, tag.as_ref());
+        // println!("table: {} -> {}", description, tag.as_ref());
         let condition = self.get_condition_expr();
         let key = tag.as_ref().to_owned();
-        //let values = values.into_iter().map(|value| self.split_expression(description, condition.expr() * value.expr())).collect_vec();
+        // let values = values.into_iter().map(|value| self.split_expression(description,
+        // condition.expr() * value.expr())).collect_vec();
         let lookup = DynamicData {
             description,
-            condition/*: 1.expr()*/,
+            condition, // : 1.expr()
             values,
             state_idx: self.state_idx,
         };
         if let Some(table_data) = self.dynamic_tables.get_mut(&key) {
             table_data.push(lookup);
         } else {
-            self.dynamic_tables.insert(key,vec![lookup]);
+            self.dynamic_tables.insert(key, vec![lookup]);
         }
     }
 
@@ -345,17 +355,18 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
     ) {
         let condition = self.get_condition_expr();
         let key = tag.as_ref().to_owned();
-        //let values = values.into_iter().map(|value| self.split_expression(description, condition.expr() * value.expr())).collect_vec();
+        // let values = values.into_iter().map(|value| self.split_expression(description,
+        // condition.expr() * value.expr())).collect_vec();
         let lookup = DynamicData {
             description,
-            condition/*: 1.expr()*/,
+            condition, // : 1.expr()
             values,
             state_idx: self.state_idx,
         };
         if let Some(lookup_data) = self.dynamic_lookups.get_mut(&key) {
             lookup_data.push(lookup);
         } else {
-            self.dynamic_lookups.insert(key,vec![lookup]);
+            self.dynamic_lookups.insert(key, vec![lookup]);
         }
     }
 
@@ -367,18 +378,20 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         cell_type: C,
         values: Vec<Expression<F>>,
     ) {
-        //println!("store lookup: {:?}: {}", cell_type, description);
+        // println!("store lookup: {:?}: {}", cell_type, description);
         let condition = self.get_condition_expr();
-        let values = values.iter().map(|value| condition.expr() * value.expr()).collect_vec();
-        //println!("________ add_static_lookup ________ \nchallenge: {:?}", challenge);
+        let values = values
+            .iter()
+            .map(|value| condition.expr() * value.expr())
+            .collect_vec();
+        // println!("________ add_static_lookup ________ \nchallenge: {:?}", challenge);
         let compressed_expr = self.split_expression(
             "Lookup compression",
             rlc::expr(&values, self.lookup_input_challenge.clone().unwrap().expr()),
         );
-        //println!("compressed_expr: {:?}", compressed_expr.identifier());
+        // println!("compressed_expr: {:?}", compressed_expr.identifier());
         self.store_expression(description, compressed_expr, cell_type);
     }
-
 
     pub(crate) fn get_stored_expressions(&self, state_idx: usize) -> Vec<StoredExpression<F, C>> {
         self.stored_expressions[state_idx].clone()
@@ -388,40 +401,38 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         &self,
         tag: S,
     ) -> (Expression<F>, Vec<Expression<F>>) {
-        let table_values = self.dynamic_tables
+        let table_values = self
+            .dynamic_tables
             .get(tag.as_ref())
-            .expect(&format!("Dynamic table {:?} unfound", tag.as_ref()));
+            .unwrap_or_else(|| panic!("Dynamic table {:?} not found", tag.as_ref()));
         merge_values_unsafe(
-            table_values.iter()
+            table_values
+                .iter()
                 .map(|table| (table.condition.clone(), table.values.clone()))
                 .collect::<Vec<_>>(),
         )
     }
 
-    pub(crate) fn get_dynamic_table_values<S: AsRef<str>>(
-        &self,
-        tag: S
-    ) -> Vec<Expression<F>> {
+    pub(crate) fn get_dynamic_table_values<S: AsRef<str>>(&self, tag: S) -> Vec<Expression<F>> {
         let condition_and_values = self.get_dynamic_table(tag);
-        condition_and_values.1
+        condition_and_values
+            .1
             .iter()
             .map(|value| value.expr() * condition_and_values.0.expr())
             .collect::<Vec<_>>()
     }
 
     pub(crate) fn generate_lookup_table_checks<S: AsRef<str>>(&mut self, tag: S) {
-        let table_values = self.dynamic_tables
+        let table_values = self
+            .dynamic_tables
             .get(tag.as_ref())
-            .expect(&format!("Dynamic table {:?} unfound", tag.as_ref()))
+            .unwrap_or_else(|| panic!("Dynamic table {:?} not found", tag.as_ref()))
             .clone();
         let selectors = table_values
             .into_iter()
             .map(|value| {
                 let sel = value.condition.expr();
-                self.require_boolean(
-                    "lookup table condition needs to be boolean",
-                    sel.clone(),
-                );
+                self.require_boolean("lookup table condition needs to be boolean", sel.clone());
                 sel
             })
             .collect::<Vec<_>>();
@@ -442,9 +453,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         let stored_expression = self.find_stored_expression(&expr, cell_type);
 
         match stored_expression {
-            Some(stored_expression) => {
-                stored_expression.cell.expr()
-            }
+            Some(stored_expression) => stored_expression.cell.expr(),
             None => {
                 // Require the stored value to equal the value of the expression
                 let cell = self.query_one(cell_type);
@@ -453,8 +462,9 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
                     Box::leak(name.clone().into_boxed_str()),
                     cell.expr() - expr.clone(),
                 ));
-                //println!("\n pushing in cell {:?}: {:?}", cell.identifier(), expr.identifier());
-                //println!("store {} ({}) [{}][{}]", name, self.state_idx, cell.column.unwrap().index(), cell.rotation());
+                // println!("\n pushing in cell {:?}: {:?}", cell.identifier(), expr.identifier());
+                // println!("store {} ({}) [{}][{}]", name, self.state_idx,
+                // cell.column.unwrap().index(), cell.rotation());
                 self.stored_expressions[self.state_idx].push(StoredExpression {
                     name,
                     cell: cell.clone(),
@@ -478,13 +488,9 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
             .find(|&e| e.cell_type == cell_type && e.expr_id == expr_id)
     }
 
-    fn split_expression(
-        &mut self,
-        name: &'static str,
-        expr: Expression<F>,
-    ) -> Expression<F> {
+    fn split_expression(&mut self, name: &'static str, expr: Expression<F>) -> Expression<F> {
         if expr.degree() > self.max_degree {
-            //println!("split {}: {} > {}", name, expr.degree(), self.max_degree);
+            // println!("split {}: {} > {}", name, expr.degree(), self.max_degree);
             match expr {
                 Expression::Negated(poly) => {
                     Expression::Negated(Box::new(self.split_expression(name, *poly)))
@@ -522,7 +528,6 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
             expr.clone()
         }
     }
-
 
     pub(crate) fn print_stats(&self) {
         let mut expressions = self.constraints.clone();
@@ -596,7 +601,7 @@ impl<T: Clone> ToVec<T> for [T] {
 
 impl<T: Clone> ToVec<T> for &[T] {
     fn to_vec(&self) -> Vec<T> {
-        self.clone().to_owned()
+        <&[T]>::clone(self).to_owned()
     }
 }
 
@@ -713,12 +718,8 @@ pub trait ExprResult<F> {
 }
 
 impl<F: Field> ExprResult<F> for () {
-    fn add(&self, _other: &Self) -> Self {
-        ()
-    }
-    fn mul(&self, _other: &Expression<F>) -> Self {
-        ()
-    }
+    fn add(&self, _other: &Self) -> Self {}
+    fn mul(&self, _other: &Expression<F>) -> Self {}
 }
 
 impl<F: Field> ExprResult<F> for Vec<Expression<F>> {
@@ -1172,7 +1173,7 @@ macro_rules! assign {
         use halo2_proofs::circuit::Value;
         let description = match $region.is_descr_disabled() {
             false => $crate::concat_with_preamble!(stringify!($column), " => ", stringify!($value)),
-            true => ""
+            true => "",
         };
         let value: F = $value;
         $region.assign_advice(|| description, $column, $offset, || Value::known(value))
@@ -1188,7 +1189,7 @@ macro_rules! assign {
         use halo2_proofs::circuit::Value;
         let description = match $region.is_descr_disabled() {
             false => $crate::concat_with_preamble!(stringify!($cell), " => ", stringify!($value)),
-            true => ""
+            true => "",
         };
         let value: F = $value;
         $region.assign_advice(
@@ -1222,7 +1223,7 @@ macro_rules! assignf {
 }
 
 /// Circuit builder macros
-/// Nested macro's can't do repetition (https://github.com/rust-lang/rust/issues/35853)
+/// Nested macro's can't do repetition <https://github.com/rust-lang/rust/issues/35853>
 /// so we expose a couple of permutations here manually.
 #[macro_export]
 macro_rules! circuit {

@@ -1,23 +1,25 @@
-
-
 use crate::{
-    _cb,
-    circuit,
+    _cb, circuit,
     circuit_tools::{
+        cached_region::{CachedRegion, ChallengeSet},
         cell_manager::{Cell, EvmCellType},
-        constraint_builder::{ConstraintBuilder, RLCable, RLCableValue}, cached_region::{CachedRegion, ChallengeSet},
+        constraint_builder::{ConstraintBuilder, RLCable, RLCableValue},
     },
     matchw,
-    mpt_circuit::{param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT}, FixedTableTag},
+    mpt_circuit::{
+        param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT},
+        FixedTableTag,
+    },
     util::Expr,
 };
 use eth_types::Field;
 use gadgets::util::{not, pow, Scalar};
-use halo2_proofs::{
-    plonk::{Error, Expression},
-};
+use halo2_proofs::plonk::{Error, Expression};
 
-use super::{param::{KEY_PREFIX_ODD, KEY_TERMINAL_PREFIX_ODD, RLP_LONG}, helpers::MPTConstraintBuilder};
+use super::{
+    helpers::MPTConstraintBuilder,
+    param::{KEY_PREFIX_ODD, KEY_TERMINAL_PREFIX_ODD, RLP_LONG},
+};
 
 // Decodes the first byte of an RLP data stream to return (is_list, is_short, is_long, is_very_long)
 pub(crate) fn decode_rlp(byte: u8) -> (bool, bool, bool, bool) {

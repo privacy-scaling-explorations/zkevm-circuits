@@ -6,7 +6,8 @@ use super::{
 use crate::{
     circuit,
     circuit_tools::{
-        cell_manager::{Cell}, cached_region::{CachedRegion, ChallengeSet},
+        cached_region::{CachedRegion, ChallengeSet},
+        cell_manager::Cell,
     },
     mpt_circuit::{
         helpers::{
@@ -18,9 +19,7 @@ use crate::{
 };
 use eth_types::Field;
 use gadgets::util::Scalar;
-use halo2_proofs::{
-    plonk::{Error, VirtualCells},
-};
+use halo2_proofs::plonk::{Error, VirtualCells};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct StartConfig<F> {
@@ -81,6 +80,7 @@ impl<F: Field> StartConfig<F> {
         config
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn assign<S: ChallengeSet<F>>(
         &self,
         region: &mut CachedRegion<'_, '_, F, S>,

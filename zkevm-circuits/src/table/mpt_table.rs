@@ -1,7 +1,11 @@
 use super::*;
 use crate::{
     circuit,
-    circuit_tools::{constraint_builder::ConstraintBuilder, cell_manager::CellTypeTrait, cached_region::{CachedRegion, ChallengeSet}},
+    circuit_tools::{
+        cached_region::{CachedRegion, ChallengeSet},
+        cell_manager::CellTypeTrait,
+        constraint_builder::ConstraintBuilder,
+    },
 };
 
 /// The types of proofs in the MPT table
@@ -101,6 +105,7 @@ impl MptTable {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn constrain<F: Field, C: CellTypeTrait>(
         &self,
         meta: &mut VirtualCells<'_, F>,
