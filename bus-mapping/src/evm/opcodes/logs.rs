@@ -182,6 +182,8 @@ mod log_tests {
 
     use mock::test_ctx::{helpers::*, TestContext};
     use pretty_assertions::assert_eq;
+    use eth_types::evm_types::MemoryAddress;
+    use crate::operation::MemoryWordOp;
 
     #[test]
     fn logs_opcode_ok() {
@@ -367,44 +369,35 @@ mod log_tests {
             { log_topic_ops },
         );
 
-        // memory reads.
-        // let mut log_data_ops = Vec::with_capacity(msize);
-        // assert_eq!(
-        //     // skip first 32 writes of MSTORE ops
-        //     (mstart..(mstart + 0 + msize))
-        //         .map(|idx| &builder.block.container.memory[idx])
-        //         .map(|op| (op.rw(), op.op().clone()))
-        //         .collect::<Vec<(RW, MemoryOp)>>(),
-        //     {
-        //         let mut memory_ops = Vec::with_capacity(msize);
-        //         (mstart..msize).for_each(|idx| {
-        //             memory_ops.push((
-        //                 RW::READ,
-        //                 MemoryOp::new(1, (mstart + idx).into(), memory_data[mstart + idx]),
-        //             ));
-        //             // tx log addition
-        //             log_data_ops.push((
-        //                 RW::WRITE,
-        //                 TxLogOp::new(
-        //                     1,
-        //                     step.log_id + 1, // because it is in next CopyToLog step
-        //                     TxLogField::Data,
-        //                     idx - mstart,
-        //                     Word::from(memory_data[mstart + idx]),
-        //                 ),
-        //             ));
-        //         });
-
-        //         memory_ops
-        //     },
-        // );
-        // assert_eq!(
-        //     ((1 + topic_count)..msize + 1 + topic_count)
-        //         .map(|idx| &builder.block.container.tx_log[idx])
-        //         .map(|op| (op.rw(), op.op().clone()))
-        //         .collect::<Vec<(RW, TxLogOp)>>(),
-        //     { log_data_ops },
-        // );
+        let length = mstart + msize;
+        let copy_start = mstart - mstart % 32;
+        let copy_end = length - length % 32;
+        let word_ops = (copy_end + 32 - copy_start) / 32;
+        let copied_bytes = builder.block.copy_events[0]
+            .bytes
+            .iter()
+            .map(|(b, _, _)| *b)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            ((1 + topic_count)..word_ops + (1 + topic_count))
+                .map(|idx| &builder.block.container.tx_log[idx])
+                .map(|op| (op.rw(), op.op().clone()))
+                .collect::<Vec<(RW, TxLogOp)>>(),
+            (0..word_ops)
+                .map(|idx| {
+                    (
+                        RW::WRITE,
+                        TxLogOp::new(
+                            1,
+                            step.log_id + 1,
+                            TxLogField::Data,
+                            idx * 32,
+                            Word::from(&copied_bytes[idx * 32..(idx + 1) * 32]),
+                        )
+                    )
+                })
+                .collect::<Vec<(RW, TxLogOp)>>(),
+        );
 
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
