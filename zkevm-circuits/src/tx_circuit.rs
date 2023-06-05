@@ -259,7 +259,6 @@ impl<F: Field> TxCircuit<F> {
                         // the SignVerifyChip
                         match tag {
                             TxFieldTag::CallerAddress => {
-                                println!("Ref. spec 0. Copy constraints using fixed offsets between the tx rows and the SignVerifyChip");
                                 // region.constrain_equal(
                                 //     assigned_cell.cell(),
                                 //     assigned_sig_verif.address.cell(),
