@@ -250,7 +250,7 @@ impl Transaction {
 
         Ok(Self {
             tx: eth_tx.into(),
-            invalid_tx: false,
+            invalid_tx: is_invalid,
             access_list_gas_cost: 0,
             calls: vec![call],
             steps: Vec::new(),

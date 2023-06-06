@@ -29,7 +29,6 @@ use log;
 use sign_verify::{AssignedSignatureVerify, SignVerifyChip, SignVerifyConfig};
 use std::fmt::{self, Debug};
 use std::marker::PhantomData;
-use gadgets::util::{and, not, select, sum, Expr};
 
 /// Number of static fields per tx: [nonce, gas, gas_price,
 /// caller_address, callee_address, is_create, value, call_data_length,

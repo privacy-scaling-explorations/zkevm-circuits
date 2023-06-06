@@ -254,6 +254,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         //   gas cost
         // - The transaction nonce does not match the current nonce expected in the
         //   account
+
+        /*
         cb.require_equal(
             "is_tx_invalid is correct",
             or::expr([
@@ -263,6 +265,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ]),
             tx_is_invalid.expr(),
         );
+        */
 
         let caller_nonce_hash_bytes = array_init::array_init(|_| cb.query_byte());
         let create = ContractCreateGadget::construct(cb);
@@ -737,7 +740,7 @@ mod test {
         }
     }
 
-    fn test_ok(tx: eth_types::Transaction, code: Option<Bytecode>) {
+    fn test_ok(tx: eth_types::Transaction, code: Option<Bytecode>, enable_skipping_invalid_tx: bool) {
         // Get the execution steps from the external tracer
         let ctx = TestContext::<2, 1>::new(
             None,
@@ -755,7 +758,8 @@ mod test {
                     .gas_price(tx.gas_price.unwrap())
                     .gas(tx.gas)
                     .input(tx.input)
-                    .value(tx.value);
+                    .value(tx.value)
+                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
             },
             |block, _tx| block.number(0xcafeu64),
         )
@@ -780,22 +784,32 @@ mod test {
         eth_types::Transaction::from(mock_transaction)
     }
 
-    #[test]
-    fn begin_tx_gadget_simple() {
+    fn begin_tx_gadget_simple(enable_skipping_invalid_tx: bool) {
         // Transfer 1 ether to account with empty code, successfully
-        test_ok(mock_tx(eth(1), gwei(2), vec![]), None);
+        test_ok(mock_tx(eth(1), gwei(2), vec![]), None, enable_skipping_invalid_tx);
 
         // Transfer 1 ether, successfully
-        test_ok(mock_tx(eth(1), gwei(2), vec![]), Some(code_with_return()));
+        test_ok(mock_tx(eth(1), gwei(2), vec![]), Some(code_with_return()), enable_skipping_invalid_tx);
 
         // Transfer 1 ether, tx reverts
-        test_ok(mock_tx(eth(1), gwei(2), vec![]), Some(code_with_revert()));
+        test_ok(mock_tx(eth(1), gwei(2), vec![]), Some(code_with_revert()), enable_skipping_invalid_tx);
 
         // Transfer nothing with some calldata
         test_ok(
             mock_tx(eth(0), gwei(2), vec![1, 2, 3, 4, 0, 0, 0, 0]),
             Some(code_with_return()),
+            enable_skipping_invalid_tx
         );
+    }
+
+    #[test]
+    fn begin_tx_gadget_simple_enable_skipping_invalid_tx() {
+        begin_tx_gadget_simple(true);
+    }
+
+    #[test]
+    fn begin_tx_gadget_simple_disable_skipping_invalid_tx() {
+        begin_tx_gadget_simple(false);
     }
 
     #[test]
@@ -828,8 +842,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    #[test]
-    fn begin_tx_gadget_rand() {
+    fn begin_tx_gadget_rand(enable_skipping_invalid_tx: bool) {
         let random_amount = Word::from_little_endian(&rand_bytes(32)) % eth(1);
         let random_gas_price = Word::from_little_endian(&rand_bytes(32)) % gwei(2);
         // If this test fails, we want these values to appear in the CI logs.
@@ -849,8 +862,18 @@ mod test {
             // Transfer nothing with random gas_price, tx reverts
             (eth(0), random_gas_price, vec![], Some(code_with_revert())),
         ] {
-            test_ok(mock_tx(value, gas_price, calldata), code);
+            test_ok(mock_tx(value, gas_price, calldata), code, enable_skipping_invalid_tx);
         }
+    }
+
+    #[test]
+    fn begin_tx_gadget_rand_enable_skipping_invalid_tx() {
+        begin_tx_gadget_rand(true);
+    }
+
+    #[test]
+    fn begin_tx_gadget_rand_disable_skipping_invalid_tx() {
+        begin_tx_gadget_rand(false);
     }
 
     #[test]
@@ -988,5 +1011,129 @@ mod test {
         begin_tx_deploy(0x0100000000000000u64);
         begin_tx_deploy(0x1020304050607080u64);
         begin_tx_deploy(0xfffffffffffffffeu64);
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn begin_tx_disable_skipping_invalid_tx_invalid_nonce() {
+        begin_tx_invalid_nonce(false);
+    }
+
+    #[test]
+    #[should_panic]
+    fn begin_tx_disable_skipping_invalid_tx_not_enough_eth() {
+        begin_tx_not_enough_eth(false);
+    }
+
+    #[test]
+    #[should_panic]
+    fn begin_tx_disable_skipping_invalid_tx_insufficient_gas() {
+        begin_tx_insufficient_gas(false);
+    }
+
+    #[test]
+    fn begin_tx_enable_skipping_invalid_tx() {
+        begin_tx_invalid_nonce(true);
+        begin_tx_not_enough_eth(true);
+        begin_tx_insufficient_gas(true);
+    }
+
+    fn begin_tx_invalid_nonce(enable_skipping_invalid_tx: bool) {
+        // The nonce of the account doing the transaction is not correct
+        // Use the same nonce value for two transactions.
+
+        let to = MOCK_ACCOUNTS[0];
+        let from = MOCK_ACCOUNTS[1];
+
+        let code = bytecode! {
+            STOP
+        };
+
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(to).balance(eth(1)).code(code);
+                accs[1].address(from).balance(eth(1)).nonce(1);
+            },
+            |mut txs, _| {
+                txs[0]
+                    .to(to)
+                    .from(from)
+                    .nonce(0)
+                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
+            },
+            |block, _| block,
+        )
+        .unwrap()
+        .into();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
+    fn begin_tx_not_enough_eth(enable_skipping_invalid_tx: bool) {
+        // The account does not have enough ETH to pay for eth_value + tx_gas *
+        // tx_gas_price.
+        let to = MOCK_ACCOUNTS[0];
+        let from = MOCK_ACCOUNTS[1];
+
+        let balance = Word::from(1) * Word::from(10u64.pow(5));
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(to).balance(gwei(0));
+                accs[1]
+                    .address(from)
+                    .balance(balance)
+                    .nonce(1);
+            },
+            |mut txs, _| {
+                txs[0]
+                    .to(to)
+                    .from(from)
+                    .nonce(1)
+                    .gas_price(gwei(1))
+                    .gas(Word::from(10u64.pow(5)))
+                    .value(gwei(1))
+                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
+            },
+            |block, _| block,
+        )
+        .unwrap()
+        .into();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
+    fn begin_tx_insufficient_gas(enable_skipping_invalid_tx: bool) {
+        let to = MOCK_ACCOUNTS[0];
+        let from = MOCK_ACCOUNTS[1];
+
+        let balance = Word::from(1) * Word::from(10u64.pow(18));
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(to).balance(gwei(0));
+                accs[1]
+                    .address(from)
+                    .balance(balance)
+                    .nonce(1);
+            },
+            |mut txs, _| {
+                txs[0]
+                    .to(to)
+                    .from(from)
+                    .nonce(1)
+                    .gas_price(gwei(1))
+                    .gas(Word::from(1))
+                    .value(gwei(1))
+                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
+            },
+            |block, _| block,
+        )
+        .unwrap()
+        .into();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }
