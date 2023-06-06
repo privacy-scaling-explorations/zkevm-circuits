@@ -310,9 +310,11 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 mod test {
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
-    use eth_types::{self, bytecode};
+    use eth_types::{self, bytecode, Word};
 
-    use mock::{eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
+    use mock::{
+        eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
+    };
 
     fn test_ok<const NACC: usize, const NTX: usize>(ctx: TestContext<NACC, NTX>) {
         CircuitTestBuilder::new_from_test_ctx(ctx)
@@ -325,19 +327,44 @@ mod test {
 
     #[test]
     fn end_tx_gadget_simple() {
-        // TODO: Enable this with respective code when SSTORE is implemented.
-        // Tx with non-capped refund
-        // test_ok(vec![mock_tx(
-        //     address!("0x00000000000000000000000000000000000000fe"),
-        //     Some(27000),
-        //     None,
-        // )]);
-        // Tx with capped refund
-        // test_ok(vec![mock_tx(
-        //     address!("0x00000000000000000000000000000000000000fe"),
-        //     Some(65000),
-        //     None,
-        // )]);
+        let key: Word = 0x030201.into();
+        let original_value: Word = 0x060504.into();
+        let zero_value: Word = 0x0.into();
+        let non_capped_refund = Word::from(27_000);
+        let capped_refund = Word::from(65_000);
+
+        // Testing Tx with non capped and capped refunds
+        for tx_value in [non_capped_refund, capped_refund] {
+            test_ok(
+                TestContext::<2, 1>::new(
+                    None,
+                    |accs| {
+                        accs[0]
+                            .address(MOCK_ACCOUNTS[0])
+                            .balance(Word::from(10u64.pow(19)))
+                            .code(bytecode! {
+                                PUSH32(zero_value)
+                                PUSH32(key)
+                                SSTORE
+                                STOP
+                            })
+                            .storage(vec![(key, original_value)].into_iter());
+                        accs[1]
+                            .address(MOCK_ACCOUNTS[1])
+                            .balance(Word::from(10u64.pow(19)));
+                    },
+                    |mut txs, accs| {
+                        txs[0]
+                            .to(accs[0].address)
+                            .from(accs[1].address)
+                            .value(tx_value)
+                            .gas_price(gwei(2));
+                    },
+                    |block, _tx| block,
+                )
+                .unwrap(),
+            );
+        }
 
         // Multiple txs
         test_ok(
