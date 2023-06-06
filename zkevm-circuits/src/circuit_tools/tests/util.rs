@@ -1,7 +1,7 @@
 use std::vec;
 
 use crate::circuit_tools::{
-    cached_region::{self, CachedRegion, ChallengeSet, MacroDescr},
+    cached_region::{self, CachedRegion, ChallengeSet},
     cell_manager::{Cell, CellManager, CellTypeTrait},
     constraint_builder::ConstraintBuilder,
     table::LookupTable,

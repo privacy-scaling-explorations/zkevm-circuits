@@ -63,7 +63,7 @@ impl<F: Field> AccountLeafConfig<F> {
             .cell_manager
             .as_mut()
             .unwrap()
-            .reset(meta, AccountRowType::Count as usize);
+            .reset(AccountRowType::Count as usize);
         let mut config = AccountLeafConfig::default();
 
         circuit!([meta, cb], {

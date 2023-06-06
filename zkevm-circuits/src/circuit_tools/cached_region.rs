@@ -22,16 +22,6 @@ impl<F: Field, V: AsRef<[Value<F>]>> ChallengeSet<F> for V {
     }
 }
 
-pub trait MacroDescr {
-    fn is_descr_disabled(&self) -> bool;
-}
-
-impl<'r, F: Field> MacroDescr for Region<'r, F> {
-    fn is_descr_disabled(&self) -> bool {
-        false
-    }
-}
-
 pub struct CachedRegion<'r, 'b, F: Field, S: ChallengeSet<F>> {
     region: &'r mut Region<'b, F>,
     pub advice: HashMap<(usize, usize), F>,
@@ -49,12 +39,8 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
         }
     }
 
-    pub(crate) fn disable_description(&mut self) {
-        self.disable_description = true;
-    }
-
-    pub(crate) fn is_descr_disabled(&self) -> bool {
-        self.disable_description
+    pub(crate) fn set_disable_description(&mut self, disable_description: bool) {
+        self.disable_description = disable_description;
     }
 
     /// Assign an advice column value (witness).
@@ -71,7 +57,6 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
         A: Fn() -> AR,
         AR: Into<String>,
     {
-        // println!("\t assign_advice: [{}][{}]", column.index(), offset);
         // Actually set the value
         let res = self.region.assign_advice(annotation, column, offset, &to);
         // Cache the value
@@ -170,11 +155,6 @@ impl<F: Field, C: CellTypeTrait> StoredExpression<F, C> {
         region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
     ) -> Result<Value<F>, Error> {
-        // println!("____ StoredExpression::assign ____ \n\t {:?} -> {:?}", self.expr_id,
-        // self.cell.identifier());
-
-        // println!("assign stored: {} [{}][{}]", self.name, self.cell.column().index(), offset);
-
         let value = self.expr.evaluate(
             &|scalar| Value::known(scalar),
             &|_| unimplemented!("selector column"),
@@ -200,7 +180,6 @@ impl<F: Field, C: CellTypeTrait> StoredExpression<F, C> {
             &|a, scalar| a * Value::known(scalar),
         );
         self.cell.assign_value(region, offset, value)?;
-        // println!("evaluated value: {:?}", value);
         Ok(value)
     }
 }

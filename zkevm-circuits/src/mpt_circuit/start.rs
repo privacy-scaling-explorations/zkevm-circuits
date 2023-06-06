@@ -36,7 +36,7 @@ impl<F: Field> StartConfig<F> {
             .cell_manager
             .as_mut()
             .unwrap()
-            .reset(meta, StartRowType::Count as usize);
+            .reset(StartRowType::Count as usize);
         let mut config = StartConfig::default();
 
         circuit!([meta, cb], {

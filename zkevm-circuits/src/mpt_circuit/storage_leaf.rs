@@ -61,7 +61,7 @@ impl<F: Field> StorageLeafConfig<F> {
             .cell_manager
             .as_mut()
             .unwrap()
-            .reset(meta, StorageRowType::Count as usize);
+            .reset(StorageRowType::Count as usize);
         let mut config = StorageLeafConfig::default();
 
         circuit!([meta, cb], {

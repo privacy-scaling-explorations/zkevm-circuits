@@ -826,10 +826,6 @@ impl<F: Field> MPTConstraintBuilder<F> {
         }
     }
 
-    pub(crate) fn is_descr_disabled(&self) -> bool {
-        self.base.is_descr_disabled()
-    }
-
     pub(crate) fn set_use_dynamic_lookup(&mut self, use_dynamic_lookup: bool) {
         self.use_dynamic_lookup = use_dynamic_lookup;
     }
@@ -847,7 +843,6 @@ impl<F: Field> MPTConstraintBuilder<F> {
     }
 
     pub(crate) fn query_byte(&mut self) -> Cell<F> {
-        // TODO(Brecht): fix
         self.base.query_one(EvmCellType::LookupByte)
     }
 
