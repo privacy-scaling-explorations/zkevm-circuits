@@ -215,7 +215,7 @@ impl<F: Field, const N: usize> WordExpr<F> for WordLimbs<Cell<F>, N> {
 }
 
 /// `Word`, special alias for Word2.
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, Default)]
 pub struct Word<T>(Word2<T>);
 
 impl<T: Clone> Word<T> {
@@ -245,12 +245,6 @@ impl<T: Clone> Word<T> {
     }
 }
 
-impl<T: Default> Default for Word<T> {
-    fn default() -> Self {
-        Self(Word2::<T>::default())
-    }
-}
-
 impl<T> std::ops::Deref for Word<T> {
     type Target = WordLimbs<T, 2>;
 
@@ -265,39 +259,47 @@ impl<T: Clone + PartialEq> PartialEq for Word<T> {
     }
 }
 
-impl<F: Field> Word<F> {
+impl<F: Field> From<eth_types::Word> for Word<F> {
     /// Construct the word from u256
-    pub fn from_u256(value: eth_types::Word) -> Word<F> {
+    fn from(value: eth_types::Word) -> Self {
         let bytes = value.to_le_bytes();
         Word::new([
             from_bytes::value(&bytes[..N_BYTES_HALF_WORD]),
             from_bytes::value(&bytes[N_BYTES_HALF_WORD..]),
         ])
     }
+}
+
+impl<F: Field> From<u64> for Word<F> {
     /// Construct the word from u64
-    pub fn from_u64(value: u64) -> Word<F> {
+    fn from(value: u64) -> Self {
         let bytes = value.to_le_bytes();
         Word::new([from_bytes::value(&bytes), F::from(0)])
     }
+}
 
+impl<F: Field> From<u8> for Word<F> {
     /// Construct the word from u8
-    pub fn from_u8(value: u8) -> Word<F> {
+    fn from(value: u8) -> Self {
         Word::new([F::from(value as u64), F::from(0)])
     }
+}
 
+impl<F: Field> From<bool> for Word<F> {
+    fn from(value: bool) -> Self {
+        Word::new([F::from(value as u64), F::from(0)])
+    }
+}
+
+impl<F: Field> From<H160> for Word<F> {
     /// Construct the word from h160
-    pub fn from_h160(value: H160) -> Word<F> {
+    fn from(value: H160) -> Self {
         let mut bytes = *value.as_fixed_bytes();
         bytes.reverse();
         Word::new([
             from_bytes::value(&bytes[..N_BYTES_HALF_WORD]),
             from_bytes::value(&bytes[N_BYTES_HALF_WORD..]),
         ])
-    }
-
-    /// Construct the word from bool
-    pub fn from_bool(value: bool) -> Word<F> {
-        Word::new([F::from(value as u64), F::from(0)])
     }
 }
 

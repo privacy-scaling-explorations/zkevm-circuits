@@ -226,7 +226,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         self.cmp_areduced_n.assign(region, offset, a_reduced, n)?;
 
         self.n_is_zero
-            .assign_value(region, offset, Value::known(Word::from_u256(n)))?;
+            .assign_value(region, offset, Value::known(Word::from(n)))?;
 
         Ok(())
     }
