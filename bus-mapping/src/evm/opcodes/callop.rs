@@ -82,7 +82,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             ]);
         }
         for (field, value) in field_values {
-            println!("{:?}, {:?}", field, value);
             state.call_context_read(&mut exec_step, current_call.call_id, field, value);
         }
 
