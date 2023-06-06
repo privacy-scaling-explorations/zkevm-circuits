@@ -3,7 +3,7 @@ use crate::{
     table::{AccountFieldTag, MPTProofType},
     util::word,
 };
-use eth_types::{Address, Field, Word};
+use eth_types::{Address, Field, ToScalar, Word};
 use itertools::Itertools;
 use std::collections::BTreeMap;
 
@@ -42,7 +42,7 @@ pub struct MptUpdates {
 
 /// The field element encoding of an MPT update, which is used by the MptTable
 #[derive(Debug, Clone, Copy)]
-pub struct MptUpdateRow<F>(pub(crate) [F; 13]);
+pub struct MptUpdateRow<F>(pub(crate) [F; 12]);
 
 impl MptUpdates {
     pub(crate) fn old_root(&self) -> Word {
@@ -98,12 +98,10 @@ impl MptUpdates {
                     word::Word::<F>::from_u256(new_value).into_lo_hi();
                 let (old_value_lo, old_value_hi) =
                     word::Word::<F>::from_u256(old_value).into_lo_hi();
-                let (address_lo, address_hi) =
-                    word::Word::<F>::from_u256(update.key.address()).into_lo_hi();
+                let address = update.key.address().to_scalar().unwrap();
 
                 MptUpdateRow([
-                    address_lo,
-                    address_hi,
+                    address,
                     storage_key_lo,
                     storage_key_hi,
                     update.proof_type(),
@@ -177,11 +175,9 @@ impl Key {
             self
         }
     }
-    fn address(&self) -> Word {
+    fn address(&self) -> Address {
         match self {
-            Self::Account { address, .. } | Self::AccountStorage { address, .. } => {
-                Word::from_big_endian(address.as_bytes())
-            }
+            Self::Account { address, .. } | Self::AccountStorage { address, .. } => *address,
         }
     }
     fn storage_key(&self) -> Word {

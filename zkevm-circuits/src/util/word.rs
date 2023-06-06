@@ -178,15 +178,6 @@ impl<F: Field> Word<F> {
         ])
     }
 
-    /// Construct word from Address
-    pub fn from_address(value: eth_types::Address) -> Word<F> {
-        let bytes_le: Vec<u8> = value.to_fixed_bytes().into_iter().rev().collect();
-        Word::new([
-            from_bytes::value(&bytes_le[..16]),
-            from_bytes::value(&bytes_le[16..]),
-        ])
-    }
-
     /// Constrct the word from u64
     pub fn from_u64(value: u64) -> Word<F> {
         let bytes = value.to_le_bytes();

@@ -7,7 +7,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::{cmp::min, marker::PhantomData};
+use std::marker::PhantomData;
 
 pub trait ToLimbs<const N: usize> {
     fn to_limbs(&self) -> [u16; N];
@@ -133,7 +133,8 @@ where
         values: [Column<Advice>; N_VALUES],
         lookup: lookups::Config,
     ) -> Config<T, N_LIMBS> {
-        let limbs_per_value = min(N_LIMBS, 8);
+        assert_eq!(N_LIMBS & N_VALUES, 0);
+        let limbs_per_value = N_LIMBS / N_VALUES;
 
         let limbs = [0; N_LIMBS].map(|_| meta.advice_column());
 
@@ -147,8 +148,7 @@ where
             meta.create_gate("mpi value matches claimed limbs", |meta| {
                 let selector = meta.query_fixed(selector, Rotation::cur());
                 let value_expr = meta.query_advice(*value, Rotation::cur());
-                let value_limbs =
-                    &limbs[n * limbs_per_value..min((n + 1) * limbs_per_value, N_LIMBS)];
+                let value_limbs = &limbs[n * limbs_per_value..(n + 1) * limbs_per_value];
                 let limbs_expr = value_limbs
                     .iter()
                     .map(|limb| meta.query_advice(*limb, Rotation::cur()));

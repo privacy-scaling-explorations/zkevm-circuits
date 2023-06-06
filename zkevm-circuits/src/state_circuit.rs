@@ -95,18 +95,12 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
     ) -> Self {
         let selector = meta.fixed_column();
         let lookups = LookupsChip::configure(meta);
-        let power_of_randomness: [Expression<F>; 31] = challenges.keccak_powers_of_randomness();
 
         let rw_counter = MpiChip::configure(meta, selector, [rw_table.rw_counter], lookups);
         let tag = BinaryNumberChip::configure(meta, selector, Some(rw_table.tag));
         let id = MpiChip::configure(meta, selector, [rw_table.id], lookups);
 
-        let address = MpiChip::configure(
-            meta,
-            selector,
-            [rw_table.address.lo(), rw_table.address.hi()],
-            lookups,
-        );
+        let address = MpiChip::configure(meta, selector, [rw_table.address], lookups);
 
         let storage_key = MpiChip::configure(
             meta,
@@ -141,6 +135,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             rw_counter,
         };
 
+        let power_of_randomness: [Expression<F>; 31] = challenges.keccak_powers_of_randomness();
         let lexicographic_ordering =
             LexicographicOrderingConfig::configure(meta, sort_keys, lookups, power_of_randomness);
 
@@ -306,10 +301,10 @@ impl<F: Field> StateCircuitConfig<F> {
                 region,
                 offset,
                 Value::known([
-                    committed_value.hi(),
                     committed_value.lo(),
-                    value.hi(),
+                    committed_value.hi(),
                     value.lo(),
+                    value.hi(),
                 ]),
             )?;
 
@@ -514,6 +509,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
     let final_bits_sum = meta.query_advice(first_different_limb.bits[3], Rotation::cur())
         + meta.query_advice(first_different_limb.bits[4], Rotation::cur());
     let mpt_update_table_expressions = c.mpt_table.table_exprs(meta);
+    assert_eq!(mpt_update_table_expressions.len(), 12);
 
     let meta_query_word =
         |metap: &mut VirtualCells<'_, F>, word_column: word::Word<Column<Advice>>, at: Rotation| {
@@ -533,8 +529,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
             tag: meta.query_advice(c.rw_table.tag, Rotation::cur()),
             id: meta.query_advice(c.rw_table.id, Rotation::cur()),
             prev_id: meta.query_advice(c.rw_table.id, Rotation::prev()),
-            address: meta_query_word(meta, c.rw_table.address, Rotation::cur()),
-            prev_address: meta_query_word(meta, c.rw_table.address, Rotation::prev()),
+            address: meta.query_advice(c.rw_table.address, Rotation::cur()),
+            prev_address: meta.query_advice(c.rw_table.address, Rotation::prev()),
             field_tag: meta.query_advice(c.rw_table.field_tag, Rotation::cur()),
             storage_key: meta_query_word(meta, c.rw_table.storage_key, Rotation::cur()),
             value: meta_query_word(meta, c.rw_table.value, Rotation::cur()),
@@ -543,30 +539,27 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         },
         // TODO: clean this up
         mpt_update_table: MptUpdateTableQueries {
-            address: word::Word::new([
-                mpt_update_table_expressions[0].clone(),
-                mpt_update_table_expressions[1].clone(),
-            ]),
+            address: mpt_update_table_expressions[0].clone(),
             storage_key: word::Word::new([
+                mpt_update_table_expressions[1].clone(),
                 mpt_update_table_expressions[2].clone(),
-                mpt_update_table_expressions[3].clone(),
             ]),
-            proof_type: mpt_update_table_expressions[4].clone(),
+            proof_type: mpt_update_table_expressions[3].clone(),
             new_root: word::Word::new([
+                mpt_update_table_expressions[4].clone(),
                 mpt_update_table_expressions[5].clone(),
-                mpt_update_table_expressions[6].clone(),
             ]),
             old_root: word::Word::new([
+                mpt_update_table_expressions[6].clone(),
                 mpt_update_table_expressions[7].clone(),
-                mpt_update_table_expressions[8].clone(),
             ]),
             new_value: word::Word::new([
+                mpt_update_table_expressions[8].clone(),
                 mpt_update_table_expressions[9].clone(),
-                mpt_update_table_expressions[10].clone(),
             ]),
             old_value: word::Word::new([
+                mpt_update_table_expressions[10].clone(),
                 mpt_update_table_expressions[11].clone(),
-                mpt_update_table_expressions[12].clone(),
             ]),
         },
         lexicographic_ordering_selector: meta

@@ -444,7 +444,7 @@ pub struct RwTable {
     /// Key1 (Id)
     pub id: Column<Advice>,
     /// Key2 (Address)
-    pub address: word::Word<Column<Advice>>,
+    pub address: Column<Advice>,
     /// Key3 (FieldTag)
     pub field_tag: Column<Advice>,
     /// Key3 (StorageKey)
@@ -464,8 +464,7 @@ impl<F: Field> LookupTable<F> for RwTable {
             self.is_write.into(),
             self.tag.into(),
             self.id.into(),
-            self.address.lo().into(),
-            self.address.hi().into(),
+            self.address.into(),
             self.field_tag.into(),
             self.storage_key.lo().into(),
             self.storage_key.hi().into(),
@@ -484,8 +483,7 @@ impl<F: Field> LookupTable<F> for RwTable {
             String::from("is_write"),
             String::from("tag"),
             String::from("id"),
-            String::from("address_lo"),
-            String::from("address_hi"),
+            String::from("address"),
             String::from("field_tag"),
             String::from("storage_key_lo"),
             String::from("storage_key_hi"),
@@ -506,7 +504,7 @@ impl RwTable {
             is_write: meta.advice_column(),
             tag: meta.advice_column(),
             id: meta.advice_column(),
-            address: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            address: meta.advice_column(),
             field_tag: meta.advice_column(),
             storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
             value: word::Word::new([meta.advice_column(), meta.advice_column()]),
@@ -521,6 +519,7 @@ impl RwTable {
         row: &RwRow<F>,
     ) -> Result<(), Error> {
         for (column, value) in [
+            (self.address, row.address),
             (self.rw_counter, row.rw_counter),
             (self.is_write, row.is_write),
             (self.tag, row.tag),
@@ -535,7 +534,6 @@ impl RwTable {
             )?;
         }
         for (column, value) in [
-            (self.address, row.address),
             (self.storage_key, row.storage_key),
             (self.value, row.value),
             (self.value_prev, row.value_prev),
@@ -611,7 +609,7 @@ impl From<AccountFieldTag> for MPTProofType {
 
 /// The MptTable shared between MPT Circuit and State Circuit
 #[derive(Clone, Copy, Debug)]
-pub struct MptTable([Column<Advice>; 13]);
+pub struct MptTable([Column<Advice>; 12]);
 
 impl<F: Field> LookupTable<F> for MptTable {
     fn columns(&self) -> Vec<Column<Any>> {
@@ -620,8 +618,7 @@ impl<F: Field> LookupTable<F> for MptTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
-            String::from("address_lo"),
-            String::from("address_hi"),
+            String::from("address"),
             String::from("storage_key_lo"),
             String::from("storage_key_hi"),
             String::from("proof_type"),
@@ -641,8 +638,7 @@ impl MptTable {
     /// Construct a new MptTable
     pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self([
-            meta.advice_column(), // Address lo
-            meta.advice_column(), // Address hi
+            meta.advice_column(), // Address
             meta.advice_column(), // Storage key lo
             meta.advice_column(), // Storage key hi
             meta.advice_column(), // Proof type

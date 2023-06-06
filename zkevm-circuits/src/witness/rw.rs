@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 
 use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField};
-use eth_types::{Address, Field, ToAddress, Word, U256};
+use eth_types::{Address, Field, ToAddress, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 
@@ -251,7 +251,7 @@ pub struct RwRow<F> {
     pub(crate) is_write: F,
     pub(crate) tag: F,
     pub(crate) id: F,
-    pub(crate) address: word::Word<F>,
+    pub(crate) address: F,
     pub(crate) field_tag: F,
     pub(crate) storage_key: word::Word<F>,
     pub(crate) value: word::Word<F>,
@@ -260,14 +260,13 @@ pub struct RwRow<F> {
 }
 
 impl<F: Field> RwRow<F> {
-    pub(crate) fn values(&self) -> [F; 15] {
+    pub(crate) fn values(&self) -> [F; 14] {
         [
             self.rw_counter,
             self.is_write,
             self.tag,
             self.id,
-            self.address.lo(),
-            self.address.hi(),
+            self.address,
             self.field_tag,
             self.storage_key.lo(),
             self.storage_key.hi(),
@@ -392,7 +391,7 @@ impl Rw {
             is_write: F::from(self.is_write() as u64),
             tag: F::from(self.tag() as u64),
             id: F::from(self.id().unwrap_or_default() as u64),
-            address: word::Word::from_address(self.address().unwrap_or_default()),
+            address: self.address().unwrap_or_default().to_scalar().unwrap(),
             field_tag: F::from(self.field_tag().unwrap_or_default()),
             storage_key: word::Word::from_u256(self.storage_key().unwrap_or_default()),
             value: word::Word::from_u256(self.value_assignment()),

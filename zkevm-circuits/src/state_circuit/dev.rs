@@ -56,8 +56,7 @@ where
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub enum AdviceColumn {
     IsWrite,
-    AddressLo,
-    AddressHi,
+    Address,
     AddressLimb0,
     AddressLimb1,
     StorageKeyLo,
@@ -93,8 +92,7 @@ impl AdviceColumn {
     pub fn value<F: Field>(&self, config: &StateCircuitConfig<F>) -> Column<Advice> {
         match self {
             Self::IsWrite => config.rw_table.is_write,
-            Self::AddressLo => config.rw_table.address.lo(),
-            Self::AddressHi => config.rw_table.address.hi(),
+            Self::Address => config.rw_table.address,
             Self::AddressLimb0 => config.sort_keys.address.limbs[0],
             Self::AddressLimb1 => config.sort_keys.address.limbs[1],
             Self::StorageKeyLo => config.rw_table.storage_key.lo(),
