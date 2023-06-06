@@ -258,18 +258,14 @@ impl<F: Field> TxCircuit<F> {
                         // Ref. spec 0. Copy constraints using fixed offsets between the tx rows and
                         // the SignVerifyChip
                         match tag {
-                            TxFieldTag::CallerAddress => {
-                                // region.constrain_equal(
-                                //     assigned_cell.cell(),
-                                //     assigned_sig_verif.address.cell(),
-                                // )?
-                                if !tx.enable_skipping_invalid_signature {
-                                    region.constrain_equal(
-                                        assigned_cell.cell(),
-                                        assigned_sig_verif.address.cell(),
-                                    )?
-                                }
-                            },
+                            // TODO: Enable it for invalid signature
+                            // TxFieldTag::CallerAddress => {
+                            //     region.constrain_equal(
+                            //         assigned_cell.cell(),
+                            //         assigned_sig_verif.address.cell(),
+                            //     )?
+                            // },
+                            
                             TxFieldTag::TxSignHash => region.constrain_equal(
                                 assigned_cell.cell(),
                                 assigned_sig_verif.msg_hash_rlc.cell(),

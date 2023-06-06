@@ -154,7 +154,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         // Build Block modifiers
         let mut block = MockBlock::default();
         block.transactions.extend_from_slice(&transactions);
-        func_block(&mut block, transactions).build();
+        func_block(&mut block, transactions.clone()).build();
 
         let chain_id = block.chain_id;
         let block = Block::<Transaction>::from(block);
@@ -173,6 +173,15 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             history_hashes.clone(),
             logger_config,
         )?;
+
+        for (transaction, geth_trace) in transactions.iter().zip(geth_traces.iter()) {
+            if !transaction.enable_skipping_invalid_tx && geth_trace.invalid == true {
+                panic!(
+                    "{:?}",
+                    Error::TracingError(geth_trace.return_value.clone()).to_string()
+                )
+            }
+        }
 
         Ok(Self {
             chain_id,

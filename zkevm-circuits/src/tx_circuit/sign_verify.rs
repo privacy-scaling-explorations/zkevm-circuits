@@ -548,25 +548,7 @@ impl<F: Field> SignVerifyChip<F> {
                     .collect_vec(),
             )
         };
-        let zero_address = {
-            let zero_zddress = address!("0x0000000000000000000000000000000000000000");
-            let tx_from_fixed_bytes = zero_zddress.to_fixed_bytes().map(|byte| Value::known(F::from(byte as u64)));
-            let powers_of_256 =
-                iter::successors(Some(F::ONE), |coeff| Some(F::from(256) * coeff))
-                    .take(20)
-                    .collect_vec();
-            let terms = tx_from_fixed_bytes
-                .iter()
-                .zip(powers_of_256.into_iter().rev())
-                .map(|(byte, coeff)| maingate::Term::Unassigned(*byte, coeff))
-                .collect_vec();
-            let (address, _) =
-                main_gate.decompose(ctx, &terms, F::ZERO, |_, _| Ok(()))?;
-            address
-        };
 
-        let enable_skipping_invalid_signature = main_gate.assign_constant(ctx, F::from(tx.enable_skipping_invalid_signature as u64))?;
-        let address_returned: AssignedCell<F, F> = main_gate.select(ctx, &zero_address, &address, &enable_skipping_invalid_signature)?;
         let is_address_zero = main_gate.is_zero(ctx, &address)?;
 
         log::error!("assign_signature_verify part 2 at the end: {} rows", ctx.offset());
@@ -634,7 +616,7 @@ impl<F: Field> SignVerifyChip<F> {
         self.enable_keccak_lookup(config, ctx, &is_address_zero, &pk_rlc, &pk_hash_rlc)?;
 
         Ok(AssignedSignatureVerify {
-            address: address_returned,
+            address: address,
             msg_hash_rlc,
             is_invalid: assigned_ecdsa.is_valid.clone(),
         })

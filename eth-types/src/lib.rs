@@ -446,12 +446,19 @@ pub struct GethExecTrace {
     pub gas: Gas,
     /// True when the transaction has failed.
     pub failed: bool,
+    /// True when the tx could not execute
+    #[serde(default = "default_bool")]
+    pub invalid: bool,
     /// Return value of execution which is a hex encoded byte array
     #[serde(rename = "returnValue")]
     pub return_value: String,
     /// Vector of geth execution steps of the trace.
     #[serde(rename = "structLogs")]
     pub struct_logs: Vec<GethExecStep>,
+}
+
+fn default_bool() -> bool {
+    false
 }
 
 #[macro_export]
@@ -559,6 +566,7 @@ mod tests {
         assert_eq!(
             trace,
             GethExecTrace {
+                invalid: false,
                 gas: Gas(26809),
                 failed: false,
                 return_value: "".to_owned(),

@@ -34,6 +34,7 @@ pub(crate) struct EndTxGadget<F> {
     effective_refund: MinMaxGadget<F, N_BYTES_GAS>,
     mul_gas_price_by_refund: MulWordByU64Gadget<F>,
     tx_caller_address: Cell<F>,
+    tx_is_invalid: Cell<F>,
     gas_fee_refund: UpdateBalanceGadget<F, 2, true>,
     sub_gas_price_by_base_fee: AddWordsGadget<F, 2, true>,
     mul_effective_tip_by_gas_used: MulWordByU64Gadget<F>,
@@ -52,6 +53,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
+        let tx_is_invalid = cb.tx_context(tx_id.expr(), TxContextFieldTag::TxInvalid, None);
 
         let [tx_gas, tx_caller_address] =
             [TxContextFieldTag::Gas, TxContextFieldTag::CallerAddress]
@@ -68,6 +70,14 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let refund = cb.query_cell();
         cb.tx_refund_read(tx_id.expr(), refund.expr());
         let effective_refund = MinMaxGadget::construct(cb, max_refund.quotient(), refund.expr());
+
+        // refund == 0 if tx is invalid
+        cb.condition(tx_is_invalid.expr(), |cb| {
+            cb.require_zero(
+                "refund == 0 if tx is invalid",
+                effective_refund.min().expr(),
+            );
+        });
 
         // Add effective_refund * tx_gas_price back to caller's balance
         let mul_gas_price_by_refund = MulWordByU64Gadget::construct(
@@ -116,6 +126,13 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             TxReceiptFieldTag::LogLength,
             cb.curr.state.log_id.expr(),
         );
+        // constrain tx status matches with `PostStateOrStatus` of TxReceipt tag in RW
+        cb.condition(tx_is_invalid.expr(), |cb| {
+            cb.require_zero(
+                "log_id is zero when tx is invalid",
+                cb.curr.state.log_id.expr(),
+            );
+        });
 
         let is_first_tx = IsEqualGadget::construct(cb, tx_id.expr(), 1.expr());
 
@@ -181,6 +198,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             effective_refund,
             mul_gas_price_by_refund,
             tx_caller_address,
+            tx_is_invalid,
             gas_fee_refund,
             sub_gas_price_by_base_fee,
             mul_effective_tip_by_gas_used,
@@ -237,6 +255,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
+        self.tx_is_invalid
+            .assign(region, offset, Value::known(F::from(tx.invalid_tx as u64)))?;
         self.gas_fee_refund.assign(
             region,
             offset,
