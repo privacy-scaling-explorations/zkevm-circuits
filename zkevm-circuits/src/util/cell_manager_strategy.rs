@@ -78,6 +78,8 @@ impl CMFixedWidthStrategy {
 }
 
 impl CellManagerStrategy for CMFixedWidthStrategy {
+    type Stats = BTreeMap<CellType, (usize, usize, usize)>;
+
     fn on_creation(&mut self, columns: &mut CellManagerColumns) {
         for (cell_type, advices) in self.advices.0.iter() {
             for column in advices.iter() {
@@ -131,8 +133,6 @@ impl CellManagerStrategy for CMFixedWidthStrategy {
             .max()
             .unwrap_or(0)
     }
-
-    type Stats = BTreeMap<CellType, (usize, usize, usize)>;
 
     fn get_stats(&self, columns: &CellManagerColumns) -> Self::Stats {
         let mut data = BTreeMap::new();
