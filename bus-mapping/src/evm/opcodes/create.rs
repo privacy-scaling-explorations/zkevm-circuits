@@ -133,14 +133,10 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
 
         // EIP-150: all but one 64th of the caller's gas is sent to the callee.
-        let caller_gas_left =
-            (geth_step.gas.0 - geth_step.gas_cost.0 - memory_expansion_gas_cost) / 64;
+        let caller_gas_left = (geth_step.gas - geth_step.gas_cost - memory_expansion_gas_cost) / 64;
 
         for (field, value) in [
-            (
-                CallContextField::ProgramCounter,
-                (geth_step.pc.0 + 1).into(),
-            ),
+            (CallContextField::ProgramCounter, (geth_step.pc + 1).into()),
             (
                 CallContextField::StackPointer,
                 geth_step.stack.nth_last_filled(n_pop - 1).0.into(),

@@ -4,10 +4,7 @@ use crate::{
     circuit_input_builder::CallContext, error::ExecError, exec_trace::OperationRef,
     operation::RWCounter,
 };
-use eth_types::{
-    evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
-    GethExecStep, Word, H256,
-};
+use eth_types::{evm_types::OpcodeId, GethExecStep, Word, H256};
 use gadgets::impl_expr;
 use halo2_proofs::plonk::Expression;
 use strum_macros::EnumIter;
@@ -18,19 +15,19 @@ pub struct ExecStep {
     /// Execution state
     pub exec_state: ExecState,
     /// Program Counter
-    pub pc: ProgramCounter,
+    pub pc: u64,
     /// Stack size
     pub stack_size: usize,
     /// Memory size
     pub memory_size: usize,
     /// Gas left
-    pub gas_left: Gas,
+    pub gas_left: u64,
     /// Gas cost of the step.  If the error is OutOfGas caused by a "gas uint64
     /// overflow", this value will **not** be the actual Gas cost of the
     /// step.
-    pub gas_cost: GasCost,
+    pub gas_cost: u64,
     /// Accumulated gas refund
-    pub gas_refund: Gas,
+    pub gas_refund: u64,
     /// Call index within the Transaction.
     pub call_index: usize,
     /// The global counter when this step was executed.
@@ -119,11 +116,6 @@ impl ExecStep {
         // Thus, the memory size must be a multiple of 32 bytes.
         assert_eq!(memory_size % n_bytes_word, 0);
         memory_size / n_bytes_word
-    }
-
-    /// Get program counter
-    pub fn program_counter(&self) -> u64 {
-        self.pc.0.try_into().expect("program counter can fit u64")
     }
 }
 
