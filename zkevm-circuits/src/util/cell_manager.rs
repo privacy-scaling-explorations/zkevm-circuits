@@ -172,12 +172,12 @@ impl CellManagerColumns {
     pub fn add_column(&mut self, cell_type: CellType, column: Column<Advice>) {
         let idx = self.columns_list.len();
         let cell_column = CellColumn::new(column, cell_type, idx);
+
         self.columns_list.push(cell_column.clone());
-        if let Some(columns) = self.columns.get_mut(&cell_type) {
-            columns.push(cell_column);
-        } else {
-            self.columns.insert(cell_type, vec![cell_column]);
-        }
+        self.columns
+            .entry(cell_type)
+            .and_modify(|columns| columns.push(cell_column.clone()))
+            .or_insert(vec![cell_column]);
     }
 
     pub fn get_cell_type_width(&self, cell_type: CellType) -> usize {
