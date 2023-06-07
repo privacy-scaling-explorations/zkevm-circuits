@@ -680,7 +680,7 @@ mod test {
         code
     }
 
-    fn creater_bytecode(
+    fn creator_bytecode(
         initialization_bytecode: Bytecode,
         value: Word,
         is_create2: bool,
@@ -715,7 +715,7 @@ mod test {
         code
     }
 
-    fn creater_bytecode_address_collision(initialization_bytecode: Bytecode) -> Bytecode {
+    fn creator_bytecode_address_collision(initialization_bytecode: Bytecode) -> Bytecode {
         let initialization_bytes = initialization_bytecode.code();
         let mut code = bytecode! {
             PUSH32(Word::from_big_endian(&initialization_bytes))
@@ -727,7 +727,7 @@ mod test {
         code.append(&bytecode! {
             PUSH1(initialization_bytes.len()) // size
             PUSH1(32 - initialization_bytes.len()) // length
-            PUSH2(23414) // value
+            PUSH2(23414) // value (endowment in CREATE2)
         });
         code.write_op(OpcodeId::CREATE2);
 
@@ -737,7 +737,7 @@ mod test {
         code.append(&bytecode! {
             PUSH1(initialization_bytes.len()) // size
             PUSH1(32 - initialization_bytes.len()) // length
-            PUSH2(23414) // value
+            PUSH2(23414) // value (endowment in CREATE2)
         });
         code.write_op(OpcodeId::CREATE2);
         code.append(&bytecode! {
@@ -777,7 +777,7 @@ mod test {
             .cartesian_product(&[true, false])
         {
             let init_code = initialization_bytecode(*is_success);
-            let root_code = creater_bytecode(init_code, 23414.into(), *is_create2, *is_persistent);
+            let root_code = creator_bytecode(init_code, 23414.into(), *is_create2, *is_persistent);
             let caller = Account {
                 address: *CALLER_ADDRESS,
                 code: root_code.into(),
@@ -794,7 +794,7 @@ mod test {
         for nonce in [0, 1, 127, 128, 255, 256, 0x10000, u64::MAX - 1] {
             let caller = Account {
                 address: *CALLER_ADDRESS,
-                code: creater_bytecode(initialization_bytecode(true), 23414.into(), false, true)
+                code: creator_bytecode(initialization_bytecode(true), 23414.into(), false, true)
                     .into(),
                 nonce: nonce.into(),
                 balance: eth(10),
@@ -809,7 +809,7 @@ mod test {
         for is_create2 in [true, false] {
             let caller = Account {
                 address: *CALLER_ADDRESS,
-                code: creater_bytecode(vec![].into(), 23414.into(), is_create2, true).into(),
+                code: creator_bytecode(vec![].into(), 23414.into(), is_create2, true).into(),
                 nonce: 10.into(),
                 balance: eth(10),
                 ..Default::default()
@@ -845,7 +845,7 @@ mod test {
     #[test]
     fn test_create_address_collision_error() {
         let initialization_code = initialization_bytecode(false);
-        let root_code = creater_bytecode_address_collision(initialization_code);
+        let root_code = creator_bytecode_address_collision(initialization_code);
         let caller = Account {
             address: *CALLER_ADDRESS,
             code: root_code.into(),
@@ -888,7 +888,7 @@ mod test {
             let caller = Account {
                 address: mock::MOCK_ACCOUNTS[0],
                 nonce: 1.into(),
-                code: creater_bytecode(initialization_bytecode(false), value, is_create2, true)
+                code: creator_bytecode(initialization_bytecode(false), value, is_create2, true)
                     .into(),
                 balance: value - 1,
                 ..Default::default()
@@ -907,7 +907,7 @@ mod test {
         // `u64::MAX - 1` to `u64::MAX` in the internal loop.
         for is_create2 in [true, false] {
             let init_code = initialization_bytecode(true);
-            let mut root_code = creater_bytecode(init_code.clone(), 23414.into(), is_create2, true);
+            let mut root_code = creator_bytecode(init_code.clone(), 23414.into(), is_create2, true);
             root_code.append(&root_code.clone());
 
             // bytecodes.into_iter().for_each(|code| {
