@@ -80,9 +80,6 @@ impl<F: Field> Cell<F> {
             cell_column_index: column_idx,
         }
     }
-}
-
-impl<F: Field> Cell<F> {
     pub fn new_from_cs(
         meta: &mut ConstraintSystem<F>,
         column: Column<Advice>,
