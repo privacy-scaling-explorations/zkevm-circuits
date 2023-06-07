@@ -226,6 +226,42 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let not_last_two_rows = 1.expr()
                 - meta.query_advice(is_last, Rotation::cur())
                 - meta.query_advice(is_last, Rotation::next());
+
+            cb.condition(
+                and::expr([
+                    is_word_index_end.is_lt(meta, None),
+                    not_last_two_rows.expr(),
+                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "word_index[0] + 1 == word_index[2]",
+                        meta.query_advice(word_index, Rotation::cur()) + 1.expr(),
+                        meta.query_advice(word_index, Rotation(2)),
+                    )
+                }
+            );
+
+            cb.condition(
+                and::expr([
+                    not::expr(is_word_index_end.is_lt(meta, None)),
+                    not_last_two_rows.expr(),
+                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "word_index[0] == 31",
+                        meta.query_advice(word_index, Rotation::cur()),
+                        31.expr(),
+                    );
+                    cb.require_equal(
+                        "word_index[2] == 0",
+                        meta.query_advice(word_index, Rotation(2)),
+                        0.expr(),
+                    );
+                }
+            );
+
             cb.condition(
                 not_last_two_rows
                     * (not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
