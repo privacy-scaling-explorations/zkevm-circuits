@@ -270,7 +270,7 @@ impl<F: Field> StateCircuitConfig<F> {
             }
 
             // The initial value can be determined from the mpt updates or is 0.
-            let initial_value = word::Word::<F>::from_u256(
+            let initial_value = word::Word::<F>::from(
                 updates
                     .get(row)
                     .map(|u| u.value_assignments().1)
@@ -292,8 +292,8 @@ impl<F: Field> StateCircuitConfig<F> {
                     .unwrap_or_default();
                 let value = row.value_assignment();
                 (
-                    word::Word::<F>::from_u256(committed_value),
-                    word::Word::<F>::from_u256(value),
+                    word::Word::<F>::from(committed_value),
+                    word::Word::<F>::from(value),
                 )
             };
 
@@ -340,7 +340,7 @@ impl<F: Field> StateCircuitConfig<F> {
             // State root assignment is at previous row (offset - 1) because the state root
             // changes on the last access row.
             if offset != 0 {
-                word::Word::<F>::from_u256(state_root)
+                word::Word::<F>::from(state_root)
                     .into_value()
                     .assign_advice(region, || "state root", self.state_root, offset - 1)?;
             }
@@ -355,7 +355,7 @@ impl<F: Field> StateCircuitConfig<F> {
                         new_root
                     };
                 }
-                word::Word::<F>::from_u256(state_root)
+                word::Word::<F>::from(state_root)
                     .into_value()
                     .assign_advice(region, || "last row state_root", self.state_root, offset)?;
             }

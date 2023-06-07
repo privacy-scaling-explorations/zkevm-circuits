@@ -423,11 +423,11 @@ impl Rw {
             id: Value::known(F::from(self.id().unwrap_or_default() as u64)),
             address: Value::known(self.address().unwrap_or_default().to_scalar().unwrap()),
             field_tag: Value::known(F::from(self.field_tag().unwrap_or_default())),
-            storage_key: word::Word::from_u256(self.storage_key().unwrap_or_default()).into_value(),
-            value: word::Word::from_u256(self.value_assignment()).into_value(),
-            value_prev: word::Word::from_u256(self.value_prev_assignment().unwrap_or_default())
+            storage_key: word::Word::from(self.storage_key().unwrap_or_default()).into_value(),
+            value: word::Word::from(self.value_assignment()).into_value(),
+            value_prev: word::Word::from(self.value_prev_assignment().unwrap_or_default())
                 .into_value(),
-            init_val: word::Word::from_u256(self.committed_value_assignment().unwrap_or_default())
+            init_val: word::Word::from(self.committed_value_assignment().unwrap_or_default())
                 .into_value(),
         }
     }

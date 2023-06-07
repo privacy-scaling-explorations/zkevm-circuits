@@ -499,7 +499,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             receiver_balance,
         )?;
         self.value_is_zero
-            .assign_value(region, offset, Value::known(Word::from_u256(value)))?;
+            .assign_value(region, offset, Value::known(Word::from(value)))?;
         Ok(())
     }
 }
@@ -593,7 +593,7 @@ impl<F: Field> TransferGadget<F> {
             receiver_balance,
         )?;
         self.value_is_zero
-            .assign_value(region, offset, Value::known(Word::from_u256(value)))?;
+            .assign_value(region, offset, Value::known(Word::from(value)))?;
         Ok(())
     }
 }
@@ -782,19 +782,19 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         )?;
 
         self.value_is_zero
-            .assign(region, offset, Word::from_u256(value))?;
+            .assign(region, offset, Word::from(value))?;
         self.callee_code_hash
             .assign(region, offset, Some(callee_code_hash.to_le_bytes()))?;
         self.is_empty_code_hash.assign_value(
             region,
             offset,
-            Value::known(Word::from_u256(callee_code_hash)),
-            Value::known(Word::from_u256(CodeDB::empty_code_hash().to_word())),
+            Value::known(Word::from(callee_code_hash)),
+            Value::known(Word::from(CodeDB::empty_code_hash().to_word())),
         )?;
         self.callee_not_exists.assign_value(
             region,
             offset,
-            Value::known(Word::from_u256(callee_code_hash)),
+            Value::known(Word::from(callee_code_hash)),
         )?;
         Ok(memory_expansion_gas_cost)
     }
@@ -939,19 +939,19 @@ impl<F: Field> SstoreGasGadget<F> {
         self.value_eq_prev.assign_value(
             region,
             offset,
-            Value::known(Word::from_u256(value)),
-            Value::known(Word::from_u256(value_prev)),
+            Value::known(Word::from(value)),
+            Value::known(Word::from(value_prev)),
         )?;
         self.original_eq_prev.assign_value(
             region,
             offset,
-            Value::known(Word::from_u256(original_value)),
-            Value::known(Word::from_u256(value_prev)),
+            Value::known(Word::from(original_value)),
+            Value::known(Word::from(value_prev)),
         )?;
         self.original_is_zero.assign_value(
             region,
             offset,
-            Value::known(Word::from_u256(original_value)),
+            Value::known(Word::from(original_value)),
         )?;
         Ok(())
     }

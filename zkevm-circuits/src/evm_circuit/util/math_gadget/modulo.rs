@@ -95,17 +95,17 @@ impl<F: Field> ModGadget<F> {
             .assign(region, offset, Some(a_or_zero.to_le_bytes()))?;
         let n_sum = (0..32).fold(0, |acc, idx| acc + n.byte(idx) as u64);
         self.n_is_zero
-            .assign(region, offset, word::Word::from_u64(n_sum))?;
+            .assign(region, offset, word::Word::from(n_sum))?;
         self.a_or_is_zero
-            .assign(region, offset, word::Word::from_u256(a_or_zero))?;
+            .assign(region, offset, word::Word::from(a_or_zero))?;
         self.mul_add_words
             .assign(region, offset, [k, n, r, a_or_zero])?;
         self.lt.assign(region, offset, r, n)?;
         self.eq.assign_value(
             region,
             offset,
-            Value::known(word::Word::from_u256(a)),
-            Value::known(word::Word::from_u256(a_or_zero)),
+            Value::known(word::Word::from(a)),
+            Value::known(word::Word::from(a_or_zero)),
         )?;
 
         Ok(())

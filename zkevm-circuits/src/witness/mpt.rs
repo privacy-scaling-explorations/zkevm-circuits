@@ -92,13 +92,11 @@ impl MptUpdates {
                 let (new_root, old_root) = update.root_assignments();
                 let (new_value, old_value) = update.value_assignments();
                 let (storage_key_lo, storage_key_hi) =
-                    word::Word::<F>::from_u256(update.key.storage_key()).into_lo_hi();
-                let (new_root_lo, new_root_hi) = word::Word::<F>::from_u256(new_root).into_lo_hi();
-                let (old_root_lo, old_root_hi) = word::Word::<F>::from_u256(old_root).into_lo_hi();
-                let (new_value_lo, new_value_hi) =
-                    word::Word::<F>::from_u256(new_value).into_lo_hi();
-                let (old_value_lo, old_value_hi) =
-                    word::Word::<F>::from_u256(old_value).into_lo_hi();
+                    word::Word::<F>::from(update.key.storage_key()).into_lo_hi();
+                let (new_root_lo, new_root_hi) = word::Word::<F>::from(new_root).into_lo_hi();
+                let (old_root_lo, old_root_hi) = word::Word::<F>::from(old_root).into_lo_hi();
+                let (new_value_lo, new_value_hi) = word::Word::<F>::from(new_value).into_lo_hi();
+                let (old_value_lo, old_value_hi) = word::Word::<F>::from(old_value).into_lo_hi();
                 let address = update.key.address().to_scalar().unwrap();
 
                 MptUpdateRow(
