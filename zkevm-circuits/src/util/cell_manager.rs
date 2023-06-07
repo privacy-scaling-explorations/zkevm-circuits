@@ -201,7 +201,7 @@ impl CellManagerColumns {
     }
 
     pub fn get_width(&self) -> usize {
-        self.columns.values().fold(0, |acc, g| acc + g.len())
+        self.columns_list.len()
     }
 }
 
