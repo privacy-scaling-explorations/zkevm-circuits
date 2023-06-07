@@ -235,14 +235,9 @@ impl<Stats, S: CellManagerStrategy<Stats = Stats>> CellManager<S> {
         cell_type: CellType,
         count: usize,
     ) -> Vec<Cell<F>> {
-        let mut acc = vec![];
-
-        for _ in 0..count {
-            let cell = self.query_cell(meta, cell_type);
-            acc.push(cell);
-        }
-
-        acc
+        (0..count)
+            .map(|_| self.query_cell(meta, cell_type))
+            .collect()
     }
 
     /// get_height
