@@ -1318,8 +1318,8 @@ impl<F: Field> LookupTable<F> for CopyTable {
     fn annotations(&self) -> Vec<String> {
         vec![
             String::from("is_first"),
-            String::from("id lo"),
-            String::from("id hi"),
+            String::from("id_lo"),
+            String::from("id_hi"),
             String::from("addr"),
             String::from("src_addr_end"),
             String::from("bytes_left"),
