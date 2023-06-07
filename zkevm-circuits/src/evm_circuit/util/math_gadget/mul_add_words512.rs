@@ -1,5 +1,6 @@
 use crate::{
     evm_circuit::util::{
+        self,
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         from_bytes, pow_of_two_expr, split_u256, split_u256_limb64, CachedRegion, Cell,
     },
@@ -53,6 +54,15 @@ pub(crate) struct MulAddWords512Gadget<F> {
 }
 
 impl<F: Field> MulAddWords512Gadget<F> {
+    #[deprecated(note = "construct is favored")]
+    pub(crate) fn legacy_construct(
+        _cb: &mut EVMConstraintBuilder<F>,
+        _words: [&util::Word<F>; 4],
+        _addend: Option<&util::Word<F>>,
+    ) -> Self {
+        todo!()
+    }
+
     /// The words argument is: a, b, d, e
     /// Addend is the optional c.
     pub(crate) fn construct(
@@ -97,43 +107,40 @@ impl<F: Field> MulAddWords512Gadget<F> {
         let t6 = a_limbs[3].clone() * b_limbs[3].clone();
 
         if let Some(c) = addend {
-            let (c_lo, c_hi) = c.to_word().to_lo_hi();
+            let c = c.to_word();
+            let (c_lo, c_hi) = c.to_lo_hi();
             cb.require_equal(
                 "(t0 + t1 ⋅ 2^64) + c_lo == e_lo + carry_0 ⋅ 2^128",
-                t0.expr() + t1.expr() * pow_of_two_expr(64) + c_lo.clone(),
-                e_lo.clone() + carry_0_expr.clone() * pow_of_two_expr(128),
+                t0.expr() + t1.expr() * pow_of_two_expr(64) + c_lo,
+                e_lo + carry_0_expr.clone() * pow_of_two_expr(128),
             );
 
             cb.require_equal(
                 "(t2 + t3 ⋅ 2^64) + c_hi + carry_0 == e_hi + carry_1 ⋅ 2^128",
-                t2.expr() + t3.expr() * pow_of_two_expr(64) + c_hi.clone() + carry_0_expr,
-                e_hi.clone() + carry_1_expr.clone() * pow_of_two_expr(128),
+                t2.expr() + t3.expr() * pow_of_two_expr(64) + c_hi + carry_0_expr,
+                e_hi + carry_1_expr.clone() * pow_of_two_expr(128),
             );
         } else {
             cb.require_equal(
                 "(t0 + t1 ⋅ 2^64) == e_lo + carry_0 ⋅ 2^128",
                 t0.expr() + t1.expr() * pow_of_two_expr(64),
-                e_lo.clone() + carry_0_expr.clone() * pow_of_two_expr(128),
+                e_lo + carry_0_expr.clone() * pow_of_two_expr(128),
             );
 
             cb.require_equal(
                 "(t2 + t3 ⋅ 2^64) + carry_0 == e_hi + carry_1 ⋅ 2^128",
                 t2.expr() + t3.expr() * pow_of_two_expr(64) + carry_0_expr,
-                e_hi.clone() + carry_1_expr.clone() * pow_of_two_expr(128),
+                e_hi + carry_1_expr.clone() * pow_of_two_expr(128),
             );
         }
 
         cb.require_equal(
             "(t4 + t5 ⋅ 2^64) + carry_1 == d_lo + carry_2 ⋅ 2^128",
             t4.expr() + t5.expr() * pow_of_two_expr(64) + carry_1_expr,
-            d_lo.clone() + carry_2_expr.clone() * pow_of_two_expr(128),
+            d_lo + carry_2_expr.clone() * pow_of_two_expr(128),
         );
 
-        cb.require_equal(
-            "t6 + carry_2 == d_hi",
-            t6.expr() + carry_2_expr,
-            d_hi.clone(),
-        );
+        cb.require_equal("t6 + carry_2 == d_hi", t6.expr() + carry_2_expr, d_hi);
 
         Self {
             carry_0,

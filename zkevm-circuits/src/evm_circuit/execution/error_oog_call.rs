@@ -11,7 +11,7 @@ use crate::{
         },
     },
     table::CallContextFieldTag,
-    util::{word::WordExpr, Expr},
+    util::Expr,
     witness::{Block, Call, ExecStep, Transaction},
 };
 use bus_mapping::evm::OpcodeId;
@@ -164,7 +164,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             rd_offset,
             rd_length,
             step.memory_word_size(),
-            region.word_rlc(callee_code_hash),
+            callee_code_hash,
         )?;
 
         self.opcode

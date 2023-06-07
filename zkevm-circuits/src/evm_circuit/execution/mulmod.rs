@@ -4,13 +4,16 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             math_gadget::{IsZeroGadget, LtWordGadget, ModGadget, MulAddWords512Gadget},
-            sum, CachedRegion,
+            sum, CachedRegion, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::{word::Word32Cell, Expr},
+    util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, U256};
@@ -23,11 +26,11 @@ use halo2_proofs::plonk::Error;
 pub(crate) struct MulModGadget<F> {
     same_context: SameContextGadget<F>,
     // a, b, n, r
-    pub words: [Word32Cell<F>; 4],
-    k: Word32Cell<F>,
-    a_reduced: Word32Cell<F>,
-    d: Word32Cell<F>,
-    e: Word32Cell<F>,
+    pub words: [Word<F>; 4],
+    k: Word<F>,
+    a_reduced: Word<F>,
+    d: Word<F>,
+    e: Word<F>,
     modword: ModGadget<F>,
     mul512_left: MulAddWords512Gadget<F>,
     mul512_right: MulAddWords512Gadget<F>,
@@ -58,10 +61,11 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let modword = ModGadget::construct(cb, [&a, &n, &a_reduced]);
 
         // 2.  a_reduced * b + 0 == d * 2^256 + e
-        let mul512_left = MulAddWords512Gadget::construct(cb, [&a_reduced, &b, &d, &e], None);
+        let mul512_left =
+            MulAddWords512Gadget::legacy_construct(cb, [&a_reduced, &b, &d, &e], None);
 
         // 3.  k2 * n + r == d * 2^256 + e
-        let mul512_right = MulAddWords512Gadget::construct(cb, [&k, &n, &d, &e], Some(&r));
+        let mul512_right = MulAddWords512Gadget::legacy_construct(cb, [&k, &n, &d, &e], Some(&r));
 
         // (r < n ) or n == 0
         let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));

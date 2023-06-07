@@ -1,3 +1,8 @@
+pub use crate::util::{
+    query_expression,
+    word::{Word as WordNew, WordExpr, WordLegacy as Word},
+    Challenges, Expr,
+};
 use crate::{
     evm_circuit::{
         param::{
@@ -6,11 +11,6 @@ use crate::{
         table::Table,
     },
     table::RwTableTag,
-    util::{
-        query_expression,
-        word::{Word, WordExpr},
-        Challenges, Expr,
-    },
     witness::{Block, ExecStep, Rw, RwMap},
 };
 use bus_mapping::state_db::CodeDB;
@@ -463,7 +463,7 @@ impl<F: Field> CellManager<F> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct RandomLinearCombination<F, const N: usize> {
+pub struct RandomLinearCombination<F, const N: usize> {
     // random linear combination expression of cells
     expression: Expression<F>,
     // inner cells in little-endian for synthesis
@@ -507,16 +507,16 @@ impl<F: Field, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
 pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>;
 
 impl<F: Field> WordExpr<F> for MemoryAddress<F> {
-    fn to_word(&self) -> Word<Expression<F>> {
-        Word::from_lo_unchecked(self.expr())
+    fn to_word(&self) -> WordNew<Expression<F>> {
+        WordNew::from_lo_unchecked(self.expr())
     }
 }
 
 pub(crate) type AccountAddress<F> = RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>;
 
 impl<F: Field> WordExpr<F> for AccountAddress<F> {
-    fn to_word(&self) -> Word<Expression<F>> {
-        Word::new([
+    fn to_word(&self) -> WordNew<Expression<F>> {
+        WordNew::new([
             rlc::expr(
                 &self.cells[0..16]
                     .iter()
@@ -538,8 +538,8 @@ impl<F: Field> WordExpr<F> for AccountAddress<F> {
 pub(crate) type U64Cell<F> = RandomLinearCombination<F, N_BYTES_U64>;
 
 impl<F: Field> WordExpr<F> for U64Cell<F> {
-    fn to_word(&self) -> Word<Expression<F>> {
-        Word::from_lo_unchecked(self.expr())
+    fn to_word(&self) -> WordNew<Expression<F>> {
+        WordNew::from_lo_unchecked(self.expr())
     }
 }
 

@@ -2,11 +2,12 @@ use std::marker::PhantomData;
 
 use crate::{
     evm_circuit::util::{
-        constraint_builder::EVMConstraintBuilder, math_gadget::*, transpose_val_ret, CachedRegion,
+        constraint_builder::EVMConstraintBuilder, math_gadget::LtWordGadgetNew as LtWordGadget,
+        transpose_val_ret, CachedRegion,
     },
     util::word::{Word, WordExpr},
 };
-use eth_types::Field;
+use eth_types::{self, Field};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -44,18 +45,19 @@ impl<F: Field, T: WordExpr<F> + Clone> MinMaxWordGadget<F, T> {
         self.max.clone()
     }
 
-    pub(crate) fn assign(
+    fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        lhs: Word<F>,
-        rhs: Word<F>,
+        _region: &mut CachedRegion<'_, '_, F>,
+        _offset: usize,
+        _lhs: F,
+        _rhs: F,
     ) -> Result<(F, F), Error> {
-        let (lt, _) = self.lt.assign(region, offset, lhs, rhs)?;
-        Ok(if lt.is_zero_vartime() {
-            (rhs, lhs)
+        todo!("lt assign");
+        let lt_says_greater = true;
+        Ok(if lt_says_greater {
+            (_rhs, _lhs)
         } else {
-            (lhs, rhs)
+            (_lhs, _rhs)
         })
     }
 
@@ -75,10 +77,19 @@ impl<F: Field, T: WordExpr<F> + Clone> MinMaxWordGadget<F, T> {
 
 #[cfg(test)]
 mod tests {
-    use super::{test_util::*, *};
-    use crate::evm_circuit::util::{constraint_builder::ConstrainBuilderCommon, Cell};
-    use eth_types::{ToScalar, Word};
-    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
+    use crate::evm_circuit::util::{
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        math_gadget::{
+            test_util::{try_test, MathGadgetContainer, WORD_LOW_MAX},
+            MinMaxGadget,
+        },
+        CachedRegion, Cell,
+    };
+
+    use super::{super::test_util::*, *};
+    use eth_types::{Field, ToScalar, Word};
+    use gadgets::util::Expr;
+    use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// MinMaxTestContainer: require(min(a, b) == (a if MIN_IS_A else b))

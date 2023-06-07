@@ -1,4 +1,4 @@
-use super::{constraint_builder::ConstrainBuilderCommon, CachedRegion};
+use super::{constraint_builder::ConstrainBuilderCommon, CachedRegion, MemoryAddress};
 use crate::{
     evm_circuit::{
         param::{N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
@@ -28,13 +28,18 @@ use halo2_proofs::{
 pub(crate) mod address_low {
     use crate::{
         evm_circuit::{param::N_BYTES_MEMORY_ADDRESS, util::from_bytes},
-        util::word::Word32Cell,
+        util::word::{Word32Cell, WordLegacy},
     };
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: Field>(address: &Word32Cell<F>) -> Expression<F> {
+    pub(crate) fn expr_word<F: Field>(address: &Word32Cell<F>) -> Expression<F> {
         from_bytes::expr(&address.limbs[..N_BYTES_MEMORY_ADDRESS])
+    }
+
+    #[deprecated(note = "expr_word is fav")]
+    pub(crate) fn expr<F: Field>(address: &WordLegacy<F>) -> Expression<F> {
+        from_bytes::expr(&address.cells[..N_BYTES_MEMORY_ADDRESS])
     }
 
     pub(crate) fn value(address: [u8; 32]) -> u64 {
@@ -49,13 +54,18 @@ pub(crate) mod address_low {
 pub(crate) mod address_high {
     use crate::{
         evm_circuit::{param::N_BYTES_MEMORY_ADDRESS, util::sum},
-        util::word::Word32Cell,
+        util::word::{Word32Cell, WordLegacy},
     };
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: Field>(address: &Word32Cell<F>) -> Expression<F> {
+    pub(crate) fn expr_word<F: Field>(address: &Word32Cell<F>) -> Expression<F> {
         sum::expr(&address.limbs[N_BYTES_MEMORY_ADDRESS..])
+    }
+
+    #[deprecated(note = "expr_word is fav")]
+    pub(crate) fn expr<F: Field>(address: &WordLegacy<F>) -> Expression<F> {
+        sum::expr(&address.cells[N_BYTES_MEMORY_ADDRESS..])
     }
 
     pub(crate) fn value<F: Field>(address: [u8; 32]) -> F {
@@ -75,12 +85,21 @@ pub(crate) struct MemoryAddressGadget<F> {
 }
 
 impl<F: Field> MemoryAddressGadget<F> {
+    #[deprecated(note = "construct_new is favored")]
     pub(crate) fn construct(
+        _cb: &mut EVMConstraintBuilder<F>,
+        _memory_offset: Cell<F>,
+        _memory_length: MemoryAddress<F>,
+    ) -> Self {
+        todo!()
+    }
+
+    pub(crate) fn construct_new(
         cb: &mut EVMConstraintBuilder<F>,
         memory_offset: Word32Cell<F>,
         memory_length: Word32Cell<F>,
     ) -> Self {
-        let memory_length_is_zero = IsZeroWordGadget::construct(cb, memory_length);
+        let memory_length_is_zero = IsZeroWordGadget::construct(cb, memory_length.clone());
 
         Self {
             memory_offset,
@@ -111,7 +130,7 @@ impl<F: Field> MemoryAddressGadget<F> {
             .assign(region, offset, Some(memory_length.to_le_bytes()))?;
 
         self.memory_length_is_zero
-            .assign(region, offset, Word::from_u256(memory_length))?;
+            .assign(region, offset, Word::from(memory_length))?;
         Ok(if memory_length_is_zero {
             0
         } else {
@@ -205,7 +224,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
         // The memory size needs to be updated if this memory access
         // requires expanding the memory.
         // `next_memory_word_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
-        let curr_memory_word_size = cb.curr.state.memory_word_size.word_expr();
+        let curr_memory_word_size = cb.curr.state.memory_word_size.expr();
         let mut next_memory_word_size = curr_memory_word_size.clone();
         let max_memory_word_sizes = array_init(|idx| {
             let max_memory_word_size = MinMaxGadget::construct(

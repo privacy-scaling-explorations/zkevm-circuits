@@ -1,8 +1,8 @@
 use crate::{
     evm_circuit::util::{
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-        math_gadget::*,
-        CachedRegion,
+        math_gadget::{LtWordGadgetNew as LtWordGadget, *},
+        CachedRegion, Word as WordLegacy,
     },
     util::{
         word::{self, Word32Cell},
@@ -32,15 +32,25 @@ pub(crate) struct ModGadget<F> {
     lt: LtWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
 }
 impl<F: Field> ModGadget<F> {
-    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&Word32Cell<F>; 3]) -> Self {
+    pub(crate) fn construct(
+        _cb: &mut EVMConstraintBuilder<F>,
+        _words: [&WordLegacy<F>; 3],
+    ) -> Self {
+        todo!()
+    }
+
+    pub(crate) fn construct_new(
+        cb: &mut EVMConstraintBuilder<F>,
+        words: [&Word32Cell<F>; 3],
+    ) -> Self {
         let (a, n, r) = (words[0], words[1], words[2]);
         let k = cb.query_word32();
         let a_or_zero = cb.query_word32();
         let n_is_zero = IsZeroWordGadget::construct(cb, n.clone());
         let a_or_is_zero = IsZeroWordGadget::construct(cb, a_or_zero.clone());
-        let mul_add_words = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);
-        let eq = IsEqualWordGadget::construct(cb, a.clone(), a_or_zero);
-        let lt = LtWordGadget::construct(cb, r, n);
+        let mul_add_words = MulAddWordsGadget::construct_new(cb, [&k, n, r, &a_or_zero]);
+        let eq = IsEqualWordGadget::construct(cb, a.clone(), a_or_zero.clone());
+        let lt = LtWordGadget::construct(cb, r.clone(), n.clone());
         // Constrain the aux variable a_or_zero to be =a or =0 if n==0:
         // (a == a_or_zero) ^ (n == 0 & a_or_zero == 0)
         cb.add_constraint(
@@ -84,19 +94,18 @@ impl<F: Field> ModGadget<F> {
         self.a_or_zero
             .assign(region, offset, Some(a_or_zero.to_le_bytes()))?;
         let n_sum = (0..32).fold(0, |acc, idx| acc + n.byte(idx) as u64);
-        let a_or_zero_sum = (0..32).fold(0, |acc, idx| acc + a_or_zero.byte(idx) as u64);
         self.n_is_zero
-            .assign(region, offset, word::Word::from_u64(n_sum))?;
+            .assign(region, offset, word::Word::from(n_sum))?;
         self.a_or_is_zero
-            .assign(region, offset, word::Word::from_u256(a_or_zero))?;
+            .assign(region, offset, word::Word::from(a_or_zero))?;
         self.mul_add_words
             .assign(region, offset, [k, n, r, a_or_zero])?;
         self.lt.assign(region, offset, r, n)?;
         self.eq.assign_value(
             region,
             offset,
-            Value::known(word::Word::from_u256(a)),
-            Value::known(word::Word::from_u256(a_or_zero)),
+            Value::known(word::Word::from(a)),
+            Value::known(word::Word::from(a_or_zero)),
         )?;
 
         Ok(())
@@ -123,7 +132,7 @@ mod tests {
             let a = cb.query_word32();
             let n = cb.query_word32();
             let r = cb.query_word32();
-            let mod_gadget = ModGadget::<F>::construct(cb, [&a, &n, &r]);
+            let mod_gadget = ModGadget::<F>::construct_new(cb, [&a, &n, &r]);
             ModGadgetTestContainer {
                 mod_gadget,
                 a,
