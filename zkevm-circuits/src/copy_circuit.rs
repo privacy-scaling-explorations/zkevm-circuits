@@ -165,15 +165,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         meta,
                     ))),
                 |cb| {
-                    cb.require_equal(
-                        "rows[0].id_lo == rows[2].id_lo",
-                        meta.query_advice(id.lo(), Rotation::cur()),
-                        meta.query_advice(id.lo(), Rotation(2)),
-                    );
-                    cb.require_equal(
-                        "rows[0].id_hi == rows[2].id_hi",
-                        meta.query_advice(id.hi(), Rotation::cur()),
-                        meta.query_advice(id.hi(), Rotation(2)),
+                    cb.require_equal_word(
+                        "rows[0].id == rows[2].id",
+                        id.map(|limb| meta.query_advice(limb, Rotation::cur())),
+                        id.map(|limb| meta.query_advice(limb, Rotation(2))),
                     );
                     cb.require_equal(
                         "rows[0].tag == rows[2].tag",
