@@ -1100,8 +1100,8 @@ impl CopyTable {
         Self {
             is_first: meta.advice_column(),
             id: word::Word::new([
-                meta.advice_column_in(SecondPhase),
-                meta.advice_column_in(SecondPhase),
+                meta.advice_column_in(FirstPhase),
+                meta.advice_column_in(FirstPhase),
             ]),
             tag: BinaryNumberChip::configure(meta, q_enable, None),
             addr: meta.advice_column(),
