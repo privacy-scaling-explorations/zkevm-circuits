@@ -204,6 +204,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 "is_last is boolean",
                 meta.query_advice(is_last, Rotation::cur()),
             );
+            cb.require_boolean(
+                "mask is boolean",
+                meta.query_advice(mask, Rotation::cur()),
+            );
             cb.require_zero(
                 "is_first == 0 when q_step == 0",
                 and::expr([
