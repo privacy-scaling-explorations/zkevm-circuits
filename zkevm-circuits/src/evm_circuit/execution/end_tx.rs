@@ -311,7 +311,6 @@ mod test {
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{self, bytecode, Word};
-
     use mock::{
         eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
     };
@@ -327,44 +326,104 @@ mod test {
 
     #[test]
     fn end_tx_gadget_simple() {
-        let key: Word = 0x030201.into();
+        let key_1: Word = 0x030201.into();
         let original_value: Word = 0x060504.into();
         let zero_value: Word = 0x0.into();
-        let non_capped_refund = Word::from(27_000);
-        let capped_refund = Word::from(65_000);
 
-        // Testing Tx with non capped and capped refunds
-        for tx_value in [non_capped_refund, capped_refund] {
-            test_ok(
-                TestContext::<2, 1>::new(
-                    None,
-                    |accs| {
-                        accs[0]
-                            .address(MOCK_ACCOUNTS[0])
-                            .balance(Word::from(10u64.pow(19)))
-                            .code(bytecode! {
-                                PUSH32(zero_value)
-                                PUSH32(key)
-                                SSTORE
-                                STOP
-                            })
-                            .storage(vec![(key, original_value)].into_iter());
-                        accs[1]
-                            .address(MOCK_ACCOUNTS[1])
-                            .balance(Word::from(10u64.pow(19)));
-                    },
-                    |mut txs, accs| {
-                        txs[0]
-                            .to(accs[0].address)
-                            .from(accs[1].address)
-                            .value(tx_value)
-                            .gas_price(gwei(2));
-                    },
-                    |block, _tx| block,
-                )
-                .unwrap(),
-            );
-        }
+        // Testing refunds
+        // When setting smart contract's non-zero values in storage to zero,
+        // the sender of the transaction receives some refund (each transaction's step may include a
+        // non-zero refund field). Moreover, the sum of the refunds is capped at $max_refund
+        // = gas_used / MAX_REFUND_QUOTIENT_OF_GAS_USED$ where MAX_REFUND_QUOTIENT_OF_GAS_USED = 5 (see EIP EIP 3529, https://eips.ethereum.org/EIPS/eip-3529)
+        // We test here that the refunds, capped or uncapped, have been correctly implemented by
+        // configuring an account, MOCK_ACCOUNTS[0], with a non null storage and some code cleaning
+        // the storage.
+
+        // 1) Testing Tx with non capped refunds
+        // In this first test, we reset only one value to minimize the gas_used so that the refund
+        // is smaller than max_refund. More particularly, we expect here to have 21_000 (tx)
+        // + 5_000 (sstore) + 3 (push) + 3 (push) gas used, hence a max_refund of 5_201 while
+        // the refund should add up to 4_800 (refund of 1 sstore). Hence, we can check after the
+        // transaction that MOCK_ACCOUNTS[0]'s balance decreased by:
+        // (21_000 + 5_000 + 3 + 3 - 4_800) * 2_000_000_000 (=gas_cost).
+        let bytecode_uncapped = bytecode! {
+            PUSH32(zero_value)
+            PUSH32(key_1)
+            SSTORE
+            STOP
+        };
+        let storage_uncapped = vec![(key_1, original_value)].into_iter();
+
+        test_ok(
+            TestContext::<2, 1>::new(
+                None,
+                |accs| {
+                    accs[0]
+                        .address(MOCK_ACCOUNTS[0])
+                        .balance(Word::from(10u64.pow(19)))
+                        .code(bytecode_uncapped)
+                        .storage(storage_uncapped.into_iter());
+                    accs[1]
+                        .address(MOCK_ACCOUNTS[1])
+                        .balance(Word::from(10u64.pow(19)));
+                },
+                |mut txs, accs| {
+                    txs[0]
+                        .to(accs[0].address)
+                        .from(accs[1].address)
+                        .gas(Word::from(30_000))
+                        .gas_price(gwei(2))
+                        .nonce(0);
+                },
+                |block, _tx| block,
+            )
+            .unwrap(),
+        );
+
+        // 2) Testing Tx with capped refunds
+        // In this second test, we reset several values so that the refund is greater than
+        // max_refund and hence the effective refund is capped. More particularly, we expect
+        // here to have 21_000 (tx) + 2 * (5_000 (sstore) + 3 (push) + 3 (push)) gas used, hence a
+        // max_refund of 6_202 while the refund should add up to 9_600 (refund of 2 sstore).
+        // Hence, we can check after the transaction that MOCK_ACCOUNTS[0]'s balance decreased by:
+        // (21_000 + 2 * (5_000 + 3 + 3)  - 6_202) * 2_000_000_000 (=gas_cost).
+        let key_2: Word = 0x030202.into();
+        let bytecode_capped = bytecode! {
+            PUSH32(zero_value)
+            PUSH32(key_1)
+            SSTORE
+            PUSH32(zero_value)
+            PUSH32(key_2)
+            SSTORE
+            STOP
+        };
+        let storage_capped = vec![(key_1, original_value), (key_2, original_value)].into_iter();
+
+        test_ok(
+            TestContext::<2, 1>::new(
+                None,
+                |accs| {
+                    accs[0]
+                        .address(MOCK_ACCOUNTS[0])
+                        .balance(Word::from(10u64.pow(19)))
+                        .code(bytecode_capped)
+                        .storage(storage_capped);
+                    accs[1]
+                        .address(MOCK_ACCOUNTS[1])
+                        .balance(Word::from(10u64.pow(19)));
+                },
+                |mut txs, accs| {
+                    txs[0]
+                        .to(accs[0].address)
+                        .from(accs[1].address)
+                        .gas(Word::from(50_000))
+                        .gas_price(gwei(2))
+                        .nonce(0);
+                },
+                |block, _tx| block,
+            )
+            .unwrap(),
+        );
 
         // Multiple txs
         test_ok(
