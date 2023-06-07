@@ -2,7 +2,7 @@ use crate::{
     assign, circuit,
     circuit_tools::{
         cached_region::{CachedRegion, ChallengeSet},
-        cell_manager::{Cell, CellManager, EvmCellType},
+        cell_manager::{Cell, CellManager, CellType},
         constraint_builder::{
             ConstraintBuilder, RLCChainable, RLCChainableValue, RLCable, RLCableValue,
         },
@@ -19,7 +19,7 @@ use crate::{
 };
 use eth_types::Field;
 use gadgets::util::{not, or, pow, Scalar};
-use halo2_proofs::plonk::{Error, Expression, VirtualCells};
+use halo2_proofs::{plonk::{Error, Expression, VirtualCells}, circuit::Value};
 
 use super::{
     rlp_gadgets::{
@@ -27,6 +27,41 @@ use super::{
     },
     FixedTableTag,
 };
+
+impl<F: Field> ChallengeSet<F> for crate::util::Challenges<Value<F>> {
+    fn indexed(&self) -> Vec<&Value<F>> {
+        vec![&self.evm_word, &self.keccak_input, &self.lookup_input]
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MptCellType {
+    StoragePhase1,
+    StoragePhase2,
+    StoragePermutation,
+    LookupByte,
+    Lookup(Table),
+}
+
+impl Default for MptCellType {
+    fn default() -> Self {
+        Self::StoragePhase1
+    }
+}
+
+impl CellType for MptCellType {
+    fn byte_type() -> Option<Self> {
+        Some(MptCellType::LookupByte)
+    }
+
+    fn storage_for_phase(phase: u8) -> Self {
+        match phase {
+            0 => MptCellType::StoragePhase1,
+            1 => MptCellType::StoragePhase2,
+            _ => unreachable!(),
+        }
+    }
+}
 
 /// Indexable object
 pub trait Indexable {
@@ -763,7 +798,7 @@ pub(crate) fn ext_key_rlc_value<F: Field>(
 pub(crate) mod num_nibbles {
     use crate::{
         _cb, circuit,
-        circuit_tools::{cell_manager::EvmCellType, constraint_builder::ConstraintBuilder},
+        circuit_tools::{constraint_builder::ConstraintBuilder},
     };
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
@@ -804,7 +839,7 @@ pub(crate) fn main_memory() -> String {
 /// MPTConstraintBuilder
 #[derive(Clone)]
 pub struct MPTConstraintBuilder<F> {
-    pub base: ConstraintBuilder<F, EvmCellType>,
+    pub base: ConstraintBuilder<F, MptCellType>,
     pub challenges: Option<Challenges<Expression<F>>>,
     pub use_dynamic_lookup: bool,
 }
@@ -813,7 +848,7 @@ impl<F: Field> MPTConstraintBuilder<F> {
     pub(crate) fn new(
         max_degree: usize,
         challenges: Option<Challenges<Expression<F>>>,
-        cell_manager: Option<CellManager<F, EvmCellType>>,
+        cell_manager: Option<CellManager<F, MptCellType>>,
     ) -> Self {
         MPTConstraintBuilder {
             base: ConstraintBuilder::new(
@@ -843,18 +878,18 @@ impl<F: Field> MPTConstraintBuilder<F> {
     }
 
     pub(crate) fn query_byte(&mut self) -> Cell<F> {
-        self.base.query_one(EvmCellType::LookupByte)
+        self.base.query_one(MptCellType::LookupByte)
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
         self.base
-            .query_cells_dyn(EvmCellType::LookupByte, N)
+            .query_cells_dyn(MptCellType::LookupByte, N)
             .try_into()
             .unwrap()
     }
 
     pub(crate) fn query_bytes_dyn(&mut self, count: usize) -> Vec<Cell<F>> {
-        self.base.query_cells_dyn(EvmCellType::StoragePhase1, count)
+        self.base.query_cells_dyn(MptCellType::StoragePhase1, count)
     }
 
     pub(crate) fn query_cell(&mut self) -> Cell<F> {
@@ -863,7 +898,7 @@ impl<F: Field> MPTConstraintBuilder<F> {
 
     pub(crate) fn query_cells<const N: usize>(&mut self) -> [Cell<F>; N] {
         self.base
-            .query_cells_dyn(EvmCellType::default(), N)
+            .query_cells_dyn(MptCellType::default(), N)
             .try_into()
             .unwrap()
     }
@@ -909,9 +944,9 @@ impl<F: Field> MPTConstraintBuilder<F> {
             self.base.add_dynamic_lookup(description, tag, values)
         } else {
             let cell_type = if tag.as_ref() == "keccak" {
-                EvmCellType::Lookup(Table::Keccak)
+                MptCellType::Lookup(Table::Keccak)
             } else if tag.as_ref() == "fixed" {
-                EvmCellType::Lookup(Table::Fixed)
+                MptCellType::Lookup(Table::Fixed)
             } else {
                 unreachable!()
             };
@@ -1195,6 +1230,7 @@ impl<F: Field> MainRLPGadget<F> {
             // value. These lookups also enforce the byte value to be zero when
             // the byte index >= num_bytes.
             // TODO(Brecht): do 2 bytes/lookup when circuit height >= 2**21
+            // We enable dynamic lookups because otherwise these lookup would require a lot of extra cells.
             cb.set_use_dynamic_lookup(true);
             for (idx, byte) in config.bytes.iter().enumerate() {
                 require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()) => @"fixed");

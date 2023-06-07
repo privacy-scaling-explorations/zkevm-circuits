@@ -7,7 +7,7 @@ use crate::evm_circuit::util::{from_bytes, pow_of_two};
 
 use super::{
     cached_region::{CachedRegion, ChallengeSet},
-    cell_manager::{Cell, CellTypeTrait},
+    cell_manager::{Cell, CellType},
     constraint_builder::ConstraintBuilder,
 };
 
@@ -19,7 +19,7 @@ pub struct IsZeroGadget<F> {
 }
 
 impl<F: Field> IsZeroGadget<F> {
-    pub(crate) fn construct<C: CellTypeTrait>(
+    pub(crate) fn construct<C: CellType>(
         cb: &mut ConstraintBuilder<F, C>,
         value: Expression<F>,
     ) -> Self {
@@ -69,7 +69,7 @@ pub struct IsEqualGadget<F> {
 }
 
 impl<F: Field> IsEqualGadget<F> {
-    pub(crate) fn construct<C: CellTypeTrait>(
+    pub(crate) fn construct<C: CellType>(
         cb: &mut ConstraintBuilder<F, C>,
         lhs: Expression<F>,
         rhs: Expression<F>,
@@ -112,7 +112,7 @@ pub struct LtGadget<F, const N_BYTES: usize> {
 }
 
 impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
-    pub(crate) fn construct<C: CellTypeTrait>(
+    pub(crate) fn construct<C: CellType>(
         cb: &mut ConstraintBuilder<F, C>,
         lhs: Expression<F>,
         rhs: Expression<F>,

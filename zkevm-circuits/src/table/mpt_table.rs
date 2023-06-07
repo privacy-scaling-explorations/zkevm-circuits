@@ -3,7 +3,7 @@ use crate::{
     circuit,
     circuit_tools::{
         cached_region::{CachedRegion, ChallengeSet},
-        cell_manager::CellTypeTrait,
+        cell_manager::CellType,
         constraint_builder::ConstraintBuilder,
     },
 };
@@ -106,7 +106,7 @@ impl MptTable {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn constrain<F: Field, C: CellTypeTrait>(
+    pub(crate) fn constrain<F: Field, C: CellType>(
         &self,
         meta: &mut VirtualCells<'_, F>,
         cb: &mut ConstraintBuilder<F, C>,

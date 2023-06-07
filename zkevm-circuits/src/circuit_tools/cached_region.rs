@@ -10,7 +10,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use super::cell_manager::CellTypeTrait;
+use super::{cell_manager::CellType, constraint_builder::ConstraintBuilder};
 
 pub trait ChallengeSet<F: Field> {
     fn indexed(&self) -> Vec<&Value<F>>;
@@ -27,6 +27,7 @@ pub struct CachedRegion<'r, 'b, F: Field, S: ChallengeSet<F>> {
     pub advice: HashMap<(usize, usize), F>,
     challenges: &'r S,
     disable_description: bool,
+    regions: Vec<(usize, usize)>,
 }
 
 impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
@@ -36,11 +37,36 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
             advice: HashMap::new(),
             challenges,
             disable_description: false,
+            regions: Vec::new(),
         }
     }
 
     pub(crate) fn set_disable_description(&mut self, disable_description: bool) {
         self.disable_description = disable_description;
+    }
+
+    pub(crate) fn push_region(&mut self, offset: usize, region_id: usize) {
+        self.regions.push((offset, region_id));
+    }
+
+    pub(crate) fn pop_region(&mut self) {
+        // Nothing to do
+    }
+
+    pub(crate) fn assign_stored_expressions<C: CellType>(
+        &mut self,
+        cb: &ConstraintBuilder<F, C> ,
+    ) {
+        for (offset, region_id) in self.regions.clone() {
+            cb
+                .get_stored_expressions(region_id)
+                .iter()
+                .for_each(|stored_expr| {
+                    stored_expr
+                        .assign(self, offset)
+                        .expect("stored expression assignment failed");
+                });
+        }
     }
 
     /// Assign an advice column value (witness).
@@ -134,7 +160,7 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
 }
 
 #[derive(Debug, Clone)]
-pub struct StoredExpression<F, C: CellTypeTrait> {
+pub struct StoredExpression<F, C: CellType> {
     pub(crate) name: String,
     pub(crate) cell: Cell<F>,
     pub(crate) cell_type: C,
@@ -142,14 +168,14 @@ pub struct StoredExpression<F, C: CellTypeTrait> {
     pub(crate) expr_id: String,
 }
 
-impl<F, C: CellTypeTrait> Hash for StoredExpression<F, C> {
+impl<F, C: CellType> Hash for StoredExpression<F, C> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.expr_id.hash(state);
         self.cell_type.hash(state);
     }
 }
 
-impl<F: Field, C: CellTypeTrait> StoredExpression<F, C> {
+impl<F: Field, C: CellType> StoredExpression<F, C> {
     pub fn assign<S: ChallengeSet<F>>(
         &self,
         region: &mut CachedRegion<'_, '_, F, S>,
@@ -181,51 +207,5 @@ impl<F: Field, C: CellTypeTrait> StoredExpression<F, C> {
         );
         self.cell.assign_value(region, offset, value)?;
         Ok(value)
-    }
-}
-
-/// Returns the random linear combination of the inputs.
-/// Encoding is done as follows: v_0 * R^0 + v_1 * R^1 + ...
-pub(crate) mod rlc {
-    use std::ops::{Add, Mul};
-
-    use crate::util::Expr;
-    use eth_types::Field;
-    use halo2_proofs::plonk::Expression;
-
-    pub(crate) fn expr<F: Field, E: Expr<F>>(expressions: &[E], randomness: E) -> Expression<F> {
-        if !expressions.is_empty() {
-            generic(expressions.iter().map(|e| e.expr()), randomness.expr())
-        } else {
-            0.expr()
-        }
-    }
-
-    pub(crate) fn value<'a, F: Field, I>(values: I, randomness: F) -> F
-    where
-        I: IntoIterator<Item = &'a u8>,
-        <I as IntoIterator>::IntoIter: DoubleEndedIterator,
-    {
-        let values = values
-            .into_iter()
-            .map(|v| F::from(*v as u64))
-            .collect::<Vec<F>>();
-        if !values.is_empty() {
-            generic(values, randomness)
-        } else {
-            F::ZERO
-        }
-    }
-
-    fn generic<V, I>(values: I, randomness: V) -> V
-    where
-        I: IntoIterator<Item = V>,
-        <I as IntoIterator>::IntoIter: DoubleEndedIterator,
-        V: Clone + Add<Output = V> + Mul<Output = V>,
-    {
-        let mut values = values.into_iter().rev();
-        let init = values.next().expect("values should not be empty");
-
-        values.fold(init, |acc, value| acc * randomness.clone() + value)
     }
 }

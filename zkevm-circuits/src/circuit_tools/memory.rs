@@ -11,7 +11,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use super::{cell_manager::CellTypeTrait, constraint_builder::ConstraintBuilder};
+use super::{cell_manager::CellType, constraint_builder::ConstraintBuilder};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Memory<F> {
@@ -59,7 +59,7 @@ impl<F: Field> Memory<F> {
         self.columns.clone()
     }
 
-    pub(crate) fn build_constraints<C: CellTypeTrait>(
+    pub(crate) fn build_constraints<C: CellType>(
         &self,
         cb: &mut ConstraintBuilder<F, C>,
         is_first_row: Expression<F>,
@@ -154,7 +154,7 @@ impl<F: Field> MemoryBank<F> {
         self.cur.expr()
     }
 
-    pub(crate) fn load<C: CellTypeTrait>(
+    pub(crate) fn load<C: CellType>(
         &self,
         description: &'static str,
         cb: &mut ConstraintBuilder<F, C>,
@@ -164,7 +164,7 @@ impl<F: Field> MemoryBank<F> {
         self.load_with_key(description, cb, self.key() - offset, values);
     }
 
-    pub(crate) fn load_with_key<C: CellTypeTrait>(
+    pub(crate) fn load_with_key<C: CellType>(
         &self,
         description: &'static str,
         cb: &mut ConstraintBuilder<F, C>,
@@ -174,7 +174,7 @@ impl<F: Field> MemoryBank<F> {
         cb.add_dynamic_lookup(description, self.tag(), self.insert_key(key, values));
     }
 
-    pub(crate) fn store<C: CellTypeTrait>(
+    pub(crate) fn store<C: CellType>(
         &self,
         cb: &mut ConstraintBuilder<F, C>,
         values: &[Expression<F>],
@@ -184,7 +184,7 @@ impl<F: Field> MemoryBank<F> {
         key
     }
 
-    pub(crate) fn store_with_key<C: CellTypeTrait>(
+    pub(crate) fn store_with_key<C: CellType>(
         &self,
         cb: &mut ConstraintBuilder<F, C>,
         key: Expression<F>,
@@ -206,7 +206,7 @@ impl<F: Field> MemoryBank<F> {
         self.store_offsets.clear();
     }
 
-    pub(crate) fn build_constraints<C: CellTypeTrait>(
+    pub(crate) fn build_constraints<C: CellType>(
         &self,
         cb: &mut ConstraintBuilder<F, C>,
         is_first_row: Expression<F>,

@@ -2,9 +2,7 @@
 use crate::{
     circuit_tools::{
         cached_region::{CachedRegion, ChallengeSet},
-        table::LookupTable,
     },
-    evm_circuit::table::Table,
     util::{query_expression, Expr},
 };
 
@@ -105,44 +103,15 @@ impl<F: Field> Expr<F> for &Cell<F> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum EvmCellType {
-    StoragePhase1,
-    StoragePhase2,
-    StoragePermutation,
-    LookupByte,
-    Lookup(Table),
-}
-
-impl Default for EvmCellType {
-    fn default() -> Self {
-        Self::StoragePhase1
-    }
-}
-
-impl CellTypeTrait for EvmCellType {
-    fn byte_type() -> Option<Self> {
-        Some(EvmCellType::LookupByte)
-    }
-
-    fn storage_for_phase(phase: u8) -> Self {
-        match phase {
-            0 => EvmCellType::StoragePhase1,
-            1 => EvmCellType::StoragePhase2,
-            _ => unreachable!(),
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
-pub struct CellConfig<C: CellTypeTrait> {
+pub struct CellConfig<C: CellType> {
     pub cell_type: C,
     pub num_columns: usize,
     pub phase: u8,
     pub is_permute: bool,
 }
 
-impl<C: CellTypeTrait> From<(C, usize, u8, bool)> for CellConfig<C> {
+impl<C: CellType> From<(C, usize, u8, bool)> for CellConfig<C> {
     fn from((cell_type, num_columns, phase, is_permute): (C, usize, u8, bool)) -> Self {
         Self {
             cell_type,
@@ -153,7 +122,7 @@ impl<C: CellTypeTrait> From<(C, usize, u8, bool)> for CellConfig<C> {
     }
 }
 
-impl<C: CellTypeTrait> CellConfig<C> {
+impl<C: CellType> CellConfig<C> {
     pub fn init_columns<F: Field>(&self, meta: &mut ConstraintSystem<F>) -> Vec<Column<Advice>> {
         let mut columns = Vec::with_capacity(self.num_columns);
         for _ in 0..self.num_columns {
@@ -175,7 +144,7 @@ impl<C: CellTypeTrait> CellConfig<C> {
     }
 }
 
-pub trait CellTypeTrait:
+pub trait CellType:
     Clone + Copy + Debug + PartialEq + Eq + PartialOrd + Ord + Hash + Default
 {
     fn byte_type() -> Option<Self>;
@@ -201,6 +170,32 @@ pub trait CellTypeTrait:
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum DefaultCellType {
+    StoragePhase1,
+    StoragePhase2,
+}
+
+impl Default for DefaultCellType {
+    fn default() -> Self {
+        Self::StoragePhase1
+    }
+}
+
+impl CellType for DefaultCellType {
+    fn byte_type() -> Option<Self> {
+        Some(DefaultCellType::StoragePhase1)
+    }
+
+    fn storage_for_phase(phase: u8) -> Self {
+        match phase {
+            0 => DefaultCellType::StoragePhase1,
+            1 => DefaultCellType::StoragePhase2,
+            _ => unreachable!(),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct CellColumn<F, C> {
     index: usize,
@@ -211,33 +206,21 @@ pub(crate) struct CellColumn<F, C> {
 }
 
 #[derive(Clone, Debug)]
-pub struct CellManager<F, C: CellTypeTrait> {
+pub struct CellManager<F, C: CellType> {
     configs: Vec<CellConfig<C>>,
     columns: Vec<CellColumn<F, C>>,
     height: usize,
     height_limit: usize,
 }
 
-impl<F: Field, C: CellTypeTrait> CellManager<F, C> {
+impl<F: Field, C: CellType> CellManager<F, C> {
     pub(crate) fn new(
         meta: &mut ConstraintSystem<F>,
         configs: Vec<(C, usize, u8, bool)>,
-        tables: Vec<&dyn LookupTable<F, TableCellType = C>>,
         offset: usize,
         max_height: usize,
     ) -> Self {
-        let mut configs = configs.into_iter().map(|c| c.into()).collect::<Vec<_>>();
-
-        // User need to put fixed columns after advice if have any
-        // permutation is not enable by default
-        for table in tables {
-            configs.push(CellConfig {
-                cell_type: table.get_type(),
-                num_columns: table.columns().len(),
-                phase: table.phase(),
-                is_permute: false,
-            });
-        }
+        let configs = configs.into_iter().map(|c| c.into()).collect::<Vec<CellConfig<C>>>();
 
         let mut columns = Vec::new();
         for config in configs.iter() {

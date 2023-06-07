@@ -2,7 +2,7 @@ use crate::{
     _cb, circuit,
     circuit_tools::{
         cached_region::{CachedRegion, ChallengeSet},
-        cell_manager::{Cell, EvmCellType},
+        cell_manager::{Cell},
         constraint_builder::{ConstraintBuilder, RLCable, RLCableValue},
     },
     matchw,

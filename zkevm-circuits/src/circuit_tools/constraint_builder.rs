@@ -5,7 +5,7 @@ use std::{
     vec,
 };
 
-use crate::{evm_circuit::util::rlc, util::Expr};
+use crate::{evm_circuit::util::rlc, util::Expr, table::LookupTable};
 use eth_types::Field;
 use gadgets::util::{and, sum, Scalar};
 use halo2_proofs::plonk::{ConstraintSystem, Expression};
@@ -13,8 +13,7 @@ use itertools::Itertools;
 
 use super::{
     cached_region::StoredExpression,
-    cell_manager::{Cell, CellManager, CellTypeTrait},
-    table::LookupTable,
+    cell_manager::{Cell, CellManager, CellType},
 };
 
 fn get_condition_expr<F: Field>(conditions: &Vec<Expression<F>>) -> Expression<F> {
@@ -34,13 +33,13 @@ pub struct DynamicData<F> {
     pub condition: Expression<F>,
     /// The values to lookup
     pub values: Vec<Expression<F>>,
-    /// state
-    pub state_idx: usize,
+    /// region
+    pub region_id: usize,
 }
 
 /// Constraint builder
 #[derive(Clone)]
-pub struct ConstraintBuilder<F, C: CellTypeTrait> {
+pub struct ConstraintBuilder<F, C: CellType> {
     /// Constraints to be returned to meta
     constraints: Vec<(&'static str, Expression<F>)>,
     /// Max degree of constraints
@@ -54,23 +53,25 @@ pub struct ConstraintBuilder<F, C: CellTypeTrait> {
     /// write to RAM
     pub dynamic_tables: HashMap<String, Vec<DynamicData<F>>>,
     /// All stored expressions
-    pub stored_expressions: [Vec<StoredExpression<F, C>>; 5],
+    pub stored_expressions: HashMap<usize, Vec<StoredExpression<F, C>>>,
     /// CellManager
     pub cell_manager: Option<CellManager<F, C>>,
     /// Disable macro-generated description for constraints & lookups
     /// for graph display
     pub disable_description: bool,
-    /// state idx
-    pub state_idx: usize,
+    /// region id
+    pub region_id: usize,
     /// lookup input challenge
     pub lookup_input_challenge: Option<Expression<F>>,
     /// state contect
     pub state_context: Vec<Expression<F>>,
     /// state constraints start
     pub state_constraints_start: usize,
+    /// use dynamic lookups
+    pub use_dynamic_lookups: bool,
 }
 
-impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
+impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
     pub(crate) fn new(
         max_degree: usize,
         cell_manager: Option<CellManager<F, C>>,
@@ -84,11 +85,12 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
             dynamic_tables: HashMap::new(),
             cell_manager,
             disable_description: false,
-            stored_expressions: [vec![], vec![], vec![], vec![], vec![]],
-            state_idx: 0,
+            stored_expressions: HashMap::new(),
+            region_id: 0,
             lookup_input_challenge,
             state_context: Vec::new(),
             state_constraints_start: 0,
+            use_dynamic_lookups: false,
         }
     }
 
@@ -100,35 +102,39 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         self.max_degree = max_degree;
     }
 
-    pub(crate) fn push_state(&mut self, state_idx: usize) {
-        self.state_idx = state_idx;
+    pub(crate) fn set_use_dynamic_lookup(&mut self, use_dynamic_lookup: bool) {
+        self.use_dynamic_lookup = use_dynamic_lookup;
+    }
+
+    pub(crate) fn push_region(&mut self, region_id: usize) {
+        assert!(region_id != 0);
+        self.region_id = region_id;
         self.state_context = self.conditions.clone();
         self.conditions.clear();
         self.state_constraints_start = self.constraints.len();
     }
 
-    pub(crate) fn pop_state(&mut self) {
+    pub(crate) fn pop_region(&mut self) {
         let condition = get_condition_expr(&self.state_context);
         for idx in self.state_constraints_start..self.constraints.len() {
             self.constraints[idx].1 = condition.expr() * self.constraints[idx].1.clone();
         }
         for (_, values) in self.dynamic_lookups.iter_mut() {
             for value in values {
-                if value.state_idx == self.state_idx {
+                if value.region_id == self.region_id {
                     value.condition = condition.expr() * value.condition.expr();
                 }
             }
         }
-        for (key, values) in self.dynamic_tables.iter_mut() {
-            if key != "keccak" && key != "fixed" {
-                for value in values {
-                    if value.state_idx == self.state_idx {
-                        value.condition = condition.expr() * value.condition.expr();
-                    }
+        for (_key, values) in self.dynamic_tables.iter_mut() {
+            for value in values {
+                if value.region_id == self.region_id {
+                    value.condition = condition.expr() * value.condition.expr();
                 }
             }
         }
         self.conditions = self.state_context.clone();
+        self.region_id = 0;
     }
 
     pub(crate) fn set_disable_description(&mut self, disable_description: bool) {
@@ -239,7 +245,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
     }
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
-        if self.max_degree > 0 {
+        if self.max_degree > 0 && self.region_id != 0 {
             debug_assert!(
                 degree <= self.max_degree,
                 "Expression {} degree too high: {} > {}",
@@ -259,12 +265,11 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         meta: &mut ConstraintSystem<F>,
         challenge: Expression<F>,
         cell_managers: Vec<CellManager<F, C>>,
-        tables: Vec<&dyn LookupTable<F, TableCellType = C>>,
+        tables: Vec<(C, &dyn LookupTable<F>)>,
     ) {
         for cm in cell_managers {
-            for table in &tables {
-                let cell_type = table.get_type();
-                for col in cm.get_typed_columns(cell_type) {
+            for (cell_type, table) in &tables {
+                for col in cm.get_typed_columns(*cell_type) {
                     let name = format!("{:?}", cell_type);
                     meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                         vec![(
@@ -331,7 +336,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
             description,
             condition,
             values,
-            state_idx: self.state_idx,
+            region_id: self.region_id,
         };
         if let Some(table_data) = self.dynamic_tables.get_mut(&key) {
             table_data.push(lookup);
@@ -352,7 +357,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
             description,
             condition,
             values,
-            state_idx: self.state_idx,
+            region_id: self.region_id,
         };
         if let Some(lookup_data) = self.dynamic_lookups.get_mut(&key) {
             lookup_data.push(lookup);
@@ -379,8 +384,8 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         self.store_expression(description, compressed_expr, cell_type);
     }
 
-    pub(crate) fn get_stored_expressions(&self, state_idx: usize) -> Vec<StoredExpression<F, C>> {
-        self.stored_expressions[state_idx].clone()
+    pub(crate) fn get_stored_expressions(&self, region_id: usize) -> Vec<StoredExpression<F, C>> {
+        self.stored_expressions.get(&region_id).cloned().unwrap_or_else(Vec::new)
     }
 
     pub(crate) fn get_dynamic_table<S: AsRef<str>>(
@@ -447,7 +452,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
                     Box::leak(name.clone().into_boxed_str()),
                     cell.expr() - expr.clone(),
                 ));
-                self.stored_expressions[self.state_idx].push(StoredExpression {
+                self.stored_expressions.entry(self.region_id).or_insert_with(Vec::new).push(StoredExpression {
                     name,
                     cell: cell.clone(),
                     cell_type,
@@ -465,13 +470,15 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
         cell_type: C,
     ) -> Option<&StoredExpression<F, C>> {
         let expr_id = expr.identifier();
-        self.stored_expressions[self.state_idx]
-            .iter()
-            .find(|&e| e.cell_type == cell_type && e.expr_id == expr_id)
+        if let Some(stored_expressions) = self.stored_expressions.get(&self.region_id) {
+            stored_expressions.iter().find(|&e| e.cell_type == cell_type && e.expr_id == expr_id)
+        } else {
+            None
+        }
     }
 
     fn split_expression(&mut self, name: &'static str, expr: Expression<F>) -> Expression<F> {
-        if expr.degree() > self.max_degree {
+        if expr.degree() > self.max_degree && self.region_id != 0 {
             // println!("split {}: {} > {}", name, expr.degree(), self.max_degree);
             match expr {
                 Expression::Negated(poly) => {
@@ -520,7 +527,7 @@ impl<F: Field, C: CellTypeTrait> ConstraintBuilder<F, C> {
     }
 }
 
-pub(crate) fn merge_lookups<F: Field, C: CellTypeTrait>(
+pub(crate) fn merge_lookups<F: Field, C: CellType>(
     cb: &mut ConstraintBuilder<F, C>,
     lookups: Vec<DynamicData<F>>,
 ) -> (Expression<F>, Vec<Expression<F>>) {
@@ -533,7 +540,7 @@ pub(crate) fn merge_lookups<F: Field, C: CellTypeTrait>(
     )
 }
 
-pub(crate) fn merge_values<F: Field, C: CellTypeTrait>(
+pub(crate) fn merge_values<F: Field, C: CellType>(
     cb: &mut ConstraintBuilder<F, C>,
     values: Vec<(Expression<F>, Vec<Expression<F>>)>,
 ) -> (Expression<F>, Vec<Expression<F>>) {
@@ -879,7 +886,8 @@ macro_rules! _require2 {
 #[macro_export]
 macro_rules! _cb {
     () => {{
-        ConstraintBuilder::<F, EvmCellType>::new(0, None, None)
+        use crate::circuit_tools::cell_manager::DefaultCellType;
+        ConstraintBuilder::<F, DefaultCellType>::new(0, None, None)
     }};
 }
 
