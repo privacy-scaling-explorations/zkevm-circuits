@@ -130,7 +130,7 @@ impl<F: Field> MemoryAddressGadget<F> {
             .assign(region, offset, Some(memory_length.to_le_bytes()))?;
 
         self.memory_length_is_zero
-            .assign(region, offset, Word::from_u256(memory_length))?;
+            .assign(region, offset, Word::from(memory_length))?;
         Ok(if memory_length_is_zero {
             0
         } else {
