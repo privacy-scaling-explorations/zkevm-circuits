@@ -18,6 +18,10 @@ impl CMFixedWidthStrategyDistribution {
     }
 }
 
+/// CMFixedWidthStrategy is a Cell Manager strategy that places the cells in the column that has
+/// less height for a given CellType.
+/// When a cell is queried for a CellType the strategy will find the column of that Cell Type that
+/// has a lower height and add it there.
 #[derive(Clone, Debug)]
 pub(crate) struct CMFixedWidthStrategy {
     advices: CMFixedWidthStrategyDistribution,
@@ -29,6 +33,10 @@ pub(crate) struct CMFixedWidthStrategy {
 }
 
 impl CMFixedWidthStrategy {
+    /// Creates a CMFixedWidthStrategy from a CMFixedWidthStrategyDistribution that contains advice
+    /// columns categorized by Cell Type.
+    /// The argument height_offset will be added to the rotation of the Cells, which is useful for a
+    /// next step.
     pub fn new(
         advices: CMFixedWidthStrategyDistribution,
         height_offset: usize,
@@ -41,6 +49,9 @@ impl CMFixedWidthStrategy {
         }
     }
 
+    /// Enables the StoragePhase1 to StoragePermutation.
+    /// When enabled if a  StoragePhase1 Cell is requested but the height would be lower if placed
+    /// on a StoragePermutation column, then the StoragePermutation is used.
     pub fn with_perm_substitution(mut self) -> Self {
         self.perm_substitution = true;
 
