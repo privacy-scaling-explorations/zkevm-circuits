@@ -23,7 +23,7 @@ use crate::{
     mpt_circuit::{
         helpers::{
             key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, Indexable,
-            IsEmptyTreeGadget, KeyData, MPTConstraintBuilder, ParentData, WrongGadget,
+            IsEmptyTreeGadget, KeyData, MPTConstraintBuilder, ParentData, WrongGadget, KECCAK,
         },
         param::{KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
         MPTConfig, MPTContext, MPTState,
@@ -177,7 +177,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 // Check if the account is in its parent.
                 // Check is skipped for placeholder leaves which are dummy leaves
                 ifx! {not!(and::expr(&[not!(config.parent_data[is_s.idx()].is_placeholder), config.is_in_empty_trie[is_s.idx()].expr()])) => {
-                    require!((1, leaf_rlc, rlp_key.rlp_list.num_bytes(), config.parent_data[is_s.idx()].rlc) => @"keccak");
+                    require!((1, leaf_rlc, rlp_key.rlp_list.num_bytes(), config.parent_data[is_s.idx()].rlc) => @KECCAK);
                 }}
 
                 // Check the RLP encoding consistency.

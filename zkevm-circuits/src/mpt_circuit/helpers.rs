@@ -19,7 +19,10 @@ use crate::{
 };
 use eth_types::Field;
 use gadgets::util::{not, or, pow, Scalar};
-use halo2_proofs::{plonk::{Error, Expression, VirtualCells}, circuit::Value};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression, VirtualCells},
+};
 
 use super::{
     rlp_gadgets::{
@@ -41,6 +44,11 @@ pub enum MptCellType {
     StoragePermutation,
     LookupByte,
     Lookup(Table),
+    MemParentS,
+    MemParentC,
+    MemKeyS,
+    MemKeyC,
+    MemMain,
 }
 
 impl Default for MptCellType {
@@ -62,6 +70,9 @@ impl CellType for MptCellType {
         }
     }
 }
+
+pub const FIXED: MptCellType = MptCellType::Lookup(Table::Fixed);
+pub const KECCAK: MptCellType = MptCellType::Lookup(Table::Keccak);
 
 /// Indexable object
 pub trait Indexable {
@@ -365,7 +376,7 @@ pub(crate) struct KeyDataWitness<F> {
 impl<F: Field> KeyData<F> {
     pub(crate) fn load(
         cb: &mut MPTConstraintBuilder<F>,
-        memory: &MemoryBank<F>,
+        memory: &MemoryBank<F, MptCellType>,
         offset: Expression<F>,
     ) -> Self {
         let key_data = KeyData {
@@ -401,7 +412,7 @@ impl<F: Field> KeyData<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn store(
         cb: &mut MPTConstraintBuilder<F>,
-        memory: &MemoryBank<F>,
+        memory: &MemoryBank<F, MptCellType>,
         rlc: Expression<F>,
         mult: Expression<F>,
         num_nibbles: Expression<F>,
@@ -426,7 +437,10 @@ impl<F: Field> KeyData<F> {
         );
     }
 
-    pub(crate) fn store_defaults(cb: &mut MPTConstraintBuilder<F>, memory: &MemoryBank<F>) {
+    pub(crate) fn store_defaults(
+        cb: &mut MPTConstraintBuilder<F>,
+        memory: &MemoryBank<F, MptCellType>,
+    ) {
         memory.store(&mut cb.base, &KeyData::default_values_expr());
     }
 
@@ -447,7 +461,7 @@ impl<F: Field> KeyData<F> {
     pub(crate) fn witness_store<S: ChallengeSet<F>>(
         _region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
-        memory: &mut MemoryBank<F>,
+        memory: &mut MemoryBank<F, MptCellType>,
         rlc: F,
         mult: F,
         num_nibbles: usize,
@@ -474,7 +488,7 @@ impl<F: Field> KeyData<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
-        memory: &MemoryBank<F>,
+        memory: &MemoryBank<F, MptCellType>,
         load_offset: usize,
     ) -> Result<KeyDataWitness<F>, Error> {
         let values = memory.witness_load(load_offset);
@@ -521,7 +535,7 @@ impl<F: Field> ParentData<F> {
     pub(crate) fn load(
         description: &'static str,
         cb: &mut MPTConstraintBuilder<F>,
-        memory: &MemoryBank<F>,
+        memory: &MemoryBank<F, MptCellType>,
         offset: Expression<F>,
     ) -> Self {
         let parent_data = ParentData {
@@ -548,7 +562,7 @@ impl<F: Field> ParentData<F> {
 
     pub(crate) fn store(
         cb: &mut MPTConstraintBuilder<F>,
-        memory: &MemoryBank<F>,
+        memory: &MemoryBank<F, MptCellType>,
         rlc: Expression<F>,
         is_root: Expression<F>,
         is_placeholder: Expression<F>,
@@ -563,7 +577,7 @@ impl<F: Field> ParentData<F> {
     pub(crate) fn witness_store<S: ChallengeSet<F>>(
         _region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
-        memory: &mut MemoryBank<F>,
+        memory: &mut MemoryBank<F, MptCellType>,
         rlc: F,
         force_hashed: bool,
         is_placeholder: bool,
@@ -585,7 +599,7 @@ impl<F: Field> ParentData<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
-        memory: &MemoryBank<F>,
+        memory: &MemoryBank<F, MptCellType>,
         load_offset: usize,
     ) -> Result<ParentDataWitness<F>, Error> {
         let values = memory.witness_load(load_offset);
@@ -626,7 +640,7 @@ impl<F: Field> MainData<F> {
     pub(crate) fn load(
         description: &'static str,
         cb: &mut MPTConstraintBuilder<F>,
-        memory: &MemoryBank<F>,
+        memory: &MemoryBank<F, MptCellType>,
         offset: Expression<F>,
     ) -> Self {
         let main_data = MainData {
@@ -655,7 +669,7 @@ impl<F: Field> MainData<F> {
 
     pub(crate) fn store(
         cb: &mut MPTConstraintBuilder<F>,
-        memory: &MemoryBank<F>,
+        memory: &MemoryBank<F, MptCellType>,
         values: [Expression<F>; 5],
     ) {
         memory.store(&mut cb.base, &values);
@@ -665,7 +679,7 @@ impl<F: Field> MainData<F> {
     pub(crate) fn witness_store<S: ChallengeSet<F>>(
         _region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
-        memory: &mut MemoryBank<F>,
+        memory: &mut MemoryBank<F, MptCellType>,
         proof_type: usize,
         is_below_account: bool,
         address_rlc: F,
@@ -688,7 +702,7 @@ impl<F: Field> MainData<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
-        memory: &MemoryBank<F>,
+        memory: &MemoryBank<F, MptCellType>,
         load_offset: usize,
     ) -> Result<MainDataWitness<F>, Error> {
         let values = memory.witness_load(load_offset);
@@ -796,10 +810,7 @@ pub(crate) fn ext_key_rlc_value<F: Field>(
 
 // Returns the number of nibbles stored in a key value
 pub(crate) mod num_nibbles {
-    use crate::{
-        _cb, circuit,
-        circuit_tools::{constraint_builder::ConstraintBuilder},
-    };
+    use crate::{_cb, circuit, circuit_tools::constraint_builder::ConstraintBuilder};
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
@@ -824,16 +835,24 @@ pub(crate) mod num_nibbles {
     }
 }
 
-pub(crate) fn parent_memory(is_s: bool) -> String {
-    (if is_s { "parent_s" } else { "parent_c" }).to_string()
+pub(crate) fn parent_memory(is_s: bool) -> MptCellType {
+    if is_s {
+        MptCellType::MemParentS
+    } else {
+        MptCellType::MemParentC
+    }
 }
 
-pub(crate) fn key_memory(is_s: bool) -> String {
-    (if is_s { "key_s" } else { "key_c" }).to_string()
+pub(crate) fn key_memory(is_s: bool) -> MptCellType {
+    if is_s {
+        MptCellType::MemKeyS
+    } else {
+        MptCellType::MemKeyC
+    }
 }
 
-pub(crate) fn main_memory() -> String {
-    "main".to_string()
+pub(crate) fn main_memory() -> MptCellType {
+    MptCellType::MemMain
 }
 
 /// MPTConstraintBuilder
@@ -841,7 +860,6 @@ pub(crate) fn main_memory() -> String {
 pub struct MPTConstraintBuilder<F> {
     pub base: ConstraintBuilder<F, MptCellType>,
     pub challenges: Option<Challenges<Expression<F>>>,
-    pub use_dynamic_lookup: bool,
 }
 
 impl<F: Field> MPTConstraintBuilder<F> {
@@ -857,12 +875,11 @@ impl<F: Field> MPTConstraintBuilder<F> {
                 Some(challenges.clone().unwrap().lookup_input.expr()),
             ),
             challenges,
-            use_dynamic_lookup: false,
         }
     }
 
     pub(crate) fn set_use_dynamic_lookup(&mut self, use_dynamic_lookup: bool) {
-        self.use_dynamic_lookup = use_dynamic_lookup;
+        self.base.set_use_dynamic_lookup(use_dynamic_lookup);
     }
 
     pub(crate) fn push_condition(&mut self, condition: Expression<F>) {
@@ -925,39 +942,28 @@ impl<F: Field> MPTConstraintBuilder<F> {
         self.base.require_boolean(name, value)
     }
 
-    pub(crate) fn add_dynamic_lookup<S: AsRef<str>>(
+    pub(crate) fn add_dynamic_lookup(
         &mut self,
         description: &'static str,
-        tag: S,
+        tag: MptCellType,
         values: Vec<Expression<F>>,
     ) {
         self.base.add_dynamic_lookup(description, tag, values)
     }
 
-    pub(crate) fn add_static_lookup<S: AsRef<str>>(
+    pub(crate) fn add_static_lookup(
         &mut self,
         description: &'static str,
-        tag: S,
+        cell_type: MptCellType,
         values: Vec<Expression<F>>,
     ) {
-        if self.use_dynamic_lookup {
-            self.base.add_dynamic_lookup(description, tag, values)
-        } else {
-            let cell_type = if tag.as_ref() == "keccak" {
-                MptCellType::Lookup(Table::Keccak)
-            } else if tag.as_ref() == "fixed" {
-                MptCellType::Lookup(Table::Fixed)
-            } else {
-                unreachable!()
-            };
-            self.base.add_static_lookup(description, cell_type, values)
-        }
+        self.base.add_static_lookup(description, cell_type, values)
     }
 
-    pub(crate) fn store_dynamic_table<S: AsRef<str>>(
+    pub(crate) fn store_dynamic_table(
         &mut self,
         description: &'static str,
-        tag: S,
+        tag: MptCellType,
         values: Vec<Expression<F>>,
     ) {
         self.base.store_dynamic_table(description, tag, values)
@@ -1068,7 +1074,7 @@ impl<F: Field> DriftedGadget<F> {
                         // Complete the drifted leaf rlc by adding the bytes on the value row
                         let leaf_rlc = (config.drifted_rlp_key.rlc(r), mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
                         // The drifted leaf needs to be stored in the branch at `drifted_index`.
-                        require!((1, leaf_rlc, config.drifted_rlp_key.rlp_list.num_bytes(), parent_data[is_s.idx()].drifted_parent_rlc.expr()) => @"keccak");
+                        require!((1, leaf_rlc, config.drifted_rlp_key.rlp_list.num_bytes(), parent_data[is_s.idx()].drifted_parent_rlc.expr()) => @KECCAK);
                     }
                 }}
             }}
@@ -1222,7 +1228,7 @@ impl<F: Field> MainRLPGadget<F> {
             require!(config.rlc_content => config.rlp.rlc_content(r));
             require!(config.rlc_rlp => config.rlp.rlc_rlp(cb, r));
             let mult_diff = config.mult_diff.expr();
-            require!((FixedTableTag::RMult, config.rlp.num_bytes(), mult_diff) => @"fixed");
+            require!((FixedTableTag::RMult, config.rlp.num_bytes(), mult_diff) => @FIXED);
             // `tag` is a "free" input that needs to be constrained externally!
 
             // Range/zero checks
@@ -1230,10 +1236,11 @@ impl<F: Field> MainRLPGadget<F> {
             // value. These lookups also enforce the byte value to be zero when
             // the byte index >= num_bytes.
             // TODO(Brecht): do 2 bytes/lookup when circuit height >= 2**21
-            // We enable dynamic lookups because otherwise these lookup would require a lot of extra cells.
+            // We enable dynamic lookups because otherwise these lookup would require a lot of extra
+            // cells.
             cb.set_use_dynamic_lookup(true);
             for (idx, byte) in config.bytes.iter().enumerate() {
-                require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()) => @"fixed");
+                require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()) => @FIXED);
             }
             cb.set_use_dynamic_lookup(false);
 

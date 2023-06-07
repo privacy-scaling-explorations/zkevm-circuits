@@ -1,8 +1,6 @@
 //! Cell manager
 use crate::{
-    circuit_tools::{
-        cached_region::{CachedRegion, ChallengeSet},
-    },
+    circuit_tools::cached_region::{CachedRegion, ChallengeSet},
     util::{query_expression, Expr},
 };
 
@@ -220,7 +218,10 @@ impl<F: Field, C: CellType> CellManager<F, C> {
         offset: usize,
         max_height: usize,
     ) -> Self {
-        let configs = configs.into_iter().map(|c| c.into()).collect::<Vec<CellConfig<C>>>();
+        let configs = configs
+            .into_iter()
+            .map(|c| c.into())
+            .collect::<Vec<CellConfig<C>>>();
 
         let mut columns = Vec::new();
         for config in configs.iter() {

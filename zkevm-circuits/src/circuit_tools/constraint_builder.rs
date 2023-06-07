@@ -5,7 +5,7 @@ use std::{
     vec,
 };
 
-use crate::{evm_circuit::util::rlc, util::Expr, table::LookupTable};
+use crate::{evm_circuit::util::rlc, table::LookupTable, util::Expr};
 use eth_types::Field;
 use gadgets::util::{and, sum, Scalar};
 use halo2_proofs::plonk::{ConstraintSystem, Expression};
@@ -48,10 +48,10 @@ pub struct ConstraintBuilder<F, C: CellType> {
     conditions: Vec<Expression<F>>,
     /// The lookups generated during synthesis
     /// assembles runtime access to RAM
-    pub dynamic_lookups: HashMap<String, Vec<DynamicData<F>>>,
+    pub dynamic_lookups: HashMap<C, Vec<DynamicData<F>>>,
     /// The tables written during synthesis
     /// write to RAM
-    pub dynamic_tables: HashMap<String, Vec<DynamicData<F>>>,
+    pub dynamic_tables: HashMap<C, Vec<DynamicData<F>>>,
     /// All stored expressions
     pub stored_expressions: HashMap<usize, Vec<StoredExpression<F, C>>>,
     /// CellManager
@@ -102,8 +102,8 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         self.max_degree = max_degree;
     }
 
-    pub(crate) fn set_use_dynamic_lookup(&mut self, use_dynamic_lookup: bool) {
-        self.use_dynamic_lookup = use_dynamic_lookup;
+    pub(crate) fn set_use_dynamic_lookup(&mut self, use_dynamic_lookups: bool) {
+        self.use_dynamic_lookups = use_dynamic_lookups;
     }
 
     pub(crate) fn push_region(&mut self, region_id: usize) {
@@ -282,16 +282,12 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         }
     }
 
-    pub(crate) fn build_dynamic_lookups<S: AsRef<str>>(
-        &self,
-        meta: &mut ConstraintSystem<F>,
-        lookup_names: &[S],
-    ) {
+    pub(crate) fn build_dynamic_lookups(&self, meta: &mut ConstraintSystem<F>, lookup_names: &[C]) {
         for lookup_name in lookup_names.iter() {
-            if let Some(lookups) = self.dynamic_lookups.get(lookup_name.as_ref()) {
+            if let Some(lookups) = self.dynamic_lookups.get(lookup_name) {
                 for lookup in lookups.iter() {
                     meta.lookup_any(lookup.description, |_meta| {
-                        let table = self.get_dynamic_table_values(lookup_name);
+                        let table = self.get_dynamic_table_values(*lookup_name);
                         let mut values: Vec<_> = lookup
                             .values
                             .iter()
@@ -324,45 +320,43 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         self.get_condition().unwrap_or_else(|| 1.expr())
     }
 
-    pub(crate) fn store_dynamic_table<S: AsRef<str>>(
+    pub(crate) fn store_dynamic_table(
         &mut self,
         description: &'static str,
-        tag: S,
+        cell_type: C,
         values: Vec<Expression<F>>,
     ) {
         let condition = self.get_condition_expr();
-        let key = tag.as_ref().to_owned();
         let lookup = DynamicData {
             description,
             condition,
             values,
             region_id: self.region_id,
         };
-        if let Some(table_data) = self.dynamic_tables.get_mut(&key) {
+        if let Some(table_data) = self.dynamic_tables.get_mut(&cell_type) {
             table_data.push(lookup);
         } else {
-            self.dynamic_tables.insert(key, vec![lookup]);
+            self.dynamic_tables.insert(cell_type, vec![lookup]);
         }
     }
 
-    pub(crate) fn add_dynamic_lookup<S: AsRef<str>>(
+    pub(crate) fn add_dynamic_lookup(
         &mut self,
         description: &'static str,
-        tag: S,
+        tag: C,
         values: Vec<Expression<F>>,
     ) {
         let condition = self.get_condition_expr();
-        let key = tag.as_ref().to_owned();
         let lookup = DynamicData {
             description,
             condition,
             values,
             region_id: self.region_id,
         };
-        if let Some(lookup_data) = self.dynamic_lookups.get_mut(&key) {
+        if let Some(lookup_data) = self.dynamic_lookups.get_mut(&tag) {
             lookup_data.push(lookup);
         } else {
-            self.dynamic_lookups.insert(key, vec![lookup]);
+            self.dynamic_lookups.insert(tag, vec![lookup]);
         }
     }
 
@@ -372,30 +366,38 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         cell_type: C,
         values: Vec<Expression<F>>,
     ) {
-        let condition = self.get_condition_expr();
-        let values = values
-            .iter()
-            .map(|value| condition.expr() * value.expr())
-            .collect_vec();
-        let compressed_expr = self.split_expression(
-            "Lookup compression",
-            rlc::expr(&values, self.lookup_input_challenge.clone().unwrap().expr()),
-        );
-        self.store_expression(description, compressed_expr, cell_type);
+        if self.use_dynamic_lookups {
+            self.add_dynamic_lookup(
+                Box::leak(description.to_string().into_boxed_str()),
+                cell_type,
+                values,
+            );
+        } else {
+            let condition = self.get_condition_expr();
+            let values = values
+                .iter()
+                .map(|value| condition.expr() * value.expr())
+                .collect_vec();
+            let compressed_expr = self.split_expression(
+                "Lookup compression",
+                rlc::expr(&values, self.lookup_input_challenge.clone().unwrap().expr()),
+            );
+            self.store_expression(description, compressed_expr, cell_type);
+        }
     }
 
     pub(crate) fn get_stored_expressions(&self, region_id: usize) -> Vec<StoredExpression<F, C>> {
-        self.stored_expressions.get(&region_id).cloned().unwrap_or_else(Vec::new)
+        self.stored_expressions
+            .get(&region_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
-    pub(crate) fn get_dynamic_table<S: AsRef<str>>(
-        &self,
-        tag: S,
-    ) -> (Expression<F>, Vec<Expression<F>>) {
+    pub(crate) fn get_dynamic_table(&self, tag: C) -> (Expression<F>, Vec<Expression<F>>) {
         let table_values = self
             .dynamic_tables
-            .get(tag.as_ref())
-            .unwrap_or_else(|| panic!("Dynamic table {:?} not found", tag.as_ref()));
+            .get(&tag)
+            .unwrap_or_else(|| panic!("Dynamic table {:?} not found", tag));
         merge_values_unsafe(
             table_values
                 .iter()
@@ -404,7 +406,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         )
     }
 
-    pub(crate) fn get_dynamic_table_values<S: AsRef<str>>(&self, tag: S) -> Vec<Expression<F>> {
+    pub(crate) fn get_dynamic_table_values(&self, tag: C) -> Vec<Expression<F>> {
         let condition_and_values = self.get_dynamic_table(tag);
         condition_and_values
             .1
@@ -413,11 +415,11 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             .collect::<Vec<_>>()
     }
 
-    pub(crate) fn generate_lookup_table_checks<S: AsRef<str>>(&mut self, tag: S) {
+    pub(crate) fn generate_lookup_table_checks(&mut self, tag: C) {
         let table_values = self
             .dynamic_tables
-            .get(tag.as_ref())
-            .unwrap_or_else(|| panic!("Dynamic table {:?} not found", tag.as_ref()))
+            .get(&tag)
+            .unwrap_or_else(|| panic!("Dynamic table {:?} not found", tag))
             .clone();
         let selectors = table_values
             .into_iter()
@@ -452,13 +454,16 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                     Box::leak(name.clone().into_boxed_str()),
                     cell.expr() - expr.clone(),
                 ));
-                self.stored_expressions.entry(self.region_id).or_insert_with(Vec::new).push(StoredExpression {
-                    name,
-                    cell: cell.clone(),
-                    cell_type,
-                    expr_id: expr.identifier(),
-                    expr,
-                });
+                self.stored_expressions
+                    .entry(self.region_id)
+                    .or_insert_with(Vec::new)
+                    .push(StoredExpression {
+                        name,
+                        cell: cell.clone(),
+                        cell_type,
+                        expr_id: expr.identifier(),
+                        expr,
+                    });
                 cell.expr()
             }
         }
@@ -471,7 +476,9 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
     ) -> Option<&StoredExpression<F, C>> {
         let expr_id = expr.identifier();
         if let Some(stored_expressions) = self.stored_expressions.get(&self.region_id) {
-            stored_expressions.iter().find(|&e| e.cell_type == cell_type && e.expr_id == expr_id)
+            stored_expressions
+                .iter()
+                .find(|&e| e.cell_type == cell_type && e.expr_id == expr_id)
         } else {
             None
         }
@@ -886,7 +893,7 @@ macro_rules! _require2 {
 #[macro_export]
 macro_rules! _cb {
     () => {{
-        use crate::circuit_tools::cell_manager::DefaultCellType;
+        use $crate::circuit_tools::cell_manager::DefaultCellType;
         ConstraintBuilder::<F, DefaultCellType>::new(0, None, None)
     }};
 }
@@ -973,14 +980,14 @@ macro_rules! _require {
         );
         $cb.add_static_lookup(
             description,
-            $tag.to_string(),
+            $tag,
             vec![$($v.expr(),)*],
         );
     }};
     ($cb:expr, $descr:expr, ($($v:expr),+)  => @$tag:expr) => {{
         $cb.add_static_lookup(
             Box::leak($descr.into_boxed_str()),
-            $tag.to_string(),
+            $tag,
             vec![$($v.expr(),)*],
         );
     }};
@@ -994,14 +1001,14 @@ macro_rules! _require {
         );
         $cb.add_static_lookup(
             description,
-            $tag.to_string(),
+            $tag,
             $values.clone(),
         );
     }};
     ($cb:expr, $descr:expr, $values:expr => @$tag:expr) => {{
         $cb.add_static_lookup(
             Box::leak($descr.to_string().into_boxed_str()),
-            $tag.to_string(),
+            $tag,
             $values.clone(),
         );
     }};
@@ -1020,7 +1027,7 @@ macro_rules! _require {
         );
         $cb.store_dynamic_table(
             description,
-            $tag.to_string(),
+            $tag,
             vec![$($v.expr(),)*],
         );
     }};
@@ -1035,7 +1042,7 @@ macro_rules! _require {
         );
         $cb.store_dynamic_table(
             description,
-            $tag.to_string(),
+            $tag,
             $values,
         );
     }};
@@ -1137,7 +1144,8 @@ macro_rules! assign {
     // Column
     ($region:expr, ($column:expr, $offset:expr) => $value:expr) => {{
         use halo2_proofs::circuit::Value;
-        let description = $crate::concat_with_preamble!(stringify!($column), " => ", stringify!($value));
+        let description =
+            $crate::concat_with_preamble!(stringify!($column), " => ", stringify!($value));
         let value: F = $value;
         $region.assign_advice(|| description, $column, $offset, || Value::known(value))
     }};
@@ -1150,7 +1158,8 @@ macro_rules! assign {
     // Cell
     ($region:expr, $cell:expr, $offset:expr => $value:expr) => {{
         use halo2_proofs::circuit::Value;
-        let description = $crate::concat_with_preamble!(stringify!($cell), " => ", stringify!($value));
+        let description =
+            $crate::concat_with_preamble!(stringify!($cell), " => ", stringify!($value));
         let value: F = $value;
         $region.assign_advice(
             || description,

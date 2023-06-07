@@ -19,6 +19,7 @@ use crate::{
     mpt_circuit::{
         helpers::{
             ext_key_rlc_calc_value, ext_key_rlc_expr, num_nibbles, Indexable, KeyData, ParentData,
+            FIXED, KECCAK,
         },
         param::HASH_WIDTH,
         FixedTableTag, MPTConfig, MPTState,
@@ -77,7 +78,7 @@ impl<F: Field> ExtensionGadget<F> {
                 key_items[true.idx()].is_long() => key_items[true.idx()].bytes[1].expr(),
                 key_items[true.idx()].is_very_long() => key_items[true.idx()].bytes[2].expr(),
             };
-            require!((FixedTableTag::ExtOddKey.expr(), first_byte, config.is_key_part_odd.expr()) => @"fixed");
+            require!((FixedTableTag::ExtOddKey.expr(), first_byte, config.is_key_part_odd.expr()) => @FIXED);
 
             let mut branch_rlp_rlc = vec![0.expr(); 2];
             for is_s in [true, false] {
@@ -116,7 +117,7 @@ impl<F: Field> ExtensionGadget<F> {
                 ifx! {not!(is_placeholder[is_s.idx()]) => {
                     ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
                         // Hashed branch hash in parent branch
-                        require!((1, rlc, num_bytes, parent_data[is_s.idx()].rlc) => @"keccak");
+                        require!((1, rlc, num_bytes, parent_data[is_s.idx()].rlc) => @KECCAK);
                     } elsex {
                         // Non-hashed branch hash in parent branch
                         require!(rlc => parent_data[is_s.idx()].rlc);
@@ -167,7 +168,7 @@ impl<F: Field> ExtensionGadget<F> {
                 - ifx! {not!(key_data.is_odd.expr() * config.is_key_part_odd.expr()) => { 1.expr() }};
             // Get the multiplier for this key length
             config.mult_key = cb.query_cell();
-            require!((FixedTableTag::RMult, key_num_bytes_for_mult, config.mult_key.expr()) => @"fixed");
+            require!((FixedTableTag::RMult, key_num_bytes_for_mult, config.mult_key.expr()) => @FIXED);
 
             // Store the post ext state
             config.post_state = Some(ExtState {

@@ -31,14 +31,13 @@ use self::{
 };
 use crate::{
     assign, assignf, circuit,
-    circuit_tools::{
-        cached_region::{CachedRegion},
-        cell_manager::{CellManager},
-        memory::Memory,
-    },
+    circuit_tools::{cached_region::CachedRegion, cell_manager::CellManager, memory::Memory},
     evm_circuit::table::Table,
     mpt_circuit::{
-        helpers::{main_memory, parent_memory, MPTConstraintBuilder, MainRLPGadget, MptCellType},
+        helpers::{
+            main_memory, parent_memory, MPTConstraintBuilder, MainRLPGadget, MptCellType, FIXED,
+            KECCAK,
+        },
         start::StartConfig,
         storage_leaf::StorageLeafConfig,
     },
@@ -127,7 +126,7 @@ pub struct MPTContext<F> {
     pub(crate) mpt_table: MptTable,
     pub(crate) rlp_item: MainRLPGadget<F>,
     pub(crate) challenges: Challenges<Expression<F>>,
-    pub(crate) memory: Memory<F>,
+    pub(crate) memory: Memory<F, MptCellType>,
     pub(crate) r: Expression<F>,
 }
 
@@ -158,7 +157,7 @@ pub struct MPTConfig<F> {
     pub(crate) q_enable: Column<Fixed>,
     pub(crate) q_first: Column<Fixed>,
     pub(crate) q_last: Column<Fixed>,
-    pub(crate) memory: Memory<F>,
+    pub(crate) memory: Memory<F, MptCellType>,
     keccak_table: KeccakTable,
     fixed_table: [Column<Fixed>; 6],
     rlp_item: MainRLPGadget<F>,
@@ -193,11 +192,11 @@ impl_expr!(FixedTableTag);
 #[derive(Default)]
 pub(crate) struct MPTState<F> {
     pub(crate) r: F,
-    pub(crate) memory: Memory<F>,
+    pub(crate) memory: Memory<F, MptCellType>,
 }
 
 impl<F: Field> MPTState<F> {
-    fn new(memory: &Memory<F>, r: F) -> Self {
+    fn new(memory: &Memory<F, MptCellType>, r: F) -> Self {
         Self {
             r,
             memory: memory.clone(),
@@ -271,8 +270,8 @@ impl<F: Field> MPTConfig<F> {
         meta.create_gate("MPT", |meta| {
             circuit!([meta, cb], {
                 // Populate lookup tables
-                require!(@"keccak" => <KeccakTable as LookupTable<F>>::advice_columns(&keccak_table).iter().map(|table| a!(table)).collect());
-                require!(@"fixed" => fixed_table.iter().map(|table| f!(table)).collect());
+                require!(@KECCAK => <KeccakTable as LookupTable<F>>::advice_columns(&keccak_table).iter().map(|table| a!(table)).collect());
+                require!(@FIXED => fixed_table.iter().map(|table| f!(table)).collect());
 
                 ifx!{f!(q_enable) => {
                     // RLP item decoding unit
@@ -343,26 +342,17 @@ impl<F: Field> MPTConfig<F> {
                     (MptCellType::Lookup(Table::Fixed), &fixed_table),
                 ],
             );
-            cb.base.build_dynamic_lookups(
-                meta,
-                &[
-                    vec!["fixed".to_string(), "keccak".to_string()],
-                    ctx.memory.tags(),
-                ]
-                .concat(),
-            );
+            cb.base
+                .build_dynamic_lookups(meta, &[vec![FIXED, KECCAK], ctx.memory.tags()].concat());
         } else if disable_lookups == 1 {
-            cb.base.build_dynamic_lookups(
-                meta,
-                &[vec!["keccak".to_string()], ctx.memory.tags()].concat(),
-            );
+            cb.base
+                .build_dynamic_lookups(meta, &[vec![KECCAK], ctx.memory.tags()].concat());
         } else if disable_lookups == 2 {
             cb.base.build_dynamic_lookups(meta, &ctx.memory.tags());
         } else if disable_lookups == 3 {
-            cb.base
-                .build_dynamic_lookups(meta, &["fixed".to_string(), "keccak".to_string()]);
+            cb.base.build_dynamic_lookups(meta, &[FIXED, KECCAK]);
         } else if disable_lookups == 4 {
-            cb.base.build_dynamic_lookups(meta, &["keccak".to_string()]);
+            cb.base.build_dynamic_lookups(meta, &[KECCAK]);
         }
 
         println!("degree: {}", meta.degree());
