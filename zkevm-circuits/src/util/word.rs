@@ -1,4 +1,3 @@
-#![allow(missing_docs)]
 //! Define generic Word type with utility functions
 // Naming Convesion
 // - Limbs: An EVN word is 256 bits. Limbs N means split 256 into N limb. For example, N = 4, each
@@ -21,13 +20,13 @@ pub struct WordLimbs<T, const N: usize> {
     pub limbs: [T; N],
 }
 
-pub type Word2<T> = WordLimbs<T, 2>;
+pub(crate) type Word2<T> = WordLimbs<T, 2>;
 
-pub type Word4<T> = WordLimbs<T, 4>;
+pub(crate) type Word4<T> = WordLimbs<T, 4>;
 
-pub type Word16<T> = WordLimbs<T, 16>;
+pub(crate) type Word16<T> = WordLimbs<T, 16>;
 
-pub type Word32<T> = WordLimbs<T, 32>;
+pub(crate) type Word32<T> = WordLimbs<T, 32>;
 
 pub(crate) type WordCell<F> = Word<Cell<F>>;
 
@@ -115,6 +114,7 @@ impl<F: Field, const N: usize> WordExpr<F> for WordLimbs<Cell<F>, N> {
 }
 
 impl<F: Field, const N: usize> WordLimbs<F, N> {
+    /// Check if zero
     pub fn is_zero_vartime(&self) -> bool {
         self.limbs.iter().all(|limb| limb.is_zero_vartime())
     }
@@ -149,11 +149,13 @@ impl<T: Clone> Word<T> {
         (self.0.limbs[0].clone(), self.0.limbs[1].clone())
     }
 
+    /// Extract (move) lo and hi values
     pub fn into_lo_hi(self) -> (T, T) {
         let [lo, hi] = self.0.limbs;
         (lo, hi)
     }
 
+    /// Wrap `Word` into into `Word<Value>`
     pub fn into_value(self) -> Word<Value<T>> {
         let [lo, hi] = self.0.limbs;
         Word::new([Value::known(lo), Value::known(hi)])
@@ -207,6 +209,7 @@ impl<F: Field> Word<Cell<F>> {
 }
 
 impl<F: Field> Word<Value<F>> {
+    /// Assign advice
     pub fn assign_advice<A, AR>(
         &self,
         region: &mut Region<'_, F>,

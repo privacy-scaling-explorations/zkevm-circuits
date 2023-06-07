@@ -516,7 +516,7 @@ impl RwTable {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        row: &RwRow<F>,
+        row: &RwRow<Value<F>>,
     ) -> Result<(), Error> {
         for (column, value) in [
             (self.address, row.address),
@@ -526,12 +526,7 @@ impl RwTable {
             (self.id, row.id),
             (self.field_tag, row.field_tag),
         ] {
-            region.assign_advice(
-                || "assign rw row on rw table",
-                column,
-                offset,
-                || Value::known(value),
-            )?;
+            region.assign_advice(|| "assign rw row on rw table", column, offset, || value)?;
         }
         for (column, value) in [
             (self.storage_key, row.storage_key),
@@ -539,12 +534,7 @@ impl RwTable {
             (self.value_prev, row.value_prev),
             (self.init_val, row.init_val),
         ] {
-            value.into_value().assign_advice(
-                region,
-                || "assign rw row on rw table",
-                column,
-                offset,
-            )?;
+            value.assign_advice(region, || "assign rw row on rw table", column, offset)?;
         }
 
         Ok(())
@@ -657,15 +647,10 @@ impl MptTable {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        row: &MptUpdateRow<F>,
+        row: &MptUpdateRow<Value<F>>,
     ) -> Result<(), Error> {
         for (column, value) in self.0.iter().zip_eq(row.values()) {
-            region.assign_advice(
-                || "assign mpt table row value",
-                *column,
-                offset,
-                || Value::known(*value),
-            )?;
+            region.assign_advice(|| "assign mpt table row value", *column, offset, || *value)?;
         }
         Ok(())
     }
@@ -945,7 +930,8 @@ impl<F: Field> LookupTable<F> for KeccakTable {
             String::from("is_enabled"),
             String::from("input_rlc"),
             String::from("input_len"),
-            String::from("output_rlc"),
+            String::from("output_lo"),
+            String::from("output_hi"),
         ]
     }
 }

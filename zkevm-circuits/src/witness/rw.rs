@@ -278,6 +278,7 @@ impl<F: Field> RwRow<F> {
             self.init_val.hi(),
         ]
     }
+
     pub(crate) fn rlc(&self, randomness: F) -> F {
         let values = self.values();
         values
@@ -288,6 +289,35 @@ impl<F: Field> RwRow<F> {
 
     pub(crate) fn rlc_value(&self, randomness: Value<F>) -> Value<F> {
         randomness.map(|randomness| self.rlc(randomness))
+    }
+}
+
+impl<F: Field> RwRow<Value<F>> {
+    pub(crate) fn unwrap(self) -> RwRow<F> {
+        let unwrap_f = |f: Value<F>| {
+            let mut inner = None;
+            _ = f.map(|v| {
+                inner = Some(v);
+            });
+            inner.unwrap()
+        };
+        let unwrap_w = |f: word::Word<Value<F>>| {
+            let (lo, hi) = f.into_lo_hi();
+            word::Word::new([unwrap_f(lo), unwrap_f(hi)])
+        };
+
+        RwRow {
+            rw_counter: unwrap_f(self.rw_counter),
+            is_write: unwrap_f(self.is_write),
+            tag: unwrap_f(self.tag),
+            id: unwrap_f(self.id),
+            address: unwrap_f(self.address),
+            field_tag: unwrap_f(self.field_tag),
+            storage_key: unwrap_w(self.storage_key),
+            value: unwrap_w(self.value),
+            value_prev: unwrap_w(self.value_prev),
+            init_val: unwrap_w(self.init_val),
+        }
     }
 }
 
@@ -385,18 +415,20 @@ impl Rw {
         }
     }
 
-    pub(crate) fn table_assignment<F: Field>(&self) -> RwRow<F> {
+    pub(crate) fn table_assignment<F: Field>(&self) -> RwRow<Value<F>> {
         RwRow {
-            rw_counter: F::from(self.rw_counter() as u64),
-            is_write: F::from(self.is_write() as u64),
-            tag: F::from(self.tag() as u64),
-            id: F::from(self.id().unwrap_or_default() as u64),
-            address: self.address().unwrap_or_default().to_scalar().unwrap(),
-            field_tag: F::from(self.field_tag().unwrap_or_default()),
-            storage_key: word::Word::from_u256(self.storage_key().unwrap_or_default()),
-            value: word::Word::from_u256(self.value_assignment()),
-            value_prev: word::Word::from_u256(self.value_prev_assignment().unwrap_or_default()),
-            init_val: word::Word::from_u256(self.committed_value_assignment().unwrap_or_default()),
+            rw_counter: Value::known(F::from(self.rw_counter() as u64)),
+            is_write: Value::known(F::from(self.is_write() as u64)),
+            tag: Value::known(F::from(self.tag() as u64)),
+            id: Value::known(F::from(self.id().unwrap_or_default() as u64)),
+            address: Value::known(self.address().unwrap_or_default().to_scalar().unwrap()),
+            field_tag: Value::known(F::from(self.field_tag().unwrap_or_default())),
+            storage_key: word::Word::from_u256(self.storage_key().unwrap_or_default()).into_value(),
+            value: word::Word::from_u256(self.value_assignment()).into_value(),
+            value_prev: word::Word::from_u256(self.value_prev_assignment().unwrap_or_default())
+                .into_value(),
+            init_val: word::Word::from_u256(self.committed_value_assignment().unwrap_or_default())
+                .into_value(),
         }
     }
 

@@ -4,6 +4,7 @@ use crate::{
     util::word,
 };
 use eth_types::{Address, Field, ToScalar, Word};
+use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 use std::collections::BTreeMap;
 
@@ -84,7 +85,7 @@ impl MptUpdates {
         }
     }
 
-    pub(crate) fn table_assignments<F: Field>(&self) -> Vec<MptUpdateRow<F>> {
+    pub(crate) fn table_assignments<F: Field>(&self) -> Vec<MptUpdateRow<Value<F>>> {
         self.updates
             .values()
             .map(|update| {
@@ -100,20 +101,23 @@ impl MptUpdates {
                     word::Word::<F>::from_u256(old_value).into_lo_hi();
                 let address = update.key.address().to_scalar().unwrap();
 
-                MptUpdateRow([
-                    address,
-                    storage_key_lo,
-                    storage_key_hi,
-                    update.proof_type(),
-                    new_root_lo,
-                    new_root_hi,
-                    old_root_lo,
-                    old_root_hi,
-                    new_value_lo,
-                    new_value_hi,
-                    old_value_lo,
-                    old_value_hi,
-                ])
+                MptUpdateRow(
+                    [
+                        address,
+                        storage_key_lo,
+                        storage_key_hi,
+                        update.proof_type(),
+                        new_root_lo,
+                        new_root_hi,
+                        old_root_lo,
+                        old_root_hi,
+                        new_value_lo,
+                        new_value_hi,
+                        old_value_lo,
+                        old_value_hi,
+                    ]
+                    .map(|v| Value::known(v)),
+                )
             })
             .collect()
     }

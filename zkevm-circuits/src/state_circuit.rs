@@ -603,14 +603,6 @@ mod state_circuit_stats {
         stats::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states},
     };
 
-    // Prints the stats of State circuit per execution state.  See
-    // `print_circuit_stats_by_states` for more details.
-
-    // Run with:
-    // `cargo test -p zkevm-circuits --release --all-features
-    // get_state_states_stats -- --nocapture --ignored`
-
-    #[ignore]
     #[test]
     pub fn get_state_states_stats() {
         print_circuit_stats_by_states(
