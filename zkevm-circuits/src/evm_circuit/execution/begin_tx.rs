@@ -212,7 +212,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 effective_tx_value.clone().expr(),
                 0.expr(),
             );
-            // FIXME: this constraint failed
             cb.require_equal("effective_gas_fee == 0", effective_gas_fee.clone().expr(), 0.expr());
         });
 
@@ -625,8 +624,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             caller_balance_sub_fee_pair,
             caller_balance_sub_value_pair,
             callee_balance_pair,
-            tx.value,
-            gas_fee,
+            intrinsic_tx_value,
+            intrinsic_gas_fee,
         )?;
         self.phase2_code_hash
             .assign(region, offset, region.word_rlc(callee_code_hash))?;
