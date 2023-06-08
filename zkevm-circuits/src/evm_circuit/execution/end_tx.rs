@@ -346,6 +346,9 @@ mod test {
         // the refund should add up to 4_800 (refund of 1 sstore). Hence, we can check after the
         // transaction that MOCK_ACCOUNTS[0]'s balance decreased by:
         // (21_000 + 5_000 + 3 + 3 - 4_800) * 2_000_000_000 (=gas_cost).
+        // To see the refund and balances, uncomment the code below, set TestContext to
+        // TestContext::<4, 2> and run the following command: cargo test
+        // evm_circuit::execution::end_tx::test::end_tx_gadget_simple -- --exact --nocapture
         let bytecode_uncapped = bytecode! {
             PUSH32(zero_value)
             PUSH32(key_1)
@@ -354,31 +357,68 @@ mod test {
         };
         let storage_uncapped = vec![(key_1, original_value)].into_iter();
 
-        test_ok(
-            TestContext::<2, 1>::new(
-                None,
-                |accs| {
-                    accs[0]
-                        .address(MOCK_ACCOUNTS[0])
-                        .balance(Word::from(10u64.pow(19)))
-                        .code(bytecode_uncapped)
-                        .storage(storage_uncapped.into_iter());
-                    accs[1]
-                        .address(MOCK_ACCOUNTS[1])
-                        .balance(Word::from(10u64.pow(19)));
-                },
-                |mut txs, accs| {
-                    txs[0]
-                        .to(accs[0].address)
-                        .from(accs[1].address)
-                        .gas(Word::from(30_000))
-                        .gas_price(gwei(2))
-                        .nonce(0);
-                },
-                |block, _tx| block,
-            )
-            .unwrap(),
-        );
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(MOCK_ACCOUNTS[0])
+                    .balance(Word::from(10u64.pow(19)))
+                    .code(bytecode_uncapped)
+                    .storage(storage_uncapped.into_iter());
+                accs[1]
+                    .address(MOCK_ACCOUNTS[1])
+                    .balance(Word::from(10u64.pow(19)));
+                // accs[2]
+                //     .address(MOCK_ACCOUNTS[2])
+                //     .code(bytecode! {
+                //         PUSH32(MOCK_ACCOUNTS[1])
+                //         BALANCE
+                //         STOP
+                //     })
+                //     .balance(Word::from(10u64.pow(19)));
+                // accs[3]
+                //     .address(MOCK_ACCOUNTS[3])
+                //     .balance(Word::from(10u64.pow(19)));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .to(accs[0].address)
+                    .from(accs[1].address)
+                    .gas(Word::from(30_000))
+                    .gas_price(gwei(2))
+                    .nonce(0);
+                // txs[1]
+                //     .to(accs[2].address)
+                //     .from(accs[3].address)
+                //     .gas(Word::from(30_000))
+                //     .gas_price(gwei(2))
+                //     .nonce(0);
+            },
+            |block, _tx| block,
+        )
+        .unwrap();
+
+        // for (i, trace) in ctx.geth_traces.iter().enumerate() {
+        //     println!(
+        //         "\n---------- trace {}: gas={}, failed={}, return_value={}",
+        //         i, trace.gas, trace.failed, trace.return_value
+        //     );
+        //     for (j, step) in trace.struct_logs.iter().enumerate() {
+        //         println!(
+        //             "  step {}: gas={}, gas_cost={}, refund={}, top_stack={}",
+        //             j,
+        //             step.gas,
+        //             step.gas_cost,
+        //             step.refund,
+        //             if step.stack.last().is_ok() {
+        //                 step.stack.last().unwrap()
+        //             } else {
+        //                 Word::from(0)
+        //             },
+        //         )
+        //     }
+        // }
+        test_ok(ctx);
 
         // 2) Testing Tx with capped refunds
         // In this second test, we reset several values so that the refund is greater than
