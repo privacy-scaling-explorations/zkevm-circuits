@@ -157,7 +157,7 @@ impl<C: CircuitsParams> Block<C> {
 }
 
 impl<C: CircuitsParams> Block<C> {
-    /// Push a copy event to tme block.
+    /// Push a copy event to the block.
     pub fn add_copy_event(&mut self, event: CopyEvent) {
         self.copy_events.push(event);
     }
