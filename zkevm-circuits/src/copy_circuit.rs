@@ -401,6 +401,20 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             .collect()
         });
 
+        meta.create_gate("id_hi === 0 when Momory, TxLog, and TxCalldata", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            let cond = or::expr([
+                tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
+                tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta),
+                tag.value_equals(CopyDataType::TxCalldata, Rotation::cur())(meta),
+            ]) * not::expr(meta.query_advice(is_pad, Rotation::cur()));
+            cb.condition(cond, |cb| {
+                cb.require_zero("id_hi === 0", meta.query_advice(id.hi(), Rotation::cur()))
+            });
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
         Self {
             q_step,
             is_last,
