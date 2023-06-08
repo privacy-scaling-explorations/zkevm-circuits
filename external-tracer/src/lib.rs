@@ -76,7 +76,7 @@ pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
     // Don't throw only for specific invalid transactions we support.
     for trace in trace.iter() {
 
-        println!("Creates a trace for the specified config {:?}, {:?}", trace.return_value, trace.invalid);
+        println!("Creates a trace for the specified config {:?}, invalid: {:?}", trace.return_value, trace.invalid);
 
         if trace.invalid == true
             && !(trace.return_value.starts_with("nonce too low")

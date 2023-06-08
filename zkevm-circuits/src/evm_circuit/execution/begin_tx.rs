@@ -52,7 +52,7 @@ pub(crate) struct BeginTxGadget<F> {
     is_nonce_valid: IsEqualGadget<F>,
 
     reversion_info: ReversionInfo<F>,
-    sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
+    sufficient_gas_left: RangeCheckGadget<F, N_BYTES_WORD>,
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     phase2_code_hash: Cell<F>,
     is_empty_code_hash: IsEqualGadget<F>,
@@ -320,7 +320,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // 3. Call to account with empty code.
         cb.condition(
-            and::expr([not::expr(tx_is_create.expr()), no_callee_code.clone()]),
+            and::expr([not::expr(tx_is_create.expr()), no_callee_code.clone(), tx_is_invalid.expr()]),
             |cb| {
                 cb.require_equal(
                     "Tx to account with empty code should be persistent",
@@ -353,7 +353,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // 4. Call to account with non-empty code.
         cb.condition(
-            and::expr([not::expr(tx_is_create.expr()), not::expr(no_callee_code)]),
+            and::expr([not::expr(tx_is_create.expr()), not::expr(no_callee_code), not::expr(tx_is_invalid.expr())]),
             |cb| {
                 // Setup first call's context.
                 for (field_tag, value) in [
@@ -981,7 +981,7 @@ mod test {
                 txs[0]
                     .to(to)
                     .from(from)
-                    .nonce(1)
+                    .nonce(0)
                     .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
             },
             |block, _| block,
