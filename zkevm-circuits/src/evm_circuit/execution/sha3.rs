@@ -13,11 +13,11 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
             },
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
-            rlc, CachedRegion, Cell, Word,
+            rlc, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::word::{WordCell, WordExpr},
+    util::word::{Word, WordCell, WordExpr},
 };
 
 use super::ExecutionGadget;

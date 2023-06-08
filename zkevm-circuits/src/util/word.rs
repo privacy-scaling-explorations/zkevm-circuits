@@ -3,7 +3,7 @@
 // - Limbs: An EVN word is 256 bits. Limbs N means split 256 into N limb. For example, N = 4, each
 //   limb is 256/4 = 64 bits
 
-use eth_types::{Field, ToLittleEndian, H160};
+use eth_types::{Field, ToLittleEndian, H160, H256};
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
@@ -294,6 +294,21 @@ impl<F: Field> From<eth_types::Word> for Word<F> {
         Word::new([
             from_bytes::value(&bytes[..N_BYTES_HALF_WORD]),
             from_bytes::value(&bytes[N_BYTES_HALF_WORD..]),
+        ])
+    }
+}
+
+impl<F: Field> From<H256> for Word<F> {
+    /// Construct the word from u256
+    fn from(h: H256) -> Self {
+        let le_bytes = {
+            let mut b = h.to_fixed_bytes();
+            b.reverse();
+            b
+        };
+        Word::new([
+            from_bytes::value(&le_bytes[..N_BYTES_HALF_WORD]),
+            from_bytes::value(&le_bytes[N_BYTES_HALF_WORD..]),
         ])
     }
 }

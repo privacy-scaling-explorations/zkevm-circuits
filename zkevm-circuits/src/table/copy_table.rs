@@ -1,6 +1,6 @@
 use super::*;
 
-type CopyTableRow<F> = [(Value<F>, &'static str); 8];
+type CopyTableRow<F> = [(Value<F>, &'static str); 9];
 type CopyCircuitRow<F> = [(Value<F>, &'static str); 4];
 
 /// Copy Table, used to verify copies of byte chunks between Memory, Bytecode,
@@ -109,9 +109,9 @@ impl CopyTable {
 
             // id
             let id = if is_read_step {
-                number_or_hash_to_field(&copy_event.src_id, challenges.evm_word())
+                number_or_hash_to_field(&copy_event.src_id)
             } else {
-                number_or_hash_to_field(&copy_event.dst_id, challenges.evm_word())
+                number_or_hash_to_field(&copy_event.dst_id)
             };
 
             // tag binary bumber chip
@@ -169,7 +169,8 @@ impl CopyTable {
                 tag,
                 [
                     (is_first, "is_first"),
-                    (id, "id"),
+                    (id.lo(), "id_lo"),
+                    (id.hi(), "id_hi"),
                     (addr, "addr"),
                     (
                         Value::known(F::from(copy_event.src_addr_end)),

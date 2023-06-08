@@ -10,14 +10,14 @@ use crate::{
                 Transition::{Delta, To},
             },
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, sum, CachedRegion, Cell, Word,
+            not, sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxLogFieldTag},
     util::{
         build_tx_log_expression,
-        word::{Word32Cell, WordCell, WordExpr},
+        word::{Word, Word32Cell, WordCell, WordExpr},
         Expr,
     },
 };
