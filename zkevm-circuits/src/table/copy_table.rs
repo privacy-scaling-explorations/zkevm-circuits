@@ -109,9 +109,9 @@ impl CopyTable {
 
             // id
             let id = if is_read_step {
-                number_or_hash_to_field(&copy_event.src_id)
+                number_or_hash_to_word(&copy_event.src_id)
             } else {
-                number_or_hash_to_field(&copy_event.dst_id)
+                number_or_hash_to_word(&copy_event.dst_id)
             };
 
             // tag binary bumber chip

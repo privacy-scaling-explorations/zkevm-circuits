@@ -3,7 +3,7 @@ use bus_mapping::circuit_input_builder;
 use eth_types::{Address, Field, Word};
 use halo2_proofs::circuit::Value;
 
-use crate::{table::TxContextFieldTag, util::Challenges};
+use crate::table::TxContextFieldTag;
 
 use super::{Call, ExecStep};
 
@@ -41,10 +41,7 @@ pub struct Transaction {
 impl Transaction {
     /// Assignments for tx table, split into tx_data (all fields except
     /// calldata) and tx_calldata
-    pub fn table_assignments<F: Field>(
-        &self,
-        _challenges: Challenges<Value<F>>,
-    ) -> [Vec<[Value<F>; 5]>; 2] {
+    pub fn table_assignments<F: Field>(&self) -> [Vec<[Value<F>; 5]>; 2] {
         let tx_data = vec![
             [
                 Value::known(F::from(self.id as u64)),

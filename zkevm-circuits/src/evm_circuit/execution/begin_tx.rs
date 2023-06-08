@@ -63,7 +63,7 @@ pub(crate) struct BeginTxGadget<F> {
     callee_not_exists: IsZeroWordGadget<F, WordCell<F>>,
     is_caller_callee_equal: Cell<F>,
     // EIP-3651 (Warm COINBASE)
-    coinbase: Word32Cell<F>,
+    coinbase: WordCell<F>,
     // Caller, callee and a list addresses are added to the access list before
     // coinbase, and may be duplicate.
     // <https://github.com/ethereum/go-ethereum/blob/604e215d1bb070dff98fb76aa965064c74e3633f/core/state/statedb.go#LL1119C9-L1119C9>
@@ -190,7 +190,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         ); // rwc_delta += 1
 
         // Query coinbase address.
-        let coinbase = cb.query_word32();
+        let coinbase = cb.query_word_unchecked();
         let is_coinbase_warm = cb.query_bool();
         cb.block_lookup_word(
             BlockContextFieldTag::Coinbase.expr(),
@@ -606,13 +606,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx.value,
             gas_fee,
         )?;
-        // TODO handle endian issue
         self.code_hash
-            .assign_u256(region, offset, callee_code_hash)?; // big endian assignment
+            .assign_u256(region, offset, callee_code_hash)?;
         self.is_empty_code_hash.assign_u256(
             region,
             offset,
-            callee_code_hash, // here is big endian
+            callee_code_hash,
             CodeDB::empty_code_hash().to_word(),
         )?;
         self.callee_not_exists

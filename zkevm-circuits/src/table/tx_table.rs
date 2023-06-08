@@ -95,7 +95,6 @@ impl TxTable {
         txs: &[Transaction],
         max_txs: usize,
         max_calldata: usize,
-        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         assert!(
             txs.len() <= max_txs,
@@ -140,8 +139,12 @@ impl TxTable {
             || "tx table",
             |mut region| {
                 let mut offset = 0;
-                let advice_columns =
-                    [vec![self.tx_id, self.index], self.value_word.limbs.to_vec()].concat();
+                let advice_columns = [
+                    self.tx_id,
+                    self.index,
+                    self.value_word.lo(),
+                    self.value_word.hi(),
+                ];
                 assign_row(
                     &mut region,
                     offset,
@@ -166,7 +169,7 @@ impl TxTable {
                     })
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {
-                    let [tx_data, tx_calldata] = tx.table_assignments(*challenges);
+                    let [tx_data, tx_calldata] = tx.table_assignments();
                     for row in tx_data {
                         assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
                         offset += 1;

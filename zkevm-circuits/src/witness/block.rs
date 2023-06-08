@@ -152,7 +152,7 @@ pub struct BlockContext {
 
 impl BlockContext {
     /// Assignments for block table
-    pub fn table_assignments<F: Field>(&self, _randomness: Value<F>) -> Vec<[Value<F>; 4]> {
+    pub fn table_assignments<F: Field>(&self) -> Vec<[Value<F>; 4]> {
         [
             vec![
                 [
@@ -239,8 +239,7 @@ pub fn block_convert<F: Field>(
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Result<Block<F>, Error> {
     let rws = RwMap::from(&block.container);
-    // TODO add me back
-    // rws.check_value();
+    rws.check_value();
     Ok(Block {
         // randomness: F::from(0x100), // Special value to reveal elements after RLC
         randomness: F::from(0xcafeu64),

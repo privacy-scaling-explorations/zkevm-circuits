@@ -3,10 +3,7 @@ use eth_types::{Field, Word};
 use halo2_proofs::circuit::Value;
 use sha3::{Digest, Keccak256};
 
-use crate::{
-    table::BytecodeFieldTag,
-    util::{word, Challenges},
-};
+use crate::{table::BytecodeFieldTag, util::word};
 
 /// Bytecode
 #[derive(Clone, Debug)]
@@ -25,10 +22,7 @@ impl Bytecode {
     }
 
     /// Assignments for bytecode table
-    pub fn table_assignments<F: Field>(
-        &self,
-        _challenges: &Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 6]> {
+    pub fn table_assignments<F: Field>(&self) -> Vec<[Value<F>; 6]> {
         let n = 1 + self.bytes.len();
         let mut rows = Vec::with_capacity(n);
 
