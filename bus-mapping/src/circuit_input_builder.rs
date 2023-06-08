@@ -74,7 +74,7 @@ pub struct ConcreteCP {
 #[derive(Debug, Clone, Copy)]
 pub struct DynamicCP {}
 
-/// Unset Circuits Parameters, computed dynamically together with crcuit witness generation.
+/// Unset Circuits Parameters, computed dynamically together with circuit witness generation.
 pub trait CircuitsParams: Debug + Copy {}
 
 impl CircuitsParams for ConcreteCP {}
