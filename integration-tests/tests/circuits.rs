@@ -120,3 +120,12 @@ unroll_tests!(
         "Multiple ERC20 OpenZeppelin transfers"
     )
 );
+
+mod root_test {
+    use integration_tests::integration_test_circuits::test_root_1;
+
+    #[tokio::test]
+    async fn root_test() {
+        test_root_1().await;
+    }
+}

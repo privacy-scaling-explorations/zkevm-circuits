@@ -452,6 +452,66 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
     }
 }
 
+use halo2_proofs::poly::kzg::multiopen::ProverGWC;
+use itertools::Itertools;
+use rand_core::OsRng;
+use zkevm_circuits::root_circuit::PoseidonTranscript;
+
+/// FOO
+pub async fn test_root_1() {
+    let (params, protocol, proof, instance) = {
+        let block_tag = "Transfer 0";
+        let block_num = *GEN_DATA.blocks.get(block_tag).unwrap();
+        let (builder, _) = gen_inputs(block_num).await;
+        let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
+        block.randomness = Fr::from(TEST_MOCK_RANDOMNESS);
+        let k = 16;
+        let circuit = TestBytecodeCircuit::new_from_block(&block);
+        let instance = circuit.instance();
+
+        let params = ParamsKZG::<Bn256>::setup(k, OsRng);
+        let pk = keygen_pk(&params, keygen_vk(&params, &circuit).unwrap(), &circuit).unwrap();
+        let protocol = compile(
+            &params,
+            pk.get_vk(),
+            Config::kzg()
+                .with_num_instance(instance.iter().map(|instance| instance.len()).collect()),
+        );
+
+        // Create proof
+        let proof = {
+            let mut transcript = PoseidonTranscript::new(Vec::new());
+            // create_proof::<KZGCommitmentScheme<_>, ProverGWC<_>, _, _, _, _>(
+            create_proof::<KZGCommitmentScheme<_>, ProverSHPLONK<'_, Bn256>, _, _, _, _>(
+                &params,
+                &pk,
+                &[circuit],
+                &[&instance.iter().map(Vec::as_slice).collect_vec()],
+                OsRng,
+                &mut transcript,
+            )
+            .unwrap();
+            transcript.finalize()
+        };
+
+        (params, protocol, proof, instance)
+    };
+
+    let root_circuit = RootCircuit::new(
+        &params,
+        &protocol,
+        Value::known(&instance),
+        Value::known(&proof),
+    )
+    .unwrap();
+    assert_eq!(
+        MockProver::run(26, &root_circuit, root_circuit.instance())
+            .unwrap()
+            .verify_par(),
+        Ok(())
+    );
+}
+
 fn new_empty_block() -> Block<Fr> {
     let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
         .unwrap()

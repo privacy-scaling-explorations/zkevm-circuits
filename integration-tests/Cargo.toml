@@ -25,6 +25,7 @@ paste = "1.0"
 rand_xorshift = "0.3.0"
 rand_core = "0.6.4"
 mock = { path = "../mock" }
+itertools = "0.10.3"
 
 [dev-dependencies]
 pretty_assertions = "1.0.0"
