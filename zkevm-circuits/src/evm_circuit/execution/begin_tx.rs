@@ -15,7 +15,7 @@ use crate::{
             is_precompiled,
             math_gadget::{
                 AddWordsGadget, ContractCreateGadget, IsEqualGadget, IsZeroGadget,
-                LtGadget, LtWordGadget, MulWordByU64Gadget, RangeCheckGadget,
+                LtGadget, LtWordGadget, MulWordByU64Gadget,
             },
             not, or, select, CachedRegion, Cell, RandomLinearCombination, StepRws, Word,
         },
@@ -51,8 +51,11 @@ pub(crate) struct BeginTxGadget<F> {
     nonce_prev: Cell<F>,
     is_nonce_valid: IsEqualGadget<F>,
 
+    effective_gas_fee: Word<F>,
+    effective_tx_value: Word<F>,
+
     reversion_info: ReversionInfo<F>,
-    sufficient_gas_left: RangeCheckGadget<F, N_BYTES_WORD>,
+    gas_not_enough: LtGadget<F, N_BYTES_GAS>,
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     phase2_code_hash: Cell<F>,
     is_empty_code_hash: IsEqualGadget<F>,
@@ -155,11 +158,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_is_create.expr(),
             GasCost::CREATION_TX.expr(),
             GasCost::TX.expr(),
-        ) + tx_call_data_gas_cost.expr();
+        ) + tx_call_data_gas_cost.expr()
+            + tx_access_list_gas_cost.expr();
 
         // Check gas_left is sufficient
-        let gas_left = tx_gas.expr() - intrinsic_gas_cost;
-        let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
+        let gas_left = tx_gas.expr() - intrinsic_gas_cost.clone();
+        let gas_not_enough = LtGadget::construct(cb, tx_gas.expr(), intrinsic_gas_cost.clone());
 
         // Prepare access list of caller and callee
         cb.account_access_list_write(
@@ -199,6 +203,19 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ); // rwc_delta += 1
         });
 
+        let effective_gas_fee = cb.query_word_rlc();
+        let effective_tx_value = cb.query_word_rlc();
+
+        cb.condition(tx_is_invalid.expr(), |cb| {
+            cb.require_equal(
+                "effective_tx_value == 0",
+                effective_tx_value.clone().expr(),
+                0.expr(),
+            );
+            // FIXME: this constraint failed
+            cb.require_equal("effective_gas_fee == 0", effective_gas_fee.clone().expr(), 0.expr());
+        });
+
         // Transfer value from caller to callee, creating account if necessary.
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
             cb,
@@ -206,8 +223,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_callee_address.expr(),
             not::expr(callee_not_exists.expr()),
             or::expr([tx_is_create.expr(), callee_not_exists.expr()]),
-            tx_value.clone(),
-            mul_gas_fee_by_gas.product().clone(),
+            effective_tx_value.clone(),
+            effective_gas_fee.clone(),
             &mut reversion_info,
         );
 
@@ -436,8 +453,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             nonce_prev,
             is_nonce_valid,
 
+            effective_gas_fee,
+            effective_tx_value,
+
             reversion_info,
-            sufficient_gas_left,
+            gas_not_enough,
+
             transfer_with_gas_fee,
             phase2_code_hash,
             is_empty_code_hash,
@@ -573,8 +594,31 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
-        self.sufficient_gas_left
-            .assign(region, offset, F::from(tx.gas - step.gas_cost.0))?;
+        
+        let intrinsic_gas = select::value(
+            F::from(tx.is_create as u64),
+            F::from(GasCost::CREATION_TX.as_u64()),
+            F::from(GasCost::TX.as_u64()),
+        ) + F::from(tx.call_data_gas_cost)
+            + F::from(tx.access_list_gas_cost);
+
+        self.gas_not_enough
+            .assign(region, offset, F::from(tx.gas), intrinsic_gas)?;
+
+
+        let (intrinsic_tx_value, intrinsic_gas_fee) = if !tx.invalid_tx {
+            (tx.value, gas_fee)
+        } else {
+            (U256::zero(), U256::zero())
+        };
+        println!("intrinsic_tx_value: {:?}, intrinsic_gas_fee: {:?}", intrinsic_tx_value, intrinsic_gas_fee);
+        println!("intrinsic_tx_value: {:?}, intrinsic_gas_fee: {:?}", intrinsic_tx_value.to_le_bytes(), intrinsic_gas_fee.to_le_bytes());
+
+        self.effective_gas_fee
+            .assign(region, offset, Some(intrinsic_gas_fee.clone().to_le_bytes()))?;
+        self.effective_tx_value
+            .assign(region, offset, Some(intrinsic_tx_value.clone().to_le_bytes()))?;
+
         self.transfer_with_gas_fee.assign(
             region,
             offset,
