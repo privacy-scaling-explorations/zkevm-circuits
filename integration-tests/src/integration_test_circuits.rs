@@ -164,7 +164,7 @@ async fn test_root_variadic(mock_prover: &MockProver<Fr>) {
     // is private so cannot store.
 }
 
-fn test_actual<C: Circuit>(
+fn test_actual<C: Circuit<Fr>>(
     circuit: C,
     degree: u32,
     instance: Vec<Vec<Fr>>,
@@ -232,6 +232,7 @@ fn test_actual<C: Circuit>(
     // change instace to slice
     let instance: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
 
+    log::info!("gen proof");
     let proof = test_gen_proof(
         RNG.clone(),
         circuit,
@@ -241,6 +242,7 @@ fn test_actual<C: Circuit>(
         &instance,
     );
 
+    log::info!("verify proof");
     let verifying_key = proving_key.get_vk();
     test_verify(
         &general_params,
@@ -301,8 +303,13 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         match self.root_key.clone() {
             Some(key) => key,
             None => {
-                let params = get_general_params(ROOT_CIRCUIT_DEGREE);
+                let params = get_general_params(self.degree);
                 let pk = self.get_key();
+
+                let block = new_empty_block();
+                let circuit = C::new_from_block(&block);
+                let instance = circuit.instance();
+
                 let protocol = compile(
                     &params,
                     pk.get_vk(),
@@ -310,8 +317,11 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                         instance.iter().map(|instance| instance.len()).collect(),
                     ),
                 );
-                let circuit = RootCircuit::new(&params, &protocol, Value::unknown, Value::unknown);
+                let circuit =
+                    RootCircuit::new(&params, &protocol, Value::unknown(), Value::unknown())
+                        .unwrap();
 
+                let general_params = get_general_params(ROOT_CIRCUIT_DEGREE);
                 let verifying_key =
                     keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
                 let key = keygen_pk(&general_params, verifying_key, &circuit)
@@ -358,10 +368,16 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         let (builder, _) = gen_inputs(block_num).await;
 
         log::info!(
-            "test {} circuit, block: #{} - {}",
+            "test {} circuit{}, {} prover, block: #{} - {}",
             self.name,
+            if root {
+                " with aggregation (root circuit)"
+            } else {
+                ""
+            },
+            if actual { "real" } else { "mock" },
             block_num,
-            block_tag
+            block_tag,
         );
         let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
         block.randomness = Fr::from(TEST_MOCK_RANDOMNESS);
@@ -381,15 +397,19 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             let proof = {
                 let mut proof_cache = PROOF_CACHE.lock().await;
                 if let Some(proof) = proof_cache.get(&proof_name) {
+                    log::info!("using circuit cached proof");
                     proof.clone()
                 } else {
                     let key = self.get_key();
+                    log::info!("circuit proof generation (no proof in the cache)");
                     let proof = test_actual(circuit, self.degree, instance.clone(), key);
                     proof_cache.insert(proof_name, proof.clone());
                     proof
                 }
             };
 
+            log::debug!("proof: {:?}", proof);
+            log::debug!("instance: {:?}", instance);
             let root_circuit = RootCircuit::new(
                 &params,
                 &protocol,
@@ -399,14 +419,12 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             .unwrap();
 
             if actual {
-                let root_key = get_root_key();
-                test_actual(
-                    root_circuit,
-                    ROOT_CIRCUIT_DEGREE,
-                    root_circuit.instance(),
-                    root_key,
-                );
+                let root_key = self.get_root_key();
+                let instance = root_circuit.instance();
+                log::info!("root circuit proof generation");
+                test_actual(root_circuit, ROOT_CIRCUIT_DEGREE, instance, root_key);
             } else {
+                log::info!("root circuit mock prover verification");
                 // Mock
                 let mock_prover = MockProver::<Fr>::run(
                     ROOT_CIRCUIT_DEGREE,
@@ -422,10 +440,12 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         } else {
             if actual {
                 let key = self.get_key();
+                log::info!("circuit proof generation");
                 let proof = test_actual(circuit, self.degree, instance, key);
                 let mut proof_cache = PROOF_CACHE.lock().await;
                 proof_cache.insert(proof_name, proof);
             } else {
+                log::info!("circuit mock prover verification");
                 self.test_mock(&circuit, instance);
             }
         }
