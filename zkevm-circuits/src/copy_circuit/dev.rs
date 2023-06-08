@@ -63,7 +63,6 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
             &mut layouter,
             &self.external_data.rws.table_assignments(),
             self.external_data.max_rws,
-            challenge_values.evm_word(),
         )?;
 
         config.0.bytecode_table.load(

@@ -447,24 +447,13 @@ pub struct RwTable {
     /// Key3 (FieldTag)
     pub field_tag: Column<Advice>,
     /// Key3 (StorageKey)
-    pub storage_key_word: word::Word<Column<Advice>>,
-    #[deprecated]
-    /// Key3 (StorageKey)
-    pub storage_key: Column<Advice>,
+    pub storage_key: word::Word<Column<Advice>>,
     /// Value
-    pub value_word: word::Word<Column<Advice>>,
-    #[deprecated]
-    /// Value
-    pub value: Column<Advice>,
+    pub value: word::Word<Column<Advice>>,
     /// Value Previous
-    pub value_prev_word: word::Word<Column<Advice>>,
-    #[deprecated]
-    /// Value Previous
-    pub value_prev: Column<Advice>,
-    /// Aux1
-    pub aux1: Column<Advice>,
-    /// Aux2 (Committed Value)
-    pub aux2: Column<Advice>,
+    pub value_prev: word::Word<Column<Advice>>,
+    /// InitVal (Committed Value)
+    pub init_val: word::Word<Column<Advice>>,
 }
 
 impl<F: Field> LookupTable<F> for RwTable {
@@ -476,14 +465,14 @@ impl<F: Field> LookupTable<F> for RwTable {
             self.id.into(),
             self.address.into(),
             self.field_tag.into(),
-            self.storage_key_word.lo().into(),
-            self.storage_key_word.hi().into(),
-            self.value_word.lo().into(),
-            self.value_word.hi().into(),
-            self.value_prev_word.lo().into(),
-            self.value_prev_word.hi().into(),
-            self.aux1.into(),
-            self.aux2.into(),
+            self.storage_key.lo().into(),
+            self.storage_key.hi().into(),
+            self.value.lo().into(),
+            self.value.hi().into(),
+            self.value_prev.lo().into(),
+            self.value_prev.hi().into(),
+            self.init_val.lo().into(),
+            self.init_val.hi().into(),
         ]
     }
 
@@ -501,8 +490,8 @@ impl<F: Field> LookupTable<F> for RwTable {
             String::from("value_hi"),
             String::from("value_prev_lo"),
             String::from("value_prev_hi"),
-            String::from("aux1"),
-            String::from("aux2"),
+            String::from("init_val_lo"),
+            String::from("init_val_hi"),
         ]
     }
 }
@@ -516,16 +505,10 @@ impl RwTable {
             id: meta.advice_column(),
             address: meta.advice_column(),
             field_tag: meta.advice_column(),
-            storage_key_word: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            value_word: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            value_prev_word: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            storage_key: meta.advice_column(),
-            value: meta.advice_column(),
-            value_prev: meta.advice_column(),
-            // It seems that aux1 for the moment is not using randomness
-            // TODO check in a future review
-            aux1: meta.advice_column_in(SecondPhase),
-            aux2: meta.advice_column_in(SecondPhase),
+            storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            value_prev: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            init_val: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
     fn assign<F: Field>(
@@ -535,20 +518,24 @@ impl RwTable {
         row: &RwRow<Value<F>>,
     ) -> Result<(), Error> {
         for (column, value) in [
+            (self.address, row.address),
             (self.rw_counter, row.rw_counter),
             (self.is_write, row.is_write),
             (self.tag, row.tag),
             (self.id, row.id),
-            (self.address, row.address),
             (self.field_tag, row.field_tag),
-            (self.storage_key, row.storage_key),
-            (self.value, row.value),
-            (self.value_prev, row.value_prev),
-            (self.aux1, row.aux1),
-            (self.aux2, row.aux2),
         ] {
             region.assign_advice(|| "assign rw row on rw table", column, offset, || value)?;
         }
+        for (column, value) in [
+            (self.storage_key, row.storage_key),
+            (self.value, row.value),
+            (self.value_prev, row.value_prev),
+            (self.init_val, row.init_val),
+        ] {
+            value.assign_advice(region, || "assign rw row on rw table", column, offset)?;
+        }
+
         Ok(())
     }
 
@@ -559,11 +546,10 @@ impl RwTable {
         layouter: &mut impl Layouter<F>,
         rws: &[Rw],
         n_rows: usize,
-        challenges: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "rw table",
-            |mut region| self.load_with_region(&mut region, rws, n_rows, challenges),
+            |mut region| self.load_with_region(&mut region, rws, n_rows),
         )
     }
 
@@ -572,11 +558,10 @@ impl RwTable {
         region: &mut Region<'_, F>,
         rws: &[Rw],
         n_rows: usize,
-        challenges: Value<F>,
     ) -> Result<(), Error> {
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
         for (offset, row) in rows.iter().enumerate() {
-            self.assign(region, offset, &row.table_assignment(challenges))?;
+            self.assign(region, offset, &row.table_assignment())?;
         }
         Ok(())
     }
@@ -613,7 +598,7 @@ impl From<AccountFieldTag> for MPTProofType {
 
 /// The MptTable shared between MPT Circuit and State Circuit
 #[derive(Clone, Copy, Debug)]
-pub struct MptTable([Column<Advice>; 7]);
+pub struct MptTable([Column<Advice>; 12]);
 
 impl<F: Field> LookupTable<F> for MptTable {
     fn columns(&self) -> Vec<Column<Any>> {
@@ -623,12 +608,17 @@ impl<F: Field> LookupTable<F> for MptTable {
     fn annotations(&self) -> Vec<String> {
         vec![
             String::from("address"),
-            String::from("storage_key"),
+            String::from("storage_key_lo"),
+            String::from("storage_key_hi"),
             String::from("proof_type"),
-            String::from("new_root"),
-            String::from("old_root"),
-            String::from("new_value"),
-            String::from("old_value"),
+            String::from("new_root_lo"),
+            String::from("new_root_hi"),
+            String::from("old_root_lo"),
+            String::from("old_root_hi"),
+            String::from("new_value_lo"),
+            String::from("new_value_hi"),
+            String::from("old_value_lo"),
+            String::from("old_value_hi"),
         ]
     }
 }
@@ -637,13 +627,18 @@ impl MptTable {
     /// Construct a new MptTable
     pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self([
-            meta.advice_column(),               // Address
-            meta.advice_column_in(SecondPhase), // Storage key
-            meta.advice_column(),               // Proof type
-            meta.advice_column_in(SecondPhase), // New root
-            meta.advice_column_in(SecondPhase), // Old root
-            meta.advice_column_in(SecondPhase), // New value
-            meta.advice_column_in(SecondPhase), // Old value
+            meta.advice_column(), // Address
+            meta.advice_column(), // Storage key lo
+            meta.advice_column(), // Storage key hi
+            meta.advice_column(), // Proof type
+            meta.advice_column(), // New root lo
+            meta.advice_column(), // New root hi
+            meta.advice_column(), // Old root lo
+            meta.advice_column(), // Old root hi
+            meta.advice_column(), // New value lo
+            meta.advice_column(), // New value hi
+            meta.advice_column(), // Old value lo
+            meta.advice_column(), // Old value hi
         ])
     }
 
@@ -663,11 +658,10 @@ impl MptTable {
         &self,
         layouter: &mut impl Layouter<F>,
         updates: &MptUpdates,
-        randomness: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "mpt table",
-            |mut region| self.load_with_region(&mut region, updates, randomness),
+            |mut region| self.load_with_region(&mut region, updates),
         )
     }
 
@@ -675,9 +669,8 @@ impl MptTable {
         &self,
         region: &mut Region<'_, F>,
         updates: &MptUpdates,
-        randomness: Value<F>,
     ) -> Result<(), Error> {
-        for (offset, row) in updates.table_assignments(randomness).iter().enumerate() {
+        for (offset, row) in updates.table_assignments().iter().enumerate() {
             self.assign(region, offset, row)?;
         }
         Ok(())

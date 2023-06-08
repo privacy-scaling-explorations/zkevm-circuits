@@ -6,8 +6,8 @@
 use eth_types::{Field, ToLittleEndian, H160};
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
-    circuit::{AssignedCell, Value},
-    plonk::{Error, Expression},
+    circuit::{AssignedCell, Region, Value},
+    plonk::{Advice, Column, Error, Expression},
 };
 use itertools::Itertools;
 
@@ -214,6 +214,13 @@ impl<F: Field, const N: usize> WordExpr<F> for WordLimbs<Cell<F>, N> {
     }
 }
 
+impl<F: Field, const N: usize> WordLimbs<F, N> {
+    /// Check if zero
+    pub fn is_zero_vartime(&self) -> bool {
+        self.limbs.iter().all(|limb| limb.is_zero_vartime())
+    }
+}
+
 /// `Word`, special alias for Word2.
 #[derive(Clone, Debug, Copy, Default)]
 pub struct Word<T>(Word2<T>);
@@ -239,6 +246,19 @@ impl<T: Clone> Word<T> {
     pub fn to_lo_hi(&self) -> (T, T) {
         (self.0.limbs[0].clone(), self.0.limbs[1].clone())
     }
+
+    /// Extract (move) lo and hi values
+    pub fn into_lo_hi(self) -> (T, T) {
+        let [lo, hi] = self.0.limbs;
+        (lo, hi)
+    }
+
+    /// Wrap `Word` into into `Word<Value>`
+    pub fn into_value(self) -> Word<Value<T>> {
+        let [lo, hi] = self.0.limbs;
+        Word::new([Value::known(lo), Value::known(hi)])
+    }
+
     /// Map the word to other types
     pub fn map<T2: Clone>(&self, mut func: impl FnMut(T) -> T2) -> Word<T2> {
         Word(WordLimbs::<T2, 2>::new([func(self.lo()), func(self.hi())]))
@@ -320,6 +340,27 @@ impl<F: Field> Word<Cell<F>> {
             self.limbs[0].assign(region, offset, value)?,
             self.limbs[1].assign(region, offset, Value::known(F::from(0)))?,
         ])
+    }
+}
+
+impl<F: Field> Word<Value<F>> {
+    /// Assign advice
+    pub fn assign_advice<A, AR>(
+        &self,
+        region: &mut Region<'_, F>,
+        annotation: A,
+        column: Word<Column<Advice>>,
+        offset: usize,
+    ) -> Result<Word<AssignedCell<F, F>>, Error>
+    where
+        A: Fn() -> AR,
+        AR: Into<String>,
+    {
+        let annotation: String = annotation().into();
+        let lo = region.assign_advice(|| &annotation, column.lo(), offset, || self.lo())?;
+        let hi = region.assign_advice(|| &annotation, column.hi(), offset, || self.hi())?;
+
+        Ok(Word::new([lo, hi]))
     }
 }
 

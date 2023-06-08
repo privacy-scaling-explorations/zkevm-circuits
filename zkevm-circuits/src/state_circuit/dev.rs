@@ -48,9 +48,7 @@ where
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
-        config
-            .mpt_table
-            .load(&mut layouter, &self.updates, challenges.evm_word())?;
+        config.mpt_table.load(&mut layouter, &self.updates)?;
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
@@ -61,11 +59,14 @@ pub enum AdviceColumn {
     Address,
     AddressLimb0,
     AddressLimb1,
-    StorageKey,
-    StorageKeyByte0,
-    StorageKeyByte1,
-    Value,
-    ValuePrev,
+    StorageKeyLo,
+    StorageKeyHi,
+    StorageKeyLimb0,
+    StorageKeyLimb1,
+    ValueLo,
+    ValueHi,
+    ValuePrevLo,
+    ValuePrevHi,
     RwCounter,
     RwCounterLimb0,
     RwCounterLimb1,
@@ -79,7 +80,8 @@ pub enum AdviceColumn {
     LimbIndexBit2,
     LimbIndexBit3,
     LimbIndexBit4, // least significant bit
-    InitialValue,
+    InitialValueLo,
+    InitialValueHi,
     IsZero, // committed_value and value are 0
     // NonEmptyWitness is the BatchedIsZero chip witness that contains the
     // inverse of the non-zero value if any in [committed_value, value]
@@ -93,11 +95,14 @@ impl AdviceColumn {
             Self::Address => config.rw_table.address,
             Self::AddressLimb0 => config.sort_keys.address.limbs[0],
             Self::AddressLimb1 => config.sort_keys.address.limbs[1],
-            Self::StorageKey => config.rw_table.storage_key,
-            Self::StorageKeyByte0 => config.sort_keys.storage_key.bytes[0],
-            Self::StorageKeyByte1 => config.sort_keys.storage_key.bytes[1],
-            Self::Value => config.rw_table.value,
-            Self::ValuePrev => config.rw_table.value_prev,
+            Self::StorageKeyLo => config.rw_table.storage_key.lo(),
+            Self::StorageKeyHi => config.rw_table.storage_key.hi(),
+            Self::StorageKeyLimb0 => config.sort_keys.storage_key.limbs[0],
+            Self::StorageKeyLimb1 => config.sort_keys.storage_key.limbs[1],
+            Self::ValueLo => config.rw_table.value.lo(),
+            Self::ValueHi => config.rw_table.value.hi(),
+            Self::ValuePrevLo => config.rw_table.value_prev.lo(),
+            Self::ValuePrevHi => config.rw_table.value_prev.hi(),
             Self::RwCounter => config.rw_table.rw_counter,
             Self::RwCounterLimb0 => config.sort_keys.rw_counter.limbs[0],
             Self::RwCounterLimb1 => config.sort_keys.rw_counter.limbs[1],
@@ -111,7 +116,8 @@ impl AdviceColumn {
             Self::LimbIndexBit2 => config.lexicographic_ordering.first_different_limb.bits[2],
             Self::LimbIndexBit3 => config.lexicographic_ordering.first_different_limb.bits[3],
             Self::LimbIndexBit4 => config.lexicographic_ordering.first_different_limb.bits[4],
-            Self::InitialValue => config.initial_value,
+            Self::InitialValueLo => config.initial_value.lo(),
+            Self::InitialValueHi => config.initial_value.hi(),
             Self::IsZero => config.is_non_exist.is_zero,
             Self::NonEmptyWitness => config.is_non_exist.nonempty_witness,
         }
