@@ -32,7 +32,7 @@ use eth_types::{
 };
 use ethers_core::{
     k256::ecdsa::SigningKey,
-    types::{Bytes, NameOrAddress, Signature, TransactionRequest},
+    types::{Bytes, Signature, TransactionRequest},
 };
 use ethers_providers::JsonRpcClient;
 pub use execution::{
@@ -62,6 +62,8 @@ pub struct CircuitsParams {
     pub max_txs: usize,
     /// Maximum number of bytes from all txs calldata in the Tx Circuit
     pub max_calldata: usize,
+    /// Maximum number of rows that the RLP Circuit can have
+    pub max_rlp_rows: usize,
     /// Max amount of rows that the CopyCircuit can have.
     pub max_copy_rows: usize,
     /// Maximum number of inner blocks in a batch
@@ -103,6 +105,7 @@ impl Default for CircuitsParams {
             max_bytecode: 512,
             max_evm_rows: 0,
             max_keccak_rows: 0,
+            max_rlp_rows: 1000,
         }
     }
 }
@@ -740,27 +743,7 @@ pub fn keccak_inputs_tx_circuit(
 
     let hash_datas = txs
         .iter()
-        .map(|tx| {
-            let sig = Signature {
-                r: tx.r,
-                s: tx.s,
-                v: tx.v,
-            };
-            let mut tx: TransactionRequest = tx.into();
-            if tx.to.is_some() {
-                let to = tx.to.clone().unwrap();
-                match to {
-                    NameOrAddress::Name(_) => {}
-                    NameOrAddress::Address(addr) => {
-                        // the rlp of zero addr is 0x80
-                        if addr == Address::zero() {
-                            tx.to = None;
-                        }
-                    }
-                }
-            }
-            tx.rlp_signed(&sig).to_vec()
-        })
+        .map(|tx| tx.rlp_bytes.clone())
         .collect::<Vec<Vec<u8>>>();
     let dummy_hash_data = {
         // dummy tx is a legacy tx.
@@ -774,14 +757,23 @@ pub fn keccak_inputs_tx_circuit(
         .iter()
         .enumerate()
         .filter(|(i, tx)| {
-            if tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
-                warn!("tx {} is not signed, skipping tx circuit keccak input", i);
+            if !tx.tx_type.is_l1_msg() && tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
+                warn!(
+                    "tx {} is not signed and is not L1Msg, skipping tx circuit keccak input",
+                    i
+                );
                 false
             } else {
                 true
             }
         })
-        .map(|(_, tx)| tx.sign_data(chain_id))
+        .map(|(_, tx)| {
+            if tx.tx_type.is_l1_msg() {
+                Ok(SignData::default())
+            } else {
+                tx.sign_data()
+            }
+        })
         .try_collect()?;
     // Keccak inputs from SignVerify Chip
     let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
@@ -795,8 +787,7 @@ pub fn keccak_inputs_tx_circuit(
         dummy_tx.rlp().to_vec()
     };
     inputs.push(dummy_sign_input);
-    // NOTE: We don't verify the Tx Hash in the circuit yet, so we don't have more
-    // hash inputs.
+
     Ok(inputs)
 }
 

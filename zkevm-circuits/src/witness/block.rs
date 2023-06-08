@@ -3,8 +3,6 @@ use std::collections::BTreeMap;
 
 #[cfg(any(feature = "test", test))]
 use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
-#[cfg(feature = "test")]
-use crate::tx_circuit::TX_LEN;
 
 use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag, util::SubCircuit};
 use bus_mapping::{
@@ -113,6 +111,7 @@ impl<F: Field> Block<F> {
 
 #[cfg(feature = "test")]
 use crate::exp_circuit::param::OFFSET_INCREMENT;
+use crate::tx_circuit::TX_LEN;
 #[cfg(feature = "test")]
 use crate::util::log2_ceil;
 
