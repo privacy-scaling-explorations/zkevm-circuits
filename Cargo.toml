@@ -15,6 +15,9 @@ members = [
 [patch.crates-io]
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_04_20" }
 
+[patch."https://github.com/privacy-scaling-explorations/snark-verifier.git"]
+snark-verifier = { path = "../snark-verifier/snark-verifier" }
+
 # Definition of benchmarks profile to use.
 [profile.bench]
 opt-level = 3
@@ -28,7 +31,8 @@ codegen-units = 1
 
 [profile.release]
 opt-level = 3
-debug = false
+# TODO(Edu): Set this to false when PR is ready
+debug = true
 debug-assertions = true
 overflow-checks = true
 rpath = false
