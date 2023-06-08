@@ -257,12 +257,12 @@ impl<F: Field> TxCircuit<F> {
 
                         // Ref. spec 0. Copy constraints using fixed offsets between the tx rows and
                         // the SignVerifyChip
-                        match tag {
-                            TxFieldTag::CallerAddress => region.constrain_equal(
+
+                        if tag == TxFieldTag::CallerAddress {
+                            region.constrain_equal(
                                 assigned_cell.cell(),
                                 assigned_sig_verif.address.cell(),
-                            )?,
-                            _ => (),
+                            )?;
                         }
                     }
 
@@ -303,18 +303,15 @@ impl<F: Field> TxCircuit<F> {
                             config.assign_row_word(&mut region, offset, i + 1, tag, 0, value)?;
                         offset += 1;
 
-                        match tag {
-                            TxFieldTag::TxSignHash => {
-                                region.constrain_equal(
-                                    assigned_cell.lo().cell(),
-                                    assigned_sig_verif.msg_hash.lo().cell(),
-                                )?;
-                                region.constrain_equal(
-                                    assigned_cell.hi().cell(),
-                                    assigned_sig_verif.msg_hash.hi().cell(),
-                                )?;
-                            }
-                            _ => (),
+                        if tag == TxFieldTag::TxSignHash {
+                            region.constrain_equal(
+                                assigned_cell.lo().cell(),
+                                assigned_sig_verif.msg_hash.lo().cell(),
+                            )?;
+                            region.constrain_equal(
+                                assigned_cell.hi().cell(),
+                                assigned_sig_verif.msg_hash.hi().cell(),
+                            )?;
                         }
                     }
                 }
