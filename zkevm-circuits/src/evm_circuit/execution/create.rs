@@ -660,7 +660,9 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    // RETURN or REVERT with data of [0x60; 5]
+    // RETURN or REVERT with a piece of random data,
+    // We don't care the init code content bcs we don't really run it.
+    // Here, we assign data with [0x60; 10],
     fn initialization_bytecode(is_success: bool) -> Bytecode {
         let memory_bytes = [0x60; 10];
         let memory_address = 0;
