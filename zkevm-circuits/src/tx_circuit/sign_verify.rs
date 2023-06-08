@@ -185,8 +185,8 @@ impl SignVerifyConfig {
                 keccak_table.is_enabled,
                 keccak_table.input_rlc,
                 keccak_table.input_len,
-                *keccak_table.output.lo(),
-                *keccak_table.output.hi(),
+                keccak_table.output.lo(),
+                keccak_table.output.hi(),
             ]
             .map(|column| meta.query_advice(column, Rotation::cur()));
 
@@ -422,12 +422,12 @@ impl<F: Field> SignVerifyChip<F> {
         let cell_word_lo = ctx.assign_advice(
             || "{name}_lo",
             config.main_gate_config.advices()[1],
-            *input_word.lo(),
+            input_word.lo(),
         )?;
         let cell_word_hi = ctx.assign_advice(
             || "{name}_hi",
             config.main_gate_config.advices()[2],
-            *input_word.hi(),
+            input_word.hi(),
         )?;
         Ok(Word::new([cell_word_lo, cell_word_hi]))
     }
@@ -495,18 +495,17 @@ impl<F: Field> SignVerifyChip<F> {
         ctx.enable(config.q_keccak)?;
         copy(ctx, "is_address_zero", a, is_address_zero)?;
         copy(ctx, "pk_rlc", config.rlc, pk_rlc)?;
-        ctx.next();
         copy(
             ctx,
             "pk_hash_lo",
             config.main_gate_config.advices()[1],
-            pk_hash.lo(),
+            &pk_hash.lo(),
         )?;
         copy(
             ctx,
             "pk_hash_hi",
             config.main_gate_config.advices()[2],
-            pk_hash.hi(),
+            &pk_hash.hi(),
         )?;
         ctx.next();
 
@@ -564,7 +563,7 @@ impl<F: Field> SignVerifyChip<F> {
         // with RLC encoding corresponds to msg_hash
         let msg_hash = {
             let zero = main_gate.assign_constant(ctx, F::ZERO)?;
-            let assigned_msg_hash_le = assigned_ecdsa
+            assigned_ecdsa
                 .msg_hash_le
                 .iter()
                 .map(|byte| main_gate.select(ctx, &zero, byte, &is_address_zero))

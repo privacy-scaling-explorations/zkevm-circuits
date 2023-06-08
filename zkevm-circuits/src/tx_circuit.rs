@@ -14,11 +14,16 @@ mod test;
 pub use dev::TxCircuit as TestTxCircuit;
 
 use crate::{
+    evm_circuit::util::from_bytes,
     table::{KeccakTable, TxFieldTag, TxTable},
-    util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig},
+    util::{
+        random_linear_combine_word as rlc, word::Word, Challenges, SubCircuit, SubCircuitConfig,
+    },
     witness,
 };
-use eth_types::{geth_types::Transaction, sign_types::SignData, Field, ToLittleEndian, ToScalar};
+use eth_types::{
+    geth_types::Transaction, sign_types::SignData, Field, ToLittleEndian, ToScalar, U256,
+};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed},
@@ -41,7 +46,7 @@ pub struct TxCircuitConfig<F: Field> {
     tx_id: Column<Advice>,
     tag: Column<Fixed>,
     index: Column<Advice>,
-    value: Column<Advice>,
+    value: Word<Column<Advice>>,
     sign_verify: SignVerifyConfig,
     _marker: PhantomData<F>,
     // External tables
@@ -73,9 +78,9 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let tx_id = tx_table.tx_id;
         let tag = tx_table.tag;
         let index = tx_table.index;
-        let value = tx_table.value;
-        meta.enable_equality(*value.lo());
-        meta.enable_equality(*value.hi());
+        let value = tx_table.value_word;
+        meta.enable_equality(value.lo());
+        meta.enable_equality(value.hi());
 
         let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone(), challenges);
 
@@ -108,11 +113,9 @@ impl<F: Field> TxCircuitConfig<F> {
         index: usize,
         value: Value<F>,
     ) -> Result<AssignedCell<F, F>, Error> {
-        // TODO: what if `value` is an address, here are some discussion
-        // https://github.com/privacy-scaling-explorations/zkevm-circuits/pull/1418/commits/90526993c87c11e4f9d721623873c28a50d422a9
         let value_in_word = Word::new([value, Value::known(F::ZERO)]);
         let cell = self.assign_row_word(region, offset, tx_id, tag, index, value_in_word)?;
-        Ok(*cell.lo())
+        Ok(cell.lo())
     }
 
     /// Assigns a tx circuit row and returns the assigned cell of the value in `word` in
@@ -145,9 +148,9 @@ impl<F: Field> TxCircuitConfig<F> {
             || Value::known(F::from(index as u64)),
         )?;
         let value_lo =
-            region.assign_advice(|| "value_lo", *self.value.lo(), offset, || *value.lo())?;
+            region.assign_advice(|| "value_lo", self.value.lo(), offset, || value.lo())?;
         let value_hi =
-            region.assign_advice(|| "value_hi", *self.value.hi(), offset, || *value.hi())?;
+            region.assign_advice(|| "value_hi", self.value.hi(), offset, || value.hi())?;
 
         Ok(Word::new([value_lo, value_hi]))
     }
@@ -238,23 +241,8 @@ impl<F: Field> TxCircuit<F> {
                                 .map(|challenge| rlc(tx.gas_price.to_le_bytes(), challenge)),
                         ),
                         (
-                            TxFieldTag::CallerAddress,
-                            Value::known(tx.from.to_scalar().expect("tx.from too big")),
-                        ),
-                        (
-                            TxFieldTag::CalleeAddress,
-                            Value::known(tx.to_or_zero().to_scalar().expect("tx.to too big")),
-                        ),
-                        (
                             TxFieldTag::IsCreate,
                             Value::known(F::from(tx.is_create() as u64)),
-                        ),
-                        // TODO: should change to word lo/hi
-                        (
-                            TxFieldTag::Value,
-                            challenges
-                                .evm_word()
-                                .map(|challenge| rlc(tx.value.to_le_bytes(), challenge)),
                         ),
                         (
                             TxFieldTag::CallDataLength,
@@ -279,27 +267,58 @@ impl<F: Field> TxCircuit<F> {
                             _ => (),
                         }
                     }
-                    // TxFieldTag::TxSignHash
-                    let assigned_cell = config.assign_row_word(
-                        &mut region,
-                        offset,
-                        i + 1,
-                        TxFieldTag::TxSignHash,
-                        0,
-                        Word::new([
-                            assigned_sig_verif.msg_hash.lo().value().copied(),
-                            assigned_sig_verif.msg_hash.hi().value().copied(),
-                        ]),
-                    )?;
-                    offset += 1;
-                    region.constrain_equal(
-                        assigned_cell.lo().cell(),
-                        assigned_sig_verif.msg_hash.lo().cell(),
-                    )?;
-                    region.constrain_equal(
-                        assigned_cell.hi().cell(),
-                        assigned_sig_verif.msg_hash.hi().cell(),
-                    )?;
+
+                    let tx_value_bytes = tx.value.to_le_bytes();
+                    let tx_from_bytes = tx.from.as_fixed_bytes();
+                    let tx_to_bytes = tx.to_or_zero();
+                    for (tag, value) in [
+                        (
+                            TxFieldTag::Value,
+                            Word::new([
+                                Value::known(from_bytes::value(&tx_value_bytes[..16])),
+                                Value::known(from_bytes::value(&tx_value_bytes[16..])),
+                            ]),
+                        ),
+                        (
+                            TxFieldTag::TxSignHash,
+                            Word::new([
+                                assigned_sig_verif.msg_hash.lo().value().copied(),
+                                assigned_sig_verif.msg_hash.hi().value().copied(),
+                            ]),
+                        ),
+                        (
+                            TxFieldTag::CallerAddress,
+                            Word::new([
+                                Value::known(from_bytes::value(&tx_from_bytes[..16])),
+                                Value::known(from_bytes::value(&tx_from_bytes[16..])),
+                            ]),
+                        ),
+                        (
+                            TxFieldTag::CalleeAddress,
+                            Word::new([
+                                Value::known(from_bytes::value(&tx_to_bytes[..16])),
+                                Value::known(from_bytes::value(&tx_to_bytes[16..])),
+                            ]),
+                        ),
+                    ] {
+                        let assigned_cell =
+                            config.assign_row_word(&mut region, offset, i + 1, tag, 0, value)?;
+                        offset += 1;
+
+                        match tag {
+                            TxFieldTag::TxSignHash => {
+                                region.constrain_equal(
+                                    assigned_cell.lo().cell(),
+                                    assigned_sig_verif.msg_hash.lo().cell(),
+                                )?;
+                                region.constrain_equal(
+                                    assigned_cell.hi().cell(),
+                                    assigned_sig_verif.msg_hash.hi().cell(),
+                                )?;
+                            }
+                            _ => (),
+                        }
+                    }
                 }
 
                 // Assign call data
