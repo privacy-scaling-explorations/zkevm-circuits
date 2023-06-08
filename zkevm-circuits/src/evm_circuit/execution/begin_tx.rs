@@ -1,3 +1,5 @@
+use std::borrow::Borrow;
+
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -12,17 +14,17 @@ use crate::{
             },
             is_precompiled,
             math_gadget::{
-                ContractCreateGadget, IsEqualGadget, IsZeroGadget, MulWordByU64Gadget,
-                RangeCheckGadget,
+                AddWordsGadget, ContractCreateGadget, IsEqualGadget, IsZeroGadget,
+                LtGadget, LtWordGadget, MulWordByU64Gadget, RangeCheckGadget,
             },
-            not, or, select, CachedRegion, Cell, StepRws, Word,
+            not, or, select, CachedRegion, Cell, RandomLinearCombination, StepRws, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag},
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
 use ethers_core::utils::{get_contract_address, keccak256};
 use gadgets::util::expr_from_bytes;
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -42,6 +44,13 @@ pub(crate) struct BeginTxGadget<F> {
     tx_value: Word<F>,
     tx_call_data_length: Cell<F>,
     tx_call_data_gas_cost: Cell<F>,
+    tx_is_invalid: Cell<F>,
+    tx_access_list_gas_cost: Cell<F>,
+
+    nonce: Cell<F>,
+    nonce_prev: Cell<F>,
+    is_nonce_valid: IsEqualGadget<F>,
+
     reversion_info: ReversionInfo<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
@@ -77,7 +86,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             reversion_info.is_persistent(),
         ); // rwc_delta += 1
 
-        let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost] =
+        let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, tx_is_invalid, tx_access_list_gas_cost] =
             [
                 TxContextFieldTag::Nonce,
                 TxContextFieldTag::Gas,
@@ -86,6 +95,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 TxContextFieldTag::IsCreate,
                 TxContextFieldTag::CallDataLength,
                 TxContextFieldTag::CallDataGasCost,
+                TxContextFieldTag::TxInvalid,
+                TxContextFieldTag::AccessListGasCost,
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
         let tx_caller_address_is_zero = IsZeroGadget::construct(cb, tx_caller_address.expr());
@@ -113,13 +124,24 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Increase caller's nonce.
         // (tx caller's nonce always increases even tx ends with error)
+        let nonce = cb.query_cell();
+        let nonce_prev = cb.query_cell();
+
         cb.account_write(
             tx_caller_address.expr(),
             AccountFieldTag::Nonce,
-            tx_nonce.expr() + 1.expr(),
-            tx_nonce.expr(),
+            nonce.expr(),
+            nonce_prev.expr(),
             None,
         ); // rwc_delta += 1
+
+        let is_nonce_valid = IsEqualGadget::construct(cb, tx_nonce.expr(), nonce_prev.expr());
+        // Increment the account nonce only if the tx is valid
+        cb.require_equal(
+            "update nonce",
+            nonce.expr(),
+            nonce_prev.expr() + 1.expr() - tx_is_invalid.expr(),
+        );
 
         // TODO: Implement EIP 1559 (currently it only supports legacy
         // transaction format)
@@ -406,6 +428,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_value,
             tx_call_data_length,
             tx_call_data_gas_cost,
+
+            tx_is_invalid,
+            tx_access_list_gas_cost,
+
+            nonce,
+            nonce_prev,
+            is_nonce_valid,
+
             reversion_info,
             sufficient_gas_left,
             transfer_with_gas_fee,
@@ -431,6 +461,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let zero = eth_types::Word::zero();
 
         let mut rws = StepRws::new(block, step);
+        rws.offset_add(4);
+        let caller_nonce_pair = rws.next().account_value_pair();
         rws.offset_add(7);
         let mut callee_code_hash = zero;
         if !is_precompiled(&tx.callee_address) && !tx.is_create {
@@ -492,6 +524,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             offset,
             Value::known(F::from((caller_address == callee_address) as u64)),
         )?;
+
+        println!("tx.is_create {:?}", tx.is_create);
+        println!("tx.caller_address {:?}", tx.caller_address);
+        println!("tx.invalid_tx {:?}", tx.invalid_tx);
+
         self.tx_is_create
             .assign(region, offset, Value::known(F::from(tx.is_create as u64)))?;
         self.tx_call_data_length.assign(
@@ -504,6 +541,32 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             offset,
             Value::known(F::from(tx.call_data_gas_cost)),
         )?;
+
+        self.tx_is_invalid
+            .assign(region, offset, Value::known(F::from(tx.invalid_tx as u64)))?;
+        self.tx_access_list_gas_cost.assign(
+            region,
+            offset,
+            Value::known(F::from(tx.access_list_gas_cost)),
+        )?;
+
+        let (nonce, nonce_prev) = caller_nonce_pair;
+        self.nonce
+            .assign(region, offset, Value::known(nonce.to_scalar().unwrap()))?;
+        self.nonce_prev.assign(
+            region,
+            offset,
+            Value::known(nonce_prev.to_scalar().unwrap()),
+        )?;
+        println!("tx.nonce: {:?} , nonce: {:?}, nonce_prev: {:?}", tx.nonce, nonce, nonce_prev);
+
+        self.is_nonce_valid.assign(
+            region,
+            offset,
+            tx.nonce.to_scalar().unwrap(),
+            nonce_prev.to_scalar().unwrap(),
+        )?;
+
         self.reversion_info.assign(
             region,
             offset,
@@ -598,7 +661,7 @@ mod test {
         }
     }
 
-    fn test_ok(tx: eth_types::Transaction, code: Option<Bytecode>) {
+    fn test_ok(tx: eth_types::Transaction, code: Option<Bytecode>, enable_skipping_invalid_tx: bool) {
         // Get the execution steps from the external tracer
         let ctx = TestContext::<2, 1>::new(
             None,
@@ -616,7 +679,8 @@ mod test {
                     .gas_price(tx.gas_price.unwrap())
                     .gas(tx.gas)
                     .input(tx.input)
-                    .value(tx.value);
+                    .value(tx.value)
+                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
             },
             |block, _tx| block.number(0xcafeu64),
         )
@@ -641,22 +705,32 @@ mod test {
         eth_types::Transaction::from(mock_transaction)
     }
 
-    #[test]
-    fn begin_tx_gadget_simple() {
+    fn begin_tx_gadget_simple(enable_skipping_invalid_tx: bool) {
         // Transfer 1 ether to account with empty code, successfully
-        test_ok(mock_tx(eth(1), gwei(2), vec![]), None);
+        test_ok(mock_tx(eth(1), gwei(2), vec![]), None, enable_skipping_invalid_tx);
 
         // Transfer 1 ether, successfully
-        test_ok(mock_tx(eth(1), gwei(2), vec![]), Some(code_with_return()));
+        test_ok(mock_tx(eth(1), gwei(2), vec![]), Some(code_with_return()), enable_skipping_invalid_tx);
 
         // Transfer 1 ether, tx reverts
-        test_ok(mock_tx(eth(1), gwei(2), vec![]), Some(code_with_revert()));
+        test_ok(mock_tx(eth(1), gwei(2), vec![]), Some(code_with_revert()), enable_skipping_invalid_tx);
 
         // Transfer nothing with some calldata
         test_ok(
             mock_tx(eth(0), gwei(2), vec![1, 2, 3, 4, 0, 0, 0, 0]),
             Some(code_with_return()),
+            enable_skipping_invalid_tx,
         );
+    }
+
+    #[test]
+    fn begin_tx_gadget_simple_enable_skipping_invalid_tx() {
+        begin_tx_gadget_simple(true);
+    }
+
+    #[test]
+    fn begin_tx_gadget_simple_disable_skipping_invalid_tx() {
+        begin_tx_gadget_simple(false);
     }
 
     #[test]
@@ -689,8 +763,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    #[test]
-    fn begin_tx_gadget_rand() {
+    fn begin_tx_gadget_rand(enable_skipping_invalid_tx: bool) {
         let random_amount = Word::from_little_endian(&rand_bytes(32)) % eth(1);
         let random_gas_price = Word::from_little_endian(&rand_bytes(32)) % gwei(2);
         // If this test fails, we want these values to appear in the CI logs.
@@ -710,8 +783,18 @@ mod test {
             // Transfer nothing with random gas_price, tx reverts
             (eth(0), random_gas_price, vec![], Some(code_with_revert())),
         ] {
-            test_ok(mock_tx(value, gas_price, calldata), code);
+            test_ok(mock_tx(value, gas_price, calldata), code, enable_skipping_invalid_tx);
         }
+    }
+
+    #[test]
+    fn begin_tx_gadget_rand_enable_skipping_invalid_tx() {
+        begin_tx_gadget_rand(true);
+    }
+
+    #[test]
+    fn begin_tx_gadget_rand_disable_skipping_invalid_tx() {
+        begin_tx_gadget_rand(false);
     }
 
     #[test]
@@ -849,5 +932,129 @@ mod test {
         begin_tx_deploy(0x0100000000000000u64);
         begin_tx_deploy(0x1020304050607080u64);
         begin_tx_deploy(0xfffffffffffffffeu64);
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn begin_tx_disable_skipping_invalid_tx_invalid_nonce() {
+        begin_tx_invalid_nonce(false);
+    }
+
+    #[test]
+    #[should_panic]
+    fn begin_tx_disable_skipping_invalid_tx_not_enough_eth() {
+        begin_tx_not_enough_eth(false);
+    }
+
+    #[test]
+    #[should_panic]
+    fn begin_tx_disable_skipping_invalid_tx_insufficient_gas() {
+        begin_tx_insufficient_gas(false);
+    }
+
+    #[test]
+    fn begin_tx_enable_skipping_invalid_tx() {
+        begin_tx_invalid_nonce(true);
+        // begin_tx_not_enough_eth(true);
+        // begin_tx_insufficient_gas(true);
+    }
+
+    fn begin_tx_invalid_nonce(enable_skipping_invalid_tx: bool) {
+        // The nonce of the account doing the transaction is not correct
+        // Use the same nonce value for two transactions.
+
+        let to = MOCK_ACCOUNTS[0];
+        let from = MOCK_ACCOUNTS[1];
+
+        let code = bytecode! {
+            STOP
+        };
+
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(to).balance(eth(1)).code(code);
+                accs[1].address(from).balance(eth(1)).nonce(1);
+            },
+            |mut txs, _| {
+                txs[0]
+                    .to(to)
+                    .from(from)
+                    .nonce(1)
+                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
+            },
+            |block, _| block,
+        )
+        .unwrap()
+        .into();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
+    fn begin_tx_not_enough_eth(enable_skipping_invalid_tx: bool) {
+        // The account does not have enough ETH to pay for eth_value + tx_gas *
+        // tx_gas_price.
+        let to = MOCK_ACCOUNTS[0];
+        let from = MOCK_ACCOUNTS[1];
+
+        let balance = Word::from(1) * Word::from(10u64.pow(5));
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(to).balance(gwei(0));
+                accs[1]
+                    .address(from)
+                    .balance(balance)
+                    .nonce(1);
+            },
+            |mut txs, _| {
+                txs[0]
+                    .to(to)
+                    .from(from)
+                    .nonce(1)
+                    .gas_price(gwei(1))
+                    .gas(Word::from(10u64.pow(5)))
+                    .value(gwei(1))
+                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
+            },
+            |block, _| block,
+        )
+        .unwrap()
+        .into();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
+    fn begin_tx_insufficient_gas(enable_skipping_invalid_tx: bool) {
+        let to = MOCK_ACCOUNTS[0];
+        let from = MOCK_ACCOUNTS[1];
+
+        let balance = Word::from(1) * Word::from(10u64.pow(18));
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(to).balance(gwei(0));
+                accs[1]
+                    .address(from)
+                    .balance(balance)
+                    .nonce(1);
+            },
+            |mut txs, _| {
+                txs[0]
+                    .to(to)
+                    .from(from)
+                    .nonce(1)
+                    .gas_price(gwei(1))
+                    .gas(Word::from(1))
+                    .value(gwei(1))
+                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
+            },
+            |block, _| block,
+        )
+        .unwrap()
+        .into();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }
