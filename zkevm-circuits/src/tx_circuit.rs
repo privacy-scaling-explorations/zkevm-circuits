@@ -21,9 +21,7 @@ use crate::{
     },
     witness,
 };
-use eth_types::{
-    geth_types::Transaction, sign_types::SignData, Field, ToLittleEndian, ToScalar, U256,
-};
+use eth_types::{geth_types::Transaction, sign_types::SignData, Field, ToLittleEndian};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed},

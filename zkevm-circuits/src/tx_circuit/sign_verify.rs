@@ -411,8 +411,6 @@ impl<F: Field> SignVerifyChip<F> {
         &self,
         config: &SignVerifyConfig,
         ctx: &mut RegionCtx<F>,
-        chips: &ChipsRef<F, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        name: &str,
         inputs_le: [u8; 32],
     ) -> Result<Word<AssignedCell<F, F>>, Error> {
         let input_word = Word::new([
@@ -531,7 +529,7 @@ impl<F: Field> SignVerifyChip<F> {
 
         let pk_le = pk_bytes_le(&sign_data.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
-        let pk_hash = (!padding)
+        let mut pk_hash = (!padding)
             .then(|| {
                 let mut keccak = Keccak::default();
                 keccak.update(&pk_be);
@@ -571,7 +569,7 @@ impl<F: Field> SignVerifyChip<F> {
             let msg_hash_le = (!padding)
                 .then(|| sign_data.msg_hash.to_bytes())
                 .unwrap_or_default();
-            self.assign_word(config, ctx, chips, "msg_hash", msg_hash_le)?
+            self.assign_word(config, ctx, msg_hash_le)?
         };
 
         let pk_rlc = {
@@ -595,7 +593,9 @@ impl<F: Field> SignVerifyChip<F> {
             )?
         };
 
-        let pk_hash_word = self.assign_word(config, ctx, chips, "pk_hash", pk_hash)?;
+        // pk_hash is big-endian, need to covert to little-endian
+        pk_hash.reverse();
+        let pk_hash_word = self.assign_word(config, ctx, pk_hash)?;
         self.enable_keccak_lookup(config, ctx, &is_address_zero, &pk_rlc, &pk_hash_word)?;
 
         Ok(AssignedSignatureVerify { address, msg_hash })
