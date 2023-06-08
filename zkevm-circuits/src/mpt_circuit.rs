@@ -31,7 +31,7 @@ use self::{
 };
 use crate::{
     assign, assignf, circuit,
-    circuit_tools::{cached_region::CachedRegion, cell_manager::CellManager, memory::Memory},
+    circuit_tools::{cached_region::CachedRegion, cell_manager::{CellManager}, memory::Memory},
     evm_circuit::table::Table,
     mpt_circuit::{
         helpers::{
@@ -248,7 +248,8 @@ impl<F: Field> MPTConfig<F> {
             // Type, #cols, phase, permutable
             vec![
                 (MptCellType::StoragePhase1, 50, 0, false),
-                (MptCellType::Lookup(Table::Fixed), 5, 0, false),
+                (MptCellType::StoragePhase2, 5, 0, false),
+                (MptCellType::Lookup(Table::Fixed), 3, 0, false),
             ],
             0,
             1,
@@ -257,10 +258,11 @@ impl<F: Field> MPTConfig<F> {
             meta,
             // Type, #cols, phase, permutable
             vec![
-                (MptCellType::StoragePhase1, 50, 0, false),
-                (MptCellType::LookupByte, 5, 0, false),
-                (MptCellType::Lookup(Table::Fixed), 5, 0, false),
-                (MptCellType::Lookup(Table::Keccak), 5, 0, false),
+                (MptCellType::StoragePhase1, 20, 0, false),
+                (MptCellType::StoragePhase2, 5, 0, false),
+                (MptCellType::LookupByte, 4, 0, false),
+                (MptCellType::Lookup(Table::Fixed), 2, 0, false),
+                (MptCellType::Lookup(Table::Keccak), 1, 0, false),
             ],
             0,
             50,
@@ -333,7 +335,7 @@ impl<F: Field> MPTConfig<F> {
             .parse()
             .expect("Cannot parse DISABLE_LOOKUPS env var as usize");
         if disable_lookups == 0 {
-            cb.base.build_static_lookups(
+            cb.base.build_lookups(
                 meta,
                 challenges.lookup_input(),
                 vec![rlp_cm, state_cm],
@@ -479,7 +481,7 @@ impl<F: Field> MPTConfig<F> {
                         cached_region.pop_region();
                     }
 
-                    cached_region.assign_stored_expressions(&self.cb.base);
+                    cached_region.assign_stored_expressions(&self.cb.base)?;
 
                     offset += node.values.len();
                 }
@@ -616,8 +618,8 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        // let challenges = Challenges::construct(meta);
-        // let challenges_expr = challenges.exprs(meta);
+        let challenges = Challenges::construct(meta);
+        let _challenges_expr = challenges.exprs(meta);
 
         let r = 123456u64;
         let _challenges = Challenges::mock(
@@ -640,7 +642,7 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         (config, _challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        // let challenges = challenges.values(&mut layouter);
+        let _challenges = _challenges.values(&mut layouter);
 
         let r = self.randomness;
         let challenges = Challenges::mock(Value::known(r), Value::known(r), Value::known(r));

@@ -32,9 +32,9 @@ pub(crate) fn random_linear_combine_word<F: Field>(bytes: [u8; 32], randomness: 
 /// All challenges used in `SuperCircuit`.
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Challenges<T = Challenge> {
-    pub evm_word: T,
-    pub keccak_input: T,
-    pub lookup_input: T,
+    evm_word: T,
+    keccak_input: T,
+    lookup_input: T,
 }
 
 impl Challenges {
@@ -94,8 +94,8 @@ impl<T: Clone> Challenges<T> {
     }
 
     /// Returns the challenges indexed by the challenge index
-    pub fn indexed(&self) -> Vec<&T> {
-        vec![&self.evm_word, &self.keccak_input, &self.lookup_input]
+    pub fn indexed(&self) -> [&T; 3] {
+        [&self.evm_word, &self.keccak_input, &self.lookup_input]
     }
 
     pub(crate) fn mock(evm_word: T, keccak_input: T, lookup_input: T) -> Self {

@@ -33,7 +33,7 @@ use super::{
 
 impl<F: Field> ChallengeSet<F> for crate::util::Challenges<Value<F>> {
     fn indexed(&self) -> Vec<&Value<F>> {
-        vec![&self.evm_word, &self.keccak_input, &self.lookup_input]
+        self.indexed().to_vec()
     }
 }
 
@@ -872,7 +872,7 @@ impl<F: Field> MPTConstraintBuilder<F> {
             base: ConstraintBuilder::new(
                 max_degree,
                 cell_manager,
-                Some(challenges.clone().unwrap().lookup_input.expr()),
+                Some(challenges.clone().unwrap().lookup_input().expr()),
             ),
             challenges,
         }
@@ -951,13 +951,13 @@ impl<F: Field> MPTConstraintBuilder<F> {
         self.base.add_dynamic_lookup(description, tag, values)
     }
 
-    pub(crate) fn add_static_lookup(
+    pub(crate) fn add_lookup(
         &mut self,
         description: &'static str,
         cell_type: MptCellType,
         values: Vec<Expression<F>>,
     ) {
-        self.base.add_static_lookup(description, cell_type, values)
+        self.base.add_lookup(description, cell_type, values)
     }
 
     pub(crate) fn store_dynamic_table(

@@ -260,7 +260,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         self.constraints.clone()
     }
 
-    pub(crate) fn build_static_lookups(
+    pub(crate) fn build_lookups(
         &self,
         meta: &mut ConstraintSystem<F>,
         challenge: Expression<F>,
@@ -360,7 +360,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         }
     }
 
-    pub(crate) fn add_static_lookup(
+    pub(crate) fn add_lookup(
         &mut self,
         description: &str,
         cell_type: C,
@@ -978,14 +978,14 @@ macro_rules! _require {
             ") => @",
             stringify!($tag),
         );
-        $cb.add_static_lookup(
+        $cb.add_lookup(
             description,
             $tag,
             vec![$($v.expr(),)*],
         );
     }};
     ($cb:expr, $descr:expr, ($($v:expr),+)  => @$tag:expr) => {{
-        $cb.add_static_lookup(
+        $cb.add_lookup(
             Box::leak($descr.into_boxed_str()),
             $tag,
             vec![$($v.expr(),)*],
@@ -999,14 +999,14 @@ macro_rules! _require {
             " => @",
             stringify!($tag),
         );
-        $cb.add_static_lookup(
+        $cb.add_lookup(
             description,
             $tag,
             $values.clone(),
         );
     }};
     ($cb:expr, $descr:expr, $values:expr => @$tag:expr) => {{
-        $cb.add_static_lookup(
+        $cb.add_lookup(
             Box::leak($descr.to_string().into_boxed_str()),
             $tag,
             $values.clone(),
