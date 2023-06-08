@@ -5,14 +5,14 @@ use crate::{
     evm_circuit::util::rlc,
     exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP},
     impl_expr,
-    util::{build_tx_log_address, word, Challenges},
+    util::{build_tx_log_address, keccak, word, Challenges},
     witness::{
         Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
     },
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
-use eth_types::{Field, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{Field, ToScalar, U256};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     util::{split_u256, split_u256_limb64},
@@ -23,7 +23,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use keccak256::plain::Keccak;
 use std::array;
 use strum_macros::{EnumCount, EnumIter};
 
@@ -959,26 +958,19 @@ impl KeccakTable {
     pub fn assignments<F: Field>(
         input: &[u8],
         challenges: &Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 4]> {
+    ) -> Vec<[Value<F>; 5]> {
         let input_rlc = challenges
             .keccak_input()
             .map(|challenge| rlc::value(input.iter().rev(), challenge));
         let input_len = F::from(input.len() as u64);
-        let mut keccak = Keccak::default();
-        keccak.update(input);
-        let output = keccak.digest();
-        let output_rlc = challenges.evm_word().map(|challenge| {
-            rlc::value(
-                &Word::from_big_endian(output.as_slice()).to_le_bytes(),
-                challenge,
-            )
-        });
+        let output = word::Word::from(keccak(input));
 
         vec![[
             Value::known(F::ONE),
             input_rlc,
             Value::known(input_len),
-            output_rlc,
+            Value::known(output.lo()),
+            Value::known(output.hi()),
         ]]
     }
 
@@ -987,7 +979,7 @@ impl KeccakTable {
         &self,
         region: &mut Region<F>,
         offset: usize,
-        values: [Value<F>; 4],
+        values: [Value<F>; 5],
     ) -> Result<(), Error> {
         for (&column, value) in <KeccakTable as LookupTable<F>>::advice_columns(self)
             .iter()
