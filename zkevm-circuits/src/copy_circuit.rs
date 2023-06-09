@@ -427,12 +427,22 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     );
                 },
             );
-            // we use rlc to constraint the write == read now
-            // cb.require_equal(
-            //     "write value == read value",
-            //     meta.query_advice(value, Rotation::cur()),
-            //     meta.query_advice(value, Rotation::next()),
-            // );
+            // we use rlc to constraint the write == read specially for memory to memory case
+            // here only handle non memory to memory cases
+            let non_memory_to_memory =
+                not::expr(tag.value_equals(CopyDataType::Memory, Rotation::cur())(
+                    meta,
+                )) * not::expr(tag.value_equals(CopyDataType::Memory, Rotation::next())(
+                    meta,
+                ));
+            cb.condition(non_memory_to_memory, |cb| {
+                cb.require_equal(
+                    "write value == read value",
+                    meta.query_advice(value, Rotation::cur()),
+                    meta.query_advice(value, Rotation::next()),
+                );
+            });
+
             cb.require_equal(
                 "value_acc is same for read-write rows",
                 meta.query_advice(value_acc, Rotation::cur()),
