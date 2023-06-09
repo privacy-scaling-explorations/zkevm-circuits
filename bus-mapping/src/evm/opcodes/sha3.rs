@@ -96,7 +96,7 @@ pub(crate) mod sha3_tests {
     };
 
     use crate::{
-        circuit_input_builder::{ConcreteCP, ExecState},
+        circuit_input_builder::ExecState,
         mock::BlockData,
         operation::{MemoryOp, StackOp, RW},
     };
@@ -124,14 +124,7 @@ pub(crate) mod sha3_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data_with_params(
-            block.clone(),
-            ConcreteCP {
-                max_rws: 2048,
-                ..Default::default()
-            },
-        )
-        .new_circuit_input_builder();
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
