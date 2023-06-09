@@ -165,14 +165,17 @@ impl SignVerifyConfig {
             // When address is 0, we disable the signature verification by using a dummy pk,
             // msg_hash and signature which is not constrained to match msg_hash nor the address.
             // Layout:
-            // | q_keccak |        a        |     b     |     c     |     rlc     |
-            // | -------- | --------------- | --------- | --------- | ----------- |
-            // |     1    | is_address_zero |  word_lo  |  word_hi  |    pk_rlc   |
+            // | q_keccak |          a      |         b        |    c     |     d     |   rlc   |
+            // | -------- | --------------- | ---------------- |--------- | --------- | ------- |
+            // |     1    | is_addr_zero_lo |  is_addr_zero_hi |  word_lo |  word_hi  |  pk_rlc |
             let q_keccak = meta.query_selector(q_keccak);
-            let is_address_zero = meta.query_advice(main_gate_config.advices()[0], Rotation::cur());
-            let is_enable = q_keccak * not::expr(is_address_zero);
-            let word_lo = meta.query_advice(main_gate_config.advices()[1], Rotation::cur());
-            let word_hi = meta.query_advice(main_gate_config.advices()[2], Rotation::cur());
+            let is_address_zero_lo =
+                meta.query_advice(main_gate_config.advices()[0], Rotation::cur());
+            let is_address_zero_hi =
+                meta.query_advice(main_gate_config.advices()[1], Rotation::cur());
+            let is_enable = q_keccak * not::expr(is_address_zero_hi + is_address_zero_lo);
+            let word_lo = meta.query_advice(main_gate_config.advices()[2], Rotation::cur());
+            let word_hi = meta.query_advice(main_gate_config.advices()[3], Rotation::cur());
 
             let input = [
                 is_enable.clone(),
@@ -299,7 +302,7 @@ pub(crate) struct AssignedECDSA<F: Field> {
 
 #[derive(Debug)]
 pub(crate) struct AssignedSignatureVerify<F: Field> {
-    pub(crate) address: AssignedValue<F>,
+    pub(crate) address: Word<AssignedValue<F>>,
     pub(crate) msg_hash: Word<AssignedValue<F>>,
 }
 
@@ -419,12 +422,12 @@ impl<F: Field> SignVerifyChip<F> {
         ]);
         let cell_word_lo = ctx.assign_advice(
             || "{name}_lo",
-            config.main_gate_config.advices()[1],
+            config.main_gate_config.advices()[2],
             input_word.lo(),
         )?;
         let cell_word_hi = ctx.assign_advice(
             || "{name}_hi",
-            config.main_gate_config.advices()[2],
+            config.main_gate_config.advices()[3],
             input_word.hi(),
         )?;
         ctx.next();
@@ -481,7 +484,7 @@ impl<F: Field> SignVerifyChip<F> {
         &self,
         config: &SignVerifyConfig,
         ctx: &mut RegionCtx<F>,
-        is_address_zero: &AssignedCell<F, F>,
+        is_address_zero: &Word<AssignedCell<F, F>>,
         pk_rlc: &AssignedCell<F, F>,
         pk_hash: &Word<AssignedCell<F, F>>,
     ) -> Result<(), Error> {
@@ -494,21 +497,27 @@ impl<F: Field> SignVerifyChip<F> {
         ctx.enable(config.q_keccak)?;
         copy(
             ctx,
-            "is_address_zero",
+            "is_address_hi_zero",
             config.main_gate_config.advices()[0],
-            is_address_zero,
+            &is_address_zero.hi(),
+        )?;
+        copy(
+            ctx,
+            "is_address_lo_zero",
+            config.main_gate_config.advices()[1],
+            &is_address_zero.lo(),
         )?;
         copy(ctx, "pk_rlc", config.rlc, pk_rlc)?;
         copy(
             ctx,
             "pk_hash_lo",
-            config.main_gate_config.advices()[1],
+            config.main_gate_config.advices()[2],
             &pk_hash.lo(),
         )?;
         copy(
             ctx,
             "pk_hash_hi",
-            config.main_gate_config.advices()[2],
+            config.main_gate_config.advices()[3],
             &pk_hash.hi(),
         )?;
         ctx.next();
@@ -546,7 +555,7 @@ impl<F: Field> SignVerifyChip<F> {
 
         // Ref. spec SignVerifyChip 2. Verify that the first 20 bytes of the
         // pub_key_hash equal the address
-        let address = {
+        let (address, is_address_zero, is_address_zero_single) = {
             let powers_of_256 = iter::successors(Some(F::ONE), |coeff| Some(F::from(256) * coeff))
                 .take(20)
                 .collect_vec();
@@ -557,11 +566,26 @@ impl<F: Field> SignVerifyChip<F> {
                     maingate::Term::Unassigned(Value::known(F::from(*byte as u64)), coeff)
                 })
                 .collect_vec();
-            let (address, _) = main_gate.decompose(ctx, &terms, F::ZERO, |_, _| Ok(()))?;
+            let terms_hi_lo = terms.split_at(4);
 
-            address
+            // TODO: figure it out how to do word lo/hi on main gate to reduce redundant address
+            // gate
+            let (address, _) = main_gate.decompose(ctx, &terms, F::ZERO, |_, _| Ok(()))?;
+            let (address_hi, _) =
+                main_gate.decompose(ctx, terms_hi_lo.0, F::ZERO, |_, _| Ok(()))?;
+            let (address_lo, _) =
+                main_gate.decompose(ctx, terms_hi_lo.1, F::ZERO, |_, _| Ok(()))?;
+            let address_word = Word::new([address_lo.clone(), address_hi.clone()]);
+
+            let is_address_zero_single = main_gate.is_zero(ctx, &address)?;
+            let is_address_hi_zero = main_gate.is_zero(ctx, &address_hi)?;
+            let is_address_lo_zero = main_gate.is_zero(ctx, &address_lo)?;
+            let is_address_zero = Word::new([is_address_lo_zero, is_address_hi_zero]);
+
+            (address_word, is_address_zero, is_address_zero_single)
         };
-        let is_address_zero = main_gate.is_zero(ctx, &address)?;
+
+        // let is_address_single = is_address_zero.hi() * is_address_zero.lo();
 
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
         // with RLC encoding corresponds to msg_hash
@@ -570,7 +594,7 @@ impl<F: Field> SignVerifyChip<F> {
             assigned_ecdsa
                 .msg_hash_le
                 .iter()
-                .map(|byte| main_gate.select(ctx, &zero, byte, &is_address_zero))
+                .map(|byte| main_gate.select(ctx, &zero, byte, &is_address_zero_single))
                 .collect::<Result<Vec<_>, _>>()?;
             let msg_hash_le = (!padding)
                 .then(|| sign_data.msg_hash.to_bytes())

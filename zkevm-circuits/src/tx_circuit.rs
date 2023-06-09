@@ -241,10 +241,16 @@ impl<F: Field> TxCircuit<F> {
                         // Ref. spec 0. Copy constraints using fixed offsets between the tx rows and
                         // the SignVerifyChip
                         match tag {
-                            TxFieldTag::CallerAddress => region.constrain_equal(
-                                assigned_cell.lo().cell(),
-                                assigned_sig_verif.address.cell(),
-                            )?,
+                            TxFieldTag::CallerAddress => {
+                                region.constrain_equal(
+                                    assigned_cell.lo().cell(),
+                                    assigned_sig_verif.address.lo().cell(),
+                                )?;
+                                region.constrain_equal(
+                                    assigned_cell.hi().cell(),
+                                    assigned_sig_verif.address.hi().cell(),
+                                )?
+                            }
                             TxFieldTag::TxSignHash => {
                                 region.constrain_equal(
                                     assigned_cell.lo().cell(),
