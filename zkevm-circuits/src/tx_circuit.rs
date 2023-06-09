@@ -233,12 +233,6 @@ impl<F: Field> TxCircuit<F> {
                             Value::known(F::from(tx.gas_limit.as_u64())),
                         ),
                         (
-                            TxFieldTag::GasPrice,
-                            challenges
-                                .evm_word()
-                                .map(|challenge| rlc(tx.gas_price.to_le_bytes(), challenge)),
-                        ),
-                        (
                             TxFieldTag::IsCreate,
                             Value::known(F::from(tx.is_create() as u64)),
                         ),
@@ -257,7 +251,6 @@ impl<F: Field> TxCircuit<F> {
 
                         // Ref. spec 0. Copy constraints using fixed offsets between the tx rows and
                         // the SignVerifyChip
-
                         if tag == TxFieldTag::CallerAddress {
                             region.constrain_equal(
                                 assigned_cell.cell(),
@@ -267,6 +260,7 @@ impl<F: Field> TxCircuit<F> {
                     }
 
                     let tx_value_bytes = tx.value.to_le_bytes();
+                    let tx_gas_price_bytes = tx.gas_price.to_le_bytes();
                     let tx_from_bytes = tx.from.as_fixed_bytes();
                     let tx_to_bytes = tx.to_or_zero();
                     for (tag, value) in [
@@ -282,6 +276,13 @@ impl<F: Field> TxCircuit<F> {
                             Word::new([
                                 assigned_sig_verif.msg_hash.lo().value().copied(),
                                 assigned_sig_verif.msg_hash.hi().value().copied(),
+                            ]),
+                        ),
+                        (
+                            TxFieldTag::GasPrice,
+                            Word::new([
+                                Value::known(from_bytes::value(&tx_gas_price_bytes[..16])),
+                                Value::known(from_bytes::value(&tx_gas_price_bytes[16..])),
                             ]),
                         ),
                         (

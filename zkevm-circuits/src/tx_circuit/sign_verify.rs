@@ -427,6 +427,8 @@ impl<F: Field> SignVerifyChip<F> {
             config.main_gate_config.advices()[2],
             input_word.hi(),
         )?;
+        ctx.next();
+
         Ok(Word::new([cell_word_lo, cell_word_hi]))
     }
 
