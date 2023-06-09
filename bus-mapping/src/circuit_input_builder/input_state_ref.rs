@@ -6,10 +6,7 @@ use super::{
     TransactionContext,
 };
 use crate::{
-    error::{
-        get_step_reported_error, DepthError, ExecError, InsufficientBalanceError,
-        NonceUintOverflowError,
-    },
+    error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError},
     exec_trace::OperationRef,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
@@ -1214,8 +1211,8 @@ impl<'a> CircuitInputStateRef<'a> {
         step: &GethExecStep,
         next_step: Option<&GethExecStep>,
     ) -> Result<Option<ExecError>, Error> {
-        if let Some(error) = &step.error {
-            return Ok(Some(get_step_reported_error(&step.op, error)));
+        if let Ok(error) = ExecError::try_from(step) {
+            return Ok(Some(error));
         }
 
         if matches!(step.op, OpcodeId::INVALID(_)) {

@@ -503,8 +503,10 @@ impl<F: Field> CopyCircuitConfig<F> {
                 lt_chip.assign(
                     region,
                     *offset,
-                    F::from(copy_event.src_addr + u64::try_from(step_idx).unwrap() / 2u64),
-                    F::from(copy_event.src_addr_end),
+                    Value::known(F::from(
+                        copy_event.src_addr + u64::try_from(step_idx).unwrap() / 2u64,
+                    )),
+                    Value::known(F::from(copy_event.src_addr_end)),
                 )?;
             }
 
@@ -683,7 +685,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         // tag
         tag_chip.assign(region, *offset, &CopyDataType::Padding)?;
         // Assign LT gadget
-        lt_chip.assign(region, *offset, F::ZERO, F::ONE)?;
+        lt_chip.assign(region, *offset, Value::known(F::ZERO), Value::known(F::ONE))?;
 
         *offset += 1;
 
