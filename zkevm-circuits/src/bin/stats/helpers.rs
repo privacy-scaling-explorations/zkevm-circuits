@@ -195,16 +195,8 @@ pub(crate) fn print_circuit_stats_by_states(
             )
             .unwrap()
             .into();
-            let mut builder = BlockData::new_from_geth_data_with_params(
-                block.clone(),
-                ConcreteCP {
-                    max_rws: 16_000,
-                    max_copy_rows: 8_000,
-                    ..ConcreteCP::default()
-                },
-            )
-            .new_circuit_input_builder();
-            builder
+            let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+            let builder = builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
             // Find the step that executed our opcode by filtering on second call (because
