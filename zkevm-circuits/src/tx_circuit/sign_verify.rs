@@ -5,7 +5,10 @@
 // - *_le: Little-Endian bytes
 
 use crate::{
-    evm_circuit::util::{from_bytes, not, rlc},
+    evm_circuit::{
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_WORD},
+        util::{from_bytes, not, rlc},
+    },
     table::KeccakTable,
     util::{word::Word, Challenges, Expr},
 };
@@ -484,7 +487,7 @@ impl<F: Field> SignVerifyChip<F> {
         &self,
         config: &SignVerifyConfig,
         ctx: &mut RegionCtx<F>,
-        is_address_zero: &Word<AssignedCell<F, F>>,
+        is_address_zero: &AssignedCell<F, F>,
         pk_rlc: &AssignedCell<F, F>,
         pk_hash: &Word<AssignedCell<F, F>>,
     ) -> Result<(), Error> {
@@ -497,15 +500,9 @@ impl<F: Field> SignVerifyChip<F> {
         ctx.enable(config.q_keccak)?;
         copy(
             ctx,
-            "is_address_hi_zero",
-            config.main_gate_config.advices()[0],
-            &is_address_zero.hi(),
-        )?;
-        copy(
-            ctx,
-            "is_address_lo_zero",
+            "is_address_zero",
             config.main_gate_config.advices()[1],
-            &is_address_zero.lo(),
+            is_address_zero,
         )?;
         copy(ctx, "pk_rlc", config.rlc, pk_rlc)?;
         copy(
@@ -555,11 +552,11 @@ impl<F: Field> SignVerifyChip<F> {
 
         // Ref. spec SignVerifyChip 2. Verify that the first 20 bytes of the
         // pub_key_hash equal the address
-        let (address, is_address_zero, is_address_zero_single) = {
+        let address = {
             let powers_of_256 = iter::successors(Some(F::ONE), |coeff| Some(F::from(256) * coeff))
-                .take(20)
+                .take(N_BYTES_ACCOUNT_ADDRESS)
                 .collect_vec();
-            let terms = pk_hash[12..]
+            let terms = pk_hash[N_BYTES_WORD - N_BYTES_ACCOUNT_ADDRESS..]
                 .iter()
                 .zip(powers_of_256.into_iter().rev())
                 .map(|(byte, coeff)| {
@@ -568,24 +565,21 @@ impl<F: Field> SignVerifyChip<F> {
                 .collect_vec();
             let terms_hi_lo = terms.split_at(4);
 
-            // TODO: figure it out how to do word lo/hi on main gate to reduce redundant address
             // gate
-            let (address, _) = main_gate.decompose(ctx, &terms, F::ZERO, |_, _| Ok(()))?;
             let (address_hi, _) =
                 main_gate.decompose(ctx, terms_hi_lo.0, F::ZERO, |_, _| Ok(()))?;
             let (address_lo, _) =
                 main_gate.decompose(ctx, terms_hi_lo.1, F::ZERO, |_, _| Ok(()))?;
-            let address_word = Word::new([address_lo.clone(), address_hi.clone()]);
+            let address = Word::new([address_lo.clone(), address_hi.clone()]);
 
-            let is_address_zero_single = main_gate.is_zero(ctx, &address)?;
-            let is_address_hi_zero = main_gate.is_zero(ctx, &address_hi)?;
-            let is_address_lo_zero = main_gate.is_zero(ctx, &address_lo)?;
-            let is_address_zero = Word::new([is_address_lo_zero, is_address_hi_zero]);
-
-            (address_word, is_address_zero, is_address_zero_single)
+            address
         };
 
-        // let is_address_single = is_address_zero.hi() * is_address_zero.lo();
+        let is_address_zero = main_gate.and(
+            ctx,
+            &main_gate.is_zero(ctx, &address.lo())?,
+            &main_gate.is_zero(ctx, &address.hi())?,
+        )?;
 
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
         // with RLC encoding corresponds to msg_hash
@@ -594,7 +588,7 @@ impl<F: Field> SignVerifyChip<F> {
             assigned_ecdsa
                 .msg_hash_le
                 .iter()
-                .map(|byte| main_gate.select(ctx, &zero, byte, &is_address_zero_single))
+                .map(|byte| main_gate.select(ctx, &zero, byte, &is_address_zero))
                 .collect::<Result<Vec<_>, _>>()?;
             let msg_hash_le = (!padding)
                 .then(|| sign_data.msg_hash.to_bytes())
