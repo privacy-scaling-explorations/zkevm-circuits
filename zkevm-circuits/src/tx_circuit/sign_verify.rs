@@ -491,9 +491,13 @@ impl<F: Field> SignVerifyChip<F> {
             Ok::<_, Error>(())
         };
 
-        let a = config.main_gate_config.advices()[0];
         ctx.enable(config.q_keccak)?;
-        copy(ctx, "is_address_zero", a, is_address_zero)?;
+        copy(
+            ctx,
+            "is_address_zero",
+            config.main_gate_config.advices()[0],
+            is_address_zero,
+        )?;
         copy(ctx, "pk_rlc", config.rlc, pk_rlc)?;
         copy(
             ctx,

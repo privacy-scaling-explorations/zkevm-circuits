@@ -263,11 +263,6 @@ impl<T: Clone> Word<T> {
     pub fn map<T2: Clone>(&self, mut func: impl FnMut(T) -> T2) -> Word<T2> {
         Word(WordLimbs::<T2, 2>::new([func(self.lo()), func(self.hi())]))
     }
-    /// Convert the word to Known Value
-    pub fn into_value(self) -> Word<Value<T>> {
-        let [lo, hi] = self.0.limbs;
-        Word::new([Value::known(lo), Value::known(hi)])
-    }
 }
 
 impl<T> std::ops::Deref for Word<T> {

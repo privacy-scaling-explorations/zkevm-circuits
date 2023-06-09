@@ -14,14 +14,11 @@ mod test;
 pub use dev::TxCircuit as TestTxCircuit;
 
 use crate::{
-    evm_circuit::util::from_bytes,
     table::{KeccakTable, TxFieldTag, TxTable},
-    util::{
-        random_linear_combine_word as rlc, word::Word, Challenges, SubCircuit, SubCircuitConfig,
-    },
+    util::{word::Word, Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
-use eth_types::{geth_types::Transaction, sign_types::SignData, Field, ToLittleEndian};
+use eth_types::{geth_types::Transaction, sign_types::SignData, Field};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed},
@@ -100,25 +97,9 @@ impl<F: Field> TxCircuitConfig<F> {
         self.sign_verify.load_range(layouter)
     }
 
-    /// Assigns a tx circuit row and returns the assigned cell of the value in
-    /// the row.
-    fn assign_row(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        tx_id: usize,
-        tag: TxFieldTag,
-        index: usize,
-        value: Value<F>,
-    ) -> Result<AssignedCell<F, F>, Error> {
-        let value_in_word = Word::new([value, Value::known(F::ZERO)]);
-        let cell = self.assign_row_word(region, offset, tx_id, tag, index, value_in_word)?;
-        Ok(cell.lo())
-    }
-
     /// Assigns a tx circuit row and returns the assigned cell of the value in `word` in
     /// the row.
-    fn assign_row_word(
+    fn assign_row(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
@@ -145,12 +126,7 @@ impl<F: Field> TxCircuitConfig<F> {
             offset,
             || Value::known(F::from(index as u64)),
         )?;
-        let value_lo =
-            region.assign_advice(|| "value_lo", self.value.lo(), offset, || value.lo())?;
-        let value_hi =
-            region.assign_advice(|| "value_hi", self.value.hi(), offset, || value.hi())?;
-
-        Ok(Word::new([value_lo, value_hi]))
+        value.assign_advice(region, || "value", self.value, offset)
     }
 
     /// Get number of rows required.
@@ -199,7 +175,6 @@ impl<F: Field> TxCircuit<F> {
     fn assign_tx_table(
         &self,
         config: &TxCircuitConfig<F>,
-        challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
         assigned_sig_verifs: Vec<AssignedSignatureVerify<F>>,
     ) -> Result<(), Error> {
@@ -214,7 +189,7 @@ impl<F: Field> TxCircuit<F> {
                     0,
                     TxFieldTag::Null,
                     0,
-                    Value::known(F::ZERO),
+                    Word::default().into_value(),
                 )?;
                 offset += 1;
                 // Assign al Tx fields except for call data
@@ -227,49 +202,29 @@ impl<F: Field> TxCircuit<F> {
                     };
 
                     for (tag, value) in [
-                        (TxFieldTag::Nonce, Value::known(F::from(tx.nonce.as_u64()))),
                         (
-                            TxFieldTag::Gas,
-                            Value::known(F::from(tx.gas_limit.as_u64())),
+                            TxFieldTag::Nonce,
+                            Word::from(tx.nonce.as_u64()).into_value(),
+                        ),
+                        (TxFieldTag::Gas, Word::from(tx.gas_limit).into_value()),
+                        (TxFieldTag::GasPrice, Word::from(tx.gas_price).into_value()),
+                        (TxFieldTag::CallerAddress, Word::from(tx.from).into_value()),
+                        (
+                            TxFieldTag::CalleeAddress,
+                            Word::from(tx.to_or_zero()).into_value(),
                         ),
                         (
                             TxFieldTag::IsCreate,
-                            Value::known(F::from(tx.is_create() as u64)),
+                            Word::from(tx.is_create() as u64).into_value(),
                         ),
+                        (TxFieldTag::Value, Word::from(tx.value).into_value()),
                         (
                             TxFieldTag::CallDataLength,
-                            Value::known(F::from(tx.call_data.0.len() as u64)),
+                            Word::from(tx.call_data.0.len() as u64).into_value(),
                         ),
                         (
                             TxFieldTag::CallDataGasCost,
-                            Value::known(F::from(tx.call_data_gas_cost())),
-                        ),
-                    ] {
-                        let assigned_cell =
-                            config.assign_row(&mut region, offset, i + 1, tag, 0, value)?;
-                        offset += 1;
-
-                        // Ref. spec 0. Copy constraints using fixed offsets between the tx rows and
-                        // the SignVerifyChip
-                        if tag == TxFieldTag::CallerAddress {
-                            region.constrain_equal(
-                                assigned_cell.cell(),
-                                assigned_sig_verif.address.cell(),
-                            )?;
-                        }
-                    }
-
-                    let tx_value_bytes = tx.value.to_le_bytes();
-                    let tx_gas_price_bytes = tx.gas_price.to_le_bytes();
-                    let tx_from_bytes = tx.from.as_fixed_bytes();
-                    let tx_to_bytes = tx.to_or_zero();
-                    for (tag, value) in [
-                        (
-                            TxFieldTag::Value,
-                            Word::new([
-                                Value::known(from_bytes::value(&tx_value_bytes[..16])),
-                                Value::known(from_bytes::value(&tx_value_bytes[16..])),
-                            ]),
+                            Word::from(tx.call_data_gas_cost()).into_value(),
                         ),
                         (
                             TxFieldTag::TxSignHash,
@@ -278,41 +233,29 @@ impl<F: Field> TxCircuit<F> {
                                 assigned_sig_verif.msg_hash.hi().value().copied(),
                             ]),
                         ),
-                        (
-                            TxFieldTag::GasPrice,
-                            Word::new([
-                                Value::known(from_bytes::value(&tx_gas_price_bytes[..16])),
-                                Value::known(from_bytes::value(&tx_gas_price_bytes[16..])),
-                            ]),
-                        ),
-                        (
-                            TxFieldTag::CallerAddress,
-                            Word::new([
-                                Value::known(from_bytes::value(&tx_from_bytes[..16])),
-                                Value::known(from_bytes::value(&tx_from_bytes[16..])),
-                            ]),
-                        ),
-                        (
-                            TxFieldTag::CalleeAddress,
-                            Word::new([
-                                Value::known(from_bytes::value(&tx_to_bytes[..16])),
-                                Value::known(from_bytes::value(&tx_to_bytes[16..])),
-                            ]),
-                        ),
                     ] {
                         let assigned_cell =
-                            config.assign_row_word(&mut region, offset, i + 1, tag, 0, value)?;
+                            config.assign_row(&mut region, offset, i + 1, tag, 0, value)?;
                         offset += 1;
 
-                        if tag == TxFieldTag::TxSignHash {
-                            region.constrain_equal(
+                        // Ref. spec 0. Copy constraints using fixed offsets between the tx rows and
+                        // the SignVerifyChip
+                        match tag {
+                            TxFieldTag::CallerAddress => region.constrain_equal(
                                 assigned_cell.lo().cell(),
-                                assigned_sig_verif.msg_hash.lo().cell(),
-                            )?;
-                            region.constrain_equal(
-                                assigned_cell.hi().cell(),
-                                assigned_sig_verif.msg_hash.hi().cell(),
-                            )?;
+                                assigned_sig_verif.address.cell(),
+                            )?,
+                            TxFieldTag::TxSignHash => {
+                                region.constrain_equal(
+                                    assigned_cell.lo().cell(),
+                                    assigned_sig_verif.msg_hash.lo().cell(),
+                                )?;
+                                region.constrain_equal(
+                                    assigned_cell.hi().cell(),
+                                    assigned_sig_verif.msg_hash.hi().cell(),
+                                )?
+                            }
+                            _ => (),
                         }
                     }
                 }
@@ -328,7 +271,7 @@ impl<F: Field> TxCircuit<F> {
                             i + 1, // tx_id
                             TxFieldTag::CallData,
                             index,
-                            Value::known(F::from(*byte as u64)),
+                            Word::from(*byte as u64).into_value(),
                         )?;
                         offset += 1;
                         calldata_count += 1;
@@ -341,7 +284,7 @@ impl<F: Field> TxCircuit<F> {
                         0, // tx_id
                         TxFieldTag::CallData,
                         0,
-                        Value::known(F::ZERO),
+                        Word::default().into_value(),
                     )?;
                     offset += 1;
                 }
@@ -411,7 +354,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         let assigned_sig_verifs =
             self.sign_verify
                 .assign(&config.sign_verify, layouter, &sign_datas, challenges)?;
-        self.assign_tx_table(config, challenges, layouter, assigned_sig_verifs)?;
+        self.assign_tx_table(config, layouter, assigned_sig_verifs)?;
         Ok(())
     }
 
