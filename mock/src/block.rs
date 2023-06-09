@@ -2,7 +2,10 @@
 
 use crate::{MockTransaction, MOCK_BASEFEE, MOCK_CHAIN_ID, MOCK_DIFFICULTY, MOCK_GASLIMIT};
 use eth_types::{Address, Block, Bytes, Hash, Transaction, Word, H64, U64};
-use ethers_core::types::{Bloom, OtherFields};
+use ethers_core::{
+    types::{Bloom, OtherFields},
+    utils::keccak256,
+};
 
 #[derive(Clone, Debug)]
 /// Mock structure which represents an Ethereum Block and can be used for tests.
@@ -143,10 +146,48 @@ impl From<MockBlock> for Block<()> {
 }
 
 impl MockBlock {
-    /// TODO: This should be computed based on the fields of the block by
-    /// default unless `Some(hash)` is specified on build process.
-    pub fn hash(&mut self, hash: Hash) -> &mut Self {
-        self.hash = Some(hash);
+    /// Compute the hash of the block's header
+    // For more details, look at https://ethereum.stackexchange.com/questions/67055/block-header-hash-verification?noredirect=1&lq=1
+    // and add "withdrawalRoot" at the end for Shanghai blocks
+    pub fn hash(&mut self) -> &mut Self {
+        let block_hash = {
+            let mut stream = ethers_core::utils::rlp::RlpStream::new();
+            // We encode the BaseFee only for upgrades higher or equal to London
+            let list_length: usize = match (self.base_fee_per_gas, self.withdrawal_hash) {
+                (Some(_), Some(_)) => 17,
+                (Some(_), None) => 16,
+                (None, Some(_)) => panic!("withdrawalsRoot given, baseFeePerGas missing"),
+                (None, None) => 15,
+            };
+            stream.begin_list(list_length);
+            stream.append(&self.parent_hash);
+            stream.append(&self.uncles_hash);
+            stream.append(&self.author);
+            stream.append(&self.state_root);
+            stream.append(&self.transactions_root);
+            stream.append(&self.receipts_root);
+            stream.append(&self.logs_bloom.unwrap()); //
+            stream.append(&self.difficulty);
+            stream.append(&self.number);
+            stream.append(&self.gas_limit);
+            stream.append(&self.gas_used);
+            stream.append(&self.timestamp);
+            stream.append(&self.extra_data.to_vec());
+            stream.append(&self.mix_hash);
+            stream.append(&self.nonce);
+            match self.base_fee_per_gas {
+                Some(base_fee_per_gas) => stream.append(&base_fee_per_gas),
+                _ => &mut stream,
+            };
+            match self.withdrawal_hash {
+                Some(withdrawal_hash) => stream.append(&withdrawal_hash),
+                _ => &mut stream,
+            };
+            let rlp_encoding = stream.out().to_vec();
+            keccak256(rlp_encoding)
+        };
+
+        self.hash = Some(eth_types::H256(block_hash));
         self
     }
 
