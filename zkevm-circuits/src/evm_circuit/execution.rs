@@ -1377,10 +1377,7 @@ impl<F: Field> ExecutionConfig<F> {
             .rw_indices
             .iter()
             .map(|rw_idx| block.rws[*rw_idx])
-            .map(|rw| {
-                rw.table_assignment_aux(evm_randomness)
-                    .rlc(lookup_randomness)
-            })
+            .map(|rw| rw.table_assignment().unwrap().rlc(lookup_randomness))
             .fold(BTreeSet::<F>::new(), |mut set, value| {
                 set.insert(value);
                 set
@@ -1429,8 +1426,8 @@ impl<F: Field> ExecutionConfig<F> {
             };
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];
-            let table_assignments = rw.table_assignment_aux(evm_randomness);
-            let rlc = table_assignments.rlc(lookup_randomness);
+            let table_assignments = rw.table_assignment();
+            let rlc = table_assignments.unwrap().rlc(lookup_randomness);
             if rlc != assigned_rw_value.1 {
                 log::error!(
                     "incorrect rw witness. lookup input name: \"{}\"\nassigned={:?}\nrlc     ={:?}\nrw index: {:?}, {}th rw of step {:?}, rw: {:?}",

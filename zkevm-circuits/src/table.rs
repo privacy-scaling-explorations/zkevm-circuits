@@ -5,14 +5,14 @@ use crate::{
     evm_circuit::util::rlc,
     exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP},
     impl_expr,
-    util::{build_tx_log_address, word, Challenges},
+    util::{build_tx_log_address, keccak, word, Challenges},
     witness::{
         Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
     },
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
-use eth_types::{Field, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{Field, ToScalar, U256};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     util::{split_u256, split_u256_limb64},
@@ -23,7 +23,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use keccak256::plain::Keccak;
 use std::array;
 use strum_macros::{EnumCount, EnumIter};
 
@@ -448,24 +447,13 @@ pub struct RwTable {
     /// Key3 (FieldTag)
     pub field_tag: Column<Advice>,
     /// Key3 (StorageKey)
-    pub storage_key_word: word::Word<Column<Advice>>,
-    #[deprecated]
-    /// Key3 (StorageKey)
-    pub storage_key: Column<Advice>,
+    pub storage_key: word::Word<Column<Advice>>,
     /// Value
-    pub value_word: word::Word<Column<Advice>>,
-    #[deprecated]
-    /// Value
-    pub value: Column<Advice>,
+    pub value: word::Word<Column<Advice>>,
     /// Value Previous
-    pub value_prev_word: word::Word<Column<Advice>>,
-    #[deprecated]
-    /// Value Previous
-    pub value_prev: Column<Advice>,
-    /// Aux1
-    pub aux1: Column<Advice>,
-    /// Aux2 (Committed Value)
-    pub aux2: Column<Advice>,
+    pub value_prev: word::Word<Column<Advice>>,
+    /// InitVal (Committed Value)
+    pub init_val: word::Word<Column<Advice>>,
 }
 
 impl<F: Field> LookupTable<F> for RwTable {
@@ -477,14 +465,14 @@ impl<F: Field> LookupTable<F> for RwTable {
             self.id.into(),
             self.address.into(),
             self.field_tag.into(),
-            self.storage_key_word.lo().into(),
-            self.storage_key_word.hi().into(),
-            self.value_word.lo().into(),
-            self.value_word.hi().into(),
-            self.value_prev_word.lo().into(),
-            self.value_prev_word.hi().into(),
-            self.aux1.into(),
-            self.aux2.into(),
+            self.storage_key.lo().into(),
+            self.storage_key.hi().into(),
+            self.value.lo().into(),
+            self.value.hi().into(),
+            self.value_prev.lo().into(),
+            self.value_prev.hi().into(),
+            self.init_val.lo().into(),
+            self.init_val.hi().into(),
         ]
     }
 
@@ -502,8 +490,8 @@ impl<F: Field> LookupTable<F> for RwTable {
             String::from("value_hi"),
             String::from("value_prev_lo"),
             String::from("value_prev_hi"),
-            String::from("aux1"),
-            String::from("aux2"),
+            String::from("init_val_lo"),
+            String::from("init_val_hi"),
         ]
     }
 }
@@ -517,16 +505,10 @@ impl RwTable {
             id: meta.advice_column(),
             address: meta.advice_column(),
             field_tag: meta.advice_column(),
-            storage_key_word: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            value_word: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            value_prev_word: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            storage_key: meta.advice_column(),
-            value: meta.advice_column(),
-            value_prev: meta.advice_column(),
-            // It seems that aux1 for the moment is not using randomness
-            // TODO check in a future review
-            aux1: meta.advice_column_in(SecondPhase),
-            aux2: meta.advice_column_in(SecondPhase),
+            storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            value_prev: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            init_val: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
     fn assign<F: Field>(
@@ -536,20 +518,24 @@ impl RwTable {
         row: &RwRow<Value<F>>,
     ) -> Result<(), Error> {
         for (column, value) in [
+            (self.address, row.address),
             (self.rw_counter, row.rw_counter),
             (self.is_write, row.is_write),
             (self.tag, row.tag),
             (self.id, row.id),
-            (self.address, row.address),
             (self.field_tag, row.field_tag),
-            (self.storage_key, row.storage_key),
-            (self.value, row.value),
-            (self.value_prev, row.value_prev),
-            (self.aux1, row.aux1),
-            (self.aux2, row.aux2),
         ] {
             region.assign_advice(|| "assign rw row on rw table", column, offset, || value)?;
         }
+        for (column, value) in [
+            (self.storage_key, row.storage_key),
+            (self.value, row.value),
+            (self.value_prev, row.value_prev),
+            (self.init_val, row.init_val),
+        ] {
+            value.assign_advice(region, || "assign rw row on rw table", column, offset)?;
+        }
+
         Ok(())
     }
 
@@ -560,11 +546,10 @@ impl RwTable {
         layouter: &mut impl Layouter<F>,
         rws: &[Rw],
         n_rows: usize,
-        challenges: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "rw table",
-            |mut region| self.load_with_region(&mut region, rws, n_rows, challenges),
+            |mut region| self.load_with_region(&mut region, rws, n_rows),
         )
     }
 
@@ -573,11 +558,10 @@ impl RwTable {
         region: &mut Region<'_, F>,
         rws: &[Rw],
         n_rows: usize,
-        challenges: Value<F>,
     ) -> Result<(), Error> {
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
         for (offset, row) in rows.iter().enumerate() {
-            self.assign(region, offset, &row.table_assignment(challenges))?;
+            self.assign(region, offset, &row.table_assignment())?;
         }
         Ok(())
     }
@@ -614,7 +598,7 @@ impl From<AccountFieldTag> for MPTProofType {
 
 /// The MptTable shared between MPT Circuit and State Circuit
 #[derive(Clone, Copy, Debug)]
-pub struct MptTable([Column<Advice>; 7]);
+pub struct MptTable([Column<Advice>; 12]);
 
 impl<F: Field> LookupTable<F> for MptTable {
     fn columns(&self) -> Vec<Column<Any>> {
@@ -624,12 +608,17 @@ impl<F: Field> LookupTable<F> for MptTable {
     fn annotations(&self) -> Vec<String> {
         vec![
             String::from("address"),
-            String::from("storage_key"),
+            String::from("storage_key_lo"),
+            String::from("storage_key_hi"),
             String::from("proof_type"),
-            String::from("new_root"),
-            String::from("old_root"),
-            String::from("new_value"),
-            String::from("old_value"),
+            String::from("new_root_lo"),
+            String::from("new_root_hi"),
+            String::from("old_root_lo"),
+            String::from("old_root_hi"),
+            String::from("new_value_lo"),
+            String::from("new_value_hi"),
+            String::from("old_value_lo"),
+            String::from("old_value_hi"),
         ]
     }
 }
@@ -638,13 +627,18 @@ impl MptTable {
     /// Construct a new MptTable
     pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self([
-            meta.advice_column(),               // Address
-            meta.advice_column_in(SecondPhase), // Storage key
-            meta.advice_column(),               // Proof type
-            meta.advice_column_in(SecondPhase), // New root
-            meta.advice_column_in(SecondPhase), // Old root
-            meta.advice_column_in(SecondPhase), // New value
-            meta.advice_column_in(SecondPhase), // Old value
+            meta.advice_column(), // Address
+            meta.advice_column(), // Storage key lo
+            meta.advice_column(), // Storage key hi
+            meta.advice_column(), // Proof type
+            meta.advice_column(), // New root lo
+            meta.advice_column(), // New root hi
+            meta.advice_column(), // Old root lo
+            meta.advice_column(), // Old root hi
+            meta.advice_column(), // New value lo
+            meta.advice_column(), // New value hi
+            meta.advice_column(), // Old value lo
+            meta.advice_column(), // Old value hi
         ])
     }
 
@@ -664,11 +658,10 @@ impl MptTable {
         &self,
         layouter: &mut impl Layouter<F>,
         updates: &MptUpdates,
-        randomness: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "mpt table",
-            |mut region| self.load_with_region(&mut region, updates, randomness),
+            |mut region| self.load_with_region(&mut region, updates),
         )
     }
 
@@ -676,9 +669,8 @@ impl MptTable {
         &self,
         region: &mut Region<'_, F>,
         updates: &MptUpdates,
-        randomness: Value<F>,
     ) -> Result<(), Error> {
-        for (offset, row) in updates.table_assignments(randomness).iter().enumerate() {
+        for (offset, row) in updates.table_assignments().iter().enumerate() {
             self.assign(region, offset, row)?;
         }
         Ok(())
@@ -959,26 +951,19 @@ impl KeccakTable {
     pub fn assignments<F: Field>(
         input: &[u8],
         challenges: &Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 4]> {
+    ) -> Vec<[Value<F>; 5]> {
         let input_rlc = challenges
             .keccak_input()
             .map(|challenge| rlc::value(input.iter().rev(), challenge));
         let input_len = F::from(input.len() as u64);
-        let mut keccak = Keccak::default();
-        keccak.update(input);
-        let output = keccak.digest();
-        let output_rlc = challenges.evm_word().map(|challenge| {
-            rlc::value(
-                &Word::from_big_endian(output.as_slice()).to_le_bytes(),
-                challenge,
-            )
-        });
+        let output = word::Word::from(keccak(input));
 
         vec![[
             Value::known(F::ONE),
             input_rlc,
             Value::known(input_len),
-            output_rlc,
+            Value::known(output.lo()),
+            Value::known(output.hi()),
         ]]
     }
 
@@ -987,7 +972,7 @@ impl KeccakTable {
         &self,
         region: &mut Region<F>,
         offset: usize,
-        values: [Value<F>; 4],
+        values: [Value<F>; 5],
     ) -> Result<(), Error> {
         for (&column, value) in <KeccakTable as LookupTable<F>>::advice_columns(self)
             .iter()
@@ -1065,9 +1050,9 @@ pub struct CopyTable {
     /// The relevant ID for the read-write row, represented as a random linear
     /// combination. The ID may be one of the below:
     /// 1. Call ID/Caller ID for CopyDataType::Memory
-    /// 2. RLC encoding of bytecode hash for CopyDataType::Bytecode
+    /// 2. The hi/lo limbs of bytecode hash for CopyDataType::Bytecode
     /// 3. Transaction ID for CopyDataType::TxCalldata, CopyDataType::TxLog
-    pub id: Column<Advice>,
+    pub id: word::Word<Column<Advice>>,
     /// The source/destination address for this copy step.  Can be memory
     /// address, byte index in the bytecode, tx call data, and tx log data.
     pub addr: Column<Advice>,
@@ -1099,7 +1084,7 @@ impl CopyTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>, q_enable: Column<Fixed>) -> Self {
         Self {
             is_first: meta.advice_column(),
-            id: meta.advice_column_in(SecondPhase),
+            id: word::Word::new([meta.advice_column(), meta.advice_column()]),
             tag: BinaryNumberChip::configure(meta, q_enable, None),
             addr: meta.advice_column(),
             src_addr_end: meta.advice_column(),
@@ -1301,7 +1286,8 @@ impl<F: Field> LookupTable<F> for CopyTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
             self.is_first.into(),
-            self.id.into(),
+            self.id.lo().into(),
+            self.id.hi().into(),
             self.addr.into(),
             self.src_addr_end.into(),
             self.bytes_left.into(),
@@ -1314,7 +1300,8 @@ impl<F: Field> LookupTable<F> for CopyTable {
     fn annotations(&self) -> Vec<String> {
         vec![
             String::from("is_first"),
-            String::from("id"),
+            String::from("id_lo"),
+            String::from("id_hi"),
             String::from("addr"),
             String::from("src_addr_end"),
             String::from("bytes_left"),
@@ -1327,13 +1314,15 @@ impl<F: Field> LookupTable<F> for CopyTable {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
             meta.query_advice(self.is_first, Rotation::cur()),
-            meta.query_advice(self.id, Rotation::cur()), // src_id
-            self.tag.value(Rotation::cur())(meta),       // src_tag
-            meta.query_advice(self.id, Rotation::next()), // dst_id
-            self.tag.value(Rotation::next())(meta),      // dst_tag
-            meta.query_advice(self.addr, Rotation::cur()), // src_addr
+            meta.query_advice(self.id.lo(), Rotation::cur()), // src_id
+            meta.query_advice(self.id.hi(), Rotation::cur()), // src_id
+            self.tag.value(Rotation::cur())(meta),            // src_tag
+            meta.query_advice(self.id.lo(), Rotation::next()), // dst_id
+            meta.query_advice(self.id.hi(), Rotation::next()), // dst_id
+            self.tag.value(Rotation::next())(meta),           // dst_tag
+            meta.query_advice(self.addr, Rotation::cur()),    // src_addr
             meta.query_advice(self.src_addr_end, Rotation::cur()), // src_addr_end
-            meta.query_advice(self.addr, Rotation::next()), // dst_addr
+            meta.query_advice(self.addr, Rotation::next()),   // dst_addr
             meta.query_advice(self.bytes_left, Rotation::cur()), // length
             meta.query_advice(self.rlc_acc, Rotation::cur()), // rlc_acc
             meta.query_advice(self.rw_counter, Rotation::cur()), // rw_counter
