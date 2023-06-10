@@ -2,10 +2,14 @@ use crate::{
     evm_circuit::util::{
         and,
         constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-        not, or, rlc, select,
+        from_bytes, not, or, rlc, select,
     },
     table::{BytecodeFieldTag, BytecodeTable, KeccakTable, LookupTable},
-    util::{get_push_size, Challenges, Expr, SubCircuit, SubCircuitConfig},
+    util::{
+        get_push_size,
+        word::{Word, Word32, WordExpr},
+        Challenges, Expr, SubCircuit, SubCircuitConfig,
+    },
     witness,
 };
 use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
@@ -18,6 +22,7 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
+use itertools::Itertools;
 use log::trace;
 use std::vec;
 
@@ -243,10 +248,24 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 challenges.evm_word(),
             );
 
+            let empty_hash_word: Word<Expression<F>> =
+                Word32::new(EMPTY_CODE_HASH_LE.map(|v| Expression::Constant(F::from(v as u64))))
+                    .to_word();
+
             cb.require_equal(
                 "assert cur.hash == EMPTY_HASH",
                 meta.query_advice(bytecode_table.code_hash, Rotation::cur()),
                 empty_hash,
+            );
+            cb.require_equal(
+                "assert cur.hash == EMPTY_HASH",
+                meta.query_advice(bytecode_table.code_hash_word.lo(), Rotation::cur()),
+                empty_hash_word.lo(),
+            );
+            cb.require_equal(
+                "assert cur.hash == EMPTY_HASH",
+                meta.query_advice(bytecode_table.code_hash_word.hi(), Rotation::cur()),
+                empty_hash_word.hi(),
             );
 
             cb.gate(and::expr(vec![
@@ -406,9 +425,12 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                     meta.query_advice(keccak_table.is_enabled, Rotation::cur()),
                 )];
 
-                for (circuit_column, table_column) in
-                    keccak_table.match_columns(value_rlc, length, bytecode_table.code_hash)
-                {
+                for (circuit_column, table_column) in keccak_table.match_columns(
+                    value_rlc,
+                    length,
+                    bytecode_table.code_hash,
+                    bytecode_table.code_hash_word,
+                ) {
                     constraints.push((
                         enable.clone() * meta.query_advice(circuit_column, Rotation::cur()),
                         meta.query_advice(table_column, Rotation::cur()),
@@ -480,6 +502,15 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             .evm_word()
             .map(|challenge| rlc::value(EMPTY_CODE_HASH_LE.as_ref(), challenge));
 
+        let empty_hash_word = Word::new(
+            EMPTY_CODE_HASH_LE
+                .chunks(32 / 2)
+                .map(|bytes: &[u8]| Value::known(from_bytes::value::<F>(bytes)))
+                .collect_vec()
+                .try_into()
+                .unwrap(),
+        );
+
         layouter.assign_region(
             || "assign bytecode",
             |mut region| {
@@ -495,6 +526,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                         &push_data_left_is_zero_chip,
                         &index_length_diff_is_zero_chip,
                         empty_hash,
+                        empty_hash_word,
                         &mut offset,
                         last_row_offset,
                         fail_fast,
@@ -508,6 +540,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                         &push_data_left_is_zero_chip,
                         &index_length_diff_is_zero_chip,
                         empty_hash,
+                        empty_hash_word,
                         idx,
                         last_row_offset,
                     )?;
@@ -572,6 +605,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         push_data_left_is_zero_chip: &IsZeroChip<F>,
         index_length_diff_is_zero_chip: &IsZeroChip<F>,
         empty_hash: Value<F>,
+        empty_hash_word: Word<Value<F>>,
         offset: &mut usize,
         last_row_offset: usize,
         fail_fast: bool,
@@ -588,6 +622,16 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         let code_hash = challenges
             .evm_word()
             .map(|challenge| rlc::value(&bytecode.rows[0].code_hash.to_le_bytes(), challenge));
+        let code_hash_word = Word::new(
+            bytecode.rows[0]
+                .code_hash
+                .to_le_bytes()
+                .chunks(32 / 2)
+                .map(|bytes| Value::known(from_bytes::value(bytes)))
+                .collect_vec()
+                .try_into()
+                .unwrap(),
+        );
 
         for (idx, row) in bytecode.rows.iter().enumerate() {
             if fail_fast && *offset > last_row_offset {
@@ -628,6 +672,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     true,
                     *offset == last_row_offset,
                     code_hash,
+                    code_hash_word,
                     row.tag,
                     row.index,
                     row.is_code,
@@ -662,6 +707,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     push_data_left_is_zero_chip,
                     index_length_diff_is_zero_chip,
                     empty_hash,
+                    empty_hash_word,
                     *offset,
                     last_row_offset,
                 )?;
@@ -677,6 +723,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         push_data_left_is_zero_chip: &IsZeroChip<F>,
         index_length_diff_is_zero_chip: &IsZeroChip<F>,
         empty_hash: Value<F>,
+        empty_hash_word: Word<Value<F>>,
         offset: usize,
         last_row_offset: usize,
     ) -> Result<(), Error> {
@@ -688,6 +735,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             offset <= last_row_offset,
             offset == last_row_offset,
             empty_hash,
+            empty_hash_word,
             F::from(BytecodeFieldTag::Header as u64),
             F::ZERO,
             F::ZERO,
@@ -709,6 +757,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         enable: bool,
         last: bool,
         code_hash: Value<F>,
+        code_hash_word: Word<Value<F>>,
         tag: F,
         index: F,
         is_code: F,
@@ -775,6 +824,13 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 || value,
             )?;
         }
+
+        code_hash_word.assign_advice(
+            region,
+            || format!("assign code_hash_word {}", offset),
+            self.bytecode_table.code_hash_word,
+            offset,
+        )?;
 
         push_data_left_is_zero_chip.assign(
             region,

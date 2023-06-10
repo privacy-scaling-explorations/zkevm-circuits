@@ -263,11 +263,6 @@ impl<T: Clone> Word<T> {
     pub fn map<T2: Clone>(&self, mut func: impl FnMut(T) -> T2) -> Word<T2> {
         Word(WordLimbs::<T2, 2>::new([func(self.lo()), func(self.hi())]))
     }
-    /// Convert the word to Known Value
-    pub fn into_value(self) -> Word<Value<T>> {
-        let [lo, hi] = self.0.limbs;
-        Word::new([Value::known(lo), Value::known(hi)])
-    }
 }
 
 impl<T> std::ops::Deref for Word<T> {
@@ -430,7 +425,7 @@ impl<F: Field> WordExpr<F> for Word<Expression<F>> {
 
 impl<F: Field, const N1: usize> WordLimbs<Expression<F>, N1> {
     /// to_wordlimbs will aggregate nested expressions, which implies during expression evaluation
-    /// it need more recursive call. if the converted limbs word will be used in many place,
+    /// it need more recursive call. if the converted limbs word will be used in many places,
     /// consider create new low limbs word, have equality constrain, then finally use low limbs
     /// elsewhere.
     // TODO static assertion. wordaround https://github.com/nvzqz/static-assertions-rs/issues/40
