@@ -35,7 +35,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_nonce: Cell<F>,
     tx_gas: Cell<F>,
     tx_gas_price: Word<F>,
-    gas_fee: MulWordByU64Gadget<F>,
+    mul_gas_fee_by_gas: MulWordByU64Gadget<F>,
     tx_caller_address: Cell<F>,
     tx_caller_address_is_zero: IsZeroGadget<F>,
     tx_callee_address: Cell<F>,
@@ -159,7 +159,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // TODO: Implement EIP 1559 (currently it only supports legacy
         // transaction format)
         // Calculate transaction gas fee
-        let gas_fee =
+        let mul_gas_fee_by_gas =
             MulWordByU64Gadget::construct(cb, tx_gas_price.clone(), tx_gas.expr());
 
         // TODO: Take gas cost of access list (EIP 2930) into consideration.
@@ -458,7 +458,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_nonce,
             tx_gas,
             tx_gas_price,
-            gas_fee,
+            mul_gas_fee_by_gas,
             tx_caller_address,
             tx_caller_address_is_zero,
             tx_callee_address,
@@ -543,7 +543,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, Value::known(F::from(tx.gas)))?;
         self.tx_gas_price
             .assign(region, offset, Some(tx.gas_price.to_le_bytes()))?;
-        self.gas_fee
+        self.mul_gas_fee_by_gas
             .assign(region, offset, tx.gas_price, tx.gas, gas_fee)?;
         let caller_address = tx
             .caller_address
