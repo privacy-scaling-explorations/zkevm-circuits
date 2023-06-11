@@ -70,9 +70,9 @@ pub(crate) struct BeginTxGadget<F> {
     is_caller_callee_equal: Cell<F>,
 
     // balance
-    // total_eth_cost: AddWordsGadget<F, 2, true>,
-    // total_eth_cost_sum: Word<F>,
-    // balance_not_enough: LtWordGadget<F>,
+    total_eth_cost: AddWordsGadget<F, 2, true>,
+    total_eth_cost_sum: Word<F>,
+    balance_not_enough: LtWordGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -224,6 +224,18 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             );
             cb.require_equal("effective_gas_fee == 0", effective_gas_fee.clone().expr(), 0.expr());
         });
+        cb.condition(not::expr(tx_is_invalid.expr()), |cb| {
+            cb.require_equal(
+                "effective_tx_value == tx_value",
+                effective_tx_value.expr(),
+                tx_value.expr(),
+            );
+            cb.require_equal(
+                "effective_gas_fee == gas_fee",
+                effective_gas_fee.expr(),
+                mul_gas_fee_by_gas.product().expr(),
+            );
+        });
 
         // Transfer value from caller to callee, creating account if necessary.
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
@@ -237,18 +249,41 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             &mut reversion_info,
         );
 
-        // let sender_balance_prev = transfer_with_gas_fee.sender_sub_value.balance_prev();
-        // let total_eth_cost_sum = cb.query_word_rlc();
-        // let total_eth_cost = AddWordsGadget::construct(
-        //    cb,
-        //    [tx_value.clone(), gas_fee.product().clone()],
-        //    total_eth_cost_sum.clone(),
-        //);
-
+        let sender_balance_prev = transfer_with_gas_fee.sender_sub_fee.balance_prev();
+        let total_eth_cost_sum = cb.query_word_rlc();
+        let total_eth_cost = AddWordsGadget::construct(
+           cb,
+           [tx_value.clone(), mul_gas_fee_by_gas.product().clone()],
+           total_eth_cost_sum.clone(),
+        );
 
         // Check if the account ETH balance is sufficient
-        // let balance_not_enough =
-        //     LtWordGadget::construct(cb, sender_balance_prev, total_eth_cost.sum());
+        let balance_not_enough =
+            LtWordGadget::construct(cb, sender_balance_prev, total_eth_cost.sum());
+
+        // A transaction is invalid when
+        // - The transaction requires more ETH than the transaction needs
+        // - The amount of gas specified in the transaction is lower than the intrinsic
+        //   gas cost
+        // - The transaction nonce does not match the current nonce expected in the
+        //   account
+        cb.require_equal(
+            "is_tx_invalid is correct",
+            or::expr([
+                balance_not_enough.expr(),
+                gas_not_enough.expr(),
+                not::expr(is_nonce_valid.expr()),
+            ]),
+            tx_is_invalid.expr(),
+        );
+
+        // cb.require_equal(
+        //     "is_tx_invalid is correct debug balance_not_enough",
+        //     or::expr([
+        //         balance_not_enough.expr(),
+        //     ]),
+        //     tx_is_invalid.expr(),
+        // );
 
         let caller_nonce_hash_bytes = array_init::array_init(|_| cb.query_byte());
         let create = ContractCreateGadget::construct(cb);
@@ -489,9 +524,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             callee_not_exists,
             is_caller_callee_equal,
 
-            // total_eth_cost,
-            // total_eth_cost_sum,
-            // balance_not_enough,
+            total_eth_cost,
+            total_eth_cost_sum,
+            balance_not_enough,
         }
     }
 
@@ -504,11 +539,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        println!("tx.is_create {:?}", tx.is_create);
-        println!("tx.caller_address {:?}", tx.caller_address);
-        println!("tx.invalid_tx {:?}", tx.invalid_tx);
-        println!("tx.value {:?}", tx.value);
-
         let gas_fee = tx.gas_price * tx.gas;
         let zero = eth_types::Word::zero();
 
@@ -607,7 +637,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             offset,
             Value::known(nonce_prev.to_scalar().unwrap()),
         )?;
-        println!("tx.nonce: {:?} , nonce: {:?}, nonce_prev: {:?}", tx.nonce, nonce, nonce_prev);
 
         self.is_nonce_valid.assign(
             region,
@@ -638,8 +667,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         } else {
             (U256::zero(), U256::zero())
         };
-        println!("intrinsic_tx_value: {:?}, intrinsic_gas_fee: {:?}", intrinsic_tx_value, intrinsic_gas_fee);
-        println!("intrinsic_tx_value: {:?}, intrinsic_gas_fee: {:?}", intrinsic_tx_value.to_le_bytes(), intrinsic_gas_fee.to_le_bytes());
 
         self.effective_gas_fee
             .assign(region, offset, Some(intrinsic_gas_fee.clone().to_le_bytes()))?;
@@ -656,16 +683,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             intrinsic_gas_fee,
         )?;
 
-        // let total_eth_cost = tx.value + tx.gas_price * tx.gas;
-        // println!("total_eth_cost: {:?}", total_eth_cost);
-        // self.total_eth_cost
-        //     .assign(region, offset, [tx.value, tx.gas_price * tx.gas], total_eth_cost)?;
-        // self.balance_not_enough
-        //  .assign(region, offset, caller_balance_sub_value_pair.1, total_eth_cost)?;
-        // println!("caller_balance_sub_value_pair: {:?}", caller_balance_sub_value_pair);
-
-        // let test1 = Value::known(F::from(total_eth_cost));
-        // self.total_eth_cost_sum.assign(region, offset, Some(total_eth_cost.clone().to_le_bytes()))?;
+        let total_eth_cost = tx.value + gas_fee;
+        self.total_eth_cost
+            .assign(region, offset, [tx.value, gas_fee], total_eth_cost)?;
+        self.total_eth_cost_sum.assign(region, offset, Some(total_eth_cost.clone().to_le_bytes()))?;
+        self.balance_not_enough
+            .assign(region, offset, caller_balance_sub_fee_pair.1, total_eth_cost)?;
+        println!("caller_balance_sub_fee_pair: {:?}, caller_balance_sub_value_pair: {:?}, total_eth_cost: {:?}", caller_balance_sub_fee_pair, caller_balance_sub_value_pair, total_eth_cost);
 
         self.phase2_code_hash
             .assign(region, offset, region.word_rlc(callee_code_hash))?;
@@ -1038,9 +1062,9 @@ mod test {
 
     #[test]
     fn begin_tx_enable_skipping_invalid_tx() {
-        // begin_tx_invalid_nonce(true);
+        begin_tx_invalid_nonce(true);
         begin_tx_not_enough_eth(true);
-        // begin_tx_insufficient_gas(true);
+        begin_tx_insufficient_gas(true);
     }
 
     fn begin_tx_invalid_nonce(enable_skipping_invalid_tx: bool) {
@@ -1081,11 +1105,11 @@ mod test {
         let to = MOCK_ACCOUNTS[0];
         let from = MOCK_ACCOUNTS[1];
 
-        let balance = Word::from(1) * Word::from(10u64.pow(18));
+        let balance = Word::from(1) * Word::from(10u64.pow(5));
         let ctx = TestContext::<2, 1>::new(
             None,
             |accs| {
-                accs[0].address(to).balance(gwei(0));
+                accs[0].address(to).balance(balance);
                 accs[1]
                     .address(from)
                     .balance(balance)
@@ -1096,9 +1120,8 @@ mod test {
                     .to(to)
                     .from(from)
                     .nonce(1)
-                    // .gas_price(gwei(1))
-                    // .gas(Word::from(10u64.pow(5)))
-                    // .value(gwei(1))
+                    .gas_price(gwei(1))
+                    .gas(Word::from(10u64.pow(5)))
                     .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
             },
             |block, _| block,
@@ -1113,11 +1136,11 @@ mod test {
         let to = MOCK_ACCOUNTS[0];
         let from = MOCK_ACCOUNTS[1];
 
-        let balance = Word::from(1) * Word::from(10u64.pow(18));
+        let balance = eth(1);
         let ctx = TestContext::<2, 1>::new(
             None,
             |accs| {
-                accs[0].address(to).balance(gwei(0));
+                accs[0].address(to).balance(balance);
                 accs[1]
                     .address(from)
                     .balance(balance)
@@ -1130,7 +1153,6 @@ mod test {
                     .nonce(1)
                     .gas_price(gwei(1))
                     .gas(Word::from(1))
-                    // .value(gwei(1))
                     .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
             },
             |block, _| block,
