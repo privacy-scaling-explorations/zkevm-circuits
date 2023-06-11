@@ -277,14 +277,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_is_invalid.expr(),
         );
 
-        // cb.require_equal(
-        //     "is_tx_invalid is correct debug balance_not_enough",
-        //     or::expr([
-        //         balance_not_enough.expr(),
-        //     ]),
-        //     tx_is_invalid.expr(),
-        // );
-
         let caller_nonce_hash_bytes = array_init::array_init(|_| cb.query_byte());
         let create = ContractCreateGadget::construct(cb);
         cb.require_equal(
