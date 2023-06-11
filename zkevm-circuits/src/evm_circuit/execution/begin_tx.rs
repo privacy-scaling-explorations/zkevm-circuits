@@ -44,18 +44,23 @@ pub(crate) struct BeginTxGadget<F> {
     tx_value: Word<F>,
     tx_call_data_length: Cell<F>,
     tx_call_data_gas_cost: Cell<F>,
+
     tx_is_invalid: Cell<F>,
     tx_access_list_gas_cost: Cell<F>,
 
+    // nonce
     nonce: Cell<F>,
     nonce_prev: Cell<F>,
     is_nonce_valid: IsEqualGadget<F>,
 
+    // gas fee and tx value for invalid tx
     effective_gas_fee: Word<F>,
     effective_tx_value: Word<F>,
 
     reversion_info: ReversionInfo<F>,
+
     gas_not_enough: LtGadget<F, N_BYTES_GAS>,
+
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     phase2_code_hash: Cell<F>,
     is_empty_code_hash: IsEqualGadget<F>,
@@ -63,6 +68,8 @@ pub(crate) struct BeginTxGadget<F> {
     create: ContractCreateGadget<F, false>,
     callee_not_exists: IsZeroGadget<F>,
     is_caller_callee_equal: Cell<F>,
+
+    // balance
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -998,8 +1005,8 @@ mod test {
 
     #[test]
     fn begin_tx_enable_skipping_invalid_tx() {
-        begin_tx_invalid_nonce(true);
-        // begin_tx_not_enough_eth(true);
+        // begin_tx_invalid_nonce(true);
+        begin_tx_not_enough_eth(true);
         // begin_tx_insufficient_gas(true);
     }
 
