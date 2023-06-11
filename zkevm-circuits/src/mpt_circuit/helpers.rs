@@ -12,7 +12,7 @@ use crate::{
     evm_circuit::table::Table,
     matchw,
     mpt_circuit::{
-        param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN},
+        param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN, RLP_LONG, RLP_LIST_LONG},
         rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble},
     },
     util::{Challenges, Expr},
@@ -993,6 +993,7 @@ pub struct DriftedGadget<F> {
 impl<F: Field> DriftedGadget<F> {
     pub(crate) fn construct(
         cb: &mut MPTConstraintBuilder<F>,
+        node_value_num_bytes: Expression<F>,        
         parent_data: &[ParentData<F>],
         key_data: &[KeyData<F>],
         expected_key_rlc: &[Expression<F>],
@@ -1007,7 +1008,11 @@ impl<F: Field> DriftedGadget<F> {
                 for is_s in [true, false] {
                     ifx! {parent_data[is_s.idx()].is_placeholder.expr() => {
                         // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
-                        // TODO(Brecht): Length can change so need to add RLP consistency checks?
+                        // TODO(-Brecht): Length can change so need to add RLP consistency checks?
+                        require!(
+                            config.drifted_rlp_key.rlp_list.len() 
+                                => config.drifted_rlp_key.key_value.num_bytes() + node_value_num_bytes.clone()
+                            );
 
                         // Calculate the drifted key RLC
                         // Get the key RLC for the drifted branch
