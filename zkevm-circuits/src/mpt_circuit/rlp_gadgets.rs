@@ -3,12 +3,12 @@ use crate::{
     circuit_tools::{
         cached_region::{CachedRegion, ChallengeSet},
         cell_manager::Cell,
-        constraint_builder::{ConstraintBuilder, RLCable, RLCableValue},
+        constraint_builder::{ConstraintBuilder, RLCable, RLCableValue}, gadgets::LtGadget,
     },
     matchw,
     mpt_circuit::{
         helpers::FIXED,
-        param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT},
+        param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT, RLP_LIST_MAX, RLP_STRING_MAX},
         FixedTableTag,
     },
     util::Expr,
@@ -595,6 +595,8 @@ pub(crate) mod get_num_bytes_list_short {
 pub(crate) struct RLPItemGadget<F> {
     pub(crate) value: RLPValueGadget<F>,
     pub(crate) list: RLPListGadget<F>,
+    pub(crate) value_limit: LtGadget<F, 2>,
+    pub(crate) list_limit: LtGadget<F, 2>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -606,9 +608,23 @@ pub(crate) struct RLPItemWitness {
 
 impl<F: Field> RLPItemGadget<F> {
     pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>, bytes: &[Expression<F>]) -> Self {
+        let value = RLPValueGadget::construct(cb, bytes);
+        let list = RLPListGadget::construct(cb, bytes);
+        let value_limit = LtGadget::<F, 2>::construct(
+            &mut cb.base, 
+            RLP_STRING_MAX.expr(),
+            value.len(),
+        );
+        let list_limit = LtGadget::<F, 2>::construct(
+            &mut cb.base, 
+            RLP_LIST_MAX.expr(),
+            list.len(),
+        );
         RLPItemGadget {
-            value: RLPValueGadget::construct(cb, bytes),
-            list: RLPListGadget::construct(cb, bytes),
+            value,
+            list,
+            value_limit,
+            list_limit,
         }
     }
 
@@ -620,13 +636,47 @@ impl<F: Field> RLPItemGadget<F> {
     ) -> Result<RLPItemWitness, Error> {
         let value_witness = self.value.assign(region, offset, bytes)?;
         let list_witness = self.list.assign(region, offset, bytes)?;
-        assert!(!(value_witness.is_string() && list_witness.is_list()));
+        self.value_limit.assign(region, offset,  (RLP_STRING_MAX).scalar(), value_witness.len().scalar())?;
+        self.list_limit.assign(region, offset, (RLP_LIST_MAX).scalar(), list_witness.len().scalar())?;
 
         Ok(RLPItemWitness {
             value: value_witness,
             list: list_witness,
             bytes: bytes.to_vec(),
         })
+    }
+    
+    /// Constraints for proof main data
+    // pub(crate) fn constraints(&mut self, cb: &mut MPTConstraintBuilder<F>, string_limit: usize, list_limit: usize) {
+    //     self.value_limit = LtGadget::<F, 2>::construct(
+    //         &mut cb.base, 
+    //         string_limit.expr(),
+    //         self.len(),
+    //     );
+    //     self.list_limit = LtGadget::<F, 2>::construct(
+    //         &mut cb.base, 
+    //         list_limit.expr(),
+    //         self.len(),
+    //     );
+    //     circuit!([meta, cb], {
+    //         ifx! {self.value.is_string() => {
+    //             require!(self.list.is_list() => false);
+    //             require!(self.value_limit => true);
+    //         } 
+    //         elsex {
+    //             require!(self.value.is_string() => false);
+    //             require!(self.list_limit => true);
+    //         }
+    //     }
+    //     });
+    // }
+
+    pub(crate) fn is_string(&self) -> Expression<F> {
+        self.value.is_string()
+    }
+
+    pub(crate) fn is_list(&self) -> Expression<F> {
+        self.list.is_list()
     }
 
     // Single RLP byte containing the byte value

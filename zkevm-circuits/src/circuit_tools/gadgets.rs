@@ -147,6 +147,7 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
         rhs: F,
     ) -> Result<(F, Vec<u8>), Error> {
         // Set `lt`
+        println!("LT assign lhs{:?} > rhs{:?}", lhs, rhs);
         let lt = lhs < rhs;
         self.lt
             .as_ref()
