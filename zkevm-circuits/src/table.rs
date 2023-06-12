@@ -5,7 +5,11 @@ use crate::{
     evm_circuit::util::rlc,
     exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP},
     impl_expr,
-    util::{build_tx_log_address, keccak, word::{self, Word}, Challenges},
+    util::{
+        build_tx_log_address, keccak,
+        word::{self, Word},
+        Challenges,
+    },
     witness::{
         Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
     },
@@ -710,7 +714,7 @@ impl BytecodeTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         let [tag, index, is_code, value] = array::from_fn(|_| meta.advice_column());
         let code_hash_word = word::Word::new([meta.advice_column(), meta.advice_column()]);
-        let code_hash = meta.advice_column();
+        let code_hash = meta.advice_column_in(SecondPhase);
         Self {
             code_hash_word,
             code_hash,
