@@ -134,17 +134,19 @@ where
         let (instance, accumulator_limbs) =
             config.aggregate::<M>(&mut layouter, &self.svk, [self.snark])?;
 
-        // // Constrain equality to instance values
-        // let main_gate: MainGate<M::Scalar> = config.main_gate();
-        // for (row, limb) in instance
-        //     .into_iter()
-        //     .flatten()
-        //     .flatten()
-        //     .chain(accumulator_limbs)
-        //     .enumerate()
-        // {
-        //     // main_gate.expose_public(layouter.namespace(|| ""), limb, row)?;
-        // }
+        /*
+        // Constrain equality to instance values
+        let main_gate = config.main_gate();
+        for (row, limb) in instance
+            .into_iter()
+            .flatten()
+            .flatten()
+            .chain(accumulator_limbs)
+            .enumerate()
+        {
+            main_gate.expose_public(layouter.namespace(|| ""), limb, row)?;
+        }
+        */
 
         Ok(())
     }

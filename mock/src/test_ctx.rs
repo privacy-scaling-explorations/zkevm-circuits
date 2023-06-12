@@ -175,7 +175,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         )?;
 
         for (transaction, geth_trace) in transactions.iter().zip(geth_traces.iter()) {
-            if !transaction.enable_skipping_invalid_tx && geth_trace.invalid == true {
+            if !transaction.enable_skipping_invalid_tx && geth_trace.invalid {
                 panic!(
                     "{:?}",
                     Error::TracingError(geth_trace.return_value.clone()).to_string()

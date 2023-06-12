@@ -13,7 +13,6 @@ use ecc::{maingate, EccConfig, GeneralEccChip};
 use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
 use eth_types::{
     self,
-    address,
     geth_types::Transaction,
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
     Field,
@@ -408,8 +407,13 @@ impl<F: Field> SignVerifyChip<F> {
         let pk_y_le = integer_to_bytes_le(ctx, range_chip, pk_y)?;
 
         // Ref. spec SignVerifyChip 4. Verify the ECDSA signature
-        println!("enable_skipping_invalid_signature {:?}", enable_skipping_invalid_signature);
-        let is_ecdsa_signature_valid = ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash, enable_skipping_invalid_signature)?;
+        let is_ecdsa_signature_valid = ecdsa_chip.verify(
+            ctx,
+            &sig,
+            &pk_assigned,
+            &msg_hash,
+            enable_skipping_invalid_signature,
+        )?;
 
         // TODO: Update once halo2wrong suports the following methods:
         // - `IntegerChip::assign_integer_from_bytes_le`
@@ -524,8 +528,6 @@ impl<F: Field> SignVerifyChip<F> {
             .map(|byte| Value::known(F::from(byte as u64)));
         let pk_hash_hi = pk_hash[..12].to_vec();
 
-        log::error!("assign_signature_verify part 1 at the end: {} rows", ctx.offset());
-
         // Ref. spec SignVerifyChip 2. Verify that the first 20 bytes of the
         // pub_key_hash equal the address
         let (address, pk_hash_lo) = {
@@ -550,8 +552,6 @@ impl<F: Field> SignVerifyChip<F> {
         };
 
         let is_address_zero = main_gate.is_zero(ctx, &address)?;
-
-        log::error!("assign_signature_verify part 2 at the end: {} rows", ctx.offset());
 
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
         // with RLC encoding corresponds to msg_hash_rlc
@@ -683,10 +683,14 @@ impl<F: Field> SignVerifyChip<F> {
                     } else {
                         Transaction::default()
                     };
-                    let assigned_ecdsa = self.assign_ecdsa(&mut ctx, &chips, &signature, tx.enable_skipping_invalid_signature)?;
+                    let assigned_ecdsa = self.assign_ecdsa(
+                        &mut ctx,
+                        &chips,
+                        &signature,
+                        tx.enable_skipping_invalid_signature,
+                    )?;
                     assigned_ecdsas.push(assigned_ecdsa);
                 }
-                log::error!("ecdsa chip verification: {} rows", ctx.offset());
                 Ok(assigned_ecdsas)
             },
         )?;
@@ -714,7 +718,6 @@ impl<F: Field> SignVerifyChip<F> {
                     )?;
                     assigned_sig_verifs.push(assigned_sig_verif);
                 }
-                log::error!("signature address verify: {} rows, txs.len {}, assigned_sig_verifs.len() {}", ctx.offset(), txs.len(), assigned_sig_verifs.len());
                 Ok(assigned_sig_verifs)
             },
         )

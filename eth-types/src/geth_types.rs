@@ -10,22 +10,17 @@ use ethers_core::{
     utils::get_contract_address,
 };
 use ethers_signers::{LocalWallet, Signer};
-use halo2_proofs::{
-    halo2curves::{
-        group::{
-            ff::PrimeField,
-            Curve,
-        },
-        secp256k1,
-    },
+use halo2_proofs::halo2curves::{
+    group::{ff::PrimeField, Curve},
+    secp256k1,
 };
+use log::warn;
 use num::Integer;
 use num_bigint::BigUint;
 use serde::{Serialize, Serializer};
 use serde_with::serde_as;
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
-use log::warn;
 
 /// Definition of all of the data related to an account.
 #[serde_as]
@@ -245,15 +240,18 @@ impl Transaction {
             .ok_or(Error::Signature(libsecp256k1::Error::InvalidSignature))? as u8;
         let pk = match recover_pk(v, &self.r, &self.s, &msg_hash) {
             Ok(pk) => pk,
-            Err(libsecp256k1::Error::InvalidSignature) if self.enable_skipping_invalid_signature => {
-                warn!("sign_data error: InvalidSignature. Failed to recover pk. Using default value.");
+            Err(libsecp256k1::Error::InvalidSignature)
+                if self.enable_skipping_invalid_signature =>
+            {
+                warn!(
+                    "sign_data error: InvalidSignature. Failed to recover pk. Using default value."
+                );
                 let g = secp256k1::Secp256k1Affine::generator();
                 let sk = secp256k1::Fq::one();
                 let pk = g * sk;
-                let pk = pk.to_affine();
-                pk
-            },
-            Err(_) => return Err(Error::Signature(libsecp256k1::Error::InvalidSignature))
+                pk.to_affine()
+            }
+            Err(_) => return Err(Error::Signature(libsecp256k1::Error::InvalidSignature)),
         };
         // msg_hash = msg_hash % q
         let msg_hash = BigUint::from_bytes_be(msg_hash.as_slice());

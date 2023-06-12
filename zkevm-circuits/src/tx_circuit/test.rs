@@ -113,23 +113,21 @@ fn tx_circuit_invalid_signature() {
     tx2.s = tx2.r;
     tx2.enable_skipping_invalid_signature = true;
 
-    // invalid_signature(vec![tx0.clone()], 1);
+    invalid_signature(vec![tx0.clone()], 1);
     invalid_signature(vec![tx1.clone()], 1);
-    // invalid_signature(vec![tx2.clone()], 1);
+    invalid_signature(vec![tx2.clone()], 1);
 }
 
 fn invalid_signature(mock_txs: Vec<MockTransaction>, max_txs: usize) {
     const MAX_CALLDATA: usize = 32;
-    
+
     let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
 
-    let txs = mock_txs.iter().map(|tx| Transaction::from(tx.clone())).collect();
-    let result = run::<Fr>(
-        txs,
-        chain_id,
-        max_txs,
-        MAX_CALLDATA
-    );
+    let txs = mock_txs
+        .iter()
+        .map(|tx| Transaction::from(tx.clone()))
+        .collect();
+    let result = run::<Fr>(txs, chain_id, max_txs, MAX_CALLDATA);
     assert_eq!(result, Ok(()));
 }
 

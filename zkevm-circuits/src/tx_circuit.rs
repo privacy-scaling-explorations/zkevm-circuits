@@ -18,17 +18,15 @@ use crate::{
     util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
-use eth_types::{address, geth_types::Transaction, sign_types::SignData, Field, ToLittleEndian, ToScalar};
+use eth_types::{geth_types::Transaction, sign_types::SignData, Field, ToLittleEndian, ToScalar};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed},
 };
 use itertools::Itertools;
-use log::error;
-use log;
+use log::{self, error};
 use sign_verify::{AssignedSignatureVerify, SignVerifyChip, SignVerifyConfig};
-use std::fmt::{self, Debug};
-use std::marker::PhantomData;
+use std::{fmt::Debug, marker::PhantomData};
 
 /// Number of static fields per tx: [nonce, gas, gas_price,
 /// caller_address, callee_address, is_create, value, call_data_length,
@@ -365,9 +363,13 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             .try_collect()?;
 
         config.load_aux_tables(layouter)?;
-        let assigned_sig_verifs =
-            self.sign_verify
-                .assign(&config.sign_verify, layouter, &sign_datas, challenges, &self.txs)?;
+        let assigned_sig_verifs = self.sign_verify.assign(
+            &config.sign_verify,
+            layouter,
+            &sign_datas,
+            challenges,
+            &self.txs,
+        )?;
         self.assign_tx_table(config, challenges, layouter, assigned_sig_verifs)?;
         Ok(())
     }

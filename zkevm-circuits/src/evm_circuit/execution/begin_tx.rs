@@ -14,10 +14,10 @@ use crate::{
             },
             is_precompiled,
             math_gadget::{
-                AddWordsGadget, ContractCreateGadget, IsEqualGadget, IsZeroGadget,
-                LtGadget, LtWordGadget, MulWordByU64Gadget,
+                AddWordsGadget, ContractCreateGadget, IsEqualGadget, IsZeroGadget, LtGadget,
+                LtWordGadget, MulWordByU64Gadget,
             },
-            not, or, select, CachedRegion, Cell, RandomLinearCombination, StepRws, Word,
+            not, or, select, CachedRegion, Cell, StepRws, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -44,23 +44,15 @@ pub(crate) struct BeginTxGadget<F> {
     tx_value: Word<F>,
     tx_call_data_length: Cell<F>,
     tx_call_data_gas_cost: Cell<F>,
-
     tx_is_invalid: Cell<F>,
     tx_access_list_gas_cost: Cell<F>,
-
-    // nonce
     nonce: Cell<F>,
     nonce_prev: Cell<F>,
     is_nonce_valid: IsEqualGadget<F>,
-
-    // gas fee and tx value for invalid tx
     effective_gas_fee: Word<F>,
     effective_tx_value: Word<F>,
-
     reversion_info: ReversionInfo<F>,
-
     gas_not_enough: LtGadget<F, N_BYTES_GAS>,
-
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     phase2_code_hash: Cell<F>,
     is_empty_code_hash: IsEqualGadget<F>,
@@ -68,8 +60,6 @@ pub(crate) struct BeginTxGadget<F> {
     create: ContractCreateGadget<F, false>,
     callee_not_exists: IsZeroGadget<F>,
     is_caller_callee_equal: Cell<F>,
-
-    // balance
     total_eth_cost: AddWordsGadget<F, 2, true>,
     total_eth_cost_sum: Word<F>,
     balance_not_enough: LtWordGadget<F>,
@@ -222,7 +212,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 effective_tx_value.clone().expr(),
                 0.expr(),
             );
-            cb.require_equal("effective_gas_fee == 0", effective_gas_fee.clone().expr(), 0.expr());
+            cb.require_equal(
+                "effective_gas_fee == 0",
+                effective_gas_fee.clone().expr(),
+                0.expr(),
+            );
         });
         cb.condition(not::expr(tx_is_invalid.expr()), |cb| {
             cb.require_equal(
@@ -252,9 +246,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let sender_balance_prev = transfer_with_gas_fee.sender_sub_fee.balance_prev();
         let total_eth_cost_sum = cb.query_word_rlc();
         let total_eth_cost = AddWordsGadget::construct(
-           cb,
-           [tx_value.clone(), mul_gas_fee_by_gas.product().clone()],
-           total_eth_cost_sum.clone(),
+            cb,
+            [tx_value.clone(), mul_gas_fee_by_gas.product().clone()],
+            total_eth_cost_sum.clone(),
         );
 
         // Check if the account ETH balance is sufficient
@@ -263,10 +257,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // A transaction is invalid when
         // - The transaction requires more ETH than the transaction needs
-        // - The amount of gas specified in the transaction is lower than the intrinsic
-        //   gas cost
-        // - The transaction nonce does not match the current nonce expected in the
-        //   account
+        // - The amount of gas specified in the transaction is lower than the intrinsic gas cost
+        // - The transaction nonce does not match the current nonce expected in the account
         cb.require_equal(
             "is_tx_invalid is correct",
             or::expr([
@@ -386,7 +378,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // 3. Call to account with empty code.
         cb.condition(
-            and::expr([not::expr(tx_is_create.expr()), no_callee_code.clone(), tx_is_invalid.expr()]),
+            and::expr([
+                not::expr(tx_is_create.expr()),
+                no_callee_code.clone(),
+                tx_is_invalid.expr(),
+            ]),
             |cb| {
                 cb.require_equal(
                     "Tx to account with empty code should be persistent",
@@ -419,7 +415,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // 4. Call to account with non-empty code.
         cb.condition(
-            and::expr([not::expr(tx_is_create.expr()), not::expr(no_callee_code), not::expr(tx_is_invalid.expr())]),
+            and::expr([
+                not::expr(tx_is_create.expr()),
+                not::expr(no_callee_code),
+                not::expr(tx_is_invalid.expr()),
+            ]),
             |cb| {
                 // Setup first call's context.
                 for (field_tag, value) in [
@@ -643,7 +643,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
-        
+
         let intrinsic_gas = select::value(
             F::from(tx.is_create as u64),
             F::from(GasCost::CREATION_TX.as_u64()),
@@ -660,10 +660,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             (U256::zero(), U256::zero())
         };
 
-        self.effective_gas_fee
-            .assign(region, offset, Some(intrinsic_gas_fee.clone().to_le_bytes()))?;
-        self.effective_tx_value
-            .assign(region, offset, Some(intrinsic_tx_value.clone().to_le_bytes()))?;
+        self.effective_gas_fee.assign(
+            region,
+            offset,
+            Some(intrinsic_gas_fee.clone().to_le_bytes()),
+        )?;
+        self.effective_tx_value.assign(
+            region,
+            offset,
+            Some(intrinsic_tx_value.clone().to_le_bytes()),
+        )?;
 
         self.transfer_with_gas_fee.assign(
             region,
@@ -678,10 +684,17 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let total_eth_cost = tx.value + gas_fee;
         self.total_eth_cost
             .assign(region, offset, [tx.value, gas_fee], total_eth_cost)?;
-        self.total_eth_cost_sum.assign(region, offset, Some(total_eth_cost.clone().to_le_bytes()))?;
-        self.balance_not_enough
-            .assign(region, offset, caller_balance_sub_fee_pair.1, total_eth_cost)?;
-        println!("caller_balance_sub_fee_pair: {:?}, caller_balance_sub_value_pair: {:?}, total_eth_cost: {:?}", caller_balance_sub_fee_pair, caller_balance_sub_value_pair, total_eth_cost);
+        self.total_eth_cost_sum.assign(
+            region,
+            offset,
+            Some(total_eth_cost.clone().to_le_bytes()),
+        )?;
+        self.balance_not_enough.assign(
+            region,
+            offset,
+            caller_balance_sub_fee_pair.1,
+            total_eth_cost,
+        )?;
 
         self.phase2_code_hash
             .assign(region, offset, region.word_rlc(callee_code_hash))?;
@@ -760,7 +773,11 @@ mod test {
         }
     }
 
-    fn test_ok(tx: eth_types::Transaction, code: Option<Bytecode>, enable_skipping_invalid_tx: bool) {
+    fn test_ok(
+        tx: eth_types::Transaction,
+        code: Option<Bytecode>,
+        enable_skipping_invalid_tx: bool,
+    ) {
         // Get the execution steps from the external tracer
         let ctx = TestContext::<2, 1>::new(
             None,
@@ -806,13 +823,25 @@ mod test {
 
     fn begin_tx_gadget_simple(enable_skipping_invalid_tx: bool) {
         // Transfer 1 ether to account with empty code, successfully
-        test_ok(mock_tx(eth(1), gwei(2), vec![]), None, enable_skipping_invalid_tx);
+        test_ok(
+            mock_tx(eth(1), gwei(2), vec![]),
+            None,
+            enable_skipping_invalid_tx,
+        );
 
         // Transfer 1 ether, successfully
-        test_ok(mock_tx(eth(1), gwei(2), vec![]), Some(code_with_return()), enable_skipping_invalid_tx);
+        test_ok(
+            mock_tx(eth(1), gwei(2), vec![]),
+            Some(code_with_return()),
+            enable_skipping_invalid_tx,
+        );
 
         // Transfer 1 ether, tx reverts
-        test_ok(mock_tx(eth(1), gwei(2), vec![]), Some(code_with_revert()), enable_skipping_invalid_tx);
+        test_ok(
+            mock_tx(eth(1), gwei(2), vec![]),
+            Some(code_with_revert()),
+            enable_skipping_invalid_tx,
+        );
 
         // Transfer nothing with some calldata
         test_ok(
@@ -882,7 +911,11 @@ mod test {
             // Transfer nothing with random gas_price, tx reverts
             (eth(0), random_gas_price, vec![], Some(code_with_revert())),
         ] {
-            test_ok(mock_tx(value, gas_price, calldata), code, enable_skipping_invalid_tx);
+            test_ok(
+                mock_tx(value, gas_price, calldata),
+                code,
+                enable_skipping_invalid_tx,
+            );
         }
     }
 
@@ -1033,7 +1066,6 @@ mod test {
         begin_tx_deploy(0xfffffffffffffffeu64);
     }
 
-
     #[test]
     #[should_panic]
     fn begin_tx_disable_skipping_invalid_tx_invalid_nonce() {
@@ -1102,10 +1134,7 @@ mod test {
             None,
             |accs| {
                 accs[0].address(to).balance(balance);
-                accs[1]
-                    .address(from)
-                    .balance(balance)
-                    .nonce(1);
+                accs[1].address(from).balance(balance).nonce(1);
             },
             |mut txs, _| {
                 txs[0]
@@ -1133,10 +1162,7 @@ mod test {
             None,
             |accs| {
                 accs[0].address(to).balance(balance);
-                accs[1]
-                    .address(from)
-                    .balance(balance)
-                    .nonce(1);
+                accs[1].address(from).balance(balance).nonce(1);
             },
             |mut txs, _| {
                 txs[0]

@@ -37,8 +37,6 @@ use log::warn;
 use std::collections::HashMap;
 pub use transaction::{Transaction, TransactionContext};
 
-use rlp::{Rlp};
-
 /// Circuit Setup Parameters
 #[derive(Debug, Clone, Copy)]
 pub struct CircuitsParams {
@@ -170,7 +168,14 @@ impl<'a> CircuitInputBuilder {
             ),
         );
 
-        Transaction::new(call_id, &self.sdb, &mut self.code_db, eth_tx, is_success, is_invalid)
+        Transaction::new(
+            call_id,
+            &self.sdb,
+            &mut self.code_db,
+            eth_tx,
+            is_success,
+            is_invalid,
+        )
     }
 
     /// Iterate over all generated CallContext RwCounterEndOfReversion

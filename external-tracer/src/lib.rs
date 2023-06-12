@@ -78,7 +78,7 @@ pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
 
         println!("Creates a trace for the specified config {:?}, invalid: {:?}", trace.return_value, trace.invalid);
 
-        if trace.invalid == true
+        if trace.invalid
             && !(trace.return_value.starts_with("nonce too low")
                 || trace.return_value.starts_with("nonce too high")
                 || trace.return_value.starts_with("intrinsic gas too low")

@@ -85,14 +85,14 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     } + state.tx.tx.call_data_gas_cost();
     
     // Don't pay any fee or transfer any ETH for invalid transactions
-    let (gas_cost, value, fee) = if !(state.tx.invalid_tx == true) {
+    let (gas_cost, value, fee) = if state.tx.invalid_tx {
+        (0, Word::zero(), Some(Word::zero()))
+    } else {
         (
             intrinsic_gas_cost,
             call.value,
             Some(state.tx.tx.gas_price * state.tx.gas()),
         )
-    } else {
-        (0, Word::zero(), Some(Word::zero()))
     };
 
     // Set the gas cost
