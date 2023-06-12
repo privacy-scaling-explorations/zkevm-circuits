@@ -1222,11 +1222,12 @@ impl<F: Field> MainRLPGadget<F> {
                     .map(|byte| byte.expr())
                     .collect::<Vec<_>>(),
             );
-            // ifx!(config.rlp.is_string() => {
-            //     config.rlp.value_limit.expr()
-            // } elsex {
-            //     config.rlp.list_limit.expr()
-            // });
+
+            let below_limit = matchx!(
+                config.rlp.is_string() => config.rlp.value_limit.expr(),
+                config.rlp.is_list() => config.rlp.list_limit.expr(),
+            );
+            require!(below_limit => true);
 
             require!(config.num_bytes => config.rlp.num_bytes());
             require!(config.len => config.rlp.len());

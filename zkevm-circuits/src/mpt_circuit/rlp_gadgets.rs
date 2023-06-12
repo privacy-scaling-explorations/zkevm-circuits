@@ -620,13 +620,13 @@ impl<F: Field> RLPItemGadget<F> {
         let list = RLPListGadget::construct(cb, bytes);
         let value_limit = LtGadget::<F, 2>::construct(
             &mut cb.base, 
-            RLP_STRING_MAX.expr(),
-            value.len(),
+            1.expr(),// value.len(),
+            0.expr()// RLP_STRING_MAX.expr(),
         );
         let list_limit = LtGadget::<F, 2>::construct(
             &mut cb.base, 
-            RLP_LIST_MAX.expr(),
-            list.len(),
+            1.expr(),// list.len(),
+            0.expr()// RLP_LIST_MAX.expr(),
         );
         RLPItemGadget {
             value,
@@ -644,26 +644,31 @@ impl<F: Field> RLPItemGadget<F> {
     ) -> Result<RLPItemWitness, Error> {
         let value_witness = self.value.assign(region, offset, bytes)?;
         let list_witness = self.list.assign(region, offset, bytes)?;
-        // if !bytes.iter()
-        //     .fold(bytes[0] == 0, |is_zero, b| is_zero && *b == 0) 
-        // {
-        //     if value_witness.is_string() {
-        //         println!("value_witness");
-        //         self.value_limit.assign(
-        //             region, 
-        //             offset,  
-        //             (RLP_STRING_MAX).scalar(), 
-        //             value_witness.len().scalar())?;
-        //     }
-        //     else if list_witness.is_list(){
-        //         println!("list_witness");
-        //         self.list_limit.assign(
-        //             region, 
-        //             offset,  
-        //             (RLP_LIST_MAX).scalar(), 
-        //             list_witness.len().scalar())?;
-        //     }
-        // }
+        if !bytes.iter()
+            .fold(bytes[0] == 0, |is_zero, b| is_zero && *b == 0) 
+        {
+            if value_witness.is_string() {
+                println!("value_witness");
+                self.value_limit.assign(
+                    region, 
+                    offset,  
+                    1.scalar(),// (RLP_STRING_MAX).scalar(), 
+                    0.scalar()// value_witness.len().scalar())?;
+                )?;
+            }
+            else if list_witness.is_list(){
+                println!("list_witness");
+                self.list_limit.assign(
+                    region, 
+                    offset,  
+                    1.scalar(),//(RLP_LIST_MAX).scalar(), 
+                    0.scalar()//list_witness.len().scalar()
+                )?;
+            }
+        } else {
+            self.value_limit.assign(region, offset, 1.scalar(), 0.scalar());
+            self.list_limit.assign(region, offset, 1.scalar(), 0.scalar());
+        }
         
         Ok(RLPItemWitness {
             value: value_witness,
