@@ -27,7 +27,7 @@ pub struct MockBlock {
     extra_data: Bytes,
     mix_hash: Hash,
     nonce: H64,
-    base_fee_per_gas: Word, // London upgrade, EIP-1559
+    base_fee_per_gas: Option<Word>, // London upgrade, EIP-1559
     // Other information
     total_difficulty: Word,
     seal_fields: Vec<Bytes>,
@@ -60,7 +60,7 @@ impl Default for MockBlock {
             extra_data: Bytes::default(),
             mix_hash: Hash::zero(),
             nonce: H64::zero(),
-            base_fee_per_gas: *MOCK_BASEFEE,
+            base_fee_per_gas: Some(*MOCK_BASEFEE),
             // Other information
             total_difficulty: Word::zero(),
             seal_fields: Vec::new(),
@@ -92,7 +92,7 @@ impl From<MockBlock> for Block<Transaction> {
             extra_data: mock.extra_data,
             mix_hash: Some(mock.mix_hash),
             nonce: Some(mock.nonce),
-            base_fee_per_gas: Some(mock.base_fee_per_gas),
+            base_fee_per_gas: mock.base_fee_per_gas,
             // Other information
             total_difficulty: Some(mock.total_difficulty),
             seal_fields: mock.seal_fields,
@@ -128,7 +128,7 @@ impl From<MockBlock> for Block<()> {
             extra_data: mock.extra_data,
             mix_hash: Some(mock.mix_hash),
             nonce: Some(mock.nonce),
-            base_fee_per_gas: Some(mock.base_fee_per_gas),
+            base_fee_per_gas: mock.base_fee_per_gas,
             // Other information
             total_difficulty: Some(mock.total_difficulty),
             seal_fields: mock.seal_fields,
@@ -239,7 +239,7 @@ impl MockBlock {
     }
 
     /// Set base_fee_per_gas field for the MockBlock.
-    pub fn base_fee_per_gas(&mut self, base_fee_per_gas: Word) -> &mut Self {
+    pub fn base_fee_per_gas(&mut self, base_fee_per_gas: Option<Word>) -> &mut Self {
         self.base_fee_per_gas = base_fee_per_gas;
         self
     }
