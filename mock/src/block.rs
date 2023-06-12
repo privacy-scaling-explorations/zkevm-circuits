@@ -9,28 +9,31 @@ use ethers_core::types::{Bloom, OtherFields};
 /// It contains all the builder-pattern methods required to be able to specify
 /// any of it's details.
 pub struct MockBlock {
+    // Block (header) hash
     hash: Option<Hash>,
+    // Block header (ordered as hashed)
     parent_hash: Hash,
     uncles_hash: Hash,
     author: Address,
     state_root: Hash,
     transactions_root: Hash,
     receipts_root: Hash,
-    number: U64,
-    gas_used: Word,
-    gas_limit: Word,
-    base_fee_per_gas: Word,
-    extra_data: Bytes,
     logs_bloom: Option<Bloom>,
-    timestamp: Word,
     difficulty: Word,
+    number: U64,
+    gas_limit: Word,
+    gas_used: Word,
+    timestamp: Word,
+    extra_data: Bytes,
+    mix_hash: Hash,
+    nonce: H64,
+    base_fee_per_gas: Word, // London upgrade, EIP-1559
+    // Other information
     total_difficulty: Word,
     seal_fields: Vec<Bytes>,
     uncles: Vec<Hash>,
     pub(crate) transactions: Vec<MockTransaction>,
     size: Word,
-    mix_hash: Hash,
-    nonce: H64,
     // This field is handled here as we assume that all block txs have the same ChainId.
     // Also, the field is stored in the block_table since we don't have a chain_config
     // structure/table.
@@ -41,27 +44,29 @@ impl Default for MockBlock {
     fn default() -> Self {
         MockBlock {
             hash: Some(Hash::zero()),
+            // Header
             parent_hash: Hash::zero(),
             uncles_hash: Hash::zero(),
             author: Address::zero(),
             state_root: Hash::zero(),
             transactions_root: Hash::zero(),
             receipts_root: Hash::zero(),
-            number: U64([0u64]),
-            gas_used: Word::zero(),
-            gas_limit: *MOCK_GASLIMIT,
-            base_fee_per_gas: *MOCK_BASEFEE,
-            extra_data: Bytes::default(),
             logs_bloom: None,
-            timestamp: Word::from(123456789u64),
             difficulty: *MOCK_DIFFICULTY,
+            number: U64([0u64]),
+            gas_limit: *MOCK_GASLIMIT,
+            gas_used: Word::zero(),
+            timestamp: Word::from(123456789u64),
+            extra_data: Bytes::default(),
+            mix_hash: Hash::zero(),
+            nonce: H64::zero(),
+            base_fee_per_gas: *MOCK_BASEFEE,
+            // Other information
             total_difficulty: Word::zero(),
             seal_fields: Vec::new(),
             uncles: Vec::new(),
             transactions: Vec::new(),
             size: Word::zero(),
-            mix_hash: Hash::zero(),
-            nonce: H64::zero(),
             chain_id: *MOCK_CHAIN_ID,
         }
     }
@@ -71,19 +76,24 @@ impl From<MockBlock> for Block<Transaction> {
     fn from(mut mock: MockBlock) -> Self {
         Block {
             hash: mock.hash.or_else(|| Some(Hash::default())),
+            // Header
             parent_hash: mock.parent_hash,
             uncles_hash: mock.uncles_hash,
             author: Some(mock.author),
             state_root: mock.state_root,
             transactions_root: mock.transactions_root,
             receipts_root: mock.receipts_root,
-            number: Some(mock.number),
-            gas_used: mock.gas_used,
-            gas_limit: mock.gas_limit,
-            extra_data: mock.extra_data,
             logs_bloom: mock.logs_bloom,
-            timestamp: mock.timestamp,
             difficulty: mock.difficulty,
+            number: Some(mock.number),
+            gas_limit: mock.gas_limit,
+            gas_used: mock.gas_used,
+            timestamp: mock.timestamp,
+            extra_data: mock.extra_data,
+            mix_hash: Some(mock.mix_hash),
+            nonce: Some(mock.nonce),
+            base_fee_per_gas: Some(mock.base_fee_per_gas),
+            // Other information
             total_difficulty: Some(mock.total_difficulty),
             seal_fields: mock.seal_fields,
             uncles: mock.uncles,
@@ -93,9 +103,6 @@ impl From<MockBlock> for Block<Transaction> {
                 .map(|mock_tx| (mock_tx.chain_id(mock.chain_id).to_owned()).into())
                 .collect::<Vec<Transaction>>(),
             size: Some(mock.size),
-            mix_hash: Some(mock.mix_hash),
-            nonce: Some(mock.nonce),
-            base_fee_per_gas: Some(mock.base_fee_per_gas),
             other: OtherFields::default(),
         }
     }
@@ -105,27 +112,29 @@ impl From<MockBlock> for Block<()> {
     fn from(mock: MockBlock) -> Self {
         Block {
             hash: mock.hash.or_else(|| Some(Hash::default())),
+            // Header
             parent_hash: mock.parent_hash,
             uncles_hash: mock.uncles_hash,
             author: Some(mock.author),
             state_root: mock.state_root,
             transactions_root: mock.transactions_root,
             receipts_root: mock.receipts_root,
-            number: Some(mock.number),
-            gas_used: mock.gas_used,
-            gas_limit: mock.gas_limit,
-            extra_data: mock.extra_data,
             logs_bloom: mock.logs_bloom,
-            timestamp: mock.timestamp,
             difficulty: mock.difficulty,
+            number: Some(mock.number),
+            gas_limit: mock.gas_limit,
+            gas_used: mock.gas_used,
+            timestamp: mock.timestamp,
+            extra_data: mock.extra_data,
+            mix_hash: Some(mock.mix_hash),
+            nonce: Some(mock.nonce),
+            base_fee_per_gas: Some(mock.base_fee_per_gas),
+            // Other information
             total_difficulty: Some(mock.total_difficulty),
             seal_fields: mock.seal_fields,
             uncles: mock.uncles,
             transactions: vec![],
             size: Some(mock.size),
-            mix_hash: Some(mock.mix_hash),
-            nonce: Some(mock.nonce),
-            base_fee_per_gas: Some(mock.base_fee_per_gas),
             other: OtherFields::default(),
         }
     }
@@ -175,15 +184,21 @@ impl MockBlock {
         self
     }
 
-    /// Set number field for the MockBlock.
-    pub fn number(&mut self, number: u64) -> &mut Self {
-        self.number = U64::from(number);
+    /// Set logs_bloom field for the MockBlock.
+    pub fn logs_bloom(&mut self, logs_bloom: Bloom) -> &mut Self {
+        self.logs_bloom = Some(logs_bloom);
         self
     }
 
-    /// Set gas_used field for the MockBlock.
-    pub fn gas_used(&mut self, gas_used: Word) -> &mut Self {
-        self.gas_used = gas_used;
+    /// Set difficulty field for the MockBlock.
+    pub fn difficulty(&mut self, difficulty: Word) -> &mut Self {
+        self.difficulty = difficulty;
+        self
+    }
+
+    /// Set number field for the MockBlock.
+    pub fn number(&mut self, number: u64) -> &mut Self {
+        self.number = U64::from(number);
         self
     }
 
@@ -193,21 +208,9 @@ impl MockBlock {
         self
     }
 
-    /// Set base_fee_per_gas field for the MockBlock.
-    pub fn base_fee_per_gas(&mut self, base_fee_per_gas: Word) -> &mut Self {
-        self.base_fee_per_gas = base_fee_per_gas;
-        self
-    }
-
-    /// Set extra_data field for the MockBlock.
-    pub fn extra_data(&mut self, extra_data: Bytes) -> &mut Self {
-        self.extra_data = extra_data;
-        self
-    }
-
-    /// Set logs_bloom field for the MockBlock.
-    pub fn logs_bloom(&mut self, logs_bloom: Bloom) -> &mut Self {
-        self.logs_bloom = Some(logs_bloom);
+    /// Set gas_used field for the MockBlock.
+    pub fn gas_used(&mut self, gas_used: Word) -> &mut Self {
+        self.gas_used = gas_used;
         self
     }
 
@@ -217,9 +220,27 @@ impl MockBlock {
         self
     }
 
-    /// Set difficulty field for the MockBlock.
-    pub fn difficulty(&mut self, difficulty: Word) -> &mut Self {
-        self.difficulty = difficulty;
+    /// Set extra_data field for the MockBlock.
+    pub fn extra_data(&mut self, extra_data: Bytes) -> &mut Self {
+        self.extra_data = extra_data;
+        self
+    }
+
+    /// Set mix_hash field for the MockBlock.
+    pub fn mix_hash(&mut self, mix_hash: Hash) -> &mut Self {
+        self.mix_hash = mix_hash;
+        self
+    }
+
+    /// Set nonce field for the MockBlock.
+    pub fn nonce(&mut self, nonce: H64) -> &mut Self {
+        self.nonce = nonce;
+        self
+    }
+
+    /// Set base_fee_per_gas field for the MockBlock.
+    pub fn base_fee_per_gas(&mut self, base_fee_per_gas: Word) -> &mut Self {
+        self.base_fee_per_gas = base_fee_per_gas;
         self
     }
 
@@ -253,18 +274,6 @@ impl MockBlock {
     /// Set size field for the MockBlock.
     pub fn size(&mut self, size: Word) -> &mut Self {
         self.size = size;
-        self
-    }
-
-    /// Set mix_hash field for the MockBlock.
-    pub fn mix_hash(&mut self, mix_hash: Hash) -> &mut Self {
-        self.mix_hash = mix_hash;
-        self
-    }
-
-    /// Set nonce field for the MockBlock.
-    pub fn nonce(&mut self, nonce: H64) -> &mut Self {
-        self.nonce = nonce;
         self
     }
 
