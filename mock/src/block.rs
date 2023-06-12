@@ -28,6 +28,7 @@ pub struct MockBlock {
     mix_hash: Hash,
     nonce: H64,
     base_fee_per_gas: Option<Word>, // London upgrade, EIP-1559
+    withdrawal_hash: Option<Hash>,  // Shanghai upgrade, EIP-4895
     // Other information
     total_difficulty: Word,
     seal_fields: Vec<Bytes>,
@@ -61,6 +62,7 @@ impl Default for MockBlock {
             mix_hash: Hash::zero(),
             nonce: H64::zero(),
             base_fee_per_gas: Some(*MOCK_BASEFEE),
+            withdrawal_hash: None,
             // Other information
             total_difficulty: Word::zero(),
             seal_fields: Vec::new(),
@@ -241,6 +243,12 @@ impl MockBlock {
     /// Set base_fee_per_gas field for the MockBlock.
     pub fn base_fee_per_gas(&mut self, base_fee_per_gas: Option<Word>) -> &mut Self {
         self.base_fee_per_gas = base_fee_per_gas;
+        self
+    }
+
+    /// Set withdrawal_hash field for the MockBlock.
+    pub fn withdrawal_hash(&mut self, withdrawal_hash: Option<Hash>) -> &mut Self {
+        self.withdrawal_hash = withdrawal_hash;
         self
     }
 
