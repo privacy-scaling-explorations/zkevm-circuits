@@ -31,7 +31,7 @@ use self::{
 };
 use crate::{
     assign, assignf, circuit,
-    circuit_tools::{cached_region::CachedRegion, cell_manager::{CellManager}, memory::Memory},
+    circuit_tools::{cached_region::CachedRegion, cell_manager::CellManager, memory::Memory},
     evm_circuit::table::Table,
     mpt_circuit::{
         helpers::{
@@ -452,7 +452,7 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                         cached_region.pop_region();
                     } else if node.account.is_some() {
-                        //println!("{}: account", offset);
+                        // println!("{:?}: account", node.account);
                         cached_region.push_region(offset, MPTRegion::Account as usize);
                         assign!(cached_region, (self.state_machine.is_account, offset) => "is_account", true.scalar())?;
                         self.state_machine.account_config.assign(
