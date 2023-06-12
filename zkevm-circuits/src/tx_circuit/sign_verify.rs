@@ -35,7 +35,7 @@ use rand_chacha::ChaCha20Rng;
 
 use itertools::Itertools;
 use keccak256::plain::Keccak;
-use log::{error, info};
+use log::error;
 use maingate::{
     AssignedCondition, AssignedValue, MainGate, MainGateConfig, MainGateInstructions, RangeChip,
     RangeConfig, RangeInstructions, RegionCtx,

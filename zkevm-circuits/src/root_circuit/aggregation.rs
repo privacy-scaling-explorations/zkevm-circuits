@@ -28,6 +28,7 @@ use snark_verifier::{
     verifier::{self, plonk::PlonkProtocol, SnarkVerifier},
 };
 use std::{io, iter, rc::Rc};
+use maingate::MainGateInstructions;
 
 /// Number of limbs to decompose a elliptic curve base field element into.
 pub const LIMBS: usize = 4;
@@ -473,17 +474,17 @@ where
         let (instances, accumulator_limbs) =
             config.aggregate::<M>(&mut layouter, &self.svk, self.snarks.clone())?;
 
-        // // Constrain equality to instance values
-        // let main_gate: maingate::MainGate<M::Scalar> = config.main_gate();
-        // for (row, limb) in instances
-        //     .into_iter()
-        //     .flatten()
-        //     .flatten()
-        //     .chain(accumulator_limbs)
-        //     .enumerate()
-        // {
-        //     // main_gate.expose_public(layouter.namespace(|| ""), limb, row)?;
-        // }
+        // Constrain equality to instance values
+        let main_gate: maingate::MainGate<M::Scalar> = config.main_gate();
+        for (row, limb) in instances
+            .into_iter()
+            .flatten()
+            .flatten()
+            .chain(accumulator_limbs)
+            .enumerate()
+        {
+            main_gate.expose_public(layouter.namespace(|| ""), limb, row)?;
+        }
 
         Ok(())
     }

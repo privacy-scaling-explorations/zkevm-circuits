@@ -8,10 +8,10 @@ use halo2_proofs::{
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use itertools::Itertools;
-use maingate::MainGateInstructions;
-use maingate::MainGate;
+
 use snark_verifier::{util::arithmetic::MultiMillerLoop, verifier::plonk::PlonkProtocol};
 use std::iter;
+use maingate::MainGateInstructions;
 
 mod aggregation;
 
@@ -134,7 +134,6 @@ where
         let (instance, accumulator_limbs) =
             config.aggregate::<M>(&mut layouter, &self.svk, [self.snark])?;
 
-        /*
         // Constrain equality to instance values
         let main_gate = config.main_gate();
         for (row, limb) in instance
@@ -146,7 +145,6 @@ where
         {
             main_gate.expose_public(layouter.namespace(|| ""), limb, row)?;
         }
-        */
 
         Ok(())
     }

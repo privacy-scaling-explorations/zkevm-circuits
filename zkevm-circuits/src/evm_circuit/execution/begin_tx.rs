@@ -1,5 +1,3 @@
-use std::borrow::Borrow;
-
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
