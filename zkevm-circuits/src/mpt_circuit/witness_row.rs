@@ -242,7 +242,7 @@ impl<F: Field> MptWitnessRow<F> {
     }
 }
 
-// TODO(Brecht): Do all of this on the MPT proof generation side
+// TODO(x Brecht): Do all of this on the MPT proof generation side
 #[allow(clippy::collapsible_else_if)]
 pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec<Node> {
     let mut key_rlp_bytes = Vec::new();

@@ -622,6 +622,7 @@ impl<F: Field> ParentData<F> {
 pub(crate) struct MainData<F> {
     pub(crate) proof_type: Cell<F>,
     pub(crate) is_below_account: Cell<F>,
+    pub(crate) is_non_existing_account: Cell<F>,
     pub(crate) address_rlc: Cell<F>,
     pub(crate) root_prev: Cell<F>,
     pub(crate) root: Cell<F>,
@@ -631,6 +632,7 @@ pub(crate) struct MainData<F> {
 pub(crate) struct MainDataWitness<F> {
     pub(crate) proof_type: usize,
     pub(crate) is_below_account: bool,
+    pub(crate) is_non_existing_account: bool,
     pub(crate) address_rlc: F,
     pub(crate) root_prev: F,
     pub(crate) root: F,
@@ -646,6 +648,7 @@ impl<F: Field> MainData<F> {
         let main_data = MainData {
             proof_type: cb.query_cell(),
             is_below_account: cb.query_cell(),
+            is_non_existing_account: cb.query_cell(),
             address_rlc: cb.query_cell(),
             root_prev: cb.query_cell(),
             root: cb.query_cell(),
@@ -658,6 +661,7 @@ impl<F: Field> MainData<F> {
                 &[
                     main_data.proof_type.expr(),
                     main_data.is_below_account.expr(),
+                    main_data.is_non_existing_account.expr(),
                     main_data.address_rlc.expr(),
                     main_data.root_prev.expr(),
                     main_data.root.expr(),
@@ -670,7 +674,7 @@ impl<F: Field> MainData<F> {
     pub(crate) fn store(
         cb: &mut MPTConstraintBuilder<F>,
         memory: &MemoryBank<F, MptCellType>,
-        values: [Expression<F>; 5],
+        values: [Expression<F>; 6],
     ) {
         memory.store(&mut cb.base, &values);
     }
@@ -682,6 +686,7 @@ impl<F: Field> MainData<F> {
         memory: &mut MemoryBank<F, MptCellType>,
         proof_type: usize,
         is_below_account: bool,
+        is_non_existing_account: F,
         address_rlc: F,
         root_prev: F,
         root: F,
@@ -689,6 +694,7 @@ impl<F: Field> MainData<F> {
         let values = [
             proof_type.scalar(),
             is_below_account.scalar(),
+            is_non_existing_account,
             address_rlc,
             root_prev,
             root,
@@ -709,13 +715,15 @@ impl<F: Field> MainData<F> {
 
         self.proof_type.assign(region, offset, values[0])?;
         self.is_below_account.assign(region, offset, values[1])?;
-        self.address_rlc.assign(region, offset, values[2])?;
-        self.root_prev.assign(region, offset, values[3])?;
-        self.root.assign(region, offset, values[4])?;
+        self.is_non_existing_account.assign(region, offset, values[2])?;
+        self.address_rlc.assign(region, offset, values[3])?;
+        self.root_prev.assign(region, offset, values[4])?;
+        self.root.assign(region, offset, values[5])?;
 
         Ok(MainDataWitness {
             proof_type: values[0].get_lower_32() as usize,
             is_below_account: values[1] == 1.scalar(),
+            is_non_existing_account: values[1] == 1.scalar(),
             address_rlc: values[2],
             root_prev: values[3],
             root: values[4],
@@ -1104,7 +1112,7 @@ impl<F: Field> DriftedGadget<F> {
 pub struct WrongGadget<F> {
     wrong_rlp_key: ListKeyGadget<F>,
     wrong_mult: Cell<F>,
-    is_key_equal: IsEqualGadget<F>,
+    pub(crate) is_key_equal: IsEqualGadget<F>,
     wrong_key: Option<Expression<F>>,
 }
 
@@ -1163,7 +1171,7 @@ impl<F: Field> WrongGadget<F> {
         for_placeholder_s: bool,
         key_data: KeyDataWitness<F>,
         r: F,
-    ) -> Result<F, Error> {
+    ) -> Result<(F, F), Error> {
         if is_non_existing {
             let wrong_witness = self
                 .wrong_rlp_key
@@ -1175,15 +1183,15 @@ impl<F: Field> WrongGadget<F> {
                 r,
             );
 
-            self.is_key_equal.assign(
+            let is_key_equal_witness = self.is_key_equal.assign(
                 region,
                 offset,
                 key_rlc[for_placeholder_s.idx()],
                 key_rlc_wrong,
             )?;
-            Ok(key_rlc_wrong)
+            Ok((key_rlc_wrong, is_key_equal_witness))
         } else {
-            Ok(key_rlc[for_placeholder_s.idx()])
+            Ok((key_rlc[for_placeholder_s.idx()], 1.scalar()))
         }
     }
 }
