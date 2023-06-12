@@ -1,6 +1,8 @@
 #![allow(unused_imports)]
-pub use super::*;
-use crate::super_circuit::{test::block_1tx, SuperCircuit};
+use crate::{
+    root_circuit::{compile, Config, Gwc, PoseidonTranscript, RootCircuit},
+    super_circuit::{test::block_1tx, SuperCircuit},
+};
 use bus_mapping::circuit_input_builder::CircuitsParams;
 use halo2_proofs::{
     circuit::Value,
@@ -61,7 +63,7 @@ fn test_root_circuit() {
         (params, protocol, proof, instance)
     };
 
-    let root_circuit = RootCircuit::new(
+    let root_circuit = RootCircuit::<Bn256, Gwc<_>>::new(
         &params,
         &protocol,
         Value::known(&instance),
