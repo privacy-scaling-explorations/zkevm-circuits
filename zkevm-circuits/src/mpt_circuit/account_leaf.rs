@@ -209,6 +209,19 @@ impl<F: Field> AccountLeafConfig<F> {
                 );
             }
 
+            MainData::store(
+                cb,
+                &ctx.memory[main_memory()],
+                [
+                    config.main_data.proof_type.expr(),
+                    true.expr(),
+                    false.expr(),
+                    key_rlc[true.idx()].expr(),
+                    config.main_data.root_prev.expr(),
+                    config.main_data.root.expr(),
+                ],
+            );
+
             // Proof types
             config.is_non_existing_account_proof = IsEqualGadget::construct(
                 &mut cb.base,
@@ -241,6 +254,19 @@ impl<F: Field> AccountLeafConfig<F> {
                 MPTProofType::CodeHashExists.expr(),
             );
 
+            // MainData::store(
+            //     cb,
+            //     &ctx.memory[main_memory()],
+            //     [
+            //         config.main_data.proof_type.expr(),
+            //         true.expr(),
+            //         config.is_non_existing_account_proof.expr(),
+            //         key_rlc[true.idx()].expr(),
+            //         config.main_data.root_prev.expr(),
+            //         config.main_data.root.expr(),
+            //     ],
+            // );
+
             // Drifted leaf handling
             config.drifted = DriftedGadget::construct(
                 cb,
@@ -264,23 +290,23 @@ impl<F: Field> AccountLeafConfig<F> {
                 config.key_data[true.idx()].clone(),
                 &ctx.r,
             );
-            let is_empty_account = config.wrong.is_key_equal.clone();
+            // let is_empty_account = config.wrong.is_key_equal.clone();
 
-            // Anything following this node is below the account
-            // TODO(Brecht): For non-existing accounts it should be impossible to prove
-            // storage leaves unless it's also a non-existing proof?
-            MainData::store(
-                cb,
-                &ctx.memory[main_memory()],
-                [
-                    config.main_data.proof_type.expr(),
-                    true.expr(),
-                    is_empty_account.expr(),
-                    key_rlc[true.idx()].expr(),
-                    config.main_data.root_prev.expr(),
-                    config.main_data.root.expr(),
-                ],
-            );
+            // // Anything following this node is below the account
+            // // TODO(Brecht): For non-existing accounts it should be impossible to prove
+            // // storage leaves unless it's also a non-existing proof?
+            // MainData::store(
+            //     cb,
+            //     &ctx.memory[main_memory()],
+            //     [
+            //         config.main_data.proof_type.expr(),
+            //         true.expr(),
+            //         is_empty_account.expr(),
+            //         key_rlc[true.idx()].expr(),
+            //         config.main_data.root_prev.expr(),
+            //         config.main_data.root.expr(),
+            //     ],
+            // );
 
             ifx! {config.is_account_delete_mod => {
                 // Account delete
