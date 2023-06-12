@@ -1,6 +1,51 @@
-use crate::common::*;
+//! Plain keccak256 implementation
+
 use itertools::Itertools;
 
+/// The State is a 5x5 matrix of 64 bit lanes.
+type State = [[u64; 5]; 5];
+
+/// The number of rounds for the 1600 bits permutation used in Keccak-256. See [here](https://github.com/Legrandin/pycryptodome/blob/016252bde04456614b68d4e4e8798bc124d91e7a/src/keccak.c#L230)
+const PERMUTATION: usize = 24;
+
+/// The Keccak [round constants](https://github.com/Legrandin/pycryptodome/blob/016252bde04456614b68d4e4e8798bc124d91e7a/src/keccak.c#L257-L282)
+static ROUND_CONSTANTS: [u64; PERMUTATION] = [
+    0x0000000000000001,
+    0x0000000000008082,
+    0x800000000000808A,
+    0x8000000080008000,
+    0x000000000000808B,
+    0x0000000080000001,
+    0x8000000080008081,
+    0x8000000000008009,
+    0x000000000000008A,
+    0x0000000000000088,
+    0x0000000080008009,
+    0x000000008000000A,
+    0x000000008000808B,
+    0x800000000000008B,
+    0x8000000000008089,
+    0x8000000000008003,
+    0x8000000000008002,
+    0x8000000000000080,
+    0x000000000000800A,
+    0x800000008000000A,
+    0x8000000080008081,
+    0x8000000000008080,
+    0x0000000080000001,
+    0x8000000080008008,
+];
+
+/// The Keccak [rotation offsets](https://github.com/Legrandin/pycryptodome/blob/016252bde04456614b68d4e4e8798bc124d91e7a/src/keccak.c#L232-L255)
+static ROTATION_CONSTANTS: [[u32; 5]; 5] = [
+    [0, 36, 3, 41, 18],
+    [1, 44, 10, 45, 2],
+    [62, 6, 43, 15, 61],
+    [28, 55, 25, 21, 56],
+    [27, 20, 39, 8, 14],
+];
+
+/// The main keccak object
 pub struct Keccak {
     state: State,
     sponge: Sponge,
@@ -21,6 +66,7 @@ impl Default for Keccak {
 }
 
 impl Keccak {
+    /// Take more input bytes to the state
     pub fn update(&mut self, input: &[u8]) {
         let rate = self.sponge.rate;
         // offset for `input`
@@ -67,10 +113,10 @@ impl Keccak {
 }
 
 #[derive(Default)]
-pub struct KeccakF {}
+struct KeccakF {}
 
 impl KeccakF {
-    pub fn permutations(&self, a: &mut State) {
+    fn permutations(&self, a: &mut State) {
         for rc in ROUND_CONSTANTS.iter().take(PERMUTATION) {
             *a = KeccakF::round_b(*a, *rc);
         }
@@ -84,7 +130,7 @@ impl KeccakF {
         KeccakF::iota(s4, rc)
     }
 
-    pub fn theta(a: State) -> State {
+    fn theta(a: State) -> State {
         let mut c: [u64; 5] = [0; 5];
         let mut out: State = [[0; 5]; 5];
 
@@ -98,7 +144,7 @@ impl KeccakF {
         out
     }
 
-    pub fn rho(a: State) -> State {
+    fn rho(a: State) -> State {
         let mut out: State = [[0; 5]; 5];
         for (x, y) in (0..5).cartesian_product(0..5) {
             out[x][y] = a[x][y].rotate_left(ROTATION_CONSTANTS[x][y]);
@@ -106,7 +152,7 @@ impl KeccakF {
         out
     }
 
-    pub fn pi(a: State) -> State {
+    fn pi(a: State) -> State {
         let mut out: State = [[0; 5]; 5];
 
         for (x, y) in (0..5).cartesian_product(0..5) {
@@ -115,7 +161,7 @@ impl KeccakF {
         out
     }
 
-    pub fn xi(a: State) -> State {
+    fn xi(a: State) -> State {
         let mut out: State = [[0; 5]; 5];
         for (x, y) in (0..5).cartesian_product(0..5) {
             out[x][y] = a[x][y] ^ (!a[(x + 1) % 5][y] & a[(x + 2) % 5][y]);
@@ -123,21 +169,21 @@ impl KeccakF {
         out
     }
 
-    pub fn iota(a: State, rc: u64) -> State {
+    fn iota(a: State, rc: u64) -> State {
         let mut out = a;
         out[0][0] ^= rc;
         out
     }
 }
 
-pub struct Sponge {
+struct Sponge {
     rate: usize,
     capacity: usize,
     keccak_f: KeccakF,
 }
 
 impl Sponge {
-    pub fn new(rate: usize, capacity: usize) -> Sponge {
+    fn new(rate: usize, capacity: usize) -> Sponge {
         Sponge {
             rate,
             capacity,
@@ -145,7 +191,7 @@ impl Sponge {
         }
     }
 
-    pub fn absorb(&self, state: &mut State, message: &[u8]) {
+    fn absorb(&self, state: &mut State, message: &[u8]) {
         debug_assert!(
             message.len() % self.rate == 0,
             "Message is not divisible entirely by bytes rate"
@@ -173,7 +219,7 @@ impl Sponge {
         }
     }
 
-    pub fn squeeze(&self, state: &mut State) -> Vec<u8> {
+    fn squeeze(&self, state: &mut State) -> Vec<u8> {
         let mut output: Vec<u8> = vec![];
 
         let output_len: usize = self.capacity / 2;
@@ -206,64 +252,57 @@ impl Sponge {
         words
     }
 }
-#[cfg(test)]
-fn keccak256(msg: &[u8]) -> Vec<u8> {
+
+/// Convinient method to get 32 bytes digest
+pub fn keccak256(msg: &[u8]) -> [u8; 32] {
     let mut keccak = Keccak::default();
     keccak.update(msg);
-    let a = keccak.digest();
+    keccak.digest().try_into().expect("keccak outputs 32 bytes")
+}
 
-    let mut keccak = Keccak::default();
-    for byte in msg {
-        keccak.update(&[*byte]);
+#[test]
+fn test_keccak256() {
+    fn keccak256(msg: &[u8]) -> Vec<u8> {
+        let mut keccak = Keccak::default();
+        keccak.update(msg);
+        let a = keccak.digest();
+
+        let mut keccak = Keccak::default();
+        for byte in msg {
+            keccak.update(&[*byte]);
+        }
+        let b = keccak.digest();
+
+        assert_eq!(a, b);
+
+        a
     }
-    let b = keccak.digest();
-
-    assert_eq!(a, b);
-
-    a
-}
-
-#[test]
-fn test_empty_input() {
-    let output = [
-        197, 210, 70, 1, 134, 247, 35, 60, 146, 126, 125, 178, 220, 199, 3, 192, 229, 0, 182, 83,
-        202, 130, 39, 59, 123, 250, 216, 4, 93, 133, 164, 112,
+    let pairs = [
+        (
+            "",
+            "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+        ),
+        (
+            "666f6f626172",
+            "38d18acb67d25c8bb9942764b62f18e17054f66a817bd4295423adf9ed98873e",
+        ),
+        (
+            "416c6963652077617320626567696e6e696e6720746f20676574207665727920\
+            7469726564206f662073697474696e672062792068657220736973746572206f\
+            6e207468652062616e6b2c20616e64206f6620686176696e67206e6f7468696e\
+            6720746f20646f3a206f6e6365206f7220747769636520736865206861642070\
+            656570656420696e746f2074686520626f6f6b20686572207369737465722077\
+            61732072656164696e672c2062757420697420686164206e6f20706963747572\
+            6573206f7220636f6e766572736174696f6e7320696e2069742c20616e642077\
+            6861742069732074686520757365206f66206120626f6f6b2c2074686f756768\
+            7420416c69636520776974686f7574207069637475726573206f7220636f6e76\
+            6572736174696f6e733f",
+            "3ce38e088f876c550dfebe3a1e6a99c2bc06d031106696786482e0b1406235fc",
+        ),
     ];
-    assert_eq!(keccak256(&[]), output);
-}
-
-#[test]
-fn test_short_input() {
-    let output = [
-        56, 209, 138, 203, 103, 210, 92, 139, 185, 148, 39, 100, 182, 47, 24, 225, 112, 84, 246,
-        106, 129, 123, 212, 41, 84, 35, 173, 249, 237, 152, 135, 62,
-    ];
-    assert_eq!(keccak256(&[102, 111, 111, 98, 97, 114]), output);
-}
-
-#[test]
-fn test_long_input() {
-    let input = [
-        65, 108, 105, 99, 101, 32, 119, 97, 115, 32, 98, 101, 103, 105, 110, 110, 105, 110, 103,
-        32, 116, 111, 32, 103, 101, 116, 32, 118, 101, 114, 121, 32, 116, 105, 114, 101, 100, 32,
-        111, 102, 32, 115, 105, 116, 116, 105, 110, 103, 32, 98, 121, 32, 104, 101, 114, 32, 115,
-        105, 115, 116, 101, 114, 32, 111, 110, 32, 116, 104, 101, 32, 98, 97, 110, 107, 44, 32, 97,
-        110, 100, 32, 111, 102, 32, 104, 97, 118, 105, 110, 103, 32, 110, 111, 116, 104, 105, 110,
-        103, 32, 116, 111, 32, 100, 111, 58, 32, 111, 110, 99, 101, 32, 111, 114, 32, 116, 119,
-        105, 99, 101, 32, 115, 104, 101, 32, 104, 97, 100, 32, 112, 101, 101, 112, 101, 100, 32,
-        105, 110, 116, 111, 32, 116, 104, 101, 32, 98, 111, 111, 107, 32, 104, 101, 114, 32, 115,
-        105, 115, 116, 101, 114, 32, 119, 97, 115, 32, 114, 101, 97, 100, 105, 110, 103, 44, 32,
-        98, 117, 116, 32, 105, 116, 32, 104, 97, 100, 32, 110, 111, 32, 112, 105, 99, 116, 117,
-        114, 101, 115, 32, 111, 114, 32, 99, 111, 110, 118, 101, 114, 115, 97, 116, 105, 111, 110,
-        115, 32, 105, 110, 32, 105, 116, 44, 32, 97, 110, 100, 32, 119, 104, 97, 116, 32, 105, 115,
-        32, 116, 104, 101, 32, 117, 115, 101, 32, 111, 102, 32, 97, 32, 98, 111, 111, 107, 44, 32,
-        116, 104, 111, 117, 103, 104, 116, 32, 65, 108, 105, 99, 101, 32, 119, 105, 116, 104, 111,
-        117, 116, 32, 112, 105, 99, 116, 117, 114, 101, 115, 32, 111, 114, 32, 99, 111, 110, 118,
-        101, 114, 115, 97, 116, 105, 111, 110, 115, 63,
-    ];
-    let output = [
-        60, 227, 142, 8, 143, 135, 108, 85, 13, 254, 190, 58, 30, 106, 153, 194, 188, 6, 208, 49,
-        16, 102, 150, 120, 100, 130, 224, 177, 64, 98, 53, 252,
-    ];
-    assert_eq!(keccak256(&input), output);
+    for (input, output) in pairs {
+        let input = hex::decode(input).unwrap();
+        let output = hex::decode(output).unwrap();
+        assert_eq!(keccak256(&input), output);
+    }
 }

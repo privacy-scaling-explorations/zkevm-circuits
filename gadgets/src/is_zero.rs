@@ -51,11 +51,11 @@ impl<F: Field> IsZeroConfig<F> {
     }
 }
 
+#[derive(Debug, Clone)]
 /// Wrapper arround [`IsZeroConfig`] for which [`Chip`] is implemented.
 pub struct IsZeroChip<F> {
     config: IsZeroConfig<F>,
 }
-
 #[rustfmt::skip]
 impl<F: Field> IsZeroChip<F> {
     /// Sets up the configuration of the chip by creating the required columns
@@ -104,6 +104,11 @@ impl<F: Field> IsZeroChip<F> {
     /// Given an `IsZeroConfig`, construct the chip.
     pub fn construct(config: IsZeroConfig<F>) -> Self {
         IsZeroChip { config }
+    }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region(&self, region: &mut Region<F>, prefix: &str) {
+      self.config.annotate_columns_in_region(region, prefix)
     }
 }
 
@@ -208,6 +213,7 @@ mod test {
         impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
+            type Params = ();
 
             fn without_witnesses(&self) -> Self {
                 Self::default()
@@ -335,6 +341,7 @@ mod test {
         impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
+            type Params = ();
 
             fn without_witnesses(&self) -> Self {
                 Self::default()

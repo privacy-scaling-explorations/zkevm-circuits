@@ -1,4 +1,3 @@
-pub use crate::table::TxContextFieldTag;
 use crate::{
     evm_circuit::step::{ExecutionState, ResponsibleOp},
     impl_expr,
@@ -108,12 +107,12 @@ impl FixedTableTag {
             })),
             Self::ConstantGasCost => Box::new(
                 OpcodeId::iter()
-                    .filter(move |opcode| opcode.constant_gas_cost().0 > 0)
+                    .filter(move |opcode| opcode.constant_gas_cost() > 0)
                     .map(move |opcode| {
                         [
                             tag,
                             F::from(opcode.as_u64()),
-                            F::from(opcode.constant_gas_cost().0),
+                            F::from(opcode.constant_gas_cost()),
                             F::ZERO,
                         ]
                     }),
@@ -123,7 +122,7 @@ impl FixedTableTag {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
-pub(crate) enum Table {
+pub enum Table {
     Fixed,
     Tx,
     Rw,

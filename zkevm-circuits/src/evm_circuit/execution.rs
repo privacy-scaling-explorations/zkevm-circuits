@@ -4,6 +4,7 @@ use super::{
         FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
         N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
+    step::HasExecutionState,
     util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
 };
 use crate::{
@@ -57,6 +58,7 @@ mod chainid;
 mod codecopy;
 mod codesize;
 mod comparator;
+mod create;
 mod dummy;
 mod dup;
 mod end_block;
@@ -129,6 +131,7 @@ use chainid::ChainIdGadget;
 use codecopy::CodeCopyGadget;
 use codesize::CodesizeGadget;
 use comparator::ComparatorGadget;
+use create::CreateGadget;
 use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
@@ -197,7 +200,7 @@ pub(crate) trait ExecutionGadget<F: Field> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ExecutionConfig<F> {
+pub struct ExecutionConfig<F> {
     // EVM Circuit selector, which enables all usable rows.  The rows where this selector is
     // disabled won't verify any constraint (they can be unused rows or rows with blinding
     // factors).
@@ -268,8 +271,8 @@ pub(crate) struct ExecutionConfig<F> {
     shl_shr_gadget: Box<ShlShrGadget<F>>,
     returndatasize_gadget: Box<ReturnDataSizeGadget<F>>,
     returndatacopy_gadget: Box<ReturnDataCopyGadget<F>>,
-    create_gadget: Box<DummyGadget<F, 3, 1, { ExecutionState::CREATE }>>,
-    create2_gadget: Box<DummyGadget<F, 4, 1, { ExecutionState::CREATE2 }>>,
+    create_gadget: Box<CreateGadget<F, false, { ExecutionState::CREATE }>>,
+    create2_gadget: Box<CreateGadget<F, true, { ExecutionState::CREATE2 }>>,
     selfdestruct_gadget: Box<DummyGadget<F, 1, 0, { ExecutionState::SELFDESTRUCT }>>,
     signed_comparator_gadget: Box<SignedComparatorGadget<F>>,
     signextend_gadget: Box<SignextendGadget<F>>,
@@ -595,7 +598,7 @@ impl<F: Field> ExecutionConfig<F> {
         config
     }
 
-    pub(crate) fn instrument(&self) -> &Instrument {
+    pub fn instrument(&self) -> &Instrument {
         &self.instrument
     }
 
@@ -927,7 +930,7 @@ impl<F: Field> ExecutionConfig<F> {
                     if next.is_none() {
                         break;
                     }
-                    let height = step.execution_state.get_step_height();
+                    let height = step.execution_state().get_step_height();
 
                     // Assign the step witness
                     self.assign_exec_step(
@@ -1074,8 +1077,8 @@ impl<F: Field> ExecutionConfig<F> {
             return Ok(());
         }
         assert_eq!(height, 1);
-        assert!(step.rw_indices.is_empty());
-        assert!(matches!(step.execution_state, ExecutionState::EndBlock));
+        assert!(step.rw_indices_len() == 0);
+        assert!(matches!(step.execution_state(), ExecutionState::EndBlock));
 
         // Disable access to next step deliberately for "repeatable" step
         let region = &mut CachedRegion::<'_, '_, F>::new(
@@ -1088,7 +1091,7 @@ impl<F: Field> ExecutionConfig<F> {
         self.assign_exec_step_int(region, offset_begin, block, transaction, call, step)?;
 
         region.replicate_assignment_for_range(
-            || format!("repeat {:?} rows", step.execution_state),
+            || format!("repeat {:?} rows", step.execution_state()),
             offset_begin + 1,
             offset_end,
         )?;
@@ -1109,11 +1112,11 @@ impl<F: Field> ExecutionConfig<F> {
         next: Option<(&Transaction, &Call, &ExecStep)>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        if !matches!(step.execution_state, ExecutionState::EndBlock) {
+        if !matches!(step.execution_state(), ExecutionState::EndBlock) {
             log::trace!(
                 "assign_exec_step offset: {} state {:?} step: {:?} call: {:?}",
                 offset,
-                step.execution_state,
+                step.execution_state(),
                 step,
                 call
             );
@@ -1165,7 +1168,7 @@ impl<F: Field> ExecutionConfig<F> {
             };
         }
 
-        match step.execution_state {
+        match step.execution_state() {
             // internal states
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
@@ -1279,9 +1282,6 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_stack)
             }
 
-            ExecutionState::ErrorInsufficientBalance => {
-                assign_exec_step!(self.call_op_gadget)
-            }
             ExecutionState::ErrorInvalidJump => {
                 assign_exec_step!(self.error_invalid_jump)
             }
@@ -1291,12 +1291,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorWriteProtection => {
                 assign_exec_step!(self.error_write_protection)
             }
-            ExecutionState::ErrorDepth => {
-                assign_exec_step!(self.error_depth)
-            }
-            ExecutionState::ErrorContractAddressCollision => {
-                assign_exec_step!(self.error_contract_address_collision)
-            }
             ExecutionState::ErrorInvalidCreationCode => {
                 assign_exec_step!(self.error_invalid_creation_code)
             }
@@ -1304,7 +1298,7 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_return_data_out_of_bound)
             }
 
-            _ => evm_unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
+            unimpl_state => evm_unimplemented!("unimplemented ExecutionState: {:?}", unimpl_state),
         }
 
         // Fill in the witness values for stored expressions
@@ -1312,8 +1306,8 @@ impl<F: Field> ExecutionConfig<F> {
 
         // enable with `RUST_LOG=debug`
         if log::log_enabled!(log::Level::Debug) {
-            let is_padding_step = matches!(step.execution_state, ExecutionState::EndBlock)
-                && step.rw_indices.is_empty();
+            let is_padding_step = matches!(step.execution_state(), ExecutionState::EndBlock)
+                && step.rw_indices_len() == 0;
             if !is_padding_step {
                 // expensive function call
                 Self::check_rw_lookup(
@@ -1337,8 +1331,8 @@ impl<F: Field> ExecutionConfig<F> {
         let mut assigned_stored_expressions = Vec::new();
         for stored_expression in self
             .stored_expressions_map
-            .get(&step.execution_state)
-            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state))
+            .get(&step.execution_state())
+            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state()))
         {
             let assigned = stored_expression.assign(region, offset)?;
             assigned.map(|v| {
@@ -1373,10 +1367,8 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
-        let rlc_assignments: BTreeSet<_> = step
-            .rw_indices
-            .iter()
-            .map(|rw_idx| block.rws[*rw_idx])
+        let rlc_assignments: BTreeSet<_> = (0..step.rw_indices_len())
+            .map(|index| block.get_rws(step, index))
             .map(|rw| rw.table_assignment().unwrap().rlc(lookup_randomness))
             .fold(BTreeSet::<F>::new(), |mut set, value| {
                 set.insert(value);
@@ -1393,10 +1385,10 @@ impl<F: Field> ExecutionConfig<F> {
         // Check that the number of rw operations generated from the bus-mapping
         // correspond to the number of assigned rw lookups by the EVM Circuit
         // plus the number of rw lookups done by the copy circuit.
-        if step.rw_indices.len() != assigned_rw_values.len() + step.copy_rw_counter_delta as usize {
+        if step.rw_indices_len() != assigned_rw_values.len() + step.copy_rw_counter_delta as usize {
             log::error!(
                 "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} in step: {:?}",
-                step.rw_indices.len(),
+                step.rw_indices_len(),
                 assigned_rw_values.len(),
                 step.copy_rw_counter_delta,
                 step
@@ -1420,23 +1412,22 @@ impl<F: Field> ExecutionConfig<F> {
             // corresponding rw lookup, but in the bus-mapping they are
             // generated at the end of the step.
             let idx = if is_rev {
-                step.rw_indices.len() - rev_count
+                step.rw_indices_len() - rev_count
             } else {
                 idx - rev_count
             };
-            let rw_idx = step.rw_indices[idx];
-            let rw = block.rws[rw_idx];
+
+            let rw = block.get_rws(step, idx);
             let table_assignments = rw.table_assignment();
             let rlc = table_assignments.unwrap().rlc(lookup_randomness);
             if rlc != assigned_rw_value.1 {
                 log::error!(
-                    "incorrect rw witness. lookup input name: \"{}\"\nassigned={:?}\nrlc     ={:?}\nrw index: {:?}, {}th rw of step {:?}, rw: {:?}",
+                    "incorrect rw witness. lookup input name: \"{}\"\nassigned={:?}\nrlc     ={:?}\n{}th rw of step {:?}, rw: {:?}",
                     assigned_rw_value.0,
                     assigned_rw_value.1,
                     rlc,
-                    rw_idx,
                     idx,
-                    step.execution_state,
+                    step.execution_state(),
                     rw);
             }
         }

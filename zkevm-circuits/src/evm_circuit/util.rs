@@ -10,7 +10,6 @@ use crate::{
         },
         table::Table,
     },
-    table::RwTableTag,
     witness::{Block, ExecStep, Rw, RwMap},
 };
 use bus_mapping::state_db::CodeDB;
@@ -200,8 +199,21 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
             .evm_word()
             .map(|r| rlc::value(&n.to_le_bytes(), r))
     }
+
+    pub fn keccak_rlc(&self, le_bytes: &[u8]) -> Value<F> {
+        self.challenges
+            .keccak_input()
+            .map(|r| rlc::value(le_bytes, r))
+    }
+
     pub fn empty_code_hash_rlc(&self) -> Value<F> {
         self.word_rlc(CodeDB::empty_code_hash().to_word())
+    }
+
+    pub fn code_hash(&self, n: U256) -> Value<F> {
+        self.challenges
+            .evm_word()
+            .map(|r| rlc::value(&n.to_le_bytes(), r))
     }
 
     /// Constrains a cell to have a constant value.
@@ -668,7 +680,7 @@ pub(crate) fn is_precompiled(address: &Address) -> bool {
 /// Helper struct to read rw operations from a step sequentially.
 pub(crate) struct StepRws<'a> {
     rws: &'a RwMap,
-    rw_indices: &'a Vec<(RwTableTag, usize)>,
+    step: &'a ExecStep,
     offset: usize,
 }
 
@@ -677,7 +689,7 @@ impl<'a> StepRws<'a> {
     pub(crate) fn new<F>(block: &'a Block<F>, step: &'a ExecStep) -> Self {
         Self {
             rws: &block.rws,
-            rw_indices: &step.rw_indices,
+            step,
             offset: 0,
         }
     }
@@ -687,7 +699,7 @@ impl<'a> StepRws<'a> {
     }
     /// Return the next rw operation from the step.
     pub(crate) fn next(&mut self) -> Rw {
-        let rw = self.rws[self.rw_indices[self.offset]];
+        let rw = self.rws[self.step.rw_index(self.offset)];
         self.offset += 1;
         rw
     }

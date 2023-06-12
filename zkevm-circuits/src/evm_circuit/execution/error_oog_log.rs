@@ -67,8 +67,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         // access
         let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
 
-        let gas_cost = GasCost::LOG.as_u64().expr()
-            + GasCost::LOG.as_u64().expr() * topic_count
+        let gas_cost = GasCost::LOG.expr()
+            + GasCost::LOG.expr() * topic_count
             + 8.expr() * memory_address.length()
             + memory_expansion.gas_cost();
 
@@ -103,12 +103,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        let [memory_start, msize] =
-            [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
+        let [memory_start, msize] = [0, 1].map(|index| block.get_rws(step, index).stack_value());
 
         let memory_address = self
             .memory_address
@@ -146,7 +145,7 @@ mod test {
     use bus_mapping::evm::OpcodeId;
     use eth_types::{
         self, address, bytecode, bytecode::Bytecode, evm_types::GasCost, geth_types::Account,
-        Address, ToWord, Word,
+        Address, ToWord, Word, U64,
     };
 
     use mock::{
@@ -155,8 +154,8 @@ mod test {
 
     fn gas(call_data: &[u8]) -> Word {
         Word::from(
-            GasCost::TX.as_u64()
-                + 2 * OpcodeId::PUSH32.constant_gas_cost().as_u64()
+            GasCost::TX
+                + 2 * OpcodeId::PUSH32.constant_gas_cost()
                 + call_data
                     .iter()
                     .map(|&x| if x == 0 { 4 } else { 16 })
@@ -268,16 +267,8 @@ mod test {
                 accs[0]
                     .address(address!("0x000000000000000000000000000000000000cafe"))
                     .balance(Word::from(10u64.pow(19)));
-                accs[1]
-                    .address(caller.address)
-                    .code(caller.code)
-                    .nonce(caller.nonce)
-                    .balance(caller.balance);
-                accs[2]
-                    .address(callee.address)
-                    .code(callee.code)
-                    .nonce(callee.nonce)
-                    .balance(callee.balance);
+                accs[1].account(&caller);
+                accs[2].account(&callee);
             },
             |mut txs, accs| {
                 txs[0]
@@ -298,7 +289,7 @@ mod test {
         Account {
             address: Address::repeat_byte(0xff),
             code: code.into(),
-            nonce: if is_empty { 0 } else { 1 }.into(),
+            nonce: U64::from(!is_empty as u64),
             balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
             ..Default::default()
         }

@@ -226,7 +226,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         self.call_data_offset
             .assign(region, offset, Value::known(F::from(call_data_offset)))?;
 
-        let data_offset = block.rws[step.rw_indices[0]].stack_value();
+        let data_offset = block.get_rws(step, 0).stack_value();
         let offset_not_overflow =
             self.data_offset
                 .assign(region, offset, data_offset, F::from(call_data_length))?;
@@ -253,8 +253,9 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 } else {
                     // Fetch from memory.
                     if src_addr + (i as u64) < call.call_data_offset + call.call_data_length {
-                        *byte =
-                            block.rws[step.rw_indices[OFFSET_RW_MEMORY_INDICES + i]].memory_value();
+                        *byte = block
+                            .get_rws(step, OFFSET_RW_MEMORY_INDICES + i)
+                            .memory_value();
                     }
                 }
             }
