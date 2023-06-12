@@ -1,14 +1,15 @@
-use crate::{get_client, GenDataOutput};
+use crate::{get_client, log_init, GenDataOutput};
 use bus_mapping::{
     circuit_input_builder::{BuilderClient, CircuitInputBuilder, CircuitsParams},
     mock::BlockData,
 };
 use eth_types::geth_types::GethData;
 use halo2_proofs::{
+    self,
     circuit::Value,
     dev::{CellValue, MockProver},
     halo2curves::bn256::{Bn256, Fr, G1Affine},
-    plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, ProvingKey, VerifyingKey},
+    plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, ProvingKey},
     poly::{
         commitment::ParamsProver,
         kzg::{
@@ -17,14 +18,10 @@ use halo2_proofs::{
             strategy::SingleStrategy,
         },
     },
-    transcript::{
-        Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
-    },
 };
 use lazy_static::lazy_static;
 use mock::TestContext;
 use rand_chacha::rand_core::SeedableRng;
-use rand_core::RngCore;
 use rand_xorshift::XorShiftRng;
 use std::{collections::HashMap, marker::PhantomData, sync::Mutex};
 use tokio::sync::Mutex as TokioMutex;
@@ -35,13 +32,15 @@ use zkevm_circuits::{
     exp_circuit::TestExpCircuit,
     keccak_circuit::TestKeccakCircuit,
     pi_circuit::TestPiCircuit,
-    root_circuit::{compile, Config, RootCircuit},
+    root_circuit::{compile, Config, EvmTranscript, NativeLoader, RootCircuit, Shplonk},
     state_circuit::TestStateCircuit,
     super_circuit::SuperCircuit,
     tx_circuit::TestTxCircuit,
     util::SubCircuit,
     witness::{block_convert, Block},
 };
+
+type As<M> = Shplonk<M>;
 
 /// TEST_MOCK_RANDOMNESS
 const TEST_MOCK_RANDOMNESS: u64 = 0x100;
@@ -83,7 +82,7 @@ const KECCAK_CIRCUIT_DEGREE: u32 = 16;
 const SUPER_CIRCUIT_DEGREE: u32 = 20;
 const EXP_CIRCUIT_DEGREE: u32 = 16;
 const PI_CIRCUIT_DEGREE: u32 = 17;
-const ROOT_CIRCUIT_DEGREE: u32 = 26;
+const ROOT_CIRCUIT_DEGREE: u32 = 24;
 
 lazy_static! {
     /// Data generation.
@@ -164,93 +163,96 @@ async fn test_root_variadic(mock_prover: &MockProver<Fr>) {
     // is private so cannot store.
 }
 
-fn test_actual<C: Circuit<Fr>>(
+/// Generate a real proof of a Circuit with Poseidon transcript and Shplonk accumulation scheme.
+/// Verify the proof and return it.  The proof is suitable to be verified by the Root Circuit.
+fn test_actual_circuit<C: Circuit<Fr>>(
     circuit: C,
     degree: u32,
     instance: Vec<Vec<Fr>>,
     proving_key: ProvingKey<G1Affine>,
 ) -> Vec<u8> {
-    fn test_gen_proof<C: Circuit<Fr>, R: RngCore>(
-        rng: R,
-        circuit: C,
-        general_params: &ParamsKZG<Bn256>,
-        proving_key: &ProvingKey<G1Affine>,
-        mut transcript: Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-        instances: &[&[Fr]],
-    ) -> Vec<u8> {
-        create_proof::<
-            KZGCommitmentScheme<Bn256>,
-            ProverSHPLONK<'_, Bn256>,
-            Challenge255<G1Affine>,
-            R,
-            Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            C,
-        >(
-            general_params,
-            proving_key,
-            &[circuit],
-            &[instances],
-            rng,
-            &mut transcript,
-        )
-        .expect("proof generation should not fail");
-
-        transcript.finalize()
-    }
-
-    fn test_verify(
-        general_params: &ParamsKZG<Bn256>,
-        verifier_params: &ParamsKZG<Bn256>,
-        verifying_key: &VerifyingKey<G1Affine>,
-        proof: &[u8],
-        instances: &[&[Fr]],
-    ) {
-        let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(proof);
-        let strategy = SingleStrategy::new(general_params);
-
-        verify_proof::<
-            KZGCommitmentScheme<Bn256>,
-            VerifierSHPLONK<'_, Bn256>,
-            Challenge255<G1Affine>,
-            Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
-            SingleStrategy<'_, Bn256>,
-        >(
-            verifier_params,
-            verifying_key,
-            strategy,
-            &[instances],
-            &mut verifier_transcript,
-        )
-        .expect("failed to verify circuit");
-    }
-
     let general_params = get_general_params(degree);
     let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
 
-    let transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
+    // let transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
+    let mut transcript = PoseidonTranscript::new(Vec::new());
 
     // change instace to slice
     let instance: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
 
     log::info!("gen proof");
-    let proof = test_gen_proof(
-        RNG.clone(),
-        circuit,
+    create_proof::<KZGCommitmentScheme<Bn256>, ProverSHPLONK<'_, Bn256>, _, _, _, _>(
         &general_params,
         &proving_key,
-        transcript,
-        &instance,
-    );
+        &[circuit],
+        &[&instance],
+        RNG.clone(),
+        &mut transcript,
+    )
+    .expect("proof generation should not fail");
+    let proof = transcript.finalize();
 
     log::info!("verify proof");
     let verifying_key = proving_key.get_vk();
-    test_verify(
-        &general_params,
+    let mut verifier_transcript = PoseidonTranscript::new(proof.as_slice());
+    let strategy = SingleStrategy::new(&general_params);
+
+    verify_proof::<KZGCommitmentScheme<Bn256>, VerifierSHPLONK<'_, Bn256>, _, _, _>(
         &verifier_params,
         verifying_key,
-        &proof,
-        &instance,
-    );
+        strategy,
+        &[&instance],
+        &mut verifier_transcript,
+    )
+    .expect("failed to verify circuit");
+
+    proof
+}
+
+/// Generate a real proof of the RootCircuit with Keccak transcript and Shplonk accumulation
+/// scheme.  Verify the proof and return it.  By using the Keccak transcript (via EvmTranscript)
+/// the resulting proof is suitable for verification by the EVM.
+fn test_actual_root_circuit<C: Circuit<Fr>>(
+    circuit: C,
+    degree: u32,
+    instance: Vec<Vec<Fr>>,
+    proving_key: ProvingKey<G1Affine>,
+) -> Vec<u8> {
+    let general_params = get_general_params(degree);
+    let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
+
+    // let transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
+    let mut transcript = EvmTranscript::<_, NativeLoader, _, _>::new(vec![]);
+
+    // change instace to slice
+    let instance: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
+
+    log::info!("gen proof");
+    create_proof::<KZGCommitmentScheme<Bn256>, ProverSHPLONK<'_, Bn256>, _, _, _, _>(
+        &general_params,
+        &proving_key,
+        &[circuit],
+        &[&instance],
+        RNG.clone(),
+        &mut transcript,
+    )
+    .expect("proof generation should not fail");
+    let proof = transcript.finalize();
+
+    log::info!("verify proof");
+    let verifying_key = proving_key.get_vk();
+    // let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(proof);
+    let mut verifier_transcript = EvmTranscript::<_, NativeLoader, _, _>::new(proof.as_slice());
+    let strategy = SingleStrategy::new(&general_params);
+
+    verify_proof::<KZGCommitmentScheme<Bn256>, VerifierSHPLONK<'_, Bn256>, _, _, _>(
+        &verifier_params,
+        verifying_key,
+        strategy,
+        &[&instance],
+        &mut verifier_transcript,
+    )
+    .expect("failed to verify circuit");
 
     proof
 }
@@ -317,9 +319,13 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                         instance.iter().map(|instance| instance.len()).collect(),
                     ),
                 );
-                let circuit =
-                    RootCircuit::new(&params, &protocol, Value::unknown(), Value::unknown())
-                        .unwrap();
+                let circuit = RootCircuit::<Bn256, As<_>>::new(
+                    &params,
+                    &protocol,
+                    Value::unknown(),
+                    Value::unknown(),
+                )
+                .unwrap();
 
                 let general_params = get_general_params(ROOT_CIRCUIT_DEGREE);
                 let verifying_key =
@@ -402,15 +408,15 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                 } else {
                     let key = self.get_key();
                     log::info!("circuit proof generation (no proof in the cache)");
-                    let proof = test_actual(circuit, self.degree, instance.clone(), key);
+                    let proof = test_actual_circuit(circuit, self.degree, instance.clone(), key);
                     proof_cache.insert(proof_name, proof.clone());
                     proof
                 }
             };
 
-            log::debug!("proof: {:?}", proof);
-            log::debug!("instance: {:?}", instance);
-            let root_circuit = RootCircuit::new(
+            // log::debug!("proof: {:?}", proof);
+            // log::debug!("instance: {:?}", instance);
+            let root_circuit = RootCircuit::<Bn256, As<_>>::new(
                 &params,
                 &protocol,
                 Value::known(&instance),
@@ -422,7 +428,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                 let root_key = self.get_root_key();
                 let instance = root_circuit.instance();
                 log::info!("root circuit proof generation");
-                test_actual(root_circuit, ROOT_CIRCUIT_DEGREE, instance, root_key);
+                test_actual_root_circuit(root_circuit, ROOT_CIRCUIT_DEGREE, instance, root_key);
             } else {
                 log::info!("root circuit mock prover verification");
                 // Mock
@@ -441,7 +447,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             if actual {
                 let key = self.get_key();
                 log::info!("circuit proof generation");
-                let proof = test_actual(circuit, self.degree, instance, key);
+                let proof = test_actual_circuit(circuit, self.degree, instance, key);
                 let mut proof_cache = PROOF_CACHE.lock().await;
                 proof_cache.insert(proof_name, proof);
             } else {
@@ -452,13 +458,14 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
     }
 }
 
-use halo2_proofs::poly::kzg::multiopen::ProverGWC;
 use itertools::Itertools;
 use rand_core::OsRng;
 use zkevm_circuits::root_circuit::PoseidonTranscript;
 
 /// FOO
 pub async fn test_root_1() {
+    log_init();
+    log::info!("test root 1");
     let (params, protocol, proof, instance) = {
         let block_tag = "Transfer 0";
         let block_num = *GEN_DATA.blocks.get(block_tag).unwrap();
@@ -469,8 +476,21 @@ pub async fn test_root_1() {
         let circuit = TestBytecodeCircuit::new_from_block(&block);
         let instance = circuit.instance();
 
-        let params = ParamsKZG::<Bn256>::setup(k, OsRng);
-        let pk = keygen_pk(&params, keygen_vk(&params, &circuit).unwrap(), &circuit).unwrap();
+        log::info!("KZG setup");
+        // let params = ParamsKZG::<Bn256>::setup(k, OsRng);
+        let params = get_general_params(k);
+        // let pk = keygen_pk(&params, keygen_vk(&params, &circuit).unwrap(), &circuit).unwrap();
+        let pk = {
+            let block = new_empty_block();
+            let circuit = TestBytecodeCircuit::new_from_block(&block);
+            let general_params = get_general_params(k);
+
+            let verifying_key =
+                keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
+            let key = keygen_pk(&general_params, verifying_key, &circuit)
+                .expect("keygen_pk should not fail");
+            key
+        };
         let protocol = compile(
             &params,
             pk.get_vk(),
@@ -482,6 +502,7 @@ pub async fn test_root_1() {
         let proof = {
             let mut transcript = PoseidonTranscript::new(Vec::new());
             // create_proof::<KZGCommitmentScheme<_>, ProverGWC<_>, _, _, _, _>(
+            log::info!("create_proof");
             create_proof::<KZGCommitmentScheme<_>, ProverSHPLONK<'_, Bn256>, _, _, _, _>(
                 &params,
                 &pk,
@@ -493,24 +514,33 @@ pub async fn test_root_1() {
             .unwrap();
             transcript.finalize()
         };
+        // let proof = test_actual(circuit, k, instance.clone(), pk);
 
         (params, protocol, proof, instance)
     };
 
-    let root_circuit = RootCircuit::new(
+    log::info!("RootCircuit::new");
+    let root_circuit = RootCircuit::<Bn256, As<_>>::new(
         &params,
         &protocol,
         Value::known(&instance),
         Value::known(&proof),
     )
     .unwrap();
+    log::info!("MockProver::run");
     assert_eq!(
-        MockProver::run(26, &root_circuit, root_circuit.instance())
+        MockProver::run(22, &root_circuit, root_circuit.instance())
             .unwrap()
             .verify_par(),
         Ok(())
     );
 }
+
+// NOTE: MockProver Root Circuit with 64 GiB RAM:
+// degree=26 -> OOM
+// degree=25 -> OK (peak ~35 GiB)
+// degree=24 -> OK
+// degree=22 -> OK
 
 fn new_empty_block() -> Block<Fr> {
     let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
