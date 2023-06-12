@@ -33,9 +33,9 @@ pub(crate) fn decode_rlp(byte: u8) -> (bool, bool, bool, bool) {
         let mut is_long = false;
         let mut is_very_long = false;
         match byte {
-            0..=RLP_SHORT_INCLUSIVE => is_short = true,
-            RLP_SHORT..=RLP_LONG => is_long = true,
-            RLP_LONG_EXCLUSIVE..=RLP_VALUE_MAX => is_very_long = true,
+            0..=RLP_SHORT_INCLUSIVE => is_short = true, // (0, 127] 直接翻译 'a','b','3',...
+            RLP_SHORT..=RLP_LONG => is_long = true, // (128, 183] 长度 = x-128 
+            RLP_LONG_EXCLUSIVE..=RLP_VALUE_MAX => is_very_long = true, // (184, 191] len_byte = x-184
             _ => unreachable!(),
         }
         (false, is_short, is_long, is_very_long)
@@ -152,7 +152,7 @@ impl<F: Field> RLPListGadget<F> {
             matchx! {
                 self.is_short() => 1.expr(),
                 self.is_long() => 2.expr(),
-                self.is_very_long() => 3.expr(),
+                self.is_very_long() => 3.expr(), // 最多250=248+2
             }
         })
     }
@@ -195,6 +195,13 @@ impl<F: Field> RLPListGadget<F> {
 }
 
 impl RLPListWitness {
+
+    // pub(crate) fn is_empty_row(&self) -> bool {
+    //     self.bytes
+    //         .iter()
+    //         .fold(self.bytes[0] == 0, |is_zero, b| is_zero && *b == 0)
+    // }
+
     pub(crate) fn is_list(&self) -> bool {
         !self.is_string
     }
@@ -385,7 +392,7 @@ impl<F: Field> RLPValueGadget<F> {
             matchx! {
                 self.is_short() => 0.expr(),
                 self.is_long() => 1.expr(),
-                self.is_very_long() => 2.expr(),
+                self.is_very_long() => 2.expr(), //不能大于184=183+1，即（184,len) 
             }
         })
     }
@@ -411,6 +418,7 @@ impl<F: Field> RLPValueGadget<F> {
                 self.is_short() => 1.expr(),
                 self.is_long() => get_len_short::expr(self.bytes[0].expr()),
                 self.is_very_long() => {
+                    // 这里都拒绝意味着string最长183-128=55
                     unreachablex!();
                     0.expr()
                 },
@@ -636,9 +644,27 @@ impl<F: Field> RLPItemGadget<F> {
     ) -> Result<RLPItemWitness, Error> {
         let value_witness = self.value.assign(region, offset, bytes)?;
         let list_witness = self.list.assign(region, offset, bytes)?;
-        self.value_limit.assign(region, offset,  (RLP_STRING_MAX).scalar(), value_witness.len().scalar())?;
-        self.list_limit.assign(region, offset, (RLP_LIST_MAX).scalar(), list_witness.len().scalar())?;
-
+        // if !bytes.iter()
+        //     .fold(bytes[0] == 0, |is_zero, b| is_zero && *b == 0) 
+        // {
+        //     if value_witness.is_string() {
+        //         println!("value_witness");
+        //         self.value_limit.assign(
+        //             region, 
+        //             offset,  
+        //             (RLP_STRING_MAX).scalar(), 
+        //             value_witness.len().scalar())?;
+        //     }
+        //     else if list_witness.is_list(){
+        //         println!("list_witness");
+        //         self.list_limit.assign(
+        //             region, 
+        //             offset,  
+        //             (RLP_LIST_MAX).scalar(), 
+        //             list_witness.len().scalar())?;
+        //     }
+        // }
+        
         Ok(RLPItemWitness {
             value: value_witness,
             list: list_witness,

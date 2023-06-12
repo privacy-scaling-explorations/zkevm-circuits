@@ -22,6 +22,7 @@ mod rlp_gadgets;
 mod start;
 mod storage_leaf;
 mod witness_row;
+mod test_data;
 
 use self::{
     account_leaf::AccountLeafConfig,
@@ -250,6 +251,7 @@ impl<F: Field> MPTConfig<F> {
                 (MptCellType::StoragePhase1, 50, 0, false),
                 (MptCellType::StoragePhase2, 5, 0, false),
                 (MptCellType::Lookup(Table::Fixed), 3, 0, false),
+                (MptCellType::LookupByte, 4, 0, false),
             ],
             0,
             1,
@@ -720,5 +722,34 @@ mod tests {
                 // assert_eq!(prover.verify_par(), Ok(()));
                 // prover.assert_satisfied();
             });
+    }
+
+    #[test]
+    fn graph_mpt() {
+        let w: Vec<Vec<u8>> = serde_json::from_str(test_data::AccountExtensionTwoNibblesInEvenLevel).unwrap();
+
+        let randomness: Fr = 2.scalar();
+
+        let mut keccak_data = vec![];
+        let mut witness_rows = vec![];
+        for row in w.iter() {
+            if row[row.len() - 1] == 5 {
+                keccak_data.push(row[0..row.len() - 1].to_vec());
+            } else {
+                let row = MptWitnessRow::<Fr>::new(row[0..row.len()].to_vec());
+                witness_rows.push(row);
+            }
+        }
+        let nodes = prepare_witness(&mut witness_rows);
+        let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
+
+        let circuit = MPTCircuit::<Fr> {
+            nodes,
+            keccak_data,
+            randomness,
+        };
+        let prover = MockProver::run(14 /* 9 */, &circuit, vec![]).unwrap();
+        assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
+    
     }
 }
