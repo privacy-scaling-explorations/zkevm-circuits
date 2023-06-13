@@ -1,4 +1,4 @@
-use crate::{get_client, log_init, GenDataOutput};
+use crate::{get_client, GenDataOutput};
 use bus_mapping::{
     circuit_input_builder::{BuilderClient, CircuitInputBuilder, CircuitsParams},
     mock::BlockData,
@@ -417,6 +417,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
 
             // log::debug!("proof: {:?}", proof);
             // log::debug!("instance: {:?}", instance);
+            log::info!("root circuit new");
             let root_circuit = RootCircuit::<Bn256, As<_>>::new(
                 &params,
                 &protocol,
@@ -459,8 +460,6 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
     }
 }
 
-use itertools::Itertools;
-use rand_core::OsRng;
 use zkevm_circuits::root_circuit::PoseidonTranscript;
 
 fn new_empty_block() -> Block<Fr> {
