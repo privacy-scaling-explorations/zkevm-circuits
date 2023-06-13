@@ -475,7 +475,7 @@ where
             config.aggregate::<M>(&mut layouter, &self.svk, self.snarks.clone())?;
 
         // Constrain equality to instance values
-        let main_gate: maingate::MainGate<M::Scalar> = config.main_gate();
+        let main_gate = config.main_gate();
         for (row, limb) in instances
             .into_iter()
             .flatten()
