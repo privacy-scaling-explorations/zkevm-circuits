@@ -447,7 +447,7 @@ pub struct GethExecTrace {
     /// True when the transaction has failed.
     pub failed: bool,
     /// True when the tx could not execute
-    #[serde(default = "default_bool")]
+    #[serde(default)]
     pub invalid: bool,
     /// Return value of execution which is a hex encoded byte array
     #[serde(rename = "returnValue")]
@@ -455,10 +455,6 @@ pub struct GethExecTrace {
     /// Vector of geth execution steps of the trace.
     #[serde(rename = "structLogs")]
     pub struct_logs: Vec<GethExecStep>,
-}
-
-fn default_bool() -> bool {
-    false
 }
 
 #[macro_export]
