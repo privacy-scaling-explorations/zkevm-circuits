@@ -391,6 +391,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         let circuit = C::new_from_block(&block);
         let instance = circuit.instance();
 
+        #[allow(clippy::collapsible_else_if)]
         if root {
             let params = get_general_params(self.degree);
             let pk = self.get_key();
