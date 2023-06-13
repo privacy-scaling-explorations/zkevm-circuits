@@ -1213,6 +1213,7 @@ impl<F: Field> MainRLPGadget<F> {
                 rlc_content: cb.query_cell(),
                 rlc_rlp: cb.query_cell(),
                 tag: cb.query_cell(),
+                // force_string: cb.query_cell(),
             };
             config.rlp = RLPItemGadget::construct(
                 cb,
