@@ -616,7 +616,7 @@ impl<F: Field> SignVerifyChip<F> {
         self.enable_keccak_lookup(config, ctx, &is_address_zero, &pk_rlc, &pk_hash_rlc)?;
 
         Ok(AssignedSignatureVerify {
-            address: address,
+            address,
             msg_hash_rlc,
             is_invalid: assigned_ecdsa.is_valid.clone(),
         })
