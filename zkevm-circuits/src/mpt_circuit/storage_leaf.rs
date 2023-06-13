@@ -238,17 +238,17 @@ impl<F: Field> StorageLeafConfig<F> {
             } elsex {
                 key_rlc[false.idx()].expr()
             }};
-            ctx.mpt_table.constrain(
-                meta,
-                &mut cb.base,
-                config.main_data.address_rlc.expr(),
-                proof_type,
-                key_rlc,
-                value_rlc[true.idx()].expr(),
-                value_rlc[false.idx()].expr(),
-                config.main_data.root_prev.expr(),
-                config.main_data.root.expr(),
-            );
+            // ctx.mpt_table.constrain(
+            //     meta,
+            //     &mut cb.base,
+            //     config.main_data.address_rlc.expr(),
+            //     proof_type,
+            //     key_rlc,
+            //     value_rlc[true.idx()].expr(),
+            //     value_rlc[false.idx()].expr(),
+            //     config.main_data.root_prev.expr(),
+            //     config.main_data.root.expr(),
+            // );
         });
 
         config
@@ -394,7 +394,7 @@ impl<F: Field> StorageLeafConfig<F> {
         )?;
 
         // Wrong leaf handling
-        let (key_rlc, is_empty_account) = self.wrong.assign(
+        let (key_rlc, _) = self.wrong.assign(
             region,
             offset,
             is_non_existing_proof,

@@ -1189,9 +1189,12 @@ impl<F: Field> WrongGadget<F> {
                 key_rlc[for_placeholder_s.idx()],
                 key_rlc_wrong,
             )?;
-            Ok((key_rlc_wrong, is_key_equal_witness))
+            
+            // When key is not equal, we have a non existing account
+            Ok((key_rlc_wrong, is_key_equal_witness.neg()))
         } else {
-            Ok((key_rlc[for_placeholder_s.idx()], 1.scalar()))
+            // existing account
+            Ok((key_rlc[for_placeholder_s.idx()], false.scalar()))
         }
     }
 }
