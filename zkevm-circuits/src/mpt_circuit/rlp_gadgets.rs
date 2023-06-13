@@ -620,13 +620,13 @@ impl<F: Field> RLPItemGadget<F> {
         let list = RLPListGadget::construct(cb, bytes);
         let value_limit = LtGadget::<F, 2>::construct(
             &mut cb.base, 
-            1.expr(),// value.len(),
-            0.expr()// RLP_STRING_MAX.expr(),
+            value.len(),
+            RLP_STRING_MAX.expr(),
         );
         let list_limit = LtGadget::<F, 2>::construct(
             &mut cb.base, 
-            1.expr(),// list.len(),
-            0.expr()// RLP_LIST_MAX.expr(),
+            list.len(),
+            RLP_LIST_MAX.expr(),
         );
         RLPItemGadget {
             value,
@@ -644,34 +644,27 @@ impl<F: Field> RLPItemGadget<F> {
     ) -> Result<RLPItemWitness, Error> {
         let value_witness = self.value.assign(region, offset, bytes)?;
         let list_witness = self.list.assign(region, offset, bytes)?;
-        if !bytes.iter()
-            .fold(bytes[0] == 0, |is_zero, b| is_zero && *b == 0) 
-        {
-            if value_witness.is_string() {
-                println!("value_witness");
-                self.value_limit.assign(
-                    region, 
-                    offset,  
-                    1.scalar(),// (RLP_STRING_MAX).scalar(), 
-                    0.scalar()// value_witness.len().scalar())?;
-                )?;
-            }
-            else if list_witness.is_list(){
-                println!("list_witness");
-                self.list_limit.assign(
-                    region, 
-                    offset,  
-                    1.scalar(),//(RLP_LIST_MAX).scalar(), 
-                    0.scalar()//list_witness.len().scalar()
-                )?;
-            } else {
-            self.value_limit.assign(region, offset, 1.scalar(), 0.scalar());
-            self.list_limit.assign(region, offset, 1.scalar(), 0.scalar());
-            }
-        } else {
-            self.value_limit.assign(region, offset, 1.scalar(), 0.scalar())?;
-            self.list_limit.assign(region, offset, 1.scalar(), 0.scalar())?;
+        let is_all_zeros = bytes.iter()
+            .fold(bytes[0] == 0, |is_zero, b| is_zero && *b == 0);
+
+        if value_witness.is_string() {
+            println!("value_witness");
+            self.value_limit.assign(
+                region, 
+                offset,  
+                if is_all_zeros {0.scalar()} else {value_witness.len().scalar()},
+                (RLP_STRING_MAX).scalar(), 
+            )?;
         }
+        else {
+            println!("list_witness");
+            self.list_limit.assign(
+                region, 
+                offset,
+                if is_all_zeros {0.scalar()} else {list_witness.len().scalar()},
+                RLP_LIST_MAX.scalar()
+            )?;
+        } 
         
         Ok(RLPItemWitness {
             value: value_witness,
@@ -680,30 +673,6 @@ impl<F: Field> RLPItemGadget<F> {
         })
     }
     
-    /// Constraints for proof main data
-    // pub(crate) fn constraints(&mut self, cb: &mut MPTConstraintBuilder<F>, string_limit: usize, list_limit: usize) {
-    //     self.value_limit = LtGadget::<F, 2>::construct(
-    //         &mut cb.base, 
-    //         string_limit.expr(),
-    //         self.len(),
-    //     );
-    //     self.list_limit = LtGadget::<F, 2>::construct(
-    //         &mut cb.base, 
-    //         list_limit.expr(),
-    //         self.len(),
-    //     );
-    //     circuit!([meta, cb], {
-    //         ifx! {self.value.is_string() => {
-    //             require!(self.list.is_list() => false);
-    //             require!(self.value_limit => true);
-    //         } 
-    //         elsex {
-    //             require!(self.value.is_string() => false);
-    //             require!(self.list_limit => true);
-    //         }
-    //     }
-    //     });
-    // }
 
     pub(crate) fn is_string(&self) -> Expression<F> {
         self.value.is_string()
