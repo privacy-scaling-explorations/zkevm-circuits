@@ -196,12 +196,6 @@ impl<F: Field> RLPListGadget<F> {
 
 impl RLPListWitness {
 
-    // pub(crate) fn is_empty_row(&self) -> bool {
-    //     self.bytes
-    //         .iter()
-    //         .fold(self.bytes[0] == 0, |is_zero, b| is_zero && *b == 0)
-    // }
-
     pub(crate) fn is_list(&self) -> bool {
         !self.is_string
     }
