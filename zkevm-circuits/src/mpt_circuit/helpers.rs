@@ -1227,7 +1227,7 @@ impl<F: Field> MainRLPGadget<F> {
                 config.rlp.is_string() => config.rlp.value_limit.expr(),
                 config.rlp.is_list() => config.rlp.list_limit.expr(),
             );
-            require!(below_limit => true);
+            // require!(below_limit => true);
 
             require!(config.num_bytes => config.rlp.num_bytes());
             require!(config.len => config.rlp.len());

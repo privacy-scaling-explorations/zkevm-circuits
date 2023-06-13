@@ -664,10 +664,13 @@ impl<F: Field> RLPItemGadget<F> {
                     1.scalar(),//(RLP_LIST_MAX).scalar(), 
                     0.scalar()//list_witness.len().scalar()
                 )?;
-            }
-        } else {
+            } else {
             self.value_limit.assign(region, offset, 1.scalar(), 0.scalar());
             self.list_limit.assign(region, offset, 1.scalar(), 0.scalar());
+            }
+        } else {
+            self.value_limit.assign(region, offset, 1.scalar(), 0.scalar())?;
+            self.list_limit.assign(region, offset, 1.scalar(), 0.scalar())?;
         }
         
         Ok(RLPItemWitness {
