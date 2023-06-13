@@ -540,7 +540,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         if !is_precompiled(&tx.callee_address) && !tx.is_create {
             callee_code_hash = rws.next().account_value_pair().1;
         }
-
         let callee_exists =
             is_precompiled(&tx.callee_address) || (!tx.is_create && !callee_code_hash.is_zero());
         let caller_balance_sub_fee_pair = rws.next().account_value_pair();
@@ -597,7 +596,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             offset,
             Value::known(F::from((caller_address == callee_address) as u64)),
         )?;
-
         self.tx_is_create
             .assign(region, offset, Value::known(F::from(tx.is_create as u64)))?;
         self.tx_call_data_length.assign(

@@ -527,7 +527,6 @@ impl<F: Field> SignVerifyChip<F> {
             .unwrap_or_default()
             .map(|byte| Value::known(F::from(byte as u64)));
         let pk_hash_hi = pk_hash[..12].to_vec();
-
         // Ref. spec SignVerifyChip 2. Verify that the first 20 bytes of the
         // pub_key_hash equal the address
         let (address, pk_hash_lo) = {
@@ -550,7 +549,6 @@ impl<F: Field> SignVerifyChip<F> {
                     .collect_vec(),
             )
         };
-
         let is_address_zero = main_gate.is_zero(ctx, &address)?;
 
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
@@ -690,6 +688,7 @@ impl<F: Field> SignVerifyChip<F> {
                         tx.enable_skipping_invalid_signature,
                     )?;
                     assigned_ecdsas.push(assigned_ecdsa);
+                    log::debug!("ecdsa chip verification: {} rows", ctx.offset());
                 }
                 Ok(assigned_ecdsas)
             },
@@ -717,6 +716,7 @@ impl<F: Field> SignVerifyChip<F> {
                         &tx,
                     )?;
                     assigned_sig_verifs.push(assigned_sig_verif);
+                    log::debug!("signature address verify: {} rows", ctx.offset());
                 }
                 Ok(assigned_sig_verifs)
             },

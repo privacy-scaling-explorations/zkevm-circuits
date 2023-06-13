@@ -53,7 +53,6 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     let nonce_prev = state.sdb.get_account(&caller_address).1.nonce;
     // Increase caller's nonce when the tx is not invalid
     let nonce = if !state.tx.invalid_tx {
-        // state.sdb.increase_nonce(&caller_address) + 1
         nonce_prev + 1
     } else {
         nonce_prev
