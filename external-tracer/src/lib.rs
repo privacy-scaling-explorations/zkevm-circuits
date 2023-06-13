@@ -75,9 +75,6 @@ pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
         serde_json::from_str(&trace_string).map_err(Error::SerdeError)?;
     // Don't throw only for specific invalid transactions we support.
     for trace in trace.iter() {
-
-        println!("Creates a trace for the specified config {:?}, invalid: {:?}", trace.return_value, trace.invalid);
-
         if trace.invalid
             && !(trace.return_value.starts_with("nonce too low")
                 || trace.return_value.starts_with("nonce too high")
