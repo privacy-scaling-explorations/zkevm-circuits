@@ -20,12 +20,10 @@ use rand::rngs::OsRng;
 fn test_root_circuit() {
     let (params, protocol, proof, instance) = {
         // Preprocess
-        const MAX_TXS: usize = 1;
-        const MAX_CALLDATA: usize = 32;
         const TEST_MOCK_RANDOMNESS: u64 = 0x100;
         let circuits_params = CircuitsParams {
-            max_txs: MAX_TXS,
-            max_calldata: MAX_CALLDATA,
+            max_txs: 1,
+            max_calldata: 32,
             max_rws: 256,
             max_copy_rows: 256,
             max_exp_steps: 256,
@@ -34,11 +32,8 @@ fn test_root_circuit() {
             max_keccak_rows: 0,
         };
         let (k, circuit, instance, _) =
-            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>::build(
-                block_1tx(),
-                circuits_params,
-            )
-            .unwrap();
+            SuperCircuit::<_>::build(block_1tx(), circuits_params, TEST_MOCK_RANDOMNESS.into())
+                .unwrap();
         let params = ParamsKZG::<Bn256>::setup(k, OsRng);
         let pk = keygen_pk(&params, keygen_vk(&params, &circuit).unwrap(), &circuit).unwrap();
         let protocol = compile(

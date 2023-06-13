@@ -16,8 +16,6 @@ crate-geth-utils:
   - geth-utils/**/*
 crate-integration-tests:
   - integration-tests/**/*
-crate-keccak:
-  - keccak256/**/*
 crate-mock:
   - mock/**/*
 crate-prover:

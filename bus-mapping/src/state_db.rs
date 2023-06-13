@@ -1,13 +1,14 @@
 //! Implementation of an in-memory key-value database to represent the
 //! Ethereum State Trie.
 
-use eth_types::{Address, Hash, Word, H256, U256};
+use eth_types::{geth_types, Address, Hash, Word, H256, U256};
 use ethers_core::utils::keccak256;
 use lazy_static::lazy_static;
 use std::collections::{HashMap, HashSet};
 
 lazy_static! {
     static ref ACCOUNT_ZERO: Account = Account::zero();
+    /// Hash value for empty code hash.
     static ref EMPTY_CODE_HASH: Hash = CodeDB::hash(&[]);
     /// bytes of empty code hash, in little endian order.
     pub static ref EMPTY_CODE_HASH_LE: [u8; 32] = {
@@ -57,7 +58,7 @@ impl CodeDB {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Account {
     /// Nonce
-    pub nonce: Word,
+    pub nonce: u64,
     /// Balance
     pub balance: Word,
     /// Storage key-value map
@@ -66,11 +67,22 @@ pub struct Account {
     pub code_hash: Hash,
 }
 
+impl From<geth_types::Account> for Account {
+    fn from(account: geth_types::Account) -> Self {
+        Self {
+            nonce: account.nonce.as_u64(),
+            balance: account.balance,
+            storage: account.storage.clone(),
+            code_hash: CodeDB::hash(&account.code.to_vec()),
+        }
+    }
+}
+
 impl Account {
     /// Return an empty account, with all values set at zero.
     pub fn zero() -> Self {
         Self {
-            nonce: Word::zero(),
+            nonce: 0,
             balance: Word::zero(),
             storage: HashMap::new(),
             code_hash: *EMPTY_CODE_HASH,
@@ -79,7 +91,7 @@ impl Account {
 
     /// Return if account is empty or not.
     pub fn is_empty(&self) -> bool {
-        self.nonce.is_zero() && self.balance.is_zero() && self.code_hash.eq(&EMPTY_CODE_HASH)
+        self.nonce == 0 && self.balance.is_zero() && self.code_hash.eq(&EMPTY_CODE_HASH)
     }
 }
 
@@ -187,14 +199,20 @@ impl StateDB {
     /// Get nonce of account with `addr`.
     pub fn get_nonce(&self, addr: &Address) -> u64 {
         let (_, account) = self.get_account(addr);
-        account.nonce.as_u64()
+        account.nonce
+    }
+
+    /// Get balance of account with the given address.
+    pub fn get_balance(&self, addr: &Address) -> Word {
+        let (_, account) = self.get_account(addr);
+        account.balance
     }
 
     /// Increase nonce of account with `addr` and return the previous value.
     pub fn increase_nonce(&mut self, addr: &Address) -> u64 {
         let (_, account) = self.get_account_mut(addr);
-        let nonce = account.nonce.as_u64();
-        account.nonce = account.nonce + 1;
+        let nonce = account.nonce;
+        account.nonce += 1;
         nonce
     }
 
@@ -291,12 +309,12 @@ mod statedb_tests {
         let (found, acc) = statedb.get_account_mut(&addr_a);
         assert!(!found);
         assert_eq!(acc, &Account::zero());
-        acc.nonce = Word::from(100);
+        acc.nonce = 100;
 
         // Get existing account and check nonce
         let (found, acc) = statedb.get_account(&addr_a);
         assert!(found);
-        assert_eq!(acc.nonce, Word::from(100));
+        assert_eq!(acc.nonce, 100);
 
         // Get non-existing storage key for existing account and set value
         let (found, value) = statedb.get_storage_mut(&addr_a, &Word::from(2));
@@ -318,7 +336,7 @@ mod statedb_tests {
         // Get existing account and check nonce
         let (found, acc) = statedb.get_account(&addr_b);
         assert!(found);
-        assert_eq!(acc.nonce, Word::zero());
+        assert_eq!(acc.nonce, 0);
 
         // Get existing storage key and check value
         let (found, value) = statedb.get_storage(&addr_b, &Word::from(3));

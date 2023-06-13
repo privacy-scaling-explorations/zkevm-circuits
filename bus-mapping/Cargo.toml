@@ -8,7 +8,6 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 eth-types = { path = "../eth-types" }
 gadgets = { path = "../gadgets" }
-keccak256 = { path = "../keccak256" }
 mock = { path = "../mock", optional = true }
 
 ethers-core = "0.17.0"

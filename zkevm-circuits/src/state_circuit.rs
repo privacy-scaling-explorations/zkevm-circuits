@@ -9,6 +9,7 @@ mod param;
 mod dev;
 #[cfg(any(feature = "test", test))]
 mod test;
+use bus_mapping::operation::Target;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::StateCircuit as TestStateCircuit;
 
@@ -17,7 +18,7 @@ use self::{
     lexicographic_ordering::LimbIndex,
 };
 use crate::{
-    table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable, RwTableTag},
+    table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable},
     util::{word, Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness::{self, MptUpdates, Rw, RwMap},
 };
@@ -263,7 +264,7 @@ impl<F: Field> StateCircuitConfig<F> {
                         assert_eq!(state_root, old_root);
                         state_root = new_root;
                     }
-                    if matches!(row.tag(), RwTableTag::CallContext) && !row.is_write() {
+                    if matches!(row.tag(), Target::CallContext) && !row.is_write() {
                         assert_eq!(row.value_assignment(), 0.into(), "{:?}", row);
                     }
                 }
@@ -385,7 +386,7 @@ impl<F: Field> StateCircuitConfig<F> {
 /// Keys for sorting the rows of the state circuit
 #[derive(Clone, Copy)]
 pub struct SortKeysConfig {
-    tag: BinaryNumberConfig<RwTableTag, 4>,
+    tag: BinaryNumberConfig<Target, 4>,
     id: MpiConfig<u32, N_LIMBS_ID>,
     address: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>,
     field_tag: Column<Advice>,
@@ -593,35 +594,5 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         last_access: 1.expr() - meta.query_advice(c.not_first_access, Rotation::next()),
         state_root: meta_query_word(meta, c.state_root, Rotation::cur()),
         state_root_prev: meta_query_word(meta, c.state_root, Rotation::prev()),
-    }
-}
-
-#[cfg(test)]
-mod state_circuit_stats {
-    use crate::{
-        evm_circuit::step::ExecutionState,
-        stats::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states},
-    };
-
-    #[test]
-    pub fn get_state_states_stats() {
-        print_circuit_stats_by_states(
-            |state| {
-                // TODO: Enable CREATE/CREATE2 once they are supported
-                !matches!(
-                    state,
-                    ExecutionState::ErrorInvalidOpcode
-                        | ExecutionState::CREATE
-                        | ExecutionState::CREATE2
-                        | ExecutionState::SELFDESTRUCT
-                )
-            },
-            bytecode_prefix_op_big_rws,
-            |block, _, step_index| {
-                let step = &block.txs[0].steps()[step_index];
-                let step_next = &block.txs[0].steps()[step_index + 1];
-                step_next.rwc.0 - step.rwc.0
-            },
-        );
     }
 }

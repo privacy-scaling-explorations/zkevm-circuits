@@ -11,9 +11,6 @@ use eth_types::{Bytecode, GethExecStep, ToAddress, ToWord, H256, U256};
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Extcodecopy;
 
-// TODO: Update to treat code_hash == 0 as account not_exists once the circuit
-// is implemented https://github.com/privacy-scaling-explorations/zkevm-circuits/pull/720
-
 impl Opcode for Extcodecopy {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
@@ -137,7 +134,9 @@ fn gen_copy_event(
     };
     let code_size = bytecode.code.len() as u64;
 
-    let dst_addr = dst_offset.as_u64();
+    // Get low Uint64 of offset to generate copy steps. Since offset could be
+    // Uint64 overflow if length is zero.
+    let dst_addr = dst_offset.low_u64();
     let src_addr_end = code_size;
 
     // Reset start offset to end offset if overflow.

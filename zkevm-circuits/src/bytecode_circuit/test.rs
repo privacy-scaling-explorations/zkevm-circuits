@@ -13,7 +13,7 @@ use log::error;
 fn bytecode_circuit_unusable_rows() {
     assert_eq!(
         BytecodeCircuit::<Fr>::unusable_rows(),
-        unusable_rows::<Fr, BytecodeCircuit::<Fr>>(),
+        unusable_rows::<Fr, BytecodeCircuit::<Fr>>(()),
     )
 }
 

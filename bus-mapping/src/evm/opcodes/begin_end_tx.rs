@@ -55,12 +55,12 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         &mut exec_step,
         caller_address,
         AccountField::Nonce,
-        nonce_prev + 1,
-        nonce_prev,
+        (nonce_prev + 1).into(),
+        nonce_prev.into(),
     )?;
 
-    // Add caller and callee into access list
-    for address in [call.caller_address, call.address] {
+    // Add caller, callee and coinbase (for EIP-3651) to access list.
+    for address in [call.caller_address, call.address, state.block.coinbase] {
         let is_warm_prev = !state.sdb.add_account_to_access_list(address);
         state.tx_accesslist_account_write(
             &mut exec_step,
@@ -71,12 +71,20 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         )?;
     }
 
-    let intrinsic_gas_cost = if state.tx.is_create() {
-        GasCost::CREATION_TX.as_u64()
+    let init_code_gas_cost = if state.tx.is_create() {
+        // Calculate gas cost of init code for EIP-3860.
+        (state.tx.tx.call_data.len() as u64 + 31) / 32 * eth_types::evm_types::INIT_CODE_WORD_GAS
     } else {
-        GasCost::TX.as_u64()
-    } + state.tx.tx.call_data_gas_cost();
-    exec_step.gas_cost = GasCost(intrinsic_gas_cost);
+        0
+    };
+
+    let intrinsic_gas_cost = if state.tx.is_create() {
+        GasCost::CREATION_TX
+    } else {
+        GasCost::TX
+    } + state.tx.tx.call_data_gas_cost()
+        + init_code_gas_cost;
+    exec_step.gas_cost = intrinsic_gas_cost;
 
     // Get code_hash of callee
     let (_, callee_account) = state.sdb.get_account(&call.address);
@@ -247,15 +255,15 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
         },
     );
 
-    let effective_refund = refund
-        .min((state.tx.gas() - exec_step.gas_left.0) / MAX_REFUND_QUOTIENT_OF_GAS_USED as u64);
+    let effective_refund =
+        refund.min((state.tx.gas() - exec_step.gas_left) / MAX_REFUND_QUOTIENT_OF_GAS_USED as u64);
     let (found, caller_account) = state.sdb.get_account(&call.caller_address);
     if !found {
         return Err(Error::AccountNotFound(call.caller_address));
     }
     let caller_balance_prev = caller_account.balance;
     let caller_balance =
-        caller_balance_prev + state.tx.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
+        caller_balance_prev + state.tx.tx.gas_price * (exec_step.gas_left + effective_refund);
     state.account_write(
         &mut exec_step,
         call.caller_address,
@@ -271,7 +279,7 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
     }
     let coinbase_balance_prev = coinbase_account.balance;
     let coinbase_balance =
-        coinbase_balance_prev + effective_tip * (state.tx.gas() - exec_step.gas_left.0);
+        coinbase_balance_prev + effective_tip * (state.tx.gas() - exec_step.gas_left);
     state.account_write(
         &mut exec_step,
         state.block.coinbase,
@@ -306,7 +314,7 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
         )?;
     }
 
-    state.block_ctx.cumulative_gas_used += state.tx.gas() - exec_step.gas_left.0;
+    state.block_ctx.cumulative_gas_used += state.tx.gas() - exec_step.gas_left;
     state.tx_receipt_write(
         &mut exec_step,
         state.tx_ctx.id(),

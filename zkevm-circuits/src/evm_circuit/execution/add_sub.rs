@@ -86,13 +86,13 @@ impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         let indices = if opcode == OpcodeId::SUB {
-            [step.rw_indices[2], step.rw_indices[1], step.rw_indices[0]]
+            [2, 1, 0]
         } else {
-            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
+            [0, 1, 2]
         };
-        let [a, b, c] = indices.map(|idx| block.rws[idx].stack_value());
+        let [a, b, c] = indices.map(|index| block.get_rws(step, index).stack_value());
         self.add_words.assign(region, offset, [a, b], c)?;
         self.is_sub.assign(
             region,

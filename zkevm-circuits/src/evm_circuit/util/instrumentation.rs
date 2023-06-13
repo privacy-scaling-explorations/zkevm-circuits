@@ -12,7 +12,7 @@ type ColumnSize = (usize, usize, usize);
 
 /// Instrument captures metrics during the compilation of a circuit.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct Instrument {
+pub struct Instrument {
     // States -> Cell Types -> (width, height, num_cells)
     states: Vec<(ExecutionState, StepSize)>,
 }
@@ -38,7 +38,7 @@ impl Instrument {
 
     /// Dissasembles the instrumentation data and returns a collection of
     /// `ExecStateReport`s. One for each EVM `ExecutionState`.
-    pub(crate) fn analyze(&self) -> Vec<ExecStateReport> {
+    pub fn analyze(&self) -> Vec<ExecStateReport> {
         let mut report_collection = vec![];
         for (state, sizes) in &self.states {
             // Create a state report
@@ -111,20 +111,20 @@ impl Instrument {
 /// Struct which contains a Cost/ColumnType report for a particular EVM
 /// `ExecutionStep`.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct ExecStateReport {
-    pub(crate) state: ExecutionState,
-    pub(crate) storage_1: StateReportRow,
-    pub(crate) storage_2: StateReportRow,
-    pub(crate) storage_perm: StateReportRow,
-    pub(crate) byte_lookup: StateReportRow,
-    pub(crate) fixed_table: StateReportRow,
-    pub(crate) tx_table: StateReportRow,
-    pub(crate) rw_table: StateReportRow,
-    pub(crate) bytecode_table: StateReportRow,
-    pub(crate) block_table: StateReportRow,
-    pub(crate) copy_table: StateReportRow,
-    pub(crate) keccak_table: StateReportRow,
-    pub(crate) exp_table: StateReportRow,
+pub struct ExecStateReport {
+    pub state: ExecutionState,
+    pub storage_1: StateReportRow,
+    pub storage_2: StateReportRow,
+    pub storage_perm: StateReportRow,
+    pub byte_lookup: StateReportRow,
+    pub fixed_table: StateReportRow,
+    pub tx_table: StateReportRow,
+    pub rw_table: StateReportRow,
+    pub bytecode_table: StateReportRow,
+    pub block_table: StateReportRow,
+    pub copy_table: StateReportRow,
+    pub keccak_table: StateReportRow,
+    pub exp_table: StateReportRow,
 }
 
 impl From<ExecutionState> for ExecStateReport {
@@ -148,17 +148,17 @@ impl From<&ExecutionState> for ExecStateReport {
 /// Struct that contains all of the measurament values required to evaluate the
 /// costs of a particular `ColumnType` of an `ExecStateReport`
 #[derive(Debug, Clone, Default)]
-pub(crate) struct StateReportRow {
+pub struct StateReportRow {
     // Given a rigion of x columns and y rows, we have x * y cells available for computation.
-    pub(crate) available_cells: usize,
+    pub available_cells: usize,
     // The cells not used in the computation in the x*y region. These are the wasted cells.
-    pub(crate) unused_cells: usize,
+    pub unused_cells: usize,
     // The cells used in the computation in the x*y region.
-    pub(crate) used_cells: usize,
+    pub used_cells: usize,
     // The largest y within all the `CellType`.
-    pub(crate) top_height: usize,
+    pub top_height: usize,
     // If we fully utilize y, how large is the x really needed?
-    pub(crate) used_columns: usize,
+    pub used_columns: usize,
     // The percentage of cells used in computation in the x * y region.
-    pub(crate) utilization: f64,
+    pub utilization: f64,
 }

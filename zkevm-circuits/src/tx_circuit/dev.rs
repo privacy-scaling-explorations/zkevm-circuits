@@ -16,6 +16,7 @@ use log::error;
 impl<F: Field> Circuit<F> for TxCircuit<F> {
     type Config = (TxCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()

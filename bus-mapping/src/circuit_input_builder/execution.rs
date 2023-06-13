@@ -4,10 +4,7 @@ use crate::{
     circuit_input_builder::CallContext, error::ExecError, exec_trace::OperationRef,
     operation::RWCounter,
 };
-use eth_types::{
-    evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
-    GethExecStep, Word, H256,
-};
+use eth_types::{evm_types::OpcodeId, GethExecStep, Word, H256};
 use gadgets::impl_expr;
 use halo2_proofs::plonk::Expression;
 use strum_macros::EnumIter;
@@ -18,19 +15,19 @@ pub struct ExecStep {
     /// Execution state
     pub exec_state: ExecState,
     /// Program Counter
-    pub pc: ProgramCounter,
+    pub pc: u64,
     /// Stack size
     pub stack_size: usize,
     /// Memory size
     pub memory_size: usize,
     /// Gas left
-    pub gas_left: Gas,
+    pub gas_left: u64,
     /// Gas cost of the step.  If the error is OutOfGas caused by a "gas uint64
     /// overflow", this value will **not** be the actual Gas cost of the
     /// step.
-    pub gas_cost: GasCost,
+    pub gas_cost: u64,
     /// Accumulated gas refund
-    pub gas_refund: Gas,
+    pub gas_refund: u64,
     /// Call index within the Transaction.
     pub call_index: usize,
     /// The global counter when this step was executed.
@@ -85,6 +82,40 @@ impl ExecStep {
             self.error,
             Some(ExecError::OutOfGas(_) | ExecError::StackOverflow | ExecError::StackUnderflow)
         )
+    }
+
+    /// Try get opcode, if possible
+    pub fn opcode(&self) -> Option<OpcodeId> {
+        match self.exec_state {
+            ExecState::Op(op) => Some(op),
+            _ => None,
+        }
+    }
+
+    /// get rw index
+    pub fn rw_index(&self, index: usize) -> OperationRef {
+        self.bus_mapping_instance[index]
+    }
+
+    /// Get the size of read and writes
+    pub fn rw_indices_len(&self) -> usize {
+        self.bus_mapping_instance.len()
+    }
+
+    /// Get stack pointer
+    pub fn stack_pointer(&self) -> u64 {
+        1024 - self.stack_size as u64
+    }
+
+    /// The memory size in word **before** this step
+    pub fn memory_word_size(&self) -> u64 {
+        let n_bytes_word = 32u64;
+        let memory_size = self.memory_size as u64;
+        // EVM always pads the memory size to word size
+        // https://github.com/ethereum/go-ethereum/blob/a340721aa909ea4b541ffd1ea5e9c7bd441ff769/core/vm/interpreter.go#L201-L205
+        // Thus, the memory size must be a multiple of 32 bytes.
+        assert_eq!(memory_size % n_bytes_word, 0);
+        memory_size / n_bytes_word
     }
 }
 

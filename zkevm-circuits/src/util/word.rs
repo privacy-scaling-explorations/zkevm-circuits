@@ -253,7 +253,7 @@ impl<T: Clone> Word<T> {
         (lo, hi)
     }
 
-    /// Wrap `Word` into into `Word<Value>`
+    /// Wrap `Word` into `Word<Value>`
     pub fn into_value(self) -> Word<Value<T>> {
         let [lo, hi] = self.0.limbs;
         Word::new([Value::known(lo), Value::known(hi)])
@@ -262,11 +262,6 @@ impl<T: Clone> Word<T> {
     /// Map the word to other types
     pub fn map<T2: Clone>(&self, mut func: impl FnMut(T) -> T2) -> Word<T2> {
         Word(WordLimbs::<T2, 2>::new([func(self.lo()), func(self.hi())]))
-    }
-    /// Convert the word to Known Value
-    pub fn into_value(self) -> Word<Value<T>> {
-        let [lo, hi] = self.0.limbs;
-        Word::new([Value::known(lo), Value::known(hi)])
     }
 }
 
