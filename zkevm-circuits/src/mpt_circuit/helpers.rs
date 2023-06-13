@@ -949,7 +949,7 @@ impl<F: Field> MPTConstraintBuilder<F> {
         values: Vec<Expression<F>>,
 
     ) {
-        self.base.add_dynamic_lookup(description, tag, values, false)
+        self.base.add_dynamic_lookup(description, tag, values)
     }
 
     pub(crate) fn add_lookup(
@@ -957,9 +957,8 @@ impl<F: Field> MPTConstraintBuilder<F> {
         description: &'static str,
         cell_type: MptCellType,
         values: Vec<Expression<F>>,
-        optional: bool
     ) {
-        self.base.add_lookup(description, cell_type, values, optional)
+        self.base.add_lookup(description, cell_type, values)
     }
 
     pub(crate) fn store_dynamic_table(
@@ -1204,7 +1203,7 @@ pub struct MainRLPGadget<F> {
 }
 
 impl<F: Field> MainRLPGadget<F> {
-    pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>, r: &Expression<F>) -> Self {
+    pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>, r: &Expression<F>, two_bytes_lookup: bool) -> Self {
         circuit!([meta, cb], {
             let mut config = MainRLPGadget {
                 bytes: cb.query_cells::<34>().to_vec(),
@@ -1241,19 +1240,22 @@ impl<F: Field> MainRLPGadget<F> {
             // We enable dynamic lookups because otherwise these lookup would require a lot of extra
             // cells.
             cb.set_use_dynamic_lookup(true);
-            for (idx, byte) in config.bytes.iter().enumerate() {
-                require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()) => @FIXED);
+            if two_bytes_lookup {
+                for idx in 0..config.bytes.len() / 2 {
+                    let first = idx * 2;
+                    let second = idx * 2 + 1;
+                    require!((
+                        config.tag.expr(), 
+                        config.bytes[first], 
+                        config.bytes[second], 
+                        (config.num_bytes.expr() - first.expr()) + (config.num_bytes.expr() - second.expr())  
+                    ) => @FIXED);
+                }
+            } else {
+                for (idx, byte) in config.bytes.iter().enumerate() {
+                    require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()) => @FIXED);
+                }
             }
-            // for idx in 0..config.bytes.len() / 2 {
-            //     let first = idx * 2;
-            //     let second = idx * 2 + 1;
-            //     require!((
-            //         config.tag.expr(), 
-            //         config.bytes[first], 
-            //         config.bytes[second], 
-            //         (config.num_bytes.expr() - first.expr()) + (config.num_bytes.expr() - second.expr())  
-            //     ) => @FIXED, true);
-            // }
             cb.set_use_dynamic_lookup(false);
             
 

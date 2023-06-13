@@ -158,7 +158,7 @@ impl<F: Field, C: CellType> MemoryBank<F, C> {
         key: Expression<F>,
         values: &[Expression<F>],
     ) {
-        cb.add_dynamic_lookup(description, self.tag(), self.insert_key(key, values), false);
+        cb.add_dynamic_lookup(description, self.tag(), self.insert_key(key, values));
     }
 
     pub(crate) fn store(

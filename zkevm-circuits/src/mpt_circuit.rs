@@ -163,6 +163,7 @@ pub struct MPTConfig<F> {
     fixed_table: [Column<Fixed>; 6],
     rlp_item: MainRLPGadget<F>,
     state_machine: StateMachineConfig<F>,
+    two_bytes_lookup: bool,
     pub(crate) mpt_table: MptTable,
     cb: MPTConstraintBuilder<F>,
 }
@@ -182,12 +183,6 @@ pub enum FixedTableTag {
     RangeKeyLen256,
     /// For checking there are 0s after the RLP stream ends
     RangeKeyLen16,
-
-    /// For checking there are 0s after the RLP stream ends, 2 bytes at a time
-    RangeDoubleKeyLen256,
-    /// For checking there are 0s after the RLP stream ends, 2 bytes at a time
-    RangeDoubleKeyLen16,
-
     /// Extesion key odd key
     ExtOddKey,
     /// RLP decoding
@@ -217,6 +212,7 @@ impl<F: Field> MPTConfig<F> {
         meta: &mut ConstraintSystem<F>,
         challenges: Challenges<Expression<F>>,
         keccak_table: KeccakTable,
+        two_bytes_lookup: bool,
     ) -> Self {
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
@@ -286,7 +282,7 @@ impl<F: Field> MPTConfig<F> {
                     // RLP item decoding unit
                     cb.base.set_cell_manager(rlp_cm.clone());
                     cb.base.push_region(MPTRegion::RLP as usize);
-                    rlp_item = MainRLPGadget::construct(&mut cb, &ctx.r);
+                    rlp_item = MainRLPGadget::construct(&mut cb, &ctx.r, two_bytes_lookup);
                     cb.base.pop_region();
                     ctx.rlp_item = rlp_item.clone();
 
@@ -379,6 +375,7 @@ impl<F: Field> MPTConfig<F> {
             fixed_table,
             state_machine,
             rlp_item,
+            two_bytes_lookup,
             mpt_table,
             cb,
         }
@@ -560,42 +557,43 @@ impl<F: Field> MPTConfig<F> {
                 // when the unused columns start, the value that is used for the lookup in the last column is negative
                 // and thus a zero is enforced.
                 let max_length = 34i32;
-                for (tag, range) in [
-                    (FixedTableTag::RangeKeyLen256, 256),
-                    (FixedTableTag::RangeKeyLen16, 16),
-                ] {
-                    for n in -max_length..=max_length {
-                        let range = if n <= 0 && range == 256 { 1 } else { range };
-                        for idx in 0..range {
-                            let v = n.scalar();
-                            assignf!(region, (self.fixed_table[0], offset) => tag.scalar())?;
-                            assignf!(region, (self.fixed_table[1], offset) => idx.scalar())?;
-                            assignf!(region, (self.fixed_table[2], offset) => v)?;
-                            offset += 1;
+                if self.two_bytes_lookup {
+                    for (tag, range) in [
+                        (FixedTableTag::RangeKeyLen256, 256),
+                        (FixedTableTag::RangeKeyLen256, 16),
+                    ] {
+                        for n in -max_length..=max_length {
+                            let range = if n <= 0 && range == 256 { 1 } else { range };
+                            for idx1 in 0..range {
+                                for idx2 in 0..range {       
+                                    let v =(2 * n - 1).scalar();
+                                    assignf!(region, (self.fixed_table[0], offset) => tag.scalar())?;
+                                    assignf!(region, (self.fixed_table[1], offset) => idx1.scalar())?;
+                                    assignf!(region, (self.fixed_table[1], offset) => idx2.scalar())?;
+                                    assignf!(region, (self.fixed_table[2], offset) => v)?;
+                                    offset += 1;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    for (tag, range) in [
+                        (FixedTableTag::RangeKeyLen256, 256),
+                        (FixedTableTag::RangeKeyLen16, 16),
+                    ] {
+                        for n in -max_length..=max_length {
+                            let range = if n <= 0 && range == 256 { 1 } else { range };
+                            for idx in 0..range {
+                                let v = n.scalar();
+                                assignf!(region, (self.fixed_table[0], offset) => tag.scalar())?;
+                                assignf!(region, (self.fixed_table[1], offset) => idx.scalar())?;
+                                assignf!(region, (self.fixed_table[2], offset) => v)?;
+                                offset += 1;
+                            }
                         }
                     }
                 }
 
-                // This would always blow up the circuit height
-                
-                // for (tag, range) in [
-                //     (FixedTableTag::RangeDoubleKeyLen256, 256),
-                //     (FixedTableTag::RangeDoubleKeyLen16, 16),
-                // ] {
-                //     for n in -max_length..=max_length {
-                //         let range = if n <= 0 && range == 256 { 1 } else { range };
-                //         for idx1 in 0..range {
-                //             for idx2 in 0..range {       
-                //                 let v =(2 * n - 1).scalar();
-                //                 assignf!(region, (self.fixed_table[0], offset) => tag.scalar())?;
-                //                 assignf!(region, (self.fixed_table[1], offset) => idx1.scalar())?;
-                //                 assignf!(region, (self.fixed_table[1], offset) => idx2.scalar())?;
-                //                 assignf!(region, (self.fixed_table[2], offset) => v)?;
-                //                 offset += 1;
-                //             }
-                //         }
-                //     }
-                // }
 
                 // Compact encoding of the extension key, find out if the key is odd or not.
                 // Even - The full byte is simply 0.
@@ -639,11 +637,39 @@ struct MPTCircuit<F> {
 impl<F: Field> Circuit<F> for MPTCircuit<F> {
     type Config = (MPTConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
-    type Params = ();
+    type Params = usize;
 
     fn without_witnesses(&self) -> Self {
         Self::default()
     }
+
+    fn configure_with_params(
+        meta: &mut ConstraintSystem<F>,
+        degree: Self::Params,
+    ) -> Self::Config {
+        let challenges = Challenges::construct(meta);
+        let _challenges_expr = challenges.exprs(meta);
+
+        let r = 123456u64;
+        let _challenges = Challenges::mock(
+            Value::known(F::from(r)),
+            Value::known(F::from(r)),
+            Value::known(F::from(r)),
+        );
+        let challenges_expr = Challenges::mock(r.expr(), r.expr(), r.expr());
+
+        let keccak_table = KeccakTable::construct(meta);
+        let challenges = Challenges::construct(meta);
+
+        let circuit = if degree >= 21 {
+            MPTConfig::configure(meta, challenges_expr, keccak_table, true)
+        } else {
+            MPTConfig::configure(meta, challenges_expr, keccak_table, false)
+        };
+
+        (circuit, challenges)
+    }
+
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let challenges = Challenges::construct(meta);
@@ -660,7 +686,7 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         let keccak_table = KeccakTable::construct(meta);
         let challenges = Challenges::construct(meta);
         (
-            MPTConfig::configure(meta, challenges_expr, keccak_table),
+            MPTConfig::configure(meta, challenges_expr, keccak_table, false),
             challenges,
         )
     }
@@ -674,7 +700,6 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
 
         let r = self.randomness;
         let challenges = Challenges::mock(Value::known(r), Value::known(r), Value::known(r));
-
         config.load_fixed_table(&mut layouter, &challenges)?;
         config.assign(&mut layouter, &self.nodes, &challenges)?;
 
