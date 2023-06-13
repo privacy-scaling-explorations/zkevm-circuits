@@ -723,10 +723,10 @@ impl<F: Field> MainData<F> {
         Ok(MainDataWitness {
             proof_type: values[0].get_lower_32() as usize,
             is_below_account: values[1] == 1.scalar(),
-            is_non_existing_account: values[1] == 1.scalar(),
-            address_rlc: values[2],
-            root_prev: values[3],
-            root: values[4],
+            is_non_existing_account: values[2] == 1.scalar(),
+            address_rlc: values[3],
+            root_prev: values[4],
+            root: values[5],
         })
     }
 }
