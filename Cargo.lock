@@ -2055,8 +2055,11 @@ name = "geth-utils"
 version = "0.1.0"
 dependencies = [
  "env_logger",
+ "eth-types",
  "gobuild",
  "log",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

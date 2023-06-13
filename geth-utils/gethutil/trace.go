@@ -216,7 +216,6 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 
 	// Run the transactions with tracing enabled.
 	executionResults := make([]*ExecutionResult, len(config.Transactions))
-	var executionResultErr error
 	for i, message := range messages {
 		tracer := logger.NewStructLogger(config.LoggerConfig)
 		evm := vm.NewEVM(blockCtx, core.NewEVMTxContext(&message), stateDB, &chainConfig, vm.Config{Debug: true, Tracer: tracer, NoBaseFee: true})
@@ -230,7 +229,6 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 				ReturnValue: fmt.Sprintf("%v", err),
 				StructLogs:  []StructLogRes{},
 			}
-			executionResultErr = fmt.Errorf("Failed to apply config.Transactions")
 		} else {
 			stateDB.Finalise(true)
 
@@ -244,5 +242,5 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		}
 	}
 
-	return executionResults, executionResultErr
+	return executionResults, nil
 }
