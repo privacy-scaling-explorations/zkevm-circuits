@@ -65,11 +65,12 @@ pub struct CopyCircuitConfig<F> {
     pub rlc_acc_read: Column<Advice>,
     /// Random linear combination of the write value
     pub rlc_acc_write: Column<Advice>,
-    /// mask indicates the byte is actual coped or padding to memory word
+    /// mask indicates when a row is not part of the copy, but it is needed to complete the front
+    /// or the back of the first or last memory word.
     pub mask: Column<Advice>,
     /// Random linear combination accumulator value.
     pub value_acc: Column<Advice>,
-    /// Whether the row is padding.
+    /// Whether the row is padding for out-of-bound reads when source address >= src_addr_end.
     pub is_pad: Column<Advice>,
     /// In case of a bytecode tag, this denotes whether or not the copied byte
     /// is an opcode or push data byte.
@@ -92,9 +93,7 @@ pub struct CopyCircuitConfig<F> {
     /// Since `src_addr` and `src_addr_end` are u64, 8 bytes are sufficient for
     /// the Lt chip.
     pub addr_lt_addr_end: LtConfig<F, 8>,
-    /// Lt chip to check: src_addr < src_addr_end.
-    /// Since `src_addr` and `src_addr_end` are u64, 8 bytes are sufficient for
-    /// the Lt chip.
+    /// Whether this row is a continuation of a word (not last byte).
     pub is_word_continue: LtConfig<F, 1>,
     /// non pad and non mask gadget
     pub non_pad_non_mask: LtConfig<F, 1>,
