@@ -31,7 +31,7 @@ use self::{
 };
 use crate::{
     assign, assignf, circuit,
-    circuit_tools::{cached_region::CachedRegion, cell_manager::{CellManager}, memory::Memory},
+    circuit_tools::{cached_region::CachedRegion, cell_manager::CellManager, memory::Memory},
     evm_circuit::table::Table,
     mpt_circuit::{
         helpers::{
@@ -138,6 +138,7 @@ impl<F: Field> MPTContext<F> {
         idx: usize,
     ) -> RLPItemView<F> {
         // TODO(Brecht): Add RLP limitations like max num bytes
+        // answer: do it in RLPMain or here
         self.rlp_item.create_view(meta, cb, idx, false)
     }
 
@@ -181,6 +182,12 @@ pub enum FixedTableTag {
     RangeKeyLen256,
     /// For checking there are 0s after the RLP stream ends
     RangeKeyLen16,
+
+    /// For checking there are 0s after the RLP stream ends, 2 bytes at a time
+    RangeDoubleKeyLen256,
+    /// For checking there are 0s after the RLP stream ends, 2 bytes at a time
+    RangeDoubleKeyLen16,
+
     /// Extesion key odd key
     ExtOddKey,
     /// RLP decoding
@@ -250,6 +257,7 @@ impl<F: Field> MPTConfig<F> {
                 (MptCellType::StoragePhase1, 50, 0, false),
                 (MptCellType::StoragePhase2, 5, 0, false),
                 (MptCellType::Lookup(Table::Fixed), 3, 0, false),
+                (MptCellType::LookupByte, 4, 0, false),
             ],
             0,
             1,
@@ -267,7 +275,6 @@ impl<F: Field> MPTConfig<F> {
             0,
             50,
         );
-
         let mut cb = MPTConstraintBuilder::new(5, Some(challenges.clone()), None);
         meta.create_gate("MPT", |meta| {
             circuit!([meta, cb], {
@@ -452,7 +459,7 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                         cached_region.pop_region();
                     } else if node.account.is_some() {
-                        //println!("{}: account", offset);
+                        // println!("{:?}: account", node.account);
                         cached_region.push_region(offset, MPTRegion::Account as usize);
                         assign!(cached_region, (self.state_machine.is_account, offset) => "is_account", true.scalar())?;
                         self.state_machine.account_config.assign(
@@ -568,6 +575,27 @@ impl<F: Field> MPTConfig<F> {
                         }
                     }
                 }
+
+                // This would always blow up the circuit height
+                
+                // for (tag, range) in [
+                //     (FixedTableTag::RangeDoubleKeyLen256, 256),
+                //     (FixedTableTag::RangeDoubleKeyLen16, 16),
+                // ] {
+                //     for n in -max_length..=max_length {
+                //         let range = if n <= 0 && range == 256 { 1 } else { range };
+                //         for idx1 in 0..range {
+                //             for idx2 in 0..range {       
+                //                 let v =(2 * n - 1).scalar();
+                //                 assignf!(region, (self.fixed_table[0], offset) => tag.scalar())?;
+                //                 assignf!(region, (self.fixed_table[1], offset) => idx1.scalar())?;
+                //                 assignf!(region, (self.fixed_table[1], offset) => idx2.scalar())?;
+                //                 assignf!(region, (self.fixed_table[2], offset) => v)?;
+                //                 offset += 1;
+                //             }
+                //         }
+                //     }
+                // }
 
                 // Compact encoding of the extension key, find out if the key is odd or not.
                 // Even - The full byte is simply 0.
@@ -715,7 +743,7 @@ mod tests {
 
                 println!("{} {:?}", idx, path);
                 // let prover = MockProver::run(9, &circuit, vec![pub_root]).unwrap();
-                let prover = MockProver::run(14 /* 9 */, &circuit, vec![]).unwrap();
+                let prover = MockProver::run(21 /* 9 */, &circuit, vec![]).unwrap();
                 assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
                 // assert_eq!(prover.verify_par(), Ok(()));
                 // prover.assert_satisfied();

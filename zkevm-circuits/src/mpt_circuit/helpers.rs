@@ -947,8 +947,9 @@ impl<F: Field> MPTConstraintBuilder<F> {
         description: &'static str,
         tag: MptCellType,
         values: Vec<Expression<F>>,
+
     ) {
-        self.base.add_dynamic_lookup(description, tag, values)
+        self.base.add_dynamic_lookup(description, tag, values, false)
     }
 
     pub(crate) fn add_lookup(
@@ -956,8 +957,9 @@ impl<F: Field> MPTConstraintBuilder<F> {
         description: &'static str,
         cell_type: MptCellType,
         values: Vec<Expression<F>>,
+        optional: bool
     ) {
-        self.base.add_lookup(description, cell_type, values)
+        self.base.add_lookup(description, cell_type, values, optional)
     }
 
     pub(crate) fn store_dynamic_table(
@@ -1242,7 +1244,18 @@ impl<F: Field> MainRLPGadget<F> {
             for (idx, byte) in config.bytes.iter().enumerate() {
                 require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()) => @FIXED);
             }
+            // for idx in 0..config.bytes.len() / 2 {
+            //     let first = idx * 2;
+            //     let second = idx * 2 + 1;
+            //     require!((
+            //         config.tag.expr(), 
+            //         config.bytes[first], 
+            //         config.bytes[second], 
+            //         (config.num_bytes.expr() - first.expr()) + (config.num_bytes.expr() - second.expr())  
+            //     ) => @FIXED, true);
+            // }
             cb.set_use_dynamic_lookup(false);
+            
 
             config
         })
