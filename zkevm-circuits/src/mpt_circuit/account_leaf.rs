@@ -104,7 +104,7 @@ impl<F: Field> AccountLeafConfig<F> {
             let mut storage_rlc = vec![0.expr(); 2];
             let mut codehash_rlc = vec![0.expr(); 2];
             let mut leaf_no_key_rlc = vec![0.expr(); 2];
-            let mut node_value_num_bytes = 0.expr();
+            let mut value_list_num_bytes = vec![0.expr(); 2];
             for is_s in [true, false] {
                 // Key data
                 let key_data = &mut config.key_data[is_s.idx()];
@@ -182,7 +182,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 }}
 
                 // Cecilia: here copy
-                
+
                 // Check the RLP encoding consistency.
                 //               node      l[0],value_rlp_bytes[0] <-(l[1] = [n, b, s, c])
                 // RLP encoding: account = [key, "[nonce, balance, storage, codehash]"]
@@ -196,12 +196,10 @@ impl<F: Field> AccountLeafConfig<F> {
                 require!(value_list_rlp_bytes[1] => nonce_items[is_s.idx()].num_bytes() + balance_items[is_s.idx()].num_bytes() + (2 * (1 + 32)).expr());
                 // Now check that the the key and value list length matches the account length.
                 // The RLP encoded string always has 2 RLP bytes.
-                let value_list_num_bytes = value_rlp_bytes[1].expr() + 2.expr();
-                if is_s {
-                    node_value_num_bytes = value_list_num_bytes.clone();
-                }
+                value_list_num_bytes[is_s.idx()] = value_rlp_bytes[1].expr() + 2.expr();
+
                 // Account length needs to equal all key bytes and all values list bytes.
-                require!(config.rlp_key[is_s.idx()].rlp_list.len() => config.rlp_key[is_s.idx()].key_value.num_bytes() + value_list_num_bytes);
+                require!(config.rlp_key[is_s.idx()].rlp_list.len() => config.rlp_key[is_s.idx()].key_value.num_bytes() + value_list_num_bytes[is_s.idx()].expr());
 
                 // Key done, set the starting values
                 KeyData::store_defaults(cb, &ctx.memory[key_memory(is_s)]);
@@ -266,7 +264,7 @@ impl<F: Field> AccountLeafConfig<F> {
             // Drifted leaf handling
             config.drifted = DriftedGadget::construct(
                 cb,
-                node_value_num_bytes,
+                &value_list_num_bytes,
                 &config.parent_data,
                 &config.key_data,
                 &key_rlc,
