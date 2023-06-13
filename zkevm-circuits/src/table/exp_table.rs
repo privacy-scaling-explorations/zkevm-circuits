@@ -139,12 +139,6 @@ impl ExpTable {
                         } else {
                             F::ZERO
                         };
-                        region.assign_fixed(
-                            || format!("exponentiation table row {}", offset),
-                            self.is_step,
-                            offset,
-                            || Value::known(is_step),
-                        )?;
                         offset += 1;
                     }
                 }
@@ -157,6 +151,22 @@ impl ExpTable {
                         *column,
                         offset,
                         || Value::known(value),
+                    )?;
+                }
+
+                // Enable selector at all rows
+                let max_exp_steps = block.circuits_params.max_exp_steps;
+                for offset in 0..max_exp_steps {
+                    let is_step = if offset % OFFSET_INCREMENT == 0 {
+                        F::ONE
+                    } else {
+                        F::ZERO
+                    };
+                    region.assign_fixed(
+                        || format!("exponentiation table row {}", offset),
+                        self.is_step,
+                        offset,
+                        || Value::known(is_step),
                     )?;
                 }
 
