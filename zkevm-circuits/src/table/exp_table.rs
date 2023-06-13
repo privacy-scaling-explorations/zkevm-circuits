@@ -134,11 +134,6 @@ impl ExpTable {
                                 || Value::known(value),
                             )?;
                         }
-                        let is_step = if offset % OFFSET_INCREMENT == 0 {
-                            F::ONE
-                        } else {
-                            F::ZERO
-                        };
                         offset += 1;
                     }
                 }
@@ -156,7 +151,7 @@ impl ExpTable {
 
                 // Enable selector at all rows
                 let max_exp_steps = block.circuits_params.max_exp_steps;
-                for offset in 0..max_exp_steps {
+                for offset in 0..max_exp_steps * OFFSET_INCREMENT {
                     let is_step = if offset % OFFSET_INCREMENT == 0 {
                         F::ONE
                     } else {
