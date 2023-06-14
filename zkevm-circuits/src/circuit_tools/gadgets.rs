@@ -124,7 +124,7 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
         // The equation we require to hold: `lhs - rhs == diff - (lt * range)`.
         cb.require_equal(
             "lhs - rhs == diff - (lt ⋅ range)",
-            lhs - rhs,
+            lhs.clone() - rhs.clone(),
             from_bytes::expr(&diff) - (lt.expr() * range),
         );
 
@@ -147,19 +147,19 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
         rhs: F,
     ) -> Result<(F, Vec<u8>), Error> {
         // Set `lt`
-        println!("LT assign lhs{:?} > rhs{:?}", lhs, rhs);
         let lt = lhs < rhs;
         self.lt
             .as_ref()
             .unwrap()
             .assign(region, offset, if lt { F::ONE } else { F::ZERO })?;
-
         // Set the bytes of diff
         let diff = (lhs - rhs) + (if lt { self.range } else { F::ZERO });
         let diff_bytes = diff.to_repr();
         for (idx, diff) in self.diff.as_ref().unwrap().iter().enumerate() {
             diff.assign(region, offset, F::from(diff_bytes[idx] as u64))?;
         }
+        // println!("LT assign lhs {:?} - rhs {:?} == diff {:?} - lt {:?} * range {:?}", 
+        //     lhs, rhs, diff, lt, 2usize.pow(2*8));
 
         Ok((if lt { F::ONE } else { F::ZERO }, diff_bytes.to_vec()))
     }

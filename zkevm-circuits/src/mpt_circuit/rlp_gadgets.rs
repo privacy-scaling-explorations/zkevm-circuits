@@ -8,7 +8,7 @@ use crate::{
     matchw,
     mpt_circuit::{
         helpers::FIXED,
-        param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT, RLP_LIST_MAX, RLP_STRING_MAX},
+        param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT, MAIN_RLP_LIST_MAX, MAIN_RLP_STRING_MAX},
         FixedTableTag,
     },
     util::Expr,
@@ -597,8 +597,8 @@ pub(crate) mod get_num_bytes_list_short {
 pub(crate) struct RLPItemGadget<F> {
     pub(crate) value: RLPValueGadget<F>,
     pub(crate) list: RLPListGadget<F>,
-    pub(crate) value_limit: LtGadget<F, 2>,
-    pub(crate) list_limit: LtGadget<F, 2>,
+    // pub(crate) value_limit: LtGadget<F, 2>,
+    // pub(crate) list_limit: LtGadget<F, 2>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -612,21 +612,9 @@ impl<F: Field> RLPItemGadget<F> {
     pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>, bytes: &[Expression<F>]) -> Self {
         let value = RLPValueGadget::construct(cb, bytes);
         let list = RLPListGadget::construct(cb, bytes);
-        let value_limit = LtGadget::<F, 2>::construct(
-            &mut cb.base, 
-            value.len(),
-            RLP_STRING_MAX.expr(),
-        );
-        let list_limit = LtGadget::<F, 2>::construct(
-            &mut cb.base, 
-            list.len(),
-            RLP_LIST_MAX.expr(),
-        );
         RLPItemGadget {
             value,
             list,
-            value_limit,
-            list_limit,
         }
     }
 
@@ -638,28 +626,6 @@ impl<F: Field> RLPItemGadget<F> {
     ) -> Result<RLPItemWitness, Error> {
         let value_witness = self.value.assign(region, offset, bytes)?;
         let list_witness = self.list.assign(region, offset, bytes)?;
-        let is_all_zeros = bytes.iter()
-            .fold(bytes[0] == 0, |is_zero, b| is_zero && *b == 0);
-
-        if value_witness.is_string() {
-            println!("value_witness");
-            self.value_limit.assign(
-                region, 
-                offset,  
-                if is_all_zeros {0.scalar()} else {value_witness.len().scalar()},
-                (RLP_STRING_MAX).scalar(), 
-            )?;
-        }
-        else {
-            println!("list_witness");
-            self.list_limit.assign(
-                region, 
-                offset,
-                if is_all_zeros {0.scalar()} else {list_witness.len().scalar()},
-                RLP_LIST_MAX.scalar()
-            )?;
-        } 
-        
         Ok(RLPItemWitness {
             value: value_witness,
             list: list_witness,
@@ -785,6 +751,14 @@ impl RLPItemWitness {
             self.value.is_string() => self.value.len(),
             self.list.is_list() => self.list.len(),
         }
+    }
+
+    pub(crate) fn is_string(&self) -> bool {
+        self.value.is_string()
+    }
+
+    pub(crate) fn is_list(&self) -> bool {
+        self.list.is_list()
     }
 
     pub(crate) fn is_short(&self) -> bool {

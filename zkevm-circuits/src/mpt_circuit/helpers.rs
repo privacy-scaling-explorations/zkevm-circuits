@@ -6,13 +6,13 @@ use crate::{
         constraint_builder::{
             ConstraintBuilder, RLCChainable, RLCChainableValue, RLCable, RLCableValue,
         },
-        gadgets::IsEqualGadget,
+        gadgets::{IsEqualGadget, LtGadget},
         memory::MemoryBank,
     },
     evm_circuit::table::Table,
     matchw,
     mpt_circuit::{
-        param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN, RLP_STRING_MAX, RLP_LIST_MAX},
+        param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN, MAIN_RLP_STRING_MAX, MAIN_RLP_LIST_MAX},
         rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble},
     },
     util::{Challenges, Expr},
@@ -1193,6 +1193,7 @@ impl<F: Field> WrongGadget<F> {
 pub struct MainRLPGadget<F> {
     bytes: Vec<Cell<F>>,
     rlp: RLPItemGadget<F>,
+    below_limit: LtGadget<F, 2>,
     num_bytes: Cell<F>,
     len: Cell<F>,
     mult_diff: Cell<F>,
@@ -1207,6 +1208,7 @@ impl<F: Field> MainRLPGadget<F> {
             let mut config = MainRLPGadget {
                 bytes: cb.query_cells::<34>().to_vec(),
                 rlp: RLPItemGadget::default(),
+                below_limit: LtGadget::default(),
                 num_bytes: cb.query_cell(),
                 len: cb.query_cell(),
                 mult_diff: cb.query_cell(),
@@ -1223,12 +1225,14 @@ impl<F: Field> MainRLPGadget<F> {
                     .map(|byte| byte.expr())
                     .collect::<Vec<_>>(),
             );
+            
 
-            let below_limit = matchx!(
-                config.rlp.is_string() => config.rlp.value_limit.expr(),
-                config.rlp.is_list() => config.rlp.list_limit.expr(),
+            let max_len = matchx!(
+                config.rlp.is_string() => MAIN_RLP_STRING_MAX.expr(),
+                config.rlp.is_list() => MAIN_RLP_LIST_MAX.expr(),
             );
-            // require!(below_limit => true);
+            config.below_limit = LtGadget::construct(&mut cb.base, config.rlp.len(), max_len);
+            require!(config.below_limit.expr() => true);
 
             require!(config.num_bytes => config.rlp.num_bytes());
             require!(config.len => config.rlp.len());
@@ -1272,6 +1276,11 @@ impl<F: Field> MainRLPGadget<F> {
 
         // Decode the RLP item
         let rlp_witness = self.rlp.assign(region, offset, bytes)?;
+        let max_len = match rlp_witness.is_string() {
+            true => MAIN_RLP_STRING_MAX,
+            false => MAIN_RLP_LIST_MAX,
+        };
+        self.below_limit.assign(region, offset, rlp_witness.len().scalar(), max_len.scalar())?;
 
         // Store RLP properties for easy access
         self.num_bytes

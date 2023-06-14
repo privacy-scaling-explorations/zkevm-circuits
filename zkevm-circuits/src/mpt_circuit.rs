@@ -426,7 +426,7 @@ impl<F: Field> MPTConfig<F> {
 
                     // Assign nodes
                     if node.start.is_some() {
-                        //println!("{}: start", offset);
+                        println!("{}: start", offset);
                         cached_region.push_region(offset, MPTRegion::Start as usize);
                         assign!(cached_region, (self.state_machine.is_start, offset) => "is_start", true.scalar())?;
                         self.state_machine.start_config.assign(
@@ -440,7 +440,7 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                         cached_region.pop_region();
                     } else if node.extension_branch.is_some() {
-                        //println!("{}: branch", offset);
+                        println!("{}: branch", offset);
                         cached_region.push_region(offset, MPTRegion::Branch as usize);
                         assign!(cached_region, (self.state_machine.is_branch, offset) => "is_branch", true.scalar())?;
                         self.state_machine.branch_config.assign(
@@ -454,7 +454,7 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                         cached_region.pop_region();
                     } else if node.account.is_some() {
-                        //println!("{}: account", offset);
+                        println!("{}: account", offset);
                         cached_region.push_region(offset, MPTRegion::Account as usize);
                         assign!(cached_region, (self.state_machine.is_account, offset) => "is_account", true.scalar())?;
                         self.state_machine.account_config.assign(
@@ -468,7 +468,7 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                         cached_region.pop_region();
                     } else if node.storage.is_some() {
-                        //println!("{}: storage", offset);
+                        println!("{}: storage", offset);
                         cached_region.push_region(offset, MPTRegion::Storage as usize);
                         assign!(cached_region, (self.state_machine.is_storage, offset) => "is_storage", true.scalar())?;
                         self.state_machine.storage_config.assign(
@@ -726,7 +726,7 @@ mod tests {
 
     #[test]
     fn graph_mpt() {
-        let w: Vec<Vec<u8>> = serde_json::from_str(test_data::AccountExtensionTwoNibblesInEvenLevel).unwrap();
+        let w: Vec<Vec<u8>> = serde_json::from_str(test_data::NonExistingAccountInFirstLevel).unwrap();
 
         let randomness: Fr = 2.scalar();
 
