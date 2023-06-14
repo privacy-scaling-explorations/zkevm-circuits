@@ -12,8 +12,10 @@ use testool::{
     utils, Compiler,
 };
 
+const ROOT_DIR: &str = "testool";
 const REPORT_FOLDER: &str = "report";
 const CODEHASH_FILE: &str = "./codehash.txt";
+const CONFIG_FILE: &str = "Config.toml";
 
 #[allow(non_camel_case_types)]
 #[derive(PartialEq, Parser, EnumString, Debug)]
@@ -91,7 +93,8 @@ fn go() -> Result<()> {
         return Ok(());
     }
 
-    let config = Config::load()?;
+    let path: PathBuf = [ROOT_DIR, CONFIG_FILE].iter().collect();
+    let config = Config::from_path(&path)?;
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 

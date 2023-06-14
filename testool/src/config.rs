@@ -1,7 +1,6 @@
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use serde::Deserialize;
-
-const CONFIG_FILE: &str = "Config.toml";
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -52,9 +51,9 @@ impl TestSuite {
 }
 
 impl Config {
-    pub fn load() -> Result<Self> {
-        let content = std::fs::read_to_string(CONFIG_FILE)
-            .context(format!("Unable to open {}", CONFIG_FILE))?;
+    pub fn from_path(path: &PathBuf) -> Result<Self> {
+        let content =
+            std::fs::read_to_string(path).context(format!("Unable to open {:?}", path))?;
         let mut config: Config = toml::from_str(&content).context("parsing toml")?;
 
         // Append all tests defined in sets into the tests
