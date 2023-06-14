@@ -53,7 +53,10 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
         // Nothing to do
     }
 
-    pub(crate) fn assign_stored_expressions<C: CellType>(&mut self, cb: &ConstraintBuilder<F, C>) -> Result<(), Error>  {
+    pub(crate) fn assign_stored_expressions<C: CellType>(
+        &mut self,
+        cb: &ConstraintBuilder<F, C>,
+    ) -> Result<(), Error> {
         for (offset, region_id) in self.regions.clone() {
             for stored_expression in cb.get_stored_expressions(region_id).iter() {
                 stored_expression.assign(self, offset)?;

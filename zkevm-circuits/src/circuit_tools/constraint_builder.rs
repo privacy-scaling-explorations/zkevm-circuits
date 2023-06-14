@@ -286,24 +286,24 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         for lookup_name in lookup_names.iter() {
             if let Some(lookups) = self.dynamic_lookups.get(lookup_name) {
                 for lookup in lookups {
-                        meta.lookup_any(lookup.description, |_meta| {
-                            let table = self.get_dynamic_table_values(*lookup_name);
-                            let mut values: Vec<_> = lookup
-                                .values
-                                .iter()
-                                .map(|value| lookup.condition.expr() * value.expr())
-                                .collect();
-                            assert!(table.len() >= values.len());
-                            while values.len() < table.len() {
-                                values.push(0.expr());
-                            }
-                            table
-                                .iter()
-                                .zip(values.iter())
-                                .map(|(table, value)| (value.expr(), table.expr()))
-                                .collect()
-                        });
-                    }
+                    meta.lookup_any(lookup.description, |_meta| {
+                        let table = self.get_dynamic_table_values(*lookup_name);
+                        let mut values: Vec<_> = lookup
+                            .values
+                            .iter()
+                            .map(|value| lookup.condition.expr() * value.expr())
+                            .collect();
+                        assert!(table.len() >= values.len());
+                        while values.len() < table.len() {
+                            values.push(0.expr());
+                        }
+                        table
+                            .iter()
+                            .zip(values.iter())
+                            .map(|(table, value)| (value.expr(), table.expr()))
+                            .collect()
+                    });
+                }
             }
         }
     }

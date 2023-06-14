@@ -643,10 +643,7 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         Self::default()
     }
 
-    fn configure_with_params(
-        meta: &mut ConstraintSystem<F>,
-        degree: Self::Params,
-    ) -> Self::Config {
+    fn configure_with_params(meta: &mut ConstraintSystem<F>, degree: Self::Params) -> Self::Config {
         let challenges = Challenges::construct(meta);
         let _challenges_expr = challenges.exprs(meta);
 
@@ -669,7 +666,6 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
 
         (circuit, challenges)
     }
-
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let challenges = Challenges::construct(meta);

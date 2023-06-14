@@ -947,7 +947,6 @@ impl<F: Field> MPTConstraintBuilder<F> {
         description: &'static str,
         tag: MptCellType,
         values: Vec<Expression<F>>,
-
     ) {
         self.base.add_dynamic_lookup(description, tag, values)
     }
@@ -1203,7 +1202,11 @@ pub struct MainRLPGadget<F> {
 }
 
 impl<F: Field> MainRLPGadget<F> {
-    pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>, r: &Expression<F>, two_bytes_lookup: bool) -> Self {
+    pub(crate) fn construct(
+        cb: &mut MPTConstraintBuilder<F>,
+        r: &Expression<F>,
+        two_bytes_lookup: bool,
+    ) -> Self {
         circuit!([meta, cb], {
             let mut config = MainRLPGadget {
                 bytes: cb.query_cells::<34>().to_vec(),
@@ -1257,7 +1260,6 @@ impl<F: Field> MainRLPGadget<F> {
                 }
             }
             cb.set_use_dynamic_lookup(false);
-            
 
             config
         })
