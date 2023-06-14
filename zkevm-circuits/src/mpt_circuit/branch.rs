@@ -1,9 +1,6 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
-use halo2_proofs::{
-    circuit::Region,
-    plonk::{Error, Expression, VirtualCells},
-};
+use halo2_proofs::plonk::{Error, Expression, VirtualCells};
 
 use super::{
     helpers::{MPTConstraintBuilder, RLPItemView},
@@ -14,9 +11,14 @@ use super::{
 };
 use crate::{
     circuit,
-    circuit_tools::{cell_manager::Cell, constraint_builder::RLCChainable, gadgets::LtGadget},
+    circuit_tools::{
+        cached_region::{CachedRegion, ChallengeSet},
+        cell_manager::Cell,
+        constraint_builder::RLCChainable,
+        gadgets::LtGadget,
+    },
     mpt_circuit::{
-        helpers::{nibble_rlc, Indexable},
+        helpers::{nibble_rlc, Indexable, KECCAK},
         param::{HASH_WIDTH, RLP_NIL},
         MPTConfig, MPTState,
     },
@@ -46,6 +48,7 @@ pub(crate) struct BranchGadget<F> {
 }
 
 impl<F: Field> BranchGadget<F> {
+    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
@@ -58,29 +61,29 @@ impl<F: Field> BranchGadget<F> {
         num_nibbles: Expression<F>,
         is_key_odd: Expression<F>,
     ) -> Self {
-        let r = ctx.r.clone();
+        let r = &ctx.r;
 
         let mut config = BranchGadget::default();
 
-        circuit!([meta, cb.base], {
+        circuit!([meta, cb], {
             // Data
             let children: [RLPItemView<F>; ARITY + 1] =
-                array_init::array_init(|i| ctx.rlp_item(meta, &mut cb.base, i));
+                array_init::array_init(|i| ctx.rlp_item(meta, cb, i));
 
             let mut num_bytes_left = vec![0.expr(); 2];
             let mut node_rlc = vec![0.expr(); 2];
             let mut mult = vec![1.expr(); 2];
             for is_s in [true, false] {
                 // Read the list
-                config.rlp_list[is_s.idx()] = RLPListDataGadget::construct(&mut cb.base);
+                config.rlp_list[is_s.idx()] = RLPListDataGadget::construct(cb);
                 // Start RLC encoding the RLP data starting with the list RLP bytes
                 (node_rlc[is_s.idx()], mult[is_s.idx()]) =
-                    config.rlp_list[is_s.idx()].rlp_list.rlc_rlp_only(&r);
+                    config.rlp_list[is_s.idx()].rlp_list.rlc_rlp_only(r);
 
                 // Keep track of how many bytes the branch contains to make sure it's correct.
                 num_bytes_left[is_s.idx()] = config.rlp_list[is_s.idx()].rlp_list.len();
 
-                config.mod_rlc[is_s.idx()] = cb.base.query_cell();
+                config.mod_rlc[is_s.idx()] = cb.query_cell();
 
                 // Check if the branch is hashed or not
                 config.is_not_hashed[is_s.idx()] = LtGadget::construct(
@@ -193,7 +196,7 @@ impl<F: Field> BranchGadget<F> {
                 ifx! {not!(is_placeholder[is_s.idx()]) => {
                     ifx!{or::expr(&[is_root[is_s.idx()].expr(), not!(is_not_hashed)]) => {
                         // Hashed branch hash in parent branch
-                        require!((1, rlc, num_bytes, parent_rlc[is_s.idx()].expr()) => @"keccak");
+                        require!((1, rlc, num_bytes, parent_rlc[is_s.idx()].expr()) => @KECCAK);
                     } elsex {
                         // Non-hashed branch hash in parent branch
                         require!(rlc => parent_rlc[is_s.idx()].expr());
@@ -203,21 +206,21 @@ impl<F: Field> BranchGadget<F> {
 
             // Update the key RLC and multiplier for the branch nibble.
             let (key_rlc_post_branch, key_mult_post_branch) = nibble_rlc(
-                &mut cb.base,
+                cb,
                 key_rlc.expr(),
                 key_mult.expr(),
                 is_key_odd.expr(),
                 modified_index.expr(),
-                &r,
+                r,
             );
             // Also calculate the key RLC and multiplier for the drifted nibble.
             let (key_rlc_post_drifted, key_mult_post_drifted) = nibble_rlc(
-                &mut cb.base,
+                cb,
                 key_rlc.expr(),
                 key_mult.expr(),
                 is_key_odd.expr(),
                 drifted_index.expr(),
-                &r,
+                r,
             );
 
             // Update the nibble counter
@@ -270,9 +273,11 @@ impl<F: Field> BranchGadget<F> {
         self.post_state.as_ref().unwrap().clone()
     }
 
-    pub(crate) fn assign(
+    #[allow(clippy::collapsible_else_if)]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F, S>,
         _mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,

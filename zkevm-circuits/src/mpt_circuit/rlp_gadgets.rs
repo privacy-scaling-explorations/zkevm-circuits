@@ -1,21 +1,60 @@
 use crate::{
     _cb, circuit,
     circuit_tools::{
+        cached_region::{CachedRegion, ChallengeSet},
         cell_manager::Cell,
         constraint_builder::{ConstraintBuilder, RLCable, RLCableValue},
     },
     matchw,
-    mpt_circuit::param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT},
+    mpt_circuit::{
+        helpers::FIXED,
+        param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT},
+        FixedTableTag,
+    },
     util::Expr,
 };
 use eth_types::Field;
 use gadgets::util::{not, pow, Scalar};
-use halo2_proofs::{
-    circuit::Region,
-    plonk::{Error, Expression},
+use halo2_proofs::plonk::{Error, Expression};
+
+use super::{
+    helpers::MPTConstraintBuilder,
+    param::{KEY_PREFIX_ODD, KEY_TERMINAL_PREFIX_ODD, RLP_LONG},
 };
 
-use super::param::{KEY_PREFIX_ODD, KEY_TERMINAL_PREFIX_ODD, RLP_LONG};
+// Decodes the first byte of an RLP data stream to return (is_list, is_short, is_long, is_very_long)
+pub(crate) fn decode_rlp(byte: u8) -> (bool, bool, bool, bool) {
+    if byte < RLP_LIST_SHORT {
+        const RLP_SHORT_INCLUSIVE: u8 = RLP_SHORT - 1;
+        const RLP_LONG_EXCLUSIVE: u8 = RLP_LONG + 1;
+        const RLP_VALUE_MAX: u8 = RLP_LIST_SHORT - 1;
+
+        let mut is_short = false;
+        let mut is_long = false;
+        let mut is_very_long = false;
+        match byte {
+            0..=RLP_SHORT_INCLUSIVE => is_short = true,
+            RLP_SHORT..=RLP_LONG => is_long = true,
+            RLP_LONG_EXCLUSIVE..=RLP_VALUE_MAX => is_very_long = true,
+            _ => unreachable!(),
+        }
+        (false, is_short, is_long, is_very_long)
+    } else {
+        const RLP_LIST_LONG_1: u8 = RLP_LIST_LONG + 1;
+        const RLP_LIST_LONG_2: u8 = RLP_LIST_LONG + 2;
+
+        let mut is_short = false;
+        let mut is_long = false;
+        let mut is_very_long = false;
+        match byte {
+            RLP_LIST_SHORT..=RLP_LIST_LONG => is_short = true,
+            RLP_LIST_LONG_1 => is_long = true,
+            RLP_LIST_LONG_2 => is_very_long = true,
+            _ => (),
+        }
+        (true, is_short, is_long, is_very_long)
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RLPListGadget<F> {
@@ -36,36 +75,41 @@ pub(crate) struct RLPListWitness {
 }
 
 impl<F: Field> RLPListGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, bytes: &[Expression<F>]) -> Self {
-        // TODO(Brecht): add lookup
-        RLPListGadget {
-            is_short: cb.query_cell(),
-            is_long: cb.query_cell(),
-            is_very_long: cb.query_cell(),
-            is_string: cb.query_cell(),
-            bytes: bytes.to_vec(),
-        }
+    pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>, bytes: &[Expression<F>]) -> Self {
+        circuit!([meta, cb], {
+            let is_short = cb.query_cell();
+            let is_long = cb.query_cell();
+            let is_very_long = cb.query_cell();
+            let is_string = cb.query_cell();
+
+            require!(vec![
+                FixedTableTag::RLP.expr(),
+                bytes[0].expr(),
+                not!(is_string),
+                is_short.expr(),
+                is_long.expr(),
+                is_very_long.expr(),
+                ] => @FIXED
+            );
+
+            RLPListGadget {
+                is_short,
+                is_long,
+                is_very_long,
+                is_string,
+                bytes: bytes.to_vec(),
+            }
+        })
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
         bytes: &[u8],
     ) -> Result<RLPListWitness, Error> {
-        const RLP_LIST_LONG_1: u8 = RLP_LIST_LONG + 1;
-        const RLP_LIST_LONG_2: u8 = RLP_LIST_LONG + 2;
-
-        let mut is_short = false;
-        let mut is_long = false;
-        let mut is_very_long = false;
-        let mut is_string = false;
-        match bytes[0] {
-            RLP_LIST_SHORT..=RLP_LIST_LONG => is_short = true,
-            RLP_LIST_LONG_1 => is_long = true,
-            RLP_LIST_LONG_2 => is_very_long = true,
-            _ => is_string = true,
-        }
+        let (is_list, is_short, is_long, is_very_long) = decode_rlp(bytes[0]);
+        let is_string = !is_list;
 
         self.is_short.assign(region, offset, is_short.scalar())?;
         self.is_long.assign(region, offset, is_long.scalar())?;
@@ -219,7 +263,7 @@ pub(crate) struct RLPListDataGadget<F> {
 }
 
 impl<F: Field> RLPListDataGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
+    pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>) -> Self {
         let rlp_list_bytes = cb.query_bytes();
         let rlp_list_bytes_expr = rlp_list_bytes.iter().map(|c| c.expr()).collect::<Vec<_>>();
         RLPListDataGadget {
@@ -228,9 +272,9 @@ impl<F: Field> RLPListDataGadget<F> {
         }
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
         list_bytes: &[u8],
     ) -> Result<RLPListWitness, Error> {
@@ -264,37 +308,40 @@ pub(crate) struct RLPValueWitness {
 }
 
 impl<F: Field> RLPValueGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, bytes: &[Expression<F>]) -> Self {
-        // TODO(Brecht): add lookup
-        RLPValueGadget {
-            is_short: cb.query_cell(),
-            is_long: cb.query_cell(),
-            is_very_long: cb.query_cell(),
-            is_list: cb.query_cell(),
-            bytes: bytes.to_vec(),
-        }
+    pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>, bytes: &[Expression<F>]) -> Self {
+        circuit!([meta, cb], {
+            let is_short = cb.query_cell();
+            let is_long = cb.query_cell();
+            let is_very_long = cb.query_cell();
+            let is_list = cb.query_cell();
+
+            require!(vec![
+                FixedTableTag::RLP.expr(),
+                bytes[0].expr(),
+                is_list.expr(),
+                is_short.expr(),
+                is_long.expr(),
+                is_very_long.expr(),
+                ] => @FIXED
+            );
+
+            RLPValueGadget {
+                is_short,
+                is_long,
+                is_very_long,
+                is_list,
+                bytes: bytes.to_vec(),
+            }
+        })
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
         bytes: &[u8],
     ) -> Result<RLPValueWitness, Error> {
-        const RLP_SHORT_INCLUSIVE: u8 = RLP_SHORT - 1;
-        const RLP_LONG_EXCLUSIVE: u8 = RLP_LONG + 1;
-        const RLP_VALUE_MAX: u8 = RLP_LIST_SHORT - 1;
-
-        let mut is_short = false;
-        let mut is_long = false;
-        let mut is_very_long = false;
-        let mut is_list = false;
-        match bytes[0] {
-            0..=RLP_SHORT_INCLUSIVE => is_short = true,
-            RLP_SHORT..=RLP_LONG => is_long = true,
-            RLP_LONG_EXCLUSIVE..=RLP_VALUE_MAX => is_very_long = true,
-            _ => is_list = true,
-        }
+        let (is_list, is_short, is_long, is_very_long) = decode_rlp(bytes[0]);
 
         self.is_short.assign(region, offset, is_short.scalar())?;
         self.is_long.assign(region, offset, is_long.scalar())?;
@@ -558,16 +605,16 @@ pub(crate) struct RLPItemWitness {
 }
 
 impl<F: Field> RLPItemGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, bytes: &[Expression<F>]) -> Self {
+    pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>, bytes: &[Expression<F>]) -> Self {
         RLPItemGadget {
             value: RLPValueGadget::construct(cb, bytes),
             list: RLPListGadget::construct(cb, bytes),
         }
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
         bytes: &[u8],
     ) -> Result<RLPItemWitness, Error> {
@@ -645,7 +692,7 @@ impl<F: Field> RLPItemGadget<F> {
 
     pub(crate) fn rlc_rlp(
         &self,
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut MPTConstraintBuilder<F>,
         r: &Expression<F>,
     ) -> Expression<F> {
         circuit!([meta, cb], {

@@ -1,9 +1,6 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
-use halo2_proofs::{
-    circuit::Region,
-    plonk::{Error, VirtualCells},
-};
+use halo2_proofs::plonk::{Error, VirtualCells};
 
 use super::{
     branch::BranchGadget,
@@ -15,7 +12,10 @@ use super::{
 };
 use crate::{
     circuit,
-    circuit_tools::cell_manager::Cell,
+    circuit_tools::{
+        cached_region::{CachedRegion, ChallengeSet},
+        cell_manager::Cell,
+    },
     mpt_circuit::{
         helpers::{key_memory, parent_memory, Indexable, KeyData, ParentData},
         witness_row::ExtensionBranchRowType,
@@ -46,24 +46,24 @@ impl<F: Field> ExtensionBranchConfig<F> {
             .reset(ExtensionBranchRowType::Count as usize);
         let mut config = ExtensionBranchConfig::default();
 
-        circuit!([meta, cb.base], {
+        circuit!([meta, cb], {
             // General inputs
-            config.is_extension = cb.base.query_bool();
+            config.is_extension = cb.query_bool();
             // If we're in a placeholder, both the extension and the branch parts are
             // placeholders
             for is_s in [true, false] {
-                config.is_placeholder[is_s.idx()] = cb.base.query_bool();
+                config.is_placeholder[is_s.idx()] = cb.query_bool();
             }
             // Don't allow both branches to be placeholders
             require!(config.is_placeholder[true.idx()].expr() + config.is_placeholder[false.idx()].expr() => bool);
 
             // Load the last key values
-            config.key_data = KeyData::load(&mut cb.base, &ctx.memory[key_memory(true)], 0.expr());
+            config.key_data = KeyData::load(cb, &ctx.memory[key_memory(true)], 0.expr());
             // Load the parent values
             for is_s in [true, false] {
                 config.parent_data[is_s.idx()] = ParentData::load(
                     "branch load",
-                    &mut cb.base,
+                    cb,
                     &ctx.memory[parent_memory(is_s)],
                     0.expr(),
                 );
@@ -135,7 +135,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
             for is_s in [true, false] {
                 ifx! {not!(config.is_placeholder[is_s.idx()].expr()) => {
                     KeyData::store(
-                        &mut cb.base,
+                        cb,
                         &ctx.memory[key_memory(is_s)],
                         branch.key_rlc_post_branch.expr(),
                         branch.key_mult_post_branch.expr(),
@@ -147,7 +147,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         false.expr(),
                     );
                     ParentData::store(
-                        &mut cb.base,
+                        cb,
                         &ctx.memory[parent_memory(is_s)],
                         branch.mod_rlc[is_s.idx()].expr(),
                         false.expr(),
@@ -156,7 +156,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     );
                  } elsex {
                     KeyData::store(
-                        &mut cb.base,
+                        cb,
                         &ctx.memory[key_memory(is_s)],
                         config.key_data.rlc.expr(),
                         config.key_data.mult.expr(),
@@ -168,7 +168,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         branch.is_key_odd.expr(),
                     );
                     ParentData::store(
-                        &mut cb.base,
+                        cb,
                         &ctx.memory[parent_memory(is_s)],
                         config.parent_data[is_s.idx()].rlc.expr(),
                         config.parent_data[is_s.idx()].is_root.expr(),
@@ -182,9 +182,11 @@ impl<F: Field> ExtensionBranchConfig<F> {
         config
     }
 
-    pub(crate) fn assign(
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F, S>,
+        _challenges: &S,
         mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
@@ -204,7 +206,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
                 region,
                 offset,
-                &mut pv.memory[parent_memory(is_s)],
+                &pv.memory[parent_memory(is_s)],
                 0,
             )?;
             self.is_placeholder[is_s.idx()].assign(

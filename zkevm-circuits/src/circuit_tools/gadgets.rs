@@ -1,26 +1,30 @@
 //! Circuit gadgets
 use eth_types::Field;
 use gadgets::util::Expr;
-use halo2_proofs::{
-    circuit::Region,
-    plonk::{Error, Expression},
-};
+use halo2_proofs::plonk::{Error, Expression};
 
 use crate::evm_circuit::util::{from_bytes, pow_of_two};
 
-use super::{cell_manager::Cell, constraint_builder::ConstraintBuilder};
+use super::{
+    cached_region::{CachedRegion, ChallengeSet},
+    cell_manager::{Cell, CellType},
+    constraint_builder::ConstraintBuilder,
+};
 
 /// Returns `1` when `value == 0`, and returns `0` otherwise.
 #[derive(Clone, Debug, Default)]
 pub struct IsZeroGadget<F> {
-    inverse: Cell<F>,
+    inverse: Option<Cell<F>>,
     is_zero: Option<Expression<F>>,
 }
 
 impl<F: Field> IsZeroGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value: Expression<F>) -> Self {
+    pub(crate) fn construct<C: CellType>(
+        cb: &mut ConstraintBuilder<F, C>,
+        value: Expression<F>,
+    ) -> Self {
         circuit!([meta, cb], {
-            let inverse = cb.query_cell();
+            let inverse = cb.query_default();
 
             let is_zero = 1.expr() - (value.expr() * inverse.expr());
             // `value != 0` => check `inverse = a.invert()`: value * (1 - value * inverse)
@@ -29,7 +33,7 @@ impl<F: Field> IsZeroGadget<F> {
             require!(inverse.expr() * is_zero.expr() => 0);
 
             Self {
-                inverse,
+                inverse: Some(inverse),
                 is_zero: Some(is_zero),
             }
         })
@@ -39,14 +43,17 @@ impl<F: Field> IsZeroGadget<F> {
         self.is_zero.as_ref().unwrap().clone()
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
         value: F,
     ) -> Result<F, Error> {
         let inverse = value.invert().unwrap_or(F::ZERO);
-        self.inverse.assign(region, offset, inverse)?;
+        self.inverse
+            .as_ref()
+            .unwrap()
+            .assign(region, offset, inverse)?;
         Ok(if value.is_zero().into() {
             F::ONE
         } else {
@@ -62,8 +69,8 @@ pub struct IsEqualGadget<F> {
 }
 
 impl<F: Field> IsEqualGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+    pub(crate) fn construct<C: CellType>(
+        cb: &mut ConstraintBuilder<F, C>,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
@@ -76,9 +83,9 @@ impl<F: Field> IsEqualGadget<F> {
         self.is_zero.expr()
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
         lhs: F,
         rhs: F,
@@ -97,16 +104,16 @@ impl<F: Field> IsEqualGadget<F> {
 /// be `1` when `lhs < rhs`.
 #[derive(Clone, Debug, Default)]
 pub struct LtGadget<F, const N_BYTES: usize> {
-    lt: Cell<F>, // `1` when `lhs < rhs`, `0` otherwise.
+    lt: Option<Cell<F>>, // `1` when `lhs < rhs`, `0` otherwise.
     diff: Option<[Cell<F>; N_BYTES]>, /* The byte values of `diff`.
-                  * `diff` equals `lhs - rhs` if `lhs >= rhs`,
-                  * `lhs - rhs + range` otherwise. */
+                          * `diff` equals `lhs - rhs` if `lhs >= rhs`,
+                          * `lhs - rhs + range` otherwise. */
     range: F, // The range of the inputs, `256**N_BYTES`
 }
 
 impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
-    pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+    pub(crate) fn construct<C: CellType>(
+        cb: &mut ConstraintBuilder<F, C>,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
@@ -122,19 +129,19 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
         );
 
         Self {
-            lt,
+            lt: Some(lt),
             diff: Some(diff),
             range,
         }
     }
 
     pub(crate) fn expr(&self) -> Expression<F> {
-        self.lt.expr()
+        self.lt.as_ref().unwrap().expr()
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
         lhs: F,
         rhs: F,
@@ -142,6 +149,8 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
         // Set `lt`
         let lt = lhs < rhs;
         self.lt
+            .as_ref()
+            .unwrap()
             .assign(region, offset, if lt { F::ONE } else { F::ZERO })?;
 
         // Set the bytes of diff

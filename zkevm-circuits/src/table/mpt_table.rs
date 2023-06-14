@@ -1,5 +1,12 @@
 use super::*;
-use crate::{circuit, circuit_tools::constraint_builder::ConstraintBuilder};
+use crate::{
+    circuit,
+    circuit_tools::{
+        cached_region::{CachedRegion, ChallengeSet},
+        cell_manager::CellType,
+        constraint_builder::ConstraintBuilder,
+    },
+};
 
 /// The types of proofs in the MPT table
 #[derive(Clone, Copy, Debug)]
@@ -98,10 +105,11 @@ impl MptTable {
         }
     }
 
-    pub(crate) fn constrain<F: Field>(
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn constrain<F: Field, C: CellType>(
         &self,
         meta: &mut VirtualCells<'_, F>,
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut ConstraintBuilder<F, C>,
         address_rlc: Expression<F>,
         proof_type: Expression<F>,
         key_rlc: Expression<F>,
@@ -124,6 +132,21 @@ impl MptTable {
     pub(crate) fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,
+        offset: usize,
+        row: &MptUpdateRow<Value<F>>,
+    ) -> Result<(), Error> {
+        for (column, value) in <MptTable as LookupTable<F>>::advice_columns(self)
+            .iter()
+            .zip_eq(row.values())
+        {
+            region.assign_advice(|| "assign mpt table row value", *column, offset, || value)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn assign_cached<F: Field, S: ChallengeSet<F>>(
+        &self,
+        region: &mut CachedRegion<'_, '_, F, S>,
         offset: usize,
         row: &MptUpdateRow<Value<F>>,
     ) -> Result<(), Error> {

@@ -26,15 +26,18 @@ mod witness_row;
 use self::{
     account_leaf::AccountLeafConfig,
     helpers::{key_memory, RLPItemView},
-    witness_row::{ExtensionBranchRowType, Node},
+    rlp_gadgets::decode_rlp,
+    witness_row::{AccountRowType, ExtensionBranchRowType, Node, StartRowType, StorageRowType},
 };
 use crate::{
     assign, assignf, circuit,
-    circuit_tools::{
-        cell_manager::CellManager, constraint_builder::ConstraintBuilder, memory::Memory,
-    },
+    circuit_tools::{cached_region::CachedRegion, cell_manager::CellManager, memory::Memory},
+    evm_circuit::table::Table,
     mpt_circuit::{
-        helpers::{main_memory, parent_memory, MPTConstraintBuilder, MainRLPGadget},
+        helpers::{
+            main_memory, parent_memory, MPTConstraintBuilder, MainRLPGadget, MptCellType, FIXED,
+            KECCAK,
+        },
         start::StartConfig,
         storage_leaf::StorageLeafConfig,
     },
@@ -43,6 +46,17 @@ use crate::{
 };
 use extension_branch::ExtensionBranchConfig;
 use param::HASH_WIDTH;
+
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum MPTRegion {
+    Default,
+    RLP,
+    Start,
+    Branch,
+    Account,
+    Storage,
+    Count,
+}
 
 /// State machine config.
 #[derive(Clone, Debug)]
@@ -82,6 +96,28 @@ impl<F: Field> StateMachineConfig<F> {
             self.is_storage,
         ]
     }
+
+    pub(crate) fn step_constraints(
+        &self,
+        meta: &mut VirtualCells<'_, F>,
+        cb: &mut MPTConstraintBuilder<F>,
+        height: usize,
+    ) {
+        circuit!([meta, cb], {
+            // Because the state machine state is this height, we're already querying cells
+            // at all of these rotations, so may as well keep things simple.
+            // State selectors are already enforced to be boolean on each row.
+            let mut sum = 0.expr();
+            for rot in 1..height {
+                for state_selector in self.state_selectors() {
+                    sum = sum + a!(state_selector, rot);
+                }
+            }
+            require!(sum => 0);
+            // It should not be necessary to force the next row to have a state enabled
+            // because we never use relative offsets between state machine states.
+        })
+    }
 }
 
 /// Merkle Patricia Trie context
@@ -90,7 +126,7 @@ pub struct MPTContext<F> {
     pub(crate) mpt_table: MptTable,
     pub(crate) rlp_item: MainRLPGadget<F>,
     pub(crate) challenges: Challenges<Expression<F>>,
-    pub(crate) memory: Memory<F>,
+    pub(crate) memory: Memory<F, MptCellType>,
     pub(crate) r: Expression<F>,
 }
 
@@ -98,7 +134,7 @@ impl<F: Field> MPTContext<F> {
     pub(crate) fn rlp_item(
         &self,
         meta: &mut VirtualCells<F>,
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut MPTConstraintBuilder<F>,
         idx: usize,
     ) -> RLPItemView<F> {
         // TODO(Brecht): Add RLP limitations like max num bytes
@@ -108,7 +144,7 @@ impl<F: Field> MPTContext<F> {
     pub(crate) fn nibbles(
         &self,
         meta: &mut VirtualCells<F>,
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut MPTConstraintBuilder<F>,
         idx: usize,
     ) -> RLPItemView<F> {
         self.rlp_item.create_view(meta, cb, idx, true)
@@ -121,11 +157,9 @@ pub struct MPTConfig<F> {
     pub(crate) q_enable: Column<Fixed>,
     pub(crate) q_first: Column<Fixed>,
     pub(crate) q_last: Column<Fixed>,
-    pub(crate) rlp_columns: Vec<Column<Advice>>,
-    pub(crate) managed_columns: Vec<Column<Advice>>,
-    pub(crate) memory: Memory<F>,
+    pub(crate) memory: Memory<F, MptCellType>,
     keccak_table: KeccakTable,
-    fixed_table: [Column<Fixed>; 3],
+    fixed_table: [Column<Fixed>; 6],
     rlp_item: MainRLPGadget<F>,
     state_machine: StateMachineConfig<F>,
     pub(crate) mpt_table: MptTable,
@@ -147,6 +181,10 @@ pub enum FixedTableTag {
     RangeKeyLen256,
     /// For checking there are 0s after the RLP stream ends
     RangeKeyLen16,
+    /// Extesion key odd key
+    ExtOddKey,
+    /// RLP decoding
+    RLP,
 }
 
 impl_expr!(FixedTableTag);
@@ -154,15 +192,14 @@ impl_expr!(FixedTableTag);
 #[derive(Default)]
 pub(crate) struct MPTState<F> {
     pub(crate) r: F,
-    pub(crate) memory: Memory<F>,
+    pub(crate) memory: Memory<F, MptCellType>,
 }
 
 impl<F: Field> MPTState<F> {
-    fn new(memory: &Memory<F>, r: F) -> Self {
+    fn new(memory: &Memory<F, MptCellType>, r: F) -> Self {
         Self {
             r,
             memory: memory.clone(),
-            ..Default::default()
         }
     }
 }
@@ -180,14 +217,12 @@ impl<F: Field> MPTConfig<F> {
 
         let mpt_table = MptTable::construct(meta);
 
-        let fixed_table: [Column<Fixed>; 3] = (0..3)
+        let fixed_table: [Column<Fixed>; 6] = (0..6)
             .map(|_| meta.fixed_column())
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
 
-        let rlp_columns = (0..50).map(|_| meta.advice_column()).collect::<Vec<_>>();
-        let managed_columns = (0..15).map(|_| meta.advice_column()).collect::<Vec<_>>();
         let memory_columns = (0..5).map(|_| meta.advice_column()).collect::<Vec<_>>();
 
         let mut state_machine = StateMachineConfig::construct(meta);
@@ -201,51 +236,84 @@ impl<F: Field> MPTConfig<F> {
         memory.allocate(meta, main_memory());
 
         let mut ctx = MPTContext {
-            mpt_table: mpt_table.clone(),
+            mpt_table,
             rlp_item: rlp_item.clone(),
             challenges: challenges.clone(),
             r: challenges.keccak_input(),
             memory: memory.clone(),
         };
 
-        let mut cb = MPTConstraintBuilder::new(33 + 10, None);
+        let rlp_cm = CellManager::new(
+            meta,
+            // Type, #cols, phase, permutable
+            vec![
+                (MptCellType::StoragePhase1, 50, 0, false),
+                (MptCellType::StoragePhase2, 5, 0, false),
+                (MptCellType::Lookup(Table::Fixed), 3, 0, false),
+            ],
+            0,
+            1,
+        );
+        let state_cm = CellManager::new(
+            meta,
+            // Type, #cols, phase, permutable
+            vec![
+                (MptCellType::StoragePhase1, 20, 0, false),
+                (MptCellType::StoragePhase2, 5, 0, false),
+                (MptCellType::LookupByte, 4, 0, false),
+                (MptCellType::Lookup(Table::Fixed), 2, 0, false),
+                (MptCellType::Lookup(Table::Keccak), 1, 0, false),
+            ],
+            0,
+            50,
+        );
+
+        let mut cb = MPTConstraintBuilder::new(5, Some(challenges.clone()), None);
         meta.create_gate("MPT", |meta| {
-            circuit!([meta, cb.base], {
+            circuit!([meta, cb], {
                 // Populate lookup tables
-                require!(@"keccak" => <KeccakTable as LookupTable<F>>::advice_columns(&keccak_table).iter().map(|table| a!(table)).collect());
-                require!(@"fixed" => fixed_table.iter().map(|table| f!(table)).collect());
+                require!(@KECCAK => <KeccakTable as LookupTable<F>>::advice_columns(&keccak_table).iter().map(|table| a!(table)).collect());
+                require!(@FIXED => fixed_table.iter().map(|table| f!(table)).collect());
 
                 ifx!{f!(q_enable) => {
                     // RLP item decoding unit
-                    let mut cell_manager = CellManager::new(meta, &rlp_columns);
-                    cell_manager.reset(1);
-                    cb.base.set_cell_manager(cell_manager);
+                    cb.base.set_cell_manager(rlp_cm.clone());
+                    cb.base.push_region(MPTRegion::RLP as usize);
                     rlp_item = MainRLPGadget::construct(&mut cb, &ctx.r);
+                    cb.base.pop_region();
                     ctx.rlp_item = rlp_item.clone();
 
                     // Main MPT circuit
-                    let cell_manager = CellManager::new(meta, &managed_columns);
-                    cb.base.set_cell_manager(cell_manager);
-
                     // State machine
-                    // TODO(Brecht): state machine constraints
-                    // Always start and end with the start state
+                    cb.base.set_cell_manager(state_cm.clone());
                     ifx! {f!(q_first) + f!(q_last) => {
                         require!(a!(state_machine.is_start) => true);
                     }};
                     // Main state machine
                     matchx! {
                         a!(state_machine.is_start) => {
+                            state_machine.step_constraints(meta, &mut cb, StartRowType::Count as usize);
+                            cb.base.push_region(MPTRegion::Start as usize);
                             state_machine.start_config = StartConfig::configure(meta, &mut cb, ctx.clone());
+                            cb.base.pop_region();
                         },
                         a!(state_machine.is_branch) => {
+                            state_machine.step_constraints(meta, &mut cb, ExtensionBranchRowType::Count as usize);
+                            cb.base.push_region(MPTRegion::Branch as usize);
                             state_machine.branch_config = ExtensionBranchConfig::configure(meta, &mut cb, ctx.clone());
+                            cb.base.pop_region();
                         },
                         a!(state_machine.is_account) => {
+                            state_machine.step_constraints(meta, &mut cb, AccountRowType::Count as usize);
+                            cb.base.push_region(MPTRegion::Account as usize);
                             state_machine.account_config = AccountLeafConfig::configure(meta, &mut cb, ctx.clone());
+                            cb.base.pop_region();
                         },
                         a!(state_machine.is_storage) => {
+                            state_machine.step_constraints(meta, &mut cb, StorageRowType::Count as usize);
+                            cb.base.push_region(MPTRegion::Storage as usize);
                             state_machine.storage_config = StorageLeafConfig::configure(meta, &mut cb, ctx.clone());
+                            cb.base.pop_region();
                         },
                         _ => (),
                     };
@@ -255,11 +323,11 @@ impl<F: Field> MPTConfig<F> {
                     }}
 
                     // Memory banks
-                    ctx.memory.generate_constraints(&mut cb.base, f!(q_first));
+                    ctx.memory.build_constraints(&mut cb.base, f!(q_first));
                 }}
             });
 
-            cb.base.generate_constraints()
+            cb.base.build_constraints()
         });
 
         let disable_lookups: usize = var("DISABLE_LOOKUPS")
@@ -267,28 +335,29 @@ impl<F: Field> MPTConfig<F> {
             .parse()
             .expect("Cannot parse DISABLE_LOOKUPS env var as usize");
         if disable_lookups == 0 {
-            cb.base.generate_lookups(
+            cb.base.build_lookups(
                 meta,
-                &[
-                    vec!["fixed".to_string(), "keccak".to_string()],
-                    ctx.memory.tags(),
-                ]
-                .concat(),
+                challenges.lookup_input(),
+                vec![rlp_cm, state_cm],
+                vec![
+                    (MptCellType::Lookup(Table::Keccak), &keccak_table),
+                    (MptCellType::Lookup(Table::Fixed), &fixed_table),
+                ],
             );
-        } else if disable_lookups == 1 {
-            cb.base.generate_lookups(
-                meta,
-                &[vec!["keccak".to_string()], ctx.memory.tags()].concat(),
-            );
-        } else if disable_lookups == 2 {
-            cb.base.generate_lookups(meta, &ctx.memory.tags());
-        } else if disable_lookups == 3 {
             cb.base
-                .generate_lookups(meta, &vec!["fixed".to_string(), "keccak".to_string()]);
+                .build_dynamic_lookups(meta, &[vec![FIXED, KECCAK], ctx.memory.tags()].concat());
+        } else if disable_lookups == 1 {
+            cb.base
+                .build_dynamic_lookups(meta, &[vec![KECCAK], ctx.memory.tags()].concat());
+        } else if disable_lookups == 2 {
+            cb.base.build_dynamic_lookups(meta, &ctx.memory.tags());
+        } else if disable_lookups == 3 {
+            cb.base.build_dynamic_lookups(meta, &[FIXED, KECCAK]);
         } else if disable_lookups == 4 {
-            cb.base.generate_lookups(meta, &vec!["keccak".to_string()]);
+            cb.base.build_dynamic_lookups(meta, &[KECCAK]);
         }
 
+        println!("degree: {}", meta.degree());
         println!("num lookups: {}", meta.lookups().len());
         println!("num advices: {}", meta.num_advice_columns());
         println!("num fixed: {}", meta.num_fixed_columns());
@@ -298,8 +367,6 @@ impl<F: Field> MPTConfig<F> {
             q_enable,
             q_first,
             q_last,
-            rlp_columns,
-            managed_columns,
             memory,
             keccak_table,
             fixed_table,
@@ -332,67 +399,89 @@ impl<F: Field> MPTConfig<F> {
 
                 let mut offset = 0;
                 for node in nodes.iter() {
+                    let mut cached_region = CachedRegion::new(
+                        &mut region,
+                        challenges
+                    );
+
                     // Assign bytes
                     let mut rlp_values = Vec::new();
+                    // Decompose RLP
                     for (idx, bytes) in node.values.iter().enumerate() {
+                        cached_region.push_region(offset + idx, MPTRegion::RLP as usize);
                         let is_nibbles = node.extension_branch.is_some()
                             && idx == ExtensionBranchRowType::KeyC as usize;
                         let rlp_value = self.rlp_item.assign(
-                            &mut region,
+                            &mut cached_region,
                             offset + idx,
                             bytes,
                             r,
                             is_nibbles,
                         )?;
                         rlp_values.push(rlp_value);
+                        cached_region.pop_region();
                     }
 
                     // Assign nodes
                     if node.start.is_some() {
-                        // println!("{}: start", offset);
-                        assign!(region, (self.state_machine.is_start, offset) => true.scalar())?;
+                        //println!("{}: start", offset);
+                        cached_region.push_region(offset, MPTRegion::Start as usize);
+                        assign!(cached_region, (self.state_machine.is_start, offset) => "is_start", true.scalar())?;
                         self.state_machine.start_config.assign(
-                            &mut region,
+                            &mut cached_region,
+                            challenges,
                             self,
                             &mut pv,
                             offset,
                             node,
                             &rlp_values,
                         )?;
+                        cached_region.pop_region();
                     } else if node.extension_branch.is_some() {
-                        // println!("{}: branch", offset);
-                        assign!(region, (self.state_machine.is_branch, offset) => true.scalar())?;
+                        //println!("{}: branch", offset);
+                        cached_region.push_region(offset, MPTRegion::Branch as usize);
+                        assign!(cached_region, (self.state_machine.is_branch, offset) => "is_branch", true.scalar())?;
                         self.state_machine.branch_config.assign(
-                            &mut region,
+                            &mut cached_region,
+                            challenges,
                             self,
                             &mut pv,
                             offset,
                             node,
                             &rlp_values,
                         )?;
-                    } else if node.storage.is_some() {
-                        // println!("{}: storage", offset);
-                        assign!(region, (self.state_machine.is_storage, offset) => true.scalar())?;
-                        self.state_machine.storage_config.assign(
-                            &mut region,
-                            self,
-                            &mut pv,
-                            offset,
-                            node,
-                            &rlp_values,
-                        )?;
+                        cached_region.pop_region();
                     } else if node.account.is_some() {
                         // println!("{}: account", offset);
-                        assign!(region, (self.state_machine.is_account, offset) => true.scalar())?;
+                        cached_region.push_region(offset, MPTRegion::Account as usize);
+                        assign!(cached_region, (self.state_machine.is_account, offset) => "is_account", true.scalar())?;
                         self.state_machine.account_config.assign(
-                            &mut region,
+                            &mut cached_region,
+                            challenges,
                             self,
                             &mut pv,
                             offset,
                             node,
                             &rlp_values,
                         )?;
+                        cached_region.pop_region();
+                    } else if node.storage.is_some() {
+                        //println!("{}: storage", offset);
+                        cached_region.push_region(offset, MPTRegion::Storage as usize);
+                        assign!(cached_region, (self.state_machine.is_storage, offset) => "is_storage", true.scalar())?;
+                        self.state_machine.storage_config.assign(
+                            &mut cached_region,
+                            challenges,
+                            self,
+                            &mut pv,
+                            offset,
+                            node,
+                            &rlp_values,
+                        )?;
+                        cached_region.pop_region();
                     }
+
+                    cached_region.assign_stored_expressions(&self.cb.base)?;
 
                     offset += node.values.len();
                 }
@@ -480,6 +569,32 @@ impl<F: Field> MPTConfig<F> {
                     }
                 }
 
+                // Compact encoding of the extension key, find out if the key is odd or not.
+                // Even - The full byte is simply 0.
+                assignf!(region, (self.fixed_table[0], offset) => FixedTableTag::ExtOddKey.scalar())?;
+                assignf!(region, (self.fixed_table[1], offset) => 0.scalar())?;
+                assignf!(region, (self.fixed_table[2], offset) => false.scalar())?;
+                offset += 1;
+                // Odd - First nibble is 1, the second nibble can be any value.
+                for idx in 0..16 {
+                    assignf!(region, (self.fixed_table[0], offset) => FixedTableTag::ExtOddKey.scalar())?;
+                    assignf!(region, (self.fixed_table[1], offset) => ((0b1_0000) + idx).scalar())?;
+                    assignf!(region, (self.fixed_table[2], offset) => true.scalar())?;
+                    offset += 1;
+                }
+
+                // RLP
+                for byte in 0..255 {
+                    let (is_list, is_short, is_long, is_very_long) = decode_rlp(byte);
+                    assignf!(region, (self.fixed_table[0], offset) => FixedTableTag::RLP.scalar())?;
+                    assignf!(region, (self.fixed_table[1], offset) => byte.scalar())?;
+                    assignf!(region, (self.fixed_table[2], offset) => is_list.scalar())?;
+                    assignf!(region, (self.fixed_table[3], offset) => is_short.scalar())?;
+                    assignf!(region, (self.fixed_table[4], offset) => is_long.scalar())?;
+                    assignf!(region, (self.fixed_table[5], offset) => is_very_long.scalar())?;
+                    offset += 1;
+                }
+
                 Ok(())
             },
         )
@@ -503,15 +618,15 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        // let challenges = Challenges::construct(meta);
-        // let challenges_expr = challenges.exprs(meta);
+        let challenges = Challenges::construct(meta);
+        let _challenges_expr = challenges.exprs(meta);
 
-        let r = 2u64;
-        // let challenges = Challenges::mock(
-        // Value::known(F::from(r)),
-        // Value::known(F::from(r)),
-        // Value::known(F::from(r)),
-        // );
+        let r = 123456u64;
+        let _challenges = Challenges::mock(
+            Value::known(F::from(r)),
+            Value::known(F::from(r)),
+            Value::known(F::from(r)),
+        );
         let challenges_expr = Challenges::mock(r.expr(), r.expr(), r.expr());
 
         let keccak_table = KeccakTable::construct(meta);
@@ -527,7 +642,7 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         (config, _challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        // let challenges = challenges.values(&mut layouter);
+        let _challenges = _challenges.values(&mut layouter);
 
         let r = self.randomness;
         let challenges = Challenges::mock(Value::known(r), Value::known(r), Value::known(r));
@@ -577,7 +692,7 @@ mod tests {
                 let reader = std::io::BufReader::new(file.unwrap());
                 let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
 
-                let randomness: Fr = 2.scalar();
+                let randomness: Fr = 123456.scalar();
 
                 let mut keccak_data = vec![];
                 let mut witness_rows = vec![];

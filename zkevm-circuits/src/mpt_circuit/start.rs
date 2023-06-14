@@ -5,7 +5,10 @@ use super::{
 };
 use crate::{
     circuit,
-    circuit_tools::cell_manager::Cell,
+    circuit_tools::{
+        cached_region::{CachedRegion, ChallengeSet},
+        cell_manager::Cell,
+    },
     mpt_circuit::{
         helpers::{
             key_memory, main_memory, parent_memory, KeyData, MPTConstraintBuilder, MainData,
@@ -16,10 +19,7 @@ use crate::{
 };
 use eth_types::Field;
 use gadgets::util::Scalar;
-use halo2_proofs::{
-    circuit::Region,
-    plonk::{Error, VirtualCells},
-};
+use halo2_proofs::plonk::{Error, VirtualCells};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct StartConfig<F> {
@@ -39,13 +39,13 @@ impl<F: Field> StartConfig<F> {
             .reset(StartRowType::Count as usize);
         let mut config = StartConfig::default();
 
-        circuit!([meta, cb.base], {
+        circuit!([meta, cb], {
             let root_items = [
-                ctx.rlp_item(meta, &mut cb.base, StartRowType::RootS as usize),
-                ctx.rlp_item(meta, &mut cb.base, StartRowType::RootC as usize),
+                ctx.rlp_item(meta, cb, StartRowType::RootS as usize),
+                ctx.rlp_item(meta, cb, StartRowType::RootC as usize),
             ];
 
-            config.proof_type = cb.base.query_cell();
+            config.proof_type = cb.query_cell();
 
             let mut root = vec![0.expr(); 2];
             for is_s in [true, false] {
@@ -53,10 +53,11 @@ impl<F: Field> StartConfig<F> {
             }
 
             MainData::store(
-                &mut cb.base,
+                cb,
                 &ctx.memory[main_memory()],
                 [
                     config.proof_type.expr(),
+                    false.expr(),
                     false.expr(),
                     0.expr(),
                     root[true.idx()].expr(),
@@ -66,24 +67,26 @@ impl<F: Field> StartConfig<F> {
 
             for is_s in [true, false] {
                 ParentData::store(
-                    &mut cb.base,
+                    cb,
                     &ctx.memory[parent_memory(is_s)],
                     root[is_s.idx()].expr(),
                     true.expr(),
                     false.expr(),
                     root[is_s.idx()].expr(),
                 );
-                KeyData::store_defaults(&mut cb.base, &ctx.memory[key_memory(is_s)]);
+                KeyData::store_defaults(cb, &ctx.memory[key_memory(is_s)]);
             }
         });
 
         config
     }
 
-    pub fn assign(
+    #[allow(clippy::too_many_arguments)]
+    pub fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut Region<'_, F>,
-        _ctx: &MPTConfig<F>,
+        region: &mut CachedRegion<'_, '_, F, S>,
+        _challenges: &S,
+        _mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
         node: &Node,
@@ -111,6 +114,7 @@ impl<F: Field> StartConfig<F> {
             &mut pv.memory[main_memory()],
             start.proof_type as usize,
             false,
+            false.scalar(),
             0.scalar(),
             root[true.idx()],
             root[false.idx()],

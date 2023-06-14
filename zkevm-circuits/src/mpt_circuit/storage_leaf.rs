@@ -1,7 +1,7 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::{
-    circuit::{Region, Value},
+    circuit::Value,
     plonk::{Error, VirtualCells},
     poly::Rotation,
 };
@@ -9,6 +9,7 @@ use halo2_proofs::{
 use crate::{
     circuit,
     circuit_tools::{
+        cached_region::{CachedRegion, ChallengeSet},
         cell_manager::Cell,
         constraint_builder::RLCChainable,
         gadgets::{IsEqualGadget, LtGadget},
@@ -16,7 +17,7 @@ use crate::{
     mpt_circuit::{
         helpers::{
             key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, IsEmptyTreeGadget,
-            KeyData, MPTConstraintBuilder, MainData, ParentData, ParentDataWitness,
+            KeyData, MPTConstraintBuilder, MainData, ParentData, ParentDataWitness, KECCAK,
         },
         param::KEY_LEN_IN_NIBBLES,
         MPTConfig, MPTContext, MPTState,
@@ -63,25 +64,21 @@ impl<F: Field> StorageLeafConfig<F> {
             .reset(StorageRowType::Count as usize);
         let mut config = StorageLeafConfig::default();
 
-        circuit!([meta, cb.base], {
+        circuit!([meta, cb], {
             let key_items = [
-                ctx.rlp_item(meta, &mut cb.base, StorageRowType::KeyS as usize),
-                ctx.rlp_item(meta, &mut cb.base, StorageRowType::KeyC as usize),
+                ctx.rlp_item(meta, cb, StorageRowType::KeyS as usize),
+                ctx.rlp_item(meta, cb, StorageRowType::KeyC as usize),
             ];
             config.value_rlp_bytes = [cb.base.query_bytes(), cb.base.query_bytes()];
             let value_item = [
-                ctx.rlp_item(meta, &mut cb.base, StorageRowType::ValueS as usize),
-                ctx.rlp_item(meta, &mut cb.base, StorageRowType::ValueC as usize),
+                ctx.rlp_item(meta, cb, StorageRowType::ValueS as usize),
+                ctx.rlp_item(meta, cb, StorageRowType::ValueC as usize),
             ];
-            let drifted_item = ctx.rlp_item(meta, &mut cb.base, StorageRowType::Drifted as usize);
-            let wrong_item = ctx.rlp_item(meta, &mut cb.base, StorageRowType::Wrong as usize);
+            let drifted_item = ctx.rlp_item(meta, cb, StorageRowType::Drifted as usize);
+            let wrong_item = ctx.rlp_item(meta, cb, StorageRowType::Wrong as usize);
 
-            config.main_data = MainData::load(
-                "main storage",
-                &mut cb.base,
-                &ctx.memory[main_memory()],
-                0.expr(),
-            );
+            config.main_data =
+                MainData::load("main storage", cb, &ctx.memory[main_memory()], 0.expr());
 
             // Storage leaves always need to be below accounts
             require!(config.main_data.is_below_account => true);
@@ -92,25 +89,21 @@ impl<F: Field> StorageLeafConfig<F> {
             for is_s in [true, false] {
                 // Parent data
                 let parent_data = &mut config.parent_data[is_s.idx()];
-                *parent_data = ParentData::load(
-                    "leaf load",
-                    &mut cb.base,
-                    &ctx.memory[parent_memory(is_s)],
-                    0.expr(),
-                );
+                *parent_data =
+                    ParentData::load("leaf load", cb, &ctx.memory[parent_memory(is_s)], 0.expr());
                 // Key data
                 let key_data = &mut config.key_data[is_s.idx()];
-                *key_data = KeyData::load(&mut cb.base, &ctx.memory[key_memory(is_s)], 0.expr());
+                *key_data = KeyData::load(cb, &ctx.memory[key_memory(is_s)], 0.expr());
 
                 // Placeholder leaf checks
                 config.is_in_empty_trie[is_s.idx()] =
-                    IsEmptyTreeGadget::construct(&mut cb.base, parent_data.rlc.expr(), &r);
+                    IsEmptyTreeGadget::construct(cb, parent_data.rlc.expr(), &r);
                 let is_placeholder_leaf = config.is_in_empty_trie[is_s.idx()].expr();
 
                 let rlp_key = &mut config.rlp_key[is_s.idx()];
-                *rlp_key = ListKeyGadget::construct(&mut cb.base, &key_items[is_s.idx()]);
+                *rlp_key = ListKeyGadget::construct(cb, &key_items[is_s.idx()]);
                 config.rlp_value[is_s.idx()] = RLPValueGadget::construct(
-                    &mut cb.base,
+                    cb,
                     &config.value_rlp_bytes[is_s.idx()]
                         .iter()
                         .map(|c| c.expr())
@@ -142,7 +135,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 // Key
                 key_rlc[is_s.idx()] = key_data.rlc.expr()
                     + rlp_key.key.expr(
-                        &mut cb.base,
+                        cb,
                         rlp_key.key_value.clone(),
                         key_data.mult.expr(),
                         key_data.is_odd.expr(),
@@ -168,7 +161,7 @@ impl<F: Field> StorageLeafConfig<F> {
                     config.is_not_hashed[is_s.idx()] = LtGadget::construct(&mut cb.base, rlp_key.rlp_list.num_bytes(), 32.expr());
                     ifx!{or::expr(&[parent_data.is_root.expr(), not!(config.is_not_hashed[is_s.idx()])]) => {
                         // Hashed branch hash in parent branch
-                        require!((1, leaf_rlc, rlp_key.rlp_list.num_bytes(), parent_data.rlc) => @"keccak");
+                        require!((1, leaf_rlc, rlp_key.rlp_list.num_bytes(), parent_data.rlc) => @KECCAK);
                     } elsex {
                         // Non-hashed branch hash in parent branch
                         require!(leaf_rlc => parent_data.rlc);
@@ -176,10 +169,10 @@ impl<F: Field> StorageLeafConfig<F> {
                 }}
 
                 // Key done, set the default values
-                KeyData::store_defaults(&mut cb.base, &ctx.memory[key_memory(is_s)]);
+                KeyData::store_defaults(cb, &ctx.memory[key_memory(is_s)]);
                 // Store the new parent
                 ParentData::store(
-                    &mut cb.base,
+                    cb,
                     &ctx.memory[parent_memory(is_s)],
                     0.expr(),
                     true.expr(),
@@ -199,6 +192,11 @@ impl<F: Field> StorageLeafConfig<F> {
                 config.main_data.proof_type.expr(),
                 MPTProofType::StorageDoesNotExist.expr(),
             );
+
+            // If we were in a non-existing account, all storage is non-existing
+            ifx! {config.main_data.is_non_existing_account.expr() => {
+                require!(config.is_non_existing_storage_proof => true);
+            }};
 
             // Drifted leaf handling
             config.drifted = DriftedGadget::construct(
@@ -257,10 +255,12 @@ impl<F: Field> StorageLeafConfig<F> {
         config
     }
 
-    pub fn assign(
+    #[allow(clippy::too_many_arguments)]
+    pub fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut Region<'_, F>,
-        ctx: &MPTConfig<F>,
+        region: &mut CachedRegion<'_, '_, F, S>,
+        _challenges: &S,
+        mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
         node: &Node,
@@ -291,7 +291,7 @@ impl<F: Field> StorageLeafConfig<F> {
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
                 region,
                 offset,
-                &mut pv.memory[parent_memory(is_s)],
+                &pv.memory[parent_memory(is_s)],
                 0,
             )?;
 
@@ -312,7 +312,7 @@ impl<F: Field> StorageLeafConfig<F> {
             key_data[is_s.idx()] = self.key_data[is_s.idx()].witness_load(
                 region,
                 offset,
-                &mut pv.memory[key_memory(is_s)],
+                &pv.memory[key_memory(is_s)],
                 0,
             )?;
             KeyData::witness_store(
@@ -395,7 +395,7 @@ impl<F: Field> StorageLeafConfig<F> {
         )?;
 
         // Wrong leaf handling
-        let key_rlc = self.wrong.assign(
+        let (key_rlc, _) = self.wrong.assign(
             region,
             offset,
             is_non_existing_proof,
@@ -415,7 +415,7 @@ impl<F: Field> StorageLeafConfig<F> {
         } else {
             MPTProofType::Disabled
         };
-        ctx.mpt_table.assign(
+        mpt_config.mpt_table.assign_cached(
             region,
             offset,
             &MptUpdateRow {
