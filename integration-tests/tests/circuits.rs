@@ -74,20 +74,25 @@ macro_rules! unroll_tests {
             PI_CIRCUIT_TEST,
         };
         use integration_tests::log_init;
-        mod real_prover {
+        // NOTE: The SubCircuits include all well known SubCircuits and the SuperCircuit.
+
+        // SubCircuit tests with real prover
+        mod sub_real_prover {
             use super::*;
             $(
                 declare_tests! ($arg, false, true) ;
             )*
         }
 
-        mod mock_prover {
+        // SubCircuit tests with mock prover
+        mod sub_mock_prover {
             use super::*;
             $(
                 declare_tests! ($arg, false, false) ;
             )*
         }
 
+        // Root Circuit (aggregation) tests with real prover.  Needs real proof of each SubCircuit.
         mod root_real_prover {
             use super::*;
             $(
@@ -95,6 +100,7 @@ macro_rules! unroll_tests {
             )*
         }
 
+        // Root Circuit (aggregation) tests with mock prover.  Needs real proof of each SubCircuit.
         mod root_mock_prover {
             use super::*;
             $(

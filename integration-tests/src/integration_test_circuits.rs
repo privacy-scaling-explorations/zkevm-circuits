@@ -138,29 +138,6 @@ lazy_static! {
 lazy_static! {
     /// Cache of real proofs from each block to be reused with the Root circuit tests
     static ref PROOF_CACHE: TokioMutex<HashMap<String, Vec<u8>>> = TokioMutex::new(HashMap::new());
-
-    /// Fixed columns from the Root Circuit, stored to compare against several setups.
-    static ref ROOT_FIXED: TokioMutex<Option<Vec<Vec<CellValue<Fr>>>>> = TokioMutex::new(None);
-}
-
-async fn test_root_variadic(mock_prover: &MockProver<Fr>) {
-    let fixed = mock_prover.fixed();
-
-    let mut root_fixed = ROOT_FIXED.lock().await;
-    match &*root_fixed {
-        Some(prev_fixed) => {
-            assert!(
-                fixed.eq(prev_fixed),
-                "circuit fixed columns are not constant for different witnesses"
-            );
-        }
-        None => {
-            *root_fixed = Some(fixed.clone());
-        }
-    };
-
-    // TODO: check mock_prover.permutation(), currently the returning type
-    // is private so cannot store.
 }
 
 /// Generate a real proof of a Circuit with Poseidon transcript and Shplonk accumulation scheme.
@@ -265,6 +242,9 @@ pub struct IntegrationTest<C: SubCircuit<Fr> + Circuit<Fr>> {
     key: Option<ProvingKey<G1Affine>>,
     root_key: Option<ProvingKey<G1Affine>>,
     fixed: Option<Vec<Vec<CellValue<Fr>>>>,
+    // The RootCircuit changes depending on the underlying circuit, so we keep a copy of its fixed
+    // columns here to have a unique version for each SubCircuit.
+    root_fixed: Option<Vec<Vec<CellValue<Fr>>>>,
     _marker: PhantomData<C>,
 }
 
@@ -276,6 +256,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             key: None,
             root_key: None,
             fixed: None,
+            root_fixed: None,
             _marker: PhantomData,
         }
     }
@@ -368,6 +349,25 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         // is private so cannot store.
     }
 
+    fn test_root_variadic(&mut self, mock_prover: &MockProver<Fr>) {
+        let fixed = mock_prover.fixed();
+
+        match self.root_fixed.clone() {
+            Some(prev_fixed) => {
+                assert!(
+                    fixed.eq(&prev_fixed),
+                    "root circuit fixed columns are not constant for different witnesses"
+                );
+            }
+            None => {
+                self.root_fixed = Some(fixed.clone());
+            }
+        };
+
+        // TODO: check mock_prover.permutation(), currently the returning type
+        // is private so cannot store.
+    }
+
     /// Run integration test at a block identified by a tag.
     pub async fn test_at_block_tag(&mut self, block_tag: &str, root: bool, actual: bool) {
         let block_num = *GEN_DATA.blocks.get(block_tag).unwrap();
@@ -441,7 +441,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                     root_circuit.instance(),
                 )
                 .unwrap();
-                test_root_variadic(&mock_prover).await;
+                self.test_root_variadic(&mock_prover);
                 mock_prover
                     .verify_par()
                     .expect("mock prover verification failed");

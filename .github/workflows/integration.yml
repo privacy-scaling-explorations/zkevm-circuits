@@ -14,11 +14,11 @@ on:
       provertype:
         description: 'invoke real vs mock prover (with or without root)'
         required: true
-        default: 'mock_prover'
+        default: 'sub_mock_prover'
         type: choice
         options:
-        - real_prover
-        - mock_prover
+        - sub_real_prover
+        - sub_mock_prover
         - root_mock_prover
         - root_real_prover
 
@@ -44,12 +44,12 @@ jobs:
           elif [ "${{ github.event.inputs.provertype }}" = "root_mock_prover" ]; then
             echo "instancetype=r6i.32xlarge" >> "$GITHUB_OUTPUT"
             echo "provertype=root_mock_prover" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.inputs.provertype }}" = "real_prover" ]; then
+          elif [ "${{ github.event.inputs.provertype }}" = "sub_real_prover" ]; then
             echo "instancetype=r6i.32xlarge" >> "$GITHUB_OUTPUT"
-            echo "provertype=real_prover" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.inputs.provertype }}" = "mock_prover" ] || [ -z ${{ github.event.inputs.provertype }} ]; then
+            echo "provertype=sub_real_prover" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.inputs.provertype }}" = "sub_mock_prover" ] || [ -z ${{ github.event.inputs.provertype }} ]; then
             echo "instancetype=c5.9xlarge" >> "$GITHUB_OUTPUT"
-            echo "provertype=mock_prover" >> "$GITHUB_OUTPUT"
+            echo "provertype=sub_mock_prover" >> "$GITHUB_OUTPUT"
           else
             exit 1
           fi
