@@ -416,8 +416,6 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                 }
             };
 
-            // log::debug!("proof: {:?}", proof);
-            // log::debug!("instance: {:?}", instance);
             log::info!("root circuit new");
             let root_circuit = RootCircuit::<Bn256, As<_>>::new(
                 &params,

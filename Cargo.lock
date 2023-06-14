@@ -2106,7 +2106,6 @@ dependencies = [
  "eth-types",
  "ethers",
  "halo2_proofs",
- "itertools",
  "lazy_static",
  "log",
  "mock",
