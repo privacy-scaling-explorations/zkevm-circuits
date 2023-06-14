@@ -238,17 +238,17 @@ impl<F: Field> StorageLeafConfig<F> {
             } elsex {
                 key_rlc[false.idx()].expr()
             }};
-            // ctx.mpt_table.constrain(
-            //     meta,
-            //     &mut cb.base,
-            //     config.main_data.address_rlc.expr(),
-            //     proof_type,
-            //     key_rlc,
-            //     value_rlc[true.idx()].expr(),
-            //     value_rlc[false.idx()].expr(),
-            //     config.main_data.root_prev.expr(),
-            //     config.main_data.root.expr(),
-            // );
+            ctx.mpt_table.constrain(
+                meta,
+                &mut cb.base,
+                config.main_data.address_rlc.expr(),
+                proof_type,
+                key_rlc,
+                value_rlc[true.idx()].expr(),
+                value_rlc[false.idx()].expr(),
+                config.main_data.root_prev.expr(),
+                config.main_data.root.expr(),
+            );
         });
 
         config
