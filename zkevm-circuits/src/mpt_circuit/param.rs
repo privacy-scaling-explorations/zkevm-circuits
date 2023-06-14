@@ -149,5 +149,5 @@ pub const EMPTY_TRIE_HASH: [u8; 32] = [
     108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
 ];
 
-pub const MAIN_RLP_STRING_MAX: usize = 33;
-pub const MAIN_RLP_LIST_MAX: usize = 31;
+pub const MAIN_RLP_STRING_MAX: usize = 34;
+pub const MAIN_RLP_LIST_MAX: usize = 32;

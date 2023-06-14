@@ -20,7 +20,7 @@ use crate::{
 use eth_types::Field;
 use gadgets::util::{not, or, pow, Scalar};
 use halo2_proofs::{
-    circuit::Value,
+    circuit::{Value, AssignedCell},
     plonk::{Error, Expression, VirtualCells},
 };
 
@@ -1215,7 +1215,6 @@ impl<F: Field> MainRLPGadget<F> {
                 rlc_content: cb.query_cell(),
                 rlc_rlp: cb.query_cell(),
                 tag: cb.query_cell(),
-                // force_string: cb.query_cell(),
             };
             config.rlp = RLPItemGadget::construct(
                 cb,
@@ -1225,7 +1224,6 @@ impl<F: Field> MainRLPGadget<F> {
                     .map(|byte| byte.expr())
                     .collect::<Vec<_>>(),
             );
-            
 
             let max_len = matchx!(
                 config.rlp.is_string() => MAIN_RLP_STRING_MAX.expr(),
@@ -1307,9 +1305,13 @@ impl<F: Field> MainRLPGadget<F> {
         cb: &mut MPTConstraintBuilder<F>,
         rot: usize,
         is_nibbles: bool,
+        require_string: bool,
     ) -> RLPItemView<F> {
         circuit!([meta, cb.base], {
             require!(self.tag.rot(meta, rot) => self.tag(is_nibbles).expr());
+            if require_string {
+                require!(self.rlp.is_string() => true);
+            }
         });
         RLPItemView {
             num_bytes: Some(self.num_bytes.rot(meta, rot)),

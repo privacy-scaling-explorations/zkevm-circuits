@@ -66,16 +66,16 @@ impl<F: Field> StorageLeafConfig<F> {
 
         circuit!([meta, cb], {
             let key_items = [
-                ctx.rlp_item(meta, cb, StorageRowType::KeyS as usize),
-                ctx.rlp_item(meta, cb, StorageRowType::KeyC as usize),
+                ctx.rlp_item(meta, cb, StorageRowType::KeyS as usize, false),
+                ctx.rlp_item(meta, cb, StorageRowType::KeyC as usize, false),
             ];
             config.value_rlp_bytes = [cb.base.query_bytes(), cb.base.query_bytes()];
             let value_item = [
-                ctx.rlp_item(meta, cb, StorageRowType::ValueS as usize /* true needs to be a string, also remember witness*/),
-                ctx.rlp_item(meta, cb, StorageRowType::ValueC as usize),
+                ctx.rlp_item(meta, cb, StorageRowType::ValueS as usize , false),
+                ctx.rlp_item(meta, cb, StorageRowType::ValueC as usize, false),
             ];
-            let drifted_item = ctx.rlp_item(meta, cb, StorageRowType::Drifted as usize);
-            let wrong_item = ctx.rlp_item(meta, cb, StorageRowType::Wrong as usize);
+            let drifted_item = ctx.rlp_item(meta, cb, StorageRowType::Drifted as usize, false);
+            let wrong_item = ctx.rlp_item(meta, cb, StorageRowType::Wrong as usize, false);
 
             config.main_data =
                 MainData::load("main storage", cb, &ctx.memory[main_memory()], 0.expr());

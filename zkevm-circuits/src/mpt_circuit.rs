@@ -137,9 +137,10 @@ impl<F: Field> MPTContext<F> {
         meta: &mut VirtualCells<F>,
         cb: &mut MPTConstraintBuilder<F>,
         idx: usize,
+        require_string: bool,
     ) -> RLPItemView<F> {
         // TODO(Brecht): Add RLP limitations like max num bytes
-        self.rlp_item.create_view(meta, cb, idx, false)
+        self.rlp_item.create_view(meta, cb, idx, false, require_string)
     }
 
     pub(crate) fn nibbles(
@@ -148,7 +149,8 @@ impl<F: Field> MPTContext<F> {
         cb: &mut MPTConstraintBuilder<F>,
         idx: usize,
     ) -> RLPItemView<F> {
-        self.rlp_item.create_view(meta, cb, idx, true)
+        // are nibbles string?
+        self.rlp_item.create_view(meta, cb, idx, true, false)
     }
 }
 

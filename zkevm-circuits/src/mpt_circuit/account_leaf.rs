@@ -68,29 +68,29 @@ impl<F: Field> AccountLeafConfig<F> {
 
         circuit!([meta, cb], {
             let key_items = [
-                ctx.rlp_item(meta, cb, AccountRowType::KeyS as usize),
-                ctx.rlp_item(meta, cb, AccountRowType::KeyC as usize),
+                ctx.rlp_item(meta, cb, AccountRowType::KeyS as usize, false),
+                ctx.rlp_item(meta, cb, AccountRowType::KeyC as usize, false),
             ];
             config.value_rlp_bytes = [cb.query_bytes(), cb.query_bytes()];
             config.value_list_rlp_bytes = [cb.query_bytes(), cb.query_bytes()];
             let nonce_items = [
-                ctx.rlp_item(meta, cb, AccountRowType::NonceS as usize),
-                ctx.rlp_item(meta, cb, AccountRowType::NonceC as usize),
+                ctx.rlp_item(meta, cb, AccountRowType::NonceS as usize, false),
+                ctx.rlp_item(meta, cb, AccountRowType::NonceC as usize, false),
             ];
             let balance_items = [
-                ctx.rlp_item(meta, cb, AccountRowType::BalanceS as usize),
-                ctx.rlp_item(meta, cb, AccountRowType::BalanceC as usize),
+                ctx.rlp_item(meta, cb, AccountRowType::BalanceS as usize, false),
+                ctx.rlp_item(meta, cb, AccountRowType::BalanceC as usize, false),
             ];
             let storage_items = [
-                ctx.rlp_item(meta, cb, AccountRowType::StorageS as usize),
-                ctx.rlp_item(meta, cb, AccountRowType::StorageC as usize),
+                ctx.rlp_item(meta, cb, AccountRowType::StorageS as usize, false),
+                ctx.rlp_item(meta, cb, AccountRowType::StorageC as usize, false),
             ];
             let codehash_items = [
-                ctx.rlp_item(meta, cb, AccountRowType::CodehashS as usize),
-                ctx.rlp_item(meta, cb, AccountRowType::CodehashC as usize),
+                ctx.rlp_item(meta, cb, AccountRowType::CodehashS as usize, false),
+                ctx.rlp_item(meta, cb, AccountRowType::CodehashC as usize, false),
             ];
-            let drifted_bytes = ctx.rlp_item(meta, cb, AccountRowType::Drifted as usize);
-            let wrong_bytes = ctx.rlp_item(meta, cb, AccountRowType::Wrong as usize);
+            let drifted_bytes = ctx.rlp_item(meta, cb, AccountRowType::Drifted as usize, false);
+            let wrong_bytes = ctx.rlp_item(meta, cb, AccountRowType::Wrong as usize, false);
 
             config.main_data =
                 MainData::load("main storage", cb, &ctx.memory[main_memory()], 0.expr());

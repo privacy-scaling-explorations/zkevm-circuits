@@ -1,16 +1,33 @@
 
 running 1 test
-0 "src/mpt_circuit/tests/AccountExtensionTwoNibblesInEvenLevel.json"
 degree: 7
 num lookups: 0
 num advices: 120
 num fixed: 9
-test mpt_circuit::tests::test_mpt ... FAILED
+0: start
+2: account
+14: start
+0: start
+2: account
+14: start
+0: start
+2: account
+14: start
+0: start
+2: account
+14: start
+0: start
+2: account
+14: start
+0: start
+2: account
+14: start
+test mpt_circuit::tests::graph_mpt ... FAILED
 
 failures:
 
 failures:
-    mpt_circuit::tests::test_mpt
+    mpt_circuit::tests::graph_mpt
 
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 414 filtered out; finished in 10.05s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 415 filtered out; finished in 0.80s
 

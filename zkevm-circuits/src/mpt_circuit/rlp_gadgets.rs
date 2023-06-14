@@ -610,11 +610,9 @@ pub(crate) struct RLPItemWitness {
 
 impl<F: Field> RLPItemGadget<F> {
     pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>, bytes: &[Expression<F>]) -> Self {
-        let value = RLPValueGadget::construct(cb, bytes);
-        let list = RLPListGadget::construct(cb, bytes);
         RLPItemGadget {
-            value,
-            list,
+            value: RLPValueGadget::construct(cb, bytes),
+            list: RLPListGadget::construct(cb, bytes),
         }
     }
 
@@ -626,6 +624,7 @@ impl<F: Field> RLPItemGadget<F> {
     ) -> Result<RLPItemWitness, Error> {
         let value_witness = self.value.assign(region, offset, bytes)?;
         let list_witness = self.list.assign(region, offset, bytes)?;
+        assert!(!(value_witness.is_string() && list_witness.is_list()));
         Ok(RLPItemWitness {
             value: value_witness,
             list: list_witness,
