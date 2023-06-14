@@ -3,7 +3,7 @@ use std::str::FromStr;
 use anyhow::{bail, Result};
 use eth_types::{bytecode::OpcodeWithData, Bytecode, GethExecTrace, U256};
 use log::{error, info};
-use prettytable::Table;
+use prettytable::{row, Table};
 use std::process::{Command, Stdio};
 
 #[derive(Debug, Eq, PartialEq, PartialOrd)]

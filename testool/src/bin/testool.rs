@@ -1,28 +1,19 @@
-/// Execute the bytecode from an empty state and run the EVM and State circuits
-mod abi;
-mod compiler;
-mod config;
-mod statetest;
-mod utils;
-
-use crate::{config::TestSuite, statetest::ResultLevel};
 use anyhow::{bail, Result};
 use clap::Parser;
-use compiler::Compiler;
-use config::Config;
 use log::info;
-use statetest::{
-    geth_trace, load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results,
-    StateTest,
-};
 use std::{collections::HashSet, path::PathBuf, time::SystemTime};
 use strum::EnumString;
+use testool::{
+    config::{Config, TestSuite},
+    statetest::{
+        geth_trace, load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig,
+        ResultLevel, Results, StateTest,
+    },
+    utils, Compiler,
+};
 
 const REPORT_FOLDER: &str = "report";
 const CODEHASH_FILE: &str = "./codehash.txt";
-
-#[macro_use]
-extern crate prettytable;
 
 #[allow(non_camel_case_types)]
 #[derive(PartialEq, Parser, EnumString, Debug)]
