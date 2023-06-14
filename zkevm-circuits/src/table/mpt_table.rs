@@ -126,7 +126,6 @@ impl MptTable {
             require!(a!(self.value) => value);
             require!(a!(self.root_prev) => root_prev);
             require!(a!(self.root) => root);
-            println!("self.root_prev {:?}, self.root {:?}", a!(self.root_prev).identifier(), a!(self.root).identifier());
         })
     }
 

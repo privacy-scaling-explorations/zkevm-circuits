@@ -208,21 +208,6 @@ impl<F: Field> AccountLeafConfig<F> {
                     storage_rlc[is_s.idx()].expr(),
                 );
             }
-
-            println!("root prev: {:?} root {:?}", config.main_data.root_prev.expr().identifier(), config.main_data.root.expr().identifier());
-            // MainData::store(
-            //     cb,
-            //     &ctx.memory[main_memory()],
-            //     [
-            //         config.main_data.proof_type.expr(),
-            //         true.expr(),
-            //         false.expr(),
-            //         key_rlc[true.idx()].expr(),
-            //         config.main_data.root_prev.expr(),
-            //         config.main_data.root.expr(),
-            //     ],
-            // );
-
             // Proof types
             config.is_non_existing_account_proof = IsEqualGadget::construct(
                 &mut cb.base,
@@ -278,7 +263,6 @@ impl<F: Field> AccountLeafConfig<F> {
                 config.key_data[true.idx()].clone(),
                 &ctx.r,
             );
-            println!("root prev: {:?} root {:?}", config.main_data.root_prev.expr().identifier(), config.main_data.root.expr().identifier());
             let is_non_existing_account = not::expr(config.wrong.is_key_equal.clone().expr());
 
             // Anything following this node is below the account
@@ -356,7 +340,6 @@ impl<F: Field> AccountLeafConfig<F> {
                 }}
             }};
 
-            println!("root prev: {:?} root {:?}", config.main_data.root_prev.expr().identifier(), config.main_data.root.expr().identifier());
             ctx.mpt_table.constrain(
                 meta,
                 &mut cb.base,
@@ -499,9 +482,6 @@ impl<F: Field> AccountLeafConfig<F> {
                 storage_rlc[is_s.idx()],
             )?;
         }
-
-        println!("-root prev {:?}, root {:?}", main_data.root_prev, main_data.root);
-
         // Proof types
         let is_non_existing_proof = self.is_non_existing_account_proof.assign(
             region,
@@ -539,9 +519,6 @@ impl<F: Field> AccountLeafConfig<F> {
             main_data.proof_type.scalar(),
             MPTProofType::CodeHashExists.scalar(),
         )? == true.scalar();
-
-        println!("-root prev {:?}, root {:?}", main_data.root_prev, main_data.root);
-
         // Drifted leaf handling
         self.drifted.assign(
             region,
@@ -564,8 +541,6 @@ impl<F: Field> AccountLeafConfig<F> {
             key_data[true.idx()].clone(),
             pv.r,
         )?;
-
-        println!("-root prev {:?}, root {:?}", main_data.root_prev, main_data.root);
         // Anything following this node is below the account
         MainData::witness_store(
             region,
@@ -595,8 +570,6 @@ impl<F: Field> AccountLeafConfig<F> {
         } else {
             (MPTProofType::Disabled, vec![0.scalar(); 2])
         };
-
-        println!("-root prev {:?}, root {:?}", main_data.root_prev, main_data.root);
         mpt_config.mpt_table.assign_cached(
             region,
             offset,
