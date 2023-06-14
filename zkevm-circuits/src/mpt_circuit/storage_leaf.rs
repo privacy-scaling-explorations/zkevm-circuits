@@ -77,6 +77,7 @@ impl<F: Field> StorageLeafConfig<F> {
             let drifted_item = ctx.rlp_item(meta, cb, StorageRowType::Drifted as usize);
             let wrong_item = ctx.rlp_item(meta, cb, StorageRowType::Wrong as usize);
 
+            // get is_non_existing_account
             config.main_data =
                 MainData::load("main storage", cb, &ctx.memory[main_memory()], 0.expr());
 
@@ -192,6 +193,9 @@ impl<F: Field> StorageLeafConfig<F> {
                 config.main_data.proof_type.expr(),
                 MPTProofType::StorageDoesNotExist.expr(),
             );
+            ifx!{config.main_data.is_non_existing_account.expr() => {
+                require!(config.is_non_existing_storage_proof => true);
+            }};
 
             // Drifted leaf handling
             config.drifted = DriftedGadget::construct(
@@ -390,7 +394,7 @@ impl<F: Field> StorageLeafConfig<F> {
         )?;
 
         // Wrong leaf handling
-        let key_rlc = self.wrong.assign(
+        let (key_rlc, _) = self.wrong.assign(
             region,
             offset,
             is_non_existing_proof,

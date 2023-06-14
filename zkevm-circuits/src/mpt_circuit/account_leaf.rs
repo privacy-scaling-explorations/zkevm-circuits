@@ -208,22 +208,6 @@ impl<F: Field> AccountLeafConfig<F> {
                     storage_rlc[is_s.idx()].expr(),
                 );
             }
-
-            // Anything following this node is below the account
-            // TODO(Brecht): For non-existing accounts it should be impossible to prove
-            // storage leaves unless it's also a non-existing proof?
-            MainData::store(
-                cb,
-                &ctx.memory[main_memory()],
-                [
-                    config.main_data.proof_type.expr(),
-                    true.expr(),
-                    key_rlc[true.idx()].expr(),
-                    config.main_data.root_prev.expr(),
-                    config.main_data.root.expr(),
-                ],
-            );
-
             // Proof types
             config.is_non_existing_account_proof = IsEqualGadget::construct(
                 &mut cb.base,
@@ -279,6 +263,23 @@ impl<F: Field> AccountLeafConfig<F> {
                 config.key_data[true.idx()].clone(),
                 &ctx.r,
             );
+            let is_non_existing_account = not::expr(config.wrong.is_key_equal.clone().expr());
+
+            // Anything following this node is below the account
+            // TODO(Brecht): For non-existing accounts it should be impossible to prove
+            // storage leaves unless it's also a non-existing proof?
+            MainData::store(
+                cb,
+                &ctx.memory[main_memory()],
+                [
+                    config.main_data.proof_type.expr(),
+                    true.expr(),
+                    is_non_existing_account.expr(),
+                    key_rlc[true.idx()].expr(),
+                    config.main_data.root_prev.expr(),
+                    config.main_data.root.expr(),
+                ],
+            );
 
             ifx! {config.is_account_delete_mod => {
                 // Account delete
@@ -289,7 +290,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 // - 2. Account leaf is deleted from a branch with two leaves, the remaining
                 // leaf moves one level up and replaces the branch. In this case we
                 // have a branch placeholder.
-                // TODO(Brecht): For case 2: just having the parent branch be the placeholder seems not enough
+                // TODO(x Brecht): For case 2: just having the parent branch be the placeholder seems not enough
                 require!(or::expr([
                     config.is_in_empty_trie[false.idx()].expr(),
                     config.parent_data[false.idx()].is_placeholder.expr()
@@ -338,6 +339,7 @@ impl<F: Field> AccountLeafConfig<F> {
                     key_rlc[false.idx()].expr()
                 }}
             }};
+
             ctx.mpt_table.constrain(
                 meta,
                 &mut cb.base,
@@ -480,19 +482,6 @@ impl<F: Field> AccountLeafConfig<F> {
                 storage_rlc[is_s.idx()],
             )?;
         }
-
-        // Anything following this node is below the account
-        MainData::witness_store(
-            region,
-            offset,
-            &mut pv.memory[main_memory()],
-            main_data.proof_type,
-            true,
-            account.address.rlc_value(pv.r),
-            main_data.root_prev,
-            main_data.root,
-        )?;
-
         // Proof types
         let is_non_existing_proof = self.is_non_existing_account_proof.assign(
             region,
@@ -530,7 +519,6 @@ impl<F: Field> AccountLeafConfig<F> {
             main_data.proof_type.scalar(),
             MPTProofType::CodeHashExists.scalar(),
         )? == true.scalar();
-
         // Drifted leaf handling
         self.drifted.assign(
             region,
@@ -542,7 +530,7 @@ impl<F: Field> AccountLeafConfig<F> {
         )?;
 
         // Wrong leaf handling
-        self.wrong.assign(
+        let (_, is_non_esisting_account)= self.wrong.assign(
             region,
             offset,
             is_non_existing_proof,
@@ -552,6 +540,18 @@ impl<F: Field> AccountLeafConfig<F> {
             true,
             key_data[true.idx()].clone(),
             pv.r,
+        )?;
+        // Anything following this node is below the account
+        MainData::witness_store(
+            region,
+            offset,
+            &mut pv.memory[main_memory()],
+            main_data.proof_type,
+            true,
+            is_non_esisting_account,
+            account.address.rlc_value(pv.r),
+            main_data.root_prev,
+            main_data.root,
         )?;
 
         // Put the data in the lookup table
