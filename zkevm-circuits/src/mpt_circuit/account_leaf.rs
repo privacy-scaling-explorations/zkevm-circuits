@@ -290,7 +290,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 // - 2. Account leaf is deleted from a branch with two leaves, the remaining
                 // leaf moves one level up and replaces the branch. In this case we
                 // have a branch placeholder.
-                // TODO(x Brecht): For case 2: just having the parent branch be the placeholder seems not enough
+                // TODO(Brecht): For case 2: just having the parent branch be the placeholder seems not enough
                 require!(or::expr([
                     config.is_in_empty_trie[false.idx()].expr(),
                     config.parent_data[false.idx()].is_placeholder.expr()
@@ -339,7 +339,6 @@ impl<F: Field> AccountLeafConfig<F> {
                     key_rlc[false.idx()].expr()
                 }}
             }};
-
             ctx.mpt_table.constrain(
                 meta,
                 &mut cb.base,
@@ -530,7 +529,7 @@ impl<F: Field> AccountLeafConfig<F> {
         )?;
 
         // Wrong leaf handling
-        let (_, is_non_esisting_account)= self.wrong.assign(
+        let (_, is_non_existing_account) = self.wrong.assign(
             region,
             offset,
             is_non_existing_proof,
@@ -541,6 +540,7 @@ impl<F: Field> AccountLeafConfig<F> {
             key_data[true.idx()].clone(),
             pv.r,
         )?;
+
         // Anything following this node is below the account
         MainData::witness_store(
             region,
@@ -548,7 +548,7 @@ impl<F: Field> AccountLeafConfig<F> {
             &mut pv.memory[main_memory()],
             main_data.proof_type,
             true,
-            is_non_esisting_account,
+            is_non_existing_account,
             account.address.rlc_value(pv.r),
             main_data.root_prev,
             main_data.root,

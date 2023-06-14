@@ -715,7 +715,8 @@ impl<F: Field> MainData<F> {
 
         self.proof_type.assign(region, offset, values[0])?;
         self.is_below_account.assign(region, offset, values[1])?;
-        self.is_non_existing_account.assign(region, offset, values[2])?;
+        self.is_non_existing_account
+            .assign(region, offset, values[2])?;
         self.address_rlc.assign(region, offset, values[3])?;
         self.root_prev.assign(region, offset, values[4])?;
         self.root.assign(region, offset, values[5])?;
@@ -1189,7 +1190,7 @@ impl<F: Field> WrongGadget<F> {
                 key_rlc[for_placeholder_s.idx()],
                 key_rlc_wrong,
             )?;
-            
+
             // When key is not equal, we have a non existing account
             Ok((key_rlc_wrong, is_key_equal_witness.neg()))
         } else {

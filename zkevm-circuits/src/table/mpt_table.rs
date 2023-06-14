@@ -92,7 +92,7 @@ impl<F: Field> LookupTable<F> for MptTable {
 impl MptTable {
     /// Construct a new MptTable
     pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
-        // TODO(x Brecht): everything except address and proof type needs to be
+        // TODO(Brecht): everything except address and proof type needs to be
         // advice_column_in(SecondPhase)
         Self {
             address_rlc: meta.advice_column(),
