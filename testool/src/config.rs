@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::{fmt::Display, path::PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -8,6 +8,19 @@ pub struct Config {
     pub set: Vec<TestsSet>,
     pub skip_paths: Vec<SkipPaths>,
     pub skip_tests: Vec<SkipTests>,
+}
+
+impl Display for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(
+            f,
+            "({} suites, {} set, {} skip_paths, and {} skip_tests)",
+            self.suite.len(),
+            self.set.len(),
+            self.skip_paths.len(),
+            self.skip_tests.len()
+        )
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -88,7 +101,7 @@ impl Config {
             .collect::<Result<_>>()?;
         Ok(config)
     }
-    pub fn suite(&self, name: &str) -> Result<&TestSuite> {
+    pub fn find_suite(&self, name: &str) -> Result<&TestSuite> {
         self.suite
             .iter()
             .find(|s| s.id == name)

@@ -11,18 +11,19 @@ use anyhow::{Context, Result};
 use rayon::prelude::*;
 use std::{
     panic::AssertUnwindSafe,
+    path::Path,
     sync::{Arc, RwLock},
 };
 
 pub fn load_statetests_suite(
-    path: &str,
+    path: &Path,
     config: Config,
     mut compiler: Compiler,
 ) -> Result<Vec<StateTest>> {
     let skip_paths: Vec<&String> = config.skip_paths.iter().flat_map(|t| &t.paths).collect();
     let skip_tests: Vec<&String> = config.skip_tests.iter().flat_map(|t| &t.tests).collect();
 
-    let files = glob::glob(path)
+    let files = glob::glob(path.to_str().unwrap())
         .context("failed to read glob")?
         .filter_map(|v| v.ok())
         .filter(|f| {

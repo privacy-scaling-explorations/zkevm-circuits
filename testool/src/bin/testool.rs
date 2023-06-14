@@ -77,15 +77,11 @@ fn run_single_test(test: StateTest, circuits_config: CircuitsConfig) -> Result<(
 }
 
 fn go() -> Result<()> {
-    //  RAYON_NUM_THREADS=1 RUST_BACKTRACE=1 cargo run -- --path
-    // "tests/src/GeneralStateTestsFiller/**/" --skip-state-circuit
-
     let args = Args::parse();
 
-    let mut circuits_config = CircuitsConfig::default();
-    if args.circuits == Some(Circuits::sc) {
-        circuits_config.super_circuit = true;
-    }
+    let circuits_config = CircuitsConfig {
+        super_circuit: matches!(args.circuits, Some(Circuits::sc)),
+    };
 
     if let Some(oneliner) = &args.oneliner {
         let test = StateTest::parse_oneline_spec(oneliner)?;
@@ -99,11 +95,18 @@ fn go() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     log::info!("Using suite '{}'", args.suite);
+    log::info!("Configuration: {}", config);
     log::info!("Parsing and compliling tests...");
-    let compiler = Compiler::new(true, Some(PathBuf::from(CODEHASH_FILE)))?;
-    let suite = config.suite(&args.suite)?.clone();
-    let state_tests = load_statetests_suite(&suite.path, config, compiler)?;
-    log::info!("{} tests collected in {}", state_tests.len(), suite.path);
+    let path: PathBuf = [ROOT_DIR, CODEHASH_FILE].iter().collect();
+    let compiler = Compiler::new(true, Some(path))?;
+    let suite = config.find_suite(&args.suite)?.clone();
+    let path: PathBuf = [ROOT_DIR, &suite.path].iter().collect();
+    let state_tests = load_statetests_suite(&path, config, compiler)?;
+    log::info!(
+        "{} tests collected in {}",
+        state_tests.len(),
+        path.display()
+    );
 
     if args.ls {
         let mut list: Vec<_> = state_tests.into_iter().map(|t| t.id).collect();
