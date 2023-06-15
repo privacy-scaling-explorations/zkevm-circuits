@@ -1259,7 +1259,6 @@ impl<F: Field> MainRLPGadget<F> {
             // These range checks ensure that the value in the RLP columns are all byte
             // value. These lookups also enforce the byte value to be zero when
             // the byte index >= num_bytes.
-            // TODO(x Brecht): do 2 bytes/lookup when circuit height >= 2**21
             // We enable dynamic lookups because otherwise these lookup would require a lot of extra
             // cells.
             cb.set_use_dynamic_lookup(true);

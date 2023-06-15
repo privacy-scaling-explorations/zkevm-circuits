@@ -124,7 +124,7 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
         // The equation we require to hold: `lhs - rhs == diff - (lt * range)`.
         cb.require_equal(
             "lhs - rhs == diff - (lt ⋅ range)",
-            lhs.clone() - rhs.clone(),
+            lhs - rhs,
             from_bytes::expr(&diff) - (lt.expr() * range),
         );
 
@@ -158,8 +158,6 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
         for (idx, diff) in self.diff.as_ref().unwrap().iter().enumerate() {
             diff.assign(region, offset, F::from(diff_bytes[idx] as u64))?;
         }
-        // println!("LT assign lhs {:?} - rhs {:?} == diff {:?} - lt {:?} * range {:?}",
-        //     lhs, rhs, diff, lt, 2usize.pow(2*8));
 
         Ok((if lt { F::ONE } else { F::ZERO }, diff_bytes.to_vec()))
     }
