@@ -1286,34 +1286,6 @@ macro_rules! circuit {
                 _require!($cb, $descr, $values => @$tag);
             }};
 
-
-
-            (($a:expr) => @$tag:expr, $o:expr) => {{
-                _require!($cb, ($a) => @$tag, $o);
-            }};
-
-            (($a:expr, $b:expr) => @$tag:expr, $o:expr) => {{
-                _require!($cb, ($a, $b) => @$tag, $o);
-            }};
-
-            (($a:expr, $b:expr, $c:expr) => @$tag:expr, $o:expr) => {{
-                _require!($cb, ($a, $b, $c) => @$tag, $o);
-            }};
-
-            (($a:expr, $b:expr, $c:expr, $d:expr) => @$tag:expr, $o:expr) => {{
-                _require!($cb, ($a, $b, $c, $d) => @$tag, $o);
-            }};
-
-            ($values:expr => @$tag:expr, $o:expr) => {{
-                _require!($cb, $values => @$tag, $o);
-            }};
-
-            ($descr:expr, $values:expr => @$tag:expr, $o:expr) => {{
-                _require!($cb, $descr, $values => @$tag, $o);
-            }};
-
-
-
             (@$tag:expr => ($a:expr, $b:expr, $c:expr)) => {{
                 _require!($cb, @$tag => ($a, $b, $c));
             }};
