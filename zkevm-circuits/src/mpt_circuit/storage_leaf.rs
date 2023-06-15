@@ -18,7 +18,7 @@ use crate::{
     mpt_circuit::{
         helpers::{
             key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, IsEmptyTreeGadget,
-            KeyData, MPTConstraintBuilder, MainData, ParentData, ParentDataWitness,
+            KeyData, MPTConstraintBuilder, MainData, ParentData, ParentDataWitness, KECCAK,
         },
         param::KEY_LEN_IN_NIBBLES,
         MPTConfig, MPTContext, MPTState,
@@ -62,7 +62,7 @@ impl<F: Field> StorageLeafConfig<F> {
             .cell_manager
             .as_mut()
             .unwrap()
-            .reset(meta, StorageRowType::Count as usize);
+            .reset(StorageRowType::Count as usize);
         let mut config = StorageLeafConfig::default();
 
         circuit!([meta, cb], {
@@ -162,7 +162,7 @@ impl<F: Field> StorageLeafConfig<F> {
                     config.is_not_hashed[is_s.idx()] = LtGadget::construct(&mut cb.base, rlp_key.rlp_list.num_bytes(), 32.expr());
                     ifx!{or::expr(&[parent_data.is_root.expr(), not!(config.is_not_hashed[is_s.idx()])]) => {
                         // Hashed branch hash in parent branch
-                        require!((1, leaf_rlc, rlp_key.rlp_list.num_bytes(), parent_data.rlc) => @"keccak");
+                        require!((1, leaf_rlc, rlp_key.rlp_list.num_bytes(), parent_data.rlc) => @KECCAK);
                     } elsex {
                         // Non-hashed branch hash in parent branch
                         require!(leaf_rlc => parent_data.rlc);
@@ -193,6 +193,11 @@ impl<F: Field> StorageLeafConfig<F> {
                 config.main_data.proof_type.expr(),
                 MPTProofType::StorageDoesNotExist.expr(),
             );
+
+            // If we were in a non-existing account, all storage is non-existing
+            ifx! {config.main_data.is_non_existing_account.expr() => {
+                require!(config.is_non_existing_storage_proof => true);
+            }};
 
             // Drifted leaf handling
             config.drifted = DriftedGadget::construct(
@@ -392,7 +397,7 @@ impl<F: Field> StorageLeafConfig<F> {
         )?;
 
         // Wrong leaf handling
-        let key_rlc = self.wrong.assign(
+        let (key_rlc, _) = self.wrong.assign(
             region,
             offset,
             is_non_existing_proof,

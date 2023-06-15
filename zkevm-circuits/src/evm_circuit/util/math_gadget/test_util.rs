@@ -3,7 +3,6 @@ use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
 use crate::{
-    circuit_tools::table::LookupTable,
     evm_circuit::{
         param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
         step::{ExecutionState, Step},
@@ -14,6 +13,7 @@ use crate::{
         },
         Advice, Column, Fixed,
     },
+    table::LookupTable,
     util::Challenges,
 };
 use eth_types::{Field, Word, U256};

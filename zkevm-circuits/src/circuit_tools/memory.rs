@@ -6,20 +6,17 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
     poly::Rotation,
 };
-use std::{
-    marker::PhantomData,
-    ops::{Index, IndexMut},
-};
+use std::ops::{Index, IndexMut};
 
-use super::{cell_manager::CellTypeTrait, constraint_builder::ConstraintBuilder};
+use super::{cell_manager::CellType, constraint_builder::ConstraintBuilder};
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct Memory<F> {
+pub(crate) struct Memory<F, C> {
     columns: Vec<Column<Advice>>,
-    banks: Vec<MemoryBank<F>>,
+    banks: Vec<MemoryBank<F, C>>,
 }
 
-impl<F: Field> Memory<F> {
+impl<F: Field, C: CellType> Memory<F, C> {
     pub(crate) fn new(columns: Vec<Column<Advice>>) -> Self {
         Self {
             columns,
@@ -27,28 +24,24 @@ impl<F: Field> Memory<F> {
         }
     }
 
-    pub(crate) fn allocate<S: AsRef<str>>(
-        &mut self,
-        meta: &mut ConstraintSystem<F>,
-        tag: S,
-    ) -> &MemoryBank<F> {
+    pub(crate) fn allocate(&mut self, meta: &mut ConstraintSystem<F>, tag: C) -> &MemoryBank<F, C> {
         self.banks
             .push(MemoryBank::new(meta, self.columns[self.banks.len()], tag));
         self.banks.last().unwrap()
     }
 
-    pub(crate) fn get<S: AsRef<str>>(&self, tag: S) -> &MemoryBank<F> {
+    pub(crate) fn get(&self, tag: C) -> &MemoryBank<F, C> {
         for bank in self.banks.iter() {
-            if bank.tag() == tag.as_ref() {
+            if bank.tag() == tag {
                 return bank;
             }
         }
         unreachable!()
     }
 
-    pub(crate) fn get_mut<S: AsRef<str>>(&mut self, tag: S) -> &mut MemoryBank<F> {
+    pub(crate) fn get_mut(&mut self, tag: C) -> &mut MemoryBank<F, C> {
         for bank in self.banks.iter_mut() {
-            if bank.tag() == tag.as_ref() {
+            if bank.tag() == tag {
                 return bank;
             }
         }
@@ -59,7 +52,7 @@ impl<F: Field> Memory<F> {
         self.columns.clone()
     }
 
-    pub(crate) fn build_constraints<C: CellTypeTrait>(
+    pub(crate) fn build_constraints(
         &self,
         cb: &mut ConstraintBuilder<F, C>,
         is_first_row: Expression<F>,
@@ -87,17 +80,17 @@ impl<F: Field> Memory<F> {
         Ok(())
     }
 
-    pub(crate) fn tags(&self) -> Vec<String> {
+    pub(crate) fn tags(&self) -> Vec<C> {
         self.banks.iter().map(|bank| bank.tag()).collect()
     }
 }
 
-impl<F: Field, S: AsRef<str>> Index<S> for Memory<F> {
-    type Output = MemoryBank<F>;
+impl<F: Field, C: CellType> Index<C> for Memory<F, C> {
+    type Output = MemoryBank<F, C>;
 
-    fn index(&self, tag: S) -> &Self::Output {
+    fn index(&self, tag: C) -> &Self::Output {
         for bank in self.banks.iter() {
-            if bank.tag() == tag.as_ref() {
+            if bank.tag() == tag {
                 return bank;
             }
         }
@@ -105,10 +98,10 @@ impl<F: Field, S: AsRef<str>> Index<S> for Memory<F> {
     }
 }
 
-impl<F: Field, S: AsRef<str>> IndexMut<S> for Memory<F> {
-    fn index_mut(&mut self, tag: S) -> &mut Self::Output {
+impl<F: Field, C: CellType> IndexMut<C> for Memory<F, C> {
+    fn index_mut(&mut self, tag: C) -> &mut Self::Output {
         for bank in self.banks.iter_mut() {
-            if bank.tag() == tag.as_ref() {
+            if bank.tag() == tag {
                 return bank;
             }
         }
@@ -117,22 +110,17 @@ impl<F: Field, S: AsRef<str>> IndexMut<S> for Memory<F> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct MemoryBank<F> {
+pub(crate) struct MemoryBank<F, C> {
     column: Column<Advice>,
-    tag: String,
+    tag: C,
     cur: Expression<F>,
     next: Expression<F>,
     store_offsets: Vec<usize>,
     stored_values: Vec<Vec<F>>,
-    _marker: PhantomData<F>,
 }
 
-impl<F: Field> MemoryBank<F> {
-    pub(crate) fn new<S: AsRef<str>>(
-        meta: &mut ConstraintSystem<F>,
-        column: Column<Advice>,
-        tag: S,
-    ) -> Self {
+impl<F: Field, C: CellType> MemoryBank<F, C> {
+    pub(crate) fn new(meta: &mut ConstraintSystem<F>, column: Column<Advice>, tag: C) -> Self {
         let mut cur = 0.expr();
         let mut next = 0.expr();
         query_expression(meta, |meta| {
@@ -141,12 +129,11 @@ impl<F: Field> MemoryBank<F> {
         });
         Self {
             column,
-            tag: tag.as_ref().to_owned(),
+            tag,
             cur,
             next,
             store_offsets: Vec::new(),
             stored_values: Vec::new(),
-            _marker: PhantomData,
         }
     }
 
@@ -154,7 +141,7 @@ impl<F: Field> MemoryBank<F> {
         self.cur.expr()
     }
 
-    pub(crate) fn load<C: CellTypeTrait>(
+    pub(crate) fn load(
         &self,
         description: &'static str,
         cb: &mut ConstraintBuilder<F, C>,
@@ -164,7 +151,7 @@ impl<F: Field> MemoryBank<F> {
         self.load_with_key(description, cb, self.key() - offset, values);
     }
 
-    pub(crate) fn load_with_key<C: CellTypeTrait>(
+    pub(crate) fn load_with_key(
         &self,
         description: &'static str,
         cb: &mut ConstraintBuilder<F, C>,
@@ -174,7 +161,7 @@ impl<F: Field> MemoryBank<F> {
         cb.add_dynamic_lookup(description, self.tag(), self.insert_key(key, values));
     }
 
-    pub(crate) fn store<C: CellTypeTrait>(
+    pub(crate) fn store(
         &self,
         cb: &mut ConstraintBuilder<F, C>,
         values: &[Expression<F>],
@@ -184,7 +171,7 @@ impl<F: Field> MemoryBank<F> {
         key
     }
 
-    pub(crate) fn store_with_key<C: CellTypeTrait>(
+    pub(crate) fn store_with_key(
         &self,
         cb: &mut ConstraintBuilder<F, C>,
         key: Expression<F>,
@@ -206,7 +193,7 @@ impl<F: Field> MemoryBank<F> {
         self.store_offsets.clear();
     }
 
-    pub(crate) fn build_constraints<C: CellTypeTrait>(
+    pub(crate) fn build_constraints(
         &self,
         cb: &mut ConstraintBuilder<F, C>,
         is_first_row: Expression<F>,
@@ -216,7 +203,8 @@ impl<F: Field> MemoryBank<F> {
             ifx! {is_first_row => {
                 require!(self.cur.expr() => 0);
             }}
-            require!(self.tag(), self.next => self.cur.expr() + lookup_table.0);
+            let description = format!("{:?}", self.tag());
+            require!(description, self.next => self.cur.expr() + lookup_table.0);
         });
     }
 
@@ -249,8 +237,8 @@ impl<F: Field> MemoryBank<F> {
         )
     }
 
-    pub(crate) fn tag(&self) -> String {
-        self.tag.clone()
+    pub(crate) fn tag(&self) -> C {
+        self.tag
     }
 
     pub(crate) fn insert_key<V: Clone>(&self, key: V, values: &[V]) -> Vec<V> {

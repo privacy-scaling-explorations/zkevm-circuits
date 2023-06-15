@@ -36,7 +36,7 @@ impl<F: Field> StartConfig<F> {
             .cell_manager
             .as_mut()
             .unwrap()
-            .reset(meta, StartRowType::Count as usize);
+            .reset(StartRowType::Count as usize);
         let mut config = StartConfig::default();
 
         circuit!([meta, cb], {
@@ -57,6 +57,7 @@ impl<F: Field> StartConfig<F> {
                 &ctx.memory[main_memory()],
                 [
                     config.proof_type.expr(),
+                    false.expr(),
                     false.expr(),
                     0.expr(),
                     root[true.idx()].expr(),
@@ -113,6 +114,7 @@ impl<F: Field> StartConfig<F> {
             &mut pv.memory[main_memory()],
             start.proof_type as usize,
             false,
+            false.scalar(),
             0.scalar(),
             root[true.idx()],
             root[false.idx()],

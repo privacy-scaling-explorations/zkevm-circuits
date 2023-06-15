@@ -43,7 +43,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
             .cell_manager
             .as_mut()
             .unwrap()
-            .reset(meta, ExtensionBranchRowType::Count as usize);
+            .reset(ExtensionBranchRowType::Count as usize);
         let mut config = ExtensionBranchConfig::default();
 
         circuit!([meta, cb], {

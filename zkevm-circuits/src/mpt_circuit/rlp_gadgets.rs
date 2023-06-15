@@ -2,11 +2,12 @@ use crate::{
     _cb, circuit,
     circuit_tools::{
         cached_region::{CachedRegion, ChallengeSet},
-        cell_manager::{Cell, EvmCellType},
+        cell_manager::Cell,
         constraint_builder::{ConstraintBuilder, RLCable, RLCableValue},
     },
     matchw,
     mpt_circuit::{
+        helpers::FIXED,
         param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT},
         FixedTableTag,
     },
@@ -88,7 +89,7 @@ impl<F: Field> RLPListGadget<F> {
                 is_short.expr(),
                 is_long.expr(),
                 is_very_long.expr(),
-                ] => @"fixed"
+                ] => @FIXED
             );
 
             RLPListGadget {
@@ -321,7 +322,7 @@ impl<F: Field> RLPValueGadget<F> {
                 is_short.expr(),
                 is_long.expr(),
                 is_very_long.expr(),
-                ] => @"fixed"
+                ] => @FIXED
             );
 
             RLPValueGadget {
