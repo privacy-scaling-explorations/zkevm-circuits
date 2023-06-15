@@ -1038,6 +1038,7 @@ pub struct DriftedGadget<F> {
 impl<F: Field> DriftedGadget<F> {
     pub(crate) fn construct(
         cb: &mut MPTConstraintBuilder<F>,
+        value_list_num_bytes: &[Expression<F>],
         parent_data: &[ParentData<F>],
         key_data: &[KeyData<F>],
         expected_key_rlc: &[Expression<F>],
@@ -1052,7 +1053,12 @@ impl<F: Field> DriftedGadget<F> {
                 for is_s in [true, false] {
                     ifx! {parent_data[is_s.idx()].is_placeholder.expr() => {
                         // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
-                        // TODO(Brecht): Length can change so need to add RLP consistency checks?
+
+                        // Make sure the RLP is still consistent with the new key part
+                        require!(
+                            config.drifted_rlp_key.rlp_list.len()
+                                => config.drifted_rlp_key.key_value.num_bytes() + value_list_num_bytes[is_s.idx()].clone()
+                            );
 
                         // Calculate the drifted key RLC
                         // Get the key RLC for the drifted branch
