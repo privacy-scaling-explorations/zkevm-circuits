@@ -3,12 +3,12 @@ use crate::{
     circuit_tools::{
         cached_region::{CachedRegion, ChallengeSet},
         cell_manager::Cell,
-        constraint_builder::{ConstraintBuilder, RLCable, RLCableValue}, gadgets::LtGadget,
+        constraint_builder::{ConstraintBuilder, RLCable, RLCableValue},
     },
     matchw,
     mpt_circuit::{
         helpers::FIXED,
-        param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT, MAIN_RLP_LIST_MAX, MAIN_RLP_STRING_MAX},
+        param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT},
         FixedTableTag,
     },
     util::Expr,
@@ -195,7 +195,6 @@ impl<F: Field> RLPListGadget<F> {
 }
 
 impl RLPListWitness {
-
     pub(crate) fn is_list(&self) -> bool {
         !self.is_string
     }
@@ -628,7 +627,6 @@ impl<F: Field> RLPItemGadget<F> {
             bytes: bytes.to_vec(),
         })
     }
-    
 
     pub(crate) fn is_string(&self) -> Expression<F> {
         self.value.is_string()

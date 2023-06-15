@@ -139,7 +139,8 @@ impl<F: Field> MPTContext<F> {
         require_string: bool,
     ) -> RLPItemView<F> {
         // TODO(Brecht): Add RLP limitations like max num bytes
-        self.rlp_item.create_view(meta, cb, idx, false, require_string)
+        self.rlp_item
+            .create_view(meta, cb, idx, false, require_string)
     }
 
     pub(crate) fn nibbles(

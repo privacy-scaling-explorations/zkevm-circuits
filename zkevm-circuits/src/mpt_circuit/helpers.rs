@@ -12,7 +12,10 @@ use crate::{
     evm_circuit::table::Table,
     matchw,
     mpt_circuit::{
-        param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN, MAIN_RLP_STRING_MAX, MAIN_RLP_LIST_MAX},
+        param::{
+            EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN,
+            MAIN_RLP_LIST_MAX, MAIN_RLP_STRING_MAX,
+        },
         rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble},
     },
     util::{Challenges, Expr},
@@ -20,7 +23,7 @@ use crate::{
 use eth_types::Field;
 use gadgets::util::{not, or, pow, Scalar};
 use halo2_proofs::{
-    circuit::{Value, AssignedCell},
+    circuit::Value,
     plonk::{Error, Expression, VirtualCells},
 };
 
@@ -1290,7 +1293,8 @@ impl<F: Field> MainRLPGadget<F> {
             true => MAIN_RLP_STRING_MAX,
             false => MAIN_RLP_LIST_MAX,
         };
-        self.below_limit.assign(region, offset, rlp_witness.len().scalar(), max_len.scalar())?;
+        self.below_limit
+            .assign(region, offset, rlp_witness.len().scalar(), max_len.scalar())?;
 
         // Store RLP properties for easy access
         self.num_bytes

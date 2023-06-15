@@ -71,7 +71,7 @@ impl<F: Field> StorageLeafConfig<F> {
             ];
             config.value_rlp_bytes = [cb.base.query_bytes(), cb.base.query_bytes()];
             let value_item = [
-                ctx.rlp_item(meta, cb, StorageRowType::ValueS as usize , false),
+                ctx.rlp_item(meta, cb, StorageRowType::ValueS as usize, false),
                 ctx.rlp_item(meta, cb, StorageRowType::ValueC as usize, false),
             ];
             let drifted_item = ctx.rlp_item(meta, cb, StorageRowType::Drifted as usize, false);
