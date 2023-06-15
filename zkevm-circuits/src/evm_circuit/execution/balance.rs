@@ -25,7 +25,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct BalanceGadget<F> {
     same_context: SameContextGadget<F>,
-    address: Word<F>,
+    address_word: Word<F>,
     reversion_info: ReversionInfo<F>,
     tx_id: Cell<F>,
     is_warm: Cell<F>,
@@ -92,7 +92,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
 
         Self {
             same_context,
-            address,
+            address_word: address,
             reversion_info,
             tx_id,
             is_warm,
@@ -113,8 +113,8 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let address = block.rws[step.rw_indices[0]].stack_value();
-        self.address
+        let address = block.get_rws(step, 0).stack_value();
+        self.address_word
             .assign(region, offset, Some(address.to_le_bytes()))?;
 
         self.tx_id
@@ -127,11 +127,11 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             call.is_persistent,
         )?;
 
-        let (_, is_warm) = block.rws[step.rw_indices[4]].tx_access_list_value_pair();
+        let (_, is_warm) = block.get_rws(step, 4).tx_access_list_value_pair();
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let code_hash = block.rws[step.rw_indices[5]].account_value_pair().0;
+        let code_hash = block.get_rws(step, 5).account_value_pair().0;
         self.code_hash
             .assign(region, offset, Some(code_hash.to_le_bytes()))?;
         self.not_exists
@@ -139,7 +139,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         let balance = if code_hash.is_zero() {
             eth_types::Word::zero()
         } else {
-            block.rws[step.rw_indices[6]].account_value_pair().0
+            block.get_rws(step, 6).account_value_pair().0
         };
         self.balance
             .assign(region, offset, Some(balance.to_le_bytes()))?;

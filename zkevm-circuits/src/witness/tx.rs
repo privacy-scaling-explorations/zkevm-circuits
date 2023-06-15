@@ -4,10 +4,10 @@ use halo2_proofs::circuit::Value;
 
 use crate::{evm_circuit::util::rlc, table::TxContextFieldTag, util::Challenges};
 
-use super::{step::step_convert, Call, ExecStep};
+use super::{Call, ExecStep};
 
 /// Transaction in a witness block
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone)]
 pub struct Transaction {
     /// The transaction identifier in the block
     pub id: usize,
@@ -135,6 +135,6 @@ pub(super) fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> 
         call_data_length: tx.tx.call_data.len(),
         call_data_gas_cost: tx.tx.call_data_gas_cost(),
         calls: tx.calls().to_vec(),
-        steps: tx.steps().iter().map(step_convert).collect(),
+        steps: tx.steps().to_vec(),
     }
 }

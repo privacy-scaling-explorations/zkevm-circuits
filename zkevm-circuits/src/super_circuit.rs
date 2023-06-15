@@ -98,17 +98,17 @@ pub struct SuperCircuitConfig<F: Field> {
 }
 
 /// Circuit configuration arguments
-pub struct SuperCircuitConfigArgs {
+pub struct SuperCircuitConfigArgs<F: Field> {
     /// Max txs
     pub max_txs: usize,
     /// Max calldata
     pub max_calldata: usize,
     /// Mock randomness
-    pub mock_randomness: u64,
+    pub mock_randomness: F,
 }
 
 impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
-    type ConfigArgs = SuperCircuitConfigArgs;
+    type ConfigArgs = SuperCircuitConfigArgs<F>;
 
     /// Configure SuperCircuitConfig
     fn new(
@@ -131,9 +131,8 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
 
         // Use a mock randomness instead of the randomness derived from the challange
         // (either from mock or real prover) to help debugging assignments.
-        let power_of_randomness: [Expression<F>; 31] = array::from_fn(|i| {
-            Expression::Constant(F::from(mock_randomness).pow([1 + i as u64, 0, 0, 0]))
-        });
+        let power_of_randomness: [Expression<F>; 31] =
+            array::from_fn(|i| Expression::Constant(mock_randomness.pow([1 + i as u64, 0, 0, 0])));
 
         let challenges = Challenges::mock(
             power_of_randomness[0].clone(),
@@ -225,12 +224,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
 
 /// The Super Circuit contains all the zkEVM circuits
 #[derive(Clone, Default, Debug)]
-pub struct SuperCircuit<
-    F: Field,
-    const MAX_TXS: usize,
-    const MAX_CALLDATA: usize,
-    const MOCK_RANDOMNESS: u64,
-> {
+pub struct SuperCircuit<F: Field> {
     /// EVM Circuit
     pub evm_circuit: EvmCircuit<F>,
     /// State Circuit
@@ -247,15 +241,16 @@ pub struct SuperCircuit<
     pub exp_circuit: ExpCircuit<F>,
     /// Keccak Circuit
     pub keccak_circuit: KeccakCircuit<F>,
+    /// Circuits Parameters
+    pub circuits_params: CircuitsParams,
+    /// Mock randomness
+    pub mock_randomness: F,
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDOMNESS: u64>
-    SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS>
-{
+impl<F: Field> SuperCircuit<F> {
     /// Return the number of rows required to verify a given block
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
         let num_rows_evm_circuit = EvmCircuit::<F>::get_num_rows_required(block);
-        assert_eq!(block.circuits_params.max_txs, MAX_TXS);
         let num_rows_tx_circuit =
             TxCircuitConfig::<F>::get_num_rows_required(block.circuits_params.max_txs);
         num_rows_evm_circuit.max(num_rows_tx_circuit)
@@ -265,9 +260,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
 // Eventhough the SuperCircuit is not a subcircuit we implement the SubCircuit
 // trait for it in order to get the `new_from_block` and `instance` methods that
 // allow us to generalize integration tests.
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDOMNESS: u64>
-    SubCircuit<F> for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS>
-{
+impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
     type Config = SuperCircuitConfig<F>;
 
     fn unusable_rows() -> usize {
@@ -294,7 +287,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
         let exp_circuit = ExpCircuit::new_from_block(block);
         let keccak_circuit = KeccakCircuit::new_from_block(block);
 
-        SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS> {
+        SuperCircuit::<_> {
             evm_circuit,
             state_circuit,
             tx_circuit,
@@ -303,6 +296,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
             copy_circuit,
             exp_circuit,
             keccak_circuit,
+            circuits_params: block.circuits_params,
+            mock_randomness: block.randomness,
         }
     }
 
@@ -368,25 +363,44 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
     }
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDOMNESS: u64>
-    Circuit<F> for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS>
-{
+/// Super Circuit configuration parameters
+#[derive(Default)]
+pub struct SuperCircuitParams<F: Field> {
+    max_txs: usize,
+    max_calldata: usize,
+    mock_randomness: F,
+}
+
+impl<F: Field> Circuit<F> for SuperCircuit<F> {
     type Config = SuperCircuitConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = SuperCircuitParams<F>;
 
     fn without_witnesses(&self) -> Self {
         Self::default()
     }
 
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+    fn params(&self) -> Self::Params {
+        SuperCircuitParams {
+            max_txs: self.circuits_params.max_txs,
+            max_calldata: self.circuits_params.max_calldata,
+            mock_randomness: self.mock_randomness,
+        }
+    }
+
+    fn configure_with_params(meta: &mut ConstraintSystem<F>, params: Self::Params) -> Self::Config {
         Self::Config::new(
             meta,
             SuperCircuitConfigArgs {
-                max_txs: MAX_TXS,
-                max_calldata: MAX_CALLDATA,
-                mock_randomness: MOCK_RANDOMNESS,
+                max_txs: params.max_txs,
+                max_calldata: params.max_calldata,
+                mock_randomness: params.mock_randomness,
             },
         )
+    }
+
+    fn configure(_meta: &mut ConstraintSystem<F>) -> Self::Config {
+        unreachable!();
     }
 
     fn synthesize(
@@ -416,9 +430,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
     }
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDOMNESS: u64>
-    SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS>
-{
+impl<F: Field> SuperCircuit<F> {
     /// From the witness data, generate a SuperCircuit instance with all of the
     /// sub-circuits filled with their corresponding witnesses.
     ///
@@ -428,6 +440,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
     pub fn build(
         geth_data: GethData,
         circuits_params: CircuitsParams,
+        mock_randomness: F,
     ) -> Result<(u32, Self, Vec<Vec<F>>, CircuitInputBuilder), bus_mapping::Error> {
         let block_data =
             BlockData::new_from_geth_data_with_params(geth_data.clone(), circuits_params);
@@ -436,7 +449,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
             .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
             .expect("could not handle block tx");
 
-        let ret = Self::build_from_circuit_input_builder(&builder)?;
+        let ret = Self::build_from_circuit_input_builder(&builder, mock_randomness)?;
         Ok((ret.0, ret.1, ret.2, builder))
     }
 
@@ -447,18 +460,16 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
     /// the Public Inputs needed.
     pub fn build_from_circuit_input_builder(
         builder: &CircuitInputBuilder,
+        mock_randomness: F,
     ) -> Result<(u32, Self, Vec<Vec<F>>), bus_mapping::Error> {
         let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
-        block.randomness = F::from(MOCK_RANDOMNESS);
-        assert_eq!(block.circuits_params.max_txs, MAX_TXS);
-        assert_eq!(block.circuits_params.max_calldata, MAX_CALLDATA);
+        block.randomness = mock_randomness;
 
         let (_, rows_needed) = Self::min_num_rows_block(&block);
         let k = log2_ceil(Self::unusable_rows() + rows_needed);
         log::debug!("super circuit uses k = {}", k);
 
-        let circuit =
-            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS>::new_from_block(&block);
+        let circuit = SuperCircuit::new_from_block(&block);
 
         let instance = circuit.instance();
         Ok((k, circuit, instance))

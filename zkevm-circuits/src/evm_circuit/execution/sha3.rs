@@ -114,8 +114,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let [memory_offset, size, sha3_output] =
-            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
-                .map(|idx| block.rws[idx].stack_value());
+            [0, 1, 2].map(|idx| block.get_rws(step, idx).stack_value());
         let memory_address = self
             .memory_address
             .assign(region, offset, memory_offset, size)?;
@@ -132,7 +131,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         )?;
 
         let values: Vec<u8> = (3..3 + (size.low_u64() as usize))
-            .map(|i| block.rws[step.rw_indices[i]].memory_value())
+            .map(|i| block.get_rws(step, i).memory_value())
             .collect();
 
         let rlc_acc = region
@@ -158,14 +157,12 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 #[cfg(test)]
 mod tests {
     use crate::test_util::CircuitTestBuilder;
-    use bus_mapping::{
-        circuit_input_builder::CircuitsParams,
-        evm::{gen_sha3_code, MemoryKind},
-    };
+    use bus_mapping::{circuit_input_builder::CircuitsParams, evm::Sha3CodeGen};
+    use eth_types::{bytecode, U256};
     use mock::TestContext;
 
-    fn test_ok(offset: usize, size: usize, mem_kind: MemoryKind) {
-        let (code, _) = gen_sha3_code(offset, size, mem_kind);
+    fn test_ok(mut gen: Sha3CodeGen) {
+        let (code, _) = gen.gen_sha3_code();
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
         )
@@ -178,22 +175,36 @@ mod tests {
 
     #[test]
     fn sha3_gadget_zero_length() {
-        test_ok(0x20, 0x00, MemoryKind::MoreThanSize);
+        test_ok(Sha3CodeGen::mem_gt_size(0x20, 0x00));
     }
 
     #[test]
     fn sha3_gadget_simple() {
-        test_ok(0x00, 0x08, MemoryKind::Empty);
-        test_ok(0x10, 0x10, MemoryKind::LessThanSize);
-        test_ok(0x24, 0x16, MemoryKind::EqualToSize);
-        test_ok(0x32, 0x78, MemoryKind::MoreThanSize);
+        test_ok(Sha3CodeGen::mem_empty(0x00, 0x08));
+        test_ok(Sha3CodeGen::mem_lt_size(0x10, 0x10));
+        test_ok(Sha3CodeGen::mem_eq_size(0x24, 0x16));
+        test_ok(Sha3CodeGen::mem_gt_size(0x32, 0x78));
     }
 
     #[test]
     fn sha3_gadget_large() {
-        test_ok(0x101, 0x202, MemoryKind::Empty);
-        test_ok(0x202, 0x303, MemoryKind::LessThanSize);
-        test_ok(0x303, 0x404, MemoryKind::EqualToSize);
-        test_ok(0x404, 0x505, MemoryKind::MoreThanSize);
+        test_ok(Sha3CodeGen::mem_empty(0x101, 0x202));
+        test_ok(Sha3CodeGen::mem_lt_size(0x202, 0x303));
+        test_ok(Sha3CodeGen::mem_eq_size(0x303, 0x404));
+        test_ok(Sha3CodeGen::mem_gt_size(0x404, 0x505));
+    }
+
+    #[test]
+    fn sha3_gadget_overflow_offset_and_zero_size() {
+        let bytecode = bytecode! {
+            PUSH1(0)
+            PUSH32(U256::MAX)
+            SHA3
+        };
+
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 }

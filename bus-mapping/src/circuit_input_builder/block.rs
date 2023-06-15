@@ -7,7 +7,7 @@ use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
 };
-use eth_types::{evm_unimplemented, Address, Hash, Word};
+use eth_types::{evm_unimplemented, Address, Word};
 use std::collections::HashMap;
 
 /// Context of a [`Block`] which can mutate in a [`Transaction`].
@@ -86,7 +86,6 @@ pub struct Block {
     pub sha3_inputs: Vec<Vec<u8>>,
     /// Exponentiation events in the block.
     pub exp_events: Vec<ExpEvent>,
-    code: HashMap<Hash, Vec<u8>>,
     /// Circuits Setup Paramteres
     pub circuits_params: CircuitsParams,
     /// Original block from geth
@@ -139,7 +138,6 @@ impl Block {
             },
             copy_events: Vec::new(),
             exp_events: Vec::new(),
-            code: HashMap::new(),
             sha3_inputs: Vec::new(),
             circuits_params,
             eth_block: eth_block.clone(),

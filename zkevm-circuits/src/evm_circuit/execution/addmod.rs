@@ -159,9 +159,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         // get stack values
-        let [mut r, n, b, a] = [3, 2, 1, 0]
-            .map(|idx| step.rw_indices[idx])
-            .map(|idx| block.rws[idx].stack_value());
+        let [mut r, n, b, a] = [3, 2, 1, 0].map(|index| block.get_rws(step, index).stack_value());
 
         // assing a,b & n stack values
         self.a.assign(region, offset, Some(a.to_le_bytes()))?;

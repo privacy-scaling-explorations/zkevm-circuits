@@ -102,7 +102,7 @@ impl Opcode for Sstore {
             TxRefundOp {
                 tx_id: state.tx_ctx.id(),
                 value_prev: state.sdb.refund(),
-                value: geth_step.refund.0,
+                value: geth_step.refund,
             },
         )?;
 

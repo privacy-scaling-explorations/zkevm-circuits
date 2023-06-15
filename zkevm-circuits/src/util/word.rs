@@ -253,7 +253,7 @@ impl<T: Clone> Word<T> {
         (lo, hi)
     }
 
-    /// Wrap `Word` into into `Word<Value>`
+    /// Wrap `Word` into `Word<Value>`
     pub fn into_value(self) -> Word<Value<T>> {
         let [lo, hi] = self.0.limbs;
         Word::new([Value::known(lo), Value::known(hi)])

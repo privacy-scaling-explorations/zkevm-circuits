@@ -12,7 +12,7 @@ use crate::{
 use ecc::{maingate, EccConfig, GeneralEccChip};
 use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
 use eth_types::{
-    self,
+    self, keccak256,
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
     Field,
 };
@@ -33,7 +33,6 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
 use itertools::Itertools;
-use keccak256::plain::Keccak;
 use log::error;
 use maingate::{
     AssignedValue, MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig,
@@ -544,15 +543,11 @@ impl<F: Field> SignVerifyChip<F> {
 
         let pk_le = pk_bytes_le(&sign_data.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
-        let mut pk_hash = (!padding)
-            .then(|| {
-                let mut keccak = Keccak::default();
-                keccak.update(&pk_be);
-                let hash: [_; 32] = keccak.digest().try_into().expect("vec to array of size 32");
-                hash
-            })
-            .unwrap_or_default();
-
+        let pk_hash = (!padding)
+            .then(|| keccak256(&pk_be))
+            .unwrap_or_default()
+            .map(|byte| Value::known(F::from(byte as u64)));
+        let pk_hash_hi = pk_hash[..12].to_vec();
         // Ref. spec SignVerifyChip 2. Verify that the first 20 bytes of the
         // pub_key_hash equal the address
         let (address, is_address_zero, is_address_zero_single) = {
@@ -777,6 +772,7 @@ mod sign_verify_tests {
     impl<F: Field> Circuit<F> for TestCircuitSignVerify<F> {
         type Config = TestCircuitSignVerifyConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()
