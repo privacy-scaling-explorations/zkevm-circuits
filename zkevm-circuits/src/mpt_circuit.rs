@@ -149,7 +149,6 @@ impl<F: Field> MPTContext<F> {
         cb: &mut MPTConstraintBuilder<F>,
         idx: usize,
     ) -> RLPItemView<F> {
-        // are nibbles string?
         self.rlp_item.create_view(meta, cb, idx, true, false)
     }
 }
