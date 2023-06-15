@@ -167,18 +167,14 @@ impl SignVerifyConfig {
             // When address is 0, we disable the signature verification by using a dummy pk,
             // msg_hash and signature which is not constrained to match msg_hash nor the address.
             // Layout:
-            // | q_keccak |          a      |         b        |    c     |     d     |   rlc   |
-            // | -------- | --------------- | ---------------- |--------- | --------- | ------- |
-            // |     1    | is_addr_zero_lo |  is_addr_zero_hi |  word_lo |  word_hi  |  pk_rlc |
+            // | q_keccak |        a        |    b     |     c     |   rlc   |
+            // | -------- | --------------- |--------- | --------- | ------- |
+            // |     1    |   is_addr_zero  | word_lo  |  word_hi  |  pk_rlc |
             let q_keccak = meta.query_selector(q_keccak);
-            let is_address_zero_lo =
-                meta.query_advice(main_gate_config.advices()[0], Rotation::cur());
-            let is_address_zero_hi =
-                meta.query_advice(main_gate_config.advices()[1], Rotation::cur());
-            let is_enable = q_keccak * not::expr(is_address_zero_hi + is_address_zero_lo);
-            let word_lo = meta.query_advice(main_gate_config.advices()[2], Rotation::cur());
-            let word_hi = meta.query_advice(main_gate_config.advices()[3], Rotation::cur());
-
+            let is_address_zero = meta.query_advice(main_gate_config.advices()[0], Rotation::cur());
+            let is_enable = q_keccak * not::expr(is_address_zero);
+            let word_lo = meta.query_advice(main_gate_config.advices()[1], Rotation::cur());
+            let word_hi = meta.query_advice(main_gate_config.advices()[2], Rotation::cur());
             let input = [
                 is_enable.clone(),
                 is_enable.clone() * meta.query_advice(rlc, Rotation::cur()),
@@ -333,7 +329,7 @@ fn integer_to_bytes_le<F: Field, FE: PrimeField>(
 }
 
 /// Helper structure pass around references to all the chips required for an
-/// ECDSA veficication.
+/// ECDSA verification.
 struct ChipsRef<'a, F: Field, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> {
     main_gate: &'a MainGate<F>,
     range_chip: &'a RangeChip<F>,
@@ -424,12 +420,12 @@ impl<F: Field> SignVerifyChip<F> {
         ]);
         let cell_word_lo = ctx.assign_advice(
             || "{name}_lo",
-            config.main_gate_config.advices()[2],
+            config.main_gate_config.advices()[1],
             input_word.lo(),
         )?;
         let cell_word_hi = ctx.assign_advice(
             || "{name}_hi",
-            config.main_gate_config.advices()[3],
+            config.main_gate_config.advices()[2],
             input_word.hi(),
         )?;
         ctx.next();
@@ -500,20 +496,20 @@ impl<F: Field> SignVerifyChip<F> {
         copy(
             ctx,
             "is_address_zero",
-            config.main_gate_config.advices()[1],
+            config.main_gate_config.advices()[0],
             is_address_zero,
         )?;
         copy(ctx, "pk_rlc", config.rlc, pk_rlc)?;
         copy(
             ctx,
             "pk_hash_lo",
-            config.main_gate_config.advices()[2],
+            config.main_gate_config.advices()[1],
             &pk_hash.lo(),
         )?;
         copy(
             ctx,
             "pk_hash_hi",
-            config.main_gate_config.advices()[3],
+            config.main_gate_config.advices()[2],
             &pk_hash.hi(),
         )?;
         ctx.next();
@@ -540,11 +536,8 @@ impl<F: Field> SignVerifyChip<F> {
 
         let pk_le = pk_bytes_le(&sign_data.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
-        let pk_hash = (!padding)
-            .then(|| keccak256(&pk_be))
-            .unwrap_or_default()
-            .map(|byte| Value::known(F::from(byte as u64)));
-        let pk_hash_hi = pk_hash[..12].to_vec();
+        let mut pk_hash = (!padding).then(|| keccak256(&pk_be)).unwrap_or_default();
+
         // Ref. spec SignVerifyChip 2. Verify that the first 20 bytes of the
         // pub_key_hash equal the address
         let address = {
@@ -565,16 +558,13 @@ impl<F: Field> SignVerifyChip<F> {
                 main_gate.decompose(ctx, terms_hi_lo.0, F::ZERO, |_, _| Ok(()))?;
             let (address_lo, _) =
                 main_gate.decompose(ctx, terms_hi_lo.1, F::ZERO, |_, _| Ok(()))?;
-            let address = Word::new([address_lo.clone(), address_hi.clone()]);
 
-            address
+            Word::new([address_lo, address_hi])
         };
 
-        let is_address_zero = main_gate.and(
-            ctx,
-            &main_gate.is_zero(ctx, &address.lo())?,
-            &main_gate.is_zero(ctx, &address.hi())?,
-        )?;
+        let iz_zero_hi = main_gate.is_zero(ctx, &address.hi())?;
+        let iz_zero_lo = main_gate.is_zero(ctx, &address.lo())?;
+        let is_address_zero = main_gate.and(ctx, &iz_zero_lo, &iz_zero_hi)?;
 
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
         // with RLC encoding corresponds to msg_hash
