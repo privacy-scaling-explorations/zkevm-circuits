@@ -1208,7 +1208,7 @@ impl<F: Field> WrongGadget<F> {
 pub struct MainRLPGadget<F> {
     bytes: Vec<Cell<F>>,
     rlp: RLPItemGadget<F>,
-    below_limit: LtGadget<F, 2>,
+    below_limit: LtGadget<F, 1>,
     num_bytes: Cell<F>,
     len: Cell<F>,
     mult_diff: Cell<F>,
