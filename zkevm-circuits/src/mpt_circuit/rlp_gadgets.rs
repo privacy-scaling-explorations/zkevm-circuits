@@ -33,9 +33,9 @@ pub(crate) fn decode_rlp(byte: u8) -> (bool, bool, bool, bool) {
         let mut is_long = false;
         let mut is_very_long = false;
         match byte {
-            0..=RLP_SHORT_INCLUSIVE => is_short = true, // (0, 127] 直接翻译 'a','b','3',...
-            RLP_SHORT..=RLP_LONG => is_long = true, // (128, 183] 长度 = x-128 
-            RLP_LONG_EXCLUSIVE..=RLP_VALUE_MAX => is_very_long = true, // (184, 191] len_byte = x-184
+            0..=RLP_SHORT_INCLUSIVE => is_short = true,
+            RLP_SHORT..=RLP_LONG => is_long = true,
+            RLP_LONG_EXCLUSIVE..=RLP_VALUE_MAX => is_very_long = true,
             _ => unreachable!(),
         }
         (false, is_short, is_long, is_very_long)
@@ -152,7 +152,7 @@ impl<F: Field> RLPListGadget<F> {
             matchx! {
                 self.is_short() => 1.expr(),
                 self.is_long() => 2.expr(),
-                self.is_very_long() => 3.expr(), // 最多250=248+2
+                self.is_very_long() => 3.expr(),
             }
         })
     }
@@ -386,7 +386,7 @@ impl<F: Field> RLPValueGadget<F> {
             matchx! {
                 self.is_short() => 0.expr(),
                 self.is_long() => 1.expr(),
-                self.is_very_long() => 2.expr(), //不能大于184=183+1，即（184,len) 
+                self.is_very_long() => 2.expr(),
             }
         })
     }
@@ -412,7 +412,6 @@ impl<F: Field> RLPValueGadget<F> {
                 self.is_short() => 1.expr(),
                 self.is_long() => get_len_short::expr(self.bytes[0].expr()),
                 self.is_very_long() => {
-                    // 这里都拒绝意味着string最长183-128=55
                     unreachablex!();
                     0.expr()
                 },
@@ -597,8 +596,6 @@ pub(crate) mod get_num_bytes_list_short {
 pub(crate) struct RLPItemGadget<F> {
     pub(crate) value: RLPValueGadget<F>,
     pub(crate) list: RLPListGadget<F>,
-    // pub(crate) value_limit: LtGadget<F, 2>,
-    // pub(crate) list_limit: LtGadget<F, 2>,
 }
 
 #[derive(Clone, Debug, Default)]
