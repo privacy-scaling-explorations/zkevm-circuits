@@ -1,6 +1,7 @@
 package gethutil
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/big"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/trie"
 )
 
 // Copied from github.com/ethereum/go-ethereum/internal/ethapi.ExecutionResult
@@ -164,16 +166,16 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 			txAccessList[i].StorageKeys = accessList.StorageKeys
 		}
 		messages[i] = core.Message{
-			From: tx.From,
-			To: tx.To,
-			Nonce: uint64(tx.Nonce),
-			Value: toBigInt(tx.Value),
-			GasLimit: uint64(tx.GasLimit),
-			GasPrice: toBigInt(tx.GasPrice),
-			GasFeeCap: toBigInt(tx.GasFeeCap),
-			GasTipCap: toBigInt(tx.GasTipCap),
-			Data: tx.CallData,
-			AccessList: txAccessList,
+			From:              tx.From,
+			To:                tx.To,
+			Nonce:             uint64(tx.Nonce),
+			Value:             toBigInt(tx.Value),
+			GasLimit:          uint64(tx.GasLimit),
+			GasPrice:          toBigInt(tx.GasPrice),
+			GasFeeCap:         toBigInt(tx.GasFeeCap),
+			GasTipCap:         toBigInt(tx.GasTipCap),
+			Data:              tx.CallData,
+			AccessList:        txAccessList,
 			SkipAccountChecks: false,
 		}
 
@@ -207,8 +209,10 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	}
 
 	// Setup state db with accounts from argument
-	stateDB, _ := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
+	// Set `Preimages: true` in Database so that Dumps work as expected.  See https://github.com/ethereum/go-ethereum/pull/26955
+	stateDB, _ := state.New(common.Hash{}, state.NewDatabaseWithConfig(rawdb.NewMemoryDatabase(), &trie.Config{Preimages: true}), nil)
 	for address, account := range config.Accounts {
+		fmt.Printf("address=%v\n", address)
 		stateDB.SetNonce(address, uint64(account.Nonce))
 		stateDB.SetCode(address, account.Code)
 		if account.Balance != nil {
@@ -219,6 +223,12 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		}
 	}
 	stateDB.Finalise(true)
+	if _, err := stateDB.Commit(true); err != nil {
+		panic(err)
+	}
+	fmt.Printf("Before\n%v\n", string(stateDB.Dump(nil)))
+
+	// DBG
 
 	// Run the transactions with tracing enabled.
 	executionResults := make([]*ExecutionResult, len(config.Transactions))
@@ -239,6 +249,17 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 			StructLogs:  FormatLogs(tracer.StructLogs()),
 		}
 	}
+	for _, res := range executionResults {
+		json, err := json.MarshalIndent(res, "", "    ")
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("%v\n", string(json))
+	}
+	if _, err := stateDB.Commit(true); err != nil {
+		panic(err)
+	}
+	fmt.Printf("After\n%v\n", string(stateDB.Dump(nil)))
 
 	return executionResults, nil
 }

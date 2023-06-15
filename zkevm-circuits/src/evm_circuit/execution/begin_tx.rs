@@ -854,6 +854,119 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
+    // Successfult Deploy
+    #[test]
+    fn test_begin_edu_0() {
+        let code = bytecode! {
+            // [ADDRESS, STOP]
+            PUSH32(word!("3000000000000000000000000000000000000000000000000000000000000000"))
+            PUSH1(0)
+            MSTORE
+
+            PUSH1(2)
+            PUSH1(0)
+            RETURN
+        };
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20)).nonce(21);
+                accs[1].address(MOCK_ACCOUNTS[1]).balance(eth(10)).nonce(10);
+            },
+            |mut txs, _accs| {
+                txs[0]
+                    .from(MOCK_ACCOUNTS[0])
+                    .nonce(21)
+                    .gas_price(gwei(2))
+                    .gas(Word::from(0x10000))
+                    .value(eth(2))
+                    .input(code.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
+    // REVERT in Deploy
+    // Contract is not deployed, transfer is not applied
+    // Nonce is bumped at sender
+    #[test]
+    fn test_begin_edu_1() {
+        let code = bytecode! {
+            // [ADDRESS, STOP]
+            PUSH32(word!("3000000000000000000000000000000000000000000000000000000000000000"))
+            PUSH1(0)
+            MSTORE
+
+            PUSH1(2)
+            PUSH1(0)
+            REVERT
+        };
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20)).nonce(21);
+                accs[1].address(MOCK_ACCOUNTS[1]).balance(eth(10)).nonce(10);
+            },
+            |mut txs, _accs| {
+                txs[0]
+                    .from(MOCK_ACCOUNTS[0])
+                    .nonce(21)
+                    .gas_price(gwei(2))
+                    .gas(Word::from(0x10000))
+                    .value(eth(2))
+                    .input(code.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
+    // REVERT in Tx from A to B with transfer
+    // Transfer is not applied
+    // Nonce is bumped at sender
+    #[test]
+    fn test_begin_edu_2() {
+        let code = bytecode! {
+            // [ADDRESS, STOP]
+            PUSH32(word!("3000000000000000000000000000000000000000000000000000000000000000"))
+            PUSH1(0)
+            MSTORE
+
+            PUSH1(2)
+            PUSH1(0)
+            REVERT
+        };
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20)).nonce(21);
+                accs[1]
+                    .address(MOCK_ACCOUNTS[1])
+                    .balance(eth(10))
+                    .nonce(10)
+                    .code(code);
+            },
+            |mut txs, _accs| {
+                txs[0]
+                    .from(MOCK_ACCOUNTS[0])
+                    .to(MOCK_ACCOUNTS[1])
+                    .nonce(21)
+                    .gas_price(gwei(2))
+                    .gas(Word::from(0x10000))
+                    .value(eth(2));
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
     #[test]
     fn begin_tx_deploy_nonce_zero() {
         begin_tx_deploy(0);
