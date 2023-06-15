@@ -181,7 +181,6 @@ impl<F: Field> AccountLeafConfig<F> {
                     require!((1, leaf_rlc, rlp_key.rlp_list.num_bytes(), config.parent_data[is_s.idx()].rlc) => @KECCAK);
                 }}
 
-                // Cecilia: here copy
 
                 // Check the RLP encoding consistency.
                 //               node      l[0],value_rlp_bytes[0] <-(l[1] = [n, b, s, c])
