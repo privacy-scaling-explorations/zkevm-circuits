@@ -58,6 +58,7 @@ impl<F: Field> StartConfig<F> {
                 [
                     config.proof_type.expr(),
                     false.expr(),
+                    false.expr(),
                     0.expr(),
                     root[true.idx()].expr(),
                     root[false.idx()].expr(),
@@ -113,6 +114,7 @@ impl<F: Field> StartConfig<F> {
             &mut pv.memory[main_memory()],
             start.proof_type as usize,
             false,
+            false.scalar(),
             0.scalar(),
             root[true.idx()],
             root[false.idx()],
