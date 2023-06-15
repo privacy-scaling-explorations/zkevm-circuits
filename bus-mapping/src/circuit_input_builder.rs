@@ -254,11 +254,7 @@ impl CircuitInputBuilder<ConcreteCP> {
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<&CircuitInputBuilder<ConcreteCP>, Error> {
         // accumulates gas across all txs in the block
-        for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
-            let geth_trace = &geth_traces[tx_index];
-            self.handle_tx(tx, geth_trace, tx_index + 1 == eth_block.transactions.len())?;
-        }
-        self.set_value_ops_call_context_rwc_eor();
+        self.begin_handle_block(eth_block, geth_traces)?;
         self.set_end_block();
         Ok(self)
     }
@@ -318,6 +314,22 @@ impl CircuitInputBuilder<DynamicCP> {
     }
 }
 
+impl<C: CircuitsParams> CircuitInputBuilder<C> {
+    /// First part of handle_block, common for dynamic and static circuit parameters.
+    pub fn begin_handle_block(
+        &mut self,
+        eth_block: &EthBlock,
+        geth_traces: &[eth_types::GethExecTrace],
+    ) -> Result<(), Error> {
+        // accumulates gas across all txs in the block
+        for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
+            let geth_trace = &geth_traces[tx_index];
+            self.handle_tx(tx, geth_trace, tx_index + 1 == eth_block.transactions.len())?;
+        }
+        self.set_value_ops_call_context_rwc_eor();
+        Ok(())
+    }
+}
 impl CircuitInputBuilder<DynamicCP> {
     /// Handle a block by handling each transaction to generate all the
     /// associated operations. From these operations, the optimal circuit parameters
@@ -327,12 +339,9 @@ impl CircuitInputBuilder<DynamicCP> {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<CircuitInputBuilder<ConcreteCP>, Error> {
-        // accumulates gas across all txs in the block
-        for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
-            let geth_trace = &geth_traces[tx_index];
-            self.handle_tx(tx, geth_trace, tx_index + 1 == eth_block.transactions.len())?;
-        }
-        self.set_value_ops_call_context_rwc_eor();
+        self.begin_handle_block(eth_block, geth_traces)?;
+
+        // Compute subcircuits parameters
         let c_params = {
             let max_txs = eth_block.transactions.len();
             let max_bytecode = self.code_db.0.values().fold(0, |acc, a| acc + a.len() + 1);
@@ -368,7 +377,6 @@ impl CircuitInputBuilder<DynamicCP> {
                 max_keccak_rows,
             }
         };
-
         let mut cib = self.set_params(c_params);
 
         cib.set_end_block();
