@@ -202,7 +202,11 @@ impl<F: Field> StorageLeafConfig<F> {
             // Drifted leaf handling
             config.drifted = DriftedGadget::construct(
                 cb,
-                &config.rlp_value.iter().map(|value| value.num_bytes()).collect_vec(),
+                &config
+                    .rlp_value
+                    .iter()
+                    .map(|value| value.num_bytes())
+                    .collect_vec(),
                 &config.parent_data,
                 &config.key_data,
                 &key_rlc,
