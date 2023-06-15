@@ -63,7 +63,8 @@ impl<F: Field> ExtensionGadget<F> {
         circuit!([meta, cb], {
             // Data
             let key_items = [
-                ctx.rlp_item(meta, cb, ExtensionBranchRowType::KeyS as usize, true),
+                // Special case, requring string fail tests
+                ctx.rlp_item(meta, cb, ExtensionBranchRowType::KeyS as usize, false),
                 ctx.nibbles(meta, cb, ExtensionBranchRowType::KeyC as usize),
             ];
             let rlp_value = [
