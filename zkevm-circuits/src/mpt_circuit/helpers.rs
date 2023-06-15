@@ -1263,8 +1263,6 @@ impl<F: Field> MainRLPGadget<F> {
             // cells.
             cb.set_use_dynamic_lookup(true);
             for (idx, byte) in config.bytes.iter().enumerate() {
-                // endien problem
-                // after 3 bytes, the rest should be 0
                 require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()) => @FIXED);
             }
             cb.set_use_dynamic_lookup(false);
