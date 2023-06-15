@@ -650,7 +650,6 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
 
     #[cfg(feature = "circuit-params")]
     fn configure_with_params(meta: &mut ConstraintSystem<F>, param: Self::Params) -> Self::Config {
-        
         println!("Using two bytes lookup");
 
         let challenges = Challenges::construct(meta);
@@ -668,8 +667,8 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         let challenges = Challenges::construct(meta);
 
         (
-            MPTConfig::configure(meta, challenges_expr, keccak_table, param), 
-            challenges
+            MPTConfig::configure(meta, challenges_expr, keccak_table, param),
+            challenges,
         )
     }
 
