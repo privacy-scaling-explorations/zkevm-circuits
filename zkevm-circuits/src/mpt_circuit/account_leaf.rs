@@ -183,7 +183,6 @@ impl<F: Field> AccountLeafConfig<F> {
 
 
                 // Check the RLP encoding consistency.
-                //               node      l[0],value_rlp_bytes[0] <-(l[1] = [n, b, s, c])
                 // RLP encoding: account = [key, "[nonce, balance, storage, codehash]"]
                 // We always store between 55 and 256 bytes of data in the values list.
                 require!(value_rlp_bytes[0] => RLP_LONG + 1);
