@@ -557,11 +557,14 @@ impl<F: Field> MPTConfig<F> {
                 // when the unused columns start, the value that is used for the lookup in the last column is negative
                 // and thus a zero is enforced.
                 let max_length = 34i32;
-                if self.two_bytes_lookup {
-                    for (tag, range) in [
-                        (FixedTableTag::RangeKeyLen256, 256),
-                        (FixedTableTag::RangeKeyLen256, 16),
-                    ] {
+                for (tag, range) in [
+                    (FixedTableTag::RangeKeyLen256, 256),
+                    (FixedTableTag::RangeKeyLen16, 16),
+                ] {
+                    // When using two byte range check, we ensure the tuple within 
+                    // ([0..255], [0..255], [-67,.. odd numbers .., 67]) 
+                    // where n is the possible sum of any consecutive indexs of the first and second byte
+                    if self.two_bytes_lookup {
                         for n in -max_length..=max_length {
                             let range = if n <= 0 && range == 256 { 1 } else { range };
                             for idx1 in 0..range {
@@ -575,25 +578,21 @@ impl<F: Field> MPTConfig<F> {
                                 }
                             }
                         }
-                    }
-                } else {
-                    for (tag, range) in [
-                        (FixedTableTag::RangeKeyLen256, 256),
-                        (FixedTableTag::RangeKeyLen16, 16),
-                    ] {
-                        for n in -max_length..=max_length {
-                            let range = if n <= 0 && range == 256 { 1 } else { range };
-                            for idx in 0..range {
-                                let v = n.scalar();
-                                assignf!(region, (self.fixed_table[0], offset) => tag.scalar())?;
-                                assignf!(region, (self.fixed_table[1], offset) => idx.scalar())?;
-                                assignf!(region, (self.fixed_table[2], offset) => v)?;
-                                offset += 1;
-                            }
+                    } else {
+
+                    
+                    for n in -max_length..=max_length {
+                        let range = if n <= 0 && range == 256 { 1 } else { range };
+                        for idx in 0..range {
+                            let v = n.scalar();
+                            assignf!(region, (self.fixed_table[0], offset) => tag.scalar())?;
+                            assignf!(region, (self.fixed_table[1], offset) => idx.scalar())?;
+                            assignf!(region, (self.fixed_table[2], offset) => v)?;
+                            offset += 1;
                         }
                     }
                 }
-
+            }
 
                 // Compact encoding of the extension key, find out if the key is odd or not.
                 // Even - The full byte is simply 0.
@@ -637,13 +636,23 @@ struct MPTCircuit<F> {
 impl<F: Field> Circuit<F> for MPTCircuit<F> {
     type Config = (MPTConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
-    type Params = usize;
+    type Params = bool;
 
     fn without_witnesses(&self) -> Self {
         Self::default()
     }
 
-    fn configure_with_params(meta: &mut ConstraintSystem<F>, degree: Self::Params) -> Self::Config {
+    #[cfg(feature = "circuit-params")]
+    fn params(&self) -> Self::Params {
+        // Use two bytes lookup
+        true
+    }
+
+    #[cfg(feature = "circuit-params")]
+    fn configure_with_params(meta: &mut ConstraintSystem<F>, param: Self::Params) -> Self::Config {
+        
+        println!("Using two bytes lookup");
+
         let challenges = Challenges::construct(meta);
         let _challenges_expr = challenges.exprs(meta);
 
@@ -658,13 +667,10 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         let keccak_table = KeccakTable::construct(meta);
         let challenges = Challenges::construct(meta);
 
-        let circuit = if degree >= 21 {
-            MPTConfig::configure(meta, challenges_expr, keccak_table, true)
-        } else {
-            MPTConfig::configure(meta, challenges_expr, keccak_table, false)
-        };
-
-        (circuit, challenges)
+        (
+            MPTConfig::configure(meta, challenges_expr, keccak_table, param), 
+            challenges
+        )
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
