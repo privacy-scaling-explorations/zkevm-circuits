@@ -138,7 +138,6 @@ impl<F: Field> MPTContext<F> {
         idx: usize,
     ) -> RLPItemView<F> {
         // TODO(Brecht): Add RLP limitations like max num bytes
-        // answer: do it in RLPMain or here
         self.rlp_item.create_view(meta, cb, idx, false)
     }
 
