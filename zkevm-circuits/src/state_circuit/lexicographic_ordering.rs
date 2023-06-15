@@ -1,4 +1,4 @@
-use super::{lookups, SortKeysConfig, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER};
+use super::{lookups, param::*, SortKeysConfig};
 use crate::{evm_circuit::param::N_BYTES_WORD, impl_expr, util::Expr, witness::Rw};
 use eth_types::{Field, ToBigEndian};
 use gadgets::binary_number::{AsBits, BinaryNumberChip, BinaryNumberConfig};
@@ -31,8 +31,8 @@ use strum_macros::EnumIter;
 // lookup for An-Bn.
 
 // We show this with following advice columns and constraints:
-// - first_different_limb: first index where the limbs differ. We use a
-//   BinaryNumberChip here to reduce the degree of the constraints.
+// - first_different_limb: first index where the limbs differ. We use a BinaryNumberChip here to
+//   reduce the degree of the constraints.
 // - limb_difference: the difference between the limbs at first_different_limb.
 // - limb_difference_inverse: the inverse of limb_difference
 
@@ -196,7 +196,7 @@ impl Config {
             || "upper_limb_difference",
             self.selector,
             offset,
-            || Value::known(F::one()),
+            || Value::known(F::ONE),
         )?;
 
         let cur_be_limbs = rw_to_be_limbs(cur);

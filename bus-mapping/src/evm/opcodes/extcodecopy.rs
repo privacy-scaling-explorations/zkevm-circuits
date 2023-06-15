@@ -1,16 +1,15 @@
 use super::Opcode;
-use crate::circuit_input_builder::{
-    CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+use crate::{
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+    },
+    operation::{AccountField, CallContextField, TxAccessListAccountOp},
+    Error,
 };
-use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp};
-use crate::Error;
 use eth_types::{Bytecode, GethExecStep, ToAddress, ToWord, H256, U256};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Extcodecopy;
-
-// TODO: Update to treat code_hash == 0 as account not_exists once the circuit
-// is implemented https://github.com/privacy-scaling-explorations/zkevm-circuits/pull/720
 
 impl Opcode for Extcodecopy {
     fn gen_associated_ops(
@@ -22,9 +21,9 @@ impl Opcode for Extcodecopy {
 
         // reconstruction
         let address = geth_steps[0].stack.nth_last(0)?.to_address();
-        let dest_offset = geth_steps[0].stack.nth_last(1)?.as_u64();
-        let code_offset = geth_steps[0].stack.nth_last(2)?.as_u64();
-        let length = geth_steps[0].stack.nth_last(3)?.as_u64();
+        let dst_offset = geth_steps[0].stack.nth_last(1)?;
+        let code_offset = geth_step.stack.nth_last(2)?;
+        let length = geth_steps[0].stack.nth_last(3)?;
 
         let (_, account) = state.sdb.get_account(&address);
         let code_hash = account.code_hash;
@@ -33,7 +32,7 @@ impl Opcode for Extcodecopy {
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
 
-        memory.copy_from(dest_offset, &code, code_offset, length as usize);
+        memory.copy_from(dst_offset, code_offset, length, &code);
 
         let copy_event = gen_copy_event(state, geth_step)?;
         state.push_copy(&mut exec_steps[0], copy_event);
@@ -109,39 +108,15 @@ fn gen_extcodecopy_step(
     Ok(exec_step)
 }
 
-fn gen_copy_steps(
-    state: &mut CircuitInputStateRef,
-    exec_step: &mut ExecStep,
-    src_addr: u64,
-    dst_addr: u64,
-    src_addr_end: u64,
-    bytes_left: u64,
-    code: &Bytecode,
-) -> Result<Vec<(u8, bool)>, Error> {
-    let mut copy_steps = Vec::with_capacity(bytes_left as usize);
-    for idx in 0..bytes_left {
-        let addr = src_addr + idx;
-        let step = if addr < src_addr_end {
-            let code = code.code.get(addr as usize).unwrap();
-            (code.value, code.is_code)
-        } else {
-            (0, false)
-        };
-        copy_steps.push(step);
-        state.memory_write(exec_step, (dst_addr + idx).into(), step.0)?;
-    }
-
-    Ok(copy_steps)
-}
-
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
+
     let external_address = geth_step.stack.nth_last(0)?.to_address();
-    let memory_offset = geth_step.stack.nth_last(1)?.as_u64();
-    let data_offset = geth_step.stack.nth_last(2)?.as_u64();
+    let dst_offset = geth_step.stack.nth_last(1)?;
+    let code_offset = geth_step.stack.nth_last(2)?;
     let length = geth_step.stack.nth_last(3)?.as_u64();
 
     let account = state.sdb.get_account(&external_address).1;
@@ -152,28 +127,39 @@ fn gen_copy_event(
         H256::zero()
     };
 
-    let code: Bytecode = if exists {
+    let bytecode: Bytecode = if exists {
         state.code(code_hash)?.into()
     } else {
         Bytecode::default()
     };
-    let src_addr_end = code.code.len() as u64;
+    let code_size = bytecode.code.len() as u64;
+
+    // Get low Uint64 of offset to generate copy steps. Since offset could be
+    // Uint64 overflow if length is zero.
+    let dst_addr = dst_offset.low_u64();
+    let src_addr_end = code_size;
+
+    // Reset start offset to end offset if overflow.
+    let src_addr = u64::try_from(code_offset)
+        .unwrap_or(src_addr_end)
+        .min(src_addr_end);
+
     let mut exec_step = state.new_step(geth_step)?;
-    let copy_steps = gen_copy_steps(
-        state,
+    let copy_steps = state.gen_copy_steps_for_bytecode(
         &mut exec_step,
-        data_offset,
-        memory_offset,
+        &bytecode,
+        src_addr,
+        dst_addr,
         src_addr_end,
         length,
-        &code,
     )?;
+
     Ok(CopyEvent {
-        src_addr: data_offset,
+        src_addr,
         src_addr_end,
         src_type: CopyDataType::Bytecode,
         src_id: NumberOrHash::Hash(code_hash),
-        dst_addr: memory_offset,
+        dst_addr,
         dst_type: CopyDataType::Memory,
         dst_id: NumberOrHash::Number(state.call()?.call_id),
         log_id: None,
@@ -191,14 +177,14 @@ mod extcodecopy_tests {
             AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, StackOp,
             TxAccessListAccountOp, RW,
         },
+        state_db::CodeDB,
     };
-    use eth_types::{address, bytecode, Bytecode, Bytes, ToWord, Word};
     use eth_types::{
+        address, bytecode,
         evm_types::{MemoryAddress, OpcodeId, StackAddress},
         geth_types::GethData,
-        H256, U256,
+        Bytecode, Bytes, ToWord, Word, U256,
     };
-    use ethers_core::utils::keccak256;
     use mock::TestContext;
 
     fn test_ok(
@@ -230,7 +216,7 @@ mod extcodecopy_tests {
         let code_hash = if code_ext.is_empty() {
             Default::default()
         } else {
-            keccak256(code_ext.clone())
+            CodeDB::hash(&code_ext)
         };
 
         // Get the execution steps from the external tracer
@@ -398,8 +384,8 @@ mod extcodecopy_tests {
                 &AccountOp {
                     address: external_address,
                     field: AccountField::CodeHash,
-                    value: Word::from(code_hash),
-                    value_prev: Word::from(code_hash),
+                    value: code_hash.to_word(),
+                    value_prev: code_hash.to_word(),
                 }
             )
         );
@@ -438,7 +424,7 @@ mod extcodecopy_tests {
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
         assert_eq!(copy_events[0].bytes.len(), copy_size);
-        assert_eq!(copy_events[0].src_id, NumberOrHash::Hash(H256(code_hash)));
+        assert_eq!(copy_events[0].src_id, NumberOrHash::Hash(code_hash));
         assert_eq!(copy_events[0].src_addr as usize, data_offset);
         assert_eq!(copy_events[0].src_addr_end as usize, code_ext.len());
         assert_eq!(copy_events[0].src_type, CopyDataType::Bytecode);

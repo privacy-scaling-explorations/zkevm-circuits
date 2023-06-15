@@ -1,17 +1,16 @@
 //! Collection of structs and functions used to:
 //! - Define the internals of a [`MemoryOp`], [`StackOp`] and [`StorageOp`].
-//! - Define the actual operation types and a wrapper over them (the
-//!   [`Operation`] enum).
-//! - Define structures that interact with operations such as
-//!   [`OperationContainer`].
+//! - Define the actual operation types and a wrapper over them (the [`Operation`] enum).
+//! - Define structures that interact with operations such as [`OperationContainer`].
 pub(crate) mod container;
 
 pub use container::OperationContainer;
 pub use eth_types::evm_types::{MemoryAddress, StackAddress};
+use gadgets::impl_expr;
+use halo2_proofs::plonk::Expression;
+use strum_macros::EnumIter;
 
-use core::cmp::Ordering;
-use core::fmt;
-use core::fmt::Debug;
+use core::{cmp::Ordering, fmt, fmt::Debug};
 use eth_types::{Address, Word};
 use std::mem::swap;
 
@@ -54,6 +53,12 @@ impl From<RWCounter> for usize {
     }
 }
 
+impl From<RWCounter> for u64 {
+    fn from(addr: RWCounter) -> u64 {
+        addr.0.try_into().expect("rwc should not overflow")
+    }
+}
+
 impl From<usize> for RWCounter {
     fn from(rwc: usize) -> Self {
         RWCounter(rwc)
@@ -86,10 +91,10 @@ impl RWCounter {
 }
 
 /// Enum used to differenciate between EVM Stack, Memory and Storage operations.
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy, EnumIter, Hash)]
 pub enum Target {
     /// Start is a padding operation.
-    Start,
+    Start = 1,
     /// Means the target of the operation is the Memory.
     Memory,
     /// Means the target of the operation is the Stack.
@@ -110,6 +115,28 @@ pub enum Target {
     TxReceipt,
     /// Means the target of the operation is the TxLog.
     TxLog,
+}
+
+impl_expr!(Target);
+
+impl From<Target> for usize {
+    fn from(value: Target) -> usize {
+        value as usize
+    }
+}
+
+impl Target {
+    /// Returns true if the RwTable operation is reversible
+    pub fn is_reversible(self) -> bool {
+        matches!(
+            self,
+            Target::TxAccessListAccount
+                | Target::TxAccessListAccountStorage
+                | Target::TxRefund
+                | Target::Account
+                | Target::Storage
+        )
+    }
 }
 
 /// Trait used for Operation Kinds.
@@ -742,8 +769,8 @@ pub enum TxLogField {
     Topic,
     /// data of log entry
     Data,
-    /* TODO: Add `TopicLength` and `DataLength`, which will be used for the RLP encoding of the
-     * Tx Receipt */
+    // TODO: Add `TopicLength` and `DataLength`, which will be used for the RLP encoding of the
+    // Tx Receipt
 }
 
 /// Represents TxLog read/write operation.

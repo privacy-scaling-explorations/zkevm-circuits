@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             from_bytes,
@@ -36,7 +36,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::MEMORY;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         // In successful case the address must be in 5 bytes
@@ -59,7 +59,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             [from_bytes::expr(&address.cells) + 1.expr() + (is_not_mstore8.clone() * 31.expr())],
         );
 
-        /* Stack operations */
+        // Stack operations
         // Pop the address from the stack
         cb.stack_pop(address.expr());
         // For MLOAD push the value to the stack
@@ -91,11 +91,10 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         });
 
         // State transition
-        // - `rw_counter` needs to be increased by 34 when is_not_mstore8, otherwise to
-        //   be increased by 31
+        // - `rw_counter` needs to be increased by 34 when is_not_mstore8, otherwise to be increased
+        //   by 31
         // - `program_counter` needs to be increased by 1
-        // - `stack_pointer` needs to be increased by 2 when is_store, otherwise to be
-        //   same
+        // - `stack_pointer` needs to be increased by 2 when is_store, otherwise to be same
         // - `memory_size` needs to be set to `next_memory_size`
         let gas_cost = OpcodeId::MLOAD.constant_gas_cost().expr() + memory_expansion.gas_cost();
         let step_state_transition = StepStateTransition {
@@ -129,11 +128,10 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
 
         // Inputs/Outputs
-        let [address, value] =
-            [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
+        let [address, value] = [0, 1].map(|index| block.get_rws(step, index).stack_value());
         self.address.assign(
             region,
             offset,
@@ -166,7 +164,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             region,
             offset,
             step.memory_word_size(),
-            [address.as_u64() + if is_mstore8 == F::one() { 1 } else { 32 }],
+            [address.as_u64() + if is_mstore8 == F::ONE { 1 } else { 32 }],
         )?;
 
         Ok(())
@@ -175,11 +173,12 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::rand_word;
-    use crate::test_util::CircuitTestBuilder;
-    use eth_types::bytecode;
-    use eth_types::evm_types::{GasCost, OpcodeId};
-    use eth_types::Word;
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
+    use eth_types::{
+        bytecode,
+        evm_types::{GasCost, OpcodeId},
+        Word,
+    };
     use mock::test_ctx::{helpers::*, TestContext};
     use std::iter;
 
@@ -192,7 +191,7 @@ mod test {
         };
 
         let gas_limit =
-            GasCost::TX.as_u64() + OpcodeId::PUSH32.as_u64() + OpcodeId::PUSH32.as_u64() + gas_cost;
+            GasCost::TX + OpcodeId::PUSH32.as_u64() + OpcodeId::PUSH32.as_u64() + gas_cost;
 
         let ctx = TestContext::<2, 1>::new(
             None,
@@ -250,7 +249,7 @@ mod test {
                 + 31;
             let memory_size = memory_address / 32;
 
-            GasCost::FASTEST.as_u64() + 3 * memory_size + memory_size * memory_size / 512
+            GasCost::FASTEST + 3 * memory_size + memory_size * memory_size / 512
         };
 
         for opcode in [OpcodeId::MSTORE, OpcodeId::MLOAD, OpcodeId::MSTORE8] {

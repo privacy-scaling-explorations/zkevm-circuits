@@ -23,73 +23,79 @@ impl Opcode for Calldataload {
         let offset = geth_step.stack.nth_last(0)?;
         state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), offset)?;
 
-        let is_root = state.call()?.is_root;
-        if is_root {
-            state.call_context_read(
-                &mut exec_step,
-                state.call()?.call_id,
-                CallContextField::TxId,
-                state.tx_ctx.id().into(),
-            );
-            state.call_context_read(
-                &mut exec_step,
-                state.call()?.call_id,
-                CallContextField::CallDataLength,
-                state.call()?.call_data_length.into(),
-            );
-        } else {
-            state.call_context_read(
-                &mut exec_step,
-                state.call()?.call_id,
-                CallContextField::CallerId,
-                state.call()?.caller_id.into(),
-            );
-            state.call_context_read(
-                &mut exec_step,
-                state.call()?.call_id,
-                CallContextField::CallDataLength,
-                state.call()?.call_data_length.into(),
-            );
-            state.call_context_read(
-                &mut exec_step,
-                state.call()?.call_id,
-                CallContextField::CallDataOffset,
-                state.call()?.call_data_offset.into(),
-            );
-        }
+        // Check if offset is Uint64 overflow.
+        let calldata_word = if let Ok(offset) = u64::try_from(offset) {
+            let is_root = state.call()?.is_root;
+            let call_id = state.call()?.call_id;
+            if is_root {
+                state.call_context_read(
+                    &mut exec_step,
+                    call_id,
+                    CallContextField::TxId,
+                    state.tx_ctx.id().into(),
+                );
+                state.call_context_read(
+                    &mut exec_step,
+                    call_id,
+                    CallContextField::CallDataLength,
+                    state.call()?.call_data_length.into(),
+                );
+            } else {
+                state.call_context_read(
+                    &mut exec_step,
+                    call_id,
+                    CallContextField::CallerId,
+                    state.call()?.caller_id.into(),
+                );
+                state.call_context_read(
+                    &mut exec_step,
+                    call_id,
+                    CallContextField::CallDataLength,
+                    state.call()?.call_data_length.into(),
+                );
+                state.call_context_read(
+                    &mut exec_step,
+                    call_id,
+                    CallContextField::CallDataOffset,
+                    state.call()?.call_data_offset.into(),
+                );
+            }
 
-        let call = state.call()?.clone();
-        let (src_addr, src_addr_end, caller_id, call_data) = (
-            call.call_data_offset as usize + offset.as_usize(),
-            call.call_data_offset as usize + call.call_data_length as usize,
-            call.caller_id,
-            state.call_ctx()?.call_data.to_vec(),
-        );
-        let calldata_word = (0..32)
-            .map(|idx| {
-                let addr = src_addr + idx;
-                if addr < src_addr_end {
-                    let byte = call_data[addr - call.call_data_offset as usize];
-                    if !is_root {
-                        // caller id as call_id
-                        state.push_op(
-                            &mut exec_step,
-                            RW::READ,
-                            MemoryOp::new(caller_id, (src_addr + idx).into(), byte),
-                        );
+            let call_data_offset = state.call()?.call_data_offset;
+            let call_data_length = state.call()?.call_data_length;
+            let (src_addr, src_addr_end, caller_id, call_data) = (
+                call_data_offset + offset.min(call_data_length),
+                call_data_offset + call_data_length,
+                state.call()?.caller_id,
+                state.call_ctx()?.call_data.to_vec(),
+            );
+
+            let calldata: Vec<_> = (0..32)
+                .map(|idx| {
+                    let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
+                    if addr < src_addr_end {
+                        let byte = call_data[(addr - call_data_offset) as usize];
+                        if !is_root {
+                            state.push_op(
+                                &mut exec_step,
+                                RW::READ,
+                                MemoryOp::new(caller_id, (src_addr + idx).into(), byte),
+                            );
+                        }
+                        byte
+                    } else {
+                        0
                     }
-                    byte
-                } else {
-                    0
-                }
-            })
-            .collect::<Vec<u8>>();
+                })
+                .collect();
 
-        state.stack_write(
-            &mut exec_step,
-            geth_step.stack.last_filled(),
-            U256::from_big_endian(&calldata_word),
-        )?;
+            U256::from_big_endian(&calldata)
+        } else {
+            // Stack push `0` as result if overflow.
+            U256::zero()
+        };
+
+        state.stack_write(&mut exec_step, geth_step.stack.last_filled(), calldata_word)?;
 
         Ok(vec![exec_step])
     }
@@ -102,9 +108,12 @@ mod calldataload_tests {
         bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
-        ToWord, Word,
+        Word,
     };
-    use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
+    use mock::{
+        generate_mock_call_bytecode, test_ctx::helpers::account_0_code_account_1_no_code,
+        MockCallBytecodeParams, TestContext,
+    };
     use rand::random;
 
     use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::StackOp};
@@ -138,22 +147,13 @@ mod calldataload_tests {
         if memory_a.len() < call_data_length {
             memory_a.resize(call_data_length, 0);
         }
-        let code_a = bytecode! {
-            // populate memory in A's context.
-            PUSH32(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call addr_b
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH1(call_data_length) // argsLength
-            PUSH1(call_data_offset) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
-            STOP
-        };
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
+            address: addr_b,
+            pushdata,
+            call_data_length,
+            call_data_offset,
+            ..MockCallBytecodeParams::default()
+        });
 
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<3, 1>::new(

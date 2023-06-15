@@ -4,7 +4,10 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             math_gadget::{AbsWordGadget, IsZeroGadget, LtGadget, LtWordGadget, MulAddWordsGadget},
             select, sum, CachedRegion,
         },
@@ -36,7 +39,7 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SDIV_SMOD;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let is_sdiv = (OpcodeId::SMOD.expr() - opcode.expr()) * F::from(2).invert().unwrap();
 
@@ -147,14 +150,13 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
-        let [pop1, pop2, push] = indices.map(|idx| block.rws[idx].stack_value());
+        let [pop1, pop2, push] = [0, 1, 2].map(|idx| block.get_rws(step, idx).stack_value());
         let pop1_abs = get_abs(pop1);
         let pop2_abs = get_abs(pop2);
         let push_abs = get_abs(push);
         let is_pop1_neg = is_neg(pop1);
         let is_pop2_neg = is_neg(pop2);
-        let (quotient, divisor, remainder, dividend) = match step.opcode.unwrap() {
+        let (quotient, divisor, remainder, dividend) = match step.opcode().unwrap() {
             OpcodeId::SDIV => (
                 push,
                 pop2,
@@ -243,8 +245,7 @@ fn is_neg(x: U256) -> bool {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::{bytecode, Word};
+    use eth_types::{bytecode, evm_types::OpcodeId, Word};
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, a: Word, b: Word) {

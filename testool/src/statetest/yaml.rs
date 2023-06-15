@@ -1,14 +1,12 @@
-use super::parse;
-use super::spec::{AccountMatch, Env, StateTest};
-use crate::utils::MainnetFork;
-use crate::Compiler;
+use super::{
+    parse,
+    spec::{AccountMatch, Env, StateTest},
+};
+use crate::{utils::MainnetFork, Compiler};
 use anyhow::{bail, Context, Result};
 use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
-use ethers_core::k256::ecdsa::SigningKey;
-use ethers_core::utils::secret_key_to_address;
-use std::collections::HashMap;
-use std::convert::TryInto;
-use std::str::FromStr;
+use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
+use std::{collections::HashMap, convert::TryInto, str::FromStr};
 use yaml_rust::Yaml;
 
 type Label = String;
@@ -106,7 +104,7 @@ impl<'a> YamlStateTestBuilder<'a> {
                 Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or_else(|_| U256::one());
 
             // TODO handle maxPriorityFeePerGas & maxFeePerGas
-            let nonce = Self::parse_u256(&yaml_transaction["nonce"])?;
+            let nonce = Self::parse_u64(&yaml_transaction["nonce"])?;
             let to = Self::parse_to_address(&yaml_transaction["to"])?;
             let secret_key = Self::parse_bytes(&yaml_transaction["secretKey"])?;
             let from = secret_key_to_address(&SigningKey::from_bytes(&secret_key.to_vec())?);
@@ -246,7 +244,7 @@ impl<'a> YamlStateTestBuilder<'a> {
                 nonce: if acc_nonce.is_badvalue() {
                     None
                 } else {
-                    Some(Self::parse_u256(acc_nonce)?)
+                    Some(Self::parse_u64(acc_nonce)?)
                 },
                 storage,
             };
@@ -266,7 +264,7 @@ impl<'a> YamlStateTestBuilder<'a> {
         } else {
             while !it.is_empty() {
                 if it.starts_with(':') {
-                    let tag = &it[..it.find(&[' ', '\n']).expect("unable to find end tag")];
+                    let tag = &it[..it.find([' ', '\n']).expect("unable to find end tag")];
                     it = &it[tag.len() + 1..];
                     let value_len = if tag == ":yul" || tag == ":solidity" {
                         it.len()
@@ -428,10 +426,10 @@ impl<'a> YamlStateTestBuilder<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::config::TestSuite;
-    use crate::statetest::run_test;
-    use crate::statetest::CircuitsConfig;
-    use crate::statetest::StateTestError;
+    use crate::{
+        config::TestSuite,
+        statetest::{run_test, CircuitsConfig, StateTestError},
+    };
     use eth_types::address;
 
     const TEMPLATE: &str = r#"
@@ -617,7 +615,7 @@ arith:
             to: Some(ccccc),
             gas_limit: 80000000,
             gas_price: U256::from(10u64),
-            nonce: U256::zero(),
+            nonce: 0,
             value: U256::one(),
             data: Bytes::from(&[0]),
             pre: HashMap::from([
@@ -627,9 +625,8 @@ arith:
                         address: ccccc,
                         balance: U256::from(1000000000000u64),
                         code: Bytes::from(&[0x60, 0x01, 0x00]),
-                        nonce: U256::zero(),
-
                         storage: HashMap::from([(U256::zero(), U256::one())]),
+                        ..Default::default()
                     },
                 ),
                 (
@@ -637,10 +634,7 @@ arith:
                     Account {
                         address: a94f5,
                         balance: U256::from(1000000000000u64),
-                        code: Bytes::default(),
-                        nonce: U256::zero(),
-
-                        storage: HashMap::new(),
+                        ..Default::default()
                     },
                 ),
             ]),
@@ -649,7 +643,7 @@ arith:
                 AccountMatch {
                     address: ccccc,
                     balance: Some(U256::from(1000000000001u64)),
-                    nonce: Some(U256::from(0)),
+                    nonce: Some(0),
                     code: Some(Bytes::from(&[0x60, 0x01, 0x00])),
                     storage: HashMap::from([(U256::zero(), U256::one())]),
                 },
@@ -764,8 +758,8 @@ arith:
                 CircuitsConfig::default()
             ),
             Err(StateTestError::NonceMismatch {
-                expected: U256::from(2),
-                found: U256::from(0)
+                expected: 2,
+                found: 0
             })
         );
 

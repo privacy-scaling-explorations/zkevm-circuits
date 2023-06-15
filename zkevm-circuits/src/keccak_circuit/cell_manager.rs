@@ -1,13 +1,13 @@
 use crate::keccak_circuit::util::extract_field;
-use crate::keccak_circuit::KeccakRegion;
+use eth_types::Field;
 use gadgets::util::Expr;
-use halo2_proofs::arithmetic::FieldExt;
-use halo2_proofs::plonk::VirtualCells;
 use halo2_proofs::{
     circuit::Value,
-    plonk::{Advice, Column, ConstraintSystem, Expression},
+    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
+
+use super::keccak_packed_multi::KeccakRegion;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Cell<F> {
@@ -18,7 +18,7 @@ pub(crate) struct Cell<F> {
     pub(crate) rotation: i32,
 }
 
-impl<F: FieldExt> Cell<F> {
+impl<F: Field> Cell<F> {
     pub(crate) fn new(
         meta: &mut VirtualCells<F>,
         column: Column<Advice>,
@@ -61,11 +61,7 @@ impl<F: FieldExt> Cell<F> {
     }
 
     pub(crate) fn assign(&self, region: &mut KeccakRegion<F>, offset: i32, value: F) {
-        region.assign(
-            self.column_idx,
-            ((offset as i32) + self.rotation) as usize,
-            value,
-        );
+        region.assign(self.column_idx, (offset + self.rotation) as usize, value);
     }
 
     pub(crate) fn assign_value(&self, region: &mut KeccakRegion<F>, offset: i32, value: Value<F>) {
@@ -75,21 +71,17 @@ impl<F: FieldExt> Cell<F> {
         // this shouldn't be needed.
         let value_f = extract_field(value);
 
-        region.assign(
-            self.column_idx,
-            ((offset as i32) + self.rotation) as usize,
-            value_f,
-        );
+        region.assign(self.column_idx, (offset + self.rotation) as usize, value_f);
     }
 }
 
-impl<F: FieldExt> Expr<F> for Cell<F> {
+impl<F: Field> Expr<F> for Cell<F> {
     fn expr(&self) -> Expression<F> {
         self.expression.clone()
     }
 }
 
-impl<F: FieldExt> Expr<F> for &Cell<F> {
+impl<F: Field> Expr<F> for &Cell<F> {
     fn expr(&self) -> Expression<F> {
         self.expression.clone()
     }
@@ -111,7 +103,7 @@ pub(crate) struct CellManager<F> {
     num_unused_cells: usize,
 }
 
-impl<F: FieldExt> CellManager<F> {
+impl<F: Field> CellManager<F> {
     pub(crate) fn new(height: usize) -> Self {
         Self {
             height,

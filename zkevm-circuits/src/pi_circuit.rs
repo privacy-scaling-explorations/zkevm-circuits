@@ -1,25 +1,32 @@
 //! Public Input Circuit implementation
+mod param;
 
-use std::marker::PhantomData;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+mod dev;
+#[cfg(any(feature = "test", test))]
+mod test;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+pub use dev::PiCircuit as TestPiCircuit;
 
-use eth_types::geth_types::BlockConstants;
-use eth_types::sign_types::SignData;
-use eth_types::H256;
 use eth_types::{
-    geth_types::Transaction, Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar,
-    Word,
+    geth_types::{BlockConstants, Transaction},
+    sign_types::SignData,
+    Address, BigEndianHash, Field, Keccak, ToBigEndian, ToLittleEndian, ToScalar, Word, H256,
 };
 use halo2_proofs::plonk::{Instance, SecondPhase};
-use keccak256::plain::Keccak;
+use param::*;
+use std::marker::PhantomData;
 
-use crate::table::TxFieldTag;
-use crate::table::TxTable;
-use crate::table::{BlockTable, LookupTable};
-use crate::tx_circuit::TX_LEN;
-use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
-use crate::witness;
-use gadgets::is_zero::IsZeroChip;
-use gadgets::util::{not, or, Expr};
+use crate::{
+    table::{BlockTable, LookupTable, TxFieldTag, TxTable},
+    tx_circuit::TX_LEN,
+    util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig},
+    witness,
+};
+use gadgets::{
+    is_zero::IsZeroChip,
+    util::{not, or, Expr},
+};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
@@ -28,12 +35,6 @@ use halo2_proofs::{
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
-
-/// Fixed by the spec
-const BLOCK_LEN: usize = 7 + 256;
-const EXTRA_LEN: usize = 2;
-const ZERO_BYTE_GAS_COST: u64 = 4;
-const NONZERO_BYTE_GAS_COST: u64 = 16;
 
 /// Values of the block table (as in the spec)
 #[derive(Clone, Default, Debug)]
@@ -51,12 +52,12 @@ pub struct BlockValues {
 /// Values of the tx table (as in the spec)
 #[derive(Default, Debug, Clone)]
 pub struct TxValues {
-    nonce: Word,
-    gas: Word, //gas limit
+    nonce: u64,
+    gas: u64, // gas limit
     gas_price: Word,
     from_addr: Address,
     to_addr: Address,
-    is_create: u64,
+    is_create: bool,
     value: Word,
     call_data_len: u64,
     call_data_gas_cost: u64,
@@ -139,21 +140,15 @@ impl PublicData {
             let mut msg_hash_le = [0u8; 32];
             msg_hash_le.copy_from_slice(sign_data.msg_hash.to_bytes().as_slice());
             tx_vals.push(TxValues {
-                nonce: tx.nonce,
+                nonce: tx.nonce.as_u64(),
                 gas_price: tx.gas_price,
-                gas: tx.gas_limit,
+                gas: tx.gas_limit.as_u64(),
                 from_addr: tx.from,
-                to_addr: tx.to.unwrap_or_else(Address::zero),
-                is_create: (tx.to.is_none() as u64),
+                to_addr: tx.to_or_zero(),
+                is_create: tx.is_create(),
                 value: tx.value,
-                call_data_len: tx.call_data.0.len() as u64,
-                call_data_gas_cost: tx.call_data.0.iter().fold(0, |acc, byte| {
-                    acc + if *byte == 0 {
-                        ZERO_BYTE_GAS_COST
-                    } else {
-                        NONZERO_BYTE_GAS_COST
-                    }
-                }),
+                call_data_len: tx.call_data.len() as u64,
+                call_data_gas_cost: tx.call_data_gas_cost(),
                 tx_sign_hash: msg_hash_le,
             });
         }
@@ -579,13 +574,13 @@ impl<F: Field> PiCircuitConfig<F> {
             || "tx_id",
             self.tx_table.tx_id,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         region.assign_advice(
             || "tx_id_inv",
             self.tx_id_inv,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         region.assign_fixed(
             || "tag",
@@ -597,31 +592,31 @@ impl<F: Field> PiCircuitConfig<F> {
             || "index",
             self.tx_table.index,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         region.assign_advice(
             || "tx_value",
             self.tx_table.value,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         region.assign_advice(
             || "tx_value_inv",
             self.tx_value_inv,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         region.assign_advice(
             || "is_final",
             self.is_final,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         region.assign_advice(
             || "gas_cost",
             self.calldata_gas_cost,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         Ok(())
     }
@@ -642,14 +637,14 @@ impl<F: Field> PiCircuitConfig<F> {
         // tx_id_inv = (tag - CallDataLength)^(-1)
         let tx_id_inv = if tag != TxFieldTag::CallDataLength {
             let x = F::from(tag as u64) - F::from(TxFieldTag::CallDataLength as u64);
-            x.invert().unwrap_or(F::zero())
+            x.invert().unwrap_or(F::ZERO)
         } else {
-            F::zero()
+            F::ZERO
         };
         let tag = F::from(tag as u64);
         let index = F::from(index as u64);
         let tx_value = tx_value;
-        let tx_value_inv = tx_value.invert().unwrap_or(F::zero());
+        let tx_value_inv = tx_value.invert().unwrap_or(F::ZERO);
 
         self.q_tx_table.enable(region, offset)?;
 
@@ -737,14 +732,14 @@ impl<F: Field> PiCircuitConfig<F> {
         raw_pi_vals: &mut [F],
     ) -> Result<(), Error> {
         let tx_id = F::from(tx_id as u64);
-        let tx_id_inv = tx_id.invert().unwrap_or(F::zero());
+        let tx_id_inv = tx_id.invert().unwrap_or(F::ZERO);
         let tx_id_diff = F::from(tx_id_next as u64) - tx_id;
-        let tx_id_diff_inv = tx_id_diff.invert().unwrap_or(F::zero());
+        let tx_id_diff_inv = tx_id_diff.invert().unwrap_or(F::ZERO);
         let tag = F::from(TxFieldTag::CallData as u64);
         let index = F::from(index as u64);
         let tx_value = tx_value;
-        let tx_value_inv = tx_value.invert().unwrap_or(F::zero());
-        let is_final = if is_final { F::one() } else { F::zero() };
+        let tx_value_inv = tx_value.invert().unwrap_or(F::ZERO);
+        let is_final = if is_final { F::ONE } else { F::ZERO };
 
         // Assign vals to raw_public_inputs column
         let tx_table_len = TX_LEN * self.max_txs + 1;
@@ -843,15 +838,15 @@ impl<F: Field> PiCircuitConfig<F> {
             || "zero",
             self.block_table.value,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         region.assign_advice(
             || "zero",
             self.raw_public_inputs,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
-        raw_pi_vals[offset] = F::zero();
+        raw_pi_vals[offset] = F::ZERO;
         offset += 1;
 
         // coinbase
@@ -1139,6 +1134,16 @@ impl<F: Field> PiCircuit<F> {
 impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     type Config = PiCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        // Column raw_public_inputs is queried at 4 distinct rotations at
+        // - Rotation::cur()
+        // - Rotation(BLOCK_LEN + 1 + EXTRA_LEN)
+        // - Rotation(BLOCK_LEN + 1 + EXTRA_LEN + max_txs * TX_LEN + 1)
+        // - Rotation(BLOCK_LEN + 1 + EXTRA_LEN + 2 * (max_txs * TX_LEN + 1))
+        // so returns 7 unusable rows.
+        7
+    }
+
     fn new_from_block(block: &witness::Block<F>) -> Self {
         let public_data = PublicData {
             chain_id: block.context.chain_id,
@@ -1202,7 +1207,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         let rlc_rpi = rlc_rpi_col
             .iter()
             .rev()
-            .fold(F::zero(), |acc, val| acc * self.rand_rpi + val);
+            .fold(F::ZERO, |acc, val| acc * self.rand_rpi + val);
 
         // let block_hash = public_data
         //     .eth_block
@@ -1271,7 +1276,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 region.name_column(|| "Public_Inputs", config.pi);
 
                 let circuit_len = config.circuit_len();
-                let mut raw_pi_vals = vec![F::zero(); circuit_len];
+                let mut raw_pi_vals = vec![F::ZERO; circuit_len];
 
                 // Assign block table
                 let block_values = self.public_data.get_block_table_values();
@@ -1304,7 +1309,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                     0,
                     TxFieldTag::Null,
                     0,
-                    F::zero(),
+                    F::ZERO,
                     &mut raw_pi_vals,
                 )?;
                 offset += 1;
@@ -1313,11 +1318,8 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                     let tx = if i < txs.len() { &txs[i] } else { &tx_default };
 
                     for (tag, value) in &[
-                        (
-                            TxFieldTag::Nonce,
-                            rlc(tx.nonce.to_le_bytes(), self.randomness),
-                        ),
-                        (TxFieldTag::Gas, rlc(tx.gas.to_le_bytes(), self.randomness)),
+                        (TxFieldTag::Nonce, F::from(tx.nonce)),
+                        (TxFieldTag::Gas, F::from(tx.gas)),
                         (
                             TxFieldTag::GasPrice,
                             rlc(tx.gas_price.to_le_bytes(), self.randomness),
@@ -1330,7 +1332,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                             TxFieldTag::CalleeAddress,
                             tx.to_addr.to_scalar().expect("tx.to too big"),
                         ),
-                        (TxFieldTag::IsCreate, F::from(tx.is_create)),
+                        (TxFieldTag::IsCreate, F::from(tx.is_create as u64)),
                         (
                             TxFieldTag::Value,
                             rlc(tx.value.to_le_bytes(), self.randomness),
@@ -1362,7 +1364,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 let txs = self.public_data.txs();
                 for (i, tx) in self.public_data.txs().iter().enumerate() {
                     let call_data_length = tx.call_data.0.len();
-                    let mut gas_cost = F::zero();
+                    let mut gas_cost = F::ZERO;
                     for (index, byte) in tx.call_data.0.iter().enumerate() {
                         assert!(calldata_count < config.max_calldata);
                         let is_final = index == call_data_length - 1;
@@ -1389,7 +1391,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                             &mut region,
                             offset,
                             i + 1,
-                            tx_id_next as usize,
+                            tx_id_next,
                             index,
                             F::from(*byte as u64),
                             is_final,
@@ -1407,9 +1409,9 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                         0, // tx_id
                         0,
                         0,
-                        F::zero(),
+                        F::ZERO,
                         false,
-                        F::zero(),
+                        F::ZERO,
                         &mut raw_pi_vals,
                     )?;
                     offset += 1;
@@ -1442,92 +1444,6 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     }
 }
 
-// We define the PiTestCircuit as a wrapper over PiCircuit extended to take the
-// generic const parameters MAX_TXS and MAX_CALLDATA.  This is necessary because
-// the trait Circuit requires an implementation of `configure` that doesn't take
-// any circuit parameters, and the PiCircuit defines gates that use rotations
-// that depend on MAX_TXS and MAX_CALLDATA, so these two values are required
-// during the configuration.
-/// Test Circuit for PiCircuit
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-#[derive(Default, Clone)]
-pub struct PiTestCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
-    pub PiCircuit<F>,
-);
-
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> SubCircuit<F>
-    for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA>
-{
-    type Config = PiCircuitConfig<F>;
-
-    fn new_from_block(block: &witness::Block<F>) -> Self {
-        assert_eq!(block.circuits_params.max_txs, MAX_TXS);
-        assert_eq!(block.circuits_params.max_calldata, MAX_CALLDATA);
-
-        Self(PiCircuit::new_from_block(block))
-    }
-
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        assert_eq!(block.circuits_params.max_txs, MAX_TXS);
-        assert_eq!(block.circuits_params.max_calldata, MAX_CALLDATA);
-
-        PiCircuit::min_num_rows_block(block)
-    }
-
-    /// Compute the public inputs for this circuit.
-    fn instance(&self) -> Vec<Vec<F>> {
-        self.0.instance()
-    }
-
-    fn synthesize_sub(
-        &self,
-        _config: &Self::Config,
-        _challenges: &Challenges<Value<F>>,
-        _layouter: &mut impl Layouter<F>,
-    ) -> Result<(), Error> {
-        panic!("use PiCircuit for embedding instead");
-    }
-}
-
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
-    for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA>
-{
-    type Config = (PiCircuitConfig<F>, Challenges);
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let block_table = BlockTable::construct(meta);
-        let tx_table = TxTable::construct(meta);
-        (
-            PiCircuitConfig::new(
-                meta,
-                PiCircuitConfigArgs {
-                    max_txs: MAX_TXS,
-                    max_calldata: MAX_CALLDATA,
-                    block_table,
-                    tx_table,
-                },
-            ),
-            Challenges::construct(meta),
-        )
-    }
-
-    fn synthesize(
-        &self,
-        (config, challenges): Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
-        self.0.synthesize_sub(&config, &challenges, &mut layouter)
-    }
-}
-
 /// Compute the raw_public_inputs column from the verifier's perspective.
 fn raw_public_inputs_col<F: Field>(
     max_txs: usize,
@@ -1541,11 +1457,11 @@ fn raw_public_inputs_col<F: Field>(
 
     let mut offset = 0;
     let mut result =
-        vec![F::zero(); BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * max_txs + 1) + max_calldata];
+        vec![F::ZERO; BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * max_txs + 1) + max_calldata];
 
     //  Insert Block Values
     // zero row
-    result[offset] = F::zero();
+    result[offset] = F::ZERO;
     offset += 1;
     // coinbase
     result[offset] = block.coinbase.to_scalar().unwrap();
@@ -1592,9 +1508,9 @@ fn raw_public_inputs_col<F: Field>(
     let value_offset = index_offset + tx_table_len;
 
     // Insert zero row
-    result[id_offset + offset] = F::zero();
-    result[index_offset + offset] = F::zero();
-    result[value_offset + offset] = F::zero();
+    result[id_offset + offset] = F::ZERO;
+    result[index_offset + offset] = F::ZERO;
+    result[value_offset + offset] = F::ZERO;
 
     offset += 1;
 
@@ -1602,19 +1518,19 @@ fn raw_public_inputs_col<F: Field>(
         let tx = if i < txs.len() { &txs[i] } else { &tx_default };
 
         for val in &[
-            rlc(tx.nonce.to_le_bytes(), randomness),
-            rlc(tx.gas.to_le_bytes(), randomness),
+            F::from(tx.nonce),
+            F::from(tx.gas),
             rlc(tx.gas_price.to_le_bytes(), randomness),
             tx.from_addr.to_scalar().expect("tx.from too big"),
             tx.to_addr.to_scalar().expect("tx.to too big"),
-            F::from(tx.is_create),
+            F::from(tx.is_create as u64),
             rlc(tx.value.to_le_bytes(), randomness),
             F::from(tx.call_data_len),
             F::from(tx.call_data_gas_cost),
             rlc(tx.tx_sign_hash, randomness),
         ] {
             result[id_offset + offset] = F::from((i + 1) as u64);
-            result[index_offset + offset] = F::zero();
+            result[index_offset + offset] = F::ZERO;
             result[value_offset + offset] = *val;
 
             offset += 1;
@@ -1631,7 +1547,7 @@ fn raw_public_inputs_col<F: Field>(
         }
     }
     for _ in calldata_count..max_calldata {
-        result[value_offset + offset] = F::zero();
+        result[value_offset + offset] = F::ZERO;
         offset += 1;
     }
 
@@ -1654,134 +1570,4 @@ pub fn gen_rand_rpi<F: Field>(
     }
     let rand_rpi = Word::from(keccak.digest().as_slice()) % F::MODULUS;
     rand_rpi.to_scalar().expect("rand_rpi.to_scalar")
-}
-
-#[cfg(test)]
-mod pi_circuit_test {
-    use super::*;
-    use halo2_proofs::{
-        dev::{MockProver, VerifyFailure},
-        halo2curves::bn256::Fr,
-    };
-    use mock::{CORRECT_MOCK_TXS, MOCK_CHAIN_ID};
-    use pretty_assertions::assert_eq;
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha20Rng;
-
-    fn run<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
-        k: u32,
-        public_data: PublicData,
-    ) -> Result<(), Vec<VerifyFailure>> {
-        let mut rng = ChaCha20Rng::seed_from_u64(2);
-        let randomness = F::random(&mut rng);
-        let rand_rpi = F::random(&mut rng);
-        let mut public_data = public_data;
-        public_data.chain_id = *MOCK_CHAIN_ID;
-
-        let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA>(PiCircuit::new(
-            MAX_TXS,
-            MAX_CALLDATA,
-            randomness,
-            rand_rpi,
-            public_data,
-        ));
-        let public_inputs = circuit.0.instance();
-
-        let prover = match MockProver::run(k, &circuit, public_inputs) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-        prover.verify()
-    }
-
-    #[test]
-    fn test_default_pi() {
-        const MAX_TXS: usize = 2;
-        const MAX_CALLDATA: usize = 8;
-        let public_data = PublicData::default();
-
-        let k = 17;
-        assert_eq!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data), Ok(()));
-    }
-
-    #[test]
-    fn test_simple_pi() {
-        const MAX_TXS: usize = 8;
-        const MAX_CALLDATA: usize = 200;
-
-        let mut public_data = PublicData::default();
-
-        let n_tx = 4;
-        for i in 0..n_tx {
-            public_data
-                .transactions
-                .push(CORRECT_MOCK_TXS[i].clone().into());
-        }
-
-        let k = 17;
-        assert_eq!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data), Ok(()));
-    }
-
-    fn run_size_check<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
-        public_data: [PublicData; 2],
-    ) {
-        let mut rng = ChaCha20Rng::seed_from_u64(2);
-        let randomness = F::random(&mut rng);
-        let rand_rpi = F::random(&mut rng);
-
-        let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA>(PiCircuit::new(
-            MAX_TXS,
-            MAX_CALLDATA,
-            randomness,
-            rand_rpi,
-            public_data[0].clone(),
-        ));
-        let public_inputs = circuit.0.instance();
-        let prover1 = MockProver::run(20, &circuit, public_inputs).unwrap();
-
-        let circuit2 = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA>(PiCircuit::new(
-            MAX_TXS,
-            MAX_CALLDATA,
-            randomness,
-            rand_rpi,
-            public_data[1].clone(),
-        ));
-        let public_inputs = circuit2.0.instance();
-        let prover2 = MockProver::run(20, &circuit, public_inputs).unwrap();
-
-        assert_eq!(prover1.fixed(), prover2.fixed());
-        assert_eq!(prover1.permutation(), prover2.permutation());
-    }
-
-    #[test]
-    fn variadic_size_check() {
-        const MAX_TXS: usize = 8;
-        const MAX_CALLDATA: usize = 200;
-
-        let mut pub_dat_1 = PublicData {
-            chain_id: *MOCK_CHAIN_ID,
-            ..Default::default()
-        };
-
-        let n_tx = 2;
-        for i in 0..n_tx {
-            pub_dat_1
-                .transactions
-                .push(CORRECT_MOCK_TXS[i].clone().into());
-        }
-
-        let mut pub_dat_2 = PublicData {
-            chain_id: *MOCK_CHAIN_ID,
-            ..Default::default()
-        };
-
-        let n_tx = 4;
-        for i in 0..n_tx {
-            pub_dat_2
-                .transactions
-                .push(CORRECT_MOCK_TXS[i].clone().into());
-        }
-
-        run_size_check::<Fr, MAX_TXS, MAX_CALLDATA>([pub_dat_1, pub_dat_2]);
-    }
 }

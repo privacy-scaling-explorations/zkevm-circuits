@@ -1,8 +1,8 @@
 //! Utility traits, functions used in the crate.
 
-use super::param::*;
+use super::{keccak_packed_multi::keccak_unusable_rows, param::*};
 use eth_types::{Field, ToScalar, Word};
-use halo2_proofs::{circuit::Value, halo2curves::FieldExt};
+use halo2_proofs::circuit::Value;
 use std::env::var;
 
 /// Description of which bits (positions) a part contains
@@ -21,7 +21,7 @@ pub(crate) struct WordParts {
 
 impl WordParts {
     /// Returns a description of how a word will be split into parts
-    pub(crate) fn new(part_size: usize, rot: usize, normalize: bool) -> Self {
+    pub(crate) fn new(part_size: usize, rot: usize, uniform: bool) -> Self {
         let mut bits = (0usize..64).collect::<Vec<_>>();
         bits.rotate_right(rot);
 
@@ -29,29 +29,13 @@ impl WordParts {
         let mut rot_idx = 0;
 
         let mut idx = 0;
-        let target_sizes = if normalize {
+        let target_sizes = if uniform {
             // After the rotation we want the parts of all the words to be at the same
             // positions
             target_part_sizes(part_size)
         } else {
             // Here we only care about minimizing the number of parts
-            let num_parts_a = rot / part_size;
-            let partial_part_a = rot % part_size;
-
-            let num_parts_b = (64 - rot) / part_size;
-            let partial_part_b = (64 - rot) % part_size;
-
-            let mut part_sizes = vec![part_size; num_parts_a];
-            if partial_part_a > 0 {
-                part_sizes.push(partial_part_a);
-            }
-
-            part_sizes.extend(vec![part_size; num_parts_b]);
-            if partial_part_b > 0 {
-                part_sizes.push(partial_part_b);
-            }
-
-            part_sizes
+            target_part_sizes_rot(part_size, rot)
         };
         // Split into parts bit by bit
         for part_size in target_sizes {
@@ -138,7 +122,7 @@ pub(crate) fn pack_with_base<F: Field>(bits: &[u8], base: usize) -> F {
     let base = F::from(base as u64);
     bits.iter()
         .rev()
-        .fold(F::zero(), |acc, &bit| acc * base + F::from(bit as u64))
+        .fold(F::ZERO, |acc, &bit| acc * base + F::from(bit as u64))
 }
 
 /// Decodes the bits using the position data found in the part info
@@ -196,6 +180,28 @@ pub(crate) fn target_part_sizes(part_size: usize) -> Vec<usize> {
     part_sizes
 }
 
+/// Returns the size (in bits) of each part size when splitting up a keccak word
+/// in parts of `part_size`, with a special alignment for a rotation.
+pub(crate) fn target_part_sizes_rot(part_size: usize, rot: usize) -> Vec<usize> {
+    let num_parts_a = rot / part_size;
+    let partial_part_a = rot % part_size;
+
+    let num_parts_b = (NUM_BITS_PER_WORD - rot) / part_size;
+    let partial_part_b = (NUM_BITS_PER_WORD - rot) % part_size;
+
+    let mut part_sizes = vec![part_size; num_parts_a];
+    if partial_part_a > 0 {
+        part_sizes.push(partial_part_a);
+    }
+
+    part_sizes.extend(vec![part_size; num_parts_b]);
+    if partial_part_b > 0 {
+        part_sizes.push(partial_part_b);
+    }
+
+    part_sizes
+}
+
 /// Gets the rotation count in parts
 pub(crate) fn get_rotate_count(count: usize, part_size: usize) -> usize {
     (count + part_size - 1) / part_size
@@ -218,7 +224,7 @@ pub(crate) fn get_num_bits_per_lookup(range: usize) -> usize {
 
 // Implementation of the above without environment dependency.
 pub(crate) fn get_num_bits_per_lookup_impl(range: usize, log_height: usize) -> usize {
-    let num_unusable_rows = 31;
+    let num_unusable_rows = keccak_unusable_rows();
     let height = 2usize.pow(log_height as u32);
     let mut num_bits = 1;
     while range.pow(num_bits + 1) + num_unusable_rows <= height {
@@ -227,8 +233,8 @@ pub(crate) fn get_num_bits_per_lookup_impl(range: usize, log_height: usize) -> u
     num_bits as usize
 }
 
-pub(crate) fn extract_field<F: FieldExt>(value: Value<F>) -> F {
-    let mut field = F::zero();
+pub(crate) fn extract_field<F: Field>(value: Value<F>) -> F {
+    let mut field = F::ZERO;
     let _ = value.map(|f| {
         field = f;
         f
@@ -274,7 +280,7 @@ pub(crate) mod to_bytes {
         let mut bytes = Vec::new();
         for byte_bits in bits.chunks(8) {
             let mut value = 0.expr();
-            let mut multiplier = F::one();
+            let mut multiplier = F::ONE;
             for byte in byte_bits.iter() {
                 value = value + byte.expr() * multiplier;
                 multiplier *= F::from(2);

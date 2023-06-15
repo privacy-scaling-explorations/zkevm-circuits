@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::UpdateBalanceGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same},
             },
             math_gadget::{
@@ -17,11 +17,10 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{
-        BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag, TxReceiptFieldTag,
-    },
+    table::{BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag, TxReceiptFieldTag},
     util::Expr,
 };
+use bus_mapping::operation::Target;
 use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use strum::EnumCount;
@@ -50,7 +49,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EndTx;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
 
@@ -203,9 +202,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_used = tx.gas - step.gas_left;
-        let (refund, _) = block.rws[step.rw_indices[2]].tx_refund_value_pair();
+        let (refund, _) = block.get_rws(step, 2).tx_refund_value_pair();
         let [(caller_balance, caller_balance_prev), (coinbase_balance, coinbase_balance_prev)] =
-            [step.rw_indices[3], step.rw_indices[4]].map(|idx| block.rws[idx].account_value_pair());
+            [3, 4].map(|index| block.get_rws(step, index).account_value_pair());
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
@@ -284,7 +283,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             // first transaction needs TxReceiptFieldTag::COUNT(3) lookups to tx receipt,
             // while later transactions need 4 (with one extra cumulative gas read) lookups
             let rw = &block.rws[(
-                RwTableTag::TxReceipt,
+                Target::TxReceipt,
                 (tx.id - 2) * (TxReceiptFieldTag::COUNT + 1) + 2,
             )];
             rw.receipt_value()
@@ -296,7 +295,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             Value::known(F::from(current_cumulative_gas_used)),
         )?;
         self.is_first_tx
-            .assign(region, offset, F::from(tx.id as u64), F::one())?;
+            .assign(region, offset, F::from(tx.id as u64), F::ONE)?;
         self.is_persistent.assign(
             region,
             offset,
@@ -311,9 +310,10 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 mod test {
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
-    use eth_types::{self, bytecode};
-
-    use mock::{eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
+    use eth_types::{self, bytecode, Word};
+    use mock::{
+        eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
+    };
 
     fn test_ok<const NACC: usize, const NTX: usize>(ctx: TestContext<NACC, NTX>) {
         CircuitTestBuilder::new_from_test_ctx(ctx)
@@ -326,19 +326,144 @@ mod test {
 
     #[test]
     fn end_tx_gadget_simple() {
-        // TODO: Enable this with respective code when SSTORE is implemented.
-        // Tx with non-capped refund
-        // test_ok(vec![mock_tx(
-        //     address!("0x00000000000000000000000000000000000000fe"),
-        //     Some(27000),
-        //     None,
-        // )]);
-        // Tx with capped refund
-        // test_ok(vec![mock_tx(
-        //     address!("0x00000000000000000000000000000000000000fe"),
-        //     Some(65000),
-        //     None,
-        // )]);
+        let key_1: Word = 0x030201.into();
+        let original_value: Word = 0x060504.into();
+        let zero_value: Word = 0x0.into();
+
+        // Testing refunds
+        // When setting smart contract's non-zero values in storage to zero,
+        // the sender of the transaction receives some refund (each transaction's step may include a
+        // non-zero refund field). Moreover, the sum of the refunds is capped at $max_refund
+        // = gas_used / MAX_REFUND_QUOTIENT_OF_GAS_USED$ where MAX_REFUND_QUOTIENT_OF_GAS_USED = 5 (see EIP EIP 3529, https://eips.ethereum.org/EIPS/eip-3529)
+        // We test here that the refunds, capped or uncapped, have been correctly implemented by
+        // configuring an account, MOCK_ACCOUNTS[0], with a non null storage and some code cleaning
+        // the storage.
+
+        // 1) Testing Tx with non capped refunds
+        // In this first test, we reset only one value to minimize the gas_used so that the refund
+        // is smaller than max_refund. More particularly, we expect here to have 21_000 (tx)
+        // + 5_000 (sstore) + 3 (push) + 3 (push) gas used, hence a max_refund of 5_201 while
+        // the refund should add up to 4_800 (refund of 1 sstore). Hence, we can check after the
+        // transaction that MOCK_ACCOUNTS[0]'s balance decreased by:
+        // (21_000 + 5_000 + 3 + 3 - 4_800) * 2_000_000_000 (=gas_cost).
+        // To see the refund and balances, uncomment the code below, set TestContext to
+        // TestContext::<4, 2> and run the following command: cargo test
+        // evm_circuit::execution::end_tx::test::end_tx_gadget_simple -- --exact --nocapture
+        let bytecode_uncapped = bytecode! {
+            PUSH32(zero_value)
+            PUSH32(key_1)
+            SSTORE
+            STOP
+        };
+        let storage_uncapped = vec![(key_1, original_value)].into_iter();
+
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(MOCK_ACCOUNTS[0])
+                    .balance(Word::from(10u64.pow(19)))
+                    .code(bytecode_uncapped)
+                    .storage(storage_uncapped.into_iter());
+                accs[1]
+                    .address(MOCK_ACCOUNTS[1])
+                    .balance(Word::from(10u64.pow(19)));
+                // accs[2]
+                //     .address(MOCK_ACCOUNTS[2])
+                //     .code(bytecode! {
+                //         PUSH32(MOCK_ACCOUNTS[1])
+                //         BALANCE
+                //         STOP
+                //     })
+                //     .balance(Word::from(10u64.pow(19)));
+                // accs[3]
+                //     .address(MOCK_ACCOUNTS[3])
+                //     .balance(Word::from(10u64.pow(19)));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .to(accs[0].address)
+                    .from(accs[1].address)
+                    .gas(Word::from(30_000))
+                    .gas_price(gwei(2))
+                    .nonce(0);
+                // txs[1]
+                //     .to(accs[2].address)
+                //     .from(accs[3].address)
+                //     .gas(Word::from(30_000))
+                //     .gas_price(gwei(2))
+                //     .nonce(0);
+            },
+            |block, _tx| block,
+        )
+        .unwrap();
+
+        // for (i, trace) in ctx.geth_traces.iter().enumerate() {
+        //     println!(
+        //         "\n---------- trace {}: gas={}, failed={}, return_value={}",
+        //         i, trace.gas, trace.failed, trace.return_value
+        //     );
+        //     for (j, step) in trace.struct_logs.iter().enumerate() {
+        //         println!(
+        //             "  step {}: gas={}, gas_cost={}, refund={}, top_stack={}",
+        //             j,
+        //             step.gas,
+        //             step.gas_cost,
+        //             step.refund,
+        //             if step.stack.last().is_ok() {
+        //                 step.stack.last().unwrap()
+        //             } else {
+        //                 Word::from(0)
+        //             },
+        //         )
+        //     }
+        // }
+        test_ok(ctx);
+
+        // 2) Testing Tx with capped refunds
+        // In this second test, we reset several values so that the refund is greater than
+        // max_refund and hence the effective refund is capped. More particularly, we expect
+        // here to have 21_000 (tx) + 2 * (5_000 (sstore) + 3 (push) + 3 (push)) gas used, hence a
+        // max_refund of 6_202 while the refund should add up to 9_600 (refund of 2 sstore).
+        // Hence, we can check after the transaction that MOCK_ACCOUNTS[0]'s balance decreased by:
+        // (21_000 + 2 * (5_000 + 3 + 3)  - 6_202) * 2_000_000_000 (=gas_cost).
+        let key_2: Word = 0x030202.into();
+        let bytecode_capped = bytecode! {
+            PUSH32(zero_value)
+            PUSH32(key_1)
+            SSTORE
+            PUSH32(zero_value)
+            PUSH32(key_2)
+            SSTORE
+            STOP
+        };
+        let storage_capped = vec![(key_1, original_value), (key_2, original_value)].into_iter();
+
+        test_ok(
+            TestContext::<2, 1>::new(
+                None,
+                |accs| {
+                    accs[0]
+                        .address(MOCK_ACCOUNTS[0])
+                        .balance(Word::from(10u64.pow(19)))
+                        .code(bytecode_capped)
+                        .storage(storage_capped);
+                    accs[1]
+                        .address(MOCK_ACCOUNTS[1])
+                        .balance(Word::from(10u64.pow(19)));
+                },
+                |mut txs, accs| {
+                    txs[0]
+                        .to(accs[0].address)
+                        .from(accs[1].address)
+                        .gas(Word::from(50_000))
+                        .gas_price(gwei(2))
+                        .nonce(0);
+                },
+                |block, _tx| block,
+            )
+            .unwrap(),
+        );
 
         // Multiple txs
         test_ok(

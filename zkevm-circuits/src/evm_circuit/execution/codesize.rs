@@ -8,7 +8,9 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
+            },
             from_bytes, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -30,7 +32,7 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CODESIZE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let codesize_bytes = array_init(|_| cb.query_byte());
@@ -74,7 +76,7 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let codesize = block.rws[step.rw_indices[0]].stack_value().as_u64();
+        let codesize = block.get_rws(step, 0).stack_value().as_u64();
 
         for (c, b) in self
             .codesize_bytes

@@ -5,7 +5,10 @@ use crate::{
         util::{
             self,
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             math_gadget::{IsZeroGadget, LtWordGadget, ModGadget, MulAddWords512Gadget},
             sum, CachedRegion,
         },
@@ -41,7 +44,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::MULMOD;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let a = cb.query_word_rlc();
@@ -113,9 +116,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [r, n, b, a] = [3, 2, 1, 0]
-            .map(|idx| step.rw_indices[idx])
-            .map(|idx| block.rws[idx].stack_value());
+        let [r, n, b, a] = [3, 2, 1, 0].map(|index| block.get_rws(step, index).stack_value());
         self.words[0].assign(region, offset, Some(a.to_le_bytes()))?;
         self.words[1].assign(region, offset, Some(b.to_le_bytes()))?;
         self.words[2].assign(region, offset, Some(n.to_le_bytes()))?;
@@ -164,8 +165,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::test_util::CircuitTestBuilder;
-    use eth_types::evm_types::Stack;
-    use eth_types::{bytecode, Word, U256};
+    use eth_types::{bytecode, evm_types::Stack, Word, U256};
     use mock::TestContext;
 
     fn test(a: Word, b: Word, n: Word, r: Option<Word>, ok: bool) {

@@ -17,7 +17,6 @@ impl Opcode for ErrorCreationCode {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
-
         exec_step.error = Some(ExecError::InvalidCreationCode);
 
         let offset = geth_step.stack.nth_last(0)?;
@@ -57,10 +56,9 @@ impl Opcode for ErrorCreationCode {
         );
 
         // refer to return_revert Case C
-        state.handle_restore_context(geth_steps, &mut exec_step)?;
+        state.handle_restore_context(&mut exec_step, geth_steps)?;
+        state.handle_return(&mut exec_step, geth_steps, true)?;
 
-        //state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
-        state.handle_return(geth_step)?;
         Ok(vec![exec_step])
     }
 }

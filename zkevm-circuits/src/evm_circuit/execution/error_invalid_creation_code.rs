@@ -3,8 +3,11 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
-            math_gadget::IsEqualGadget, memory_gadget::MemoryAddressGadget, CachedRegion, Cell,
+            common_gadget::CommonErrorGadget,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            math_gadget::IsEqualGadget,
+            memory_gadget::MemoryAddressGadget,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -29,7 +32,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorInvalidCreationCode;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let first_byte = cb.query_cell();
 
@@ -41,7 +44,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         cb.require_true("is_create is true", cb.curr.state.is_create.expr());
 
         let memory_address = MemoryAddressGadget::construct(cb, offset, length);
-        //TODO: lookup memory for first byte
+        // TODO: lookup memory for first byte
         cb.memory_lookup(0.expr(), memory_address.offset(), first_byte.expr(), None);
 
         // constrain first byte is 0xef
@@ -78,15 +81,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
+        let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_index(i)].stack_value());
         self.memory_address
             .assign(region, offset, memory_offset, length)?;
 
-        let byte = block.rws[step.rw_indices[2]].memory_value();
+        let byte = block.rws[step.rw_index(2)].memory_value();
 
         self.first_byte
             .assign(region, offset, Value::known(F::from(byte as u64)))?;
@@ -153,7 +156,7 @@ mod test {
         let initialization_bytes = initialization_bytecode.code();
         let mut code = Bytecode::default();
 
-        //construct maxcodesize + 1 memory bytes
+        // construct maxcodesize + 1 memory bytes
         let code_creator: Vec<u8> = initialization_bytes
             .to_vec()
             .iter()
@@ -216,7 +219,7 @@ mod test {
             let caller = Account {
                 address: *CALLER_ADDRESS,
                 code: root_code.into(),
-                nonce: Word::one(),
+                nonce: 1.into(),
                 balance: eth(10),
                 ..Default::default()
             };

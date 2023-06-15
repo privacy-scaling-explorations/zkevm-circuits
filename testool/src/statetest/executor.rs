@@ -1,22 +1,20 @@
 use super::{AccountMatch, StateTest, StateTestResult};
 use crate::config::TestSuite;
-use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
-use bus_mapping::mock::BlockData;
+use bus_mapping::{
+    circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+    mock::BlockData,
+};
 use eth_types::{geth_types, Address, Bytes, GethExecTrace, U256, U64};
-use ethers_core::k256::ecdsa::SigningKey;
-use ethers_core::types::transaction::eip2718::TypedTransaction;
-use ethers_core::types::TransactionRequest;
+use ethers_core::{
+    k256::ecdsa::SigningKey,
+    types::{transaction::eip2718::TypedTransaction, TransactionRequest},
+};
 use ethers_signers::{LocalWallet, Signer};
 use external_tracer::TraceConfig;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
-use zkevm_circuits::super_circuit::SuperCircuit;
-use zkevm_circuits::test_util::CircuitTestBuilder;
-use zkevm_circuits::witness::Block;
-
-const MAX_TXS: usize = 1;
-const MAX_CALLDATA: usize = 32;
+use zkevm_circuits::{super_circuit::SuperCircuit, test_util::CircuitTestBuilder, witness::Block};
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
@@ -25,7 +23,7 @@ pub enum StateTestError {
     #[error("BalanceMismatch(expected:{expected:?}, found:{found:?})")]
     BalanceMismatch { expected: U256, found: U256 },
     #[error("NonceMismatch(expected:{expected:?}, found:{found:?})")]
-    NonceMismatch { expected: U256, found: U256 },
+    NonceMismatch { expected: u64, found: u64 },
     #[error("CodeMismatch(expected: {expected:?}, found:{found:?})")]
     CodeMismatch { expected: Bytes, found: Bytes },
     #[error("StorgeMismatch(slot:{slot:?} expected:{expected:?}, found: {found:?})")]
@@ -141,9 +139,9 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
             transactions: vec![geth_types::Transaction {
                 from: st.from,
                 to: st.to,
-                nonce: st.nonce,
+                nonce: U64::from(st.nonce),
                 value: st.value,
-                gas_limit: U256::from(st.gas_limit),
+                gas_limit: U64::from(st.gas_limit),
                 gas_price: st.gas_price,
                 gas_fee_cap: U256::zero(),
                 gas_tip_cap: U256::zero(),
@@ -203,30 +201,20 @@ pub fn run_test(
         ));
     }
 
-    if suite.max_gas > 0 && geth_traces[0].gas.0 > suite.max_gas {
-        return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas.0));
+    if suite.max_gas > 0 && geth_traces[0].gas > suite.max_gas {
+        return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas));
     }
 
     let transactions = trace_config
         .transactions
         .into_iter()
         .enumerate()
-        .map(|(index, tx)| eth_types::Transaction {
-            from: tx.from,
-            to: tx.to,
-            value: tx.value,
-            input: tx.call_data,
-            gas_price: Some(tx.gas_price),
-            access_list: tx.access_list,
-            nonce: tx.nonce,
-            gas: tx.gas_limit,
-            transaction_index: Some(U64::from(index)),
-            r: tx.r,
-            s: tx.s,
-            v: U64::from(tx.v),
-            block_number: Some(U64::from(trace_config.block_constants.number.as_u64())),
-            chain_id: Some(trace_config.chain_id),
-            ..eth_types::Transaction::default()
+        .map(|(index, tx)| {
+            tx.to_response(
+                U64::from(index),
+                trace_config.chain_id,
+                trace_config.block_constants.number,
+            )
         })
         .collect();
 
@@ -286,8 +274,8 @@ pub fn run_test(
         geth_data.sign(&wallets);
 
         let circuits_params = CircuitsParams {
-            max_txs: MAX_TXS,
-            max_calldata: MAX_CALLDATA,
+            max_txs: 1,
+            max_calldata: 32,
             max_rws: 256,
             max_copy_rows: 256,
             max_exp_steps: 256,
@@ -296,8 +284,7 @@ pub fn run_test(
             max_keccak_rows: 0,
         };
         let (k, circuit, instance, _builder) =
-            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, 0x100>::build(geth_data, circuits_params)
-                .unwrap();
+            SuperCircuit::<Fr>::build(geth_data, circuits_params, Fr::from(0x100)).unwrap();
         builder = _builder;
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();

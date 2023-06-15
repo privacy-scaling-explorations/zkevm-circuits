@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
+                EVMConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
             from_bytes, select, CachedRegion, Cell, Word,
         },
@@ -33,7 +33,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EXTCODEHASH;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let address_word = cb.query_word_rlc();
         let address = from_bytes::expr(&address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
         cb.stack_pop(address_word.expr());
@@ -93,7 +93,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let address = block.rws[step.rw_indices[0]].stack_value();
+        let address = block.get_rws(step, 0).stack_value();
         self.address_word
             .assign(region, offset, Some(address.to_le_bytes()))?;
 
@@ -106,11 +106,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             call.is_persistent,
         )?;
 
-        let (_, is_warm) = block.rws[step.rw_indices[4]].tx_access_list_value_pair();
+        let (_, is_warm) = block.get_rws(step, 4).tx_access_list_value_pair();
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let code_hash = block.rws[step.rw_indices[5]].account_value_pair().0;
+        let code_hash = block.get_rws(step, 5).account_value_pair().0;
         self.code_hash
             .assign(region, offset, region.word_rlc(code_hash))?;
 
@@ -122,7 +122,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 mod test {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{
-        address, bytecode, geth_types::Account, Address, Bytecode, Bytes, ToWord, Word, U256,
+        address, bytecode, geth_types::Account, Address, Bytecode, Bytes, ToWord, Word, U256, U64,
     };
     use lazy_static::lazy_static;
     use mock::TestContext;
@@ -134,7 +134,7 @@ mod test {
 
     fn test_ok(external_account: Option<Account>, is_warm: bool) {
         let external_address = external_account
-            .as_ref()
+            .clone()
             .map(|a| a.address)
             .unwrap_or(*EXTERNAL_ADDRESS);
 
@@ -166,10 +166,7 @@ mod test {
 
                 accs[1].address(external_address);
                 if let Some(external_account) = external_account {
-                    accs[1]
-                        .balance(external_account.balance)
-                        .nonce(external_account.nonce)
-                        .code(external_account.code);
+                    accs[1].account(&external_account);
                 }
                 accs[2]
                     .address(address!("0x0000000000000000000000000000000000000010"))
@@ -200,7 +197,7 @@ mod test {
         test_ok(
             Some(Account {
                 address: *EXTERNAL_ADDRESS,
-                nonce: U256::from(259),
+                nonce: U64::from(259),
                 code: Bytes::from([3]),
                 ..Default::default()
             }),
@@ -227,7 +224,7 @@ mod test {
         // code = [].
         let nonce_only_account = Account {
             address: *EXTERNAL_ADDRESS,
-            nonce: U256::from(200),
+            nonce: U64::from(200),
             ..Default::default()
         };
         // This account state is possible if another account sends ETH to a previously

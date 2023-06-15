@@ -1,6 +1,7 @@
 //! The Root circuit implementation.
+use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::Field,
+    arithmetic::Field as Halo2Field,
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::serde::SerdeObject,
     plonk::{Circuit, ConstraintSystem, Error},
@@ -8,14 +9,28 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use maingate::MainGateInstructions;
-use snark_verifier::{util::arithmetic::MultiMillerLoop, verifier::plonk::PlonkProtocol};
-use std::iter;
+use snark_verifier::{
+    loader::native::NativeLoader,
+    pcs::{
+        kzg::{KzgAccumulator, KzgAsProvingKey, KzgAsVerifyingKey, KzgDecidingKey},
+        AccumulationDecider, AccumulationScheme, AccumulationSchemeProver,
+        PolynomialCommitmentScheme,
+    },
+    util::arithmetic::MultiMillerLoop,
+    verifier::plonk::PlonkProtocol,
+};
+use std::{iter, marker::PhantomData, rc::Rc};
 
 mod aggregation;
 
+#[cfg(any(feature = "test", test))]
+mod test;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+pub use self::RootCircuit as TestRootCircuit;
+
 pub use aggregation::{
-    aggregate, AggregationConfig, EccChip, Halo2Loader, KzgAs, KzgDk, KzgSvk,
-    PlonkSuccinctVerifier, PlonkVerifier, PoseidonTranscript, Snark, SnarkWitness, BITS, LIMBS,
+    aggregate, AggregationConfig, EccChip, Gwc, Halo2Loader, KzgDk, KzgSvk, PlonkSuccinctVerifier,
+    PlonkVerifier, PoseidonTranscript, Shplonk, Snark, SnarkWitness, BITS, LIMBS,
 };
 pub use snark_verifier::system::halo2::{compile, Config};
 
@@ -24,16 +39,29 @@ pub use aggregation::TestAggregationCircuit;
 
 /// RootCircuit for aggregating SuperCircuit into a much smaller proof.
 #[derive(Clone)]
-pub struct RootCircuit<'a, M: MultiMillerLoop> {
+pub struct RootCircuit<'a, M: MultiMillerLoop, As> {
     svk: KzgSvk<M>,
     snark: SnarkWitness<'a, M::G1Affine>,
     instance: Vec<M::Scalar>,
+    _marker: PhantomData<As>,
 }
 
-impl<'a, M: MultiMillerLoop> RootCircuit<'a, M>
+impl<'a, M, As> RootCircuit<'a, M, As>
 where
+    M: MultiMillerLoop,
     M::G1Affine: SerdeObject,
     M::G2Affine: SerdeObject,
+    M::Scalar: Field,
+    As: PolynomialCommitmentScheme<
+            M::G1Affine,
+            NativeLoader,
+            VerifyingKey = KzgSvk<M>,
+            Output = KzgAccumulator<M::G1Affine, NativeLoader>,
+        > + AccumulationSchemeProver<
+            M::G1Affine,
+            Accumulator = KzgAccumulator<M::G1Affine, NativeLoader>,
+            ProvingKey = KzgAsProvingKey<M::G1Affine>,
+        > + AccumulationDecider<M::G1Affine, NativeLoader, DecidingKey = KzgDecidingKey<M>>,
 {
     /// Create a `RootCircuit` with accumulator computed given a `SuperCircuit`
     /// proof and its instance. Returns `None` if given proof is invalid.
@@ -45,7 +73,7 @@ where
     ) -> Result<Self, snark_verifier::Error> {
         let num_instances = super_circuit_protocol.num_instance.iter().sum::<usize>() + 4 * LIMBS;
         let instance = {
-            let mut instance = Ok(vec![M::Scalar::zero(); num_instances]);
+            let mut instance = Ok(vec![M::Scalar::ZERO; num_instances]);
             super_circuit_instances
                 .as_ref()
                 .zip(super_circuit_proof.as_ref())
@@ -55,7 +83,7 @@ where
                         super_circuit_instances,
                         super_circuit_proof,
                     );
-                    instance = aggregate::<M>(params, [snark]).map(|accumulator_limbs| {
+                    instance = aggregate::<M, As>(params, [snark]).map(|accumulator_limbs| {
                         iter::empty()
                             // Propagate `SuperCircuit`'s instance
                             .chain(super_circuit_instances.iter().flatten().cloned())
@@ -76,6 +104,7 @@ where
                 super_circuit_proof,
             ),
             instance,
+            _marker: PhantomData,
         })
     }
 
@@ -97,15 +126,32 @@ where
     }
 }
 
-impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for RootCircuit<'a, M> {
+impl<'a, M, As> Circuit<M::Scalar> for RootCircuit<'a, M, As>
+where
+    M: MultiMillerLoop,
+    M::Scalar: Field,
+    for<'b> As: PolynomialCommitmentScheme<
+            M::G1Affine,
+            Rc<Halo2Loader<'b, M::G1Affine>>,
+            VerifyingKey = KzgSvk<M>,
+            Output = KzgAccumulator<M::G1Affine, Rc<Halo2Loader<'b, M::G1Affine>>>,
+        > + AccumulationScheme<
+            M::G1Affine,
+            Rc<Halo2Loader<'b, M::G1Affine>>,
+            Accumulator = KzgAccumulator<M::G1Affine, Rc<Halo2Loader<'b, M::G1Affine>>>,
+            VerifyingKey = KzgAsVerifyingKey,
+        >,
+{
     type Config = AggregationConfig;
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self {
             svk: self.svk,
             snark: self.snark.without_witnesses(),
-            instance: vec![M::Scalar::zero(); self.instance.len()],
+            instance: vec![M::Scalar::ZERO; self.instance.len()],
+            _marker: PhantomData,
         }
     }
 
@@ -120,7 +166,7 @@ impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for RootCircuit<'a, M> {
     ) -> Result<(), Error> {
         config.load_table(&mut layouter)?;
         let (instance, accumulator_limbs) =
-            config.aggregate::<M>(&mut layouter, &self.svk, [self.snark])?;
+            config.aggregate::<M, As>(&mut layouter, &self.svk, [self.snark])?;
 
         // Constrain equality to instance values
         let main_gate = config.main_gate();
@@ -135,92 +181,5 @@ impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for RootCircuit<'a, M> {
         }
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::{
-        root_circuit::{compile, Config, PoseidonTranscript, RootCircuit},
-        super_circuit::{super_circuit_tests::block_1tx, SuperCircuit},
-    };
-    use bus_mapping::circuit_input_builder::CircuitsParams;
-    use halo2_proofs::{
-        circuit::Value,
-        dev::MockProver,
-        halo2curves::bn256::Bn256,
-        plonk::{create_proof, keygen_pk, keygen_vk},
-        poly::kzg::{
-            commitment::{KZGCommitmentScheme, ParamsKZG},
-            multiopen::ProverGWC,
-        },
-    };
-    use itertools::Itertools;
-    use rand::rngs::OsRng;
-
-    #[ignore = "Due to high memory requirement"]
-    #[test]
-    fn test_root_circuit() {
-        let (params, protocol, proof, instance) = {
-            // Preprocess
-            const MAX_TXS: usize = 1;
-            const MAX_CALLDATA: usize = 32;
-            const TEST_MOCK_RANDOMNESS: u64 = 0x100;
-            let circuits_params = CircuitsParams {
-                max_txs: MAX_TXS,
-                max_calldata: MAX_CALLDATA,
-                max_rws: 256,
-                max_copy_rows: 256,
-                max_exp_steps: 256,
-                max_bytecode: 512,
-                max_evm_rows: 0,
-                max_keccak_rows: 0,
-            };
-            let (k, circuit, instance, _) =
-                SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>::build(
-                    block_1tx(),
-                    circuits_params,
-                )
-                .unwrap();
-            let params = ParamsKZG::<Bn256>::setup(k, OsRng);
-            let pk = keygen_pk(&params, keygen_vk(&params, &circuit).unwrap(), &circuit).unwrap();
-            let protocol = compile(
-                &params,
-                pk.get_vk(),
-                Config::kzg()
-                    .with_num_instance(instance.iter().map(|instance| instance.len()).collect()),
-            );
-
-            // Create proof
-            let proof = {
-                let mut transcript = PoseidonTranscript::new(Vec::new());
-                create_proof::<KZGCommitmentScheme<_>, ProverGWC<_>, _, _, _, _>(
-                    &params,
-                    &pk,
-                    &[circuit],
-                    &[&instance.iter().map(Vec::as_slice).collect_vec()],
-                    OsRng,
-                    &mut transcript,
-                )
-                .unwrap();
-                transcript.finalize()
-            };
-
-            (params, protocol, proof, instance)
-        };
-
-        let root_circuit = RootCircuit::new(
-            &params,
-            &protocol,
-            Value::known(&instance),
-            Value::known(&proof),
-        )
-        .unwrap();
-        assert_eq!(
-            MockProver::run(26, &root_circuit, root_circuit.instance())
-                .unwrap()
-                .verify_par(),
-            Ok(())
-        );
     }
 }

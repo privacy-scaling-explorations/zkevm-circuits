@@ -30,10 +30,10 @@
 //! ## Bus Mapping
 //! The goal of this crate is to serve as:
 //! - A parsing lib for EVM execution traces.
-//! - A way to infer some witness data that can only be constructed once we've
-//!   analyzed the full exec trace.
-//! - An easy interface to collect all of the data to witness into the circuits
-//!   and witness it with few function calls.
+//! - A way to infer some witness data that can only be constructed once we've analyzed the full
+//!   exec trace.
+//! - An easy interface to collect all of the data to witness into the circuits and witness it with
+//!   few function calls.
 //!
 //! ## Parsing
 //! Provided a JSON file or a JSON as a stream of bytes, which contains an
@@ -54,7 +54,6 @@
 //!     self, address, Address, Word, Hash, U64, GethExecTrace, GethExecStep, geth_types::GethData, bytecode
 //! };
 //! use mock::test_ctx::{TestContext, helpers::*};
-//! use eth_types::evm_types::Gas;
 //! use bus_mapping::circuit_input_builder::{Block, CircuitInputBuilder};
 //!
 //! let input_trace = r#"
@@ -139,7 +138,7 @@
 //! let geth_steps: Vec<GethExecStep> = serde_json::from_str(input_trace).unwrap();
 //! let geth_trace = GethExecTrace {
 //!     return_value: "".to_string(),
-//!     gas: Gas(block.eth_block.transactions[0].gas.as_u64()),
+//!     gas: block.eth_block.transactions[0].gas.as_u64(),
 //!     failed: false,
 //!     struct_logs: geth_steps,
 //! };
@@ -179,8 +178,8 @@
 //!
 //! Once you have the trace built (following the code found above) you can
 //! basically:
-//! - Get an iterator/vector over the `Stack`, `Memory` or `Storage` operations
-//!   ordered on the way the State Proof needs.
+//! - Get an iterator/vector over the `Stack`, `Memory` or `Storage` operations ordered on the way
+//!   the State Proof needs.
 //!
 //! On that way, we would get something like this for the Memory ops:
 //! ```text,ignore
@@ -213,8 +212,6 @@
 //! See: <https://hackmd.io/@liangcc/zkvmbook/https%3A%2F%2Fhackmd.io%2FAmhZ2ryITxicmhYFyQ0DEw#Bus-Mapping>
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
-// Temporary until we have more of the crate implemented.
-#![allow(dead_code)]
 // We want to have UPPERCASE idents sometimes.
 #![allow(non_snake_case)]
 // Catch documentation errors caused by code changes.
@@ -234,6 +231,7 @@ pub mod exec_trace;
 pub(crate) mod geth_errors;
 pub mod mock;
 pub mod operation;
+pub mod precompile;
 pub mod rpc;
 pub mod state_db;
 pub use error::Error;

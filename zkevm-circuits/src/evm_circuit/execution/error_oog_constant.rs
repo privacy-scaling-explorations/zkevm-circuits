@@ -1,14 +1,18 @@
-use crate::evm_circuit::{
-    execution::ExecutionGadget,
-    param::N_BYTES_GAS,
-    step::ExecutionState,
-    util::{
-        common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
-        math_gadget::LtGadget, CachedRegion, Cell,
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        param::N_BYTES_GAS,
+        step::ExecutionState,
+        util::{
+            common_gadget::CommonErrorGadget,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            math_gadget::LtGadget,
+            CachedRegion, Cell,
+        },
+        witness::{Block, Call, ExecStep, Transaction},
     },
-    witness::{Block, Call, ExecStep, Transaction},
+    util::Expr,
 };
-use crate::util::Expr;
 use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -26,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasConstant;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let gas_required = cb.query_cell();
@@ -61,7 +65,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
@@ -90,17 +94,18 @@ mod test {
     use bus_mapping::evm::OpcodeId;
     use eth_types::{
         self, address, bytecode, bytecode::Bytecode, evm_types::GasCost, geth_types::Account,
-        Address, ToWord, Word,
+        Address, ToWord, Word, U64,
     };
 
     use mock::{
-        eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
+        eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, MockTransaction,
+        TestContext, MOCK_ACCOUNTS,
     };
 
     fn gas(call_data: &[u8]) -> Word {
         Word::from(
-            GasCost::TX.as_u64()
-                + 2 * OpcodeId::PUSH32.constant_gas_cost().as_u64()
+            GasCost::TX
+                + 2 * OpcodeId::PUSH32.constant_gas_cost()
                 + call_data
                     .iter()
                     .map(|&x| if x == 0 { 4 } else { 16 })
@@ -142,19 +147,19 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    // TODO: Use `mock` crate
     fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_types::Transaction {
         let from = MOCK_ACCOUNTS[1];
         let to = MOCK_ACCOUNTS[0];
-        eth_types::Transaction {
-            from,
-            to: Some(to),
-            value,
-            gas: gas(&calldata),
-            gas_price: Some(gas_price),
-            input: calldata.into(),
-            ..Default::default()
-        }
+
+        let mock_transaction = MockTransaction::default()
+            .from(from)
+            .to(to)
+            .value(value)
+            .gas(gas(&calldata))
+            .gas_price(gas_price)
+            .input(calldata.into())
+            .build();
+        eth_types::Transaction::from(mock_transaction)
     }
 
     #[test]
@@ -221,16 +226,8 @@ mod test {
                 accs[0]
                     .address(address!("0x000000000000000000000000000000000000cafe"))
                     .balance(Word::from(10u64.pow(19)));
-                accs[1]
-                    .address(caller.address)
-                    .code(caller.code)
-                    .nonce(caller.nonce)
-                    .balance(caller.balance);
-                accs[2]
-                    .address(callee.address)
-                    .code(callee.code)
-                    .nonce(callee.nonce)
-                    .balance(callee.balance);
+                accs[1].account(&caller);
+                accs[2].account(&callee);
             },
             |mut txs, accs| {
                 txs[0]
@@ -251,7 +248,7 @@ mod test {
         Account {
             address: Address::repeat_byte(0xff),
             code: code.into(),
-            nonce: if is_empty { 0 } else { 1 }.into(),
+            nonce: U64::from(!is_empty as u64),
             balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
             ..Default::default()
         }

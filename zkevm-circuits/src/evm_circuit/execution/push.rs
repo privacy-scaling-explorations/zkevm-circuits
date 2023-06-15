@@ -4,7 +4,10 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             sum, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -27,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::PUSH;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let value = cb.query_word_rlc();
@@ -123,9 +126,9 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
 
-        let value = block.rws[step.rw_indices[0]].stack_value();
+        let value = block.get_rws(step, 0).stack_value();
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
@@ -145,8 +148,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use eth_types::bytecode;
-    use eth_types::evm_types::OpcodeId;
+    use eth_types::{bytecode, evm_types::OpcodeId};
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, bytes: &[u8]) {
@@ -158,7 +160,7 @@ mod test {
         for b in bytes {
             bytecode.write(*b, false);
         }
-        bytecode.write_op(OpcodeId::STOP);
+        bytecode.op_stop();
 
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),

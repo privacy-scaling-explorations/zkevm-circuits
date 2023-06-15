@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::util::{
-        self, constraint_builder::ConstraintBuilder, from_bytes, math_gadget::*, select,
+        self, constraint_builder::EVMConstraintBuilder, from_bytes, math_gadget::*, select,
         CachedRegion,
     },
     util::Expr,
@@ -19,7 +19,7 @@ pub(crate) struct CmpWordsGadget<F> {
 
 impl<F: Field> CmpWordsGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         a: &util::Word<F>,
         b: &util::Word<F>,
     ) -> Self {
@@ -85,11 +85,10 @@ impl<F: Field> CmpWordsGadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::test_util::*;
-    use super::*;
+    use super::{test_util::*, *};
+    use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
     use eth_types::Word;
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// CmpWordGadgetTestContainer: require(a == b if CHECK_EQ else a < b)
@@ -102,7 +101,7 @@ mod tests {
     impl<F: Field, const CHECK_EQ: bool> MathGadgetContainer<F>
         for CmpWordGadgetTestContainer<F, CHECK_EQ>
     {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_word_rlc();
             let b = cb.query_word_rlc();
             let cmp_gadget = CmpWordsGadget::<F>::construct(cb, &a, &b);

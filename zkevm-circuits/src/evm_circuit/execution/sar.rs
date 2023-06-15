@@ -1,19 +1,27 @@
-use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::param::N_BYTES_U64;
-use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::table::{FixedTableTag, Lookup};
-use crate::evm_circuit::util::common_gadget::SameContextGadget;
-use crate::evm_circuit::util::constraint_builder::Transition::Delta;
-use crate::evm_circuit::util::constraint_builder::{ConstraintBuilder, StepStateTransition};
-use crate::evm_circuit::util::math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget};
-use crate::evm_circuit::util::{from_bytes, select, sum, CachedRegion, Cell, Word};
-use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
-use crate::util::Expr;
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        param::N_BYTES_U64,
+        step::ExecutionState,
+        table::{FixedTableTag, Lookup},
+        util::{
+            common_gadget::SameContextGadget,
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
+            from_bytes,
+            math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
+            select, sum, CachedRegion, Cell, Word,
+        },
+        witness::{Block, Call, ExecStep, Transaction},
+    },
+    util::Expr,
+};
 use array_init::array_init;
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// SarGadget verifies SAR opcode.
 /// Verify signed word shift right as `signed(a) >> shift == signed(b)`;
@@ -66,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SAR;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let shift = cb.query_word_rlc();
@@ -258,8 +266,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
-        let [shift, a, b] = indices.map(|idx| block.rws[idx].stack_value());
+        let [shift, a, b] = [0, 1, 2].map(|idx| block.get_rws(step, idx).stack_value());
 
         self.shift
             .assign(region, offset, Some(shift.to_le_bytes()))?;
@@ -358,8 +365,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::rand_word;
-    use crate::test_util::CircuitTestBuilder;
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, U256};
     use ethers_core::types::I256;
     use lazy_static::lazy_static;

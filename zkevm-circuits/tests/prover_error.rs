@@ -1,22 +1,19 @@
 // This file is intended to be used with fixtures generated from zkevm-chain.
 // Copy the `errors/<block number>` directory into the zkevm-circuits git root
 // as `block` and run via `cargo test -p zkevm-circuits --features test
-// prover_error -- --nocapture --ignored`. Change any constant variables like
-// `MAX_TXS` to suit your needs.
-use bus_mapping::circuit_input_builder::CircuitsParams;
-use bus_mapping::mock::BlockData;
+// prover_error -- --nocapture --ignored`. Change any circuit parameters like
+// `max_txs` to suit your needs.
+use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
 use env_logger::Env;
-use eth_types::geth_types::{Account, GethData};
-use eth_types::{Block, Bytes, Error, Transaction, Word, H160, U256};
-use halo2_proofs::dev::MockProver;
-use halo2_proofs::halo2curves::bn256::Fr;
+use eth_types::{
+    geth_types::{Account, GethData},
+    Block, Bytes, Error, Transaction, Word, H160, U256,
+};
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use mock::test_ctx::{gen_geth_traces, LoggerConfig};
 use serde_json::{from_value, Value};
-use std::io::BufReader;
-use std::{collections::HashMap, fs::File};
-use zkevm_circuits::super_circuit::SuperCircuit;
-use zkevm_circuits::util::SubCircuit;
-use zkevm_circuits::witness::block_convert;
+use std::{collections::HashMap, fs::File, io::BufReader};
+use zkevm_circuits::{super_circuit::SuperCircuit, util::SubCircuit, witness::block_convert};
 
 #[derive(serde::Deserialize)]
 struct MyAccount {
@@ -39,14 +36,12 @@ fn load_json(path: &str) -> Value {
 #[ignore]
 fn prover_error() {
     // change any of these values to your needs
-    const MAX_TXS: usize = 1;
-    const MAX_CALLDATA: usize = 256;
     const MOCK_RANDOMNESS: u64 = 0x100;
     let k = 19;
     let chain_id = Word::from(99);
     let circuit_params = CircuitsParams {
-        max_txs: MAX_TXS,
-        max_calldata: MAX_CALLDATA,
+        max_txs: 1,
+        max_calldata: 256,
         max_rws: 16388,
         ..Default::default()
     };
@@ -107,8 +102,7 @@ fn prover_error() {
         block.randomness = Fr::from(MOCK_RANDOMNESS);
         block
     };
-    let circuit =
-        SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS>::new_from_block(&block_witness);
+    let circuit = SuperCircuit::new_from_block(&block_witness);
     let res = MockProver::run(k, &circuit, circuit.instance())
         .expect("MockProver::run")
         .verify_par();

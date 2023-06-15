@@ -8,9 +8,10 @@ use crate::{
 };
 use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
 use eth_types::geth_types::GethData;
+use std::cmp;
 
-use halo2_proofs::dev::MockProver;
-use halo2_proofs::halo2curves::bn256::Fr;
+use crate::util::log2_ceil;
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use mock::TestContext;
 
 #[cfg(test)]
@@ -19,6 +20,8 @@ fn init_env_logger() {
     // Enable RUST_LOG during tests
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 }
+
+const NUM_BLINDING_ROWS: usize = 64;
 
 #[allow(clippy::type_complexity)]
 /// Struct used to easily generate tests for EVM &| State circuits being able to
@@ -221,18 +224,18 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         // TODO: use randomness as one of the circuit public input, since randomness in
         // state circuit and evm circuit must be same
         {
+            let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block).1;
+            let k = cmp::max(log2_ceil(rows_needed + NUM_BLINDING_ROWS), 18);
             let state_circuit = StateCircuit::<Fr>::new(block.rws, params.max_rws);
             let instance = state_circuit.instance();
-            let prover = MockProver::<Fr>::run(18, &state_circuit, instance).unwrap();
+            let prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();
             // Skip verification of Start rows to accelerate testing
             let non_start_rows_len = state_circuit
                 .rows
                 .iter()
                 .filter(|rw| !matches!(rw, Rw::Start { .. }))
                 .count();
-            let rows = (params.max_rws - non_start_rows_len..params.max_rws)
-                .into_iter()
-                .collect();
+            let rows = (params.max_rws - non_start_rows_len..params.max_rws).collect();
 
             self.state_checks.as_ref()(prover, &rows, &rows);
         }

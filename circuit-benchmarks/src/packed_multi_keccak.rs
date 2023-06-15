@@ -3,13 +3,17 @@
 #[cfg(test)]
 mod tests {
     use ark_std::{end_timer, start_timer};
-    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
-    use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
-    use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
-    use halo2_proofs::poly::kzg::strategy::SingleStrategy;
     use halo2_proofs::{
         halo2curves::bn256::{Bn256, Fr, G1Affine},
-        poly::commitment::ParamsProver,
+        plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
+        poly::{
+            commitment::ParamsProver,
+            kzg::{
+                commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG},
+                multiopen::{ProverSHPLONK, VerifierSHPLONK},
+                strategy::SingleStrategy,
+            },
+        },
         transcript::{
             Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
         },
@@ -17,7 +21,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::keccak_circuit::KeccakCircuit;
+    use zkevm_circuits::{keccak_circuit::TestKeccakCircuit, util::SubCircuit};
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -25,7 +29,7 @@ mod tests {
         let setup_prfx = crate::constants::SETUP_PREFIX;
         let proof_gen_prfx = crate::constants::PROOFGEN_PREFIX;
         let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;
-        //Unique string used by bench results module for parsing the result
+        // Unique string used by bench results module for parsing the result
         const BENCHMARK_ID: &str = "Packed Multi-Keccak Circuit";
 
         let degree: u32 = var("DEGREE")
@@ -37,7 +41,10 @@ mod tests {
         let inputs = vec![(0u8..135).collect::<Vec<_>>(); 3];
 
         // Create the circuit. Leave last dozens of rows for blinding.
-        let circuit = KeccakCircuit::new(2usize.pow(degree) - 64, inputs);
+        let circuit = TestKeccakCircuit::new(
+            2usize.pow(degree) - TestKeccakCircuit::<Fr>::unusable_rows(),
+            inputs,
+        );
 
         // Initialize the polynomial commitment parameters
         let mut rng = XorShiftRng::from_seed([
@@ -70,7 +77,7 @@ mod tests {
             Challenge255<G1Affine>,
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            KeccakCircuit<Fr>,
+            TestKeccakCircuit<Fr>,
         >(
             &general_params,
             &pk,

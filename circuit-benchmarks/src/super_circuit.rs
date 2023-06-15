@@ -4,17 +4,19 @@
 mod tests {
     use ark_std::{end_timer, start_timer};
     use bus_mapping::circuit_input_builder::CircuitsParams;
-    use eth_types::geth_types::GethData;
-    use eth_types::{address, bytecode, Word};
-    use ethers_signers::LocalWallet;
-    use ethers_signers::Signer;
-    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
-    use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
-    use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
-    use halo2_proofs::poly::kzg::strategy::SingleStrategy;
+    use eth_types::{address, bytecode, geth_types::GethData, Word};
+    use ethers_signers::{LocalWallet, Signer};
     use halo2_proofs::{
         halo2curves::bn256::{Bn256, Fr, G1Affine},
-        poly::commitment::ParamsProver,
+        plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
+        poly::{
+            commitment::ParamsProver,
+            kzg::{
+                commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG},
+                multiopen::{ProverSHPLONK, VerifierSHPLONK},
+                strategy::SingleStrategy,
+            },
+        },
         transcript::{
             Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
         },
@@ -22,8 +24,7 @@ mod tests {
     use mock::{TestContext, MOCK_CHAIN_ID};
     use rand::SeedableRng;
     use rand_chacha::ChaChaRng;
-    use std::collections::HashMap;
-    use std::env::var;
+    use std::{collections::HashMap, env::var};
     use zkevm_circuits::super_circuit::SuperCircuit;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
@@ -32,7 +33,7 @@ mod tests {
         let setup_prfx = crate::constants::SETUP_PREFIX;
         let proof_gen_prfx = crate::constants::PROOFGEN_PREFIX;
         let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;
-        //Unique string used by bench results module for parsing the result
+        // Unique string used by bench results module for parsing the result
         const BENCHMARK_ID: &str = "Super Circuit";
 
         let degree: u32 = var("DEGREE")
@@ -78,11 +79,9 @@ mod tests {
 
         block.sign(&wallets);
 
-        const MAX_TXS: usize = 1;
-        const MAX_CALLDATA: usize = 32;
         let circuits_params = CircuitsParams {
-            max_txs: MAX_TXS,
-            max_calldata: MAX_CALLDATA,
+            max_txs: 1,
+            max_calldata: 32,
             max_rws: 256,
             max_copy_rows: 256,
             max_exp_steps: 256,
@@ -91,7 +90,7 @@ mod tests {
             max_keccak_rows: 0,
         };
         let (_, circuit, instance, _) =
-            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, 0x100>::build(block, circuits_params).unwrap();
+            SuperCircuit::build(block, circuits_params, Fr::from(0x100)).unwrap();
         let instance_refs: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
 
         // Bench setup generation
@@ -119,7 +118,7 @@ mod tests {
             Challenge255<G1Affine>,
             ChaChaRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, 0x100>,
+            SuperCircuit<Fr>,
         >(
             &general_params,
             &pk,

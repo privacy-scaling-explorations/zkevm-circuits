@@ -6,7 +6,10 @@ use crate::{
         util::{
             self,
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             from_bytes,
             math_gadget::{IsZeroGadget, LtWordGadget, MulAddWordsGadget},
             sum, CachedRegion, Cell,
@@ -51,7 +54,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SHL_SHR;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let is_shl = OpcodeId::SHR.expr() - opcode.expr();
         let is_shr = 1.expr() - is_shl.expr();
@@ -160,8 +163,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
-        let [pop1, pop2, push] = indices.map(|idx| block.rws[idx].stack_value());
+        let [pop1, pop2, push] = [0, 1, 2].map(|idx| block.get_rws(step, idx).stack_value());
         let shf0 = u64::from(pop1.to_le_bytes()[0]);
         let shf_lt256 = pop1
             .to_le_bytes()
@@ -177,7 +179,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
             U256::from(0)
         };
 
-        let (quotient, remainder, dividend) = match step.opcode.unwrap() {
+        let (quotient, remainder, dividend) = match step.opcode().unwrap() {
             OpcodeId::SHL => (pop2, U256::from(0), push),
             OpcodeId::SHR => (push, pop2 - push * divisor, pop2),
             _ => unreachable!(),
@@ -211,8 +213,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::{bytecode, Word};
+    use eth_types::{bytecode, evm_types::OpcodeId, Word};
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, pop1: Word, pop2: Word) {

@@ -4,7 +4,7 @@ use crate::{
         param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         util::{
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::EVMConstraintBuilder,
             math_gadget::{IsEqualGadget, IsZeroGadget, RangeCheckGadget},
             memory_gadget::{address_high, address_low, MemoryExpansionGadget},
             CachedRegion, Cell, Word,
@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasStaticMemoryExpansion;
 
     // Support other OOG due to pure memory including CREATE, RETURN and REVERT
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         // Query address by a full word
@@ -95,10 +95,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
 
         // Inputs/Outputs
-        let address = block.rws[step.rw_indices[0]].stack_value();
+        let address = block.get_rws(step, 0).stack_value();
         self.address
             .assign(region, offset, Some(address.to_le_bytes()))?;
 
@@ -122,8 +122,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
             region,
             offset,
             step.memory_word_size(),
-            [address_low::value(address.to_le_bytes())
-                + if is_mstore8 == F::one() { 1 } else { 32 }],
+            [
+                address_low::value(address.to_le_bytes())
+                    + if is_mstore8 == F::ONE { 1 } else { 32 },
+            ],
         )?;
 
         // Gas insufficient check

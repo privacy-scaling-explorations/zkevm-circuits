@@ -1,7 +1,8 @@
 use crate::{
     evm_circuit::util::{
-        self, constraint_builder::ConstraintBuilder, from_bytes, pow_of_two_expr, split_u256,
-        split_u256_limb64, CachedRegion, Cell,
+        self,
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        from_bytes, pow_of_two_expr, split_u256, split_u256_limb64, CachedRegion, Cell,
     },
     util::Expr,
 };
@@ -50,7 +51,7 @@ impl<F: Field> MulAddWords512Gadget<F> {
     /// The words argument is: a, b, d, e
     /// Addend is the optional c.
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         words: [&util::Word<F>; 4],
         addend: Option<&util::Word<F>>,
     ) -> Self {
@@ -194,11 +195,9 @@ impl<F: Field> MulAddWords512Gadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_util::*;
-    use super::*;
+    use super::{super::test_util::*, *};
     use eth_types::Word;
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// MulAddWords512GadgetContainer: require(a * b + c == d * 2**256 + e)
@@ -212,7 +211,7 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for MulAddWords512GadgetContainer<F> {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_word_rlc();
             let b = cb.query_word_rlc();
             let d = cb.query_word_rlc();

@@ -1,21 +1,23 @@
 use super::util::{CachedRegion, CellManager, CellType};
-use crate::evm_circuit::param::EXECUTION_STATE_HEIGHT_MAP;
 use crate::{
     evm_circuit::{
-        param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT, STEP_WIDTH},
+        param::{EXECUTION_STATE_HEIGHT_MAP, MAX_STEP_HEIGHT, STEP_STATE_HEIGHT, STEP_WIDTH},
         util::Cell,
         witness::{Block, Call, ExecStep},
     },
     util::Expr,
 };
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{
+    circuit_input_builder::ExecState,
+    error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
+    evm::OpcodeId,
+};
+use eth_types::{evm_unimplemented, Field, ToWord};
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
 };
-use std::fmt::Display;
-use std::iter;
+use std::{fmt::Display, iter};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
@@ -123,6 +125,168 @@ impl Display for ExecutionState {
         write!(f, "{:?}", self)
     }
 }
+impl From<&ExecError> for ExecutionState {
+    fn from(error: &ExecError) -> Self {
+        match error {
+            ExecError::InvalidOpcode => ExecutionState::ErrorInvalidOpcode,
+            ExecError::StackOverflow | ExecError::StackUnderflow => ExecutionState::ErrorStack,
+            ExecError::WriteProtection => ExecutionState::ErrorWriteProtection,
+            ExecError::Depth(depth_error) => match depth_error {
+                DepthError::Call => ExecutionState::CALL_OP,
+                DepthError::Create => ExecutionState::CREATE,
+                DepthError::Create2 => ExecutionState::CREATE2,
+            },
+            ExecError::InsufficientBalance(insufficient_balance_err) => {
+                match insufficient_balance_err {
+                    InsufficientBalanceError::Call => ExecutionState::CALL_OP,
+                    InsufficientBalanceError::Create => ExecutionState::CREATE,
+                    InsufficientBalanceError::Create2 => ExecutionState::CREATE2,
+                }
+            }
+            ExecError::NonceUintOverflow(nonce_overflow_err) => match nonce_overflow_err {
+                NonceUintOverflowError::Create => ExecutionState::CREATE,
+                NonceUintOverflowError::Create2 => ExecutionState::CREATE2,
+            },
+            ExecError::ContractAddressCollision => ExecutionState::CREATE2,
+            ExecError::InvalidCreationCode => ExecutionState::ErrorInvalidCreationCode,
+            ExecError::InvalidJump => ExecutionState::ErrorInvalidJump,
+            ExecError::ReturnDataOutOfBounds => ExecutionState::ErrorReturnDataOutOfBound,
+            ExecError::CodeStoreOutOfGas => ExecutionState::ErrorOutOfGasCodeStore,
+            ExecError::MaxCodeSizeExceeded => ExecutionState::ErrorMaxCodeSizeExceeded,
+            ExecError::OutOfGas(oog_error) => match oog_error {
+                OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
+                OogError::StaticMemoryExpansion => {
+                    ExecutionState::ErrorOutOfGasStaticMemoryExpansion
+                }
+                OogError::DynamicMemoryExpansion => {
+                    ExecutionState::ErrorOutOfGasDynamicMemoryExpansion
+                }
+                OogError::MemoryCopy => ExecutionState::ErrorOutOfGasMemoryCopy,
+                OogError::AccountAccess => ExecutionState::ErrorOutOfGasAccountAccess,
+                OogError::CodeStore => ExecutionState::ErrorOutOfGasCodeStore,
+                OogError::Log => ExecutionState::ErrorOutOfGasLOG,
+                OogError::Exp => ExecutionState::ErrorOutOfGasEXP,
+                OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
+                OogError::Call => ExecutionState::ErrorOutOfGasCall,
+                OogError::SloadSstore => ExecutionState::ErrorOutOfGasSloadSstore,
+                OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
+                OogError::SelfDestruct => ExecutionState::ErrorOutOfGasSELFDESTRUCT,
+            },
+        }
+    }
+}
+impl From<&ExecStep> for ExecutionState {
+    fn from(step: &ExecStep) -> Self {
+        if let Some(error) = step.error.as_ref() {
+            return error.into();
+        }
+        match step.exec_state {
+            ExecState::Op(op) => {
+                if op.is_dup() {
+                    return ExecutionState::DUP;
+                }
+                if op.is_push() {
+                    return ExecutionState::PUSH;
+                }
+                if op.is_swap() {
+                    return ExecutionState::SWAP;
+                }
+                if op.is_log() {
+                    return ExecutionState::LOG;
+                }
+
+                macro_rules! dummy {
+                    ($name:expr) => {{
+                        evm_unimplemented!("{:?} is implemented with DummyGadget", $name);
+                        $name
+                    }};
+                }
+
+                match op {
+                    OpcodeId::ADD | OpcodeId::SUB => ExecutionState::ADD_SUB,
+                    OpcodeId::ADDMOD => ExecutionState::ADDMOD,
+                    OpcodeId::ADDRESS => ExecutionState::ADDRESS,
+                    OpcodeId::BALANCE => ExecutionState::BALANCE,
+                    OpcodeId::MUL | OpcodeId::DIV | OpcodeId::MOD => ExecutionState::MUL_DIV_MOD,
+                    OpcodeId::MULMOD => ExecutionState::MULMOD,
+                    OpcodeId::SDIV | OpcodeId::SMOD => ExecutionState::SDIV_SMOD,
+                    OpcodeId::EQ | OpcodeId::LT | OpcodeId::GT => ExecutionState::CMP,
+                    OpcodeId::SLT | OpcodeId::SGT => ExecutionState::SCMP,
+                    OpcodeId::SIGNEXTEND => ExecutionState::SIGNEXTEND,
+                    OpcodeId::STOP => ExecutionState::STOP,
+                    OpcodeId::AND => ExecutionState::BITWISE,
+                    OpcodeId::XOR => ExecutionState::BITWISE,
+                    OpcodeId::OR => ExecutionState::BITWISE,
+                    OpcodeId::NOT => ExecutionState::NOT,
+                    OpcodeId::EXP => ExecutionState::EXP,
+                    OpcodeId::POP => ExecutionState::POP,
+                    OpcodeId::PUSH32 => ExecutionState::PUSH,
+                    OpcodeId::BYTE => ExecutionState::BYTE,
+                    OpcodeId::MLOAD => ExecutionState::MEMORY,
+                    OpcodeId::MSTORE => ExecutionState::MEMORY,
+                    OpcodeId::MSTORE8 => ExecutionState::MEMORY,
+                    OpcodeId::JUMPDEST => ExecutionState::JUMPDEST,
+                    OpcodeId::JUMP => ExecutionState::JUMP,
+                    OpcodeId::JUMPI => ExecutionState::JUMPI,
+                    OpcodeId::GASPRICE => ExecutionState::GASPRICE,
+                    OpcodeId::PC => ExecutionState::PC,
+                    OpcodeId::MSIZE => ExecutionState::MSIZE,
+                    OpcodeId::CALLER => ExecutionState::CALLER,
+                    OpcodeId::CALLVALUE => ExecutionState::CALLVALUE,
+                    OpcodeId::EXTCODEHASH => ExecutionState::EXTCODEHASH,
+                    OpcodeId::EXTCODESIZE => ExecutionState::EXTCODESIZE,
+                    OpcodeId::BLOCKHASH => ExecutionState::BLOCKHASH,
+                    OpcodeId::TIMESTAMP | OpcodeId::NUMBER | OpcodeId::GASLIMIT => {
+                        ExecutionState::BLOCKCTXU64
+                    }
+                    OpcodeId::COINBASE => ExecutionState::BLOCKCTXU160,
+                    OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
+                    OpcodeId::GAS => ExecutionState::GAS,
+                    OpcodeId::SAR => ExecutionState::SAR,
+                    OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
+                    OpcodeId::SHA3 => ExecutionState::SHA3,
+                    OpcodeId::SHL | OpcodeId::SHR => ExecutionState::SHL_SHR,
+                    OpcodeId::SLOAD => ExecutionState::SLOAD,
+                    OpcodeId::SSTORE => ExecutionState::SSTORE,
+                    OpcodeId::CALLDATASIZE => ExecutionState::CALLDATASIZE,
+                    OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
+                    OpcodeId::CHAINID => ExecutionState::CHAINID,
+                    OpcodeId::ISZERO => ExecutionState::ISZERO,
+                    OpcodeId::CALL
+                    | OpcodeId::CALLCODE
+                    | OpcodeId::DELEGATECALL
+                    | OpcodeId::STATICCALL => ExecutionState::CALL_OP,
+                    OpcodeId::ORIGIN => ExecutionState::ORIGIN,
+                    OpcodeId::CODECOPY => ExecutionState::CODECOPY,
+                    OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
+                    OpcodeId::CODESIZE => ExecutionState::CODESIZE,
+                    OpcodeId::EXTCODECOPY => ExecutionState::EXTCODECOPY,
+                    OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN_REVERT,
+                    OpcodeId::RETURNDATASIZE => ExecutionState::RETURNDATASIZE,
+                    OpcodeId::RETURNDATACOPY => ExecutionState::RETURNDATACOPY,
+                    OpcodeId::CREATE => ExecutionState::CREATE,
+                    OpcodeId::CREATE2 => ExecutionState::CREATE2,
+                    // dummy ops
+                    OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
+                    _ => unimplemented!("unimplemented opcode {:?}", op),
+                }
+            }
+            ExecState::BeginTx => ExecutionState::BeginTx,
+            ExecState::EndTx => ExecutionState::EndTx,
+            ExecState::EndBlock => ExecutionState::EndBlock,
+        }
+    }
+}
+
+pub trait HasExecutionState {
+    fn execution_state(&self) -> ExecutionState;
+}
+
+impl HasExecutionState for ExecStep {
+    fn execution_state(&self) -> ExecutionState {
+        ExecutionState::from(self)
+    }
+}
 
 impl ExecutionState {
     pub(crate) const fn as_u64(&self) -> u64 {
@@ -139,9 +303,6 @@ impl ExecutionState {
             Self::ErrorInvalidOpcode
                 | Self::ErrorStack
                 | Self::ErrorWriteProtection
-                | Self::ErrorDepth
-                | Self::ErrorInsufficientBalance
-                | Self::ErrorContractAddressCollision
                 | Self::ErrorInvalidCreationCode
                 | Self::ErrorMaxCodeSizeExceeded
                 | Self::ErrorInvalidJump
@@ -168,7 +329,7 @@ impl ExecutionState {
             || self.halts_in_exception()
     }
 
-    pub(crate) fn responsible_opcodes(&self) -> Vec<ResponsibleOp> {
+    pub fn responsible_opcodes(&self) -> Vec<ResponsibleOp> {
         if matches!(self, Self::ErrorStack) {
             return OpcodeId::valid_opcodes()
                 .into_iter()
@@ -339,7 +500,7 @@ impl ExecutionState {
 
 /// Enum of Responsible opcode mapping to execution state.
 #[derive(Debug)]
-pub(crate) enum ResponsibleOp {
+pub enum ResponsibleOp {
     /// Raw opcode
     Op(OpcodeId),
     /// Corresponding to ExecutionState::ErrorStack
@@ -354,7 +515,7 @@ impl From<OpcodeId> for ResponsibleOp {
 }
 
 impl ResponsibleOp {
-    pub(crate) fn opcode(&self) -> OpcodeId {
+    pub fn opcode(&self) -> OpcodeId {
         *match self {
             ResponsibleOp::Op(opcode) => opcode,
             ResponsibleOp::InvalidStackPtr(opcode, _) => opcode,
@@ -375,7 +536,7 @@ pub(crate) struct DynamicSelectorHalf<F> {
     pub(crate) target_pairs: Vec<Cell<F>>,
 }
 
-impl<F: FieldExt> DynamicSelectorHalf<F> {
+impl<F: Field> DynamicSelectorHalf<F> {
     pub(crate) fn new(cell_manager: &mut CellManager<F>, count: usize) -> Self {
         let target_pairs = cell_manager.query_cells(CellType::StoragePhase1, (count + 1) / 2);
         let target_odd = cell_manager.query_cell(CellType::StoragePhase1);
@@ -444,17 +605,13 @@ impl<F: FieldExt> DynamicSelectorHalf<F> {
         self.target_odd.assign(
             region,
             offset,
-            Value::known(if odd { F::one() } else { F::zero() }),
+            Value::known(if odd { F::ONE } else { F::ZERO }),
         )?;
         for (index, cell) in self.target_pairs.iter().enumerate() {
             cell.assign(
                 region,
                 offset,
-                Value::known(if index == pair_index {
-                    F::one()
-                } else {
-                    F::zero()
-                }),
+                Value::known(if index == pair_index { F::ONE } else { F::ZERO }),
             )?;
         }
         Ok(())
@@ -501,7 +658,7 @@ pub(crate) struct Step<F> {
     pub(crate) cell_manager: CellManager<F>,
 }
 
-impl<F: FieldExt> Step<F> {
+impl<F: Field> Step<F> {
     pub(crate) fn new(
         meta: &mut ConstraintSystem<F>,
         advices: [Column<Advice>; STEP_WIDTH],
@@ -558,35 +715,31 @@ impl<F: FieldExt> Step<F> {
     ) -> Result<(), Error> {
         self.state
             .execution_state
-            .assign(region, offset, step.execution_state as usize)?;
-        self.state.rw_counter.assign(
-            region,
-            offset,
-            Value::known(F::from(step.rw_counter as u64)),
-        )?;
+            .assign(region, offset, step.execution_state() as usize)?;
+        self.state
+            .rw_counter
+            .assign(region, offset, Value::known(F::from(step.rwc.into())))?;
         self.state
             .call_id
-            .assign(region, offset, Value::known(F::from(call.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(call.call_id as u64)))?;
         self.state
             .is_root
             .assign(region, offset, Value::known(F::from(call.is_root as u64)))?;
         self.state.is_create.assign(
             region,
             offset,
-            Value::known(F::from(call.is_create as u64)),
+            Value::known(F::from(call.is_create() as u64)),
         )?;
         self.state
             .code_hash
-            .assign(region, offset, region.word_rlc(call.code_hash))?;
-        self.state.program_counter.assign(
-            region,
-            offset,
-            Value::known(F::from(step.program_counter as u64)),
-        )?;
+            .assign(region, offset, region.word_rlc(call.code_hash.to_word()))?;
+        self.state
+            .program_counter
+            .assign(region, offset, Value::known(F::from(step.pc)))?;
         self.state.stack_pointer.assign(
             region,
             offset,
-            Value::known(F::from(step.stack_pointer as u64)),
+            Value::known(F::from(step.stack_pointer())),
         )?;
         self.state
             .gas_left

@@ -1,10 +1,12 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep};
-use crate::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
-use crate::operation::{CallContextField, TxLogField};
-use crate::Error;
-use eth_types::Word;
-use eth_types::{GethExecStep, ToWord};
+use crate::{
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecState, ExecStep, NumberOrHash,
+    },
+    operation::{CallContextField, TxLogField},
+    Error,
+};
+use eth_types::{GethExecStep, ToWord, Word};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Log;
@@ -250,7 +252,7 @@ mod log_tests {
         code.push(32, Word::from(msize));
         code.push(32, Word::from(mstart));
         code.write_op(cur_op_code);
-        code.write_op(OpcodeId::STOP);
+        code.op_stop();
 
         // prepare memory data
         let pushdata = hex::decode("1234567890abcdef1234567890abcdef").unwrap();
@@ -289,7 +291,7 @@ mod log_tests {
             .unwrap();
 
         let is_persistent = builder.block.txs()[0].calls()[0].is_persistent;
-        let callee_address = builder.block.txs()[0].to;
+        let callee_address = builder.block.txs()[0].tx.to_or_contract_addr();
 
         let step = builder.block.txs()[0]
             .steps()

@@ -28,12 +28,12 @@ pub enum Error {
     /// Code not found in the CodeDB
     CodeNotFound(H256),
     /// Unable to figure out error at a [`GethExecStep`]
-    UnexpectedExecStepError(&'static str, GethExecStep),
+    UnexpectedExecStepError(&'static str, Box<GethExecStep>),
     /// Invalid [`eth_types::GethExecTrace`] due to an invalid/unexpected value
     /// in it.
     InvalidGethExecTrace(&'static str),
     /// Invalid [`GethExecStep`] due to an invalid/unexpected value in it.
-    InvalidGethExecStep(&'static str, GethExecStep),
+    InvalidGethExecStep(&'static str, Box<GethExecStep>),
     /// Eth type related error.
     EthTypeError(eth_types::Error),
     /// EVM Execution error
@@ -73,8 +73,8 @@ pub enum OogError {
     /// Out of Gas for CREATE, RETURN, REVERT, which have dynamic memory
     /// expansion gas cost
     DynamicMemoryExpansion,
-    /// Out of Gas for CALLDATACOPY, CODECOPY, RETURNDATACOPY, which copy a
-    /// specified chunk of memory
+    /// Out of Gas for CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY,
+    /// which copy a specified chunk of memory
     MemoryCopy,
     /// Out of Gas for BALANCE, EXTCODESIZE, EXTCODEHASH, which possibly touch
     /// an extra account
@@ -88,8 +88,6 @@ pub enum OogError {
     Exp,
     /// Out of Gas for SHA3
     Sha3,
-    /// Out of Gas for EXTCODECOPY
-    ExtCodeCopy,
     /// Out of Gas for SLOAD and SSTORE
     SloadSstore,
     /// Out of Gas for CALL, CALLCODE, DELEGATECALL and STATICCALL
@@ -98,6 +96,70 @@ pub enum OogError {
     Create2,
     /// Out of Gas for SELFDESTRUCT
     SelfDestruct,
+}
+
+// Given OpCodeId, returns correponding OogError.
+impl From<&OpcodeId> for OogError {
+    fn from(op: &OpcodeId) -> Self {
+        match op {
+            OpcodeId::MLOAD | OpcodeId::MSTORE | OpcodeId::MSTORE8 => {
+                OogError::StaticMemoryExpansion
+            }
+            OpcodeId::CREATE | OpcodeId::RETURN | OpcodeId::REVERT => {
+                OogError::DynamicMemoryExpansion
+            }
+            OpcodeId::CALLDATACOPY
+            | OpcodeId::CODECOPY
+            | OpcodeId::EXTCODECOPY
+            | OpcodeId::RETURNDATACOPY => OogError::MemoryCopy,
+            OpcodeId::BALANCE | OpcodeId::EXTCODESIZE | OpcodeId::EXTCODEHASH => {
+                OogError::AccountAccess
+            }
+            OpcodeId::LOG0 | OpcodeId::LOG1 | OpcodeId::LOG2 | OpcodeId::LOG3 | OpcodeId::LOG4 => {
+                OogError::Log
+            }
+            OpcodeId::EXP => OogError::Exp,
+            OpcodeId::SHA3 => OogError::Sha3,
+            OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
+                OogError::Call
+            }
+            OpcodeId::SLOAD | OpcodeId::SSTORE => OogError::SloadSstore,
+            OpcodeId::CREATE2 => OogError::Create2,
+            OpcodeId::SELFDESTRUCT => OogError::SelfDestruct,
+            _ => OogError::Constant,
+        }
+    }
+}
+
+/// Insufficient balance errors by opcode/state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InsufficientBalanceError {
+    /// Insufficient balance during CALL/CALLCODE opcode.
+    Call,
+    /// Insufficient balance during CREATE opcode.
+    Create,
+    /// Insufficient balance during CREATE2 opcode.
+    Create2,
+}
+
+/// Nonce uint overflow errors by opcode/state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NonceUintOverflowError {
+    /// Nonce uint overflow during CREATE opcode.
+    Create,
+    /// Nonce uint overflow during CREATE2 opcode.
+    Create2,
+}
+
+/// Call depth errors by opcode/state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DepthError {
+    /// Call depth errors in CALL/CALLCODE opcode.
+    Call,
+    /// Call depth errors in CREATE opcode.
+    Create,
+    /// Call depth errors in CREATE2 opcode.
+    Create2,
 }
 
 /// EVM Execution Error
@@ -114,11 +176,11 @@ pub enum ExecError {
     /// For SSTORE, LOG0, LOG1, LOG2, LOG3, LOG4, CREATE, CALL, CREATE2,
     /// SELFDESTRUCT
     WriteProtection,
-    /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
-    Depth,
-    /// For CALL, CALLCODE
-    InsufficientBalance,
-    /// For CREATE, CREATE2
+    /// For CALL, CALLCODE, DELEGATECALL, STATICCALL, CREATE, CREATE2
+    Depth(DepthError),
+    /// For CALL, CALLCODE, CREATE, CREATE2
+    InsufficientBalance(InsufficientBalanceError),
+    /// For CREATE2
     ContractAddressCollision,
     /// contract must not begin with 0xef due to EIP #3541 EVM Object Format
     /// (EOF)
@@ -131,45 +193,30 @@ pub enum ExecError {
     CodeStoreOutOfGas,
     /// For RETURN in a CREATE, CREATE2
     MaxCodeSizeExceeded,
+    /// For CREATE, CREATE2
+    NonceUintOverflow(NonceUintOverflowError),
 }
 
-// TODO: Move to impl block.
-pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
-    if error == GETH_ERR_OUT_OF_GAS || error == GETH_ERR_GAS_UINT_OVERFLOW {
-        // NOTE: We report a GasUintOverflow error as an OutOfGas error
-        let oog_err = match op {
-            OpcodeId::MLOAD | OpcodeId::MSTORE | OpcodeId::MSTORE8 => {
-                OogError::StaticMemoryExpansion
+// Returns a GethExecStep's error if present, else return the empty error.
+impl TryFrom<&GethExecStep> for ExecError {
+    type Error = ();
+
+    fn try_from(step: &GethExecStep) -> Result<Self, Self::Error> {
+        Ok(match step.error.as_ref().ok_or(())?.as_str() {
+            GETH_ERR_OUT_OF_GAS | GETH_ERR_GAS_UINT_OVERFLOW => {
+                // NOTE: We report a GasUintOverflow error as an OutOfGas error
+                let oog_err = OogError::from(&step.op);
+                ExecError::OutOfGas(oog_err)
             }
-            OpcodeId::CREATE | OpcodeId::RETURN | OpcodeId::REVERT => {
-                OogError::DynamicMemoryExpansion
+            error => {
+                if error.starts_with(GETH_ERR_STACK_OVERFLOW) {
+                    ExecError::StackOverflow
+                } else if error.starts_with(GETH_ERR_STACK_UNDERFLOW) {
+                    ExecError::StackUnderflow
+                } else {
+                    panic!("Unknown GethExecStep.error: {}", error);
+                }
             }
-            OpcodeId::CALLDATACOPY | OpcodeId::CODECOPY | OpcodeId::RETURNDATACOPY => {
-                OogError::MemoryCopy
-            }
-            OpcodeId::BALANCE | OpcodeId::EXTCODESIZE | OpcodeId::EXTCODEHASH => {
-                OogError::AccountAccess
-            }
-            OpcodeId::LOG0 | OpcodeId::LOG1 | OpcodeId::LOG2 | OpcodeId::LOG3 | OpcodeId::LOG4 => {
-                OogError::Log
-            }
-            OpcodeId::EXP => OogError::Exp,
-            OpcodeId::SHA3 => OogError::Sha3,
-            OpcodeId::EXTCODECOPY => OogError::ExtCodeCopy,
-            OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
-                OogError::Call
-            }
-            OpcodeId::SLOAD | OpcodeId::SSTORE => OogError::SloadSstore,
-            OpcodeId::CREATE2 => OogError::Create2,
-            OpcodeId::SELFDESTRUCT => OogError::SelfDestruct,
-            _ => OogError::Constant,
-        };
-        ExecError::OutOfGas(oog_err)
-    } else if error.starts_with(GETH_ERR_STACK_OVERFLOW) {
-        ExecError::StackOverflow
-    } else if error.starts_with(GETH_ERR_STACK_UNDERFLOW) {
-        ExecError::StackUnderflow
-    } else {
-        panic!("Unknown GethExecStep.error: {}", error);
+        })
     }
 }

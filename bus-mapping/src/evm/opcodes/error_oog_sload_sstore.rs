@@ -1,9 +1,10 @@
 use super::{Opcode, OpcodeId};
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::error::{ExecError, OogError};
-use crate::operation::{CallContextField, RW};
-use crate::operation::{StorageOp, TxAccessListAccountStorageOp};
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    error::{ExecError, OogError},
+    operation::{CallContextField, StorageOp, TxAccessListAccountStorageOp, RW},
+    Error,
+};
 use eth_types::{GethExecStep, ToWord};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
@@ -88,9 +89,7 @@ impl Opcode for OOGSloadSstore {
             );
         }
 
-        state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
-        state.handle_return(geth_step)?;
-
+        state.handle_return(&mut exec_step, geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

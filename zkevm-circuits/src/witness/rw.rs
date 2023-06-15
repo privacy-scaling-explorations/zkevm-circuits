@@ -1,38 +1,49 @@
 #![allow(missing_docs)]
 use std::collections::HashMap;
 
-use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField};
+use bus_mapping::{
+    exec_trace::OperationRef,
+    operation::{self, AccountField, CallContextField, Target, TxLogField, TxReceiptField},
+};
 use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::halo2curves::bn256::Fr;
+use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
 
-use crate::evm_circuit::util::rlc;
-use crate::table::{
-    AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag,
+use crate::{
+    evm_circuit::util::rlc,
+    table::{AccountFieldTag, CallContextFieldTag, TxLogFieldTag, TxReceiptFieldTag},
+    util::build_tx_log_address,
 };
-use crate::util::build_tx_log_address;
 
 use super::MptUpdates;
 
 /// Rw constainer for a witness block
 #[derive(Debug, Default, Clone)]
-pub struct RwMap(pub HashMap<RwTableTag, Vec<Rw>>);
+pub struct RwMap(pub HashMap<Target, Vec<Rw>>);
 
-impl std::ops::Index<(RwTableTag, usize)> for RwMap {
+impl std::ops::Index<(Target, usize)> for RwMap {
     type Output = Rw;
 
-    fn index(&self, (tag, idx): (RwTableTag, usize)) -> &Self::Output {
+    fn index(&self, (tag, idx): (Target, usize)) -> &Self::Output {
         &self.0.get(&tag).unwrap()[idx]
     }
 }
+
+impl std::ops::Index<OperationRef> for RwMap {
+    type Output = Rw;
+
+    fn index(&self, OperationRef(tag, idx): OperationRef) -> &Self::Output {
+        &self.0.get(&tag).unwrap()[idx]
+    }
+}
+
 impl RwMap {
     /// Check rw_counter is continuous and starting from 1
     pub fn check_rw_counter_sanity(&self) {
         for (idx, rw_counter) in self
             .0
             .iter()
-            .filter(|(tag, _rs)| !matches!(tag, RwTableTag::Start))
+            .filter(|(tag, _rs)| !matches!(tag, Target::Start))
             .flat_map(|(_tag, rs)| rs)
             .map(|r| r.rw_counter())
             .sorted()
@@ -282,7 +293,7 @@ impl<F: Field> RwRow<F> {
         values
             .iter()
             .rev()
-            .fold(F::zero(), |acc, value| acc * randomness + value)
+            .fold(F::ZERO, |acc, value| acc * randomness + value)
     }
 
     pub(crate) fn rlc_value(&self, randomness: Value<F>) -> Value<F> {
@@ -393,14 +404,14 @@ impl Rw {
             tag: F::from(self.tag() as u64),
             id: F::from(self.id().unwrap_or_default() as u64),
             address: self.address().unwrap_or_default().to_scalar().unwrap(),
-            field_tag: F::from(self.field_tag().unwrap_or_default() as u64),
+            field_tag: F::from(self.field_tag().unwrap_or_default()),
             storage_key: rlc::value(
                 &self.storage_key().unwrap_or_default().to_le_bytes(),
                 randomness,
             ),
             value: self.value_assignment(randomness),
             value_prev: self.value_prev_assignment(randomness).unwrap_or_default(),
-            aux1: F::zero(), // only used for AccountStorage::tx_id, which moved to key1.
+            aux1: F::ZERO, // only used for AccountStorage::tx_id, which moved to key1.
             aux2: self
                 .committed_value_assignment(randomness)
                 .unwrap_or_default(),
@@ -414,7 +425,7 @@ impl Rw {
             tag: Value::known(F::from(self.tag() as u64)),
             id: Value::known(F::from(self.id().unwrap_or_default() as u64)),
             address: Value::known(self.address().unwrap_or_default().to_scalar().unwrap()),
-            field_tag: Value::known(F::from(self.field_tag().unwrap_or_default() as u64)),
+            field_tag: Value::known(F::from(self.field_tag().unwrap_or_default())),
             storage_key: randomness.map(|randomness| {
                 rlc::value(
                     &self.storage_key().unwrap_or_default().to_le_bytes(),
@@ -424,8 +435,8 @@ impl Rw {
             value: randomness.map(|randomness| self.value_assignment(randomness)),
             value_prev: randomness
                 .map(|randomness| self.value_prev_assignment(randomness).unwrap_or_default()),
-            aux1: Value::known(F::zero()), /* only used for AccountStorage::tx_id, which moved to
-                                            * key1. */
+            aux1: Value::known(F::ZERO), /* only used for AccountStorage::tx_id, which moved to
+                                          * key1. */
             aux2: randomness.map(|randomness| {
                 self.committed_value_assignment(randomness)
                     .unwrap_or_default()
@@ -465,19 +476,19 @@ impl Rw {
         }
     }
 
-    pub(crate) fn tag(&self) -> RwTableTag {
+    pub(crate) fn tag(&self) -> Target {
         match self {
-            Self::Start { .. } => RwTableTag::Start,
-            Self::Memory { .. } => RwTableTag::Memory,
-            Self::Stack { .. } => RwTableTag::Stack,
-            Self::AccountStorage { .. } => RwTableTag::AccountStorage,
-            Self::TxAccessListAccount { .. } => RwTableTag::TxAccessListAccount,
-            Self::TxAccessListAccountStorage { .. } => RwTableTag::TxAccessListAccountStorage,
-            Self::TxRefund { .. } => RwTableTag::TxRefund,
-            Self::Account { .. } => RwTableTag::Account,
-            Self::CallContext { .. } => RwTableTag::CallContext,
-            Self::TxLog { .. } => RwTableTag::TxLog,
-            Self::TxReceipt { .. } => RwTableTag::TxReceipt,
+            Self::Start { .. } => Target::Start,
+            Self::Memory { .. } => Target::Memory,
+            Self::Stack { .. } => Target::Stack,
+            Self::AccountStorage { .. } => Target::Storage,
+            Self::TxAccessListAccount { .. } => Target::TxAccessListAccount,
+            Self::TxAccessListAccountStorage { .. } => Target::TxAccessListAccountStorage,
+            Self::TxRefund { .. } => Target::TxRefund,
+            Self::Account { .. } => Target::Account,
+            Self::CallContext { .. } => Target::CallContext,
+            Self::TxLog { .. } => Target::TxLog,
+            Self::TxReceipt { .. } => Target::TxReceipt,
         }
     }
 
@@ -564,7 +575,7 @@ impl Rw {
 
     pub(crate) fn value_assignment<F: Field>(&self, randomness: F) -> F {
         match self {
-            Self::Start { .. } => F::zero(),
+            Self::Start { .. } => F::ZERO,
             Self::CallContext {
                 field_tag, value, ..
             } => {
@@ -649,7 +660,7 @@ impl From<&operation::OperationContainer> for RwMap {
         let mut rws = HashMap::default();
 
         rws.insert(
-            RwTableTag::Start,
+            Target::Start,
             container
                 .start
                 .iter()
@@ -659,7 +670,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::TxAccessListAccount,
+            Target::TxAccessListAccount,
             container
                 .tx_access_list_account
                 .iter()
@@ -674,7 +685,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::TxAccessListAccountStorage,
+            Target::TxAccessListAccountStorage,
             container
                 .tx_access_list_account_storage
                 .iter()
@@ -690,7 +701,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::TxRefund,
+            Target::TxRefund,
             container
                 .tx_refund
                 .iter()
@@ -704,7 +715,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::Account,
+            Target::Account,
             container
                 .account
                 .iter()
@@ -723,7 +734,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::AccountStorage,
+            Target::Storage,
             container
                 .storage
                 .iter()
@@ -740,7 +751,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::CallContext,
+            Target::CallContext,
             container
                 .call_context
                 .iter()
@@ -788,7 +799,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::Stack,
+            Target::Stack,
             container
                 .stack
                 .iter()
@@ -802,7 +813,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::Memory,
+            Target::Memory,
             container
                 .memory
                 .iter()
@@ -818,7 +829,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::TxLog,
+            Target::TxLog,
             container
                 .tx_log
                 .iter()
@@ -838,7 +849,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::TxReceipt,
+            Target::TxReceipt,
             container
                 .tx_receipt
                 .iter()

@@ -1,13 +1,16 @@
-use crate::evm_circuit::{
-    execution::ExecutionGadget,
-    step::ExecutionState,
-    table::{FixedTableTag, Lookup},
-    util::{
-        common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder, CachedRegion, Cell,
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        step::ExecutionState,
+        table::{FixedTableTag, Lookup},
+        util::{
+            common_gadget::CommonErrorGadget, constraint_builder::EVMConstraintBuilder,
+            CachedRegion, Cell,
+        },
+        witness::{Block, Call, ExecStep, Transaction},
     },
-    witness::{Block, Call, ExecStep, Transaction},
+    util::Expr,
 };
-use crate::util::Expr;
 use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -22,7 +25,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorStack;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         cb.add_lookup(
@@ -54,7 +57,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
@@ -69,10 +72,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
 mod test {
 
     use crate::test_util::CircuitTestBuilder;
-    use bus_mapping::circuit_input_builder::CircuitsParams;
-    use bus_mapping::evm::OpcodeId;
+    use bus_mapping::{circuit_input_builder::CircuitsParams, evm::OpcodeId};
     use eth_types::{
         self, address, bytecode, bytecode::Bytecode, geth_types::Account, Address, ToWord, Word,
+        U64,
     };
 
     use mock::TestContext;
@@ -129,7 +132,7 @@ mod test {
             }
         }
         // append final stop op code
-        bytecode.write_op(OpcodeId::STOP);
+        bytecode.op_stop();
 
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
@@ -197,16 +200,8 @@ mod test {
                 accs[0]
                     .address(address!("0x000000000000000000000000000000000000cafe"))
                     .balance(Word::from(10u64.pow(19)));
-                accs[1]
-                    .address(caller.address)
-                    .code(caller.code)
-                    .nonce(caller.nonce)
-                    .balance(caller.balance);
-                accs[2]
-                    .address(callee.address)
-                    .code(callee.code)
-                    .nonce(callee.nonce)
-                    .balance(callee.balance);
+                accs[1].account(&caller);
+                accs[2].account(&callee);
             },
             |mut txs, accs| {
                 txs[0]
@@ -227,7 +222,7 @@ mod test {
         Account {
             address: Address::repeat_byte(0xff),
             code: code.into(),
-            nonce: if is_empty { 0 } else { 1 }.into(),
+            nonce: U64::from(!is_empty as u64),
             balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
             ..Default::default()
         }

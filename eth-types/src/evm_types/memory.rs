@@ -1,8 +1,9 @@
 //! Doc this
-use crate::Error;
-use crate::{DebugByte, ToBigEndian, Word};
-use core::ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign, Range, Sub, SubAssign};
-use core::str::FromStr;
+use crate::{DebugByte, Error, ToBigEndian, Word};
+use core::{
+    ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign, Range, Sub, SubAssign},
+    str::FromStr,
+};
 use itertools::Itertools;
 use serde::{Serialize, Serializer};
 use std::fmt;
@@ -328,17 +329,29 @@ impl Memory {
     }
 
     /// Copy source data to memory. Used in (ext)codecopy/calldatacopy.
-    pub fn copy_from(&mut self, dst_offset: u64, data: &[u8], data_offset: u64, length: usize) {
-        // https://github.com/ethereum/go-ethereum/blob/df52967ff6080a27243569020ff64cd956fb8362/core/vm/instructions.go#L312
+    pub fn copy_from(&mut self, dst_offset: Word, src_offset: Word, length: Word, data: &[u8]) {
+        // Reference go-ethereum `opCallDataCopy` function for defails.
+        // https://github.com/ethereum/go-ethereum/blob/bb4ac2d396de254898a5f44b1ea2086bfe5bd193/core/vm/instructions.go#L299
+
+        // `length` should be checked for overflow during gas cost calculation.
+        // Otherwise should return an out of gas error previously.
+        let length = length.as_usize();
         if length != 0 {
+            // `dst_offset` should be within range if length is non-zero.
+            // https://github.com/ethereum/go-ethereum/blob/bb4ac2d396de254898a5f44b1ea2086bfe5bd193/core/vm/common.go#L37
+            let dst_offset = dst_offset.as_u64();
+
+            // Reset data offset to the maximum value of Uint64 if overflow.
+            let src_offset = u64::try_from(src_offset).unwrap_or(u64::MAX);
+
             let minimal_length = dst_offset as usize + length;
             self.extend_at_least(minimal_length);
 
             let mem_starts = dst_offset as usize;
-            let mem_ends = mem_starts + length as usize;
+            let mem_ends = mem_starts + length;
             let dst_slice = &mut self.0[mem_starts..mem_ends];
             dst_slice.fill(0);
-            let data_starts = data_offset as usize;
+            let data_starts = src_offset as usize;
             let actual_length = std::cmp::min(
                 length,
                 data.len().checked_sub(data_starts).unwrap_or_default(),
@@ -372,10 +385,10 @@ mod memory_tests {
         let first_usize = 64536usize;
         // Parsing on both ways works.
         assert_eq!(
-            MemoryAddress::from_le_bytes(&first_usize.to_le_bytes())?,
-            MemoryAddress::from_be_bytes(&first_usize.to_be_bytes())?
+            MemoryAddress::from_le_bytes(first_usize.to_le_bytes())?,
+            MemoryAddress::from_be_bytes(first_usize.to_be_bytes())?
         );
-        let addr = MemoryAddress::from_le_bytes(&first_usize.to_le_bytes())?;
+        let addr = MemoryAddress::from_le_bytes(first_usize.to_le_bytes())?;
         assert_eq!(addr, MemoryAddress::from(first_usize));
 
         // Little endian export

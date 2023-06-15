@@ -3,8 +3,10 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
-            math_gadget::IsZeroGadget, sum, CachedRegion, Cell, Word as RLCWord,
+            common_gadget::CommonErrorGadget,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            math_gadget::IsZeroGadget,
+            sum, CachedRegion, Cell, Word as RLCWord,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -30,7 +32,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorWriteProtection;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
         let gas_word = cb.query_word_rlc();
@@ -98,7 +100,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         let is_call = opcode == OpcodeId::CALL;
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
@@ -106,8 +108,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
 
         if is_call {
             [gas, code_address, value] =
-                [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
-                    .map(|idx| block.rws[idx].stack_value());
+                [0, 1, 2].map(|index| block.get_rws(step, index).stack_value());
         }
 
         self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
@@ -140,10 +141,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::test_util::CircuitTestBuilder;
-    use eth_types::bytecode::Bytecode;
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::geth_types::Account;
-    use eth_types::{address, bytecode, Address, ToWord, Word};
+    use eth_types::{
+        address, bytecode, bytecode::Bytecode, evm_types::OpcodeId, geth_types::Account, Address,
+        ToWord, Word, U64,
+    };
     use mock::TestContext;
 
     // internal call test
@@ -159,10 +160,11 @@ mod test {
     fn callee(code: Bytecode) -> Account {
         let code = code.to_vec();
         let is_empty = code.is_empty();
+
         Account {
             address: Address::repeat_byte(0xff),
             code: code.into(),
-            nonce: if is_empty { 0 } else { 1 }.into(),
+            nonce: U64::from(!is_empty as u64),
             balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
             ..Default::default()
         }
@@ -283,16 +285,8 @@ mod test {
                 accs[0]
                     .address(address!("0x000000000000000000000000000000000000cafe"))
                     .balance(Word::from(10u64.pow(19)));
-                accs[1]
-                    .address(caller.address)
-                    .code(caller.code)
-                    .nonce(caller.nonce)
-                    .balance(caller.balance);
-                accs[2]
-                    .address(callee.address)
-                    .code(callee.code)
-                    .nonce(callee.nonce)
-                    .balance(callee.balance);
+                accs[1].account(&caller);
+                accs[2].account(&callee);
             },
             |mut txs, accs| {
                 txs[0]

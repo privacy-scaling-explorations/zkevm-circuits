@@ -11,18 +11,22 @@ mod tracer_tests;
 mod transaction;
 
 use self::access::gen_state_access_trace;
-use crate::error::Error;
-use crate::evm::opcodes::{gen_associated_ops, gen_begin_tx_ops, gen_end_tx_ops};
-use crate::operation::{CallContextField, Operation, RWCounter, StartOp, RW};
-use crate::rpc::GethClient;
-use crate::state_db::{self, CodeDB, StateDB};
+use crate::{
+    error::Error,
+    evm::opcodes::{gen_associated_ops, gen_associated_steps},
+    operation::{CallContextField, Operation, RWCounter, StartOp, RW},
+    rpc::GethClient,
+    state_db::{self, CodeDB, StateDB},
+};
 pub use access::{Access, AccessSet, AccessValue, CodeSource};
 pub use block::{Block, BlockContext};
 pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
-use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
-use eth_types::ToWord;
-use eth_types::{self, geth_types, Address, GethExecStep, GethExecTrace, Word};
+use eth_types::{
+    self, geth_types,
+    sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
+    Address, GethExecStep, GethExecTrace, ToWord, Word,
+};
 use ethers_providers::JsonRpcClient;
 pub use execution::{
     CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
@@ -211,7 +215,7 @@ impl<'a> CircuitInputBuilder {
         end_block_not_last.rwc = self.block_ctx.rwc;
         end_block_last.rwc = self.block_ctx.rwc;
 
-        let mut dummy_tx = Transaction::dummy();
+        let mut dummy_tx = Transaction::default();
         let mut dummy_tx_ctx = TransactionContext::default();
         let mut state = self.state_ref(&mut dummy_tx, &mut dummy_tx_ctx);
 
@@ -266,11 +270,11 @@ impl<'a> CircuitInputBuilder {
         let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
         let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
 
-        // TODO: Move into gen_associated_steps with
-        // - execution_state: BeginTx
-        // - op: None
         // Generate BeginTx step
-        let begin_tx_step = gen_begin_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
+        let begin_tx_step = gen_associated_steps(
+            &mut self.state_ref(&mut tx, &mut tx_ctx),
+            ExecState::BeginTx,
+        )?;
         tx.steps_mut().push(begin_tx_step);
 
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
@@ -284,11 +288,9 @@ impl<'a> CircuitInputBuilder {
             tx.steps_mut().extend(exec_steps);
         }
 
-        // TODO: Move into gen_associated_steps with
-        // - execution_state: EndTx
-        // - op: None
         // Generate EndTx step
-        let end_tx_step = gen_end_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
+        let end_tx_step =
+            gen_associated_steps(&mut self.state_ref(&mut tx, &mut tx_ctx), ExecState::EndTx)?;
         tx.steps_mut().push(end_tx_step);
 
         self.sdb.commit_tx();
@@ -303,7 +305,7 @@ impl<'a> CircuitInputBuilder {
 pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Error> {
     let mut keccak_inputs = Vec::new();
     // Tx Circuit
-    let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.into()).collect();
+    let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.tx.clone()).collect();
     keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs, block.chain_id.as_u64())?);
     // Bytecode Circuit
     for bytecode in code_db.0.values() {
@@ -360,14 +362,21 @@ pub fn keccak_inputs_tx_circuit(
 }
 
 /// Retrieve the init_code from memory for {CREATE, CREATE2}
-pub fn get_create_init_code<'a, 'b>(
+pub fn get_create_init_code<'a>(
     call_ctx: &'a CallContext,
-    step: &'b GethExecStep,
+    step: &GethExecStep,
 ) -> Result<&'a [u8], Error> {
-    let offset = step.stack.nth_last(1)?;
-    let length = step.stack.nth_last(2)?;
-    Ok(&call_ctx.memory.0
-        [offset.low_u64() as usize..(offset.low_u64() + length.low_u64()) as usize])
+    let offset = step.stack.nth_last(1)?.low_u64() as usize;
+    let length = step.stack.nth_last(2)?.as_usize();
+
+    let mem_len = call_ctx.memory.0.len();
+    if offset >= mem_len {
+        return Ok(&[]);
+    }
+
+    let offset_end = offset.checked_add(length).unwrap_or(mem_len);
+
+    Ok(&call_ctx.memory.0[offset..offset_end])
 }
 
 /// Retrieve the memory offset and length of call.
@@ -429,7 +438,7 @@ pub fn build_state_code_db(
         sdb.set_account(
             &proof.address,
             state_db::Account {
-                nonce: proof.nonce,
+                nonce: proof.nonce.as_u64(),
                 balance: proof.balance,
                 storage,
                 code_hash: proof.code_hash,

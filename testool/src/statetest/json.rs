@@ -1,21 +1,13 @@
-#![allow(dead_code, unused_imports)]
-
-use super::parse;
-use super::spec::{AccountMatch, Env, StateTest};
-use crate::abi;
-use crate::compiler::Compiler;
-use crate::utils::MainnetFork;
-use anyhow::{bail, Context, Result};
-use eth_types::evm_types::OpcodeId;
-use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
-use ethers_core::k256::ecdsa::SigningKey;
-use ethers_core::utils::secret_key_to_address;
+use super::{
+    parse,
+    spec::{AccountMatch, Env, StateTest},
+};
+use crate::{compiler::Compiler, utils::MainnetFork};
+use anyhow::{bail, Result};
+use eth_types::{geth_types::Account, Address, U256};
+use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::convert::TryInto;
-use std::ops::RangeBounds;
-use std::str::FromStr;
-use yaml_rust::Yaml;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,7 +33,6 @@ struct AccountPost {
     code: Option<String>,
     nonce: Option<String>,
     storage: Option<HashMap<String, String>>,
-    shouldnotexist: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -117,7 +108,7 @@ impl<'a> JsonStateTestBuilder<'a> {
             let to = parse::parse_to_address(&test.transaction.to)?;
             let secret_key = parse::parse_bytes(&test.transaction.secret_key)?;
             let from = secret_key_to_address(&SigningKey::from_bytes(&secret_key.to_vec())?);
-            let nonce = parse::parse_u256(&test.transaction.nonce)?;
+            let nonce = parse::parse_u64(&test.transaction.nonce)?;
             let gas_price = parse::parse_u256(&test.transaction.gas_price)?;
 
             let data_s: Vec<_> = test
@@ -224,7 +215,7 @@ impl<'a> JsonStateTestBuilder<'a> {
             let account = Account {
                 address,
                 balance: parse::parse_u256(&acc.balance)?,
-                nonce: parse::parse_u256(&acc.nonce)?,
+                nonce: parse::parse_u64(&acc.nonce)?.into(),
                 code: parse::parse_code(self.compiler, &acc.code)?,
                 storage,
             };
@@ -262,7 +253,7 @@ impl<'a> JsonStateTestBuilder<'a> {
                 nonce: acc
                     .nonce
                     .as_ref()
-                    .map(|v| parse::parse_u256(v))
+                    .map(|v| parse::parse_u64(v))
                     .transpose()?,
                 storage,
             };
@@ -303,6 +294,8 @@ impl<'a> JsonStateTestBuilder<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use eth_types::{Bytes, H256};
+    use std::{collections::HashMap, str::FromStr};
 
     const JSON: &str = r#"
 {
@@ -395,24 +388,23 @@ mod test {
             )?),
             gas_limit: 400000,
             gas_price: U256::from(10u64),
-            nonce: U256::from(0u64),
+            nonce: 0,
             value: U256::from(100000u64),
             data: Bytes::from(hex::decode("6001")?),
             pre: HashMap::from([(
                 acc095e,
                 Account {
                     address: acc095e,
-                    nonce: U256::from(0u64),
                     balance: U256::from(1000000000000000000u64),
                     code: Bytes::from(hex::decode("600160010160005500")?),
-                    storage: HashMap::new(),
+                    ..Default::default()
                 },
             )]),
             result: HashMap::from([(
                 acc095e,
                 AccountMatch {
                     address: acc095e,
-                    nonce: Some(U256::from(1u64)),
+                    nonce: Some(1u64),
                     balance: None,
                     code: Some(Bytes::from(hex::decode("600160010160005500")?)),
                     storage: HashMap::from([(U256::zero(), U256::from(2u64))]),
