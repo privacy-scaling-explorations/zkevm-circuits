@@ -193,6 +193,11 @@ impl<F: Field> StorageLeafConfig<F> {
                 MPTProofType::StorageDoesNotExist.expr(),
             );
 
+            // If we were in a non-existing account, all storage is non-existing
+            ifx! {config.main_data.is_non_existing_account.expr() => {
+                require!(config.is_non_existing_storage_proof => true);
+            }};
+
             // Drifted leaf handling
             config.drifted = DriftedGadget::construct(
                 cb,
@@ -390,7 +395,7 @@ impl<F: Field> StorageLeafConfig<F> {
         )?;
 
         // Wrong leaf handling
-        let key_rlc = self.wrong.assign(
+        let (key_rlc, _) = self.wrong.assign(
             region,
             offset,
             is_non_existing_proof,
