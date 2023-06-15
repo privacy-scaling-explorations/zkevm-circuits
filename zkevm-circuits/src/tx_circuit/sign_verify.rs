@@ -383,7 +383,7 @@ impl<F: Field> SignVerifyChip<F> {
         } = chips;
 
         let integer_r = ecc_chip.new_unassigned_scalar(Value::known(*sig_r));
-        let integer_s = ecc_chip.new_unassigned_scalar(Value::known(*sig_s));
+        let integer_s = ecc_chip.new_unassigned_scalar(Value::known(*msg_hash));
         let msg_hash = ecc_chip.new_unassigned_scalar(Value::known(*msg_hash));
 
         let r_assigned = scalar_chip.assign_integer(ctx, integer_r, Range::Remainder)?;

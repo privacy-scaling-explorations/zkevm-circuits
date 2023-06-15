@@ -1177,7 +1177,7 @@ dependencies = [
 [[package]]
 name = "ecc"
 version = "0.1.0"
-source = "git+https://github.com/xiaodino/halo2wrong?rev=24a7880c259f19cc6cf786ca47cfda34433ee9fb#24a7880c259f19cc6cf786ca47cfda34433ee9fb"
+source = "git+https://github.com/xiaodino/halo2wrong?rev=082a983a91fa0a527f78c38b51feb1575398065c#082a983a91fa0a527f78c38b51feb1575398065c"
 dependencies = [
  "integer",
  "num-bigint",
@@ -1190,7 +1190,7 @@ dependencies = [
 [[package]]
 name = "ecdsa"
 version = "0.1.0"
-source = "git+https://github.com/xiaodino/halo2wrong?rev=24a7880c259f19cc6cf786ca47cfda34433ee9fb#24a7880c259f19cc6cf786ca47cfda34433ee9fb"
+source = "git+https://github.com/xiaodino/halo2wrong?rev=082a983a91fa0a527f78c38b51feb1575398065c#082a983a91fa0a527f78c38b51feb1575398065c"
 dependencies = [
  "ecc",
  "num-bigint",
@@ -2193,7 +2193,7 @@ dependencies = [
 [[package]]
 name = "halo2wrong"
 version = "0.1.0"
-source = "git+https://github.com/xiaodino/halo2wrong?rev=24a7880c259f19cc6cf786ca47cfda34433ee9fb#24a7880c259f19cc6cf786ca47cfda34433ee9fb"
+source = "git+https://github.com/xiaodino/halo2wrong?rev=082a983a91fa0a527f78c38b51feb1575398065c#082a983a91fa0a527f78c38b51feb1575398065c"
 dependencies = [
  "halo2_proofs 0.2.0",
  "num-bigint",
@@ -2530,7 +2530,7 @@ dependencies = [
 [[package]]
 name = "integer"
 version = "0.1.0"
-source = "git+https://github.com/xiaodino/halo2wrong?rev=24a7880c259f19cc6cf786ca47cfda34433ee9fb#24a7880c259f19cc6cf786ca47cfda34433ee9fb"
+source = "git+https://github.com/xiaodino/halo2wrong?rev=082a983a91fa0a527f78c38b51feb1575398065c#082a983a91fa0a527f78c38b51feb1575398065c"
 dependencies = [
  "maingate",
  "num-bigint",
@@ -2833,7 +2833,7 @@ dependencies = [
 [[package]]
 name = "maingate"
 version = "0.1.0"
-source = "git+https://github.com/xiaodino/halo2wrong?rev=24a7880c259f19cc6cf786ca47cfda34433ee9fb#24a7880c259f19cc6cf786ca47cfda34433ee9fb"
+source = "git+https://github.com/xiaodino/halo2wrong?rev=082a983a91fa0a527f78c38b51feb1575398065c#082a983a91fa0a527f78c38b51feb1575398065c"
 dependencies = [
  "halo2wrong",
  "num-bigint",
@@ -4330,7 +4330,7 @@ checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
 [[package]]
 name = "snark-verifier"
 version = "0.1.0"
-source = "git+https://github.com/xiaodino/snark-verifier?rev=6131ee5d6c7126e608f798e5037b102ca3cbd406#6131ee5d6c7126e608f798e5037b102ca3cbd406"
+source = "git+https://github.com/xiaodino/snark-verifier?rev=a63e11a155d68092b4498135c7a9a65653c4f6b9#a63e11a155d68092b4498135c7a9a65653c4f6b9"
 dependencies = [
  "ecc",
  "halo2_proofs 0.2.0",

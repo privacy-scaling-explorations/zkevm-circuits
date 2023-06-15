@@ -83,20 +83,29 @@ fn tx_circuit_1tx_2max_tx() {
 }
 
 #[test]
+fn tx_circuit_bad_address() {
+    const MAX_TXS: usize = 1;
+    const MAX_CALLDATA: usize = 32;
+
+    let mut tx = mock::CORRECT_MOCK_TXS[0].clone();
+    // This address doesn't correspond to the account that signed this tx.
+    tx.from = AddrOrWallet::from(address!("0x1230000000000000000000000000000000000456"));
+
+    assert!(run::<Fr>(
+        vec![tx.into()],
+        mock::MOCK_CHAIN_ID.as_u64(),
+        MAX_TXS,
+        MAX_CALLDATA
+    )
+    .is_err(),);
+}
+
+#[test]
 fn tx_circuit_invalid_signature() {
-    let tx0 = mock::CORRECT_MOCK_TXS[0].clone();
-
     let mut tx1 = mock::CORRECT_MOCK_TXS[1].clone();
-    tx1.from = AddrOrWallet::from(address!("0x0000000000000000000000000000000000000000"));
-    tx1.r = tx1.s;
-    tx1.enable_skipping_invalid_signature = true;
-
     let mut tx2 = mock::CORRECT_MOCK_TXS[2].clone();
-    tx2.s = tx2.r;
+    tx2.s = tx1.s.clone();
     tx2.enable_skipping_invalid_signature = true;
-
-    invalid_signature(vec![tx0.clone()], 1);
-    invalid_signature(vec![tx1.clone()], 1);
     invalid_signature(vec![tx2.clone()], 1);
 }
 

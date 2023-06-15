@@ -27,14 +27,14 @@ lazy_static = "1.4"
 keccak256 = { path = "../keccak256"}
 log = "0.4"
 env_logger = "0.9"
-ecdsa = { git = "https://github.com/xiaodino/halo2wrong", rev = "24a7880c259f19cc6cf786ca47cfda34433ee9fb" }
-ecc = { git = "https://github.com/xiaodino/halo2wrong", rev = "24a7880c259f19cc6cf786ca47cfda34433ee9fb" }
-maingate = { git = "https://github.com/xiaodino/halo2wrong", rev = "24a7880c259f19cc6cf786ca47cfda34433ee9fb" }
-integer = { git = "https://github.com/xiaodino/halo2wrong", rev = "24a7880c259f19cc6cf786ca47cfda34433ee9fb" }
+ecdsa = { git = "https://github.com/xiaodino/halo2wrong", rev = "082a983a91fa0a527f78c38b51feb1575398065c" }
+ecc = { git = "https://github.com/xiaodino/halo2wrong", rev = "082a983a91fa0a527f78c38b51feb1575398065c" }
+maingate = { git = "https://github.com/xiaodino/halo2wrong", rev = "082a983a91fa0a527f78c38b51feb1575398065c" }
+integer = { git = "https://github.com/xiaodino/halo2wrong", rev = "082a983a91fa0a527f78c38b51feb1575398065c" }
 libsecp256k1 = "0.7"
 num-bigint = { version = "0.4" }
 rand_chacha = "0.3"
-snark-verifier = { git = "https://github.com/xiaodino/snark-verifier", rev = "6131ee5d6c7126e608f798e5037b102ca3cbd406", default-features = false, features = ["loader_halo2", "system_halo2"] }
+snark-verifier = { git = "https://github.com/xiaodino/snark-verifier", rev = "a63e11a155d68092b4498135c7a9a65653c4f6b9", default-features = false, features = ["loader_halo2", "system_halo2"] }
 cli-table = { version = "0.4", optional = true }
 
 [dev-dependencies]

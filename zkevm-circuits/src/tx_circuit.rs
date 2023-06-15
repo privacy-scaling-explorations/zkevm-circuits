@@ -256,13 +256,16 @@ impl<F: Field> TxCircuit<F> {
                         // the SignVerifyChip
                         match tag {
                             // TODO: Enable it for invalid signature
-                            // TxFieldTag::CallerAddress => {
-                            //     region.constrain_equal(
-                            //         assigned_cell.cell(),
-                            //         assigned_sig_verif.address.cell(),
-                            //     )?
-                            // },
-                            
+                            // Err([Equality constraint not satisfied by cell (Column('Advice { phase: Phase(1) }', 2 - ), in Region 5 ('tx table') at offset 4),
+                            // Equality constraint not satisfied by cell (Column('Advice', 14 - ), in Region 4 ('signature address verify') at offset 0)])
+                            /*
+                            TxFieldTag::CallerAddress => {
+                                region.constrain_equal(
+                                    assigned_cell.cell(),
+                                    assigned_sig_verif.address.cell(),
+                                )?
+                            },
+                            */
                             TxFieldTag::TxSignHash => region.constrain_equal(
                                 assigned_cell.cell(),
                                 assigned_sig_verif.msg_hash_rlc.cell(),
