@@ -9,6 +9,7 @@ use halo2_proofs::{
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+use itertools::max;
 
 use std::{convert::TryInto, env::var};
 
@@ -27,7 +28,7 @@ use self::{
     account_leaf::AccountLeafConfig,
     helpers::{key_memory, RLPItemView},
     rlp_gadgets::decode_rlp,
-    witness_row::{AccountRowType, ExtensionBranchRowType, Node, StartRowType, StorageRowType},
+    witness_row::{AccountRowType, ExtensionBranchRowType, Node, StartRowType, StorageRowType}, param::MAX_ROW_LEN,
 };
 use crate::{
     assign, assignf, circuit,
@@ -555,41 +556,36 @@ impl<F: Field> MPTConfig<F> {
                 // The lookups ensure that when the unused columns start, the values in these columns are zeros -
                 // when the unused columns start, the value that is used for the lookup in the last column is negative
                 // and thus a zero is enforced.
-                let max_length = 34i32;
                 for (tag, range) in [
                     (FixedTableTag::RangeKeyLen256, 256),
                     (FixedTableTag::RangeKeyLen16, 16),
                 ] {
                     // When using two byte range check, we ensure the tuple within 
-                    // ([0..255], [0..255], [-67,.. odd numbers .., 67]) 
-                    // where n is the possible sum of any consecutive indexs of the first and second byte
-                    if self.two_bytes_lookup {
-                        for n in -max_length..=max_length {
-                            let range = if n <= 0 && range == 256 { 1 } else { range };
-                            for idx1 in 0..range {
-                                for idx2 in 0..range {       
-                                    let v =(2 * n - 1).scalar();
+                    // ([0..255], [0..255], [-34..,34]) 
+                    for n in -MAX_ROW_LEN..=MAX_ROW_LEN {
+                        if self.two_bytes_lookup {
+                            let range1 = if n <= 0 && range == 256 { 1 } else { range };
+                            for idx1 in 0..range1 {
+                                let range2 = if n < 0 && range == 256 { 1 } else { range };
+                                for idx2 in 0..range2 {       
+                                    let v = n.scalar();
                                     assignf!(region, (self.fixed_table[0], offset) => tag.scalar())?;
                                     assignf!(region, (self.fixed_table[1], offset) => idx1.scalar())?;
-                                    assignf!(region, (self.fixed_table[1], offset) => idx2.scalar())?;
-                                    assignf!(region, (self.fixed_table[2], offset) => v)?;
+                                    assignf!(region, (self.fixed_table[2], offset) => idx2.scalar())?;
+                                    assignf!(region, (self.fixed_table[3], offset) => v)?;
                                     offset += 1;
                                 }
                             }
+                        } else {
+                            let range = if n <= 0 && range == 256 { 1 } else { range };
+                            for idx in 0..range {
+                                let v = n.scalar();
+                                assignf!(region, (self.fixed_table[0], offset) => tag.scalar())?;
+                                assignf!(region, (self.fixed_table[1], offset) => idx.scalar())?;
+                                assignf!(region, (self.fixed_table[2], offset) => v)?;
+                                offset += 1;
+                            }
                         }
-                    } else {
-
-                    
-                    for n in -max_length..=max_length {
-                        let range = if n <= 0 && range == 256 { 1 } else { range };
-                        for idx in 0..range {
-                            let v = n.scalar();
-                            assignf!(region, (self.fixed_table[0], offset) => tag.scalar())?;
-                            assignf!(region, (self.fixed_table[1], offset) => idx.scalar())?;
-                            assignf!(region, (self.fixed_table[2], offset) => v)?;
-                            offset += 1;
-                        }
-                    }
                 }
             }
 
@@ -768,7 +764,7 @@ mod tests {
 
                 println!("{} {:?}", idx, path);
                 // let prover = MockProver::run(9, &circuit, vec![pub_root]).unwrap();
-                let prover = MockProver::run(21 /* 9 */, &circuit, vec![]).unwrap();
+                let prover = MockProver::run(22 /* 9 */, &circuit, vec![]).unwrap();
                 assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
                 // assert_eq!(prover.verify_par(), Ok(()));
                 // prover.assert_satisfied();
