@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, CircuitsParams, ExecStep},
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
     Error,
 };
 use eth_types::{evm_types::MemoryAddress, GethExecStep, ToBigEndian};
@@ -14,8 +14,8 @@ use eth_types::{evm_types::MemoryAddress, GethExecStep, ToBigEndian};
 pub(crate) struct Mload;
 
 impl Opcode for Mload {
-    fn gen_associated_ops<C: CircuitsParams>(
-        state: &mut CircuitInputStateRef<C>,
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];

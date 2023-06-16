@@ -1,6 +1,6 @@
 use super::TxExecSteps;
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, CircuitsParams, ExecState, ExecStep},
+    circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep},
     operation::{AccountField, AccountOp, CallContextField, TxReceiptField, TxRefundOp, RW},
     state_db::CodeDB,
     Error,
@@ -15,8 +15,8 @@ use ethers_core::utils::get_contract_address;
 pub(crate) struct BeginEndTx;
 
 impl TxExecSteps for BeginEndTx {
-    fn gen_associated_steps<C: CircuitsParams>(
-        state: &mut CircuitInputStateRef<C>,
+    fn gen_associated_steps(
+        state: &mut CircuitInputStateRef,
         execution_step: ExecState,
     ) -> Result<ExecStep, Error> {
         match execution_step {
@@ -29,8 +29,8 @@ impl TxExecSteps for BeginEndTx {
     }
 }
 
-fn gen_begin_tx_steps<C: CircuitsParams>(
-    state: &mut CircuitInputStateRef<C>,
+fn gen_begin_tx_steps(
+    state: &mut CircuitInputStateRef,
 ) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_begin_tx_step();
     let call = state.call()?.clone();
@@ -229,8 +229,8 @@ fn gen_begin_tx_steps<C: CircuitsParams>(
     }
 }
 
-fn gen_end_tx_steps<C: CircuitsParams>(
-    state: &mut CircuitInputStateRef<C>,
+fn gen_end_tx_steps(
+    state: &mut CircuitInputStateRef,
 ) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_end_tx_step();
     let call = state.tx.calls()[0].clone();

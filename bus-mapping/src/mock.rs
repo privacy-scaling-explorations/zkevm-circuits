@@ -41,9 +41,9 @@ impl<C: CircuitsParams> BlockData<C> {
                 self.history_hashes.clone(),
                 Word::default(),
                 &self.eth_block,
-                self.circuits_params,
             )
             .unwrap(),
+            self.circuits_params,
         )
     }
 

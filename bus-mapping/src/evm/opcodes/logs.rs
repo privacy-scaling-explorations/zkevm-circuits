@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CircuitsParams, CopyDataType, CopyEvent, ExecState, ExecStep,
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecState, ExecStep,
         NumberOrHash,
     },
     operation::{CallContextField, TxLogField},
@@ -13,8 +13,8 @@ use eth_types::{GethExecStep, ToWord, Word};
 pub(crate) struct Log;
 
 impl Opcode for Log {
-    fn gen_associated_ops<C: CircuitsParams>(
-        state: &mut CircuitInputStateRef<C>,
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
@@ -40,8 +40,8 @@ impl Opcode for Log {
     }
 }
 
-fn gen_log_step<C: CircuitsParams>(
-    state: &mut CircuitInputStateRef<C>,
+fn gen_log_step(
+    state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
 ) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_step(geth_step)?;
@@ -130,8 +130,8 @@ fn gen_log_step<C: CircuitsParams>(
     Ok(exec_step)
 }
 
-fn gen_copy_steps<C: CircuitsParams>(
-    state: &mut CircuitInputStateRef<C>,
+fn gen_copy_steps(
+    state: &mut CircuitInputStateRef,
     exec_step: &mut ExecStep,
     src_addr: u64,
     bytes_left: usize,
@@ -165,8 +165,8 @@ fn gen_copy_steps<C: CircuitsParams>(
     Ok(copy_steps)
 }
 
-fn gen_copy_event<C: CircuitsParams>(
-    state: &mut CircuitInputStateRef<C>,
+fn gen_copy_event(
+    state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
     exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {

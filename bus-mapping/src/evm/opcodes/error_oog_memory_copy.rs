@@ -1,5 +1,5 @@
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, CircuitsParams, ExecStep},
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
     error::{ExecError, OogError},
     evm::Opcode,
     operation::{CallContextField, TxAccessListAccountOp, RW},
@@ -14,8 +14,8 @@ use eth_types::{evm_types::OpcodeId, GethExecStep, ToAddress};
 pub(crate) struct OOGMemoryCopy;
 
 impl Opcode for OOGMemoryCopy {
-    fn gen_associated_ops<C: CircuitsParams>(
-        state: &mut CircuitInputStateRef<C>,
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];

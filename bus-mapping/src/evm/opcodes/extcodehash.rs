@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, CircuitsParams},
+    circuit_input_builder::{CircuitInputStateRef},
     evm::opcodes::ExecStep,
     operation::{AccountField, CallContextField, TxAccessListAccountOp},
     Error,
@@ -11,8 +11,8 @@ use eth_types::{GethExecStep, ToAddress, ToWord, H256, U256};
 pub(crate) struct Extcodehash;
 
 impl Opcode for Extcodehash {
-    fn gen_associated_ops<C: CircuitsParams>(
-        state: &mut CircuitInputStateRef<C>,
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
         steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let step = &steps[0];

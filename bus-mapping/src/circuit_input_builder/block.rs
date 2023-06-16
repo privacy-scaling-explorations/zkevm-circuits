@@ -1,9 +1,6 @@
 //! Block-related utility module
 
-use super::{
-    execution::ExecState, transaction::Transaction, CircuitsParams, ConcreteCP, CopyEvent,
-    DynamicCP, ExecStep, ExpEvent,
-};
+use super::{execution::ExecState, transaction::Transaction, CopyEvent, ExecStep, ExpEvent};
 use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
@@ -55,7 +52,7 @@ pub struct BlockSteps {
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Circuit Input related to a block.
 #[derive(Debug)]
-pub struct Block<C: CircuitsParams> {
+pub struct Block {
     /// chain id
     pub chain_id: Word,
     /// history hashes contains most recent 256 block hashes in history, where
@@ -87,20 +84,17 @@ pub struct Block<C: CircuitsParams> {
     pub sha3_inputs: Vec<Vec<u8>>,
     /// Exponentiation events in the block.
     pub exp_events: Vec<ExpEvent>,
-    /// Circuits Setup Paramteres
-    pub circuits_params: C,
     /// Original block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
 }
 
-impl<C: CircuitsParams> Block<C> {
+impl Block {
     /// Create a new block.
     pub fn new(
         chain_id: Word,
         history_hashes: Vec<Word>,
         prev_state_root: Word,
         eth_block: &eth_types::Block<eth_types::Transaction>,
-        circuits_params: C,
     ) -> Result<Self, Error> {
         if eth_block.base_fee_per_gas.is_none() {
             // FIXME: resolve this once we have proper EIP-1559 support
@@ -140,7 +134,6 @@ impl<C: CircuitsParams> Block<C> {
             copy_events: Vec::new(),
             exp_events: Vec::new(),
             sha3_inputs: Vec::new(),
-            circuits_params,
             eth_block: eth_block.clone(),
         })
     }
@@ -154,9 +147,7 @@ impl<C: CircuitsParams> Block<C> {
     pub fn txs_mut(&mut self) -> &mut Vec<Transaction> {
         &mut self.txs
     }
-}
 
-impl<C: CircuitsParams> Block<C> {
     /// Push a copy event to the block.
     pub fn add_copy_event(&mut self, event: CopyEvent) {
         self.copy_events.push(event);
@@ -164,15 +155,5 @@ impl<C: CircuitsParams> Block<C> {
     /// Push an exponentiation event to the block.
     pub fn add_exp_event(&mut self, event: ExpEvent) {
         self.exp_events.push(event);
-    }
-}
-
-impl Block<DynamicCP> {
-    /// Set Circuit Parameters
-    pub fn set_params(self, cp: ConcreteCP) -> Block<ConcreteCP> {
-        Block {
-            circuits_params: cp,
-            ..self
-        }
     }
 }

@@ -1,5 +1,5 @@
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, CircuitsParams, ExecStep},
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
     evm::Opcode,
     operation::{AccountField, CallContextField, TxAccessListAccountOp},
     Error,
@@ -10,8 +10,8 @@ use eth_types::{GethExecStep, ToAddress, ToWord, H256};
 pub(crate) struct Extcodesize;
 
 impl Opcode for Extcodesize {
-    fn gen_associated_ops<C: CircuitsParams>(
-        state: &mut CircuitInputStateRef<C>,
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
