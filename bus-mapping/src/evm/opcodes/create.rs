@@ -1,6 +1,6 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, MaybeParams, NumberOrHash,
     },
     error::ExecError,
     evm::Opcode,
@@ -15,8 +15,8 @@ use ethers_core::utils::{get_create2_address, keccak256, rlp};
 pub struct Create<const IS_CREATE2: bool>;
 
 impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
+    fn gen_associated_ops<M: MaybeParams>(
+        state: &mut CircuitInputStateRef<M>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
