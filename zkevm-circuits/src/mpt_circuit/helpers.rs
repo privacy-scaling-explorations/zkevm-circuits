@@ -1263,7 +1263,7 @@ impl<F: Field> MainRLPGadget<F> {
                         config.tag.expr(), 
                         config.bytes[first], 
                         config.bytes[second], 
-                        (config.num_bytes.expr() - first.expr()) + (config.num_bytes.expr() - second.expr())  
+                        config.num_bytes.expr() - first.expr()
                     ) => @FIXED);
                 }
             } else {
