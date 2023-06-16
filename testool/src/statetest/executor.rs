@@ -266,8 +266,7 @@ pub fn run_test(
             .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
         let block: Block<Fr> =
-            zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db)
-                .unwrap();
+            zkevm_circuits::evm_circuit::witness::block_convert(&builder).unwrap();
 
         CircuitTestBuilder::<1, 1>::new_from_block(block).run();
     } else {

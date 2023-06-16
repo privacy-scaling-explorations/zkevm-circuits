@@ -52,7 +52,7 @@ mod evm_circ_benches {
             .handle_block(&empty_data.eth_block, &empty_data.geth_traces)
             .unwrap();
 
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert(&builder).unwrap();
 
         let circuit = TestEvmCircuit::<Fr>::new(block);
         let mut rng = XorShiftRng::from_seed([

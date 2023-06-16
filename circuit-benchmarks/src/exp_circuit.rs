@@ -148,6 +148,6 @@ mod tests {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        block_convert(&builder.block, &builder.code_db).unwrap()
+        block_convert(&builder).unwrap()
     }
 }
