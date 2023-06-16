@@ -6,21 +6,21 @@ use crate::evm_circuit::{
 use eth_types::Field;
 use itertools::Itertools;
 
-type StepSize = Vec<(CellType, ColumnSize)>;
+type StepSize<F> = Vec<(CellType<F>, ColumnSize)>;
 /// Contains (width, height, num_cells)
 type ColumnSize = (usize, usize, usize);
 
 /// Instrument captures metrics during the compilation of a circuit.
 #[derive(Clone, Debug, Default)]
-pub struct Instrument {
+pub struct Instrument<F> {
     // States -> Cell Types -> (width, height, num_cells)
-    states: Vec<(ExecutionState, StepSize)>,
+    states: Vec<(ExecutionState, StepSize<F>)>,
 }
 
-impl Instrument {
+impl<F: Field> Instrument<F> {
     /// Collects `CellManager` stats from a compiled EVMCircuit in order to
     /// extract metrics.
-    pub(crate) fn on_gadget_built<F: Field>(
+    pub(crate) fn on_gadget_built(
         &mut self,
         execution_state: ExecutionState,
         cb: &EVMConstraintBuilder<F>,

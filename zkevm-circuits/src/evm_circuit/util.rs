@@ -4,11 +4,8 @@ pub use crate::util::{
     Challenges, Expr,
 };
 use crate::{
-    evm_circuit::{
-        param::{
-            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE2_COLUMNS,
-        },
-        table::Table,
+    evm_circuit::param::{
+        LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE2_COLUMNS,
     },
     witness::{Block, ExecStep, Rw, RwMap},
 };
@@ -33,7 +30,10 @@ pub(crate) mod memory_gadget;
 
 pub use gadgets::util::{and, not, or, select, sum};
 
-use super::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64};
+use super::{
+    param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64},
+    table::Lookup,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Cell<F> {
@@ -236,7 +236,7 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
 pub struct StoredExpression<F> {
     pub(crate) name: String,
     cell: Cell<F>,
-    cell_type: CellType,
+    pub cell_type: CellType<F>,
     expr: Expression<F>,
     expr_id: String,
 }
@@ -283,18 +283,19 @@ impl<F: Field> StoredExpression<F> {
     }
 }
 
+// cell
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum CellType {
+pub(crate) enum CellType<F: Field> {
     StoragePhase1,
     StoragePhase2,
     StoragePermutation,
     LookupByte,
-    Lookup(Table),
+    Lookup(Lookup<F>),
 }
 
-impl CellType {
+impl<F: Field> CellType<F> {
     // The phase that given `Expression` becomes evaluateable.
-    fn expr_phase<F: Field>(expr: &Expression<F>) -> u8 {
+    fn expr_phase(expr: &Expression<F>) -> u8 {
         use Expression::*;
         match expr {
             Challenge(challenge) => challenge.phase() + 1,
@@ -306,7 +307,7 @@ impl CellType {
     }
 
     /// Return the storage phase of phase
-    pub(crate) fn storage_for_phase(phase: u8) -> CellType {
+    pub(crate) fn storage_for_phase(phase: u8) -> CellType<F> {
         match phase {
             0 => CellType::StoragePhase1,
             1 => CellType::StoragePhase2,
@@ -315,15 +316,15 @@ impl CellType {
     }
 
     /// Return the storage cell of the expression
-    pub(crate) fn storage_for_expr<F: Field>(expr: &Expression<F>) -> CellType {
-        Self::storage_for_phase(Self::expr_phase::<F>(expr))
+    pub(crate) fn storage_for_expr(expr: &Expression<F>) -> CellType<F> {
+        Self::storage_for_phase(Self::expr_phase(expr))
     }
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct CellColumn<F> {
     pub(crate) index: usize,
-    pub(crate) cell_type: CellType,
+    pub(crate) cell_type: CellType<F>,
     pub(crate) height: usize,
     pub(crate) expr: Expression<F>,
 }
@@ -405,7 +406,7 @@ impl<F: Field> CellManager<F> {
         }
     }
 
-    pub(crate) fn query_cells(&mut self, cell_type: CellType, count: usize) -> Vec<Cell<F>> {
+    pub(crate) fn query_cells(&mut self, cell_type: CellType<F>, count: usize) -> Vec<Cell<F>> {
         let mut cells = Vec::with_capacity(count);
         while cells.len() < count {
             let column_idx = self.next_column(cell_type);
@@ -416,11 +417,11 @@ impl<F: Field> CellManager<F> {
         cells
     }
 
-    pub(crate) fn query_cell(&mut self, cell_type: CellType) -> Cell<F> {
+    pub(crate) fn query_cell(&mut self, cell_type: CellType<F>) -> Cell<F> {
         self.query_cells(cell_type, 1)[0].clone()
     }
 
-    fn next_column(&self, cell_type: CellType) -> usize {
+    fn next_column(&self, cell_type: CellType<F>) -> usize {
         let mut best_index: Option<usize> = None;
         let mut best_height = self.height;
         for column in self.columns.iter() {
@@ -456,7 +457,7 @@ impl<F: Field> CellManager<F> {
     }
 
     /// Returns a map of CellType -> (width, height, num_cells)
-    pub(crate) fn get_stats(&self) -> BTreeMap<CellType, (usize, usize, usize)> {
+    pub(crate) fn get_stats(&self) -> BTreeMap<CellType<F>, (usize, usize, usize)> {
         let mut data = BTreeMap::new();
         for column in self.columns.iter() {
             let (mut count, mut height, mut num_cells) =

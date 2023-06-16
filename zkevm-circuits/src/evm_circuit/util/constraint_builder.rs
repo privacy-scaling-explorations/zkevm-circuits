@@ -514,17 +514,17 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.query_cell_with_type(CellType::StoragePermutation)
     }
 
-    pub(crate) fn query_cell_with_type(&mut self, cell_type: CellType) -> Cell<F> {
+    pub(crate) fn query_cell_with_type(&mut self, cell_type: CellType<F>) -> Cell<F> {
         self.query_cells(cell_type, 1).first().unwrap().clone()
     }
 
-    pub(crate) fn query_bool_with_type(&mut self, cell_type: CellType) -> Cell<F> {
+    pub(crate) fn query_bool_with_type(&mut self, cell_type: CellType<F>) -> Cell<F> {
         let cell = self.query_cell_with_type(cell_type);
         self.require_boolean("Constrain cell to be a bool", cell.expr());
         cell
     }
 
-    fn query_cells(&mut self, cell_type: CellType, count: usize) -> Vec<Cell<F>> {
+    fn query_cells(&mut self, cell_type: CellType<F>, count: usize) -> Vec<Cell<F>> {
         if self.in_next_step {
             &mut self.next
         } else {
@@ -1835,14 +1835,14 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             rlc::expr(&lookup.input_exprs(), self.challenges.lookup_input()),
             MAX_DEGREE - IMPLICIT_DEGREE,
         );
-        self.store_expression(name, compressed_expr, CellType::Lookup(lookup.table()));
+        self.store_expression(name, compressed_expr, CellType::Lookup(lookup));
     }
 
     pub(crate) fn store_expression(
         &mut self,
         name: &str,
         expr: Expression<F>,
-        cell_type: CellType,
+        cell_type: CellType<F>,
     ) -> Expression<F> {
         // Check if we already stored the expression somewhere
         let stored_expression = self.find_stored_expression(&expr, cell_type);
@@ -1885,7 +1885,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn find_stored_expression(
         &self,
         expr: &Expression<F>,
-        cell_type: CellType,
+        cell_type: CellType<F>,
     ) -> Option<&StoredExpression<F>> {
         let expr_id = expr.identifier();
         self.stored_expressions

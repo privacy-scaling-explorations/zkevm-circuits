@@ -5,6 +5,7 @@ use super::{
         N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
     step::HasExecutionState,
+    table::Lookup,
     util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
 };
 use crate::{
@@ -220,7 +221,7 @@ pub struct ExecutionConfig<F> {
     step: Step<F>,
     pub(crate) height_map: HashMap<ExecutionState, usize>,
     stored_expressions_map: HashMap<ExecutionState, Vec<StoredExpression<F>>>,
-    instrument: Instrument,
+    instrument: Instrument<F>,
     // internal state gadgets
     begin_tx_gadget: Box<BeginTxGadget<F>>,
     end_block_gadget: Box<EndBlockGadget<F>>,
@@ -598,7 +599,7 @@ impl<F: Field> ExecutionConfig<F> {
         config
     }
 
-    pub fn instrument(&self) -> &Instrument {
+    pub fn instrument(&self) -> &Instrument<F> {
         &self.instrument
     }
 
@@ -615,7 +616,7 @@ impl<F: Field> ExecutionConfig<F> {
         step_curr: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
-        instrument: &mut Instrument,
+        instrument: &mut Instrument<F>,
     ) -> G {
         // Configure the gadget with the max height first so we can find out the actual
         // height
@@ -676,7 +677,7 @@ impl<F: Field> ExecutionConfig<F> {
         step_next: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
-        instrument: &mut Instrument,
+        instrument: &mut Instrument<F>,
         name: &'static str,
         execution_state: ExecutionState,
         height: usize,
@@ -1327,7 +1328,7 @@ impl<F: Field> ExecutionConfig<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         step: &ExecStep,
-    ) -> Result<Vec<(String, F)>, Error> {
+    ) -> Result<Vec<(String, Value<F>, F)>, Error> {
         let mut assigned_stored_expressions = Vec::new();
         for stored_expression in self
             .stored_expressions_map
@@ -1336,15 +1337,49 @@ impl<F: Field> ExecutionConfig<F> {
         {
             let assigned = stored_expression.assign(region, offset)?;
             assigned.map(|v| {
+                let rw_counter = if let CellType::Lookup(Lookup::Rw {
+                    counter,
+                    is_write,
+                    tag,
+                    values,
+                }) = stored_expression.cell_type
+                {
+                    counter.evaluate(
+                        &|scalar| Value::known(scalar),
+                        &|_| unimplemented!("selector column"),
+                        &|fixed_query| {
+                            Value::known(region.get_fixed(
+                                offset,
+                                fixed_query.column_index(),
+                                fixed_query.rotation(),
+                            ))
+                        },
+                        &|advice_query| {
+                            Value::known(region.get_advice(
+                                offset,
+                                advice_query.column_index(),
+                                advice_query.rotation(),
+                            ))
+                        },
+                        &|_| unimplemented!("instance column"),
+                        &|challenge| *region.challenges().indexed()[challenge.index()],
+                        &|a| -a,
+                        &|a, b| a + b,
+                        &|a, b| a * b,
+                        &|a, scalar| a * Value::known(scalar),
+                    )
+                } else {
+                    panic!("xxx")
+                };
                 let name = stored_expression.name.clone();
-                assigned_stored_expressions.push((name, v));
+                assigned_stored_expressions.push((name, rw_counter, v));
             });
         }
         Ok(assigned_stored_expressions)
     }
 
     fn check_rw_lookup(
-        assigned_stored_expressions: &[(String, F)],
+        assigned_stored_expressions: &[(String, Value<F>, F)],
         step: &ExecStep,
         block: &Block<F>,
         challenges: &Challenges<Value<F>>,
@@ -1358,12 +1393,11 @@ impl<F: Field> ExecutionConfig<F> {
             return;
         }
         let mut assigned_rw_values = Vec::new();
-        for (name, v) in assigned_stored_expressions {
-            if name.starts_with("rw lookup ")
-                && !v.is_zero_vartime()
-                && !assigned_rw_values.contains(&(name.clone(), *v))
+        for (name, rw_counter, v) in assigned_stored_expressions {
+            if !v.is_zero_vartime()
+                && !assigned_rw_values.contains(&(name.clone(), rw_counter.clone(), *v))
             {
-                assigned_rw_values.push((name.clone(), *v));
+                assigned_rw_values.push((name.clone(), rw_counter.clone(), *v));
             }
         }
 
@@ -1395,41 +1429,44 @@ impl<F: Field> ExecutionConfig<F> {
             );
         }
         let mut rev_count = 0;
-        for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
-            let is_rev = if assigned_rw_value.0.contains(" with reversion") {
-                rev_count += 1;
-                true
-            } else {
-                false
-            };
-            assert!(
-                rev_count <= step.reversible_write_counter_delta,
-                "Assigned {} reversions, but step only has {}",
-                rev_count,
-                step.reversible_write_counter_delta
-            );
-            // In the EVM Circuit, reversion rw lookups are assigned after their
-            // corresponding rw lookup, but in the bus-mapping they are
-            // generated at the end of the step.
-            let idx = if is_rev {
-                step.rw_indices_len() - rev_count
-            } else {
-                idx - rev_count
-            };
+        for (idx, (_, rw_counter, assigned_rw_value)) in assigned_rw_values.iter().enumerate() {
+            rw_counter.map(|idx| {
+                let is_rev = if assigned_rw_value.0.contains(" with reversion") {
+                    rev_count += 1;
+                    true
+                } else {
+                    false
+                };
+                assert!(
+                    rev_count <= step.reversible_write_counter_delta,
+                    "Assigned {} reversions, but step only has {}",
+                    rev_count,
+                    step.reversible_write_counter_delta
+                );
+                // In the EVM Circuit, reversion rw lookups are assigned after their
+                // corresponding rw lookup, but in the bus-mapping they are
+                // generated at the end of the step.
+                let idx = if is_rev {
+                    step.rw_indices_len() - rev_count
+                } else {
+                    idx - rev_count
+                };
 
-            let rw = block.get_rws(step, idx);
-            let table_assignments = rw.table_assignment();
-            let rlc = table_assignments.unwrap().rlc(lookup_randomness);
-            if rlc != assigned_rw_value.1 {
-                log::error!(
-                    "incorrect rw witness. lookup input name: \"{}\"\nassigned={:?}\nrlc     ={:?}\n{}th rw of step {:?}, rw: {:?}",
-                    assigned_rw_value.0,
-                    assigned_rw_value.1,
-                    rlc,
-                    idx,
-                    step.execution_state(),
-                    rw);
-            }
+                let rw = block.get_rws(step, idx);
+                let table_assignments = rw.table_assignment();
+                let rlc = table_assignments.unwrap().rlc(lookup_randomness);
+                if rlc != assigned_rw_value.1 {
+                    log::error!(
+                        "incorrect rw witness. lookup input name: \"{}\"\nassigned={:?}\nrlc     ={:?}\n{}th rw of step {:?}, rw: {:?} step: {:?}",
+                        assigned_rw_value.0,
+                        assigned_rw_value.1,
+                        rlc,
+                        idx,
+                        step.execution_state(),
+                        rw,
+                        step,);
+                }
+            })
         }
     }
 }
