@@ -9,7 +9,7 @@ use halo2_proofs::{
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use itertools::max;
+
 
 use std::{convert::TryInto, env::var};
 
