@@ -82,7 +82,9 @@ const KECCAK_CIRCUIT_DEGREE: u32 = 16;
 const SUPER_CIRCUIT_DEGREE: u32 = 20;
 const EXP_CIRCUIT_DEGREE: u32 = 16;
 const PI_CIRCUIT_DEGREE: u32 = 17;
-const ROOT_CIRCUIT_DEGREE: u32 = 24;
+const ROOT_CIRCUIT_SMALL_DEGREE: u32 = 24;
+// Big is for SuperCircuit only
+const ROOT_CIRCUIT_BIG_DEGREE: u32 = 26;
 
 lazy_static! {
     /// Data generation.
@@ -100,39 +102,39 @@ lazy_static! {
 lazy_static! {
     /// Integration test for EVM circuit
     pub static ref EVM_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestEvmCircuit<Fr>>> =
-    TokioMutex::new(IntegrationTest::new("EVM", EVM_CIRCUIT_DEGREE));
+    TokioMutex::new(IntegrationTest::new("EVM", EVM_CIRCUIT_DEGREE, ROOT_CIRCUIT_SMALL_DEGREE));
 
     /// Integration test for State circuit
     pub static ref STATE_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestStateCircuit<Fr>>> =
-    TokioMutex::new(IntegrationTest::new("State", STATE_CIRCUIT_DEGREE));
+    TokioMutex::new(IntegrationTest::new("State", STATE_CIRCUIT_DEGREE, ROOT_CIRCUIT_SMALL_DEGREE));
 
     /// Integration test for State circuit
     pub static ref TX_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestTxCircuit<Fr>>> =
-    TokioMutex::new(IntegrationTest::new("Tx", TX_CIRCUIT_DEGREE));
+    TokioMutex::new(IntegrationTest::new("Tx", TX_CIRCUIT_DEGREE, ROOT_CIRCUIT_SMALL_DEGREE));
 
     /// Integration test for Bytecode circuit
     pub static ref BYTECODE_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestBytecodeCircuit<Fr>>> =
-    TokioMutex::new(IntegrationTest::new("Bytecode", BYTECODE_CIRCUIT_DEGREE));
+    TokioMutex::new(IntegrationTest::new("Bytecode", BYTECODE_CIRCUIT_DEGREE, ROOT_CIRCUIT_SMALL_DEGREE));
 
     /// Integration test for Copy circuit
     pub static ref COPY_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestCopyCircuit<Fr>>> =
-    TokioMutex::new(IntegrationTest::new("Copy", COPY_CIRCUIT_DEGREE));
+    TokioMutex::new(IntegrationTest::new("Copy", COPY_CIRCUIT_DEGREE, ROOT_CIRCUIT_SMALL_DEGREE));
 
     /// Integration test for Keccak circuit
     pub static ref KECCAK_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestKeccakCircuit<Fr>>> =
-    TokioMutex::new(IntegrationTest::new("Keccak", KECCAK_CIRCUIT_DEGREE));
+    TokioMutex::new(IntegrationTest::new("Keccak", KECCAK_CIRCUIT_DEGREE, ROOT_CIRCUIT_SMALL_DEGREE));
 
     /// Integration test for Copy circuit
     pub static ref SUPER_CIRCUIT_TEST: TokioMutex<IntegrationTest<SuperCircuit::<Fr>>> =
-    TokioMutex::new(IntegrationTest::new("Super", SUPER_CIRCUIT_DEGREE));
+    TokioMutex::new(IntegrationTest::new("Super", SUPER_CIRCUIT_DEGREE, ROOT_CIRCUIT_BIG_DEGREE));
 
-     /// Integration test for Exp circuit
-     pub static ref EXP_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestExpCircuit::<Fr>>> =
-     TokioMutex::new(IntegrationTest::new("Exp", EXP_CIRCUIT_DEGREE));
+    /// Integration test for Exp circuit
+    pub static ref EXP_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestExpCircuit::<Fr>>> =
+    TokioMutex::new(IntegrationTest::new("Exp", EXP_CIRCUIT_DEGREE, ROOT_CIRCUIT_SMALL_DEGREE));
 
-     /// Integration test for Pi circuit
-     pub static ref PI_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestPiCircuit::<Fr>>> =
-     TokioMutex::new(IntegrationTest::new("Pi", PI_CIRCUIT_DEGREE));
+    /// Integration test for Pi circuit
+    pub static ref PI_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestPiCircuit::<Fr>>> =
+    TokioMutex::new(IntegrationTest::new("Pi", PI_CIRCUIT_DEGREE, ROOT_CIRCUIT_SMALL_DEGREE));
 }
 
 lazy_static! {
@@ -239,6 +241,7 @@ fn test_actual_root_circuit<C: Circuit<Fr>>(
 pub struct IntegrationTest<C: SubCircuit<Fr> + Circuit<Fr>> {
     name: &'static str,
     degree: u32,
+    root_degree: u32,
     key: Option<ProvingKey<G1Affine>>,
     root_key: Option<ProvingKey<G1Affine>>,
     fixed: Option<Vec<Vec<CellValue<Fr>>>>,
@@ -249,10 +252,11 @@ pub struct IntegrationTest<C: SubCircuit<Fr> + Circuit<Fr>> {
 }
 
 impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
-    fn new(name: &'static str, degree: u32) -> Self {
+    fn new(name: &'static str, degree: u32, root_degree: u32) -> Self {
         Self {
             name,
             degree,
+            root_degree,
             key: None,
             root_key: None,
             fixed: None,
@@ -309,7 +313,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                 )
                 .unwrap();
 
-                let general_params = get_general_params(ROOT_CIRCUIT_DEGREE);
+                let general_params = get_general_params(self.root_degree);
                 let verifying_key =
                     keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
                 let key = keygen_pk(&general_params, verifying_key, &circuit)
@@ -429,16 +433,13 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                 let root_key = self.get_root_key();
                 let instance = root_circuit.instance();
                 log::info!("root circuit proof generation");
-                test_actual_root_circuit(root_circuit, ROOT_CIRCUIT_DEGREE, instance, root_key);
+                test_actual_root_circuit(root_circuit, self.root_degree, instance, root_key);
             } else {
                 log::info!("root circuit mock prover verification");
                 // Mock
-                let mock_prover = MockProver::<Fr>::run(
-                    ROOT_CIRCUIT_DEGREE,
-                    &root_circuit,
-                    root_circuit.instance(),
-                )
-                .unwrap();
+                let mock_prover =
+                    MockProver::<Fr>::run(self.root_degree, &root_circuit, root_circuit.instance())
+                        .unwrap();
                 self.test_root_variadic(&mock_prover);
                 mock_prover
                     .verify_par()
