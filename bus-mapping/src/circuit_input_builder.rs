@@ -362,8 +362,7 @@ impl CircuitInputBuilder<DynamicCParams> {
             let max_evm_rows = 0;
             let max_keccak_rows = 0;
             FixedCParams {
-                // TODO Re-check RW padding warning
-                max_rws: max_rws + 3,
+                max_rws: max_rws + 1,
                 max_txs,
                 max_calldata,
                 max_copy_rows,
