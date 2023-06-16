@@ -174,35 +174,35 @@ fn gen_tx_log_data() -> CircuitInputBuilder<ConcreteCP> {
 #[test]
 fn copy_circuit_valid_calldatacopy() {
     let builder = gen_calldatacopy_data();
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
     assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
 }
 
 #[test]
 fn copy_circuit_valid_codecopy() {
     let builder = gen_codecopy_data();
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
     assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
 }
 
 #[test]
 fn copy_circuit_valid_extcodecopy() {
     let builder = gen_extcodecopy_data();
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
     assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
 }
 
 #[test]
 fn copy_circuit_valid_sha3() {
     let builder = gen_sha3_data();
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
     assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
 }
 
 #[test]
 fn copy_circuit_valid_tx_log() {
     let builder = gen_tx_log_data();
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
     assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
 }
 
@@ -214,7 +214,7 @@ fn copy_circuit_invalid_calldatacopy() {
     builder.block.copy_events[0].bytes[0].0 =
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
 
     assert_error_matches(
         test_copy_circuit_from_block(14, block),
@@ -230,7 +230,7 @@ fn copy_circuit_invalid_codecopy() {
     builder.block.copy_events[0].bytes[0].0 =
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
 
     assert_error_matches(
         test_copy_circuit_from_block(10, block),
@@ -246,7 +246,7 @@ fn copy_circuit_invalid_extcodecopy() {
     builder.block.copy_events[0].bytes[0].0 =
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
 
     assert_error_matches(
         test_copy_circuit_from_block(14, block),
@@ -262,7 +262,7 @@ fn copy_circuit_invalid_sha3() {
     builder.block.copy_events[0].bytes[0].0 =
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
 
     assert_error_matches(
         test_copy_circuit_from_block(14, block),
@@ -278,7 +278,7 @@ fn copy_circuit_invalid_tx_log() {
     builder.block.copy_events[0].bytes[0].0 =
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
 
     assert_error_matches(
         test_copy_circuit_from_block(10, block),
@@ -289,7 +289,7 @@ fn copy_circuit_invalid_tx_log() {
 #[test]
 fn variadic_size_check() {
     let builder = gen_tx_log_data();
-    let block1 = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block1 = block_convert::<Fr>(&builder).unwrap();
 
     let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
         .unwrap()
@@ -300,7 +300,7 @@ fn variadic_size_check() {
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
-    let block2 = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block2 = block_convert::<Fr>(&builder).unwrap();
 
     let circuit = CopyCircuit::<Fr>::new(block1.copy_events, block1.circuits_params.max_copy_rows);
     let prover1 = MockProver::<Fr>::run(14, &circuit, vec![]).unwrap();
