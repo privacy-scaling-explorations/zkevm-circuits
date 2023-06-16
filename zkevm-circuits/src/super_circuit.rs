@@ -465,7 +465,7 @@ impl<F: Field> SuperCircuit<F> {
         builder: &CircuitInputBuilder<FixedCParams>,
         mock_randomness: F,
     ) -> Result<(u32, Self, Vec<Vec<F>>), bus_mapping::Error> {
-        let mut block = block_convert(&builder).unwrap();
+        let mut block = block_convert(builder).unwrap();
         block.randomness = mock_randomness;
 
         let (_, rows_needed) = Self::min_num_rows_block(&block);

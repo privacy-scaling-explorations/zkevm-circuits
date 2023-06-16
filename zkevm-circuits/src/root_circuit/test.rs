@@ -3,7 +3,7 @@ use crate::{
     root_circuit::{compile, Config, Gwc, PoseidonTranscript, RootCircuit},
     super_circuit::{test::block_1tx, SuperCircuit},
 };
-use bus_mapping::circuit_input_builder::CircuitsParams;
+use bus_mapping::circuit_input_builder::FixedCParams;
 use halo2_proofs::{
     circuit::Value,
     dev::MockProver,
