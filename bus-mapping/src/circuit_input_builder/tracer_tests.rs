@@ -27,7 +27,7 @@ use std::collections::HashSet;
 // CircuitInputStateRef to have a context in order to get the error at a
 // given step.
 struct CircuitInputBuilderTx {
-    builder: CircuitInputBuilder<DynamicCP>,
+    builder: CircuitInputBuilder<DynamicCParams>,
     tx: Transaction,
     pub(crate) tx_ctx: TransactionContext,
 }
@@ -58,7 +58,7 @@ impl CircuitInputBuilderTx {
         }
     }
 
-    fn state_ref(&mut self) -> CircuitInputStateRef<DynamicCP> {
+    fn state_ref(&mut self) -> CircuitInputStateRef<DynamicCParams> {
         self.builder.state_ref(&mut self.tx, &mut self.tx_ctx)
     }
 }

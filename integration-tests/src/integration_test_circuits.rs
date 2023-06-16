@@ -1,6 +1,6 @@
 use crate::{get_client, GenDataOutput};
 use bus_mapping::{
-    circuit_input_builder::{BuilderClient, CircuitInputBuilder, ConcreteCP},
+    circuit_input_builder::{BuilderClient, CircuitInputBuilder, FixedCParams},
     mock::BlockData,
 };
 use eth_types::geth_types::GethData;
@@ -65,7 +65,7 @@ const MAX_EXP_STEPS: usize = 1000;
 
 const MAX_KECCAK_ROWS: usize = 15000;
 
-const CIRCUITS_PARAMS: ConcreteCP = ConcreteCP {
+const CIRCUITS_PARAMS: FixedCParams = FixedCParams {
     max_rws: MAX_RWS,
     max_txs: MAX_TXS,
     max_calldata: MAX_CALLDATA,
@@ -508,7 +508,7 @@ fn get_general_params(degree: u32) -> ParamsKZG<Bn256> {
 async fn gen_inputs(
     block_num: u64,
 ) -> (
-    CircuitInputBuilder<ConcreteCP>,
+    CircuitInputBuilder<FixedCParams>,
     eth_types::Block<eth_types::Transaction>,
 ) {
     let cli = get_client();

@@ -23,7 +23,7 @@ fn test_root_circuit() {
     let (params, protocol, proof, instance) = {
         // Preprocess
         const TEST_MOCK_RANDOMNESS: u64 = 0x100;
-        let circuits_params = ConcreteCP {
+        let circuits_params = FixedCParams {
             max_txs: 1,
             max_calldata: 32,
             max_rws: 256,

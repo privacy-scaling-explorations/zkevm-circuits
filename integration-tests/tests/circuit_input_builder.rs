@@ -1,7 +1,7 @@
 #![cfg(feature = "circuit_input_builder")]
 
 use bus_mapping::circuit_input_builder::{
-    build_state_code_db, get_state_accesses, BuilderClient, ConcreteCP,
+    build_state_code_db, get_state_accesses, BuilderClient, FixedCParams,
 };
 use integration_tests::{get_client, log_init, GenDataOutput};
 use lazy_static::lazy_static;
@@ -15,7 +15,7 @@ async fn test_circuit_input_builder_block(block_num: u64) {
     let cli = get_client();
     let cli = BuilderClient::new(
         cli,
-        ConcreteCP {
+        FixedCParams {
             max_rws: 16384,
             max_txs: 1,
             max_calldata: 4000,

@@ -6,7 +6,7 @@ use crate::{
     util::SubCircuit,
     witness::{Block, Rw},
 };
-use bus_mapping::{circuit_input_builder::ConcreteCP, mock::BlockData};
+use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
 use eth_types::geth_types::GethData;
 use std::cmp;
 
@@ -76,7 +76,7 @@ const NUM_BLINDING_ROWS: usize = 64;
 /// ```
 pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     test_ctx: Option<TestContext<NACC, NTX>>,
-    circuits_params: Option<ConcreteCP>,
+    circuits_params: Option<FixedCParams>,
     block: Option<Block<Fr>>,
     evm_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
     state_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
@@ -127,7 +127,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
     /// Allows to pass a non-default [`ConcreteCP`] to the builder.
     /// This means that we can increase for example, the `max_rws` or `max_txs`.
-    pub fn params(mut self, params: ConcreteCP) -> Self {
+    pub fn params(mut self, params: FixedCParams) -> Self {
         assert!(
             self.block.is_none(),
             "circuit_params already provided in the block"
@@ -190,8 +190,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
             // Build a witness block from trace result.
-            let mut block =
-                crate::witness::block_convert(&builder).unwrap();
+            let mut block = crate::witness::block_convert(&builder).unwrap();
 
             for modifier_fn in self.block_modifiers {
                 modifier_fn.as_ref()(&mut block);

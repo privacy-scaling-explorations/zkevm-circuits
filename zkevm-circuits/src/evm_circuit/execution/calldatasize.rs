@@ -89,7 +89,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use bus_mapping::circuit_input_builder::ConcreteCP;
+    use bus_mapping::circuit_input_builder::FixedCParams;
     use eth_types::{address, bytecode, Word};
 
     use itertools::Itertools;
@@ -125,9 +125,9 @@ mod test {
             .unwrap();
 
             CircuitTestBuilder::new_from_test_ctx(ctx)
-                .params(ConcreteCP {
+                .params(FixedCParams {
                     max_calldata: 1200,
-                    ..ConcreteCP::default()
+                    ..FixedCParams::default()
                 })
                 .run();
         } else {
@@ -167,9 +167,9 @@ mod test {
             .unwrap();
 
             CircuitTestBuilder::new_from_test_ctx(ctx)
-                .params(ConcreteCP {
+                .params(FixedCParams {
                     max_calldata: 600,
-                    ..ConcreteCP::default()
+                    ..FixedCParams::default()
                 })
                 .run();
         };

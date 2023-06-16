@@ -268,7 +268,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use bus_mapping::circuit_input_builder::ConcreteCP;
+    use bus_mapping::circuit_input_builder::FixedCParams;
     use eth_types::{bytecode, Word};
     use mock::{generate_mock_call_bytecode, test_ctx::TestContext, MockCallBytecodeParams};
 
@@ -321,7 +321,7 @@ mod test {
         .unwrap();
 
         CircuitTestBuilder::new_from_test_ctx(ctx)
-            .params(ConcreteCP {
+            .params(FixedCParams {
                 max_rws: 2048,
                 ..Default::default()
             })

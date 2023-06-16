@@ -39,7 +39,7 @@ pub use transaction::{Transaction, TransactionContext};
 
 /// Circuit Setup Parameters
 #[derive(Debug, Clone, Copy)]
-pub struct ConcreteCP {
+pub struct FixedCParams {
     /// Maximum number of rw operations in the state circuit (RwTable length /
     /// nummber of rows). This must be at least the number of rw operations
     /// + 1, in order to allocate at least a Start row.
@@ -72,18 +72,18 @@ pub struct ConcreteCP {
 
 /// Circuit Setup Parameters. These can be fixed/concrete or unset/dynamic.
 #[derive(Debug, Clone, Copy)]
-pub struct DynamicCP {}
+pub struct DynamicCParams {}
 
 /// Unset Circuits Parameters, computed dynamically together with circuit witness generation.
 pub trait CircuitsParams: Debug + Copy {}
 
-impl CircuitsParams for ConcreteCP {}
-impl CircuitsParams for DynamicCP {}
+impl CircuitsParams for FixedCParams {}
+impl CircuitsParams for DynamicCParams {}
 
-impl Default for ConcreteCP {
+impl Default for FixedCParams {
     /// Default values for most of the unit tests of the Circuit Parameters
     fn default() -> Self {
-        ConcreteCP {
+        FixedCParams {
             max_rws: 1000,
             max_txs: 1,
             max_calldata: 256,
@@ -248,14 +248,14 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     }
 }
 
-impl CircuitInputBuilder<ConcreteCP> {
+impl CircuitInputBuilder<FixedCParams> {
     /// Handle a block by handling each transaction to generate all the
     /// associated operations.
     pub fn handle_block(
         &mut self,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
-    ) -> Result<&CircuitInputBuilder<ConcreteCP>, Error> {
+    ) -> Result<&CircuitInputBuilder<FixedCParams>, Error> {
         // accumulates gas across all txs in the block
         self.begin_handle_block(eth_block, geth_traces)?;
         self.set_end_block(self.circuits_params.max_rws);
@@ -326,7 +326,7 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
         Ok(())
     }
 }
-impl CircuitInputBuilder<DynamicCP> {
+impl CircuitInputBuilder<DynamicCParams> {
     /// Handle a block by handling each transaction to generate all the
     /// associated operations. From these operations, the optimal circuit parameters
     /// are derived and set.
@@ -334,7 +334,7 @@ impl CircuitInputBuilder<DynamicCP> {
         mut self,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
-    ) -> Result<CircuitInputBuilder<ConcreteCP>, Error> {
+    ) -> Result<CircuitInputBuilder<FixedCParams>, Error> {
         self.begin_handle_block(eth_block, geth_traces)?;
 
         // Compute subcircuits parameters
@@ -361,7 +361,7 @@ impl CircuitInputBuilder<DynamicCP> {
             let max_rws: usize = self.block_ctx.rwc.into();
             let max_evm_rows = 0;
             let max_keccak_rows = 0;
-            ConcreteCP {
+            FixedCParams {
                 // TODO Re-check RW padding warning
                 max_rws: max_rws + 3,
                 max_txs,
@@ -373,7 +373,7 @@ impl CircuitInputBuilder<DynamicCP> {
                 max_keccak_rows,
             }
         };
-        let mut cib = CircuitInputBuilder::<ConcreteCP> {
+        let mut cib = CircuitInputBuilder::<FixedCParams> {
             sdb: self.sdb,
             code_db: self.code_db,
             block: self.block,
@@ -484,7 +484,7 @@ type EthBlock = eth_types::Block<eth_types::Transaction>;
 pub struct BuilderClient<P: JsonRpcClient> {
     cli: GethClient<P>,
     chain_id: Word,
-    circuits_params: ConcreteCP,
+    circuits_params: FixedCParams,
 }
 
 /// Get State Accesses from TxExecTraces
@@ -541,7 +541,7 @@ pub fn build_state_code_db(
 
 impl<P: JsonRpcClient> BuilderClient<P> {
     /// Create a new BuilderClient
-    pub async fn new(client: GethClient<P>, circuits_params: ConcreteCP) -> Result<Self, Error> {
+    pub async fn new(client: GethClient<P>, circuits_params: FixedCParams) -> Result<Self, Error> {
         let chain_id = client.get_chain_id().await?;
 
         Ok(Self {
@@ -657,7 +657,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         geth_traces: &[eth_types::GethExecTrace],
         history_hashes: Vec<Word>,
         prev_state_root: Word,
-    ) -> Result<CircuitInputBuilder<ConcreteCP>, Error> {
+    ) -> Result<CircuitInputBuilder<FixedCParams>, Error> {
         let block = Block::new(self.chain_id, history_hashes, prev_state_root, eth_block)?;
         let mut builder = CircuitInputBuilder::new(sdb, code_db, block, self.circuits_params);
         builder.handle_block(eth_block, geth_traces)?;
@@ -670,7 +670,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         block_num: u64,
     ) -> Result<
         (
-            CircuitInputBuilder<ConcreteCP>,
+            CircuitInputBuilder<FixedCParams>,
             eth_types::Block<eth_types::Transaction>,
         ),
         Error,

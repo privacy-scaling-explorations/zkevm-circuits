@@ -2,7 +2,8 @@
 
 use crate::{
     circuit_input_builder::{
-        get_state_accesses, Block, CircuitInputBuilder, CircuitsParams, ConcreteCP, DynamicCP,
+        get_state_accesses, Block, CircuitInputBuilder, CircuitsParams, DynamicCParams,
+        FixedCParams,
     },
     state_db::{self, CodeDB, StateDB},
 };
@@ -65,11 +66,11 @@ impl<C: CircuitsParams> BlockData<C> {
         (sdb, code_db)
     }
 }
-impl BlockData<ConcreteCP> {
+impl BlockData<FixedCParams> {
     /// Create a new block from the given Geth data.
     pub fn new_from_geth_data_with_params(
         geth_data: GethData,
-        circuits_params: ConcreteCP,
+        circuits_params: FixedCParams,
     ) -> Self {
         let (sdb, code_db) = Self::init_dbs(&geth_data);
 
@@ -85,7 +86,7 @@ impl BlockData<ConcreteCP> {
     }
 }
 
-impl BlockData<DynamicCP> {
+impl BlockData<DynamicCParams> {
     /// Create a new block from the given Geth data with default CircuitsParams.
     pub fn new_from_geth_data(geth_data: GethData) -> Self {
         let (sdb, code_db) = Self::init_dbs(&geth_data);
@@ -97,7 +98,7 @@ impl BlockData<DynamicCP> {
             history_hashes: geth_data.history_hashes,
             eth_block: geth_data.eth_block,
             geth_traces: geth_data.geth_traces,
-            circuits_params: DynamicCP {},
+            circuits_params: DynamicCParams {},
         }
     }
 }

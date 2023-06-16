@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod evm_circ_benches {
     use ark_std::{end_timer, start_timer};
-    use bus_mapping::{circuit_input_builder::ConcreteCP, mock::BlockData};
+    use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
     use eth_types::geth_types::GethData;
     use halo2_proofs::{
         halo2curves::bn256::{Bn256, Fr, G1Affine},
@@ -45,7 +45,7 @@ mod evm_circ_benches {
             .into();
 
         let mut builder =
-            BlockData::new_from_geth_data_with_params(empty_data.clone(), ConcreteCP::default())
+            BlockData::new_from_geth_data_with_params(empty_data.clone(), FixedCParams::default())
                 .new_circuit_input_builder();
 
         builder

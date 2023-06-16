@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use ark_std::{end_timer, start_timer};
-    use bus_mapping::circuit_input_builder::ConcreteCP;
+    use bus_mapping::circuit_input_builder::FixedCParams;
     use eth_types::{address, bytecode, geth_types::GethData, Word};
     use ethers_signers::{LocalWallet, Signer};
     use halo2_proofs::{
@@ -79,7 +79,7 @@ mod tests {
 
         block.sign(&wallets);
 
-        let circuits_params = ConcreteCP {
+        let circuits_params = FixedCParams {
             max_txs: 1,
             max_calldata: 32,
             max_rws: 256,

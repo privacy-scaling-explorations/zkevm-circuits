@@ -1,7 +1,7 @@
 use super::{AccountMatch, StateTest, StateTestResult};
 use crate::config::TestSuite;
 use bus_mapping::{
-    circuit_input_builder::{CircuitInputBuilder, ConcreteCP},
+    circuit_input_builder::{CircuitInputBuilder, FixedCParams},
     mock::BlockData,
 };
 use eth_types::{geth_types, Address, Bytes, GethExecTrace, U256, U64};
@@ -55,7 +55,7 @@ pub struct CircuitsConfig {
 }
 
 fn check_post(
-    builder: &CircuitInputBuilder<ConcreteCP>,
+    builder: &CircuitInputBuilder<FixedCParams>,
     post: &HashMap<Address, AccountMatch>,
 ) -> Result<(), StateTestError> {
     // check if the generated account data is the expected one
@@ -248,7 +248,7 @@ pub fn run_test(
     let mut builder;
 
     if !circuits_config.super_circuit {
-        let circuits_params = ConcreteCP {
+        let circuits_params = FixedCParams {
             max_txs: 1,
             max_rws: 55000,
             max_calldata: 5000,
@@ -273,7 +273,7 @@ pub fn run_test(
     } else {
         geth_data.sign(&wallets);
 
-        let circuits_params = ConcreteCP {
+        let circuits_params = FixedCParams {
             max_txs: 1,
             max_calldata: 32,
             max_rws: 256,

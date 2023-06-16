@@ -444,7 +444,7 @@ mod evm_circuit_stats {
         util::{unusable_rows, SubCircuit},
         witness::block_convert,
     };
-    use bus_mapping::{circuit_input_builder::ConcreteCP, mock::BlockData};
+    use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
 
     use eth_types::{bytecode, geth_types::GethData};
     use halo2_proofs::{self, dev::MockProver, halo2curves::bn256::Fr};
@@ -483,7 +483,7 @@ mod evm_circuit_stats {
 
     #[test]
     fn variadic_size_check() {
-        let params = ConcreteCP {
+        let params = FixedCParams {
             max_evm_rows: 1 << 12,
             ..Default::default()
         };
