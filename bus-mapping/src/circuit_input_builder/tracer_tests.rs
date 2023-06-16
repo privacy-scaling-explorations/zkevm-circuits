@@ -58,7 +58,7 @@ impl CircuitInputBuilderTx {
         }
     }
 
-    fn state_ref(&mut self) -> CircuitInputStateRef<DynamicCParams> {
+    fn state_ref(&mut self) -> CircuitInputStateRef {
         self.builder.state_ref(&mut self.tx, &mut self.tx_ctx)
     }
 }
