@@ -544,20 +544,32 @@ impl<F: Field> SignVerifyChip<F> {
             let powers_of_256 = iter::successors(Some(F::ONE), |coeff| Some(F::from(256) * coeff))
                 .take(N_BYTES_ACCOUNT_ADDRESS)
                 .collect_vec();
-            let terms = pk_hash[N_BYTES_WORD - N_BYTES_ACCOUNT_ADDRESS..]
+
+            // The base of lo and hi part should be the same (starting from 2^0, 2^1... 2^n-1).
+            // Therefore, we calculate separately.
+            let mut terms_hi = pk_hash[N_BYTES_WORD - N_BYTES_ACCOUNT_ADDRESS..16]
                 .iter()
-                .zip(powers_of_256.into_iter().rev())
+                .rev()
+                .zip(powers_of_256.clone().into_iter())
                 .map(|(byte, coeff)| {
                     maingate::Term::Unassigned(Value::known(F::from(*byte as u64)), coeff)
                 })
                 .collect_vec();
-            let terms_hi_lo = terms.split_at(4);
+            terms_hi.reverse();
+
+            let mut terms_lo = pk_hash[16..]
+                .iter()
+                .rev()
+                .zip(powers_of_256.into_iter())
+                .map(|(byte, coeff)| {
+                    maingate::Term::Unassigned(Value::known(F::from(*byte as u64)), coeff)
+                })
+                .collect_vec();
+            terms_lo.reverse();
 
             // gate
-            let (address_hi, _) =
-                main_gate.decompose(ctx, terms_hi_lo.0, F::ZERO, |_, _| Ok(()))?;
-            let (address_lo, _) =
-                main_gate.decompose(ctx, terms_hi_lo.1, F::ZERO, |_, _| Ok(()))?;
+            let (address_hi, _) = main_gate.decompose(ctx, &terms_hi, F::ZERO, |_, _| Ok(()))?;
+            let (address_lo, _) = main_gate.decompose(ctx, &terms_lo, F::ZERO, |_, _| Ok(()))?;
 
             Word::new([address_lo, address_hi])
         };
@@ -567,14 +579,9 @@ impl<F: Field> SignVerifyChip<F> {
         let is_address_zero = main_gate.and(ctx, &iz_zero_lo, &iz_zero_hi)?;
 
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
-        // with RLC encoding corresponds to msg_hash
+        // corresponds to msg_hash
         let msg_hash = {
-            let zero = main_gate.assign_constant(ctx, F::ZERO)?;
-            assigned_ecdsa
-                .msg_hash_le
-                .iter()
-                .map(|byte| main_gate.select(ctx, &zero, byte, &is_address_zero))
-                .collect::<Result<Vec<_>, _>>()?;
+            main_gate.assign_constant(ctx, F::ZERO)?;
             let msg_hash_le = (!padding)
                 .then(|| sign_data.msg_hash.to_bytes())
                 .unwrap_or_default();
@@ -606,7 +613,6 @@ impl<F: Field> SignVerifyChip<F> {
         pk_hash.reverse();
         let pk_hash_word = self.assign_word(config, ctx, pk_hash)?;
         self.enable_keccak_lookup(config, ctx, &is_address_zero, &pk_rlc, &pk_hash_word)?;
-
         Ok(AssignedSignatureVerify { address, msg_hash })
     }
 
