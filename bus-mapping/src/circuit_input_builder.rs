@@ -123,7 +123,9 @@ pub struct CircuitInputBuilder<C: CircuitsParams> {
     /// Map of account codes by code hash
     pub code_db: CodeDB,
     /// Block
-    pub block: Block<C>,
+    pub block: Block,
+    /// Circuits Setup Paramteres
+    pub circuits_params: C,
     /// Block Context
     pub block_ctx: BlockContext,
 }
@@ -131,11 +133,12 @@ pub struct CircuitInputBuilder<C: CircuitsParams> {
 impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     /// Create a new CircuitInputBuilder from the given `eth_block` and
     /// `constants`.
-    pub fn new(sdb: StateDB, code_db: CodeDB, block: Block<C>) -> Self {
+    pub fn new(sdb: StateDB, code_db: CodeDB, block: Block, params: C) -> Self {
         Self {
             sdb,
             code_db,
             block,
+            circuits_params: params,
             block_ctx: BlockContext::new(),
         }
     }
@@ -147,7 +150,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         &'a mut self,
         tx: &'a mut Transaction,
         tx_ctx: &'a mut TransactionContext,
-    ) -> CircuitInputStateRef<C> {
+    ) -> CircuitInputStateRef {
         CircuitInputStateRef {
             sdb: &mut self.sdb,
             code_db: &mut self.code_db,
@@ -255,12 +258,11 @@ impl CircuitInputBuilder<ConcreteCP> {
     ) -> Result<&CircuitInputBuilder<ConcreteCP>, Error> {
         // accumulates gas across all txs in the block
         self.begin_handle_block(eth_block, geth_traces)?;
-        self.set_end_block();
+        self.set_end_block(self.circuits_params.max_rws);
         Ok(self)
     }
 
-    fn set_end_block(&mut self) {
-        let max_rws = self.block.circuits_params.max_rws;
+    fn set_end_block(&mut self, max_rws: usize) {
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
         end_block_not_last.rwc = self.block_ctx.rwc;
@@ -307,12 +309,12 @@ impl CircuitInputBuilder<ConcreteCP> {
         self.block.block_steps.end_block_last = end_block_last;
     }
 }
-impl CircuitInputBuilder<DynamicCP> {
-    fn set_params(self, cp: ConcreteCP) -> CircuitInputBuilder<ConcreteCP> {
-        let block = self.block.set_params(cp);
-        CircuitInputBuilder { block, ..self }
-    }
-}
+// impl CircuitInputBuilder<DynamicCP> {
+//     fn set_params(self, cp: ConcreteCP) -> CircuitInputBuilder<ConcreteCP> {
+//         let block = self.block.set_params(cp);
+//         CircuitInputBuilder { block, ..self }
+//     }
+// }
 
 impl<C: CircuitsParams> CircuitInputBuilder<C> {
     /// First part of handle_block, common for dynamic and static circuit parameters.
@@ -377,16 +379,22 @@ impl CircuitInputBuilder<DynamicCP> {
                 max_keccak_rows,
             }
         };
-        let mut cib = self.set_params(c_params);
+        let mut cib = CircuitInputBuilder::<ConcreteCP> {
+            sdb: self.sdb,
+            code_db: self.code_db,
+            block: self.block,
+            circuits_params: c_params,
+            block_ctx: self.block_ctx,
+        };
 
-        cib.set_end_block();
+        cib.set_end_block(c_params.max_rws);
         Ok(cib)
     }
 }
 
 /// Return all the keccak inputs used during the processing of the current
 /// block.
-pub fn keccak_inputs(block: &Block<ConcreteCP>, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Error> {
+pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Error> {
     let mut keccak_inputs = Vec::new();
     // Tx Circuit
     let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.tx.clone()).collect();
@@ -656,14 +664,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         history_hashes: Vec<Word>,
         prev_state_root: Word,
     ) -> Result<CircuitInputBuilder<ConcreteCP>, Error> {
-        let block = Block::new(
-            self.chain_id,
-            history_hashes,
-            prev_state_root,
-            eth_block,
-            self.circuits_params,
-        )?;
-        let mut builder = CircuitInputBuilder::new(sdb, code_db, block);
+        let block = Block::new(self.chain_id, history_hashes, prev_state_root, eth_block)?;
+        let mut builder = CircuitInputBuilder::new(sdb, code_db, block, self.circuits_params);
         builder.handle_block(eth_block, geth_traces)?;
         Ok(builder)
     }

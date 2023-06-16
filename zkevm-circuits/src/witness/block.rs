@@ -214,8 +214,8 @@ impl BlockContext {
     }
 }
 
-impl From<&circuit_input_builder::Block<ConcreteCP>> for BlockContext {
-    fn from(block: &circuit_input_builder::Block<ConcreteCP>) -> Self {
+impl From<&circuit_input_builder::Block> for BlockContext {
+    fn from(block: &circuit_input_builder::Block) -> Self {
         Self {
             coinbase: block.coinbase,
             gas_limit: block.gas_limit,
@@ -231,9 +231,10 @@ impl From<&circuit_input_builder::Block<ConcreteCP>> for BlockContext {
 
 /// Convert a block struct in bus-mapping to a witness block used in circuits
 pub fn block_convert<F: Field>(
-    block: &circuit_input_builder::Block<ConcreteCP>,
-    code_db: &bus_mapping::state_db::CodeDB,
+    builder: &circuit_input_builder::CircuitInputBuilder<ConcreteCP>,
 ) -> Result<Block<F>, Error> {
+    let block = &builder.block;
+    let code_db = &builder.code_db;
     let rws = RwMap::from(&block.container);
     rws.check_value();
     Ok(Block {
@@ -260,7 +261,7 @@ pub fn block_convert<F: Field>(
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
-        circuits_params: block.circuits_params,
+        circuits_params: builder.circuits_params,
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,

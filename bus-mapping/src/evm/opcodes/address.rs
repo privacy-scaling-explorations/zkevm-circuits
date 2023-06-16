@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, CircuitsParams, ExecStep},
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
     operation::CallContextField,
     Error,
 };
@@ -10,8 +10,8 @@ use eth_types::GethExecStep;
 pub(crate) struct Address;
 
 impl Opcode for Address {
-    fn gen_associated_ops<C: CircuitsParams>(
-        state: &mut CircuitInputStateRef<C>,
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];

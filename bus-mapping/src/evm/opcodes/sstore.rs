@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, CircuitsParams, ExecStep},
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
     operation::{CallContextField, StorageOp, TxAccessListAccountStorageOp, TxRefundOp},
     Error,
 };
@@ -14,8 +14,8 @@ use eth_types::{GethExecStep, ToWord, Word};
 pub(crate) struct Sstore;
 
 impl Opcode for Sstore {
-    fn gen_associated_ops<C: CircuitsParams>(
-        state: &mut CircuitInputStateRef<C>,
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
