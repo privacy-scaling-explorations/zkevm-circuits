@@ -309,12 +309,6 @@ impl CircuitInputBuilder<ConcreteCP> {
         self.block.block_steps.end_block_last = end_block_last;
     }
 }
-// impl CircuitInputBuilder<DynamicCP> {
-//     fn set_params(self, cp: ConcreteCP) -> CircuitInputBuilder<ConcreteCP> {
-//         let block = self.block.set_params(cp);
-//         CircuitInputBuilder { block, ..self }
-//     }
-// }
 
 impl<C: CircuitsParams> CircuitInputBuilder<C> {
     /// First part of handle_block, common for dynamic and static circuit parameters.
