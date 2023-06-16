@@ -13,13 +13,13 @@ use crate::{
     circuit_tools::{
         cached_region::{CachedRegion, ChallengeSet},
         cell_manager::Cell,
-        constraint_builder::RLCChainable,
+        constraint_builder::{RLCChainable, RLCChainable2},
         gadgets::LtGadget,
     },
     mpt_circuit::{
         helpers::{
             ext_key_rlc_calc_value, ext_key_rlc_expr, num_nibbles, Indexable, KeyData, ParentData,
-            FIXED, KECCAK,
+            FIXED, KECCAK, MULT,
         },
         param::HASH_WIDTH,
         FixedTableTag, MPTConfig, MPTState,
@@ -56,8 +56,6 @@ impl<F: Field> ExtensionGadget<F> {
         parent_data: &[ParentData<F>; 2],
         is_placeholder: &[Cell<F>; 2],
     ) -> Self {
-        let r = ctx.r.clone();
-
         let mut config = ExtensionGadget::default();
 
         circuit!([meta, cb], {
@@ -89,12 +87,8 @@ impl<F: Field> ExtensionGadget<F> {
                     require!(config.rlp_key.rlp_list.len() => config.rlp_key.key_value.num_bytes() + rlp_value[is_s.idx()].num_bytes());
                 }
 
-                // Multiplier after list and key
-                let mult = config.rlp_key.rlp_list.rlp_mult(&r) * key_items[true.idx()].mult();
-
                 // Extension node RLC
-                let node_rlc = (config.rlp_key.rlc(&r), mult.expr())
-                    .rlc_chain(rlp_value[is_s.idx()].rlc_rlp());
+                let node_rlc = config.rlp_key.rlc2(&cb.keccak_r).rlc_chain2(rlp_value[is_s.idx()].rlc_chain_data());
 
                 // The branch expected in the extension node
                 branch_rlp_rlc[is_s.idx()] = rlp_value[is_s.idx()].rlc_content();
@@ -158,7 +152,7 @@ impl<F: Field> ExtensionGadget<F> {
                         .collect::<Vec<_>>()
                         .try_into()
                         .unwrap(),
-                    &ctx.r,
+                    &cb.r.expr(),
                 );
 
             // Get the length of the key
@@ -168,6 +162,7 @@ impl<F: Field> ExtensionGadget<F> {
                 - ifx! {not!(key_data.is_odd.expr() * config.is_key_part_odd.expr()) => { 1.expr() }};
             // Get the multiplier for this key length
             config.mult_key = cb.query_cell();
+            //require!((key_num_bytes_for_mult, config.mult_key.expr()) => @MULT);
             require!((FixedTableTag::RMult, key_num_bytes_for_mult, config.mult_key.expr()) => @FIXED);
 
             // Store the post ext state
@@ -192,7 +187,7 @@ impl<F: Field> ExtensionGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F, S>,
         _mpt_config: &MPTConfig<F>,
-        pv: &mut MPTState<F>,
+        _pv: &mut MPTState<F>,
         offset: usize,
         key_data: &KeyDataWitness<F>,
         key_rlc: &mut F,
@@ -266,12 +261,12 @@ impl<F: Field> ExtensionGadget<F> {
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap(),
-            pv.r,
+            region.r,
         );
         *key_rlc = key_data.rlc + key_rlc_ext;
 
         // Key mult
-        let mult_key = pow::value(pv.r, key_len_mult);
+        let mult_key = pow::value(region.r, key_len_mult);
         self.mult_key.assign(region, offset, mult_key)?;
         *key_mult = key_data.mult * mult_key;
 

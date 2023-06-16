@@ -186,7 +186,6 @@ impl<F: Field> ExtensionBranchConfig<F> {
     pub(crate) fn assign<S: ChallengeSet<F>>(
         &self,
         region: &mut CachedRegion<'_, '_, F, S>,
-        _challenges: &S,
         mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,

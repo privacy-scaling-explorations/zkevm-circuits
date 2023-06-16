@@ -1,8 +1,8 @@
 //! The MPT circuit implementation.
-use eth_types::Field;
+use eth_types::{Field};
 use gadgets::{
     impl_expr,
-    util::{Expr, Scalar},
+    util::{Expr, Scalar, pow},
 };
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -11,6 +11,7 @@ use halo2_proofs::{
 };
 
 use std::{convert::TryInto, env::var};
+use itertools::Itertools;
 
 mod account_leaf;
 mod branch;
@@ -36,7 +37,7 @@ use crate::{
     mpt_circuit::{
         helpers::{
             main_memory, parent_memory, MPTConstraintBuilder, MainRLPGadget, MptCellType, FIXED,
-            KECCAK,
+            KECCAK, MULT,
         },
         start::StartConfig,
         storage_leaf::StorageLeafConfig,
@@ -125,9 +126,7 @@ impl<F: Field> StateMachineConfig<F> {
 pub struct MPTContext<F> {
     pub(crate) mpt_table: MptTable,
     pub(crate) rlp_item: MainRLPGadget<F>,
-    pub(crate) challenges: Challenges<Expression<F>>,
     pub(crate) memory: Memory<F, MptCellType>,
-    pub(crate) r: Expression<F>,
 }
 
 impl<F: Field> MPTContext<F> {
@@ -160,6 +159,7 @@ pub struct MPTConfig<F> {
     pub(crate) memory: Memory<F, MptCellType>,
     keccak_table: KeccakTable,
     fixed_table: [Column<Fixed>; 6],
+    mult_table: [Column<Advice>; 3],
     rlp_item: MainRLPGadget<F>,
     state_machine: StateMachineConfig<F>,
     pub(crate) mpt_table: MptTable,
@@ -171,8 +171,6 @@ pub struct MPTConfig<F> {
 pub enum FixedTableTag {
     /// All zero lookup data
     Disabled,
-    /// Power of randomness: [1, r], [2, r^2],...
-    RMult,
     /// 0 - 15
     Range16,
     /// 0 - 255
@@ -185,20 +183,20 @@ pub enum FixedTableTag {
     ExtOddKey,
     /// RLP decoding
     RLP,
+    /// TEMP
+    RMult,
 }
 
 impl_expr!(FixedTableTag);
 
 #[derive(Default)]
 pub(crate) struct MPTState<F> {
-    pub(crate) r: F,
     pub(crate) memory: Memory<F, MptCellType>,
 }
 
 impl<F: Field> MPTState<F> {
-    fn new(memory: &Memory<F, MptCellType>, r: F) -> Self {
+    fn new(memory: &Memory<F, MptCellType>) -> Self {
         Self {
-            r,
             memory: memory.clone(),
         }
     }
@@ -223,6 +221,12 @@ impl<F: Field> MPTConfig<F> {
             .try_into()
             .unwrap();
 
+        let mult_table: [Column<Advice>; 3] = (0..3)
+            .map(|_| meta.advice_column())
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
         let memory_columns = (0..5).map(|_| meta.advice_column()).collect::<Vec<_>>();
 
         let mut state_machine = StateMachineConfig::construct(meta);
@@ -238,8 +242,6 @@ impl<F: Field> MPTConfig<F> {
         let mut ctx = MPTContext {
             mpt_table,
             rlp_item: rlp_item.clone(),
-            challenges: challenges.clone(),
-            r: challenges.keccak_input(),
             memory: memory.clone(),
         };
 
@@ -248,8 +250,10 @@ impl<F: Field> MPTConfig<F> {
             // Type, #cols, phase, permutable
             vec![
                 (MptCellType::StoragePhase1, 50, 0, false),
-                (MptCellType::StoragePhase2, 5, 0, false),
-                (MptCellType::Lookup(Table::Fixed), 3, 0, false),
+                (MptCellType::StoragePhase2, 5, 1, false),
+                (MptCellType::StoragePhase3, 5, 2, false),
+                (MptCellType::Lookup(Table::Fixed), 3, 2, false),
+                (MptCellType::Lookup(Table::Exp), 2, 2, false),
             ],
             0,
             1,
@@ -259,27 +263,31 @@ impl<F: Field> MPTConfig<F> {
             // Type, #cols, phase, permutable
             vec![
                 (MptCellType::StoragePhase1, 20, 0, false),
-                (MptCellType::StoragePhase2, 5, 0, false),
+                (MptCellType::StoragePhase2, 5, 1, false),
+                (MptCellType::StoragePhase3, 5, 2, false),
                 (MptCellType::LookupByte, 4, 0, false),
-                (MptCellType::Lookup(Table::Fixed), 2, 0, false),
-                (MptCellType::Lookup(Table::Keccak), 1, 0, false),
+                (MptCellType::Lookup(Table::Fixed), 3, 2, false),
+                (MptCellType::Lookup(Table::Keccak), 1, 2, false),
+                (MptCellType::Lookup(Table::Exp), 2, 2, false),
             ],
             0,
             50,
         );
 
-        let mut cb = MPTConstraintBuilder::new(5, Some(challenges.clone()), None);
+        let r = 123456.expr();
+        let mut cb = MPTConstraintBuilder::new(50, Some(challenges.clone()), None, r.expr());
         meta.create_gate("MPT", |meta| {
             circuit!([meta, cb], {
                 // Populate lookup tables
                 require!(@KECCAK => <KeccakTable as LookupTable<F>>::advice_columns(&keccak_table).iter().map(|table| a!(table)).collect());
                 require!(@FIXED => fixed_table.iter().map(|table| f!(table)).collect());
+                require!(@MULT => mult_table.iter().map(|table| a!(table)).collect());
 
                 ifx!{f!(q_enable) => {
                     // RLP item decoding unit
                     cb.base.set_cell_manager(rlp_cm.clone());
                     cb.base.push_region(MPTRegion::RLP as usize);
-                    rlp_item = MainRLPGadget::construct(&mut cb, &ctx.r);
+                    rlp_item = MainRLPGadget::construct(&mut cb);
                     cb.base.pop_region();
                     ctx.rlp_item = rlp_item.clone();
 
@@ -337,11 +345,11 @@ impl<F: Field> MPTConfig<F> {
         if disable_lookups == 0 {
             cb.base.build_lookups(
                 meta,
-                challenges.lookup_input(),
                 vec![rlp_cm, state_cm],
                 vec![
                     (MptCellType::Lookup(Table::Keccak), &keccak_table),
                     (MptCellType::Lookup(Table::Fixed), &fixed_table),
+                    (MptCellType::Lookup(Table::Exp), &mult_table),
                 ],
             );
             cb.base
@@ -370,6 +378,7 @@ impl<F: Field> MPTConfig<F> {
             memory,
             keccak_table,
             fixed_table,
+            mult_table,
             state_machine,
             rlp_item,
             mpt_table,
@@ -387,21 +396,32 @@ impl<F: Field> MPTConfig<F> {
         let mut height = 0;
         let mut memory = self.memory.clone();
 
-        let mut r = F::ZERO;
-        challenges.keccak_input().map(|v| r = v);
-
         layouter.assign_region(
             || "MPT",
             |mut region| {
-                let mut pv = MPTState::new(&self.memory, r);
+
+                let mut keccak_r = F::ZERO;
+                challenges.keccak_input().map(|v| keccak_r = v);
+                let keccak_r = F::from(123456u64 + 1);
+                let r = F::from(123456u64);
+
+                //println!("r: {:?}", r);
+                //println!("challenge[0]: {:?}", *challenges.indexed()[0]);
+                //println!("challenge[1]: {:?}", *challenges.indexed()[1]);
+                //println!("challenge[2]: {:?}", *challenges.indexed()[2]);
+
+                let mut pv = MPTState::new(&self.memory);
 
                 memory.clear_witness_data();
 
                 let mut offset = 0;
                 for node in nodes.iter() {
+                    //println!("offset: {}", offset);
                     let mut cached_region = CachedRegion::new(
                         &mut region,
-                        challenges
+                        challenges,
+                        r,
+                        keccak_r,
                     );
 
                     // Assign bytes
@@ -415,7 +435,6 @@ impl<F: Field> MPTConfig<F> {
                             &mut cached_region,
                             offset + idx,
                             bytes,
-                            r,
                             is_nibbles,
                         )?;
                         rlp_values.push(rlp_value);
@@ -429,7 +448,6 @@ impl<F: Field> MPTConfig<F> {
                         assign!(cached_region, (self.state_machine.is_start, offset) => "is_start", true.scalar())?;
                         self.state_machine.start_config.assign(
                             &mut cached_region,
-                            challenges,
                             self,
                             &mut pv,
                             offset,
@@ -443,7 +461,6 @@ impl<F: Field> MPTConfig<F> {
                         assign!(cached_region, (self.state_machine.is_branch, offset) => "is_branch", true.scalar())?;
                         self.state_machine.branch_config.assign(
                             &mut cached_region,
-                            challenges,
                             self,
                             &mut pv,
                             offset,
@@ -457,7 +474,6 @@ impl<F: Field> MPTConfig<F> {
                         assign!(cached_region, (self.state_machine.is_account, offset) => "is_account", true.scalar())?;
                         self.state_machine.account_config.assign(
                             &mut cached_region,
-                            challenges,
                             self,
                             &mut pv,
                             offset,
@@ -471,7 +487,6 @@ impl<F: Field> MPTConfig<F> {
                         assign!(cached_region, (self.state_machine.is_storage, offset) => "is_storage", true.scalar())?;
                         self.state_machine.storage_config.assign(
                             &mut cached_region,
-                            challenges,
                             self,
                             &mut pv,
                             offset,
@@ -481,7 +496,10 @@ impl<F: Field> MPTConfig<F> {
                         cached_region.pop_region();
                     }
 
+                    //println!("stored expressions");
+                    //println!("challenge accessed: {:?}", *cached_region.challenges().indexed()[2]);
                     cached_region.assign_stored_expressions(&self.cb.base)?;
+                    //println!("stored expressions done");
 
                     offset += node.values.len();
                 }
@@ -507,11 +525,7 @@ impl<F: Field> MPTConfig<F> {
     fn load_fixed_table(
         &self,
         layouter: &mut impl Layouter<F>,
-        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        let mut r = F::ZERO;
-        challenges.keccak_input().map(|v| r = v);
-
         layouter.assign_region(
             || "fixed table",
             |mut region| {
@@ -524,6 +538,7 @@ impl<F: Field> MPTConfig<F> {
                 offset += 1;
 
                 // Mult table
+                let r = F::from(123456u64);
                 let mut mult = F::ONE;
                 for ind in 0..(2 * HASH_WIDTH + 1) {
                     assignf!(region, (self.fixed_table[0], offset) => FixedTableTag::RMult.scalar())?;
@@ -599,6 +614,37 @@ impl<F: Field> MPTConfig<F> {
             },
         )
     }
+
+    fn load_mult_table(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
+        let mut keccak_r = F::ZERO;
+        challenges.keccak_input().map(|v| keccak_r = v);
+        let keccak_r = F::from(123456u64 + 1);
+
+        layouter.assign_region(
+            || "mult table",
+            |mut region| {
+                let mut offset = 0;
+                // Zero lookup
+                assign!(region, (self.mult_table[0], 0) => 0.scalar())?;
+                assign!(region, (self.mult_table[1], 0) => 0.scalar())?;
+                offset += 1;
+
+                let max: usize = HASH_WIDTH + 2;
+                for idx in 0..=max {
+                    assign!(region, (self.mult_table[0], offset) => idx.scalar())?;
+                    assign!(region, (self.mult_table[1], offset) => pow::value(keccak_r, idx))?;
+                    assign!(region, (self.mult_table[2], offset) => pow::value(keccak_r, max - idx).invert().unwrap())?;
+                    //println!("{}: {}, {:?}", offset, max - offset, pow::value(keccak_r, max - offset).invert().unwrap());
+                    offset += 1;
+                }
+                Ok(())
+            },
+        )
+    }
 }
 
 #[derive(Default)]
@@ -619,18 +665,17 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let challenges = Challenges::construct(meta);
-        let _challenges_expr = challenges.exprs(meta);
+        let challenges_expr = challenges.exprs(meta);
 
-        let r = 123456u64;
+        /*let r = 123456u64;
         let _challenges = Challenges::mock(
             Value::known(F::from(r)),
             Value::known(F::from(r)),
             Value::known(F::from(r)),
         );
-        let challenges_expr = Challenges::mock(r.expr(), r.expr(), r.expr());
+        let challenges_expr = Challenges::mock(r.expr(), r.expr(), r.expr());*/
 
         let keccak_table = KeccakTable::construct(meta);
-        let challenges = Challenges::construct(meta);
         (
             MPTConfig::configure(meta, challenges_expr, keccak_table),
             challenges,
@@ -642,17 +687,27 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         (config, _challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let _challenges = _challenges.values(&mut layouter);
+        let challenges = _challenges.values(&mut layouter);
 
-        let r = self.randomness;
-        let challenges = Challenges::mock(Value::known(r), Value::known(r), Value::known(r));
+        //let r = self.randomness;
+        //let challenges = Challenges::mock(Value::known(r), Value::known(r), Value::known(r));
 
-        config.load_fixed_table(&mut layouter, &challenges)?;
+        config.load_fixed_table(&mut layouter)?;
+        config.load_mult_table(&mut layouter, &challenges)?;
         config.assign(&mut layouter, &self.nodes, &challenges)?;
 
+        //for input in self.keccak_data.iter() {
+        //    println!("keccak input: {:?}", input);
+        //}
+
+        /*let keccak_inputs = self.keccak_data.iter().map(|input| input.iter().cloned().rev().collect::<Vec<u8>>()).collect_vec();
         config
             .keccak_table
-            .dev_load(&mut layouter, &self.keccak_data, &challenges, false)?;
+            .dev_load(&mut layouter, &keccak_inputs, &challenges, false)?;*/
+
+        config
+          .keccak_table
+          .dev_load(&mut layouter, &self.keccak_data, &challenges, false)?;
 
         Ok(())
     }

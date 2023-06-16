@@ -172,6 +172,7 @@ pub trait CellType:
 pub enum DefaultCellType {
     StoragePhase1,
     StoragePhase2,
+    StoragePhase3,
 }
 
 impl Default for DefaultCellType {
@@ -186,9 +187,11 @@ impl CellType for DefaultCellType {
     }
 
     fn storage_for_phase(phase: u8) -> Self {
+        //println!("phase: {}", phase);
         match phase {
             0 => DefaultCellType::StoragePhase1,
             1 => DefaultCellType::StoragePhase2,
+            2 => DefaultCellType::StoragePhase3,
             _ => unreachable!(),
         }
     }

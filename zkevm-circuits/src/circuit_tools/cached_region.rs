@@ -1,5 +1,5 @@
 use crate::circuit_tools::cell_manager::Cell;
-use eth_types::Field;
+use eth_types::{Field};
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
     plonk::{Advice, Any, Assigned, Column, Error, Expression, Fixed},
@@ -28,16 +28,20 @@ pub struct CachedRegion<'r, 'b, F: Field, S: ChallengeSet<F>> {
     challenges: &'r S,
     disable_description: bool,
     regions: Vec<(usize, usize)>,
+    pub r: F,
+    pub keccak_r: F,
 }
 
 impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
-    pub(crate) fn new(region: &'r mut Region<'b, F>, challenges: &'r S) -> Self {
+    pub(crate) fn new(region: &'r mut Region<'b, F>, challenges: &'r S, r: F, keccak_r: F) -> Self {
         Self {
             region,
             advice: HashMap::new(),
             challenges,
             disable_description: false,
             regions: Vec::new(),
+            r,
+            keccak_r,
         }
     }
 
@@ -56,6 +60,7 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
     pub(crate) fn assign_stored_expressions<C: CellType>(&mut self, cb: &ConstraintBuilder<F, C>) -> Result<(), Error>  {
         for (offset, region_id) in self.regions.clone() {
             for stored_expression in cb.get_stored_expressions(region_id).iter() {
+                //println!("stored expression: {}", stored_expression.name);
                 stored_expression.assign(self, offset)?;
             }
         }
@@ -192,7 +197,11 @@ impl<F: Field, C: CellType> StoredExpression<F, C> {
                 ))
             },
             &|_| unimplemented!("instance column"),
-            &|challenge| *region.challenges().indexed()[challenge.index()],
+            &|challenge| {
+                //println!("challenge {} accessed: {:?}", challenge.index(), *region.challenges().indexed()[challenge.index()]);
+                *region.challenges().indexed()[challenge.index()]
+                //Value::known(word!("0x2a79eee6c17367c19c0de1ca49eca2a478494747b4bf58ecad53e889d6695f4c").to_scalar().unwrap())
+            },
             &|a| -a,
             &|a, b| a + b,
             &|a, b| a * b,

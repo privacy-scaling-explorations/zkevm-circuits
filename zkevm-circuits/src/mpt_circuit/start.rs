@@ -84,7 +84,6 @@ impl<F: Field> StartConfig<F> {
     pub fn assign<S: ChallengeSet<F>>(
         &self,
         region: &mut CachedRegion<'_, '_, F, S>,
-        _challenges: &S,
         _mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
@@ -103,7 +102,7 @@ impl<F: Field> StartConfig<F> {
 
         let mut root = vec![0.scalar(); 2];
         for is_s in [true, false] {
-            root[is_s.idx()] = rlp_values[is_s.idx()].rlc_content(pv.r);
+            root[is_s.idx()] = rlp_values[is_s.idx()].rlc_content(region.r);
             // println!("root {}: {:?}", is_s, root[is_s.idx()]);
         }
 

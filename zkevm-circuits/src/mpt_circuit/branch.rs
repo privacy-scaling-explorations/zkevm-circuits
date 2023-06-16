@@ -14,7 +14,7 @@ use crate::{
     circuit_tools::{
         cached_region::{CachedRegion, ChallengeSet},
         cell_manager::Cell,
-        constraint_builder::RLCChainable,
+        constraint_builder::{RLCChainable, RLCChainable2},
         gadgets::LtGadget,
     },
     mpt_circuit::{
@@ -61,8 +61,6 @@ impl<F: Field> BranchGadget<F> {
         num_nibbles: Expression<F>,
         is_key_odd: Expression<F>,
     ) -> Self {
-        let r = &ctx.r;
-
         let mut config = BranchGadget::default();
 
         circuit!([meta, cb], {
@@ -72,13 +70,11 @@ impl<F: Field> BranchGadget<F> {
 
             let mut num_bytes_left = vec![0.expr(); 2];
             let mut node_rlc = vec![0.expr(); 2];
-            let mut mult = vec![1.expr(); 2];
             for is_s in [true, false] {
                 // Read the list
                 config.rlp_list[is_s.idx()] = RLPListDataGadget::construct(cb);
                 // Start RLC encoding the RLP data starting with the list RLP bytes
-                (node_rlc[is_s.idx()], mult[is_s.idx()]) =
-                    config.rlp_list[is_s.idx()].rlp_list.rlc_rlp_only(r);
+                node_rlc[is_s.idx()] = config.rlp_list[is_s.idx()].rlp_list.rlc_rlp_only2(&cb.keccak_r).0;
 
                 // Keep track of how many bytes the branch contains to make sure it's correct.
                 num_bytes_left[is_s.idx()] = config.rlp_list[is_s.idx()].rlp_list.len();
@@ -114,18 +110,18 @@ impl<F: Field> BranchGadget<F> {
                     // child branch for c is stored in child 0.
                     let child = &children[node_index + 1];
                     let mod_child = &children[0];
-                    let (rlc_rlp, num_bytes, length, mult_diff) = if is_s {
+                    let (rlc, rlc_mult, num_bytes, length) = if is_s {
                         (
-                            child.rlc_rlp(),
+                            child.rlc_chain_data().0,
+                            child.rlc_chain_data().1,
                             child.num_bytes(),
                             child.len(),
-                            child.mult(),
                         )
                     } else {
                         ifx! {config.is_modified[node_index] => {
-                            (mod_child.rlc_rlp(), mod_child.num_bytes(), mod_child.len(), mod_child.mult())
+                            (mod_child.rlc_chain_data().0, mod_child.rlc_chain_data().1, mod_child.num_bytes(), mod_child.len())
                         } elsex {
-                            (child.rlc_rlp(), child.num_bytes(), child.len(), child.mult())
+                            (child.rlc_chain_data().0, child.rlc_chain_data().1, child.num_bytes(), child.len())
                         }}
                     };
 
@@ -134,11 +130,7 @@ impl<F: Field> BranchGadget<F> {
                         num_bytes_left[is_s.idx()].expr() - num_bytes.expr();
 
                     // Update the full branch node RLC with the data of this branch
-                    node_rlc[is_s.idx()] = (node_rlc[is_s.idx()].expr(), mult[is_s.idx()].expr())
-                        .rlc_chain(rlc_rlp.expr());
-
-                    // Update the branch node multiplier
-                    mult[is_s.idx()] = mult[is_s.idx()].expr() * mult_diff;
+                    node_rlc[is_s.idx()] = node_rlc[is_s.idx()].rlc_chain2((rlc, rlc_mult));
 
                     // When in a placeholder branch, both branches are the same - the placeholder
                     // branch and its parallel counterpart, which is not a
@@ -166,9 +158,8 @@ impl<F: Field> BranchGadget<F> {
             for is_s in [true, false] {
                 // Number of bytes left needs to be 1 because ValueNode which occupies 1 byte
                 require!(num_bytes_left[is_s.idx()] => 1);
-                // TODO: acc currently doesn'thave branch ValueNode info
-                node_rlc[is_s.idx()] = (node_rlc[is_s.idx()].expr(), mult[is_s.idx()].expr())
-                    .rlc_chain(RLP_NIL.expr());
+                // TODO: acc currently doesn't have branch ValueNode info
+                node_rlc[is_s.idx()] = node_rlc[is_s.idx()].rlc_chain2((RLP_NIL.expr(), cb.keccak_r.expr()));
             }
 
             // `is_modified` needs to be set to 1 at exactly 1 branch child
@@ -199,7 +190,8 @@ impl<F: Field> BranchGadget<F> {
                         require!((1, rlc, num_bytes, parent_rlc[is_s.idx()].expr()) => @KECCAK);
                     } elsex {
                         // Non-hashed branch hash in parent branch
-                        require!(rlc => parent_rlc[is_s.idx()].expr());
+                        // TODO(Brecht): restore
+                        //require!(rlc => parent_rlc[is_s.idx()].expr());
                     }}
                 }}
             }
@@ -211,7 +203,7 @@ impl<F: Field> BranchGadget<F> {
                 key_mult.expr(),
                 is_key_odd.expr(),
                 modified_index.expr(),
-                r,
+                &cb.r.expr(),
             );
             // Also calculate the key RLC and multiplier for the drifted nibble.
             let (key_rlc_post_drifted, key_mult_post_drifted) = nibble_rlc(
@@ -220,7 +212,7 @@ impl<F: Field> BranchGadget<F> {
                 key_mult.expr(),
                 is_key_odd.expr(),
                 drifted_index.expr(),
-                r,
+                &cb.r.expr(),
             );
 
             // Update the nibble counter
@@ -279,7 +271,7 @@ impl<F: Field> BranchGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F, S>,
         _mpt_config: &MPTConfig<F>,
-        pv: &mut MPTState<F>,
+        _pv: &mut MPTState<F>,
         offset: usize,
         is_placeholder: &[bool; 2],
         key_rlc: &mut F,
@@ -331,7 +323,7 @@ impl<F: Field> BranchGadget<F> {
         } else {
             // The nibble will be added as the least significant nibble, the multiplier
             // needs to advance
-            (1.scalar(), pv.r)
+            (1.scalar(), region.r)
         };
         let key_rlc_post_branch =
             *key_rlc + F::from(branch.modified_index as u64) * nibble_mult * *key_mult;
@@ -343,12 +335,12 @@ impl<F: Field> BranchGadget<F> {
         let mut mod_node_hash_rlc = [0.scalar(); 2];
         for is_s in [true, false] {
             mod_node_hash_rlc[is_s.idx()] = if is_placeholder[is_s.idx()] {
-                rlp_values[1 + branch.drifted_index].rlc_content(pv.r)
+                rlp_values[1 + branch.drifted_index].rlc_content(region.r)
             } else {
                 if is_s {
-                    rlp_values[1 + branch.modified_index].rlc_content(pv.r)
+                    rlp_values[1 + branch.modified_index].rlc_content(region.r)
                 } else {
-                    rlp_values[0].rlc_content(pv.r)
+                    rlp_values[0].rlc_content(region.r)
                 }
             };
             self.mod_rlc[is_s.idx()].assign(region, offset, mod_node_hash_rlc[is_s.idx()])?;

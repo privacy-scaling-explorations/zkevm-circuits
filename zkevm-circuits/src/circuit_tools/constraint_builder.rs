@@ -244,6 +244,10 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             .query_cells(cell_type, count)
     }
 
+    pub(crate) fn query_cell_with_type(&mut self, cell_type: C) -> Cell<F> {
+        self.query_cells_dyn(cell_type, 1).first().unwrap().clone()
+    }
+
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
         if self.max_degree > 0 && self.region_id != 0 {
             debug_assert!(
@@ -263,7 +267,6 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
     pub(crate) fn build_lookups(
         &self,
         meta: &mut ConstraintSystem<F>,
-        challenge: Expression<F>,
         cell_managers: Vec<CellManager<F, C>>,
         tables: Vec<(C, &dyn LookupTable<F>)>,
     ) {
@@ -274,7 +277,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                     meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                         vec![(
                             col.expr,
-                            rlc::expr(&table.table_exprs(meta), challenge.clone()),
+                            rlc::expr(&table.table_exprs(meta), self.lookup_input_challenge.clone().unwrap()),
                         )]
                     });
                 }
@@ -447,6 +450,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         match stored_expression {
             Some(stored_expression) => stored_expression.cell.expr(),
             None => {
+                //println!("cell_type: {:?}", cell_type);
                 // Require the stored value to equal the value of the expression
                 let cell = self.query_one(cell_type);
                 let name = format!("{} (stored expression)", name);
@@ -793,11 +797,17 @@ impl_expr_result!(
 pub trait RLCable<F: Field> {
     /// Returns the RLC of itself
     fn rlc(&self, r: &Expression<F>) -> Expression<F>;
+    /// Returns the RLC of the reverse of itself
+    fn rlc_rev(&self, r: &Expression<F>) -> Expression<F>;
 }
 
 impl<F: Field, E: ExprVec<F> + ?Sized> RLCable<F> for E {
     fn rlc(&self, r: &Expression<F>) -> Expression<F> {
         rlc::expr(&self.to_expr_vec(), r.expr())
+    }
+
+    fn rlc_rev(&self, r: &Expression<F>) -> Expression<F> {
+        rlc::expr(&self.to_expr_vec().iter().rev().cloned().collect_vec(), r.expr())
     }
 }
 
@@ -810,6 +820,18 @@ pub trait RLCChainable<F> {
 impl<F: Field> RLCChainable<F> for (Expression<F>, Expression<F>) {
     fn rlc_chain(&self, other: Expression<F>) -> Expression<F> {
         self.0.expr() + self.1.expr() * other.expr()
+    }
+}
+
+/// Trait around RLC
+pub trait RLCChainable2<F> {
+    /// Returns the RLC of itself with a starting rlc/multiplier
+    fn rlc_chain2(&self, other: (Expression<F>, Expression<F>)) -> Expression<F>;
+}
+
+impl<F: Field> RLCChainable2<F> for Expression<F> {
+    fn rlc_chain2(&self, other: (Expression<F>, Expression<F>)) -> Expression<F> {
+        self.expr() * other.1.expr() + other.0.expr()
     }
 }
 

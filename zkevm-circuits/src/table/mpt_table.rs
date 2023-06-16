@@ -95,13 +95,13 @@ impl MptTable {
         // TODO(Brecht): everything except address and proof type needs to be
         // advice_column_in(SecondPhase)
         Self {
-            address_rlc: meta.advice_column(),
+            address_rlc: meta.advice_column_in(SecondPhase),
             proof_type: meta.advice_column(),
-            key_rlc: meta.advice_column(),
-            value_prev: meta.advice_column(),
-            value: meta.advice_column(),
-            root_prev: meta.advice_column(),
-            root: meta.advice_column(),
+            key_rlc: meta.advice_column_in(SecondPhase),
+            value_prev: meta.advice_column_in(SecondPhase),
+            value: meta.advice_column_in(SecondPhase),
+            root_prev: meta.advice_column_in(SecondPhase),
+            root: meta.advice_column_in(SecondPhase),
         }
     }
 
