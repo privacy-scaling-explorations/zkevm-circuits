@@ -70,11 +70,11 @@ pub struct FixedCParams {
     pub max_keccak_rows: usize,
 }
 
-/// Circuit Setup Parameters. These can be fixed/concrete or unset/dynamic.
+/// Unset Circuits Parameters, computed dynamically together with circuit witness generation.
 #[derive(Debug, Clone, Copy)]
 pub struct DynamicCParams {}
 
-/// Unset Circuits Parameters, computed dynamically together with circuit witness generation.
+/// Circuit Setup Parameters. These can be fixed/concrete or unset/dynamic.
 pub trait CircuitsParams: Debug + Copy {}
 
 impl CircuitsParams for FixedCParams {}
