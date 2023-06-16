@@ -1,5 +1,5 @@
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep, MaybeParams},
+    circuit_input_builder::{CircuitInputStateRef, CircuitsParams, ExecStep},
     operation::CallContextField,
     Error,
 };
@@ -12,8 +12,8 @@ use super::Opcode;
 pub(crate) struct Returndatasize;
 
 impl Opcode for Returndatasize {
-    fn gen_associated_ops<M: MaybeParams>(
-        state: &mut CircuitInputStateRef<M>,
+    fn gen_associated_ops<C: CircuitsParams>(
+        state: &mut CircuitInputStateRef<C>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
@@ -39,7 +39,7 @@ impl Opcode for Returndatasize {
 #[cfg(test)]
 mod returndatasize_tests {
     use crate::{
-        circuit_input_builder::{CircuitsParams, ExecState},
+        circuit_input_builder::{ConcreteCP, ExecState},
         mock::BlockData,
         operation::{CallContextField, CallContextOp, StackOp, RW},
     };
@@ -93,7 +93,7 @@ mod returndatasize_tests {
 
         let mut builder = BlockData::new_from_geth_data_with_params(
             block.clone(),
-            CircuitsParams {
+            ConcreteCP {
                 max_rws: 512,
                 ..Default::default()
             },

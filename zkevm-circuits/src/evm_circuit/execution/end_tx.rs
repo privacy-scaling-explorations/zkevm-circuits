@@ -317,7 +317,7 @@ mod test {
 
     fn test_ok<const NACC: usize, const NTX: usize>(ctx: TestContext<NACC, NTX>) {
         CircuitTestBuilder::new_from_test_ctx(ctx)
-            .params(CircuitsParams {
+            .params(ConcreteCP {
                 max_txs: 5,
                 ..Default::default()
             })

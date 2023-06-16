@@ -1,6 +1,6 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, MaybeParams, NumberOrHash,
+        CircuitInputStateRef, CircuitsParams, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     evm::Opcode,
     operation::{CallContextField, MemoryOp, RW},
@@ -12,8 +12,8 @@ use eth_types::GethExecStep;
 pub(crate) struct Returndatacopy;
 
 impl Opcode for Returndatacopy {
-    fn gen_associated_ops<M: MaybeParams>(
-        state: &mut CircuitInputStateRef<M>,
+    fn gen_associated_ops<C: CircuitsParams>(
+        state: &mut CircuitInputStateRef<C>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
@@ -38,8 +38,8 @@ impl Opcode for Returndatacopy {
     }
 }
 
-fn gen_returndatacopy_step<M: MaybeParams>(
-    state: &mut CircuitInputStateRef<M>,
+fn gen_returndatacopy_step<C: CircuitsParams>(
+    state: &mut CircuitInputStateRef<C>,
     geth_step: &GethExecStep,
 ) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_step(geth_step)?;
@@ -88,8 +88,8 @@ fn gen_returndatacopy_step<M: MaybeParams>(
     Ok(exec_step)
 }
 
-fn gen_copy_steps<M: MaybeParams>(
-    state: &mut CircuitInputStateRef<M>,
+fn gen_copy_steps<C: CircuitsParams>(
+    state: &mut CircuitInputStateRef<C>,
     exec_step: &mut ExecStep,
     src_addr: u64,
     dst_addr: u64,
@@ -119,8 +119,8 @@ fn gen_copy_steps<M: MaybeParams>(
     Ok(copy_steps)
 }
 
-fn gen_copy_event<M: MaybeParams>(
-    state: &mut CircuitInputStateRef<M>,
+fn gen_copy_event<C: CircuitsParams>(
+    state: &mut CircuitInputStateRef<C>,
     geth_step: &GethExecStep,
 ) -> Result<CopyEvent, Error> {
     // Get low Uint64 of destination offset to generate copy steps. Since it
@@ -216,7 +216,7 @@ mod return_tests {
         .into();
 
         let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        let builder = builder
+        builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
     }

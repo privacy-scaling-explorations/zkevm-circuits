@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep, MaybeParams},
+    circuit_input_builder::{CircuitInputStateRef, CircuitsParams, ExecStep},
     Error,
 };
 use eth_types::{evm_types::MemoryAddress, GethExecStep, ToBigEndian, ToLittleEndian};
@@ -12,8 +12,8 @@ use eth_types::{evm_types::MemoryAddress, GethExecStep, ToBigEndian, ToLittleEnd
 pub(crate) struct Mstore<const IS_MSTORE8: bool>;
 
 impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
-    fn gen_associated_ops<M: MaybeParams>(
-        state: &mut CircuitInputStateRef<M>,
+    fn gen_associated_ops<C: CircuitsParams>(
+        state: &mut CircuitInputStateRef<C>,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
