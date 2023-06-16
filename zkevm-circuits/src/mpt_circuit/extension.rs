@@ -22,7 +22,7 @@ use crate::{
             FIXED, KECCAK,
         },
         param::HASH_WIDTH,
-        FixedTableTag, MPTConfig, MPTState,
+        FixedTableTag, MPTConfig, MPTState, RlpItemType,
     },
 };
 
@@ -64,12 +64,32 @@ impl<F: Field> ExtensionGadget<F> {
             // Data
             let key_items = [
                 // Special case, requring string fail tests
-                ctx.rlp_item(meta, cb, ExtensionBranchRowType::KeyS as usize, false),
-                ctx.nibbles(meta, cb, ExtensionBranchRowType::KeyC as usize),
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    ExtensionBranchRowType::KeyS as usize,
+                    RlpItemType::Key,
+                ),
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    ExtensionBranchRowType::KeyC as usize,
+                    RlpItemType::Nibbles,
+                ),
             ];
             let rlp_value = [
-                ctx.rlp_item(meta, cb, ExtensionBranchRowType::ValueS as usize, false),
-                ctx.rlp_item(meta, cb, ExtensionBranchRowType::ValueC as usize, false),
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    ExtensionBranchRowType::ValueS as usize,
+                    RlpItemType::Node,
+                ),
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    ExtensionBranchRowType::ValueC as usize,
+                    RlpItemType::Node,
+                ),
             ];
 
             config.rlp_key = ListKeyGadget::construct(cb, &key_items[0]);

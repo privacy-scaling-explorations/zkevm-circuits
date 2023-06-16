@@ -130,26 +130,30 @@ pub struct MPTContext<F> {
     pub(crate) r: Expression<F>,
 }
 
+/// RLP item type
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum RlpItemType {
+    /// Node (string with len == 0 or 32, OR list with len <= 31)
+    Node,
+    /// Value (string with len <= 32)
+    Value,
+    /// Hash (string with len == 32)
+    Hash,
+    /// Key (string with len <= 33)
+    Key,
+    /// Nibbles
+    Nibbles,
+}
+
 impl<F: Field> MPTContext<F> {
     pub(crate) fn rlp_item(
         &self,
         meta: &mut VirtualCells<F>,
         cb: &mut MPTConstraintBuilder<F>,
         idx: usize,
-        require_string: bool,
+        item_type: RlpItemType,
     ) -> RLPItemView<F> {
-        // TODO(Brecht): Add RLP limitations like max num bytes
-        self.rlp_item
-            .create_view(meta, cb, idx, false, require_string)
-    }
-
-    pub(crate) fn nibbles(
-        &self,
-        meta: &mut VirtualCells<F>,
-        cb: &mut MPTConstraintBuilder<F>,
-        idx: usize,
-    ) -> RLPItemView<F> {
-        self.rlp_item.create_view(meta, cb, idx, true, false)
+        self.rlp_item.create_view(meta, cb, idx, item_type)
     }
 }
 
@@ -410,16 +414,14 @@ impl<F: Field> MPTConfig<F> {
                     // Assign bytes
                     let mut rlp_values = Vec::new();
                     // Decompose RLP
-                    for (idx, bytes) in node.values.iter().enumerate() {
+                    for (idx, (item_type, bytes)) in node.values.iter().enumerate() {
                         cached_region.push_region(offset + idx, MPTRegion::RLP as usize);
-                        let is_nibbles = node.extension_branch.is_some()
-                            && idx == ExtensionBranchRowType::KeyC as usize;
                         let rlp_value = self.rlp_item.assign(
                             &mut cached_region,
                             offset + idx,
                             bytes,
                             r,
-                            is_nibbles,
+                            *item_type,
                         )?;
                         rlp_values.push(rlp_value);
                         cached_region.pop_region();
