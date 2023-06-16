@@ -271,17 +271,14 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
     fn test_variadic(&mut self, mock_prover: &MockProver<Fr>) {
         let fixed = mock_prover.fixed();
 
-        match self.fixed.clone() {
-            Some(prev_fixed) => {
-                assert!(
-                    fixed.eq(&prev_fixed),
-                    "circuit fixed columns are not constant for different witnesses"
-                );
-            }
-            None => {
-                self.fixed = Some(fixed.clone());
-            }
-        };
+        if let Some(prev_fixed) = self.fixed.clone() {
+            assert!(
+                fixed.eq(&prev_fixed),
+                "circuit fixed columns are not constant for different witnesses"
+            );
+        } else {
+            self.fixed = Some(fixed.clone());
+        }
 
         let permutation = mock_prover.permutation();
 
