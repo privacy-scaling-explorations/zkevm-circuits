@@ -7,7 +7,10 @@ use eth_types::geth_types::GethData;
 use halo2_proofs::{
     dev::{CellValue, MockProver},
     halo2curves::bn256::{Bn256, Fr, G1Affine},
-    plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, ProvingKey, VerifyingKey},
+    plonk::{
+        create_proof, keygen_pk, keygen_vk, permutation::Assembly, verify_proof, Circuit,
+        ProvingKey, VerifyingKey,
+    },
     poly::{
         commitment::ParamsProver,
         kzg::{
@@ -139,6 +142,7 @@ pub struct IntegrationTest<C: SubCircuit<Fr> + Circuit<Fr>> {
     degree: u32,
     key: Option<ProvingKey<G1Affine>>,
     fixed: Option<Vec<Vec<CellValue<Fr>>>>,
+    permutation: Option<Assembly>,
     _marker: PhantomData<C>,
 }
 
@@ -149,6 +153,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             degree,
             key: None,
             fixed: None,
+            permutation: None,
             _marker: PhantomData,
         }
     }
@@ -278,8 +283,16 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             }
         };
 
-        // TODO: check mock_prover.permutation(), currently the returning type
-        // is private so cannot store.
+        let permutation = mock_prover.permutation();
+
+        if let Some(prev_permutation) = self.permutation.clone() {
+            assert!(
+                permutation.eq(&prev_permutation),
+                "circuit permutations are not constant for different witnesses"
+            );
+        } else {
+            self.permutation = Some(permutation.clone());
+        }
     }
 
     /// Run integration test at a block identified by a tag.
