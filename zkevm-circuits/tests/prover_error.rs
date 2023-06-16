@@ -91,7 +91,7 @@ fn prover_error() {
         .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
         .expect("handle_block");
     let block_witness = {
-        let mut block = block_convert(&builder.block, &builder.code_db).expect("block_convert");
+        let mut block = block_convert(&builder).expect("block_convert");
         block.randomness = Fr::from(MOCK_RANDOMNESS);
         block
     };

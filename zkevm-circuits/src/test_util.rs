@@ -191,7 +191,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 .unwrap();
             // Build a witness block from trace result.
             let mut block =
-                crate::witness::block_convert(&builder.block, &builder.code_db).unwrap();
+                crate::witness::block_convert(&builder).unwrap();
 
             for modifier_fn in self.block_modifiers {
                 modifier_fn.as_ref()(&mut block);
