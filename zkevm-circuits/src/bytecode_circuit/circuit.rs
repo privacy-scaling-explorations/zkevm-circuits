@@ -610,16 +610,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         let code_hash = challenges
             .evm_word()
             .map(|challenge| rlc::value(&bytecode.rows[0].code_hash.to_le_bytes(), challenge));
-        let code_hash_word = Word::new(
-            bytecode.rows[0]
-                .code_hash
-                .to_le_bytes()
-                .chunks(32 / 2)
-                .map(|bytes| Value::known(from_bytes::value(bytes)))
-                .collect_vec()
-                .try_into()
-                .unwrap(),
-        );
+        let code_hash_word = Word::from(bytecode.rows[0].code_hash).into_value();
 
         for (idx, row) in bytecode.rows.iter().enumerate() {
             if fail_fast && *offset > last_row_offset {
