@@ -1,5 +1,5 @@
-use crate::circuit_tools::cell_manager::Cell;
-use eth_types::{Field};
+use crate::{circuit_tools::cell_manager::Cell, mpt_circuit::MPTRegion};
+use eth_types::{Field, word, ToScalar};
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
     plonk::{Advice, Any, Assigned, Column, Error, Expression, Fixed},
@@ -25,6 +25,7 @@ impl<F: Field, V: AsRef<[Value<F>]>> ChallengeSet<F> for V {
 pub struct CachedRegion<'r, 'b, F: Field, S: ChallengeSet<F>> {
     region: &'r mut Region<'b, F>,
     pub advice: HashMap<(usize, usize), F>,
+    pub fixed: HashMap<(usize, usize), F>,
     challenges: &'r S,
     disable_description: bool,
     regions: Vec<(usize, usize)>,
@@ -37,6 +38,7 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
         Self {
             region,
             advice: HashMap::new(),
+            fixed: HashMap::new(),
             challenges,
             disable_description: false,
             regions: Vec::new(),
@@ -58,9 +60,10 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
     }
 
     pub(crate) fn assign_stored_expressions<C: CellType>(&mut self, cb: &ConstraintBuilder<F, C>) -> Result<(), Error>  {
+        // println!("assign stored expressions {:?}", self.regions);
         for (offset, region_id) in self.regions.clone() {
             for stored_expression in cb.get_stored_expressions(region_id).iter() {
-                //println!("stored expression: {}", stored_expression.name);
+                // println!("stored expression: {}", stored_expression.name);
                 stored_expression.assign(self, offset)?;
             }
         }
@@ -122,11 +125,25 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
         A: Fn() -> AR,
         AR: Into<String>,
     {
-        self.region.assign_fixed(annotation, column, offset, &to)
+        let res = self.region.assign_fixed(annotation, column, offset, &to);
+        if res.is_ok() {
+            to().map(|f: VR| {
+                let existing = self
+                    .fixed
+                    .insert((column.index(), offset), Assigned::from(&f).evaluate());
+                assert!(existing.is_none());
+                existing
+            });
+        }
+        res
     }
 
-    pub fn get_fixed(&self, _row_index: usize, _column_index: usize, _rotation: Rotation) -> F {
-        unimplemented!("fixed column");
+    pub fn get_fixed(&self, row_index: usize, column_index: usize, rotation: Rotation) -> F {
+        let zero = F::ZERO;
+        *self
+            .fixed
+            .get(&(column_index, row_index + rotation.0 as usize))
+            .unwrap_or(&zero)
     }
 
     pub fn get_advice(&self, row_index: usize, column_index: usize, rotation: Rotation) -> F {
@@ -198,15 +215,16 @@ impl<F: Field, C: CellType> StoredExpression<F, C> {
             },
             &|_| unimplemented!("instance column"),
             &|challenge| {
-                //println!("challenge {} accessed: {:?}", challenge.index(), *region.challenges().indexed()[challenge.index()]);
+                // println!("challenge {} accessed: {:?}", challenge.index(), *region.challenges().indexed()[challenge.index()]);
                 *region.challenges().indexed()[challenge.index()]
-                //Value::known(word!("0x2a79eee6c17367c19c0de1ca49eca2a478494747b4bf58ecad53e889d6695f4c").to_scalar().unwrap())
+                // Value::known(word!("0x2a79eee6c17367c19c0de1ca49eca2a478494747b4bf58ecad53e889d6695f4c").to_scalar().unwrap())
             },
             &|a| -a,
             &|a, b| a + b,
             &|a, b| a * b,
             &|a, scalar| a * Value::known(scalar),
         );
+        // println!("Assignment result: {:?}", value);
         self.cell.assign_value(region, offset, value)?;
         Ok(value)
     }

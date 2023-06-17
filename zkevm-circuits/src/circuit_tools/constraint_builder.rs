@@ -43,36 +43,6 @@ pub struct DynamicData<F> {
     pub is_split: bool,
 }
 
-// /// Data for dynamic lookup
-// #[derive(Clone)]
-// pub struct LookupData<F> {
-//     /// Desciption
-//     pub description: &'static str,
-//     /// Condition under which the lookup needs to be done
-//     pub condition: Expression<F>,
-//     /// The values to lookup
-//     pub values: Vec<Expression<F>>,
-//     /// region
-//     pub region_id: usize,
-//     /// If is fixed, use static table
-//     pub is_fixed: bool,
-// }
-
-// /// Data for dynamic lookup
-// #[derive(Clone)]
-// pub struct TableData<F> {
-//     /// Desciption
-//     pub description: &'static str,
-//     /// Condition under which the lookup needs to be done
-//     pub condition: Expression<F>,
-//     /// The values to lookup
-//     pub values: Vec<Expression<F>>,
-//     /// region
-//     pub region_id: usize,
-    
-//     pub is_merged: bool,
-//     pub is_combined: bool,
-// }
 
 /// Constraint builder
 #[derive(Clone)]
@@ -106,11 +76,6 @@ pub struct ConstraintBuilder<F, C: CellType> {
     pub state_constraints_start: usize,
     /// use dynamic lookups
     pub use_dynamic_lookups: bool,
-
-
-    // pub lookup_values: HashMap<C, Vec<LookupData<F>>>,
-    // pub lookup_tables: HashMap<C, Vec<TableData<F>>>,
-    // pub lookup_cells: HashMap<usize, Vec<StoredExpression<F, C>>>,
 }
 
 impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
@@ -133,10 +98,6 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             state_context: Vec::new(),
             state_constraints_start: 0,
             use_dynamic_lookups: false,
-
-            // lookup_values: HashMap::new(),
-            // lookup_tables: HashMap::new(),
-            // lookup_cells: HashMap::new(),
         }
     }
 
@@ -375,10 +336,13 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                             .collect()
                         };
                         if lookup.is_split {
+                            println!("Splitting lookup {:?}", lookup_name);
                             ret.iter_mut()
                                 .for_each(|(v, t)| {
+                                    println!("before {:?} {:?}", v.degree(), t.degree());
                                     *v = self.split_expression(Box::leak(format!("compression value - {:?}", lookup_name).into_boxed_str()), v.clone());
                                     *t = self.split_expression(Box::leak(format!("compression table - {:?}", lookup_name).into_boxed_str()), t.clone());
+                                    println!("after {:?} {:?}", v.degree(), t.degree());
                                 });
                         }
                         ret
@@ -414,6 +378,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             condition,
             values,
             region_id: self.region_id,
+            // Flags does not matter for table data
             is_fixed: false,
             is_combine: false,
             is_split: false,
@@ -430,6 +395,9 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         description: &'static str,
         tag: C,
         values: Vec<Expression<F>>,
+        is_fixed: bool,
+        is_combine: bool,
+        is_split: bool
     ) {
         let condition = self.get_condition_expr();
         let lookup = DynamicData {
@@ -459,6 +427,9 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                 Box::leak(description.to_string().into_boxed_str()),
                 cell_type,
                 values,
+                true,
+                false,
+                false
             );
         } else {
             let condition = self.get_condition_expr();
@@ -575,7 +546,6 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
 
     fn split_expression(&mut self, name: &'static str, expr: Expression<F>) -> Expression<F> {
         if expr.degree() > self.max_degree && self.region_id != 0 {
-            // println!("split {}: {} > {}", name, expr.degree(), self.max_degree);
             match expr {
                 Expression::Negated(poly) => {
                     Expression::Negated(Box::new(self.split_expression(name, *poly)))

@@ -275,7 +275,7 @@ impl<F: Field> MPTConfig<F> {
         );
 
         let r = 123456.expr();
-        let mut cb = MPTConstraintBuilder::new(50, Some(challenges.clone()), None, r.expr());
+        let mut cb = MPTConstraintBuilder::new(7, Some(challenges.clone()), None, r.expr());
         meta.create_gate("MPT", |meta| {
             circuit!([meta, cb], {
                 // Populate lookup tables
@@ -338,6 +338,11 @@ impl<F: Field> MPTConfig<F> {
             cb.base.build_constraints()
         });
 
+        // Region for spliting dynamic lookup
+        // currently not working :(
+        cb.base.push_region(MPTRegion::Count as usize);
+
+
         let disable_lookups: usize = var("DISABLE_LOOKUPS")
             .unwrap_or_else(|_| "0".to_string())
             .parse()
@@ -353,16 +358,24 @@ impl<F: Field> MPTConfig<F> {
                 ],
             );
             cb.base
-                .build_dynamic_lookups(meta, &[vec![FIXED, KECCAK], ctx.memory.tags()].concat(), Vec::new());
+                .build_dynamic_lookups(
+                    meta, 
+                    &[vec![FIXED, KECCAK], ctx.memory.tags()].concat(), 
+                    vec![(MptCellType::Lookup(Table::Fixed), &fixed_table)]
+                );
         } else if disable_lookups == 1 {
             cb.base
-                .build_dynamic_lookups(meta, &[vec![KECCAK], ctx.memory.tags()].concat(), Vec::new());
+                .build_dynamic_lookups(meta, &[vec![KECCAK], ctx.memory.tags()].concat(), vec![(MptCellType::Lookup(Table::Fixed), &fixed_table)]
+            );
         } else if disable_lookups == 2 {
-            cb.base.build_dynamic_lookups(meta, &ctx.memory.tags(), Vec::new());
+            cb.base.build_dynamic_lookups(meta, &ctx.memory.tags(), vec![(MptCellType::Lookup(Table::Fixed), &fixed_table)]
+        );
         } else if disable_lookups == 3 {
-            cb.base.build_dynamic_lookups(meta, &[FIXED, KECCAK], Vec::new());
+            cb.base.build_dynamic_lookups(meta, &[FIXED, KECCAK], vec![(MptCellType::Lookup(Table::Fixed), &fixed_table)]
+        );
         } else if disable_lookups == 4 {
-            cb.base.build_dynamic_lookups(meta, &[KECCAK], Vec::new());
+            cb.base.build_dynamic_lookups(meta, &[KECCAK], vec![(MptCellType::Lookup(Table::Fixed), &fixed_table)]
+        );
         }
 
         println!("degree: {}", meta.degree());
@@ -495,11 +508,12 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                         cached_region.pop_region();
                     }
-
-                    //println!("stored expressions");
-                    //println!("challenge accessed: {:?}", *cached_region.challenges().indexed()[2]);
+                    
+                    // Region for spliting dynamic lookup
+                    // currently not working :(
+                    cached_region.push_region(offset, MPTRegion::Count as usize);
                     cached_region.assign_stored_expressions(&self.cb.base)?;
-                    //println!("stored expressions done");
+                    cached_region.pop_region();
 
                     offset += node.values.len();
                 }

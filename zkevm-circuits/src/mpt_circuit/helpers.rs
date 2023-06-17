@@ -968,8 +968,11 @@ impl<F: Field> MPTConstraintBuilder<F> {
         description: &'static str,
         tag: MptCellType,
         values: Vec<Expression<F>>,
+        is_fixed: bool,
+        is_combine: bool,
+        is_split: bool
     ) {
-        self.base.add_dynamic_lookup(description, tag, values)
+        self.base.add_dynamic_lookup(description, tag, values, is_fixed, is_combine, is_split)
     }
 
     pub(crate) fn add_lookup(
