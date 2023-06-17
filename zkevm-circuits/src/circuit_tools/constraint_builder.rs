@@ -25,7 +25,7 @@ fn get_condition_expr<F: Field>(conditions: &Vec<Expression<F>>) -> Expression<F
 }
 
 /// Data for dynamic lookup
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DynamicData<F> {
     /// Desciption
     pub description: &'static str,
@@ -74,8 +74,8 @@ pub struct ConstraintBuilder<F, C: CellType> {
     pub state_context: Vec<Expression<F>>,
     /// state constraints start
     pub state_constraints_start: usize,
-    /// use dynamic lookups
-    pub use_dynamic_lookups: bool,
+    // /// use dynamic lookups
+    // pub use_dynamic_lookups: bool,
 }
 
 impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
@@ -97,7 +97,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             lookup_challenge,
             state_context: Vec::new(),
             state_constraints_start: 0,
-            use_dynamic_lookups: false,
+            // use_dynamic_lookups: false,
         }
     }
 
@@ -109,9 +109,9 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         self.max_degree = max_degree;
     }
 
-    pub(crate) fn set_use_dynamic_lookup(&mut self, use_dynamic_lookups: bool) {
-        self.use_dynamic_lookups = use_dynamic_lookups;
-    }
+    // pub(crate) fn set_use_dynamic_lookup(&mut self, use_dynamic_lookups: bool) {
+    //     self.use_dynamic_lookups = use_dynamic_lookups;
+    // }
 
     pub(crate) fn push_region(&mut self, region_id: usize) {
         assert!(region_id != 0);
@@ -300,8 +300,10 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
     ) {
         let lookups = self.dynamic_lookups.clone();
         for lookup_name in lookup_names.iter() {
+            println!("build_dynamic_lookups {:?}", lookup_name);
             if let Some(lookups) = lookups.get(lookup_name) {
                 for lookup in lookups.iter() {
+                    print!("{:?} ", lookup.description);
                     meta.lookup_any(lookup.description, |meta| {
                         let table = if lookup.is_fixed {
                             let table_cols = fixed_table
@@ -405,9 +407,9 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             condition,
             values,
             region_id: self.region_id,
-            is_fixed: false,
-            is_combine: false,
-            is_split: false,
+            is_fixed,
+            is_combine,
+            is_split,
         };
         if let Some(lookup_data) = self.dynamic_lookups.get_mut(&tag) {
             lookup_data.push(lookup);
@@ -422,17 +424,19 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         cell_type: C,
         values: Vec<Expression<F>>,
     ) {
-        if self.use_dynamic_lookups {
-            self.add_dynamic_lookup(
-                Box::leak(description.to_string().into_boxed_str()),
-                cell_type,
-                values,
-                true,
-                false,
-                false
-            );
-        } else {
-            let condition = self.get_condition_expr();
+        // if self.use_dynamic_lookups {
+        //     self.add_dynamic_lookup(
+        //         Box::leak(description.to_string().into_boxed_str()),
+        //         cell_type,
+        //         values,
+        //         true,
+        //         false,
+        //         false
+        //     );
+        // } else {
+            
+        // }
+        let condition = self.get_condition_expr();
             let values = values
                 .iter()
                 .map(|value| condition.expr() * value.expr())
@@ -442,7 +446,6 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                 rlc::expr(&values, self.lookup_challenge.clone().unwrap().expr()),
             );
             self.store_expression(description, compressed_expr, cell_type);
-        }
     }
 
     pub(crate) fn get_stored_expressions(&self, region_id: usize) -> Vec<StoredExpression<F, C>> {
@@ -1090,6 +1093,65 @@ macro_rules! _require {
         );
     }};
 
+        // Lookup using a tuple
+        ($cb:expr, ($($v:expr),+) => @$tag:expr, $is_fixed:expr, $is_combine:expr, $is_split:expr) => {{
+            let description = concat_with_preamble!(
+                "(",
+                $(
+                    stringify!($v),
+                    ", ",
+                )*
+                ") => @",
+                stringify!($tag),
+            );
+            $cb.add_dynamic_lookup(
+                description,
+                $tag,
+                vec![$($v.expr(),)*],
+                $is_fixed,
+                $is_combine,
+                $is_split,
+            );
+        }};
+        ($cb:expr, $descr:expr, ($($v:expr),+)  => @$tag:expr, $is_fixed:expr, $is_combine:expr, $is_split:expr) => {{
+            $cb.add_dynamic_lookup(
+                Box::leak($descr.into_boxed_str()),
+                $tag,
+                vec![$($v.expr(),)*],
+                $is_fixed,
+                $is_combine,
+                $is_split,
+            );
+        }};
+    
+    
+        // Lookup using an array
+        ($cb:expr, $values:expr => @$tag:expr, $is_fixed:expr, $is_combine:expr, $is_split:expr) => {{
+            let description = concat_with_preamble!(
+                stringify!($values),
+                " => @",
+                stringify!($tag),
+            );
+            $cb.add_dynamic_lookup(
+                description,
+                $tag,
+                $values.clone(),
+                $is_fixed,
+                $is_combine,
+                $is_split,
+            );
+        }};
+        ($cb:expr, $descr:expr, $values:expr => @$tag:expr, $is_fixed:expr, $is_combine:expr, $is_split:expr) => {{
+            $cb.add_dynamic_lookup(
+                Box::leak($descr.into_boxed_str()),
+                $tag,
+                $values.clone(),
+                $is_fixed,
+                $is_combine,
+                $is_split,
+            );
+        }};
+
     // Put values in a lookup table using a tuple
     ($cb:expr, @$tag:expr => ($($v:expr),+)) => {{
         let description = concat_with_preamble!(
@@ -1361,6 +1423,30 @@ macro_rules! circuit {
 
             ($descr:expr, $values:expr => @$tag:expr) => {{
                 _require!($cb, $descr, $values => @$tag);
+            }};
+
+            (($a:expr) => @$tag:expr, $is_fixed:expr, $is_combine:expr, $is_split:expr) => {{
+                _require!($cb, ($a) => @$tag, $is_fixed, $is_combine, $is_split);
+            }};
+
+            (($a:expr, $b:expr) => @$tag:expr, $is_fixed:expr, $is_combine:expr, $is_split:expr) => {{
+                _require!($cb, ($a, $b) => @$tag, $is_fixed, $is_combine, $is_split);
+            }};
+
+            (($a:expr, $b:expr, $c:expr) => @$tag:expr, $is_fixed:expr, $is_combine:expr, $is_split:expr) => {{
+                _require!($cb, ($a, $b, $c) => @$tag, $is_fixed, $is_combine, $is_split);
+            }};
+
+            (($a:expr, $b:expr, $c:expr, $d:expr) => @$tag:expr, $is_fixed:expr, $is_combine:expr, $is_split:expr) => {{
+                _require!($cb, ($a, $b, $c, $d) => @$tag, $is_fixed, $is_combine, $is_split);
+            }};
+
+            ($values:expr => @$tag:expr, $is_fixed:expr, $is_combine:expr, $is_split:expr) => {{
+                _require!($cb, $values => @$tag, $is_fixed, $is_combine, $is_split);
+            }};
+
+            ($descr:expr, $values:expr => @$tag:expr, $is_fixed:expr, $is_combine:expr, $is_split:expr) => {{
+                _require!($cb, $descr, $values => @$tag, $is_fixed, $is_combine, $is_split);
             }};
 
             (@$tag:expr => ($a:expr, $b:expr, $c:expr)) => {{

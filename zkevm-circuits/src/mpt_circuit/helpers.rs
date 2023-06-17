@@ -77,6 +77,7 @@ pub const FIXED: MptCellType = MptCellType::Lookup(Table::Fixed);
 pub const KECCAK: MptCellType = MptCellType::Lookup(Table::Keccak);
 pub const MULT: MptCellType = MptCellType::Lookup(Table::Exp);
 
+
 /// Indexable object
 pub trait Indexable {
     /// Convert to index
@@ -895,9 +896,9 @@ impl<F: Field> MPTConstraintBuilder<F> {
         }
     }
 
-    pub(crate) fn set_use_dynamic_lookup(&mut self, use_dynamic_lookup: bool) {
-        self.base.set_use_dynamic_lookup(use_dynamic_lookup);
-    }
+    // pub(crate) fn set_use_dynamic_lookup(&mut self, use_dynamic_lookup: bool) {
+    //     self.base.set_use_dynamic_lookup(use_dynamic_lookup);
+    // }
 
     pub(crate) fn push_condition(&mut self, condition: Expression<F>) {
         self.base.push_condition(condition)
@@ -1265,11 +1266,14 @@ impl<F: Field> MainRLPGadget<F> {
             // TODO(Brecht): do 2 bytes/lookup when circuit height >= 2**21
             // We enable dynamic lookups because otherwise these lookup would require a lot of extra
             // cells.
-            cb.set_use_dynamic_lookup(true);
             for (idx, byte) in config.bytes.iter().enumerate() {
-                //require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()) => @FIXED);
+                require!(
+                    format!("byte {:?}", byte.identifier()),
+                    vec![config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()]        
+                    // is_fixed, is_combine, is_split
+                    => @FIXED, true, true, false
+                );
             }
-            cb.set_use_dynamic_lookup(false);
 
             config
         })
