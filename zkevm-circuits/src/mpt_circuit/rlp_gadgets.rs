@@ -15,7 +15,7 @@ use crate::{
 };
 use eth_types::Field;
 use gadgets::util::{not, pow, Scalar};
-use halo2_proofs::plonk::{Error, Expression};
+use halo2_proofs::plonk::{Error, Expression, VirtualCells};
 
 use super::{
     helpers::MPTConstraintBuilder,
@@ -126,9 +126,12 @@ impl<F: Field> RLPListGadget<F> {
         })
     }
 
-    // Single RLP byte, length at most 55 bytes
     pub(crate) fn is_list(&self) -> Expression<F> {
         not::expr(self.is_string.expr())
+    }
+
+    pub(crate) fn is_list_at(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
+        not::expr(self.is_string.rot(meta, rot))
     }
 
     // Single RLP byte, length at most 55 bytes
@@ -361,6 +364,10 @@ impl<F: Field> RLPValueGadget<F> {
     // Returns true if this is indeed a string RLP
     pub(crate) fn is_string(&self) -> Expression<F> {
         not::expr(self.is_list.expr())
+    }
+
+    pub(crate) fn is_string_at(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
+        not::expr(self.is_list.rot(meta, rot))
     }
 
     // Single RLP byte containing the byte value
@@ -621,12 +628,27 @@ impl<F: Field> RLPItemGadget<F> {
         let value_witness = self.value.assign(region, offset, bytes)?;
         let list_witness = self.list.assign(region, offset, bytes)?;
         assert!(!(value_witness.is_string() && list_witness.is_list()));
-
         Ok(RLPItemWitness {
             value: value_witness,
             list: list_witness,
             bytes: bytes.to_vec(),
         })
+    }
+
+    pub(crate) fn is_string(&self) -> Expression<F> {
+        self.value.is_string()
+    }
+
+    pub(crate) fn is_string_at(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
+        self.value.is_string_at(meta, rot)
+    }
+
+    pub(crate) fn is_list(&self) -> Expression<F> {
+        self.list.is_list()
+    }
+
+    pub(crate) fn is_list_at(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
+        self.list.is_list_at(meta, rot)
     }
 
     // Single RLP byte containing the byte value
@@ -738,6 +760,14 @@ impl RLPItemWitness {
             self.value.is_string() => self.value.len(),
             self.list.is_list() => self.list.len(),
         }
+    }
+
+    pub(crate) fn is_string(&self) -> bool {
+        self.value.is_string()
+    }
+
+    pub(crate) fn is_list(&self) -> bool {
+        self.list.is_list()
     }
 
     pub(crate) fn is_short(&self) -> bool {

@@ -131,24 +131,30 @@ pub struct MPTContext<F> {
     pub(crate) r: Expression<F>,
 }
 
+/// RLP item type
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum RlpItemType {
+    /// Node (string with len == 0 or 32, OR list with len <= 31)
+    Node,
+    /// Value (string with len <= 32)
+    Value,
+    /// Hash (string with len == 32)
+    Hash,
+    /// Key (string with len <= 33)
+    Key,
+    /// Nibbles
+    Nibbles,
+}
+
 impl<F: Field> MPTContext<F> {
     pub(crate) fn rlp_item(
         &self,
         meta: &mut VirtualCells<F>,
         cb: &mut MPTConstraintBuilder<F>,
         idx: usize,
+        item_type: RlpItemType,
     ) -> RLPItemView<F> {
-        // TODO(Brecht): Add RLP limitations like max num bytes
-        self.rlp_item.create_view(meta, cb, idx, false)
-    }
-
-    pub(crate) fn nibbles(
-        &self,
-        meta: &mut VirtualCells<F>,
-        cb: &mut MPTConstraintBuilder<F>,
-        idx: usize,
-    ) -> RLPItemView<F> {
-        self.rlp_item.create_view(meta, cb, idx, true)
+        self.rlp_item.create_view(meta, cb, idx, item_type)
     }
 }
 
@@ -411,16 +417,14 @@ impl<F: Field> MPTConfig<F> {
                     // Assign bytes
                     let mut rlp_values = Vec::new();
                     // Decompose RLP
-                    for (idx, bytes) in node.values.iter().enumerate() {
+                    for (idx, (item_type, bytes)) in node.values.iter().enumerate() {
                         cached_region.push_region(offset + idx, MPTRegion::RLP as usize);
-                        let is_nibbles = node.extension_branch.is_some()
-                            && idx == ExtensionBranchRowType::KeyC as usize;
                         let rlp_value = self.rlp_item.assign(
                             &mut cached_region,
                             offset + idx,
                             bytes,
                             r,
-                            is_nibbles,
+                            *item_type,
                         )?;
                         rlp_values.push(rlp_value);
                         cached_region.pop_region();
@@ -428,7 +432,7 @@ impl<F: Field> MPTConfig<F> {
 
                     // Assign nodes
                     if node.start.is_some() {
-                        //println!("{}: start", offset);
+                        // println!("{}: start", offset);
                         cached_region.push_region(offset, MPTRegion::Start as usize);
                         assign!(cached_region, (self.state_machine.is_start, offset) => "is_start", true.scalar())?;
                         self.state_machine.start_config.assign(
@@ -442,7 +446,7 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                         cached_region.pop_region();
                     } else if node.extension_branch.is_some() {
-                        //println!("{}: branch", offset);
+                        // println!("{}: branch", offset);
                         cached_region.push_region(offset, MPTRegion::Branch as usize);
                         assign!(cached_region, (self.state_machine.is_branch, offset) => "is_branch", true.scalar())?;
                         self.state_machine.branch_config.assign(
@@ -470,7 +474,7 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                         cached_region.pop_region();
                     } else if node.storage.is_some() {
-                        //println!("{}: storage", offset);
+                        // println!("{}: storage", offset);
                         cached_region.push_region(offset, MPTRegion::Storage as usize);
                         assign!(cached_region, (self.state_machine.is_storage, offset) => "is_storage", true.scalar())?;
                         self.state_machine.storage_config.assign(
