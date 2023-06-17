@@ -12,7 +12,10 @@ use crate::{
     evm_circuit::table::Table,
     matchw,
     mpt_circuit::{
-        param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN},
+        param::{
+            EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN,
+            RLP_UNIT_NUM_BYTES,
+        },
         rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble},
     },
     util::{Challenges, Expr},
@@ -28,7 +31,7 @@ use super::{
     rlp_gadgets::{
         get_ext_odd_nibble_value, RLPItemGadget, RLPItemWitness, RLPListGadget, RLPListWitness,
     },
-    FixedTableTag,
+    FixedTableTag, MPTCircuitParams,
 };
 
 impl<F: Field> ChallengeSet<F> for crate::util::Challenges<Value<F>> {
@@ -1217,11 +1220,11 @@ impl<F: Field> MainRLPGadget<F> {
     pub(crate) fn construct(
         cb: &mut MPTConstraintBuilder<F>,
         r: &Expression<F>,
-        two_bytes_lookup: bool,
+        params: MPTCircuitParams,
     ) -> Self {
         circuit!([meta, cb], {
             let mut config = MainRLPGadget {
-                bytes: cb.query_cells::<34>().to_vec(),
+                bytes: cb.query_cells::<RLP_UNIT_NUM_BYTES>().to_vec(),
                 rlp: RLPItemGadget::default(),
                 num_bytes: cb.query_cell(),
                 len: cb.query_cell(),
@@ -1251,24 +1254,20 @@ impl<F: Field> MainRLPGadget<F> {
             // These range checks ensure that the value in the RLP columns are all byte
             // value. These lookups also enforce the byte value to be zero when
             // the byte index >= num_bytes.
-            // TODO(Brecht): do 2 bytes/lookup when circuit height >= 2**21
-            // We enable dynamic lookups because otherwise these lookup would require a lot of extra
-            // cells.
             cb.set_use_dynamic_lookup(true);
-            if two_bytes_lookup {
-                for idx in 0..config.bytes.len() / 2 {
-                    let first = idx * 2;
-                    let second = idx * 2 + 1;
+            if params.is_two_byte_lookup_enabled() {
+                assert!(config.bytes.len() % 2 == 0);
+                for idx in (0..config.bytes.len()).step_by(2) {
                     require!((
-                        config.tag.expr(), 
-                        config.bytes[first], 
-                        config.bytes[second], 
-                        config.num_bytes.expr() - first.expr()
+                        config.tag.expr(),
+                        config.num_bytes.expr() - idx.expr(),
+                        config.bytes[idx],
+                        config.bytes[idx + 1]
                     ) => @FIXED);
                 }
             } else {
                 for (idx, byte) in config.bytes.iter().enumerate() {
-                    require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()) => @FIXED);
+                    require!((config.tag.expr(), config.num_bytes.expr() - idx.expr(), byte.expr()) => @FIXED);
                 }
             }
             cb.set_use_dynamic_lookup(false);

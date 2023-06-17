@@ -10,7 +10,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-
 use std::{convert::TryInto, env::var};
 
 mod account_leaf;
@@ -27,8 +26,9 @@ mod witness_row;
 use self::{
     account_leaf::AccountLeafConfig,
     helpers::{key_memory, RLPItemView},
+    param::RLP_UNIT_NUM_BYTES,
     rlp_gadgets::decode_rlp,
-    witness_row::{AccountRowType, ExtensionBranchRowType, Node, StartRowType, StorageRowType}, param::MAX_ROW_LEN,
+    witness_row::{AccountRowType, ExtensionBranchRowType, Node, StartRowType, StorageRowType},
 };
 use crate::{
     assign, assignf, circuit,
@@ -163,7 +163,7 @@ pub struct MPTConfig<F> {
     fixed_table: [Column<Fixed>; 6],
     rlp_item: MainRLPGadget<F>,
     state_machine: StateMachineConfig<F>,
-    two_bytes_lookup: bool,
+    params: MPTCircuitParams,
     pub(crate) mpt_table: MptTable,
     cb: MPTConstraintBuilder<F>,
 }
@@ -208,11 +208,11 @@ impl<F: Field> MPTState<F> {
 
 impl<F: Field> MPTConfig<F> {
     /// Configure MPT Circuit
-    pub fn configure(
+    pub fn new(
         meta: &mut ConstraintSystem<F>,
         challenges: Challenges<Expression<F>>,
         keccak_table: KeccakTable,
-        two_bytes_lookup: bool,
+        params: MPTCircuitParams,
     ) -> Self {
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
@@ -282,7 +282,7 @@ impl<F: Field> MPTConfig<F> {
                     // RLP item decoding unit
                     cb.base.set_cell_manager(rlp_cm.clone());
                     cb.base.push_region(MPTRegion::RLP as usize);
-                    rlp_item = MainRLPGadget::construct(&mut cb, &ctx.r, two_bytes_lookup);
+                    rlp_item = MainRLPGadget::construct(&mut cb, &ctx.r, params);
                     cb.base.pop_region();
                     ctx.rlp_item = rlp_item.clone();
 
@@ -360,7 +360,7 @@ impl<F: Field> MPTConfig<F> {
             cb.base.build_dynamic_lookups(meta, &[KECCAK]);
         }
 
-        println!("degree: {}", meta.degree());
+        println!("max expression degree: {}", meta.degree());
         println!("num lookups: {}", meta.lookups().len());
         println!("num advices: {}", meta.num_advice_columns());
         println!("num fixed: {}", meta.num_fixed_columns());
@@ -375,7 +375,7 @@ impl<F: Field> MPTConfig<F> {
             fixed_table,
             state_machine,
             rlp_item,
-            two_bytes_lookup,
+            params,
             mpt_table,
             cb,
         }
@@ -552,37 +552,37 @@ impl<F: Field> MPTConfig<F> {
                 }
 
                 // Byte range with length table
-                // These fixed rows enable to easily check whether there are zeros in the unused columns (the number of unused columns vary).
+                // This allows us to easily check whether there are zeros in the unused columns (the number of unused columns vary).
                 // The lookups ensure that when the unused columns start, the values in these columns are zeros -
-                // when the unused columns start, the value that is used for the lookup in the last column is negative
+                // when the unused columns start, the value that is used for the lookup in the last column is zero or negative
                 // and thus a zero is enforced.
-                for (tag, range) in [
-                    (FixedTableTag::RangeKeyLen256, 256),
-                    (FixedTableTag::RangeKeyLen16, 16),
+                for (tag, range, out_of_range) in [
+                    (FixedTableTag::RangeKeyLen256, 256, 1),
+                    (FixedTableTag::RangeKeyLen16, 16, 16),
                 ] {
-                    // When using two byte range check, we ensure the tuple within 
-                    // ([0..255], [0..255], [-34..,34]) 
-                    for n in -MAX_ROW_LEN..=MAX_ROW_LEN {
-                        if self.two_bytes_lookup {
-                            let range1 = if n <= 0 && range == 256 { 1 } else { range };
-                            for idx1 in 0..range1 {
-                                let range2 = if n < 0 && range == 256 { 1 } else { range };
-                                for idx2 in 0..range2 {       
-                                    let v = n.scalar();
+                    let get_range = |n: i32| {
+                        if n <= 0 { out_of_range } else { range }
+                    };
+                    let max_length = RLP_UNIT_NUM_BYTES as i32;
+                    for idx in -max_length..=max_length {
+                        if self.params.is_two_byte_lookup_enabled() {
+                            let range1 = get_range(idx);
+                            for byte1 in 0..range1 {
+                                let range2 = get_range(idx - 1);
+                                for byte2 in 0..range2 {
                                     assignf!(region, (self.fixed_table[0], offset) => tag.scalar())?;
-                                    assignf!(region, (self.fixed_table[1], offset) => idx1.scalar())?;
-                                    assignf!(region, (self.fixed_table[2], offset) => idx2.scalar())?;
-                                    assignf!(region, (self.fixed_table[3], offset) => v)?;
+                                    assignf!(region, (self.fixed_table[1], offset) => idx.scalar())?;
+                                    assignf!(region, (self.fixed_table[2], offset) => byte1.scalar())?;
+                                    assignf!(region, (self.fixed_table[3], offset) => byte2.scalar())?;
                                     offset += 1;
                                 }
                             }
                         } else {
-                            let range = if n <= 0 && range == 256 { 1 } else { range };
-                            for idx in 0..range {
-                                let v = n.scalar();
+                            let range = get_range(idx);
+                            for byte in 0..range {
                                 assignf!(region, (self.fixed_table[0], offset) => tag.scalar())?;
                                 assignf!(region, (self.fixed_table[1], offset) => idx.scalar())?;
-                                assignf!(region, (self.fixed_table[2], offset) => v)?;
+                                assignf!(region, (self.fixed_table[2], offset) => byte.scalar())?;
                                 offset += 1;
                             }
                         }
@@ -625,28 +625,38 @@ impl<F: Field> MPTConfig<F> {
 struct MPTCircuit<F> {
     nodes: Vec<Node>,
     keccak_data: Vec<Vec<u8>>,
+    degree: usize,
     randomness: F,
+}
+
+/// Super Circuit configuration parameters
+#[derive(Copy, Clone, Default)]
+pub struct MPTCircuitParams {
+    degree: usize,
+}
+
+impl MPTCircuitParams {
+    fn is_two_byte_lookup_enabled(&self) -> bool {
+        self.degree >= 22
+    }
 }
 
 impl<F: Field> Circuit<F> for MPTCircuit<F> {
     type Config = (MPTConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
-    type Params = bool;
+    type Params = MPTCircuitParams;
 
     fn without_witnesses(&self) -> Self {
         Self::default()
     }
 
-    #[cfg(feature = "circuit-params")]
     fn params(&self) -> Self::Params {
-        // Use two bytes lookup
-        true
+        MPTCircuitParams {
+            degree: self.degree,
+        }
     }
 
-    #[cfg(feature = "circuit-params")]
-    fn configure_with_params(meta: &mut ConstraintSystem<F>, param: Self::Params) -> Self::Config {
-        println!("Using two bytes lookup");
-
+    fn configure_with_params(meta: &mut ConstraintSystem<F>, params: Self::Params) -> Self::Config {
         let challenges = Challenges::construct(meta);
         let _challenges_expr = challenges.exprs(meta);
 
@@ -662,29 +672,13 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         let challenges = Challenges::construct(meta);
 
         (
-            MPTConfig::configure(meta, challenges_expr, keccak_table, param),
+            MPTConfig::new(meta, challenges_expr, keccak_table, params),
             challenges,
         )
     }
 
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let challenges = Challenges::construct(meta);
-        let _challenges_expr = challenges.exprs(meta);
-
-        let r = 123456u64;
-        let _challenges = Challenges::mock(
-            Value::known(F::from(r)),
-            Value::known(F::from(r)),
-            Value::known(F::from(r)),
-        );
-        let challenges_expr = Challenges::mock(r.expr(), r.expr(), r.expr());
-
-        let keccak_table = KeccakTable::construct(meta);
-        let challenges = Challenges::construct(meta);
-        (
-            MPTConfig::configure(meta, challenges_expr, keccak_table, false),
-            challenges,
-        )
+    fn configure(_meta: &mut ConstraintSystem<F>) -> Self::Config {
+        unreachable!();
     }
 
     fn synthesize(
@@ -756,15 +750,16 @@ mod tests {
                 let nodes = prepare_witness(&mut witness_rows);
                 let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
 
+                let degree = 14;
                 let circuit = MPTCircuit::<Fr> {
                     nodes,
                     keccak_data,
                     randomness,
+                    degree,
                 };
 
                 println!("{} {:?}", idx, path);
-                // let prover = MockProver::run(9, &circuit, vec![pub_root]).unwrap();
-                let prover = MockProver::run(22 /* 9 */, &circuit, vec![]).unwrap();
+                let prover = MockProver::run(degree as u32, &circuit, vec![]).unwrap();
                 assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
                 // assert_eq!(prover.verify_par(), Ok(()));
                 // prover.assert_satisfied();

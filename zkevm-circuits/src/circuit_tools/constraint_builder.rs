@@ -285,7 +285,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
     pub(crate) fn build_dynamic_lookups(&self, meta: &mut ConstraintSystem<F>, lookup_names: &[C]) {
         for lookup_name in lookup_names.iter() {
             if let Some(lookups) = self.dynamic_lookups.get(lookup_name) {
-                for lookup in lookups {
+                for lookup in lookups.iter() {
                     meta.lookup_any(lookup.description, |_meta| {
                         let table = self.get_dynamic_table_values(*lookup_name);
                         let mut values: Vec<_> = lookup

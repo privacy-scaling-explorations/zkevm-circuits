@@ -149,5 +149,4 @@ pub const EMPTY_TRIE_HASH: [u8; 32] = [
     108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
 ];
 
-
-pub const MAX_ROW_LEN: i32 = 34;
+pub const RLP_UNIT_NUM_BYTES: usize = 34;

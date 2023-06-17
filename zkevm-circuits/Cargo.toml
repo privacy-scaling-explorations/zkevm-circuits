@@ -54,7 +54,6 @@ test = ["ethers-signers", "mock", "bus-mapping/test"]
 test-circuits = []
 warn-unimplemented = ["eth-types/warn-unimplemented"]
 stats = ["warn-unimplemented", "dep:cli-table"]
-circuit-params = []
 
 [[bin]]
 name = "stats"
