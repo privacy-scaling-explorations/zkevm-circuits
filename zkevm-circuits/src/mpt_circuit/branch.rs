@@ -20,7 +20,7 @@ use crate::{
     mpt_circuit::{
         helpers::{nibble_rlc, Indexable, KECCAK},
         param::{HASH_WIDTH, RLP_NIL},
-        MPTConfig, MPTState,
+        MPTConfig, MPTState, RlpItemType,
     },
 };
 
@@ -68,7 +68,7 @@ impl<F: Field> BranchGadget<F> {
         circuit!([meta, cb], {
             // Data
             let children: [RLPItemView<F>; ARITY + 1] =
-                array_init::array_init(|i| ctx.rlp_item(meta, cb, i));
+                array_init::array_init(|i| ctx.rlp_item(meta, cb, i, RlpItemType::Node));
 
             let mut num_bytes_left = vec![0.expr(); 2];
             let mut node_rlc = vec![0.expr(); 2];

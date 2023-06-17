@@ -14,7 +14,7 @@ use crate::{
             key_memory, main_memory, parent_memory, KeyData, MPTConstraintBuilder, MainData,
             ParentData,
         },
-        MPTConfig, MPTContext, MPTState,
+        MPTConfig, MPTContext, MPTState, RlpItemType,
     },
 };
 use eth_types::Field;
@@ -41,8 +41,8 @@ impl<F: Field> StartConfig<F> {
 
         circuit!([meta, cb], {
             let root_items = [
-                ctx.rlp_item(meta, cb, StartRowType::RootS as usize),
-                ctx.rlp_item(meta, cb, StartRowType::RootC as usize),
+                ctx.rlp_item(meta, cb, StartRowType::RootS as usize, RlpItemType::Value),
+                ctx.rlp_item(meta, cb, StartRowType::RootC as usize, RlpItemType::Value),
             ];
 
             config.proof_type = cb.query_cell();

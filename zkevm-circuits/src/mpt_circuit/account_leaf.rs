@@ -8,7 +8,6 @@ use halo2_proofs::{
 
 use super::{
     helpers::{KeyDataWitness, ListKeyGadget, MainData, ParentDataWitness},
-    param::HASH_WIDTH,
     rlp_gadgets::RLPItemWitness,
     witness_row::{AccountRowType, Node},
 };
@@ -26,7 +25,7 @@ use crate::{
             IsEmptyTreeGadget, KeyData, MPTConstraintBuilder, ParentData, WrongGadget, KECCAK,
         },
         param::{KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
-        MPTConfig, MPTContext, MPTState,
+        MPTConfig, MPTContext, MPTState, RlpItemType,
     },
     table::MPTProofType,
     witness::MptUpdateRow,
@@ -68,29 +67,71 @@ impl<F: Field> AccountLeafConfig<F> {
 
         circuit!([meta, cb], {
             let key_items = [
-                ctx.rlp_item(meta, cb, AccountRowType::KeyS as usize),
-                ctx.rlp_item(meta, cb, AccountRowType::KeyC as usize),
+                ctx.rlp_item(meta, cb, AccountRowType::KeyS as usize, RlpItemType::Key),
+                ctx.rlp_item(meta, cb, AccountRowType::KeyC as usize, RlpItemType::Key),
             ];
             config.value_rlp_bytes = [cb.query_bytes(), cb.query_bytes()];
             config.value_list_rlp_bytes = [cb.query_bytes(), cb.query_bytes()];
             let nonce_items = [
-                ctx.rlp_item(meta, cb, AccountRowType::NonceS as usize),
-                ctx.rlp_item(meta, cb, AccountRowType::NonceC as usize),
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    AccountRowType::NonceS as usize,
+                    RlpItemType::Value,
+                ),
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    AccountRowType::NonceC as usize,
+                    RlpItemType::Value,
+                ),
             ];
             let balance_items = [
-                ctx.rlp_item(meta, cb, AccountRowType::BalanceS as usize),
-                ctx.rlp_item(meta, cb, AccountRowType::BalanceC as usize),
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    AccountRowType::BalanceS as usize,
+                    RlpItemType::Value,
+                ),
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    AccountRowType::BalanceC as usize,
+                    RlpItemType::Value,
+                ),
             ];
             let storage_items = [
-                ctx.rlp_item(meta, cb, AccountRowType::StorageS as usize),
-                ctx.rlp_item(meta, cb, AccountRowType::StorageC as usize),
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    AccountRowType::StorageS as usize,
+                    RlpItemType::Hash,
+                ),
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    AccountRowType::StorageC as usize,
+                    RlpItemType::Hash,
+                ),
             ];
             let codehash_items = [
-                ctx.rlp_item(meta, cb, AccountRowType::CodehashS as usize),
-                ctx.rlp_item(meta, cb, AccountRowType::CodehashC as usize),
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    AccountRowType::CodehashS as usize,
+                    RlpItemType::Hash,
+                ),
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    AccountRowType::CodehashC as usize,
+                    RlpItemType::Hash,
+                ),
             ];
-            let drifted_bytes = ctx.rlp_item(meta, cb, AccountRowType::Drifted as usize);
-            let wrong_bytes = ctx.rlp_item(meta, cb, AccountRowType::Wrong as usize);
+            let drifted_bytes =
+                ctx.rlp_item(meta, cb, AccountRowType::Drifted as usize, RlpItemType::Key);
+            let wrong_bytes =
+                ctx.rlp_item(meta, cb, AccountRowType::Wrong as usize, RlpItemType::Key);
 
             config.main_data =
                 MainData::load("main storage", cb, &ctx.memory[main_memory()], 0.expr());
@@ -126,10 +167,6 @@ impl<F: Field> AccountLeafConfig<F> {
                 // Calculate the key RLC
                 let rlp_key = &mut config.rlp_key[is_s.idx()];
                 *rlp_key = ListKeyGadget::construct(cb, &key_items[is_s.idx()]);
-
-                // Storage root and codehash are always 32-byte hashes.
-                require!(storage_items[is_s.idx()].len() => HASH_WIDTH);
-                require!(codehash_items[is_s.idx()].len() => HASH_WIDTH);
 
                 // Multiplier after list and key
                 let mult = rlp_key.rlp_list.rlp_mult(&r) * key_items[is_s.idx()].mult();

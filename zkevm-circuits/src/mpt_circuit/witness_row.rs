@@ -15,7 +15,7 @@ use crate::{
     table::MPTProofType,
 };
 
-use super::helpers::Indexable;
+use super::{helpers::Indexable, RlpItemType};
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum StorageRowType {
@@ -127,7 +127,7 @@ pub struct Node {
     pub(crate) extension_branch: Option<ExtensionBranchNode>,
     pub(crate) account: Option<AccountNode>,
     pub(crate) storage: Option<StorageNode>,
-    pub(crate) values: Vec<Vec<u8>>,
+    pub(crate) values: Vec<(RlpItemType, Vec<u8>)>,
 }
 
 #[derive(Debug, Eq, PartialEq, TryFromPrimitive)]
@@ -506,9 +506,10 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
             ]
             .concat();
 
-            let mut node_rows = vec![Vec::new(); StartRowType::Count as usize];
-            node_rows[StartRowType::RootS as usize] = new_row.s();
-            node_rows[StartRowType::RootC as usize] = new_row.c();
+            let mut node_rows =
+                vec![(RlpItemType::Value, Vec::new()); StartRowType::Count as usize];
+            node_rows[StartRowType::RootS as usize] = (RlpItemType::Value, new_row.s());
+            node_rows[StartRowType::RootC as usize] = (RlpItemType::Value, new_row.c());
 
             let start_node = StartNode {
                 proof_type: new_row.proof_type,
@@ -536,16 +537,21 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
                 row_init.rlp_bytes[0..3].to_owned(),
                 row_init.rlp_bytes[3..6].to_owned(),
             ];
-            let child_bytes: [Vec<u8>; ARITY + 1] =
-                array_init::array_init(|i| witness[offset + i].s());
+            let child_bytes: [_; ARITY + 1] =
+                array_init::array_init(|i| (RlpItemType::Node, witness[offset + i].s()));
             let ext_list_rlp_bytes = witness[offset + 17].rlp_bytes.to_owned();
 
-            let mut node_rows = vec![Vec::new(); ExtensionBranchRowType::Count as usize];
+            let mut node_rows =
+                vec![(RlpItemType::Value, Vec::new()); ExtensionBranchRowType::Count as usize];
             node_rows[..(ARITY + 1)].clone_from_slice(&child_bytes[..(ARITY + 1)]);
-            node_rows[ExtensionBranchRowType::KeyS as usize] = witness[offset + 17].s();
-            node_rows[ExtensionBranchRowType::ValueS as usize] = witness[offset + 17].c();
-            node_rows[ExtensionBranchRowType::KeyC as usize] = witness[offset + 18].s();
-            node_rows[ExtensionBranchRowType::ValueC as usize] = witness[offset + 18].c();
+            node_rows[ExtensionBranchRowType::KeyS as usize] =
+                (RlpItemType::Key, witness[offset + 17].s());
+            node_rows[ExtensionBranchRowType::ValueS as usize] =
+                (RlpItemType::Node, witness[offset + 17].c());
+            node_rows[ExtensionBranchRowType::KeyC as usize] =
+                (RlpItemType::Nibbles, witness[offset + 18].s());
+            node_rows[ExtensionBranchRowType::ValueC as usize] =
+                (RlpItemType::Node, witness[offset + 18].c());
             offset += 19;
 
             let extension_branch_node = ExtensionBranchNode {
@@ -583,13 +589,16 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
             let drifted_rlp_bytes = row_drifted.rlp_bytes.clone();
             let wrong_rlp_bytes = row_wrong.rlp_bytes.clone();
 
-            let mut node_rows = vec![Vec::new(); StorageRowType::Count as usize];
-            node_rows[StorageRowType::KeyS as usize] = row_key[true.idx()].s();
-            node_rows[StorageRowType::ValueS as usize] = row_value[true.idx()].s();
-            node_rows[StorageRowType::KeyC as usize] = row_key[false.idx()].s();
-            node_rows[StorageRowType::ValueC as usize] = row_value[false.idx()].s();
-            node_rows[StorageRowType::Drifted as usize] = row_drifted.s();
-            node_rows[StorageRowType::Wrong as usize] = row_wrong.s();
+            let mut node_rows =
+                vec![(RlpItemType::Value, Vec::new()); StorageRowType::Count as usize];
+            node_rows[StorageRowType::KeyS as usize] = (RlpItemType::Key, row_key[true.idx()].s());
+            node_rows[StorageRowType::ValueS as usize] =
+                (RlpItemType::Value, row_value[true.idx()].s());
+            node_rows[StorageRowType::KeyC as usize] = (RlpItemType::Key, row_key[false.idx()].s());
+            node_rows[StorageRowType::ValueC as usize] =
+                (RlpItemType::Value, row_value[false.idx()].s());
+            node_rows[StorageRowType::Drifted as usize] = (RlpItemType::Key, row_drifted.s());
+            node_rows[StorageRowType::Wrong as usize] = (RlpItemType::Key, row_wrong.s());
 
             let storage_node = StorageNode {
                 list_rlp_bytes,
@@ -626,19 +635,26 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
             let drifted_rlp_bytes = row_drifted.rlp_bytes.clone();
             let wrong_rlp_bytes = row_wrong.rlp_bytes.clone();
 
-            let mut node_rows = vec![Vec::new(); AccountRowType::Count as usize];
-            node_rows[AccountRowType::KeyS as usize] = key_s.s();
-            node_rows[AccountRowType::KeyC as usize] = key_c.s();
-            node_rows[AccountRowType::NonceS as usize] = nonce_balance_s.s();
-            node_rows[AccountRowType::BalanceS as usize] = nonce_balance_s.c();
-            node_rows[AccountRowType::StorageS as usize] = storage_codehash_s.s();
-            node_rows[AccountRowType::CodehashS as usize] = storage_codehash_s.c();
-            node_rows[AccountRowType::NonceC as usize] = nonce_balance_c.s();
-            node_rows[AccountRowType::BalanceC as usize] = nonce_balance_c.c();
-            node_rows[AccountRowType::StorageC as usize] = storage_codehash_c.s();
-            node_rows[AccountRowType::CodehashC as usize] = storage_codehash_c.c();
-            node_rows[AccountRowType::Drifted as usize] = row_drifted.s();
-            node_rows[AccountRowType::Wrong as usize] = row_wrong.s();
+            let mut node_rows =
+                vec![(RlpItemType::Value, Vec::new()); AccountRowType::Count as usize];
+            node_rows[AccountRowType::KeyS as usize] = (RlpItemType::Key, key_s.s());
+            node_rows[AccountRowType::KeyC as usize] = (RlpItemType::Key, key_c.s());
+            node_rows[AccountRowType::NonceS as usize] = (RlpItemType::Value, nonce_balance_s.s());
+            node_rows[AccountRowType::BalanceS as usize] =
+                (RlpItemType::Value, nonce_balance_s.c());
+            node_rows[AccountRowType::StorageS as usize] =
+                (RlpItemType::Hash, storage_codehash_s.s());
+            node_rows[AccountRowType::CodehashS as usize] =
+                (RlpItemType::Hash, storage_codehash_s.c());
+            node_rows[AccountRowType::NonceC as usize] = (RlpItemType::Value, nonce_balance_c.s());
+            node_rows[AccountRowType::BalanceC as usize] =
+                (RlpItemType::Value, nonce_balance_c.c());
+            node_rows[AccountRowType::StorageC as usize] =
+                (RlpItemType::Hash, storage_codehash_c.s());
+            node_rows[AccountRowType::CodehashC as usize] =
+                (RlpItemType::Hash, storage_codehash_c.c());
+            node_rows[AccountRowType::Drifted as usize] = (RlpItemType::Key, row_drifted.s());
+            node_rows[AccountRowType::Wrong as usize] = (RlpItemType::Key, row_wrong.s());
 
             let account_node = AccountNode {
                 address,
@@ -662,7 +678,7 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
     };
     nodes.push(Node {
         start: Some(start_node),
-        values: vec![vec![0; 34]; StartRowType::Count as usize],
+        values: vec![(RlpItemType::Value, vec![0]); StartRowType::Count as usize],
         ..Default::default()
     });
 
