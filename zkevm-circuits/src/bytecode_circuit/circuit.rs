@@ -2,12 +2,12 @@ use crate::{
     evm_circuit::util::{
         and,
         constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-        from_bytes, not, or, rlc, select,
+        not, or, rlc, select,
     },
     table::{BytecodeFieldTag, BytecodeTable, KeccakTable, LookupTable},
     util::{
         get_push_size,
-        word::{Word, Word32, WordExpr},
+        word::{empty_code_hash_word_value, Word, Word32, WordExpr},
         Challenges, Expr, SubCircuit, SubCircuitConfig,
     },
     witness,
@@ -502,15 +502,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             .evm_word()
             .map(|challenge| rlc::value(EMPTY_CODE_HASH_LE.as_ref(), challenge));
 
-        let empty_hash_word = Word::new(
-            EMPTY_CODE_HASH_LE
-                .chunks(32 / 2)
-                .map(|bytes: &[u8]| Value::known(from_bytes::value::<F>(bytes)))
-                .collect_vec()
-                .try_into()
-                .unwrap(),
-        );
-
         layouter.assign_region(
             || "assign bytecode",
             |mut region| {
@@ -526,7 +517,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                         &push_data_left_is_zero_chip,
                         &index_length_diff_is_zero_chip,
                         empty_hash,
-                        empty_hash_word,
                         &mut offset,
                         last_row_offset,
                         fail_fast,
@@ -540,7 +530,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                         &push_data_left_is_zero_chip,
                         &index_length_diff_is_zero_chip,
                         empty_hash,
-                        empty_hash_word,
                         idx,
                         last_row_offset,
                     )?;
@@ -605,7 +594,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         push_data_left_is_zero_chip: &IsZeroChip<F>,
         index_length_diff_is_zero_chip: &IsZeroChip<F>,
         empty_hash: Value<F>,
-        empty_hash_word: Word<Value<F>>,
         offset: &mut usize,
         last_row_offset: usize,
         fail_fast: bool,
@@ -707,7 +695,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     push_data_left_is_zero_chip,
                     index_length_diff_is_zero_chip,
                     empty_hash,
-                    empty_hash_word,
                     *offset,
                     last_row_offset,
                 )?;
@@ -723,7 +710,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         push_data_left_is_zero_chip: &IsZeroChip<F>,
         index_length_diff_is_zero_chip: &IsZeroChip<F>,
         empty_hash: Value<F>,
-        empty_hash_word: Word<Value<F>>,
         offset: usize,
         last_row_offset: usize,
     ) -> Result<(), Error> {
@@ -735,7 +721,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             offset <= last_row_offset,
             offset == last_row_offset,
             empty_hash,
-            empty_hash_word,
+            empty_code_hash_word_value(),
             F::from(BytecodeFieldTag::Header as u64),
             F::ZERO,
             F::ZERO,

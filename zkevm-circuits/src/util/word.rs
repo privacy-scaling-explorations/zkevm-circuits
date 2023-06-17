@@ -3,6 +3,7 @@
 // - Limbs: An EVN word is 256 bits. Limbs N means split 256 into N limb. For example, N = 4, each
 //   limb is 256/4 = 64 bits
 
+use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
 use eth_types::{Field, ToLittleEndian, H160};
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
@@ -476,6 +477,17 @@ impl<F: Field> From<WordLegacy<F>> for Word32Cell<F> {
     fn from(value: WordLegacy<F>) -> Self {
         Word32Cell::new(value.cells)
     }
+}
+
+pub fn empty_code_hash_word_value<F: Field>() -> Word<Value<F>> {
+    Word::new(
+        EMPTY_CODE_HASH_LE
+            .chunks(32 / 2)
+            .map(|bytes: &[u8]| Value::known(from_bytes::value(bytes)))
+            .collect_vec()
+            .try_into()
+            .unwrap(),
+    )
 }
 
 // TODO unittest
