@@ -158,6 +158,7 @@ impl<F: Field, C: CellType> MemoryBank<F, C> {
         key: Expression<F>,
         values: &[Expression<F>],
     ) {
+        // TODO:(Cecilia) make split expression work
         cb.add_dynamic_lookup(description, self.tag(), self.insert_key(key, values), false, true, false);
     }
 

@@ -348,7 +348,7 @@ impl<F: Field> MPTConfig<F> {
             .parse()
             .expect("Cannot parse DISABLE_LOOKUPS env var as usize");
         if disable_lookups == 0 {
-            cb.base.build_lookups(
+            cb.base.build_celltype_lookups(
                 meta,
                 vec![rlp_cm, state_cm],
                 vec![

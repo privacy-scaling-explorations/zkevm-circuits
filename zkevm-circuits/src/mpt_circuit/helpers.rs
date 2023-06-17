@@ -896,10 +896,6 @@ impl<F: Field> MPTConstraintBuilder<F> {
         }
     }
 
-    // pub(crate) fn set_use_dynamic_lookup(&mut self, use_dynamic_lookup: bool) {
-    //     self.base.set_use_dynamic_lookup(use_dynamic_lookup);
-    // }
-
     pub(crate) fn push_condition(&mut self, condition: Expression<F>) {
         self.base.push_condition(condition)
     }
@@ -976,13 +972,13 @@ impl<F: Field> MPTConstraintBuilder<F> {
         self.base.add_dynamic_lookup(description, tag, values, is_fixed, is_combine, is_split)
     }
 
-    pub(crate) fn add_lookup(
+    pub(crate) fn add_celltype_lookup(
         &mut self,
         description: &'static str,
         cell_type: MptCellType,
         values: Vec<Expression<F>>,
     ) {
-        self.base.add_lookup(description, cell_type, values)
+        self.base.add_celltype_lookup(description, cell_type, values)
     }
 
     pub(crate) fn store_dynamic_table(

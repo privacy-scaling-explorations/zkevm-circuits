@@ -74,8 +74,6 @@ pub struct ConstraintBuilder<F, C: CellType> {
     pub state_context: Vec<Expression<F>>,
     /// state constraints start
     pub state_constraints_start: usize,
-    // /// use dynamic lookups
-    // pub use_dynamic_lookups: bool,
 }
 
 impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
@@ -97,7 +95,6 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             lookup_challenge,
             state_context: Vec::new(),
             state_constraints_start: 0,
-            // use_dynamic_lookups: false,
         }
     }
 
@@ -108,10 +105,6 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
     pub(crate) fn set_max_degree(&mut self, max_degree: usize) {
         self.max_degree = max_degree;
     }
-
-    // pub(crate) fn set_use_dynamic_lookup(&mut self, use_dynamic_lookups: bool) {
-    //     self.use_dynamic_lookups = use_dynamic_lookups;
-    // }
 
     pub(crate) fn push_region(&mut self, region_id: usize) {
         assert!(region_id != 0);
@@ -271,7 +264,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         self.constraints.clone()
     }
 
-    pub(crate) fn build_lookups(
+    pub(crate) fn build_celltype_lookups(
         &self,
         meta: &mut ConstraintSystem<F>,
         cell_managers: Vec<CellManager<F, C>>,
@@ -300,7 +293,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
     ) {
         let lookups = self.dynamic_lookups.clone();
         for lookup_name in lookup_names.iter() {
-            println!("build_dynamic_lookups {:?}", lookup_name);
+            println!("\nbuild_dynamic_lookups {:?}", lookup_name);
             if let Some(lookups) = lookups.get(lookup_name) {
                 for lookup in lookups.iter() {
                     print!("{:?} ", lookup.description);
@@ -418,24 +411,12 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         }
     }
 
-    pub(crate) fn add_lookup(
+    pub(crate) fn add_celltype_lookup(
         &mut self,
         description: &str,
         cell_type: C,
         values: Vec<Expression<F>>,
     ) {
-        // if self.use_dynamic_lookups {
-        //     self.add_dynamic_lookup(
-        //         Box::leak(description.to_string().into_boxed_str()),
-        //         cell_type,
-        //         values,
-        //         true,
-        //         false,
-        //         false
-        //     );
-        // } else {
-            
-        // }
         let condition = self.get_condition_expr();
             let values = values
                 .iter()
@@ -1058,14 +1039,14 @@ macro_rules! _require {
             ") => @",
             stringify!($tag),
         );
-        $cb.add_lookup(
+        $cb.add_celltype_lookup(
             description,
             $tag,
             vec![$($v.expr(),)*],
         );
     }};
     ($cb:expr, $descr:expr, ($($v:expr),+)  => @$tag:expr) => {{
-        $cb.add_lookup(
+        $cb.add_celltype_lookup(
             Box::leak($descr.into_boxed_str()),
             $tag,
             vec![$($v.expr(),)*],
@@ -1079,14 +1060,14 @@ macro_rules! _require {
             " => @",
             stringify!($tag),
         );
-        $cb.add_lookup(
+        $cb.add_celltype_lookup(
             description,
             $tag,
             $values.clone(),
         );
     }};
     ($cb:expr, $descr:expr, $values:expr => @$tag:expr) => {{
-        $cb.add_lookup(
+        $cb.add_celltype_lookup(
             Box::leak($descr.to_string().into_boxed_str()),
             $tag,
             $values.clone(),
