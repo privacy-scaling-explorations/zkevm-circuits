@@ -14,7 +14,7 @@ use crate::{
     mpt_circuit::{
         param::{
             EMPTY_TRIE_HASH, HASH_WIDTH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN,
-            KEY_TERMINAL_PREFIX_EVEN,
+            KEY_TERMINAL_PREFIX_EVEN, RLP_UNIT_NUM_BYTES,
         },
         rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble},
     },
@@ -31,7 +31,7 @@ use super::{
     rlp_gadgets::{
         get_ext_odd_nibble_value, RLPItemGadget, RLPItemWitness, RLPListGadget, RLPListWitness,
     },
-    FixedTableTag, RlpItemType,
+    FixedTableTag, MPTCircuitParams, RlpItemType,
 };
 
 impl<F: Field> ChallengeSet<F> for crate::util::Challenges<Value<F>> {
@@ -1039,6 +1039,7 @@ pub struct DriftedGadget<F> {
 }
 
 impl<F: Field> DriftedGadget<F> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut MPTConstraintBuilder<F>,
         value_list_num_bytes: &[Expression<F>],
@@ -1225,10 +1226,14 @@ pub struct MainRLPGadget<F> {
 }
 
 impl<F: Field> MainRLPGadget<F> {
-    pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>, r: &Expression<F>) -> Self {
+    pub(crate) fn construct(
+        cb: &mut MPTConstraintBuilder<F>,
+        r: &Expression<F>,
+        params: MPTCircuitParams,
+    ) -> Self {
         circuit!([meta, cb], {
             let mut config = MainRLPGadget {
-                bytes: cb.query_cells::<34>().to_vec(),
+                bytes: cb.query_cells::<RLP_UNIT_NUM_BYTES>().to_vec(),
                 rlp: RLPItemGadget::default(),
                 below_limit: LtGadget::default(),
                 num_bytes: cb.query_cell(),
@@ -1274,8 +1279,20 @@ impl<F: Field> MainRLPGadget<F> {
             // We enable dynamic lookups because otherwise these lookup would require a lot of extra
             // cells.
             cb.set_use_dynamic_lookup(true);
-            for (idx, byte) in config.bytes.iter().enumerate() {
-                require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()) => @FIXED);
+            if params.is_two_byte_lookup_enabled() {
+                assert!(config.bytes.len() % 2 == 0);
+                for idx in (0..config.bytes.len()).step_by(2) {
+                    require!((
+                        config.tag.expr(),
+                        config.num_bytes.expr() - idx.expr(),
+                        config.bytes[idx],
+                        config.bytes[idx + 1]
+                    ) => @FIXED);
+                }
+            } else {
+                for (idx, byte) in config.bytes.iter().enumerate() {
+                    require!((config.tag.expr(), config.num_bytes.expr() - idx.expr(), byte.expr()) => @FIXED);
+                }
             }
             cb.set_use_dynamic_lookup(false);
 

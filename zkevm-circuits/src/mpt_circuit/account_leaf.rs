@@ -218,7 +218,6 @@ impl<F: Field> AccountLeafConfig<F> {
                     require!((1, leaf_rlc, rlp_key.rlp_list.num_bytes(), config.parent_data[is_s.idx()].rlc) => @KECCAK);
                 }}
 
-
                 // Check the RLP encoding consistency.
                 // RLP encoding: account = [key, "[nonce, balance, storage, codehash]"]
                 // We always store between 55 and 256 bytes of data in the values list.
