@@ -5,10 +5,10 @@ use std::{
     vec,
 };
 
-use crate::{evm_circuit::util::rlc, table::LookupTable, util::Expr};
+use crate::{evm_circuit::util::rlc, table::LookupTable, util::{Expr, query_expression}};
 use eth_types::Field;
 use gadgets::util::{and, sum, Scalar};
-use halo2_proofs::plonk::{ConstraintSystem, Expression};
+use halo2_proofs::{plonk::{ConstraintSystem, Expression}, poly::Rotation};
 use itertools::Itertools;
 
 use super::{
@@ -35,7 +35,44 @@ pub struct DynamicData<F> {
     pub values: Vec<Expression<F>>,
     /// region
     pub region_id: usize,
+    /// If is fixed, use static table for lookup
+    pub is_fixed: bool,
+    /// Use rlc
+    pub is_combine: bool,
+    /// Lower the degree by spliting expression
+    pub is_split: bool,
 }
+
+// /// Data for dynamic lookup
+// #[derive(Clone)]
+// pub struct LookupData<F> {
+//     /// Desciption
+//     pub description: &'static str,
+//     /// Condition under which the lookup needs to be done
+//     pub condition: Expression<F>,
+//     /// The values to lookup
+//     pub values: Vec<Expression<F>>,
+//     /// region
+//     pub region_id: usize,
+//     /// If is fixed, use static table
+//     pub is_fixed: bool,
+// }
+
+// /// Data for dynamic lookup
+// #[derive(Clone)]
+// pub struct TableData<F> {
+//     /// Desciption
+//     pub description: &'static str,
+//     /// Condition under which the lookup needs to be done
+//     pub condition: Expression<F>,
+//     /// The values to lookup
+//     pub values: Vec<Expression<F>>,
+//     /// region
+//     pub region_id: usize,
+    
+//     pub is_merged: bool,
+//     pub is_combined: bool,
+// }
 
 /// Constraint builder
 #[derive(Clone)]
@@ -62,20 +99,25 @@ pub struct ConstraintBuilder<F, C: CellType> {
     /// region id
     pub region_id: usize,
     /// lookup input challenge
-    pub lookup_input_challenge: Option<Expression<F>>,
+    pub lookup_challenge: Option<Expression<F>>,
     /// state contect
     pub state_context: Vec<Expression<F>>,
     /// state constraints start
     pub state_constraints_start: usize,
     /// use dynamic lookups
     pub use_dynamic_lookups: bool,
+
+
+    // pub lookup_values: HashMap<C, Vec<LookupData<F>>>,
+    // pub lookup_tables: HashMap<C, Vec<TableData<F>>>,
+    // pub lookup_cells: HashMap<usize, Vec<StoredExpression<F, C>>>,
 }
 
 impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
     pub(crate) fn new(
         max_degree: usize,
         cell_manager: Option<CellManager<F, C>>,
-        lookup_input_challenge: Option<Expression<F>>,
+        lookup_challenge: Option<Expression<F>>,
     ) -> Self {
         ConstraintBuilder {
             constraints: Vec::new(),
@@ -87,10 +129,14 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             disable_description: false,
             stored_expressions: HashMap::new(),
             region_id: 0,
-            lookup_input_challenge,
+            lookup_challenge,
             state_context: Vec::new(),
             state_constraints_start: 0,
             use_dynamic_lookups: false,
+
+            // lookup_values: HashMap::new(),
+            // lookup_tables: HashMap::new(),
+            // lookup_cells: HashMap::new(),
         }
     }
 
@@ -277,7 +323,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                     meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                         vec![(
                             col.expr,
-                            rlc::expr(&table.table_exprs(meta), self.lookup_input_challenge.clone().unwrap()),
+                            rlc::expr(&table.table_exprs(meta), self.lookup_challenge.clone().unwrap()),
                         )]
                     });
                 }
@@ -285,12 +331,27 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         }
     }
 
-    pub(crate) fn build_dynamic_lookups(&self, meta: &mut ConstraintSystem<F>, lookup_names: &[C]) {
+    pub(crate) fn build_dynamic_lookups(
+        &mut self, 
+        meta: &mut ConstraintSystem<F>, 
+        lookup_names: &[C], 
+        fixed_table: Vec<(C, &dyn LookupTable<F>)>
+    ) {
+        let lookups = self.dynamic_lookups.clone();
         for lookup_name in lookup_names.iter() {
-            if let Some(lookups) = self.dynamic_lookups.get(lookup_name) {
+            if let Some(lookups) = lookups.get(lookup_name) {
                 for lookup in lookups.iter() {
-                    meta.lookup_any(lookup.description, |_meta| {
-                        let table = self.get_dynamic_table_values(*lookup_name);
+                    meta.lookup_any(lookup.description, |meta| {
+                        let table = if lookup.is_fixed {
+                            let table_cols = fixed_table
+                                .iter()
+                                .find(|(name, _)| name == lookup_name)
+                                .unwrap().1
+                                .columns();
+                            table_cols.iter().map(|col| meta.query_any(*col, Rotation(0))).collect()
+                        } else {
+                            self.get_dynamic_table_values(*lookup_name)
+                        };
                         let mut values: Vec<_> = lookup
                             .values
                             .iter()
@@ -300,11 +361,27 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                         while values.len() < table.len() {
                             values.push(0.expr());
                         }
-                        table
+
+                        let mut ret = if lookup.is_combine {
+                            vec![(
+                                rlc::expr(&values, self.lookup_challenge.clone().unwrap()),
+                                rlc::expr(&table, self.lookup_challenge.clone().unwrap()),
+                            )]
+                        } else {
+                            values
                             .iter()
-                            .zip(values.iter())
-                            .map(|(table, value)| (value.expr(), table.expr()))
+                            .zip(table.iter())
+                            .map(|(v, t)| (v.expr(), t.expr()))
                             .collect()
+                        };
+                        if lookup.is_split {
+                            ret.iter_mut()
+                                .for_each(|(v, t)| {
+                                    *v = self.split_expression(Box::leak(format!("compression value - {:?}", lookup_name).into_boxed_str()), v.clone());
+                                    *t = self.split_expression(Box::leak(format!("compression table - {:?}", lookup_name).into_boxed_str()), t.clone());
+                                });
+                        }
+                        ret
                     });
                 }
             }
@@ -323,6 +400,8 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         self.get_condition().unwrap_or_else(|| 1.expr())
     }
 
+
+
     pub(crate) fn store_dynamic_table(
         &mut self,
         description: &'static str,
@@ -335,6 +414,9 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             condition,
             values,
             region_id: self.region_id,
+            is_fixed: false,
+            is_combine: false,
+            is_split: false,
         };
         if let Some(table_data) = self.dynamic_tables.get_mut(&cell_type) {
             table_data.push(lookup);
@@ -355,6 +437,9 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             condition,
             values,
             region_id: self.region_id,
+            is_fixed: false,
+            is_combine: false,
+            is_split: false,
         };
         if let Some(lookup_data) = self.dynamic_lookups.get_mut(&tag) {
             lookup_data.push(lookup);
@@ -382,8 +467,8 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                 .map(|value| condition.expr() * value.expr())
                 .collect_vec();
             let compressed_expr = self.split_expression(
-                "Lookup compression",
-                rlc::expr(&values, self.lookup_input_challenge.clone().unwrap().expr()),
+                "compression",
+                rlc::expr(&values, self.lookup_challenge.clone().unwrap().expr()),
             );
             self.store_expression(description, compressed_expr, cell_type);
         }

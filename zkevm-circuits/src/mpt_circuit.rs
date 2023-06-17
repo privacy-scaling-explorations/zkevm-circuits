@@ -353,16 +353,16 @@ impl<F: Field> MPTConfig<F> {
                 ],
             );
             cb.base
-                .build_dynamic_lookups(meta, &[vec![FIXED, KECCAK], ctx.memory.tags()].concat());
+                .build_dynamic_lookups(meta, &[vec![FIXED, KECCAK], ctx.memory.tags()].concat(), Vec::new());
         } else if disable_lookups == 1 {
             cb.base
-                .build_dynamic_lookups(meta, &[vec![KECCAK], ctx.memory.tags()].concat());
+                .build_dynamic_lookups(meta, &[vec![KECCAK], ctx.memory.tags()].concat(), Vec::new());
         } else if disable_lookups == 2 {
-            cb.base.build_dynamic_lookups(meta, &ctx.memory.tags());
+            cb.base.build_dynamic_lookups(meta, &ctx.memory.tags(), Vec::new());
         } else if disable_lookups == 3 {
-            cb.base.build_dynamic_lookups(meta, &[FIXED, KECCAK]);
+            cb.base.build_dynamic_lookups(meta, &[FIXED, KECCAK], Vec::new());
         } else if disable_lookups == 4 {
-            cb.base.build_dynamic_lookups(meta, &[KECCAK]);
+            cb.base.build_dynamic_lookups(meta, &[KECCAK], Vec::new());
         }
 
         println!("degree: {}", meta.degree());
