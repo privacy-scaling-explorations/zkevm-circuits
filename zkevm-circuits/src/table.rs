@@ -695,10 +695,7 @@ impl_expr!(BytecodeFieldTag);
 #[derive(Clone, Debug)]
 pub struct BytecodeTable {
     /// Code Hash
-    pub code_hash_word: word::Word<Column<Advice>>,
-    #[deprecated]
-    /// Code Hash
-    pub code_hash: Column<Advice>,
+    pub code_hash: word::Word<Column<Advice>>,
     /// Tag
     pub tag: Column<Advice>,
     /// Index
@@ -716,8 +713,7 @@ impl BytecodeTable {
         let code_hash_word = word::Word::new([meta.advice_column(), meta.advice_column()]);
         let code_hash = meta.advice_column_in(SecondPhase);
         Self {
-            code_hash_word,
-            code_hash,
+            code_hash: code_hash_word,
             tag,
             index,
             is_code,
@@ -771,8 +767,8 @@ impl BytecodeTable {
 impl<F: Field> LookupTable<F> for BytecodeTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.code_hash_word.lo().into(),
-            self.code_hash_word.hi().into(),
+            self.code_hash.lo().into(),
+            self.code_hash.hi().into(),
             self.tag.into(),
             self.index.into(),
             self.is_code.into(),

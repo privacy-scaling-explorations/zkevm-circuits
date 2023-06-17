@@ -479,6 +479,7 @@ impl<F: Field> From<WordLegacy<F>> for Word32Cell<F> {
     }
 }
 
+/// Return the hash of the empty code as a Word<Value<F>>
 pub fn empty_code_hash_word_value<F: Field>() -> Word<Value<F>> {
     Word::new(
         EMPTY_CODE_HASH_LE
