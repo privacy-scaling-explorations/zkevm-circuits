@@ -412,7 +412,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             ]))
         });
         meta.lookup_any(
-            "keccak256_table_lookup(cur.value_rlc, cur.length, cur.hash, cur.hash_word)",
+            "keccak256_table_lookup(cur.value_rlc, cur.length, cur.hash_word)",
             |meta| {
                 let enable = and::expr(vec![
                     meta.query_fixed(q_enable, Rotation::cur()),
@@ -425,12 +425,9 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                     meta.query_advice(keccak_table.is_enabled, Rotation::cur()),
                 )];
 
-                for (circuit_column, table_column) in keccak_table.match_columns(
-                    value_rlc,
-                    length,
-                    bytecode_table.code_hash,
-                    bytecode_table.code_hash_word,
-                ) {
+                for (circuit_column, table_column) in
+                    keccak_table.match_columns(value_rlc, length, bytecode_table.code_hash_word)
+                {
                     constraints.push((
                         enable.clone() * meta.query_advice(circuit_column, Rotation::cur()),
                         meta.query_advice(table_column, Rotation::cur()),

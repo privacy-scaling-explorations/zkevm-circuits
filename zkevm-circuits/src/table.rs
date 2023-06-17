@@ -1035,13 +1035,11 @@ impl KeccakTable {
         &self,
         value_rlc: Column<Advice>,
         length: Column<Advice>,
-        code_hash: Column<Advice>,
         code_hash_word: Word<Column<Advice>>,
     ) -> Vec<(Column<Advice>, Column<Advice>)> {
         vec![
             (value_rlc, self.input_rlc),
             (length, self.input_len),
-            (code_hash, self.output_rlc),
             (code_hash_word.lo(), self.output.lo()),
             (code_hash_word.hi(), self.output.hi()),
         ]
