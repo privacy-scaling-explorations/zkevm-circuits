@@ -14,7 +14,7 @@ use crate::{
 };
 use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
 use eth_types::Field;
-use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
+use gadgets::is_zero::{IsZeroChip, IsZeroInstruction};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{
@@ -22,7 +22,6 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
-use itertools::Itertools;
 use log::trace;
 use std::vec;
 
@@ -534,7 +533,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 
                 // Padding
                 for idx in offset..=last_row_offset {
-                    self.set_padding_row(&mut region, challenges, idx, last_row_offset)?;
+                    self.set_padding_row(&mut region, idx, last_row_offset)?;
                 }
 
                 // Overwrite the witness assignment by using the values in the `overwrite`
@@ -651,7 +650,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 push_data_left = next_push_data_left
             }
             if *offset == last_row_offset {
-                self.set_padding_row(region, challenges, *offset, last_row_offset)?;
+                self.set_padding_row(region, *offset, last_row_offset)?;
             }
         }
 
@@ -661,7 +660,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
     fn set_padding_row(
         &self,
         region: &mut Region<'_, F>,
-        challenges: &Challenges<Value<F>>,
         offset: usize,
         last_row_offset: usize,
     ) -> Result<(), Error> {
