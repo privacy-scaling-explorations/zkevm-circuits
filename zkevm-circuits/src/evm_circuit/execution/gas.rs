@@ -78,7 +78,7 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
             offset,
             Some(
                 step.gas_left
-                    .saturating_sub(OpcodeId::GAS.constant_gas_cost().as_u64())
+                    .saturating_sub(OpcodeId::GAS.constant_gas_cost())
                     .to_le_bytes(),
             ),
         )?;

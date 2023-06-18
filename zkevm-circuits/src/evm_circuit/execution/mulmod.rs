@@ -116,9 +116,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [r, n, b, a] = [3, 2, 1, 0]
-            .map(|idx| step.rw_indices[idx])
-            .map(|idx| block.rws[idx].stack_value());
+        let [r, n, b, a] = [3, 2, 1, 0].map(|index| block.get_rws(step, index).stack_value());
         self.words[0].assign(region, offset, Some(a.to_le_bytes()))?;
         self.words[1].assign(region, offset, Some(b.to_le_bytes()))?;
         self.words[2].assign(region, offset, Some(n.to_le_bytes()))?;

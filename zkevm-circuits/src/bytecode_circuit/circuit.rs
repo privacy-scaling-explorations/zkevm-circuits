@@ -31,6 +31,43 @@ use super::{
     param::PUSH_TABLE_WIDTH,
 };
 
+#[derive(Debug, Clone, Default)]
+/// Row for assignment
+pub struct BytecodeCircuitRow<F: Field> {
+    offset: usize,
+    last_row_offset: usize,
+    code_hash: Word<Value<F>>,
+    tag: F,
+    index: F,
+    is_code: F,
+    value: F,
+    push_data_left: u64,
+    value_rlc: Value<F>,
+    length: F,
+    push_data_size: F,
+}
+impl<F: Field> BytecodeCircuitRow<F> {
+    /// enable selector if we are within the range of table size.
+    pub fn enable(&self) -> bool {
+        self.offset <= self.last_row_offset
+    }
+
+    /// Determine if we are at last row of the bytecode table.
+    pub fn last(&self) -> bool {
+        self.offset == self.last_row_offset
+    }
+
+    /// Get offset
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+
+    /// Witness to IsZero chip to determine if we are at the last row of a bytecode instance
+    pub fn diff(&self) -> F {
+        self.index + F::ONE - self.length
+    }
+}
+
 #[derive(Clone, Debug)]
 /// Bytecode circuit configuration
 pub struct BytecodeCircuitConfig<F> {
@@ -43,10 +80,8 @@ pub struct BytecodeCircuitConfig<F> {
     value_rlc: Column<Advice>,
     length: Column<Advice>,
     push_data_size: Column<Advice>,
-    push_data_left_inv: Column<Advice>,
-    push_data_left_is_zero: IsZeroConfig<F>,
-    index_length_diff_inv: Column<Advice>,
-    index_length_diff_is_zero: IsZeroConfig<F>,
+    push_data_left_is_zero: IsZeroChip<F>,
+    index_length_diff_is_zero: IsZeroChip<F>,
     push_table: [Column<Fixed>; PUSH_TABLE_WIDTH],
     // External tables
     pub(crate) keccak_table: KeccakTable,
@@ -146,7 +181,6 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             },
             index_length_diff_inv,
         );
-        // dbg!(index_length_diff_is_zero.clone().is_zero_expression);
 
         // When q_first || q_last ->
         // assert cur.tag == Header
@@ -438,6 +472,9 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             },
         );
 
+        let push_data_left_is_zero = IsZeroChip::construct(push_data_left_is_zero);
+        let index_length_diff_is_zero = IsZeroChip::construct(index_length_diff_is_zero);
+
         BytecodeCircuitConfig {
             minimum_rows: meta.minimum_rows(),
             q_enable,
@@ -448,9 +485,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             value_rlc,
             length,
             push_data_size,
-            push_data_left_inv,
             push_data_left_is_zero,
-            index_length_diff_inv,
             index_length_diff_is_zero,
             push_table,
             keccak_table,
@@ -459,17 +494,6 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
 }
 
 impl<F: Field> BytecodeCircuitConfig<F> {
-    pub(crate) fn assign(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        size: usize,
-        witness: &[UnrolledBytecode<F>],
-        overwrite: &UnrolledBytecode<F>,
-        challenges: &Challenges<Value<F>>,
-    ) -> Result<(), Error> {
-        self.assign_internal(layouter, size, witness, overwrite, challenges, true)
-    }
-
     pub(crate) fn assign_internal(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -479,11 +503,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         challenges: &Challenges<Value<F>>,
         fail_fast: bool,
     ) -> Result<(), Error> {
-        let push_data_left_is_zero_chip =
-            IsZeroChip::construct(self.push_data_left_is_zero.clone());
-        let index_length_diff_is_zero_chip =
-            IsZeroChip::construct(self.index_length_diff_is_zero.clone());
-
         // Subtract the unusable rows from the size
         assert!(size > self.minimum_rows);
         let last_row_offset = size - self.minimum_rows + 1;
@@ -507,8 +526,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                         &mut region,
                         bytecode,
                         challenges,
-                        &push_data_left_is_zero_chip,
-                        &index_length_diff_is_zero_chip,
                         &mut offset,
                         last_row_offset,
                         fail_fast,
@@ -517,13 +534,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 
                 // Padding
                 for idx in offset..=last_row_offset {
-                    self.set_padding_row(
-                        &mut region,
-                        &push_data_left_is_zero_chip,
-                        &index_length_diff_is_zero_chip,
-                        idx,
-                        last_row_offset,
-                    )?;
+                    self.set_padding_row(&mut region, challenges, idx, last_row_offset)?;
                 }
 
                 // Overwrite the witness assignment by using the values in the `overwrite`
@@ -570,14 +581,11 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn assign_bytecode(
         &self,
         region: &mut Region<'_, F>,
         bytecode: &UnrolledBytecode<F>,
         challenges: &Challenges<Value<F>>,
-        push_data_left_is_zero_chip: &IsZeroChip<F>,
-        index_length_diff_is_zero_chip: &IsZeroChip<F>,
         offset: &mut usize,
         last_row_offset: usize,
         fail_fast: bool,
@@ -622,50 +630,28 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 
             // Set the data for this row
             if *offset < last_row_offset {
-                self.set_row(
-                    region,
-                    push_data_left_is_zero_chip,
-                    index_length_diff_is_zero_chip,
-                    *offset,
-                    true,
-                    *offset == last_row_offset,
+                let row = BytecodeCircuitRow {
+                    offset: *offset,
+                    last_row_offset,
                     code_hash,
-                    row.tag,
-                    row.index,
-                    row.is_code,
-                    row.value,
+                    tag: row.tag,
+                    index: row.index,
+                    is_code: row.is_code,
+                    value: row.value,
                     push_data_left,
                     value_rlc,
                     length,
-                    F::from(push_data_size),
-                )?;
+                    push_data_size: F::from(push_data_size),
+                };
+                self.set_row(region, row.clone())?;
 
-                trace!(
-                    "bytecode.set_row({}): last:{} h:{:?} t:{:?} i:{:?} c:{:?} v:{:?} pdl:{} rlc:{:?} l:{:?} pds:{:?}",
-                    offset,
-                    *offset == last_row_offset,
-                    code_hash,
-                    row.tag.get_lower_32(),
-                    row.index.get_lower_32(),
-                    row.is_code.get_lower_32(),
-                    row.value.get_lower_32(),
-                    push_data_left,
-                    value_rlc,
-                    length.get_lower_32(),
-                    push_data_size
-                );
+                trace!("bytecode.set_row({:?})", row);
 
                 *offset += 1;
                 push_data_left = next_push_data_left
             }
             if *offset == last_row_offset {
-                self.set_padding_row(
-                    region,
-                    push_data_left_is_zero_chip,
-                    index_length_diff_is_zero_chip,
-                    *offset,
-                    last_row_offset,
-                )?;
+                self.set_padding_row(region, challenges, *offset, last_row_offset)?;
             }
         }
 
@@ -675,55 +661,31 @@ impl<F: Field> BytecodeCircuitConfig<F> {
     fn set_padding_row(
         &self,
         region: &mut Region<'_, F>,
-        push_data_left_is_zero_chip: &IsZeroChip<F>,
-        index_length_diff_is_zero_chip: &IsZeroChip<F>,
+        challenges: &Challenges<Value<F>>,
         offset: usize,
         last_row_offset: usize,
     ) -> Result<(), Error> {
         self.set_row(
             region,
-            push_data_left_is_zero_chip,
-            index_length_diff_is_zero_chip,
-            offset,
-            offset <= last_row_offset,
-            offset == last_row_offset,
-            empty_code_hash_word_value(),
-            F::from(BytecodeFieldTag::Header as u64),
-            F::ZERO,
-            F::ZERO,
-            F::ZERO,
-            0,
-            Value::known(F::ZERO),
-            F::ZERO,
-            F::ZERO,
+            BytecodeCircuitRow {
+                offset,
+                last_row_offset,
+                code_hash: empty_code_hash_word_value(),
+                tag: F::from(BytecodeFieldTag::Header as u64),
+                value_rlc: Value::known(F::ZERO),
+                ..Default::default()
+            },
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn set_row(
-        &self,
-        region: &mut Region<'_, F>,
-        push_data_left_is_zero_chip: &IsZeroChip<F>,
-        index_length_diff_is_zero_chip: &IsZeroChip<F>,
-        offset: usize,
-        enable: bool,
-        last: bool,
-        code_hash: Word<Value<F>>,
-        tag: F,
-        index: F,
-        is_code: F,
-        value: F,
-        push_data_left: u64,
-        value_rlc: Value<F>,
-        length: F,
-        push_data_size: F,
-    ) -> Result<(), Error> {
+    fn set_row(&self, region: &mut Region<'_, F>, row: BytecodeCircuitRow<F>) -> Result<(), Error> {
+        let offset = row.offset;
         // q_enable
         region.assign_fixed(
             || format!("assign q_enable {}", offset),
             self.q_enable,
             offset,
-            || Value::known(F::from(enable as u64)),
+            || Value::known(F::from(row.enable().into())),
         )?;
 
         // q_first
@@ -731,31 +693,30 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             || format!("assign q_first {}", offset),
             self.q_first,
             offset,
-            || Value::known(F::from((offset == 0) as u64)),
+            || Value::known(F::from((offset == 0).into())),
         )?;
 
         // q_last
-        let q_last_value = if last { F::ONE } else { F::ZERO };
         region.assign_fixed(
             || format!("assign q_last {}", offset),
             self.q_last,
             offset,
-            || Value::known(q_last_value),
+            || Value::known(F::from(row.last().into())),
         )?;
 
         // Advices
         for (name, column, value) in [
-            ("tag", self.bytecode_table.tag, tag),
-            ("index", self.bytecode_table.index, index),
-            ("is_code", self.bytecode_table.is_code, is_code),
-            ("value", self.bytecode_table.value, value),
+            ("tag", self.bytecode_table.tag, row.tag),
+            ("index", self.bytecode_table.index, row.index),
+            ("is_code", self.bytecode_table.is_code, row.is_code),
+            ("value", self.bytecode_table.value, row.value),
             (
                 "push_data_left",
                 self.push_data_left,
-                F::from(push_data_left),
+                F::from(row.push_data_left),
             ),
-            ("length", self.length, length),
-            ("push_data_size", self.push_data_size, push_data_size),
+            ("length", self.length, row.length),
+            ("push_data_size", self.push_data_size, row.push_data_size),
         ] {
             region.assign_advice(
                 || format!("assign {} {}", name, offset),
@@ -764,7 +725,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 || Value::known(value),
             )?;
         }
-        for (name, column, value) in [("value_rlc", self.value_rlc, value_rlc)] {
+        for (name, column, value) in [("value_rlc", self.value_rlc, row.value_rlc)] {
             region.assign_advice(
                 || format!("assign {} {}", name, offset),
                 column,
@@ -773,24 +734,21 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             )?;
         }
 
-        code_hash.assign_advice(
+        row.code_hash.assign_advice(
             region,
             || format!("assign code_hash {}", offset),
             self.bytecode_table.code_hash,
             offset,
         )?;
 
-        push_data_left_is_zero_chip.assign(
+        self.push_data_left_is_zero.assign(
             region,
             offset,
-            Value::known(F::from(push_data_left)),
+            Value::known(F::from(row.push_data_left)),
         )?;
 
-        index_length_diff_is_zero_chip.assign(
-            region,
-            offset,
-            Value::known(index + F::ONE - length),
-        )?;
+        self.index_length_diff_is_zero
+            .assign(region, offset, Value::known(row.diff()))?;
 
         Ok(())
     }
@@ -810,11 +768,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         region.name_column(|| "BYTECODE_push_data_left", self.push_data_left);
         region.name_column(|| "BYTECODE_push_data_size", self.push_data_size);
         region.name_column(|| "BYTECODE_value_rlc", self.value_rlc);
-        region.name_column(|| "BYTECODE_push_data_left_inv", self.push_data_left_inv);
-        region.name_column(
-            || "BYTECODE_index_length_diff_inv",
-            self.index_length_diff_inv,
-        );
     }
 
     /// load fixed tables

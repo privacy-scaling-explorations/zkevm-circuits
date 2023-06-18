@@ -31,9 +31,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let args_offset = geth_step.stack.nth_last(N_ARGS - 4)?.as_usize();
+        // In offset and length are truncated to Uint64 for call opcodes as:
+        // <https://github.com/ethereum/go-ethereum/blob/84c3799e21d61d677965715fe09f8209660b4009/core/vm/instructions.go#L672>
+        let args_offset = geth_step.stack.nth_last(N_ARGS - 4)?.low_u64() as usize;
         let args_length = geth_step.stack.nth_last(N_ARGS - 3)?.as_usize();
-        let ret_offset = geth_step.stack.nth_last(N_ARGS - 2)?.as_usize();
+        let ret_offset = geth_step.stack.nth_last(N_ARGS - 2)?.low_u64() as usize;
         let ret_length = geth_step.stack.nth_last(N_ARGS - 1)?.as_usize();
 
         // we need to keep the memory until parse_call complete
@@ -201,13 +203,13 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
         let gas_cost = if is_warm {
-            GasCost::WARM_ACCESS.as_u64()
+            GasCost::WARM_ACCESS
         } else {
-            GasCost::COLD_ACCOUNT_ACCESS.as_u64()
+            GasCost::COLD_ACCOUNT_ACCESS
         } + if has_value {
-            GasCost::CALL_WITH_VALUE.as_u64()
+            GasCost::CALL_WITH_VALUE
                 + if call.kind == CallKind::Call && !callee_exists {
-                    GasCost::NEW_ACCOUNT.as_u64()
+                    GasCost::NEW_ACCOUNT
                 } else {
                     0
                 }
@@ -215,7 +217,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             0
         } + memory_expansion_gas_cost;
         let gas_specified = geth_step.stack.last()?;
-        let callee_gas_left = eip150_gas(geth_step.gas.0 - gas_cost, gas_specified);
+        let callee_gas_left = eip150_gas(geth_step.gas - gas_cost, gas_specified);
 
         // There are 4 branches from here.
         // add failure case for insufficient balance or error depth in the future.
@@ -260,16 +262,16 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 log::warn!("missing circuit part of precompile");
                 state.handle_return(&mut exec_step, geth_steps, false)?;
 
-                let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
-                if real_cost != exec_step.gas_cost.0 {
+                let real_cost = geth_steps[0].gas - geth_steps[1].gas;
+                if real_cost != exec_step.gas_cost {
                     log::warn!(
                         "precompile gas fixed from {} to {}, step {:?}",
-                        exec_step.gas_cost.0,
+                        exec_step.gas_cost,
                         real_cost,
                         geth_steps[0]
                     );
                 }
-                exec_step.gas_cost = GasCost(real_cost);
+                exec_step.gas_cost = real_cost;
                 Ok(vec![exec_step])
             }
             // 2. Call to account with empty code.
@@ -287,17 +289,14 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             // 3. Call to account with non-empty code.
             (false, _, false) => {
                 for (field, value) in [
-                    (
-                        CallContextField::ProgramCounter,
-                        (geth_step.pc.0 + 1).into(),
-                    ),
+                    (CallContextField::ProgramCounter, (geth_step.pc + 1).into()),
                     (
                         CallContextField::StackPointer,
                         (geth_step.stack.stack_pointer().0 + N_ARGS - 1).into(),
                     ),
                     (
                         CallContextField::GasLeft,
-                        (geth_step.gas.0 - gas_cost - callee_gas_left).into(),
+                        (geth_step.gas - gas_cost - callee_gas_left).into(),
                     ),
                     (CallContextField::MemorySize, next_memory_word_size.into()),
                     (
@@ -742,7 +741,8 @@ mod tests {
                 assert_eq!(
                     *stack_value,
                     step.stack.nth_last(offset).expect("stack value not found"),
-                    "stack output mismatch"
+                    "stack output mismatch {}",
+                    test_call.name
                 );
             }
         }

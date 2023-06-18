@@ -49,6 +49,11 @@ macro_rules! declare_tests {
             async fn [<serial_test_exp_ $name>]() {
                 run_test! (EXP_CIRCUIT_TEST, $block_tag, $real_prover);
             }
+
+            #[tokio::test]
+            async fn [<serial_test_pi_ $name>]() {
+                run_test! (PI_CIRCUIT_TEST, $block_tag, $real_prover);
+            }
         }
     };
 }
@@ -64,7 +69,8 @@ macro_rules! unroll_tests {
             COPY_CIRCUIT_TEST,
             KECCAK_CIRCUIT_TEST,
             SUPER_CIRCUIT_TEST,
-            EXP_CIRCUIT_TEST
+            EXP_CIRCUIT_TEST,
+            PI_CIRCUIT_TEST,
         };
         use integration_tests::log_init;
         mod real_prover {
