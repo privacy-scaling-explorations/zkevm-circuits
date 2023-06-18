@@ -566,14 +566,12 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                         value_rlc = challenges.keccak_input().map(|_| F::ZERO);
                     }
 
-                    for (name, column, value) in [("value_rlc", self.value_rlc, value_rlc)] {
-                        region.assign_advice(
-                            || format!("assign {} {}", name, offset),
-                            column,
-                            offset,
-                            || value,
-                        )?;
-                    }
+                    region.assign_advice(
+                        || format!("assign value_rlc {}", offset),
+                        self.value_rlc,
+                        offset,
+                        || value_rlc,
+                    )?;
                 }
                 Ok(())
             },
@@ -723,14 +721,13 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 || Value::known(value),
             )?;
         }
-        for (name, column, value) in [("value_rlc", self.value_rlc, row.value_rlc)] {
-            region.assign_advice(
-                || format!("assign {} {}", name, offset),
-                column,
-                offset,
-                || value,
-            )?;
-        }
+
+        region.assign_advice(
+            || format!("assign value_rlc {}", offset),
+            self.value_rlc,
+            offset,
+            || row.value_rlc,
+        )?;
 
         row.code_hash.assign_advice(
             region,
