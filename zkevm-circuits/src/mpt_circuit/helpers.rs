@@ -986,8 +986,10 @@ impl<F: Field> MPTConstraintBuilder<F> {
         description: &'static str,
         tag: MptCellType,
         values: Vec<Expression<F>>,
+        is_combine: bool,
+        is_split: bool
     ) {
-        self.base.store_dynamic_table(description, tag, values)
+        self.base.store_dynamic_table(description, tag, values, is_combine, is_split)
     }
 }
 

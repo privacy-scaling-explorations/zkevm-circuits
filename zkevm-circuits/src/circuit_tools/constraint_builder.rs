@@ -306,18 +306,23 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                                 .columns();
                             table_cols.iter().map(|col| meta.query_any(*col, Rotation(0))).collect()
                         } else {
-                            self.get_dynamic_table_values(*lookup_name)
+                            let dyn_table = self.get_dynamic_table_values(*lookup_name);
+                            // Both side should be combined or not combined
+                            assert_eq!(dyn_table.len(), lookup.values.len());
+                            dyn_table
                         };
                         let mut values: Vec<_> = lookup
-                            .values
-                            .iter()
-                            .map(|value| lookup.condition.expr() * value.expr())
-                            .collect();
+                                .values
+                                .iter()
+                                .map(|value| value.expr() * lookup.condition.clone())
+                                .collect();
+                            
                         assert!(table.len() >= values.len());
                         while values.len() < table.len() {
                             values.push(0.expr());
                         }
-
+                        // Both side may had been combined
+                        // in that case rlc::expr returns the one and only element of both
                         let mut ret = if lookup.is_combine {
                             vec![(
                                 rlc::expr(&values, self.lookup_challenge.clone().unwrap()),
@@ -330,16 +335,6 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                             .map(|(v, t)| (v.expr(), t.expr()))
                             .collect()
                         };
-                        if lookup.is_split {
-                            println!("Splitting lookup {:?}", lookup_name);
-                            ret.iter_mut()
-                                .for_each(|(v, t)| {
-                                    println!("before {:?} {:?}", v.degree(), t.degree());
-                                    *v = self.split_expression(Box::leak(format!("compression value - {:?}", lookup_name).into_boxed_str()), v.clone());
-                                    *t = self.split_expression(Box::leak(format!("compression table - {:?}", lookup_name).into_boxed_str()), t.clone());
-                                    println!("after {:?} {:?}", v.degree(), t.degree());
-                                });
-                        }
                         ret
                     });
                 }
@@ -364,24 +359,37 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
     pub(crate) fn store_dynamic_table(
         &mut self,
         description: &'static str,
-        cell_type: C,
+        tag: C,
         values: Vec<Expression<F>>,
+        is_combine: bool,
+        is_split: bool,
     ) {
         let condition = self.get_condition_expr();
+        let mut values = if is_combine {
+            vec![rlc::expr(&values, self.lookup_challenge.clone().unwrap())]
+        } else {
+            values.clone()
+        };
+        if is_split {
+            values.iter_mut()
+            .for_each(|v| 
+                *v = self.split_expression(Box::leak(format!("compression value - {:?}", tag).into_boxed_str()), v.clone())
+            );
+        }
         let lookup = DynamicData {
             description,
             condition,
             values,
             region_id: self.region_id,
-            // Flags does not matter for table data
+            // cannot be is_fixed
             is_fixed: false,
             is_combine: false,
             is_split: false,
         };
-        if let Some(table_data) = self.dynamic_tables.get_mut(&cell_type) {
+        if let Some(table_data) = self.dynamic_tables.get_mut(&tag) {
             table_data.push(lookup);
         } else {
-            self.dynamic_tables.insert(cell_type, vec![lookup]);
+            self.dynamic_tables.insert(tag, vec![lookup]);
         }
     }
 
@@ -395,6 +403,17 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         is_split: bool
     ) {
         let condition = self.get_condition_expr();
+        let mut values = if is_combine {
+            vec![rlc::expr(&values, self.lookup_challenge.clone().unwrap())]
+        } else {
+            values.clone()
+        };
+        if is_split {
+            values.iter_mut()
+            .for_each(|v| 
+                *v = self.split_expression(Box::leak(format!("compression value - {:?}", tag).into_boxed_str()), v.clone())
+            );
+        }
         let lookup = DynamicData {
             description,
             condition,
@@ -444,7 +463,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         merge_values_unsafe(
             table_values
                 .iter()
-                .map(|table| (table.condition.clone(), table.values.clone()))
+                .map(|table| (table.condition.clone(), table.values.clone(), table.is_split))
                 .collect::<Vec<_>>(),
         )
     }
@@ -581,20 +600,11 @@ pub(crate) fn merge_lookups<F: Field, C: CellType>(
     cb: &mut ConstraintBuilder<F, C>,
     lookups: Vec<DynamicData<F>>,
 ) -> (Expression<F>, Vec<Expression<F>>) {
-    merge_values(
-        cb,
-        lookups
+    let values = lookups
             .iter()
-            .map(|lookup| (lookup.condition.clone(), lookup.values.clone()))
-            .collect::<Vec<_>>(),
-    )
-}
-
-pub(crate) fn merge_values<F: Field, C: CellType>(
-    cb: &mut ConstraintBuilder<F, C>,
-    values: Vec<(Expression<F>, Vec<Expression<F>>)>,
-) -> (Expression<F>, Vec<Expression<F>>) {
-    let selector = sum::expr(values.iter().map(|(condition, _)| condition.expr()));
+            .map(|lookup| (lookup.condition.clone(), lookup.values.clone(), lookup.is_split))
+            .collect::<Vec<_>>();
+    let selector = sum::expr(values.iter().map(|(condition, _, _)| condition.expr()));
     crate::circuit!([meta, cb], {
         require!(selector => bool);
     });
@@ -602,19 +612,23 @@ pub(crate) fn merge_values<F: Field, C: CellType>(
 }
 
 pub(crate) fn merge_values_unsafe<F: Field>(
-    values: Vec<(Expression<F>, Vec<Expression<F>>)>,
+    values: Vec<(Expression<F>, Vec<Expression<F>>, bool)>,
 ) -> (Expression<F>, Vec<Expression<F>>) {
     if values.is_empty() {
         return (0.expr(), Vec::new());
     }
-    let selector = sum::expr(values.iter().map(|(condition, _)| condition.expr()));
+    let selector = sum::expr(values.iter().map(|(condition, _, _)| condition.expr()));
     // Merge
-    let max_length = values.iter().map(|(_, values)| values.len()).max().unwrap();
+    let max_length = values.iter().map(|(_, values, _)| values.len()).max().unwrap();
     let mut merged_values = vec![0.expr(); max_length];
     let default_value = 0.expr();
     for (idx, value) in merged_values.iter_mut().enumerate() {
-        *value = sum::expr(values.iter().map(|(condition, values)| {
-            condition.expr() * values.get(idx).unwrap_or(&default_value).expr()
+        *value = sum::expr(values.iter().map(|(condition, values, is_split)| {
+            // Condition had been included if is_split
+            values.get(idx).unwrap_or(&default_value).expr() * { 
+                condition.expr()
+                // if *is_split {1.expr() } else {condition.expr()}
+            }
         }));
     }
     (selector, merged_values)
@@ -1149,6 +1163,8 @@ macro_rules! _require {
             description,
             $tag,
             vec![$($v.expr(),)*],
+            false,
+            false,
         );
     }};
     // Put values in a lookup table using an array
@@ -1164,6 +1180,46 @@ macro_rules! _require {
             description,
             $tag,
             $values,
+            false,
+            false,
+        );
+    }};
+
+    // Put values in a lookup table using a tuple
+    ($cb:expr, @$tag:expr => ($($v:expr),+), $is_combine:expr, $is_split:expr) => {{
+        let description = concat_with_preamble!(
+            "@",
+            stringify!($tag),
+            " => (",
+            $(
+                stringify!($v),
+                ", ",
+            )*
+            ")",
+        );
+        $cb.store_dynamic_table(
+            description,
+            $tag,
+            vec![$($v.expr(),)*],
+            $is_combine,
+            $is_split,
+        );
+    }};
+    // Put values in a lookup table using an array
+    ($cb:expr, @$tag:expr => $values:expr, $is_combine:expr, $is_split:expr) => {{
+        let description = concat_with_preamble!(
+            "@",
+            stringify!($tag),
+            " => (",
+            stringify!($values),
+            ")",
+        );
+        $cb.store_dynamic_table(
+            description,
+            $tag,
+            $values,
+            $is_combine,
+            $is_split,
         );
     }};
 }
