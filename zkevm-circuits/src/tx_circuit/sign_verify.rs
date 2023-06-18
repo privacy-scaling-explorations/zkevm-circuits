@@ -373,6 +373,7 @@ impl<F: Field> SignVerifyChip<F> {
             msg_hash,
         } = sign_data;
         let (sig_r, sig_s) = signature;
+        println!("assign_ecdsa sig_r {:?} sig_s {:?}", sig_r, sig_s);
 
         let ChipsRef {
             main_gate: _,
@@ -417,7 +418,7 @@ impl<F: Field> SignVerifyChip<F> {
 
         let zero = chips.main_gate.assign_constant(ctx, F::ZERO)?;
         let one = chips.main_gate.assign_constant(ctx, F::ONE)?;
-        // ctx.constrain_equal(one.cell(), is_ecdsa_signature_valid.cell())?;
+        ctx.constrain_equal(one.cell(), is_ecdsa_signature_valid.cell())?;
 
         // TODO: Update once halo2wrong suports the following methods:
         // - `IntegerChip::assign_integer_from_bytes_le`

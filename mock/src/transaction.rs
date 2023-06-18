@@ -42,7 +42,7 @@ lazy_static! {
             .nonce(0x105u64)
             .value(word!("0x3e8"))
             .gas_price(word!("0x4d2"))
-            .input(Bytes::from(b"hello"))
+            .input(Bytes::from(b"hello hello 2 "))
             .build(),
             MockTransaction::default()
             .from(AddrOrWallet::random(&mut rng))
@@ -200,6 +200,7 @@ impl From<MockTransaction> for GethTransaction {
     fn from(mock: MockTransaction) -> Self {
         let mut geth_transaction = GethTransaction::from(&Transaction::from(mock.clone()));
         geth_transaction.enable_skipping_invalid_signature = mock.enable_skipping_invalid_signature;
+        // geth_transaction.r = geth_transaction.s;
         geth_transaction
     }
 }
@@ -331,6 +332,7 @@ impl MockTransaction {
 
         match (self.v, self.r, self.s) {
             (None, None, None) => {
+                println!("Compute sig params and set them in case we have a wallet as `from` attr.");
                 // Compute sig params and set them in case we have a wallet as `from` attr.
                 if self.from.is_wallet() && self.hash.is_none() {
                     let sig = self
@@ -345,6 +347,10 @@ impl MockTransaction {
             (Some(_), Some(_), Some(_)) => (),
             _ => panic!("Either all or none of the SigData params have to be set"),
         }
+
+        println!("before self.r {:?}", self.r);
+        // self.r = Word::from(2).into();
+        println!("after self.r {:?}", self.r);
 
         // Compute tx hash in case is not already set
         if self.hash.is_none() {

@@ -97,6 +97,8 @@ pub fn recover_pk(
     s: &Word,
     msg_hash: &[u8; 32],
 ) -> Result<Secp256k1Affine, libsecp256k1::Error> {
+    println!("recover_pk r: {:?}, s: {:?}", r, s);
+
     let mut sig_bytes = [0u8; 64];
     sig_bytes[..32].copy_from_slice(&r.to_be_bytes());
     sig_bytes[32..].copy_from_slice(&s.to_be_bytes());

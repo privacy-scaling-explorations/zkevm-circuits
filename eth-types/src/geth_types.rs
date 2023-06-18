@@ -342,7 +342,7 @@ impl GethData {
             let req: TransactionRequest = (&geth_tx).into();
             let sig = wallet.sign_transaction_sync(&req.chain_id(self.chain_id.as_u64()).into());
             tx.v = U64::from(sig.v);
-            tx.r = sig.r;
+            tx.r = sig.s;
             tx.s = sig.s;
         }
     }

@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 use super::*;
 use crate::util::{log2_ceil, unusable_rows};
-use eth_types::{address, Word};
+use eth_types::{address, Bytes, Word};
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
@@ -97,15 +97,17 @@ fn tx_circuit_bad_address() {
     .is_err(),);
 }
 
+
 #[test]
 fn tx_circuit_invalid_signature() {
-    let tx1 = mock::CORRECT_MOCK_TXS[1].clone();
-    let mut tx2 = mock::CORRECT_MOCK_TXS[2].clone();
-    tx2.from = AddrOrWallet::from(address!("0x1230000000000000000000000000000000000456"));
-    tx2.s = Word::from(1).into();
-    tx2.r = Word::from(1).into();
-    tx2.enable_skipping_invalid_signature = false;
-    invalid_signature(vec![tx2.clone()], 1);
+    let mut tx = mock::CORRECT_MOCK_TXS[2].clone();
+    tx.enable_skipping_invalid_signature = false;
+    println!("before tx.input {:?}", tx.input);
+    // tx.input = Bytes::from(b"hello 2");
+    println!("after tx.input {:?}", tx.input);
+    tx.r = Word::from(0).into();
+    // let tx = tx.build();
+    invalid_signature(vec![tx.clone()], 1);
 }
 
 fn invalid_signature(mock_txs: Vec<MockTransaction>, max_txs: usize) {
