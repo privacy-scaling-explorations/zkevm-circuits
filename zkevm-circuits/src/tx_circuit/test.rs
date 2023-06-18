@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 use super::*;
 use crate::util::{log2_ceil, unusable_rows};
-use eth_types::address;
+use eth_types::{address, Word};
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
@@ -30,10 +30,7 @@ fn run<F: Field>(
 
     let prover = match MockProver::run(k, &circuit, vec![vec![]]) {
         Ok(prover) => prover,
-        Err(e) => {
-            eprintln!("Error: {:#?}", e); // Print error to standard error stream
-            panic!("Failed to create prover");
-        }
+        Err(e) => panic!("{:#?}", e),
     };
     prover.verify()
 }
@@ -102,10 +99,12 @@ fn tx_circuit_bad_address() {
 
 #[test]
 fn tx_circuit_invalid_signature() {
-    let mut tx1 = mock::CORRECT_MOCK_TXS[1].clone();
+    let tx1 = mock::CORRECT_MOCK_TXS[1].clone();
     let mut tx2 = mock::CORRECT_MOCK_TXS[2].clone();
-    tx2.s = tx1.s.clone();
-    tx2.enable_skipping_invalid_signature = true;
+    tx2.from = AddrOrWallet::from(address!("0x1230000000000000000000000000000000000456"));
+    tx2.s = Word::from(1).into();
+    tx2.r = Word::from(1).into();
+    tx2.enable_skipping_invalid_signature = false;
     invalid_signature(vec![tx2.clone()], 1);
 }
 

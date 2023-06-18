@@ -12,7 +12,6 @@ use itertools::Itertools;
 use snark_verifier::{util::arithmetic::MultiMillerLoop, verifier::plonk::PlonkProtocol};
 use std::iter;
 use maingate::MainGateInstructions;
-
 mod aggregation;
 
 #[cfg(any(feature = "test", test))]

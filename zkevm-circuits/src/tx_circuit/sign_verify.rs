@@ -415,6 +415,10 @@ impl<F: Field> SignVerifyChip<F> {
             enable_skipping_invalid_signature,
         )?;
 
+        let zero = chips.main_gate.assign_constant(ctx, F::ZERO)?;
+        let one = chips.main_gate.assign_constant(ctx, F::ONE)?;
+        // ctx.constrain_equal(one.cell(), is_ecdsa_signature_valid.cell())?;
+
         // TODO: Update once halo2wrong suports the following methods:
         // - `IntegerChip::assign_integer_from_bytes_le`
         // - `GeneralEccChip::assing_point_from_bytes_le`
@@ -835,10 +839,7 @@ mod sign_verify_tests {
 
         let prover = match MockProver::run(k, &circuit, vec![vec![]]) {
             Ok(prover) => prover,
-            Err(e) => {
-                eprintln!("Error: {:#?}", e); // Print error to standard error stream
-                panic!("Failed to create prover");
-            }
+            Err(e) => panic!("{:#?}", e),
         };
         assert_eq!(prover.verify(), Ok(()));
     }
