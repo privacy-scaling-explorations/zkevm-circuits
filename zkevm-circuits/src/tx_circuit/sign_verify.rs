@@ -720,8 +720,8 @@ impl<F: Field> SignVerifyChip<F> {
                         &tx,
                     )?;
                     assigned_sig_verifs.push(assigned_sig_verif);
-                    log::debug!("signature address verify: {} rows", ctx.offset());
                 }
+                log::debug!("signature address verify: {} rows", ctx.offset());
                 Ok(assigned_sig_verifs)
             },
         )
