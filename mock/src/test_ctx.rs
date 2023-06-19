@@ -132,26 +132,17 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             .expect("Mismatched acc len");
 
         let mut transactions = vec![MockTransaction::default(); NTX];
-        // By default, set the TxIndex and the Nonce values of the multiple transactions
-        // of the context correlative so that any Ok test passes by default.
-        // If the user decides to override these values, they'll then be set to whatever
-        // inputs were provided by the user.
-        transactions
-            .iter_mut()
-            .enumerate()
-            .skip(1)
-            .for_each(|(idx, tx)| {
-                let idx = u64::try_from(idx).expect("Unexpected idx conversion error");
-                tx.transaction_idx(idx);
-            });
         let tx_refs = transactions.iter_mut().collect();
 
         // Build Tx modifiers.
         func_tx(tx_refs, accounts.clone());
 
-        // Assign correct nonce.
+        // Sets the transaction_idx and nonce after building the tx modifiers. Hence, if user has
+        // overridden these values above using the tx modifiers, that will be ignored.
         let mut acc_tx_count = vec![0u64; NACC];
-        transactions.iter_mut().for_each(|tx| {
+        transactions.iter_mut().enumerate().for_each(|(idx, tx)| {
+            let idx = u64::try_from(idx).expect("Unexpected idx conversion error");
+            tx.transaction_idx(idx);
             if let Some((pos, from_acc)) = accounts
                 .iter()
                 .find_position(|acc| acc.address == tx.from.address())
