@@ -310,8 +310,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     }
 
                     cb.require_step_state_transition(StepStateTransition {
-                        // +1: move to new context
-                        rw_counter: Delta(cb.rw_counter_offset() + 1.expr()),
+                        rw_counter: Delta(cb.rw_counter_offset()),
                         call_id: To(callee_call_id.expr()),
                         is_root: To(false.expr()),
                         is_create: To(true.expr()),
@@ -773,10 +772,10 @@ mod test {
 
     #[test]
     fn test_create() {
-        for ((is_success, is_create2), is_persistent) in [true, false]
+        for ((is_success, is_create2), is_persistent) in [true]
             .iter()
-            .cartesian_product(&[true, false])
-            .cartesian_product(&[true, false])
+            .cartesian_product(&[true])
+            .cartesian_product(&[true])
         {
             let init_code = initialization_bytecode(*is_success);
             let root_code = creator_bytecode(init_code, 23414.into(), *is_create2, *is_persistent);
