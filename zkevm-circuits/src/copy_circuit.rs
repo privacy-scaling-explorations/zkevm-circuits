@@ -818,7 +818,6 @@ impl<F: Field> CopyCircuitConfig<F> {
                 F::from(31u64),
             )?;
 
-
             non_pad_non_mask_chip.assign(
                 region,
                 *offset,

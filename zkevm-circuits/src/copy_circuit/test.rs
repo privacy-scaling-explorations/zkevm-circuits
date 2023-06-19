@@ -238,7 +238,7 @@ fn gen_tx_log_data() -> CircuitInputBuilder {
         MSTORE
         PUSH32(Word::MAX)   // topic
         PUSH1(32)           // length
-        PUSH1(0x20)            // offset
+        PUSH1(0x20)         // offset
         LOG0
         STOP
     };

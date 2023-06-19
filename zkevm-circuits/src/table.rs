@@ -1692,7 +1692,7 @@ impl CopyTable {
 
             let addr = if tag == CopyDataType::TxLog {
                 build_tx_log_address(
-                    read_addr_slot,
+                    write_addr_slot,
                     TxLogFieldTag::Data,
                     copy_event.log_id.unwrap(),
                 )
@@ -1741,7 +1741,7 @@ impl CopyTable {
             // debug info
             let rw_count = F::from(copy_event.rw_counter_step(step_idx));
             let rwc_inc_left = F::from(copy_event.rw_counter_increase_left(step_idx));
-
+            // todo: rm
             println!(
                 "log: step_idx {}\t tag {:?} \t rw_count {:?} id {:?}, bytes_left {}, addr {:?}, 
                 rwc_inc_left {:?}, value_word_write_rlc {:?}, mask {}",
