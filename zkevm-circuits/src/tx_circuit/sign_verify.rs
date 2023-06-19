@@ -13,9 +13,11 @@ use ecc::{maingate, EccConfig, GeneralEccChip};
 use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
 use eth_types::{
     self,
+    address,
     geth_types::Transaction,
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
     Field,
+    ToScalar,
 };
 use halo2_proofs::{
     arithmetic::CurveAffine,
@@ -373,7 +375,6 @@ impl<F: Field> SignVerifyChip<F> {
             msg_hash,
         } = sign_data;
         let (sig_r, sig_s) = signature;
-        println!("assign_ecdsa sig_r {:?} sig_s {:?}", sig_r, sig_s);
 
         let ChipsRef {
             main_gate: _,
@@ -415,10 +416,6 @@ impl<F: Field> SignVerifyChip<F> {
             &msg_hash,
             enable_skipping_invalid_signature,
         )?;
-
-        let zero = chips.main_gate.assign_constant(ctx, F::ZERO)?;
-        let one = chips.main_gate.assign_constant(ctx, F::ONE)?;
-        ctx.constrain_equal(one.cell(), is_ecdsa_signature_valid.cell())?;
 
         // TODO: Update once halo2wrong suports the following methods:
         // - `IntegerChip::assign_integer_from_bytes_le`
@@ -554,7 +551,16 @@ impl<F: Field> SignVerifyChip<F> {
                     .collect_vec(),
             )
         };
-        let is_address_zero = main_gate.is_zero(ctx, &address)?;
+
+        let is_address_zero: AssignedCell<F, F> = main_gate.is_zero(ctx, &address)?;
+
+        let default_address = main_gate.assign_value(ctx, Value::known(address!("0x0000000000000000000000000000000000000000").to_scalar().unwrap()))?;
+        let address = main_gate.select(ctx, &address, &default_address, &assigned_ecdsa.is_valid)?;
+        let from_address = main_gate.assign_value(ctx, Value::known(tx.from.to_scalar().unwrap()))?;
+        let is_address_equal_to_from = main_gate.is_equal(ctx, &address, &from_address)?;
+        let enable_skipping_invalid_signature = chips.scalar_chip.assign_constant(ctx, (tx.enable_skipping_invalid_signature as u64).into())?;
+        let enable_skipping_invalid_signature = chips.scalar_chip.is_not_zero(ctx, &enable_skipping_invalid_signature)?;
+        chips.scalar_chip.one_or_one(ctx, &is_address_equal_to_from, &enable_skipping_invalid_signature)?;
 
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
         // with RLC encoding corresponds to msg_hash_rlc

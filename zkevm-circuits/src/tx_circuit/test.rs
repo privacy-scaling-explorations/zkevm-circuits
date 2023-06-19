@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 use super::*;
 use crate::util::{log2_ceil, unusable_rows};
-use eth_types::{address, Bytes, Word};
+use eth_types::{address, Bytes, Word, ToScalar};
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
@@ -100,17 +100,27 @@ fn tx_circuit_bad_address() {
 
 #[test]
 fn tx_circuit_invalid_signature() {
-    let mut tx = mock::CORRECT_MOCK_TXS[2].clone();
-    tx.enable_skipping_invalid_signature = false;
-    println!("before tx.input {:?}", tx.input);
-    // tx.input = Bytes::from(b"hello 2");
-    println!("after tx.input {:?}", tx.input);
-    tx.r = Word::from(0).into();
-    // let tx = tx.build();
-    invalid_signature(vec![tx.clone()], 1);
+    let mut tx0 = mock::CORRECT_MOCK_TXS[0].clone();
+    tx0.enable_skipping_invalid_signature = true;
+    tx0.r = Word::from(1).into();
+    invalid_signature(vec![tx0.clone()], 1, true);
+
+    let mut tx1 = mock::CORRECT_MOCK_TXS[1].clone();
+    tx1.enable_skipping_invalid_signature = true;
+    tx1.r = Word::from(1).into();
+    invalid_signature(vec![tx1.clone()], 1, true);
 }
 
-fn invalid_signature(mock_txs: Vec<MockTransaction>, max_txs: usize) {
+#[test]
+#[should_panic]
+fn tx_circuit_invalid_signature_should_panic() {
+    let mut tx0 = mock::CORRECT_MOCK_TXS[0].clone();
+    tx0.enable_skipping_invalid_signature = true;
+    tx0.r = Word::from(1).into();
+    invalid_signature(vec![tx0.clone()], 1, true);
+}
+
+fn invalid_signature(mock_txs: Vec<MockTransaction>, max_txs: usize, should_success: bool) {
     const MAX_CALLDATA: usize = 32;
 
     let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
@@ -120,7 +130,11 @@ fn invalid_signature(mock_txs: Vec<MockTransaction>, max_txs: usize) {
         .map(|tx| Transaction::from(tx.clone()))
         .collect();
     let result = run::<Fr>(txs, chain_id, max_txs, MAX_CALLDATA);
-    assert_eq!(result, Ok(()));
+    if should_success {
+        assert_eq!(result, Ok(()));
+    } else {
+        assert!(result.is_err());
+    }
 }
 
 #[test]

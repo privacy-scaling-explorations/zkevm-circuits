@@ -255,17 +255,6 @@ impl<F: Field> TxCircuit<F> {
                         // Ref. spec 0. Copy constraints using fixed offsets between the tx rows and
                         // the SignVerifyChip
                         match tag {
-                            // TODO: Enable it for invalid signature
-                            // Err([Equality constraint not satisfied by cell (Column('Advice { phase: Phase(1) }', 2 - ), in Region 5 ('tx table') at offset 4),
-                            // Equality constraint not satisfied by cell (Column('Advice', 14 - ), in Region 4 ('signature address verify') at offset 0)])
-                            /*
-                            TxFieldTag::CallerAddress => {
-                                region.constrain_equal(
-                                    assigned_cell.cell(),
-                                    assigned_sig_verif.address.cell(),
-                                )?
-                            },
-                            */
                             TxFieldTag::TxSignHash => region.constrain_equal(
                                 assigned_cell.cell(),
                                 assigned_sig_verif.msg_hash_rlc.cell(),
@@ -359,14 +348,13 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             .txs
             .iter()
             .map(|tx| {
-                println!(" Make the assignments to the TxCircuit tx.sign_data");
                 tx.sign_data(self.chain_id).map_err(|e| {
                     error!("tx_to_sign_data error for tx {:?}", e);
                     Error::Synthesis
                 })
             })
             .try_collect()?;
-        
+
         config.load_aux_tables(layouter)?;
         let assigned_sig_verifs = self.sign_verify.assign(
             &config.sign_verify,

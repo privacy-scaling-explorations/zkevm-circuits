@@ -332,7 +332,6 @@ impl MockTransaction {
 
         match (self.v, self.r, self.s) {
             (None, None, None) => {
-                println!("Compute sig params and set them in case we have a wallet as `from` attr.");
                 // Compute sig params and set them in case we have a wallet as `from` attr.
                 if self.from.is_wallet() && self.hash.is_none() {
                     let sig = self
@@ -347,10 +346,6 @@ impl MockTransaction {
             (Some(_), Some(_), Some(_)) => (),
             _ => panic!("Either all or none of the SigData params have to be set"),
         }
-
-        println!("before self.r {:?}", self.r);
-        // self.r = Word::from(2).into();
-        println!("after self.r {:?}", self.r);
 
         // Compute tx hash in case is not already set
         if self.hash.is_none() {
