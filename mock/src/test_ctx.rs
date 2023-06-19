@@ -65,8 +65,7 @@ pub use external_tracer::LoggerConfig;
 ///         txs[0].to(accs[0].address).from(accs[2].address);
 ///         txs[1]
 ///             .to(accs[1].address)
-///             .from(accs[2].address)
-///             .nonce(1);
+///             .from(accs[2].address);
 ///     },
 ///     |block, _tx| block.number(0xcafeu64),
 /// )
