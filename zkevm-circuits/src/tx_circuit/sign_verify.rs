@@ -699,8 +699,8 @@ impl<F: Field> SignVerifyChip<F> {
                         tx.enable_skipping_invalid_signature,
                     )?;
                     assigned_ecdsas.push(assigned_ecdsa);
-                    log::debug!("ecdsa chip verification: {} rows", ctx.offset());
                 }
+                log::debug!("ecdsa chip verification: {} rows", ctx.offset());
                 Ok(assigned_ecdsas)
             },
         )?;
