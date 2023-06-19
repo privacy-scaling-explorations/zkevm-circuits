@@ -402,10 +402,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     cb.call_context_lookup_write(Some(callee_call_id.expr()), field_tag, value);
                 }
 
-                for (field_tag, value) in [] {
-                    cb.call_context_lookup_write(Some(callee_call_id.expr()), field_tag, value);
-                }
-
                 // Give gas stipend if value is not zero
                 let callee_gas_left = callee_gas_left
                     + call_gadget.has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr();

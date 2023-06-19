@@ -12,7 +12,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
-        word::{Word, Word32Cell, WordExpr},
+        word::{Word, WordCell, WordExpr},
         Expr,
     },
 };
@@ -29,8 +29,8 @@ pub(crate) struct ErrorInvalidJumpGadget<F> {
     is_code: Cell<F>,
     is_jump_dest: IsEqualGadget<F>,
     is_jumpi: IsEqualGadget<F>,
-    condition: Word32Cell<F>,
-    is_condition_zero: IsZeroWordGadget<F, Word32Cell<F>>,
+    condition: WordCell<F>,
+    is_condition_zero: IsZeroWordGadget<F, WordCell<F>>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
@@ -46,7 +46,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         let opcode = cb.query_cell();
         let value = cb.query_cell();
         let is_code = cb.query_cell();
-        let condition = cb.query_word32();
+        let condition = cb.query_word_unchecked();
 
         cb.require_in_set(
             "ErrorInvalidJump only happend in JUMP or JUMPI",
