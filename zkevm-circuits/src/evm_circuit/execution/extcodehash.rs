@@ -14,7 +14,7 @@ use crate::{
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
-        word::{Word, Word32Cell, WordCell, WordExpr},
+        word::{Word32Cell, WordCell, WordExpr},
         Expr,
     },
 };
@@ -51,11 +51,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         let mut reversion_info = cb.reversion_info_read(None);
 
         let is_warm = cb.query_bool();
-        cb.account_access_list_write_word(
+        cb.account_access_list_write(
             tx_id.expr(),
             address.to_word(),
-            Word::from_lo_unchecked(1.expr()),
-            Word::from_lo_unchecked(is_warm.expr()),
+            1.expr(),
+            is_warm.expr(),
             Some(&mut reversion_info),
         );
 

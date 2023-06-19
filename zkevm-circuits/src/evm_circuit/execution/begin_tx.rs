@@ -171,21 +171,21 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
 
         // Prepare access list of caller and callee
-        cb.account_access_list_write_word(
+        cb.account_access_list_write(
             tx_id.expr(),
             tx_caller_address.to_word(),
-            Word::from_lo_unchecked(1.expr()),
-            Word::zero(),
+            1.expr(),
+            0.expr(),
             None,
         ); // rwc_delta += 1
         let is_caller_callee_equal = cb.query_bool();
-        cb.account_access_list_write_word(
+        cb.account_access_list_write(
             tx_id.expr(),
             tx_callee_address.to_word(),
-            Word::from_lo_unchecked(1.expr()),
+            1.expr(),
             // No extra constraint being used here.
             // Correctness will be enforced in build_tx_access_list_account_constraints
-            Word::from_lo_unchecked(is_caller_callee_equal.expr()),
+            is_caller_callee_equal.expr(),
             None,
         ); // rwc_delta += 1
 
@@ -197,11 +197,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             None,
             coinbase.to_word(),
         );
-        cb.account_access_list_write_word(
+        cb.account_access_list_write(
             tx_id.expr(),
             coinbase.to_word(),
-            Word::from_lo_unchecked(1.expr()),
-            Word::from_lo_unchecked(is_coinbase_warm.expr()),
+            1.expr(),
+            is_coinbase_warm.expr(),
             None,
         ); // rwc_delta += 1
 

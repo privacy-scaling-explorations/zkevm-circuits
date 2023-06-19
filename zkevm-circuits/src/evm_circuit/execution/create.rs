@@ -183,11 +183,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             );
 
             // add callee to access list
-            cb.account_access_list_write_word(
+            cb.account_access_list_write(
                 tx_id.expr(),
                 contract_addr.to_word(),
-                Word::from_lo_unchecked(1.expr()),
-                Word::from_lo_unchecked(was_warm.expr()),
+                1.expr(),
+                was_warm.expr(),
                 Some(&mut reversion_info),
             );
 

@@ -120,11 +120,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // Add callee to access list
         let is_warm = cb.query_bool();
         let is_warm_prev = cb.query_bool();
-        cb.account_access_list_write_word(
+        cb.account_access_list_write(
             tx_id.expr(),
             call_gadget.callee_address_word(),
-            Word::from_lo_unchecked(is_warm.expr()),
-            Word::from_lo_unchecked(is_warm_prev.expr()),
+            is_warm.expr(),
+            is_warm_prev.expr(),
             Some(&mut reversion_info),
         );
 

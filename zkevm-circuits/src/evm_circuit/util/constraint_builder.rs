@@ -887,12 +887,12 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // Access list
-    pub(crate) fn account_access_list_write_word(
+    pub(crate) fn account_access_list_write(
         &mut self,
         tx_id: Expression<F>,
         account_address: Word<Expression<F>>,
-        value: Word<Expression<F>>,
-        value_prev: Word<Expression<F>>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
         self.reversible_write(
@@ -903,19 +903,19 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 address_word_to_expr(account_address),
                 0.expr(),
                 Word::zero(),
-                value,
-                value_prev,
+                Word::from_lo_unchecked(value),
+                Word::from_lo_unchecked(value_prev),
                 Word::zero(),
             ),
             reversion_info,
         );
     }
 
-    pub(crate) fn account_access_list_read_word(
+    pub(crate) fn account_access_list_read(
         &mut self,
         tx_id: Expression<F>,
         account_address: Word<Expression<F>>,
-        value: Word<Expression<F>>,
+        value: Expression<F>,
     ) {
         self.rw_lookup(
             "account access list read",
@@ -926,8 +926,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 address_word_to_expr(account_address),
                 0.expr(),
                 Word::zero(),
-                value.clone(),
-                value,
+                Word::from_lo_unchecked(value.clone()),
+                Word::from_lo_unchecked(value),
                 Word::zero(),
             ),
         );

@@ -82,11 +82,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             );
 
             // Check if EXTCODECOPY external address is warm.
-            cb.account_access_list_read_word(
-                tx_id.expr(),
-                external_address.to_word(),
-                Word::from_lo_unchecked(is_warm.expr()),
-            );
+            cb.account_access_list_read(tx_id.expr(), external_address.to_word(), is_warm.expr());
 
             // EXTCODECOPY has an extra stack pop for external address.
             cb.stack_pop_word(external_address.to_word());

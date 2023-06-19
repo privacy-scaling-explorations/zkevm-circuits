@@ -47,11 +47,11 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
         let is_warm = cb.query_bool();
-        cb.account_access_list_write_word(
+        cb.account_access_list_write(
             tx_id.expr(),
             address.to_word(),
-            Word::from_lo_unchecked(1.expr()),
-            Word::from_lo_unchecked(is_warm.expr()),
+            1.expr(),
+            is_warm.expr(),
             Some(&mut reversion_info),
         );
         let code_hash = cb.query_word_unchecked();
