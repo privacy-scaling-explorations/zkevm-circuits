@@ -3,7 +3,7 @@
 // - Limbs: An EVN word is 256 bits. Limbs N means split 256 into N limb. For example, N = 4, each
 //   limb is 256/4 = 64 bits
 
-use bus_mapping::state_db::{EMPTY_CODE_HASH, EMPTY_CODE_HASH_LE};
+use bus_mapping::state_db::EMPTY_CODE_HASH;
 use eth_types::{Field, ToLittleEndian, H160};
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
