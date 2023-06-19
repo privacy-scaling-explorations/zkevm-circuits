@@ -51,7 +51,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         let mut reversion_info = cb.reversion_info_read(None);
 
         let is_warm = cb.query_bool();
-        cb.account_access_list_write(
+        cb.account_access_list_write_unchecked(
             tx_id.expr(),
             address.to_word(),
             1.expr(),

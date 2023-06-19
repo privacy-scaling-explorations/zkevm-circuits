@@ -183,7 +183,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             );
 
             // add callee to access list
-            cb.account_access_list_write(
+            cb.account_access_list_write_unchecked(
                 tx_id.expr(),
                 contract_addr.to_word(),
                 1.expr(),
@@ -238,10 +238,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 Word::from_lo_unchecked(cb.curr.state.reversible_write_counter.expr() + 2.expr()),
             ),
         ] {
-            cb.call_context_lookup_write_unchecked(None, field_tag, value);
+            cb.call_context_lookup_write(None, field_tag, value);
         }
 
-        let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
+        let mut callee_reversion_info =
+            cb.reversion_info_write_unchecked(Some(callee_call_id.expr()));
         let transfer = cb.condition(
             and::expr([is_precheck_ok.clone(), not_address_collision.expr()]),
             |cb| {
@@ -343,11 +344,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                         ),
                         (CallContextFieldTag::CodeHash, create.code_hash_word()),
                     ] {
-                        cb.call_context_lookup_write_unchecked(
-                            Some(callee_call_id.expr()),
-                            field_tag,
-                            value,
-                        );
+                        cb.call_context_lookup_write(Some(callee_call_id.expr()), field_tag, value);
                     }
 
                     cb.require_step_state_transition(StepStateTransition {
@@ -372,7 +369,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                         CallContextFieldTag::LastCalleeReturnDataOffset,
                         CallContextFieldTag::LastCalleeReturnDataLength,
                     ] {
-                        cb.call_context_lookup_write_unchecked(None, field_tag, Word::zero());
+                        cb.call_context_lookup_write(None, field_tag, Word::zero());
                     }
                     cb.require_step_state_transition(StepStateTransition {
                         rw_counter: Delta(cb.rw_counter_offset()),
@@ -415,7 +412,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     CallContextFieldTag::LastCalleeReturnDataOffset,
                     CallContextFieldTag::LastCalleeReturnDataLength,
                 ] {
-                    cb.call_context_lookup_write_unchecked(None, field_tag, Word::zero());
+                    cb.call_context_lookup_write(None, field_tag, Word::zero());
                 }
 
                 cb.require_step_state_transition(StepStateTransition {

@@ -887,7 +887,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // Access list
-    pub(crate) fn account_access_list_write(
+    pub(crate) fn account_access_list_write_unchecked(
         &mut self,
         tx_id: Expression<F>,
         account_address: Word<Expression<F>>,
@@ -1173,7 +1173,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
-    pub(crate) fn call_context_lookup_write_unchecked(
+    pub(crate) fn call_context_lookup_write(
         &mut self,
         call_id: Option<Expression<F>>,
         field_tag: CallContextFieldTag,
@@ -1207,10 +1207,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         .map(|field_tag| {
             let cell = self.query_cell();
             if is_write {
-                self.call_context_lookup_write_unchecked(
+                self.call_context_lookup_write(
                     call_id.clone(),
                     field_tag,
-                    // TODO assure range check since write=true also possible
                     Word::from_lo_unchecked(cell.expr()),
                 );
             } else {
@@ -1242,7 +1241,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.reversion_info(call_id, false)
     }
 
-    pub(crate) fn reversion_info_write(
+    pub(crate) fn reversion_info_write_unchecked(
         &mut self,
         call_id: Option<Expression<F>>,
     ) -> ReversionInfo<F> {

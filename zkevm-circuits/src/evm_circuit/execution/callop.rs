@@ -120,7 +120,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // Add callee to access list
         let is_warm = cb.query_bool();
         let is_warm_prev = cb.query_bool();
-        cb.account_access_list_write(
+        cb.account_access_list_write_unchecked(
             tx_id.expr(),
             call_gadget.callee_address_word(),
             is_warm.expr(),
@@ -129,7 +129,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         );
 
         // Propagate rw_counter_end_of_reversion and is_persistent
-        let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
+        let mut callee_reversion_info =
+            cb.reversion_info_write_unchecked(Some(callee_call_id.expr()));
         cb.require_equal(
             "callee_is_persistent == is_persistent ⋅ is_success",
             callee_reversion_info.is_persistent(),
@@ -241,7 +242,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     CallContextFieldTag::LastCalleeReturnDataOffset,
                     CallContextFieldTag::LastCalleeReturnDataLength,
                 ] {
-                    cb.call_context_lookup_write_unchecked(None, field_tag, Word::zero());
+                    cb.call_context_lookup_write(None, field_tag, Word::zero());
                 }
 
                 // For CALL opcode, it has an extra stack pop `value` (+1) and if the value is
@@ -286,7 +287,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 CallContextFieldTag::LastCalleeReturnDataOffset,
                 CallContextFieldTag::LastCalleeReturnDataLength,
             ] {
-                cb.call_context_lookup_write_unchecked(None, field_tag, Word::zero());
+                cb.call_context_lookup_write(None, field_tag, Word::zero());
             }
 
             cb.require_step_state_transition(StepStateTransition {
@@ -329,11 +330,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         cb.curr.state.reversible_write_counter.expr() + 1.expr(),
                     ),
                 ] {
-                    cb.call_context_lookup_write_unchecked(
-                        None,
-                        field_tag,
-                        Word::from_lo_unchecked(value),
-                    );
+                    cb.call_context_lookup_write(None, field_tag, Word::from_lo_unchecked(value));
                 }
 
                 // Setup next call's context.
@@ -402,19 +399,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         call_gadget.callee_code_hash.to_word(),
                     ),
                 ] {
-                    cb.call_context_lookup_write_unchecked(
-                        Some(callee_call_id.expr()),
-                        field_tag,
-                        value,
-                    );
+                    cb.call_context_lookup_write(Some(callee_call_id.expr()), field_tag, value);
                 }
 
                 for (field_tag, value) in [] {
-                    cb.call_context_lookup_write_unchecked(
-                        Some(callee_call_id.expr()),
-                        field_tag,
-                        value,
-                    );
+                    cb.call_context_lookup_write(Some(callee_call_id.expr()), field_tag, value);
                 }
 
                 // Give gas stipend if value is not zero

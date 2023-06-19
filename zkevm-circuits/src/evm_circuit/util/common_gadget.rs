@@ -161,7 +161,7 @@ impl<F: Field> RestoreContextGadget<F> {
             ),
         ] {
             // TODO review and assure range check
-            cb.call_context_lookup_write_unchecked(
+            cb.call_context_lookup_write(
                 Some(caller_id.expr()),
                 field_tag,
                 Word::from_lo_unchecked(value),

@@ -80,13 +80,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let call_id = cb.curr.state.rw_counter.clone();
 
         let tx_id = cb.query_u64();
-        cb.call_context_lookup_write_unchecked(
+        cb.call_context_lookup_write(
             Some(call_id.expr()),
             CallContextFieldTag::TxId,
             tx_id.to_word(),
         ); // rwc_delta += 1
-        let mut reversion_info = cb.reversion_info_write(None); // rwc_delta += 2
-        cb.call_context_lookup_write_unchecked(
+        let mut reversion_info = cb.reversion_info_write_unchecked(None); // rwc_delta += 2
+        cb.call_context_lookup_write(
             Some(call_id.expr()),
             CallContextFieldTag::IsSuccess,
             Word::from_lo_unchecked(reversion_info.is_persistent()),
@@ -171,7 +171,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
 
         // Prepare access list of caller and callee
-        cb.account_access_list_write(
+        cb.account_access_list_write_unchecked(
             tx_id.expr(),
             tx_caller_address.to_word(),
             1.expr(),
@@ -179,7 +179,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             None,
         ); // rwc_delta += 1
         let is_caller_callee_equal = cb.query_bool();
-        cb.account_access_list_write(
+        cb.account_access_list_write_unchecked(
             tx_id.expr(),
             tx_callee_address.to_word(),
             1.expr(),
@@ -197,7 +197,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             None,
             coinbase.to_word(),
         );
-        cb.account_access_list_write(
+        cb.account_access_list_write_unchecked(
             tx_id.expr(),
             coinbase.to_word(),
             1.expr(),
@@ -311,7 +311,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     cb.curr.state.code_hash.to_word(),
                 ),
             ] {
-                cb.call_context_lookup_write_unchecked(Some(call_id.expr()), field_tag, value);
+                cb.call_context_lookup_write(Some(call_id.expr()), field_tag, value);
             }
 
             cb.require_step_state_transition(StepStateTransition {
@@ -431,7 +431,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     ),
                     (CallContextFieldTag::CodeHash, code_hash.to_word()),
                 ] {
-                    cb.call_context_lookup_write_unchecked(Some(call_id.expr()), field_tag, value);
+                    cb.call_context_lookup_write(Some(call_id.expr()), field_tag, value);
                 }
 
                 cb.require_step_state_transition(StepStateTransition {
