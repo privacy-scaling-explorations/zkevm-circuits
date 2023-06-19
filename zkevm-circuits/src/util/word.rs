@@ -3,7 +3,7 @@
 // - Limbs: An EVN word is 256 bits. Limbs N means split 256 into N limb. For example, N = 4, each
 //   limb is 256/4 = 64 bits
 
-use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
+use bus_mapping::state_db::{EMPTY_CODE_HASH, EMPTY_CODE_HASH_LE};
 use eth_types::{Field, ToLittleEndian, H160};
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
@@ -324,6 +324,18 @@ impl<F: Field> From<H160> for Word<F> {
     }
 }
 
+impl<F: Field> From<eth_types::Hash> for Word<F> {
+    /// Construct the word from eth_types::Hash
+    fn from(value: eth_types::Hash) -> Self {
+        let mut bytes = *value.as_fixed_bytes();
+        bytes.reverse();
+        Word::new([
+            from_bytes::value(&bytes[..N_BYTES_HALF_WORD]),
+            from_bytes::value(&bytes[N_BYTES_HALF_WORD..]),
+        ])
+    }
+}
+
 impl<F: Field> Word<Cell<F>> {
     /// Assign low 128 bits for the word
     pub fn assign_lo(
@@ -481,14 +493,7 @@ impl<F: Field> From<WordLegacy<F>> for Word32Cell<F> {
 
 /// Return the hash of the empty code as a Word<Value<F>>
 pub fn empty_code_hash_word_value<F: Field>() -> Word<Value<F>> {
-    Word::new(
-        EMPTY_CODE_HASH_LE
-            .chunks(32 / 2)
-            .map(|bytes: &[u8]| Value::known(from_bytes::value(bytes)))
-            .collect_vec()
-            .try_into()
-            .unwrap(),
-    )
+    Word::from(*EMPTY_CODE_HASH).into_value()
 }
 
 // TODO unittest
