@@ -1357,13 +1357,25 @@ impl<F: Field> ExecutionConfig<F> {
             // challenges not ready
             return;
         }
+
+        let mut copy_lookup_included = false;
         let mut assigned_rw_values = Vec::new();
         for (name, v) in assigned_stored_expressions {
+            // println!("{:?}", name.clone());
             if name.starts_with("rw lookup ")
                 && !v.is_zero_vartime()
                 && !assigned_rw_values.contains(&(name.clone(), *v))
             {
                 assigned_rw_values.push((name.clone(), *v));
+            }
+            // If any `copy lookup` with Memory tag in opcode execution,
+            // block.get_rws() contains memory operations but
+            // assigned_stored_expressions only has a `copy lookup` expression without
+            // any rw lookup with Memory tag.
+            // So, we need to filter out Memory operation in get_rws_for_check_rw_lookup
+            // if having any `copy lookup` happens.
+            if name.starts_with("copy lookup") {
+                copy_lookup_included = true;
             }
         }
 
@@ -1398,6 +1410,7 @@ impl<F: Field> ExecutionConfig<F> {
             );
         }
         let mut rev_count = 0;
+        let mut acc_offset = 0;
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             let is_rev = if assigned_rw_value.0.contains(" with reversion") {
                 rev_count += 1;
@@ -1411,15 +1424,19 @@ impl<F: Field> ExecutionConfig<F> {
                 rev_count,
                 step.reversible_write_counter_delta
             );
+
             // In the EVM Circuit, reversion rw lookups are assigned after their
             // corresponding rw lookup, but in the bus-mapping they are
             // generated at the end of the step.
             let idx = if is_rev {
                 step.rw_indices_len() - rev_count
             } else {
-                idx - rev_count
+                idx - rev_count + acc_offset
             };
-            let rw = block.get_rws(step, idx);
+            let (rw, offset) = block.get_rws_for_check_rw_lookup(step, idx, copy_lookup_included);
+            // let rw = block.get_rws(step, idx);
+            // let offset = 0;
+            acc_offset += offset;
             let table_assignments = rw.table_assignment_aux(evm_randomness);
             let rlc = table_assignments.rlc(lookup_randomness);
             if rlc != assigned_rw_value.1 {
