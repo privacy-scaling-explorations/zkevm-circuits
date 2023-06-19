@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef},
+    circuit_input_builder::CircuitInputStateRef,
     evm::opcodes::ExecStep,
     operation::{AccountField, CallContextField, TxAccessListAccountOp},
     Error,

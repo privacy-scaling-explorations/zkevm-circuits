@@ -125,7 +125,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         self
     }
 
-    /// Allows to pass a non-default [`ConcreteCP`] to the builder.
+    /// Allows to pass a non-default [`FixedCParams`] to the builder.
     /// This means that we can increase for example, the `max_rws` or `max_txs`.
     pub fn params(mut self, params: FixedCParams) -> Self {
         assert!(

@@ -1,8 +1,6 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, NumberOrHash,
-    },
+    circuit_input_builder::{CircuitInputStateRef, CopyDataType, CopyEvent, NumberOrHash},
     evm::opcodes::ExecStep,
     operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
     state_db::CodeDB,

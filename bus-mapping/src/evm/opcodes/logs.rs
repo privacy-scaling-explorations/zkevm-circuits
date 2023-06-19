@@ -1,8 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecState, ExecStep,
-        NumberOrHash,
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecState, ExecStep, NumberOrHash,
     },
     operation::{CallContextField, TxLogField},
     Error,
