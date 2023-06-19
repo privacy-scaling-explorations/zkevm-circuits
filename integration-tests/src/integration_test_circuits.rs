@@ -32,15 +32,15 @@ use zkevm_circuits::{
     exp_circuit::TestExpCircuit,
     keccak_circuit::TestKeccakCircuit,
     pi_circuit::TestPiCircuit,
-    root_circuit::{compile, Config, EvmTranscript, NativeLoader, RootCircuit, Shplonk},
+    root_circuit::{
+        compile, Config, EvmTranscript, NativeLoader, PoseidonTranscript, RootCircuit, Shplonk,
+    },
     state_circuit::TestStateCircuit,
     super_circuit::SuperCircuit,
     tx_circuit::TestTxCircuit,
     util::SubCircuit,
     witness::{block_convert, Block},
 };
-
-type As<M> = Shplonk<M>;
 
 /// TEST_MOCK_RANDOMNESS
 const TEST_MOCK_RANDOMNESS: u64 = 0x100;
@@ -305,7 +305,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                         instance.iter().map(|instance| instance.len()).collect(),
                     ),
                 );
-                let circuit = RootCircuit::<Bn256, As<_>>::new(
+                let circuit = RootCircuit::<Bn256, Shplonk<_>>::new(
                     &params,
                     &protocol,
                     Value::unknown(),
@@ -421,7 +421,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             };
 
             log::info!("root circuit new");
-            let root_circuit = RootCircuit::<Bn256, As<_>>::new(
+            let root_circuit = RootCircuit::<Bn256, Shplonk<_>>::new(
                 &params,
                 &protocol,
                 Value::known(&instance),
@@ -459,8 +459,6 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         }
     }
 }
-
-use zkevm_circuits::root_circuit::PoseidonTranscript;
 
 fn new_empty_block() -> Block<Fr> {
     let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
