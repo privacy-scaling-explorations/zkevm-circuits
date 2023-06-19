@@ -103,7 +103,12 @@ impl Opcode for Calldataload {
 
 #[cfg(test)]
 mod calldataload_tests {
-    use crate::operation::CallContextOp;
+    use super::*;
+    use crate::{
+        circuit_input_builder::ExecState,
+        mock::BlockData,
+        operation::{CallContextOp, StackOp},
+    };
     use eth_types::{
         bytecode,
         evm_types::{OpcodeId, StackAddress},
@@ -111,18 +116,9 @@ mod calldataload_tests {
         Word,
     };
     use mock::{
-        generate_mock_call_bytecode, test_ctx::helpers::account_0_code_account_1_no_code,
-        MockCallBytecodeParams, TestContext,
+        generate_mock_call_bytecode, rand_bytes,
+        test_ctx::helpers::account_0_code_account_1_no_code, MockCallBytecodeParams, TestContext,
     };
-    use rand::random;
-
-    use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::StackOp};
-
-    use super::*;
-
-    fn rand_bytes(size: usize) -> Vec<u8> {
-        (0..size).map(|_| random()).collect::<Vec<u8>>()
-    }
 
     fn test_internal_ok(
         call_data_length: usize,
