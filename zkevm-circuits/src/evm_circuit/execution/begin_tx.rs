@@ -15,7 +15,7 @@ use crate::{
                 ConstantDivisionGadget, ContractCreateGadget, IsEqualWordGadget, IsZeroWordGadget,
                 MulWordByU64Gadget, RangeCheckGadget,
             },
-            not, or, select, AccountAddress, CachedRegion, Cell, StepRws, U64Cell,
+            not, or, select, AccountAddress, CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -38,7 +38,7 @@ use halo2_proofs::{
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
     // tx_id is query in current scope. The range should be determined here
-    tx_id: U64Cell<F>,
+    tx_id: Cell<F>,
     tx_nonce: Cell<F>,
     tx_gas: Cell<F>,
     tx_gas_price: Word32Cell<F>,
@@ -78,11 +78,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Use rw_counter of the step which triggers next call as its call_id.
         let call_id = cb.curr.state.rw_counter.clone();
 
-        let tx_id = cb.query_u64();
+        let tx_id = cb.query_cell(); // already constrain `if step_first && tx_id = 1` and `tx_id += 1` at EndTx
         cb.call_context_lookup_write(
             Some(call_id.expr()),
             CallContextFieldTag::TxId,
-            tx_id.to_word(),
+            Word::from_lo_unchecked(tx_id.expr()),
         ); // rwc_delta += 1
         let mut reversion_info = cb.reversion_info_write_unchecked(None); // rwc_delta += 2
         cb.call_context_lookup_write(
@@ -534,7 +534,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         };
 
         self.tx_id
-            .assign(region, offset, Some(tx.id.to_le_bytes()))?;
+            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
         self.tx_nonce
             .assign(region, offset, Value::known(F::from(tx.nonce)))?;
         self.tx_gas
