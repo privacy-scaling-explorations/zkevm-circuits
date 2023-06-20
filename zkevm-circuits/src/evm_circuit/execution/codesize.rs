@@ -42,7 +42,7 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
 
         cb.require_equal(
             "Constraint: bytecode length lookup == codesize",
-            codesize_bytes.to_word().lo(),
+            codesize_bytes.expr(),
             codesize.expr(),
         );
 

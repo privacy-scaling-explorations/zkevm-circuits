@@ -1,12 +1,11 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_U64,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes, CachedRegion,
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -17,8 +16,8 @@ use crate::{
     },
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use eth_types::Field;
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ReturnDataSizeGadget<F> {
@@ -72,13 +71,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
         let return_data_size = block.get_rws(step, 1).stack_value();
-        self.return_data_size.assign_lo(
-            region,
-            offset,
-            Value::known(from_bytes::value(
-                &return_data_size.to_le_bytes()[..N_BYTES_U64],
-            )),
-        )?;
+        self.return_data_size
+            .assign_u64(region, offset, return_data_size.as_u64())?;
 
         Ok(())
     }

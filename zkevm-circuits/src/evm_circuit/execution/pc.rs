@@ -35,7 +35,7 @@ impl<F: Field> ExecutionGadget<F> for PcGadget<F> {
         // program_counter is limited to 64 bits so we only consider 8 bytes
         cb.require_equal(
             "Constrain program_counter equal to stack value",
-            value.to_word().lo(),
+            value.expr(),
             cb.curr.state.program_counter.expr(),
         );
 

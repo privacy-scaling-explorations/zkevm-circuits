@@ -44,10 +44,6 @@ impl<T, const N: usize> WordLimbs<T, N> {
     pub fn n() -> usize {
         N
     }
-    /// get limbs by index
-    pub fn get(&self, index: usize) -> &T {
-        &self.limbs[index]
-    }
 }
 
 impl<T: Default, const N: usize> Default for WordLimbs<T, N> {
@@ -342,21 +338,6 @@ impl<F: Field> From<H160> for Word<F> {
         Word::new([
             from_bytes::value(&bytes[..N_BYTES_HALF_WORD]),
             from_bytes::value(&bytes[N_BYTES_HALF_WORD..]),
-        ])
-    }
-}
-
-impl<F: Field> Word<Cell<F>> {
-    /// Assign low 128 bits for the word
-    pub fn assign_lo(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        value: Value<F>,
-    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
-        Ok(vec![
-            self.limbs[0].assign(region, offset, value)?,
-            self.limbs[1].assign(region, offset, Value::known(F::from(0)))?,
         ])
     }
 }

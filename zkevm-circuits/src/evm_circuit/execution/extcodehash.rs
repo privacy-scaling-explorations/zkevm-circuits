@@ -38,13 +38,13 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let address_word = cb.query_word32();
-        // let address = cb.query_account_address();
         let address = AccountAddress::new(
             address_word.limbs[..N_BYTES_ACCOUNT_ADDRESS]
                 .to_vec()
                 .try_into()
                 .unwrap(),
         );
+        cb.stack_pop_word(address_word.to_word());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);

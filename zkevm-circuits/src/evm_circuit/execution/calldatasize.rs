@@ -1,7 +1,6 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_CALLDATASIZE,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -17,8 +16,8 @@ use crate::{
     },
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use eth_types::Field;
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CallDataSizeGadget<F> {
@@ -74,15 +73,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
 
         let call_data_size = block.get_rws(step, 1).stack_value();
 
-        self.call_data_size.assign_lo(
-            region,
-            offset,
-            Value::known(F::from(u64::from_le_bytes(
-                call_data_size.to_le_bytes()[..N_BYTES_CALLDATASIZE]
-                    .try_into()
-                    .unwrap(),
-            ))),
-        )?;
+        self.call_data_size
+            .assign_u64(region, offset, call_data_size.as_u64())?;
 
         Ok(())
     }

@@ -8,7 +8,7 @@ use halo2_proofs::{
 use itertools::Itertools;
 
 use crate::evm_circuit::{
-    param::N_BYTES_HALF_WORD,
+    param::{MAX_N_BYTES_INTEGER, N_BYTES_HALF_WORD},
     util::{rlc, CachedRegion, Cell},
 };
 
@@ -76,6 +76,7 @@ impl<F: Field, const N_LIMBS: usize> IntDecomposition<F, N_LIMBS> {
 
 impl<F: Field, const N_LIMBS: usize> Expr<F> for IntDecomposition<F, N_LIMBS> {
     fn expr(&self) -> Expression<F> {
+        assert!(N_LIMBS <= MAX_N_BYTES_INTEGER);
         rlc::expr(&self.limbs.clone().map(|limb| limb.expr()), 256.expr())
     }
 }

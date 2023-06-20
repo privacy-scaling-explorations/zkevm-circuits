@@ -1048,10 +1048,10 @@ impl<F: Field> CommonErrorGadget<F> {
         step: &ExecStep,
         rw_offset: usize,
     ) -> Result<u64, Error> {
-        self.rw_counter_end_of_reversion.assign_lo(
+        self.rw_counter_end_of_reversion.assign_u64(
             region,
             offset,
-            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
+            call.rw_counter_end_of_reversion as u64,
         )?;
         self.restore_context
             .assign(region, offset, block, call, step, rw_offset)?;
