@@ -80,7 +80,7 @@ impl Default for CircuitsParams {
             // TODO: Check whether this value is correct or we should increase/decrease based on
             // this lib tests
             max_copy_rows: 1000,
-            max_exp_steps: 1000,
+            max_exp_steps: 1000 / 7, // exp_circuit::OFFSET_INCREMENT = 7
             max_bytecode: 512,
             max_evm_rows: 0,
             max_keccak_rows: 0,
