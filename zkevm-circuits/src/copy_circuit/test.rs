@@ -169,7 +169,17 @@ fn gen_returndatacopy_data() -> CircuitInputBuilder {
     .unwrap();
 
     let block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+    let mut builder = BlockData::new_from_geth_data_with_params(
+        block.clone(),
+        CircuitsParams {
+            max_rws: 8192,
+            max_copy_rows: 8192 + 2,
+            max_calldata: 5000,
+            ..Default::default()
+        },
+    )
+    .new_circuit_input_builder();
+
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
