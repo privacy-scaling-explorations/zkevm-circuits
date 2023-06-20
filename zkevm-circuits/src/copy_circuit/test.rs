@@ -6,7 +6,6 @@ use crate::{
 };
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, FixedCParams},
-    evm::Sha3CodeGen,
     mock::BlockData,
 };
 use eth_types::{bytecode, geth_types::GethData, ToWord, Word};

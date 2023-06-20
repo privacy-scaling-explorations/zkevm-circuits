@@ -157,7 +157,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 #[cfg(test)]
 mod tests {
     use crate::test_util::CircuitTestBuilder;
-    use bus_mapping::{circuit_input_builder::FixedCParams, evm::Sha3CodeGen};
+    use bus_mapping::circuit_input_builder::FixedCParams;
     use eth_types::{bytecode, U256};
     use mock::{Sha3CodeGen, TestContext};
 
