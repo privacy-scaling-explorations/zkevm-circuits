@@ -1,40 +1,32 @@
-use std::marker::PhantomData;
-
 use crate::{
-    evm_circuit::util::{
-        constraint_builder::EVMConstraintBuilder, math_gadget::LtWordGadgetNew as LtWordGadget,
-        transpose_val_ret, CachedRegion,
-    },
-    util::word::{Word, WordExpr},
+    evm_circuit::util::{constraint_builder::EVMConstraintBuilder, CachedRegion},
+    util::word::Word,
 };
 use eth_types::{self, Field};
-use halo2_proofs::{
-    circuit::Value,
-    plonk::{Error, Expression},
-};
+use halo2_proofs::plonk::{Error, Expression};
+
+use super::LtWordGadget;
 /// Returns `rhs` when `lhs < rhs`, and returns `lhs` otherwise.
 /// lhs and rhs `< 256**N_BYTES`
 /// `N_BYTES` is required to be `<= MAX_N_BYTES_INTEGER`.
 #[derive(Clone, Debug)]
-pub struct MinMaxWordGadget<F, T> {
-    lt: LtWordGadget<F, T, T>,
+pub struct MinMaxWordGadget<F> {
+    lt: LtWordGadget<F>,
     min: Word<Expression<F>>,
     max: Word<Expression<F>>,
-    _marker: PhantomData<T>,
 }
 
-impl<F: Field, T: WordExpr<F> + Clone> MinMaxWordGadget<F, T> {
-    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, lhs: T, rhs: T) -> Self {
-        let lt = LtWordGadget::construct(cb, lhs.clone(), rhs.clone());
+impl<F: Field> MinMaxWordGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        lhs: &Word<Expression<F>>,
+        rhs: &Word<Expression<F>>,
+    ) -> Self {
+        let lt = LtWordGadget::construct(cb, lhs, rhs);
         let max = Word::select(lt.expr(), rhs.clone(), lhs.clone());
-        let min = Word::select(lt.expr(), lhs, rhs);
+        let min = Word::select(lt.expr(), lhs.clone(), rhs.clone());
 
-        Self {
-            lt,
-            min,
-            max,
-            _marker: Default::default(),
-        }
+        Self { lt, min, max }
     }
 
     pub(crate) fn min(&self) -> Word<Expression<F>> {
@@ -47,31 +39,13 @@ impl<F: Field, T: WordExpr<F> + Clone> MinMaxWordGadget<F, T> {
 
     fn assign(
         &self,
-        _region: &mut CachedRegion<'_, '_, F>,
-        _offset: usize,
-        _lhs: F,
-        _rhs: F,
-    ) -> Result<(F, F), Error> {
-        todo!("lt assign");
-        let lt_says_greater = true;
-        Ok(if lt_says_greater {
-            (_rhs, _lhs)
-        } else {
-            (_lhs, _rhs)
-        })
-    }
-
-    pub(crate) fn assign_value(
-        &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        lhs: Value<F>,
-        rhs: Value<F>,
-    ) -> Result<Value<(F, F)>, Error> {
-        transpose_val_ret(
-            lhs.zip(rhs)
-                .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs)),
-        )
+        lhs: eth_types::Word,
+        rhs: eth_types::Word,
+    ) -> Result<(), Error> {
+        self.lt.assign(region, offset, lhs, rhs)?;
+        Ok(())
     }
 }
 

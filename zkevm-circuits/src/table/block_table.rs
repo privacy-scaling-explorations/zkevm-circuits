@@ -54,7 +54,6 @@ impl BlockTable {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &BlockContext,
-        randomness: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "block table",
@@ -71,7 +70,7 @@ impl BlockTable {
                 offset += 1;
 
                 let block_table_columns = <BlockTable as LookupTable<F>>::advice_columns(self);
-                for row in block.table_assignments(randomness) {
+                for row in block.table_assignments::<F>() {
                     for (&column, value) in block_table_columns.iter().zip_eq(row) {
                         region.assign_advice(
                             || format!("block table row {}", offset),

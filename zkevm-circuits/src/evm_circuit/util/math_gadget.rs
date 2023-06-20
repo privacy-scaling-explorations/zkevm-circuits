@@ -39,7 +39,7 @@ pub(crate) use is_equal_word::IsEqualWordGadget;
 pub(crate) use is_zero::IsZeroGadget;
 pub(crate) use is_zero_word::IsZeroWordGadget;
 pub(crate) use lt::LtGadget;
-pub(crate) use lt_word::{LtWordGadget as LtWordGadgetNew, LtWordGadgetLegacy as LtWordGadget};
+pub(crate) use lt_word::LtWordGadget;
 pub(crate) use min_max::MinMaxGadget;
 pub(crate) use modulo::ModGadget;
 pub(crate) use mul_add_words::MulAddWordsGadget;

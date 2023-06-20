@@ -20,7 +20,7 @@ use crate::{
         Expr,
     },
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use eth_types::{evm_types::OpcodeId, Field};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -58,7 +58,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         // access
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
-            [address.to_word().lo() + 1.expr() + (is_not_mstore8.clone() * 31.expr())],
+            [address.expr() + 1.expr() + (is_not_mstore8.clone() * 31.expr())],
         );
 
         // Stack operations
@@ -73,19 +73,14 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         );
 
         cb.condition(is_mstore8.expr(), |cb| {
-            cb.memory_lookup(
-                1.expr(),
-                address.to_word().lo(),
-                value.limbs[0].expr(),
-                None,
-            );
+            cb.memory_lookup(1.expr(), address.expr(), value.limbs[0].expr(), None);
         });
 
         cb.condition(is_not_mstore8, |cb| {
             for idx in 0..32 {
                 cb.memory_lookup(
                     is_store.clone(),
-                    address.to_word().lo().clone() + idx.expr(),
+                    address.expr() + idx.expr(),
                     value.limbs[31 - idx].expr(),
                     None,
                 );
@@ -134,13 +129,8 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
         // Inputs/Outputs
         let [address, value] = [0, 1].map(|index| block.get_rws(step, index).stack_value());
-        self.address.assign(
-            region,
-            offset,
-            Some(address.to_le_bytes()[..5].try_into().unwrap()),
-        )?;
-        self.value
-            .assign(region, offset, Some(value.to_le_bytes()))?;
+        self.address.assign_u256(region, offset, address)?;
+        self.value.assign_u256(region, offset, value)?;
 
         // Check if this is an MLOAD
         self.is_mload.assign(

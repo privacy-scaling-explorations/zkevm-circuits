@@ -1,16 +1,23 @@
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use crate::{
+    evm_circuit::util::rlc,
+    util::word::{Word32Cell, WordExpr},
+};
+use eth_types::{Address, Field, ToScalar, Word};
 use gadgets::util::{and, expr_from_bytes, not, select, sum, Expr};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
 
-use crate::evm_circuit::{
-    param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
-    util::{
-        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-        CachedRegion, Cell, RandomLinearCombination,
+use crate::{
+    evm_circuit::{
+        param::{N_BYTES_U64, N_BYTES_WORD},
+        util::{
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            AccountAddress, CachedRegion, Cell, RandomLinearCombination,
+        },
     },
+    util::word,
 };
 
 use super::IsZeroGadget;
@@ -197,7 +204,7 @@ impl<F: Field> RlpU64Gadget<F> {
 #[derive(Clone, Debug)]
 pub struct ContractCreateGadget<F, const IS_CREATE2: bool> {
     /// Sender address of the contract creation tx.
-    caller_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
+    caller_address: AccountAddress<F>,
     /// Sender nonce of the contract creation tx.
     nonce: RlpU64Gadget<F>,
     /// Keccak256 hash of init code, used for CREATE2. We don't use a
@@ -205,18 +212,18 @@ pub struct ContractCreateGadget<F, const IS_CREATE2: bool> {
     /// RLC in the case of init code hash, for BeginTx and
     /// CREATE2 respectively. Instead, we store just the bytes and calculate the
     /// appropriate RLC wherever needed.
-    code_hash: [Cell<F>; N_BYTES_WORD],
+    code_hash: Word32Cell<F>,
     /// Random salt for CREATE2.
-    salt: [Cell<F>; N_BYTES_WORD],
+    salt: Word32Cell<F>,
 }
 
 impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     /// Configure and construct the gadget.
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let caller_address = cb.query_keccak_rlc();
+        let caller_address = cb.query_account_address();
         let nonce = RlpU64Gadget::construct(cb);
-        let code_hash = array_init::array_init(|_| cb.query_byte());
-        let salt = array_init::array_init(|_| cb.query_byte());
+        let code_hash = cb.query_word32();
+        let salt = cb.query_word32();
 
         Self {
             caller_address,
@@ -243,27 +250,18 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
 
         self.nonce.assign(region, offset, caller_nonce)?;
 
-        for (c, v) in self
-            .code_hash
-            .iter()
-            .zip(code_hash.map(|v| v.to_le_bytes()).unwrap_or_default())
-        {
-            c.assign(region, offset, Value::known(F::from(v as u64)))?;
-        }
-        for (c, v) in self
-            .salt
-            .iter()
-            .zip(salt.map(|v| v.to_le_bytes()).unwrap_or_default())
-        {
-            c.assign(region, offset, Value::known(F::from(v as u64)))?;
-        }
+        self.code_hash
+            .assign_u256(region, offset, code_hash.unwrap_or_default())?;
+
+        self.salt
+            .assign_u256(region, offset, salt.unwrap_or_default())?;
 
         Ok(())
     }
 
     /// Caller address' value.
-    pub(crate) fn caller_address(&self) -> Expression<F> {
-        expr_from_bytes(&self.caller_address.cells)
+    pub(crate) fn caller_address_word(&self) -> word::Word<Expression<F>> {
+        self.caller_address.to_word()
     }
 
     /// Caller nonce's value.
@@ -272,21 +270,21 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     }
 
     /// Code hash word RLC.
-    pub(crate) fn code_hash_word_rlc(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
-        cb.word_rlc::<N_BYTES_WORD>(
-            self.code_hash
-                .iter()
-                .map(Expr::expr)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
-        )
+    #[deprecated(note = "in fav of code_hash_word")]
+    pub(crate) fn code_hash_word_rlc(&self) -> Expression<F> {
+        unimplemented!()
+    }
+
+    /// Code hash word RLC.
+    pub(crate) fn code_hash_word(&self) -> word::Word<Expression<F>> {
+        self.code_hash.to_word()
     }
 
     /// Code hash keccak RLC.
     pub(crate) fn code_hash_keccak_rlc(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
         cb.keccak_rlc::<N_BYTES_WORD>(
             self.code_hash
+                .limbs
                 .iter()
                 .map(Expr::expr)
                 .collect::<Vec<_>>()
@@ -296,9 +294,11 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     }
 
     /// Salt EVM word RLC.
+    #[deprecated(note = "in fav of salt_word")]
     pub(crate) fn salt_word_rlc(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
         cb.word_rlc::<N_BYTES_WORD>(
             self.salt
+                .limbs
                 .iter()
                 .map(Expr::expr)
                 .collect::<Vec<_>>()
@@ -307,10 +307,15 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
         )
     }
 
+    pub(crate) fn salt_word(&self) -> word::Word<Expression<F>> {
+        self.salt.to_word()
+    }
+
     /// Salt keccak RLC.
     pub(crate) fn salt_keccak_rlc(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
         cb.keccak_rlc::<N_BYTES_WORD>(
             self.salt
+                .limbs
                 .iter()
                 .map(Expr::expr)
                 .collect::<Vec<_>>()
@@ -320,8 +325,11 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     }
 
     /// Caller address' RLC value.
-    pub(crate) fn caller_address_rlc(&self) -> Expression<F> {
-        self.caller_address.expr()
+    pub(crate) fn caller_address_rlc(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
+        rlc::expr(
+            &self.caller_address.limbs.clone().map(|x| x.expr()),
+            cb.challenges().keccak_input(),
+        )
     }
 
     /// Caller nonce's RLC value.
@@ -359,13 +367,13 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
             let challenge_power_64 = challenge_power_32.clone().square();
             let challenge_power_84 = challenge_power_64.clone() * challenge_power_20;
             (0xff.expr() * challenge_power_84)
-                + (self.caller_address_rlc() * challenge_power_64)
+                + (self.caller_address_rlc(cb) * challenge_power_64)
                 + (self.salt_keccak_rlc(cb) * challenge_power_32)
                 + self.code_hash_keccak_rlc(cb)
         } else {
             // RLC(RLP([caller_address, caller_nonce]))
             let challenge_power_21 = challenges[20].clone();
-            ((self.caller_address_rlc()
+            ((self.caller_address_rlc(cb)
                 + (148.expr() * challenge_power_20)
                 + ((213.expr() + self.nonce.rlp_length()) * challenge_power_21))
                 * self.nonce.challenge_power_rlp_length(cb))

@@ -1,7 +1,7 @@
 use super::*;
 
-type CopyTableRow<F> = [(Value<F>, &'static str); 8];
-type CopyCircuitRow<F> = [(Value<F>, &'static str); 4];
+type CopyTableRow<F> = [(Value<F>, &'static str); 9];
+type CopyCircuitRow<F> = [(Value<F>, &'static str); 5];
 
 /// Copy Table, used to verify copies of byte chunks between Memory, Bytecode,
 /// TxLogs and TxCallData.
@@ -61,7 +61,7 @@ impl CopyTable {
     ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
         let mut assignments = Vec::new();
         // rlc_acc
-        let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
+        let rlc_acc = {
             let values = copy_event
                 .bytes
                 .iter()
@@ -70,8 +70,6 @@ impl CopyTable {
             challenges
                 .keccak_input()
                 .map(|keccak_input| rlc::value(values.iter().rev(), keccak_input))
-        } else {
-            Value::known(F::ZERO)
         };
         let mut value_acc = Value::known(F::ZERO);
         for (step_idx, (is_read_step, copy_step)) in copy_event
@@ -109,9 +107,9 @@ impl CopyTable {
 
             // id
             let id = if is_read_step {
-                number_or_hash_to_field(&copy_event.src_id, challenges.evm_word())
+                number_or_hash_to_word(&copy_event.src_id)
             } else {
-                number_or_hash_to_field(&copy_event.dst_id, challenges.evm_word())
+                number_or_hash_to_word(&copy_event.dst_id)
             };
 
             // tag binary bumber chip
@@ -146,17 +144,11 @@ impl CopyTable {
             // bytes_left
             let bytes_left = u64::try_from(copy_event.bytes.len() * 2 - step_idx).unwrap() / 2;
             // value
-            let value = if copy_event.dst_type == CopyDataType::RlcAcc {
-                if is_read_step {
-                    Value::known(F::from(copy_step.value as u64))
-                } else {
-                    value_acc = value_acc * challenges.keccak_input()
-                        + Value::known(F::from(copy_step.value as u64));
-                    value_acc
-                }
-            } else {
-                Value::known(F::from(copy_step.value as u64))
-            };
+            let value = Value::known(F::from(copy_step.value as u64));
+            // value_acc
+            if is_read_step {
+                value_acc = value_acc * challenges.keccak_input() + value;
+            }
             // is_pad
             let is_pad = Value::known(F::from(
                 (is_read_step && copy_step_addr >= copy_event.src_addr_end) as u64,
@@ -169,14 +161,22 @@ impl CopyTable {
                 tag,
                 [
                     (is_first, "is_first"),
-                    (id, "id"),
+                    (id.lo(), "id_lo"),
+                    (id.hi(), "id_hi"),
                     (addr, "addr"),
                     (
                         Value::known(F::from(copy_event.src_addr_end)),
                         "src_addr_end",
                     ),
                     (Value::known(F::from(bytes_left)), "bytes_left"),
-                    (rlc_acc, "rlc_acc"),
+                    (
+                        match (copy_event.src_type, copy_event.dst_type) {
+                            (CopyDataType::Memory, CopyDataType::Bytecode) => rlc_acc,
+                            (_, CopyDataType::RlcAcc) => rlc_acc,
+                            _ => Value::known(F::ZERO),
+                        },
+                        "rlc_acc",
+                    ),
                     (
                         Value::known(F::from(copy_event.rw_counter(step_idx))),
                         "rw_counter",
@@ -189,6 +189,7 @@ impl CopyTable {
                 [
                     (is_last, "is_last"),
                     (value, "value"),
+                    (value_acc, "value_acc"),
                     (is_pad, "is_pad"),
                     (is_code, "is_code"),
                 ],

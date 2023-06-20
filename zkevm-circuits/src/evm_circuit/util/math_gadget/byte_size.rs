@@ -129,7 +129,7 @@ mod tests {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let value_word32 = cb.query_word32();
             let bytesize_gadget =
-                ByteSizeGadget::<F>::construct(cb, value_word32.word_expr().limbs);
+                ByteSizeGadget::<F>::construct(cb, value_word32.to_word_n().limbs);
             cb.require_equal(
                 "byte size gadget must equal N",
                 bytesize_gadget.byte_size(),
@@ -148,7 +148,7 @@ mod tests {
         ) -> Result<(), Error> {
             let offset = 0;
             let x = witnesses[0];
-            self.a.assign(region, offset, Some(x.to_le_bytes()))?;
+            self.a.assign_u256(region, offset, x)?;
             self.bytesize_gadget.assign(region, offset, x)?;
 
             Ok(())
