@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
+        param::N_BYTES_MEMORY_WORD_SIZE,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -20,7 +20,7 @@ use crate::{
         Expr,
     },
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use eth_types::{evm_types::OpcodeId, Field};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -129,13 +129,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
         // Inputs/Outputs
         let [address, value] = [0, 1].map(|index| block.get_rws(step, index).stack_value());
-        self.address.assign(
-            region,
-            offset,
-            address.to_le_bytes()[0..N_BYTES_MEMORY_ADDRESS]
-                .try_into()
-                .ok(),
-        )?;
+        self.address.assign_u256(region, offset, address)?;
         self.value.assign_u256(region, offset, value)?;
 
         // Check if this is an MLOAD

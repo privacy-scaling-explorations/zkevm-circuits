@@ -1,7 +1,6 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -15,7 +14,7 @@ use crate::{
     },
     util::{word::WordExpr, Expr},
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use eth_types::{evm_types::OpcodeId, Field};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -67,15 +66,7 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let destination = block.get_rws(step, 0).stack_value();
-        self.destination.assign(
-            region,
-            offset,
-            Some(
-                destination.to_le_bytes()[..N_BYTES_PROGRAM_COUNTER]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+        self.destination.assign_u256(region, offset, destination)?;
 
         Ok(())
     }

@@ -58,7 +58,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
                 .to_vec()
                 .try_into()
                 .unwrap(),
-            256.expr(),
         );
 
         let code_size = cb.query_cell();

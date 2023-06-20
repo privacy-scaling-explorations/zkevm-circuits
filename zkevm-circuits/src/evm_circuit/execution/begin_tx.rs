@@ -34,7 +34,6 @@ use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
-use itertools::Itertools;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
@@ -252,7 +251,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         .to_vec()
                         .try_into()
                         .unwrap(),
-                    256.expr(),
                 )
                 .to_word(),
             );
@@ -554,21 +552,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         )?;
         self.tx_callee_address
             .assign_h160(region, offset, tx.callee_address)?;
-        self.call_callee_address.assign(
+        self.call_callee_address.assign_h160(
             region,
             offset,
             if tx.is_create {
                 get_contract_address(tx.caller_address, tx.nonce)
             } else {
                 tx.callee_address
-            }
-            .to_fixed_bytes()
-            .iter()
-            .rev()
-            .copied()
-            .collect_vec()
-            .try_into()
-            .ok(),
+            },
         )?;
         self.is_caller_callee_equal.assign(
             region,

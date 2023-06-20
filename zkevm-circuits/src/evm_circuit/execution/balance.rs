@@ -1,7 +1,6 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_ACCOUNT_ADDRESS,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -20,7 +19,7 @@ use crate::{
         Expr,
     },
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToWord};
+use eth_types::{evm_types::GasCost, Field, ToWord};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -119,15 +118,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let address = block.get_rws(step, 0).stack_value();
-        self.address.assign(
-            region,
-            offset,
-            Some(
-                address.to_le_bytes()[0..N_BYTES_ACCOUNT_ADDRESS]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+        self.address.assign_u256(region, offset, address)?;
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;

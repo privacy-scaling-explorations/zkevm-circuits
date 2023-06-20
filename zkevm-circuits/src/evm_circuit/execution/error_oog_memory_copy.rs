@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
@@ -20,7 +20,7 @@ use crate::{
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    Field, ToLittleEndian, U256,
+    Field, U256,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -186,13 +186,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             .assign(region, offset, Value::known(F::from(u64::from(is_warm))))?;
         self.tx_id
             .assign(region, offset, Value::known(F::from(transaction.id as u64)))?;
-        self.external_address.assign(
-            region,
-            offset,
-            external_address.to_le_bytes()[0..N_BYTES_ACCOUNT_ADDRESS]
-                .try_into()
-                .ok(),
-        )?;
+        self.external_address
+            .assign_u256(region, offset, external_address)?;
         self.src_offset.assign_u256(region, offset, src_offset)?;
         let memory_addr = self
             .dst_memory_addr

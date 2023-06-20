@@ -109,7 +109,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 .to_vec()
                 .try_into()
                 .unwrap(),
-            256.expr(),
         );
 
         // stack operations

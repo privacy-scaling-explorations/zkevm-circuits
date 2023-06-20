@@ -477,15 +477,15 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_u64(&mut self) -> U64Cell<F> {
-        U64Cell::new(self.query_bytes(), 256u64.expr())
+        U64Cell::new(self.query_bytes())
     }
 
     pub(crate) fn query_account_address(&mut self) -> AccountAddress<F> {
-        AccountAddress::<F>::new(self.query_bytes(), 256u64.expr())
+        AccountAddress::<F>::new(self.query_bytes())
     }
 
     pub(crate) fn query_memory_address(&mut self) -> MemoryAddress<F> {
-        MemoryAddress::<F>::new(self.query_bytes(), 256u64.expr())
+        MemoryAddress::<F>::new(self.query_bytes())
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
@@ -747,17 +747,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         index: Option<Expression<F>>,
     ) -> WordCell<F> {
         let word = self.query_word_unchecked();
-        self.tx_context_lookup_word(id, field_tag, index, word.to_word());
-        word
-    }
-
-    pub(crate) fn tx_context_as_account_address(
-        &mut self,
-        id: Expression<F>,
-        field_tag: TxContextFieldTag,
-        index: Option<Expression<F>>,
-    ) -> AccountAddress<F> {
-        let word = self.query_account_address();
         self.tx_context_lookup_word(id, field_tag, index, word.to_word());
         word
     }

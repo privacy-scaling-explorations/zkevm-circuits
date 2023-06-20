@@ -1,7 +1,6 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_ACCOUNT_ADDRESS,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -14,7 +13,7 @@ use crate::{
     util::{word::WordExpr, Expr},
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
+use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -79,13 +78,7 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
 
         // Assign Origin addr.
-        self.origin.assign(
-            region,
-            offset,
-            origin.to_le_bytes()[..N_BYTES_ACCOUNT_ADDRESS]
-                .try_into()
-                .ok(),
-        )?;
+        self.origin.assign_u256(region, offset, origin)?;
 
         // Assign SameContextGadget witnesses.
         self.same_context.assign_exec_step(region, offset, step)?;

@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
+        param::N_BYTES_MEMORY_WORD_SIZE,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -22,7 +22,7 @@ use crate::{
     },
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToScalar};
 use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -176,15 +176,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         let [dest_offset, data_offset, size] =
             [0, 1, 2].map(|index| block.get_rws(step, index).stack_value());
 
-        self.data_offset.assign(
-            region,
-            offset,
-            Some(
-                data_offset.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+        self.data_offset.assign_u256(region, offset, data_offset)?;
 
         let [last_callee_id, return_data_offset, return_data_size] = [
             (3, CallContextFieldTag::LastCalleeId),

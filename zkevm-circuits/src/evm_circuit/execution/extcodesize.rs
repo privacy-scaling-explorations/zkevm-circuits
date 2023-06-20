@@ -47,7 +47,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
                 .to_vec()
                 .try_into()
                 .unwrap(),
-            256.expr(),
         );
         cb.stack_pop_word(address_word.to_word());
 

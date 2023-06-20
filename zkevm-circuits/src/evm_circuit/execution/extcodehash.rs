@@ -44,7 +44,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
                 .to_vec()
                 .try_into()
                 .unwrap(),
-            256.expr(),
         );
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);

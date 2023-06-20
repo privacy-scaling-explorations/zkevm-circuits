@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     evm_circuit::{
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         table::{FixedTableTag, Lookup},
         util::{
@@ -756,13 +756,8 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         callee_code_hash: U256,
     ) -> Result<u64, Error> {
         self.gas.assign_u256(region, offset, gas)?;
-        self.callee_address_word.assign(
-            region,
-            offset,
-            callee_address.to_le_bytes()[0..N_BYTES_ACCOUNT_ADDRESS]
-                .try_into()
-                .ok(),
-        )?;
+        self.callee_address_word
+            .assign_u256(region, offset, callee_address)?;
         self.value.assign_u256(region, offset, value)?;
         if IS_SUCCESS_CALL {
             self.is_success

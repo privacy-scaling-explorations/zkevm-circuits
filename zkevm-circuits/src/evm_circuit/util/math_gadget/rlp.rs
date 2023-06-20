@@ -1,4 +1,7 @@
-use crate::util::word::{Word32Cell, WordExpr};
+use crate::{
+    evm_circuit::util::rlc,
+    util::word::{Word32Cell, WordExpr},
+};
 use eth_types::{Address, Field, ToScalar, Word};
 use gadgets::util::{and, expr_from_bytes, not, select, sum, Expr};
 use halo2_proofs::{
@@ -217,7 +220,7 @@ pub struct ContractCreateGadget<F, const IS_CREATE2: bool> {
 impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     /// Configure and construct the gadget.
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let caller_address = cb.query_keccak_rlc();
+        let caller_address = cb.query_account_address();
         let nonce = RlpU64Gadget::construct(cb);
         let code_hash = cb.query_word32();
         let salt = cb.query_word32();
@@ -322,8 +325,11 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     }
 
     /// Caller address' RLC value.
-    pub(crate) fn caller_address_rlc(&self) -> Expression<F> {
-        self.caller_address.expr()
+    pub(crate) fn caller_address_rlc(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
+        rlc::expr(
+            &self.caller_address.limbs.clone().map(|x| x.expr()),
+            cb.challenges().keccak_input(),
+        )
     }
 
     /// Caller nonce's RLC value.
@@ -361,13 +367,13 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
             let challenge_power_64 = challenge_power_32.clone().square();
             let challenge_power_84 = challenge_power_64.clone() * challenge_power_20;
             (0xff.expr() * challenge_power_84)
-                + (self.caller_address_rlc() * challenge_power_64)
+                + (self.caller_address_rlc(cb) * challenge_power_64)
                 + (self.salt_keccak_rlc(cb) * challenge_power_32)
                 + self.code_hash_keccak_rlc(cb)
         } else {
             // RLC(RLP([caller_address, caller_nonce]))
             let challenge_power_21 = challenges[20].clone();
-            ((self.caller_address_rlc()
+            ((self.caller_address_rlc(cb)
                 + (148.expr() * challenge_power_20)
                 + ((213.expr() + self.nonce.rlp_length()) * challenge_power_21))
                 * self.nonce.challenge_power_rlp_length(cb))

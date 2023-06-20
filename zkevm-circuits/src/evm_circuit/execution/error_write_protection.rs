@@ -1,7 +1,6 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_ACCOUNT_ADDRESS,
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
@@ -17,7 +16,7 @@ use crate::{
         Expr,
     },
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
+use eth_types::{evm_types::OpcodeId, Field, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -120,13 +119,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         }
 
         self.gas.assign_u256(region, offset, gas)?;
-        self.code_address.assign(
-            region,
-            offset,
-            code_address.to_le_bytes()[0..N_BYTES_ACCOUNT_ADDRESS]
-                .try_into()
-                .ok(),
-        )?;
+        self.code_address
+            .assign_u256(region, offset, code_address)?;
         self.value.assign_u256(region, offset, value)?;
 
         self.is_call.assign(
