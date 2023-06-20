@@ -1358,14 +1358,14 @@ impl<F: Field> ExecutionConfig<F> {
             return;
         }
 
-        let mut copy_lookup_included = 0;
+        let mut copy_lookup_included = false;
         let mut assigned_rw_values = Vec::new();
         for (name, v) in assigned_stored_expressions {
             // If any `copy lookup` which dst_tag or src_tag is Memory in opcode execution,
             // block.get_rws() contains memory operations but
             // assigned_stored_expressions only has a single `copy lookup` expression without
             // any rw memory lookup.
-            // So, we include `copy lookup` in assigned_rw_values as well, then we could skip
+            // So, we include `copy lookup` in assigned_rw_values as well, then we could verify
             // those memory operations later.
             if (name.starts_with("rw lookup ") || name.starts_with("copy lookup"))
                 && !v.is_zero_vartime()
@@ -1373,11 +1373,8 @@ impl<F: Field> ExecutionConfig<F> {
             {
                 assigned_rw_values.push((name.clone(), *v));
 
-                // The length of `assigned_rw_values` would increase bcs `copy lookup` is inclueded.
-                // To make the later rw count check pass, add `copy_lookup_included` to record how
-                // many `copy lookup` are incluedd.
                 if name.starts_with("copy lookup") {
-                    copy_lookup_included += 1;
+                    copy_lookup_included = true;
                 }
             }
         }
@@ -1405,8 +1402,8 @@ impl<F: Field> ExecutionConfig<F> {
         }
 
         // if copy_rw_counter_delta is zero, ignore `copy lookup` event.
-        if step.copy_rw_counter_delta == 0 && copy_lookup_included > 0 {
-            copy_lookup_included = 0;
+        if step.copy_rw_counter_delta == 0 && copy_lookup_included {
+            copy_lookup_included = false;
         }
 
         // Check that the number of rw operations generated from the bus-mapping
@@ -1414,7 +1411,8 @@ impl<F: Field> ExecutionConfig<F> {
         // plus the number of rw lookups done by the copy circuit
         // minus the number of copy lookup event.
         if step.rw_indices_len()
-            != assigned_rw_values.len() + step.copy_rw_counter_delta as usize - copy_lookup_included
+            != assigned_rw_values.len() + step.copy_rw_counter_delta as usize
+                - copy_lookup_included as usize
         {
             log::error!(
                 "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} - copy_lookup_included: {} in step: {:?}", 
@@ -1427,8 +1425,8 @@ impl<F: Field> ExecutionConfig<F> {
         }
 
         let mut rev_count = 0;
-        let mut acc_offset = 0;
-        let mut copy_lookup_count = 0;
+        let mut offset = 0;
+        let mut copy_lookup_processed = false;
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             let is_rev = if assigned_rw_value.0.contains(" with reversion") {
                 rev_count += 1;
@@ -1449,39 +1447,36 @@ impl<F: Field> ExecutionConfig<F> {
             let idx = if is_rev {
                 step.rw_indices_len() - rev_count
             } else {
-                idx - rev_count + acc_offset - copy_lookup_count
+                idx - rev_count + offset - copy_lookup_processed as usize
             };
-
-            // If assigned_rw_value is a `copy lookup` event and rw lookup is a memory operation,
-            // then keep iterate rw lookups until it's not a memory operation.
-            let mut offset = 0;
 
             // TODO: can remove after #1483 fixed
             // step.rw_indices_len() doesn't inclued copy_rw_counter_delta in some cases
             // which will cuase out of boundary while calling rw_index().
             // Beside, if this condition holds, `copy lookup` is the last element of
-            // assigned_rw_value. Therefore, just ignore it
+            // assigned_rw_value. Therefore, can ignore it for now.
             if idx > step.rw_indices_len() - 1 {
                 continue;
             }
 
-            loop {
-                if assigned_rw_value.0.starts_with("copy lookup")
-                    && step.rw_index(idx + offset).0 == Target::Memory
-                {
-                    // break if it's the last element
-                    if idx + offset == step.rw_indices_len() - 1 {
-                        break;
+            // If assigned_rw_value is a `copy lookup` event, the following
+            // `step.copy_rw_counter_delta` rw lookups must be memory operations.
+            if assigned_rw_value.0.starts_with("copy lookup") {
+                for i in 0..step.copy_rw_counter_delta as usize {
+                    let index = idx + i;
+                    let rw = block.get_rws(step, index);
+                    if rw.tag() != Target::Memory {
+                        log::error!(
+                                "incorrect rw memory witness from copy lookup.\n lookup name: \"{}\"\n {}th rw of step {:?}, rw: {:?}",
+                                assigned_rw_value.0,
+                                index,
+                                step.execution_state(),
+                                rw);
                     }
-                    offset += 1;
-                } else {
-                    break;
                 }
-            }
-            acc_offset += offset;
-            // skip to next one if the current one is `copy lookup`
-            if offset != 0 {
-                copy_lookup_count += 1;
+
+                offset = step.copy_rw_counter_delta as usize;
+                copy_lookup_processed = true;
                 continue;
             }
 
