@@ -9,8 +9,8 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use maingate::MainGateInstructions;
+
 use snark_verifier::{
-    loader::native::NativeLoader,
     pcs::{
         kzg::{KzgAccumulator, KzgAsProvingKey, KzgAsVerifyingKey, KzgDecidingKey},
         AccumulationDecider, AccumulationScheme, AccumulationSchemeProver,
@@ -32,7 +32,10 @@ pub use aggregation::{
     aggregate, AggregationConfig, EccChip, Gwc, Halo2Loader, KzgDk, KzgSvk, PlonkSuccinctVerifier,
     PlonkVerifier, PoseidonTranscript, Shplonk, Snark, SnarkWitness, BITS, LIMBS,
 };
-pub use snark_verifier::system::halo2::{compile, Config};
+pub use snark_verifier::{
+    loader::native::NativeLoader,
+    system::halo2::{compile, transcript::evm::EvmTranscript, Config},
+};
 
 #[cfg(any(feature = "test", test))]
 pub use aggregation::TestAggregationCircuit;
