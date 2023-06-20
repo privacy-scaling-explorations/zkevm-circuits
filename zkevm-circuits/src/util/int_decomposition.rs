@@ -1,0 +1,95 @@
+//! Define IntDecomposition to decompose int into byte limbs
+use eth_types::{Field, ToLittleEndian, H160, U256};
+use gadgets::util::Expr;
+use halo2_proofs::{
+    circuit::{AssignedCell, Value},
+    plonk::{Error, Expression},
+};
+use itertools::Itertools;
+
+use crate::evm_circuit::{
+    param::N_BYTES_HALF_WORD,
+    util::{rlc, CachedRegion, Cell},
+};
+
+use super::word::{Word, WordExpr};
+
+#[derive(Clone, Debug)]
+/// IntDecomposition decompose integer into byte limbs
+pub struct IntDecomposition<F, const N_LIMBS: usize> {
+    /// inner cells in little-endian for synthesis
+    pub limbs: [Cell<F>; N_LIMBS],
+}
+
+impl<F: Field, const N_LIMBS: usize> IntDecomposition<F, N_LIMBS> {
+    /// new by cell limbs
+    pub fn new(limbs: [Cell<F>; N_LIMBS]) -> Self {
+        Self { limbs }
+    }
+
+    /// assign bytes to cells
+    pub fn assign<const N_LIMBS_ASSIGN: usize>(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        bytes: Option<[u8; N_LIMBS_ASSIGN]>,
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+        assert!(N_LIMBS_ASSIGN >= N_LIMBS);
+        bytes.map_or(Err(Error::Synthesis), |bytes| {
+            self.limbs
+                .iter()
+                .zip(bytes.iter())
+                .map(|(cell, byte)| {
+                    cell.assign(region, offset, Value::known(F::from(*byte as u64)))
+                })
+                .collect()
+        })
+    }
+
+    /// assign h160 to cells
+    pub fn assign_h160(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        h160: H160,
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+        let mut bytes = *h160.as_fixed_bytes();
+        bytes.reverse();
+        self.assign(region, offset, Some(bytes))
+    }
+
+    /// assign u256 to cells
+    pub fn assign_u256(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        u256: U256,
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+        self.assign(region, offset, Some(u256.to_le_bytes()))
+    }
+}
+
+impl<F: Field, const N_LIMBS: usize> Expr<F> for IntDecomposition<F, N_LIMBS> {
+    fn expr(&self) -> Expression<F> {
+        rlc::expr(&self.limbs.clone().map(|limb| limb.expr()), 256.expr())
+    }
+}
+
+impl<F: Field, const N_LIMBS: usize> WordExpr<F> for IntDecomposition<F, N_LIMBS> {
+    fn to_word(&self) -> Word<Expression<F>> {
+        let exprs = self
+            .limbs
+            .clone()
+            .map(|x| x.expr())
+            .chunks(N_BYTES_HALF_WORD)
+            .map(|chunk| rlc::expr(chunk, 256.expr()))
+            .collect::<Vec<Expression<F>>>();
+        Word::new(
+            (0..2)
+                .map(|id| exprs.get(id).unwrap_or(&0.expr()).clone())
+                .collect_vec()
+                .try_into()
+                .unwrap(),
+        )
+    }
+}
