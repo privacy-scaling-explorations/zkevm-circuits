@@ -1,6 +1,4 @@
-use super::{
-    constraint_builder::ConstrainBuilderCommon, from_bytes, CachedRegion, MemoryAddress, WordExpr,
-};
+use super::{constraint_builder::ConstrainBuilderCommon, CachedRegion, MemoryAddress, WordExpr};
 use crate::{
     evm_circuit::{
         param::{N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
@@ -89,7 +87,7 @@ impl<F: Field> MemoryAddressGadget<F> {
         memory_offset_word: WordCell<F>,
         memory_length: MemoryAddress<F>,
     ) -> Self {
-        let memory_length_is_zero = IsZeroGadget::construct(cb, memory_length.expr());
+        let memory_length_is_zero = IsZeroGadget::construct(cb, memory_length.sum_expr());
         let memory_offset_bytes = cb.query_memory_address();
 
         let has_length = 1.expr() - memory_length_is_zero.expr();
@@ -134,11 +132,8 @@ impl<F: Field> MemoryAddressGadget<F> {
             .assign_u256(region, offset, memory_offset)?;
         self.memory_length
             .assign_u256(region, offset, memory_length)?;
-        self.memory_length_is_zero.assign(
-            region,
-            offset,
-            from_bytes::value(&memory_length_bytes),
-        )?;
+        self.memory_length_is_zero
+            .assign(region, offset, sum::value(&memory_length_bytes))?;
         Ok(if memory_length_is_zero {
             0
         } else {

@@ -1,6 +1,6 @@
 //! Define IntDecomposition to decompose int into byte limbs
 use eth_types::{Field, ToLittleEndian, H160, U256};
-use gadgets::util::Expr;
+use gadgets::util::{sum, Expr};
 use halo2_proofs::{
     circuit::{AssignedCell, Value},
     plonk::{Error, Expression},
@@ -66,6 +66,11 @@ impl<F: Field, const N_LIMBS: usize> IntDecomposition<F, N_LIMBS> {
         u256: U256,
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
         self.assign(region, offset, Some(u256.to_le_bytes()))
+    }
+
+    /// assign all limbs into one expression
+    pub fn sum_expr(&self) -> Expression<F> {
+        sum::expr(self.limbs.clone())
     }
 }
 
