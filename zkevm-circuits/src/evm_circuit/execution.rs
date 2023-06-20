@@ -1455,6 +1455,16 @@ impl<F: Field> ExecutionConfig<F> {
             // If assigned_rw_value is a `copy lookup` event and rw lookup is a memory operation,
             // then keep iterate rw lookups until it's not a memory operation.
             let mut offset = 0;
+
+            // TODO: can remove after #1483 fixed
+            // step.rw_indices_len() doesn't inclued copy_rw_counter_delta in some cases
+            // which will cuase out of boundary while calling rw_index().
+            // Beside, if this condition holds, `copy lookup` is the last element of
+            // assigned_rw_value. Therefore, just ignore it
+            if idx > step.rw_indices_len() - 1 {
+                continue;
+            }
+
             loop {
                 if assigned_rw_value.0.starts_with("copy lookup")
                     && step.rw_index(idx + offset).0 == Target::Memory
