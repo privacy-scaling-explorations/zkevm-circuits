@@ -250,7 +250,7 @@ fn tracer_err_insufficient_balance() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1].to(accs[1].address).from(accs[2].address).nonce(1);
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -405,7 +405,7 @@ fn tracer_err_address_collision() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1].to(accs[1].address).from(accs[2].address).nonce(1);
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -525,7 +525,7 @@ fn tracer_create_collision_free() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1].to(accs[1].address).from(accs[2].address).nonce(1);
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -655,7 +655,7 @@ fn tracer_err_code_store_out_of_gas() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1].to(accs[1].address).from(accs[2].address).nonce(1);
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -705,7 +705,6 @@ fn tracer_err_code_store_out_of_gas_tx_deploy() {
             txs[0]
                 .from(accs[1].address)
                 .gas(55000u64.into())
-                .nonce(0)
                 .input(code_creator.into());
         },
         |block, _tx| block.number(0x0264),
@@ -804,7 +803,7 @@ fn tracer_err_invalid_code() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1].to(accs[1].address).from(accs[2].address).nonce(1);
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -901,7 +900,7 @@ fn tracer_err_max_code_size_exceeded() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1].to(accs[1].address).from(accs[2].address).nonce(1);
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -951,7 +950,6 @@ fn tracer_err_max_code_size_exceeded_tx_deploy() {
             txs[0]
                 .from(accs[1].address)
                 .gas(60000u64.into())
-                .nonce(0)
                 .input(code_creator.into());
         },
         |block, _tx| block.number(0x0264),
@@ -1042,7 +1040,7 @@ fn tracer_create_stop() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1].to(accs[1].address).from(accs[2].address).nonce(1);
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -1160,7 +1158,7 @@ fn tracer_err_invalid_jump() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1].to(accs[1].address).from(accs[2].address).nonce(1);
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -1260,7 +1258,7 @@ fn tracer_err_execution_reverted() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1].to(accs[1].address).from(accs[2].address).nonce(1);
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -1319,7 +1317,7 @@ fn tracer_stop() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1].to(accs[1].address).from(accs[2].address).nonce(1);
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -1387,7 +1385,7 @@ fn tracer_err_return_data_out_of_bounds() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1].to(accs[1].address).from(accs[2].address).nonce(1);
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -1540,7 +1538,7 @@ fn tracer_err_write_protection(is_call: bool) {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1].to(accs[1].address).from(accs[2].address).nonce(1);
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -1742,7 +1740,7 @@ fn create2_address() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1].to(accs[1].address).from(accs[2].address).nonce(1);
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -1840,7 +1838,7 @@ fn create_address() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1].to(accs[1].address).from(accs[2].address).nonce(1);
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -1924,7 +1922,7 @@ fn test_gen_access_trace() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1].to(accs[1].address).from(accs[2].address).nonce(1);
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -2146,7 +2144,7 @@ fn test_gen_access_trace_create_push_call_stack() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1].to(accs[1].address).from(accs[2].address).nonce(1);
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),

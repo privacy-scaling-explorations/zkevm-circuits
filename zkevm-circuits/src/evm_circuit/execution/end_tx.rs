@@ -385,8 +385,7 @@ mod test {
                     .to(accs[0].address)
                     .from(accs[1].address)
                     .gas(Word::from(30_000))
-                    .gas_price(gwei(2))
-                    .nonce(0);
+                    .gas_price(gwei(2));
                 // txs[1]
                 //     .to(accs[2].address)
                 //     .from(accs[3].address)
@@ -457,8 +456,7 @@ mod test {
                         .to(accs[0].address)
                         .from(accs[1].address)
                         .gas(Word::from(50_000))
-                        .gas_price(gwei(2))
-                        .nonce(0);
+                        .gas_price(gwei(2));
                 },
                 |block, _tx| block,
             )
