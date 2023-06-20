@@ -105,7 +105,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         for idx in 0..4 {
             cb.require_equal(
                 "a64s[idx] == a64s_lo[idx] + a64s_hi[idx] * p_lo",
-                a64s.limbs[0].clone(),
+                a64s.limbs[idx].clone(),
                 a64s_lo[idx].expr() + a64s_hi[idx].expr() * p_lo.expr(),
             );
         }

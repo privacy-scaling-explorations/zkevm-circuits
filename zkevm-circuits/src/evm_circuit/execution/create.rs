@@ -291,8 +291,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 cb.account_write_word(
                     contract_addr.to_word(),
                     AccountFieldTag::Nonce,
-                    Word::from_lo_unchecked(1.expr()),
-                    Word::from_lo_unchecked(0.expr()),
+                    Word::one(),
+                    Word::zero(),
                     Some(&mut callee_reversion_info),
                 );
 

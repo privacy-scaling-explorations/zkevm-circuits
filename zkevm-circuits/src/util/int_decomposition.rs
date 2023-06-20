@@ -28,13 +28,20 @@ impl<F: Field, const N_LIMBS: usize> IntDecomposition<F, N_LIMBS> {
     }
 
     /// assign bytes to cells
-    pub fn assign<const N_LIMBS_ASSIGN: usize>(
+    pub fn assign<const N_BYTES: usize>(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        bytes: Option<[u8; N_LIMBS_ASSIGN]>,
+        bytes: Option<[u8; N_BYTES]>,
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
-        assert!(N_LIMBS_ASSIGN >= N_LIMBS);
+        assert!(N_BYTES >= N_LIMBS);
+        if let Some(bytes) = bytes {
+            if N_BYTES > N_LIMBS {
+                for byte in &bytes[N_BYTES - N_LIMBS..] {
+                    assert_eq!(*byte, 0);
+                }
+            }
+        }
         bytes.map_or(Err(Error::Synthesis), |bytes| {
             self.limbs
                 .iter()

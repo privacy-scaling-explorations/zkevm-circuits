@@ -73,11 +73,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         });
 
         // current call context is readonly
-        cb.call_context_lookup_read(
-            None,
-            CallContextFieldTag::IsStatic,
-            Word::from_lo_unchecked(1.expr()),
-        );
+        cb.call_context_lookup_read(None, CallContextFieldTag::IsStatic, Word::one());
 
         // constrain not root call as at least one previous staticcall preset.
         cb.require_zero(

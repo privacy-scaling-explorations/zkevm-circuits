@@ -272,7 +272,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             cb.account_write_word(
                 call_callee_address.to_word(),
                 AccountFieldTag::Nonce,
-                Word::from_lo_unchecked(1.expr()),
+                Word::one(),
                 Word::zero(),
                 Some(&mut reversion_info),
             );
@@ -394,10 +394,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             |cb| {
                 // Setup first call's context.
                 for (field_tag, value) in [
-                    (
-                        CallContextFieldTag::Depth,
-                        Word::from_lo_unchecked(1.expr()),
-                    ),
+                    (CallContextFieldTag::Depth, Word::one()),
                     (
                         CallContextFieldTag::CallerAddress,
                         tx_caller_address.to_word(),
