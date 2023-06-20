@@ -8,7 +8,8 @@ use eth_types::{Field, ToLittleEndian, H160};
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
-    plonk::{Advice, Column, Error, Expression},
+    plonk::{Advice, Column, Error, Expression, VirtualCells},
+    poly::Rotation,
 };
 use itertools::Itertools;
 
@@ -44,6 +45,24 @@ impl<T, const N: usize> WordLimbs<T, N> {
     /// The number of limbs
     pub fn n() -> usize {
         N
+    }
+}
+
+impl<const N: usize> WordLimbs<Column<Advice>, N> {
+    /// Query advice of WordLibs of columns advice
+    pub fn query<F: Field>(
+        &self,
+        meta: &mut VirtualCells<F>,
+        at: Rotation,
+    ) -> WordLimbs<Expression<F>, N> {
+        WordLimbs::new(self.limbs.map(|column| meta.query_advice(column, at)))
+    }
+}
+
+impl<const N: usize> WordLimbs<u8, N> {
+    /// Convert WordLimbs of u8 to WordLimbs of expressions
+    pub fn to_expr<F: Field>(&self) -> WordLimbs<Expression<F>, N> {
+        WordLimbs::new(self.limbs.map(|v| Expression::Constant(F::from(v as u64))))
     }
 }
 
@@ -369,6 +388,13 @@ impl<F: Field> Word<Value<F>> {
         let hi = region.assign_advice(|| &annotation, column.hi(), offset, || self.hi())?;
 
         Ok(Word::new([lo, hi]))
+    }
+}
+
+impl Word<Column<Advice>> {
+    /// Query advice of Word of columns advice
+    pub fn query<F: Field>(&self, meta: &mut VirtualCells<F>, at: Rotation) -> Word<Expression<F>> {
+        self.0.query(meta, at).to_word()
     }
 }
 

@@ -277,15 +277,11 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             );
 
             let empty_hash_word: Word<Expression<F>> =
-                Word32::new(EMPTY_CODE_HASH_LE.map(|v| Expression::Constant(F::from(v as u64))))
-                    .to_word();
+                Word32::new(*EMPTY_CODE_HASH_LE).to_expr().to_word();
 
             cb.require_equal_word(
                 "assert cur.hash == EMPTY_HASH",
-                Word::new([
-                    meta.query_advice(bytecode_table.code_hash.lo(), Rotation::cur()),
-                    meta.query_advice(bytecode_table.code_hash.hi(), Rotation::cur()),
-                ]),
+                bytecode_table.code_hash.query(meta, Rotation::cur()),
                 empty_hash_word,
             );
 
@@ -326,14 +322,8 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
 
             cb.require_equal_word(
                 "next.hash == cur.hash",
-                Word::new([
-                    meta.query_advice(bytecode_table.code_hash.lo(), Rotation::next()),
-                    meta.query_advice(bytecode_table.code_hash.hi(), Rotation::next()),
-                ]),
-                Word::new([
-                    meta.query_advice(bytecode_table.code_hash.lo(), Rotation::cur()),
-                    meta.query_advice(bytecode_table.code_hash.hi(), Rotation::cur()),
-                ]),
+                bytecode_table.code_hash.query(meta, Rotation::next()),
+                bytecode_table.code_hash.query(meta, Rotation::cur()),
             );
 
             cb.require_equal(
@@ -375,14 +365,8 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
 
             cb.require_equal_word(
                 "next.hash == cur.hash",
-                Word::new([
-                    meta.query_advice(bytecode_table.code_hash.lo(), Rotation::next()),
-                    meta.query_advice(bytecode_table.code_hash.hi(), Rotation::next()),
-                ]),
-                Word::new([
-                    meta.query_advice(bytecode_table.code_hash.lo(), Rotation::cur()),
-                    meta.query_advice(bytecode_table.code_hash.hi(), Rotation::cur()),
-                ]),
+                bytecode_table.code_hash.query(meta, Rotation::next()),
+                bytecode_table.code_hash.query(meta, Rotation::cur()),
             );
 
             cb.require_equal(
