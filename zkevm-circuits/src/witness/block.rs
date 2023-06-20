@@ -8,7 +8,6 @@ use crate::{
 };
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
-    operation::Target,
     Error,
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
@@ -72,35 +71,6 @@ impl<F: Field> Block<F> {
     /// Get a read-write record
     pub(crate) fn get_rws(&self, step: &ExecStep, index: usize) -> Rw {
         self.rws[step.rw_index(index)]
-    }
-
-    /// Get a read-write record for `check_rw_lookup`
-    pub(crate) fn get_rws_for_check_rw_lookup(
-        &self,
-        step: &ExecStep,
-        index: usize,
-        skip_memory_rw: bool,
-    ) -> (Rw, usize) {
-        if skip_memory_rw == false {
-            (self.get_rws(step, index), 0)
-        } else {
-            let mut idx = index;
-            let mut rw_index = step.rw_index(idx);
-            loop {
-                if idx == step.rw_indices_len() - 1 {
-                    idx = index;
-                    rw_index = step.rw_index(idx);
-                    break;
-                }
-                if rw_index.0 == Target::Memory {
-                    idx += 1;
-                    rw_index = step.rw_index(idx);
-                } else {
-                    break;
-                }
-            }
-            (self.rws[rw_index], idx - index)
-        }
     }
 
     /// Obtains the expected Circuit degree needed in order to be able to test
