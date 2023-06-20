@@ -359,7 +359,15 @@ impl CircuitInputBuilder<DynamicCParams> {
                 * 2
                 + 2;
             let max_rws: usize = self.block_ctx.rwc.into();
+            // Computing the number of rows for the EVM circuit requires the size of ExecStep,
+            // which is determined in the code of zkevm-circuits and cannot be imported here.
+            // When the evm circuit receives a 0 value it dynamically computes the minimum
+            // number of rows necessary.
             let max_evm_rows = 0;
+            // Similarly, computing the number of rows for the Keccak circuit requires
+            // constants that cannot be accessed from here (NUM_ROUNDS and KECCAK_ROWS).
+            // With a 0 value the keccak circuit computes dynamically the minimum number of rows
+            // needed.
             let max_keccak_rows = 0;
             FixedCParams {
                 max_rws: max_rws + 1,
