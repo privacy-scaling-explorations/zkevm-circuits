@@ -11,10 +11,9 @@ use ethers_core::{
 };
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::halo2curves::{
-    group::{ff::PrimeField, Curve},
+    group::ff::PrimeField,
     secp256k1,
 };
-use log::warn;
 use num::Integer;
 use num_bigint::BigUint;
 use serde::{Serialize, Serializer};
@@ -151,9 +150,6 @@ pub struct Transaction {
     pub r: Word,
     /// "s" value of the transaction signature
     pub s: Word,
-
-    /// True when the invalid signature is skipped
-    pub enable_skipping_invalid_signature: bool,
 }
 
 impl From<&Transaction> for crate::Transaction {
@@ -193,7 +189,6 @@ impl From<&crate::Transaction> for Transaction {
             v: tx.v.as_u64(),
             r: tx.r,
             s: tx.s,
-            enable_skipping_invalid_signature: true,
         }
     }
 }
@@ -240,17 +235,6 @@ impl Transaction {
             .ok_or(Error::Signature(libsecp256k1::Error::InvalidSignature))? as u8;
         let pk = match recover_pk(v, &self.r, &self.s, &msg_hash) {
             Ok(pk) => pk,
-            Err(libsecp256k1::Error::InvalidSignature)
-                if self.enable_skipping_invalid_signature =>
-            {
-                warn!(
-                    "sign_data error: InvalidSignature. Failed to recover pk. Using default value."
-                );
-                let g = secp256k1::Secp256k1Affine::generator();
-                let sk = secp256k1::Fq::one();
-                let pk = g * sk;
-                pk.to_affine()
-            }
             Err(_) => return Err(Error::Signature(libsecp256k1::Error::InvalidSignature)),
         };
         // msg_hash = msg_hash % q

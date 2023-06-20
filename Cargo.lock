@@ -1177,7 +1177,7 @@ dependencies = [
 [[package]]
 name = "ecc"
 version = "0.1.0"
-source = "git+https://github.com/xiaodino/halo2wrong?rev=082a983a91fa0a527f78c38b51feb1575398065c#082a983a91fa0a527f78c38b51feb1575398065c"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20#f72db265aa3cebe297c9b9816e940d0e1d400886"
 dependencies = [
  "integer",
  "num-bigint",
@@ -1190,7 +1190,7 @@ dependencies = [
 [[package]]
 name = "ecdsa"
 version = "0.1.0"
-source = "git+https://github.com/xiaodino/halo2wrong?rev=082a983a91fa0a527f78c38b51feb1575398065c#082a983a91fa0a527f78c38b51feb1575398065c"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20#f72db265aa3cebe297c9b9816e940d0e1d400886"
 dependencies = [
  "ecc",
  "num-bigint",
@@ -2193,7 +2193,7 @@ dependencies = [
 [[package]]
 name = "halo2wrong"
 version = "0.1.0"
-source = "git+https://github.com/xiaodino/halo2wrong?rev=082a983a91fa0a527f78c38b51feb1575398065c#082a983a91fa0a527f78c38b51feb1575398065c"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20#f72db265aa3cebe297c9b9816e940d0e1d400886"
 dependencies = [
  "halo2_proofs 0.2.0",
  "num-bigint",
@@ -2530,7 +2530,7 @@ dependencies = [
 [[package]]
 name = "integer"
 version = "0.1.0"
-source = "git+https://github.com/xiaodino/halo2wrong?rev=082a983a91fa0a527f78c38b51feb1575398065c#082a983a91fa0a527f78c38b51feb1575398065c"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20#f72db265aa3cebe297c9b9816e940d0e1d400886"
 dependencies = [
  "maingate",
  "num-bigint",
@@ -2833,7 +2833,7 @@ dependencies = [
 [[package]]
 name = "maingate"
 version = "0.1.0"
-source = "git+https://github.com/xiaodino/halo2wrong?rev=082a983a91fa0a527f78c38b51feb1575398065c#082a983a91fa0a527f78c38b51feb1575398065c"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20#f72db265aa3cebe297c9b9816e940d0e1d400886"
 dependencies = [
  "halo2wrong",
  "num-bigint",
@@ -4330,7 +4330,7 @@ checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
 [[package]]
 name = "snark-verifier"
 version = "0.1.0"
-source = "git+https://github.com/xiaodino/snark-verifier?rev=a63e11a155d68092b4498135c7a9a65653c4f6b9#a63e11a155d68092b4498135c7a9a65653c4f6b9"
+source = "git+https://github.com/privacy-scaling-explorations/snark-verifier?tag=v2023_04_20#e5d5e4a6ccff2bba71baf77ab7a12b124d6364a1"
 dependencies = [
  "ecc",
  "halo2_proofs 0.2.0",

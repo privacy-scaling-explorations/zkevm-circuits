@@ -243,10 +243,6 @@ impl<F: Field> TxCircuit<F> {
                             TxFieldTag::TxSignHash,
                             assigned_sig_verif.msg_hash_rlc.value().copied(),
                         ),
-                        (
-                            TxFieldTag::TxInvalid,
-                            assigned_sig_verif.is_invalid.value().copied(),
-                        ),
                     ] {
                         let assigned_cell =
                             config.assign_row(&mut region, offset, i + 1, tag, 0, value)?;
@@ -255,6 +251,10 @@ impl<F: Field> TxCircuit<F> {
                         // Ref. spec 0. Copy constraints using fixed offsets between the tx rows and
                         // the SignVerifyChip
                         match tag {
+                            TxFieldTag::CallerAddress => region.constrain_equal(
+                                assigned_cell.cell(),
+                                assigned_sig_verif.address.cell(),
+                            )?,
                             TxFieldTag::TxSignHash => region.constrain_equal(
                                 assigned_cell.cell(),
                                 assigned_sig_verif.msg_hash_rlc.cell(),
@@ -361,7 +361,6 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             layouter,
             &sign_datas,
             challenges,
-            &self.txs,
         )?;
         self.assign_tx_table(config, challenges, layouter, assigned_sig_verifs)?;
         Ok(())

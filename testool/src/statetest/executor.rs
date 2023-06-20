@@ -150,7 +150,6 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 v: sig.v,
                 r: sig.r,
                 s: sig.s,
-                enable_skipping_invalid_signature: false,
             }],
             accounts: st.pre,
             ..Default::default()

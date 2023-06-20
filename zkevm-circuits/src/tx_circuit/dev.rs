@@ -49,7 +49,6 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
 
-        
         config.keccak_table.dev_load(
             &mut layouter,
             &keccak_inputs_tx_circuit(&self.txs[..], self.chain_id).map_err(|e| {
@@ -58,7 +57,6 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
             })?,
             &challenges,
         )?;
-        
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
