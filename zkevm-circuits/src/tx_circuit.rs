@@ -231,10 +231,7 @@ impl<F: Field> TxCircuit<F> {
                         ),
                         (
                             TxFieldTag::TxSignHash,
-                            Word::new([
-                                assigned_sig_verif.msg_hash.lo().value().copied(),
-                                assigned_sig_verif.msg_hash.hi().value().copied(),
-                            ]),
+                            assigned_sig_verif.msg_hash.map(|x| x.value().copied()),
                         ),
                     ] {
                         let assigned_cell =
