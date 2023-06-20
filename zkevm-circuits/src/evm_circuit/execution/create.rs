@@ -772,10 +772,10 @@ mod test {
 
     #[test]
     fn test_create() {
-        for ((is_success, is_create2), is_persistent) in [true]
+        for ((is_success, is_create2), is_persistent) in [true, false]
             .iter()
-            .cartesian_product(&[true])
-            .cartesian_product(&[true])
+            .cartesian_product(&[true, false])
+            .cartesian_product(&[true, false])
         {
             let init_code = initialization_bytecode(*is_success);
             let root_code = creator_bytecode(init_code, 23414.into(), *is_create2, *is_persistent);
