@@ -25,7 +25,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, U256};
+use eth_types::{evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
@@ -561,10 +561,16 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
-        self.current_callee_address
-            .assign_u256(region, offset, current_callee_address)?;
-        self.current_caller_address
-            .assign_u256(region, offset, current_caller_address)?;
+        self.current_callee_address.assign_h160(
+            region,
+            offset,
+            current_callee_address.to_address(),
+        )?;
+        self.current_caller_address.assign_h160(
+            region,
+            offset,
+            current_caller_address.to_address(),
+        )?;
         self.current_value
             .assign_u256(region, offset, current_value)?;
         self.is_static

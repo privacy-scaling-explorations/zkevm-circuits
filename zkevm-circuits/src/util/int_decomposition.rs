@@ -37,7 +37,7 @@ impl<F: Field, const N_LIMBS: usize> IntDecomposition<F, N_LIMBS> {
         assert!(N_BYTES >= N_LIMBS);
         if let Some(bytes) = bytes {
             if N_BYTES > N_LIMBS {
-                for byte in &bytes[N_BYTES - N_LIMBS..] {
+                for byte in &bytes[N_LIMBS..] {
                     assert_eq!(*byte, 0);
                 }
             }

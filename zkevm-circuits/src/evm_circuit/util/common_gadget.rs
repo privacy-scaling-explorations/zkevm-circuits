@@ -27,7 +27,7 @@ use crate::{
     witness::{Block, Call, ExecStep},
 };
 use bus_mapping::state_db::CodeDB;
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, ToWord, U256};
+use eth_types::{evm_types::GasCost, Field, ToAddress, ToLittleEndian, ToScalar, ToWord, U256};
 use gadgets::util::{select, sum};
 use halo2_proofs::{
     circuit::Value,
@@ -757,7 +757,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
     ) -> Result<u64, Error> {
         self.gas.assign_u256(region, offset, gas)?;
         self.callee_address_word
-            .assign_u256(region, offset, callee_address)?;
+            .assign_h160(region, offset, callee_address.to_address())?;
         self.value.assign_u256(region, offset, value)?;
         if IS_SUCCESS_CALL {
             self.is_success

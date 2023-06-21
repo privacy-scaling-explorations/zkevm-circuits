@@ -16,7 +16,7 @@ use crate::{
         Expr,
     },
 };
-use eth_types::{evm_types::OpcodeId, Field, U256};
+use eth_types::{evm_types::OpcodeId, Field, ToAddress, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -116,7 +116,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
 
         self.gas.assign_u256(region, offset, gas)?;
         self.code_address
-            .assign_u256(region, offset, code_address)?;
+            .assign_h160(region, offset, code_address.to_address())?;
         self.value.assign_u256(region, offset, value)?;
 
         self.is_call.assign(
