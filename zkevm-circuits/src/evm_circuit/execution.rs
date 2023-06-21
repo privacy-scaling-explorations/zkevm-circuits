@@ -1358,7 +1358,7 @@ impl<F: Field> ExecutionConfig<F> {
             return;
         }
 
-        let mut copy_lookup_included = false;
+        let mut copy_lookup_count = 0;
         let mut assigned_rw_values = Vec::new();
         for (name, v) in assigned_stored_expressions {
             // If any `copy lookup` which dst_tag or src_tag is Memory in opcode execution,
@@ -1374,9 +1374,18 @@ impl<F: Field> ExecutionConfig<F> {
                 assigned_rw_values.push((name.clone(), *v));
 
                 if name.starts_with("copy lookup") {
-                    copy_lookup_included = true;
+                    copy_lookup_count += 1;
                 }
             }
+        }
+
+        // TODO: We should find a better way to avoid this kind of special case.
+        // #1489 is the issue for this refactor.
+        if copy_lookup_count > 1 {
+            log::warn!("The number of copy events is more than 1, it's not supported by current design. Stop checking this step: {:?}", 
+                step
+            );
+            return;
         }
 
         let rlc_assignments: BTreeSet<_> = (0..step.rw_indices_len())
@@ -1402,8 +1411,8 @@ impl<F: Field> ExecutionConfig<F> {
         }
 
         // if copy_rw_counter_delta is zero, ignore `copy lookup` event.
-        if step.copy_rw_counter_delta == 0 && copy_lookup_included {
-            copy_lookup_included = false;
+        if step.copy_rw_counter_delta == 0 && copy_lookup_count > 0 {
+            copy_lookup_count = 0;
         }
 
         // Check that the number of rw operations generated from the bus-mapping
@@ -1411,15 +1420,14 @@ impl<F: Field> ExecutionConfig<F> {
         // plus the number of rw lookups done by the copy circuit
         // minus the number of copy lookup event.
         if step.rw_indices_len()
-            != assigned_rw_values.len() + step.copy_rw_counter_delta as usize
-                - copy_lookup_included as usize
+            != assigned_rw_values.len() + step.copy_rw_counter_delta as usize - copy_lookup_count
         {
             log::error!(
-                "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} - copy_lookup_included: {} in step: {:?}", 
+                "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} - copy_lookup_count: {} in step: {:?}", 
                 step.rw_indices_len(),
                 assigned_rw_values.len(),
                 step.copy_rw_counter_delta,
-                copy_lookup_included,
+                copy_lookup_count,
                 step
             );
         }
