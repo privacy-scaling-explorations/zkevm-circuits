@@ -159,7 +159,7 @@ mod test {
     use mock::{generate_mock_call_bytecode, test_ctx::TestContext, MockCallBytecodeParams};
 
     lazy_static! {
-        static ref TEST_ADDRESS: Address = address!("0xaabbccddee000000000000000000000000000000");
+        static ref TEST_ADDRESS: Address = address!("0xaabbccddeeffdeadbeef00000000000000000000");
     }
 
     #[test]
