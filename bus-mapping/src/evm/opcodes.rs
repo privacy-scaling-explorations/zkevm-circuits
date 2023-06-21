@@ -9,8 +9,6 @@ use crate::{
 use core::fmt::Debug;
 use eth_types::{evm_unimplemented, GethExecStep, ToAddress};
 
-pub use self::sha3::Sha3CodeGen;
-
 mod address;
 mod balance;
 mod begin_end_tx;

@@ -310,8 +310,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     }
 
                     cb.require_step_state_transition(StepStateTransition {
-                        // +1: move to new context
-                        rw_counter: Delta(cb.rw_counter_offset() + 1.expr()),
+                        rw_counter: Delta(cb.rw_counter_offset()),
                         call_id: To(callee_call_id.expr()),
                         is_root: To(false.expr()),
                         is_create: To(true.expr()),

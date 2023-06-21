@@ -9,16 +9,18 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:    
+  workflow_dispatch:
     inputs:
       provertype:
-        description: 'invoke real vs mock prover'
+        description: 'invoke real vs mock prover (with or without root)'
         required: true
-        default: 'mock_prover'
+        default: 'sub_mock_prover'
         type: choice
         options:
-        - real_prover
-        - mock_prover  
+        - sub_real_prover
+        - sub_mock_prover
+        - root_mock_prover
+        - root_real_prover
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -36,12 +38,18 @@ jobs:
       - id: set-outputs
         name: Select instance and prover type
         run: |
-          if [ "${{ github.event.inputs.provertype }}" = "real_prover" ] || [ "${{ github.event_name }}" = "schedule" ]; then
+          if [ "${{ github.event.inputs.provertype }}" = "root_real_prover" ] || [ "${{ github.event_name }}" = "schedule" ]; then
             echo "instancetype=r6i.32xlarge" >> "$GITHUB_OUTPUT"
-            echo "provertype=real_prover" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.inputs.provertype }}" = "mock_prover" ] || [ -z ${{ github.event.inputs.provertype }} ]; then
+            echo "provertype=root_real_prover" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.inputs.provertype }}" = "root_mock_prover" ]; then
+            echo "instancetype=r6i.32xlarge" >> "$GITHUB_OUTPUT"
+            echo "provertype=root_mock_prover" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.inputs.provertype }}" = "sub_real_prover" ]; then
+            echo "instancetype=r6i.32xlarge" >> "$GITHUB_OUTPUT"
+            echo "provertype=sub_real_prover" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.inputs.provertype }}" = "sub_mock_prover" ] || [ -z ${{ github.event.inputs.provertype }} ]; then
             echo "instancetype=c5.9xlarge" >> "$GITHUB_OUTPUT"
-            echo "provertype=mock_prover" >> "$GITHUB_OUTPUT"
+            echo "provertype=sub_mock_prover" >> "$GITHUB_OUTPUT"
           else
             exit 1
           fi
@@ -73,7 +81,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
       - name: Cargo cache
-        uses: actions/cache@v3  
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/bin/
@@ -82,7 +90,7 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      # Run an initial build in a separate step to split the build time from execution time    
+      # Run an initial build in a separate step to split the build time from execution time
       - name: Build bins
         run: cargo build --bin gen_blockchain_data
       - name: Build tests

@@ -6,7 +6,6 @@ use crate::{
 };
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
-    evm::Sha3CodeGen,
     mock::BlockData,
 };
 use eth_types::{bytecode, geth_types::GethData, ToWord, Word};
@@ -14,7 +13,9 @@ use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
 };
-use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS};
+use mock::{
+    test_ctx::helpers::account_0_code_account_1_no_code, Sha3CodeGen, TestContext, MOCK_ACCOUNTS,
+};
 
 #[test]
 fn copy_circuit_unusable_rows() {

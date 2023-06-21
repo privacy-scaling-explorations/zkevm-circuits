@@ -5,9 +5,8 @@ use crate::{
     },
     Error,
 };
-use eth_types::{bytecode, Bytecode, GethExecStep, Word, U256};
+use eth_types::{GethExecStep, U256};
 use ethers_core::utils::keccak256;
-use rand::{rngs::ThreadRng, Rng};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Sha3;
@@ -46,7 +45,7 @@ impl Opcode for Sha3 {
 
         // keccak-256 hash of the given data in memory.
         let sha3 = keccak256(&memory);
-        debug_assert_eq!(Word::from_big_endian(&sha3), expected_sha3);
+        debug_assert_eq!(U256::from_big_endian(&sha3), expected_sha3);
         state.stack_write(
             &mut exec_step,
             geth_steps[1].stack.last_filled(),
@@ -87,113 +86,13 @@ impl Opcode for Sha3 {
     }
 }
 
-/// Generate Sha3 opcode
-pub struct Sha3CodeGen {
-    /// The offset
-    pub offset: usize,
-    /// The size
-    pub size: usize,
-    data_len: usize,
-    rng: ThreadRng,
-}
-impl Sha3CodeGen {
-    /// Construct with memory less than size
-    pub fn mem_lt_size(offset: usize, size: usize) -> Self {
-        let mut rng = rand::thread_rng();
-        let data_len = offset
-            + if size.gt(&0) {
-                rng.gen_range(0..size)
-            } else {
-                0
-            };
-        Self {
-            offset,
-            size,
-            data_len,
-            rng,
-        }
-    }
-    /// Construct with memory equal to size
-    pub fn mem_eq_size(offset: usize, size: usize) -> Self {
-        let data_len = offset + size;
-        Self {
-            offset,
-            size,
-            data_len,
-            rng: rand::thread_rng(),
-        }
-    }
-    /// Construct with memory greater than size
-    pub fn mem_gt_size(offset: usize, size: usize) -> Self {
-        let mut rng = rand::thread_rng();
-        let data_len = offset
-            + size
-            + if size.gt(&0) {
-                rng.gen_range(0..size)
-            } else {
-                0
-            };
-        Self {
-            offset,
-            size,
-            data_len,
-            rng,
-        }
-    }
-    /// Construct with empty memory
-    pub fn mem_empty(offset: usize, size: usize) -> Self {
-        Self {
-            offset,
-            size,
-            data_len: 0,
-            rng: rand::thread_rng(),
-        }
-    }
-    fn rand_bytes(&mut self) -> Vec<u8> {
-        (0..self.data_len)
-            .map(|_| self.rng.gen())
-            .collect::<Vec<u8>>()
-    }
-    /// Generate bytecode for SHA3 opcode after having populated sufficient
-    /// memory given the offset and size arguments for SHA3.
-    pub fn gen_sha3_code(&mut self) -> (Bytecode, Vec<u8>) {
-        let data = self.rand_bytes();
-        let mut memory = Vec::with_capacity(self.data_len);
-
-        // add opcodes to populate memory in the current context.
-        let mut code = Bytecode::default();
-        for (i, mem_chunk) in data.chunks(32).enumerate() {
-            let mem_value = if mem_chunk.len() < 32 {
-                std::iter::repeat(0u8)
-                    .take(32 - mem_chunk.len())
-                    .chain(mem_chunk.to_vec())
-                    .collect::<Vec<u8>>()
-            } else {
-                mem_chunk.to_vec()
-            };
-            memory.extend_from_slice(&mem_value);
-            code.op_mstore(32 * i, Word::from_big_endian(&mem_value));
-        }
-        // append SHA3 related opcodes at the tail end.
-        let code_tail = bytecode! {
-            PUSH32(self.size)
-            PUSH32(self.offset)
-            SHA3
-            STOP
-        };
-        code.append(&code_tail);
-        (code, memory)
-    }
-}
-
 #[cfg(test)]
 pub(crate) mod sha3_tests {
-    use super::Sha3CodeGen;
-    use eth_types::{evm_types::OpcodeId, geth_types::GethData, Word};
+    use eth_types::{evm_types::OpcodeId, geth_types::GethData, U256};
     use ethers_core::utils::keccak256;
     use mock::{
         test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
-        TestContext,
+        Sha3CodeGen, TestContext,
     };
 
     use crate::{
@@ -253,11 +152,11 @@ pub(crate) mod sha3_tests {
             [
                 (
                     RW::READ,
-                    &StackOp::new(call_id, 1022.into(), Word::from(offset)),
+                    &StackOp::new(call_id, 1022.into(), U256::from(offset)),
                 ),
                 (
                     RW::READ,
-                    &StackOp::new(call_id, 1023.into(), Word::from(size)),
+                    &StackOp::new(call_id, 1023.into(), U256::from(size)),
                 ),
                 (
                     RW::WRITE,
