@@ -321,7 +321,7 @@ fn copy_circuit_valid_codecopy() {
 fn copy_circuit_valid_returndatacopy() {
     let builder = gen_returndatacopy_data();
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-    assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
+    assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
 }
 
 #[test]

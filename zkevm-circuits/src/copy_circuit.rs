@@ -328,17 +328,15 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             cb.condition(
                 and::expr([
                     not_last_two_rows.expr(),
-                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
-                        meta,
-                    )),
+                    non_pad_non_mask.is_lt(meta, None),
                     not::expr(tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta)),
                 ]),
                 |cb| {
-                    // cb.require_equal(
-                    //     "rows[0].addr + 1 == rows[2].addr",
-                    //     meta.query_advice(addr, Rotation::cur()) + 1.expr(),
-                    //     meta.query_advice(addr, Rotation(2)),
-                    // );
+                    cb.require_equal(
+                        "rows[0].addr + 1 == rows[2].addr",
+                        meta.query_advice(addr, Rotation::cur()) + 1.expr(),
+                        meta.query_advice(addr, Rotation(2)),
+                    );
                 },
             );
 
@@ -645,7 +643,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         meta.lookup_any("Tx calldata lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * meta.query_advice(is_tx_calldata, Rotation::cur())
-                * not::expr(meta.query_advice(is_pad, Rotation::cur()));
+                * non_pad_non_mask.is_lt(meta, None);
 
             vec![
                 1.expr(),
@@ -793,15 +791,16 @@ impl<F: Field> CopyCircuitConfig<F> {
             // lt chip
             if is_read {
                 // for bytecode, front mask rows not increase addr
-                let src_addr_increase = if tag.eq(&CopyDataType::Bytecode) {
-                    if step_idx as u64 <= 2 * src_first_non_mask {
-                        0
+                let src_addr_increase =
+                    if tag.eq(&CopyDataType::Bytecode) || tag.eq(&CopyDataType::TxCalldata) {
+                        if step_idx as u64 <= 2 * src_first_non_mask {
+                            0
+                        } else {
+                            u64::try_from(step_idx).unwrap() / 2u64 - src_first_non_mask
+                        }
                     } else {
-                        u64::try_from(step_idx).unwrap() / 2u64 - src_first_non_mask
-                    }
-                } else {
-                    u64::try_from(step_idx).unwrap() / 2u64
-                };
+                        u64::try_from(step_idx).unwrap() / 2u64
+                    };
 
                 lt_chip.assign(
                     region,
