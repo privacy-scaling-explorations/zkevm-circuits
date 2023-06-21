@@ -1,6 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -8,6 +9,7 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::Delta,
             },
+            math_gadget::MinMaxGadget,
             sum, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -83,15 +85,27 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             );
         }
 
+        // Fetch the bytecode length from the bytecode table.
+        let code_size = cb.query_cell();
+        let code_hash = cb.curr.state.code_hash.clone();
+        cb.bytecode_length(code_hash.expr(), code_size.expr());
+
         // Deduce the number of additional bytes to push than PUSH1. Note that
         // num_additional_pushed = n - 1 where n is the suffix number of PUSH*.
         let num_additional_pushed = opcode.expr() - OpcodeId::PUSH1.as_u64().expr();
+
         // Sum of selectors needs to be exactly the number of additional bytes
-        // that needs to be pushed.
+        // that needs to be pushed or the bytecode_length - program counter
+        // if we push outside the bytecode length.
+        let minmax: MinMaxGadget<F, N_BYTES_PROGRAM_COUNTER> = MinMaxGadget::construct(
+            cb,
+            code_size.expr() - cb.curr.state.program_counter.expr(),
+            num_additional_pushed,
+        );
         cb.require_equal(
             "Constrain sum of selectors equal to num_additional_pushed",
             sum::expr(&selectors),
-            num_additional_pushed,
+            minmax.min(),
         );
 
         // Push the value on the stack
