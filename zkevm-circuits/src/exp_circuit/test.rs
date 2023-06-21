@@ -51,29 +51,37 @@ fn gen_code_multiple(args: Vec<(Word, Word)>) -> Bytecode {
     code
 }
 
-fn gen_data(code: Bytecode) -> CircuitInputBuilder<FixedCParams> {
+fn gen_data(code: Bytecode, default_params: bool) -> CircuitInputBuilder<FixedCParams> {
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
     // Needs default parameters for variadic size test
-    let mut builder =
-        BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
-            .new_circuit_input_builder();
-    builder
-        .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
+    let builder = if default_params {
+        let mut builder =
+            BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
+                .new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        builder
+    } else {
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap()
+    };
     builder
 }
 
 fn test_ok(base: Word, exponent: Word, k: Option<u32>) {
     let code = gen_code_single(base, exponent);
-    let builder = gen_data(code);
+    let builder = gen_data(code, false);
     let block = block_convert::<Fr>(&builder).unwrap();
     test_exp_circuit(k.unwrap_or(18), block);
 }
 
 fn test_ok_multiple(args: Vec<(Word, Word)>) {
     let code = gen_code_multiple(args);
-    let builder = gen_data(code);
+    let builder = gen_data(code, false);
     let block = block_convert::<Fr>(&builder).unwrap();
     test_exp_circuit(20, block);
 }
@@ -142,7 +150,7 @@ fn variadic_size_check() {
         EXP
         STOP
     };
-    let builder = gen_data(code);
+    let builder = gen_data(code, true);
     let block = block_convert::<Fr>(&builder).unwrap();
     let circuit = ExpCircuit::<Fr>::new(
         block.exp_events.clone(),
