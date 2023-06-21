@@ -1,6 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -8,6 +9,7 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::Delta,
             },
+            math_gadget::LtGadget,
             sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -25,7 +27,10 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 pub(crate) struct PushGadget<F> {
     same_context: SameContextGadget<F>,
     value: Word32Cell<F>,
-    selectors: [Cell<F>; 31],
+    is_pushed: [Cell<F>; 32],
+    is_padding: [Cell<F>; 32],
+    code_size: Cell<F>,
+    is_out_of_range: LtGadget<F, N_BYTES_PROGRAM_COUNTER>,
 }
 
 impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
@@ -35,10 +40,33 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
+        let code_size = cb.query_cell();
+        let code_size_left = code_size.expr() - cb.curr.state.program_counter.expr();
 
         let value = cb.query_word32();
-        // Query selectors for each opcode_lookup
-        let selectors = array_init(|_| cb.query_bool());
+        // Query selectors for each opcode_lookup to know whether the current byte needs to be
+        // pushed
+        let is_pushed = array_init(|_| cb.query_bool());
+
+        // Query selectors for each opcode_lookup to know whether the current byte is actually
+        // padding
+        let is_padding = array_init(|_| cb.query_bool());
+
+        // Fetch the bytecode length from the bytecode table.
+        let code_hash = cb.curr.state.code_hash.clone();
+        cb.bytecode_length(code_hash.to_word(), code_size.expr());
+
+        // Deduce the number of bytes to push.
+        let num_pushed = opcode.expr() - OpcodeId::PUSH1.as_u64().expr() + 1.expr();
+
+        // If the number of bytes that needs to be pushed is greater
+        // than the size of the bytecode left, then we are out of range.
+        let is_out_of_range: LtGadget<F, N_BYTES_PROGRAM_COUNTER> =
+            LtGadget::construct(cb, code_size_left.clone(), num_pushed.clone());
+
+        // Expected number of padding
+        let num_padding: halo2_proofs::plonk::Expression<F> = 32.expr() - num_pushed.clone()
+            + is_out_of_range.expr() * (num_pushed.clone() - code_size_left + 1.expr());
 
         // The pushed bytes are viewed as left-padded big-endian, but our random
         // linear combination uses little-endian, so we lookup from the LSB
@@ -53,48 +81,58 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         //                           ▼                     ▼
         //   [byte31,     ...,     byte2,     byte1,     byte0]
         //
-        for idx in 0..32 {
+        // First is_pushed (resp. is_padding) will always be 1 (resp. 1)
+        let mut pu_prev = 1.expr();
+        let mut pa_prev = 1.expr();
+        for (idx, (pu, pa)) in is_pushed.iter().zip(is_padding.iter()).enumerate() {
             let byte = &value.limbs[idx];
             let index = cb.curr.state.program_counter.expr() + opcode.expr()
                 - (OpcodeId::PUSH1.as_u8() - 1 + idx as u8).expr();
-            if idx == 0 {
-                cb.opcode_lookup_at(index, byte.expr(), 0.expr())
-            } else {
-                cb.condition(selectors[idx - 1].expr(), |cb| {
-                    cb.opcode_lookup_at(index, byte.expr(), 0.expr())
-                });
-            }
-        }
 
-        for idx in 0..31 {
-            let selector_prev = if idx == 0 {
-                // First selector will always be 1
-                1.expr()
-            } else {
-                selectors[idx - 1].expr()
-            };
-            // selector can transit from 1 to 0 only once as [1, 1, 1, ...,
-            // 0, 0, 0]
+            // is_pushed can transit from 1 to 0 only once
+            // as 1 - [1, 1, 1, ..., 1, 0, 0, 0]
             cb.require_boolean(
-                "Constrain selector can only transit from 1 to 0",
-                selector_prev - selectors[idx].expr(),
+                "Constrain is_pushed can only transit from 1 to 0",
+                pu_prev - pu.expr(),
             );
-            // byte should be 0 when selector is 0
+
+            // when is_pushed = 0, is_padding = 1
+            // otherwise, is_padding can transit from 1 to 0 only once
+            // as 1 - [1, 1, 0, ..., 0, 1, 1, 1] (out of bound)
+            // as 1 - [0, 0, 0, ..., 0, 1, 1, 1] (not out of bound)
+            cb.require_boolean(
+                "Constrain is_padding can only transit from 1 to 0 when is_pushed = 1, else is 1",
+                pu.expr() * (pa_prev - pa.expr()) + (1.expr() - pu.expr()) * (pa.expr() - 1.expr()),
+            );
+
+            // byte is 0 if it is either not pushed or padding
             cb.require_zero(
-                "Constrain byte == 0 when selector == 0",
-                value.limbs[idx + 1].expr() * (1.expr() - selectors[idx].expr()),
+                "Constrain byte == 0 when is_pushed == 0 OR is_padding == 1",
+                byte.expr() * (pa.expr() + (1.expr() - pu.expr())),
             );
+
+            // if byte is pushed and not padding, we check consistency with bytecode table
+            cb.condition(pu.expr() * (1.expr() - pa.expr()), |cb| {
+                cb.opcode_lookup_at(index, byte.expr(), 0.expr())
+            });
+
+            pu_prev = pu.expr();
+            pa_prev = pa.expr();
         }
 
-        // Deduce the number of additional bytes to push than PUSH1. Note that
-        // num_additional_pushed = n - 1 where n is the suffix number of PUSH*.
-        let num_additional_pushed = opcode.expr() - OpcodeId::PUSH1.as_u64().expr();
-        // Sum of selectors needs to be exactly the number of additional bytes
-        // that needs to be pushed.
+        // Sum of selectors is_pushed needs to be exactly the number of bytes
+        // that needs to be pushed
         cb.require_equal(
-            "Constrain sum of selectors equal to num_additional_pushed",
-            sum::expr(&selectors),
-            num_additional_pushed,
+            "Constrain sum of is_pushed equal to num_pushed",
+            sum::expr(&is_pushed),
+            num_pushed.expr(),
+        );
+
+        // Sum of selectors is_padding needs to be exactly the number of padded bytes
+        cb.require_equal(
+            "Constrain sum of is_padding equal to num_padding",
+            sum::expr(&is_padding),
+            num_padding.expr(),
         );
 
         // Push the value on the stack
@@ -114,7 +152,10 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         Self {
             same_context,
             value,
-            selectors,
+            is_pushed,
+            is_padding,
+            code_size,
+            is_out_of_range,
         }
     }
 
@@ -124,23 +165,52 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let opcode = step.opcode().unwrap();
+        let num_pushed = opcode.postfix().expect("opcode with postfix");
+        let npushed = num_pushed as usize;
+
+        let bytecode = block
+            .bytecodes
+            .get_from_h256(&call.code_hash)
+            .expect("could not find current environment's bytecode");
+
+        let code_size = bytecode.codesize() as u64;
+        self.code_size
+            .assign(region, offset, Value::known(F::from(code_size)))?;
+
+        let code_size_left = (code_size - step.pc) as usize;
+        self.is_out_of_range.assign(
+            region,
+            offset,
+            F::from(code_size_left as u64),
+            F::from(num_pushed as u64),
+        )?;
 
         let value = block.get_rws(step, 0).stack_value();
         self.value.assign_u256(region, offset, value)?;
 
-        let num_additional_pushed = opcode.postfix().expect("opcode with postfix") - 1;
-        for (idx, selector) in self.selectors.iter().enumerate() {
-            selector.assign(
-                region,
-                offset,
-                Value::known(F::from((idx < num_additional_pushed as usize) as u64)),
-            )?;
+        let is_out_of_bound = code_size_left < npushed;
+        // let mut num_padding = 32 - n;
+        let mut out_of_bound_padding = 0;
+        if is_out_of_bound {
+            out_of_bound_padding = npushed - code_size_left + 1;
+            // num_padding += out_of_bound_padding
+        };
+        for (i, (pu, pa)) in self
+            .is_pushed
+            .iter()
+            .zip(self.is_padding.iter())
+            .enumerate()
+        {
+            let pushed = i < npushed;
+            let padding = !pushed || (is_out_of_bound && i < out_of_bound_padding);
+            pu.assign(region, offset, Value::known(F::from(pushed as u64)))?;
+            pa.assign(region, offset, Value::known(F::from(padding as u64)))?;
         }
 
         Ok(())
@@ -154,7 +224,7 @@ mod test {
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, bytes: &[u8]) {
-        assert!(bytes.len() == opcode.data_len());
+        assert!(bytes.len() <= opcode.data_len());
 
         let mut bytecode = bytecode! {
             .write_op(opcode)
@@ -162,7 +232,9 @@ mod test {
         for b in bytes {
             bytecode.write(*b, false);
         }
-        bytecode.op_stop();
+        if bytes.len() == opcode.data_len() {
+            bytecode.op_stop();
+        }
 
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
@@ -174,6 +246,7 @@ mod test {
     fn push_gadget_simple() {
         test_ok(OpcodeId::PUSH1, &[1]);
         test_ok(OpcodeId::PUSH2, &[1, 2]);
+        test_ok(OpcodeId::PUSH5, &[1, 2, 3, 4, 5]);
         test_ok(
             OpcodeId::PUSH31,
             &[
@@ -188,6 +261,7 @@ mod test {
                 24, 25, 26, 27, 28, 29, 30, 31, 32,
             ],
         );
+        test_ok(OpcodeId::PUSH16, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     }
 
     #[test]
