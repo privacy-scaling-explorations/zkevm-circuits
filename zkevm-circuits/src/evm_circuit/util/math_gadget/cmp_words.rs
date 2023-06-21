@@ -129,8 +129,8 @@ mod tests {
             let b = witnesses[1];
             let offset = 0;
 
-            self.a_word.assign(region, offset, Some(a.to_le_bytes()))?;
-            self.b_word.assign(region, offset, Some(b.to_le_bytes()))?;
+            self.a_word.assign_u256(region, offset, a)?;
+            self.b_word.assign_u256(region, offset, b)?;
             self.cmp_gadget.assign(region, offset, a, b)?;
             Ok(())
         }

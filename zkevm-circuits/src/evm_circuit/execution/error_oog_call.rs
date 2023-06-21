@@ -66,7 +66,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         let is_warm = cb.query_bool();
         cb.account_access_list_read(
             tx_id.expr(),
-            call_gadget.callee_address_expr(),
+            call_gadget.callee_address_word(),
             is_warm.expr(),
         );
 

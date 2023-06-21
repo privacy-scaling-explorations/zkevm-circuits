@@ -4,18 +4,18 @@ use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
-        util::{constraint_builder::EVMConstraintBuilder, CachedRegion, Word},
+        util::{constraint_builder::EVMConstraintBuilder, CachedRegion},
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::word::{WordCell, WordExpr},
 };
-use eth_types::{Field, ToLittleEndian};
+use eth_types::Field;
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct DummyGadget<F, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState> {
-    pops: [Word<F>; N_POP],
-    pushes: [Word<F>; N_PUSH],
+    pops: [WordCell<F>; N_POP],
+    pushes: [WordCell<F>; N_PUSH],
     _marker: PhantomData<F>,
 }
 
@@ -27,13 +27,13 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
     const EXECUTION_STATE: ExecutionState = S;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let pops: [Word<F>; N_POP] = [(); N_POP].map(|_| cb.query_word_rlc());
-        let pushes: [Word<F>; N_PUSH] = [(); N_PUSH].map(|_| cb.query_word_rlc());
+        let pops: [WordCell<F>; N_POP] = [(); N_POP].map(|_| cb.query_word_unchecked());
+        let pushes: [WordCell<F>; N_PUSH] = [(); N_PUSH].map(|_| cb.query_word_unchecked());
         for pop in pops.iter() {
-            cb.stack_pop(pop.expr());
+            cb.stack_pop_word(pop.to_word());
         }
         for push in pushes.iter() {
-            cb.stack_push(push.expr());
+            cb.stack_push_word(push.to_word());
         }
         Self {
             pops,
@@ -61,11 +61,11 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
 
         for i in 0..N_POP {
             let value = block.get_rws(step, i).stack_value();
-            self.pops[i].assign(region, offset, Some(value.to_le_bytes()))?;
+            self.pops[i].assign_u256(region, offset, value)?;
         }
         for i in 0..N_PUSH {
             let value = block.get_rws(step, N_POP + i).stack_value();
-            self.pushes[i].assign(region, offset, Some(value.to_le_bytes()))?;
+            self.pushes[i].assign_u256(region, offset, value)?;
         }
         Ok(())
     }

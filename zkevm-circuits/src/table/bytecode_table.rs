@@ -45,7 +45,6 @@ impl BytecodeTable {
         &self,
         layouter: &mut impl Layouter<F>,
         bytecodes: impl IntoIterator<Item = &'a Bytecode> + Clone,
-        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "bytecode table",
@@ -64,7 +63,7 @@ impl BytecodeTable {
                 let bytecode_table_columns =
                     <BytecodeTable as LookupTable<F>>::advice_columns(self);
                 for bytecode in bytecodes.clone() {
-                    for row in bytecode.table_assignments(challenges) {
+                    for row in bytecode.table_assignments::<F>() {
                         for (&column, value) in bytecode_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("bytecode table row {}", offset),

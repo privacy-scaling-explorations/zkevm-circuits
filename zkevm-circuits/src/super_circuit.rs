@@ -416,11 +416,7 @@ impl<F: Field> Circuit<F> for SuperCircuit<F> {
         );
         let rws = &self.state_circuit.rows;
 
-        config.block_table.load(
-            &mut layouter,
-            &block.context,
-            Value::known(block.randomness),
-        )?;
+        config.block_table.load(&mut layouter, &block.context)?;
 
         config
             .mpt_table

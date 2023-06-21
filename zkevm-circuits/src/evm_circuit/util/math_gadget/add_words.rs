@@ -5,11 +5,11 @@ use crate::{
         pow_of_two_expr, split_u256, sum, CachedRegion, Cell,
     },
     util::{
-        word::{Word32Cell, WordExpr, WordLegacy},
+        word::{Word32Cell, WordExpr},
         Expr,
     },
 };
-use eth_types::{Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{Field, ToScalar, Word};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Construction of 2 256-bit words addition and result, which is useful for
@@ -26,13 +26,6 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
     AddWordsGadget<F, N_ADDENDS, CHECK_OVERFLOW>
 {
     pub(crate) fn construct(
-        _cb: &mut EVMConstraintBuilder<F>,
-        _addends: [WordLegacy<F>; N_ADDENDS],
-        _sum: WordLegacy<F>,
-    ) -> Self {
-        todo!()
-    }
-    pub(crate) fn construct_new(
         cb: &mut EVMConstraintBuilder<F>,
         addends: [Word32Cell<F>; N_ADDENDS],
         sum: Word32Cell<F>,
@@ -52,8 +45,7 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
             .iter()
             .map(|addend| addend.to_word().hi())
             .collect::<Vec<_>>();
-        let sum_lo = sum.to_word().lo();
-        let sum_hi = sum.to_word().hi();
+        let (sum_lo, sum_hi) = sum.to_word().to_lo_hi();
 
         cb.require_equal(
             "sum(addends_lo) == sum_lo + carry_lo ⋅ 2^128",
@@ -102,9 +94,9 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
         sum: Word,
     ) -> Result<(), Error> {
         for (word, value) in self.addends.iter().zip(addends.iter()) {
-            word.assign(region, offset, Some(value.to_le_bytes()))?;
+            word.assign_u256(region, offset, *value)?;
         }
-        self.sum.assign(region, offset, Some(sum.to_le_bytes()))?;
+        self.sum.assign_u256(region, offset, sum)?;
 
         let (addends_lo, addends_hi): (Vec<_>, Vec<_>) = addends.iter().map(split_u256).unzip();
         let (sum_lo, sum_hi) = split_u256(&sum);
@@ -181,7 +173,7 @@ mod tests {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let addends = [(); N_ADDENDS].map(|_| cb.query_word32());
             let sum = cb.query_word32();
-            let addwords_gadget = AddWordsGadget::<F, N_ADDENDS, CHECK_OVERFLOW>::construct_new(
+            let addwords_gadget = AddWordsGadget::<F, N_ADDENDS, CHECK_OVERFLOW>::construct(
                 cb,
                 addends.clone(),
                 sum.clone(),
@@ -211,10 +203,10 @@ mod tests {
             let offset = 0;
             for (i, addend) in self.addends.iter().enumerate() {
                 let a = witnesses[i];
-                addend.assign(region, offset, Some(a.to_le_bytes()))?;
+                addend.assign_u256(region, offset, a)?;
             }
             let sum = witnesses[N_ADDENDS];
-            self.sum.assign(region, offset, Some(sum.to_le_bytes()))?;
+            self.sum.assign_u256(region, offset, sum)?;
 
             let addends = witnesses[0..N_ADDENDS].try_into().unwrap();
             self.addwords_gadget.assign(region, 0, addends, sum)?;

@@ -4,7 +4,7 @@
 //   limb is 256/4 = 64 bits
 
 use bus_mapping::state_db::CodeDB;
-use eth_types::{Field, ToLittleEndian, H160};
+use eth_types::{Field, ToLittleEndian, H160, H256};
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
@@ -113,7 +113,7 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
     /// e.g. N1 = 4 bytes, [b1, b2, b3, b4], and N = 2 limbs [l1, l2]
     /// It equivalent `l1.assign(b1.expr() + b2.expr * F(256))`, `l2.assign(b3.expr() + b4.expr *
     /// F(256))`
-    pub fn assign<const N1: usize>(
+    fn assign<const N1: usize>(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
@@ -155,7 +155,7 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
         let bytes_lo_assigned = bytes_lo_le
             .chunks(N_LO / half_limb_size) // chunk in little endian
             .map(|chunk| from_bytes::value(chunk))
-            .zip(self.limbs[0..half_limb_size].iter())
+            .zip_eq(self.limbs[0..half_limb_size].iter())
             .map(|(value, cell)| cell.assign(region, offset, Value::known(value)))
             .collect::<Result<Vec<AssignedCell<F, F>>, _>>()?;
 
@@ -164,7 +164,7 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
             bytes
                 .chunks(N_HI / half_limb_size) // chunk in little endian
                 .map(|chunk| from_bytes::value(chunk))
-                .zip(self.limbs[half_limb_size..].iter())
+                .zip_eq(self.limbs[half_limb_size..].iter())
                 .map(|(value, cell)| cell.assign(region, offset, Value::known(value)))
                 .collect::<Result<Vec<AssignedCell<F, F>>, _>>()
         });
@@ -221,10 +221,14 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
         self.assign_lo_hi(region, offset, value.to_le_bytes(), Option::<[u8; 0]>::None)
     }
 
-    #[deprecated(note = "in fav of to_word trait. Make this private")]
     /// word expr
-    pub fn word_expr(&self) -> WordLimbs<Expression<F>, N> {
+    fn word_expr(&self) -> WordLimbs<Expression<F>, N> {
         WordLimbs::new(self.limbs.clone().map(|cell| cell.expr()))
+    }
+
+    /// convert from N cells to N2 expressions limbs
+    pub fn to_word_n<const N2: usize>(&self) -> WordLimbs<Expression<F>, N2> {
+        self.word_expr().to_word_n()
     }
 }
 
@@ -310,6 +314,21 @@ impl<F: Field> From<eth_types::Word> for Word<F> {
     }
 }
 
+impl<F: Field> From<H256> for Word<F> {
+    /// Construct the word from u256
+    fn from(h: H256) -> Self {
+        let le_bytes = {
+            let mut b = h.to_fixed_bytes();
+            b.reverse();
+            b
+        };
+        Word::new([
+            from_bytes::value(&le_bytes[..N_BYTES_HALF_WORD]),
+            from_bytes::value(&le_bytes[N_BYTES_HALF_WORD..]),
+        ])
+    }
+}
+
 impl<F: Field> From<u64> for Word<F> {
     /// Construct the word from u64
     fn from(value: u64) -> Self {
@@ -339,33 +358,6 @@ impl<F: Field> From<H160> for Word<F> {
         Word::new([
             from_bytes::value(&bytes[..N_BYTES_HALF_WORD]),
             from_bytes::value(&bytes[N_BYTES_HALF_WORD..]),
-        ])
-    }
-}
-
-impl<F: Field> From<eth_types::Hash> for Word<F> {
-    /// Construct the word from eth_types::Hash
-    fn from(value: eth_types::Hash) -> Self {
-        let mut bytes = *value.as_fixed_bytes();
-        bytes.reverse();
-        Word::new([
-            from_bytes::value(&bytes[..N_BYTES_HALF_WORD]),
-            from_bytes::value(&bytes[N_BYTES_HALF_WORD..]),
-        ])
-    }
-}
-
-impl<F: Field> Word<Cell<F>> {
-    /// Assign low 128 bits for the word
-    pub fn assign_lo(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        value: Value<F>,
-    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
-        Ok(vec![
-            self.limbs[0].assign(region, offset, value)?,
-            self.limbs[1].assign(region, offset, Value::known(F::from(0)))?,
         ])
     }
 }
@@ -418,22 +410,24 @@ impl<F: Field> Word<Expression<F>> {
         Self(WordLimbs::<Expression<F>, 2>::new([0.expr(), 0.expr()]))
     }
 
-    /// select based on selector. Here assume selector is 1/0 therefore no overflow check
-    pub fn select<T: WordExpr<F>>(
-        selector: Expression<F>,
-        when_true: T,
-        when_false: T,
-    ) -> Word<Expression<F>> {
-        let (true_lo, true_hi) = when_true
-            .to_word()
-            .mul_selector(selector.clone())
-            .to_lo_hi();
+    /// one word
+    pub fn one() -> Self {
+        Self(WordLimbs::<Expression<F>, 2>::new([1.expr(), 0.expr()]))
+    }
 
-        let (false_lo, false_hi) = when_false
-            .to_word()
-            .mul_selector(1.expr() - selector)
-            .to_lo_hi();
-        Word::new([true_lo + false_lo, true_hi + false_hi])
+    /// select based on selector. Here assume selector is 1/0 therefore no overflow check
+    pub fn select<T: Expr<F> + Clone>(
+        selector: T,
+        when_true: Word<T>,
+        when_false: Word<T>,
+    ) -> Word<Expression<F>> {
+        let (true_lo, true_hi) = when_true.to_lo_hi();
+
+        let (false_lo, false_hi) = when_false.to_lo_hi();
+        Word::new([
+            selector.expr() * true_lo.expr() + (1.expr() - selector.expr()) * false_lo.expr(),
+            selector.expr() * true_hi.expr() + (1.expr() - selector.expr()) * false_hi.expr(),
+        ])
     }
 
     /// Assume selector is 1/0 therefore no overflow check
@@ -451,12 +445,9 @@ impl<F: Field> Word<Expression<F>> {
         Word::new([self.lo() - rhs.lo(), self.hi() - rhs.hi()])
     }
 
-    /// Compress the lo and hi limbs into an expression without checking the overflow.
-    /// So far only use it for address.
-    /// TODO We should remove it before merging to the main branch.
-    #[deprecated(note = "no overflow check and unsafe. please consider keep word type")]
-    pub fn expr_unchecked(&self) -> Expression<F> {
-        self.lo() + self.hi() * (1 << (N_BYTES_HALF_WORD * 8)).expr()
+    /// No overflow check on lo/hi limbs
+    pub fn mul_unchecked(self, rhs: Self) -> Self {
+        Word::new([self.lo() * rhs.lo(), self.hi() * rhs.hi()])
     }
 }
 

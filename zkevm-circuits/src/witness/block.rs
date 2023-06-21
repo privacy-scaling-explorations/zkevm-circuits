@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 
 use crate::{
-    evm_circuit::{detect_fixed_table_tags, util::rlc, EvmCircuit},
+    evm_circuit::{detect_fixed_table_tags, EvmCircuit},
     exp_circuit::param::OFFSET_INCREMENT,
     table::BlockContextFieldTag,
-    util::{log2_ceil, SubCircuit},
+    util::{log2_ceil, word, SubCircuit},
 };
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{Address, Field, ToScalar, Word};
 use halo2_proofs::circuit::Value;
 
 use super::{tx::tx_convert, Bytecode, ExecStep, Rw, RwMap, Transaction};
@@ -152,46 +152,50 @@ pub struct BlockContext {
 
 impl BlockContext {
     /// Assignments for block table
-    pub fn table_assignments<F: Field>(&self, randomness: Value<F>) -> Vec<[Value<F>; 3]> {
+    pub fn table_assignments<F: Field>(&self) -> Vec<[Value<F>; 4]> {
         [
             vec![
                 [
                     Value::known(F::from(BlockContextFieldTag::Coinbase as u64)),
                     Value::known(F::ZERO),
-                    Value::known(self.coinbase.to_scalar().unwrap()),
+                    Value::known(word::Word::from(self.coinbase).lo()),
+                    Value::known(word::Word::from(self.coinbase).hi()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::Timestamp as u64)),
                     Value::known(F::ZERO),
                     Value::known(self.timestamp.to_scalar().unwrap()),
+                    Value::known(F::ZERO),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::Number as u64)),
                     Value::known(F::ZERO),
                     Value::known(self.number.to_scalar().unwrap()),
+                    Value::known(F::ZERO),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
                     Value::known(F::ZERO),
-                    randomness
-                        .map(|randomness| rlc::value(&self.difficulty.to_le_bytes(), randomness)),
+                    Value::known(word::Word::from(self.difficulty).lo()),
+                    Value::known(word::Word::from(self.difficulty).hi()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
                     Value::known(F::ZERO),
                     Value::known(F::from(self.gas_limit)),
+                    Value::known(F::ZERO),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::BaseFee as u64)),
                     Value::known(F::ZERO),
-                    randomness
-                        .map(|randomness| rlc::value(&self.base_fee.to_le_bytes(), randomness)),
+                    Value::known(word::Word::from(self.base_fee).lo()),
+                    Value::known(word::Word::from(self.base_fee).hi()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
                     Value::known(F::ZERO),
-                    randomness
-                        .map(|randomness| rlc::value(&self.chain_id.to_le_bytes(), randomness)),
+                    Value::known(word::Word::from(self.chain_id).lo()),
+                    Value::known(word::Word::from(self.chain_id).hi()),
                 ],
             ],
             {
@@ -203,8 +207,8 @@ impl BlockContext {
                         [
                             Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
                             Value::known((self.number - len_history + idx).to_scalar().unwrap()),
-                            randomness
-                                .map(|randomness| rlc::value(&hash.to_le_bytes(), randomness)),
+                            Value::known(word::Word::from(*hash).lo()),
+                            Value::known(word::Word::from(*hash).hi()),
                         ]
                     })
                     .collect()

@@ -1,8 +1,9 @@
+use crate::util::word;
 use bus_mapping::circuit_input_builder;
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{Address, Field, Word};
 use halo2_proofs::circuit::Value;
 
-use crate::{evm_circuit::util::rlc, table::TxContextFieldTag, util::Challenges};
+use crate::table::TxContextFieldTag;
 
 use super::{Call, ExecStep};
 
@@ -40,68 +41,70 @@ pub struct Transaction {
 impl Transaction {
     /// Assignments for tx table, split into tx_data (all fields except
     /// calldata) and tx_calldata
-    pub fn table_assignments<F: Field>(
-        &self,
-        challenges: Challenges<Value<F>>,
-    ) -> [Vec<[Value<F>; 4]>; 2] {
+    pub fn table_assignments<F: Field>(&self) -> [Vec<[Value<F>; 5]>; 2] {
         let tx_data = vec![
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::Nonce as u64)),
                 Value::known(F::ZERO),
                 Value::known(F::from(self.nonce)),
+                Value::known(F::ZERO),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::Gas as u64)),
                 Value::known(F::ZERO),
                 Value::known(F::from(self.gas)),
+                Value::known(F::ZERO),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::GasPrice as u64)),
                 Value::known(F::ZERO),
-                challenges
-                    .evm_word()
-                    .map(|challenge| rlc::value(&self.gas_price.to_le_bytes(), challenge)),
+                Value::known(word::Word::from(self.gas_price).lo()),
+                Value::known(word::Word::from(self.gas_price).hi()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::CallerAddress as u64)),
                 Value::known(F::ZERO),
-                Value::known(self.caller_address.to_scalar().unwrap()),
+                Value::known(word::Word::from(self.caller_address).lo()),
+                Value::known(word::Word::from(self.caller_address).hi()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::CalleeAddress as u64)),
                 Value::known(F::ZERO),
-                Value::known(self.callee_address.to_scalar().unwrap()),
+                Value::known(word::Word::from(self.callee_address).lo()),
+                Value::known(word::Word::from(self.callee_address).hi()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::IsCreate as u64)),
                 Value::known(F::ZERO),
                 Value::known(F::from(self.is_create as u64)),
+                Value::known(F::ZERO),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::Value as u64)),
                 Value::known(F::ZERO),
-                challenges
-                    .evm_word()
-                    .map(|challenge| rlc::value(&self.value.to_le_bytes(), challenge)),
+                Value::known(word::Word::from(self.value).lo()),
+                Value::known(word::Word::from(self.value).hi()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::CallDataLength as u64)),
                 Value::known(F::ZERO),
                 Value::known(F::from(self.call_data_length as u64)),
+                Value::known(F::ZERO),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::CallDataGasCost as u64)),
                 Value::known(F::ZERO),
                 Value::known(F::from(self.call_data_gas_cost)),
+                Value::known(F::ZERO),
             ],
         ];
         let tx_calldata = self
@@ -114,6 +117,7 @@ impl Transaction {
                     Value::known(F::from(TxContextFieldTag::CallData as u64)),
                     Value::known(F::from(idx as u64)),
                     Value::known(F::from(*byte as u64)),
+                    Value::known(F::ZERO),
                 ]
             })
             .collect();

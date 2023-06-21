@@ -16,9 +16,10 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::BlockContextFieldTag,
+    util::word::WordExpr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, ToScalar};
+use eth_types::{Field, ToScalar};
 use gadgets::util::{not, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -27,7 +28,7 @@ pub(crate) struct BlockHashGadget<F> {
     same_context: SameContextGadget<F>,
     block_number: WordByteCapGadget<F, N_BYTES_U64>,
     current_block_number: Cell<F>,
-    block_hash: Word<F>,
+    block_hash: Word<Cell<F>>,
     diff_lt: LtGadget<F, N_BYTES_U64>,
 }
 
@@ -38,16 +39,16 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let current_block_number = cb.query_cell();
-        cb.block_lookup(
+        cb.block_lookup_word(
             BlockContextFieldTag::Number.expr(),
             None,
-            current_block_number.expr(),
+            Word::from_lo_unchecked(current_block_number.expr()),
         );
 
         let block_number = WordByteCapGadget::construct(cb, current_block_number.expr());
-        cb.stack_pop(block_number.original_word());
+        cb.stack_pop_word(block_number.original_word_new().to_word());
 
-        let block_hash = cb.query_word_rlc();
+        let block_hash = cb.query_word_unchecked();
 
         let diff_lt = LtGadget::construct(
             cb,
@@ -58,21 +59,21 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         let is_valid = and::expr([block_number.lt_cap(), diff_lt.expr()]);
 
         cb.condition(is_valid.expr(), |cb| {
-            cb.block_lookup(
+            cb.block_lookup_word(
                 BlockContextFieldTag::BlockHash.expr(),
                 Some(block_number.valid_value()),
-                block_hash.expr(),
+                block_hash.to_word(),
             );
         });
 
         cb.condition(not::expr(is_valid), |cb| {
-            cb.require_zero(
+            cb.require_zero_word(
                 "Invalid block number for block hash lookup",
-                block_hash.expr(),
+                block_hash.to_word(),
             );
         });
 
-        cb.stack_push(block_hash.expr());
+        cb.stack_push_word(block_hash.to_word());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(2.expr()),
@@ -115,11 +116,8 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         self.current_block_number
             .assign(region, offset, Value::known(current_block_number))?;
 
-        self.block_hash.assign(
-            region,
-            offset,
-            Some(block.get_rws(step, 1).stack_value().to_le_bytes()),
-        )?;
+        self.block_hash
+            .assign_u256(region, offset, block.get_rws(step, 1).stack_value())?;
 
         self.diff_lt.assign(
             region,

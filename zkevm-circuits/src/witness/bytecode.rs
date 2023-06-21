@@ -1,9 +1,9 @@
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, Word};
+use eth_types::{Field, Word};
 use halo2_proofs::circuit::Value;
 use sha3::{Digest, Keccak256};
 
-use crate::{evm_circuit::util::rlc, table::BytecodeFieldTag, util::Challenges};
+use crate::{table::BytecodeFieldTag, util::word};
 
 /// Bytecode
 #[derive(Clone, Debug)]
@@ -22,18 +22,13 @@ impl Bytecode {
     }
 
     /// Assignments for bytecode table
-    pub fn table_assignments<F: Field>(
-        &self,
-        challenges: &Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 5]> {
+    pub fn table_assignments<F: Field>(&self) -> Vec<[Value<F>; 6]> {
         let n = 1 + self.bytes.len();
         let mut rows = Vec::with_capacity(n);
-        let hash = challenges
-            .evm_word()
-            .map(|challenge| rlc::value(&self.hash.to_le_bytes(), challenge));
 
         rows.push([
-            hash,
+            Value::known(word::Word::from(self.hash).lo()),
+            Value::known(word::Word::from(self.hash).hi()),
             Value::known(F::from(BytecodeFieldTag::Header as u64)),
             Value::known(F::ZERO),
             Value::known(F::ZERO),
@@ -52,7 +47,8 @@ impl Bytecode {
             };
 
             rows.push([
-                hash,
+                Value::known(word::Word::from(self.hash).lo()),
+                Value::known(word::Word::from(self.hash).hi()),
                 Value::known(F::from(BytecodeFieldTag::Byte as u64)),
                 Value::known(F::from(idx as u64)),
                 Value::known(F::from(is_code as u64)),
