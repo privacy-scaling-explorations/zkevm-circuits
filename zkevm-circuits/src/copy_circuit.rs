@@ -375,23 +375,21 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 }
             );
 
-            // FIXME: // addr change: for tx log, addr use addr_slot as index, not increase by 1
-            // cb.condition(
-            //     and::expr([
-            //         not_last_two_rows.expr(),
-            //         not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
-            //             meta,
-            //         )),
-            //         not::expr(tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta)),
-            //     ]),
-            //     |cb| {
-            //         cb.require_equal(
-            //             "rows[0].addr + 1 == rows[2].addr",
-            //             meta.query_advice(addr, Rotation::cur()) + 1.expr(),
-            //             meta.query_advice(addr, Rotation(2)),
-            //         );
-            //     },
-            // );
+            // addr change: for tx log, addr use addr_slot as index, not increase by 1
+            cb.condition(
+                and::expr([
+                    not_last_two_rows.expr(),
+                    non_pad_non_mask.is_lt(meta, None),
+                    not::expr(tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta)),
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "rows[0].addr + 1 == rows[2].addr",
+                        meta.query_advice(addr, Rotation::cur()) + 1.expr(),
+                        meta.query_advice(addr, Rotation(2)),
+                    );
+                },
+            );
 
             cb.condition(
                 not_last_two_rows.expr() * non_pad_non_mask.is_lt(meta, None),
@@ -554,12 +552,13 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     meta.query_advice(is_memory, Rotation::next()),
                 ])),
                 |cb| {
-                cb.require_equal(
-                    "write value == read value",
-                    meta.query_advice(value, Rotation::cur()),
-                    meta.query_advice(value, Rotation::next()),
-                );
-            });
+                    cb.require_equal(
+                        "write value == read value",
+                        meta.query_advice(value, Rotation::cur()),
+                        meta.query_advice(value, Rotation::next()),
+                    );
+                },
+            );
 
             cb.require_equal(
                 "value_acc is same for read-write rows",
