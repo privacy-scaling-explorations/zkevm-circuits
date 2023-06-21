@@ -106,10 +106,11 @@ mod test {
             let trace_result = trace(config);
             assert!(trace_result.is_ok());
             let trace_string = trace_result.unwrap();
-            let trace: Vec<GethExecTrace> =
-                serde_json::from_str(&trace_string).map_err(Error::SerdeError).unwrap();
+            let trace: Vec<GethExecTrace> = serde_json::from_str(&trace_string)
+                .map_err(Error::SerdeError)
+                .unwrap();
             for trace in trace.iter() {
-                assert_eq!(trace.invalid, false);
+                assert!(!trace.invalid);
             }
         }
     }
@@ -161,10 +162,11 @@ mod test {
             let trace_result = trace(config);
             assert!(trace_result.is_ok());
             let trace_string = trace_result.unwrap();
-            let trace: Vec<GethExecTrace> =
-                serde_json::from_str(&trace_string).map_err(Error::SerdeError).unwrap();
+            let trace: Vec<GethExecTrace> = serde_json::from_str(&trace_string)
+                .map_err(Error::SerdeError)
+                .unwrap();
             for trace in trace.iter() {
-                assert_eq!(trace.invalid, true);
+                assert!(trace.invalid);
             }
         }
     }

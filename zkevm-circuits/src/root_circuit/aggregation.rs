@@ -9,6 +9,7 @@ use halo2_proofs::{
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use itertools::Itertools;
+use maingate::MainGateInstructions;
 use rand::{rngs::StdRng, SeedableRng};
 use snark_verifier::{
     loader::{
@@ -28,7 +29,6 @@ use snark_verifier::{
     verifier::{self, plonk::PlonkProtocol, SnarkVerifier},
 };
 use std::{io, iter, rc::Rc};
-use maingate::MainGateInstructions;
 
 /// Number of limbs to decompose a elliptic curve base field element into.
 pub const LIMBS: usize = 4;

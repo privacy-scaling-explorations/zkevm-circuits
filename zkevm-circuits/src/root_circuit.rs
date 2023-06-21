@@ -8,9 +8,10 @@ use halo2_proofs::{
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use itertools::Itertools;
+use maingate::MainGateInstructions;
 use snark_verifier::{util::arithmetic::MultiMillerLoop, verifier::plonk::PlonkProtocol};
 use std::iter;
-use maingate::MainGateInstructions;
+
 mod aggregation;
 
 #[cfg(any(feature = "test", test))]

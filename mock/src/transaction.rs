@@ -42,7 +42,7 @@ lazy_static! {
             .nonce(0x105u64)
             .value(word!("0x3e8"))
             .gas_price(word!("0x4d2"))
-            .input(Bytes::from(b"hello hello 2 "))
+            .input(Bytes::from(b"hello"))
             .build(),
             MockTransaction::default()
             .from(AddrOrWallet::random(&mut rng))
@@ -196,8 +196,7 @@ impl From<MockTransaction> for Transaction {
 
 impl From<MockTransaction> for GethTransaction {
     fn from(mock: MockTransaction) -> Self {
-        let geth_transaction = GethTransaction::from(&Transaction::from(mock.clone()));
-        geth_transaction
+        GethTransaction::from(&Transaction::from(mock))
     }
 }
 

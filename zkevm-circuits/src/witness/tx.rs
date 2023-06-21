@@ -150,7 +150,7 @@ pub(super) fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> 
         call_data: tx.tx.call_data.to_vec(),
         call_data_length: tx.tx.call_data.len(),
         call_data_gas_cost: tx.tx.call_data_gas_cost(),
-        invalid_tx: tx.invalid_tx == true,
+        invalid_tx: tx.invalid_tx,
         access_list_gas_cost: tx.access_list_gas_cost,
         calls: tx.calls().to_vec(),
         steps: tx.steps().to_vec(),

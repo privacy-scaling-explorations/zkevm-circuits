@@ -81,7 +81,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     } else {
         GasCost::TX.as_u64()
     } + state.tx.tx.call_data_gas_cost();
-    
+
     // Don't pay any fee or transfer any ETH for invalid transactions
     let (gas_cost, value, fee) = if state.tx.invalid_tx {
         (0, Word::zero(), Some(Word::zero()))

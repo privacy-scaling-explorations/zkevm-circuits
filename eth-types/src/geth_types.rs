@@ -10,10 +10,7 @@ use ethers_core::{
     utils::get_contract_address,
 };
 use ethers_signers::{LocalWallet, Signer};
-use halo2_proofs::halo2curves::{
-    group::ff::PrimeField,
-    secp256k1,
-};
+use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1};
 use num::Integer;
 use num_bigint::BigUint;
 use serde::{Serialize, Serializer};
@@ -233,10 +230,7 @@ impl Transaction {
             .v
             .checked_sub(35 + chain_id * 2)
             .ok_or(Error::Signature(libsecp256k1::Error::InvalidSignature))? as u8;
-        let pk = match recover_pk(v, &self.r, &self.s, &msg_hash) {
-            Ok(pk) => pk,
-            Err(_) => return Err(Error::Signature(libsecp256k1::Error::InvalidSignature)),
-        };
+        let pk = recover_pk(v, &self.r, &self.s, &msg_hash)?;
         // msg_hash = msg_hash % q
         let msg_hash = BigUint::from_bytes_be(msg_hash.as_slice());
         let msg_hash = msg_hash.mod_floor(&*SECP256K1_Q);
@@ -326,7 +320,7 @@ impl GethData {
             let req: TransactionRequest = (&geth_tx).into();
             let sig = wallet.sign_transaction_sync(&req.chain_id(self.chain_id.as_u64()).into());
             tx.v = U64::from(sig.v);
-            tx.r = sig.s;
+            tx.r = sig.r;
             tx.s = sig.s;
         }
     }

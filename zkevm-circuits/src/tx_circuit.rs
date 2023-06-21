@@ -24,9 +24,9 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed},
 };
 use itertools::Itertools;
-use log::{self, error};
+use log::error;
 use sign_verify::{AssignedSignatureVerify, SignVerifyChip, SignVerifyConfig};
-use std::{fmt::Debug, marker::PhantomData};
+use std::marker::PhantomData;
 
 /// Number of static fields per tx: [nonce, gas, gas_price,
 /// caller_address, callee_address, is_create, value, call_data_length,
@@ -356,12 +356,9 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             .try_collect()?;
 
         config.load_aux_tables(layouter)?;
-        let assigned_sig_verifs = self.sign_verify.assign(
-            &config.sign_verify,
-            layouter,
-            &sign_datas,
-            challenges,
-        )?;
+        let assigned_sig_verifs =
+            self.sign_verify
+                .assign(&config.sign_verify, layouter, &sign_datas, challenges)?;
         self.assign_tx_table(config, challenges, layouter, assigned_sig_verifs)?;
         Ok(())
     }

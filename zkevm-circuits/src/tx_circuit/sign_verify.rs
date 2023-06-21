@@ -537,8 +537,7 @@ impl<F: Field> SignVerifyChip<F> {
                     .collect_vec(),
             )
         };
-
-        let is_address_zero: AssignedCell<F, F> = main_gate.is_zero(ctx, &address)?;
+        let is_address_zero = main_gate.is_zero(ctx, &address)?;
 
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
         // with RLC encoding corresponds to msg_hash_rlc
@@ -770,6 +769,7 @@ mod sign_verify_tests {
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
             let challenges = config.challenges.values(&mut layouter);
+
             self.sign_verify.assign(
                 &config.sign_verify,
                 &mut layouter,

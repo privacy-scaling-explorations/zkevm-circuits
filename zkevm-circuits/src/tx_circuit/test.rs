@@ -1,12 +1,12 @@
 #![allow(unused_imports)]
 use super::*;
 use crate::util::{log2_ceil, unusable_rows};
-use eth_types::{address, Bytes, ToScalar, Word};
+use eth_types::address;
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
 };
-use mock::{AddrOrWallet, MockTransaction};
+use mock::AddrOrWallet;
 
 #[test]
 fn tx_circuit_unusable_rows() {

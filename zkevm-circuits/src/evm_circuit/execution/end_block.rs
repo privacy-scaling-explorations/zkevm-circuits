@@ -39,7 +39,6 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let max_rws = cb.query_copy_cell();
         let total_txs = cb.query_cell();
         let total_txs_is_max_txs = IsEqualGadget::construct(cb, total_txs.expr(), max_txs.expr());
-        // TODO: constrain this value using the invalid tx info in the tx table
         let total_valid_txs = cb.query_cell();
 
         // Note that rw_counter starts at 1
