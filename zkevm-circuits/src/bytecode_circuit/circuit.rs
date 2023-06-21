@@ -281,7 +281,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
 
             cb.require_equal_word(
                 "assert cur.hash == EMPTY_HASH",
-                bytecode_table.code_hash.query(meta, Rotation::cur()),
+                bytecode_table.code_hash.query_advice(meta, Rotation::cur()),
                 empty_hash_word,
             );
 
@@ -322,8 +322,10 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
 
             cb.require_equal_word(
                 "next.hash == cur.hash",
-                bytecode_table.code_hash.query(meta, Rotation::next()),
-                bytecode_table.code_hash.query(meta, Rotation::cur()),
+                bytecode_table
+                    .code_hash
+                    .query_advice(meta, Rotation::next()),
+                bytecode_table.code_hash.query_advice(meta, Rotation::cur()),
             );
 
             cb.require_equal(
@@ -365,8 +367,10 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
 
             cb.require_equal_word(
                 "next.hash == cur.hash",
-                bytecode_table.code_hash.query(meta, Rotation::next()),
-                bytecode_table.code_hash.query(meta, Rotation::cur()),
+                bytecode_table
+                    .code_hash
+                    .query_advice(meta, Rotation::next()),
+                bytecode_table.code_hash.query_advice(meta, Rotation::cur()),
             );
 
             cb.require_equal(

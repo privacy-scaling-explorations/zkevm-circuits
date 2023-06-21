@@ -50,7 +50,7 @@ impl<T, const N: usize> WordLimbs<T, N> {
 
 impl<const N: usize> WordLimbs<Column<Advice>, N> {
     /// Query advice of WordLibs of columns advice
-    pub fn query<F: Field>(
+    pub fn query_advice<F: Field>(
         &self,
         meta: &mut VirtualCells<F>,
         at: Rotation,
@@ -393,8 +393,12 @@ impl<F: Field> Word<Value<F>> {
 
 impl Word<Column<Advice>> {
     /// Query advice of Word of columns advice
-    pub fn query<F: Field>(&self, meta: &mut VirtualCells<F>, at: Rotation) -> Word<Expression<F>> {
-        self.0.query(meta, at).to_word()
+    pub fn query_advice<F: Field>(
+        &self,
+        meta: &mut VirtualCells<F>,
+        at: Rotation,
+    ) -> Word<Expression<F>> {
+        self.0.query_advice(meta, at).to_word()
     }
 }
 
