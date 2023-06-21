@@ -20,7 +20,7 @@ use crate::{
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    Field, U256,
+    Field, ToAddress, U256,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -187,7 +187,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         self.tx_id
             .assign(region, offset, Value::known(F::from(transaction.id as u64)))?;
         self.external_address
-            .assign_u256(region, offset, external_address)?;
+            .assign_h160(region, offset, external_address.to_address())?;
         self.src_offset.assign_u256(region, offset, src_offset)?;
         let memory_addr = self
             .dst_memory_addr

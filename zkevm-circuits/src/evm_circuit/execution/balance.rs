@@ -19,7 +19,7 @@ use crate::{
         Expr,
     },
 };
-use eth_types::{evm_types::GasCost, Field, ToWord};
+use eth_types::{evm_types::GasCost, Field, ToAddress, ToWord};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -118,7 +118,8 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let address = block.get_rws(step, 0).stack_value();
-        self.address.assign_u256(region, offset, address)?;
+        self.address
+            .assign_h160(region, offset, address.to_address())?;
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
