@@ -259,7 +259,7 @@ impl BlockContext {
         #[cfg(not(feature = "scroll"))]
         let history_hashes: &[U256] = &self.history_hashes;
         #[cfg(feature = "scroll")]
-        let history_hashes: &[U256] = &[self.eth_block.parent_hash.to_word()];
+        let history_hashes: &[U256] = &[]; // block_hash is computed as keccak256(chain_id || block_number)
 
         let len_history = history_hashes.len();
 
