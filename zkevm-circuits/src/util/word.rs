@@ -13,7 +13,7 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 
-use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell, RandomLinearCombination};
+use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell};
 
 /// evm word 32 bytes, half word 16 bytes
 const N_BYTES_HALF_WORD: usize = 16;
@@ -71,14 +71,6 @@ impl<T: Default, const N: usize> Default for WordLimbs<T, N> {
         Self {
             limbs: [(); N].map(|_| T::default()),
         }
-    }
-}
-
-impl<F: Field> From<Word32Cell<F>> for WordLegacy<F> {
-    fn from(_: Word32Cell<F>) -> Self {
-        unreachable!(
-            "This function is meat to fix the build. Remove once we fixed the word lo-hi refactor"
-        )
     }
 }
 
@@ -493,22 +485,6 @@ impl<F: Field, const N1: usize> WordLimbs<Expression<F>, N1> {
 impl<F: Field, const N1: usize> WordExpr<F> for WordLimbs<Expression<F>, N1> {
     fn to_word(&self) -> Word<Expression<F>> {
         Word(self.to_word_n())
-    }
-}
-
-#[deprecated(note = "Word is preferred")]
-/// Support legacy type of RLC word
-pub type WordLegacy<F> = RandomLinearCombination<F, 32>;
-
-impl<F: Field> WordExpr<F> for WordLegacy<F> {
-    fn to_word(&self) -> Word<Expression<F>> {
-        Word::new([self.expr(), 0.expr()])
-    }
-}
-
-impl<F: Field> From<WordLegacy<F>> for Word32Cell<F> {
-    fn from(value: WordLegacy<F>) -> Self {
-        Word32Cell::new(value.cells)
     }
 }
 
