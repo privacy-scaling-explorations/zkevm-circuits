@@ -141,8 +141,7 @@ pub struct RwValues<F> {
     pub storage_key: Word<Expression<F>>,
     pub value: Word<Expression<F>>,
     pub value_prev: Word<Expression<F>>,
-    pub aux1: Expression<F>,
-    pub aux2: Expression<F>,
+    pub init_val: Word<Expression<F>>,
 }
 
 impl<F: Field> RwValues<F> {
@@ -154,8 +153,7 @@ impl<F: Field> RwValues<F> {
         storage_key: Word<Expression<F>>,
         value: Word<Expression<F>>,
         value_prev: Word<Expression<F>>,
-        aux1: Expression<F>,
-        aux2: Expression<F>,
+        init_val: Word<Expression<F>>,
     ) -> Self {
         Self {
             id,
@@ -164,8 +162,7 @@ impl<F: Field> RwValues<F> {
             storage_key,
             value,
             value_prev,
-            aux1,
-            aux2,
+            init_val,
         }
     }
 }
@@ -237,11 +234,11 @@ pub(crate) enum Lookup<F> {
         /// Whether the row is the first row of the copy event.
         is_first: Expression<F>,
         /// The source ID for the copy event.
-        src_id: Expression<F>,
+        src_id: Word<Expression<F>>,
         /// The source tag for the copy event.
         src_tag: Expression<F>,
         /// The destination ID for the copy event.
-        dst_id: Expression<F>,
+        dst_id: Word<Expression<F>>,
         /// The destination tag for the copy event.
         dst_tag: Expression<F>,
         /// The source address where bytes are copied from.
@@ -336,8 +333,8 @@ impl<F: Field> Lookup<F> {
                 values.value.hi(),
                 values.value_prev.lo(),
                 values.value_prev.hi(),
-                values.aux1.clone(),
-                values.aux2.clone(),
+                values.init_val.lo(),
+                values.init_val.hi(),
             ],
             Self::Bytecode {
                 hash,
@@ -373,9 +370,11 @@ impl<F: Field> Lookup<F> {
                 rwc_inc,
             } => vec![
                 is_first.clone(),
-                src_id.clone(),
+                src_id.lo(),
+                src_id.hi(),
                 src_tag.clone(),
-                dst_id.clone(),
+                dst_id.lo(),
+                dst_id.hi(),
                 dst_tag.clone(),
                 src_addr.clone(),
                 src_addr_end.clone(),

@@ -13,7 +13,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{word::WordExpr, Expr},
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
@@ -41,12 +41,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let mstart = cb.query_cell_phase2();
-        let msize = cb.query_word_rlc();
+        let mstart = cb.query_word_unchecked();
+        let msize = cb.query_memory_address();
 
         // Pop mstart_address, msize from stack
-        cb.stack_pop(mstart.expr());
-        cb.stack_pop(msize.expr());
+        cb.stack_pop_word(mstart.to_word());
+        cb.stack_pop_word(msize.to_word());
 
         // constrain not in static call
         let is_static_call = cb.call_context(None, CallContextFieldTag::IsStatic);

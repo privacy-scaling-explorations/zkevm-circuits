@@ -88,11 +88,11 @@ impl RwTable {
         row: &RwRow<Value<F>>,
     ) -> Result<(), Error> {
         for (column, value) in [
-            (self.address, row.address),
             (self.rw_counter, row.rw_counter),
             (self.is_write, row.is_write),
             (self.tag, row.tag),
             (self.id, row.id),
+            (self.address, row.address),
             (self.field_tag, row.field_tag),
         ] {
             region.assign_advice(|| "assign rw row on rw table", column, offset, || value)?;

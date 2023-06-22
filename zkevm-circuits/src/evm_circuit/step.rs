@@ -15,7 +15,7 @@ use bus_mapping::{
     error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
     evm::OpcodeId,
 };
-use eth_types::{evm_unimplemented, Field};
+use eth_types::{evm_unimplemented, Field, ToWord};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
@@ -66,9 +66,7 @@ pub enum ExecutionState {
     RETURNDATACOPY,
     EXTCODEHASH,
     BLOCKHASH,
-    BLOCKCTXU64,  // TIMESTAMP, NUMBER, GASLIMIT
-    BLOCKCTXU160, // COINBASE
-    BLOCKCTXU256, // DIFFICULTY, BASEFEE
+    BLOCKCTX, // TIMESTAMP, NUMBER, GASLIMIT, COINBASE, DIFFICULTY, BASEFEE
     CHAINID,
     SELFBALANCE,
     POP,
@@ -239,11 +237,12 @@ impl From<&ExecStep> for ExecutionState {
                     OpcodeId::EXTCODEHASH => ExecutionState::EXTCODEHASH,
                     OpcodeId::EXTCODESIZE => ExecutionState::EXTCODESIZE,
                     OpcodeId::BLOCKHASH => ExecutionState::BLOCKHASH,
-                    OpcodeId::TIMESTAMP | OpcodeId::NUMBER | OpcodeId::GASLIMIT => {
-                        ExecutionState::BLOCKCTXU64
-                    }
-                    OpcodeId::COINBASE => ExecutionState::BLOCKCTXU160,
-                    OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
+                    OpcodeId::TIMESTAMP
+                    | OpcodeId::NUMBER
+                    | OpcodeId::GASLIMIT
+                    | OpcodeId::COINBASE
+                    | OpcodeId::DIFFICULTY
+                    | OpcodeId::BASEFEE => ExecutionState::BLOCKCTX,
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SAR => ExecutionState::SAR,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
@@ -379,9 +378,14 @@ impl ExecutionState {
             Self::RETURNDATACOPY => vec![OpcodeId::RETURNDATACOPY],
             Self::EXTCODEHASH => vec![OpcodeId::EXTCODEHASH],
             Self::BLOCKHASH => vec![OpcodeId::BLOCKHASH],
-            Self::BLOCKCTXU64 => vec![OpcodeId::TIMESTAMP, OpcodeId::NUMBER, OpcodeId::GASLIMIT],
-            Self::BLOCKCTXU160 => vec![OpcodeId::COINBASE],
-            Self::BLOCKCTXU256 => vec![OpcodeId::DIFFICULTY, OpcodeId::BASEFEE],
+            Self::BLOCKCTX => vec![
+                OpcodeId::TIMESTAMP,
+                OpcodeId::NUMBER,
+                OpcodeId::GASLIMIT,
+                OpcodeId::COINBASE,
+                OpcodeId::DIFFICULTY,
+                OpcodeId::BASEFEE,
+            ],
             Self::CHAINID => vec![OpcodeId::CHAINID],
             Self::SELFBALANCE => vec![OpcodeId::SELFBALANCE],
             Self::POP => vec![OpcodeId::POP],
@@ -738,7 +742,7 @@ impl<F: Field> Step<F> {
         )?;
         self.state
             .code_hash
-            .assign(region, offset, Some(call.code_hash.to_fixed_bytes()))?;
+            .assign_u256(region, offset, call.code_hash.to_word())?;
         self.state
             .program_counter
             .assign(region, offset, Value::known(F::from(step.pc)))?;

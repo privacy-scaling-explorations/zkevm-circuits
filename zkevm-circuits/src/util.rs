@@ -1,4 +1,5 @@
 //! Common utility traits and functions.
+pub mod int_decomposition;
 pub mod word;
 
 use bus_mapping::evm::OpcodeId;

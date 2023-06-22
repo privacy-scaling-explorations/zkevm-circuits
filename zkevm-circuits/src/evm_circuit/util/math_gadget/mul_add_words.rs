@@ -4,7 +4,7 @@ use crate::{
         from_bytes, pow_of_two_expr, split_u256, split_u256_limb64, CachedRegion, Cell,
     },
     util::{
-        word::{Word, Word32Cell, Word4, WordExpr, WordLegacy},
+        word::{Word, Word32Cell, Word4, WordExpr},
         Expr,
     },
 };
@@ -52,17 +52,7 @@ pub(crate) struct MulAddWordsGadget<F> {
 }
 
 impl<F: Field> MulAddWordsGadget<F> {
-    pub(crate) fn construct(
-        _cb: &mut EVMConstraintBuilder<F>,
-        _words: [&WordLegacy<F>; 4],
-    ) -> Self {
-        todo!()
-    }
-
-    pub(crate) fn construct_new(
-        cb: &mut EVMConstraintBuilder<F>,
-        words: [&Word32Cell<F>; 4],
-    ) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&Word32Cell<F>; 4]) -> Self {
         let (a, b, c, d) = (words[0], words[1], words[2], words[3]);
         let carry_lo = cb.query_bytes();
         let carry_hi = cb.query_bytes();
@@ -71,8 +61,8 @@ impl<F: Field> MulAddWordsGadget<F> {
 
         let mut a_limbs = vec![];
         let mut b_limbs = vec![];
-        let word4_a: Word4<Expression<F>> = a.word_expr().to_word_n();
-        let word4_b: Word4<Expression<F>> = b.word_expr().to_word_n();
+        let word4_a: Word4<Expression<F>> = a.to_word_n();
+        let word4_b: Word4<Expression<F>> = b.to_word_n();
         for i in 0..4 {
             a_limbs.push(word4_a.limbs[i].expr());
             b_limbs.push(word4_b.limbs[i].expr());
@@ -184,7 +174,7 @@ mod tests {
             let c = cb.query_word32();
             let d = cb.query_word32();
             let carry = cb.query_cell();
-            let math_gadget = MulAddWordsGadget::<F>::construct_new(cb, [&a, &b, &c, &d]);
+            let math_gadget = MulAddWordsGadget::<F>::construct(cb, [&a, &b, &c, &d]);
             cb.require_equal("carry is correct", math_gadget.overflow(), carry.expr());
             MulAddGadgetContainer {
                 muladd_words_gadget: math_gadget,
@@ -202,14 +192,10 @@ mod tests {
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
             let offset = 0;
-            self.a
-                .assign(region, offset, Some(witnesses[0].to_le_bytes()))?;
-            self.b
-                .assign(region, offset, Some(witnesses[1].to_le_bytes()))?;
-            self.c
-                .assign(region, offset, Some(witnesses[2].to_le_bytes()))?;
-            self.d
-                .assign(region, offset, Some(witnesses[3].to_le_bytes()))?;
+            self.a.assign_u256(region, offset, witnesses[0])?;
+            self.b.assign_u256(region, offset, witnesses[1])?;
+            self.c.assign_u256(region, offset, witnesses[2])?;
+            self.d.assign_u256(region, offset, witnesses[3])?;
             self.carry.assign(
                 region,
                 offset,

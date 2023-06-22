@@ -411,7 +411,6 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             &block.txs,
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
-            &challenges,
         )?;
         block.rws.check_rw_counter_sanity();
         config.rw_table.load(
@@ -421,10 +420,8 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         )?;
         config
             .bytecode_table
-            .load(&mut layouter, block.bytecodes.values(), &challenges)?;
-        config
-            .block_table
-            .load(&mut layouter, &block.context, challenges.evm_word())?;
+            .load(&mut layouter, block.bytecodes.values())?;
+        config.block_table.load(&mut layouter, &block.context)?;
         config.copy_table.load(&mut layouter, block, &challenges)?;
         config
             .keccak_table

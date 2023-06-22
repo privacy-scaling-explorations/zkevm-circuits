@@ -5,21 +5,24 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            AccountAddress, CachedRegion,
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::{word::WordExpr, Expr},
+    util::{
+        word::{WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToAddress, ToLittleEndian};
+use eth_types::{Field, ToAddress};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AddressGadget<F> {
     same_context: SameContextGadget<F>,
-    address: AccountAddress<F>,
+    address: WordCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
@@ -28,7 +31,7 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ADDRESS;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let address = cb.query_account_address();
+        let address = cb.query_word_unchecked();
 
         // Lookup callee address in call context.
         cb.call_context_lookup_read(None, CallContextFieldTag::CalleeAddress, address.to_word());
@@ -66,11 +69,8 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
         let address = block.get_rws(step, 1).stack_value();
         debug_assert_eq!(call.address, address.to_address());
 
-        self.address.assign(
-            region,
-            offset,
-            Some(address.to_le_bytes()[..20].try_into().unwrap()),
-        )?;
+        self.address
+            .assign_h160(region, offset, address.to_address())?;
 
         Ok(())
     }

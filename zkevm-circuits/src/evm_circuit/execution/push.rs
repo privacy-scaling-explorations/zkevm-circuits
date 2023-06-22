@@ -18,7 +18,7 @@ use crate::{
     },
 };
 use array_init::array_init;
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use eth_types::{evm_types::OpcodeId, Field};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -132,8 +132,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         let opcode = step.opcode().unwrap();
 
         let value = block.get_rws(step, 0).stack_value();
-        self.value
-            .assign(region, offset, Some(value.to_le_bytes()))?;
+        self.value.assign_u256(region, offset, value)?;
 
         let num_additional_pushed = opcode.postfix().expect("opcode with postfix") - 1;
         for (idx, selector) in self.selectors.iter().enumerate() {
