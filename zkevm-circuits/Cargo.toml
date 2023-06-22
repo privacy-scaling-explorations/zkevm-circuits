@@ -36,6 +36,7 @@ num-bigint = { version = "0.4" }
 rand_chacha = "0.3"
 snark-verifier = { git = "https://github.com/privacy-scaling-explorations/snark-verifier", tag = "v2023_04_20", default-features = false, features = ["loader_halo2", "system_halo2"] }
 cli-table = { version = "0.4", optional = true }
+once_cell = "1.17.1"
 
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }

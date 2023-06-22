@@ -13,7 +13,7 @@ use bus_mapping::{
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::circuit::Value;
 
-use super::{tx::tx_convert, Bytecode, ExecStep, Rw, RwMap, Transaction};
+use super::{taiko::Taiko, tx::tx_convert, Bytecode, ExecStep, Rw, RwMap, Transaction};
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -51,6 +51,8 @@ pub struct Block<F> {
     pub keccak_inputs: Vec<Vec<u8>>,
     /// Original Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
+    /// Taiko witness
+    pub taiko: Taiko,
 }
 
 impl<F: Field> Block<F> {
@@ -231,7 +233,7 @@ pub fn block_convert<F: Field>(
             .txs()
             .iter()
             .enumerate()
-            .map(|(idx, tx)| tx_convert(tx, idx + 1))
+            .map(|(idx, tx)| tx_convert(tx, block.chain_id.as_u64(), idx + 1))
             .collect(),
         end_block_not_last: block.block_steps.end_block_not_last.clone(),
         end_block_last: block.block_steps.end_block_last.clone(),
@@ -251,5 +253,6 @@ pub fn block_convert<F: Field>(
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         eth_block: block.eth_block.clone(),
+        taiko: Taiko::default(),
     })
 }

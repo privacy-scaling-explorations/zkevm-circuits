@@ -2,7 +2,7 @@
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::{BlockTable, KeccakTable},
+    table::{byte_table::ByteTable, BlockTable, KeccakTable, LookupTable},
     util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
@@ -22,7 +22,7 @@ use halo2_proofs::{
 };
 use std::marker::PhantomData;
 
-const MAX_DEGREE: usize = 10;
+const MAX_DEGREE: usize = 9;
 const MIN_DEGREE: usize = 8;
 const RPI_CELL_IDX: usize = 0;
 const RPI_RLC_ACC_CELL_IDX: usize = 1;
@@ -135,18 +135,7 @@ impl PublicData {
 
     /// create PublicData from block and taiko
     pub fn new<F>(block: &witness::Block<F>, taiko: &witness::Taiko) -> Self {
-        // left shift x by n bits
-        fn left_shift<T: ToWord>(x: T, n: u32) -> Word {
-            assert!(n < 256);
-            if n < 128 {
-                return x.to_word() * Word::from(2u128.pow(n));
-            }
-            let mut bits = [0; 32];
-            bits[..16].copy_from_slice(2u128.pow(n - 128).to_be_bytes().as_ref());
-            bits[16..].copy_from_slice(0u128.to_be_bytes().as_ref());
-            x.to_word() * Word::from(&bits[..])
-        }
-
+        use witness::left_shift;
         let field9 = left_shift(taiko.prover, 96)
             + left_shift(taiko.parent_gas_used as u64, 64)
             + left_shift(taiko.gas_used as u64, 32);
@@ -158,7 +147,7 @@ impl PublicData {
             l1_signal_service: taiko.l1_signal_service.to_word(),
             l2_signal_service: taiko.l2_signal_service.to_word(),
             l2_contract: taiko.l2_contract.to_word(),
-            meta_hash: taiko.meta_hash.to_word(),
+            meta_hash: taiko.meta_hash.hash().to_word(),
             block_hash: taiko.block_hash.to_word(),
             parent_hash: taiko.parent_hash.to_word(),
             signal_root: taiko.signal_root.to_word(),
@@ -218,7 +207,7 @@ pub struct PiCircuitConfig<F: Field> {
     q_start: Selector,
     q_not_end: Selector,
 
-    is_byte: Column<Fixed>,
+    byte_table: ByteTable,
 
     pi: Column<Instance>, // keccak_hi, keccak_lo
 
@@ -237,6 +226,8 @@ pub struct PiCircuitConfigArgs<F: Field> {
     pub block_table: BlockTable,
     /// KeccakTable
     pub keccak_table: KeccakTable,
+    /// ByteTable
+    pub byte_table: ByteTable,
     /// Challenges
     pub challenges: Challenges<Expression<F>>,
 }
@@ -250,6 +241,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         Self::ConfigArgs {
             block_table,
             keccak_table,
+            byte_table,
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
@@ -261,7 +253,6 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let q_field_end = meta.complex_selector();
         let q_start = meta.complex_selector();
         let q_not_end = meta.complex_selector();
-        let is_byte = meta.fixed_column();
         let is_field_rlc = meta.fixed_column();
 
         let pi = meta.instance_column();
@@ -336,9 +327,11 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             let q_field_end = meta.query_selector(q_field_end);
             let is_field = or::expr([q_field_step, q_field_end]);
             let rpi_field_bytes = meta.query_advice(rpi_field_bytes, Rotation::cur());
-
-            let is_byte = meta.query_fixed(is_byte, Rotation::cur());
-            vec![(is_field * rpi_field_bytes, is_byte)]
+            [rpi_field_bytes]
+                .into_iter()
+                .zip(byte_table.table_exprs(meta).into_iter())
+                .map(|(arg, table)| (is_field.expr() * arg, table))
+                .collect::<Vec<_>>()
         });
 
         Self {
@@ -351,7 +344,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
 
             q_start,
             q_not_end,
-            is_byte,
+            byte_table,
             is_field_rlc,
 
             pi, // keccak_hi, keccak_lo
@@ -654,21 +647,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        layouter.assign_region(
-            || "is_byte table",
-            |mut region| {
-                for i in 0..(1 << 8) {
-                    region.assign_fixed(
-                        || format!("row_{}", i),
-                        config.is_byte,
-                        i,
-                        || Value::known(F::from(i as u64)),
-                    )?;
-                }
-
-                Ok(())
-            },
-        )?;
+        config.byte_table.load(layouter)?;
         config.assign(layouter, &self.public_data, challenges)
     }
 }
@@ -697,6 +676,7 @@ impl<F: Field> Circuit<F> for PiTestCircuit<F> {
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let block_table = BlockTable::construct(meta);
         let keccak_table = KeccakTable::construct(meta);
+        let byte_table = ByteTable::construct(meta);
         let challenges = Challenges::construct(meta);
         let challenge_exprs = challenges.exprs(meta);
         // let challenge_exprs = Challenges::mock(100.expr(), 100.expr());
@@ -707,6 +687,7 @@ impl<F: Field> Circuit<F> for PiTestCircuit<F> {
                 PiCircuitConfigArgs {
                     block_table,
                     keccak_table,
+                    byte_table,
                     challenges: challenge_exprs,
                 },
             ),
@@ -728,6 +709,7 @@ impl<F: Field> Circuit<F> for PiTestCircuit<F> {
         config
             .keccak_table
             .dev_load(&mut layouter, vec![&public_data.rpi_bytes()], &challenges)?;
+        config.byte_table.load(&mut layouter)?;
 
         self.0.synthesize_sub(&config, &challenges, &mut layouter)
     }

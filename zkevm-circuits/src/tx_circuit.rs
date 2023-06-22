@@ -30,10 +30,10 @@ use std::marker::PhantomData;
 
 /// Number of static fields per tx: [nonce, gas, gas_price,
 /// caller_address, callee_address, is_create, value, call_data_length,
-/// call_data_gas_cost, tx_sign_hash].
+/// call_data_gas_cost, tx_sign_hash, r, s, v].
 /// Note that call data bytes are layed out in the TxTable after all the static
 /// fields arranged by txs.
-pub(crate) const TX_LEN: usize = 10;
+pub(crate) const TX_LEN: usize = 13;
 
 /// Config for TxCircuit
 #[derive(Clone, Debug)]
@@ -242,6 +242,19 @@ impl<F: Field> TxCircuit<F> {
                         (
                             TxFieldTag::TxSignHash,
                             assigned_sig_verif.msg_hash_rlc.value().copied(),
+                        ),
+                        (TxFieldTag::SigV, Value::known(F::from(tx.v))),
+                        (
+                            TxFieldTag::SigR,
+                            challenges
+                                .evm_word()
+                                .map(|challenge| rlc(tx.r.to_le_bytes(), challenge)),
+                        ),
+                        (
+                            TxFieldTag::SigS,
+                            challenges
+                                .evm_word()
+                                .map(|challenge| rlc(tx.s.to_le_bytes(), challenge)),
                         ),
                     ] {
                         let assigned_cell =

@@ -29,6 +29,12 @@ pub enum TxFieldTag {
     TxSignHash,
     /// CallData
     CallData,
+    /// Signature field V.
+    SigV,
+    /// Signature field R.
+    SigR,
+    /// Signature field S.
+    SigS,
 }
 impl_expr!(TxFieldTag);
 
@@ -93,6 +99,23 @@ impl TxTable {
         max_calldata: usize,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "tx table",
+            |mut region| self.load_with_region(&mut region, txs, max_txs, max_calldata, challenges),
+        )
+    }
+
+    /// Assign the `TxTable` from a list of block `Transaction`s, followig the
+    /// same layout that the Tx Circuit uses.
+    /// NOTE: This function is used by passing the region directly
+    pub fn load_with_region<F: Field>(
+        &self,
+        region: &mut Region<'_, F>,
+        txs: &[Transaction],
+        max_txs: usize,
+        max_calldata: usize,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
         assert!(
             txs.len() <= max_txs,
             "txs.len() <= max_txs: txs.len()={}, max_txs={}",
@@ -132,58 +155,53 @@ impl TxTable {
             Ok(())
         }
 
-        layouter.assign_region(
-            || "tx table",
-            |mut region| {
-                let mut offset = 0;
-                let advice_columns = [self.tx_id, self.index, self.value];
-                assign_row(
-                    &mut region,
-                    offset,
-                    &advice_columns,
-                    &self.tag,
-                    &[(); 4].map(|_| Value::known(F::ZERO)),
-                    "all-zero",
-                )?;
-                offset += 1;
+        let mut offset = 0;
+        let advice_columns = [self.tx_id, self.index, self.value];
+        assign_row(
+            region,
+            offset,
+            &advice_columns,
+            &self.tag,
+            &[(); 4].map(|_| Value::known(F::ZERO)),
+            "all-zero",
+        )?;
+        offset += 1;
 
-                // Tx Table contains an initial region that has a size parametrized by max_txs
-                // with all the tx data except for calldata, and then a second
-                // region that has a size parametrized by max_calldata with all
-                // the tx calldata.  This is required to achieve a constant fixed column tag
-                // regardless of the number of input txs or the calldata size of each tx.
-                let mut calldata_assignments: Vec<[Value<F>; 4]> = Vec::new();
-                // Assign Tx data (all tx fields except for calldata)
-                let padding_txs: Vec<_> = (txs.len()..max_txs)
-                    .map(|i| Transaction {
-                        id: i + 1,
-                        ..Default::default()
-                    })
-                    .collect();
-                for tx in txs.iter().chain(padding_txs.iter()) {
-                    let [tx_data, tx_calldata] = tx.table_assignments(*challenges);
-                    for row in tx_data {
-                        assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
-                        offset += 1;
-                    }
-                    calldata_assignments.extend(tx_calldata.iter());
-                }
-                // Assign Tx calldata
-                let padding_calldata = (sum_txs_calldata..max_calldata).map(|_| {
-                    [
-                        Value::known(F::ZERO),
-                        Value::known(F::from(TxContextFieldTag::CallData as u64)),
-                        Value::known(F::ZERO),
-                        Value::known(F::ZERO),
-                    ]
-                });
-                for row in calldata_assignments.into_iter().chain(padding_calldata) {
-                    assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
-                    offset += 1;
-                }
-                Ok(())
-            },
-        )
+        // Tx Table contains an initial region that has a size parametrized by max_txs
+        // with all the tx data except for calldata, and then a second
+        // region that has a size parametrized by max_calldata with all
+        // the tx calldata.  This is required to achieve a constant fixed column tag
+        // regardless of the number of input txs or the calldata size of each tx.
+        let mut calldata_assignments: Vec<[Value<F>; 4]> = Vec::new();
+        // Assign Tx data (all tx fields except for calldata)
+        let padding_txs: Vec<_> = (txs.len()..max_txs)
+            .map(|i| Transaction {
+                id: i + 1,
+                ..Default::default()
+            })
+            .collect();
+        for tx in txs.iter().chain(padding_txs.iter()) {
+            let [tx_data, tx_calldata] = tx.table_assignments(*challenges);
+            for row in tx_data {
+                assign_row(region, offset, &advice_columns, &self.tag, &row, "")?;
+                offset += 1;
+            }
+            calldata_assignments.extend(tx_calldata.iter());
+        }
+        // Assign Tx calldata
+        let padding_calldata = (sum_txs_calldata..max_calldata).map(|_| {
+            [
+                Value::known(F::ZERO),
+                Value::known(F::from(TxContextFieldTag::CallData as u64)),
+                Value::known(F::ZERO),
+                Value::known(F::ZERO),
+            ]
+        });
+        for row in calldata_assignments.into_iter().chain(padding_calldata) {
+            assign_row(region, offset, &advice_columns, &self.tag, &row, "")?;
+            offset += 1;
+        }
+        Ok(())
     }
 }
 
