@@ -270,12 +270,6 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     }
 
     /// Code hash word RLC.
-    #[deprecated(note = "in fav of code_hash_word")]
-    pub(crate) fn code_hash_word_rlc(&self) -> Expression<F> {
-        unimplemented!()
-    }
-
-    /// Code hash word RLC.
     pub(crate) fn code_hash_word(&self) -> word::Word<Expression<F>> {
         self.code_hash.to_word()
     }
@@ -284,20 +278,6 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     pub(crate) fn code_hash_keccak_rlc(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
         cb.keccak_rlc::<N_BYTES_WORD>(
             self.code_hash
-                .limbs
-                .iter()
-                .map(Expr::expr)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
-        )
-    }
-
-    /// Salt EVM word RLC.
-    #[deprecated(note = "in fav of salt_word")]
-    pub(crate) fn salt_word_rlc(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
-        cb.word_rlc::<N_BYTES_WORD>(
-            self.salt
                 .limbs
                 .iter()
                 .map(Expr::expr)

@@ -211,13 +211,6 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
         self.word_rlc(CodeDB::empty_code_hash().to_word())
     }
 
-    #[deprecated(note = "in fav of code_hash_word")]
-    pub fn code_hash(&self, n: U256) -> Value<F> {
-        self.challenges
-            .evm_word()
-            .map(|r| rlc::value(&n.to_le_bytes(), r))
-    }
-
     pub fn code_hash_word(&self, n: U256) -> Word<Value<F>> {
         Word::from(n).into_value()
     }
