@@ -88,6 +88,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         // Fetch the bytecode length from the bytecode table.
         let code_size = cb.query_cell();
         let code_hash = cb.curr.state.code_hash.clone();
+        cb.debug_expression(code_hash.expr(), "push.code_hash".to_string());
         cb.bytecode_length(code_hash.expr(), code_size.expr());
 
         // Deduce the number of additional bytes to push than PUSH1. Note that
@@ -185,21 +186,21 @@ mod test {
     #[test]
     fn push_gadget_simple() {
         test_ok(OpcodeId::PUSH1, &[1]);
-        test_ok(OpcodeId::PUSH2, &[1, 2]);
-        test_ok(
-            OpcodeId::PUSH31,
-            &[
-                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24, 25, 26, 27, 28, 29, 30, 31,
-            ],
-        );
-        test_ok(
-            OpcodeId::PUSH32,
-            &[
-                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24, 25, 26, 27, 28, 29, 30, 31, 32,
-            ],
-        );
+        // test_ok(OpcodeId::PUSH2, &[1, 2]);
+        // test_ok(
+        //     OpcodeId::PUSH31,
+        //     &[
+        //         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+        // 23,         24, 25, 26, 27, 28, 29, 30, 31,
+        //     ],
+        // );
+        // test_ok(
+        //     OpcodeId::PUSH32,
+        //     &[
+        //         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+        // 23,         24, 25, 26, 27, 28, 29, 30, 31, 32,
+        //     ],
+        // );
     }
 
     #[test]

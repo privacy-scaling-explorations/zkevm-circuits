@@ -279,6 +279,7 @@ pub(crate) struct EVMConstraintBuilder<'a, F> {
     conditions: Vec<Expression<F>>,
     constraints_location: ConstraintLocation,
     stored_expressions: Vec<StoredExpression<F>>,
+    pub(crate) debug_expressions: Vec<(Expression<F>, String)>,
 }
 
 impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
@@ -321,6 +322,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             conditions: Vec::new(),
             constraints_location: ConstraintLocation::Step,
             stored_expressions: Vec::new(),
+            debug_expressions: Vec::new(),
         }
     }
 
@@ -1519,5 +1521,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Some(condition) => condition,
             None => 1.expr(),
         }
+    }
+
+    pub fn debug_expression(&mut self, expr: Expression<F>, name: String) {
+        self.debug_expressions.push((expr, name));
     }
 }

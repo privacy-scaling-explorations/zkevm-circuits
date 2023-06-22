@@ -221,6 +221,7 @@ pub struct ExecutionConfig<F> {
     step: Step<F>,
     pub(crate) height_map: HashMap<ExecutionState, usize>,
     stored_expressions_map: HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+    debug_expressions_map: HashMap<ExecutionState, Vec<(Expression<F>, String)>>,
     instrument: Instrument,
     // internal state gadgets
     begin_tx_gadget: Box<BeginTxGadget<F>>,
@@ -451,6 +452,7 @@ impl<F: Field> ExecutionConfig<F> {
         });
 
         let mut stored_expressions_map = HashMap::new();
+        let mut debug_expressions_map = HashMap::new();
 
         macro_rules! configure_gadget {
             () => {
@@ -472,6 +474,7 @@ impl<F: Field> ExecutionConfig<F> {
                         &step_curr,
                         &mut height_map,
                         &mut stored_expressions_map,
+                        &mut debug_expressions_map,
                         &mut instrument,
                     ))
                 })()
@@ -579,6 +582,7 @@ impl<F: Field> ExecutionConfig<F> {
             step: step_curr,
             height_map,
             stored_expressions_map,
+            debug_expressions_map,
             instrument,
         };
 
@@ -616,6 +620,7 @@ impl<F: Field> ExecutionConfig<F> {
         step_curr: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+        debug_expressions_map: &mut HashMap<ExecutionState, Vec<(Expression<F>, String)>>,
         instrument: &mut Instrument,
     ) -> G {
         // Configure the gadget with the max height first so we can find out the actual
@@ -655,6 +660,7 @@ impl<F: Field> ExecutionConfig<F> {
             step_next,
             height_map,
             stored_expressions_map,
+            debug_expressions_map,
             instrument,
             G::NAME,
             G::EXECUTION_STATE,
@@ -677,6 +683,7 @@ impl<F: Field> ExecutionConfig<F> {
         step_next: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+        debug_expressions_map: &mut HashMap<ExecutionState, Vec<(Expression<F>, String)>>,
         instrument: &mut Instrument,
         name: &'static str,
         execution_state: ExecutionState,
@@ -695,6 +702,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         instrument.on_gadget_built(execution_state, &cb);
 
+        let debug_expressions = cb.debug_expressions.clone();
         let (constraints, stored_expressions, _) = cb.build();
         debug_assert!(
             !height_map.contains_key(&execution_state),
@@ -707,6 +715,7 @@ impl<F: Field> ExecutionConfig<F> {
             "execution state already configured"
         );
         stored_expressions_map.insert(execution_state, stored_expressions);
+        debug_expressions_map.insert(execution_state, debug_expressions);
 
         // Enforce the logic for this opcode
         let sel_step: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
@@ -1089,7 +1098,7 @@ impl<F: Field> ExecutionConfig<F> {
             1,
             offset_begin,
         );
-        self.assign_exec_step_int(region, offset_begin, block, transaction, call, step)?;
+        self.assign_exec_step_int(region, offset_begin, block, transaction, call, step, false)?;
 
         region.replicate_assignment_for_range(
             || format!("repeat {:?} rows", step.execution_state()),
@@ -1145,10 +1154,11 @@ impl<F: Field> ExecutionConfig<F> {
                 transaction_next,
                 call_next,
                 step_next,
+                true,
             )?;
         }
 
-        self.assign_exec_step_int(region, offset, block, transaction, call, step)
+        self.assign_exec_step_int(region, offset, block, transaction, call, step, false)
     }
 
     fn assign_exec_step_int(
@@ -1159,6 +1169,10 @@ impl<F: Field> ExecutionConfig<F> {
         transaction: &Transaction,
         call: &Call,
         step: &ExecStep,
+        // Set to true when we're assigning the next step before the current step to have
+        // next step assignments for evaluation of the stored expressions in current step that
+        // depend on the next step.
+        is_next: bool,
     ) -> Result<(), Error> {
         self.step
             .assign_exec_step(region, offset, block, call, step)?;
@@ -1304,19 +1318,30 @@ impl<F: Field> ExecutionConfig<F> {
 
         // Fill in the witness values for stored expressions
         let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
+        if !is_next {
+            // We only want to print at the latest possible Phase.  Currently halo2 implements 3
+            // phases.  The `lookup_input` randomness is calculated after SecondPhase, so we print
+            // the debug expressions only once when we're at third phase, when `lookup_input` has
+            // a `Value::known`.  This gets called for every `synthesize` call that the Layouter
+            // does.
+            region.challenges().lookup_input().assert_if_known(|_| {
+                self.print_debug_expressions(region, offset, step);
+                true
+            });
 
-        // enable with `RUST_LOG=debug`
-        if log::log_enabled!(log::Level::Debug) {
-            let is_padding_step = matches!(step.execution_state(), ExecutionState::EndBlock)
-                && step.rw_indices_len() == 0;
-            if !is_padding_step {
-                // expensive function call
-                Self::check_rw_lookup(
-                    &assigned_stored_expressions,
-                    step,
-                    block,
-                    region.challenges(),
-                );
+            // enable with `RUST_LOG=debug`
+            if log::log_enabled!(log::Level::Debug) {
+                let is_padding_step = matches!(step.execution_state(), ExecutionState::EndBlock)
+                    && step.rw_indices_len() == 0;
+                if !is_padding_step {
+                    // expensive function call
+                    Self::check_rw_lookup(
+                        &assigned_stored_expressions,
+                        step,
+                        block,
+                        region.challenges(),
+                    );
+                }
             }
         }
         Ok(())
@@ -1341,6 +1366,48 @@ impl<F: Field> ExecutionConfig<F> {
             });
         }
         Ok(assigned_stored_expressions)
+    }
+
+    fn print_debug_expressions(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        step: &ExecStep,
+    ) {
+        for (expression, name) in self
+            .debug_expressions_map
+            .get(&step.execution_state())
+            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state()))
+        {
+            let value = expression.evaluate(
+                &|scalar| Value::known(scalar),
+                &|_| unimplemented!("selector column"),
+                &|fixed_query| {
+                    Value::known(region.get_fixed(
+                        offset,
+                        fixed_query.column_index(),
+                        fixed_query.rotation(),
+                    ))
+                },
+                &|advice_query| {
+                    Value::known(region.get_advice(
+                        offset,
+                        advice_query.column_index(),
+                        advice_query.rotation(),
+                    ))
+                },
+                &|_| unimplemented!("instance column"),
+                &|challenge| *region.challenges().indexed()[challenge.index()],
+                &|a| -a,
+                &|a, b| a + b,
+                &|a, b| a * b,
+                &|a, scalar| a * Value::known(scalar),
+            );
+            println!(
+                "Debug expression \"{}\" {:?} [offset={}, step={:?}] = {:?}",
+                name, expression, offset, step.exec_state, value
+            );
+        }
     }
 
     fn check_rw_lookup(
