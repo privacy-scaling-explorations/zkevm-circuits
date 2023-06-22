@@ -9,7 +9,7 @@ use crate::{
     table::MPTProofType,
 };
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum StorageRowType {

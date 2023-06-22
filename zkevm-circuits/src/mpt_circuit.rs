@@ -661,12 +661,7 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use halo2_proofs::{
-        dev::MockProver,
-        halo2curves::bn256::Fr,
-    };
-
+    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
     use std::fs;
 
     #[test]
@@ -690,7 +685,7 @@ mod tests {
                 let file = std::fs::File::open(path.clone());
 
                 let reader = std::io::BufReader::new(file.unwrap());
-                let nodes:Vec<Node> = serde_json::from_reader(reader).unwrap();
+                let nodes: Vec<Node> = serde_json::from_reader(reader).unwrap();
                 let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
 
                 let randomness: Fr = 123456.scalar();
@@ -713,8 +708,8 @@ mod tests {
                 // let prover = MockProver::run(9, &circuit, vec![pub_root]).unwrap();
                 let prover = MockProver::run(14 /* 9 */, &circuit, vec![]).unwrap();
                 assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
-                //assert_eq!(prover.verify_par(), Ok(()));
-                //prover.assert_satisfied();
+                // assert_eq!(prover.verify_par(), Ok(()));
+                // prover.assert_satisfied();
             });
     }
 }
