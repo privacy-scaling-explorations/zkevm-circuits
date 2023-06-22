@@ -746,7 +746,7 @@ fn check_err_invalid_code(step: &GethExecStep, next_step: Option<&GethExecStep>)
 }
 
 #[test]
-fn tracer_err_invalid_code() {
+fn tracer_err_invalid_code_for_create_opcode() {
     // code_creator outputs byte array that starts with 0xef, which is
     // invalid code.
     let code_creator = bytecode! {
@@ -833,10 +833,10 @@ fn tracer_err_invalid_code() {
     );
 }
 
-// test tx deploy transaction (tx.to == null)
+// Test ErrInvalidCode in transaction deployment (`tx.to == null`).
 #[test]
-fn tracer_err_invalid_code_tx_deploy() {
-    // code_creator outputs byte array that starts with 0xef, which is
+fn tracer_err_invalid_code_for_tx_deployment() {
+    // Code creator outputs a byte array that starts with 0xef, which is the
     // invalid code.
     let code_creator = bytecode! {
         PUSH32(word!("0xef00000000000000000000000000000000000000000000000000000000000000")) // value
@@ -847,7 +847,7 @@ fn tracer_err_invalid_code_tx_deploy() {
         RETURN
     };
 
-    // Get the execution steps from the external tracer
+    // Get the execution steps from external tracer.
     let block: GethData = TestContext::<2, 1>::new_with_logger_config(
         None,
         |accs| {
@@ -858,7 +858,6 @@ fn tracer_err_invalid_code_tx_deploy() {
             txs[0]
                 .from(accs[1].address)
                 .gas(60000u64.into())
-                .nonce(0)
                 .input(code_creator.into());
         },
         |block, _tx| block.number(0x0264),
@@ -867,7 +866,7 @@ fn tracer_err_invalid_code_tx_deploy() {
     .unwrap()
     .into();
 
-    // get last RETURN
+    // Get last RETURN.
     let (index, step) = block.geth_traces[0]
         .struct_logs
         .iter()
@@ -878,8 +877,8 @@ fn tracer_err_invalid_code_tx_deploy() {
     let next_step = block.geth_traces[0].struct_logs.get(index + 1);
     assert!(check_err_invalid_code(step, next_step));
 
+    // Setup call context at RETURN.
     let mut builder = CircuitInputBuilderTx::new(&block, step);
-    // Set up call context at RETURN
     builder.tx_ctx.call_is_success.push(false);
     builder.state_ref().push_call(mock_root_create());
     builder.state_ref().call_ctx_mut().unwrap().memory = step.memory.clone();

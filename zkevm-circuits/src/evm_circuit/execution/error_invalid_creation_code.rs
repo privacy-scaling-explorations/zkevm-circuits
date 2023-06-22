@@ -13,17 +13,19 @@ use crate::{
     },
     util::Expr,
 };
-
 use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
-/// Gadget for code store oog and max code size exceed
+/// New contract code is invalid if it starts with the 0xEF (EIP-3541).
+const INVALID_FIRST_BYTE: u8 = 0xef;
+
+/// Gadget for the invalid creation code error
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorInvalidCreationCodeGadget<F> {
     opcode: Cell<F>,
-    memory_address: MemoryAddressGadget<F>,
     first_byte: Cell<F>,
     is_first_byte_invalid: IsEqualGadget<F>,
+    memory_address: MemoryAddressGadget<F>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
@@ -44,18 +46,16 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         cb.require_true("is_create is true", cb.curr.state.is_create.expr());
 
         let memory_address = MemoryAddressGadget::construct(cb, offset, length);
-        // TODO: lookup memory for first byte
         cb.memory_lookup(0.expr(), memory_address.offset(), first_byte.expr(), None);
 
-        // constrain first byte is 0xef
-        let is_first_byte_invalid = IsEqualGadget::construct(cb, first_byte.expr(), 0xef.expr());
-
+        let is_first_byte_invalid =
+            IsEqualGadget::construct(cb, first_byte.expr(), INVALID_FIRST_BYTE.expr());
         cb.require_true(
             "is_first_byte_invalid is true",
             is_first_byte_invalid.expr(),
         );
 
-        let common_error_gadget = CommonErrorGadget::construct_with_lastcallee_return_data(
+        let common_error_gadget = CommonErrorGadget::construct_with_last_return(
             cb,
             opcode.expr(),
             5.expr(),
@@ -89,91 +89,93 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         self.memory_address
             .assign(region, offset, memory_offset, length)?;
 
-        let byte = block.rws[step.rw_index(2)].memory_value();
-
+        let first_byte = block.rws[step.rw_index(2)].memory_value().into();
         self.first_byte
-            .assign(region, offset, Value::known(F::from(byte as u64)))?;
+            .assign(region, offset, Value::known(F::from(first_byte)))?;
         self.is_first_byte_invalid.assign(
             region,
             offset,
-            F::from(byte as u64),
-            F::from(0xef_u64),
+            F::from(first_byte),
+            F::from(INVALID_FIRST_BYTE.into()),
         )?;
 
         self.common_error_gadget
             .assign(region, offset, block, call, step, 5)?;
+
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
-    use bus_mapping::circuit_input_builder::CircuitsParams;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{
-        address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, Word,
+        address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, U256,
     };
-
-    use lazy_static::lazy_static;
     use mock::{eth, TestContext, MOCK_ACCOUNTS};
 
-    use crate::test_util::CircuitTestBuilder;
+    const CALLER_ADDRESS: Address = Address::repeat_byte(0xaa);
 
-    const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
-    lazy_static! {
-        static ref CALLER_ADDRESS: Address = address!("0x00bbccddee000000000000000000000000002400");
-    }
+    #[test]
+    fn test_invalid_creation_code_for_create_opcodes() {
+        [false, true].into_iter().for_each(|is_create2| {
+            let code = caller_code(is_create2, init_code(10)).into();
 
-    const MAXCODESIZE: u64 = 0x6000u64;
-
-    fn run_test_circuits(ctx: TestContext<2, 1>) {
-        CircuitTestBuilder::new_from_test_ctx(ctx)
-            .params(CircuitsParams {
-                max_rws: 4500,
+            let caller = Account {
+                address: CALLER_ADDRESS,
+                code,
+                nonce: 1.into(),
+                balance: eth(10),
                 ..Default::default()
-            })
-            .run();
+            };
+
+            CircuitTestBuilder::new_from_test_ctx(test_ctx(caller)).run();
+        });
     }
 
-    fn initialization_bytecode() -> Bytecode {
-        let memory_bytes = [0xef; 10];
-        let memory_value = Word::from_big_endian(&memory_bytes);
-
-        let mut code = bytecode! {
-            PUSH10(memory_value)
-            PUSH32(0)
-            MSTORE
-            PUSH2( 5 ) // length to copy
-            PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap()) // offset
-            //PUSH2(0x00) // offset
-
-        };
-        code.write_op(OpcodeId::RETURN);
-
-        code
+    // Test ErrInvalidCode in transaction deployment (`tx.to == null`).
+    #[test]
+    fn test_invalid_creation_code_for_tx_deployment() {
+        let deploy_code = init_code(20);
+        let test_ctx = TestContext::<1, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+            },
+            |mut txs, _accs| {
+                txs[0]
+                    .from(MOCK_ACCOUNTS[0])
+                    .gas(53630_u64.into())
+                    .value(eth(1))
+                    .input(deploy_code.into());
+            },
+            |block, _tx| block.number(0xcafe_u64),
+        )
+        .unwrap();
+        CircuitTestBuilder::new_from_test_ctx(test_ctx).run();
     }
 
-    fn creator_bytecode(initialization_bytecode: Bytecode, is_create2: bool) -> Bytecode {
-        let initialization_bytes = initialization_bytecode.code();
-        let mut code = Bytecode::default();
+    fn caller_code(is_create2: bool, init_code: Bytecode) -> Bytecode {
+        let init_bytes = init_code.code();
+        let init_len = init_bytes.len();
 
-        // construct maxcodesize + 1 memory bytes
-        let code_creator: Vec<u8> = initialization_bytes
-            .to_vec()
-            .iter()
-            .cloned()
-            .chain(0u8..((32 - initialization_bytes.len() % 32) as u8))
+        let memory_bytes: Vec<_> = init_bytes
+            .into_iter()
+            .chain(0_u8..32 - init_len as u8 % 32)
             .collect();
-        for (index, word) in code_creator.chunks(32).enumerate() {
-            code.push(32, Word::from_big_endian(word));
-            code.push(32, Word::from(index * 32));
+
+        let mut code = Bytecode::default();
+        memory_bytes.chunks(32).enumerate().for_each(|(idx, word)| {
+            code.push(32, U256::from_big_endian(word));
+            code.push(32, U256::from(idx * 32));
             code.write_op(OpcodeId::MSTORE);
-        }
+        });
 
         if is_create2 {
-            code.append(&bytecode! {PUSH1(45)}); // salt;
+            code.append(&bytecode! {PUSH1(45)}); // salt
         }
         code.append(&bytecode! {
-            PUSH32(initialization_bytes.len()) // size
+            PUSH1(init_len) // size
             PUSH2(0x00) // offset
             PUSH2(23414) // value
         });
@@ -191,7 +193,21 @@ mod test {
         code
     }
 
-    fn test_context(caller: Account) -> TestContext<2, 1> {
+    fn init_code(size: usize) -> Bytecode {
+        let memory_bytes = vec![0xef; size];
+        let memory_value = U256::from_big_endian(&memory_bytes);
+
+        bytecode! {
+            PUSH32(memory_value)
+            PUSH32(0)
+            MSTORE
+            PUSH1(5) // length to copy
+            PUSH1(32 - memory_bytes.len()) // offset
+            RETURN
+        }
+    }
+
+    fn test_ctx(caller: Account) -> TestContext<2, 1> {
         TestContext::new(
             None,
             |accs| {
@@ -204,50 +220,10 @@ mod test {
                 txs[0]
                     .from(accs[0].address)
                     .to(accs[1].address)
-                    .gas(103800u64.into());
+                    .gas(103800_u64.into());
             },
             |block, _| block,
         )
         .unwrap()
-    }
-
-    #[test]
-    fn test_invalid_creation_code() {
-        for is_create2 in [false, true] {
-            let initialization_code = initialization_bytecode();
-            let root_code = creator_bytecode(initialization_code, is_create2);
-            let caller = Account {
-                address: *CALLER_ADDRESS,
-                code: root_code.into(),
-                nonce: 1.into(),
-                balance: eth(10),
-                ..Default::default()
-            };
-            run_test_circuits(test_context(caller));
-        }
-    }
-
-    // TODO: add tx deploy case for invalid creation code.
-    #[test]
-    fn test_tx_deploy_invalid_creation_code() {
-        let code = initialization_bytecode();
-
-        let ctx = TestContext::<1, 1>::new(
-            None,
-            |accs| {
-                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
-            },
-            |mut txs, _accs| {
-                txs[0]
-                    .from(MOCK_ACCOUNTS[0])
-                    .gas(53446u64.into())
-                    .value(eth(2))
-                    .input(code.into());
-            },
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap();
-
-        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }

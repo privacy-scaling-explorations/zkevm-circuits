@@ -970,16 +970,10 @@ impl<F: Field> CommonErrorGadget<F> {
         opcode: Expression<F>,
         rw_counter_delta: Expression<F>,
     ) -> Self {
-        Self::construct_with_lastcallee_return_data(
-            cb,
-            opcode,
-            rw_counter_delta,
-            0.expr(),
-            0.expr(),
-        )
+        Self::construct_with_last_return(cb, opcode, rw_counter_delta, 0.expr(), 0.expr())
     }
 
-    pub(crate) fn construct_with_lastcallee_return_data(
+    pub(crate) fn construct_with_last_return(
         cb: &mut EVMConstraintBuilder<F>,
         opcode: Expression<F>,
         rw_counter_delta: Expression<F>,
@@ -988,9 +982,9 @@ impl<F: Field> CommonErrorGadget<F> {
     ) -> Self {
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        let rw_counter_end_of_reversion = cb.query_cell();
         // current call must be failed.
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
+        let rw_counter_end_of_reversion = cb.query_cell();
         cb.call_context_lookup(
             false.expr(),
             None,

@@ -1064,7 +1064,8 @@ impl<'a> CircuitInputStateRef<'a> {
         let geth_step = steps
             .get(0)
             .ok_or(Error::InternalError("invalid index 0"))?;
-        let is_return_revert = geth_step.op == OpcodeId::REVERT || geth_step.op == OpcodeId::RETURN;
+        let is_return_revert = geth_step.op == OpcodeId::REVERT
+            || geth_step.op == OpcodeId::RETURN && exec_step.error.is_none();
 
         if !is_return_revert && !call.is_success {
             // add call failure ops for exception cases
