@@ -3,7 +3,7 @@
 // as `block` and run via `cargo test -p zkevm-circuits --features test
 // prover_error -- --nocapture --ignored`. Change any circuit parameters like
 // `max_txs` to suit your needs.
-use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+use bus_mapping::mock::BlockData;
 use env_logger::Env;
 use eth_types::{
     geth_types::{Account, GethData},
@@ -39,12 +39,6 @@ fn prover_error() {
     const MOCK_RANDOMNESS: u64 = 0x100;
     let k = 19;
     let chain_id = Word::from(99);
-    let circuit_params = CircuitsParams {
-        max_txs: 1,
-        max_calldata: 256,
-        max_rws: 16388,
-        ..Default::default()
-    };
 
     env_logger::Builder::from_env(Env::default().default_filter_or("trace")).init();
     let eth_block = load_json("../block/block.json");
@@ -92,13 +86,12 @@ fn prover_error() {
         geth_traces,
         accounts,
     };
-    let mut builder = BlockData::new_from_geth_data_with_params(geth_data.clone(), circuit_params)
-        .new_circuit_input_builder();
-    builder
+    let builder = BlockData::new_from_geth_data(geth_data.clone()).new_circuit_input_builder();
+    let builder = builder
         .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
         .expect("handle_block");
     let block_witness = {
-        let mut block = block_convert(&builder.block, &builder.code_db).expect("block_convert");
+        let mut block = block_convert(&builder).expect("block_convert");
         block.randomness = Fr::from(MOCK_RANDOMNESS);
         block
     };

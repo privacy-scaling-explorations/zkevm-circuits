@@ -39,7 +39,7 @@ impl Opcode for Returndatasize {
 #[cfg(test)]
 mod returndatasize_tests {
     use crate::{
-        circuit_input_builder::{CircuitsParams, ExecState},
+        circuit_input_builder::ExecState,
         mock::BlockData,
         operation::{CallContextField, CallContextOp, StackOp, RW},
     };
@@ -91,15 +91,8 @@ mod returndatasize_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data_with_params(
-            block.clone(),
-            CircuitsParams {
-                max_rws: 512,
-                ..Default::default()
-            },
-        )
-        .new_circuit_input_builder();
-        builder
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 

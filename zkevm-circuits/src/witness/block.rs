@@ -7,7 +7,7 @@ use crate::{
     util::{log2_ceil, SubCircuit},
 };
 use bus_mapping::{
-    circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
+    circuit_input_builder::{self, CopyEvent, ExpEvent, FixedCParams},
     Error,
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
@@ -42,7 +42,7 @@ pub struct Block<F> {
     /// Pad exponentiation circuit to make selectors fixed.
     pub exp_circuit_pad_to: usize,
     /// Circuit Setup Parameters
-    pub circuits_params: CircuitsParams,
+    pub circuits_params: FixedCParams,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
     /// State root of the previous block
@@ -231,9 +231,10 @@ impl From<&circuit_input_builder::Block> for BlockContext {
 
 /// Convert a block struct in bus-mapping to a witness block used in circuits
 pub fn block_convert<F: Field>(
-    block: &circuit_input_builder::Block,
-    code_db: &bus_mapping::state_db::CodeDB,
+    builder: &circuit_input_builder::CircuitInputBuilder<FixedCParams>,
 ) -> Result<Block<F>, Error> {
+    let block = &builder.block;
+    let code_db = &builder.code_db;
     let rws = RwMap::from(&block.container);
     rws.check_value();
     Ok(Block {
@@ -260,7 +261,7 @@ pub fn block_convert<F: Field>(
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
-        circuits_params: block.circuits_params,
+        circuits_params: builder.circuits_params,
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,

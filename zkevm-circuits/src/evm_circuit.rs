@@ -444,7 +444,7 @@ mod evm_circuit_stats {
         util::{unusable_rows, SubCircuit},
         witness::block_convert,
     };
-    use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+    use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
 
     use eth_types::{bytecode, geth_types::GethData};
     use halo2_proofs::{self, dev::MockProver, halo2curves::bn256::Fr};
@@ -483,7 +483,7 @@ mod evm_circuit_stats {
 
     #[test]
     fn variadic_size_check() {
-        let params = CircuitsParams {
+        let params = FixedCParams {
             max_evm_rows: 1 << 12,
             ..Default::default()
         };
@@ -496,7 +496,7 @@ mod evm_circuit_stats {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder).unwrap();
         let k = block.get_test_degree();
 
         let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block);
@@ -518,7 +518,7 @@ mod evm_circuit_stats {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder).unwrap();
         let k = block.get_test_degree();
         let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block);
         let prover2 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
