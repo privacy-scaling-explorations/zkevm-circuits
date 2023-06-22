@@ -520,6 +520,8 @@ dependencies = [
  "rand",
  "rand_chacha",
  "rand_xorshift",
+ "serde",
+ "serde_json",
  "zkevm-circuits",
 ]
 

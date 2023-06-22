@@ -130,6 +130,7 @@ pub struct Node {
     pub(crate) storage: Option<StorageNode>,
     /// MPT node values
     pub values: Vec<Vec<u8>>,
+    /// MPT keccak data
     pub keccak_data: Vec<Vec<u8>>,
 }
 
