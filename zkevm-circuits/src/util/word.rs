@@ -3,11 +3,13 @@
 // - Limbs: An EVN word is 256 bits. Limbs N means split 256 into N limb. For example, N = 4, each
 //   limb is 256/4 = 64 bits
 
+use bus_mapping::state_db::CodeDB;
 use eth_types::{Field, ToLittleEndian, H160, H256};
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
-    plonk::{Advice, Column, Error, Expression},
+    plonk::{Advice, Column, Error, Expression, VirtualCells},
+    poly::Rotation,
 };
 use itertools::Itertools;
 
@@ -43,6 +45,24 @@ impl<T, const N: usize> WordLimbs<T, N> {
     /// The number of limbs
     pub fn n() -> usize {
         N
+    }
+}
+
+impl<const N: usize> WordLimbs<Column<Advice>, N> {
+    /// Query advice of WordLibs of columns advice
+    pub fn query_advice<F: Field>(
+        &self,
+        meta: &mut VirtualCells<F>,
+        at: Rotation,
+    ) -> WordLimbs<Expression<F>, N> {
+        WordLimbs::new(self.limbs.map(|column| meta.query_advice(column, at)))
+    }
+}
+
+impl<const N: usize> WordLimbs<u8, N> {
+    /// Convert WordLimbs of u8 to WordLimbs of expressions
+    pub fn to_expr<F: Field>(&self) -> WordLimbs<Expression<F>, N> {
+        WordLimbs::new(self.limbs.map(|v| Expression::Constant(F::from(v as u64))))
     }
 }
 
@@ -363,6 +383,17 @@ impl<F: Field> Word<Value<F>> {
     }
 }
 
+impl Word<Column<Advice>> {
+    /// Query advice of Word of columns advice
+    pub fn query_advice<F: Field>(
+        &self,
+        meta: &mut VirtualCells<F>,
+        at: Rotation,
+    ) -> Word<Expression<F>> {
+        self.0.query_advice(meta, at).to_word()
+    }
+}
+
 impl<F: Field> WordExpr<F> for Word<Cell<F>> {
     fn to_word(&self) -> Word<Expression<F>> {
         self.word_expr().to_word()
@@ -428,7 +459,7 @@ impl<F: Field> WordExpr<F> for Word<Expression<F>> {
 
 impl<F: Field, const N1: usize> WordLimbs<Expression<F>, N1> {
     /// to_wordlimbs will aggregate nested expressions, which implies during expression evaluation
-    /// it need more recursive call. if the converted limbs word will be used in many place,
+    /// it need more recursive call. if the converted limbs word will be used in many places,
     /// consider create new low limbs word, have equality constrain, then finally use low limbs
     /// elsewhere.
     // TODO static assertion. wordaround https://github.com/nvzqz/static-assertions-rs/issues/40
@@ -479,6 +510,11 @@ impl<F: Field> From<WordLegacy<F>> for Word32Cell<F> {
     fn from(value: WordLegacy<F>) -> Self {
         Word32Cell::new(value.cells)
     }
+}
+
+/// Return the hash of the empty code as a Word<Value<F>> in little-endian.
+pub fn empty_code_hash_word_value<F: Field>() -> Word<Value<F>> {
+    Word::from(CodeDB::empty_code_hash()).into_value()
 }
 
 // TODO unittest

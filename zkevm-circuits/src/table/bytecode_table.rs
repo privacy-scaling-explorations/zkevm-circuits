@@ -14,10 +14,7 @@ impl_expr!(BytecodeFieldTag);
 #[derive(Clone, Debug)]
 pub struct BytecodeTable {
     /// Code Hash
-    pub code_hash_word: word::Word<Column<Advice>>,
-    #[deprecated]
-    /// Code Hash
-    pub code_hash: Column<Advice>,
+    pub code_hash: word::Word<Column<Advice>>,
     /// Tag
     pub tag: Column<Advice>,
     /// Index
@@ -32,10 +29,8 @@ impl BytecodeTable {
     /// Construct a new BytecodeTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         let [tag, index, is_code, value] = array::from_fn(|_| meta.advice_column());
-        let code_hash_word = word::Word::new([meta.advice_column(), meta.advice_column()]);
-        let code_hash = meta.advice_column();
+        let code_hash = word::Word::new([meta.advice_column(), meta.advice_column()]);
         Self {
-            code_hash_word,
             code_hash,
             tag,
             index,
@@ -89,8 +84,8 @@ impl BytecodeTable {
 impl<F: Field> LookupTable<F> for BytecodeTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.code_hash_word.lo().into(),
-            self.code_hash_word.hi().into(),
+            self.code_hash.lo().into(),
+            self.code_hash.hi().into(),
             self.tag.into(),
             self.index.into(),
             self.is_code.into(),

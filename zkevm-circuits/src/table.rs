@@ -4,7 +4,11 @@ use crate::{
     copy_circuit::util::number_or_hash_to_word,
     evm_circuit::util::rlc,
     impl_expr,
-    util::{build_tx_log_address, keccak, word, Challenges},
+    util::{
+        build_tx_log_address, keccak,
+        word::{self, Word},
+        Challenges,
+    },
     witness::{
         Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
     },
