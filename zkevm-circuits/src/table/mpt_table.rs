@@ -1,3 +1,5 @@
+use serde::{Serialize, Deserialize};
+
 use super::*;
 use crate::{
     circuit,
@@ -9,7 +11,7 @@ use crate::{
 };
 
 /// The types of proofs in the MPT table
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum MPTProofType {
     /// Disabled
     Disabled,

@@ -660,19 +660,18 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
 
 #[cfg(test)]
 mod tests {
-    use crate::mpt_circuit::witness_row::{prepare_witness, MptWitnessRow};
-
     use super::*;
 
-    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+    use halo2_proofs::{
+        dev::MockProver,
+        halo2curves::bn256::Fr,
+    };
 
     use std::fs;
 
     #[test]
     fn test_mpt() {
-        // for debugging:
         let path = "src/mpt_circuit/tests";
-        // let path = "tests";
         let files = fs::read_dir(path).unwrap();
         files
             .filter_map(Result::ok)
@@ -689,23 +688,20 @@ mod tests {
                 let mut parts = path.to_str().unwrap().split('-');
                 parts.next();
                 let file = std::fs::File::open(path.clone());
+
                 let reader = std::io::BufReader::new(file.unwrap());
-                let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
+                let nodes:Vec<Node> = serde_json::from_reader(reader).unwrap();
+                let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
 
                 let randomness: Fr = 123456.scalar();
 
                 let mut keccak_data = vec![];
-                let mut witness_rows = vec![];
-                for row in w.iter() {
-                    if row[row.len() - 1] == 5 {
-                        keccak_data.push(row[0..row.len() - 1].to_vec());
-                    } else {
-                        let row = MptWitnessRow::<Fr>::new(row[0..row.len()].to_vec());
-                        witness_rows.push(row);
+
+                for node in nodes.iter() {
+                    for k in node.keccak_data.iter() {
+                        keccak_data.push(k.clone());
                     }
                 }
-                let nodes = prepare_witness(&mut witness_rows);
-                let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
 
                 let circuit = MPTCircuit::<Fr> {
                     nodes,
@@ -717,8 +713,8 @@ mod tests {
                 // let prover = MockProver::run(9, &circuit, vec![pub_root]).unwrap();
                 let prover = MockProver::run(14 /* 9 */, &circuit, vec![]).unwrap();
                 assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
-                // assert_eq!(prover.verify_par(), Ok(()));
-                // prover.assert_satisfied();
+                //assert_eq!(prover.verify_par(), Ok(()));
+                //prover.assert_satisfied();
             });
     }
 }
