@@ -109,10 +109,10 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 
         // pop/push values
         // take care that if n==0 pushed value for r should be zero also
-        cb.stack_pop_word(a.to_word());
-        cb.stack_pop_word(b.to_word());
-        cb.stack_pop_word(n.clone().to_word());
-        cb.stack_push_word(
+        cb.stack_pop(a.to_word());
+        cb.stack_pop(b.to_word());
+        cb.stack_pop(n.clone().to_word());
+        cb.stack_push(
             r.clone()
                 .to_word()
                 .mul_selector(not::expr(n_is_zero.expr())),

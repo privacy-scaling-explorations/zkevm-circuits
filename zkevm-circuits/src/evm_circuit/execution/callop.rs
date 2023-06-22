@@ -114,7 +114,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let callee_address = Word::select(
             is_callcode.expr() + is_delegatecall.expr(),
             current_callee_address.to_word(),
-            call_gadget.callee_address_word(),
+            call_gadget.callee_address(),
         );
 
         // Add callee to access list
@@ -122,7 +122,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_warm_prev = cb.query_bool();
         cb.account_access_list_write_unchecked(
             tx_id.expr(),
-            call_gadget.callee_address_word(),
+            call_gadget.callee_address(),
             is_warm.expr(),
             is_warm_prev.expr(),
             Some(&mut reversion_info),
@@ -152,7 +152,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         });
 
         let caller_balance_word = cb.query_word_unchecked();
-        cb.account_read_word(
+        cb.account_read(
             caller_address.to_word(),
             AccountFieldTag::Balance,
             caller_balance_word.to_word(),

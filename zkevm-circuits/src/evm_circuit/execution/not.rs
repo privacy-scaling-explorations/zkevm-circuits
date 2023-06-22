@@ -36,8 +36,8 @@ impl<F: Field> ExecutionGadget<F> for NotGadget<F> {
         let input = cb.query_word32();
         let output = cb.query_word32();
 
-        cb.stack_pop_word(input.to_word());
-        cb.stack_push_word(output.to_word());
+        cb.stack_pop(input.to_word());
+        cb.stack_push(output.to_word());
 
         for (i, o) in input.limbs.iter().zip(output.limbs.iter()) {
             cb.add_lookup(

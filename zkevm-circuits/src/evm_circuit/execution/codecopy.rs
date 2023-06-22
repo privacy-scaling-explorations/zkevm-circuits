@@ -61,9 +61,9 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         let code_offset = WordByteCapGadget::construct(cb, code_size.expr());
 
         // Pop items from stack.
-        cb.stack_pop_word(dst_memory_offset.to_word());
-        cb.stack_pop_word(code_offset.original_word_new().to_word());
-        cb.stack_pop_word(Word::from_lo_unchecked(length.expr()));
+        cb.stack_pop(dst_memory_offset.to_word());
+        cb.stack_pop(code_offset.original_word().to_word());
+        cb.stack_pop(Word::from_lo_unchecked(length.expr()));
 
         // Construct memory address in the destionation (memory) to which we copy code.
         let dst_memory_addr = MemoryAddressGadget::construct(cb, dst_memory_offset, length);
@@ -72,7 +72,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         let code_hash = cb.curr.state.code_hash.clone();
 
         // Fetch the bytecode length from the bytecode table.
-        cb.bytecode_length_word(code_hash.to_word(), code_size.expr());
+        cb.bytecode_length(code_hash.to_word(), code_size.expr());
 
         // Calculate the next memory size and the gas cost for this memory
         // access. This also accounts for the dynamic gas required to copy bytes to

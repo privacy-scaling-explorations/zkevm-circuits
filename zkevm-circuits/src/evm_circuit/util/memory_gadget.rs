@@ -29,7 +29,7 @@ pub(crate) mod address_low {
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr_word<F: Field>(address: &Word32Cell<F>) -> Expression<F> {
+    pub(crate) fn expr<F: Field>(address: &Word32Cell<F>) -> Expression<F> {
         from_bytes::expr(&address.limbs[..N_BYTES_MEMORY_ADDRESS])
     }
 
@@ -50,7 +50,7 @@ pub(crate) mod address_high {
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr_word<F: Field>(address: &Word32Cell<F>) -> Expression<F> {
+    pub(crate) fn expr<F: Field>(address: &Word32Cell<F>) -> Expression<F> {
         sum::expr(&address.limbs[N_BYTES_MEMORY_ADDRESS..])
     }
 

@@ -56,9 +56,9 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         let data_offset = WordByteCapGadget::construct(cb, call_data_length.expr());
 
         // Pop memory_offset, data_offset, length from stack
-        cb.stack_pop_word(memory_offset.to_word());
-        cb.stack_pop_word(data_offset.original_word_new().to_word());
-        cb.stack_pop_word(length.to_word());
+        cb.stack_pop(memory_offset.to_word());
+        cb.stack_pop(data_offset.original_word().to_word());
+        cb.stack_pop(length.to_word());
 
         // Lookup the calldata_length and caller_address in Tx context table or
         // Call context table

@@ -260,7 +260,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     }
 
     /// Caller address' value.
-    pub(crate) fn caller_address_word(&self) -> word::Word<Expression<F>> {
+    pub(crate) fn caller_address(&self) -> word::Word<Expression<F>> {
         self.caller_address.to_word()
     }
 
@@ -270,7 +270,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     }
 
     /// Code hash word RLC.
-    pub(crate) fn code_hash_word(&self) -> word::Word<Expression<F>> {
+    pub(crate) fn code_hash(&self) -> word::Word<Expression<F>> {
         self.code_hash.to_word()
     }
 
@@ -287,7 +287,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
         )
     }
 
-    pub(crate) fn salt_word(&self) -> word::Word<Expression<F>> {
+    pub(crate) fn salt(&self) -> word::Word<Expression<F>> {
         self.salt.to_word()
     }
 

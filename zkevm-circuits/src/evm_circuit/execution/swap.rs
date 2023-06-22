@@ -38,13 +38,13 @@ impl<F: Field> ExecutionGadget<F> for SwapGadget<F> {
         let swap_offset = opcode.expr() - (OpcodeId::SWAP1.as_u64() - 1).expr();
 
         // Peek the value at `swap_offset`
-        cb.stack_lookup_word(false.expr(), swap_offset.clone(), values[0].to_word());
+        cb.stack_lookup(false.expr(), swap_offset.clone(), values[0].to_word());
         // Peek the value at the top of the stack
-        cb.stack_lookup_word(false.expr(), 0.expr(), values[1].to_word());
+        cb.stack_lookup(false.expr(), 0.expr(), values[1].to_word());
         // Write the value previously at the top of the stack to `swap_offset`
-        cb.stack_lookup_word(true.expr(), swap_offset, values[1].to_word());
+        cb.stack_lookup(true.expr(), swap_offset, values[1].to_word());
         // Write the value previously at `swap_offset` to the top of the stack
-        cb.stack_lookup_word(true.expr(), 0.expr(), values[0].to_word());
+        cb.stack_lookup(true.expr(), 0.expr(), values[0].to_word());
 
         // State transition
         let step_state_transition = StepStateTransition {

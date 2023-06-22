@@ -34,7 +34,7 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
         // Lookup in call_ctx the TxId
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         // Lookup rw_table -> call_context with tx origin address
-        cb.tx_context_lookup_word(
+        cb.tx_context_lookup(
             tx_id.expr(),
             TxContextFieldTag::CallerAddress,
             None, // None because unrelated to calldata
@@ -42,7 +42,7 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
         );
 
         // Push the value to the stack
-        cb.stack_push_word(origin.to_word());
+        cb.stack_push(origin.to_word());
 
         // State transition
         let opcode = cb.query_cell();

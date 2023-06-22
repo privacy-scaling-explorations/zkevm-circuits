@@ -67,9 +67,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         let size = cb.query_memory_address();
 
         // 1. Pop dest_offset, offset, length from stack
-        cb.stack_pop_word(dest_offset.to_word());
-        cb.stack_pop_word(Word::from_lo_unchecked(data_offset.expr()));
-        cb.stack_pop_word(Word::from_lo_unchecked(size.expr()));
+        cb.stack_pop(dest_offset.to_word());
+        cb.stack_pop(Word::from_lo_unchecked(data_offset.expr()));
+        cb.stack_pop(Word::from_lo_unchecked(size.expr()));
 
         // 2. Add lookup constraint in the call context for the returndatacopy field.
         let last_callee_id = cb.query_cell();

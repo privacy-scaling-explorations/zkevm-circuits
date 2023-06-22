@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
         );
 
         // Construct the value and push it to stack.
-        cb.stack_push_word(gas_left.to_word());
+        cb.stack_push(gas_left.to_word());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(1.expr()),

@@ -63,11 +63,11 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         let exponentiation = cb.query_word32();
 
         // Pop RLC-encoded base and exponent from the stack.
-        cb.stack_pop_word(base.to_word());
-        cb.stack_pop_word(exponent.to_word());
+        cb.stack_pop(base.to_word());
+        cb.stack_pop(exponent.to_word());
 
         // Push RLC-encoded exponentiation to the stack.
-        cb.stack_push_word(exponentiation.to_word());
+        cb.stack_push(exponentiation.to_word());
 
         // Extract low and high bytes of the base.
         let (base_lo, base_hi) = base.to_word().to_lo_hi();

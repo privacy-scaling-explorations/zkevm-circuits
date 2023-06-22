@@ -13,8 +13,7 @@ use crate::{
     util::int_decomposition::IntDecomposition,
     witness::{Block, ExecStep, Rw, RwMap},
 };
-use bus_mapping::state_db::CodeDB;
-use eth_types::{Address, Field, ToLittleEndian, ToWord, U256};
+use eth_types::{Address, Field, ToLittleEndian, U256};
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
     plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, VirtualCells},
@@ -207,11 +206,7 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
             .map(|r| rlc::value(le_bytes, r))
     }
 
-    pub fn empty_code_hash_rlc(&self) -> Value<F> {
-        self.word_rlc(CodeDB::empty_code_hash().to_word())
-    }
-
-    pub fn code_hash_word(&self, n: U256) -> Word<Value<F>> {
+    pub fn code_hash(&self, n: U256) -> Word<Value<F>> {
         Word::from(n).into_value()
     }
 

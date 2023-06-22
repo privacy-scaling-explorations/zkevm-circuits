@@ -66,9 +66,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         // Lookup values from stack if opcode is call
         // Precondition: If there's a StackUnderflow CALL, is handled before this error
         cb.condition(is_call.expr(), |cb| {
-            cb.stack_pop_word(gas_word.to_word());
-            cb.stack_pop_word(code_address.to_word());
-            cb.stack_pop_word(value.to_word());
+            cb.stack_pop(gas_word.to_word());
+            cb.stack_pop(code_address.to_word());
+            cb.stack_pop(value.to_word());
             cb.require_zero("value of call is not zero", is_value_zero.expr());
         });
 

@@ -36,7 +36,7 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
         // Lookup callee address in call context.
         cb.call_context_lookup_read(None, CallContextFieldTag::CalleeAddress, address.to_word());
 
-        cb.stack_push_word(address.to_word());
+        cb.stack_push(address.to_word());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(2.expr()),

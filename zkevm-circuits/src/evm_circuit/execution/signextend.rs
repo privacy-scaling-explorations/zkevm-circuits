@@ -128,9 +128,9 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
 
         // Pop the byte index and the value from the stack, push the result on
         // the stack
-        cb.stack_pop_word(index.to_word());
-        cb.stack_pop_word(value.to_word());
-        cb.stack_push_word(result.to_word());
+        cb.stack_pop(index.to_word());
+        cb.stack_pop(value.to_word());
+        cb.stack_push(result.to_word());
 
         // State transition
         let step_state_transition = StepStateTransition {

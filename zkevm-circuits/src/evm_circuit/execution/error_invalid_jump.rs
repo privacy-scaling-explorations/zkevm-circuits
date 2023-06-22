@@ -64,20 +64,20 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         let is_condition_zero = IsZeroWordGadget::construct(cb, &condition);
 
         // Pop the value from the stack
-        cb.stack_pop_word(dest.original_word_new().to_word());
+        cb.stack_pop(dest.original_word().to_word());
 
         cb.condition(is_jumpi.expr(), |cb| {
-            cb.stack_pop_word(condition.to_word());
+            cb.stack_pop(condition.to_word());
             // if condition is zero, jump will not happen, so constrain condition not zero
             cb.require_zero("condition is not zero", is_condition_zero.expr());
         });
 
         // Look up bytecode length
-        cb.bytecode_length_word(cb.curr.state.code_hash.to_word(), code_len.expr());
+        cb.bytecode_length(cb.curr.state.code_hash.to_word(), code_len.expr());
 
         // If destination is in valid range, lookup for the value.
         cb.condition(dest.lt_cap(), |cb| {
-            cb.bytecode_lookup_word(
+            cb.bytecode_lookup(
                 cb.curr.state.code_hash.to_word(),
                 dest.valid_value(),
                 is_code.expr(),

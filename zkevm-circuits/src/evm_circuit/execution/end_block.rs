@@ -68,7 +68,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             // Verify that there are at most total_txs meaningful txs in the tx_table, by
             // showing that the Tx following the last processed one has
             // CallerAddress = 0x0 (which means padding tx).
-            cb.tx_context_lookup_word(
+            cb.tx_context_lookup(
                 total_txs.expr() + 1.expr(),
                 TxContextFieldTag::CallerAddress,
                 None,

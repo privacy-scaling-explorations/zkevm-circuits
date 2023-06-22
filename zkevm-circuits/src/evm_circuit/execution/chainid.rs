@@ -34,10 +34,10 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
         let chain_id = cb.query_word_unchecked();
 
         // Push the value to the stack
-        cb.stack_push_word(chain_id.to_word());
+        cb.stack_push(chain_id.to_word());
 
         // Lookup block table with chain_id
-        cb.block_lookup_word(
+        cb.block_lookup(
             BlockContextFieldTag::ChainId.expr(),
             None,
             chain_id.to_word(),

@@ -94,10 +94,10 @@ impl<F: Field> AbsWordGadget<F> {
         &self.is_neg
     }
 
-    pub(crate) fn x_word(&self) -> &Word32Cell<F> {
+    pub(crate) fn x(&self) -> &Word32Cell<F> {
         &self.x
     }
-    pub(crate) fn x_abs_word(&self) -> &Word32Cell<F> {
+    pub(crate) fn x_abs(&self) -> &Word32Cell<F> {
         &self.x_abs
     }
 }

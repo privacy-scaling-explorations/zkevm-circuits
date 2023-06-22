@@ -45,9 +45,9 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         let size = cb.query_memory_address();
         let sha3_digest = cb.query_word_unchecked();
 
-        cb.stack_pop_word(offset.to_word());
-        cb.stack_pop_word(size.to_word());
-        cb.stack_push_word(sha3_digest.to_word());
+        cb.stack_pop(offset.to_word());
+        cb.stack_pop(size.to_word());
+        cb.stack_push(sha3_digest.to_word());
 
         let memory_address = MemoryAddressGadget::construct(cb, offset, size);
 
@@ -73,7 +73,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
             cb.require_zero("copy_rwc_inc == 0 for size = 0", copy_rwc_inc.expr());
             cb.require_zero("rlc_acc == 0 for size = 0", rlc_acc.expr());
         });
-        cb.keccak_table_lookup_word(
+        cb.keccak_table_lookup(
             rlc_acc.expr(),
             memory_address.length(),
             sha3_digest.to_word(),

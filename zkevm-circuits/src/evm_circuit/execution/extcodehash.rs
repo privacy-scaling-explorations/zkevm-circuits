@@ -44,7 +44,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
                 .try_into()
                 .unwrap(),
         );
-        cb.stack_pop_word(address_word.to_word());
+        cb.stack_pop(address_word.to_word());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
@@ -61,12 +61,12 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         // range check will be cover by account code_hash lookup
         let code_hash = cb.query_word_unchecked();
         // For non-existing accounts the code_hash must be 0 in the rw_table.
-        cb.account_read_word(
+        cb.account_read(
             address.to_word(),
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
         );
-        cb.stack_push_word(code_hash.to_word());
+        cb.stack_push(code_hash.to_word());
 
         let gas_cost = select::expr(
             is_warm.expr(),

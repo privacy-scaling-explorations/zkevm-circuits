@@ -40,8 +40,8 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
         let condition = cb.query_word_unchecked();
 
         // Pop the value from the stack
-        cb.stack_pop_word(dest.original());
-        cb.stack_pop_word(condition.to_word());
+        cb.stack_pop(dest.original());
+        cb.stack_pop(condition.to_word());
 
         // Determine if the jump condition is met
         let is_condition_zero = IsZeroWordGadget::construct(cb, &condition);

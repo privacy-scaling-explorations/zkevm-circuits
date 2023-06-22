@@ -45,8 +45,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         let msize = cb.query_memory_address();
 
         // Pop mstart_address, msize from stack
-        cb.stack_pop_word(mstart.to_word());
-        cb.stack_pop_word(msize.to_word());
+        cb.stack_pop(mstart.to_word());
+        cb.stack_pop(msize.to_word());
 
         // constrain not in static call
         let is_static_call = cb.call_context(None, CallContextFieldTag::IsStatic);

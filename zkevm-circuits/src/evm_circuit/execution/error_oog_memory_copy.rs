@@ -85,12 +85,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             cb.account_access_list_read(tx_id.expr(), external_address.to_word(), is_warm.expr());
 
             // EXTCODECOPY has an extra stack pop for external address.
-            cb.stack_pop_word(external_address.to_word());
+            cb.stack_pop(external_address.to_word());
         });
 
-        cb.stack_pop_word(dst_offset.to_word());
-        cb.stack_pop_word(src_offset.to_word());
-        cb.stack_pop_word(copy_size.to_word());
+        cb.stack_pop(dst_offset.to_word());
+        cb.stack_pop(src_offset.to_word());
+        cb.stack_pop(copy_size.to_word());
 
         let dst_memory_addr = MemoryAddressGadget::construct(cb, dst_offset, copy_size);
         let memory_expansion = MemoryExpansionGadget::construct(cb, [dst_memory_addr.address()]);

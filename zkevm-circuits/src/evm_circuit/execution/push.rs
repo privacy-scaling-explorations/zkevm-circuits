@@ -98,7 +98,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         );
 
         // Push the value on the stack
-        cb.stack_push_word(value.to_word());
+        cb.stack_push(value.to_word());
 
         // State transition
         // `program_counter` needs to be increased by number of bytes pushed + 1

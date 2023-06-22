@@ -85,9 +85,9 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         let a = cb.query_word32();
         let b = cb.query_word32();
 
-        cb.stack_pop_word(shift.to_word());
-        cb.stack_pop_word(a.to_word());
-        cb.stack_push_word(b.to_word());
+        cb.stack_pop(shift.to_word());
+        cb.stack_pop(a.to_word());
+        cb.stack_push(b.to_word());
 
         let a64s: Word4<Expression<F>> = a.to_word_n();
         let b64s: Word4<Expression<F>> = b.to_word_n();

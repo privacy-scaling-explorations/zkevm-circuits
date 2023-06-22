@@ -46,11 +46,11 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
 
         let key = cb.query_word_unchecked();
         // Pop the key from the stack
-        cb.stack_pop_word(key.to_word());
+        cb.stack_pop(key.to_word());
 
         let value = cb.query_word_unchecked();
         let committed_value = cb.query_word_unchecked();
-        cb.account_storage_read_word(
+        cb.account_storage_read(
             callee_address.to_word(),
             key.to_word(),
             value.to_word(),
@@ -58,10 +58,10 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
             committed_value.to_word(),
         );
 
-        cb.stack_push_word(value.to_word());
+        cb.stack_push(value.to_word());
 
         let is_warm = cb.query_bool();
-        cb.account_storage_access_list_write_word(
+        cb.account_storage_access_list_write(
             tx_id.expr(),
             callee_address.to_word(),
             key.to_word(),

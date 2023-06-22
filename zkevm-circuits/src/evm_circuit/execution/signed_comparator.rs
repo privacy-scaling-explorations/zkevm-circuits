@@ -109,9 +109,9 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
         let result = a_neg_b_pos.clone() + (1.expr() - a_neg_b_pos - b_neg_a_pos) * a_lt_b.expr();
 
         // Pop a and b from the stack, push the result on the stack.
-        cb.stack_pop_word(Word::select(is_sgt.expr(), b.to_word(), a.to_word()));
-        cb.stack_pop_word(Word::select(is_sgt.expr(), a.to_word(), b.to_word()));
-        cb.stack_push_word(Word::from_lo_unchecked(result));
+        cb.stack_pop(Word::select(is_sgt.expr(), b.to_word(), a.to_word()));
+        cb.stack_pop(Word::select(is_sgt.expr(), a.to_word(), b.to_word()));
+        cb.stack_push(Word::from_lo_unchecked(result));
 
         // The read-write counter changes by three since we're reading two words
         // from stack and writing one. The program counter shifts only by one
