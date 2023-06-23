@@ -32,6 +32,7 @@ pub mod table;
 #[cfg(any(feature = "test", test))]
 pub mod test_util;
 
+pub mod anchor_tx_circuit;
 pub mod tx_circuit;
 pub mod util;
 pub mod witness;

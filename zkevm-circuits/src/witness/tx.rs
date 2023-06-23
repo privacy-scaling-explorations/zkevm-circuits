@@ -1,8 +1,14 @@
 use bus_mapping::circuit_input_builder;
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{
+    sign_types::SignData, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word, H256,
+};
 use halo2_proofs::circuit::Value;
 
-use crate::{evm_circuit::util::rlc, table::TxContextFieldTag, util::Challenges};
+use crate::{
+    evm_circuit::util::rlc,
+    table::TxContextFieldTag,
+    util::{rlc_be_bytes, Challenges},
+};
 
 use super::{Call, ExecStep};
 
@@ -39,6 +45,14 @@ pub struct Transaction {
     pub calls: Vec<Call>,
     /// The steps executioned in the transaction
     pub steps: Vec<ExecStep>,
+    /// "v" value of the transaction signature
+    pub v: u64,
+    /// "r" value of the transaction signature
+    pub r: Word,
+    /// "s" value of the transaction signature
+    pub s: Word,
+    /// tx sign hash
+    pub tx_sign_hash: H256,
 }
 
 impl Transaction {
@@ -109,6 +123,32 @@ impl Transaction {
             ],
             [
                 Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::TxSignHash as u64)),
+                Value::known(F::ZERO),
+                challenges
+                    .evm_word()
+                    .map(|challenge| rlc::value(&self.tx_sign_hash.to_fixed_bytes(), challenge)),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::SigV as u64)),
+                Value::known(F::ZERO),
+                Value::known(F::from(self.v)),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::SigR as u64)),
+                Value::known(F::ZERO),
+                rlc_be_bytes(&self.r.to_be_bytes(), challenges.evm_word()),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::SigS as u64)),
+                Value::known(F::ZERO),
+                rlc_be_bytes(&self.s.to_be_bytes(), challenges.evm_word()),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::TxInvalid as u64)),
                 Value::known(F::ZERO),
                 Value::known(F::from(self.invalid_tx as u64)),
@@ -137,7 +177,16 @@ impl Transaction {
     }
 }
 
-pub(super) fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> Transaction {
+pub(super) fn tx_convert(
+    tx: &circuit_input_builder::Transaction,
+    chain_id: u64,
+    id: usize,
+) -> Transaction {
+    let sign_data: SignData = tx
+        .tx
+        .sign_data(chain_id)
+        .expect("Error computing tx_sign_hash");
+    let tx_sign_hash = H256::from(&sign_data.msg_hash.to_bytes());
     Transaction {
         id,
         nonce: tx.tx.nonce.as_u64(),
@@ -154,5 +203,9 @@ pub(super) fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> 
         access_list_gas_cost: tx.access_list_gas_cost,
         calls: tx.calls().to_vec(),
         steps: tx.steps().to_vec(),
+        v: tx.tx.v,
+        r: tx.tx.r,
+        s: tx.tx.s,
+        tx_sign_hash,
     }
 }

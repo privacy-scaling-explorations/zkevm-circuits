@@ -13,6 +13,7 @@
 
 pub mod batched_is_zero;
 pub mod binary_number;
+pub mod is_equal;
 pub mod is_zero;
 pub mod less_than;
 pub mod mul_add;

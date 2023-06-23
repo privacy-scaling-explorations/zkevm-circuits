@@ -1,9 +1,17 @@
 //! extra witness for taiko circuits
 
-use eth_types::{Address, Hash, H256};
+use std::iter;
+
+use crate::{table::PiFieldTag, util::rlc_be_bytes};
+use eth_types::{Address, Bytes, Field, Hash, ToBigEndian, ToWord, Word, H256};
+use halo2_proofs::circuit::Value;
+use keccak256::plain::Keccak;
+
+// hash(anchor)
+const ANCHOR_TX_METHOD_SIGNATURE: u32 = 0x3d384a4b;
 
 /// Taiko witness
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Taiko {
     /// l1 signal service address
     pub l1_signal_service: Address,
@@ -12,7 +20,7 @@ pub struct Taiko {
     /// l2 contract address
     pub l2_contract: Address,
     /// meta hash
-    pub meta_hash: Hash,
+    pub meta_hash: MetaHash,
     /// block hash value
     pub block_hash: Hash,
     /// the parent block hash
@@ -33,4 +41,122 @@ pub struct Taiko {
     pub max_transactions_per_block: u64,
     /// maxBytesPerTxList
     pub max_bytes_per_tx_list: u64,
+
+    /// anchor gas cost
+    pub anchor_gas_cost: u64,
+}
+
+/// l1 meta hash
+#[derive(Debug, Default, Clone)]
+pub struct MetaHash {
+    /// meta id
+    pub id: u64,
+    /// meta timestamp
+    pub timestamp: u64,
+    /// l1 block height
+    pub l1_height: u64,
+    /// l1 block hash
+    pub l1_hash: Hash,
+    /// l1 block mix hash
+    pub l1_mix_hash: Hash,
+    /// deposits processed
+    pub deposits_processed: Hash,
+    /// tx list hash
+    pub tx_list_hash: Hash,
+    /// tx list byte start
+    pub tx_list_byte_start: u32, // u24
+    /// tx list byte end
+    pub tx_list_byte_end: u32, // u24
+    /// gas limit
+    pub gas_limit: u32,
+    /// beneficiary
+    pub beneficiary: Address,
+    /// treasury
+    pub treasury: Address,
+}
+
+/// left shift x by n bits
+pub fn left_shift<T: ToWord>(x: T, n: u32) -> Word {
+    assert!(n < 256);
+    if n < 128 {
+        return x.to_word() * Word::from(2u128.pow(n));
+    }
+    let mut bits = [0; 32];
+    bits[..16].copy_from_slice(2u128.pow(n - 128).to_be_bytes().as_ref());
+    bits[16..].copy_from_slice(0u128.to_be_bytes().as_ref());
+    x.to_word() * Word::from(&bits[..])
+}
+
+impl MetaHash {
+    /// get the hash of meta hash
+    pub fn hash(&self) -> Hash {
+        let field0 = left_shift(self.id, 192)
+            + left_shift(self.timestamp, 128)
+            + left_shift(self.l1_height, 64);
+
+        let field5 = left_shift(self.tx_list_byte_start as u64, 232)
+            + left_shift(self.tx_list_byte_end as u64, 208)
+            + left_shift(self.gas_limit as u64, 176)
+            + left_shift(self.beneficiary, 16);
+
+        let field6 = left_shift(self.treasury, 96);
+
+        let input: Vec<u8> = iter::empty()
+            .chain(field0.to_be_bytes())
+            .chain(self.l1_hash.to_fixed_bytes())
+            .chain(self.l1_mix_hash.to_fixed_bytes())
+            .chain(self.deposits_processed.to_fixed_bytes())
+            .chain(self.tx_list_hash.to_fixed_bytes())
+            .chain(field5.to_be_bytes())
+            .chain(field6.to_be_bytes())
+            .collect();
+        let mut keccak = Keccak::default();
+        keccak.update(&input);
+        let output = keccak.digest();
+        Hash::from_slice(&output)
+    }
+}
+
+impl Taiko {
+    /// gen anchor call
+    // anchor(l1_hash,signal_root,l1_height,parent_gas_used)
+    pub fn anchor_call(&self) -> Bytes {
+        let mut result = Vec::new();
+        result.extend_from_slice(&ANCHOR_TX_METHOD_SIGNATURE.to_be_bytes());
+        result.extend_from_slice(&self.meta_hash.l1_hash.to_fixed_bytes());
+        result.extend_from_slice(&self.signal_root.to_fixed_bytes());
+        result.extend_from_slice(&self.meta_hash.l1_height.to_be_bytes());
+        result.extend_from_slice(&(self.parent_gas_used as u64).to_be_bytes());
+        result.into()
+    }
+
+    /// Assignments for pi table
+    pub fn table_assignments<F: Field>(&self, randomness: Value<F>) -> [[Value<F>; 2]; 6] {
+        [
+            [
+                Value::known(F::from(PiFieldTag::Null as u64)),
+                Value::known(F::ZERO),
+            ],
+            [
+                Value::known(F::from(PiFieldTag::MethodSign as u64)),
+                Value::known(F::from(ANCHOR_TX_METHOD_SIGNATURE as u64)),
+            ],
+            [
+                Value::known(F::from(PiFieldTag::L1Hash as u64)),
+                rlc_be_bytes(&self.meta_hash.l1_hash.to_fixed_bytes(), randomness),
+            ],
+            [
+                Value::known(F::from(PiFieldTag::L1SignalRoot as u64)),
+                rlc_be_bytes(&self.signal_root.to_fixed_bytes(), randomness),
+            ],
+            [
+                Value::known(F::from(PiFieldTag::L1Height as u64)),
+                Value::known(F::from(self.meta_hash.l1_height)),
+            ],
+            [
+                Value::known(F::from(PiFieldTag::ParentGasUsed as u64)),
+                Value::known(F::from(self.parent_gas_used as u64)),
+            ],
+        ]
+    }
 }

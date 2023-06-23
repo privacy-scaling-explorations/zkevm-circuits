@@ -107,7 +107,7 @@ impl<'a> YamlStateTestBuilder<'a> {
             let nonce = Self::parse_u64(&yaml_transaction["nonce"])?;
             let to = Self::parse_to_address(&yaml_transaction["to"])?;
             let secret_key = Self::parse_bytes(&yaml_transaction["secretKey"])?;
-            let from = secret_key_to_address(&SigningKey::from_bytes(&secret_key.to_vec())?);
+            let from = secret_key_to_address(&SigningKey::from_bytes(&secret_key)?);
 
             // parse expects (account states before executing the transaction)
             let mut expects = Vec::new();
