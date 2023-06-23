@@ -77,7 +77,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks --package zkevm-circuits --lib -- evm_circuit keccak_circuit exp_circuit pi_circuit state_circuit # tx_circuit/copy_circuit/bytecode_circuit/root_circuit ...more subcircuits
+          args: --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks --package zkevm-circuits --lib -- evm_circuit keccak_circuit exp_circuit pi_circuit state_circuit bytecode_circuit tx_circuit # copy_circuit/root_circuit ...more subcircuits
       # - name: Run heavy tests # heavy tests are run serially to avoid OOM
       #   uses: actions-rs/cargo@v1
       #   with:
