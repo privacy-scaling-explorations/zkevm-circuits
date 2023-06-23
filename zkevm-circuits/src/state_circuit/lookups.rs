@@ -113,9 +113,6 @@ impl<F: Field> Chip<F> {
             u16_table,
             call_context_field_tag: meta.fixed_column(),
         };
-        u8_table.annotate_columns(meta);
-        u10_table.annotate_columns(meta);
-        u16_table.annotate_columns(meta);
         meta.annotate_lookup_any_column(config.call_context_field_tag, || {
             "LOOKUP_call_context_field_tag"
         });
