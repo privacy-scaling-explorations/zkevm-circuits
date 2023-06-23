@@ -832,25 +832,28 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
         for column in cell_manager.columns().iter() {
-            if let CellType::LookupU8 = column.cell_type {
-                meta.lookup_any("u8 lookup", |meta| {
-                    vec![column.expr()]
-                        .into_iter()
-                        .zip(u8_table.table_exprs(meta).into_iter())
-                        .map(|(expr, table)| (expr, table))
-                        .collect()
-                });
-            }
-        }
-        for column in cell_manager.columns().iter() {
-            if let CellType::LookupU16 = column.cell_type {
-                meta.lookup_any("u16 lookup", |meta| {
-                    vec![column.expr()]
-                        .into_iter()
-                        .zip(u16_table.table_exprs(meta).into_iter())
-                        .map(|(expr, table)| (expr, table))
-                        .collect()
-                });
+            match column.cell_type {
+                CellType::LookupU8 => {
+                    meta.lookup_any("u8 lookup", |meta| {
+                        vec![column.expr()]
+                            .into_iter()
+                            .zip(u8_table.table_exprs(meta).into_iter())
+                            .map(|(expr, table)| (expr, table))
+                            .collect()
+                    });
+                    ()
+                }
+                CellType::LookupU16 => {
+                    meta.lookup_any("u16 lookup", |meta| {
+                        vec![column.expr()]
+                            .into_iter()
+                            .zip(u16_table.table_exprs(meta).into_iter())
+                            .map(|(expr, table)| (expr, table))
+                            .collect()
+                    });
+                    ()
+                }
+                _ => (),
             }
         }
     }
