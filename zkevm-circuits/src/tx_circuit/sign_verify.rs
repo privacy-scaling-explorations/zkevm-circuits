@@ -540,6 +540,7 @@ impl<F: Field> SignVerifyChip<F> {
         challenges: &Challenges<Value<F>>,
     ) -> Result<AssignedSignatureVerify<F>, Error> {
         let main_gate = chips.main_gate;
+        let range_chip = chips.range_chip;
 
         let (padding, sign_data) = match sign_data {
             Some(sign_data) => (false, sign_data.clone()),
@@ -548,58 +549,67 @@ impl<F: Field> SignVerifyChip<F> {
 
         let pk_le = pk_bytes_le(&sign_data.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
-        let pk_hash = (!padding).then(|| keccak256(&pk_be)).unwrap_or_default();
+        let mut pk_hash = (!padding).then(|| keccak256(&pk_be)).unwrap_or_default();
+        pk_hash.reverse();
 
         // Ref. spec SignVerifyChip 2. Verify that the first 20 bytes of the
         // pub_key_hash equal the address
-        let (address_assigned_cell, address_word) = {
+        let (address_cells, pk_hash_cells) = {
+            // Diagram of byte decomposition of pk_hash, and how address is built from it:
+            //
+            // byte 0             15 16           20 21   32
+            //      [ address_lo   ] [ address_hi  ] [     ]
+            //      [ pk_hash_lo   ] [ pk_hash_hi          ]
+
+            let pk_hash_lo_bytes = &pk_hash[..16];
+            let pk_hash_hi_bytes = &pk_hash[16..];
+            let pk_hash_lo = from_bytes::value::<F>(pk_hash_lo_bytes);
+            let pk_hash_hi = from_bytes::value::<F>(pk_hash_hi_bytes);
+            // Assign all bytes of pk_hash to cells which are range constrained to be 8 bits.  Then
+            // constrain the lower 16 cell bytes to build the lo cell, and the higher 16 bytes to
+            // build the hi cell.
+            let (pk_hash_cell_lo, pk_hash_lo_cell_bytes) =
+                range_chip.decompose(ctx, Value::known(pk_hash_lo), 8, 128)?;
+            let (pk_hash_cell_hi, pk_hash_hi_cell_bytes) =
+                range_chip.decompose(ctx, Value::known(pk_hash_hi), 8, 128)?;
+
             let powers_of_256 = iter::successors(Some(F::ONE), |coeff| Some(F::from(256) * coeff))
-                .take(N_BYTES_ACCOUNT_ADDRESS)
+                .take(20)
                 .collect_vec();
 
-            // The base of lo and hi part should be the same (starting from 2^0, 2^1... 2^n-1).
-            // Therefore, we calculate separately.
-            let mut terms_hi = pk_hash[N_BYTES_WORD - N_BYTES_ACCOUNT_ADDRESS..16]
-                .iter()
-                .rev()
-                .zip(powers_of_256.clone().into_iter())
-                .map(|(byte, coeff)| {
-                    maingate::Term::Unassigned(Value::known(F::from(*byte as u64)), coeff)
-                })
-                .collect_vec();
-            terms_hi.reverse();
-
-            let mut terms_lo = pk_hash[16..]
-                .iter()
-                .rev()
-                .zip(powers_of_256.into_iter())
-                .map(|(byte, coeff)| {
-                    maingate::Term::Unassigned(Value::known(F::from(*byte as u64)), coeff)
-                })
-                .collect_vec();
-            terms_lo.reverse();
-
-            // gate
-            let (address_hi, _) = main_gate.decompose(ctx, &terms_hi, F::ZERO, |_, _| Ok(()))?;
-            let (address_lo, _) = main_gate.decompose(ctx, &terms_lo, F::ZERO, |_, _| Ok(()))?;
+            // Take the 20 lowest assigned byte cells of pk_hash and constrain them to build
+            // address.  From the lower 16 build the lo cell, and from the higher 4 build the hi
+            // cell.
+            let (address_cell_lo, _) = main_gate.decompose(
+                ctx,
+                &pk_hash_lo_cell_bytes
+                    .iter()
+                    .zip(&powers_of_256)
+                    .map(|(cell, coeff)| maingate::Term::Assigned(cell, *coeff))
+                    .collect_vec(),
+                F::ZERO,
+                |_, _| Ok(()),
+            )?;
+            let (address_cell_hi, _) = main_gate.decompose(
+                ctx,
+                &pk_hash_hi_cell_bytes
+                    .iter()
+                    .take(N_BYTES_ACCOUNT_ADDRESS - 16)
+                    .zip(&powers_of_256)
+                    .map(|(cell, coeff)| maingate::Term::Assigned(cell, *coeff))
+                    .collect_vec(),
+                F::ZERO,
+                |_, _| Ok(()),
+            )?;
 
             (
-                Word::new([address_lo, address_hi]),
-                Word::new([
-                    from_bytes::value::<F>(&pk_hash[16..]),
-                    from_bytes::value::<F>(&pk_hash[12..16]),
-                ]),
+                Word::new([address_cell_lo, address_cell_hi]),
+                Word::new([pk_hash_cell_lo, pk_hash_cell_hi]),
             )
         };
 
-        // reconstruct pk_hash by address to bind the relationship between pk_hash and address
-        let pk_hash_hi =
-            address_word.hi() + from_bytes::value::<F>(&pk_hash[..12]).mul(F::from(2u64.pow(12)));
-        let pk_hash_assigned_cell =
-            self.assign_word_lo_hi(config, ctx, address_word.lo(), pk_hash_hi)?;
-
-        let iz_zero_hi = main_gate.is_zero(ctx, &address_assigned_cell.hi())?;
-        let iz_zero_lo = main_gate.is_zero(ctx, &address_assigned_cell.lo())?;
+        let iz_zero_hi = main_gate.is_zero(ctx, &address_cells.hi())?;
+        let iz_zero_lo = main_gate.is_zero(ctx, &address_cells.lo())?;
         let is_address_zero = main_gate.and(ctx, &iz_zero_lo, &iz_zero_hi)?;
 
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
@@ -632,15 +642,9 @@ impl<F: Field> SignVerifyChip<F> {
             )?
         };
 
-        self.enable_keccak_lookup(
-            config,
-            ctx,
-            &is_address_zero,
-            &pk_rlc,
-            &pk_hash_assigned_cell,
-        )?;
+        self.enable_keccak_lookup(config, ctx, &is_address_zero, &pk_rlc, &pk_hash_cells)?;
         Ok(AssignedSignatureVerify {
-            address: address_assigned_cell,
+            address: address_cells,
             msg_hash,
         })
     }
@@ -844,7 +848,7 @@ mod sign_verify_tests {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
-        assert_eq!(prover.verify(), Ok(()));
+        prover.assert_satisfied_par();
     }
 
     // Generate a test key pair
