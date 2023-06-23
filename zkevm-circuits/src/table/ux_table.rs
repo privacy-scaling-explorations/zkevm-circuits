@@ -7,7 +7,7 @@ pub struct UXTable<const N_BITS: usize> {
 }
 
 impl<const N_BITS: usize> UXTable<N_BITS> {
-    /// Construct the Exponentiation table.
+    /// Construct the UXTable.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             col: meta.fixed_column(),

@@ -399,6 +399,7 @@ impl<F: Field> CellManager<F> {
         }
 
         // Mark columns used for byte lookup
+        #[allow(clippy::reversed_empty_ranges)]
         for _ in 0..N_U8_LOOKUPS {
             columns[column_idx].cell_type = CellType::LookupU8;
             assert_eq!(advices[column_idx].column_type().phase(), 0);
@@ -406,6 +407,7 @@ impl<F: Field> CellManager<F> {
         }
 
         // Mark columns used for byte lookup
+        #[allow(clippy::reversed_empty_ranges)]
         for _ in 0..N_U16_LOOKUPS {
             columns[column_idx].cell_type = CellType::LookupU16;
             assert_eq!(advices[column_idx].column_type().phase(), 0);
