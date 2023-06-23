@@ -1,6 +1,4 @@
-use crate::{
-    table::MPTProofType,
-};
+use crate::table::MPTProofType;
 
 use serde::{Deserialize, Serialize};
 

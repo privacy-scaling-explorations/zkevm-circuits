@@ -41,7 +41,6 @@ mod tests {
         let file = std::fs::File::open(path.clone());
         let reader = std::io::BufReader::new(file.unwrap());
 
-        // let randomness: Fr = Fr::one() + Fr::one();
         let randomness = Fr::from(123456u64);
         let nodes: Vec<Node> = serde_json::from_reader(reader).unwrap();
 
