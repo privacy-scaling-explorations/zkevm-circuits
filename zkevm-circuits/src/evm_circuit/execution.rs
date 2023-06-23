@@ -841,7 +841,6 @@ impl<F: Field> ExecutionConfig<F> {
                             .map(|(expr, table)| (expr, table))
                             .collect()
                     });
-                    ()
                 }
                 CellType::LookupU16 => {
                     meta.lookup_any("u16 lookup", |meta| {
@@ -851,7 +850,6 @@ impl<F: Field> ExecutionConfig<F> {
                             .map(|(expr, table)| (expr, table))
                             .collect()
                     });
-                    ()
                 }
                 _ => (),
             }
