@@ -41,7 +41,8 @@ mod tests {
         let file = std::fs::File::open(path.clone());
         let reader = std::io::BufReader::new(file.unwrap());
 
-        let randomness: Fr = Fr::one() + Fr::one();
+        // let randomness: Fr = Fr::one() + Fr::one();
+        let randomness = Fr::from(123456u64);
         let nodes: Vec<Node> = serde_json::from_reader(reader).unwrap();
 
         let mut keccak_data = vec![];
@@ -90,7 +91,14 @@ mod tests {
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
             MPTCircuit<Fr>,
-        >(&general_params, &pk, &[circuit], &[&[]], rng, &mut transcript)
+        >(
+            &general_params,
+            &pk,
+            &[circuit],
+            &[&[]],
+            rng,
+            &mut transcript,
+        )
         .expect("proof generation should not fail");
         let proof = transcript.finalize();
         end_timer!(start2);
