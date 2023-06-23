@@ -414,10 +414,22 @@ impl<F: Field> SignVerifyChip<F> {
         ctx: &mut RegionCtx<F>,
         inputs_le: [u8; 32],
     ) -> Result<Word<AssignedCell<F, F>>, Error> {
-        let input_word = Word::new([
-            Value::known(from_bytes::value(&inputs_le[..16])),
-            Value::known(from_bytes::value(&inputs_le[16..])),
-        ]);
+        self.assign_word_lo_hi(
+            config,
+            ctx,
+            from_bytes::value(&inputs_le[..16]),
+            from_bytes::value(&inputs_le[16..]),
+        )
+    }
+
+    fn assign_word_lo_hi(
+        &self,
+        config: &SignVerifyConfig,
+        ctx: &mut RegionCtx<F>,
+        lo: F,
+        hi: F,
+    ) -> Result<Word<AssignedCell<F, F>>, Error> {
+        let input_word = Word::new([Value::known(lo), Value::known(hi)]);
         let cell_word_lo = ctx.assign_advice(
             || "{name}_lo",
             config.main_gate_config.advices()[1],
@@ -536,11 +548,11 @@ impl<F: Field> SignVerifyChip<F> {
 
         let pk_le = pk_bytes_le(&sign_data.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
-        let mut pk_hash = (!padding).then(|| keccak256(&pk_be)).unwrap_or_default();
+        let pk_hash = (!padding).then(|| keccak256(&pk_be)).unwrap_or_default();
 
         // Ref. spec SignVerifyChip 2. Verify that the first 20 bytes of the
         // pub_key_hash equal the address
-        let address = {
+        let (address_assigned_cell, address_word) = {
             let powers_of_256 = iter::successors(Some(F::ONE), |coeff| Some(F::from(256) * coeff))
                 .take(N_BYTES_ACCOUNT_ADDRESS)
                 .collect_vec();
@@ -571,17 +583,28 @@ impl<F: Field> SignVerifyChip<F> {
             let (address_hi, _) = main_gate.decompose(ctx, &terms_hi, F::ZERO, |_, _| Ok(()))?;
             let (address_lo, _) = main_gate.decompose(ctx, &terms_lo, F::ZERO, |_, _| Ok(()))?;
 
-            Word::new([address_lo, address_hi])
+            (
+                Word::new([address_lo, address_hi]),
+                Word::new([
+                    from_bytes::value::<F>(&pk_hash[16..]),
+                    from_bytes::value::<F>(&pk_hash[12..16]),
+                ]),
+            )
         };
 
-        let iz_zero_hi = main_gate.is_zero(ctx, &address.hi())?;
-        let iz_zero_lo = main_gate.is_zero(ctx, &address.lo())?;
+        // reconstruct pk_hash by address to bind the relationship between pk_hash and address
+        let pk_hash_hi =
+            address_word.hi() + from_bytes::value::<F>(&pk_hash[..12]).mul(F::from(2u64.pow(12)));
+        let pk_hash_assigned_cell =
+            self.assign_word_lo_hi(config, ctx, address_word.lo(), pk_hash_hi)?;
+
+        let iz_zero_hi = main_gate.is_zero(ctx, &address_assigned_cell.hi())?;
+        let iz_zero_lo = main_gate.is_zero(ctx, &address_assigned_cell.lo())?;
         let is_address_zero = main_gate.and(ctx, &iz_zero_lo, &iz_zero_hi)?;
 
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
         // corresponds to msg_hash
         let msg_hash = {
-            main_gate.assign_constant(ctx, F::ZERO)?;
             let msg_hash_le = (!padding)
                 .then(|| sign_data.msg_hash.to_bytes())
                 .unwrap_or_default();
@@ -609,11 +632,17 @@ impl<F: Field> SignVerifyChip<F> {
             )?
         };
 
-        // pk_hash is big-endian, need to covert to little-endian
-        pk_hash.reverse();
-        let pk_hash_word = self.assign_word(config, ctx, pk_hash)?;
-        self.enable_keccak_lookup(config, ctx, &is_address_zero, &pk_rlc, &pk_hash_word)?;
-        Ok(AssignedSignatureVerify { address, msg_hash })
+        self.enable_keccak_lookup(
+            config,
+            ctx,
+            &is_address_zero,
+            &pk_rlc,
+            &pk_hash_assigned_cell,
+        )?;
+        Ok(AssignedSignatureVerify {
+            address: address_assigned_cell,
+            msg_hash,
+        })
     }
 
     pub(crate) fn assign(
