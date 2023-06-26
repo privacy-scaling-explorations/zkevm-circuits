@@ -10,7 +10,7 @@ use crate::{
 };
 use eth_types::{
     address, bytecode,
-    evm_types::{stack::Stack, OpcodeId},
+    evm_types::{stack::Stack, OpcodeId, INVALID_INIT_CODE_FIRST_BYTE},
     geth_types::GethData,
     word, Bytecode, Hash, ToAddress, ToWord, Word,
 };
@@ -742,7 +742,7 @@ fn check_err_invalid_code(step: &GethExecStep, next_step: Option<&GethExecStep>)
         && result(next_step).is_zero()
         && length > Word::zero()
         && !step.memory.is_empty()
-        && step.memory.0.get(offset.low_u64() as usize) == Some(&0xef)
+        && step.memory.0.get(offset.low_u64() as usize) == Some(&INVALID_INIT_CODE_FIRST_BYTE)
 }
 
 #[test]

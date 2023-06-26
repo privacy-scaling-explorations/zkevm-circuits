@@ -13,11 +13,8 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::Field;
+use eth_types::{evm_types::INVALID_INIT_CODE_FIRST_BYTE, Field};
 use halo2_proofs::{circuit::Value, plonk::Error};
-
-/// New contract code is invalid if it starts with the 0xEF (EIP-3541).
-const INVALID_FIRST_BYTE: u8 = 0xef;
 
 /// Gadget for the invalid creation code error
 #[derive(Clone, Debug)]
@@ -49,7 +46,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         cb.memory_lookup(0.expr(), memory_address.offset(), first_byte.expr(), None);
 
         let is_first_byte_invalid =
-            IsEqualGadget::construct(cb, first_byte.expr(), INVALID_FIRST_BYTE.expr());
+            IsEqualGadget::construct(cb, first_byte.expr(), INVALID_INIT_CODE_FIRST_BYTE.expr());
         cb.require_true(
             "is_first_byte_invalid is true",
             is_first_byte_invalid.expr(),
@@ -96,7 +93,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
             region,
             offset,
             F::from(first_byte),
-            F::from(INVALID_FIRST_BYTE.into()),
+            F::from(INVALID_INIT_CODE_FIRST_BYTE.into()),
         )?;
 
         self.common_error_gadget
