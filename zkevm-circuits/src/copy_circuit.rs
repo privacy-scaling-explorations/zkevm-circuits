@@ -57,7 +57,7 @@ pub struct CopyCircuitConfig<F> {
     pub value: Column<Advice>,
     /// The word value for memory lookup.
     pub value_word_rlc: Column<Advice>,
-    /// The index of a word [0..31].
+    /// The index of the current byte within a word [0..31].
     pub word_index: Column<Advice>,
     /// address for slot memory src or dest, review if can reuse `addr` .
     pub addr_slot: Column<Advice>,

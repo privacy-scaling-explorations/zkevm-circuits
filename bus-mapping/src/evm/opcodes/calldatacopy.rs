@@ -7,7 +7,6 @@ use crate::{
     Error,
 };
 use eth_types::GethExecStep;
-use std::cmp::min;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Calldatacopy;
@@ -168,7 +167,7 @@ mod calldatacopy_tests {
     use crate::{
         circuit_input_builder::{ExecState, NumberOrHash},
         mock::BlockData,
-        operation::{CallContextField, CallContextOp, MemoryOp, StackOp, RW},
+        operation::{CallContextField, CallContextOp, StackOp, RW},
     };
     use eth_types::{
         bytecode,

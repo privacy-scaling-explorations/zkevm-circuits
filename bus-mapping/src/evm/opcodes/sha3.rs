@@ -72,9 +72,9 @@ impl Opcode for Sha3 {
             let mut first_set = true;
             let mut chunk_index = dst_begin_slot;
             for chunk in memory_slot_bytes.chunks(32) {
-                let dest_word = Word::from_big_endian(&chunk);
+                let dest_word = Word::from_big_endian(chunk);
                 state.memory_read_word(&mut exec_step, chunk_index.into(), dest_word)?;
-                chunk_index = chunk_index + 32;
+                chunk_index += 32;
             }
             for idx in 0..memory_slot_bytes.len() {
                 let value = memory_clone.0[dst_begin_slot as usize + idx];

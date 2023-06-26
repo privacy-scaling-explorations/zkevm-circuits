@@ -355,10 +355,10 @@ fn handle_copy(
     let mut chunk_index = dst_begin_slot;
     // memory word writes to destination word
     for chunk in create_slot_bytes.chunks(32) {
-        let dest_word = Word::from_big_endian(&chunk);
+        let dest_word = Word::from_big_endian(chunk);
         // read memory
         state.memory_read_word(step, chunk_index.into(), dest_word)?;
-        chunk_index = chunk_index + 32;
+        chunk_index += 32;
     }
 
     let mut copy_steps = Vec::with_capacity(length as usize);

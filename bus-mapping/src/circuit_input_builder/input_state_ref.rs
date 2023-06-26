@@ -5,6 +5,8 @@ use super::{
     CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, Transaction,
     TransactionContext,
 };
+#[cfg(feature = "scroll")]
+use crate::util::KECCAK_CODE_HASH_ZERO;
 use crate::{
     error::{
         get_step_reported_error, ContractAddressCollisionError, DepthError, ExecError,
@@ -630,6 +632,16 @@ impl<'a> CircuitInputStateRef<'a> {
                     address: receiver,
                     field: AccountField::CodeHash,
                     value: CodeDB::empty_code_hash().to_word(),
+                    value_prev: Word::zero(),
+                },
+            )?;
+            #[cfg(feature = "scroll")]
+            self.push_op_reversible(
+                step,
+                AccountOp {
+                    address: receiver,
+                    field: AccountField::KeccakCodeHash,
+                    value: KECCAK_CODE_HASH_ZERO.to_word(),
                     value_prev: Word::zero(),
                 },
             )?;
@@ -1650,9 +1662,9 @@ impl<'a> CircuitInputStateRef<'a> {
         let mut chunk_index = dst_begin_slot;
         // memory word writes to destination word
         for chunk in code_slot_bytes.chunks(32) {
-            let dest_word = Word::from_big_endian(&chunk);
+            let dest_word = Word::from_big_endian(chunk);
             self.memory_write_word(exec_step, chunk_index.into(), dest_word)?;
-            chunk_index = chunk_index + 32;
+            chunk_index += 32;
         }
 
         Ok(copy_steps)
@@ -1698,7 +1710,7 @@ impl<'a> CircuitInputStateRef<'a> {
             self.push_op(
                 exec_step,
                 RW::READ,
-                MemoryWordOp::new(call_id, chunk_index.into(), Word::from_big_endian(&chunk)),
+                MemoryWordOp::new(call_id, chunk_index.into(), Word::from_big_endian(chunk)),
             );
             chunk_index += 32;
         }
@@ -1713,7 +1725,7 @@ impl<'a> CircuitInputStateRef<'a> {
         result: &Vec<u8>,
     ) -> Result<Vec<(u8, bool, bool)>, Error> {
         let mut copy_steps = Vec::with_capacity(result.len() as usize);
-        if result.len() == 0 {
+        if result.is_empty() {
             return Ok(copy_steps);
         }
 
@@ -1738,7 +1750,7 @@ impl<'a> CircuitInputStateRef<'a> {
             self.push_op(
                 exec_step,
                 RW::WRITE,
-                MemoryWordOp::new(call_id, chunk_index.into(), Word::from_big_endian(&chunk)),
+                MemoryWordOp::new(call_id, chunk_index.into(), Word::from_big_endian(chunk)),
             );
             chunk_index += 32;
         }
@@ -1816,7 +1828,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 MemoryWordOp::new(
                     call_id,
                     src_chunk_index.into(),
-                    Word::from_big_endian(&read_chunk),
+                    Word::from_big_endian(read_chunk),
                 ),
             );
             src_chunk_index += 32;
@@ -1885,7 +1897,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let mut chunk_index = dst_begin_slot;
         // memory word writes to destination word
         for chunk in calldata_slot_bytes.chunks(32) {
-            let dest_word = Word::from_big_endian(&chunk);
+            let dest_word = Word::from_big_endian(chunk);
             // memory word reads if it is an internal call
             if !is_root {
                 self.push_op(
@@ -1896,7 +1908,7 @@ impl<'a> CircuitInputStateRef<'a> {
             }
 
             self.memory_write_word(exec_step, chunk_index.into(), dest_word)?;
-            chunk_index = chunk_index + 32;
+            chunk_index += 32;
         }
 
         Ok(copy_steps)
@@ -1977,7 +1989,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 "read chunk: {} {} {:?}",
                 caller_id, src_chunk_index, read_chunk
             );
-            src_chunk_index = src_chunk_index + 32;
+            src_chunk_index += 32;
 
             self.push_op(
                 exec_step,
@@ -1992,9 +2004,9 @@ impl<'a> CircuitInputStateRef<'a> {
                 "write chunk: {} {} {:?}",
                 current_call_id, dst_chunk_index, write_chunk
             );
-            dst_chunk_index = dst_chunk_index + 32;
+            dst_chunk_index += 32;
 
-            copy_rwc_inc = copy_rwc_inc + 2;
+            copy_rwc_inc += 2;
         }
 
         println!(
@@ -2100,7 +2112,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 "read chunk: {} {} {:?}",
                 last_callee_id, src_chunk_index, read_chunk
             );
-            src_chunk_index = src_chunk_index + 32;
+            src_chunk_index += 32;
 
             self.push_op(
                 exec_step,
@@ -2115,9 +2127,9 @@ impl<'a> CircuitInputStateRef<'a> {
                 "write chunk: {} {} {:?}",
                 current_call_id, dst_chunk_index, write_chunk
             );
-            dst_chunk_index = dst_chunk_index + 32;
+            dst_chunk_index += 32;
 
-            copy_rwc_inc = copy_rwc_inc + 2;
+            copy_rwc_inc += 2;
         }
 
         println!(
@@ -2172,7 +2184,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let mut chunk_index = dst_begin_slot;
         // memory word writes to destination word
         for chunk in log_slot_bytes.chunks(32) {
-            let dest_word = Word::from_big_endian(&chunk);
+            let dest_word = Word::from_big_endian(chunk);
             // read memory
             self.memory_read_word(exec_step, chunk_index.into(), dest_word)?;
             // write log
@@ -2184,7 +2196,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 (chunk_index - dst_begin_slot) as usize,
                 dest_word,
             )?;
-            chunk_index = chunk_index + 32;
+            chunk_index += 32;
         }
 
         for idx in 0..log_slot_bytes.len() {
