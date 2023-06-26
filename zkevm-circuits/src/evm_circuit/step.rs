@@ -269,9 +269,9 @@ impl From<&ExecStep> for ExecutionState {
                     OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN_REVERT,
                     OpcodeId::RETURNDATASIZE => ExecutionState::RETURNDATASIZE,
                     OpcodeId::RETURNDATACOPY => ExecutionState::RETURNDATACOPY,
+                    OpcodeId::CREATE => ExecutionState::CREATE,
+                    OpcodeId::CREATE2 => ExecutionState::CREATE2,
                     // dummy ops
-                    OpcodeId::CREATE => dummy!(ExecutionState::CREATE),
-                    OpcodeId::CREATE2 => dummy!(ExecutionState::CREATE2),
                     OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }

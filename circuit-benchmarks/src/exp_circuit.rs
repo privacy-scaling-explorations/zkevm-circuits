@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use ark_std::{end_timer, start_timer};
-    use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+    use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
     use env_logger::Env;
     use eth_types::{bytecode, geth_types::GethData, Word};
     use halo2_proofs::{
@@ -139,7 +139,7 @@ mod tests {
         let block: GethData = test_ctx.into();
         let mut builder = BlockData::new_from_geth_data_with_params(
             block.clone(),
-            CircuitsParams {
+            FixedCParams {
                 max_rws: 1 << (degree - 1),
                 ..Default::default()
             },
@@ -148,6 +148,6 @@ mod tests {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        block_convert(&builder.block, &builder.code_db).unwrap()
+        block_convert(&builder).unwrap()
     }
 }

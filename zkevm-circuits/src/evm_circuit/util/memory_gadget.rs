@@ -154,8 +154,16 @@ impl<F: Field> MemoryAddressGadget<F> {
         self.has_length() * from_bytes::expr(&self.memory_offset_bytes.cells)
     }
 
+    pub(crate) fn offset_rlc(&self) -> Expression<F> {
+        self.memory_offset.expr()
+    }
+
     pub(crate) fn length(&self) -> Expression<F> {
         from_bytes::expr(&self.memory_length.cells)
+    }
+
+    pub(crate) fn length_rlc(&self) -> Expression<F> {
+        self.memory_length.expr()
     }
 
     pub(crate) fn address(&self) -> Expression<F> {

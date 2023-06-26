@@ -9,8 +9,6 @@ use crate::{
 use core::fmt::Debug;
 use eth_types::{evm_unimplemented, GethExecStep, ToAddress};
 
-pub use self::sha3::Sha3CodeGen;
-
 mod address;
 mod balance;
 mod begin_end_tx;
@@ -71,7 +69,7 @@ use callop::CallOpcode;
 use callvalue::Callvalue;
 use codecopy::Codecopy;
 use codesize::Codesize;
-use create::DummyCreate;
+use create::Create;
 use dup::Dup;
 use error_invalid_jump::InvalidJump;
 use error_oog_call::OOGCall;
@@ -251,18 +249,12 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::LOG4 => Log::gen_associated_ops,
         OpcodeId::CALL | OpcodeId::CALLCODE => CallOpcode::<7>::gen_associated_ops,
         OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => CallOpcode::<6>::gen_associated_ops,
+        OpcodeId::CREATE => Create::<false>::gen_associated_ops,
+        OpcodeId::CREATE2 => Create::<true>::gen_associated_ops,
         OpcodeId::RETURN | OpcodeId::REVERT => ReturnRevert::gen_associated_ops,
         OpcodeId::SELFDESTRUCT => {
             evm_unimplemented!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
             DummySelfDestruct::gen_associated_ops
-        }
-        OpcodeId::CREATE => {
-            evm_unimplemented!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
-            DummyCreate::<false>::gen_associated_ops
-        }
-        OpcodeId::CREATE2 => {
-            evm_unimplemented!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
-            DummyCreate::<true>::gen_associated_ops
         }
         _ => {
             evm_unimplemented!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
@@ -289,26 +281,26 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         }
         // create & create2 can encounter insufficient balance.
         ExecError::InsufficientBalance(InsufficientBalanceError::Create) => {
-            Some(DummyCreate::<false>::gen_associated_ops)
+            Some(Create::<false>::gen_associated_ops)
         }
         ExecError::InsufficientBalance(InsufficientBalanceError::Create2) => {
-            Some(DummyCreate::<true>::gen_associated_ops)
+            Some(Create::<true>::gen_associated_ops)
         }
-        // only create2 may cause ContractAddressCollision error, so use DummyCreate::<true>.
-        ExecError::ContractAddressCollision => Some(DummyCreate::<true>::gen_associated_ops),
+        // only create2 may cause ContractAddressCollision error, so use Create::<true>.
+        ExecError::ContractAddressCollision => Some(Create::<true>::gen_associated_ops),
         // create & create2 can encounter nonce uint overflow.
         ExecError::NonceUintOverflow(NonceUintOverflowError::Create) => {
-            Some(DummyCreate::<false>::gen_associated_ops)
+            Some(Create::<false>::gen_associated_ops)
         }
         ExecError::NonceUintOverflow(NonceUintOverflowError::Create2) => {
-            Some(DummyCreate::<true>::gen_associated_ops)
+            Some(Create::<true>::gen_associated_ops)
         }
         ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
         // call, callcode, create & create2 can encounter DepthError error,
         ExecError::Depth(DepthError::Call) => Some(CallOpcode::<7>::gen_associated_ops),
-        ExecError::Depth(DepthError::Create) => Some(DummyCreate::<false>::gen_associated_ops),
-        ExecError::Depth(DepthError::Create2) => Some(DummyCreate::<true>::gen_associated_ops),
+        ExecError::Depth(DepthError::Create) => Some(Create::<false>::gen_associated_ops),
+        ExecError::Depth(DepthError::Create2) => Some(Create::<true>::gen_associated_ops),
         // more future errors place here
         _ => {
             evm_unimplemented!("TODO: error state {:?} not implemented", error);

@@ -130,8 +130,8 @@
 //! .into();
 //!
 //! // Here we update the circuit input with the data from the transaction trace.
-//! let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-//! builder
+//! let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+//! let builder = builder
 //!     .handle_block(&block.eth_block, &block.geth_traces)
 //!     .unwrap();
 //!
@@ -220,6 +220,7 @@
 //#![deny(unsafe_code)] Allowed now until we find a
 // better way to handle downcasting from Operation into it's variants.
 #![allow(clippy::upper_case_acronyms)] // Too pedantic
+#![feature(type_changing_struct_update)]
 
 extern crate alloc;
 extern crate core;

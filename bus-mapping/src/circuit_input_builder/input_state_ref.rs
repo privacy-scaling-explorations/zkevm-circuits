@@ -6,10 +6,7 @@ use super::{
     TransactionContext,
 };
 use crate::{
-    error::{
-        get_step_reported_error, DepthError, ExecError, InsufficientBalanceError,
-        NonceUintOverflowError,
-    },
+    error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError},
     exec_trace::OperationRef,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
@@ -79,7 +76,22 @@ impl<'a> CircuitInputStateRef<'a> {
         ExecStep {
             exec_state: ExecState::EndTx,
             gas_left: if prev_step.error.is_none() {
-                prev_step.gas_left - prev_step.gas_cost
+                let mut gas_left = prev_step.gas_left - prev_step.gas_cost;
+
+                // for contract creation
+                let call = self.tx.calls()[0].clone();
+                if call.is_create() {
+                    let code_hash = self.sdb.get_account(&call.address).1.code_hash;
+                    let bytecode_len = self.code(code_hash).unwrap().len() as u64;
+                    let deposit_cost = bytecode_len * GasCost::CODE_DEPOSIT_BYTE_COST;
+                    assert!(
+                        gas_left >= deposit_cost,
+                        "gas left {gas_left} is not enough for deposit cost {deposit_cost}"
+                    );
+                    gas_left -= deposit_cost;
+                }
+
+                gas_left
             } else {
                 // consume all remaining gas when non revert err happens
                 0
@@ -464,6 +476,24 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
+    /// Add address to access list for the current transaction.
+    pub fn tx_access_list_write(
+        &mut self,
+        step: &mut ExecStep,
+        address: Address,
+    ) -> Result<(), Error> {
+        let is_warm = self.sdb.check_account_in_access_list(&address);
+        self.push_op_reversible(
+            step,
+            TxAccessListAccountOp {
+                tx_id: self.tx_ctx.id(),
+                address,
+                is_warm: true,
+                is_warm_prev: is_warm,
+            },
+        )
+    }
+
     /// Push 2 reversible [`AccountOp`] to update `sender` and `receiver`'s
     /// balance by `value`. If `fee` is existing (not None), also need to push 1
     /// non-reversible [`AccountOp`] to update `sender` balance by `fee`.
@@ -689,6 +719,32 @@ impl<'a> CircuitInputStateRef<'a> {
             salt.to_be_bytes().to_vec(),
             init_code,
         ))
+    }
+
+    /// read reversion info
+    pub(crate) fn reversion_info_read(&mut self, step: &mut ExecStep, call: &Call) {
+        for (field, value) in [
+            (
+                CallContextField::RwCounterEndOfReversion,
+                call.rw_counter_end_of_reversion.to_word(),
+            ),
+            (CallContextField::IsPersistent, call.is_persistent.to_word()),
+        ] {
+            self.call_context_read(step, call.call_id, field, value);
+        }
+    }
+
+    /// write reversion info
+    pub(crate) fn reversion_info_write(&mut self, step: &mut ExecStep, call: &Call) {
+        for (field, value) in [
+            (
+                CallContextField::RwCounterEndOfReversion,
+                call.rw_counter_end_of_reversion.to_word(),
+            ),
+            (CallContextField::IsPersistent, call.is_persistent.to_word()),
+        ] {
+            self.call_context_write(step, call.call_id, field, value);
+        }
     }
 
     /// Check if address is a precompiled or not.
@@ -1155,8 +1211,8 @@ impl<'a> CircuitInputStateRef<'a> {
         step: &GethExecStep,
         next_step: Option<&GethExecStep>,
     ) -> Result<Option<ExecError>, Error> {
-        if let Some(error) = &step.error {
-            return Ok(Some(get_step_reported_error(&step.op, error)));
+        if let Ok(error) = ExecError::try_from(step) {
+            return Ok(Some(error));
         }
 
         if matches!(step.op, OpcodeId::INVALID(_)) {

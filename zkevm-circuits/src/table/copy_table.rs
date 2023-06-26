@@ -32,6 +32,8 @@ pub struct CopyTable {
     pub rw_counter: Column<Advice>,
     /// Decrementing counter denoting reverse read-write counter.
     pub rwc_inc_left: Column<Advice>,
+    /// Selector for the tag BinaryNumberChip
+    pub q_enable: Column<Fixed>,
     /// Binary chip to constrain the copy table conditionally depending on the
     /// current row's tag, whether it is Bytecode, Memory, TxCalldata or
     /// TxLog.
@@ -44,6 +46,7 @@ impl CopyTable {
         Self {
             is_first: meta.advice_column(),
             id: meta.advice_column_in(SecondPhase),
+            q_enable,
             tag: BinaryNumberChip::configure(meta, q_enable, None),
             addr: meta.advice_column(),
             src_addr_end: meta.advice_column(),
@@ -233,6 +236,17 @@ impl CopyTable {
                         tag_chip.assign(&mut region, offset, &tag)?;
                         offset += 1;
                     }
+                }
+
+                // Enable selector at all rows
+                let max_copy_rows = block.circuits_params.max_copy_rows;
+                for offset in 0..max_copy_rows {
+                    region.assign_fixed(
+                        || "q_enable",
+                        self.q_enable,
+                        offset,
+                        || Value::known(F::ONE),
+                    )?;
                 }
 
                 Ok(())
