@@ -52,7 +52,7 @@ pub struct Transaction {
     /// "s" value of the transaction signature
     pub s: Word,
     /// tx sign hash
-    pub tx_sign_hash: H256,
+    pub tx_sign_hash: Option<H256>,
 }
 
 impl Transaction {
@@ -125,9 +125,12 @@ impl Transaction {
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::TxSignHash as u64)),
                 Value::known(F::ZERO),
-                challenges
-                    .evm_word()
-                    .map(|challenge| rlc::value(&self.tx_sign_hash.to_fixed_bytes(), challenge)),
+                challenges.evm_word().map(|challenge| {
+                    rlc::value(
+                        &self.tx_sign_hash.unwrap_or_default().to_fixed_bytes(),
+                        challenge,
+                    )
+                }),
             ],
             [
                 Value::known(F::from(self.id as u64)),
@@ -182,11 +185,8 @@ pub(super) fn tx_convert(
     chain_id: u64,
     id: usize,
 ) -> Transaction {
-    let sign_data: SignData = tx
-        .tx
-        .sign_data(chain_id)
-        .expect("Error computing tx_sign_hash");
-    let tx_sign_hash = H256::from(&sign_data.msg_hash.to_bytes());
+    let sign_data: Option<SignData> = tx.tx.sign_data(chain_id).ok();
+    let tx_sign_hash = sign_data.map(|sign_data| H256::from(&sign_data.msg_hash.to_bytes()));
     Transaction {
         id,
         nonce: tx.tx.nonce.as_u64(),
