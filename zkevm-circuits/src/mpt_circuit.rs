@@ -407,7 +407,7 @@ impl<F: Field> MPTConfig<F> {
 
                 memory.clear_witness_data();
 
-                let mut offset: usize = 0;
+                let mut offset = 0;
                 for node in nodes.iter() {
                     let mut cached_region = CachedRegion::new(
                         &mut region,
@@ -488,14 +488,10 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                         cached_region.pop_region();
                     }
-                    if offset == 0 {
-                        println!("{:?}", node);
-                    }
                     cached_region.assign_stored_expressions(&self.cb.base)?;
 
                     offset += node.values.len();
                 }
-
 
                 height = offset;
                 memory = pv.memory;
