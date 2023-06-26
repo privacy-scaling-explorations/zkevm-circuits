@@ -6,7 +6,7 @@
 
 use crate::{
     evm_circuit::{
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_WORD},
+        param::N_BYTES_ACCOUNT_ADDRESS,
         util::{from_bytes, not, rlc},
     },
     table::KeccakTable,
@@ -417,8 +417,8 @@ impl<F: Field> SignVerifyChip<F> {
         self.assign_word_lo_hi(
             config,
             ctx,
-            from_bytes::value(&inputs_le[..16]),
-            from_bytes::value(&inputs_le[16..]),
+            Value::known(from_bytes::value(&inputs_le[..16])),
+            Value::known(from_bytes::value(&inputs_le[16..])),
         )
     }
 
@@ -426,20 +426,13 @@ impl<F: Field> SignVerifyChip<F> {
         &self,
         config: &SignVerifyConfig,
         ctx: &mut RegionCtx<F>,
-        lo: F,
-        hi: F,
+        lo: Value<F>,
+        hi: Value<F>,
     ) -> Result<Word<AssignedCell<F, F>>, Error> {
-        let input_word = Word::new([Value::known(lo), Value::known(hi)]);
-        let cell_word_lo = ctx.assign_advice(
-            || "{name}_lo",
-            config.main_gate_config.advices()[1],
-            input_word.lo(),
-        )?;
-        let cell_word_hi = ctx.assign_advice(
-            || "{name}_hi",
-            config.main_gate_config.advices()[2],
-            input_word.hi(),
-        )?;
+        let cell_word_lo =
+            ctx.assign_advice(|| "{name}_lo", config.main_gate_config.advices()[1], lo)?;
+        let cell_word_hi =
+            ctx.assign_advice(|| "{name}_hi", config.main_gate_config.advices()[2], hi)?;
         ctx.next();
 
         Ok(Word::new([cell_word_lo, cell_word_hi]))
@@ -555,7 +548,7 @@ impl<F: Field> SignVerifyChip<F> {
         // Ref. spec SignVerifyChip 2. Verify that the first 20 bytes of the
         // pub_key_hash equal the address
         let (address_cells, pk_hash_cells) = {
-            // Diagram of byte decomposition of pk_hash, and how address is built from it:
+            // Diagram of byte decomposition of reversed pk_hash, and how address is built from it:
             //
             // byte 0             15 16           20 21   32
             //      [ address_lo   ] [ address_hi  ] [     ]
@@ -618,7 +611,31 @@ impl<F: Field> SignVerifyChip<F> {
             let msg_hash_le = (!padding)
                 .then(|| sign_data.msg_hash.to_bytes())
                 .unwrap_or_default();
-            self.assign_word(config, ctx, msg_hash_le)?
+            let msg_hash_lo_bytes = &msg_hash_le[16..];
+            let msg_hash_hi_bytes = &msg_hash_le[..16];
+
+            // Assign all bytes of msg_hash to cells which are range constrained to be 8 bits.  Then
+            // constrain the lower 16 cell bytes to build the lo cell, and the higher 16 bytes to
+            // build the hi cell.
+            let (msg_hash_cell_lo, _) = range_chip.decompose(
+                ctx,
+                Value::known(from_bytes::value::<F>(msg_hash_lo_bytes)),
+                8,
+                128,
+            )?;
+            let (msg_hash_cell_hi, _) = range_chip.decompose(
+                ctx,
+                Value::known(from_bytes::value::<F>(msg_hash_hi_bytes)),
+                8,
+                128,
+            )?;
+
+            self.assign_word_lo_hi(
+                config,
+                ctx,
+                msg_hash_cell_lo.value().copied(),
+                msg_hash_cell_hi.value().copied(),
+            )?
         };
 
         let pk_rlc = {
@@ -759,7 +776,6 @@ mod sign_verify_tests {
         },
         plonk::Circuit,
     };
-    use pretty_assertions::assert_eq;
     use rand::{RngCore, SeedableRng};
     use rand_xorshift::XorShiftRng;
 
