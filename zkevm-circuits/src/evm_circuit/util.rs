@@ -23,7 +23,7 @@ pub(crate) mod memory_gadget;
 
 pub use gadgets::util::{and, not, or, select, sum};
 
-// Removing this would require to edit almost all gadget
+#[deprecated(note = "Removing this would require to edit almost all gadget")]
 pub(crate) use crate::util::cell_manager::{Cell, CellType};
 
 pub struct CachedRegion<'r, 'b, F: Field> {

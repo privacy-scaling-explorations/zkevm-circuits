@@ -62,7 +62,7 @@ pub(crate) struct Cell<F> {
     pub(crate) column_idx: usize,
     pub(crate) rotation: usize,
 
-    // DEPRECATED: the same value as column_idx
+    #[deprecated(note = "the same value as column_idx")]
     pub(crate) cell_column_index: usize,
 }
 
