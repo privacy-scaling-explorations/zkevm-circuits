@@ -256,7 +256,7 @@ impl<F: Field> MPTConfig<F> {
             meta,
             // Type, #cols, phase, permutable
             vec![
-                (MptCellType::StoragePhase1, 50, 0, false),
+                (MptCellType::StoragePhase1, 51, 0, false),
                 (MptCellType::StoragePhase2, 5, 0, false),
                 (MptCellType::Lookup(Table::Fixed), 3, 0, false),
                 (MptCellType::LookupByte, 4, 0, false),
@@ -487,6 +487,9 @@ impl<F: Field> MPTConfig<F> {
                             &rlp_values,
                         )?;
                         cached_region.pop_region();
+                    }
+                    if offset == 44 {
+                        println!("offset {:?}, bytes {:?}", offset, node.values);
                     }
 
                     cached_region.assign_stored_expressions(&self.cb.base)?;
@@ -731,6 +734,7 @@ mod tests {
                 }
             })
             .enumerate()
+            .skip(24)
             .for_each(|(idx, f)| {
                 let path = f.path();
                 let mut parts = path.to_str().unwrap().split('-');

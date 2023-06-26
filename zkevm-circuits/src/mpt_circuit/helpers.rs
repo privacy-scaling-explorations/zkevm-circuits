@@ -6,7 +6,7 @@ use crate::{
         constraint_builder::{
             ConstraintBuilder, RLCChainable, RLCChainableValue, RLCable, RLCableValue,
         },
-        gadgets::{IsEqualGadget, LtGadget},
+        gadgets::{IsEqualGadget, LtGadget, IsZeroGadget},
         memory::MemoryBank,
     },
     evm_circuit::table::Table,
@@ -1216,6 +1216,7 @@ pub struct MainRLPGadget<F> {
     bytes: Vec<Cell<F>>,
     rlp: RLPItemGadget<F>,
     below_limit: LtGadget<F, 1>,
+    leading_zero: IsZeroGadget<F>,
     num_bytes: Cell<F>,
     len: Cell<F>,
     mult_diff: Cell<F>,
@@ -1236,6 +1237,7 @@ impl<F: Field> MainRLPGadget<F> {
                 bytes: cb.query_cells::<RLP_UNIT_NUM_BYTES>().to_vec(),
                 rlp: RLPItemGadget::default(),
                 below_limit: LtGadget::default(),
+                leading_zero: IsZeroGadget::default(),
                 num_bytes: cb.query_cell(),
                 len: cb.query_cell(),
                 mult_diff: cb.query_cell(),
@@ -1263,6 +1265,11 @@ impl<F: Field> MainRLPGadget<F> {
             );
             require!(config.below_limit.expr() => true);
 
+            // Ensure minimal RLP encoding for is_long string
+            config.leading_zero = IsZeroGadget::construct(
+                &mut cb.base,
+                config.bytes[1].expr()
+            );
             // Store RLP properties for easy access
             require!(config.num_bytes => config.rlp.num_bytes());
             require!(config.len => config.rlp.len());
@@ -1334,6 +1341,13 @@ impl<F: Field> MainRLPGadget<F> {
             (max_len + 1).scalar(),
         )?;
 
+        // Skip the rows that only contain 1 byte
+        if bytes.len() > 1 {
+            self.leading_zero.assign(region, offset, bytes[1].scalar())?;
+        } else {
+            self.leading_zero.assign(region, offset, 0.scalar())?;
+        }
+
         // Store RLP properties for easy access
         self.num_bytes
             .assign(region, offset, rlp_witness.num_bytes().scalar())?;
@@ -1361,6 +1375,7 @@ impl<F: Field> MainRLPGadget<F> {
     ) -> RLPItemView<F> {
         circuit!([meta, cb.base], {
             let is_string = self.rlp.is_string_at(meta, rot);
+            let is_long = self.rlp.is_long_at(meta, rot);
             let tag = self.tag.rot(meta, rot);
             let max_len = self.max_len.rot(meta, rot);
             let len = self.len.rot(meta, rot);
@@ -1370,6 +1385,9 @@ impl<F: Field> MainRLPGadget<F> {
             // Check the is_string value
             if item_type == RlpItemType::Value || item_type == RlpItemType::Key {
                 require!(is_string => true);
+                ifx!(is_long => {
+                    require!(self.leading_zero.expr() => false)
+                });
             }
             // Hashes always have length 32
             if item_type == RlpItemType::Hash {
@@ -1380,6 +1398,9 @@ impl<F: Field> MainRLPGadget<F> {
                 ifx! {is_string => {
                     require!(max_len => self.max_length(item_type).expr());
                     require!(len => [0, HASH_WIDTH]);
+                    ifx!(is_long => {
+                        require!(self.leading_zero.expr() => false)
+                    });
                 } elsex {
                     require!(max_len => HASH_WIDTH - 1);
                 }}

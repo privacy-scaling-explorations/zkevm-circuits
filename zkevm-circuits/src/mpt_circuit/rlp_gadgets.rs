@@ -144,6 +144,10 @@ impl<F: Field> RLPListGadget<F> {
         self.is_long.expr()
     }
 
+    pub(crate) fn is_long_at(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
+        self.is_long.rot(meta, rot)
+    }
+
     // RLP byte followed by the length in 1 byte, followed by the length
     pub(crate) fn is_very_long(&self) -> Expression<F> {
         self.is_very_long.expr()
@@ -378,6 +382,10 @@ impl<F: Field> RLPValueGadget<F> {
     // Single RLP byte containing the length of the value
     pub(crate) fn is_long(&self) -> Expression<F> {
         self.is_long.expr()
+    }
+
+    pub(crate) fn is_long_at(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
+        self.is_long.rot(meta, rot)
     }
 
     // RLP byte containing the lenght of the length,
@@ -667,6 +675,16 @@ impl<F: Field> RLPItemGadget<F> {
             matchx! {
                 self.value.is_string() => self.value.is_long(),
                 self.list.is_list() => self.list.is_long(),
+            }
+        })
+    }
+
+    // Single RLP byte containing the length of the value
+    pub(crate) fn is_long_at(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
+        circuit!([meta, _cb!()], {
+            matchx! {
+                self.value.is_string() => self.value.is_long_at(meta, rot),
+                self.list.is_list() => self.list.is_long_at(meta, rot),
             }
         })
     }
