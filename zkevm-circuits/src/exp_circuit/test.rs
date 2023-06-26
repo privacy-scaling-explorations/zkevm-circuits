@@ -5,7 +5,7 @@ use crate::{
     util::{unusable_rows, SubCircuit},
 };
 use bus_mapping::{
-    circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+    circuit_input_builder::{CircuitInputBuilder, FixedCParams},
     evm::OpcodeId,
     mock::BlockData,
 };
@@ -51,34 +51,38 @@ fn gen_code_multiple(args: Vec<(Word, Word)>) -> Bytecode {
     code
 }
 
-fn gen_data(code: Bytecode) -> CircuitInputBuilder {
+fn gen_data(code: Bytecode, default_params: bool) -> CircuitInputBuilder<FixedCParams> {
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data_with_params(
-        block.clone(),
-        CircuitsParams {
-            max_exp_steps: 1000,
-            ..CircuitsParams::default()
-        },
-    )
-    .new_circuit_input_builder();
-    builder
-        .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
+    // Needs default parameters for variadic size test
+    let builder = if default_params {
+        let mut builder =
+            BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
+                .new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        builder
+    } else {
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap()
+    };
     builder
 }
 
 fn test_ok(base: Word, exponent: Word, k: Option<u32>) {
     let code = gen_code_single(base, exponent);
-    let builder = gen_data(code);
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let builder = gen_data(code, false);
+    let block = block_convert::<Fr>(&builder).unwrap();
     test_exp_circuit(k.unwrap_or(18), block);
 }
 
 fn test_ok_multiple(args: Vec<(Word, Word)>) {
     let code = gen_code_multiple(args);
-    let builder = gen_data(code);
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let builder = gen_data(code, false);
+    let block = block_convert::<Fr>(&builder).unwrap();
     test_exp_circuit(20, block);
 }
 
@@ -123,18 +127,13 @@ fn variadic_size_check() {
     let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
         .unwrap()
         .into();
-    let mut builder = BlockData::new_from_geth_data_with_params(
-        block.clone(),
-        CircuitsParams {
-            max_exp_steps: 1000,
-            ..CircuitsParams::default()
-        },
-    )
-    .new_circuit_input_builder();
+    let mut builder =
+        BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
+            .new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
     let circuit = ExpCircuit::<Fr>::new(
         block.exp_events.clone(),
         block.circuits_params.max_exp_steps,
@@ -151,8 +150,8 @@ fn variadic_size_check() {
         EXP
         STOP
     };
-    let builder = gen_data(code);
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let builder = gen_data(code, true);
+    let block = block_convert::<Fr>(&builder).unwrap();
     let circuit = ExpCircuit::<Fr>::new(
         block.exp_events.clone(),
         block.circuits_params.max_exp_steps,

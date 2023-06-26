@@ -1,6 +1,6 @@
 use crate::{get_client, GenDataOutput};
 use bus_mapping::{
-    circuit_input_builder::{BuilderClient, CircuitInputBuilder, CircuitsParams},
+    circuit_input_builder::{BuilderClient, CircuitInputBuilder, FixedCParams},
     mock::BlockData,
 };
 use eth_types::geth_types::GethData;
@@ -65,7 +65,7 @@ const MAX_EXP_STEPS: usize = 1000;
 
 const MAX_KECCAK_ROWS: usize = 15000;
 
-const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
+const CIRCUITS_PARAMS: FixedCParams = FixedCParams {
     max_rws: MAX_RWS,
     max_txs: MAX_TXS,
     max_calldata: MAX_CALLDATA,
@@ -410,7 +410,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             block_num,
             block_tag,
         );
-        let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let mut block = block_convert(&builder).unwrap();
         block.randomness = Fr::from(TEST_MOCK_RANDOMNESS);
         let circuit = C::new_from_block(&block);
         let instance = circuit.instance();
@@ -489,7 +489,7 @@ fn new_empty_block() -> Block<Fr> {
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
-    block_convert(&builder.block, &builder.code_db).unwrap()
+    block_convert(&builder).unwrap()
 }
 
 fn get_general_params(degree: u32) -> ParamsKZG<Bn256> {
@@ -508,7 +508,7 @@ fn get_general_params(degree: u32) -> ParamsKZG<Bn256> {
 async fn gen_inputs(
     block_num: u64,
 ) -> (
-    CircuitInputBuilder,
+    CircuitInputBuilder<FixedCParams>,
     eth_types::Block<eth_types::Transaction>,
 ) {
     let cli = get_client();

@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod evm_circ_benches {
     use ark_std::{end_timer, start_timer};
-    use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+    use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
     use eth_types::geth_types::GethData;
     use halo2_proofs::{
         halo2curves::bn256::{Bn256, Fr, G1Affine},
@@ -44,17 +44,15 @@ mod evm_circ_benches {
             .unwrap()
             .into();
 
-        let mut builder = BlockData::new_from_geth_data_with_params(
-            empty_data.clone(),
-            CircuitsParams::default(),
-        )
-        .new_circuit_input_builder();
+        let mut builder =
+            BlockData::new_from_geth_data_with_params(empty_data.clone(), FixedCParams::default())
+                .new_circuit_input_builder();
 
         builder
             .handle_block(&empty_data.eth_block, &empty_data.geth_traces)
             .unwrap();
 
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert(&builder).unwrap();
 
         let circuit = TestEvmCircuit::<Fr>::new(block);
         let mut rng = XorShiftRng::from_seed([
