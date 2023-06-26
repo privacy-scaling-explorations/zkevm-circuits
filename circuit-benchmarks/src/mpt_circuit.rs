@@ -38,7 +38,7 @@ mod tests {
             .expect("Cannot parse DEGREE env var as u32");
 
         let path = "../zkevm-circuits/src/mpt_circuit/tests/UpdateOneLevel.json";
-        let file = std::fs::File::open(path.clone());
+        let file = std::fs::File::open(path);
         let reader = std::io::BufReader::new(file.unwrap());
 
         let randomness = Fr::from(123456u64);
