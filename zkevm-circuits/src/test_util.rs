@@ -6,9 +6,11 @@ use crate::{
     util::SubCircuit,
     witness::{Block, Rw},
 };
-use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
 use eth_types::geth_types::GethData;
+use std::cmp;
 
+use crate::util::log2_ceil;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use mock::TestContext;
 
@@ -18,6 +20,8 @@ fn init_env_logger() {
     // Enable RUST_LOG during tests
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 }
+
+const NUM_BLINDING_ROWS: usize = 64;
 
 #[allow(clippy::type_complexity)]
 /// Struct used to easily generate tests for EVM &| State circuits being able to
@@ -72,7 +76,7 @@ fn init_env_logger() {
 /// ```
 pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     test_ctx: Option<TestContext<NACC, NTX>>,
-    circuits_params: Option<CircuitsParams>,
+    circuits_params: Option<FixedCParams>,
     block: Option<Block<Fr>>,
     evm_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
     state_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
@@ -121,9 +125,9 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         self
     }
 
-    /// Allows to pass a non-default [`CircuitsParams`] to the builder.
+    /// Allows to pass a non-default [`FixedCParams`] to the builder.
     /// This means that we can increase for example, the `max_rws` or `max_txs`.
-    pub fn params(mut self, params: CircuitsParams) -> Self {
+    pub fn params(mut self, params: FixedCParams) -> Self {
         assert!(
             self.block.is_none(),
             "circuit_params already provided in the block"
@@ -177,24 +181,16 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// into a [`Block`] and apply the default or provided block_modifiers or
     /// circuit checks to the provers generated for the State and EVM circuits.
     pub fn run(self) {
-        let params = if let Some(block) = self.block.as_ref() {
-            block.circuits_params
-        } else {
-            self.circuits_params.unwrap_or_default()
-        };
-
         let block: Block<Fr> = if self.block.is_some() {
             self.block.unwrap()
         } else if self.test_ctx.is_some() {
             let block: GethData = self.test_ctx.unwrap().into();
-            let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
-                .new_circuit_input_builder();
-            builder
+            let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+            let builder = builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
             // Build a witness block from trace result.
-            let mut block =
-                crate::witness::block_convert(&builder.block, &builder.code_db).unwrap();
+            let mut block = crate::witness::block_convert(&builder).unwrap();
 
             for modifier_fn in self.block_modifiers {
                 modifier_fn.as_ref()(&mut block);
@@ -203,6 +199,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         } else {
             panic!("No attribute to build a block was passed to the CircuitTestBuilder")
         };
+        let params = block.circuits_params;
 
         // Run evm circuit test
         {
@@ -220,9 +217,11 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         // TODO: use randomness as one of the circuit public input, since randomness in
         // state circuit and evm circuit must be same
         {
+            let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block).1;
+            let k = cmp::max(log2_ceil(rows_needed + NUM_BLINDING_ROWS), 18);
             let state_circuit = StateCircuit::<Fr>::new(block.rws, params.max_rws);
             let instance = state_circuit.instance();
-            let prover = MockProver::<Fr>::run(18, &state_circuit, instance).unwrap();
+            let prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();
             // Skip verification of Start rows to accelerate testing
             let non_start_rows_len = state_circuit
                 .rows

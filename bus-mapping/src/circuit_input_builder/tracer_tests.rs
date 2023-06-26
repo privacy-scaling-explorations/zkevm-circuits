@@ -1,17 +1,16 @@
 use super::*;
 use crate::{
     circuit_input_builder::access::gen_state_access_trace,
-    error::{ExecError, OogError},
+    error::{DepthError, ExecError, InsufficientBalanceError, OogError},
     geth_errors::{
         GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_STACK_OVERFLOW,
         GETH_ERR_STACK_UNDERFLOW,
     },
-    operation::RWCounter,
     state_db::Account,
 };
 use eth_types::{
     address, bytecode,
-    evm_types::{stack::Stack, Gas, OpcodeId},
+    evm_types::{stack::Stack, OpcodeId},
     geth_types::GethData,
     word, Bytecode, Hash, ToAddress, ToWord, Word,
 };
@@ -28,10 +27,9 @@ use std::collections::HashSet;
 // CircuitInputStateRef to have a context in order to get the error at a
 // given step.
 struct CircuitInputBuilderTx {
-    builder: CircuitInputBuilder,
+    builder: CircuitInputBuilder<DynamicCParams>,
     tx: Transaction,
     pub(crate) tx_ctx: TransactionContext,
-    step: ExecStep,
 }
 
 impl CircuitInputBuilderTx {
@@ -44,7 +42,7 @@ impl CircuitInputBuilderTx {
         let tx_ctx = TransactionContext::new(
             &block.eth_block.transactions[0],
             &GethExecTrace {
-                gas: Gas(0),
+                gas: 0,
                 failed: false,
                 return_value: "".to_owned(),
                 struct_logs: vec![geth_step.clone()],
@@ -53,19 +51,10 @@ impl CircuitInputBuilderTx {
         )
         .unwrap();
 
-        let prev_log_id = if tx.is_steps_empty() {
-            0
-        } else {
-            tx.last_step().log_id
-        };
-
-        let call_ctx = tx_ctx.call_ctx().unwrap();
-        let exec_step = ExecStep::new(geth_step, call_ctx, RWCounter::new(), 0, prev_log_id);
         Self {
             builder,
             tx,
             tx_ctx,
-            step: exec_step,
         }
     }
 
@@ -219,7 +208,7 @@ fn tracer_err_depth() {
     let mut builder = CircuitInputBuilderTx::new(&block, step);
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
-        Some(ExecError::Depth)
+        Some(ExecError::Depth(DepthError::Call))
     );
 }
 
@@ -261,10 +250,7 @@ fn tracer_err_insufficient_balance() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1]
-                .to(accs[1].address)
-                .from(accs[2].address)
-                .nonce(Word::one());
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -288,7 +274,9 @@ fn tracer_err_insufficient_balance() {
     let mut builder = CircuitInputBuilderTx::new(&block, step);
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
-        Some(ExecError::InsufficientBalance)
+        Some(ExecError::InsufficientBalance(
+            InsufficientBalanceError::Call
+        ))
     );
 }
 
@@ -417,10 +405,7 @@ fn tracer_err_address_collision() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1]
-                .to(accs[1].address)
-                .from(accs[2].address)
-                .nonce(Word::one());
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -540,10 +525,7 @@ fn tracer_create_collision_free() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1]
-                .to(accs[1].address)
-                .from(accs[2].address)
-                .nonce(Word::one());
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -584,7 +566,7 @@ fn tracer_create_collision_free() {
     builder.builder.sdb.set_account(
         &ADDR_B,
         Account {
-            nonce: Word::zero(),
+            nonce: 0,
             balance: Word::from(555u64), /* same value as in
                                           * `mock::new_tracer_account` */
             storage: HashMap::new(),
@@ -594,7 +576,7 @@ fn tracer_create_collision_free() {
     builder.builder.sdb.set_account(
         &create_address,
         Account {
-            nonce: Word::zero(),
+            nonce: 0,
             balance: Word::zero(),
             storage: HashMap::new(),
             code_hash: Hash::zero(),
@@ -611,7 +593,7 @@ fn check_err_code_store_out_of_gas(step: &GethExecStep, next_step: Option<&GethE
     step.op == OpcodeId::RETURN
         && step.error.is_none()
         && result(next_step).is_zero()
-        && Word::from(200) * length > Word::from(step.gas.0)
+        && Word::from(200) * length > Word::from(step.gas)
 }
 
 #[test]
@@ -673,10 +655,7 @@ fn tracer_err_code_store_out_of_gas() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1]
-                .to(accs[1].address)
-                .from(accs[2].address)
-                .nonce(Word::one());
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -726,7 +705,6 @@ fn tracer_err_code_store_out_of_gas_tx_deploy() {
             txs[0]
                 .from(accs[1].address)
                 .gas(55000u64.into())
-                .nonce(Word::zero())
                 .input(code_creator.into());
         },
         |block, _tx| block.number(0x0264),
@@ -825,10 +803,7 @@ fn tracer_err_invalid_code() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1]
-                .to(accs[1].address)
-                .from(accs[2].address)
-                .nonce(Word::one());
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -925,10 +900,7 @@ fn tracer_err_max_code_size_exceeded() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1]
-                .to(accs[1].address)
-                .from(accs[2].address)
-                .nonce(Word::one());
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -978,7 +950,6 @@ fn tracer_err_max_code_size_exceeded_tx_deploy() {
             txs[0]
                 .from(accs[1].address)
                 .gas(60000u64.into())
-                .nonce(Word::zero())
                 .input(code_creator.into());
         },
         |block, _tx| block.number(0x0264),
@@ -1069,10 +1040,7 @@ fn tracer_create_stop() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1]
-                .to(accs[1].address)
-                .from(accs[2].address)
-                .nonce(Word::one());
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -1190,10 +1158,7 @@ fn tracer_err_invalid_jump() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1]
-                .to(accs[1].address)
-                .from(accs[2].address)
-                .nonce(Word::one());
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -1293,10 +1258,7 @@ fn tracer_err_execution_reverted() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1]
-                .to(accs[1].address)
-                .from(accs[2].address)
-                .nonce(Word::one());
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -1355,10 +1317,7 @@ fn tracer_stop() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1]
-                .to(accs[1].address)
-                .from(accs[2].address)
-                .nonce(Word::one());
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -1426,10 +1385,7 @@ fn tracer_err_return_data_out_of_bounds() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1]
-                .to(accs[1].address)
-                .from(accs[2].address)
-                .nonce(Word::one());
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -1582,10 +1538,7 @@ fn tracer_err_write_protection(is_call: bool) {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1]
-                .to(accs[1].address)
-                .from(accs[2].address)
-                .nonce(Word::one());
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -1787,10 +1740,7 @@ fn create2_address() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1]
-                .to(accs[1].address)
-                .from(accs[2].address)
-                .nonce(Word::one());
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -1888,10 +1838,7 @@ fn create_address() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1]
-                .to(accs[1].address)
-                .from(accs[2].address)
-                .nonce(Word::one());
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -1924,7 +1871,7 @@ fn create_address() {
     builder.builder.sdb.set_account(
         &ADDR_B,
         Account {
-            nonce: Word::from(1),
+            nonce: 1,
             ..Account::zero()
         },
     );
@@ -1975,10 +1922,7 @@ fn test_gen_access_trace() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1]
-                .to(accs[1].address)
-                .from(accs[2].address)
-                .nonce(Word::one());
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),
@@ -2200,10 +2144,7 @@ fn test_gen_access_trace_create_push_call_stack() {
         },
         |mut txs, accs| {
             txs[0].to(accs[0].address).from(accs[2].address);
-            txs[1]
-                .to(accs[1].address)
-                .from(accs[2].address)
-                .nonce(Word::one());
+            txs[1].to(accs[1].address).from(accs[2].address);
         },
         |block, _tx| block.number(0xcafeu64),
         LoggerConfig::enable_memory(),

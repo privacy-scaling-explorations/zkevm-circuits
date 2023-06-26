@@ -12,23 +12,20 @@ use eth_types::{address, bytecode, geth_types::GethData, Word};
 #[test]
 fn super_circuit_degree() {
     let mut cs = ConstraintSystem::<Fr>::default();
-    SuperCircuit::<_, 1, 32, 0x100>::configure(&mut cs);
+    let params = SuperCircuitParams {
+        max_txs: 1,
+        max_calldata: 32,
+        mock_randomness: Fr::from(0x100),
+    };
+    SuperCircuit::configure_with_params(&mut cs, params);
     log::info!("super circuit degree: {}", cs.degree());
     log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
     assert!(cs.degree() <= 9);
 }
 
-fn test_super_circuit<
-    const MAX_TXS: usize,
-    const MAX_CALLDATA: usize,
-    const MOCK_RANDOMNESS: u64,
->(
-    block: GethData,
-    circuits_params: CircuitsParams,
-) {
+fn test_super_circuit(block: GethData, circuits_params: FixedCParams, mock_randomness: Fr) {
     let (k, circuit, instance, _) =
-        SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS>::build(block, circuits_params)
-            .unwrap();
+        SuperCircuit::<Fr>::build(block, circuits_params, mock_randomness).unwrap();
     let prover = MockProver::run(k, &circuit, instance).unwrap();
     let res = prover.verify_par();
     if let Err(err) = res {
@@ -131,11 +128,9 @@ const TEST_MOCK_RANDOMNESS: u64 = 0x100;
 #[test]
 fn serial_test_super_circuit_1tx_1max_tx() {
     let block = block_1tx();
-    const MAX_TXS: usize = 1;
-    const MAX_CALLDATA: usize = 32;
-    let circuits_params = CircuitsParams {
-        max_txs: MAX_TXS,
-        max_calldata: MAX_CALLDATA,
+    let circuits_params = FixedCParams {
+        max_txs: 1,
+        max_calldata: 32,
         max_rws: 256,
         max_copy_rows: 256,
         max_exp_steps: 256,
@@ -143,17 +138,15 @@ fn serial_test_super_circuit_1tx_1max_tx() {
         max_evm_rows: 0,
         max_keccak_rows: 0,
     };
-    test_super_circuit::<MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>(block, circuits_params);
+    test_super_circuit(block, circuits_params, Fr::from(TEST_MOCK_RANDOMNESS));
 }
 #[ignore]
 #[test]
 fn serial_test_super_circuit_1tx_2max_tx() {
     let block = block_1tx();
-    const MAX_TXS: usize = 2;
-    const MAX_CALLDATA: usize = 32;
-    let circuits_params = CircuitsParams {
-        max_txs: MAX_TXS,
-        max_calldata: MAX_CALLDATA,
+    let circuits_params = FixedCParams {
+        max_txs: 2,
+        max_calldata: 32,
         max_rws: 256,
         max_copy_rows: 256,
         max_exp_steps: 256,
@@ -161,17 +154,15 @@ fn serial_test_super_circuit_1tx_2max_tx() {
         max_evm_rows: 0,
         max_keccak_rows: 0,
     };
-    test_super_circuit::<MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>(block, circuits_params);
+    test_super_circuit(block, circuits_params, Fr::from(TEST_MOCK_RANDOMNESS));
 }
 #[ignore]
 #[test]
 fn serial_test_super_circuit_2tx_2max_tx() {
     let block = block_2tx();
-    const MAX_TXS: usize = 2;
-    const MAX_CALLDATA: usize = 32;
-    let circuits_params = CircuitsParams {
-        max_txs: MAX_TXS,
-        max_calldata: MAX_CALLDATA,
+    let circuits_params = FixedCParams {
+        max_txs: 2,
+        max_calldata: 32,
         max_rws: 256,
         max_copy_rows: 256,
         max_exp_steps: 256,
@@ -179,5 +170,5 @@ fn serial_test_super_circuit_2tx_2max_tx() {
         max_evm_rows: 0,
         max_keccak_rows: 0,
     };
-    test_super_circuit::<MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>(block, circuits_params);
+    test_super_circuit(block, circuits_params, Fr::from(TEST_MOCK_RANDOMNESS));
 }

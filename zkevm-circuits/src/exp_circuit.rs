@@ -291,11 +291,12 @@ impl<F: Field> ExpCircuitConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         exp_events: &[ExpEvent],
-        max_exp_steps: usize,
+        max_exp_rows: usize,
     ) -> Result<(), Error> {
-        let max_exp_rows = max_exp_steps * OFFSET_INCREMENT;
+        let min_n_rows = Self::min_num_rows(exp_events);
+        dbg!(max_exp_rows, min_n_rows);
         debug_assert!(
-            Self::min_num_rows(exp_events) <= max_exp_rows,
+            min_n_rows <= max_exp_rows,
             "insufficient rows to populate the exponentiation trace"
         );
 
@@ -382,14 +383,14 @@ impl<F: Field> ExpCircuitConfig<F> {
                 || format!("exp_circuit: {:?}: {}", self.exp_table.is_step, offset),
                 self.exp_table.is_step,
                 *offset,
-                || Value::known(F::one()),
+                || Value::known(F::ONE),
             )?;
             for i in 1..OFFSET_INCREMENT {
                 region.assign_fixed(
                     || format!("exp_circuit: {:?}: {}", self.exp_table.is_step, *offset + i),
                     self.exp_table.is_step,
                     *offset + i,
-                    || Value::known(F::zero()),
+                    || Value::known(F::ZERO),
                 )?;
             }
             // mul_chip has 7 rows, exp_table has 4 rows. So we increment the offset by
@@ -449,14 +450,14 @@ impl<F: Field> ExpCircuitConfig<F> {
                     || format!("unused rows: {}", offset + i),
                     *column,
                     offset + i,
-                    || Value::known(F::zero()),
+                    || Value::known(F::ZERO),
                 )?;
             }
             region.assign_fixed(
                 || format!("unused rows: {}", offset + i),
                 self.exp_table.is_step,
                 offset + i,
-                || Value::known(F::zero()),
+                || Value::known(F::ZERO),
             )?;
         }
 
@@ -484,7 +485,8 @@ pub struct ExpCircuit<F> {
 
 impl<F: Field> ExpCircuit<F> {
     /// Return a new ExpCircuit
-    pub fn new(exp_events: Vec<ExpEvent>, max_exp_rows: usize) -> Self {
+    pub fn new(exp_events: Vec<ExpEvent>, max_exp_steps: usize) -> Self {
+        let max_exp_rows = max_exp_steps * OFFSET_INCREMENT + UNUSABLE_EXP_ROWS;
         Self {
             exp_events,
             max_exp_rows,
@@ -495,6 +497,29 @@ impl<F: Field> ExpCircuit<F> {
 
 impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
     type Config = ExpCircuitConfig<F>;
+
+    fn unusable_rows() -> usize {
+        // Column base_limb of ExpTable is queried at 8 distinct rotations at
+        // - Rotation(0)
+        // - Rotation(1)
+        // - Rotation(2)
+        // - Rotation(3)
+        // - Rotation(7)
+        // - Rotation(8)
+        // - Rotation(9)
+        // - Rotation(10)
+        // Also column col2 and col3 of are queried at 8 distinct rotations at
+        // - Rotation(0)
+        // - Rotation(1)
+        // - Rotation(2)
+        // - Rotation(3)
+        // - Rotation(4)
+        // - Rotation(5)
+        // - Rotation(6)
+        // - Rotation(9)
+        // so returns 11 unusable rows.
+        11
+    }
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
         // Hardcoded to pass unit tests for now. In the future, insert:

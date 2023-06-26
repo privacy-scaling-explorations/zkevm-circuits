@@ -28,8 +28,8 @@ pub fn unroll<F: Field>(bytes: Vec<u8>) -> UnrolledBytecode<F> {
     let mut rows = vec![BytecodeRow::<F> {
         code_hash,
         tag: F::from(BytecodeFieldTag::Header as u64),
-        index: F::zero(),
-        is_code: F::zero(),
+        index: F::ZERO,
+        is_code: F::ZERO,
         value: F::from(bytes.len() as u64),
     }];
     // Run over all the bytes

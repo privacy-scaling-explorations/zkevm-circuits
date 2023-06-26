@@ -16,7 +16,6 @@ use crate::{
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToAddress, ToLittleEndian};
 use halo2_proofs::plonk::Error;
-use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AddressGadget<F> {
@@ -70,8 +69,8 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let address = block.rws[step.rw_indices[1]].stack_value();
-        debug_assert_eq!(call.callee_address, address.to_address());
+        let address = block.get_rws(step, 1).stack_value();
+        debug_assert_eq!(call.address, address.to_address());
 
         self.address.assign(
             region,

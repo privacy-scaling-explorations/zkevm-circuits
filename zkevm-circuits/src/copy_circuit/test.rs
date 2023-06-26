@@ -1,13 +1,11 @@
-#![allow(unused_imports)]
-
 use crate::{
     copy_circuit::*,
     evm_circuit::{test::rand_bytes, witness::block_convert},
+    util::unusable_rows,
     witness::Block,
 };
 use bus_mapping::{
-    circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
-    evm::{gen_sha3_code, MemoryKind},
+    circuit_input_builder::{CircuitInputBuilder, FixedCParams},
     mock::BlockData,
 };
 use eth_types::{bytecode, geth_types::GethData, ToWord, Word};
@@ -15,7 +13,17 @@ use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
 };
-use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS};
+use mock::{
+    test_ctx::helpers::account_0_code_account_1_no_code, Sha3CodeGen, TestContext, MOCK_ACCOUNTS,
+};
+
+#[test]
+fn copy_circuit_unusable_rows() {
+    assert_eq!(
+        CopyCircuit::<Fr>::unusable_rows(),
+        unusable_rows::<Fr, CopyCircuit::<Fr>>(()),
+    )
+}
 
 /// Test copy circuit from copy events and test data
 pub fn test_copy_circuit<F: Field>(
@@ -51,7 +59,7 @@ pub fn test_copy_circuit_from_block<F: Field>(
     )
 }
 
-fn gen_calldatacopy_data() -> CircuitInputBuilder {
+fn gen_calldatacopy_data() -> CircuitInputBuilder<FixedCParams> {
     let length = 0x0fffusize;
     let code = bytecode! {
         PUSH32(Word::from(length))
@@ -74,23 +82,13 @@ fn gen_calldatacopy_data() -> CircuitInputBuilder {
     )
     .unwrap();
     let block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data_with_params(
-        block.clone(),
-        CircuitsParams {
-            max_rws: 8192,
-            max_copy_rows: 8192 + 2,
-            max_calldata: 5000,
-            ..Default::default()
-        },
-    )
-    .new_circuit_input_builder();
+    let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
-    builder
+        .unwrap()
 }
 
-fn gen_codecopy_data() -> CircuitInputBuilder {
+fn gen_codecopy_data() -> CircuitInputBuilder<FixedCParams> {
     let code = bytecode! {
         PUSH32(Word::from(0x20))
         PUSH32(Word::from(0x00))
@@ -100,14 +98,13 @@ fn gen_codecopy_data() -> CircuitInputBuilder {
     };
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+    let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
-    builder
+        .unwrap()
 }
 
-fn gen_extcodecopy_data() -> CircuitInputBuilder {
+fn gen_extcodecopy_data() -> CircuitInputBuilder<FixedCParams> {
     let external_address = MOCK_ACCOUNTS[0];
     let code = bytecode! {
         PUSH1(0x30usize)
@@ -136,33 +133,23 @@ fn gen_extcodecopy_data() -> CircuitInputBuilder {
     )
     .unwrap();
     let block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+    let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
-    builder
+        .unwrap()
 }
 
-fn gen_sha3_data() -> CircuitInputBuilder {
-    let (code, _) = gen_sha3_code(0x20, 0x200, MemoryKind::EqualToSize);
+fn gen_sha3_data() -> CircuitInputBuilder<FixedCParams> {
+    let (code, _) = Sha3CodeGen::mem_eq_size(0x20, 0x200).gen_sha3_code();
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data_with_params(
-        block.clone(),
-        CircuitsParams {
-            max_rws: 2000,
-            max_copy_rows: 0x200 * 2 + 2,
-            ..Default::default()
-        },
-    )
-    .new_circuit_input_builder();
+    let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
-    builder
+        .unwrap()
 }
 
-fn gen_tx_log_data() -> CircuitInputBuilder {
+fn gen_tx_log_data() -> CircuitInputBuilder<FixedCParams> {
     let code = bytecode! {
         PUSH32(200)         // value
         PUSH32(0)           // offset
@@ -175,7 +162,10 @@ fn gen_tx_log_data() -> CircuitInputBuilder {
     };
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+    // Needs default params for variadic check
+    let mut builder =
+        BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
+            .new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
@@ -185,35 +175,35 @@ fn gen_tx_log_data() -> CircuitInputBuilder {
 #[test]
 fn copy_circuit_valid_calldatacopy() {
     let builder = gen_calldatacopy_data();
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
     assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
 }
 
 #[test]
 fn copy_circuit_valid_codecopy() {
     let builder = gen_codecopy_data();
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
     assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
 }
 
 #[test]
 fn copy_circuit_valid_extcodecopy() {
     let builder = gen_extcodecopy_data();
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
     assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
 }
 
 #[test]
 fn copy_circuit_valid_sha3() {
     let builder = gen_sha3_data();
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
     assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
 }
 
 #[test]
 fn copy_circuit_valid_tx_log() {
     let builder = gen_tx_log_data();
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
     assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
 }
 
@@ -225,7 +215,7 @@ fn copy_circuit_invalid_calldatacopy() {
     builder.block.copy_events[0].bytes[0].0 =
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
 
     assert_error_matches(
         test_copy_circuit_from_block(14, block),
@@ -241,7 +231,7 @@ fn copy_circuit_invalid_codecopy() {
     builder.block.copy_events[0].bytes[0].0 =
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
 
     assert_error_matches(
         test_copy_circuit_from_block(10, block),
@@ -257,7 +247,7 @@ fn copy_circuit_invalid_extcodecopy() {
     builder.block.copy_events[0].bytes[0].0 =
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
 
     assert_error_matches(
         test_copy_circuit_from_block(14, block),
@@ -273,7 +263,7 @@ fn copy_circuit_invalid_sha3() {
     builder.block.copy_events[0].bytes[0].0 =
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
 
     assert_error_matches(
         test_copy_circuit_from_block(14, block),
@@ -289,7 +279,7 @@ fn copy_circuit_invalid_tx_log() {
     builder.block.copy_events[0].bytes[0].0 =
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
-    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder).unwrap();
 
     assert_error_matches(
         test_copy_circuit_from_block(10, block),
@@ -300,18 +290,18 @@ fn copy_circuit_invalid_tx_log() {
 #[test]
 fn variadic_size_check() {
     let builder = gen_tx_log_data();
-    let block1 = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block1 = block_convert::<Fr>(&builder).unwrap();
 
     let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
         .unwrap()
         .into();
     let mut builder =
-        BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
+        BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
             .new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
-    let block2 = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let block2 = block_convert::<Fr>(&builder).unwrap();
 
     let circuit = CopyCircuit::<Fr>::new(block1.copy_events, block1.circuits_params.max_copy_rows);
     let prover1 = MockProver::<Fr>::run(14, &circuit, vec![]).unwrap();

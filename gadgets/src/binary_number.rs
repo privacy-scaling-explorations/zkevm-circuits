@@ -190,7 +190,7 @@ where
                 || format!("binary number {:?}", column),
                 column,
                 offset,
-                || Value::known(F::from(bit)),
+                || Value::known(F::from(bit as u64)),
             )?;
         }
         Ok(())

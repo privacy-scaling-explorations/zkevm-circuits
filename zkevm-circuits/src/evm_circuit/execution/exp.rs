@@ -187,7 +187,7 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
 
         // Finally we build an expression for the dynamic gas cost as:
         // dynamic_gas = 50 * exponent_byte_size
-        let dynamic_gas_cost = GasCost::EXP_BYTE_TIMES.0.expr() * exponent_byte_size.byte_size();
+        let dynamic_gas_cost = GasCost::EXP_BYTE_TIMES.expr() * exponent_byte_size.byte_size();
         let step_state_transition = StepStateTransition {
             rw_counter: Transition::Delta(3.expr()), // 2 stack pops, 1 stack push
             program_counter: Transition::Delta(1.expr()),
@@ -227,8 +227,7 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let [base, exponent, exponentiation] =
-            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
-                .map(|idx| block.rws[idx].stack_value());
+            [0, 1, 2].map(|index| block.get_rws(step, index).stack_value());
 
         self.base.assign(region, offset, Some(base.to_le_bytes()))?;
         self.exponent
@@ -248,7 +247,7 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         self.exponent_hi_is_zero
             .assign(region, offset, exponent_hi_scalar)?;
         self.exponent_lo_is_one
-            .assign(region, offset, exponent_lo_scalar, F::one())?;
+            .assign(region, offset, exponent_lo_scalar, F::ONE)?;
 
         let (base_sq, _) = base.overflowing_mul(base);
         self.zero_rlc

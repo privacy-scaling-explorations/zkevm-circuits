@@ -60,7 +60,7 @@ impl<F: Field> ExecutionGadget<F> for PopGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let value = block.rws[step.rw_indices[0]].stack_value();
+        let value = block.get_rws(step, 0).stack_value();
         self.phase2_value
             .assign(region, offset, region.word_rlc(value))?;
 

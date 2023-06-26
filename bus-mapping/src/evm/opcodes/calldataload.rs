@@ -23,73 +23,79 @@ impl Opcode for Calldataload {
         let offset = geth_step.stack.nth_last(0)?;
         state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), offset)?;
 
-        let is_root = state.call()?.is_root;
-        if is_root {
-            state.call_context_read(
-                &mut exec_step,
-                state.call()?.call_id,
-                CallContextField::TxId,
-                state.tx_ctx.id().into(),
-            );
-            state.call_context_read(
-                &mut exec_step,
-                state.call()?.call_id,
-                CallContextField::CallDataLength,
-                state.call()?.call_data_length.into(),
-            );
-        } else {
-            state.call_context_read(
-                &mut exec_step,
-                state.call()?.call_id,
-                CallContextField::CallerId,
-                state.call()?.caller_id.into(),
-            );
-            state.call_context_read(
-                &mut exec_step,
-                state.call()?.call_id,
-                CallContextField::CallDataLength,
-                state.call()?.call_data_length.into(),
-            );
-            state.call_context_read(
-                &mut exec_step,
-                state.call()?.call_id,
-                CallContextField::CallDataOffset,
-                state.call()?.call_data_offset.into(),
-            );
-        }
+        // Check if offset is Uint64 overflow.
+        let calldata_word = if let Ok(offset) = u64::try_from(offset) {
+            let is_root = state.call()?.is_root;
+            let call_id = state.call()?.call_id;
+            if is_root {
+                state.call_context_read(
+                    &mut exec_step,
+                    call_id,
+                    CallContextField::TxId,
+                    state.tx_ctx.id().into(),
+                );
+                state.call_context_read(
+                    &mut exec_step,
+                    call_id,
+                    CallContextField::CallDataLength,
+                    state.call()?.call_data_length.into(),
+                );
+            } else {
+                state.call_context_read(
+                    &mut exec_step,
+                    call_id,
+                    CallContextField::CallerId,
+                    state.call()?.caller_id.into(),
+                );
+                state.call_context_read(
+                    &mut exec_step,
+                    call_id,
+                    CallContextField::CallDataLength,
+                    state.call()?.call_data_length.into(),
+                );
+                state.call_context_read(
+                    &mut exec_step,
+                    call_id,
+                    CallContextField::CallDataOffset,
+                    state.call()?.call_data_offset.into(),
+                );
+            }
 
-        let call = state.call()?.clone();
-        let (src_addr, src_addr_end, caller_id, call_data) = (
-            call.call_data_offset as usize + offset.as_usize(),
-            call.call_data_offset as usize + call.call_data_length as usize,
-            call.caller_id,
-            state.call_ctx()?.call_data.to_vec(),
-        );
-        let calldata_word = (0..32)
-            .map(|idx| {
-                let addr = src_addr + idx;
-                if addr < src_addr_end {
-                    let byte = call_data[addr - call.call_data_offset as usize];
-                    if !is_root {
-                        // caller id as call_id
-                        state.push_op(
-                            &mut exec_step,
-                            RW::READ,
-                            MemoryOp::new(caller_id, (src_addr + idx).into(), byte),
-                        );
+            let call_data_offset = state.call()?.call_data_offset;
+            let call_data_length = state.call()?.call_data_length;
+            let (src_addr, src_addr_end, caller_id, call_data) = (
+                call_data_offset + offset.min(call_data_length),
+                call_data_offset + call_data_length,
+                state.call()?.caller_id,
+                state.call_ctx()?.call_data.to_vec(),
+            );
+
+            let calldata: Vec<_> = (0..32)
+                .map(|idx| {
+                    let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
+                    if addr < src_addr_end {
+                        let byte = call_data[(addr - call_data_offset) as usize];
+                        if !is_root {
+                            state.push_op(
+                                &mut exec_step,
+                                RW::READ,
+                                MemoryOp::new(caller_id, (src_addr + idx).into(), byte),
+                            );
+                        }
+                        byte
+                    } else {
+                        0
                     }
-                    byte
-                } else {
-                    0
-                }
-            })
-            .collect::<Vec<u8>>();
+                })
+                .collect();
 
-        state.stack_write(
-            &mut exec_step,
-            geth_step.stack.last_filled(),
-            U256::from_big_endian(&calldata_word),
-        )?;
+            U256::from_big_endian(&calldata)
+        } else {
+            // Stack push `0` as result if overflow.
+            U256::zero()
+        };
+
+        state.stack_write(&mut exec_step, geth_step.stack.last_filled(), calldata_word)?;
 
         Ok(vec![exec_step])
     }
@@ -97,7 +103,12 @@ impl Opcode for Calldataload {
 
 #[cfg(test)]
 mod calldataload_tests {
-    use crate::operation::CallContextOp;
+    use super::*;
+    use crate::{
+        circuit_input_builder::ExecState,
+        mock::BlockData,
+        operation::{CallContextOp, StackOp},
+    };
     use eth_types::{
         bytecode,
         evm_types::{OpcodeId, StackAddress},
@@ -105,18 +116,9 @@ mod calldataload_tests {
         Word,
     };
     use mock::{
-        generate_mock_call_bytecode, test_ctx::helpers::account_0_code_account_1_no_code,
-        MockCallBytecodeParams, TestContext,
+        generate_mock_call_bytecode, rand_bytes,
+        test_ctx::helpers::account_0_code_account_1_no_code, MockCallBytecodeParams, TestContext,
     };
-    use rand::random;
-
-    use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::StackOp};
-
-    use super::*;
-
-    fn rand_bytes(size: usize) -> Vec<u8> {
-        (0..size).map(|_| random()).collect::<Vec<u8>>()
-    }
 
     fn test_internal_ok(
         call_data_length: usize,
@@ -167,8 +169,8 @@ mod calldataload_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 
@@ -278,8 +280,8 @@ mod calldataload_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 

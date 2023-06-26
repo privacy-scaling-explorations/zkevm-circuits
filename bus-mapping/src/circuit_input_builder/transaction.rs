@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use eth_types::{evm_types::Memory, geth_types, Address, GethExecTrace, Signature, Word};
+use eth_types::{evm_types::Memory, geth_types, GethExecTrace};
 use ethers_core::utils::get_contract_address;
 
 use crate::{
@@ -176,70 +176,18 @@ impl TransactionContext {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 /// Result of the parsing of an Ethereum Transaction.
 pub struct Transaction {
-    /// Nonce
-    pub nonce: u64,
-    /// Gas
-    pub gas: u64,
-    /// Gas price
-    pub gas_price: Word,
-    /// From / Caller Address
-    pub from: Address,
-    /// To / Callee Address
-    pub to: Address,
-    /// Value
-    pub value: Word,
-    /// Input / Call Data
-    pub input: Vec<u8>,
-    /// Signature
-    pub signature: Signature,
+    /// The raw transaction fields
+    pub tx: geth_types::Transaction,
     /// Calls made in the transaction
     pub(crate) calls: Vec<Call>,
     /// Execution steps
     steps: Vec<ExecStep>,
 }
 
-impl From<&Transaction> for geth_types::Transaction {
-    fn from(tx: &Transaction) -> geth_types::Transaction {
-        geth_types::Transaction {
-            from: tx.from,
-            to: Some(tx.to),
-            nonce: Word::from(tx.nonce),
-            gas_limit: Word::from(tx.gas),
-            value: tx.value,
-            gas_price: tx.gas_price,
-            call_data: tx.input.clone().into(),
-            v: tx.signature.v,
-            r: tx.signature.r,
-            s: tx.signature.s,
-            ..Default::default()
-        }
-    }
-}
-
 impl Transaction {
-    /// Create a dummy Transaction with zero values
-    pub fn dummy() -> Self {
-        Self {
-            nonce: 0,
-            gas: 0,
-            gas_price: Word::zero(),
-            from: Address::zero(),
-            to: Address::zero(),
-            value: Word::zero(),
-            input: Vec::new(),
-            signature: Signature {
-                r: Word::zero(),
-                s: Word::zero(),
-                v: 0,
-            },
-            calls: Vec::new(),
-            steps: Vec::new(),
-        }
-    }
-
     /// Create a new Self.
     pub fn new(
         call_id: usize,
@@ -296,22 +244,9 @@ impl Transaction {
         };
 
         Ok(Self {
-            nonce: eth_tx.nonce.as_u64(),
-            gas: eth_tx.gas.as_u64(),
-            gas_price: eth_tx.gas_price.unwrap_or_default(),
-            from: eth_tx.from,
-            to: eth_tx
-                .to
-                .unwrap_or_else(|| get_contract_address(eth_tx.from, eth_tx.nonce)),
-            value: eth_tx.value,
-            input: eth_tx.input.to_vec(),
+            tx: eth_tx.into(),
             calls: vec![call],
             steps: Vec::new(),
-            signature: Signature {
-                v: eth_tx.v.as_u64(),
-                r: eth_tx.r,
-                s: eth_tx.s,
-            },
         })
     }
 
@@ -358,5 +293,10 @@ impl Transaction {
     /// Return whether the steps in this transaction is empty
     pub fn is_steps_empty(&self) -> bool {
         self.steps.is_empty()
+    }
+
+    /// Convinient method for gas limit
+    pub fn gas(&self) -> u64 {
+        self.tx.gas_limit.as_u64()
     }
 }

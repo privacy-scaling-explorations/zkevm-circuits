@@ -72,7 +72,7 @@ impl<F: Field> ExecutionGadget<F> for PcGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         self.value
-            .assign(region, offset, Some(step.program_counter.to_le_bytes()))?;
+            .assign(region, offset, Some(step.pc.to_le_bytes()))?;
 
         Ok(())
     }

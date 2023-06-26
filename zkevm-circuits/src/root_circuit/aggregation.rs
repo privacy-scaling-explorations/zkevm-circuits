@@ -1,8 +1,9 @@
+use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::Field,
     circuit::{AssignedCell, Layouter, SimpleFloorPlanner, Value},
     halo2curves::{
-        group::prime::PrimeCurveAffine, pairing::Engine, serde::SerdeObject, CurveAffine,
+        ff::Field as Halo2Field, group::prime::PrimeCurveAffine, pairing::Engine,
+        serde::SerdeObject, CurveAffine,
     },
     plonk::{Circuit, ConstraintSystem, Error},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
@@ -19,14 +20,14 @@ use snark_verifier::{
         native::NativeLoader,
     },
     pcs::{
-        kzg::{self, *},
-        AccumulationDecider, AccumulationScheme, AccumulationSchemeProver,
+        kzg::*, AccumulationDecider, AccumulationScheme, AccumulationSchemeProver,
+        PolynomialCommitmentScheme,
     },
     system::halo2::transcript,
-    util::arithmetic::{fe_to_limbs, FieldExt, MultiMillerLoop},
+    util::arithmetic::{fe_to_limbs, MultiMillerLoop},
     verifier::{self, plonk::PlonkProtocol, SnarkVerifier},
 };
-use std::{io, iter, rc::Rc};
+use std::{io, iter, marker::PhantomData, rc::Rc};
 
 /// Number of limbs to decompose a elliptic curve base field element into.
 pub const LIMBS: usize = 4;
@@ -34,15 +35,17 @@ pub const LIMBS: usize = 4;
 pub const BITS: usize = 68;
 
 /// KZG accumulation scheme with GWC19 multiopen.
-pub type KzgAs<M> = kzg::KzgAs<M, Gwc19>;
+pub type Gwc<M> = KzgAs<M, Gwc19>;
+/// KZG accumulation scheme with BDFG21 multiopen.
+pub type Shplonk<M> = KzgAs<M, Bdfg21>;
 /// KZG succinct verifying key
 pub type KzgSvk<M> = KzgSuccinctVerifyingKey<<M as Engine>::G1Affine>;
 /// KZG deciding key
 pub type KzgDk<M> = KzgDecidingKey<M>;
 /// Plonk succinct verifier with `KzgAs`
-pub type PlonkSuccinctVerifier<M> = verifier::plonk::PlonkSuccinctVerifier<KzgAs<M>>;
+pub type PlonkSuccinctVerifier<As> = verifier::plonk::PlonkSuccinctVerifier<As>;
 /// Plonk verifier with `KzgAs` and `LimbsEncoding<LIMBS, BITS>`.
-pub type PlonkVerifier<M> = verifier::plonk::PlonkVerifier<KzgAs<M>, LimbsEncoding<LIMBS, BITS>>;
+pub type PlonkVerifier<As> = verifier::plonk::PlonkVerifier<As, LimbsEncoding<LIMBS, BITS>>;
 
 const T: usize = 5;
 const RATE: usize = 4;
@@ -178,12 +181,12 @@ impl AggregationConfig {
     }
 
     /// Returns `MainGate`.
-    pub fn main_gate<F: FieldExt>(&self) -> MainGate<F> {
+    pub fn main_gate<F: Field>(&self) -> MainGate<F> {
         MainGate::new(self.main_gate_config.clone())
     }
 
     /// Returns `RangeChip`.
-    pub fn range_chip<F: FieldExt>(&self) -> RangeChip<F> {
+    pub fn range_chip<F: Field>(&self) -> RangeChip<F> {
         RangeChip::new(self.range_config.clone())
     }
 
@@ -196,7 +199,7 @@ impl AggregationConfig {
     }
 
     /// Load fixed lookup table for `RangeChip`
-    pub fn load_table<F: FieldExt>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub fn load_table<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         self.range_chip().load_table(layouter)
     }
 
@@ -204,7 +207,7 @@ impl AggregationConfig {
     /// `4 * LIMBS` limbs.
     /// Returns assigned instances of snarks and aggregated accumulator limbs.
     #[allow(clippy::type_complexity)]
-    pub fn aggregate<'a, M: MultiMillerLoop>(
+    pub fn aggregate<'a, M, As>(
         &self,
         layouter: &mut impl Layouter<M::Scalar>,
         svk: &KzgSvk<M>,
@@ -215,7 +218,22 @@ impl AggregationConfig {
             Vec<AssignedCell<M::Scalar, M::Scalar>>,
         ),
         Error,
-    > {
+    >
+    where
+        M: MultiMillerLoop,
+        M::Scalar: Field,
+        for<'b> As: PolynomialCommitmentScheme<
+                M::G1Affine,
+                Rc<Halo2Loader<'b, M::G1Affine>>,
+                VerifyingKey = KzgSvk<M>,
+                Output = KzgAccumulator<M::G1Affine, Rc<Halo2Loader<'b, M::G1Affine>>>,
+            > + AccumulationScheme<
+                M::G1Affine,
+                Rc<Halo2Loader<'b, M::G1Affine>>,
+                Accumulator = KzgAccumulator<M::G1Affine, Rc<Halo2Loader<'b, M::G1Affine>>>,
+                VerifyingKey = KzgAsVerifyingKey,
+            >,
+    {
         type PoseidonTranscript<'a, C, S> =
             transcript::halo2::PoseidonTranscript<C, Rc<Halo2Loader<'a, C>>, S, T, RATE, R_F, R_P>;
         let snarks = snarks.into_iter().collect_vec();
@@ -241,7 +259,7 @@ impl AggregationConfig {
                         let protocol = snark.protocol.loaded(&loader);
                         let instances = snark.loaded_instances(&loader);
                         let mut transcript = PoseidonTranscript::new(&loader, snark.proof());
-                        let proof = PlonkSuccinctVerifier::<M>::read_proof(
+                        let proof = PlonkSuccinctVerifier::<As>::read_proof(
                             svk,
                             &protocol,
                             &instances,
@@ -264,9 +282,13 @@ impl AggregationConfig {
                     let accumulators = accumulators.into_iter().flatten().collect_vec();
                     let mut transcript =
                         PoseidonTranscript::new(&loader, Value::known(as_proof.as_slice()));
-                    let proof =
-                        KzgAs::<M>::read_proof(&as_vk, &accumulators, &mut transcript).unwrap();
-                    KzgAs::<M>::verify(&as_vk, &accumulators, &proof).unwrap()
+                    let proof = <As as AccumulationScheme<_, _>>::read_proof(
+                        &as_vk,
+                        &accumulators,
+                        &mut transcript,
+                    )
+                    .unwrap();
+                    <As as AccumulationScheme<_, _>>::verify(&as_vk, &accumulators, &proof).unwrap()
                 };
 
                 let instances = instances
@@ -304,13 +326,25 @@ impl AggregationConfig {
 /// Aggregate snarks into a single accumulator and decompose it into
 /// `4 * LIMBS` limbs.
 /// Returns `None` if any given snarks is invalid.
-pub fn aggregate<'a, M: MultiMillerLoop>(
+pub fn aggregate<'a, M, As>(
     params: &ParamsKZG<M>,
     snarks: impl IntoIterator<Item = Snark<'a, M::G1Affine>>,
 ) -> Result<[M::Scalar; 4 * LIMBS], snark_verifier::Error>
 where
+    M: MultiMillerLoop,
     M::G1Affine: SerdeObject,
     M::G2Affine: SerdeObject,
+    M::Scalar: Field,
+    for<'b> As: PolynomialCommitmentScheme<
+            M::G1Affine,
+            NativeLoader,
+            VerifyingKey = KzgSvk<M>,
+            Output = KzgAccumulator<M::G1Affine, NativeLoader>,
+        > + AccumulationSchemeProver<
+            M::G1Affine,
+            Accumulator = KzgAccumulator<M::G1Affine, NativeLoader>,
+            ProvingKey = KzgAsProvingKey<M::G1Affine>,
+        > + AccumulationDecider<M::G1Affine, NativeLoader, DecidingKey = KzgDecidingKey<M>>,
 {
     let svk = KzgSvk::<M>::new(params.get_g()[0]);
     let dk = KzgDk::new(svk, params.g2(), params.s_g2());
@@ -321,7 +355,7 @@ where
         .into_iter()
         .map(|snark| {
             let mut transcript = PoseidonTranscript::new(snark.proof);
-            let proof = PlonkSuccinctVerifier::<M>::read_proof(
+            let proof = PlonkSuccinctVerifier::<As>::read_proof(
                 &svk,
                 snark.protocol,
                 snark.instances,
@@ -353,11 +387,11 @@ where
         let as_pk = Default::default();
         let rng = StdRng::from_seed(Default::default());
         let mut transcript = PoseidonTranscript::new(Vec::new());
-        let accumulator = KzgAs::<M>::create_proof(&as_pk, &accumulators, &mut transcript, rng)?;
+        let accumulator = As::create_proof(&as_pk, &accumulators, &mut transcript, rng)?;
         assert!(transcript.finalize().is_empty());
         accumulator
     };
-    KzgAs::<M>::decide(&dk, accumulator.clone())?;
+    As::decide(&dk, accumulator.clone())?;
 
     let KzgAccumulator { lhs, rhs } = accumulator;
     let accumulator_limbs = [lhs, rhs]
@@ -375,16 +409,28 @@ where
 
 /// Aggregation circuit for testing purpose.
 #[derive(Clone)]
-pub struct TestAggregationCircuit<'a, M: MultiMillerLoop> {
+pub struct TestAggregationCircuit<'a, M: MultiMillerLoop, As> {
     svk: KzgSvk<M>,
     snarks: Vec<SnarkWitness<'a, M::G1Affine>>,
     instances: Vec<M::Scalar>,
+    _marker: PhantomData<As>,
 }
 
-impl<'a, M: MultiMillerLoop> TestAggregationCircuit<'a, M>
+impl<'a, M: MultiMillerLoop, As> TestAggregationCircuit<'a, M, As>
 where
     M::G1Affine: SerdeObject,
     M::G2Affine: SerdeObject,
+    M::Scalar: Field,
+    for<'b> As: PolynomialCommitmentScheme<
+            M::G1Affine,
+            NativeLoader,
+            VerifyingKey = KzgSvk<M>,
+            Output = KzgAccumulator<M::G1Affine, NativeLoader>,
+        > + AccumulationSchemeProver<
+            M::G1Affine,
+            Accumulator = KzgAccumulator<M::G1Affine, NativeLoader>,
+            ProvingKey = KzgAsProvingKey<M::G1Affine>,
+        > + AccumulationDecider<M::G1Affine, NativeLoader, DecidingKey = KzgDecidingKey<M>>,
 {
     /// Create an Aggregation circuit with aggregated accumulator computed.
     /// Returns `None` if any given snark is invalid.
@@ -394,7 +440,7 @@ where
     ) -> Result<Self, snark_verifier::Error> {
         let snarks = snarks.into_iter().collect_vec();
 
-        let accumulator_limbs = aggregate(params, snarks.clone())?;
+        let accumulator_limbs = aggregate::<M, As>(params, snarks.clone())?;
         let instances = iter::empty()
             // Propagate aggregated snarks' instances
             .chain(
@@ -411,6 +457,7 @@ where
             svk: KzgSvk::<M>::new(params.get_g()[0]),
             snarks: snarks.into_iter().map_into().collect(),
             instances,
+            _marker: PhantomData,
         })
     }
 
@@ -434,9 +481,24 @@ where
     }
 }
 
-impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for TestAggregationCircuit<'a, M> {
+impl<'a, M: MultiMillerLoop, As> Circuit<M::Scalar> for TestAggregationCircuit<'a, M, As>
+where
+    M::Scalar: Field,
+    for<'b> As: PolynomialCommitmentScheme<
+            M::G1Affine,
+            Rc<Halo2Loader<'b, M::G1Affine>>,
+            VerifyingKey = KzgSvk<M>,
+            Output = KzgAccumulator<M::G1Affine, Rc<Halo2Loader<'b, M::G1Affine>>>,
+        > + AccumulationScheme<
+            M::G1Affine,
+            Rc<Halo2Loader<'b, M::G1Affine>>,
+            Accumulator = KzgAccumulator<M::G1Affine, Rc<Halo2Loader<'b, M::G1Affine>>>,
+            VerifyingKey = KzgAsVerifyingKey,
+        >,
+{
     type Config = AggregationConfig;
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self {
@@ -446,7 +508,8 @@ impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for TestAggregationCircuit<'a, M
                 .iter()
                 .map(SnarkWitness::without_witnesses)
                 .collect(),
-            instances: vec![M::Scalar::zero(); self.instances.len()],
+            instances: vec![M::Scalar::ZERO; self.instances.len()],
+            _marker: PhantomData,
         }
     }
 
@@ -461,7 +524,7 @@ impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for TestAggregationCircuit<'a, M
     ) -> Result<(), Error> {
         config.load_table(&mut layouter)?;
         let (instances, accumulator_limbs) =
-            config.aggregate::<M>(&mut layouter, &self.svk, self.snarks.clone())?;
+            config.aggregate::<M, As>(&mut layouter, &self.svk, self.snarks.clone())?;
 
         // Constrain equality to instance values
         let main_gate = config.main_gate();
@@ -483,9 +546,12 @@ impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for TestAggregationCircuit<'a, M
 /// any given inputs.
 #[cfg(test)]
 pub mod test {
-    use crate::root_circuit::{PoseidonTranscript, Snark, TestAggregationCircuit};
+    use crate::root_circuit::{
+        aggregation::Gwc, PoseidonTranscript, Snark, TestAggregationCircuit,
+    };
+    use eth_types::Field;
     use halo2_proofs::{
-        arithmetic::FieldExt,
+        arithmetic::Field as Halo2Field,
         circuit::{floor_planner::V1, Layouter, Value},
         dev::{FailureLocation, MockProver, VerifyFailure},
         halo2curves::{
@@ -550,7 +616,7 @@ pub mod test {
 
     impl StandardPlonkConfig {
         /// Configure for `StandardPlonk`
-        pub fn configure<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+        pub fn configure<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
             let [w_l, w_r, w_o] = [(); 3].map(|_| meta.advice_column());
             let [q_l, q_r, q_o, q_m, q_c] = [(); 5].map(|_| meta.fixed_column());
             let pi = meta.instance_column();
@@ -584,7 +650,7 @@ pub mod test {
     #[derive(Clone, Copy)]
     pub struct StandardPlonk<F>(F);
 
-    impl<F: FieldExt> StandardPlonk<F> {
+    impl<F: Field> StandardPlonk<F> {
         /// Create a `StandardPlonk` with random instnace.
         pub fn rand<R: RngCore>(mut rng: R) -> Self {
             Self(F::from(rng.next_u32() as u64))
@@ -596,9 +662,10 @@ pub mod test {
         }
     }
 
-    impl<F: FieldExt> Circuit<F> for StandardPlonk<F> {
+    impl<F: Field> Circuit<F> for StandardPlonk<F> {
         type Config = StandardPlonkConfig;
         type FloorPlanner = V1;
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             *self
@@ -622,7 +689,7 @@ pub mod test {
                     // Assign some non-zero values to make sure the advice/fixed columns have
                     // non-identity commitments.
                     let a = region.assign_advice(|| "", w_l, 0, || Value::known(self.0))?;
-                    region.assign_fixed(|| "", q_l, 0, || Value::known(-F::one()))?;
+                    region.assign_fixed(|| "", q_l, 0, || Value::known(-F::ONE))?;
                     a.copy_advice(|| "", &mut region, w_r, 1)?;
                     a.copy_advice(|| "", &mut region, w_o, 2)?;
                     region.assign_advice(|| "", w_l, 3, || Value::known(-F::from(5)))?;
@@ -642,7 +709,7 @@ pub mod test {
     ) -> Vec<SnarkOwned<G1Affine>> {
         // Preprocess
         let (pk, protocol) = {
-            let standard_plonk = StandardPlonk(Fr::zero());
+            let standard_plonk = StandardPlonk(Fr::ZERO);
             let vk = keygen_vk(params, &standard_plonk).unwrap();
             let pk = keygen_pk(params, vk, &standard_plonk).unwrap();
             let protocol = compile(
@@ -688,9 +755,11 @@ pub mod test {
 
         // Create Aggregation circuit and compute aggregated accumulator
         let snarks = rand_standard_plonk_snarks(&params, 2);
-        let aggregation =
-            TestAggregationCircuit::<Bn256>::new(&params, snarks.iter().map(SnarkOwned::as_snark))
-                .unwrap();
+        let aggregation = TestAggregationCircuit::<Bn256, Gwc<_>>::new(
+            &params,
+            snarks.iter().map(SnarkOwned::as_snark),
+        )
+        .unwrap();
         let instances = aggregation.instances();
         assert_eq!(
             MockProver::run(21, &aggregation, instances)
@@ -706,12 +775,14 @@ pub mod test {
 
         // Create Aggregation circuit and compute aggregated accumulator
         let snarks = rand_standard_plonk_snarks(&params, 2);
-        let aggregation =
-            TestAggregationCircuit::<Bn256>::new(&params, snarks.iter().map(SnarkOwned::as_snark))
-                .unwrap();
+        let aggregation = TestAggregationCircuit::<Bn256, Gwc<_>>::new(
+            &params,
+            snarks.iter().map(SnarkOwned::as_snark),
+        )
+        .unwrap();
         let mut instances = aggregation.instances();
         // Change the propagated inner snark's instance
-        instances[0][0] += Fr::one();
+        instances[0][0] += Fr::ONE;
         // Then expect the verification to fail
         assert_eq!(
             MockProver::run(21, &aggregation, instances)

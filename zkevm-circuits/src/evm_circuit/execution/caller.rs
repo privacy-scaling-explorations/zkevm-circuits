@@ -71,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let caller = block.rws[step.rw_indices[1]].stack_value();
+        let caller = block.get_rws(step, 1).stack_value();
 
         self.caller_address.assign(
             region,

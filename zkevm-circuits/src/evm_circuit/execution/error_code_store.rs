@@ -95,11 +95,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
+        let [memory_offset, length] = [0, 1].map(|i| block.get_rws(step, i).stack_value());
         self.memory_address
             .assign(region, offset, memory_offset, length)?;
 
@@ -107,7 +107,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
             region,
             offset,
             F::from(step.gas_left),
-            F::from(GasCost::CODE_DEPOSIT_BYTE_COST.as_u64() * length.as_u64()),
+            F::from(GasCost::CODE_DEPOSIT_BYTE_COST * length.as_u64()),
         )?;
 
         self.max_code_size_exceed.assign(
@@ -125,7 +125,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use bus_mapping::circuit_input_builder::CircuitsParams;
+    use bus_mapping::circuit_input_builder::FixedCParams;
     use eth_types::{
         address,
         bytecode,
@@ -151,7 +151,7 @@ mod test {
 
     fn run_test_circuits(ctx: TestContext<2, 1>) {
         CircuitTestBuilder::new_from_test_ctx(ctx)
-            .params(CircuitsParams {
+            .params(FixedCParams {
                 max_rws: 4500,
                 ..Default::default()
             })
@@ -248,7 +248,7 @@ mod test {
             let caller = Account {
                 address: *CALLER_ADDRESS,
                 code: root_code.into(),
-                nonce: Word::one(),
+                nonce: 1.into(),
                 balance: eth(10),
                 ..Default::default()
             };
@@ -264,7 +264,7 @@ mod test {
             let caller = Account {
                 address: *CALLER_ADDRESS,
                 code: root_code.into(),
-                nonce: Word::one(),
+                nonce: 1.into(),
                 balance: eth(10),
                 ..Default::default()
             };

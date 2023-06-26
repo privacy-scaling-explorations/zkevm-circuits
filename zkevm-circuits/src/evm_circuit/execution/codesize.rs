@@ -76,7 +76,7 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let codesize = block.rws[step.rw_indices[0]].stack_value().as_u64();
+        let codesize = block.get_rws(step, 0).stack_value().as_u64();
 
         for (c, b) in self
             .codesize_bytes

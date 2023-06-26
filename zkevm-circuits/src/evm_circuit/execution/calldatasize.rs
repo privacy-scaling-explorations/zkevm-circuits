@@ -70,7 +70,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let call_data_size = block.rws[step.rw_indices[1]].stack_value();
+        let call_data_size = block.get_rws(step, 1).stack_value();
 
         self.call_data_size.assign(
             region,
@@ -89,7 +89,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use bus_mapping::circuit_input_builder::CircuitsParams;
+    use bus_mapping::circuit_input_builder::FixedCParams;
     use eth_types::{address, bytecode, Word};
 
     use itertools::Itertools;
@@ -125,9 +125,9 @@ mod test {
             .unwrap();
 
             CircuitTestBuilder::new_from_test_ctx(ctx)
-                .params(CircuitsParams {
+                .params(FixedCParams {
                     max_calldata: 1200,
-                    ..CircuitsParams::default()
+                    ..FixedCParams::default()
                 })
                 .run();
         } else {
@@ -167,9 +167,9 @@ mod test {
             .unwrap();
 
             CircuitTestBuilder::new_from_test_ctx(ctx)
-                .params(CircuitsParams {
+                .params(FixedCParams {
                     max_calldata: 600,
-                    ..CircuitsParams::default()
+                    ..FixedCParams::default()
                 })
                 .run();
         };

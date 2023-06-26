@@ -1,17 +1,19 @@
 use std::collections::HashMap;
 
-#[cfg(any(feature = "test", test))]
-use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
-
-use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag};
+use crate::{
+    evm_circuit::{detect_fixed_table_tags, util::rlc, EvmCircuit},
+    exp_circuit::param::OFFSET_INCREMENT,
+    table::BlockContextFieldTag,
+    util::{log2_ceil, SubCircuit},
+};
 use bus_mapping::{
-    circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
+    circuit_input_builder::{self, CopyEvent, ExpEvent, FixedCParams},
     Error,
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::circuit::Value;
 
-use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
+use super::{tx::tx_convert, Bytecode, ExecStep, Rw, RwMap, Transaction};
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -40,7 +42,7 @@ pub struct Block<F> {
     /// Pad exponentiation circuit to make selectors fixed.
     pub exp_circuit_pad_to: usize,
     /// Circuit Setup Parameters
-    pub circuits_params: CircuitsParams,
+    pub circuits_params: FixedCParams,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
     /// State root of the previous block
@@ -58,22 +60,19 @@ impl<F: Field> Block<F> {
         for (tx_idx, tx) in self.txs.iter().enumerate() {
             println!("tx {}", tx_idx);
             for step in &tx.steps {
-                println!(" step {:?} rwc: {}", step.execution_state, step.rw_counter);
-                for rw_ref in &step.rw_indices {
-                    println!("  - {:?}", self.rws[*rw_ref]);
+                println!(" step {:?} rwc: {}", step.exec_state, step.rwc.0);
+                for rw_idx in 0..step.bus_mapping_instance.len() {
+                    println!("  - {:?}", self.get_rws(step, rw_idx));
                 }
             }
         }
     }
-}
 
-#[cfg(feature = "test")]
-use crate::exp_circuit::param::OFFSET_INCREMENT;
-#[cfg(feature = "test")]
-use crate::util::log2_ceil;
+    /// Get a read-write record
+    pub(crate) fn get_rws(&self, step: &ExecStep, index: usize) -> Rw {
+        self.rws[step.rw_index(index)]
+    }
 
-#[cfg(feature = "test")]
-impl<F: Field> Block<F> {
     /// Obtains the expected Circuit degree needed in order to be able to test
     /// the EvmCircuit with this block without needing to configure the
     /// `ConstraintSystem`.
@@ -101,8 +100,6 @@ impl<F: Field> Block<F> {
             .map(|e| e.steps.len() * OFFSET_INCREMENT)
             .sum();
 
-        const NUM_BLINDING_ROWS: usize = 64;
-
         let rows_needed: usize = itertools::max([
             num_rows_required_for_execution_steps,
             num_rows_required_for_rw_table,
@@ -115,7 +112,7 @@ impl<F: Field> Block<F> {
         ])
         .unwrap();
 
-        let k = log2_ceil(NUM_BLINDING_ROWS + rows_needed);
+        let k = log2_ceil(EvmCircuit::<F>::unusable_rows() + rows_needed);
         log::debug!(
             "num_rows_requred_for rw_table={}, fixed_table={}, bytecode_table={}, \
             copy_table={}, keccak_table={}, tx_table={}, exp_table={}",
@@ -160,39 +157,39 @@ impl BlockContext {
             vec![
                 [
                     Value::known(F::from(BlockContextFieldTag::Coinbase as u64)),
-                    Value::known(F::zero()),
+                    Value::known(F::ZERO),
                     Value::known(self.coinbase.to_scalar().unwrap()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::Timestamp as u64)),
-                    Value::known(F::zero()),
+                    Value::known(F::ZERO),
                     Value::known(self.timestamp.to_scalar().unwrap()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::Number as u64)),
-                    Value::known(F::zero()),
+                    Value::known(F::ZERO),
                     Value::known(self.number.to_scalar().unwrap()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
-                    Value::known(F::zero()),
+                    Value::known(F::ZERO),
                     randomness
                         .map(|randomness| rlc::value(&self.difficulty.to_le_bytes(), randomness)),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
-                    Value::known(F::zero()),
+                    Value::known(F::ZERO),
                     Value::known(F::from(self.gas_limit)),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::BaseFee as u64)),
-                    Value::known(F::zero()),
+                    Value::known(F::ZERO),
                     randomness
                         .map(|randomness| rlc::value(&self.base_fee.to_le_bytes(), randomness)),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
-                    Value::known(F::zero()),
+                    Value::known(F::ZERO),
                     randomness
                         .map(|randomness| rlc::value(&self.chain_id.to_le_bytes(), randomness)),
                 ],
@@ -234,9 +231,10 @@ impl From<&circuit_input_builder::Block> for BlockContext {
 
 /// Convert a block struct in bus-mapping to a witness block used in circuits
 pub fn block_convert<F: Field>(
-    block: &circuit_input_builder::Block,
-    code_db: &bus_mapping::state_db::CodeDB,
+    builder: &circuit_input_builder::CircuitInputBuilder<FixedCParams>,
 ) -> Result<Block<F>, Error> {
+    let block = &builder.block;
+    let code_db = &builder.code_db;
     let rws = RwMap::from(&block.container);
     rws.check_value();
     Ok(Block {
@@ -250,8 +248,8 @@ pub fn block_convert<F: Field>(
             .enumerate()
             .map(|(idx, tx)| tx_convert(tx, idx + 1))
             .collect(),
-        end_block_not_last: step_convert(&block.block_steps.end_block_not_last),
-        end_block_last: step_convert(&block.block_steps.end_block_last),
+        end_block_not_last: block.block_steps.end_block_not_last.clone(),
+        end_block_last: block.block_steps.end_block_last.clone(),
         bytecodes: code_db
             .0
             .values()
@@ -263,7 +261,7 @@ pub fn block_convert<F: Field>(
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
-        circuits_params: block.circuits_params,
+        circuits_params: builder.circuits_params,
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,

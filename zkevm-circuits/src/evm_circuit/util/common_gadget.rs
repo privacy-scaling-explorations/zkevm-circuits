@@ -1,7 +1,7 @@
 use super::{
     constraint_builder::ConstrainBuilderCommon,
     from_bytes,
-    math_gadget::{IsEqualGadget, IsZeroGadget},
+    math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
     memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
     CachedRegion,
 };
@@ -76,7 +76,7 @@ impl<F: Field> SameContextGadget<F> {
         offset: usize,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
@@ -222,8 +222,7 @@ impl<F: Field> RestoreContextGadget<F> {
                 [U256::zero(); 9]
             } else {
                 [0, 1, 2, 3, 4, 5, 6, 7, 8]
-                    .map(|i| step.rw_indices[i + rw_offset])
-                    .map(|idx| block.rws[idx].call_context_value())
+                    .map(|i| block.get_rws(step, i + rw_offset).call_context_value())
             };
 
         for (cell, value) in [
@@ -376,7 +375,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         // If receiver doesn't exist, create it
         cb.condition(
             or::expr([
-                not::expr(value_is_zero.expr()) * not::expr(receiver_exists.clone()),
+                not::expr(value_is_zero.expr()) * not::expr(receiver_exists.expr()),
                 must_create.clone(),
             ]),
             |cb| {
@@ -421,7 +420,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         1.expr() +
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
         or::expr([
-            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
+            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.expr()),
             self.must_create.clone()]
         ) * 1.expr() +
         // +1 Write Account (sender) Balance
@@ -433,7 +432,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         // NOTE: Write Account (sender) Balance (Not Reversible tx fee)
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
         or::expr([
-            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
+            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.expr()),
             self.must_create.clone()]
         ) * 1.expr() +
         // +1 Write Account (sender) Balance
@@ -487,6 +486,8 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
 pub(crate) struct TransferGadget<F> {
     sender: UpdateBalanceGadget<F, 2, false>,
     receiver: UpdateBalanceGadget<F, 2, true>,
+    must_create: Expression<F>,
+    receiver_exists: Expression<F>,
     pub(crate) value_is_zero: IsZeroGadget<F>,
 }
 
@@ -496,13 +497,17 @@ impl<F: Field> TransferGadget<F> {
         sender_address: Expression<F>,
         receiver_address: Expression<F>,
         receiver_exists: Expression<F>,
+        must_create: Expression<F>,
         value: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
         let value_is_zero = IsZeroGadget::construct(cb, value.expr());
         // If receiver doesn't exist, create it
         cb.condition(
-            not::expr(value_is_zero.expr()) * not::expr(receiver_exists),
+            or::expr([
+                not::expr(value_is_zero.expr()) * not::expr(receiver_exists.expr()),
+                must_create.clone(),
+            ]),
             |cb| {
                 cb.account_write(
                     receiver_address.clone(),
@@ -531,8 +536,10 @@ impl<F: Field> TransferGadget<F> {
         });
 
         Self {
+            must_create,
             sender,
             receiver,
+            receiver_exists,
             value_is_zero,
         }
     }
@@ -543,6 +550,17 @@ impl<F: Field> TransferGadget<F> {
 
     pub(crate) fn receiver(&self) -> &UpdateBalanceGadget<F, 2, true> {
         &self.receiver
+    }
+
+    pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
+        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        or::expr([
+                        not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
+                        self.must_create.clone()]
+                    ) * 1.expr() +
+        // +1 Write Account (sender) Balance
+        // +1 Write Account (receiver) Balance
+        not::expr(self.value_is_zero.expr()) * 2.expr()
     }
 
     pub(crate) fn assign(
@@ -773,14 +791,14 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         is_empty_account: bool,
     ) -> Result<u64, Error> {
         let gas_cost = if is_warm_prev {
-            GasCost::WARM_ACCESS.as_u64()
+            GasCost::WARM_ACCESS
         } else {
-            GasCost::COLD_ACCOUNT_ACCESS.as_u64()
+            GasCost::COLD_ACCOUNT_ACCESS
         } + if has_value {
-            GasCost::CALL_WITH_VALUE.as_u64()
+            GasCost::CALL_WITH_VALUE
                 // Only CALL opcode could invoke transfer to make empty account into non-empty.
                 + if is_call && is_empty_account {
-                    GasCost::NEW_ACCOUNT.as_u64()
+                    GasCost::NEW_ACCOUNT
                 } else {
                     0
                 }
@@ -909,13 +927,11 @@ impl<F: Field> SstoreGasGadget<F> {
 }
 
 pub(crate) fn cal_sload_gas_cost_for_assignment(is_warm: bool) -> u64 {
-    let gas_cost = if is_warm {
+    if is_warm {
         GasCost::WARM_ACCESS
     } else {
         GasCost::COLD_SLOAD
-    };
-
-    gas_cost.0
+    }
 }
 
 pub(crate) fn cal_sstore_gas_cost_for_assignment(
@@ -936,9 +952,9 @@ pub(crate) fn cal_sstore_gas_cost_for_assignment(
         GasCost::WARM_ACCESS
     };
     if is_warm {
-        warm_case_gas.0
+        warm_case_gas
     } else {
-        warm_case_gas.0 + GasCost::COLD_SLOAD.0
+        warm_case_gas + GasCost::COLD_SLOAD
     }
 }
 
@@ -1051,5 +1067,123 @@ impl<F: Field> CommonErrorGadget<F> {
 
         // NOTE: return value not use for now.
         Ok(1u64)
+    }
+}
+
+/// Check if the passed in word is within the specified byte range
+/// (not overflow) and less than a maximum cap.
+#[derive(Clone, Debug)]
+pub(crate) struct WordByteCapGadget<F, const VALID_BYTES: usize> {
+    word: WordByteRangeGadget<F, VALID_BYTES>,
+    lt_cap: LtGadget<F, VALID_BYTES>,
+}
+
+impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, cap: Expression<F>) -> Self {
+        let word = WordByteRangeGadget::construct(cb);
+        let value = select::expr(word.overflow(), cap.expr(), word.valid_value());
+        let lt_cap = LtGadget::construct(cb, value, cap);
+
+        Self { word, lt_cap }
+    }
+
+    /// Return true if within the specified byte range (not overflow), false if
+    /// overflow. No matter whether it is less than the cap.
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        original: U256,
+        cap: F,
+    ) -> Result<bool, Error> {
+        let not_overflow = self.word.assign(region, offset, original)?;
+
+        let value = if not_overflow {
+            let mut bytes = [0; 32];
+            bytes[0..VALID_BYTES].copy_from_slice(&original.to_le_bytes()[0..VALID_BYTES]);
+            F::from_repr(bytes).unwrap()
+        } else {
+            cap
+        };
+
+        self.lt_cap.assign(region, offset, value, cap)?;
+
+        Ok(not_overflow)
+    }
+
+    pub(crate) fn lt_cap(&self) -> Expression<F> {
+        self.lt_cap.expr()
+    }
+
+    pub(crate) fn original_word(&self) -> Expression<F> {
+        self.word.original_word()
+    }
+
+    pub(crate) fn overflow(&self) -> Expression<F> {
+        self.word.overflow()
+    }
+
+    pub(crate) fn valid_value(&self) -> Expression<F> {
+        self.word.valid_value()
+    }
+
+    pub(crate) fn not_overflow(&self) -> Expression<F> {
+        self.word.not_overflow()
+    }
+}
+
+/// Check if the passed in word is within the specified byte range (not overflow).
+#[derive(Clone, Debug)]
+pub(crate) struct WordByteRangeGadget<F, const VALID_BYTES: usize> {
+    original: Word<F>,
+    not_overflow: IsZeroGadget<F>,
+}
+
+impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        debug_assert!(VALID_BYTES < 32);
+
+        let original = cb.query_word_rlc();
+        let not_overflow = IsZeroGadget::construct(cb, sum::expr(&original.cells[VALID_BYTES..]));
+
+        Self {
+            original,
+            not_overflow,
+        }
+    }
+
+    /// Return true if within the range, false if overflow.
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        original: U256,
+    ) -> Result<bool, Error> {
+        self.original
+            .assign(region, offset, Some(original.to_le_bytes()))?;
+
+        let overflow_hi = original.to_le_bytes()[VALID_BYTES..]
+            .iter()
+            .fold(0, |acc, val| acc + u64::from(*val));
+        self.not_overflow
+            .assign(region, offset, F::from(overflow_hi))?;
+
+        Ok(overflow_hi == 0)
+    }
+
+    pub(crate) fn original_word(&self) -> Expression<F> {
+        self.original.expr()
+    }
+
+    pub(crate) fn overflow(&self) -> Expression<F> {
+        not::expr(self.not_overflow())
+    }
+
+    pub(crate) fn valid_value(&self) -> Expression<F> {
+        from_bytes::expr(&self.original.cells[..VALID_BYTES])
+    }
+
+    pub(crate) fn not_overflow(&self) -> Expression<F> {
+        self.not_overflow.expr()
     }
 }

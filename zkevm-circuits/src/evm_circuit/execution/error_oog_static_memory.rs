@@ -95,10 +95,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
 
         // Inputs/Outputs
-        let address = block.rws[step.rw_indices[0]].stack_value();
+        let address = block.get_rws(step, 0).stack_value();
         self.address
             .assign(region, offset, Some(address.to_le_bytes()))?;
 
@@ -122,8 +122,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
             region,
             offset,
             step.memory_word_size(),
-            [address_low::value(address.to_le_bytes())
-                + if is_mstore8 == F::one() { 1 } else { 32 }],
+            [
+                address_low::value(address.to_le_bytes())
+                    + if is_mstore8 == F::ONE { 1 } else { 32 },
+            ],
         )?;
 
         // Gas insufficient check

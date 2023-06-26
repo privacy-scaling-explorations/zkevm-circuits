@@ -2,7 +2,6 @@ use super::{cell_manager::*, param::*, util::*};
 use crate::{evm_circuit::util::rlc, util::Challenges};
 use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::Value,
     plonk::{Error, Expression},
 };
@@ -11,9 +10,17 @@ use std::{env::var, vec};
 
 pub(crate) fn get_num_rows_per_round() -> usize {
     var("KECCAK_ROWS")
-        .unwrap_or_else(|_| "12".to_string())
+        .unwrap_or_else(|_| format!("{DEFAULT_KECCAK_ROWS}"))
         .parse()
         .expect("Cannot parse KECCAK_ROWS env var as usize")
+}
+
+pub(crate) fn keccak_unusable_rows() -> usize {
+    const UNUSABLE_ROWS_BY_KECCAK_ROWS: [usize; 24] = [
+        53, 67, 63, 59, 45, 79, 77, 75, 73, 71, 69, 67, 65, 63, 61, 59, 57, 71, 89, 107, 107, 107,
+        107, 107,
+    ];
+    UNUSABLE_ROWS_BY_KECCAK_ROWS[get_num_rows_per_round() - NUM_BYTES_PER_WORD - 1]
 }
 
 pub(crate) fn get_num_bits_per_absorb_lookup() -> usize {
@@ -84,7 +91,7 @@ pub(crate) struct KeccakRegion<F> {
     pub(crate) rows: Vec<Vec<F>>,
 }
 
-impl<F: FieldExt> KeccakRegion<F> {
+impl<F: Field> KeccakRegion<F> {
     pub(crate) fn new() -> Self {
         Self { rows: Vec::new() }
     }
@@ -95,7 +102,7 @@ impl<F: FieldExt> KeccakRegion<F> {
         }
         let row = &mut self.rows[offset];
         while column >= row.len() {
-            row.push(F::zero());
+            row.push(F::ZERO);
         }
         row[column] = value;
     }
@@ -115,7 +122,7 @@ pub(crate) mod decode {
     }
 
     pub(crate) fn value<F: Field>(parts: Vec<PartValue<F>>) -> F {
-        parts.iter().rev().fold(F::zero(), |acc, part| {
+        parts.iter().rev().fold(F::ZERO, |acc, part| {
             acc * F::from(1u64 << (BIT_COUNT * part.num_bits)) + part.value
         })
     }
@@ -484,7 +491,7 @@ pub(crate) fn keccak<F: Field>(
     challenges: Challenges<Value<F>>,
 ) {
     let mut bits = into_bits(bytes);
-    let mut s = [[F::zero(); 5]; 5];
+    let mut s = [[F::ZERO; 5]; 5];
     let absorb_positions = get_absorb_positions();
     let num_bytes_in_last_block = bytes.len() % RATE;
     let two = F::from(2u64);
@@ -497,7 +504,7 @@ pub(crate) fn keccak<F: Field>(
     bits.push(1);
 
     let mut length = 0usize;
-    let mut data_rlc = Value::known(F::zero());
+    let mut data_rlc = Value::known(F::ZERO);
     let chunks = bits.chunks(RATE_IN_BITS);
     let num_chunks = chunks.len();
     for (idx, chunk) in chunks.enumerate() {
@@ -521,7 +528,7 @@ pub(crate) fn keccak<F: Field>(
         let mut cell_managers = Vec::new();
         let mut regions = Vec::new();
 
-        let mut hash_rlc = Value::known(F::zero());
+        let mut hash_rlc = Value::known(F::ZERO);
         let mut round_lengths = Vec::new();
         let mut round_data_rlcs = Vec::new();
         for round in 0..NUM_ROUNDS + 1 {
@@ -574,7 +581,7 @@ pub(crate) fn keccak<F: Field>(
                 transform::value(&mut cell_manager, &mut region, packed, false, |v| *v, true);
             cell_manager.start_region();
             let mut is_paddings = Vec::new();
-            let mut data_rlcs = vec![Value::known(F::zero()); get_num_rows_per_round()];
+            let mut data_rlcs = vec![Value::known(F::ZERO); get_num_rows_per_round()];
             for _ in input_bytes.iter() {
                 is_paddings.push(cell_manager.query_cell_value());
             }
@@ -589,7 +596,7 @@ pub(crate) fn keccak<F: Field>(
                         false
                     };
                     paddings.push(padding);
-                    is_padding.assign(&mut region, 0, if padding { F::one() } else { F::zero() });
+                    is_padding.assign(&mut region, 0, if padding { F::ONE } else { F::ZERO });
                 }
 
                 data_rlcs[NUM_BYTES_PER_WORD] = data_rlc; // Start at 0 or forward the previous value.
@@ -631,7 +638,7 @@ pub(crate) fn keccak<F: Field>(
                     bc.push(bc_norm);
                 }
                 cell_manager.start_region();
-                let mut os = [[F::zero(); 5]; 5];
+                let mut os = [[F::ZERO; 5]; 5];
                 for i in 0..5 {
                     let t = decode::value(bc[(i + 4) % 5].clone())
                         + decode::value(rotate(bc[(i + 1) % 5].clone(), 1, part_size));
@@ -693,7 +700,7 @@ pub(crate) fn keccak<F: Field>(
                 // Chi
                 let part_size_base = get_num_bits_per_base_chi_lookup();
                 let three_packed = pack::<F>(&vec![3u8; part_size_base]);
-                let mut os = [[F::zero(); 5]; 5];
+                let mut os = [[F::ZERO; 5]; 5];
                 for j in 0..5 {
                     for i in 0..5 {
                         let mut s_parts = Vec::new();
@@ -751,7 +758,7 @@ pub(crate) fn keccak<F: Field>(
                     .evm_word()
                     .map(|challenge_value| rlc::value(&hash_bytes_le, challenge_value))
             } else {
-                Value::known(F::zero())
+                Value::known(F::ZERO)
             };
 
             // The words to squeeze out
@@ -834,11 +841,11 @@ pub(crate) fn multi_keccak<F: Field>(
             q_round_last: false,
             q_padding: false,
             q_padding_last: false,
-            round_cst: F::zero(),
+            round_cst: F::ZERO,
             is_final: false,
             length: 0usize,
-            data_rlc: Value::known(F::zero()),
-            hash_rlc: Value::known(F::zero()),
+            data_rlc: Value::known(F::ZERO),
+            hash_rlc: Value::known(F::ZERO),
             cell_values: Vec::new(),
         });
     }

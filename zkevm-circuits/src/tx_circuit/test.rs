@@ -1,6 +1,6 @@
 #![allow(unused_imports)]
 use super::*;
-use crate::util::log2_ceil;
+use crate::util::{log2_ceil, unusable_rows};
 use eth_types::address;
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
@@ -8,7 +8,13 @@ use halo2_proofs::{
 };
 use mock::AddrOrWallet;
 
-const NUM_BLINDING_ROWS: usize = 64;
+#[test]
+fn tx_circuit_unusable_rows() {
+    assert_eq!(
+        TxCircuit::<Fr>::unusable_rows(),
+        unusable_rows::<Fr, TxCircuit::<Fr>>(()),
+    )
+}
 
 fn run<F: Field>(
     txs: Vec<Transaction>,
@@ -16,7 +22,9 @@ fn run<F: Field>(
     max_txs: usize,
     max_calldata: usize,
 ) -> Result<(), Vec<VerifyFailure>> {
-    let k = log2_ceil(NUM_BLINDING_ROWS + TxCircuit::<Fr>::min_num_rows(max_txs, max_calldata));
+    let k = log2_ceil(
+        TxCircuit::<Fr>::unusable_rows() + TxCircuit::<Fr>::min_num_rows(max_txs, max_calldata),
+    );
     // SignVerifyChip -> ECDSAChip -> MainGate instance column
     let circuit = TxCircuit::<F>::new(max_txs, max_calldata, chain_id, txs);
 

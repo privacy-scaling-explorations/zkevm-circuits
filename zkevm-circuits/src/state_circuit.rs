@@ -10,6 +10,7 @@ mod random_linear_combination;
 mod dev;
 #[cfg(any(feature = "test", test))]
 mod test;
+use bus_mapping::operation::Target;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::StateCircuit as TestStateCircuit;
 
@@ -19,7 +20,7 @@ use self::{
 };
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::rlc},
-    table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable, RwTableTag},
+    table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness::{self, MptUpdates, Rw, RwMap},
 };
@@ -227,7 +228,7 @@ impl<F: Field> StateCircuitConfig<F> {
                 || "selector",
                 self.selector,
                 offset,
-                || Value::known(F::one()),
+                || Value::known(F::ONE),
             )?;
 
             tag_chip.assign(region, offset, &row.tag())?;
@@ -262,7 +263,7 @@ impl<F: Field> StateCircuitConfig<F> {
                     || "not_first_access",
                     self.not_first_access,
                     offset,
-                    || Value::known(if is_first_access { F::zero() } else { F::one() }),
+                    || Value::known(if is_first_access { F::ZERO } else { F::ONE }),
                 )?;
 
                 if is_first_access {
@@ -275,13 +276,8 @@ impl<F: Field> StateCircuitConfig<F> {
                                 assert_eq!(state_root, old_root);
                                 state_root = new_root;
                             }
-                            if matches!(row.tag(), RwTableTag::CallContext) && !row.is_write() {
-                                assert_eq!(
-                                    row.value_assignment(randomness),
-                                    F::zero(),
-                                    "{:?}",
-                                    row
-                                );
+                            if matches!(row.tag(), Target::CallContext) && !row.is_write() {
+                                assert_eq!(row.value_assignment(randomness), F::ZERO, "{:?}", row);
                             }
                             state_root
                         });
@@ -398,7 +394,7 @@ impl<F: Field> StateCircuitConfig<F> {
 /// Keys for sorting the rows of the state circuit
 #[derive(Clone, Copy)]
 pub struct SortKeysConfig {
-    tag: BinaryNumberConfig<RwTableTag, 4>,
+    tag: BinaryNumberConfig<Target, 4>,
     id: MpiConfig<u32, N_LIMBS_ID>,
     address: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>,
     field_tag: Column<Advice>,
@@ -453,6 +449,12 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
         Self::new(block.rws.clone(), block.circuits_params.max_rws)
+    }
+
+    fn unusable_rows() -> usize {
+        // No column queried at more than 3 distinct rotations, so returns 6 as
+        // minimum unusable rows.
+        6
     }
 
     /// Return the minimum number of rows required to prove the block
@@ -588,42 +590,5 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         last_access: 1.expr() - meta.query_advice(c.not_first_access, Rotation::next()),
         state_root: meta.query_advice(c.state_root, Rotation::cur()),
         state_root_prev: meta.query_advice(c.state_root, Rotation::prev()),
-    }
-}
-
-#[cfg(test)]
-mod state_circuit_stats {
-    use crate::{
-        evm_circuit::step::ExecutionState,
-        stats::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states},
-    };
-
-    /// Prints the stats of State circuit per execution state.  See
-    /// `print_circuit_stats_by_states` for more details.
-    ///
-    /// Run with:
-    /// `cargo test -p zkevm-circuits --release --all-features
-    /// get_state_states_stats -- --nocapture --ignored`
-    #[ignore]
-    #[test]
-    pub fn get_state_states_stats() {
-        print_circuit_stats_by_states(
-            |state| {
-                // TODO: Enable CREATE/CREATE2 once they are supported
-                !matches!(
-                    state,
-                    ExecutionState::ErrorInvalidOpcode
-                        | ExecutionState::CREATE
-                        | ExecutionState::CREATE2
-                        | ExecutionState::SELFDESTRUCT
-                )
-            },
-            bytecode_prefix_op_big_rws,
-            |block, _, step_index| {
-                let step = &block.txs[0].steps()[step_index];
-                let step_next = &block.txs[0].steps()[step_index + 1];
-                step_next.rwc.0 - step.rwc.0
-            },
-        );
     }
 }

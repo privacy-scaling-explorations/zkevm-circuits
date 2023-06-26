@@ -4,6 +4,7 @@ use super::{
         FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
         N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
+    step::HasExecutionState,
     util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
 };
 use crate::{
@@ -22,10 +23,10 @@ use crate::{
     table::LookupTable,
     util::{query_expression, Challenges, Expr},
 };
-use eth_types::Field;
+use bus_mapping::operation::Target;
+use eth_types::{evm_unimplemented, Field};
 use gadgets::util::not;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Layouter, Region, Value},
     plonk::{
         Advice, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, SecondPhase,
@@ -58,6 +59,7 @@ mod chainid;
 mod codecopy;
 mod codesize;
 mod comparator;
+mod create;
 mod dummy;
 mod dup;
 mod end_block;
@@ -132,6 +134,7 @@ use chainid::ChainIdGadget;
 use codecopy::CodeCopyGadget;
 use codesize::CodesizeGadget;
 use comparator::ComparatorGadget;
+use create::CreateGadget;
 use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
@@ -183,7 +186,7 @@ use sstore::SstoreGadget;
 use stop::StopGadget;
 use swap::SwapGadget;
 
-pub(crate) trait ExecutionGadget<F: FieldExt> {
+pub(crate) trait ExecutionGadget<F: Field> {
     const NAME: &'static str;
 
     const EXECUTION_STATE: ExecutionState;
@@ -202,7 +205,7 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ExecutionConfig<F> {
+pub struct ExecutionConfig<F> {
     // EVM Circuit selector, which enables all usable rows.  The rows where this selector is
     // disabled won't verify any constraint (they can be unused rows or rows with blinding
     // factors).
@@ -273,8 +276,8 @@ pub(crate) struct ExecutionConfig<F> {
     shl_shr_gadget: Box<ShlShrGadget<F>>,
     returndatasize_gadget: Box<ReturnDataSizeGadget<F>>,
     returndatacopy_gadget: Box<ReturnDataCopyGadget<F>>,
-    create_gadget: Box<DummyGadget<F, 3, 1, { ExecutionState::CREATE }>>,
-    create2_gadget: Box<DummyGadget<F, 4, 1, { ExecutionState::CREATE2 }>>,
+    create_gadget: Box<CreateGadget<F, false, { ExecutionState::CREATE }>>,
+    create2_gadget: Box<CreateGadget<F, true, { ExecutionState::CREATE2 }>>,
     selfdestruct_gadget: Box<DummyGadget<F, 1, 0, { ExecutionState::SELFDESTRUCT }>>,
     signed_comparator_gadget: Box<SignedComparatorGadget<F>>,
     signextend_gadget: Box<SignextendGadget<F>>,
@@ -603,7 +606,7 @@ impl<F: Field> ExecutionConfig<F> {
         config
     }
 
-    pub(crate) fn instrument(&self) -> &Instrument {
+    pub fn instrument(&self) -> &Instrument {
         &self.instrument
     }
 
@@ -863,10 +866,10 @@ impl<F: Field> ExecutionConfig<F> {
                 || "step selector",
                 self.q_step,
                 offset,
-                || Value::known(if idx == 0 { F::one() } else { F::zero() }),
+                || Value::known(if idx == 0 { F::ONE } else { F::ZERO }),
             )?;
             let value = if idx == 0 {
-                F::zero()
+                F::ZERO
             } else {
                 F::from((height - idx) as u64)
             };
@@ -880,7 +883,7 @@ impl<F: Field> ExecutionConfig<F> {
                 || "step height inv",
                 self.num_rows_inv,
                 offset,
-                || Value::known(value.invert().unwrap_or(F::zero())),
+                || Value::known(value.invert().unwrap_or(F::ZERO)),
             )?;
         }
         Ok(())
@@ -935,7 +938,7 @@ impl<F: Field> ExecutionConfig<F> {
                     if next.is_none() {
                         break;
                     }
-                    let height = step.execution_state.get_step_height();
+                    let height = step.execution_state().get_step_height();
 
                     // Assign the step witness
                     self.assign_exec_step(
@@ -1018,13 +1021,13 @@ impl<F: Field> ExecutionConfig<F> {
                     || "step height",
                     self.num_rows_until_next_step,
                     offset,
-                    || Value::known(F::zero()),
+                    || Value::known(F::ZERO),
                 )?;
                 region.assign_advice(
                     || "step height inv",
                     self.q_step,
                     offset,
-                    || Value::known(F::zero()),
+                    || Value::known(F::ZERO),
                 )?;
 
                 Ok(())
@@ -1082,8 +1085,8 @@ impl<F: Field> ExecutionConfig<F> {
             return Ok(());
         }
         assert_eq!(height, 1);
-        assert!(step.rw_indices.is_empty());
-        assert!(matches!(step.execution_state, ExecutionState::EndBlock));
+        assert!(step.rw_indices_len() == 0);
+        assert!(matches!(step.execution_state(), ExecutionState::EndBlock));
 
         // Disable access to next step deliberately for "repeatable" step
         let region = &mut CachedRegion::<'_, '_, F>::new(
@@ -1096,7 +1099,7 @@ impl<F: Field> ExecutionConfig<F> {
         self.assign_exec_step_int(region, offset_begin, block, transaction, call, step)?;
 
         region.replicate_assignment_for_range(
-            || format!("repeat {:?} rows", step.execution_state),
+            || format!("repeat {:?} rows", step.execution_state()),
             offset_begin + 1,
             offset_end,
         )?;
@@ -1117,11 +1120,11 @@ impl<F: Field> ExecutionConfig<F> {
         next: Option<(&Transaction, &Call, &ExecStep)>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        if !matches!(step.execution_state, ExecutionState::EndBlock) {
+        if !matches!(step.execution_state(), ExecutionState::EndBlock) {
             log::trace!(
                 "assign_exec_step offset: {} state {:?} step: {:?} call: {:?}",
                 offset,
-                step.execution_state,
+                step.execution_state(),
                 step,
                 call
             );
@@ -1173,7 +1176,7 @@ impl<F: Field> ExecutionConfig<F> {
             };
         }
 
-        match step.execution_state {
+        match step.execution_state() {
             // internal states
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
@@ -1287,9 +1290,6 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_stack)
             }
 
-            ExecutionState::ErrorInsufficientBalance => {
-                assign_exec_step!(self.call_op_gadget)
-            }
             ExecutionState::ErrorInvalidJump => {
                 assign_exec_step!(self.error_invalid_jump)
             }
@@ -1299,18 +1299,14 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorWriteProtection => {
                 assign_exec_step!(self.error_write_protection)
             }
-            ExecutionState::ErrorDepth => {
-                assign_exec_step!(self.error_depth)
-            }
-            ExecutionState::ErrorContractAddressCollision => {
-                assign_exec_step!(self.error_contract_address_collision)
-            }
             ExecutionState::ErrorInvalidCreationCode => {
                 assign_exec_step!(self.error_invalid_creation_code)
             }
             ExecutionState::ErrorReturnDataOutOfBound => {
                 assign_exec_step!(self.error_return_data_out_of_bound)
             }
+
+            unimpl_state => evm_unimplemented!("unimplemented ExecutionState: {:?}", unimpl_state),
         }
 
         // Fill in the witness values for stored expressions
@@ -1318,8 +1314,8 @@ impl<F: Field> ExecutionConfig<F> {
 
         // enable with `RUST_LOG=debug`
         if log::log_enabled!(log::Level::Debug) {
-            let is_padding_step = matches!(step.execution_state, ExecutionState::EndBlock)
-                && step.rw_indices.is_empty();
+            let is_padding_step = matches!(step.execution_state(), ExecutionState::EndBlock)
+                && step.rw_indices_len() == 0;
             if !is_padding_step {
                 // expensive function call
                 Self::check_rw_lookup(
@@ -1330,7 +1326,6 @@ impl<F: Field> ExecutionConfig<F> {
                 );
             }
         }
-        //}
         Ok(())
     }
 
@@ -1343,8 +1338,8 @@ impl<F: Field> ExecutionConfig<F> {
         let mut assigned_stored_expressions = Vec::new();
         for stored_expression in self
             .stored_expressions_map
-            .get(&step.execution_state)
-            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state))
+            .get(&step.execution_state())
+            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state()))
         {
             let assigned = stored_expression.assign(region, offset)?;
             assigned.map(|v| {
@@ -1361,28 +1356,47 @@ impl<F: Field> ExecutionConfig<F> {
         block: &Block<F>,
         challenges: &Challenges<Value<F>>,
     ) {
-        let mut evm_randomness = F::zero();
+        let mut evm_randomness = F::ZERO;
         challenges.evm_word().map(|v| evm_randomness = v);
-        let mut lookup_randomness = F::zero();
+        let mut lookup_randomness = F::ZERO;
         challenges.lookup_input().map(|v| lookup_randomness = v);
         if evm_randomness.is_zero_vartime() || lookup_randomness.is_zero_vartime() {
             // challenges not ready
             return;
         }
+
+        let mut copy_lookup_count = 0;
         let mut assigned_rw_values = Vec::new();
         for (name, v) in assigned_stored_expressions {
-            if name.starts_with("rw lookup ")
+            // If any `copy lookup` which dst_tag or src_tag is Memory in opcode execution,
+            // block.get_rws() contains memory operations but
+            // assigned_stored_expressions only has a single `copy lookup` expression without
+            // any rw memory lookup.
+            // So, we include `copy lookup` in assigned_rw_values as well, then we could verify
+            // those memory operations later.
+            if (name.starts_with("rw lookup ") || name.starts_with("copy lookup"))
                 && !v.is_zero_vartime()
                 && !assigned_rw_values.contains(&(name.clone(), *v))
             {
                 assigned_rw_values.push((name.clone(), *v));
+
+                if name.starts_with("copy lookup") {
+                    copy_lookup_count += 1;
+                }
             }
         }
 
-        let rlc_assignments: BTreeSet<_> = step
-            .rw_indices
-            .iter()
-            .map(|rw_idx| block.rws[*rw_idx])
+        // TODO: We should find a better way to avoid this kind of special case.
+        // #1489 is the issue for this refactor.
+        if copy_lookup_count > 1 {
+            log::warn!("The number of copy events is more than 1, it's not supported by current design. Stop checking this step: {:?}", 
+                step
+            );
+            return;
+        }
+
+        let rlc_assignments: BTreeSet<_> = (0..step.rw_indices_len())
+            .map(|index| block.get_rws(step, index))
             .map(|rw| {
                 rw.table_assignment_aux(evm_randomness)
                     .rlc(lookup_randomness)
@@ -1395,23 +1409,39 @@ impl<F: Field> ExecutionConfig<F> {
         // Check that every rw_lookup assigned from the execution steps in the EVM
         // Circuit is in the set of rw operations generated by the step.
         for (name, value) in assigned_rw_values.iter() {
+            if name.starts_with("copy lookup") {
+                continue;
+            }
             if !rlc_assignments.contains(value) {
                 log::error!("rw lookup error: name: {}, step: {:?}", *name, step);
             }
         }
+
+        // if copy_rw_counter_delta is zero, ignore `copy lookup` event.
+        if step.copy_rw_counter_delta == 0 && copy_lookup_count > 0 {
+            copy_lookup_count = 0;
+        }
+
         // Check that the number of rw operations generated from the bus-mapping
         // correspond to the number of assigned rw lookups by the EVM Circuit
-        // plus the number of rw lookups done by the copy circuit.
-        if step.rw_indices.len() != assigned_rw_values.len() + step.copy_rw_counter_delta as usize {
+        // plus the number of rw lookups done by the copy circuit
+        // minus the number of copy lookup event.
+        if step.rw_indices_len()
+            != assigned_rw_values.len() + step.copy_rw_counter_delta as usize - copy_lookup_count
+        {
             log::error!(
-                "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} in step: {:?}", 
-                step.rw_indices.len(),
+                "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} - copy_lookup_count: {} in step: {:?}", 
+                step.rw_indices_len(),
                 assigned_rw_values.len(),
                 step.copy_rw_counter_delta,
+                copy_lookup_count,
                 step
             );
         }
+
         let mut rev_count = 0;
+        let mut offset = 0;
+        let mut copy_lookup_processed = false;
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             let is_rev = if assigned_rw_value.0.contains(" with reversion") {
                 rev_count += 1;
@@ -1425,27 +1455,57 @@ impl<F: Field> ExecutionConfig<F> {
                 rev_count,
                 step.reversible_write_counter_delta
             );
+
             // In the EVM Circuit, reversion rw lookups are assigned after their
             // corresponding rw lookup, but in the bus-mapping they are
             // generated at the end of the step.
             let idx = if is_rev {
-                step.rw_indices.len() - rev_count
+                step.rw_indices_len() - rev_count
             } else {
-                idx - rev_count
+                idx - rev_count + offset - copy_lookup_processed as usize
             };
-            let rw_idx = step.rw_indices[idx];
-            let rw = block.rws[rw_idx];
+
+            // TODO: can remove after #1483 fixed
+            // step.rw_indices_len() doesn't inclued copy_rw_counter_delta in some cases
+            // which will cuase out of boundary while calling rw_index().
+            // Beside, if this condition holds, `copy lookup` is the last element of
+            // assigned_rw_value. Therefore, can ignore it for now.
+            if idx > step.rw_indices_len() - 1 {
+                continue;
+            }
+
+            // If assigned_rw_value is a `copy lookup` event, the following
+            // `step.copy_rw_counter_delta` rw lookups must be memory operations.
+            if assigned_rw_value.0.starts_with("copy lookup") {
+                for i in 0..step.copy_rw_counter_delta as usize {
+                    let index = idx + i;
+                    let rw = block.get_rws(step, index);
+                    if rw.tag() != Target::Memory {
+                        log::error!(
+                                "incorrect rw memory witness from copy lookup.\n lookup name: \"{}\"\n {}th rw of step {:?}, rw: {:?}",
+                                assigned_rw_value.0,
+                                index,
+                                step.execution_state(),
+                                rw);
+                    }
+                }
+
+                offset = step.copy_rw_counter_delta as usize;
+                copy_lookup_processed = true;
+                continue;
+            }
+
+            let rw = block.get_rws(step, idx);
             let table_assignments = rw.table_assignment_aux(evm_randomness);
             let rlc = table_assignments.rlc(lookup_randomness);
             if rlc != assigned_rw_value.1 {
                 log::error!(
-                    "incorrect rw witness. lookup input name: \"{}\"\nassigned={:?}\nrlc     ={:?}\nrw index: {:?}, {}th rw of step {:?}, rw: {:?}",
+                    "incorrect rw witness. lookup input name: \"{}\"\nassigned={:?}\nrlc     ={:?}\n{}th rw of step {:?}, rw: {:?}",
                     assigned_rw_value.0,
                     assigned_rw_value.1,
                     rlc,
-                    rw_idx,
                     idx,
-                    step.execution_state,
+                    step.execution_state(),
                     rw);
             }
         }

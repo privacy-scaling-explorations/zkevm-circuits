@@ -6,15 +6,14 @@ mod dev;
 #[cfg(any(feature = "test", test))]
 mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
-pub use dev::PiTestCircuit;
+pub use dev::PiCircuit as TestPiCircuit;
 
 use eth_types::{
     geth_types::{BlockConstants, Transaction},
     sign_types::SignData,
-    Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar, Word, H256,
+    Address, BigEndianHash, Field, Keccak, ToBigEndian, ToLittleEndian, ToScalar, Word, H256,
 };
 use halo2_proofs::plonk::{Instance, SecondPhase};
-use keccak256::plain::Keccak;
 use param::*;
 use std::marker::PhantomData;
 
@@ -53,12 +52,12 @@ pub struct BlockValues {
 /// Values of the tx table (as in the spec)
 #[derive(Default, Debug, Clone)]
 pub struct TxValues {
-    nonce: Word,
-    gas: Word, // gas limit
+    nonce: u64,
+    gas: u64, // gas limit
     gas_price: Word,
     from_addr: Address,
     to_addr: Address,
-    is_create: u64,
+    is_create: bool,
     value: Word,
     call_data_len: u64,
     call_data_gas_cost: u64,
@@ -141,21 +140,15 @@ impl PublicData {
             let mut msg_hash_le = [0u8; 32];
             msg_hash_le.copy_from_slice(sign_data.msg_hash.to_bytes().as_slice());
             tx_vals.push(TxValues {
-                nonce: tx.nonce,
+                nonce: tx.nonce.as_u64(),
                 gas_price: tx.gas_price,
-                gas: tx.gas_limit,
+                gas: tx.gas_limit.as_u64(),
                 from_addr: tx.from,
-                to_addr: tx.to.unwrap_or_else(Address::zero),
-                is_create: (tx.to.is_none() as u64),
+                to_addr: tx.to_or_zero(),
+                is_create: tx.is_create(),
                 value: tx.value,
-                call_data_len: tx.call_data.0.len() as u64,
-                call_data_gas_cost: tx.call_data.0.iter().fold(0, |acc, byte| {
-                    acc + if *byte == 0 {
-                        ZERO_BYTE_GAS_COST
-                    } else {
-                        NONZERO_BYTE_GAS_COST
-                    }
-                }),
+                call_data_len: tx.call_data.len() as u64,
+                call_data_gas_cost: tx.call_data_gas_cost(),
                 tx_sign_hash: msg_hash_le,
             });
         }
@@ -581,13 +574,13 @@ impl<F: Field> PiCircuitConfig<F> {
             || "tx_id",
             self.tx_table.tx_id,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         region.assign_advice(
             || "tx_id_inv",
             self.tx_id_inv,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         region.assign_fixed(
             || "tag",
@@ -599,31 +592,31 @@ impl<F: Field> PiCircuitConfig<F> {
             || "index",
             self.tx_table.index,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         region.assign_advice(
             || "tx_value",
             self.tx_table.value,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         region.assign_advice(
             || "tx_value_inv",
             self.tx_value_inv,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         region.assign_advice(
             || "is_final",
             self.is_final,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         region.assign_advice(
             || "gas_cost",
             self.calldata_gas_cost,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         Ok(())
     }
@@ -644,14 +637,14 @@ impl<F: Field> PiCircuitConfig<F> {
         // tx_id_inv = (tag - CallDataLength)^(-1)
         let tx_id_inv = if tag != TxFieldTag::CallDataLength {
             let x = F::from(tag as u64) - F::from(TxFieldTag::CallDataLength as u64);
-            x.invert().unwrap_or(F::zero())
+            x.invert().unwrap_or(F::ZERO)
         } else {
-            F::zero()
+            F::ZERO
         };
         let tag = F::from(tag as u64);
         let index = F::from(index as u64);
         let tx_value = tx_value;
-        let tx_value_inv = tx_value.invert().unwrap_or(F::zero());
+        let tx_value_inv = tx_value.invert().unwrap_or(F::ZERO);
 
         self.q_tx_table.enable(region, offset)?;
 
@@ -739,14 +732,14 @@ impl<F: Field> PiCircuitConfig<F> {
         raw_pi_vals: &mut [F],
     ) -> Result<(), Error> {
         let tx_id = F::from(tx_id as u64);
-        let tx_id_inv = tx_id.invert().unwrap_or(F::zero());
+        let tx_id_inv = tx_id.invert().unwrap_or(F::ZERO);
         let tx_id_diff = F::from(tx_id_next as u64) - tx_id;
-        let tx_id_diff_inv = tx_id_diff.invert().unwrap_or(F::zero());
+        let tx_id_diff_inv = tx_id_diff.invert().unwrap_or(F::ZERO);
         let tag = F::from(TxFieldTag::CallData as u64);
         let index = F::from(index as u64);
         let tx_value = tx_value;
-        let tx_value_inv = tx_value.invert().unwrap_or(F::zero());
-        let is_final = if is_final { F::one() } else { F::zero() };
+        let tx_value_inv = tx_value.invert().unwrap_or(F::ZERO);
+        let is_final = if is_final { F::ONE } else { F::ZERO };
 
         // Assign vals to raw_public_inputs column
         let tx_table_len = TX_LEN * self.max_txs + 1;
@@ -845,15 +838,15 @@ impl<F: Field> PiCircuitConfig<F> {
             || "zero",
             self.block_table.value,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         region.assign_advice(
             || "zero",
             self.raw_public_inputs,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
-        raw_pi_vals[offset] = F::zero();
+        raw_pi_vals[offset] = F::ZERO;
         offset += 1;
 
         // coinbase
@@ -1141,6 +1134,16 @@ impl<F: Field> PiCircuit<F> {
 impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     type Config = PiCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        // Column raw_public_inputs is queried at 4 distinct rotations at
+        // - Rotation::cur()
+        // - Rotation(BLOCK_LEN + 1 + EXTRA_LEN)
+        // - Rotation(BLOCK_LEN + 1 + EXTRA_LEN + max_txs * TX_LEN + 1)
+        // - Rotation(BLOCK_LEN + 1 + EXTRA_LEN + 2 * (max_txs * TX_LEN + 1))
+        // so returns 7 unusable rows.
+        7
+    }
+
     fn new_from_block(block: &witness::Block<F>) -> Self {
         let public_data = PublicData {
             chain_id: block.context.chain_id,
@@ -1204,7 +1207,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         let rlc_rpi = rlc_rpi_col
             .iter()
             .rev()
-            .fold(F::zero(), |acc, val| acc * self.rand_rpi + val);
+            .fold(F::ZERO, |acc, val| acc * self.rand_rpi + val);
 
         // let block_hash = public_data
         //     .eth_block
@@ -1273,7 +1276,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 region.name_column(|| "Public_Inputs", config.pi);
 
                 let circuit_len = config.circuit_len();
-                let mut raw_pi_vals = vec![F::zero(); circuit_len];
+                let mut raw_pi_vals = vec![F::ZERO; circuit_len];
 
                 // Assign block table
                 let block_values = self.public_data.get_block_table_values();
@@ -1306,7 +1309,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                     0,
                     TxFieldTag::Null,
                     0,
-                    F::zero(),
+                    F::ZERO,
                     &mut raw_pi_vals,
                 )?;
                 offset += 1;
@@ -1315,11 +1318,8 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                     let tx = if i < txs.len() { &txs[i] } else { &tx_default };
 
                     for (tag, value) in &[
-                        (
-                            TxFieldTag::Nonce,
-                            rlc(tx.nonce.to_le_bytes(), self.randomness),
-                        ),
-                        (TxFieldTag::Gas, rlc(tx.gas.to_le_bytes(), self.randomness)),
+                        (TxFieldTag::Nonce, F::from(tx.nonce)),
+                        (TxFieldTag::Gas, F::from(tx.gas)),
                         (
                             TxFieldTag::GasPrice,
                             rlc(tx.gas_price.to_le_bytes(), self.randomness),
@@ -1332,7 +1332,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                             TxFieldTag::CalleeAddress,
                             tx.to_addr.to_scalar().expect("tx.to too big"),
                         ),
-                        (TxFieldTag::IsCreate, F::from(tx.is_create)),
+                        (TxFieldTag::IsCreate, F::from(tx.is_create as u64)),
                         (
                             TxFieldTag::Value,
                             rlc(tx.value.to_le_bytes(), self.randomness),
@@ -1364,7 +1364,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 let txs = self.public_data.txs();
                 for (i, tx) in self.public_data.txs().iter().enumerate() {
                     let call_data_length = tx.call_data.0.len();
-                    let mut gas_cost = F::zero();
+                    let mut gas_cost = F::ZERO;
                     for (index, byte) in tx.call_data.0.iter().enumerate() {
                         assert!(calldata_count < config.max_calldata);
                         let is_final = index == call_data_length - 1;
@@ -1409,9 +1409,9 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                         0, // tx_id
                         0,
                         0,
-                        F::zero(),
+                        F::ZERO,
                         false,
-                        F::zero(),
+                        F::ZERO,
                         &mut raw_pi_vals,
                     )?;
                     offset += 1;
@@ -1457,11 +1457,11 @@ fn raw_public_inputs_col<F: Field>(
 
     let mut offset = 0;
     let mut result =
-        vec![F::zero(); BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * max_txs + 1) + max_calldata];
+        vec![F::ZERO; BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * max_txs + 1) + max_calldata];
 
     //  Insert Block Values
     // zero row
-    result[offset] = F::zero();
+    result[offset] = F::ZERO;
     offset += 1;
     // coinbase
     result[offset] = block.coinbase.to_scalar().unwrap();
@@ -1508,9 +1508,9 @@ fn raw_public_inputs_col<F: Field>(
     let value_offset = index_offset + tx_table_len;
 
     // Insert zero row
-    result[id_offset + offset] = F::zero();
-    result[index_offset + offset] = F::zero();
-    result[value_offset + offset] = F::zero();
+    result[id_offset + offset] = F::ZERO;
+    result[index_offset + offset] = F::ZERO;
+    result[value_offset + offset] = F::ZERO;
 
     offset += 1;
 
@@ -1518,19 +1518,19 @@ fn raw_public_inputs_col<F: Field>(
         let tx = if i < txs.len() { &txs[i] } else { &tx_default };
 
         for val in &[
-            rlc(tx.nonce.to_le_bytes(), randomness),
-            rlc(tx.gas.to_le_bytes(), randomness),
+            F::from(tx.nonce),
+            F::from(tx.gas),
             rlc(tx.gas_price.to_le_bytes(), randomness),
             tx.from_addr.to_scalar().expect("tx.from too big"),
             tx.to_addr.to_scalar().expect("tx.to too big"),
-            F::from(tx.is_create),
+            F::from(tx.is_create as u64),
             rlc(tx.value.to_le_bytes(), randomness),
             F::from(tx.call_data_len),
             F::from(tx.call_data_gas_cost),
             rlc(tx.tx_sign_hash, randomness),
         ] {
             result[id_offset + offset] = F::from((i + 1) as u64);
-            result[index_offset + offset] = F::zero();
+            result[index_offset + offset] = F::ZERO;
             result[value_offset + offset] = *val;
 
             offset += 1;
@@ -1547,7 +1547,7 @@ fn raw_public_inputs_col<F: Field>(
         }
     }
     for _ in calldata_count..max_calldata {
-        result[value_offset + offset] = F::zero();
+        result[value_offset + offset] = F::ZERO;
         offset += 1;
     }
 

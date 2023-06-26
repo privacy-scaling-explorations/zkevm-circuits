@@ -98,44 +98,10 @@ pub enum OogError {
     SelfDestruct,
 }
 
-/// EVM Execution Error
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ExecError {
-    /// Invalid Opcode
-    InvalidOpcode,
-    /// For opcodes who push more than pop
-    StackOverflow,
-    /// For opcodes which pop, DUP and SWAP, which peek deeper element directly
-    StackUnderflow,
-    /// Out of Gas
-    OutOfGas(OogError),
-    /// For SSTORE, LOG0, LOG1, LOG2, LOG3, LOG4, CREATE, CALL, CREATE2,
-    /// SELFDESTRUCT
-    WriteProtection,
-    /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
-    Depth,
-    /// For CALL, CALLCODE
-    InsufficientBalance,
-    /// For CREATE, CREATE2
-    ContractAddressCollision,
-    /// contract must not begin with 0xef due to EIP #3541 EVM Object Format
-    /// (EOF)
-    InvalidCreationCode,
-    /// For JUMP, JUMPI
-    InvalidJump,
-    /// For RETURNDATACOPY
-    ReturnDataOutOfBounds,
-    /// For RETURN in a CREATE, CREATE2
-    CodeStoreOutOfGas,
-    /// For RETURN in a CREATE, CREATE2
-    MaxCodeSizeExceeded,
-}
-
-// TODO: Move to impl block.
-pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
-    if error == GETH_ERR_OUT_OF_GAS || error == GETH_ERR_GAS_UINT_OVERFLOW {
-        // NOTE: We report a GasUintOverflow error as an OutOfGas error
-        let oog_err = match op {
+// Given OpCodeId, returns correponding OogError.
+impl From<&OpcodeId> for OogError {
+    fn from(op: &OpcodeId) -> Self {
+        match op {
             OpcodeId::MLOAD | OpcodeId::MSTORE | OpcodeId::MSTORE8 => {
                 OogError::StaticMemoryExpansion
             }
@@ -161,13 +127,96 @@ pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
             OpcodeId::CREATE2 => OogError::Create2,
             OpcodeId::SELFDESTRUCT => OogError::SelfDestruct,
             _ => OogError::Constant,
-        };
-        ExecError::OutOfGas(oog_err)
-    } else if error.starts_with(GETH_ERR_STACK_OVERFLOW) {
-        ExecError::StackOverflow
-    } else if error.starts_with(GETH_ERR_STACK_UNDERFLOW) {
-        ExecError::StackUnderflow
-    } else {
-        panic!("Unknown GethExecStep.error: {}", error);
+        }
+    }
+}
+
+/// Insufficient balance errors by opcode/state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InsufficientBalanceError {
+    /// Insufficient balance during CALL/CALLCODE opcode.
+    Call,
+    /// Insufficient balance during CREATE opcode.
+    Create,
+    /// Insufficient balance during CREATE2 opcode.
+    Create2,
+}
+
+/// Nonce uint overflow errors by opcode/state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NonceUintOverflowError {
+    /// Nonce uint overflow during CREATE opcode.
+    Create,
+    /// Nonce uint overflow during CREATE2 opcode.
+    Create2,
+}
+
+/// Call depth errors by opcode/state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DepthError {
+    /// Call depth errors in CALL/CALLCODE opcode.
+    Call,
+    /// Call depth errors in CREATE opcode.
+    Create,
+    /// Call depth errors in CREATE2 opcode.
+    Create2,
+}
+
+/// EVM Execution Error
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ExecError {
+    /// Invalid Opcode
+    InvalidOpcode,
+    /// For opcodes who push more than pop
+    StackOverflow,
+    /// For opcodes which pop, DUP and SWAP, which peek deeper element directly
+    StackUnderflow,
+    /// Out of Gas
+    OutOfGas(OogError),
+    /// For SSTORE, LOG0, LOG1, LOG2, LOG3, LOG4, CREATE, CALL, CREATE2,
+    /// SELFDESTRUCT
+    WriteProtection,
+    /// For CALL, CALLCODE, DELEGATECALL, STATICCALL, CREATE, CREATE2
+    Depth(DepthError),
+    /// For CALL, CALLCODE, CREATE, CREATE2
+    InsufficientBalance(InsufficientBalanceError),
+    /// For CREATE2
+    ContractAddressCollision,
+    /// contract must not begin with 0xef due to EIP #3541 EVM Object Format
+    /// (EOF)
+    InvalidCreationCode,
+    /// For JUMP, JUMPI
+    InvalidJump,
+    /// For RETURNDATACOPY
+    ReturnDataOutOfBounds,
+    /// For RETURN in a CREATE, CREATE2
+    CodeStoreOutOfGas,
+    /// For RETURN in a CREATE, CREATE2
+    MaxCodeSizeExceeded,
+    /// For CREATE, CREATE2
+    NonceUintOverflow(NonceUintOverflowError),
+}
+
+// Returns a GethExecStep's error if present, else return the empty error.
+impl TryFrom<&GethExecStep> for ExecError {
+    type Error = ();
+
+    fn try_from(step: &GethExecStep) -> Result<Self, Self::Error> {
+        Ok(match step.error.as_ref().ok_or(())?.as_str() {
+            GETH_ERR_OUT_OF_GAS | GETH_ERR_GAS_UINT_OVERFLOW => {
+                // NOTE: We report a GasUintOverflow error as an OutOfGas error
+                let oog_err = OogError::from(&step.op);
+                ExecError::OutOfGas(oog_err)
+            }
+            error => {
+                if error.starts_with(GETH_ERR_STACK_OVERFLOW) {
+                    ExecError::StackOverflow
+                } else if error.starts_with(GETH_ERR_STACK_UNDERFLOW) {
+                    ExecError::StackUnderflow
+                } else {
+                    panic!("Unknown GethExecStep.error: {}", error);
+                }
+            }
+        })
     }
 }
