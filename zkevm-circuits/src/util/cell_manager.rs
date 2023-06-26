@@ -61,9 +61,6 @@ pub(crate) struct Cell<F> {
     pub(crate) column: Column<Advice>,
     pub(crate) column_idx: usize,
     pub(crate) rotation: usize,
-
-    #[deprecated(note = "the same value as column_idx")]
-    pub(crate) cell_column_index: usize,
 }
 
 impl<F: Field> Cell<F> {
@@ -80,7 +77,6 @@ impl<F: Field> Cell<F> {
             column,
             column_idx,
             rotation,
-            cell_column_index: column_idx,
         }
     }
 
