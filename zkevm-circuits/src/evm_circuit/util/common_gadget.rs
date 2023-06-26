@@ -16,11 +16,14 @@ use crate::{
                 Transition::{Delta, Same, To},
             },
             math_gadget::{AddWordsGadget, RangeCheckGadget},
-            not, or, Cell, CellType, Word,
+            not, or, Word,
         },
     },
     table::{AccountFieldTag, CallContextFieldTag},
-    util::Expr,
+    util::{
+        cell_manager::{Cell, CellType},
+        Expr,
+    },
     witness::{Block, Call, ExecStep},
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};

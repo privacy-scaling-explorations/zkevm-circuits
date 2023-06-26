@@ -1,11 +1,16 @@
-use super::util::{CachedRegion, CellManager, CellType};
+use super::{
+    param::MAX_STEP_HEIGHT,
+    util::{evm_cm_distribute_advice, CachedRegion},
+};
 use crate::{
     evm_circuit::{
-        param::{EXECUTION_STATE_HEIGHT_MAP, MAX_STEP_HEIGHT, STEP_STATE_HEIGHT, STEP_WIDTH},
-        util::Cell,
+        param::{EXECUTION_STATE_HEIGHT_MAP, STEP_WIDTH},
         witness::{Block, Call, ExecStep},
     },
-    util::Expr,
+    util::{
+        cell_manager::{CMFixedWidthStrategy, Cell, CellManager, CellType},
+        Expr,
+    },
 };
 use bus_mapping::{
     circuit_input_builder::ExecState,
@@ -537,9 +542,13 @@ pub(crate) struct DynamicSelectorHalf<F> {
 }
 
 impl<F: Field> DynamicSelectorHalf<F> {
-    pub(crate) fn new(cell_manager: &mut CellManager<F>, count: usize) -> Self {
-        let target_pairs = cell_manager.query_cells(CellType::StoragePhase1, (count + 1) / 2);
-        let target_odd = cell_manager.query_cell(CellType::StoragePhase1);
+    pub(crate) fn new(
+        meta: &mut ConstraintSystem<F>,
+        cell_manager: &mut CellManager<CMFixedWidthStrategy>,
+        count: usize,
+    ) -> Self {
+        let target_pairs = cell_manager.query_cells(meta, CellType::StoragePhase1, (count + 1) / 2);
+        let target_odd = cell_manager.query_cell(meta, CellType::StoragePhase1);
         Self {
             count,
             target_pairs,
@@ -655,7 +664,7 @@ pub(crate) struct StepState<F> {
 #[derive(Clone, Debug)]
 pub(crate) struct Step<F> {
     pub(crate) state: StepState<F>,
-    pub(crate) cell_manager: CellManager<F>,
+    pub(crate) cell_manager: CellManager<CMFixedWidthStrategy>,
 }
 
 impl<F: Field> Step<F> {
@@ -663,31 +672,31 @@ impl<F: Field> Step<F> {
         meta: &mut ConstraintSystem<F>,
         advices: [Column<Advice>; STEP_WIDTH],
         offset: usize,
-        is_next: bool,
     ) -> Self {
-        let height = if is_next {
-            STEP_STATE_HEIGHT // Query only the state of the next step.
-        } else {
-            MAX_STEP_HEIGHT // Query the entire current step.
-        };
-        let mut cell_manager = CellManager::new(meta, height, &advices, offset);
+        let cell_manager_strategy =
+            CMFixedWidthStrategy::new(evm_cm_distribute_advice::<F>(meta, &advices), offset)
+                .with_perm_substitution()
+                .with_max_height(MAX_STEP_HEIGHT);
+
+        let mut cell_manager = CellManager::new(cell_manager_strategy);
         let state = {
             StepState {
                 execution_state: DynamicSelectorHalf::new(
+                    meta,
                     &mut cell_manager,
                     ExecutionState::amount(),
                 ),
-                rw_counter: cell_manager.query_cell(CellType::StoragePhase1),
-                call_id: cell_manager.query_cell(CellType::StoragePhase1),
-                is_root: cell_manager.query_cell(CellType::StoragePhase1),
-                is_create: cell_manager.query_cell(CellType::StoragePhase1),
-                code_hash: cell_manager.query_cell(CellType::StoragePhase2),
-                program_counter: cell_manager.query_cell(CellType::StoragePhase1),
-                stack_pointer: cell_manager.query_cell(CellType::StoragePhase1),
-                gas_left: cell_manager.query_cell(CellType::StoragePhase1),
-                memory_word_size: cell_manager.query_cell(CellType::StoragePhase1),
-                reversible_write_counter: cell_manager.query_cell(CellType::StoragePhase1),
-                log_id: cell_manager.query_cell(CellType::StoragePhase1),
+                rw_counter: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                call_id: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                is_root: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                is_create: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                code_hash: cell_manager.query_cell(meta, CellType::StoragePhase2),
+                program_counter: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                stack_pointer: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                gas_left: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                memory_word_size: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                reversible_write_counter: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                log_id: cell_manager.query_cell(meta, CellType::StoragePhase1),
             }
         };
         Self {
