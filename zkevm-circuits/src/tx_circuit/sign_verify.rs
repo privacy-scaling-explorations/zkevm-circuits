@@ -545,6 +545,10 @@ impl<F: Field> SignVerifyChip<F> {
         let mut pk_hash = (!padding).then(|| keccak256(&pk_be)).unwrap_or_default();
         pk_hash.reverse();
 
+        let powers_of_256 = iter::successors(Some(F::ONE), |coeff| Some(F::from(256) * coeff))
+            .take(20)
+            .collect_vec();
+
         // Ref. spec SignVerifyChip 2. Verify that the first 20 bytes of the
         // pub_key_hash equal the address
         let (address_cells, pk_hash_cells) = {
@@ -565,10 +569,6 @@ impl<F: Field> SignVerifyChip<F> {
                 range_chip.decompose(ctx, Value::known(pk_hash_lo), 8, 128)?;
             let (pk_hash_cell_hi, pk_hash_hi_cell_bytes) =
                 range_chip.decompose(ctx, Value::known(pk_hash_hi), 8, 128)?;
-
-            let powers_of_256 = iter::successors(Some(F::ONE), |coeff| Some(F::from(256) * coeff))
-                .take(20)
-                .collect_vec();
 
             // Take the 20 lowest assigned byte cells of pk_hash and constrain them to build
             // address.  From the lower 16 build the lo cell, and from the higher 4 build the hi
@@ -608,34 +608,30 @@ impl<F: Field> SignVerifyChip<F> {
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
         // corresponds to msg_hash
         let msg_hash = {
-            let msg_hash_le = (!padding)
-                .then(|| sign_data.msg_hash.to_bytes())
-                .unwrap_or_default();
-            let msg_hash_lo_bytes = &msg_hash_le[16..];
-            let msg_hash_hi_bytes = &msg_hash_le[..16];
-
-            // Assign all bytes of msg_hash to cells which are range constrained to be 8 bits.  Then
-            // constrain the lower 16 cell bytes to build the lo cell, and the higher 16 bytes to
-            // build the hi cell.
-            let (msg_hash_cell_lo, _) = range_chip.decompose(
+            let msg_hash_lo_cell_bytes = &assigned_ecdsa.msg_hash_le[..16];
+            let msg_hash_hi_cell_bytes = &assigned_ecdsa.msg_hash_le[16..];
+            let (msg_hash_cell_lo, _) = main_gate.decompose(
                 ctx,
-                Value::known(from_bytes::value::<F>(msg_hash_lo_bytes)),
-                8,
-                128,
+                &msg_hash_lo_cell_bytes
+                    .iter()
+                    .zip(&powers_of_256)
+                    .map(|(cell, coeff)| maingate::Term::Assigned(cell, *coeff))
+                    .collect_vec(),
+                F::ZERO,
+                |_, _| Ok(()),
             )?;
-            let (msg_hash_cell_hi, _) = range_chip.decompose(
+            let (msg_hash_cell_hi, _) = main_gate.decompose(
                 ctx,
-                Value::known(from_bytes::value::<F>(msg_hash_hi_bytes)),
-                8,
-                128,
+                &msg_hash_hi_cell_bytes
+                    .iter()
+                    .zip(&powers_of_256)
+                    .map(|(cell, coeff)| maingate::Term::Assigned(cell, *coeff))
+                    .collect_vec(),
+                F::ZERO,
+                |_, _| Ok(()),
             )?;
 
-            self.assign_word_lo_hi(
-                config,
-                ctx,
-                msg_hash_cell_lo.value().copied(),
-                msg_hash_cell_hi.value().copied(),
-            )?
+            Word::new([msg_hash_cell_lo, msg_hash_cell_hi])
         };
 
         let pk_rlc = {
