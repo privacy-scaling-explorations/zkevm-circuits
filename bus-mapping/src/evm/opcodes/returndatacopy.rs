@@ -32,7 +32,7 @@ impl Opcode for Returndatacopy {
         let memory = &mut call_ctx.memory;
         memory.copy_from(dst_offset, src_offset, length, &return_data);
 
-        let copy_event = gen_copy_event(state, geth_step)?;
+        let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
         state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
@@ -122,6 +122,7 @@ fn gen_copy_steps(
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
+    exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
     // Get low Uint64 of destination offset to generate copy steps. Since it
     // could be Uint64 overflow if length is zero.
@@ -137,15 +138,7 @@ fn gen_copy_event(
     );
 
     let rw_counter_start = state.block_ctx.rwc;
-    let mut exec_step = state.new_step(geth_step)?;
-    let copy_steps = gen_copy_steps(
-        state,
-        &mut exec_step,
-        src_addr,
-        dst_addr,
-        src_addr_end,
-        length,
-    )?;
+    let copy_steps = gen_copy_steps(state, exec_step, src_addr, dst_addr, src_addr_end, length)?;
 
     let (src_type, dst_type, src_id, dst_id) = (
         CopyDataType::Memory,
