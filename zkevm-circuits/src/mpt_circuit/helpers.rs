@@ -890,7 +890,7 @@ impl<F: Field> MPTConstraintBuilder<F> {
                 //Some(Expression::Constant(lookup_value)),
             ),
             r: r.expr(),
-            keccak_r: /*challenges.clone().unwrap().keccak_input().expr()*/(r.expr() + 1.expr()),
+            keccak_r: challenges.clone().unwrap().keccak_input().expr()/*(r.expr() + 1.expr())*/,
             challenges,
         }
     }
@@ -1294,7 +1294,7 @@ impl<F: Field> MainRLPGadget<F> {
             .assign(region, offset, rlp_witness.len().scalar())?;
 
         let max: usize = HASH_WIDTH + 2;
-        let mult_norm = pow::value(region.keccak_r, max - rlp_witness.num_bytes()).invert().unwrap();
+        let mult_norm = pow::value(region.keccak_r, max - rlp_witness.num_bytes()).invert().unwrap_or(F::ZERO);
         self.mult_diff
             .assign(region, offset, pow::value(region.keccak_r, rlp_witness.num_bytes()))?;
         self.mult_norm

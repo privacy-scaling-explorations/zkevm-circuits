@@ -6,7 +6,7 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells, SecondPhase},
     poly::Rotation,
 };
 
@@ -222,7 +222,7 @@ impl<F: Field> MPTConfig<F> {
             .unwrap();
 
         let mult_table: [Column<Advice>; 3] = (0..3)
-            .map(|_| meta.advice_column())
+            .map(|_| meta.advice_column_in(SecondPhase))
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
@@ -402,7 +402,7 @@ impl<F: Field> MPTConfig<F> {
 
                 let mut keccak_r = F::ZERO;
                 challenges.keccak_input().map(|v| keccak_r = v);
-                let keccak_r = F::from(123456u64 + 1);
+                //let keccak_r = F::from(123456u64 + 1);
                 let r = F::from(123456u64);
 
                 //println!("r: {:?}", r);
@@ -622,7 +622,8 @@ impl<F: Field> MPTConfig<F> {
     ) -> Result<(), Error> {
         let mut keccak_r = F::ZERO;
         challenges.keccak_input().map(|v| keccak_r = v);
-        let keccak_r = F::from(123456u64 + 1);
+        //println!("{:?}", keccak_r);
+        //let keccak_r = F::from(123456u64 + 1);
 
         layouter.assign_region(
             || "mult table",
@@ -637,8 +638,8 @@ impl<F: Field> MPTConfig<F> {
                 for idx in 0..=max {
                     assign!(region, (self.mult_table[0], offset) => idx.scalar())?;
                     assign!(region, (self.mult_table[1], offset) => pow::value(keccak_r, idx))?;
-                    assign!(region, (self.mult_table[2], offset) => pow::value(keccak_r, max - idx).invert().unwrap())?;
-                    //println!("{}: {}, {:?}", offset, max - offset, pow::value(keccak_r, max - offset).invert().unwrap());
+                    assign!(region, (self.mult_table[2], offset) => pow::value(keccak_r, max - idx).invert().unwrap_or(F::ZERO))?;
+                    //println!("{}: {}, {:?}", offset, offset, pow::value(keccak_r, max - idx).invert().unwrap_or(F::ZERO));
                     offset += 1;
                 }
                 Ok(())
