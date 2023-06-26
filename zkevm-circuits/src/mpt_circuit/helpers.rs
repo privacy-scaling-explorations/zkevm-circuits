@@ -1343,9 +1343,6 @@ impl<F: Field> MainRLPGadget<F> {
 
         // Skip the rows that only contain 1 byte
         if bytes.len() > 1 {
-            if  item_type == RlpItemType::Node && bytes[0] == 128 {
-                self.leading_zero.assign(region, offset, 1.scalar())?;
-            }
             self.leading_zero.assign(region, offset, bytes[1].scalar())?;
         } else {
             self.leading_zero.assign(region, offset, 0.scalar())?;
@@ -1401,9 +1398,6 @@ impl<F: Field> MainRLPGadget<F> {
                 ifx! {is_string => {
                     require!(max_len => self.max_length(item_type).expr());
                     require!(len => [0, HASH_WIDTH]);
-                    ifx!(is_long => {
-                        require!(self.leading_zero.expr() => false)
-                    });
                 } elsex {
                     require!(max_len => HASH_WIDTH - 1);
                 }}
