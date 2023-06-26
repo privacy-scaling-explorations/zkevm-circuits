@@ -1382,7 +1382,7 @@ impl<F: Field> ExecutionConfig<F> {
         // TODO: We should find a better way to avoid this kind of special case.
         // #1489 is the issue for this refactor.
         if copy_lookup_count > 1 {
-            log::warn!("The number of copy events is more than 1, it's not supported by current design. Stop checking this step: {:?}", 
+            log::warn!("The number of copy events is more than 1, it's not supported by current design. Stop checking this step: {:?}",
                 step
             );
             return;
@@ -1423,7 +1423,7 @@ impl<F: Field> ExecutionConfig<F> {
             != assigned_rw_values.len() + step.copy_rw_counter_delta as usize - copy_lookup_count
         {
             log::error!(
-                "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} - copy_lookup_count: {} in step: {:?}", 
+                "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} - copy_lookup_count: {} in step: {:?}",
                 step.rw_indices_len(),
                 assigned_rw_values.len(),
                 step.copy_rw_counter_delta,
@@ -1457,15 +1457,6 @@ impl<F: Field> ExecutionConfig<F> {
             } else {
                 idx - rev_count + offset - copy_lookup_processed as usize
             };
-
-            // TODO: can remove after #1483 fixed
-            // step.rw_indices_len() doesn't inclued copy_rw_counter_delta in some cases
-            // which will cuase out of boundary while calling rw_index().
-            // Beside, if this condition holds, `copy lookup` is the last element of
-            // assigned_rw_value. Therefore, can ignore it for now.
-            if idx > step.rw_indices_len() - 1 {
-                continue;
-            }
 
             // If assigned_rw_value is a `copy lookup` event, the following
             // `step.copy_rw_counter_delta` rw lookups must be memory operations.
