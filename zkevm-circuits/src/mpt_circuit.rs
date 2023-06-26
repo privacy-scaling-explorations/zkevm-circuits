@@ -488,7 +488,7 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                         cached_region.pop_region();
                     }
-                    if offset == 44 {
+                    if offset == 161 {
                         println!("offset {:?}, bytes {:?}", offset, node.values);
                     }
 
@@ -734,7 +734,7 @@ mod tests {
                 }
             })
             .enumerate()
-            .skip(24)
+            .skip(32)
             .for_each(|(idx, f)| {
                 let path = f.path();
                 let mut parts = path.to_str().unwrap().split('-');
