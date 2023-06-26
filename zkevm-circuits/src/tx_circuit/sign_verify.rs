@@ -408,36 +408,6 @@ impl<F: Field> SignVerifyChip<F> {
         })
     }
 
-    fn assign_word(
-        &self,
-        config: &SignVerifyConfig,
-        ctx: &mut RegionCtx<F>,
-        inputs_le: [u8; 32],
-    ) -> Result<Word<AssignedCell<F, F>>, Error> {
-        self.assign_word_lo_hi(
-            config,
-            ctx,
-            Value::known(from_bytes::value(&inputs_le[..16])),
-            Value::known(from_bytes::value(&inputs_le[16..])),
-        )
-    }
-
-    fn assign_word_lo_hi(
-        &self,
-        config: &SignVerifyConfig,
-        ctx: &mut RegionCtx<F>,
-        lo: Value<F>,
-        hi: Value<F>,
-    ) -> Result<Word<AssignedCell<F, F>>, Error> {
-        let cell_word_lo =
-            ctx.assign_advice(|| "{name}_lo", config.main_gate_config.advices()[1], lo)?;
-        let cell_word_hi =
-            ctx.assign_advice(|| "{name}_hi", config.main_gate_config.advices()[2], hi)?;
-        ctx.next();
-
-        Ok(Word::new([cell_word_lo, cell_word_hi]))
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn assign_rlc_le(
         &self,
@@ -630,12 +600,7 @@ impl<F: Field> SignVerifyChip<F> {
                 128,
             )?;
 
-            self.assign_word_lo_hi(
-                config,
-                ctx,
-                msg_hash_cell_lo.value().copied(),
-                msg_hash_cell_hi.value().copied(),
-            )?
+            Word::new([msg_hash_cell_lo, msg_hash_cell_hi])
         };
 
         let pk_rlc = {
