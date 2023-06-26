@@ -4,9 +4,7 @@ use crate::{
         CallKind, CircuitInputStateRef, CodeSource, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     evm::opcodes::precompiles::gen_associated_ops as precompile_associated_ops,
-    operation::{
-        AccountField, CallContextField, MemoryWordOp, TxAccessListAccountOp, RW,
-    },
+    operation::{AccountField, CallContextField, MemoryWordOp, TxAccessListAccountOp, RW},
     precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
     state_db::CodeDB,
     Error,
@@ -410,14 +408,15 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 // insert another copy event (output) for this step.
                 let rw_counter_start = state.block_ctx.rwc;
                 if call.is_success() && call.call_data_length > 0 && length > 0 {
-                    let (read_steps, write_steps) = state.gen_copy_steps_for_precompile_returndata(
-                        &mut exec_step,
-                        call.call_id,
-                        call.caller_id,
-                        call.return_data_offset,
-                        length,
-                        &result,
-                    )?;
+                    let (read_steps, write_steps) = state
+                        .gen_copy_steps_for_precompile_returndata(
+                            &mut exec_step,
+                            call.call_id,
+                            call.caller_id,
+                            call.return_data_offset,
+                            length,
+                            &result,
+                        )?;
                     state.push_copy(
                         &mut exec_step,
                         CopyEvent {

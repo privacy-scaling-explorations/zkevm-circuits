@@ -1690,7 +1690,7 @@ impl CopyTable {
                     copy_event.dst_addr
                 } + (u64::try_from(step_idx).unwrap() - if is_read_step { 0 } else { 1 }) / 2u64;
 
-            let addr = if tag == CopyDataType::TxLog {
+            let addr: F = if tag == CopyDataType::TxLog {
                 build_tx_log_address(
                     write_addr_slot,
                     TxLogFieldTag::Data,
