@@ -1,4 +1,7 @@
-use super::util::{evm_cm_distribute_advice, CachedRegion};
+use super::{
+    param::MAX_STEP_HEIGHT,
+    util::{evm_cm_distribute_advice, CachedRegion},
+};
 use crate::{
     evm_circuit::{
         param::{EXECUTION_STATE_HEIGHT_MAP, STEP_WIDTH},
@@ -672,7 +675,8 @@ impl<F: Field> Step<F> {
     ) -> Self {
         let cell_manager_strategy =
             CMFixedWidthStrategy::new(evm_cm_distribute_advice::<F>(meta, &advices), offset)
-                .with_perm_substitution();
+                .with_perm_substitution()
+                .with_max_height(MAX_STEP_HEIGHT);
 
         let mut cell_manager = CellManager::new(cell_manager_strategy);
         let state = {

@@ -30,6 +30,7 @@ pub(crate) struct CMFixedWidthStrategy {
     next: HashMap<CellType, (usize, usize)>,
 
     perm_substitution: bool,
+    max_height: usize,
 }
 
 impl CMFixedWidthStrategy {
@@ -46,6 +47,7 @@ impl CMFixedWidthStrategy {
             height_offset,
             next: HashMap::default(),
             perm_substitution: false,
+            max_height: usize::max_value(),
         }
     }
 
@@ -54,6 +56,13 @@ impl CMFixedWidthStrategy {
     /// on a StoragePermutation column, then the StoragePermutation is used.
     pub fn with_perm_substitution(mut self) -> Self {
         self.perm_substitution = true;
+
+        self
+    }
+
+    /// Sets a max height, if the strategy chooses a height that is over this, it will panic.
+    pub fn with_max_height(mut self, max_height: usize) -> Self {
+        self.max_height = max_height;
 
         self
     }
@@ -111,6 +120,13 @@ impl CellManagerStrategy for CMFixedWidthStrategy {
             if row_perm < row {
                 return self.query_cell(columns, meta, CellType::StoragePermutation);
             }
+        }
+
+        if row > self.max_height {
+            panic!(
+                "CMFixedWidthStrategy: max_height reached ({})",
+                self.max_height
+            )
         }
 
         let column = columns
