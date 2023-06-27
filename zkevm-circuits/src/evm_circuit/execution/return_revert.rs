@@ -353,7 +353,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let init_code_first_byte = if is_contract_deployment {
             block.get_rws(step, 3).memory_value()
         } else {
-            INVALID_INIT_CODE_FIRST_BYTE
+            0
         }
         .into();
         self.init_code_first_byte.assign(

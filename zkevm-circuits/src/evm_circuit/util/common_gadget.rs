@@ -970,10 +970,10 @@ impl<F: Field> CommonErrorGadget<F> {
         opcode: Expression<F>,
         rw_counter_delta: Expression<F>,
     ) -> Self {
-        Self::construct_with_last_return(cb, opcode, rw_counter_delta, 0.expr(), 0.expr())
+        Self::construct_with_return_data(cb, opcode, rw_counter_delta, 0.expr(), 0.expr())
     }
 
-    pub(crate) fn construct_with_last_return(
+    pub(crate) fn construct_with_return_data(
         cb: &mut EVMConstraintBuilder<F>,
         opcode: Expression<F>,
         rw_counter_delta: Expression<F>,
