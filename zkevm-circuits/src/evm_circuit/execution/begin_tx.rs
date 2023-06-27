@@ -161,7 +161,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Check gas_left is sufficient
         let gas_left = tx_gas.expr() - intrinsic_gas_cost.clone();
-        let gas_not_enough = LtGadget::construct(cb, tx_gas.expr(), intrinsic_gas_cost.clone());
+        let gas_not_enough = LtGadget::construct(cb, tx_gas.expr(), intrinsic_gas_cost);
 
         // Prepare access list of caller and callee
         cb.account_access_list_write(
@@ -731,7 +731,7 @@ mod test {
     use std::vec;
 
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use bus_mapping::evm::OpcodeId;
+    use bus_mapping::{circuit_input_builder::CircuitsParams, evm::OpcodeId};
     use eth_types::{self, bytecode, evm_types::GasCost, word, Bytecode, Word};
 
     use mock::{eth, gwei, MockTransaction, TestContext, MOCK_ACCOUNTS};
@@ -1092,25 +1092,31 @@ mod test {
             STOP
         };
 
-        let ctx = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 2>::new(
             None,
             |accs| {
                 accs[0].address(to).balance(eth(1)).code(code);
                 accs[1].address(from).balance(eth(1)).nonce(1);
             },
             |mut txs, _| {
-                txs[0]
+                // Work around no payment to the coinbase address
+                txs[0].to(to).from(from).nonce(1);
+                txs[1]
                     .to(to)
                     .from(from)
-                    .nonce(0)
+                    .nonce(1)
                     .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
             },
             |block, _| block,
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_txs: 2,
+                ..Default::default()
+            })
+            .run();
     }
 
     fn begin_tx_not_enough_eth(enable_skipping_invalid_tx: bool) {
@@ -1119,28 +1125,38 @@ mod test {
         let to = MOCK_ACCOUNTS[0];
         let from = MOCK_ACCOUNTS[1];
 
-        let balance = Word::from(1) * Word::from(10u64.pow(5));
-        let ctx = TestContext::<2, 1>::new(
+        let balance = gwei(1) + Word::from(10u64.pow(5));
+        let ctx = TestContext::<2, 2>::new(
             None,
             |accs| {
                 accs[0].address(to).balance(balance);
                 accs[1].address(from).balance(balance).nonce(1);
             },
             |mut txs, _| {
+                // Work around no payment to the coinbase address
                 txs[0]
                     .to(to)
                     .from(from)
                     .nonce(1)
+                    .gas_price(Word::from(1u64));
+                txs[1]
+                    .to(to)
+                    .from(from)
+                    .nonce(2)
                     .gas_price(gwei(1))
                     .gas(Word::from(10u64.pow(5)))
                     .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
             },
             |block, _| block,
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_txs: 2,
+                ..Default::default()
+            })
+            .run();
     }
 
     fn begin_tx_insufficient_gas(enable_skipping_invalid_tx: bool) {
@@ -1148,26 +1164,32 @@ mod test {
         let from = MOCK_ACCOUNTS[1];
 
         let balance = eth(1);
-        let ctx = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 2>::new(
             None,
             |accs| {
                 accs[0].address(to).balance(balance);
                 accs[1].address(from).balance(balance).nonce(1);
             },
             |mut txs, _| {
-                txs[0]
+                // Work around no payment to the coinbase address
+                txs[0].to(to).from(from).nonce(1);
+                txs[1]
                     .to(to)
                     .from(from)
-                    .nonce(1)
+                    .nonce(2)
                     .gas_price(gwei(1))
                     .gas(Word::from(1))
                     .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
             },
             |block, _| block,
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_txs: 2,
+                ..Default::default()
+            })
+            .run();
     }
 }
