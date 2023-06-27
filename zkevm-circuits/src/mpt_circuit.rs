@@ -730,7 +730,6 @@ mod tests {
                 }
             })
             .enumerate()
-            .skip(68)
             .for_each(|(idx, f)| {
                 let path = f.path();
                 let mut parts = path.to_str().unwrap().split('-');

@@ -6,7 +6,7 @@ use crate::{
         constraint_builder::{
             ConstraintBuilder, RLCChainable, RLCChainableValue, RLCable, RLCableValue,
         },
-        gadgets::{IsEqualGadget, LtGadget, IsZeroGadget},
+        gadgets::{IsEqualGadget, IsZeroGadget, LtGadget},
         memory::MemoryBank,
     },
     evm_circuit::table::Table,
@@ -1266,10 +1266,7 @@ impl<F: Field> MainRLPGadget<F> {
             require!(config.below_limit.expr() => true);
 
             // Ensure minimal RLP encoding for is_long string
-            config.leading_zero = IsZeroGadget::construct(
-                &mut cb.base,
-                config.bytes[1].expr()
-            );
+            config.leading_zero = IsZeroGadget::construct(&mut cb.base, config.bytes[1].expr());
             // Store RLP properties for easy access
             require!(config.num_bytes => config.rlp.num_bytes());
             require!(config.len => config.rlp.len());
@@ -1343,7 +1340,8 @@ impl<F: Field> MainRLPGadget<F> {
 
         // Skip the rows that only contain 1 byte
         if bytes.len() > 1 {
-            self.leading_zero.assign(region, offset, bytes[1].scalar())?;
+            self.leading_zero
+                .assign(region, offset, bytes[1].scalar())?;
         } else {
             self.leading_zero.assign(region, offset, 0.scalar())?;
         }
@@ -1392,6 +1390,7 @@ impl<F: Field> MainRLPGadget<F> {
             // Hashes always have length 32
             if item_type == RlpItemType::Hash {
                 require!(len => HASH_WIDTH);
+                require!(is_string => true);
             }
             if item_type == RlpItemType::Node {
                 // Nodes always have length 0 or 32 when a string, or are < 32 when a list
