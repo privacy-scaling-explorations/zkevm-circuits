@@ -516,7 +516,7 @@ impl<F: Field> SignVerifyChip<F> {
         pk_hash.reverse();
 
         let powers_of_256 = iter::successors(Some(F::ONE), |coeff| Some(F::from(256) * coeff))
-            .take(20)
+            .take(16)
             .collect_vec();
 
         // Ref. spec SignVerifyChip 2. Verify that the first 20 bytes of the
@@ -548,7 +548,7 @@ impl<F: Field> SignVerifyChip<F> {
                 ctx,
                 &pk_hash_lo_cell_bytes
                     .iter()
-                    .zip(&powers_of_256)
+                    .zip_eq(&powers_of_256)
                     .map(|(cell, coeff)| maingate::Term::Assigned(cell, *coeff))
                     .collect_vec(),
                 F::ZERO,
@@ -585,7 +585,7 @@ impl<F: Field> SignVerifyChip<F> {
                 ctx,
                 &msg_hash_lo_cell_bytes
                     .iter()
-                    .zip(&powers_of_256)
+                    .zip_eq(&powers_of_256)
                     .map(|(cell, coeff)| maingate::Term::Assigned(cell, *coeff))
                     .collect_vec(),
                 F::ZERO,
@@ -595,7 +595,7 @@ impl<F: Field> SignVerifyChip<F> {
                 ctx,
                 &msg_hash_hi_cell_bytes
                     .iter()
-                    .zip(&powers_of_256)
+                    .zip_eq(&powers_of_256)
                     .map(|(cell, coeff)| maingate::Term::Assigned(cell, *coeff))
                     .collect_vec(),
                 F::ZERO,
