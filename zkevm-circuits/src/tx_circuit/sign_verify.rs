@@ -522,7 +522,8 @@ impl<F: Field> SignVerifyChip<F> {
         // Ref. spec SignVerifyChip 2. Verify that the first 20 bytes of the
         // pub_key_hash equal the address
         let (address_cells, pk_hash_cells) = {
-            // Diagram of byte decomposition of reversed pk_hash, and how address is built from it:
+            // Diagram of byte decomposition of little-endian pk_hash, and how address is built
+            // from it:
             //
             // byte 0             15 16           20 21   32
             //      [ address_lo   ] [ address_hi  ] [     ]
@@ -541,7 +542,7 @@ impl<F: Field> SignVerifyChip<F> {
                 range_chip.decompose(ctx, Value::known(pk_hash_hi), 8, 128)?;
 
             // Take the 20 lowest assigned byte cells of pk_hash and constrain them to build
-            // address.  From the lower 16 build the lo cell, and from the higher 4 build the hi
+            // address. From the lower 16 build the lo cell, and from the higher 4 build the hi
             // cell.
             let (address_cell_lo, _) = main_gate.decompose(
                 ctx,
@@ -577,7 +578,7 @@ impl<F: Field> SignVerifyChip<F> {
 
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
         // corresponds to msg_hash
-        let msg_hash = {
+        let msg_hash_cells = {
             let msg_hash_lo_cell_bytes = &assigned_ecdsa.msg_hash_le[..16];
             let msg_hash_hi_cell_bytes = &assigned_ecdsa.msg_hash_le[16..];
             let (msg_hash_cell_lo, _) = main_gate.decompose(
@@ -628,7 +629,7 @@ impl<F: Field> SignVerifyChip<F> {
         self.enable_keccak_lookup(config, ctx, &is_address_zero, &pk_rlc, &pk_hash_cells)?;
         Ok(AssignedSignatureVerify {
             address: address_cells,
-            msg_hash,
+            msg_hash: msg_hash_cells,
         })
     }
 
