@@ -109,6 +109,7 @@ impl<F: Field> Block<F> {
             num_rows_required_for_keccak_table,
             num_rows_required_for_tx_table,
             num_rows_required_for_exp_table,
+            1 << 16, // u16 range lookup
         ])
         .unwrap();
 

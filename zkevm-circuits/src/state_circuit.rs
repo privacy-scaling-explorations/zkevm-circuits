@@ -18,7 +18,7 @@ use self::{
     lexicographic_ordering::LimbIndex,
 };
 use crate::{
-    table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable},
+    table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable, UXTable},
     util::{word, Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness::{self, MptUpdates, Rw, RwMap},
 };
@@ -69,6 +69,12 @@ pub struct StateCircuitConfig<F> {
     lookups: LookupsConfig,
     // External tables
     mpt_table: MptTable,
+    // External U8Table
+    u8_table: UXTable<8>,
+    // External U10Table
+    u10_table: UXTable<10>,
+    // External U16Table
+    u16_table: UXTable<16>,
     _marker: PhantomData<F>,
 }
 
@@ -78,6 +84,12 @@ pub struct StateCircuitConfigArgs<F: Field> {
     pub rw_table: RwTable,
     /// MptTable
     pub mpt_table: MptTable,
+    /// U8Table
+    pub u8_table: UXTable<8>,
+    /// U10Table
+    pub u10_table: UXTable<10>,
+    /// U16Table
+    pub u16_table: UXTable<16>,
     /// Challenges
     pub challenges: Challenges<Expression<F>>,
 }
@@ -91,11 +103,14 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         Self::ConfigArgs {
             rw_table,
             mpt_table,
+            u8_table,
+            u10_table,
+            u16_table,
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
         let selector = meta.fixed_column();
-        let lookups = LookupsChip::configure(meta);
+        let lookups = LookupsChip::configure(meta, u8_table, u10_table, u16_table);
 
         let rw_counter = MpiChip::configure(meta, selector, [rw_table.rw_counter], lookups);
         let tag = BinaryNumberChip::configure(meta, selector, Some(rw_table.tag));
@@ -143,6 +158,9 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         // annotate columns
         rw_table.annotate_columns(meta);
         mpt_table.annotate_columns(meta);
+        u8_table.annotate_columns(meta);
+        u10_table.annotate_columns(meta);
+        u16_table.annotate_columns(meta);
 
         let config = Self {
             selector,
@@ -156,6 +174,9 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             lookups,
             rw_table,
             mpt_table,
+            u8_table,
+            u10_table,
+            u16_table,
             _marker: PhantomData::default(),
         };
 

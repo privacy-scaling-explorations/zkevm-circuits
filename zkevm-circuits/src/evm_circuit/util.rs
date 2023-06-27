@@ -6,7 +6,7 @@ pub use crate::util::{
 use crate::{
     evm_circuit::{
         param::{
-            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE2_COLUMNS,
+            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_COPY_COLUMNS, N_PHASE2_COLUMNS, N_U8_LOOKUPS,
         },
         table::Table,
     },
@@ -34,7 +34,7 @@ pub(crate) mod memory_gadget;
 
 pub use gadgets::util::{and, not, or, select, sum};
 
-use super::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64};
+use super::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_U16_LOOKUPS};
 
 #[derive(Clone, Debug)]
 pub struct Cell<F> {
@@ -294,7 +294,9 @@ pub(crate) enum CellType {
     StoragePhase1,
     StoragePhase2,
     StoragePermutation,
-    LookupByte,
+    // TODO combine LookupU8, LookupU16 with Lookup(Table::U8 | Table::U16)
+    LookupU8,
+    LookupU16,
     Lookup(Table),
 }
 
@@ -397,8 +399,17 @@ impl<F: Field> CellManager<F> {
         }
 
         // Mark columns used for byte lookup
-        for _ in 0..N_BYTE_LOOKUPS {
-            columns[column_idx].cell_type = CellType::LookupByte;
+        #[allow(clippy::reversed_empty_ranges)]
+        for _ in 0..N_U8_LOOKUPS {
+            columns[column_idx].cell_type = CellType::LookupU8;
+            assert_eq!(advices[column_idx].column_type().phase(), 0);
+            column_idx += 1;
+        }
+
+        // Mark columns used for byte lookup
+        #[allow(clippy::reversed_empty_ranges)]
+        for _ in 0..N_U16_LOOKUPS {
+            columns[column_idx].cell_type = CellType::LookupU16;
             assert_eq!(advices[column_idx].column_type().phase(), 0);
             column_idx += 1;
         }

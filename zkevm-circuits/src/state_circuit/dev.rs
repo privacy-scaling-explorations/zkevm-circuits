@@ -1,3 +1,4 @@
+use super::test::UXTable;
 pub use super::StateCircuit;
 
 use crate::{
@@ -27,6 +28,9 @@ where
         let rw_table = RwTable::construct(meta);
         let mpt_table = MptTable::construct(meta);
         let challenges = Challenges::construct(meta);
+        let u8_table = UXTable::construct(meta);
+        let u10_table = UXTable::construct(meta);
+        let u16_table = UXTable::construct(meta);
 
         let config = {
             let challenges = challenges.exprs(meta);
@@ -35,6 +39,9 @@ where
                 StateCircuitConfigArgs {
                     rw_table,
                     mpt_table,
+                    u8_table,
+                    u10_table,
+                    u16_table,
                     challenges,
                 },
             )
@@ -50,6 +57,9 @@ where
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
         config.mpt_table.load(&mut layouter, &self.updates)?;
+        config.u8_table.load(&mut layouter)?;
+        config.u10_table.load(&mut layouter)?;
+        config.u16_table.load(&mut layouter)?;
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }

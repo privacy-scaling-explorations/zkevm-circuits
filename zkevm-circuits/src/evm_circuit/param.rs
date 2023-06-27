@@ -20,12 +20,15 @@ pub const N_PHASE2_COLUMNS: usize = 4;
 
 /// Number of Advice Phase1 columns in the EVM circuit
 pub const N_PHASE1_COLUMNS: usize =
-    STEP_WIDTH - EVM_LOOKUP_COLS - N_PHASE2_COLUMNS - N_COPY_COLUMNS - N_BYTE_LOOKUPS;
+    STEP_WIDTH - EVM_LOOKUP_COLS - N_PHASE2_COLUMNS - N_COPY_COLUMNS - N_U8_LOOKUPS - N_U16_LOOKUPS;
 
 // Number of copy columns
 pub const N_COPY_COLUMNS: usize = 2;
 
-pub const N_BYTE_LOOKUPS: usize = 24;
+pub const N_U8_LOOKUPS: usize = 24;
+
+// TODO shift #column/2 from u8 to u16
+pub const N_U16_LOOKUPS: usize = 0;
 
 /// Amount of lookup columns in the EVM circuit dedicated to lookups.
 pub(crate) const EVM_LOOKUP_COLS: usize = FIXED_TABLE_LOOKUPS
