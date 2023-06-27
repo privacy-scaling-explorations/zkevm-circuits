@@ -1354,6 +1354,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         let digest_word_assigned = layouter.assign_region(
             || "region 0",
             |mut region| {
+                println!("call assign_region");
                 // Annotate columns
 
                 config.tx_table.annotate_columns_in_region(&mut region);

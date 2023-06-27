@@ -401,6 +401,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
+        println!("in evm synthesize");
         let block = self.block.as_ref().unwrap();
 
         let (config, challenges) = config;

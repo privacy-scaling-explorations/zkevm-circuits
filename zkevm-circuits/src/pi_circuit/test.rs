@@ -142,6 +142,7 @@ fn test_1tx_1maxtx() {
         Ok(prover) => prover,
         Err(e) => panic!("{:#?}", e),
     };
+    panic!("terminate");
     assert_eq!(prover.verify(), Ok(()));
 }
 

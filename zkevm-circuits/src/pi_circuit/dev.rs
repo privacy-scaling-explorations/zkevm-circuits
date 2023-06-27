@@ -57,6 +57,7 @@ impl<F: Field> Circuit<F> for PiCircuit<F> {
         (config, challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
+        println!("call synthesis");
         let challenges = challenges.values(&mut layouter);
         // assign keccak table
         let rpi_bytes = self
