@@ -5,6 +5,7 @@ use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
+use log::trace;
 
 use crate::{
     evm_circuit::{

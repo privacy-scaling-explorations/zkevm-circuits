@@ -238,6 +238,7 @@ mod test {
         evm_types::{GasCost, OpcodeId},
         Word,
     };
+    use log::trace;
     use mock::test_ctx::{helpers::*, TestContext};
     use std::iter;
 

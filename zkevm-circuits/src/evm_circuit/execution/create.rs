@@ -34,6 +34,7 @@ use ethers_core::utils::keccak256;
 use gadgets::util::{and, expr_from_bytes};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
+use log::trace;
 use std::iter::once;
 
 /// Gadget for CREATE and CREATE2 opcodes

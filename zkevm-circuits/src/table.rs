@@ -32,7 +32,6 @@ use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
 
-use halo2_proofs::dev::unwrap_value;
 use itertools::Itertools;
 use keccak256::plain::Keccak;
 use log::trace;
