@@ -1706,10 +1706,6 @@ impl CopyTable {
             // is_code
             let is_code = Value::known(copy_step.is_code.map_or(F::zero(), |v| F::from(v)));
 
-            // debug info
-            let rw_count = F::from(copy_event.rw_counter_step(step_idx));
-            let _rwc_inc_left = F::from(copy_event.rw_counter_increase_left(step_idx));
-
             assignments.push((
                 tag,
                 [

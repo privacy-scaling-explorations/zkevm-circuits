@@ -110,7 +110,7 @@ impl<F: Field> WordConfig<F> {
             |mut meta| {
                 for byte in 0..=u8::MAX {
                     meta.assign_fixed(
-                        || format!("load {}", byte),
+                        || format!("load {byte}"),
                         self.byte_lookup,
                         byte.into(),
                         || Value::known(F::from(byte as u64)),
