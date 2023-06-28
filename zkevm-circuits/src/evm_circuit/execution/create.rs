@@ -555,7 +555,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 bytes
             })
             .into_iter()
-            .flat_map(|byte| byte)
+            .flatten()
             .collect();
 
         let values: Vec<u8> = if init_code_length.is_zero() {
@@ -570,7 +570,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             self.init_code
                 .assign(region, offset, init_code_start, init_code_length)?;
         let rlc_acc = region.keccak_rlc(&values.iter().rev().cloned().collect::<Vec<u8>>());
-        println!("rlc_acc of assign {:?}", rlc_acc);
+        println!("rlc_acc of assign {rlc_acc:?}");
         self.init_code_rlc.assign(
             region,
             offset,

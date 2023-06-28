@@ -1,8 +1,6 @@
-use std::mem;
-
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    operation::{CallContextField, MemoryOp, MemoryWordOp, RW},
+    operation::{CallContextField, MemoryWordOp, RW},
     Error,
 };
 use eth_types::{GethExecStep, Word, U256};
@@ -78,8 +76,7 @@ impl Opcode for Calldataload {
                 .map(|idx| {
                     let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
                     if addr < src_addr_end {
-                        let byte = call_data[(addr - call_data_offset) as usize];
-                        byte
+                        call_data[(addr - call_data_offset) as usize]
                     } else {
                         0
                     }
@@ -93,7 +90,7 @@ impl Opcode for Calldataload {
                 let mut slot_bytes: [u8; 32] = [0; 32];
                 // pick up caller's memory
                 let mut memory = state.caller_ctx_mut()?.memory.clone();
-                println!("calldatload caller memory {:?}", memory);
+                println!("calldatload caller memory {memory:?}");
                 // expand to offset + 64 to enusre addr_right_Word without out of boundary
                 let minimal_length = offset + 64;
                 memory.extend_at_least(minimal_length as usize);

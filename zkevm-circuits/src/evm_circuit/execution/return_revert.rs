@@ -91,7 +91,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let memory_expansion = MemoryExpansionGadget::construct(cb, [range.address()]);
 
         // Case A in the specs.
-        cb.condition(is_create.clone() * is_success.expr(), |cb| {
+        cb.condition(is_create.clone() * is_success.expr(), |_cb| {
             // cb.require_equal(
             //     "increase rw counter once for each memory to bytecode byte copied",
             //     copy_rw_increase.expr(),
@@ -359,7 +359,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                     bytes
                 })
                 .into_iter()
-                .flat_map(|byte| byte)
+                .flatten()
                 .collect();
 
             let values: Vec<u8> = if valid_length == 0 {

@@ -184,10 +184,6 @@ fn handle_copy(
     destination: Destination,
 ) -> Result<(), Error> {
     let copy_length = std::cmp::min(source.length, destination.length);
-    let bytes: Vec<_> = state.call_ctx()?.memory.0[source.offset..source.offset + copy_length]
-        .iter()
-        .map(|byte| (*byte, false, false))
-        .collect();
 
     let rw_counter_start = state.block_ctx.rwc;
     let (_, src_begin_slot) = state.get_addr_shift_slot(source.offset as u64).unwrap();
@@ -211,10 +207,8 @@ fn handle_copy(
     let mut caller_memory = state.caller_ctx_mut()?.memory.clone();
     caller_memory.extend_at_least(dst_end_slot + 32);
 
-    let src_slot_bytes =
-        callee_memory.0[src_begin_slot as usize..(src_end_slot + 32) as usize].to_vec();
-    let dst_slot_bytes =
-        caller_memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
+    let src_slot_bytes = callee_memory.0[src_begin_slot as usize..(src_end_slot + 32)].to_vec();
+    let dst_slot_bytes = caller_memory.0[dst_begin_slot as usize..(dst_end_slot + 32)].to_vec();
     let mut src_chunk_index = src_begin_slot;
     let mut dst_chunk_index = dst_begin_slot;
 
@@ -239,24 +233,24 @@ fn handle_copy(
     }
 
     // memory word write to destination
-    let mut read_steps = Vec::with_capacity(source.length as usize);
+    let mut read_steps = Vec::with_capacity(source.length);
     CircuitInputStateRef::gen_memory_copy_steps(
         &mut read_steps,
         &callee_memory.0,
         slot_count + 32,
         source.offset,
         src_begin_slot as usize,
-        copy_length as usize,
+        copy_length,
     );
 
-    let mut write_steps = Vec::with_capacity(destination.length as usize);
+    let mut write_steps = Vec::with_capacity(destination.length);
     CircuitInputStateRef::gen_memory_copy_steps(
         &mut write_steps,
         &caller_memory.0,
         slot_count + 32,
         destination.offset,
         dst_begin_slot as usize,
-        copy_length as usize,
+        copy_length,
     );
 
     state.push_copy(
@@ -320,20 +314,19 @@ fn handle_create(
     let mut chunk_index = dst_begin_slot;
     // memory word writes to destination word
     for chunk in create_slot_bytes.chunks(32) {
-        let dest_word = Word::from_big_endian(&chunk);
+        let dest_word = Word::from_big_endian(chunk);
         // read memory
         state.memory_read_word(step, chunk_index.into(), dest_word)?;
         chunk_index += 32;
     }
 
-    let mut copy_steps = Vec::with_capacity(source.length as usize);
+    let mut copy_steps = Vec::with_capacity(source.length);
     for idx in 0..create_slot_bytes.len() {
         let value = memory.0[dst_begin_slot as usize + idx];
-        if idx as u64 + dst_begin_slot < source.offset as u64 {
-            // front mask byte
-            copy_steps.push((value, false, true));
-        } else if idx as u64 + dst_begin_slot >= (source.offset + source.length) as u64 {
-            // back mask byte
+        if (idx as u64 + dst_begin_slot < source.offset as u64)
+            || (idx as u64 + dst_begin_slot >= (source.offset + source.length) as u64)
+        {
+            // front and back mask byte
             copy_steps.push((value, false, true));
         } else {
             // real copy byte

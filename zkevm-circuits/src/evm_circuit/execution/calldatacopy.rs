@@ -22,10 +22,10 @@ use crate::{
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{evm_types::GasCost, Field, ToScalar};
-use ethers_core::k256::U256;
+
 use halo2_proofs::{circuit::Value, plonk::Error};
 
-use std::cmp::{max, min};
+use std::cmp::max;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CallDataCopyGadget<F> {

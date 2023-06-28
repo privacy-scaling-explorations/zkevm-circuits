@@ -197,7 +197,7 @@ impl RlpFsmRomTable {
                         .zip(row.values::<F>().into_iter())
                     {
                         region.assign_fixed(
-                            || format!("rom table row: offset = {}", offset),
+                            || format!("rom table row: offset = {offset}"),
                             column,
                             offset,
                             || value,
@@ -1559,8 +1559,8 @@ impl<F: Field> RlpCircuitConfig<F> {
         tx_id_check_chip.assign(
             region,
             row,
-            Value::known(F::from(witness.rlp_table.tx_id as u64)),
-            Value::known(F::from(tx_id_next as u64)),
+            Value::known(F::from(witness.rlp_table.tx_id)),
+            Value::known(F::from(tx_id_next)),
         )?;
 
         let format_check_chip = IsEqualChip::construct(self.format_check_in_sm.clone());
@@ -1688,7 +1688,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 .zip(witness.values().into_iter())
         {
             region.assign_advice(
-                || format!("RLP data table row: row = {}", row),
+                || format!("RLP data table row: row = {row}"),
                 column,
                 row,
                 || value,
@@ -1701,7 +1701,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             (0, Default::default())
         };
         let padding_chip = IsZeroChip::construct(self.is_padding_in_dt.clone());
-        padding_chip.assign(region, row, Value::known(F::from(witness.tx_id as u64)))?;
+        padding_chip.assign(region, row, Value::known(F::from(witness.tx_id)))?;
         tx_id_check_chip.assign(
             region,
             row,

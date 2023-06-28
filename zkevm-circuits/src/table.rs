@@ -24,8 +24,8 @@ use halo2_proofs::{
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use rand::seq::index;
-use std::{io::copy, iter::repeat};
+
+use std::iter::repeat;
 
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
@@ -225,9 +225,7 @@ impl TxTable {
         let sum_txs_calldata: usize = txs.iter().map(|tx| tx.call_data.len()).sum();
         assert!(
             sum_txs_calldata <= max_calldata,
-            "sum_txs_calldata <= max_calldata: sum_txs_calldata={}, max_calldata={}",
-            sum_txs_calldata,
-            max_calldata,
+            "sum_txs_calldata <= max_calldata: sum_txs_calldata={sum_txs_calldata}, max_calldata={max_calldata}",
         );
 
         fn assign_row<F: Field>(
@@ -241,20 +239,20 @@ impl TxTable {
         ) -> Result<(), Error> {
             for (index, column) in advice_columns.iter().enumerate() {
                 region.assign_advice(
-                    || format!("tx table {} row {}", msg, offset),
+                    || format!("tx table {msg} row {offset}"),
                     *column,
                     offset,
                     || row[if index > 0 { index + 1 } else { index }],
                 )?;
             }
             region.assign_fixed(
-                || format!("tx table q_enable row {}", offset),
+                || format!("tx table q_enable row {offset}"),
                 q_enable,
                 offset,
                 || Value::known(F::one()),
             )?;
             region.assign_fixed(
-                || format!("tx table {} row {}", msg, offset),
+                || format!("tx table {msg} row {offset}"),
                 *tag,
                 offset,
                 || row[1],
@@ -1012,7 +1010,7 @@ impl PoseidonTable {
                             F::from_u128(HASHABLE_DOMAIN_SPEC * control_len as u128);
 
                         region.assign_fixed(
-                            || format!("poseidon table row {}", offset),
+                            || format!("poseidon table row {offset}"),
                             self.q_enable,
                             offset,
                             || Value::known(F::one()),
@@ -1028,7 +1026,7 @@ impl PoseidonTable {
                                 }))),
                         ) {
                             region.assign_advice(
-                                || format!("poseidon table row {}", offset),
+                                || format!("poseidon table row {offset}"),
                                 *column,
                                 offset,
                                 || value,
@@ -1131,14 +1129,14 @@ impl BytecodeTable {
                 for bytecode in bytecodes.clone() {
                     for row in bytecode.table_assignments(challenges) {
                         region.assign_fixed(
-                            || format!("bytecode table row {}", offset),
+                            || format!("bytecode table row {offset}"),
                             self.q_enable,
                             offset,
                             || Value::known(F::one()),
                         )?;
                         for (&column, value) in bytecode_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
-                                || format!("bytecode table row {}", offset),
+                                || format!("bytecode table row {offset}"),
                                 column,
                                 offset,
                                 || value,
@@ -1268,14 +1266,14 @@ impl BlockTable {
                     cum_num_txs += num_txs;
                     for row in block_ctx.table_assignments(num_txs, cum_num_txs, challenges) {
                         region.assign_fixed(
-                            || format!("block table row {}", offset),
+                            || format!("block table row {offset}"),
                             self.tag,
                             offset,
                             || row[0],
                         )?;
                         for (column, value) in block_table_columns.iter().zip_eq(&row[1..]) {
                             region.assign_advice(
-                                || format!("block table row {}", offset),
+                                || format!("block table row {offset}"),
                                 *column,
                                 offset,
                                 || *value,
@@ -1395,7 +1393,7 @@ impl KeccakTable {
             .iter()
             .zip(values.iter())
         {
-            region.assign_advice(|| format!("assign {}", offset), column, offset, || *value)?;
+            region.assign_advice(|| format!("assign {offset}"), column, offset, || *value)?;
         }
         Ok(())
     }
@@ -1432,14 +1430,14 @@ impl KeccakTable {
                 for input in inputs.clone() {
                     for row in Self::assignments(input, challenges) {
                         region.assign_fixed(
-                            || format!("keccak table row {}", offset),
+                            || format!("keccak table row {offset}"),
                             self.q_enable,
                             offset,
                             || Value::known(F::one()),
                         )?;
                         for (&column, value) in keccak_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
-                                || format!("keccak table row {}", offset),
+                                || format!("keccak table row {offset}"),
                                 column,
                                 offset,
                                 || value,
@@ -1542,7 +1540,7 @@ impl CopyTable {
         copy_event: &CopyEvent,
         challenges: Challenges<Value<F>>,
     ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
-        println!("assignments CopyEvent challenge  {:?} ", challenges);
+        println!("assignments CopyEvent challenge  {challenges:?} ");
         let mut assignments = Vec::new();
         // rlc_acc
         let rlc_acc = {
@@ -1553,13 +1551,13 @@ impl CopyTable {
                 .map(|(value, _, _)| *value)
                 .collect::<Vec<u8>>();
 
-            println!("rlc_acc bytes are {:?}", values);
+            println!("rlc_acc bytes are {values:?}");
             challenges
                 .keccak_input()
                 .map(|keccak_input| rlc::value(values.iter().rev(), keccak_input))
         };
 
-        println!("rlc_acc of bytecode bytes {:?} ", rlc_acc);
+        println!("rlc_acc of bytecode bytes {rlc_acc:?} ");
         let mut value_word_read_rlc = Value::known(F::zero());
         let mut value_word_write_rlc = Value::known(F::zero());
         let mut value_acc = Value::known(F::zero());
@@ -1572,7 +1570,7 @@ impl CopyTable {
             .position(|&step| !step.2)
             .unwrap_or(0);
         let mut real_length_left = copy_event.bytes.iter().filter(|&step| !step.2).count();
-        let mut word_index = 0u64;
+        let mut word_index;
         let mut read_addr_slot = if copy_event.src_type == CopyDataType::Memory {
             copy_event.src_addr - copy_event.src_addr % 32
         } else {
@@ -1738,7 +1736,7 @@ impl CopyTable {
 
             // debug info
             let rw_count = F::from(copy_event.rw_counter_step(step_idx));
-            let rwc_inc_left = F::from(copy_event.rw_counter_increase_left(step_idx));
+            let _rwc_inc_left = F::from(copy_event.rw_counter_increase_left(step_idx));
             // todo: rm
             //if is_read_step {
             println!(
@@ -1861,14 +1859,14 @@ impl CopyTable {
                 for copy_event in block.copy_events.iter() {
                     for (tag, row, _) in Self::assignments(copy_event, *challenges) {
                         region.assign_fixed(
-                            || format!("q_enable at row: {}", offset),
+                            || format!("q_enable at row: {offset}"),
                             self.q_enable,
                             offset,
                             || Value::known(F::one()),
                         )?;
                         for (&column, (value, label)) in copy_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
-                                || format!("{} at row: {}", label, offset),
+                                || format!("{label} at row: {offset}"),
                                 column,
                                 offset,
                                 || value,
@@ -2061,14 +2059,14 @@ impl ExpTable {
                 for exp_event in block.exp_events.iter() {
                     for row in Self::assignments::<F>(exp_event) {
                         region.assign_fixed(
-                            || format!("exponentiation table row {}", offset),
+                            || format!("exponentiation table row {offset}"),
                             self.q_enable,
                             offset,
                             || Value::known(F::one()),
                         )?;
                         for (&column, value) in exp_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
-                                || format!("exponentiation table row {}", offset),
+                                || format!("exponentiation table row {offset}"),
                                 column,
                                 offset,
                                 || Value::known(value),
@@ -2080,7 +2078,7 @@ impl ExpTable {
                             F::zero()
                         };
                         region.assign_fixed(
-                            || format!("exponentiation table row {}", offset),
+                            || format!("exponentiation table row {offset}"),
                             self.is_step,
                             offset,
                             || Value::known(is_step),
@@ -2092,14 +2090,14 @@ impl ExpTable {
                 // pad an empty row
                 let row = [F::from_u128(0); 5];
                 region.assign_fixed(
-                    || format!("exponentiation table row {}", offset),
+                    || format!("exponentiation table row {offset}"),
                     self.q_enable,
                     offset,
                     || Value::known(F::one()),
                 )?;
                 for (column, value) in exp_table_columns.iter().zip_eq(row) {
                     region.assign_advice(
-                        || format!("exponentiation table row {}", offset),
+                        || format!("exponentiation table row {offset}"),
                         *column,
                         offset,
                         || Value::known(value),

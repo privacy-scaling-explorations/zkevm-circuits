@@ -155,7 +155,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
                 bytes
             })
             .into_iter()
-            .flat_map(|byte| byte)
+            .flatten()
             .collect();
 
         let values: Vec<u8> = if size.is_zero() {

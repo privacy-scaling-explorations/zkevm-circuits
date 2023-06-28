@@ -137,7 +137,7 @@ impl<F: Field> WordConfig<F> {
 
             let byte_field_elem = byte.map(|byte| F::from(byte as u64));
             let cell = region.assign_advice(
-                || format!("assign byte {}", idx),
+                || format!("assign byte {idx}"),
                 *column,
                 offset,
                 || byte_field_elem,

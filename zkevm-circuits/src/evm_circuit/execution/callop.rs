@@ -1052,9 +1052,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 .flat_map(|word| word.to_be_bytes())
                 .collect::<Vec<_>>();
 
-            println!("input_bytes: {:x?}", input_bytes);
-            println!("output_bytes: {:x?}", output_bytes);
-            println!("return_bytes: {:x?}", return_bytes);
+            println!("input_bytes: {input_bytes:x?}");
+            println!("output_bytes: {output_bytes:x?}");
+            println!("return_bytes: {return_bytes:x?}");
 
             let input_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
                 rlc::value(
@@ -1075,15 +1075,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     randomness,
                 )
             });
-            println!("input_bytes_rlc: {:?}", input_bytes_rlc);
-            println!("output_bytes_rlc: {:?}", output_bytes_rlc);
-            println!("return_bytes_rlc: {:?}", return_bytes_rlc);
+            println!("input_bytes_rlc: {input_bytes_rlc:?}");
+            println!("output_bytes_rlc: {output_bytes_rlc:?}");
+            println!("return_bytes_rlc: {return_bytes_rlc:?}");
             let input_rws = Value::known(F::from(input_bytes_word_count as u64));
             let output_rws = Value::known(F::from(output_bytes_word_count as u64));
             let return_rws = Value::known(F::from((return_bytes_word_count * 2) as u64));
-            println!("input_rws: {:?}", input_rws);
-            println!("output_rws: {:?}", output_rws);
-            println!("return_rws: {:?}", return_rws);
+            println!("input_rws: {input_rws:?}");
+            println!("output_rws: {output_rws:?}");
+            println!("return_rws: {return_rws:?}");
             (
                 input_bytes_rlc,
                 output_bytes_rlc,
