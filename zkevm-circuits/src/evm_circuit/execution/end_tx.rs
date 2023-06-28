@@ -71,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         cb.tx_refund_read(tx_id.expr(), refund.expr());
         let effective_refund = MinMaxGadget::construct(cb, max_refund.quotient(), refund.expr());
 
-        // refund == 0 if tx is invalid
+        // No refund if the tx is invalid
         cb.condition(tx_is_invalid.expr(), |cb| {
             cb.require_zero(
                 "refund == 0 if tx is invalid",
@@ -126,7 +126,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             TxReceiptFieldTag::LogLength,
             cb.curr.state.log_id.expr(),
         );
-        // constrain tx status matches with `PostStateOrStatus` of TxReceipt tag in RW
+        // For invalid transactions the log id needs to be zero
         cb.condition(tx_is_invalid.expr(), |cb| {
             cb.require_zero(
                 "log_id is zero when tx is invalid",

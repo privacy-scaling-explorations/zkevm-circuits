@@ -282,7 +282,7 @@ impl MockTransaction {
         self
     }
 
-    /// Set invalid_tx field for the MockTransaction.
+    /// Set enable_skipping_invalid_tx field for the MockTransaction.
     pub fn enable_skipping_invalid_tx(&mut self, enable_skipping_invalid_tx: bool) -> &mut Self {
         self.enable_skipping_invalid_tx = enable_skipping_invalid_tx;
         self

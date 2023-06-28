@@ -356,7 +356,6 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         assert!(self.txs.len() <= self.max_txs);
-
         let sign_datas: Vec<SignData> = self
             .txs
             .iter()

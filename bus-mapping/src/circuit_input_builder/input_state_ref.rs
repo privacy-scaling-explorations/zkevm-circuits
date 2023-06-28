@@ -472,6 +472,7 @@ impl<'a> CircuitInputStateRef<'a> {
         receiver: Address,
         receiver_exists: bool,
         must_create: bool,
+        must_read_caller_balance: bool,
         value: Word,
         fee: Option<Word>,
     ) -> Result<(), Error> {
@@ -526,20 +527,24 @@ impl<'a> CircuitInputStateRef<'a> {
                 },
             )?;
         }
+
+        // Read the caller balance when required, skip if value == 0 otherwise
+        if must_read_caller_balance || !value.is_zero() {
+            self.push_op_reversible(
+                step,
+                AccountOp {
+                    address: sender,
+                    field: AccountField::Balance,
+                    value: sender_balance,
+                    value_prev: sender_balance_prev,
+                },
+            )?;
+        }
+
         if value.is_zero() {
             // Skip transfer if value == 0
             return Ok(());
         }
-
-        self.push_op_reversible(
-            step,
-            AccountOp {
-                address: sender,
-                field: AccountField::Balance,
-                value: sender_balance,
-                value_prev: sender_balance_prev,
-            },
-        )?;
 
         let (_found, receiver_account) = self.sdb.get_account(&receiver);
         let receiver_balance_prev = receiver_account.balance;
@@ -573,6 +578,7 @@ impl<'a> CircuitInputStateRef<'a> {
             receiver,
             receiver_exists,
             must_create,
+            false,
             value,
             None,
         )
