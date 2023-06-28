@@ -13,7 +13,7 @@ use crate::{
     matchw,
     mpt_circuit::{
         param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN},
-        rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble},
+        rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble}, PhaseTwoTableTag,
     },
     util::{Challenges, Expr},
 };
@@ -75,7 +75,7 @@ impl CellType for MptCellType {
 
 pub const FIXED: MptCellType = MptCellType::Lookup(Table::Fixed);
 pub const KECCAK: MptCellType = MptCellType::Lookup(Table::Keccak);
-pub const MULT: MptCellType = MptCellType::Lookup(Table::Exp);
+pub const PHASE_TWO: MptCellType = MptCellType::Lookup(Table::Exp);
 
 /// Indexable object
 pub trait Indexable {
@@ -890,7 +890,7 @@ impl<F: Field> MPTConstraintBuilder<F> {
                 //Some(Expression::Constant(lookup_value)),
             ),
             r: r.expr(),
-            keccak_r: challenges.clone().unwrap().keccak_input().expr()/*(r.expr() + 1.expr())*/,
+            keccak_r:/*  challenges.clone().unwrap().keccak_input().expr() */(r.expr() + 1.expr()),
             challenges,
         }
     }
@@ -1215,9 +1215,9 @@ pub struct MainRLPGadget<F> {
     rlp: RLPItemGadget<F>,
     num_bytes: Cell<F>,
     len: Cell<F>,
-    mult_norm: Cell<F>,
-    mult_diff: Cell<F>,
-    mult_diff_key: Cell<F>,
+    mult_inv: Cell<F>,
+    mult_diff_be: Cell<F>,
+    mult_diff_le: Cell<F>,
     rlc_content: Cell<F>,
     rlc_rlp: Cell<F>,
     tag: Cell<F>,
@@ -1231,9 +1231,9 @@ impl<F: Field> MainRLPGadget<F> {
                 rlp: RLPItemGadget::default(),
                 num_bytes: cb.query_cell(),
                 len: cb.query_cell(),
-                mult_norm: cb.query_cell(),
-                mult_diff: cb.query_cell(),
-                mult_diff_key: cb.query_cell(),
+                mult_inv: cb.query_cell(),
+                mult_diff_be: cb.query_cell_with_type(MptCellType::StoragePhase2),
+                mult_diff_le: cb.query_cell(), // TODO: remove
                 rlc_content: cb.query_cell(),
                 rlc_rlp: cb.query_cell_with_type(MptCellType::StoragePhase2),
                 tag: cb.query_cell(),
@@ -1250,9 +1250,11 @@ impl<F: Field> MainRLPGadget<F> {
             require!(config.num_bytes => config.rlp.num_bytes());
             require!(config.len => config.rlp.len());
             require!(config.rlc_content => config.rlp.rlc_content(&cb.r));
-            require!(config.rlc_rlp => config.rlp.rlc_rlp2(cb) * config.mult_norm.expr());
-            require!((config.rlp.num_bytes(), config.mult_diff.expr(), config.mult_norm.expr()) => @MULT);
-            require!((FixedTableTag::RMult, config.rlp.num_bytes(), config.mult_diff_key.expr()) => @FIXED);
+            require!(config.rlc_rlp => config.rlp.rlc_rlp2(cb) * config.mult_inv.expr());
+
+            require!(config.mult_inv.expr() * pow::expr(cb.keccak_r.expr(), HASH_WIDTH + 2) => config.mult_diff_be.expr());
+            require!((FixedTableTag::LERMult, config.rlp.num_bytes(), config.mult_diff_le.expr()) => @FIXED);
+            // require!((PhaseTwoTableTag::BERMult, config.rlp.num_bytes(), config.mult_diff_be.expr()) => @PHASE_TWO);
             // `tag` is a "free" input that needs to be constrained externally!
 
             // Range/zero checks
@@ -1287,26 +1289,20 @@ impl<F: Field> MainRLPGadget<F> {
         // Decode the RLP item
         let rlp_witness = self.rlp.assign(region, offset, bytes)?;
 
+        // Compute the denominator needed for BE
+        let mult_inv = pow::value(region.keccak_r, HASH_WIDTH + 2 - rlp_witness.num_bytes())
+            .invert()
+            .unwrap_or(F::ZERO);
+
         // Store RLP properties for easy access
-        self.num_bytes
-            .assign(region, offset, rlp_witness.num_bytes().scalar())?;
-        self.len
-            .assign(region, offset, rlp_witness.len().scalar())?;
+        self.num_bytes.assign(region, offset, rlp_witness.num_bytes().scalar())?;
+        self.len.assign(region, offset, rlp_witness.len().scalar())?;
+        self.rlc_content.assign(region, offset, rlp_witness.rlc_content(region.r))?;
+        self.rlc_rlp.assign(region, offset, rlp_witness.rlc_rlp2(region.keccak_r) * mult_inv)?;
 
-        let max: usize = HASH_WIDTH + 2;
-        let mult_norm = pow::value(region.keccak_r, max - rlp_witness.num_bytes()).invert().unwrap_or(F::ZERO);
-        self.mult_diff
-            .assign(region, offset, pow::value(region.keccak_r, rlp_witness.num_bytes()))?;
-        self.mult_norm
-            .assign(region, offset, mult_norm)?;
-        self.mult_diff_key
-            .assign(region, offset, pow::value(region.r, rlp_witness.num_bytes()))?;
-        //println!("[{}] {} -> {:?}", offset, rlp_witness.num_bytes(), pow::value(region.keccak_r, max - rlp_witness.num_bytes()).invert().unwrap());
-
-        self.rlc_content
-            .assign(region, offset, rlp_witness.rlc_content(region.r))?;
-        self.rlc_rlp
-            .assign(region, offset, rlp_witness.rlc_rlp2(region.keccak_r) * mult_norm)?;
+        self.mult_inv.assign(region, offset, mult_inv)?;
+        self.mult_diff_be.assign(region, offset, pow::value(region.keccak_r, rlp_witness.num_bytes()))?;
+        self.mult_diff_le.assign(region, offset, pow::value(region.r, rlp_witness.num_bytes()))?;
 
         assign!(region, self.tag, offset => self.tag(is_nibbles).scalar())?;
 
@@ -1326,7 +1322,7 @@ impl<F: Field> MainRLPGadget<F> {
         RLPItemView {
             num_bytes: Some(self.num_bytes.rot(meta, rot)),
             len: Some(self.len.rot(meta, rot)),
-            mult_diff: Some(self.mult_diff.rot(meta, rot)),
+            mult_diff_be: Some(self.mult_diff_be.rot(meta, rot)),
             rlc_content: Some(self.rlc_content.rot(meta, rot)),
             rlc_rlp: Some(self.rlc_rlp.rot(meta, rot)),
             bytes: self.bytes.iter().map(|byte| byte.rot(meta, rot)).collect(),
@@ -1350,7 +1346,7 @@ pub struct RLPItemView<F> {
     pub(crate) bytes: Vec<Expression<F>>,
     pub(crate) num_bytes: Option<Expression<F>>,
     pub(crate) len: Option<Expression<F>>,
-    pub(crate) mult_diff: Option<Expression<F>>,
+    pub(crate) mult_diff_be: Option<Expression<F>>,
     pub(crate) rlc_content: Option<Expression<F>>,
     pub(crate) rlc_rlp: Option<Expression<F>>,
     pub(crate) is_short: Option<Expression<F>>,
@@ -1367,7 +1363,7 @@ impl<F: Field> RLPItemView<F> {
     }
 
     pub(crate) fn mult(&self) -> Expression<F> {
-        self.mult_diff.clone().unwrap()
+        self.mult_diff_be.clone().unwrap()
     }
 
     pub(crate) fn rlc_content(&self) -> Expression<F> {

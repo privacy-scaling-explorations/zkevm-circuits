@@ -19,7 +19,7 @@ use crate::{
     mpt_circuit::{
         helpers::{
             ext_key_rlc_calc_value, ext_key_rlc_expr, num_nibbles, Indexable, KeyData, ParentData,
-            FIXED, KECCAK, MULT,
+            FIXED, KECCAK, PHASE_TWO,
         },
         param::HASH_WIDTH,
         FixedTableTag, MPTConfig, MPTState,
@@ -162,8 +162,7 @@ impl<F: Field> ExtensionGadget<F> {
                 - ifx! {not!(key_data.is_odd.expr() * config.is_key_part_odd.expr()) => { 1.expr() }};
             // Get the multiplier for this key length
             config.mult_key = cb.query_cell();
-            //require!((key_num_bytes_for_mult, config.mult_key.expr()) => @MULT);
-            require!((FixedTableTag::RMult, key_num_bytes_for_mult, config.mult_key.expr()) => @FIXED);
+            require!((FixedTableTag::LERMult, key_num_bytes_for_mult, config.mult_key.expr()) => @FIXED);
 
             // Store the post ext state
             config.post_state = Some(ExtState {
