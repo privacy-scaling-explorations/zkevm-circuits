@@ -490,7 +490,6 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
 
     fn split_expression(&mut self, name: &'static str, expr: Expression<F>) -> Expression<F> {
         if expr.degree() > self.max_degree && self.region_id != 0 {
-            // println!("split {}: {} > {}", name, expr.degree(), self.max_degree);
             match expr {
                 Expression::Negated(poly) => {
                     Expression::Negated(Box::new(self.split_expression(name, *poly)))

@@ -275,7 +275,6 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
         }
 
         if row.get_type() == MptWitnessRowType::BranchChild {
-            // println!("- {:?}", row.bytes);
             let mut child_s_bytes = row.bytes[0..34].to_owned();
             if child_s_bytes[1] == 160 {
                 child_s_bytes[0] = 0;
@@ -302,13 +301,11 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
                 row.bytes[68..].to_owned(),
             ]
             .concat();
-            // println!("+ {:?}", row.bytes);
         }
 
         if row.get_type() == MptWitnessRowType::ExtensionNodeS
             || row.get_type() == MptWitnessRowType::ExtensionNodeC
         {
-            // println!("- {:?}", row.bytes);
             let mut value_bytes = row.bytes[34..68].to_owned();
             if value_bytes[1] == 160 {
                 value_bytes[0] = 0;
@@ -324,7 +321,6 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
                 row.bytes[68..].to_owned(),
             ]
             .concat();
-            // println!("+ {:?}", row.bytes);
         }
 
         // Separate the list rlp bytes from the key bytes
@@ -377,8 +373,6 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
                     unreachable!()
                 }
             };
-
-            // println!("bytes: {:?}", key_bytes);
             row.rlp_bytes = key_bytes[..num_rlp_bytes].to_vec();
             for byte in key_bytes[..num_rlp_bytes].iter_mut() {
                 *byte = 0;
@@ -391,9 +385,6 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
             {
                 key_rlp_bytes = row.rlp_bytes.clone();
             }
-
-            // println!("list : {:?}", row.rlp_bytes);
-            // println!("key  : {:?}", row.bytes);
         }
 
         // Separate the RLP bytes and shift the value bytes to the start of the row
@@ -483,7 +474,6 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
         .collect::<Vec<_>>();
     let mut offset = 0;
     while offset < witness.len() {
-        // println!("offset: {}", offset);
         let mut new_proof = offset == 0;
         if offset > 0 {
             let row_prev = witness[offset - 1].clone();

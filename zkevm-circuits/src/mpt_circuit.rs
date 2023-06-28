@@ -661,15 +661,6 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let challenges = Challenges::construct(meta);
         let challenges_expr = challenges.exprs(meta);
-
-        /*let r = 123456u64;
-        let _challenges = Challenges::mock(
-            Value::known(F::from(r)),
-            Value::known(F::from(r)),
-            Value::known(F::from(r)),
-        );
-        let challenges_expr = Challenges::mock(r.expr(), r.expr(), r.expr());*/
-
         let keccak_table = KeccakTable::construct(meta);
         (
             MPTConfig::configure(meta, challenges_expr, keccak_table),
@@ -683,23 +674,9 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = _challenges.values(&mut layouter);
-
-        //let r = self.randomness;
-        //let challenges = Challenges::mock(Value::known(r), Value::known(r), Value::known(r));
-
         config.load_fixed_table(&mut layouter)?;
         config.load_phase_two_table(&mut layouter, &challenges)?;
         config.assign(&mut layouter, &self.nodes, &challenges)?;
-
-        //for input in self.keccak_data.iter() {
-        //    println!("keccak input: {:?}", input);
-        //}
-
-        /*let keccak_inputs = self.keccak_data.iter().map(|input| input.iter().cloned().rev().collect::<Vec<u8>>()).collect_vec();
-        config
-            .keccak_table
-            .dev_load(&mut layouter, &keccak_inputs, &challenges, false)?;*/
-
         config
           .keccak_table
           .dev_load(&mut layouter, &self.keccak_data, &challenges, false)?;
@@ -720,9 +697,7 @@ mod tests {
 
     #[test]
     fn test_mpt() {
-        // for debugging:
         let path = "src/mpt_circuit/tests";
-        // let path = "tests";
         let files = fs::read_dir(path).unwrap();
         files
             .filter_map(Result::ok)
