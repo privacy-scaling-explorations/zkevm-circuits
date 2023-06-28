@@ -31,6 +31,7 @@ use eth_types::{
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address, keccak256};
+use log::trace;
 use std::cmp::max;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
@@ -1850,7 +1851,7 @@ impl<'a> CircuitInputStateRef<'a> {
             return Ok(copy_steps);
         }
 
-        println!("calldata : {:?}", self.call_ctx()?.call_data);
+        trace!("calldata : {:?}", self.call_ctx()?.call_data);
         let is_root = self.call()?.is_root;
         // dest memory slot
         let (_, dst_begin_slot) = self.get_addr_shift_slot(dst_addr).unwrap();
@@ -1924,8 +1925,8 @@ impl<'a> CircuitInputStateRef<'a> {
         let (_, dst_begin_slot) = self.get_addr_shift_slot(dst_addr).unwrap();
         let (_, dst_end_slot) = self.get_addr_shift_slot(dst_addr + copy_length).unwrap();
 
-        println!("overflow check: {src_begin_slot} {src_end_slot}");
-        println!("overflow check: {dst_begin_slot} {dst_end_slot}");
+        trace!("overflow check: {src_begin_slot} {src_end_slot}");
+        trace!("overflow check: {dst_begin_slot} {dst_end_slot}");
         let slot_count = max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot) as usize;
         let src_end_slot = src_begin_slot as usize + slot_count;
         let dst_end_slot = dst_begin_slot as usize + slot_count;
@@ -1971,7 +1972,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     Word::from_big_endian(read_chunk),
                 ),
             );
-            println!("read chunk: {caller_id} {src_chunk_index} {read_chunk:?}");
+            trace!("read chunk: {caller_id} {src_chunk_index} {read_chunk:?}");
             src_chunk_index += 32;
 
             self.push_op(
@@ -1983,13 +1984,13 @@ impl<'a> CircuitInputStateRef<'a> {
                     Word::from_big_endian(write_chunk),
                 ),
             );
-            println!("write chunk: {current_call_id} {dst_chunk_index} {write_chunk:?}");
+            trace!("write chunk: {current_call_id} {dst_chunk_index} {write_chunk:?}");
             dst_chunk_index += 32;
 
             copy_rwc_inc += 2;
         }
 
-        println!(
+        trace!(
             r#"busmapping:
             src_addr = {src_addr}
             dst_addr = {dst_addr}
@@ -2087,7 +2088,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     Word::from_big_endian(read_chunk),
                 ),
             );
-            println!("read chunk: {last_callee_id} {src_chunk_index} {read_chunk:?}");
+            trace!("read chunk: {last_callee_id} {src_chunk_index} {read_chunk:?}");
             src_chunk_index += 32;
 
             self.push_op(
@@ -2099,13 +2100,13 @@ impl<'a> CircuitInputStateRef<'a> {
                     Word::from_big_endian(write_chunk),
                 ),
             );
-            println!("write chunk: {current_call_id} {dst_chunk_index} {write_chunk:?}");
+            trace!("write chunk: {current_call_id} {dst_chunk_index} {write_chunk:?}");
             dst_chunk_index += 32;
 
             copy_rwc_inc += 2;
         }
 
-        println!(
+        trace!(
             r#"busmapping:
             src_addr = {src_addr}
             dst_addr = {dst_addr}

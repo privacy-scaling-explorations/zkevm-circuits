@@ -352,7 +352,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 }
             }
         }
-        println!("assign calldata_bytes {calldata_bytes:?}");
+        trace!("assign calldata_bytes {calldata_bytes:?}");
 
         self.buffer_reader.assign(
             region,

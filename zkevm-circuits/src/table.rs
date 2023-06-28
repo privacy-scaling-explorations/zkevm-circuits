@@ -35,6 +35,7 @@ use halo2_proofs::plonk::SecondPhase;
 use halo2_proofs::dev::unwrap_value;
 use itertools::Itertools;
 use keccak256::plain::Keccak;
+use log::trace;
 use std::array;
 use strum_macros::{EnumCount, EnumIter};
 
@@ -1540,7 +1541,7 @@ impl CopyTable {
         copy_event: &CopyEvent,
         challenges: Challenges<Value<F>>,
     ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
-        println!("assignments CopyEvent challenge  {challenges:?} ");
+        trace!("assignments CopyEvent challenge  {challenges:?} ");
         let mut assignments = Vec::new();
         // rlc_acc
         let rlc_acc = {
@@ -1551,13 +1552,13 @@ impl CopyTable {
                 .map(|(value, _, _)| *value)
                 .collect::<Vec<u8>>();
 
-            println!("rlc_acc bytes are {values:?}");
+            trace!("rlc_acc bytes are {values:?}");
             challenges
                 .keccak_input()
                 .map(|keccak_input| rlc::value(values.iter().rev(), keccak_input))
         };
 
-        println!("rlc_acc of bytecode bytes {rlc_acc:?} ");
+        trace!("rlc_acc of bytecode bytes {rlc_acc:?} ");
         let mut value_word_read_rlc = Value::known(F::zero());
         let mut value_word_write_rlc = Value::known(F::zero());
         let mut value_acc = Value::known(F::zero());
@@ -1737,22 +1738,6 @@ impl CopyTable {
             // debug info
             let rw_count = F::from(copy_event.rw_counter_step(step_idx));
             let _rwc_inc_left = F::from(copy_event.rw_counter_increase_left(step_idx));
-            // todo: rm
-            //if is_read_step {
-            println!(
-                "#{}\ttag {:?}\taddr 0x{:X}\taddr_end 0x{:X}\trw_count 0x{:X}\tid 0x{:X}\tbytes_left 0x{:X}\treal_bytes_left 0x{:X}\tmask {}\tis_pad {}",
-                step_idx,
-                tag,
-                addr.get_lower_32(),
-                copy_event.src_addr_end,
-                rw_count.get_lower_32(),
-                unwrap_value(id).get_lower_32(),
-                bytes_left,
-                real_length_left,
-                copy_step.mask,
-                is_read_step && addr >= F::from(copy_event.src_addr_end),
-            );
-            //}
 
             assignments.push((
                 tag,

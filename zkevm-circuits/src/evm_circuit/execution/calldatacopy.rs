@@ -25,6 +25,7 @@ use eth_types::{evm_types::GasCost, Field, ToScalar};
 
 use halo2_proofs::{circuit::Value, plonk::Error};
 
+use log::trace;
 use std::cmp::max;
 
 #[derive(Clone, Debug)]
@@ -227,7 +228,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             let memory_start_slot = memory_offset.low_u64() - memory_offset.low_u64() % 32;
             let memory_end = memory_offset.low_u64() + length_u64;
             let memory_end_slot = memory_end - memory_end % 32;
-            println!(
+            trace!(
                 "memory_start {}, length {}",
                 memory_offset.low_u64(),
                 length.low_u64()

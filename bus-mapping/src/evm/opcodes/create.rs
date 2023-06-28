@@ -10,6 +10,7 @@ use crate::{
 };
 use eth_types::{Bytecode, GethExecStep, ToBigEndian, ToWord, Word, H160, H256};
 use ethers_core::utils::{get_create2_address, keccak256, rlp};
+use log::trace;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Create<const IS_CREATE2: bool>;
@@ -327,7 +328,7 @@ fn handle_copy(
     length: usize,
 ) -> Result<(Vec<u8>, H256, H256), Error> {
     let initialization_bytes = state.call_ctx()?.memory.0[offset..offset + length].to_vec();
-    println!("initialization_bytes bussmapping is {initialization_bytes:?}");
+    trace!("initialization_bytes bussmapping is {initialization_bytes:?}");
     let keccak_code_hash = H256(keccak256(&initialization_bytes));
     let code_hash = CodeDB::hash(&initialization_bytes);
     let bytes: Vec<_> = Bytecode::from(initialization_bytes.clone())

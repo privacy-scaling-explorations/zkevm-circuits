@@ -4,6 +4,7 @@ use crate::{
     Error,
 };
 use eth_types::{GethExecStep, Word};
+use log::trace;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MLOAD`](crate::evm::OpcodeId::MLOAD)
@@ -34,7 +35,7 @@ impl Opcode for Mload {
         let offset = stack_value_read.as_u64();
         let shift = offset % 32;
         let slot = offset - shift;
-        println!("shift {shift}, slot {slot}");
+        trace!("shift {shift}, slot {slot}");
 
         let (left_word, right_word) = {
             // Get the memory chunk that contains the word, starting at an aligned slot address.

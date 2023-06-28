@@ -269,7 +269,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             2 * (slot_count / 32 + 1)
         };
 
-        println!(
+        trace!(
             r#"circuit:
         src_addr = {src_begin}
         dst_addr = {dst_begin}
@@ -306,7 +306,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
                 .expect("unexpected U256 -> Scalar conversion failure"),
         )?;
 
-        println!(
+        trace!(
             "copytable lookup: src_id: 0x{:x}, src_addr: 0x{:x}, src_addr_end: 0x{:x}, dst_id: 0x{:x}, dst_addr: 0x{:x}, length: 0x{:x}, rw_counter: 0x{:x}, rwc_inc: 0x{:x}",
             last_callee_id.low_u64(),
             return_data_offset.low_u64() + data_offset.low_u64(),

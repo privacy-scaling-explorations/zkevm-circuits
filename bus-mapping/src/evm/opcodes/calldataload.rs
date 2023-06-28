@@ -4,6 +4,7 @@ use crate::{
     Error,
 };
 use eth_types::{GethExecStep, Word, U256};
+use log::trace;
 
 use super::Opcode;
 
@@ -90,7 +91,7 @@ impl Opcode for Calldataload {
                 let mut slot_bytes: [u8; 32] = [0; 32];
                 // pick up caller's memory
                 let mut memory = state.caller_ctx_mut()?.memory.clone();
-                println!("calldatload caller memory {memory:?}");
+                trace!("calldatload caller memory {memory:?}");
                 // expand to offset + 64 to enusre addr_right_Word without out of boundary
                 let minimal_length = offset + 64;
                 memory.extend_at_least(minimal_length as usize);
@@ -300,7 +301,7 @@ mod calldataload_tests {
         if memory_bytes.len() < slot + minimal_length {
             memory_bytes.resize(slot + minimal_length, 0);
         }
-        println!("calldatload memory_bytes {:?}", memory_bytes);
+        trace!("calldatload memory_bytes {:?}", memory_bytes);
 
         //memory_a.reverse();
         slot_bytes.clone_from_slice(&memory_bytes[slot..slot + 32]);

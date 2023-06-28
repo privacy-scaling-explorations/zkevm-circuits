@@ -29,6 +29,7 @@ use eth_types::{
     ToScalar, U256,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
+use log::trace;
 use std::cmp::{max, min};
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
@@ -980,10 +981,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             output_rws,
             return_rws,
         ) = if is_precompiled(&callee_address.to_address()) {
-            for (idx, idx_rw) in step.rw_indices.iter().enumerate() {
-                println!("{idx} {:?}", block.rws[*idx_rw])
-            }
-
             let input_bytes_begin = cd_offset.as_usize();
             let input_bytes_end = cd_offset.as_usize() + cd_length.as_usize();
             let input_bytes_begin_slot = input_bytes_begin - input_bytes_begin % 32;
@@ -1013,18 +1010,18 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             let return_bytes_start_offset = return_bytes_begin - return_bytes_begin_slot;
             let return_bytes_end_offset = return_bytes_end - return_bytes_begin_slot;
 
-            println!("rw_offset {rw_offset}");
-            println!(
+            trace!("rw_offset {rw_offset}");
+            trace!(
                 "input_bytes rws [{},{})",
                 33 + rw_offset,
                 33 + rw_offset + input_bytes_word_count
             );
-            println!(
+            trace!(
                 "output_bytes rws [{},{})",
                 33 + rw_offset + input_bytes_word_count,
                 33 + rw_offset + input_bytes_word_count + output_bytes_word_count
             );
-            println!(
+            trace!(
                 "return_bytes copy [{},{})",
                 33 + rw_offset + input_bytes_word_count + output_bytes_word_count,
                 33 + rw_offset
@@ -1052,9 +1049,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 .flat_map(|word| word.to_be_bytes())
                 .collect::<Vec<_>>();
 
-            println!("input_bytes: {input_bytes:x?}");
-            println!("output_bytes: {output_bytes:x?}");
-            println!("return_bytes: {return_bytes:x?}");
+            trace!("input_bytes: {input_bytes:x?}");
+            trace!("output_bytes: {output_bytes:x?}");
+            trace!("return_bytes: {return_bytes:x?}");
 
             let input_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
                 rlc::value(
@@ -1075,15 +1072,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     randomness,
                 )
             });
-            println!("input_bytes_rlc: {input_bytes_rlc:?}");
-            println!("output_bytes_rlc: {output_bytes_rlc:?}");
-            println!("return_bytes_rlc: {return_bytes_rlc:?}");
+            trace!("input_bytes_rlc: {input_bytes_rlc:?}");
+            trace!("output_bytes_rlc: {output_bytes_rlc:?}");
+            trace!("return_bytes_rlc: {return_bytes_rlc:?}");
             let input_rws = Value::known(F::from(input_bytes_word_count as u64));
             let output_rws = Value::known(F::from(output_bytes_word_count as u64));
             let return_rws = Value::known(F::from((return_bytes_word_count * 2) as u64));
-            println!("input_rws: {input_rws:?}");
-            println!("output_rws: {output_rws:?}");
-            println!("return_rws: {return_rws:?}");
+            trace!("input_rws: {input_rws:?}");
+            trace!("output_rws: {output_rws:?}");
+            trace!("return_rws: {return_rws:?}");
             (
                 input_bytes_rlc,
                 output_bytes_rlc,

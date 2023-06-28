@@ -271,7 +271,7 @@ mod test {
     #[test]
     fn memory_gadget_simple() {
         let val = Word::from_big_endian(&(1..33).collect::<Vec<_>>());
-        println!("value is {val}");
+        trace!("value is {val}");
         test_ok(
             OpcodeId::MSTORE,
             Word::from(0x12FFFF),

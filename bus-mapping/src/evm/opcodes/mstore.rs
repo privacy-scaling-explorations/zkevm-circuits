@@ -4,6 +4,7 @@ use crate::{
     Error,
 };
 use eth_types::{GethExecStep, ToBigEndian, ToLittleEndian, Word};
+use log::trace;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MSTORE`](crate::evm::OpcodeId::MSTORE)
@@ -31,7 +32,7 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
         let offset_u64 = offset.as_u64() as usize;
         let shift = offset_u64 % 32;
         let slot = offset_u64 - shift;
-        println!("shift {shift}, slot {slot}");
+        trace!("shift {shift}, slot {slot}");
 
         let (left_word, right_word) = {
             // Get the memory chunk that contains the word, starting at an aligned slot address.
@@ -82,7 +83,7 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
             }
         }
 
-        println!(
+        trace!(
             "after mstore memory length {}",
             state.call_ctx_mut()?.memory.0.len()
         );
