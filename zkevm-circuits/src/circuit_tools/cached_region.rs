@@ -215,16 +215,13 @@ impl<F: Field, C: CellType> StoredExpression<F, C> {
             },
             &|_| unimplemented!("instance column"),
             &|challenge| {
-                // println!("challenge {} accessed: {:?}", challenge.index(), *region.challenges().indexed()[challenge.index()]);
                 *region.challenges().indexed()[challenge.index()]
-                // Value::known(word!("0x2a79eee6c17367c19c0de1ca49eca2a478494747b4bf58ecad53e889d6695f4c").to_scalar().unwrap())
             },
             &|a| -a,
             &|a, b| a + b,
             &|a, b| a * b,
             &|a, scalar| a * Value::known(scalar),
         );
-        // println!("Assignment result: {:?}", value);
         self.cell.assign_value(region, offset, value)?;
         Ok(value)
     }

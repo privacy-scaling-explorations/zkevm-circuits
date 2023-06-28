@@ -293,11 +293,18 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
     ) {
         let lookups = self.dynamic_lookups.clone();
         for lookup_name in lookup_names.iter() {
-            println!("\nbuild_dynamic_lookups {:?}", lookup_name);
             if let Some(lookups) = lookups.get(lookup_name) {
                 for lookup in lookups.iter() {
-                    print!("{:?} ", lookup.description);
                     meta.lookup_any(lookup.description, |meta| {
+                        
+                        // Fixed lookup is a direct lookup into the pre-difined fixed tables
+                        // i.e. cond * (v1, v2, v3) => (t1, t2, t3)
+                        // equivalent to the vanilla lookup operation of Halo2.
+                        // Dynamic lookup applies condition to the advice values stored at configuration time
+                        // i.e. cond * (v1, v2, v3) => cond * (t1, t2, t3)
+                        // the dynamic lookup in a ifx! branch would become trivial 0 => 0 
+                        // when the elsex! branch evaluates to true
+                        
                         let table = if lookup.is_fixed {
                             let table_cols = fixed_table
                                 .iter()
@@ -307,22 +314,25 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                             table_cols.iter().map(|col| meta.query_any(*col, Rotation(0))).collect()
                         } else {
                             let dyn_table = self.get_dynamic_table_values(*lookup_name);
-                            // Both side should be combined or not combined
                             assert_eq!(dyn_table.len(), lookup.values.len());
                             dyn_table
                         };
+                        
                         let mut values: Vec<_> = lookup
                                 .values
                                 .iter()
                                 .map(|value| value.expr() * lookup.condition.clone())
                                 .collect();
-                            
+                        // allign the length of values and table    
                         assert!(table.len() >= values.len());
                         while values.len() < table.len() {
                             values.push(0.expr());
                         }
-                        // Both side may had been combined
-                        // in that case rlc::expr returns the one and only element of both
+                        
+                        // Perform rlc if specified
+                        // i.e. (v1*r + v2*r^2 + v3*r^3) => (t1*r + t2*r^2 + t3*r^3)
+                        // lastly is_split had been fulfilled at insertion time
+
                         let mut ret = if lookup.is_combine {
                             vec![(
                                 rlc::expr(&values, self.lookup_challenge.clone().unwrap()),
