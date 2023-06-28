@@ -5,7 +5,7 @@ use super::{
         N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
     step::HasExecutionState,
-    util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
+    util::{instrumentation::Instrument, CachedRegion, StoredExpression},
 };
 use crate::{
     evm_circuit::{
@@ -16,12 +16,15 @@ use crate::{
             constraint_builder::{
                 BaseConstraintBuilder, ConstrainBuilderCommon, EVMConstraintBuilder,
             },
-            rlc, CellType,
+            rlc,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::LookupTable,
-    util::{query_expression, Challenges, Expr},
+    util::{
+        cell_manager::{CMFixedWidthStrategy, CellManager, CellType},
+        Challenges, Expr,
+    },
 };
 use bus_mapping::operation::Target;
 use eth_types::{evm_unimplemented, Field};
@@ -359,7 +362,7 @@ impl<F: Field> ExecutionConfig<F> {
             .try_into()
             .unwrap();
 
-        let step_curr = Step::new(meta, advices, 0, false);
+        let step_curr = Step::new(meta, advices, 0);
         let mut height_map = HashMap::new();
 
         meta.create_gate("Constrain execution state", |meta| {
@@ -622,21 +625,23 @@ impl<F: Field> ExecutionConfig<F> {
         // Configure the gadget with the max height first so we can find out the actual
         // height
         let height = {
-            let dummy_step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
+            let dummy_step_next = Step::new(meta, advices, MAX_STEP_HEIGHT);
             let mut cb = EVMConstraintBuilder::new(
+                meta,
                 step_curr.clone(),
                 dummy_step_next,
                 challenges,
                 G::EXECUTION_STATE,
             );
             G::configure(&mut cb);
-            let (_, _, height) = cb.build();
+            let (_, _, height, _) = cb.build();
             height
         };
 
         // Now actually configure the gadget with the correct minimal height
-        let step_next = &Step::new(meta, advices, height, true);
+        let step_next = &Step::new(meta, advices, height);
         let mut cb = EVMConstraintBuilder::new(
+            meta,
             step_curr.clone(),
             step_next.clone(),
             challenges,
@@ -646,7 +651,6 @@ impl<F: Field> ExecutionConfig<F> {
         let gadget = G::configure(&mut cb);
 
         Self::configure_gadget_impl(
-            meta,
             q_usable,
             q_step,
             num_rows_until_next_step,
@@ -668,7 +672,6 @@ impl<F: Field> ExecutionConfig<F> {
 
     #[allow(clippy::too_many_arguments)]
     fn configure_gadget_impl(
-        meta: &mut ConstraintSystem<F>,
         q_usable: Selector,
         q_step: Column<Advice>,
         num_rows_until_next_step: Column<Advice>,
@@ -685,9 +688,8 @@ impl<F: Field> ExecutionConfig<F> {
         mut cb: EVMConstraintBuilder<F>,
     ) {
         // Enforce the step height for this opcode
-        let num_rows_until_next_step_next = query_expression(meta, |meta| {
-            meta.query_advice(num_rows_until_next_step, Rotation::next())
-        });
+        let num_rows_until_next_step_next = cb
+            .query_expression(|meta| meta.query_advice(num_rows_until_next_step, Rotation::next()));
         cb.require_equal(
             "num_rows_until_next_step_next := height - 1",
             num_rows_until_next_step_next,
@@ -696,7 +698,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         instrument.on_gadget_built(execution_state, &cb);
 
-        let (constraints, stored_expressions, _) = cb.build();
+        let (constraints, stored_expressions, _, meta) = cb.build();
         debug_assert!(
             !height_map.contains_key(&execution_state),
             "execution state already configured"
@@ -811,11 +813,12 @@ impl<F: Field> ExecutionConfig<F> {
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
         challenges: &Challenges<Expression<F>>,
-        cell_manager: &CellManager<F>,
+        cell_manager: &CellManager<CMFixedWidthStrategy>,
     ) {
         for column in cell_manager.columns().iter() {
             if let CellType::Lookup(table) = column.cell_type {
                 let name = format!("{:?}", table);
+                let column_expr = column.expr(meta);
                 meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                     let table_expressions = match table {
                         Table::Fixed => fixed_table,
@@ -829,7 +832,7 @@ impl<F: Field> ExecutionConfig<F> {
                     }
                     .table_exprs(meta);
                     vec![(
-                        column.expr(),
+                        column_expr,
                         rlc::expr(&table_expressions, challenges.lookup_input()),
                     )]
                 });
@@ -837,9 +840,10 @@ impl<F: Field> ExecutionConfig<F> {
         }
         for column in cell_manager.columns().iter() {
             if let CellType::LookupByte = column.cell_type {
+                let column_expr = column.expr(meta);
                 meta.lookup_any("Byte lookup", |meta| {
                     let byte_table_expression = byte_table.table_exprs(meta)[0].clone();
-                    vec![(column.expr(), byte_table_expression)]
+                    vec![(column_expr, byte_table_expression)]
                 });
             }
         }
@@ -1383,7 +1387,7 @@ impl<F: Field> ExecutionConfig<F> {
         // TODO: We should find a better way to avoid this kind of special case.
         // #1489 is the issue for this refactor.
         if copy_lookup_count > 1 {
-            log::warn!("The number of copy events is more than 1, it's not supported by current design. Stop checking this step: {:?}", 
+            log::warn!("The number of copy events is more than 1, it's not supported by current design. Stop checking this step: {:?}",
                 step
             );
             return;
@@ -1424,7 +1428,7 @@ impl<F: Field> ExecutionConfig<F> {
             != assigned_rw_values.len() + step.copy_rw_counter_delta as usize - copy_lookup_count
         {
             log::error!(
-                "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} - copy_lookup_count: {} in step: {:?}", 
+                "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} - copy_lookup_count: {} in step: {:?}",
                 step.rw_indices_len(),
                 assigned_rw_values.len(),
                 step.copy_rw_counter_delta,
@@ -1458,15 +1462,6 @@ impl<F: Field> ExecutionConfig<F> {
             } else {
                 idx - rev_count + offset - copy_lookup_processed as usize
             };
-
-            // TODO: can remove after #1483 fixed
-            // step.rw_indices_len() doesn't inclued copy_rw_counter_delta in some cases
-            // which will cuase out of boundary while calling rw_index().
-            // Beside, if this condition holds, `copy lookup` is the last element of
-            // assigned_rw_value. Therefore, can ignore it for now.
-            if idx > step.rw_indices_len() - 1 {
-                continue;
-            }
 
             // If assigned_rw_value is a `copy lookup` event, the following
             // `step.copy_rw_counter_delta` rw lookups must be memory operations.

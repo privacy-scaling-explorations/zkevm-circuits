@@ -1,7 +1,8 @@
-use crate::evm_circuit::{
-    step::ExecutionState,
-    table::Table,
-    util::{constraint_builder::EVMConstraintBuilder, CellType},
+use crate::{
+    evm_circuit::{
+        step::ExecutionState, table::Table, util::constraint_builder::EVMConstraintBuilder,
+    },
+    util::cell_manager::CellType,
 };
 use eth_types::Field;
 use itertools::Itertools;

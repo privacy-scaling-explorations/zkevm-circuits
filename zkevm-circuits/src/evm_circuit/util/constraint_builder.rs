@@ -3,13 +3,17 @@ use crate::{
         param::STACK_CAPACITY,
         step::{ExecutionState, Step},
         table::{FixedTableTag, Lookup, RwValues},
-        util::{Cell, RandomLinearCombination, Word},
+        util::{RandomLinearCombination, Word},
     },
     table::{
         AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, TxContextFieldTag, TxLogFieldTag,
         TxReceiptFieldTag,
     },
-    util::{build_tx_log_expression, Challenges, Expr},
+    util::{
+        build_tx_log_expression,
+        cell_manager::{Cell, CellType},
+        query_expression, Challenges, Expr,
+    },
 };
 use bus_mapping::{operation::Target, state_db::EMPTY_CODE_HASH_LE};
 use eth_types::Field;
@@ -17,12 +21,13 @@ use gadgets::util::not;
 use halo2_proofs::{
     circuit::Value,
     plonk::{
-        Error,
+        ConstraintSystem, Error,
         Expression::{self, Constant},
+        VirtualCells,
     },
 };
 
-use super::{rlc, CachedRegion, CellType, StoredExpression};
+use super::{rlc, CachedRegion, StoredExpression};
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
 // It aims to cap `extended_k` to 2, which allows constraint degree to 2^2+1,
@@ -268,7 +273,7 @@ pub(crate) struct Constraints<F> {
     pub(crate) not_step_last: Vec<(&'static str, Expression<F>)>,
 }
 
-pub(crate) struct EVMConstraintBuilder<'a, F> {
+pub(crate) struct EVMConstraintBuilder<'a, F: Field> {
     pub max_degree: usize,
     pub(crate) curr: Step<F>,
     pub(crate) next: Step<F>,
@@ -283,6 +288,8 @@ pub(crate) struct EVMConstraintBuilder<'a, F> {
     conditions: Vec<Expression<F>>,
     constraints_location: ConstraintLocation,
     stored_expressions: Vec<StoredExpression<F>>,
+
+    meta: &'a mut ConstraintSystem<F>,
 }
 
 impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
@@ -300,6 +307,7 @@ impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
 
 impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn new(
+        meta: &'a mut ConstraintSystem<F>,
         curr: Step<F>,
         next: Step<F>,
         challenges: &'a Challenges<Expression<F>>,
@@ -325,13 +333,21 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             conditions: Vec::new(),
             constraints_location: ConstraintLocation::Step,
             stored_expressions: Vec::new(),
+            meta,
         }
     }
 
     /// Returns (list of constraints, list of first step constraints, stored
     /// expressions, height used).
     #[allow(clippy::type_complexity)]
-    pub(crate) fn build(self) -> (Constraints<F>, Vec<StoredExpression<F>>, usize) {
+    pub(crate) fn build(
+        self,
+    ) -> (
+        Constraints<F>,
+        Vec<StoredExpression<F>>,
+        usize,
+        &'a mut ConstraintSystem<F>,
+    ) {
         let exec_state_sel = self.curr.execution_state_selector([self.execution_state]);
         let mul_exec_state_sel = |c: Vec<(&'static str, Expression<F>)>| {
             c.into_iter()
@@ -347,7 +363,16 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             },
             self.stored_expressions,
             self.curr.cell_manager.get_height(),
+            self.meta,
         )
+    }
+
+    pub(crate) fn get_cs(&'a mut self) -> &'a mut ConstraintSystem<F> {
+        self.meta
+    }
+
+    pub(crate) fn query_expression<T>(&mut self, f: impl FnMut(&mut VirtualCells<F>) -> T) -> T {
+        query_expression(self.meta, f)
     }
 
     fn condition_expr_opt(&self) -> Option<Expression<F>> {
@@ -446,7 +471,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             &mut self.curr
         }
         .cell_manager
-        .query_cells(cell_type, count)
+        .query_cells(self.meta, cell_type, count)
     }
 
     pub(crate) fn word_rlc<const N: usize>(&self, bytes: [Expression<F>; N]) -> Expression<F> {
