@@ -187,7 +187,7 @@ impl CellType for DefaultCellType {
     }
 
     fn storage_for_phase(phase: u8) -> Self {
-        //println!("phase: {}", phase);
+        // println!("phase: {}", phase);
         match phase {
             0 => DefaultCellType::StoragePhase1,
             1 => DefaultCellType::StoragePhase2,

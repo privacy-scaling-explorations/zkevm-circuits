@@ -4,7 +4,8 @@ use crate::{
         cached_region::{CachedRegion, ChallengeSet},
         cell_manager::{Cell, CellManager, CellType},
         constraint_builder::{
-            ConstraintBuilder, RLCChainable, RLCChainableValue, RLCable, RLCableValue, RLCChainable2,
+            ConstraintBuilder, RLCChainable, RLCChainable2, RLCChainableValue, RLCable,
+            RLCableValue,
         },
         gadgets::IsEqualGadget,
         memory::MemoryBank,
@@ -13,11 +14,12 @@ use crate::{
     matchw,
     mpt_circuit::{
         param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN},
-        rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble}, PhaseTwoTableTag,
+        rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble},
+        PhaseTwoTableTag,
     },
     util::{Challenges, Expr},
 };
-use eth_types::{Field};
+use eth_types::Field;
 use gadgets::util::{not, or, pow, Scalar};
 use halo2_proofs::{
     circuit::Value,
@@ -25,10 +27,11 @@ use halo2_proofs::{
 };
 
 use super::{
+    param::HASH_WIDTH,
     rlp_gadgets::{
         get_ext_odd_nibble_value, RLPItemGadget, RLPItemWitness, RLPListGadget, RLPListWitness,
     },
-    FixedTableTag, param::HASH_WIDTH,
+    FixedTableTag,
 };
 
 impl<F: Field> ChallengeSet<F> for crate::util::Challenges<Value<F>> {
@@ -344,7 +347,8 @@ impl<F: Field> ListKeyGadget<F> {
 
     pub(crate) fn rlc2(&self, r: &Expression<F>) -> Expression<F> {
         self.rlp_list
-            .rlc_rlp_only2(r).0
+            .rlc_rlp_only2(r)
+            .0
             .rlc_chain2(self.key_value.rlc_chain_data())
     }
 }
@@ -887,7 +891,7 @@ impl<F: Field> MPTConstraintBuilder<F> {
                 Some(challenges.clone().unwrap().lookup_input().expr()),
             ),
             le_r: le_r.expr(),
-            be_r: challenges.clone().unwrap().keccak_input().expr()/* (r.expr() + 1.expr()) */,
+            be_r: challenges.clone().unwrap().keccak_input().expr(), // (r.expr() + 1.expr())
             challenges,
         }
     }
@@ -1261,9 +1265,10 @@ impl<F: Field> MainRLPGadget<F> {
             // We enable dynamic lookups because otherwise these lookup would require a lot of extra
             // cells.
             cb.set_use_dynamic_lookup(true);
-            for (idx, byte) in config.bytes.iter().enumerate() {
+            for (_idx, _byte) in config.bytes.iter().enumerate() {
                 // `tag` is a "free" input that needs to be constrained externally!
-                //require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()) => @FIXED);
+                // require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr())
+                // => @FIXED);
             }
             cb.set_use_dynamic_lookup(false);
 
@@ -1292,14 +1297,26 @@ impl<F: Field> MainRLPGadget<F> {
             .unwrap_or(F::ZERO);
 
         // Store RLP properties for easy access
-        self.num_bytes.assign(region, offset, rlp_witness.num_bytes().scalar())?;
-        self.len.assign(region, offset, rlp_witness.len().scalar())?;
-        self.rlc_content.assign(region, offset, rlp_witness.rlc_content(region.le_r))?;
-        self.rlc_rlp.assign(region, offset, rlp_witness.rlc_rlp2(region.be_r) * mult_inv)?;
+        self.num_bytes
+            .assign(region, offset, rlp_witness.num_bytes().scalar())?;
+        self.len
+            .assign(region, offset, rlp_witness.len().scalar())?;
+        self.rlc_content
+            .assign(region, offset, rlp_witness.rlc_content(region.le_r))?;
+        self.rlc_rlp
+            .assign(region, offset, rlp_witness.rlc_rlp2(region.be_r) * mult_inv)?;
 
         self.mult_inv.assign(region, offset, mult_inv)?;
-        self.mult_diff_be.assign(region, offset, pow::value(region.be_r, rlp_witness.num_bytes()))?;
-        self.mult_diff_le.assign(region, offset, pow::value(region.le_r, rlp_witness.num_bytes()))?;
+        self.mult_diff_be.assign(
+            region,
+            offset,
+            pow::value(region.be_r, rlp_witness.num_bytes()),
+        )?;
+        self.mult_diff_le.assign(
+            region,
+            offset,
+            pow::value(region.le_r, rlp_witness.num_bytes()),
+        )?;
 
         assign!(region, self.tag, offset => self.tag(is_nibbles).scalar())?;
 

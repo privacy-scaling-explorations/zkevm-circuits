@@ -277,7 +277,10 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                     meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                         vec![(
                             col.expr,
-                            rlc::expr(&table.table_exprs(meta), self.lookup_challenge.clone().unwrap()),
+                            rlc::expr(
+                                &table.table_exprs(meta),
+                                self.lookup_challenge.clone().unwrap(),
+                            ),
                         )]
                     });
                 }
@@ -450,7 +453,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         match stored_expression {
             Some(stored_expression) => stored_expression.cell.expr(),
             None => {
-                //println!("cell_type: {:?}", cell_type);
+                // println!("cell_type: {:?}", cell_type);
                 // Require the stored value to equal the value of the expression
                 let cell = self.query_one(cell_type);
                 let name = format!("{} (stored expression)", name);
@@ -806,7 +809,10 @@ impl<F: Field, E: ExprVec<F> + ?Sized> RLCable<F> for E {
     }
 
     fn rlc_rev(&self, r: &Expression<F>) -> Expression<F> {
-        rlc::expr(&self.to_expr_vec().iter().rev().cloned().collect_vec(), r.expr())
+        rlc::expr(
+            &self.to_expr_vec().iter().rev().cloned().collect_vec(),
+            r.expr(),
+        )
     }
 }
 

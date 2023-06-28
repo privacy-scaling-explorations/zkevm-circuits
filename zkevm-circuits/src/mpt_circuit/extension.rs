@@ -13,13 +13,13 @@ use crate::{
     circuit_tools::{
         cached_region::{CachedRegion, ChallengeSet},
         cell_manager::Cell,
-        constraint_builder::{RLCChainable, RLCChainable2},
+        constraint_builder::RLCChainable2,
         gadgets::LtGadget,
     },
     mpt_circuit::{
         helpers::{
             ext_key_rlc_calc_value, ext_key_rlc_expr, num_nibbles, Indexable, KeyData, ParentData,
-            FIXED, KECCAK, PHASE_TWO,
+            FIXED, KECCAK,
         },
         param::HASH_WIDTH,
         FixedTableTag, MPTConfig, MPTState,
@@ -88,7 +88,10 @@ impl<F: Field> ExtensionGadget<F> {
                 }
 
                 // Extension node RLC
-                let node_rlc = config.rlp_key.rlc2(&cb.be_r).rlc_chain2(rlp_value[is_s.idx()].rlc_chain_data());
+                let node_rlc = config
+                    .rlp_key
+                    .rlc2(&cb.be_r)
+                    .rlc_chain2(rlp_value[is_s.idx()].rlc_chain_data());
 
                 // The branch expected in the extension node
                 branch_rlp_rlc[is_s.idx()] = rlp_value[is_s.idx()].rlc_content();

@@ -441,7 +441,11 @@ impl<F: Field> RLPValueGadget<F> {
     }
 
     /// RLC data
-    pub(crate) fn rlc(&self, r: &Expression<F>, keccak_r: &Expression<F>) -> (Expression<F>, Expression<F>) {
+    pub(crate) fn rlc(
+        &self,
+        r: &Expression<F>,
+        keccak_r: &Expression<F>,
+    ) -> (Expression<F>, Expression<F>) {
         (self.rlc_value(r), self.rlc_rlp(keccak_r))
     }
 
@@ -450,7 +454,11 @@ impl<F: Field> RLPValueGadget<F> {
     }
 
     /// RLC data
-    pub(crate) fn rlc2(&self, r: &Expression<F>, keccak_r: &Expression<F>) -> (Expression<F>, Expression<F>) {
+    pub(crate) fn rlc2(
+        &self,
+        r: &Expression<F>,
+        keccak_r: &Expression<F>,
+    ) -> (Expression<F>, Expression<F>) {
         (self.rlc_value(r), self.rlc_rlp_only2(keccak_r).0)
     }
 
@@ -738,10 +746,7 @@ impl<F: Field> RLPItemGadget<F> {
         })
     }
 
-    pub(crate) fn rlc_rlp(
-        &self,
-        cb: &mut MPTConstraintBuilder<F>,
-    ) -> Expression<F> {
+    pub(crate) fn rlc_rlp(&self, cb: &mut MPTConstraintBuilder<F>) -> Expression<F> {
         circuit!([meta, cb], {
             matchx! {
                 self.value.is_string() => self.value.rlc_rlp(&cb.be_r),
@@ -750,10 +755,7 @@ impl<F: Field> RLPItemGadget<F> {
         })
     }
 
-    pub(crate) fn rlc_rlp2(
-        &self,
-        cb: &mut MPTConstraintBuilder<F>,
-    ) -> Expression<F> {
+    pub(crate) fn rlc_rlp2(&self, cb: &mut MPTConstraintBuilder<F>) -> Expression<F> {
         circuit!([meta, cb], {
             matchx! {
                 self.value.is_string() => self.value.rlc_rlp2(&cb.be_r),

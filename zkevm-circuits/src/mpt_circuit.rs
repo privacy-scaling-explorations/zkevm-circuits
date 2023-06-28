@@ -1,17 +1,20 @@
 //! The MPT circuit implementation.
-use eth_types::{Field};
+use eth_types::Field;
 use gadgets::{
     impl_expr,
-    util::{Expr, Scalar, pow},
+    util::{Expr, Scalar},
 };
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells, SecondPhase},
+    plonk::{
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
+        VirtualCells,
+    },
     poly::Rotation,
 };
 
-use std::{convert::TryInto, env::var};
 use itertools::Itertools;
+use std::{convert::TryInto, env::var};
 
 mod account_leaf;
 mod branch;
@@ -32,7 +35,7 @@ use self::{
 };
 use crate::{
     assign, assignf, circuit,
-    circuit_tools::{cached_region::CachedRegion, cell_manager::{CellManager}, memory::Memory},
+    circuit_tools::{cached_region::CachedRegion, cell_manager::CellManager, memory::Memory},
     evm_circuit::table::Table,
     mpt_circuit::{
         helpers::{
@@ -521,10 +524,7 @@ impl<F: Field> MPTConfig<F> {
         Ok(())
     }
 
-    fn load_fixed_table(
-        &self,
-        layouter: &mut impl Layouter<F>,
-    ) -> Result<(), Error> {
+    fn load_fixed_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_region(
             || "fixed table",
             |mut region| {
@@ -678,8 +678,8 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         config.load_phase_two_table(&mut layouter, &challenges)?;
         config.assign(&mut layouter, &self.nodes, &challenges)?;
         config
-          .keccak_table
-          .dev_load(&mut layouter, &self.keccak_data, &challenges, false)?;
+            .keccak_table
+            .dev_load(&mut layouter, &self.keccak_data, &challenges, false)?;
 
         Ok(())
     }
