@@ -343,15 +343,18 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 Target::Memory.expr(),
                 meta.query_advice(id.lo(), Rotation::cur()), // call_id
                 meta.query_advice(addr, Rotation::cur()),    // memory address
-                0.expr(),
-                0.expr(),
-                meta.query_advice(value, Rotation::cur()),
-                0.expr(),
-                0.expr(),
-                0.expr(),
+                0.expr(),                                    // field tag
+                0.expr(),                                    // storage_key_lo
+                0.expr(),                                    // storage_key_hi
+                meta.query_advice(value, Rotation::cur()),   // value_lo
+                0.expr(),                                    // value_hi
+                0.expr(),                                    // value_prev_lo
+                0.expr(),                                    // value_prev_hi
+                0.expr(),                                    // init_val_lo
+                0.expr(),                                    // init_val_hi
             ]
             .into_iter()
-            .zip(rw_table.table_exprs(meta).into_iter())
+            .zip_eq(rw_table.table_exprs(meta).into_iter())
             .map(|(arg, table)| (cond.clone() * arg, table))
             .collect()
         });
@@ -365,15 +368,18 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 Target::TxLog.expr(),
                 meta.query_advice(id.lo(), Rotation::cur()), // tx_id
                 meta.query_advice(addr, Rotation::cur()),    // byte_index || field_tag || log_id
-                0.expr(),
-                0.expr(),
-                meta.query_advice(value, Rotation::cur()),
-                0.expr(),
-                0.expr(),
-                0.expr(),
+                0.expr(),                                    // field tag
+                0.expr(),                                    // storage_key_lo
+                0.expr(),                                    // storage_key_hi
+                meta.query_advice(value, Rotation::cur()),   // value_lo
+                0.expr(),                                    // value_hi
+                0.expr(),                                    // value_prev_lo
+                0.expr(),                                    // value_prev_hi
+                0.expr(),                                    // init_val_lo
+                0.expr(),                                    // init_val_hi
             ]
             .into_iter()
-            .zip(rw_table.table_exprs(meta).into_iter())
+            .zip_eq(rw_table.table_exprs(meta).into_iter())
             .map(|(arg, table)| (cond.clone() * arg, table))
             .collect()
         });
@@ -391,7 +397,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(value, Rotation::cur()),
             ]
             .into_iter()
-            .zip(bytecode_table.table_exprs(meta).into_iter())
+            .zip_eq(bytecode_table.table_exprs(meta).into_iter())
             .map(|(arg, table)| (cond.clone() * arg, table))
             .collect()
         });
