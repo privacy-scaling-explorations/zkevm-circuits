@@ -58,7 +58,7 @@ impl KeccakTable {
         let r = F::from(123456u64);
         let input_rlc = challenges
             .keccak_input()
-            .map(|challenge| rlc::value(input.iter().rev(), /* challenge */r + F::ONE));
+            .map(|challenge| rlc::value(input.iter().rev(), challenge/* r + F::ONE */));
         /*let input_rlc = challenges
             .keccak_input()
             .map(|challenge| rlc::value(&bytes, /*challenge*/r + F::ONE));*/

@@ -890,7 +890,7 @@ impl<F: Field> MPTConstraintBuilder<F> {
                 //Some(Expression::Constant(lookup_value)),
             ),
             r: r.expr(),
-            keccak_r:/*  challenges.clone().unwrap().keccak_input().expr() */(r.expr() + 1.expr()),
+            keccak_r: challenges.clone().unwrap().keccak_input().expr()/* (r.expr() + 1.expr()) */,
             challenges,
         }
     }

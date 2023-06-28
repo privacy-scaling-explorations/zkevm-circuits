@@ -412,11 +412,11 @@ impl<F: Field> MPTConfig<F> {
             || "MPT",
             |mut region| {
 
-                // let mut keccak_r = F::ZERO;
-                // challenges.keccak_input().map(|v| keccak_r = v);
+                let mut keccak_r = F::ZERO;
+                challenges.keccak_input().map(|v| keccak_r = v);
                 //let keccak_r = F::from(123456u64 + 1);
                 let r = F::from(123456u64);
-                let mut keccak_r = r + F::ONE;
+                // let mut keccak_r = r + F::ONE;
 
                 //println!("r: {:?}", r);
                 //println!("challenge[0]: {:?}", *challenges.indexed()[0]);
@@ -562,18 +562,6 @@ impl<F: Field> MPTConfig<F> {
                     offset += 1;
                 }
 
-                // let mut keccak_r = F::ZERO;
-                // challenges.keccak_input().map(|k| keccak_r = k);
-                let mut keccak_r = r + F::ONE;
-                let mut mult = F::ONE;
-                for ind in 0..(2 * HASH_WIDTH + 1) {
-                    assignf!(region, (self.fixed_table[0], offset) => FixedTableTag::BERMult.scalar())?;
-                    assignf!(region, (self.fixed_table[1], offset) => ind.scalar())?;
-                    assignf!(region, (self.fixed_table[2], offset) => mult)?;
-                    mult *= keccak_r;
-                    offset += 1;
-                }
-
                 // Byte range table
                 for ind in 0..256 {
                     assignf!(region, (self.fixed_table[0], offset) => FixedTableTag::Range256.scalar())?;
@@ -646,19 +634,15 @@ impl<F: Field> MPTConfig<F> {
         layouter: &mut impl Layouter<F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        let mut keccak_r = F::ZERO;
-        challenges.keccak_input().map(|v| keccak_r = v);
-        //println!("{:?}", keccak_r);
-        //let keccak_r = F::from(123456u64 + 1);
-
         layouter.assign_region(
             || "phase two table",
             |mut region| {
                 let mut offset = 0;
-                let r = F::from(123456u64);
-                // let mut keccak_r = F::ZERO;
-                // challenges.keccak_input().map(|k| keccak_r = k);
-                let keccak_r = r + F::ONE;
+                // let r = F::from(123456u64);
+                // let keccak_r = r + F::ONE;
+
+                let mut keccak_r = F::ZERO;
+                challenges.keccak_input().map(|k| keccak_r = k);
                 let mut mult = F::ONE;
                 for ind in 0..(2 * HASH_WIDTH + 1) {
                     assign!(region, (self.phase_two_table[0], offset) => PhaseTwoTableTag::BERMult.scalar())?;
