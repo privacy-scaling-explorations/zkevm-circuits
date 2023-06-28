@@ -103,7 +103,6 @@ impl<F: Field> StartConfig<F> {
         let mut root = vec![0.scalar(); 2];
         for is_s in [true, false] {
             root[is_s.idx()] = rlp_values[is_s.idx()].rlc_content(region.le_r);
-            // println!("root {}: {:?}", is_s, root[is_s.idx()]);
         }
 
         MainData::witness_store(
