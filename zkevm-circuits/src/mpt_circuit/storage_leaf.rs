@@ -96,7 +96,7 @@ impl<F: Field> StorageLeafConfig<F> {
 
                 // Placeholder leaf checks
                 config.is_in_empty_trie[is_s.idx()] =
-                    IsEmptyTreeGadget::construct(cb, parent_data.rlc.expr(), &cb.r.expr());
+                    IsEmptyTreeGadget::construct(cb, parent_data.rlc.expr(), &cb.le_r.expr());
                 let is_placeholder_leaf = config.is_in_empty_trie[is_s.idx()].expr();
 
                 let rlp_key = &mut config.rlp_key[is_s.idx()];
@@ -114,8 +114,8 @@ impl<F: Field> StorageLeafConfig<F> {
                 // `value` here containing a single stored value) the stored
                 // value is either stored directly in the RLP encoded string if short, or stored
                 // wrapped inside another RLP encoded string if long.
-                let rlp_value = config.rlp_value[is_s.idx()].rlc_value(&cb.r);
-                let rlp_value_rlc_mult = config.rlp_value[is_s.idx()].rlc_rlp_only2(&cb.keccak_r);
+                let rlp_value = config.rlp_value[is_s.idx()].rlc_value(&cb.le_r);
+                let rlp_value_rlc_mult = config.rlp_value[is_s.idx()].rlc_rlp_only2(&cb.be_r);
                 (value_rlc[is_s.idx()], value_rlp_rlc[is_s.idx()], value_rlp_rlc_mult[is_s.idx()]) = ifx! {config.rlp_value[is_s.idx()].is_short() => {
                     (rlp_value, rlp_value_rlc_mult.0.expr(), rlp_value_rlc_mult.1.expr())
                 } elsex {
@@ -126,7 +126,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 }};
 
                 let leaf_rlc =
-                    rlp_key.rlc2(&cb.keccak_r).rlc_chain2((value_rlp_rlc[is_s.idx()].expr(), value_rlp_rlc_mult[is_s.idx()].expr()));
+                    rlp_key.rlc2(&cb.be_r).rlc_chain2((value_rlp_rlc[is_s.idx()].expr(), value_rlp_rlc_mult[is_s.idx()].expr()));
 
                 // Key
                 key_rlc[is_s.idx()] = key_data.rlc.expr()
@@ -135,7 +135,7 @@ impl<F: Field> StorageLeafConfig<F> {
                         rlp_key.key_value.clone(),
                         key_data.mult.expr(),
                         key_data.is_odd.expr(),
-                        &cb.r.expr(),
+                        &cb.le_r.expr(),
                     );
                 // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES
                 let num_nibbles =
@@ -199,7 +199,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 &value_rlp_rlc,
                 &value_rlp_rlc_mult,
                 &drifted_item,
-                &cb.r.expr(),
+                &cb.le_r.expr(),
             );
 
             // Wrong leaf handling
@@ -212,7 +212,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 &wrong_item,
                 config.is_in_empty_trie[true.idx()].expr(),
                 config.key_data[true.idx()].clone(),
-                &cb.r.expr(),
+                &cb.le_r.expr(),
             );
 
             // For non-existing proofs the tree needs to remain the same
@@ -324,7 +324,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 rlp_key_witness.key_item.clone(),
                 key_data[is_s.idx()].rlc,
                 key_data[is_s.idx()].mult,
-                region.r,
+                region.le_r,
             );
 
             // Value
@@ -340,9 +340,9 @@ impl<F: Field> StorageLeafConfig<F> {
                 &storage.value_rlp_bytes[is_s.idx()],
             )?;
             value_rlc[is_s.idx()] = if value_witness.is_short() {
-                value_witness.rlc_value(region.r)
+                value_witness.rlc_value(region.le_r)
             } else {
-                value_item[is_s.idx()].rlc_content(region.r)
+                value_item[is_s.idx()].rlc_content(region.le_r)
             };
 
             ParentData::witness_store(
@@ -359,7 +359,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 region,
                 offset,
                 parent_data[is_s.idx()].rlc,
-                region.r,
+                region.le_r,
             )?;
         }
 
@@ -383,7 +383,7 @@ impl<F: Field> StorageLeafConfig<F> {
             &parent_data,
             &storage.drifted_rlp_bytes,
             &drifted_item,
-            region.r,
+            region.le_r,
         )?;
 
         // Wrong leaf handling
@@ -396,7 +396,7 @@ impl<F: Field> StorageLeafConfig<F> {
             &wrong_item,
             false,
             key_data[true.idx()].clone(),
-            region.r,
+            region.le_r,
         )?;
 
         // Put the data in the lookup table

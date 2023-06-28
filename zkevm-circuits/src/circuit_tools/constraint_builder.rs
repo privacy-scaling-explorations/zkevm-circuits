@@ -62,7 +62,7 @@ pub struct ConstraintBuilder<F, C: CellType> {
     /// region id
     pub region_id: usize,
     /// lookup input challenge
-    pub lookup_input_challenge: Option<Expression<F>>,
+    pub lookup_challenge: Option<Expression<F>>,
     /// state contect
     pub state_context: Vec<Expression<F>>,
     /// state constraints start
@@ -75,7 +75,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
     pub(crate) fn new(
         max_degree: usize,
         cell_manager: Option<CellManager<F, C>>,
-        lookup_input_challenge: Option<Expression<F>>,
+        lookup_challenge: Option<Expression<F>>,
     ) -> Self {
         ConstraintBuilder {
             constraints: Vec::new(),
@@ -87,7 +87,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             disable_description: false,
             stored_expressions: HashMap::new(),
             region_id: 0,
-            lookup_input_challenge,
+            lookup_challenge,
             state_context: Vec::new(),
             state_constraints_start: 0,
             use_dynamic_lookups: false,
@@ -277,7 +277,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                     meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                         vec![(
                             col.expr,
-                            rlc::expr(&table.table_exprs(meta), self.lookup_input_challenge.clone().unwrap()),
+                            rlc::expr(&table.table_exprs(meta), self.lookup_challenge.clone().unwrap()),
                         )]
                     });
                 }
@@ -383,7 +383,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                 .collect_vec();
             let compressed_expr = self.split_expression(
                 "Lookup compression",
-                rlc::expr(&values, self.lookup_input_challenge.clone().unwrap().expr()),
+                rlc::expr(&values, self.lookup_challenge.clone().unwrap().expr()),
             );
             self.store_expression(description, compressed_expr, cell_type);
         }

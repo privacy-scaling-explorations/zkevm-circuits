@@ -120,7 +120,7 @@ impl<F: Field> AccountLeafConfig<F> {
 
                 // Placeholder leaf checks
                 config.is_in_empty_trie[is_s.idx()] =
-                    IsEmptyTreeGadget::construct(cb, parent_data.rlc.expr(), &cb.r.expr());
+                    IsEmptyTreeGadget::construct(cb, parent_data.rlc.expr(), &cb.le_r.expr());
 
                 // Calculate the key RLC
                 let rlp_key = &mut config.rlp_key[is_s.idx()];
@@ -140,7 +140,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 (codehash_rlc[is_s.idx()], codehash_rlp_rlc) = codehash_items[is_s.idx()].rlc2();
 
                 // Calculate the leaf RLC
-                let keccak_r = &cb.keccak_r;
+                let keccak_r = &cb.be_r;
                 let value_rlp_bytes = config.value_rlp_bytes[is_s.idx()].to_expr_vec();
                 let value_list_rlp_bytes = config.value_list_rlp_bytes[is_s.idx()].to_expr_vec();
                 leaf_no_key_rlc[is_s.idx()] =
@@ -151,7 +151,7 @@ impl<F: Field> AccountLeafConfig<F> {
                             .rlc_chain2(storage_rlp_rlc.clone())
                             .rlc_chain2(codehash_rlp_rlc.clone());
                 leaf_no_key_rlc_mult[is_s.idx()] = pow::expr(keccak_r.expr(), 4) * nonce_rlp_rlc.1 * balance_rlp_rlc.1 * storage_rlp_rlc.1 * codehash_rlp_rlc.1;
-                let leaf_rlc = rlp_key.rlc2(&cb.keccak_r).rlc_chain2((leaf_no_key_rlc[is_s.idx()].expr(), leaf_no_key_rlc_mult[is_s.idx()].expr()));
+                let leaf_rlc = rlp_key.rlc2(&cb.be_r).rlc_chain2((leaf_no_key_rlc[is_s.idx()].expr(), leaf_no_key_rlc_mult[is_s.idx()].expr()));
 
                 // Key
                 key_rlc[is_s.idx()] = key_data.rlc.expr()
@@ -160,7 +160,7 @@ impl<F: Field> AccountLeafConfig<F> {
                         rlp_key.key_value.clone(),
                         key_data.mult.expr(),
                         key_data.is_odd.expr(),
-                        &cb.r.expr(),
+                        &cb.le_r.expr(),
                     );
                 // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES.
                 let num_nibbles =
@@ -258,7 +258,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 &leaf_no_key_rlc,
                 &leaf_no_key_rlc_mult,
                 &drifted_bytes,
-                &cb.r.expr(),
+                &cb.le_r.expr(),
             );
 
             // Wrong leaf handling
@@ -271,7 +271,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 &wrong_bytes,
                 config.is_in_empty_trie[true.idx()].expr(),
                 config.key_data[true.idx()].clone(),
-                &cb.r.expr(),
+                &cb.le_r.expr(),
             );
 
             ifx! {config.is_account_delete_mod => {
@@ -428,7 +428,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 region,
                 offset,
                 parent_data[is_s.idx()].rlc,
-                region.r,
+                region.le_r,
             )?;
 
             let rlp_key_witness = self.rlp_key[is_s.idx()].assign(
@@ -438,17 +438,17 @@ impl<F: Field> AccountLeafConfig<F> {
                 &key_items[is_s.idx()],
             )?;
 
-            nonce_rlc[is_s.idx()] = nonce_items[is_s.idx()].rlc_content(region.r);
-            balance_rlc[is_s.idx()] = balance_items[is_s.idx()].rlc_content(region.r);
-            storage_rlc[is_s.idx()] = storage_items[is_s.idx()].rlc_content(region.r);
-            codehash_rlc[is_s.idx()] = codehash_items[is_s.idx()].rlc_content(region.r);
+            nonce_rlc[is_s.idx()] = nonce_items[is_s.idx()].rlc_content(region.le_r);
+            balance_rlc[is_s.idx()] = balance_items[is_s.idx()].rlc_content(region.le_r);
+            storage_rlc[is_s.idx()] = storage_items[is_s.idx()].rlc_content(region.le_r);
+            codehash_rlc[is_s.idx()] = codehash_items[is_s.idx()].rlc_content(region.le_r);
 
             // Key
             (key_rlc[is_s.idx()], _) = rlp_key_witness.key.key(
                 rlp_key_witness.key_item.clone(),
                 key_data[is_s.idx()].rlc,
                 key_data[is_s.idx()].mult,
-                region.r,
+                region.le_r,
             );
 
             // Update key and parent state
@@ -481,7 +481,7 @@ impl<F: Field> AccountLeafConfig<F> {
             &mut pv.memory[main_memory()],
             main_data.proof_type,
             true,
-            account.address.rlc_value(region.r),
+            account.address.rlc_value(region.le_r),
             main_data.root_prev,
             main_data.root,
         )?;
@@ -531,7 +531,7 @@ impl<F: Field> AccountLeafConfig<F> {
             &parent_data,
             &account.drifted_rlp_bytes,
             &drifted_item,
-            region.r,
+            region.le_r,
         )?;
 
         // Wrong leaf handling
@@ -544,7 +544,7 @@ impl<F: Field> AccountLeafConfig<F> {
             &wrong_item,
             true,
             key_data[true.idx()].clone(),
-            region.r,
+            region.le_r,
         )?;
 
         // Put the data in the lookup table
@@ -567,7 +567,7 @@ impl<F: Field> AccountLeafConfig<F> {
             region,
             offset,
             &MptUpdateRow {
-                address_rlc: Value::known(account.address.rlc_value(region.r)),
+                address_rlc: Value::known(account.address.rlc_value(region.le_r)),
                 proof_type: Value::known(proof_type.scalar()),
                 key_rlc: Value::known(0.scalar()),
                 value_prev: Value::known(value[true.idx()]),

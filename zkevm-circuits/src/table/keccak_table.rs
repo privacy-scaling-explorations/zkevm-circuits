@@ -55,13 +55,10 @@ impl KeccakTable {
         } else {
             input.to_owned()
         };*/
-        let r = F::from(123456u64);
+        let le_r = F::from(123456u64);
         let input_rlc = challenges
             .keccak_input()
-            .map(|challenge| rlc::value(input.iter().rev(), challenge/* r + F::ONE */));
-        /*let input_rlc = challenges
-            .keccak_input()
-            .map(|challenge| rlc::value(&bytes, /*challenge*/r + F::ONE));*/
+            .map(|challenge| rlc::value(input.iter().rev(), challenge/* le_r + F::ONE */));
         let input_len = F::from(input.len() as u64);
         let mut keccak = Keccak::default();
         keccak.update(input);
@@ -74,7 +71,7 @@ impl KeccakTable {
                     Word::from_little_endian(output.as_slice())
                 }
                 .to_le_bytes(),
-                /*challenge*/r,
+                /*challenge*/le_r,
             )
         });
 

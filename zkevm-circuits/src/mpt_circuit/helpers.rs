@@ -869,8 +869,8 @@ pub(crate) fn main_memory() -> MptCellType {
 pub struct MPTConstraintBuilder<F> {
     pub base: ConstraintBuilder<F, MptCellType>,
     pub challenges: Option<Challenges<Expression<F>>>,
-    pub r: Expression<F>,
-    pub keccak_r: Expression<F>,
+    pub le_r: Expression<F>,
+    pub be_r: Expression<F>,
 }
 
 impl<F: Field> MPTConstraintBuilder<F> {
@@ -878,19 +878,16 @@ impl<F: Field> MPTConstraintBuilder<F> {
         max_degree: usize,
         challenges: Option<Challenges<Expression<F>>>,
         cell_manager: Option<CellManager<F, MptCellType>>,
-        r: Expression<F>,
+        le_r: Expression<F>,
     ) -> Self {
-        //let lookup_value: F = word!("0x2a79eee6c17367c19c0de1ca49eca2a478494747b4bf58ecad53e889d6695f4c").to_scalar().unwrap();
         MPTConstraintBuilder {
             base: ConstraintBuilder::new(
                 max_degree,
                 cell_manager,
                 Some(challenges.clone().unwrap().lookup_input().expr()),
-                //Some(123456u64.expr()),
-                //Some(Expression::Constant(lookup_value)),
             ),
-            r: r.expr(),
-            keccak_r: challenges.clone().unwrap().keccak_input().expr()/* (r.expr() + 1.expr()) */,
+            le_r: le_r.expr(),
+            be_r: challenges.clone().unwrap().keccak_input().expr()/* (r.expr() + 1.expr()) */,
             challenges,
         }
     }
@@ -1091,8 +1088,8 @@ impl<F: Field> DriftedGadget<F> {
                         require!(key_num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
 
                         // Complete the drifted leaf rlc by adding the bytes on the value row
-                        //let leaf_rlc = (config.drifted_rlp_key.rlc(keccak_r), mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
-                        let leaf_rlc = config.drifted_rlp_key.rlc2(&cb.keccak_r).rlc_chain2((leaf_no_key_rlc[is_s.idx()].expr(), leaf_no_key_rlc_mult[is_s.idx()].expr()));
+                        //let leaf_rlc = (config.drifted_rlp_key.rlc(be_r), mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
+                        let leaf_rlc = config.drifted_rlp_key.rlc2(&cb.be_r).rlc_chain2((leaf_no_key_rlc[is_s.idx()].expr(), leaf_no_key_rlc_mult[is_s.idx()].expr()));
                         // The drifted leaf needs to be stored in the branch at `drifted_index`.
                         require!((1, leaf_rlc, config.drifted_rlp_key.rlp_list.num_bytes(), parent_data[is_s.idx()].drifted_parent_rlc.expr()) => @KECCAK);
                     }
@@ -1249,13 +1246,12 @@ impl<F: Field> MainRLPGadget<F> {
 
             require!(config.num_bytes => config.rlp.num_bytes());
             require!(config.len => config.rlp.len());
-            require!(config.rlc_content => config.rlp.rlc_content(&cb.r));
+            require!(config.rlc_content => config.rlp.rlc_content(&cb.le_r));
             require!(config.rlc_rlp => config.rlp.rlc_rlp2(cb) * config.mult_inv.expr());
 
-            require!(config.mult_inv.expr() * pow::expr(cb.keccak_r.expr(), HASH_WIDTH + 2) => config.mult_diff_be.expr());
+            require!(config.mult_inv.expr() * pow::expr(cb.be_r.expr(), HASH_WIDTH + 2) => config.mult_diff_be.expr());
             require!((FixedTableTag::LERMult, config.rlp.num_bytes(), config.mult_diff_le.expr()) => @FIXED);
-            // require!((PhaseTwoTableTag::BERMult, config.rlp.num_bytes(), config.mult_diff_be.expr()) => @PHASE_TWO);
-            // `tag` is a "free" input that needs to be constrained externally!
+            require!((PhaseTwoTableTag::BERMult, config.rlp.num_bytes(), config.mult_diff_be.expr()) => @PHASE_TWO);
 
             // Range/zero checks
             // These range checks ensure that the value in the RLP columns are all byte
@@ -1266,6 +1262,7 @@ impl<F: Field> MainRLPGadget<F> {
             // cells.
             cb.set_use_dynamic_lookup(true);
             for (idx, byte) in config.bytes.iter().enumerate() {
+                // `tag` is a "free" input that needs to be constrained externally!
                 //require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()) => @FIXED);
             }
             cb.set_use_dynamic_lookup(false);
@@ -1290,19 +1287,19 @@ impl<F: Field> MainRLPGadget<F> {
         let rlp_witness = self.rlp.assign(region, offset, bytes)?;
 
         // Compute the denominator needed for BE
-        let mult_inv = pow::value(region.keccak_r, HASH_WIDTH + 2 - rlp_witness.num_bytes())
+        let mult_inv = pow::value(region.be_r, HASH_WIDTH + 2 - rlp_witness.num_bytes())
             .invert()
             .unwrap_or(F::ZERO);
 
         // Store RLP properties for easy access
         self.num_bytes.assign(region, offset, rlp_witness.num_bytes().scalar())?;
         self.len.assign(region, offset, rlp_witness.len().scalar())?;
-        self.rlc_content.assign(region, offset, rlp_witness.rlc_content(region.r))?;
-        self.rlc_rlp.assign(region, offset, rlp_witness.rlc_rlp2(region.keccak_r) * mult_inv)?;
+        self.rlc_content.assign(region, offset, rlp_witness.rlc_content(region.le_r))?;
+        self.rlc_rlp.assign(region, offset, rlp_witness.rlc_rlp2(region.be_r) * mult_inv)?;
 
         self.mult_inv.assign(region, offset, mult_inv)?;
-        self.mult_diff_be.assign(region, offset, pow::value(region.keccak_r, rlp_witness.num_bytes()))?;
-        self.mult_diff_le.assign(region, offset, pow::value(region.r, rlp_witness.num_bytes()))?;
+        self.mult_diff_be.assign(region, offset, pow::value(region.be_r, rlp_witness.num_bytes()))?;
+        self.mult_diff_le.assign(region, offset, pow::value(region.le_r, rlp_witness.num_bytes()))?;
 
         assign!(region, self.tag, offset => self.tag(is_nibbles).scalar())?;
 

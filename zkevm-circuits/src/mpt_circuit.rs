@@ -153,6 +153,7 @@ impl<F: Field> MPTContext<F> {
 /// Merkle Patricia Trie config.
 #[derive(Clone)]
 pub struct MPTConfig<F> {
+    pub(crate) mpt_table: MptTable,
     pub(crate) q_enable: Column<Fixed>,
     pub(crate) q_first: Column<Fixed>,
     pub(crate) q_last: Column<Fixed>,
@@ -162,7 +163,6 @@ pub struct MPTConfig<F> {
     phase_two_table: [Column<Advice>; 3],
     rlp_item: MainRLPGadget<F>,
     state_machine: StateMachineConfig<F>,
-    pub(crate) mpt_table: MptTable,
     cb: MPTConstraintBuilder<F>,
 }
 
@@ -185,8 +185,6 @@ pub enum FixedTableTag {
     RLP,
     /// TEMP
     LERMult,
-    /// TEMP
-    BERMult,
 }
 
 impl_expr!(FixedTableTag);
@@ -286,8 +284,8 @@ impl<F: Field> MPTConfig<F> {
             50,
         );
 
-        let r = 123456.expr();
-        let mut cb = MPTConstraintBuilder::new(50, Some(challenges.clone()), None, r.expr());
+        let le_r = 123456.expr();
+        let mut cb = MPTConstraintBuilder::new(50, Some(challenges.clone()), None, le_r.expr());
         meta.create_gate("MPT", |meta| {
             circuit!([meta, cb], {
                 // Populate lookup tables
@@ -412,16 +410,9 @@ impl<F: Field> MPTConfig<F> {
             || "MPT",
             |mut region| {
 
-                let mut keccak_r = F::ZERO;
-                challenges.keccak_input().map(|v| keccak_r = v);
-                //let keccak_r = F::from(123456u64 + 1);
-                let r = F::from(123456u64);
-                // let mut keccak_r = r + F::ONE;
-
-                //println!("r: {:?}", r);
-                //println!("challenge[0]: {:?}", *challenges.indexed()[0]);
-                //println!("challenge[1]: {:?}", *challenges.indexed()[1]);
-                //println!("challenge[2]: {:?}", *challenges.indexed()[2]);
+                let le_r = F::from(123456u64);
+                let mut be_r = F::ZERO;
+                challenges.keccak_input().map(|v| be_r = v);
 
                 let mut pv = MPTState::new(&self.memory);
 
@@ -433,8 +424,8 @@ impl<F: Field> MPTConfig<F> {
                     let mut cached_region = CachedRegion::new(
                         &mut region,
                         challenges,
-                        r,
-                        keccak_r,
+                        le_r,
+                        be_r,
                     );
 
                     // Assign bytes
@@ -508,12 +499,7 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                         cached_region.pop_region();
                     }
-
-                    //println!("stored expressions");
-                    //println!("challenge accessed: {:?}", *cached_region.challenges().indexed()[2]);
                     cached_region.assign_stored_expressions(&self.cb.base)?;
-                    //println!("stored expressions done");
-
                     offset += node.values.len();
                 }
 
@@ -538,7 +524,6 @@ impl<F: Field> MPTConfig<F> {
     fn load_fixed_table(
         &self,
         layouter: &mut impl Layouter<F>,
-        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "fixed table",
@@ -637,18 +622,18 @@ impl<F: Field> MPTConfig<F> {
         layouter.assign_region(
             || "phase two table",
             |mut region| {
+                // let le_r = F::from(123456u64);
+                // let be_r = r + F::ONE;
+                let mut be_r = F::ZERO;
+                challenges.keccak_input().map(|k| be_r = k);
+                
                 let mut offset = 0;
-                // let r = F::from(123456u64);
-                // let keccak_r = r + F::ONE;
-
-                let mut keccak_r = F::ZERO;
-                challenges.keccak_input().map(|k| keccak_r = k);
                 let mut mult = F::ONE;
                 for ind in 0..(2 * HASH_WIDTH + 1) {
                     assign!(region, (self.phase_two_table[0], offset) => PhaseTwoTableTag::BERMult.scalar())?;
                     assign!(region, (self.phase_two_table[1], offset) => ind.scalar())?;
                     assign!(region, (self.phase_two_table[2], offset) => mult)?;
-                    mult *= keccak_r;
+                    mult *= be_r;
                     offset += 1;
                 }
                 Ok(())
@@ -702,7 +687,7 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         //let r = self.randomness;
         //let challenges = Challenges::mock(Value::known(r), Value::known(r), Value::known(r));
 
-        config.load_fixed_table(&mut layouter, &challenges)?;
+        config.load_fixed_table(&mut layouter)?;
         config.load_phase_two_table(&mut layouter, &challenges)?;
         config.assign(&mut layouter, &self.nodes, &challenges)?;
 
