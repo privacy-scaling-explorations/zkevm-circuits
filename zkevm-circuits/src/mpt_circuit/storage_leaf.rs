@@ -11,7 +11,7 @@ use crate::{
     circuit_tools::{
         cached_region::{CachedRegion, ChallengeSet},
         cell_manager::Cell,
-        constraint_builder::{RLCChainable, RLCChainable2},
+        constraint_builder::RLCChainable2,
         gadgets::{IsEqualGadget, LtGadget},
     },
     mpt_circuit::{
@@ -116,7 +116,11 @@ impl<F: Field> StorageLeafConfig<F> {
                 // wrapped inside another RLP encoded string if long.
                 let rlp_value = config.rlp_value[is_s.idx()].rlc_value(&cb.r);
                 let rlp_value_rlc_mult = config.rlp_value[is_s.idx()].rlc_rlp_only2(&cb.keccak_r);
-                (value_rlc[is_s.idx()], value_rlp_rlc[is_s.idx()], value_rlp_rlc_mult[is_s.idx()]) = ifx! {config.rlp_value[is_s.idx()].is_short() => {
+                (
+                    value_rlc[is_s.idx()],
+                    value_rlp_rlc[is_s.idx()],
+                    value_rlp_rlc_mult[is_s.idx()],
+                ) = ifx! {config.rlp_value[is_s.idx()].is_short() => {
                     (rlp_value, rlp_value_rlc_mult.0.expr(), rlp_value_rlc_mult.1.expr())
                 } elsex {
                     let value_rlc = value_item[is_s.idx()].rlc_content();
@@ -125,8 +129,10 @@ impl<F: Field> StorageLeafConfig<F> {
                     (value_rlc, value_rlp_rlc, rlp_value_rlc_mult.1 * value_item[is_s.idx()].mult())
                 }};
 
-                let leaf_rlc =
-                    rlp_key.rlc2(&cb.keccak_r).rlc_chain2((value_rlp_rlc[is_s.idx()].expr(), value_rlp_rlc_mult[is_s.idx()].expr()));
+                let leaf_rlc = rlp_key.rlc2(&cb.keccak_r).rlc_chain2((
+                    value_rlp_rlc[is_s.idx()].expr(),
+                    value_rlp_rlc_mult[is_s.idx()].expr(),
+                ));
 
                 // Key
                 key_rlc[is_s.idx()] = key_data.rlc.expr()

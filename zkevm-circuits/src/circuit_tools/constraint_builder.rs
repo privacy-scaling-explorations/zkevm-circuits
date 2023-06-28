@@ -5,10 +5,13 @@ use std::{
     vec,
 };
 
-use crate::{evm_circuit::util::rlc, table::LookupTable, util::{Expr, query_expression}};
+use crate::{evm_circuit::util::rlc, table::LookupTable, util::Expr};
 use eth_types::Field;
 use gadgets::util::{and, sum, Scalar};
-use halo2_proofs::{plonk::{ConstraintSystem, Expression}, poly::Rotation};
+use halo2_proofs::{
+    plonk::{ConstraintSystem, Expression},
+    poly::Rotation,
+};
 use itertools::Itertools;
 
 use super::{
@@ -42,7 +45,6 @@ pub struct DynamicData<F> {
     /// Lower the degree by spliting expression
     pub is_split: bool,
 }
-
 
 /// Constraint builder
 #[derive(Clone)]
@@ -277,7 +279,10 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                     meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                         vec![(
                             col.expr,
-                            rlc::expr(&table.table_exprs(meta), self.lookup_challenge.clone().unwrap()),
+                            rlc::expr(
+                                &table.table_exprs(meta),
+                                self.lookup_challenge.clone().unwrap(),
+                            ),
                         )]
                     });
                 }
@@ -286,64 +291,68 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
     }
 
     pub(crate) fn build_dynamic_lookups(
-        &mut self, 
-        meta: &mut ConstraintSystem<F>, 
-        lookup_names: &[C], 
-        fixed_table: Vec<(C, &dyn LookupTable<F>)>
+        &mut self,
+        meta: &mut ConstraintSystem<F>,
+        lookup_names: &[C],
+        fixed_table: Vec<(C, &dyn LookupTable<F>)>,
     ) {
         let lookups = self.dynamic_lookups.clone();
         for lookup_name in lookup_names.iter() {
             if let Some(lookups) = lookups.get(lookup_name) {
                 for lookup in lookups.iter() {
                     meta.lookup_any(lookup.description, |meta| {
-                        
                         // Fixed lookup is a direct lookup into the pre-difined fixed tables
                         // i.e. cond * (v1, v2, v3) => (t1, t2, t3)
                         // equivalent to the vanilla lookup operation of Halo2.
-                        // Dynamic lookup applies condition to the advice values stored at configuration time
-                        // i.e. cond * (v1, v2, v3) => cond * (t1, t2, t3)
-                        // the dynamic lookup in a ifx! branch would become trivial 0 => 0 
+                        // Dynamic lookup applies condition to the advice values stored at
+                        // configuration time i.e. cond * (v1, v2, v3) =>
+                        // cond * (t1, t2, t3) the dynamic lookup in a ifx!
+                        // branch would become trivial 0 => 0
                         // when the elsex! branch evaluates to true
-                        
+
                         let table = if lookup.is_fixed {
                             let table_cols = fixed_table
                                 .iter()
                                 .find(|(name, _)| name == lookup_name)
-                                .unwrap().1
+                                .unwrap()
+                                .1
                                 .columns();
-                            table_cols.iter().map(|col| meta.query_any(*col, Rotation(0))).collect()
+                            table_cols
+                                .iter()
+                                .map(|col| meta.query_any(*col, Rotation(0)))
+                                .collect()
                         } else {
                             let dyn_table = self.get_dynamic_table_values(*lookup_name);
                             assert_eq!(dyn_table.len(), lookup.values.len());
                             dyn_table
                         };
-                        
+
                         let mut values: Vec<_> = lookup
-                                .values
-                                .iter()
-                                .map(|value| value.expr() * lookup.condition.clone())
-                                .collect();
-                        // allign the length of values and table    
+                            .values
+                            .iter()
+                            .map(|value| value.expr() * lookup.condition.clone())
+                            .collect();
+                        // allign the length of values and table
                         assert!(table.len() >= values.len());
                         while values.len() < table.len() {
                             values.push(0.expr());
                         }
-                        
+
                         // Perform rlc if specified
                         // i.e. (v1*r + v2*r^2 + v3*r^3) => (t1*r + t2*r^2 + t3*r^3)
                         // lastly is_split had been fulfilled at insertion time
 
-                        let mut ret = if lookup.is_combine {
+                        let ret = if lookup.is_combine {
                             vec![(
                                 rlc::expr(&values, self.lookup_challenge.clone().unwrap()),
                                 rlc::expr(&table, self.lookup_challenge.clone().unwrap()),
                             )]
                         } else {
                             values
-                            .iter()
-                            .zip(table.iter())
-                            .map(|(v, t)| (v.expr(), t.expr()))
-                            .collect()
+                                .iter()
+                                .zip(table.iter())
+                                .map(|(v, t)| (v.expr(), t.expr()))
+                                .collect()
                         };
                         ret
                     });
@@ -364,8 +373,6 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         self.get_condition().unwrap_or_else(|| 1.expr())
     }
 
-
-
     pub(crate) fn store_dynamic_table(
         &mut self,
         description: &'static str,
@@ -381,10 +388,12 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             values.clone()
         };
         if is_split {
-            values.iter_mut()
-            .for_each(|v| 
-                *v = self.split_expression(Box::leak(format!("compression value - {:?}", tag).into_boxed_str()), v.clone())
-            );
+            values.iter_mut().for_each(|v| {
+                *v = self.split_expression(
+                    Box::leak(format!("compression value - {:?}", tag).into_boxed_str()),
+                    v.clone(),
+                )
+            });
         }
         let lookup = DynamicData {
             description,
@@ -410,7 +419,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         values: Vec<Expression<F>>,
         is_fixed: bool,
         is_combine: bool,
-        is_split: bool
+        is_split: bool,
     ) {
         let condition = self.get_condition_expr();
         let mut values = if is_combine {
@@ -419,10 +428,12 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             values.clone()
         };
         if is_split {
-            values.iter_mut()
-            .for_each(|v| 
-                *v = self.split_expression(Box::leak(format!("compression value - {:?}", tag).into_boxed_str()), v.clone())
-            );
+            values.iter_mut().for_each(|v| {
+                *v = self.split_expression(
+                    Box::leak(format!("compression value - {:?}", tag).into_boxed_str()),
+                    v.clone(),
+                )
+            });
         }
         let lookup = DynamicData {
             description,
@@ -447,15 +458,15 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         values: Vec<Expression<F>>,
     ) {
         let condition = self.get_condition_expr();
-            let values = values
-                .iter()
-                .map(|value| condition.expr() * value.expr())
-                .collect_vec();
-            let compressed_expr = self.split_expression(
-                "compression",
-                rlc::expr(&values, self.lookup_challenge.clone().unwrap().expr()),
-            );
-            self.store_expression(description, compressed_expr, cell_type);
+        let values = values
+            .iter()
+            .map(|value| condition.expr() * value.expr())
+            .collect_vec();
+        let compressed_expr = self.split_expression(
+            "compression",
+            rlc::expr(&values, self.lookup_challenge.clone().unwrap().expr()),
+        );
+        self.store_expression(description, compressed_expr, cell_type);
     }
 
     pub(crate) fn get_stored_expressions(&self, region_id: usize) -> Vec<StoredExpression<F, C>> {
@@ -473,7 +484,13 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         merge_values_unsafe(
             table_values
                 .iter()
-                .map(|table| (table.condition.clone(), table.values.clone(), table.is_split))
+                .map(|table| {
+                    (
+                        table.condition.clone(),
+                        table.values.clone(),
+                        table.is_split,
+                    )
+                })
                 .collect::<Vec<_>>(),
         )
     }
@@ -519,7 +536,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         match stored_expression {
             Some(stored_expression) => stored_expression.cell.expr(),
             None => {
-                //println!("cell_type: {:?}", cell_type);
+                // println!("cell_type: {:?}", cell_type);
                 // Require the stored value to equal the value of the expression
                 let cell = self.query_one(cell_type);
                 let name = format!("{} (stored expression)", name);
@@ -611,9 +628,15 @@ pub(crate) fn merge_lookups<F: Field, C: CellType>(
     lookups: Vec<DynamicData<F>>,
 ) -> (Expression<F>, Vec<Expression<F>>) {
     let values = lookups
-            .iter()
-            .map(|lookup| (lookup.condition.clone(), lookup.values.clone(), lookup.is_split))
-            .collect::<Vec<_>>();
+        .iter()
+        .map(|lookup| {
+            (
+                lookup.condition.clone(),
+                lookup.values.clone(),
+                lookup.is_split,
+            )
+        })
+        .collect::<Vec<_>>();
     let selector = sum::expr(values.iter().map(|(condition, _, _)| condition.expr()));
     crate::circuit!([meta, cb], {
         require!(selector => bool);
@@ -629,13 +652,17 @@ pub(crate) fn merge_values_unsafe<F: Field>(
     }
     let selector = sum::expr(values.iter().map(|(condition, _, _)| condition.expr()));
     // Merge
-    let max_length = values.iter().map(|(_, values, _)| values.len()).max().unwrap();
+    let max_length = values
+        .iter()
+        .map(|(_, values, _)| values.len())
+        .max()
+        .unwrap();
     let mut merged_values = vec![0.expr(); max_length];
     let default_value = 0.expr();
     for (idx, value) in merged_values.iter_mut().enumerate() {
-        *value = sum::expr(values.iter().map(|(condition, values, is_split)| {
+        *value = sum::expr(values.iter().map(|(condition, values, _is_split)| {
             // Condition had been included if is_split
-            values.get(idx).unwrap_or(&default_value).expr() * { 
+            values.get(idx).unwrap_or(&default_value).expr() * {
                 condition.expr()
                 // if *is_split {1.expr() } else {condition.expr()}
             }
@@ -870,7 +897,10 @@ impl<F: Field, E: ExprVec<F> + ?Sized> RLCable<F> for E {
     }
 
     fn rlc_rev(&self, r: &Expression<F>) -> Expression<F> {
-        rlc::expr(&self.to_expr_vec().iter().rev().cloned().collect_vec(), r.expr())
+        rlc::expr(
+            &self.to_expr_vec().iter().rev().cloned().collect_vec(),
+            r.expr(),
+        )
     }
 }
 
@@ -1128,8 +1158,8 @@ macro_rules! _require {
                 $is_split,
             );
         }};
-    
-    
+
+
         // Lookup using an array
         ($cb:expr, $values:expr => @$tag:expr, $is_fixed:expr, $is_combine:expr, $is_split:expr) => {{
             let description = concat_with_preamble!(

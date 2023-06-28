@@ -5,7 +5,6 @@ use halo2_proofs::{
     plonk::{Error, VirtualCells},
     poly::Rotation,
 };
-use itertools::Itertools;
 
 use super::{
     helpers::{KeyDataWitness, ListKeyGadget, MainData, ParentDataWitness},
@@ -18,7 +17,7 @@ use crate::{
     circuit_tools::{
         cached_region::{CachedRegion, ChallengeSet},
         cell_manager::Cell,
-        constraint_builder::{RLCChainable, RLCable, RLCableValue, RLCChainable2},
+        constraint_builder::{RLCChainable2, RLCable, RLCableValue},
         gadgets::IsEqualGadget,
     },
     mpt_circuit::{
@@ -143,15 +142,25 @@ impl<F: Field> AccountLeafConfig<F> {
                 let keccak_r = &cb.keccak_r;
                 let value_rlp_bytes = config.value_rlp_bytes[is_s.idx()].to_expr_vec();
                 let value_list_rlp_bytes = config.value_list_rlp_bytes[is_s.idx()].to_expr_vec();
-                leaf_no_key_rlc[is_s.idx()] =
-                            value_rlp_bytes.rlc_rev(&keccak_r)
-                            .rlc_chain2((value_list_rlp_bytes.rlc_rev(&keccak_r), pow::expr(keccak_r.expr(), 2)))
-                            .rlc_chain2(nonce_rlp_rlc.clone())
-                            .rlc_chain2(balance_rlp_rlc.clone())
-                            .rlc_chain2(storage_rlp_rlc.clone())
-                            .rlc_chain2(codehash_rlp_rlc.clone());
-                leaf_no_key_rlc_mult[is_s.idx()] = pow::expr(keccak_r.expr(), 4) * nonce_rlp_rlc.1 * balance_rlp_rlc.1 * storage_rlp_rlc.1 * codehash_rlp_rlc.1;
-                let leaf_rlc = rlp_key.rlc2(&cb.keccak_r).rlc_chain2((leaf_no_key_rlc[is_s.idx()].expr(), leaf_no_key_rlc_mult[is_s.idx()].expr()));
+                leaf_no_key_rlc[is_s.idx()] = value_rlp_bytes
+                    .rlc_rev(&keccak_r)
+                    .rlc_chain2((
+                        value_list_rlp_bytes.rlc_rev(&keccak_r),
+                        pow::expr(keccak_r.expr(), 2),
+                    ))
+                    .rlc_chain2(nonce_rlp_rlc.clone())
+                    .rlc_chain2(balance_rlp_rlc.clone())
+                    .rlc_chain2(storage_rlp_rlc.clone())
+                    .rlc_chain2(codehash_rlp_rlc.clone());
+                leaf_no_key_rlc_mult[is_s.idx()] = pow::expr(keccak_r.expr(), 4)
+                    * nonce_rlp_rlc.1
+                    * balance_rlp_rlc.1
+                    * storage_rlp_rlc.1
+                    * codehash_rlp_rlc.1;
+                let leaf_rlc = rlp_key.rlc2(&cb.keccak_r).rlc_chain2((
+                    leaf_no_key_rlc[is_s.idx()].expr(),
+                    leaf_no_key_rlc_mult[is_s.idx()].expr(),
+                ));
 
                 // Key
                 key_rlc[is_s.idx()] = key_data.rlc.expr()

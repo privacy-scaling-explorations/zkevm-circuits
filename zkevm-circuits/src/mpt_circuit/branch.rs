@@ -14,7 +14,7 @@ use crate::{
     circuit_tools::{
         cached_region::{CachedRegion, ChallengeSet},
         cell_manager::Cell,
-        constraint_builder::{RLCChainable, RLCChainable2},
+        constraint_builder::RLCChainable2,
         gadgets::LtGadget,
     },
     mpt_circuit::{
@@ -74,7 +74,10 @@ impl<F: Field> BranchGadget<F> {
                 // Read the list
                 config.rlp_list[is_s.idx()] = RLPListDataGadget::construct(cb);
                 // Start RLC encoding the RLP data starting with the list RLP bytes
-                node_rlc[is_s.idx()] = config.rlp_list[is_s.idx()].rlp_list.rlc_rlp_only2(&cb.keccak_r).0;
+                node_rlc[is_s.idx()] = config.rlp_list[is_s.idx()]
+                    .rlp_list
+                    .rlc_rlp_only2(&cb.keccak_r)
+                    .0;
 
                 // Keep track of how many bytes the branch contains to make sure it's correct.
                 num_bytes_left[is_s.idx()] = config.rlp_list[is_s.idx()].rlp_list.len();
@@ -159,7 +162,8 @@ impl<F: Field> BranchGadget<F> {
                 // Number of bytes left needs to be 1 because ValueNode which occupies 1 byte
                 require!(num_bytes_left[is_s.idx()] => 1);
                 // TODO: acc currently doesn't have branch ValueNode info
-                node_rlc[is_s.idx()] = node_rlc[is_s.idx()].rlc_chain2((RLP_NIL.expr(), cb.keccak_r.expr()));
+                node_rlc[is_s.idx()] =
+                    node_rlc[is_s.idx()].rlc_chain2((RLP_NIL.expr(), cb.keccak_r.expr()));
             }
 
             // `is_modified` needs to be set to 1 at exactly 1 branch child

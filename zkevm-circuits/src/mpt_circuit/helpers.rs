@@ -4,7 +4,8 @@ use crate::{
         cached_region::{CachedRegion, ChallengeSet},
         cell_manager::{Cell, CellManager, CellType},
         constraint_builder::{
-            ConstraintBuilder, RLCChainable, RLCChainableValue, RLCable, RLCableValue, RLCChainable2,
+            ConstraintBuilder, RLCChainable, RLCChainable2, RLCChainableValue, RLCable,
+            RLCableValue,
         },
         gadgets::IsEqualGadget,
         memory::MemoryBank,
@@ -17,7 +18,7 @@ use crate::{
     },
     util::{Challenges, Expr},
 };
-use eth_types::{Field};
+use eth_types::Field;
 use gadgets::util::{not, or, pow, Scalar};
 use halo2_proofs::{
     circuit::Value,
@@ -25,10 +26,11 @@ use halo2_proofs::{
 };
 
 use super::{
+    param::HASH_WIDTH,
     rlp_gadgets::{
         get_ext_odd_nibble_value, RLPItemGadget, RLPItemWitness, RLPListGadget, RLPListWitness,
     },
-    FixedTableTag, param::HASH_WIDTH,
+    FixedTableTag,
 };
 
 impl<F: Field> ChallengeSet<F> for crate::util::Challenges<Value<F>> {
@@ -76,7 +78,6 @@ impl CellType for MptCellType {
 pub const FIXED: MptCellType = MptCellType::Lookup(Table::Fixed);
 pub const KECCAK: MptCellType = MptCellType::Lookup(Table::Keccak);
 pub const MULT: MptCellType = MptCellType::Lookup(Table::Exp);
-
 
 /// Indexable object
 pub trait Indexable {
@@ -345,7 +346,8 @@ impl<F: Field> ListKeyGadget<F> {
 
     pub(crate) fn rlc2(&self, r: &Expression<F>) -> Expression<F> {
         self.rlp_list
-            .rlc_rlp_only2(r).0
+            .rlc_rlp_only2(r)
+            .0
             .rlc_chain2(self.key_value.rlc_chain_data())
     }
 }
@@ -881,7 +883,9 @@ impl<F: Field> MPTConstraintBuilder<F> {
         cell_manager: Option<CellManager<F, MptCellType>>,
         r: Expression<F>,
     ) -> Self {
-        //let lookup_value: F = word!("0x2a79eee6c17367c19c0de1ca49eca2a478494747b4bf58ecad53e889d6695f4c").to_scalar().unwrap();
+        // let lookup_value: F =
+        // word!("0x2a79eee6c17367c19c0de1ca49eca2a478494747b4bf58ecad53e889d6695f4c").to_scalar().
+        // unwrap();
         MPTConstraintBuilder {
             base: ConstraintBuilder::new(
                 max_degree,
@@ -967,9 +971,10 @@ impl<F: Field> MPTConstraintBuilder<F> {
         values: Vec<Expression<F>>,
         is_fixed: bool,
         is_combine: bool,
-        is_split: bool
+        is_split: bool,
     ) {
-        self.base.add_dynamic_lookup(description, tag, values, is_fixed, is_combine, is_split)
+        self.base
+            .add_dynamic_lookup(description, tag, values, is_fixed, is_combine, is_split)
     }
 
     pub(crate) fn add_celltype_lookup(
@@ -978,7 +983,8 @@ impl<F: Field> MPTConstraintBuilder<F> {
         cell_type: MptCellType,
         values: Vec<Expression<F>>,
     ) {
-        self.base.add_celltype_lookup(description, cell_type, values)
+        self.base
+            .add_celltype_lookup(description, cell_type, values)
     }
 
     pub(crate) fn store_dynamic_table(
@@ -987,9 +993,10 @@ impl<F: Field> MPTConstraintBuilder<F> {
         tag: MptCellType,
         values: Vec<Expression<F>>,
         is_combine: bool,
-        is_split: bool
+        is_split: bool,
     ) {
-        self.base.store_dynamic_table(description, tag, values, is_combine, is_split)
+        self.base
+            .store_dynamic_table(description, tag, values, is_combine, is_split)
     }
 }
 
@@ -1267,7 +1274,7 @@ impl<F: Field> MainRLPGadget<F> {
             for (idx, byte) in config.bytes.iter().enumerate() {
                 require!(
                     format!("byte {:?}", byte.identifier()),
-                    vec![config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()]        
+                    vec![config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()]
                     // is_fixed, is_combine, is_split
                     => @FIXED, true, true, false
                 );
@@ -1299,19 +1306,30 @@ impl<F: Field> MainRLPGadget<F> {
             .assign(region, offset, rlp_witness.len().scalar())?;
 
         let max: usize = HASH_WIDTH + 2;
-        let mult_norm = pow::value(region.keccak_r, max - rlp_witness.num_bytes()).invert().unwrap();
-        self.mult_diff
-            .assign(region, offset, pow::value(region.keccak_r, rlp_witness.num_bytes()))?;
-        self.mult_norm
-            .assign(region, offset, mult_norm)?;
-        self.mult_diff_key
-            .assign(region, offset, pow::value(region.r, rlp_witness.num_bytes()))?;
-        //println!("[{}] {} -> {:?}", offset, rlp_witness.num_bytes(), pow::value(region.keccak_r, max - rlp_witness.num_bytes()).invert().unwrap());
+        let mult_norm = pow::value(region.keccak_r, max - rlp_witness.num_bytes())
+            .invert()
+            .unwrap();
+        self.mult_diff.assign(
+            region,
+            offset,
+            pow::value(region.keccak_r, rlp_witness.num_bytes()),
+        )?;
+        self.mult_norm.assign(region, offset, mult_norm)?;
+        self.mult_diff_key.assign(
+            region,
+            offset,
+            pow::value(region.r, rlp_witness.num_bytes()),
+        )?;
+        // println!("[{}] {} -> {:?}", offset, rlp_witness.num_bytes(), pow::value(region.keccak_r,
+        // max - rlp_witness.num_bytes()).invert().unwrap());
 
         self.rlc_content
             .assign(region, offset, rlp_witness.rlc_content(region.r))?;
-        self.rlc_rlp
-            .assign(region, offset, rlp_witness.rlc_rlp2(region.keccak_r) * mult_norm)?;
+        self.rlc_rlp.assign(
+            region,
+            offset,
+            rlp_witness.rlc_rlp2(region.keccak_r) * mult_norm,
+        )?;
 
         assign!(region, self.tag, offset => self.tag(is_nibbles).scalar())?;
 

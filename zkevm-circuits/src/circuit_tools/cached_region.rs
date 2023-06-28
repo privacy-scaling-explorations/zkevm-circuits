@@ -1,5 +1,5 @@
-use crate::{circuit_tools::cell_manager::Cell, mpt_circuit::MPTRegion};
-use eth_types::{Field, word, ToScalar};
+use crate::circuit_tools::cell_manager::Cell;
+use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
     plonk::{Advice, Any, Assigned, Column, Error, Expression, Fixed},
@@ -59,7 +59,10 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
         // Nothing to do
     }
 
-    pub(crate) fn assign_stored_expressions<C: CellType>(&mut self, cb: &ConstraintBuilder<F, C>) -> Result<(), Error>  {
+    pub(crate) fn assign_stored_expressions<C: CellType>(
+        &mut self,
+        cb: &ConstraintBuilder<F, C>,
+    ) -> Result<(), Error> {
         // println!("assign stored expressions {:?}", self.regions);
         for (offset, region_id) in self.regions.clone() {
             for stored_expression in cb.get_stored_expressions(region_id).iter() {
@@ -214,9 +217,7 @@ impl<F: Field, C: CellType> StoredExpression<F, C> {
                 ))
             },
             &|_| unimplemented!("instance column"),
-            &|challenge| {
-                *region.challenges().indexed()[challenge.index()]
-            },
+            &|challenge| *region.challenges().indexed()[challenge.index()],
             &|a| -a,
             &|a, b| a + b,
             &|a, b| a * b,

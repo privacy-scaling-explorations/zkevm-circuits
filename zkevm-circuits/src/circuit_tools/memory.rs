@@ -159,7 +159,14 @@ impl<F: Field, C: CellType> MemoryBank<F, C> {
         values: &[Expression<F>],
     ) {
         // TODO:(Cecilia) make split expression work
-        cb.add_dynamic_lookup(description, self.tag(), self.insert_key(key, values), false, true, true);
+        cb.add_dynamic_lookup(
+            description,
+            self.tag(),
+            self.insert_key(key, values),
+            false,
+            true,
+            true,
+        );
     }
 
     pub(crate) fn store(
@@ -178,7 +185,13 @@ impl<F: Field, C: CellType> MemoryBank<F, C> {
         key: Expression<F>,
         values: &[Expression<F>],
     ) {
-        cb.store_dynamic_table("memory store", self.tag(), self.insert_key(key, values), true, true);
+        cb.store_dynamic_table(
+            "memory store",
+            self.tag(),
+            self.insert_key(key, values),
+            true,
+            true,
+        );
     }
 
     pub(crate) fn witness_store(&mut self, offset: usize, values: &[F]) {
