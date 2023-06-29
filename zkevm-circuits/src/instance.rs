@@ -61,7 +61,8 @@ pub struct TxValues {
 /// Extra values (not contained in block or tx tables)
 #[derive(Default, Debug, Clone)]
 pub struct ExtraValues {
-    // block_hash: H256,
+    /// block_hash
+    pub block_hash: H256,
     /// state_root
     pub state_root: H256,
     /// prev_state_root
@@ -84,6 +85,8 @@ pub struct PublicData {
     pub prev_state_root: H256,
     /// Constants related to Ethereum block
     pub block_constants: BlockConstants,
+    /// Block Hash
+    pub block_hash: Option<H256>,
 }
 
 impl Default for PublicData {
@@ -95,6 +98,7 @@ impl Default for PublicData {
             state_root: H256::zero(),
             prev_state_root: H256::zero(),
             block_constants: BlockConstants::default(),
+            block_hash: None,
         }
     }
 }
@@ -158,7 +162,7 @@ impl PublicData {
     /// Returns struct with the extra values
     pub fn get_extra_values(&self) -> ExtraValues {
         ExtraValues {
-            // block_hash: self.hash.unwrap_or_else(H256::zero),
+            block_hash: self.block_hash.unwrap_or_else(H256::zero),
             state_root: self.state_root,
             prev_state_root: self.prev_state_root,
         }
@@ -195,6 +199,7 @@ impl PublicData {
         // Assign extra fields
         let extra_vals = self.get_extra_values();
         let result = result
+            .chain(extra_vals.block_hash.to_fixed_bytes()) // block hash
             .chain(extra_vals.state_root.to_fixed_bytes()) // block state root
             .chain(extra_vals.prev_state_root.to_fixed_bytes()); // previous block state root
 
@@ -276,6 +281,7 @@ pub fn public_data_convert<F: Field>(block: &Block<F>) -> PublicData {
         transactions: block.eth_block.transactions.clone(),
         state_root: block.eth_block.state_root,
         prev_state_root: H256::from_uint(&block.prev_state_root),
+        block_hash: block.eth_block.hash,
         block_constants: BlockConstants {
             coinbase: block.context.coinbase,
             timestamp: block.context.timestamp,

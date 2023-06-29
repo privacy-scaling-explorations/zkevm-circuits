@@ -1199,15 +1199,21 @@ impl<F: Field> PiCircuitConfig<F> {
         zero_cell: AssignedCell<F, F>,
     ) -> Result<(), Error> {
         // block hash
-        // let block_hash = rlc(extra.block_hash.to_fixed_bytes(), randomness);
-        // region.assign_advice(
-        //     || "block.hash",
-        //     self.raw_public_inputs,
-        //     offset,
-        //     || Ok(block_hash),
-        // )?;
-        // raw_pi_vals[offset] = block_hash;
-        // offset += 1;
+        self.assign_raw_bytes(
+            region,
+            &extra
+                .block_hash
+                .to_fixed_bytes()
+                .iter()
+                .copied()
+                .rev()
+                .collect_vec(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell.clone(),
+        )?;
 
         // block state root
         self.assign_raw_bytes(
