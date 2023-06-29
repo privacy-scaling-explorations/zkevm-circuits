@@ -38,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         // Lookup in call_ctx the TxId
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         // Lookup the gas_price in tx table
-        cb.tx_context_lookup_word(
+        cb.tx_context_lookup(
             tx_id.expr(),
             TxContextFieldTag::GasPrice,
             None,
@@ -46,7 +46,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         );
 
         // Push the value to the stack
-        cb.stack_push_word(gas_price.to_word());
+        cb.stack_push(gas_price.to_word());
 
         // State transition
         let opcode = cb.query_cell();

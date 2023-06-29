@@ -93,7 +93,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             (BlockContextFieldTag::Coinbase, coinbase.to_word()),
             (BlockContextFieldTag::BaseFee, base_fee.to_word()),
         ] {
-            cb.block_lookup_word(tag.expr(), None, value);
+            cb.block_lookup(tag.expr(), None, value);
         }
         let effective_tip = cb.query_word32();
         let sub_gas_price_by_base_fee =

@@ -115,24 +115,24 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let value = cb.query_word32();
         let length = cb.query_memory_address();
         let offset = cb.query_word_unchecked();
-        cb.stack_pop_word(value.to_word());
-        cb.stack_pop_word(offset.to_word());
-        cb.stack_pop_word(length.to_word());
+        cb.stack_pop(value.to_word());
+        cb.stack_pop(offset.to_word());
+        cb.stack_pop(length.to_word());
         cb.condition(is_create2.expr(), |cb| {
-            cb.stack_pop_word(create.salt_word());
+            cb.stack_pop(create.salt());
         });
-        cb.stack_push_word(contract_addr.to_word().mul_selector(is_success.expr()));
+        cb.stack_push(contract_addr.to_word().mul_selector(is_success.expr()));
 
         // read caller's balance and nonce
         let caller_nonce = create.caller_nonce();
         let caller_balance = cb.query_word_unchecked();
-        cb.account_read_word(
-            create.caller_address_word(),
+        cb.account_read(
+            create.caller_address(),
             AccountFieldTag::Balance,
             caller_balance.to_word(),
         );
-        cb.account_read_word(
-            create.caller_address_word(),
+        cb.account_read(
+            create.caller_address(),
             AccountFieldTag::Nonce,
             Word::from_lo_unchecked(caller_nonce.expr()),
         );
@@ -173,8 +173,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let callee_nonce = cb.query_cell();
         let not_address_collision = cb.condition(is_precheck_ok.expr(), |cb| {
             // increase caller's nonce
-            cb.account_write_word(
-                create.caller_address_word(),
+            cb.account_write(
+                create.caller_address(),
                 AccountFieldTag::Nonce,
                 Word::from_lo_unchecked(caller_nonce.expr() + 1.expr()),
                 Word::from_lo_unchecked(caller_nonce.expr()),
@@ -191,7 +191,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             );
 
             // read contract's previous hash
-            cb.account_read_word(
+            cb.account_read(
                 contract_addr.to_word(),
                 AccountFieldTag::CodeHash,
                 prev_code_hash.to_word(),
@@ -206,9 +206,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             IsZeroWordGadget::construct(
                 cb,
                 &Word::from_lo_unchecked(callee_nonce.expr()).add_unchecked(
-                    prev_code_hash_word.clone().mul_unchecked(
-                        prev_code_hash_word.sub_unchecked(cb.empty_code_hash_word()),
-                    ),
+                    prev_code_hash_word
+                        .clone()
+                        .mul_unchecked(prev_code_hash_word.sub_unchecked(cb.empty_code_hash())),
                 ),
             )
         });
@@ -251,7 +251,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     cb.copy_table_lookup(
                         Word::from_lo_unchecked(current_call_id.expr()),
                         CopyDataType::Memory.expr(),
-                        create.code_hash_word(),
+                        create.code_hash(),
                         CopyDataType::Bytecode.expr(),
                         init_code.offset(),
                         init_code.address(),
@@ -263,7 +263,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 });
 
                 // keccak table lookup to verify contract address.
-                cb.keccak_table_lookup_word(
+                cb.keccak_table_lookup(
                     create.input_rlc(cb),
                     create.input_length(),
                     keccak_output.to_word(),
@@ -279,7 +279,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 // transfer
                 let transfer = TransferGadget::construct(
                     cb,
-                    create.caller_address_word(),
+                    create.caller_address(),
                     contract_addr.to_word(),
                     0.expr(),
                     1.expr(),
@@ -288,7 +288,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 );
 
                 // EIP 161, the nonce of a newly created contract is 1
-                cb.account_write_word(
+                cb.account_write(
                     contract_addr.to_word(),
                     AccountFieldTag::Nonce,
                     Word::one(),
@@ -314,10 +314,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                             CallContextFieldTag::TxId,
                             Word::from_lo_unchecked(tx_id.expr()),
                         ),
-                        (
-                            CallContextFieldTag::CallerAddress,
-                            create.caller_address_word(),
-                        ),
+                        (CallContextFieldTag::CallerAddress, create.caller_address()),
                         (CallContextFieldTag::CalleeAddress, contract_addr.to_word()),
                         (
                             CallContextFieldTag::RwCounterEndOfReversion,
@@ -341,7 +338,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                             CallContextFieldTag::IsCreate,
                             Word::from_lo_unchecked(true.expr()),
                         ),
-                        (CallContextFieldTag::CodeHash, create.code_hash_word()),
+                        (CallContextFieldTag::CodeHash, create.code_hash()),
                     ] {
                         cb.call_context_lookup_write(Some(callee_call_id.expr()), field_tag, value);
                     }
@@ -352,7 +349,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                         call_id: To(callee_call_id.expr()),
                         is_root: To(false.expr()),
                         is_create: To(true.expr()),
-                        code_hash: To(create.code_hash_word()),
+                        code_hash: To(create.code_hash()),
                         gas_left: To(callee_gas_left),
                         reversible_write_counter: To(
                             1.expr() + transfer.reversible_w_delta().expr()

@@ -40,7 +40,7 @@ impl<F: Field> ExecutionGadget<F> for PcGadget<F> {
         );
 
         // Push the value on the stack
-        cb.stack_push_word(value.to_word());
+        cb.stack_push(value.to_word());
 
         // State transition
         let step_state_transition = StepStateTransition {

@@ -65,15 +65,15 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 
         let key = cb.query_word32();
         // Pop the key from the stack
-        cb.stack_pop_word(key.to_word());
+        cb.stack_pop(key.to_word());
 
         let value = cb.query_word32();
         // Pop the value from the stack
-        cb.stack_pop_word(value.to_word());
+        cb.stack_pop(value.to_word());
 
         let value_prev = cb.query_word32();
         let original_value = cb.query_word32();
-        cb.account_storage_write_word(
+        cb.account_storage_write(
             callee_address.to_word(),
             key.to_word(),
             value.to_word(),
@@ -84,7 +84,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         );
 
         let is_warm = cb.query_bool();
-        cb.account_storage_access_list_write_word(
+        cb.account_storage_access_list_write(
             tx_id.expr(),
             callee_address.to_word(),
             key.to_word(),
@@ -121,7 +121,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             value_prev.clone(),
             original_value.clone(),
         );
-        cb.tx_refund_write_word(
+        cb.tx_refund_write(
             tx_id.expr(),
             Word::from_lo_unchecked(tx_refund.expr()),
             tx_refund_prev.to_word(),

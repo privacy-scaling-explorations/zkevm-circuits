@@ -68,7 +68,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         let call_data_offset = cb.query_cell();
 
         let data_offset = WordByteCapGadget::construct(cb, call_data_length.expr());
-        cb.stack_pop_word(data_offset.original_word_new().to_word());
+        cb.stack_pop(data_offset.original_word().to_word());
 
         cb.condition(
             and::expr([data_offset.not_overflow(), cb.curr.state.is_root.expr()]),
@@ -137,7 +137,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                         cb.curr.state.is_root.expr(),
                     ]),
                     |cb| {
-                        cb.tx_context_lookup_word(
+                        cb.tx_context_lookup(
                             src_id.expr(),
                             TxContextFieldTag::CallData,
                             Some(src_addr.expr() + idx.expr()),
@@ -178,7 +178,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             calldata_word.to_word().mul_selector(data_offset.overflow()),
         );
 
-        cb.stack_push_word(calldata_word.to_word());
+        cb.stack_push(calldata_word.to_word());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(cb.rw_counter_offset()),

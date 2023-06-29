@@ -35,13 +35,13 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
         let callee_address = cb.call_context_read_as_word(None, CallContextFieldTag::CalleeAddress);
 
         let self_balance = cb.query_word_unchecked();
-        cb.account_read_word(
+        cb.account_read(
             callee_address.to_word(),
             AccountFieldTag::Balance,
             self_balance.to_word(),
         );
 
-        cb.stack_push_word(self_balance.to_word());
+        cb.stack_push(self_balance.to_word());
 
         let opcode = cb.query_cell();
         let step_state_transition = StepStateTransition {

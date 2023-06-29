@@ -38,8 +38,8 @@ impl<F: Field> ExecutionGadget<F> for DupGadget<F> {
         let dup_offset = opcode.expr() - OpcodeId::DUP1.expr();
 
         // Peek the value at `dup_offset` and push the value on the stack
-        cb.stack_lookup_word(false.expr(), dup_offset, value.to_word());
-        cb.stack_push_word(value.to_word());
+        cb.stack_lookup(false.expr(), dup_offset, value.to_word());
+        cb.stack_push(value.to_word());
 
         // State transition
         let step_state_transition = StepStateTransition {

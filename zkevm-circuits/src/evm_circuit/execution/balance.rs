@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let address = cb.query_account_address();
-        cb.stack_pop_word(address.to_word());
+        cb.stack_pop(address.to_word());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
@@ -55,7 +55,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         );
         let code_hash = cb.query_word_unchecked();
         // For non-existing accounts the code_hash must be 0 in the rw_table.
-        cb.account_read_word(
+        cb.account_read(
             address.to_word(),
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
@@ -64,7 +64,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         let exists = not::expr(not_exists.expr());
         let balance = cb.query_word32();
         cb.condition(exists.expr(), |cb| {
-            cb.account_read_word(
+            cb.account_read(
                 address.to_word(),
                 AccountFieldTag::Balance,
                 balance.to_word(),
@@ -74,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             cb.require_zero_word("balance is zero when non_exists", balance.to_word());
         });
 
-        cb.stack_push_word(balance.to_word());
+        cb.stack_push(balance.to_word());
 
         let gas_cost = select::expr(
             is_warm.expr(),

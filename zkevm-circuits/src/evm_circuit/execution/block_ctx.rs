@@ -34,7 +34,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let value = cb.query_word_unchecked(); // block table lookup below
 
-        cb.stack_push_word(value.to_word());
+        cb.stack_push(value.to_word());
 
         // Get op's FieldTag
         let opcode = cb.query_cell();
@@ -43,7 +43,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxGadget<F> {
 
         // Lookup block table with block context ops
         // TIMESTAMP/NUMBER/GASLIMIT, COINBASE and DIFFICULTY/BASEFEE
-        cb.block_lookup_word(blockctx_tag, None, value.to_word());
+        cb.block_lookup(blockctx_tag, None, value.to_word());
 
         // State transition
         let step_state_transition = StepStateTransition {

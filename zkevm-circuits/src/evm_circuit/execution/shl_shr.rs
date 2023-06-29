@@ -78,14 +78,14 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         // Constrain stack pops and pushes as:
         // - for SHL, two pops are shift and quotient, and push is dividend.
         // - for SHR, two pops are shift and dividend, and push is quotient.
-        cb.stack_pop_word(shift.to_word());
-        cb.stack_pop_word(
+        cb.stack_pop(shift.to_word());
+        cb.stack_pop(
             quotient
                 .to_word()
                 .mul_selector(is_shl.expr())
                 .add_unchecked(dividend.to_word().mul_selector(is_shr.expr())),
         );
-        cb.stack_push_word(
+        cb.stack_push(
             (dividend
                 .to_word()
                 .mul_selector(is_shl.expr())

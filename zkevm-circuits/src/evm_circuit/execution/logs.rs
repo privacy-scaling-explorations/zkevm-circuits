@@ -55,8 +55,8 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let msize = cb.query_memory_address();
 
         // Pop mstart_address, msize from stack
-        cb.stack_pop_word(mstart.to_word());
-        cb.stack_pop_word(msize.to_word());
+        cb.stack_pop(mstart.to_word());
+        cb.stack_pop(msize.to_word());
         // read tx id
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         // constrain not in static call
@@ -71,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         cb.require_boolean("is_persistent is bool", is_persistent.expr());
 
         cb.condition(is_persistent.expr(), |cb| {
-            cb.tx_log_lookup_word(
+            cb.tx_log_lookup(
                 tx_id.expr(),
                 cb.curr.state.log_id.expr() + 1.expr(),
                 TxLogFieldTag::Address,
@@ -85,10 +85,10 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let topic_selectors: [Cell<F>; 4] = array_init(|_| cb.query_cell());
         for (idx, topic) in topics.iter().enumerate() {
             cb.condition(topic_selectors[idx].expr(), |cb| {
-                cb.stack_pop_word(topic.to_word());
+                cb.stack_pop(topic.to_word());
             });
             cb.condition(topic_selectors[idx].expr() * is_persistent.expr(), |cb| {
-                cb.tx_log_lookup_word(
+                cb.tx_log_lookup(
                     tx_id.expr(),
                     cb.curr.state.log_id.expr() + 1.expr(),
                     TxLogFieldTag::Topic,

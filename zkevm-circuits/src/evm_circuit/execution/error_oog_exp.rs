@@ -50,8 +50,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
 
         let base = cb.query_word32();
         let exponent = cb.query_word32();
-        cb.stack_pop_word(base.to_word());
-        cb.stack_pop_word(exponent.to_word());
+        cb.stack_pop(base.to_word());
+        cb.stack_pop(exponent.to_word());
 
         let exponent_byte_size = ByteSizeGadget::construct(
             cb,

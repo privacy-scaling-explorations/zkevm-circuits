@@ -56,9 +56,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         );
 
         // Pop memory_offset, offset, size from stack
-        cb.stack_pop_word(memory_offset.to_word());
-        cb.stack_pop_word(data_offset.to_word());
-        cb.stack_pop_word(size.to_word());
+        cb.stack_pop(memory_offset.to_word());
+        cb.stack_pop(data_offset.to_word());
+        cb.stack_pop(size.to_word());
 
         // Read last callee return data length
         cb.call_context_lookup_read(

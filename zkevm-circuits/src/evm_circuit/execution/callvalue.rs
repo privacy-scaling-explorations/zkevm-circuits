@@ -43,7 +43,7 @@ impl<F: Field> ExecutionGadget<F> for CallValueGadget<F> {
         );
 
         // Push the value to the stack
-        cb.stack_push_word(call_value.to_word());
+        cb.stack_push(call_value.to_word());
 
         // State transition
         let opcode = cb.query_cell();

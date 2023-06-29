@@ -57,11 +57,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         // Get the next memory size and the gas cost for this memory access
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
-            [address_low::expr_word(&address) + 1.expr() + (is_not_mstore8 * 31.expr())],
+            [address_low::expr(&address) + 1.expr() + (is_not_mstore8 * 31.expr())],
         );
 
         // Check if the memory address is too large
-        let address_in_range = IsZeroGadget::construct(cb, address_high::expr_word(&address));
+        let address_in_range = IsZeroGadget::construct(cb, address_high::expr(&address));
         // Check if the amount of gas available is less than the amount of gas
         // required
         let insufficient_gas = cb.condition(address_in_range.expr(), |cb| {
@@ -74,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
 
         // Pop the address from the stack
         // We still have to do this to verify the correctness of `address`
-        cb.stack_pop_word(address.to_word());
+        cb.stack_pop(address.to_word());
 
         // TODO: Use ContextSwitchGadget to switch call context to caller's and
         // consume all gas_left.

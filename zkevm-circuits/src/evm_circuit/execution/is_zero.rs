@@ -36,8 +36,8 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
         let value = cb.query_word_unchecked();
         let is_zero_word = math_gadget::IsZeroWordGadget::construct(cb, &value);
 
-        cb.stack_pop_word(value.to_word());
-        cb.stack_push_word(Word::from_lo_unchecked(is_zero_word.expr()));
+        cb.stack_pop(value.to_word());
+        cb.stack_push(Word::from_lo_unchecked(is_zero_word.expr()));
 
         // State transition
         let step_state_transition = StepStateTransition {

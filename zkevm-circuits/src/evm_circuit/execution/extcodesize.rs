@@ -48,7 +48,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
                 .try_into()
                 .unwrap(),
         );
-        cb.stack_pop_word(address_word.to_word());
+        cb.stack_pop(address_word.to_word());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
@@ -64,7 +64,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         // range check will be cover by account code_hash lookup
         let code_hash = cb.query_word_unchecked();
         // For non-existing accounts the code_hash must be 0 in the rw_table.
-        cb.account_read_word(
+        cb.account_read(
             address.to_word(),
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
@@ -74,13 +74,13 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 
         let code_size = cb.query_u64();
         cb.condition(exists.expr(), |cb| {
-            cb.bytecode_length_word(code_hash.to_word(), code_size.expr());
+            cb.bytecode_length(code_hash.to_word(), code_size.expr());
         });
         cb.condition(not_exists.expr(), |cb| {
             cb.require_zero("code_size is zero when non_exists", code_size.expr());
         });
 
-        cb.stack_push_word(code_size.to_word());
+        cb.stack_push(code_size.to_word());
 
         let gas_cost = select::expr(
             is_warm.expr(),

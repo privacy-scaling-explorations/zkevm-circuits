@@ -30,10 +30,10 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
         let pops: [WordCell<F>; N_POP] = [(); N_POP].map(|_| cb.query_word_unchecked());
         let pushes: [WordCell<F>; N_PUSH] = [(); N_PUSH].map(|_| cb.query_word_unchecked());
         for pop in pops.iter() {
-            cb.stack_pop_word(pop.to_word());
+            cb.stack_pop(pop.to_word());
         }
         for push in pushes.iter() {
-            cb.stack_push_word(push.to_word());
+            cb.stack_push(push.to_word());
         }
         Self {
             pops,

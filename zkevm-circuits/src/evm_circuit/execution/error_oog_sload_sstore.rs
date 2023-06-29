@@ -76,8 +76,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         let original_value = cb.query_word_unchecked();
         let is_warm = cb.query_bool();
 
-        cb.stack_pop_word(key.to_word());
-        cb.account_storage_access_list_read_word(
+        cb.stack_pop(key.to_word());
+        cb.account_storage_access_list_read(
             tx_id.expr(),
             callee_address.to_word(),
             key.to_word(),
@@ -86,9 +86,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
 
         let sload_gas_cost = SloadGasGadget::construct(cb, is_warm.expr());
         let sstore_gas_cost = cb.condition(is_sstore.expr().0, |cb| {
-            cb.stack_pop_word(value.to_word());
+            cb.stack_pop(value.to_word());
 
-            cb.account_storage_read_word(
+            cb.account_storage_read(
                 callee_address.to_word(),
                 key.to_word(),
                 value_prev.to_word(),

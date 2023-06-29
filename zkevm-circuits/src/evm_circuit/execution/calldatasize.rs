@@ -42,7 +42,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
         );
 
         // The calldatasize should be pushed to the top of the stack.
-        cb.stack_push_word(call_data_size.to_word());
+        cb.stack_push(call_data_size.to_word());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(2.expr()),

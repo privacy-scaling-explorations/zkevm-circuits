@@ -131,7 +131,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Increase caller's nonce.
         // (tx caller's nonce always increases even tx ends with error)
-        cb.account_write_word(
+        cb.account_write(
             tx_caller_address.to_word(),
             AccountFieldTag::Nonce,
             Word::from_lo_unchecked(tx_nonce.expr() + 1.expr()),
@@ -191,7 +191,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Query coinbase address.
         let coinbase = cb.query_word_unchecked();
         let is_coinbase_warm = cb.query_bool();
-        cb.block_lookup_word(
+        cb.block_lookup(
             BlockContextFieldTag::Coinbase.expr(),
             None,
             coinbase.to_word(),
@@ -207,7 +207,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Read code_hash of callee
         let code_hash = cb.query_word_unchecked();
         let is_empty_code_hash =
-            IsEqualWordGadget::construct(cb, &code_hash.to_word(), &cb.empty_code_hash_word());
+            IsEqualWordGadget::construct(cb, &code_hash.to_word(), &cb.empty_code_hash());
         let callee_not_exists = IsZeroWordGadget::construct(cb, &code_hash);
         // no_callee_code is true when the account exists and has empty
         // code hash, or when the account doesn't exist (which we encode with
@@ -216,7 +216,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // TODO: And not precompile
         cb.condition(not::expr(tx_is_create.expr()), |cb| {
-            cb.account_read_word(
+            cb.account_read(
                 tx_callee_address.to_word(),
                 AccountFieldTag::CodeHash,
                 code_hash.to_word(),
@@ -240,7 +240,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         cb.require_equal_word(
             "tx caller address equivalence",
             tx_caller_address.to_word(),
-            create.caller_address_word(),
+            create.caller_address(),
         );
         cb.condition(tx_is_create.expr(), |cb| {
             cb.require_equal_word(
@@ -263,13 +263,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // 1. Handle contract creation transaction.
         cb.condition(tx_is_create.expr(), |cb| {
-            cb.keccak_table_lookup_word(
+            cb.keccak_table_lookup(
                 create.input_rlc(cb),
                 create.input_length(),
                 caller_nonce_hash_bytes.to_word(),
             );
 
-            cb.account_write_word(
+            cb.account_write(
                 call_callee_address.to_word(),
                 AccountFieldTag::Nonce,
                 Word::one(),

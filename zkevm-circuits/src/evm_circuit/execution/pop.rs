@@ -33,7 +33,7 @@ impl<F: Field> ExecutionGadget<F> for PopGadget<F> {
         let value = cb.query_word_unchecked();
 
         // Pop the value from the stack
-        cb.stack_pop_word(value.to_word());
+        cb.stack_pop(value.to_word());
 
         // State transition
         let step_state_transition = StepStateTransition {

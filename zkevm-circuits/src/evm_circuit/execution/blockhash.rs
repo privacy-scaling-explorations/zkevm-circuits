@@ -39,14 +39,14 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let current_block_number = cb.query_cell();
-        cb.block_lookup_word(
+        cb.block_lookup(
             BlockContextFieldTag::Number.expr(),
             None,
             Word::from_lo_unchecked(current_block_number.expr()),
         );
 
         let block_number = WordByteCapGadget::construct(cb, current_block_number.expr());
-        cb.stack_pop_word(block_number.original_word_new().to_word());
+        cb.stack_pop(block_number.original_word().to_word());
 
         let block_hash = cb.query_word_unchecked();
 
@@ -59,7 +59,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         let is_valid = and::expr([block_number.lt_cap(), diff_lt.expr()]);
 
         cb.condition(is_valid.expr(), |cb| {
-            cb.block_lookup_word(
+            cb.block_lookup(
                 BlockContextFieldTag::BlockHash.expr(),
                 Some(block_number.valid_value()),
                 block_hash.to_word(),
@@ -73,7 +73,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
             );
         });
 
-        cb.stack_push_word(block_hash.to_word());
+        cb.stack_push(block_hash.to_word());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(2.expr()),

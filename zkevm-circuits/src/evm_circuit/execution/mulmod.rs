@@ -77,10 +77,10 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
             1.expr() - lt.expr() - n_is_zero.expr(),
         );
 
-        cb.stack_pop_word(a.to_word());
-        cb.stack_pop_word(b.to_word());
-        cb.stack_pop_word(n.to_word());
-        cb.stack_push_word(r.to_word());
+        cb.stack_pop(a.to_word());
+        cb.stack_pop(b.to_word());
+        cb.stack_pop(n.to_word());
+        cb.stack_push(r.to_word());
 
         // State transition
         let step_state_transition = StepStateTransition {

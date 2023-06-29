@@ -38,9 +38,9 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
         let b = cb.query_word32();
         let c = cb.query_word32();
 
-        cb.stack_pop_word(a.to_word());
-        cb.stack_pop_word(b.to_word());
-        cb.stack_push_word(c.to_word());
+        cb.stack_pop(a.to_word());
+        cb.stack_pop(b.to_word());
+        cb.stack_push(c.to_word());
 
         // Because opcode AND, OR, and XOR are continuous, so we can make the
         // FixedTableTag of them also continuous, and use the opcode delta from

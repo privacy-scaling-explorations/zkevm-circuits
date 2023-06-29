@@ -62,9 +62,9 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
         // When swap is enabled we swap stack places between a and b.
         // We can push result here directly because
         // it only uses the LSB of a word.
-        cb.stack_pop_word(Word::select(is_gt.expr(), b.to_word(), a.to_word()));
-        cb.stack_pop_word(Word::select(is_gt.expr(), a.to_word(), b.to_word()));
-        cb.stack_push_word(Word::from_lo_unchecked(result.expr()));
+        cb.stack_pop(Word::select(is_gt.expr(), b.to_word(), a.to_word()));
+        cb.stack_pop(Word::select(is_gt.expr(), a.to_word(), b.to_word()));
+        cb.stack_push(Word::from_lo_unchecked(result.expr()));
 
         // State transition
         let step_state_transition = StepStateTransition {

@@ -304,7 +304,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
             balance_sum,
         );
 
-        cb.account_write_word(
+        cb.account_write(
             address,
             AccountFieldTag::Balance,
             value.to_word(),
@@ -392,10 +392,10 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
                 must_create.clone(),
             ]),
             |cb| {
-                cb.account_write_word(
+                cb.account_write(
                     receiver_address.clone(),
                     AccountFieldTag::CodeHash,
-                    cb.empty_code_hash_word(),
+                    cb.empty_code_hash(),
                     Word::zero(),
                     Some(reversion_info),
                 );
@@ -522,10 +522,10 @@ impl<F: Field> TransferGadget<F> {
                 must_create.clone(),
             ]),
             |cb| {
-                cb.account_write_word(
+                cb.account_write(
                     receiver_address.clone(),
                     AccountFieldTag::CodeHash,
-                    cb.empty_code_hash_word(),
+                    cb.empty_code_hash(),
                     Word::zero(),
                     Some(reversion_info),
                 );
@@ -610,7 +610,7 @@ pub(crate) struct CommonCallGadget<F, const IS_SUCCESS_CALL: bool> {
 
     pub gas: Word32Cell<F>,
     pub gas_is_u64: IsZeroGadget<F>,
-    pub callee_address_word: AccountAddress<F>,
+    pub callee_address: AccountAddress<F>,
     pub value: Word32Cell<F>,
     pub cd_address: MemoryAddressGadget<F>,
     pub rd_address: MemoryAddressGadget<F>,
@@ -640,7 +640,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         );
 
         let gas_word = cb.query_word32();
-        let callee_address_word = cb.query_account_address();
+        let callee_address = cb.query_account_address();
         let value = cb.query_word32();
         let cd_offset = cb.query_word_unchecked();
         let cd_length = cb.query_memory_address();
@@ -656,18 +656,16 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         // callee address is `current_callee_address`.
         // For both CALL and STATICCALL, caller address is
         // `current_callee_address` and callee address is `callee_address`.
-        cb.stack_pop_word(gas_word.to_word());
-        cb.stack_pop_word(callee_address_word.to_word());
+        cb.stack_pop(gas_word.to_word());
+        cb.stack_pop(callee_address.to_word());
 
         // `CALL` and `CALLCODE` opcodes have an additional stack pop `value`.
-        cb.condition(is_call + is_callcode, |cb| {
-            cb.stack_pop_word(value.to_word())
-        });
-        cb.stack_pop_word(cd_offset.to_word());
-        cb.stack_pop_word(cd_length.to_word());
-        cb.stack_pop_word(rd_offset.to_word());
-        cb.stack_pop_word(rd_length.to_word());
-        cb.stack_push_word(if IS_SUCCESS_CALL {
+        cb.condition(is_call + is_callcode, |cb| cb.stack_pop(value.to_word()));
+        cb.stack_pop(cd_offset.to_word());
+        cb.stack_pop(cd_length.to_word());
+        cb.stack_pop(rd_offset.to_word());
+        cb.stack_pop(rd_length.to_word());
+        cb.stack_push(if IS_SUCCESS_CALL {
             Word::from_lo_unchecked(is_success.expr()) // is_success is bool
         } else {
             Word::zero()
@@ -689,18 +687,18 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         );
 
         let callee_code_hash = cb.query_word_unchecked();
-        cb.account_read_word(
-            callee_address_word.to_word(),
+        cb.account_read(
+            callee_address.to_word(),
             AccountFieldTag::CodeHash,
             callee_code_hash.to_word(),
         );
         let is_empty_code_hash =
-            IsEqualWordGadget::construct(cb, &callee_code_hash, &cb.empty_code_hash_word());
+            IsEqualWordGadget::construct(cb, &callee_code_hash, &cb.empty_code_hash());
         let callee_not_exists = IsZeroWordGadget::construct(cb, &callee_code_hash);
 
         Self {
             is_success,
-            callee_address_word,
+            callee_address,
             gas: gas_word,
             gas_is_u64,
             value,
@@ -715,8 +713,8 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         }
     }
 
-    pub fn callee_address_word(&self) -> Word<Expression<F>> {
-        self.callee_address_word.to_word()
+    pub fn callee_address(&self) -> Word<Expression<F>> {
+        self.callee_address.to_word()
     }
 
     pub fn gas_expr(&self) -> Expression<F> {
@@ -756,7 +754,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         callee_code_hash: U256,
     ) -> Result<u64, Error> {
         self.gas.assign_u256(region, offset, gas)?;
-        self.callee_address_word
+        self.callee_address
             .assign_h160(region, offset, callee_address.to_address())?;
         self.value.assign_u256(region, offset, value)?;
         if IS_SUCCESS_CALL {
@@ -1106,7 +1104,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
         self.lt_cap.expr()
     }
 
-    pub(crate) fn original_word_new(&self) -> Word32Cell<F> {
+    pub(crate) fn original_word(&self) -> Word32Cell<F> {
         self.word.original.clone()
     }
 

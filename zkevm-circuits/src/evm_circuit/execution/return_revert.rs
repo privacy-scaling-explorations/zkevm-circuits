@@ -61,8 +61,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         let offset = cb.query_word_unchecked();
         let length = cb.query_memory_address();
-        cb.stack_pop_word(offset.to_word());
-        cb.stack_pop_word(length.to_word());
+        cb.stack_pop(offset.to_word());
+        cb.stack_pop(length.to_word());
         let range = MemoryAddressGadget::construct(cb, offset, length);
 
         let is_success = cb.call_context(None, CallContextFieldTag::IsSuccess);
@@ -126,11 +126,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
                 let mut reversion_info = cb.reversion_info_read(None);
 
-                cb.account_write_word(
+                cb.account_write(
                     address.to_word(),
                     AccountFieldTag::CodeHash,
                     code_hash.to_word(),
-                    cb.empty_code_hash_word(),
+                    cb.empty_code_hash(),
                     Some(&mut reversion_info),
                 );
 

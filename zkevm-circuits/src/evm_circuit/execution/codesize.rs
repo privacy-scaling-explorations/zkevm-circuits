@@ -38,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
 
         let code_hash = cb.curr.state.code_hash.clone();
         let codesize = cb.query_cell();
-        cb.bytecode_length_word(code_hash.to_word(), codesize.expr());
+        cb.bytecode_length(code_hash.to_word(), codesize.expr());
 
         cb.require_equal(
             "Constraint: bytecode length lookup == codesize",
@@ -46,7 +46,7 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
             codesize.expr(),
         );
 
-        cb.stack_push_word(codesize_bytes.to_word());
+        cb.stack_push(codesize_bytes.to_word());
 
         let step_state_transition = StepStateTransition {
             gas_left: Transition::Delta(-OpcodeId::CODESIZE.constant_gas_cost().expr()),

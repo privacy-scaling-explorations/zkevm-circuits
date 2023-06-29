@@ -71,9 +71,9 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         // The second pop is multiplicand for MUL and divisor for DIV/MOD
         // The push is product for MUL, quotient for DIV, and residue for MOD
         // Note that for DIV/MOD, when divisor == 0, the push value is also 0.
-        cb.stack_pop_word(Word::select(is_mul.clone(), a.to_word(), d.to_word()));
-        cb.stack_pop_word(b.to_word());
-        cb.stack_push_word(
+        cb.stack_pop(Word::select(is_mul.clone(), a.to_word(), d.to_word()));
+        cb.stack_pop(b.to_word());
+        cb.stack_push(
             d.to_word()
                 .mul_selector(is_mul.clone())
                 .add_unchecked(

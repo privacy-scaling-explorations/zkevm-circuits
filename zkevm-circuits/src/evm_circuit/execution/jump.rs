@@ -32,7 +32,7 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
         let destination = cb.query_u64();
 
         // Pop the value from the stack
-        cb.stack_pop_word(destination.to_word());
+        cb.stack_pop(destination.to_word());
 
         // Lookup opcode at destination
         cb.opcode_lookup_at(destination.expr(), OpcodeId::JUMPDEST.expr(), 1.expr());

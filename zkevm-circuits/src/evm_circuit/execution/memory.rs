@@ -63,10 +63,10 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
         // Stack operations
         // Pop the address from the stack
-        cb.stack_pop_word(address.to_word());
+        cb.stack_pop(address.to_word());
         // For MLOAD push the value to the stack
         // FOR MSTORE pop the value from the stack
-        cb.stack_lookup_word(
+        cb.stack_lookup(
             is_mload.expr(),
             cb.stack_pointer_offset().expr() - is_mload.expr(),
             value.to_word(),

@@ -42,7 +42,7 @@ impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
         );
 
         // Push the value on the stack
-        cb.stack_push_word(Word::from_lo_unchecked(value.expr()));
+        cb.stack_push(Word::from_lo_unchecked(value.expr()));
 
         // State transition
         let step_state_transition = StepStateTransition {

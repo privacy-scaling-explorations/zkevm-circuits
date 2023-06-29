@@ -66,10 +66,10 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let memory_offset = cb.query_word_unchecked();
         let code_offset = WordByteCapGadget::construct(cb, code_size.expr());
 
-        cb.stack_pop_word(external_address_word.to_word());
-        cb.stack_pop_word(memory_offset.to_word());
-        cb.stack_pop_word(code_offset.original_word_new().to_word());
-        cb.stack_pop_word(memory_length.to_word());
+        cb.stack_pop(external_address_word.to_word());
+        cb.stack_pop(memory_offset.to_word());
+        cb.stack_pop(code_offset.original_word().to_word());
+        cb.stack_pop(memory_length.to_word());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
@@ -83,7 +83,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         );
 
         let code_hash = cb.query_word32();
-        cb.account_read_word(
+        cb.account_read(
             external_address.to_word(),
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
@@ -91,7 +91,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let not_exists = IsZeroWordGadget::construct(cb, &code_hash.to_word());
         let exists = not::expr(not_exists.expr());
         cb.condition(exists.expr(), |cb| {
-            cb.bytecode_length_word(code_hash.to_word(), code_size.expr());
+            cb.bytecode_length(code_hash.to_word(), code_size.expr());
         });
         cb.condition(not_exists.expr(), |cb| {
             cb.require_zero("code_size is zero when non_exists", code_size.expr());
