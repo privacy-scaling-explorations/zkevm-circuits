@@ -2,7 +2,7 @@
 use eth_types::Field;
 use gadgets::{
     impl_expr,
-    util::{pow, Expr, Scalar},
+    util::{Expr, Scalar},
 };
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
