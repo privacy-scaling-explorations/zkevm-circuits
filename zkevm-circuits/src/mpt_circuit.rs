@@ -427,10 +427,7 @@ impl<F: Field> MPTConfig<F> {
                 let keccak_r = F::from(123456u64 + 1);
                 let r = F::from(123456u64);
 
-                //println!("r: {:?}", r);
-                //println!("challenge[0]: {:?}", *challenges.indexed()[0]);
-                //println!("challenge[1]: {:?}", *challenges.indexed()[1]);
-                //println!("challenge[2]: {:?}", *challenges.indexed()[2]);
+
 
                 let mut pv = MPTState::new(&self.memory);
 
