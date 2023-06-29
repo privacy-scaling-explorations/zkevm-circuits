@@ -63,11 +63,7 @@ fn test_simple_pi() {
 
     let mut public_data = PublicData::default();
 
-    public_data.block_constants.coinbase = H160(
-        vec![1u8, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-            .try_into()
-            .unwrap(),
-    );
+    public_data.block_constants.coinbase = H160([1u8; 20]);
     let n_tx = 4;
     for i in 0..n_tx {
         public_data

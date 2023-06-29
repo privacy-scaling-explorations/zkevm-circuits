@@ -56,11 +56,17 @@ pub struct PiCircuitConfig<F: Field> {
     /// Max number of supported calldata bytes
     max_calldata: usize,
 
+    // q_digest_last: will be 1 on last byte of keccak digest, others are 0
     q_digest_last: Selector,
+    // q_bytes_last: will be 1 on last byte of raw public input last byte, others are 0
     q_bytes_last: Selector,
+    // q_tx_table: 1 on the rows where tx_table is activated, others are 0
     q_tx_table: Selector,
+    // q_tx_calldata: 1 on the rows where tx_table calldata is activated, others are 0
     q_tx_calldata: Selector,
+    // q_calldata_start: 1 on the starting row of calldata in tx_table, others are 0
     q_calldata_start: Selector,
+    // q_rpi_keccak_lookup: enable keccak lookup
     q_rpi_keccak_lookup: Selector,
     // q_rpi_value_start: assure rpi_bytes sync with rpi_value_lc when cross boundary.
     // because we layout rpi bytes vertically, which is concated from multiple original values.
@@ -79,7 +85,6 @@ pub struct PiCircuitConfig<F: Field> {
     fixed_u16: Column<Fixed>,
     calldata_gas_cost: Column<Advice>,
     is_final: Column<Advice>,
-    // is_value_rlc: Column<Fixed>,
 
     // rpi_bytes: raw public input bytes laid verticlly
     rpi_bytes: Column<Advice>,
@@ -87,7 +92,7 @@ pub struct PiCircuitConfig<F: Field> {
     // rlc
     rpi_bytes_keccakrlc: Column<Advice>,
     // rpi_value_lc: This is similar with rpi_bytes_keccakrlc, while the key differences is
-    // it's rlc in value based and reset for next new value. rand value is control by is_value_rlc
+    // it's linear combination with base 256.
     rpi_value_lc: Column<Advice>,
     // rpi_digest_bytes: Keccak digest raw bytes laid verticlly in this column
     rpi_digest_bytes: Column<Advice>,
@@ -165,7 +170,6 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let rpi_bytes = meta.advice_column();
         let rpi_bytes_keccakrlc = meta.advice_column_in(SecondPhase);
         let rpi_value_lc = meta.advice_column();
-        // let is_value_rlc = meta.fixed_column();
         let rpi_digest_bytes = meta.advice_column();
         let rpi_digest_bytes_limbs = meta.advice_column();
 
@@ -849,7 +853,8 @@ impl<F: Field> PiCircuitConfig<F> {
             zero_cell,
         )?;
 
-        // calldata value also need to be in copy constraint
+        // constrain `value` field in calldata match with public input lc cell
+        // tx_id and index constrains will be on tx circuit
         region.constrain_equal(rpi_value_lc_cell.lo().cell(), tx_value_cell.lo().cell())?;
         region.constrain_equal(rpi_value_lc_cell.hi().cell(), tx_value_cell.hi().cell())?;
 
@@ -1184,6 +1189,7 @@ impl<F: Field> PiCircuitConfig<F> {
     }
 
     /// Assigns the extra fields (not in block or tx tables):
+    ///   - block hash
     ///   - state root
     ///   - previous block state root
     /// to the rpi_byte column
@@ -1370,7 +1376,6 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 region.name_column(|| "rpi_bytes", config.rpi_bytes);
                 region.name_column(|| "rpi_bytes_keccakrlc", config.rpi_bytes_keccakrlc);
                 region.name_column(|| "rpi_value_lc", config.rpi_value_lc);
-                // region.name_column(|| "is_value_rlc", config.is_value_rlc);
                 region.name_column(|| "q_digest_value_start", config.q_digest_value_start);
                 region.name_column(|| "rpi_digest_bytes", config.rpi_digest_bytes);
                 region.name_column(|| "rpi_digest_bytes_lc", config.rpi_digest_bytes_limbs);
