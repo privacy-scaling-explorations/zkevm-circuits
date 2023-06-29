@@ -14,7 +14,12 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use lazy_static::__Deref;
-use std::{collections::{BTreeMap, HashMap}, fmt::Debug, hash::Hash, cmp::{max, Ordering}};
+use std::{
+    cmp::{max, Ordering},
+    collections::{BTreeMap, HashMap},
+    fmt::Debug,
+    hash::Hash,
+};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Cell<F> {
@@ -207,10 +212,11 @@ pub(crate) struct CellColumn<F, C: CellType> {
     pub(crate) expr: Expression<F>,
 }
 
-
 impl<F: Field, C: CellType> PartialEq for CellColumn<F, C> {
     fn eq(&self, other: &Self) -> bool {
-        self.index == other.index && self.cell_type == other.cell_type && self.height == other.height 
+        self.index == other.index
+            && self.cell_type == other.cell_type
+            && self.height == other.height
     }
 }
 
@@ -234,7 +240,6 @@ impl<F: Field, C: CellType> Expr<F> for CellColumn<F, C> {
     }
 }
 
-
 #[derive(Clone, Debug)]
 pub struct CellManager<F, C: CellType> {
     configs: Vec<CellConfig<C>>,
@@ -248,9 +253,8 @@ pub struct CellManager<F, C: CellType> {
     parent_ctx: Option<CmContext<F, C>>,
 }
 
-
 #[derive(Default, Clone, Debug)]
-struct CmContext<F, C: CellType>{
+struct CmContext<F, C: CellType> {
     parent: Box<Option<CmContext<F, C>>>,
     columns: Vec<CellColumn<F, C>>,
 }
@@ -266,7 +270,7 @@ impl<F: Field, C: CellType> CellManager<F, C> {
             .into_iter()
             .map(|c| c.into())
             .collect::<Vec<CellConfig<C>>>();
-        
+
         let mut width = 0;
         let mut columns = Vec::new();
         for config in configs.iter() {
@@ -312,7 +316,7 @@ impl<F: Field, C: CellType> CellManager<F, C> {
             None => CmContext {
                 parent: Box::new(None),
                 columns: self.columns.clone(),
-            }
+            },
         };
         self.parent_ctx = Some(new_parent);
         self.reset(self.height_limit);
@@ -331,7 +335,7 @@ impl<F: Field, C: CellType> CellManager<F, C> {
             None => CmContext {
                 parent: Box::new(None),
                 columns: self.columns.clone(),
-            }
+            },
         };
         self.branch_ctxs.insert(name.to_string(), new_branch);
         self.reset(self.height_limit);
@@ -339,18 +343,20 @@ impl<F: Field, C: CellType> CellManager<F, C> {
 
     pub(crate) fn recover_max_branch(&mut self) {
         let mut new_cols = self.columns.clone();
-        let parent = self.parent_ctx.clone().expect("Retruning context needs parent");
-        self.branch_ctxs
-            .iter()
-            .for_each(|(name, ctx)| {
-                for c in 0..self.width {
-                    new_cols[c] = max(&new_cols[c], &ctx.columns[c]).clone();
-                    new_cols[c] = max(&new_cols[c], &parent.columns[c]).clone();
-                }
-            });
+        let parent = self
+            .parent_ctx
+            .clone()
+            .expect("Retruning context needs parent");
+        self.branch_ctxs.iter().for_each(|(_name, ctx)| {
+            for c in 0..self.width {
+                new_cols[c] = max(&new_cols[c], &ctx.columns[c]).clone();
+                new_cols[c] = max(&new_cols[c], &parent.columns[c]).clone();
+            }
+        });
         self.columns = new_cols;
         self.branch_ctxs.clear();
-        self.parent_ctx = self.parent_ctx
+        self.parent_ctx = self
+            .parent_ctx
             .clone()
             .map(|ctx| ctx.parent.deref().clone())
             .unwrap();
