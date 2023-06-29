@@ -896,10 +896,6 @@ impl<F: Field> MPTConstraintBuilder<F> {
         }
     }
 
-    pub(crate) fn set_use_dynamic_lookup(&mut self, use_dynamic_lookup: bool) {
-        self.base.set_use_dynamic_lookup(use_dynamic_lookup);
-    }
-
     pub(crate) fn push_condition(&mut self, condition: Expression<F>) {
         self.base.push_condition(condition)
     }
@@ -969,17 +965,22 @@ impl<F: Field> MPTConstraintBuilder<F> {
         description: &'static str,
         tag: MptCellType,
         values: Vec<Expression<F>>,
+        is_fixed: bool,
+        is_combine: bool,
+        is_split: bool,
     ) {
-        self.base.add_dynamic_lookup(description, tag, values)
+        self.base
+            .add_dynamic_lookup(description, tag, values, is_fixed, is_combine, is_split)
     }
 
-    pub(crate) fn add_lookup(
+    pub(crate) fn add_celltype_lookup(
         &mut self,
         description: &'static str,
         cell_type: MptCellType,
         values: Vec<Expression<F>>,
     ) {
-        self.base.add_lookup(description, cell_type, values)
+        self.base
+            .add_celltype_lookup(description, cell_type, values)
     }
 
     pub(crate) fn store_dynamic_table(
@@ -987,8 +988,11 @@ impl<F: Field> MPTConstraintBuilder<F> {
         description: &'static str,
         tag: MptCellType,
         values: Vec<Expression<F>>,
+        is_combine: bool,
+        is_split: bool,
     ) {
-        self.base.store_dynamic_table(description, tag, values)
+        self.base
+            .store_dynamic_table(description, tag, values, is_combine, is_split)
     }
 }
 
@@ -1264,13 +1268,14 @@ impl<F: Field> MainRLPGadget<F> {
             // TODO(Brecht): do 2 bytes/lookup when circuit height >= 2**21
             // We enable dynamic lookups because otherwise these lookup would require a lot of extra
             // cells.
-            cb.set_use_dynamic_lookup(true);
-            for (_idx, _byte) in config.bytes.iter().enumerate() {
-                // `tag` is a "free" input that needs to be constrained externally!
-                // require!((config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr())
-                // => @FIXED);
+            for (idx, byte) in config.bytes.iter().enumerate() {
+                require!(
+                    format!("byte {:?}", byte.identifier()),
+                    vec![config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()]
+                    // is_fixed, is_combine, is_split
+                    => @FIXED, true, true, false
+                );
             }
-            cb.set_use_dynamic_lookup(false);
 
             config
         })

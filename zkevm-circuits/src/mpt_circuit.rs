@@ -2,7 +2,7 @@
 use eth_types::Field;
 use gadgets::{
     impl_expr,
-    util::{Expr, Scalar},
+    util::{pow, Expr, Scalar},
 };
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -351,12 +351,16 @@ impl<F: Field> MPTConfig<F> {
             cb.base.build_constraints()
         });
 
+        // Region for spliting dynamic lookup
+        // currently not working :(
+        cb.base.push_region(MPTRegion::Count as usize);
+
         let disable_lookups: usize = var("DISABLE_LOOKUPS")
             .unwrap_or_else(|_| "0".to_string())
             .parse()
             .expect("Cannot parse DISABLE_LOOKUPS env var as usize");
         if disable_lookups == 0 {
-            cb.base.build_lookups(
+            cb.base.build_celltype_lookups(
                 meta,
                 vec![rlp_cm, state_cm],
                 vec![
@@ -365,17 +369,35 @@ impl<F: Field> MPTConfig<F> {
                     (MptCellType::Lookup(Table::Exp), &phase_two_table),
                 ],
             );
-            cb.base
-                .build_dynamic_lookups(meta, &[vec![FIXED, KECCAK], ctx.memory.tags()].concat());
+            cb.base.build_dynamic_lookups(
+                meta,
+                &[vec![FIXED, KECCAK], ctx.memory.tags()].concat(),
+                vec![(MptCellType::Lookup(Table::Fixed), &fixed_table)],
+            );
         } else if disable_lookups == 1 {
-            cb.base
-                .build_dynamic_lookups(meta, &[vec![KECCAK], ctx.memory.tags()].concat());
+            cb.base.build_dynamic_lookups(
+                meta,
+                &[vec![KECCAK], ctx.memory.tags()].concat(),
+                vec![(MptCellType::Lookup(Table::Fixed), &fixed_table)],
+            );
         } else if disable_lookups == 2 {
-            cb.base.build_dynamic_lookups(meta, &ctx.memory.tags());
+            cb.base.build_dynamic_lookups(
+                meta,
+                &ctx.memory.tags(),
+                vec![(MptCellType::Lookup(Table::Fixed), &fixed_table)],
+            );
         } else if disable_lookups == 3 {
-            cb.base.build_dynamic_lookups(meta, &[FIXED, KECCAK]);
+            cb.base.build_dynamic_lookups(
+                meta,
+                &[FIXED, KECCAK],
+                vec![(MptCellType::Lookup(Table::Fixed), &fixed_table)],
+            );
         } else if disable_lookups == 4 {
-            cb.base.build_dynamic_lookups(meta, &[KECCAK]);
+            cb.base.build_dynamic_lookups(
+                meta,
+                &[KECCAK],
+                vec![(MptCellType::Lookup(Table::Fixed), &fixed_table)],
+            );
         }
 
         println!("degree: {}", meta.degree());
@@ -502,7 +524,9 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                         cached_region.pop_region();
                     }
+                    cached_region.push_region(offset, MPTRegion::Count as usize);
                     cached_region.assign_stored_expressions(&self.cb.base)?;
+                    cached_region.pop_region();
                     offset += node.values.len();
                 }
 
