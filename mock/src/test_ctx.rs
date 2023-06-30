@@ -174,6 +174,8 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             logger_config,
         )?;
 
+        // Don't allow invalid transactions unless explicitely allowed to avoid unrelated tests from
+        // passing simply because the test transaction was incorrectly set up.
         for (transaction, geth_trace) in transactions.iter().zip(geth_traces.iter()) {
             if !transaction.enable_skipping_invalid_tx && geth_trace.invalid {
                 panic!(

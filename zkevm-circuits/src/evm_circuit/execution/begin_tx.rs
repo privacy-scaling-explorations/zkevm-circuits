@@ -50,7 +50,7 @@ pub(crate) struct BeginTxGadget<F> {
     effective_gas_fee: Word<F>,
     effective_tx_value: Word<F>,
     reversion_info: ReversionInfo<F>,
-    gas_not_enough: LtGadget<F, N_BYTES_GAS>,
+    is_gas_not_enough: LtGadget<F, N_BYTES_GAS>,
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     phase2_code_hash: Cell<F>,
     is_empty_code_hash: IsEqualGadget<F>,
@@ -123,11 +123,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             cb.require_equal("tx_id is initialized to be 1", tx_id.expr(), 1.expr());
         });
 
-        // Increase caller's nonce.
-        // (tx caller's nonce always increases even tx ends with error)
+        // Increase caller's nonce if the tx is valid.
+        // (a valid tx caller's nonce always increases even if the tx ends with error)
         let nonce = cb.query_cell();
         let nonce_prev = cb.query_cell();
-
+        let is_nonce_valid = IsEqualGadget::construct(cb, tx_nonce.expr(), nonce_prev.expr());
+        cb.require_equal(
+            "update nonce",
+            nonce.expr(),
+            nonce_prev.expr() + 1.expr() - tx_is_invalid.expr(),
+        );
         cb.account_write(
             tx_caller_address.expr(),
             AccountFieldTag::Nonce,
@@ -135,14 +140,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             nonce_prev.expr(),
             None,
         ); // rwc_delta += 1
-
-        let is_nonce_valid = IsEqualGadget::construct(cb, tx_nonce.expr(), nonce_prev.expr());
-        // Increment the account nonce only if the tx is valid
-        cb.require_equal(
-            "update nonce",
-            nonce.expr(),
-            nonce_prev.expr() + 1.expr() - tx_is_invalid.expr(),
-        );
 
         // TODO: Implement EIP 1559 (currently it only supports legacy
         // transaction format)
@@ -161,7 +158,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Check gas_left is sufficient
         let gas_left = tx_gas.expr() - intrinsic_gas_cost.clone();
-        let gas_not_enough = LtGadget::construct(cb, tx_gas.expr(), intrinsic_gas_cost.clone());
+        let is_gas_not_enough = LtGadget::construct(cb, tx_gas.expr(), intrinsic_gas_cost);
 
         // Prepare access list of caller and callee
         cb.account_access_list_write(
@@ -201,9 +198,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ); // rwc_delta += 1
         });
 
+        // Transfer value from caller to callee, creating account if necessary.
+        // For invalid transactions we do not do any transfers
+        // A bit awkward for now because TransferWithGasFeeGadget requires words,
+        // will be cleaner after lo/hi split.
         let effective_gas_fee = cb.query_word_rlc();
         let effective_tx_value = cb.query_word_rlc();
-
         cb.condition(tx_is_invalid.expr(), |cb| {
             cb.require_equal(
                 "effective_tx_value == 0",
@@ -228,19 +228,22 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 mul_gas_fee_by_gas.product().expr(),
             );
         });
-
-        // Transfer value from caller to callee, creating account if necessary.
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
             cb,
             tx_caller_address.expr(),
             tx_callee_address.expr(),
             not::expr(callee_not_exists.expr()),
-            or::expr([tx_is_create.expr(), callee_not_exists.expr()]),
+            and::expr([
+                not::expr(tx_is_invalid.expr()),
+                or::expr([tx_is_create.expr(), callee_not_exists.expr()]),
+            ]),
+            1.expr(),
             effective_tx_value.clone(),
             effective_gas_fee.clone(),
             &mut reversion_info,
         );
 
+        // Check if the account ETH balance is sufficient
         let sender_balance_prev = transfer_with_gas_fee.sender_sub_fee.balance_prev();
         let total_eth_cost_sum = cb.query_word_rlc();
         let total_eth_cost = AddWordsGadget::construct(
@@ -248,20 +251,19 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             [tx_value.clone(), mul_gas_fee_by_gas.product().clone()],
             total_eth_cost_sum.clone(),
         );
-
-        // Check if the account ETH balance is sufficient
         let balance_not_enough =
             LtWordGadget::construct(cb, sender_balance_prev, total_eth_cost.sum());
 
+        // Check if the `is_invalid` value in the tx table is correct.
         // A transaction is invalid when
         // - The transaction requires more ETH than the transaction needs
         // - The amount of gas specified in the transaction is lower than the intrinsic gas cost
-        // - The transaction nonce does not match the current nonce expected in the account
+        // - The transaction nonce does not match the nonce stored in the account
         cb.require_equal(
             "is_tx_invalid is correct",
             or::expr([
                 balance_not_enough.expr(),
-                gas_not_enough.expr(),
+                is_gas_not_enough.expr(),
                 not::expr(is_nonce_valid.expr()),
             ]),
             tx_is_invalid.expr(),
@@ -500,7 +502,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             effective_gas_fee,
             effective_tx_value,
             reversion_info,
-            gas_not_enough,
+            is_gas_not_enough,
             transfer_with_gas_fee,
             phase2_code_hash,
             is_empty_code_hash,
@@ -541,10 +543,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         if (!callee_exists && !tx.value.is_zero()) || must_create {
             callee_code_hash = rws.next().account_value_pair().1;
         }
-        let mut caller_balance_sub_value_pair = (zero, zero);
+        let caller_balance_sub_value_pair = rws.next().account_value_pair();
         let mut callee_balance_pair = (zero, zero);
         if !tx.value.is_zero() {
-            caller_balance_sub_value_pair = rws.next().account_value_pair();
             callee_balance_pair = rws.next().account_value_pair();
         };
 
@@ -611,6 +612,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             Value::known(F::from(tx.access_list_gas_cost)),
         )?;
 
+        // Increase caller's nonce if the tx is valid.
         let (nonce, nonce_prev) = caller_nonce_pair;
         self.nonce
             .assign(region, offset, Value::known(nonce.to_scalar().unwrap()))?;
@@ -619,7 +621,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             offset,
             Value::known(nonce_prev.to_scalar().unwrap()),
         )?;
-
         self.is_nonce_valid.assign(
             region,
             offset,
@@ -641,15 +642,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         ) + F::from(tx.call_data_gas_cost)
             + F::from(tx.access_list_gas_cost);
 
-        self.gas_not_enough
+        // Check gas_left is sufficient
+        self.is_gas_not_enough
             .assign(region, offset, F::from(tx.gas), intrinsic_gas)?;
 
+        // Transfer value from caller to callee, creating account if necessary.
         let (intrinsic_tx_value, intrinsic_gas_fee) = if !tx.invalid_tx {
             (tx.value, gas_fee)
         } else {
             (U256::zero(), U256::zero())
         };
-
         self.effective_gas_fee.assign(
             region,
             offset,
@@ -660,7 +662,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             offset,
             Some(intrinsic_tx_value.clone().to_le_bytes()),
         )?;
-
         self.transfer_with_gas_fee.assign(
             region,
             offset,
@@ -671,6 +672,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             intrinsic_gas_fee,
         )?;
 
+        // Check if the account ETH balance is sufficient
         let total_eth_cost = tx.value + gas_fee;
         self.total_eth_cost
             .assign(region, offset, [tx.value, gas_fee], total_eth_cost)?;
@@ -731,7 +733,7 @@ mod test {
     use std::vec;
 
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use bus_mapping::evm::OpcodeId;
+    use bus_mapping::{circuit_input_builder::CircuitsParams, evm::OpcodeId};
     use eth_types::{self, bytecode, evm_types::GasCost, word, Bytecode, Word};
 
     use mock::{eth, gwei, MockTransaction, TestContext, MOCK_ACCOUNTS};
@@ -1092,25 +1094,31 @@ mod test {
             STOP
         };
 
-        let ctx = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 2>::new(
             None,
             |accs| {
                 accs[0].address(to).balance(eth(1)).code(code);
                 accs[1].address(from).balance(eth(1)).nonce(1);
             },
             |mut txs, _| {
-                txs[0]
+                // Work around no payment to the coinbase address
+                txs[0].to(to).from(from).nonce(1);
+                txs[1]
                     .to(to)
                     .from(from)
-                    .nonce(0)
+                    .nonce(1)
                     .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
             },
             |block, _| block,
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_txs: 2,
+                ..Default::default()
+            })
+            .run();
     }
 
     fn begin_tx_not_enough_eth(enable_skipping_invalid_tx: bool) {
@@ -1119,28 +1127,38 @@ mod test {
         let to = MOCK_ACCOUNTS[0];
         let from = MOCK_ACCOUNTS[1];
 
-        let balance = Word::from(1) * Word::from(10u64.pow(5));
-        let ctx = TestContext::<2, 1>::new(
+        let balance = gwei(1) + Word::from(10u64.pow(5));
+        let ctx = TestContext::<2, 2>::new(
             None,
             |accs| {
                 accs[0].address(to).balance(balance);
                 accs[1].address(from).balance(balance).nonce(1);
             },
             |mut txs, _| {
+                // Work around no payment to the coinbase address
                 txs[0]
                     .to(to)
                     .from(from)
                     .nonce(1)
+                    .gas_price(Word::from(1u64));
+                txs[1]
+                    .to(to)
+                    .from(from)
+                    .nonce(2)
                     .gas_price(gwei(1))
                     .gas(Word::from(10u64.pow(5)))
                     .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
             },
             |block, _| block,
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_txs: 2,
+                ..Default::default()
+            })
+            .run();
     }
 
     fn begin_tx_insufficient_gas(enable_skipping_invalid_tx: bool) {
@@ -1148,26 +1166,32 @@ mod test {
         let from = MOCK_ACCOUNTS[1];
 
         let balance = eth(1);
-        let ctx = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 2>::new(
             None,
             |accs| {
                 accs[0].address(to).balance(balance);
                 accs[1].address(from).balance(balance).nonce(1);
             },
             |mut txs, _| {
-                txs[0]
+                // Work around no payment to the coinbase address
+                txs[0].to(to).from(from).nonce(1);
+                txs[1]
                     .to(to)
                     .from(from)
-                    .nonce(1)
+                    .nonce(2)
                     .gas_price(gwei(1))
                     .gas(Word::from(1))
                     .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
             },
             |block, _| block,
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_txs: 2,
+                ..Default::default()
+            })
+            .run();
     }
 }

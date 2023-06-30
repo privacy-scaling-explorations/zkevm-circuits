@@ -9,7 +9,6 @@ use halo2_proofs::{
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use itertools::Itertools;
-use maingate::MainGateInstructions;
 use rand::{rngs::StdRng, SeedableRng};
 use snark_verifier::{
     loader::{

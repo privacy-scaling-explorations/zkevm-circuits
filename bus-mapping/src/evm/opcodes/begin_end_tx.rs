@@ -122,7 +122,8 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         call.caller_address,
         call.address,
         callee_exists,
-        call.is_create(),
+        !state.tx.invalid_tx && call.is_create(),
+        true,
         value,
         fee,
     )?;
