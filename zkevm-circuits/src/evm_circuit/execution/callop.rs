@@ -52,7 +52,7 @@ pub(crate) struct CallOpGadget<F> {
     callee_reversion_info: ReversionInfo<F>,
     transfer: TransferGadget<F>,
     // current handling Call* opcode's caller balance
-    caller_balance_word: WordCell<F>,
+    caller_balance: WordCell<F>,
     // check if insufficient balance case
     is_insufficient_balance: LtWordGadget<F>,
     is_depth_ok: LtGadget<F, N_BYTES_U64>,
@@ -151,17 +151,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             );
         });
 
-        let caller_balance_word = cb.query_word_unchecked();
+        let caller_balance = cb.query_word_unchecked();
         cb.account_read(
             caller_address.to_word(),
             AccountFieldTag::Balance,
-            caller_balance_word.to_word(),
+            caller_balance.to_word(),
         );
-        let is_insufficient_balance = LtWordGadget::construct(
-            cb,
-            &caller_balance_word.to_word(),
-            &call_gadget.value.to_word(),
-        );
+        let is_insufficient_balance =
+            LtWordGadget::construct(cb, &caller_balance.to_word(), &call_gadget.value.to_word());
         // depth < 1025
         let is_depth_ok = LtGadget::construct(cb, depth.expr(), 1025.expr());
 
@@ -456,7 +453,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             is_warm_prev,
             callee_reversion_info,
             transfer,
-            caller_balance_word,
+            caller_balance,
             is_insufficient_balance,
             is_depth_ok,
             one_64th_gas,
@@ -517,7 +514,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // check if it is insufficient balance case.
         // get caller balance
         let (caller_balance, _) = block.get_rws(step, 17 + rw_offset).account_value_pair();
-        self.caller_balance_word
+        self.caller_balance
             .assign_u256(region, offset, caller_balance)?;
         self.is_insufficient_balance
             .assign(region, offset, caller_balance, value)?;

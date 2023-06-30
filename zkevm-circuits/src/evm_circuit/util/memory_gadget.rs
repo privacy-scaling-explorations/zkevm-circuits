@@ -66,7 +66,7 @@ pub(crate) mod address_high {
 #[derive(Clone, Debug)]
 pub(crate) struct MemoryAddressGadget<F> {
     memory_offset_bytes: MemoryAddress<F>,
-    memory_offset_word: WordCell<F>,
+    memory_offset: WordCell<F>,
     memory_length: MemoryAddress<F>,
     memory_length_is_zero: IsZeroGadget<F>,
 }
@@ -74,7 +74,7 @@ pub(crate) struct MemoryAddressGadget<F> {
 impl<F: Field> MemoryAddressGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        memory_offset_word: WordCell<F>,
+        memory_offset: WordCell<F>,
         memory_length: MemoryAddress<F>,
     ) -> Self {
         let memory_length_is_zero = IsZeroGadget::construct(cb, memory_length.sum_expr());
@@ -85,13 +85,13 @@ impl<F: Field> MemoryAddressGadget<F> {
             cb.require_equal_word(
                 "Offset decomposition into 5 bytes",
                 Word::from_lo_unchecked(memory_offset_bytes.expr()),
-                memory_offset_word.to_word(),
+                memory_offset.to_word(),
             );
         });
 
         Self {
             memory_offset_bytes,
-            memory_offset_word,
+            memory_offset,
             memory_length,
             memory_length_is_zero,
         }
@@ -118,7 +118,7 @@ impl<F: Field> MemoryAddressGadget<F> {
                     .ok()
             },
         )?;
-        self.memory_offset_word
+        self.memory_offset
             .assign_u256(region, offset, memory_offset)?;
         self.memory_length
             .assign_u256(region, offset, memory_length)?;

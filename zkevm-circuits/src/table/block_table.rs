@@ -32,10 +32,7 @@ pub struct BlockTable {
     /// Index
     pub index: Column<Advice>,
     /// Value
-    pub value_word: word::Word<Column<Advice>>,
-    #[deprecated]
-    /// Value
-    pub value: Column<Advice>,
+    pub value: word::Word<Column<Advice>>,
 }
 
 impl BlockTable {
@@ -44,8 +41,7 @@ impl BlockTable {
         Self {
             tag: meta.advice_column(),
             index: meta.advice_column(),
-            value_word: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            value: meta.advice_column(),
+            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
 
@@ -93,8 +89,8 @@ impl<F: Field> LookupTable<F> for BlockTable {
         vec![
             self.tag.into(),
             self.index.into(),
-            self.value_word.lo().into(),
-            self.value_word.hi().into(),
+            self.value.lo().into(),
+            self.value.hi().into(),
         ]
     }
 

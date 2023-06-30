@@ -147,7 +147,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let q_rpi_keccak_lookup = meta.complex_selector();
         // Tx Table
         let tx_id = tx_table.tx_id;
-        let tx_value = tx_table.value_word;
+        let tx_value = tx_table.value;
         let tag = tx_table.tag;
         let index = tx_table.index;
         let tx_id_inv = meta.advice_column();
@@ -179,12 +179,12 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         tx_table.annotate_columns(meta);
         block_table.annotate_columns(meta);
 
-        meta.enable_equality(block_table.value_word.lo());
-        meta.enable_equality(block_table.value_word.hi());
+        meta.enable_equality(block_table.value.lo());
+        meta.enable_equality(block_table.value.hi());
         meta.enable_equality(tx_table.tx_id);
         meta.enable_equality(tx_table.index);
-        meta.enable_equality(tx_table.value_word.lo());
-        meta.enable_equality(tx_table.value_word.hi());
+        meta.enable_equality(tx_table.value.lo());
+        meta.enable_equality(tx_table.value.hi());
 
         meta.enable_equality(rpi_value_lc);
         meta.enable_equality(rpi_bytes_keccakrlc);
@@ -597,7 +597,7 @@ impl<F: Field> PiCircuitConfig<F> {
         Word::default().into_value().assign_advice(
             region,
             || "tx_value",
-            self.tx_table.value_word,
+            self.tx_table.value,
             offset,
         )?;
         Ok(())
@@ -707,7 +707,7 @@ impl<F: Field> PiCircuitConfig<F> {
         )?;
 
         let tx_value_assignedcell =
-            tx_value.assign_advice(region, || "tx_value", self.tx_table.value_word, offset)?;
+            tx_value.assign_advice(region, || "tx_value", self.tx_table.value, offset)?;
 
         // tx_id
         let (_, raw_tx_id) = self.assign_raw_bytes(
@@ -816,7 +816,7 @@ impl<F: Field> PiCircuitConfig<F> {
         )?;
 
         let tx_value_cell =
-            tx_value.assign_advice(region, || "tx_value", self.tx_table.value_word, offset)?;
+            tx_value.assign_advice(region, || "tx_value", self.tx_table.value, offset)?;
 
         region.assign_advice(
             || "tx_value_lo_inv",
@@ -1009,7 +1009,7 @@ impl<F: Field> PiCircuitConfig<F> {
             .assign_advice(
                 region,
                 || "coinbase",
-                self.block_table.value_word,
+                self.block_table.value,
                 *block_table_offset,
             )?;
         let (_, word) = self.assign_raw_bytes(
@@ -1036,7 +1036,7 @@ impl<F: Field> PiCircuitConfig<F> {
             .assign_advice(
                 region,
                 || "gas_limit",
-                self.block_table.value_word,
+                self.block_table.value,
                 *block_table_offset,
             )?;
         let (_, word) = self.assign_raw_bytes(
@@ -1055,7 +1055,7 @@ impl<F: Field> PiCircuitConfig<F> {
         let block_value = Word::from(block_values.number).into_value().assign_advice(
             region,
             || "number",
-            self.block_table.value_word,
+            self.block_table.value,
             *block_table_offset,
         )?;
         let (_, word) = self.assign_raw_bytes(
@@ -1076,7 +1076,7 @@ impl<F: Field> PiCircuitConfig<F> {
             .assign_advice(
                 region,
                 || "timestamp",
-                self.block_table.value_word,
+                self.block_table.value,
                 *block_table_offset,
             )?;
         let (_, word) = self.assign_raw_bytes(
@@ -1097,7 +1097,7 @@ impl<F: Field> PiCircuitConfig<F> {
             .assign_advice(
                 region,
                 || "difficulty",
-                self.block_table.value_word,
+                self.block_table.value,
                 *block_table_offset,
             )?;
         let (_, word) = self.assign_raw_bytes(
@@ -1118,7 +1118,7 @@ impl<F: Field> PiCircuitConfig<F> {
             .assign_advice(
                 region,
                 || "base_fee",
-                self.block_table.value_word,
+                self.block_table.value,
                 *block_table_offset,
             )?;
         let (_, word) = self.assign_raw_bytes(
@@ -1139,7 +1139,7 @@ impl<F: Field> PiCircuitConfig<F> {
             .assign_advice(
                 region,
                 || "chain_id",
-                self.block_table.value_word,
+                self.block_table.value,
                 *block_table_offset,
             )?;
         let (_, word) = self.assign_raw_bytes(
@@ -1158,7 +1158,7 @@ impl<F: Field> PiCircuitConfig<F> {
             let block_value = Word::from(prev_hash).into_value().assign_advice(
                 region,
                 || "prev_hash",
-                self.block_table.value_word,
+                self.block_table.value,
                 *block_table_offset,
             )?;
             let (_, word) = self.assign_raw_bytes(
@@ -1414,7 +1414,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 let zero_word = Word::default().into_value().assign_advice(
                     &mut region,
                     || "zero",
-                    config.block_table.value_word,
+                    config.block_table.value,
                     block_table_offset,
                 )?;
                 let zero_cell = zero_word.hi();
@@ -1467,7 +1467,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 // we use hi() part to copy-constrains other tx_table value `hi` cells.
                 let zero_cell = Word::default()
                     .into_value()
-                    .assign_advice(&mut region, || "tx_value", config.tx_table.value_word, 0)?
+                    .assign_advice(&mut region, || "tx_value", config.tx_table.value, 0)?
                     .hi();
                 config.assign_tx_row(
                     &mut region,
