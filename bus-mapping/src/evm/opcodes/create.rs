@@ -251,7 +251,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                     (CallContextField::IsStatic, false.to_word()),
                     (CallContextField::IsCreate, true.to_word()),
                     (CallContextField::CodeHash, code_hash.to_word()),
-                    (CallContextField::Value, callee.value),
                 ] {
                     state.call_context_write(&mut exec_step, callee.call_id, field, value);
                 }
@@ -376,8 +375,8 @@ mod tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 

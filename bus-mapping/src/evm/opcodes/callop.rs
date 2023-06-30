@@ -366,7 +366,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{circuit_input_builder::CircuitsParams, mock::BlockData};
+    use crate::mock::BlockData;
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, word, Bytecode, Word};
     use mock::{
         test_ctx::{
@@ -390,7 +390,6 @@ mod tests {
             value: Word,
             gas: Word,
             stack_value: Vec<(Word, Word)>,
-            max_rws: usize,
         }
 
         impl Default for PrecompileCall {
@@ -406,7 +405,6 @@ mod tests {
                     value: Word::from(0),
                     gas: Word::from(0xFFFFFFF),
                     stack_value: vec![],
-                    max_rws: 500,
                 }
             }
         }
@@ -642,7 +640,6 @@ mod tests {
                 call_data_length: Word::from(0x180),
                 address: Word::from(0x8),
                 stack_value: vec![(Word::from(0x0), Word::from(1))],
-                max_rws: 3000,
                 ..Default::default()
             },
             PrecompileCall {
@@ -693,7 +690,6 @@ mod tests {
                         word!("8c9bcf367e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54fa5"),
                     ),
                 ],
-                max_rws: 1500,
                 ..Default::default()
             },
         ];
@@ -720,14 +716,7 @@ mod tests {
             .unwrap()
             .into();
 
-            let mut builder = BlockData::new_from_geth_data_with_params(
-                block.clone(),
-                CircuitsParams {
-                    max_rws: test_call.max_rws,
-                    ..Default::default()
-                },
-            )
-            .new_circuit_input_builder();
+            let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
             builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
