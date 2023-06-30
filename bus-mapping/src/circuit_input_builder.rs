@@ -203,6 +203,8 @@ impl<'a> CircuitInputBuilder {
             let geth_trace = &geth_traces[tx_index];
             self.handle_tx(tx, geth_trace, tx_index + 1 == eth_block.transactions.len())?;
         }
+        // set eth_block
+        self.block.eth_block = eth_block.clone();
         self.set_value_ops_call_context_rwc_eor();
         self.set_end_block();
         Ok(())

@@ -112,6 +112,51 @@ pub(crate) const N_BYTES_GAS: usize = N_BYTES_U64;
 // Number of bytes that will be used for call data's size.
 pub(crate) const N_BYTES_CALLDATASIZE: usize = N_BYTES_U64;
 
+// Number of bytes that will be used for block values
+pub(crate) const N_BYTES_COINBASE: usize = N_BYTES_ACCOUNT_ADDRESS;
+pub(crate) const N_BYTES_GAS_LIMIT: usize = N_BYTES_U64;
+pub(crate) const N_BYTES_NUMBER: usize = N_BYTES_U64;
+pub(crate) const N_BYTES_TIMESTAMP: usize = N_BYTES_U64;
+pub(crate) const N_BYTES_DIFFICULTY: usize = N_BYTES_WORD;
+pub(crate) const N_BYTES_BASE_FEE: usize = N_BYTES_WORD;
+pub(crate) const N_BYTES_CHAIN_ID: usize = N_BYTES_U64;
+pub(crate) const N_BYTES_PREV_HASH: usize = 256 * N_BYTES_WORD;
+
+pub(crate) const N_BYTES_BLOCK: usize = N_BYTES_COINBASE
+    + N_BYTES_GAS_LIMIT
+    + N_BYTES_NUMBER
+    + N_BYTES_TIMESTAMP
+    + N_BYTES_DIFFICULTY
+    + N_BYTES_BASE_FEE
+    + N_BYTES_CHAIN_ID
+    + N_BYTES_PREV_HASH;
+
+pub(crate) const N_BYTES_EXTRA_VALUE: usize = N_BYTES_WORD // block hash
+    + N_BYTES_WORD // state root
+    + N_BYTES_WORD; // prev state root
+
+// Number of bytes that will be used for tx values
+pub(crate) const N_BYTES_TX_NONCE: usize = N_BYTES_U64;
+pub(crate) const N_BYTES_TX_GAS_LIMIT: usize = N_BYTES_U64; // gas limit type is U256, different with gas U64
+pub(crate) const N_BYTES_TX_GASPRICE: usize = N_BYTES_WORD;
+pub(crate) const N_BYTES_TX_FROM: usize = N_BYTES_ACCOUNT_ADDRESS;
+pub(crate) const N_BYTES_TX_TO: usize = N_BYTES_ACCOUNT_ADDRESS;
+pub(crate) const N_BYTES_TX_IS_CREATE: usize = N_BYTES_U64;
+pub(crate) const N_BYTES_TX_VALUE: usize = N_BYTES_WORD;
+pub(crate) const N_BYTES_TX_CALLDATA_LEN: usize = N_BYTES_CALLDATASIZE;
+pub(crate) const N_BYTES_TX_CALLDATA_GASCOST: usize = N_BYTES_U64;
+pub(crate) const N_BYTES_TX_TXSIGNHASH: usize = N_BYTES_WORD;
+pub(crate) const N_BYTES_TX: usize = N_BYTES_TX_NONCE
+    + N_BYTES_TX_GAS_LIMIT
+    + N_BYTES_TX_GASPRICE
+    + N_BYTES_TX_FROM
+    + N_BYTES_TX_TO
+    + N_BYTES_TX_IS_CREATE
+    + N_BYTES_TX_VALUE
+    + N_BYTES_TX_CALLDATA_LEN
+    + N_BYTES_TX_CALLDATA_GASCOST
+    + N_BYTES_TX_TXSIGNHASH;
+
 lazy_static::lazy_static! {
     // Step slot height in evm circuit
     pub(crate) static ref EXECUTION_STATE_HEIGHT_MAP : HashMap<ExecutionState, usize> = get_step_height_map();

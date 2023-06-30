@@ -291,7 +291,7 @@ impl<F: Field> From<eth_types::Word> for Word<F> {
 }
 
 impl<F: Field> From<H256> for Word<F> {
-    /// Construct the word from u256
+    /// Construct the word from H256
     fn from(h: H256) -> Self {
         let le_bytes = {
             let mut b = h.to_fixed_bytes();
