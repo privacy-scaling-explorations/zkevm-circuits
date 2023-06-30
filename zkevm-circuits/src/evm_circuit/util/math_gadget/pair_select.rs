@@ -1,9 +1,9 @@
 use crate::{
     evm_circuit::util::{
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-        CachedRegion, Cell,
+        CachedRegion,
     },
-    util::Expr,
+    util::{cell_manager::Cell, Expr},
 };
 use eth_types::Field;
 use halo2_proofs::{

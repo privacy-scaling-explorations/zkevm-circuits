@@ -141,7 +141,15 @@ impl<F: Field> MemoryAddressGadget<F> {
         self.has_length() * self.memory_offset_bytes.expr()
     }
 
+    pub(crate) fn offset_rlc(&self) -> Expression<F> {
+        self.memory_offset.expr()
+    }
+
     pub(crate) fn length(&self) -> Expression<F> {
+        self.memory_length.expr()
+    }
+
+    pub(crate) fn length_rlc(&self) -> Expression<F> {
         self.memory_length.expr()
     }
 

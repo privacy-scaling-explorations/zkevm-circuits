@@ -1,53 +1,59 @@
 macro_rules! run_test {
-    ($test_instance:expr, $block_tag:expr, $real_prover:expr) => {
+    ($test_instance:expr, $block_tag:expr, $root:expr, $real_prover:expr) => {
         log_init();
 
         let mut test = $test_instance.lock().await;
-        test.test_at_block_tag($block_tag, $real_prover).await;
+        test.test_at_block_tag($block_tag, $root, $real_prover)
+            .await;
     };
 }
 
 macro_rules! declare_tests {
-    (($name:ident, $block_tag:expr),$real_prover:expr) => {
+    (($name:ident, $block_tag:expr),$root:expr,$real_prover:expr) => {
         paste! {
             #[tokio::test]
             async fn [<serial_test_evm_ $name>]() {
-                run_test! (EVM_CIRCUIT_TEST, $block_tag, $real_prover);
+                run_test! (EVM_CIRCUIT_TEST, $block_tag, $root, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_state_ $name>]() {
-                run_test! (STATE_CIRCUIT_TEST, $block_tag, $real_prover);
+                run_test! (STATE_CIRCUIT_TEST, $block_tag, $root, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_tx_ $name>]() {
-                run_test! (TX_CIRCUIT_TEST, $block_tag, $real_prover);
+                run_test! (TX_CIRCUIT_TEST, $block_tag, $root, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_bytecode_ $name>]() {
-                run_test! (BYTECODE_CIRCUIT_TEST, $block_tag, $real_prover);
+                run_test! (BYTECODE_CIRCUIT_TEST, $block_tag, $root, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_copy_ $name>]() {
-                run_test! (COPY_CIRCUIT_TEST, $block_tag, $real_prover);
+                run_test! (COPY_CIRCUIT_TEST, $block_tag, $root, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_keccak_ $name>]() {
-                run_test! (KECCAK_CIRCUIT_TEST, $block_tag, $real_prover);
+                run_test! (KECCAK_CIRCUIT_TEST, $block_tag, $root, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_super_ $name>]() {
-                run_test! (SUPER_CIRCUIT_TEST, $block_tag, $real_prover);
+                run_test! (SUPER_CIRCUIT_TEST, $block_tag, $root, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_exp_ $name>]() {
-                run_test! (EXP_CIRCUIT_TEST, $block_tag, $real_prover);
+                run_test! (EXP_CIRCUIT_TEST, $block_tag, $root, $real_prover);
+            }
+
+            #[tokio::test]
+            async fn [<serial_test_pi_ $name>]() {
+                run_test! (PI_CIRCUIT_TEST, $block_tag, $root, $real_prover);
             }
 
             #[tokio::test]
@@ -73,17 +79,37 @@ macro_rules! unroll_tests {
             PI_CIRCUIT_TEST,
         };
         use integration_tests::log_init;
-        mod real_prover {
+        // NOTE: The SubCircuits include all well known SubCircuits and the SuperCircuit.
+
+        // SubCircuit tests with real prover
+        mod sub_real_prover {
             use super::*;
             $(
-                declare_tests! ($arg, true) ;
+                declare_tests! ($arg, false, true) ;
             )*
         }
 
-        mod mock_prover {
+        // SubCircuit tests with mock prover
+        mod sub_mock_prover {
             use super::*;
             $(
-                declare_tests! ($arg, false) ;
+                declare_tests! ($arg, false, false) ;
+            )*
+        }
+
+        // Root Circuit (aggregation) tests with real prover.  Needs real proof of each SubCircuit.
+        mod root_real_prover {
+            use super::*;
+            $(
+                declare_tests! ($arg, true, true) ;
+            )*
+        }
+
+        // Root Circuit (aggregation) tests with mock prover.  Needs real proof of each SubCircuit.
+        mod root_mock_prover {
+            use super::*;
+            $(
+                declare_tests! ($arg, true, false) ;
             )*
         }
     }

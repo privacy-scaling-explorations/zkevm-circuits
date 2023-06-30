@@ -1,7 +1,10 @@
 //! Mock types and functions to generate mock data useful for tests
 
 use crate::{
-    circuit_input_builder::{get_state_accesses, Block, CircuitInputBuilder, CircuitsParams},
+    circuit_input_builder::{
+        get_state_accesses, Block, CircuitInputBuilder, CircuitsParams, DynamicCParams,
+        FixedCParams,
+    },
     state_db::{self, CodeDB, StateDB},
 };
 use eth_types::{geth_types::GethData, Word};
@@ -9,7 +12,7 @@ use eth_types::{geth_types::GethData, Word};
 /// BlockData is a type that contains all the information from a block required
 /// to build the circuit inputs.
 #[derive(Debug)]
-pub struct BlockData {
+pub struct BlockData<C: CircuitsParams> {
     /// StateDB
     pub sdb: StateDB,
     /// CodeDB
@@ -24,13 +27,13 @@ pub struct BlockData {
     /// Execution Trace from geth
     pub geth_traces: Vec<eth_types::GethExecTrace>,
     /// Circuits setup parameters
-    pub circuits_params: CircuitsParams,
+    pub circuits_params: C,
 }
 
-impl BlockData {
+impl<C: CircuitsParams> BlockData<C> {
     /// Generate a new CircuitInputBuilder initialized with the context of the
     /// BlockData.
-    pub fn new_circuit_input_builder(&self) -> CircuitInputBuilder {
+    pub fn new_circuit_input_builder(&self) -> CircuitInputBuilder<C> {
         CircuitInputBuilder::new(
             self.sdb.clone(),
             self.code_db.clone(),
@@ -39,16 +42,13 @@ impl BlockData {
                 self.history_hashes.clone(),
                 Word::default(),
                 &self.eth_block,
-                self.circuits_params,
             )
             .unwrap(),
+            self.circuits_params,
         )
     }
-    /// Create a new block from the given Geth data.
-    pub fn new_from_geth_data_with_params(
-        geth_data: GethData,
-        circuits_params: CircuitsParams,
-    ) -> Self {
+
+    fn init_dbs(geth_data: &GethData) -> (StateDB, CodeDB) {
         let mut sdb = StateDB::new();
         let mut code_db = CodeDB::new();
 
@@ -63,6 +63,16 @@ impl BlockData {
             code_db.insert(account.code.to_vec());
             sdb.set_account(&account.address, state_db::Account::from(account.clone()));
         }
+        (sdb, code_db)
+    }
+}
+impl BlockData<FixedCParams> {
+    /// Create a new block from the given Geth data.
+    pub fn new_from_geth_data_with_params(
+        geth_data: GethData,
+        circuits_params: FixedCParams,
+    ) -> Self {
+        let (sdb, code_db) = Self::init_dbs(&geth_data);
 
         Self {
             sdb,
@@ -74,9 +84,21 @@ impl BlockData {
             circuits_params,
         }
     }
+}
 
+impl BlockData<DynamicCParams> {
     /// Create a new block from the given Geth data with default CircuitsParams.
     pub fn new_from_geth_data(geth_data: GethData) -> Self {
-        Self::new_from_geth_data_with_params(geth_data, CircuitsParams::default())
+        let (sdb, code_db) = Self::init_dbs(&geth_data);
+
+        Self {
+            sdb,
+            code_db,
+            chain_id: geth_data.chain_id,
+            history_hashes: geth_data.history_hashes,
+            eth_block: geth_data.eth_block,
+            geth_traces: geth_data.geth_traces,
+            circuits_params: DynamicCParams {},
+        }
     }
 }

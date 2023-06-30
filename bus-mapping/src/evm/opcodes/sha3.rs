@@ -46,7 +46,7 @@ impl Opcode for Sha3 {
 
         // keccak-256 hash of the given data in memory.
         let sha3 = keccak256(&memory);
-        debug_assert_eq!(Word::from_big_endian(&sha3), expected_sha3);
+        debug_assert_eq!(U256::from_big_endian(&sha3), expected_sha3);
         state.stack_write(
             &mut exec_step,
             geth_steps[1].stack.last_filled(),
@@ -225,15 +225,8 @@ pub(crate) mod sha3_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data_with_params(
-            block.clone(),
-            CircuitsParams {
-                max_rws: 2048,
-                ..Default::default()
-            },
-        )
-        .new_circuit_input_builder();
-        builder
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 
@@ -253,11 +246,11 @@ pub(crate) mod sha3_tests {
             [
                 (
                     RW::READ,
-                    &StackOp::new(call_id, 1022.into(), Word::from(offset)),
+                    &StackOp::new(call_id, 1022.into(), U256::from(offset)),
                 ),
                 (
                     RW::READ,
-                    &StackOp::new(call_id, 1023.into(), Word::from(size)),
+                    &StackOp::new(call_id, 1023.into(), U256::from(size)),
                 ),
                 (
                     RW::WRITE,

@@ -92,13 +92,12 @@ fn prover_error() {
         geth_traces,
         accounts,
     };
-    let mut builder = BlockData::new_from_geth_data_with_params(geth_data.clone(), circuit_params)
-        .new_circuit_input_builder();
-    builder
+    let builder = BlockData::new_from_geth_data(geth_data.clone()).new_circuit_input_builder();
+    let builder = builder
         .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
         .expect("handle_block");
     let block_witness = {
-        let mut block = block_convert(&builder.block, &builder.code_db).expect("block_convert");
+        let mut block = block_convert(&builder).expect("block_convert");
         block.randomness = Fr::from(MOCK_RANDOMNESS);
         block
     };

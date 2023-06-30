@@ -172,7 +172,7 @@ mod tests {
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
         )
-        .params(CircuitsParams {
+        .params(FixedCParams {
             max_rws: 5500,
             ..Default::default()
         })

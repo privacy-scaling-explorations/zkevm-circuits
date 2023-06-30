@@ -224,8 +224,8 @@ impl MockTransaction {
         self
     }
 
-    /// Set transaction_idx field for the MockTransaction.
-    pub fn transaction_idx(&mut self, transaction_idx: u64) -> &mut Self {
+    /// Set transaction_idx field for the MockTransaction. Overridden in TestContext.
+    pub(crate) fn transaction_idx(&mut self, transaction_idx: u64) -> &mut Self {
         self.transaction_index = U64::from(transaction_idx);
         self
     }

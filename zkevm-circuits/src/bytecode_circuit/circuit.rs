@@ -649,6 +649,10 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         offset: usize,
         last_row_offset: usize,
     ) -> Result<(), Error> {
+        let empty_hash = challenges
+            .evm_word()
+            .map(|challenge| rlc::value(EMPTY_CODE_HASH_LE.as_ref(), challenge));
+
         self.set_row(
             region,
             BytecodeCircuitRow {

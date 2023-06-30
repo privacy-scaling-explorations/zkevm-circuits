@@ -72,7 +72,7 @@ use crate::{
     witness::{block_convert, Block, MptUpdates},
 };
 use bus_mapping::{
-    circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+    circuit_input_builder::{CircuitInputBuilder, FixedCParams},
     mock::BlockData,
 };
 use eth_types::{geth_types::GethData, Field};

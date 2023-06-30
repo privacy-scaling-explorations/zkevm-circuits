@@ -1,8 +1,6 @@
 //! Block-related utility module
 
-use super::{
-    execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep, ExpEvent,
-};
+use super::{execution::ExecState, transaction::Transaction, CopyEvent, ExecStep, ExpEvent};
 use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
@@ -11,7 +9,7 @@ use eth_types::{evm_unimplemented, Address, Word};
 use std::collections::HashMap;
 
 /// Context of a [`Block`] which can mutate in a [`Transaction`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockContext {
     /// Used to track the global counter in every operation in the block.
     /// Contains the next available value.
@@ -99,7 +97,6 @@ impl Block {
         history_hashes: Vec<Word>,
         prev_state_root: Word,
         eth_block: &eth_types::Block<eth_types::Transaction>,
-        circuits_params: CircuitsParams,
     ) -> Result<Self, Error> {
         if eth_block.base_fee_per_gas.is_none() {
             // FIXME: resolve this once we have proper EIP-1559 support
@@ -139,7 +136,6 @@ impl Block {
             copy_events: Vec::new(),
             exp_events: Vec::new(),
             sha3_inputs: Vec::new(),
-            circuits_params,
             eth_block: eth_block.clone(),
         })
     }
@@ -153,9 +149,7 @@ impl Block {
     pub fn txs_mut(&mut self) -> &mut Vec<Transaction> {
         &mut self.txs
     }
-}
 
-impl Block {
     /// Push a copy event to the block.
     pub fn add_copy_event(&mut self, event: CopyEvent) {
         self.copy_events.push(event);

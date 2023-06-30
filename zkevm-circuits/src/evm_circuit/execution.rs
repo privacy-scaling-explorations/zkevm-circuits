@@ -16,13 +16,17 @@ use crate::{
             constraint_builder::{
                 BaseConstraintBuilder, ConstrainBuilderCommon, EVMConstraintBuilder,
             },
-            rlc, CellType,
+            rlc,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::LookupTable,
-    util::{query_expression, Challenges, Expr},
+    util::{
+        cell_manager::{CMFixedWidthStrategy, CellManager, CellType},
+        Challenges, Expr,
+    },
 };
+use bus_mapping::operation::Target;
 use eth_types::{evm_unimplemented, Field};
 use gadgets::util::not;
 use halo2_proofs::{
@@ -355,7 +359,7 @@ impl<F: Field> ExecutionConfig<F> {
             .try_into()
             .unwrap();
 
-        let step_curr = Step::new(meta, advices, 0, false);
+        let step_curr = Step::new(meta, advices, 0);
         let mut height_map = HashMap::new();
 
         meta.create_gate("Constrain execution state", |meta| {
@@ -617,21 +621,23 @@ impl<F: Field> ExecutionConfig<F> {
         // Configure the gadget with the max height first so we can find out the actual
         // height
         let height = {
-            let dummy_step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
+            let dummy_step_next = Step::new(meta, advices, MAX_STEP_HEIGHT);
             let mut cb = EVMConstraintBuilder::new(
+                meta,
                 step_curr.clone(),
                 dummy_step_next,
                 challenges,
                 G::EXECUTION_STATE,
             );
             G::configure(&mut cb);
-            let (_, _, height) = cb.build();
+            let (_, _, height, _) = cb.build();
             height
         };
 
         // Now actually configure the gadget with the correct minimal height
-        let step_next = &Step::new(meta, advices, height, true);
+        let step_next = &Step::new(meta, advices, height);
         let mut cb = EVMConstraintBuilder::new(
+            meta,
             step_curr.clone(),
             step_next.clone(),
             challenges,
@@ -641,7 +647,6 @@ impl<F: Field> ExecutionConfig<F> {
         let gadget = G::configure(&mut cb);
 
         Self::configure_gadget_impl(
-            meta,
             q_usable,
             q_step,
             num_rows_until_next_step,
@@ -663,7 +668,6 @@ impl<F: Field> ExecutionConfig<F> {
 
     #[allow(clippy::too_many_arguments)]
     fn configure_gadget_impl(
-        meta: &mut ConstraintSystem<F>,
         q_usable: Selector,
         q_step: Column<Advice>,
         num_rows_until_next_step: Column<Advice>,
@@ -680,9 +684,8 @@ impl<F: Field> ExecutionConfig<F> {
         mut cb: EVMConstraintBuilder<F>,
     ) {
         // Enforce the step height for this opcode
-        let num_rows_until_next_step_next = query_expression(meta, |meta| {
-            meta.query_advice(num_rows_until_next_step, Rotation::next())
-        });
+        let num_rows_until_next_step_next = cb
+            .query_expression(|meta| meta.query_advice(num_rows_until_next_step, Rotation::next()));
         cb.require_equal(
             "num_rows_until_next_step_next := height - 1",
             num_rows_until_next_step_next,
@@ -691,7 +694,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         instrument.on_gadget_built(execution_state, &cb);
 
-        let (constraints, stored_expressions, _) = cb.build();
+        let (constraints, stored_expressions, _, meta) = cb.build();
         debug_assert!(
             !height_map.contains_key(&execution_state),
             "execution state already configured"
@@ -807,11 +810,12 @@ impl<F: Field> ExecutionConfig<F> {
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
         challenges: &Challenges<Expression<F>>,
-        cell_manager: &CellManager<F>,
+        cell_manager: &CellManager<CMFixedWidthStrategy>,
     ) {
         for column in cell_manager.columns().iter() {
             if let CellType::Lookup(table) = column.cell_type {
                 let name = format!("{:?}", table);
+                let column_expr = column.expr(meta);
                 meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                     let table_expressions = match table {
                         Table::Fixed => fixed_table,
@@ -825,7 +829,7 @@ impl<F: Field> ExecutionConfig<F> {
                     }
                     .table_exprs(meta);
                     vec![(
-                        column.expr(),
+                        column_expr,
                         rlc::expr(&table_expressions, challenges.lookup_input()),
                     )]
                 });
@@ -1330,7 +1334,6 @@ impl<F: Field> ExecutionConfig<F> {
                 );
             }
         }
-        //}
         Ok(())
     }
 
@@ -1369,13 +1372,25 @@ impl<F: Field> ExecutionConfig<F> {
             // challenges not ready
             return;
         }
+
+        let mut copy_lookup_count = 0;
         let mut assigned_rw_values = Vec::new();
         for (name, v) in assigned_stored_expressions {
-            if name.starts_with("rw lookup ")
+            // If any `copy lookup` which dst_tag or src_tag is Memory in opcode execution,
+            // block.get_rws() contains memory operations but
+            // assigned_stored_expressions only has a single `copy lookup` expression without
+            // any rw memory lookup.
+            // So, we include `copy lookup` in assigned_rw_values as well, then we could verify
+            // those memory operations later.
+            if (name.starts_with("rw lookup ") || name.starts_with("copy lookup"))
                 && !v.is_zero_vartime()
                 && !assigned_rw_values.contains(&(name.clone(), *v))
             {
                 assigned_rw_values.push((name.clone(), *v));
+
+                if name.starts_with("copy lookup") {
+                    copy_lookup_count += 1;
+                }
             }
         }
 
@@ -1390,10 +1405,19 @@ impl<F: Field> ExecutionConfig<F> {
         // Check that every rw_lookup assigned from the execution steps in the EVM
         // Circuit is in the set of rw operations generated by the step.
         for (name, value) in assigned_rw_values.iter() {
+            if name.starts_with("copy lookup") {
+                continue;
+            }
             if !rlc_assignments.contains(value) {
                 log::error!("rw lookup error: name: {}, step: {:?}", *name, step);
             }
         }
+
+        // if copy_rw_counter_delta is zero, ignore `copy lookup` event.
+        if step.copy_rw_counter_delta == 0 && copy_lookup_count > 0 {
+            copy_lookup_count = 0;
+        }
+
         // Check that the number of rw operations generated from the bus-mapping
         // correspond to the number of assigned rw lookups by the EVM Circuit
         // plus the number of rw lookups done by the copy circuit.
@@ -1403,10 +1427,14 @@ impl<F: Field> ExecutionConfig<F> {
                 step.rw_indices_len(),
                 assigned_rw_values.len(),
                 step.copy_rw_counter_delta,
+                copy_lookup_count,
                 step
             );
         }
+
         let mut rev_count = 0;
+        let mut offset = 0;
+        let mut copy_lookup_processed = false;
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             let is_rev = if assigned_rw_value.0.contains(" with reversion") {
                 rev_count += 1;
@@ -1420,13 +1448,14 @@ impl<F: Field> ExecutionConfig<F> {
                 rev_count,
                 step.reversible_write_counter_delta
             );
+
             // In the EVM Circuit, reversion rw lookups are assigned after their
             // corresponding rw lookup, but in the bus-mapping they are
             // generated at the end of the step.
             let idx = if is_rev {
                 step.rw_indices_len() - rev_count
             } else {
-                idx - rev_count
+                idx - rev_count + offset - copy_lookup_processed as usize
             };
 
             let rw = block.get_rws(step, idx);

@@ -758,7 +758,7 @@ mod test {
                 accs[1].address(from).balance(eth(1)).nonce(multibyte_nonce);
             },
             |mut txs, _| {
-                txs[0].to(to).from(from).nonce(multibyte_nonce);
+                txs[0].to(to).from(from);
             },
             |block, _| block,
         )

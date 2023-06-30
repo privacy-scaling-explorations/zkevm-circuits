@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use ark_std::{end_timer, start_timer};
-    use bus_mapping::circuit_input_builder::CircuitsParams;
+    use bus_mapping::circuit_input_builder::FixedCParams;
     use eth_types::{address, bytecode, geth_types::GethData, Word};
     use ethers_signers::{LocalWallet, Signer};
     use halo2_proofs::{
