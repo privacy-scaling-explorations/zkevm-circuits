@@ -793,7 +793,7 @@ mod test {
     use std::vec;
 
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use bus_mapping::{circuit_input_builder::CircuitsParams, evm::OpcodeId};
+    use bus_mapping::evm::OpcodeId;
     use eth_types::{self, bytecode, evm_types::GasCost, word, Bytecode, Word};
 
     use mock::{eth, gwei, MockTransaction, TestContext, MOCK_ACCOUNTS};
