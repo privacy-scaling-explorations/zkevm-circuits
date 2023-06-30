@@ -32,7 +32,7 @@ impl Opcode for Codecopy {
 
         memory.copy_from(dst_offset, code_offset, length, &code);
 
-        let copy_event = gen_copy_event(state, geth_step)?;
+        let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
         state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
@@ -67,6 +67,7 @@ fn gen_codecopy_step(
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
+    exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
@@ -78,7 +79,9 @@ fn gen_copy_event(
     let bytecode: Bytecode = state.code(code_hash)?.into();
     let code_size = bytecode.code.len() as u64;
 
-    let dst_addr = dst_offset.as_u64();
+    // Get low Uint64 of offset to generate copy steps. Since offset could be
+    // Uint64 overflow if length is zero.
+    let dst_addr = dst_offset.low_u64();
     let src_addr_end = code_size;
 
     // Reset start offset to end offset if overflow.
@@ -86,9 +89,8 @@ fn gen_copy_event(
         .unwrap_or(src_addr_end)
         .min(src_addr_end);
 
-    let mut exec_step = state.new_step(geth_step)?;
     let copy_steps = state.gen_copy_steps_for_bytecode(
-        &mut exec_step,
+        exec_step,
         &bytecode,
         src_addr,
         dst_addr,
@@ -154,8 +156,8 @@ mod codecopy_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 

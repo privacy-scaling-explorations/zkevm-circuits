@@ -16,11 +16,14 @@ use crate::{
                 Transition::{Delta, Same, To},
             },
             math_gadget::{AddWordsGadget, RangeCheckGadget},
-            not, or, Cell, CellType, Word,
+            not, or, Word,
         },
     },
     table::{AccountFieldTag, CallContextFieldTag},
-    util::Expr,
+    util::{
+        cell_manager::{Cell, CellType},
+        Expr,
+    },
     witness::{Block, Call, ExecStep},
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
@@ -80,11 +83,8 @@ impl<F: Field> SameContextGadget<F> {
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        self.sufficient_gas_left.assign(
-            region,
-            offset,
-            F::from(step.gas_left.0 - step.gas_cost.0),
-        )?;
+        self.sufficient_gas_left
+            .assign(region, offset, F::from(step.gas_left - step.gas_cost))?;
 
         Ok(())
     }
@@ -380,7 +380,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         // If receiver doesn't exist, create it
         cb.condition(
             or::expr([
-                not::expr(value_is_zero.expr()) * not::expr(receiver_exists.clone()),
+                not::expr(value_is_zero.expr()) * not::expr(receiver_exists.expr()),
                 must_create.clone(),
             ]),
             |cb| {
@@ -429,7 +429,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         1.expr() +
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
         or::expr([
-            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
+            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.expr()),
             self.must_create.clone()]
         ) * 1.expr() +
         // +1 Write Account (sender) Balance
@@ -442,7 +442,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         // NOTE: Write Account (sender) Balance (Not Reversible tx fee)
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
         or::expr([
-            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
+            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.expr()),
             self.must_create.clone()]
         ) * 1.expr() +
         // +1 Write Account (sender) Balance
@@ -497,6 +497,8 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
 pub(crate) struct TransferGadget<F> {
     sender: UpdateBalanceGadget<F, 2, false>,
     receiver: UpdateBalanceGadget<F, 2, true>,
+    must_create: Expression<F>,
+    receiver_exists: Expression<F>,
     pub(crate) value_is_zero: IsZeroGadget<F>,
 }
 
@@ -506,13 +508,17 @@ impl<F: Field> TransferGadget<F> {
         sender_address: Expression<F>,
         receiver_address: Expression<F>,
         receiver_exists: Expression<F>,
+        must_create: Expression<F>,
         value: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
         let value_is_zero = IsZeroGadget::construct(cb, value.expr());
         // If receiver doesn't exist, create it
         cb.condition(
-            not::expr(value_is_zero.expr()) * not::expr(receiver_exists),
+            or::expr([
+                not::expr(value_is_zero.expr()) * not::expr(receiver_exists.expr()),
+                must_create.clone(),
+            ]),
             |cb| {
                 cb.account_write(
                     receiver_address.clone(),
@@ -541,8 +547,10 @@ impl<F: Field> TransferGadget<F> {
         });
 
         Self {
+            must_create,
             sender,
             receiver,
+            receiver_exists,
             value_is_zero,
         }
     }
@@ -553,6 +561,17 @@ impl<F: Field> TransferGadget<F> {
 
     pub(crate) fn receiver(&self) -> &UpdateBalanceGadget<F, 2, true> {
         &self.receiver
+    }
+
+    pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
+        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        or::expr([
+                        not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
+                        self.must_create.clone()]
+                    ) * 1.expr() +
+        // +1 Write Account (sender) Balance
+        // +1 Write Account (receiver) Balance
+        not::expr(self.value_is_zero.expr()) * 2.expr()
     }
 
     pub(crate) fn assign(
@@ -783,14 +802,14 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         is_empty_account: bool,
     ) -> Result<u64, Error> {
         let gas_cost = if is_warm_prev {
-            GasCost::WARM_ACCESS.as_u64()
+            GasCost::WARM_ACCESS
         } else {
-            GasCost::COLD_ACCOUNT_ACCESS.as_u64()
+            GasCost::COLD_ACCOUNT_ACCESS
         } + if has_value {
-            GasCost::CALL_WITH_VALUE.as_u64()
+            GasCost::CALL_WITH_VALUE
                 // Only CALL opcode could invoke transfer to make empty account into non-empty.
                 + if is_call && is_empty_account {
-                    GasCost::NEW_ACCOUNT.as_u64()
+                    GasCost::NEW_ACCOUNT
                 } else {
                     0
                 }
@@ -919,13 +938,11 @@ impl<F: Field> SstoreGasGadget<F> {
 }
 
 pub(crate) fn cal_sload_gas_cost_for_assignment(is_warm: bool) -> u64 {
-    let gas_cost = if is_warm {
+    if is_warm {
         GasCost::WARM_ACCESS
     } else {
         GasCost::COLD_SLOAD
-    };
-
-    gas_cost.0
+    }
 }
 
 pub(crate) fn cal_sstore_gas_cost_for_assignment(
@@ -946,9 +963,9 @@ pub(crate) fn cal_sstore_gas_cost_for_assignment(
         GasCost::WARM_ACCESS
     };
     if is_warm {
-        warm_case_gas.0
+        warm_case_gas
     } else {
-        warm_case_gas.0 + GasCost::COLD_SLOAD.0
+        warm_case_gas + GasCost::COLD_SLOAD
     }
 }
 

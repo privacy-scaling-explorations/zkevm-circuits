@@ -102,7 +102,7 @@ impl Opcode for Sstore {
             TxRefundOp {
                 tx_id: state.tx_ctx.id(),
                 value_prev: state.sdb.refund(),
-                value: geth_step.refund.0,
+                value: geth_step.refund,
             },
         )?;
 
@@ -170,8 +170,8 @@ mod sstore_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 

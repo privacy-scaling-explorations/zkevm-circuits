@@ -27,18 +27,15 @@ pub struct TraceConfig {
 
 /// Configuration structure for `logger.Config`
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
 pub struct LoggerConfig {
     /// enable memory capture
-    #[serde(rename = "EnableMemory")]
     pub enable_memory: bool,
     /// disable stack capture
-    #[serde(rename = "DisableStack")]
     pub disable_stack: bool,
     /// disable storage capture
-    #[serde(rename = "DisableStorage")]
     pub disable_storage: bool,
     /// enable return data capture
-    #[serde(rename = "EnableReturnData")]
     pub enable_return_data: bool,
 }
 

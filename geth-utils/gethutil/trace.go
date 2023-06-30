@@ -129,21 +129,24 @@ func newUint64(val uint64) *uint64 { return &val }
 
 func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	chainConfig := params.ChainConfig{
-		ChainID:             toBigInt(config.ChainID),
-		HomesteadBlock:      big.NewInt(0),
-		DAOForkBlock:        big.NewInt(0),
-		DAOForkSupport:      true,
-		EIP150Block:         big.NewInt(0),
-		EIP150Hash:          common.Hash{},
-		EIP155Block:         big.NewInt(0),
-		EIP158Block:         big.NewInt(0),
-		ByzantiumBlock:      big.NewInt(0),
-		ConstantinopleBlock: big.NewInt(0),
-		PetersburgBlock:     big.NewInt(0),
-		IstanbulBlock:       big.NewInt(0),
-		MuirGlacierBlock:    big.NewInt(0),
-		BerlinBlock:         big.NewInt(0),
-		LondonBlock:         big.NewInt(0),
+		ChainID:                       toBigInt(config.ChainID),
+		HomesteadBlock:                big.NewInt(0),
+		DAOForkBlock:                  big.NewInt(0),
+		DAOForkSupport:                true,
+		EIP150Block:                   big.NewInt(0),
+		EIP150Hash:                    common.Hash{},
+		EIP155Block:                   big.NewInt(0),
+		EIP158Block:                   big.NewInt(0),
+		ByzantiumBlock:                big.NewInt(0),
+		ConstantinopleBlock:           big.NewInt(0),
+		PetersburgBlock:               big.NewInt(0),
+		IstanbulBlock:                 big.NewInt(0),
+		MuirGlacierBlock:              big.NewInt(0),
+		BerlinBlock:                   big.NewInt(0),
+		LondonBlock:                   big.NewInt(0),
+		ShanghaiTime:                  newUint64(0),
+		TerminalTotalDifficulty:       big.NewInt(0),
+		TerminalTotalDifficultyPassed: true,
 	}
 
 	var txsGasLimit uint64
@@ -181,6 +184,9 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		return nil, fmt.Errorf("txs total gas: %d Exceeds block gas limit: %d", txsGasLimit, blockGasLimit)
 	}
 
+	// For opcode PREVRANDAO
+	randao := common.BigToHash(toBigInt(config.Block.Difficulty)) // TODO: fix
+
 	blockCtx := vm.BlockContext{
 		CanTransfer: core.CanTransfer,
 		Transfer:    core.Transfer,
@@ -196,6 +202,7 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		BlockNumber: toBigInt(config.Block.Number),
 		Time:        toBigInt(config.Block.Timestamp).Uint64(),
 		Difficulty:  toBigInt(config.Block.Difficulty),
+		Random:      &randao,
 		BaseFee:     toBigInt(config.Block.BaseFee),
 		GasLimit:    blockGasLimit,
 	}

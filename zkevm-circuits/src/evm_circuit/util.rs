@@ -1,25 +1,19 @@
 use crate::{
-    evm_circuit::{
-        param::{
-            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE2_COLUMNS,
-        },
-        table::Table,
+    evm_circuit::param::{
+        LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE2_COLUMNS,
     },
-    util::{query_expression, Challenges, Expr},
+    util::{cell_manager::CMFixedWidthStrategyDistribution, Challenges, Expr},
     witness::{Block, ExecStep, Rw, RwMap},
 };
 use bus_mapping::state_db::CodeDB;
 use eth_types::{Address, Field, ToLittleEndian, ToWord, U256};
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
-    plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, VirtualCells},
+    plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression},
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::{
-    collections::BTreeMap,
-    hash::{Hash, Hasher},
-};
+use std::hash::{Hash, Hasher};
 
 pub(crate) mod common_gadget;
 pub(crate) mod constraint_builder;
@@ -29,62 +23,9 @@ pub(crate) mod memory_gadget;
 
 pub use gadgets::util::{and, not, or, select, sum};
 
-#[derive(Clone, Debug)]
-pub(crate) struct Cell<F> {
-    // expression for constraint
-    expression: Expression<F>,
-    column: Column<Advice>,
-    // relative position to selector for synthesis
-    rotation: usize,
-    cell_column_index: usize,
-}
+#[deprecated(note = "Removing this would require to edit almost all gadget")]
+pub(crate) use crate::util::cell_manager::{Cell, CellType};
 
-impl<F: Field> Cell<F> {
-    pub(crate) fn new(
-        meta: &mut VirtualCells<F>,
-        column: Column<Advice>,
-        rotation: usize,
-        cell_column_index: usize,
-    ) -> Self {
-        Self {
-            expression: meta.query_advice(column, Rotation(rotation as i32)),
-            column,
-            rotation,
-            cell_column_index,
-        }
-    }
-
-    pub(crate) fn assign(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        value: Value<F>,
-    ) -> Result<AssignedCell<F, F>, Error> {
-        region.assign_advice(
-            || {
-                format!(
-                    "Cell column: {:?} and rotation: {}",
-                    self.column, self.rotation
-                )
-            },
-            self.column,
-            offset + self.rotation,
-            || value,
-        )
-    }
-}
-
-impl<F: Field> Expr<F> for Cell<F> {
-    fn expr(&self) -> Expression<F> {
-        self.expression.clone()
-    }
-}
-
-impl<F: Field> Expr<F> for &Cell<F> {
-    fn expr(&self) -> Expression<F> {
-        self.expression.clone()
-    }
-}
 pub struct CachedRegion<'r, 'b, F: Field> {
     region: &'r mut Region<'b, F>,
     advice: Vec<Vec<F>>,
@@ -193,8 +134,21 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
             .evm_word()
             .map(|r| rlc::value(&n.to_le_bytes(), r))
     }
+
+    pub fn keccak_rlc(&self, le_bytes: &[u8]) -> Value<F> {
+        self.challenges
+            .keccak_input()
+            .map(|r| rlc::value(le_bytes, r))
+    }
+
     pub fn empty_code_hash_rlc(&self) -> Value<F> {
         self.word_rlc(CodeDB::empty_code_hash().to_word())
+    }
+
+    pub fn code_hash(&self, n: U256) -> Value<F> {
+        self.challenges
+            .evm_word()
+            .map(|r| rlc::value(&n.to_le_bytes(), r))
     }
 
     /// Constrains a cell to have a constant value.
@@ -217,7 +171,7 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
 pub struct StoredExpression<F> {
     pub(crate) name: String,
     cell: Cell<F>,
-    cell_type: CellType,
+    cell_type: crate::util::cell_manager::CellType,
     expr: Expression<F>,
     expr_id: String,
 }
@@ -264,195 +218,50 @@ impl<F: Field> StoredExpression<F> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum CellType {
-    StoragePhase1,
-    StoragePhase2,
-    StoragePermutation,
-    LookupByte,
-    Lookup(Table),
-}
+#[allow(clippy::mut_range_bound)]
+pub(crate) fn evm_cm_distribute_advice<F: Field>(
+    meta: &mut ConstraintSystem<F>,
+    advices: &[Column<Advice>],
+) -> CMFixedWidthStrategyDistribution {
+    let mut dist = CMFixedWidthStrategyDistribution::default();
 
-impl CellType {
-    // The phase that given `Expression` becomes evaluateable.
-    fn expr_phase<F: Field>(expr: &Expression<F>) -> u8 {
-        use Expression::*;
-        match expr {
-            Challenge(challenge) => challenge.phase() + 1,
-            Advice(query) => query.phase(),
-            Constant(_) | Selector(_) | Fixed(_) | Instance(_) => 0,
-            Negated(a) | Expression::Scaled(a, _) => Self::expr_phase(a),
-            Sum(a, b) | Product(a, b) => std::cmp::max(Self::expr_phase(a), Self::expr_phase(b)),
-        }
-    }
+    let mut column_idx = 0;
 
-    /// Return the storage phase of phase
-    pub(crate) fn storage_for_phase(phase: u8) -> CellType {
-        match phase {
-            0 => CellType::StoragePhase1,
-            1 => CellType::StoragePhase2,
-            _ => unreachable!(),
-        }
-    }
-
-    /// Return the storage cell of the expression
-    pub(crate) fn storage_for_expr<F: Field>(expr: &Expression<F>) -> CellType {
-        Self::storage_for_phase(Self::expr_phase::<F>(expr))
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct CellColumn<F> {
-    pub(crate) index: usize,
-    pub(crate) cell_type: CellType,
-    pub(crate) height: usize,
-    pub(crate) expr: Expression<F>,
-}
-
-impl<F: Field> Expr<F> for CellColumn<F> {
-    fn expr(&self) -> Expression<F> {
-        self.expr.clone()
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct CellManager<F> {
-    width: usize,
-    height: usize,
-    cells: Vec<Cell<F>>,
-    columns: Vec<CellColumn<F>>,
-}
-
-impl<F: Field> CellManager<F> {
-    pub(crate) fn new(
-        meta: &mut ConstraintSystem<F>,
-        height: usize,
-        advices: &[Column<Advice>],
-        height_offset: usize,
-    ) -> Self {
-        // Setup the columns and query the cells
-        let width = advices.len();
-        let mut cells = Vec::with_capacity(height * width);
-        let mut columns = Vec::with_capacity(width);
-        query_expression(meta, |meta| {
-            for c in 0..width {
-                for r in 0..height {
-                    cells.push(Cell::new(meta, advices[c], height_offset + r, c));
-                }
-                columns.push(CellColumn {
-                    index: c,
-                    cell_type: CellType::StoragePhase1,
-                    height: 0,
-                    expr: cells[c * height].expr(),
-                });
-            }
-        });
-
-        let mut column_idx = 0;
-
-        // Mark columns used for lookups in Phase3
-        for &(table, count) in LOOKUP_CONFIG {
-            for _ in 0usize..count {
-                columns[column_idx].cell_type = CellType::Lookup(table);
-                column_idx += 1;
-            }
-        }
-
-        // Mark columns used for Phase2 constraints
-        for _ in 0..N_PHASE2_COLUMNS {
-            columns[column_idx].cell_type = CellType::StoragePhase2;
+    // Mark columns used for lookups in Phase3
+    for &(table, count) in LOOKUP_CONFIG {
+        for _ in 0usize..count {
+            dist.add(CellType::Lookup(table), advices[column_idx]);
             column_idx += 1;
         }
-
-        // Mark columns used for copy constraints
-        for _ in 0..N_COPY_COLUMNS {
-            meta.enable_equality(advices[column_idx]);
-            columns[column_idx].cell_type = CellType::StoragePermutation;
-            column_idx += 1;
-        }
-
-        // Mark columns used for byte lookup
-        for _ in 0..N_BYTE_LOOKUPS {
-            columns[column_idx].cell_type = CellType::LookupByte;
-            assert_eq!(advices[column_idx].column_type().phase(), 0);
-            column_idx += 1;
-        }
-
-        Self {
-            width,
-            height,
-            cells,
-            columns,
-        }
     }
 
-    pub(crate) fn query_cells(&mut self, cell_type: CellType, count: usize) -> Vec<Cell<F>> {
-        let mut cells = Vec::with_capacity(count);
-        while cells.len() < count {
-            let column_idx = self.next_column(cell_type);
-            let column = &mut self.columns[column_idx];
-            cells.push(self.cells[column_idx * self.height + column.height].clone());
-            column.height += 1;
-        }
-        cells
+    // Mark columns used for Phase2 constraints
+    for _ in 0..N_PHASE2_COLUMNS {
+        dist.add(CellType::StoragePhase2, advices[column_idx]);
+        column_idx += 1;
     }
 
-    pub(crate) fn query_cell(&mut self, cell_type: CellType) -> Cell<F> {
-        self.query_cells(cell_type, 1)[0].clone()
+    // Mark columns used for copy constraints
+    for _ in 0..N_COPY_COLUMNS {
+        meta.enable_equality(advices[column_idx]);
+        dist.add(CellType::StoragePermutation, advices[column_idx]);
+        column_idx += 1;
     }
 
-    fn next_column(&self, cell_type: CellType) -> usize {
-        let mut best_index: Option<usize> = None;
-        let mut best_height = self.height;
-        for column in self.columns.iter() {
-            if column.cell_type == cell_type && column.height < best_height {
-                best_index = Some(column.index);
-                best_height = column.height;
-            }
-        }
-        // Replace a CellType::Storage by CellType::StoragePermutation if the later has
-        // better height
-        if cell_type == CellType::StoragePhase1 {
-            for column in self.columns.iter() {
-                if column.cell_type == CellType::StoragePermutation && column.height < best_height {
-                    best_index = Some(column.index);
-                    best_height = column.height;
-                }
-            }
-        }
-        match best_index {
-            Some(index) => index,
-            // If we reach this case, it means that all the columns of cell_type have assignments
-            // taking self.height rows, so there's no more space.
-            None => panic!("not enough cells for query: {:?}", cell_type),
-        }
+    // Mark columns used for byte lookup
+    for _ in 0..N_BYTE_LOOKUPS {
+        dist.add(CellType::LookupByte, advices[column_idx]);
+        assert_eq!(advices[column_idx].column_type().phase(), 0);
+        column_idx += 1;
     }
 
-    pub(crate) fn get_height(&self) -> usize {
-        self.columns
-            .iter()
-            .map(|column| column.height)
-            .max()
-            .unwrap()
+    // Mark columns used for for Phase1 constraints
+    for _ in column_idx..advices.len() {
+        dist.add(CellType::StoragePhase1, advices[column_idx]);
+        column_idx += 1;
     }
 
-    /// Returns a map of CellType -> (width, height, num_cells)
-    pub(crate) fn get_stats(&self) -> BTreeMap<CellType, (usize, usize, usize)> {
-        let mut data = BTreeMap::new();
-        for column in self.columns.iter() {
-            let (mut count, mut height, mut num_cells) =
-                data.get(&column.cell_type).unwrap_or(&(0, 0, 0));
-            count += 1;
-            height = height.max(column.height);
-            num_cells += column.height;
-            data.insert(column.cell_type, (count, height, num_cells));
-        }
-        data
-    }
-
-    pub(crate) fn columns(&self) -> &[CellColumn<F>] {
-        &self.columns
-    }
+    dist
 }
 
 #[derive(Clone, Debug)]

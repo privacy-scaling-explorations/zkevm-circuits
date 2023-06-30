@@ -28,7 +28,7 @@ impl Opcode for Calldatacopy {
 
         memory.copy_from(memory_offset, data_offset, length, &call_ctx.call_data);
 
-        let copy_event = gen_copy_event(state, geth_step)?;
+        let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
         state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
@@ -95,6 +95,7 @@ fn gen_calldatacopy_step(
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
+    exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
@@ -105,7 +106,9 @@ fn gen_copy_event(
     let call_data_offset = state.call()?.call_data_offset;
     let call_data_length = state.call()?.call_data_length;
 
-    let dst_addr = memory_offset.as_u64();
+    // Get low Uint64 of memory offset to generate copy steps. Since memory
+    // offset could be Uint64 overflow if memory length is zero.
+    let dst_addr = memory_offset.low_u64();
     let src_addr_end = call_data_offset.checked_add(call_data_length).unwrap();
 
     // Reset start offset to end offset if overflow.
@@ -115,14 +118,8 @@ fn gen_copy_event(
         .unwrap_or(src_addr_end)
         .min(src_addr_end);
 
-    let mut exec_step = state.new_step(geth_step)?;
-    let copy_steps = state.gen_copy_steps_for_call_data(
-        &mut exec_step,
-        src_addr,
-        dst_addr,
-        src_addr_end,
-        length,
-    )?;
+    let copy_steps =
+        state.gen_copy_steps_for_call_data(exec_step, src_addr, dst_addr, src_addr_end, length)?;
 
     let (src_type, src_id) = if state.call()?.is_root {
         (CopyDataType::TxCalldata, state.tx_ctx.id())
@@ -213,8 +210,8 @@ mod calldatacopy_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 
@@ -227,8 +224,8 @@ mod calldatacopy_tests {
         let caller_id = builder.block.txs()[0].calls()[step.call_index].caller_id;
         let expected_call_id = builder.block.txs()[0].calls()[step.call_index].call_id;
 
-        // 3 stack reads + 3 call context reads.
-        assert_eq!(step.bus_mapping_instance.len(), 6);
+        // 3 stack reads + 3 call context reads + `copy_size` x 2 memory r/w
+        assert_eq!(step.bus_mapping_instance.len(), 6 + copy_size * 2);
 
         // 3 stack reads.
         assert_eq!(
@@ -386,7 +383,7 @@ mod calldatacopy_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
@@ -419,8 +416,8 @@ mod calldatacopy_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 
@@ -431,7 +428,8 @@ mod calldatacopy_tests {
             .unwrap();
 
         let expected_call_id = builder.block.txs()[0].calls()[step.call_index].call_id;
-        assert_eq!(step.bus_mapping_instance.len(), 5);
+        // 3 stack reads + 2 call context reads + `size` memory write
+        assert_eq!(step.bus_mapping_instance.len(), 5 + size);
 
         assert_eq!(
             [0, 1, 2]

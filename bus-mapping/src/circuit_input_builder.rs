@@ -39,7 +39,7 @@ pub use transaction::{Transaction, TransactionContext};
 
 /// Circuit Setup Parameters
 #[derive(Debug, Clone, Copy)]
-pub struct CircuitsParams {
+pub struct FixedCParams {
     /// Maximum number of rw operations in the state circuit (RwTable length /
     /// nummber of rows). This must be at least the number of rw operations
     /// + 1, in order to allocate at least a Start row.
@@ -70,17 +70,27 @@ pub struct CircuitsParams {
     pub max_keccak_rows: usize,
 }
 
-impl Default for CircuitsParams {
+/// Unset Circuits Parameters, computed dynamically together with circuit witness generation.
+#[derive(Debug, Clone, Copy)]
+pub struct DynamicCParams {}
+
+/// Circuit Setup Parameters. These can be fixed/concrete or unset/dynamic.
+pub trait CircuitsParams: Debug + Copy {}
+
+impl CircuitsParams for FixedCParams {}
+impl CircuitsParams for DynamicCParams {}
+
+impl Default for FixedCParams {
     /// Default values for most of the unit tests of the Circuit Parameters
     fn default() -> Self {
-        CircuitsParams {
+        FixedCParams {
             max_rws: 1000,
             max_txs: 1,
             max_calldata: 256,
             // TODO: Check whether this value is correct or we should increase/decrease based on
             // this lib tests
             max_copy_rows: 1000,
-            max_exp_steps: 1000,
+            max_exp_steps: 1000 / 7, // exp_circuit::OFFSET_INCREMENT = 7
             max_bytecode: 512,
             max_evm_rows: 0,
             max_keccak_rows: 0,
@@ -107,25 +117,28 @@ impl Default for CircuitsParams {
 /// the State Proof witnesses are already generated on a structured manner and
 /// ready to be added into the State circuit.
 #[derive(Debug)]
-pub struct CircuitInputBuilder {
+pub struct CircuitInputBuilder<C: CircuitsParams> {
     /// StateDB key-value DB
     pub sdb: StateDB,
     /// Map of account codes by code hash
     pub code_db: CodeDB,
     /// Block
     pub block: Block,
+    /// Circuits Setup Paramteres
+    pub circuits_params: C,
     /// Block Context
     pub block_ctx: BlockContext,
 }
 
-impl<'a> CircuitInputBuilder {
+impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     /// Create a new CircuitInputBuilder from the given `eth_block` and
     /// `constants`.
-    pub fn new(sdb: StateDB, code_db: CodeDB, block: Block) -> Self {
+    pub fn new(sdb: StateDB, code_db: CodeDB, block: Block, params: C) -> Self {
         Self {
             sdb,
             code_db,
             block,
+            circuits_params: params,
             block_ctx: BlockContext::new(),
         }
     }
@@ -199,25 +212,65 @@ impl<'a> CircuitInputBuilder {
         }
     }
 
+    /// Handle a transaction with its corresponding execution trace to generate
+    /// all the associated operations.  Each operation is registered in
+    /// `self.block.container`, and each step stores the
+    /// [`OperationRef`](crate::exec_trace::OperationRef) to each of the
+    /// generated operations.
+    fn handle_tx(
+        &mut self,
+        eth_tx: &eth_types::Transaction,
+        geth_trace: &GethExecTrace,
+        is_last_tx: bool,
+    ) -> Result<(), Error> {
+        let mut tx = self.new_tx(eth_tx, !geth_trace.failed, geth_trace.invalid)?;
+        let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
+
+        // Generate BeginTx step
+        let begin_tx_step = gen_associated_steps(
+            &mut self.state_ref(&mut tx, &mut tx_ctx),
+            ExecState::BeginTx,
+        )?;
+        tx.steps_mut().push(begin_tx_step);
+
+        for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
+            let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
+            log::trace!("handle {}th opcode {:?} ", index, geth_step.op);
+            let exec_steps = gen_associated_ops(
+                &geth_step.op,
+                &mut state_ref,
+                &geth_trace.struct_logs[index..],
+            )?;
+            tx.steps_mut().extend(exec_steps);
+        }
+
+        // Generate EndTx step
+        let end_tx_step =
+            gen_associated_steps(&mut self.state_ref(&mut tx, &mut tx_ctx), ExecState::EndTx)?;
+        tx.steps_mut().push(end_tx_step);
+
+        self.sdb.commit_tx();
+        self.block.txs.push(tx);
+
+        Ok(())
+    }
+}
+
+impl CircuitInputBuilder<FixedCParams> {
     /// Handle a block by handling each transaction to generate all the
     /// associated operations.
     pub fn handle_block(
         &mut self,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
-    ) -> Result<(), Error> {
+    ) -> Result<&CircuitInputBuilder<FixedCParams>, Error> {
         // accumulates gas across all txs in the block
-        for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
-            let geth_trace = &geth_traces[tx_index];
-            self.handle_tx(tx, geth_trace, tx_index + 1 == eth_block.transactions.len())?;
-        }
-        self.set_value_ops_call_context_rwc_eor();
-        self.set_end_block();
-        Ok(())
+        self.begin_handle_block(eth_block, geth_traces)?;
+        self.set_end_block(self.circuits_params.max_rws);
+        Ok(self)
     }
 
-    fn set_end_block(&mut self) {
-        let max_rws = self.block.circuits_params.max_rws;
+    fn set_end_block(&mut self, max_rws: usize) {
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
         end_block_not_last.rwc = self.block_ctx.rwc;
@@ -263,48 +316,92 @@ impl<'a> CircuitInputBuilder {
         self.block.block_steps.end_block_not_last = end_block_not_last;
         self.block.block_steps.end_block_last = end_block_last;
     }
+}
 
-    /// Handle a transaction with its corresponding execution trace to generate
-    /// all the associated operations.  Each operation is registered in
-    /// `self.block.container`, and each step stores the
-    /// [`OperationRef`](crate::exec_trace::OperationRef) to each of the
-    /// generated operations.
-    fn handle_tx(
+impl<C: CircuitsParams> CircuitInputBuilder<C> {
+    /// First part of handle_block, common for dynamic and static circuit parameters.
+    pub fn begin_handle_block(
         &mut self,
-        eth_tx: &eth_types::Transaction,
-        geth_trace: &GethExecTrace,
-        is_last_tx: bool,
+        eth_block: &EthBlock,
+        geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<(), Error> {
-        let mut tx = self.new_tx(eth_tx, !geth_trace.failed, geth_trace.invalid)?;
-        let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
-
-        // Generate BeginTx step
-        let begin_tx_step = gen_associated_steps(
-            &mut self.state_ref(&mut tx, &mut tx_ctx),
-            ExecState::BeginTx,
-        )?;
-        tx.steps_mut().push(begin_tx_step);
-
-        for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
-            let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
-            log::trace!("handle {}th opcode {:?} ", index, geth_step.op);
-            let exec_steps = gen_associated_ops(
-                &geth_step.op,
-                &mut state_ref,
-                &geth_trace.struct_logs[index..],
-            )?;
-            tx.steps_mut().extend(exec_steps);
+        // accumulates gas across all txs in the block
+        for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
+            let geth_trace = &geth_traces[tx_index];
+            self.handle_tx(tx, geth_trace, tx_index + 1 == eth_block.transactions.len())?;
         }
-
-        // Generate EndTx step
-        let end_tx_step =
-            gen_associated_steps(&mut self.state_ref(&mut tx, &mut tx_ctx), ExecState::EndTx)?;
-        tx.steps_mut().push(end_tx_step);
-
-        self.sdb.commit_tx();
-        self.block.txs.push(tx);
-
+        self.set_value_ops_call_context_rwc_eor();
         Ok(())
+    }
+}
+impl CircuitInputBuilder<DynamicCParams> {
+    /// Handle a block by handling each transaction to generate all the
+    /// associated operations. From these operations, the optimal circuit parameters
+    /// are derived and set.
+    pub fn handle_block(
+        mut self,
+        eth_block: &EthBlock,
+        geth_traces: &[eth_types::GethExecTrace],
+    ) -> Result<CircuitInputBuilder<FixedCParams>, Error> {
+        self.begin_handle_block(eth_block, geth_traces)?;
+
+        // Compute subcircuits parameters
+        let c_params = {
+            let max_txs = eth_block.transactions.len();
+            let max_bytecode = self.code_db.0.values().fold(0, |acc, a| acc + a.len() + 1);
+
+            let max_calldata = eth_block
+                .transactions
+                .iter()
+                .fold(0, |acc, tx| acc + tx.input.len());
+            let max_exp_steps = self
+                .block
+                .exp_events
+                .iter()
+                .fold(0usize, |acc, e| acc + e.steps.len());
+            // The `+ 2` is used to take into account the two extra empty copy rows needed
+            // to satisfy the query at `Rotation(2)` performed inside of the
+            // `rows[2].value == rows[0].value * r + rows[1].value` requirement in the RLC
+            // Accumulation gate.
+            let max_copy_rows = self
+                .block
+                .copy_events
+                .iter()
+                .fold(0, |acc, c| acc + c.bytes.len())
+                * 2
+                + 2;
+            let max_rws: usize = self.block_ctx.rwc.into();
+            // Computing the number of rows for the EVM circuit requires the size of ExecStep,
+            // which is determined in the code of zkevm-circuits and cannot be imported here.
+            // When the evm circuit receives a 0 value it dynamically computes the minimum
+            // number of rows necessary.
+            let max_evm_rows = 0;
+            // Similarly, computing the number of rows for the Keccak circuit requires
+            // constants that cannot be accessed from here (NUM_ROUNDS and KECCAK_ROWS).
+            // With a 0 value the keccak circuit computes dynamically the minimum number of rows
+            // needed.
+            let max_keccak_rows = 0;
+            FixedCParams {
+                max_rws: max_rws + 1,
+                max_txs,
+                max_calldata,
+                max_copy_rows,
+                max_exp_steps,
+                max_bytecode,
+                max_evm_rows,
+                max_keccak_rows,
+            }
+        };
+        let mut cib = CircuitInputBuilder::<FixedCParams> {
+            sdb: self.sdb,
+            code_db: self.code_db,
+            block: self.block,
+            circuits_params: c_params,
+            block_ctx: self.block_ctx,
+        };
+
+        cib.set_end_block(c_params.max_rws);
+        Ok(cib)
     }
 }
 
@@ -374,10 +471,17 @@ pub fn get_create_init_code<'a>(
     call_ctx: &'a CallContext,
     step: &GethExecStep,
 ) -> Result<&'a [u8], Error> {
-    let offset = step.stack.nth_last(1)?;
-    let length = step.stack.nth_last(2)?;
-    Ok(&call_ctx.memory.0
-        [offset.low_u64() as usize..(offset.low_u64() + length.low_u64()) as usize])
+    let offset = step.stack.nth_last(1)?.low_u64() as usize;
+    let length = step.stack.nth_last(2)?.as_usize();
+
+    let mem_len = call_ctx.memory.0.len();
+    if offset >= mem_len {
+        return Ok(&[]);
+    }
+
+    let offset_end = offset.checked_add(length).unwrap_or(mem_len);
+
+    Ok(&call_ctx.memory.0[offset..offset_end])
 }
 
 /// Retrieve the memory offset and length of call.
@@ -399,7 +503,7 @@ type EthBlock = eth_types::Block<eth_types::Transaction>;
 pub struct BuilderClient<P: JsonRpcClient> {
     cli: GethClient<P>,
     chain_id: Word,
-    circuits_params: CircuitsParams,
+    circuits_params: FixedCParams,
 }
 
 /// Get State Accesses from TxExecTraces
@@ -456,10 +560,7 @@ pub fn build_state_code_db(
 
 impl<P: JsonRpcClient> BuilderClient<P> {
     /// Create a new BuilderClient
-    pub async fn new(
-        client: GethClient<P>,
-        circuits_params: CircuitsParams,
-    ) -> Result<Self, Error> {
+    pub async fn new(client: GethClient<P>, circuits_params: FixedCParams) -> Result<Self, Error> {
         let chain_id = client.get_chain_id().await?;
 
         Ok(Self {
@@ -575,15 +676,9 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         geth_traces: &[eth_types::GethExecTrace],
         history_hashes: Vec<Word>,
         prev_state_root: Word,
-    ) -> Result<CircuitInputBuilder, Error> {
-        let block = Block::new(
-            self.chain_id,
-            history_hashes,
-            prev_state_root,
-            eth_block,
-            self.circuits_params,
-        )?;
-        let mut builder = CircuitInputBuilder::new(sdb, code_db, block);
+    ) -> Result<CircuitInputBuilder<FixedCParams>, Error> {
+        let block = Block::new(self.chain_id, history_hashes, prev_state_root, eth_block)?;
+        let mut builder = CircuitInputBuilder::new(sdb, code_db, block, self.circuits_params);
         builder.handle_block(eth_block, geth_traces)?;
         Ok(builder)
     }
@@ -594,7 +689,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         block_num: u64,
     ) -> Result<
         (
-            CircuitInputBuilder,
+            CircuitInputBuilder<FixedCParams>,
             eth_types::Block<eth_types::Transaction>,
         ),
         Error,

@@ -1,7 +1,7 @@
 use super::*;
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 8];
-type CopyCircuitRow<F> = [(Value<F>, &'static str); 4];
+type CopyCircuitRow<F> = [(Value<F>, &'static str); 5];
 
 /// Copy Table, used to verify copies of byte chunks between Memory, Bytecode,
 /// TxLogs and TxCallData.
@@ -32,6 +32,8 @@ pub struct CopyTable {
     pub rw_counter: Column<Advice>,
     /// Decrementing counter denoting reverse read-write counter.
     pub rwc_inc_left: Column<Advice>,
+    /// Selector for the tag BinaryNumberChip
+    pub q_enable: Column<Fixed>,
     /// Binary chip to constrain the copy table conditionally depending on the
     /// current row's tag, whether it is Bytecode, Memory, TxCalldata or
     /// TxLog.
@@ -44,6 +46,7 @@ impl CopyTable {
         Self {
             is_first: meta.advice_column(),
             id: meta.advice_column_in(SecondPhase),
+            q_enable,
             tag: BinaryNumberChip::configure(meta, q_enable, None),
             addr: meta.advice_column(),
             src_addr_end: meta.advice_column(),
@@ -61,7 +64,7 @@ impl CopyTable {
     ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
         let mut assignments = Vec::new();
         // rlc_acc
-        let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
+        let rlc_acc = {
             let values = copy_event
                 .bytes
                 .iter()
@@ -70,8 +73,6 @@ impl CopyTable {
             challenges
                 .keccak_input()
                 .map(|keccak_input| rlc::value(values.iter().rev(), keccak_input))
-        } else {
-            Value::known(F::ZERO)
         };
         let mut value_acc = Value::known(F::ZERO);
         for (step_idx, (is_read_step, copy_step)) in copy_event
@@ -146,17 +147,11 @@ impl CopyTable {
             // bytes_left
             let bytes_left = u64::try_from(copy_event.bytes.len() * 2 - step_idx).unwrap() / 2;
             // value
-            let value = if copy_event.dst_type == CopyDataType::RlcAcc {
-                if is_read_step {
-                    Value::known(F::from(copy_step.value as u64))
-                } else {
-                    value_acc = value_acc * challenges.keccak_input()
-                        + Value::known(F::from(copy_step.value as u64));
-                    value_acc
-                }
-            } else {
-                Value::known(F::from(copy_step.value as u64))
-            };
+            let value = Value::known(F::from(copy_step.value as u64));
+            // value_acc
+            if is_read_step {
+                value_acc = value_acc * challenges.keccak_input() + value;
+            }
             // is_pad
             let is_pad = Value::known(F::from(
                 (is_read_step && copy_step_addr >= copy_event.src_addr_end) as u64,
@@ -176,7 +171,14 @@ impl CopyTable {
                         "src_addr_end",
                     ),
                     (Value::known(F::from(bytes_left)), "bytes_left"),
-                    (rlc_acc, "rlc_acc"),
+                    (
+                        match (copy_event.src_type, copy_event.dst_type) {
+                            (CopyDataType::Memory, CopyDataType::Bytecode) => rlc_acc,
+                            (_, CopyDataType::RlcAcc) => rlc_acc,
+                            _ => Value::known(F::ZERO),
+                        },
+                        "rlc_acc",
+                    ),
                     (
                         Value::known(F::from(copy_event.rw_counter(step_idx))),
                         "rw_counter",
@@ -189,6 +191,7 @@ impl CopyTable {
                 [
                     (is_last, "is_last"),
                     (value, "value"),
+                    (value_acc, "value_acc"),
                     (is_pad, "is_pad"),
                     (is_code, "is_code"),
                 ],
@@ -233,6 +236,17 @@ impl CopyTable {
                         tag_chip.assign(&mut region, offset, &tag)?;
                         offset += 1;
                     }
+                }
+
+                // Enable selector at all rows
+                let max_copy_rows = block.circuits_params.max_copy_rows;
+                for offset in 0..max_copy_rows {
+                    region.assign_fixed(
+                        || "q_enable",
+                        self.q_enable,
+                        offset,
+                        || Value::known(F::ONE),
+                    )?;
                 }
 
                 Ok(())

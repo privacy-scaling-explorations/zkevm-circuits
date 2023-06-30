@@ -175,16 +175,20 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // skip the transfer (this is necessary for non-existing accounts, which
         // will not be crated when value is 0 and so the callee balance lookup
         // would be invalid).
-        let transfer = cb.condition(and::expr(&[is_call.expr(), is_precheck_ok.expr()]), |cb| {
-            TransferGadget::construct(
-                cb,
-                caller_address.expr(),
-                callee_address.expr(),
-                not::expr(call_gadget.callee_not_exists.expr()),
-                call_gadget.value.clone(),
-                &mut callee_reversion_info,
-            )
-        });
+        let transfer = cb.condition(
+            is_call.expr() * not::expr(is_insufficient_balance.expr()),
+            |cb| {
+                TransferGadget::construct(
+                    cb,
+                    caller_address.expr(),
+                    callee_address.expr(),
+                    not::expr(call_gadget.callee_not_exists.expr()),
+                    0.expr(),
+                    call_gadget.value.clone(),
+                    &mut callee_reversion_info,
+                )
+            },
+        );
 
         // For CALLCODE opcode, verify caller balance is greater than or equal to stack
         // `value` in successful case. that is `is_insufficient_balance` is false.
@@ -596,7 +600,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             has_value,
             !callee_exists,
         )?;
-        let gas_available: u64 = step.gas_left.0 - gas_cost;
+        let gas_available: u64 = step.gas_left - gas_cost;
 
         self.one_64th_gas
             .assign(region, offset, gas_available.into())?;
@@ -615,7 +619,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 mod test {
     use super::*;
     use crate::test_util::CircuitTestBuilder;
-    use bus_mapping::circuit_input_builder::CircuitsParams;
+    use bus_mapping::circuit_input_builder::FixedCParams;
     use eth_types::{
         address, bytecode, evm_types::OpcodeId, geth_types::Account, word, Address, ToWord, Word,
         U64,
@@ -691,31 +695,31 @@ mod test {
             },
             // With memory expansion
             Stack {
-                cd_offset: 64,
+                cd_offset: 64.into(),
                 cd_length: 320,
-                rd_offset: 0,
+                rd_offset: Word::zero(),
                 rd_length: 32,
                 ..Default::default()
             },
             Stack {
-                cd_offset: 0,
+                cd_offset: Word::zero(),
                 cd_length: 32,
-                rd_offset: 64,
+                rd_offset: 64.into(),
                 rd_length: 320,
                 ..Default::default()
             },
             Stack {
-                cd_offset: 0xFFFFFF,
+                cd_offset: 0xFFFFFF.into(),
                 cd_length: 0,
-                rd_offset: 0xFFFFFF,
+                rd_offset: 0xFFFFFF.into(),
                 rd_length: 0,
                 ..Default::default()
             },
             // With memory expansion and value
             Stack {
-                cd_offset: 64,
+                cd_offset: 64.into(),
                 cd_length: 320,
-                rd_offset: 0,
+                rd_offset: 0.into(),
                 rd_length: 32,
                 value: Word::from(10).pow(18.into()),
                 ..Default::default()
@@ -732,13 +736,28 @@ mod test {
         }
     }
 
+    #[test]
+    fn callop_overflow_offset_and_zero_length() {
+        let stack = Stack {
+            cd_offset: Word::MAX,
+            cd_length: 0,
+            rd_offset: Word::MAX,
+            rd_length: 0,
+            ..Default::default()
+        };
+
+        TEST_CALL_OPCODES
+            .iter()
+            .for_each(|opcode| test_ok(caller(opcode, stack, true), callee(bytecode! {})));
+    }
+
     #[derive(Clone, Copy, Debug, Default)]
     struct Stack {
         gas: u64,
         value: Word,
-        cd_offset: u64,
+        cd_offset: Word,
         cd_length: u64,
-        rd_offset: u64,
+        rd_offset: Word,
         rd_length: u64,
     }
 
@@ -765,9 +784,9 @@ mod test {
         // Call twice for testing both cold and warm access
         let mut bytecode = bytecode! {
             PUSH32(Word::from(stack.rd_length))
-            PUSH32(Word::from(stack.rd_offset))
+            PUSH32(stack.rd_offset)
             PUSH32(Word::from(stack.cd_length))
-            PUSH32(Word::from(stack.cd_offset))
+            PUSH32(stack.cd_offset)
         };
         if is_call_or_callcode {
             bytecode.push(32, stack.value);
@@ -777,9 +796,9 @@ mod test {
             PUSH32(Word::from(stack.gas))
             .write_op(*opcode)
             PUSH32(Word::from(stack.rd_length))
-            PUSH32(Word::from(stack.rd_offset))
+            PUSH32(stack.rd_offset)
             PUSH32(Word::from(stack.cd_length))
-            PUSH32(Word::from(stack.cd_offset))
+            PUSH32(stack.cd_offset)
         });
         if is_call_or_callcode {
             bytecode.push(32, stack.value);
@@ -807,9 +826,9 @@ mod test {
 
         let mut bytecode = bytecode! {
             PUSH32(Word::from(stack.rd_length))
-            PUSH32(Word::from(stack.rd_offset))
+            PUSH32(stack.rd_offset)
             PUSH32(Word::from(stack.cd_length))
-            PUSH32(Word::from(stack.cd_offset))
+            PUSH32(stack.cd_offset)
         };
         if is_call_or_callcode {
             bytecode.push(32, stack.value);
@@ -891,7 +910,7 @@ mod test {
         .unwrap();
 
         CircuitTestBuilder::new_from_test_ctx(ctx)
-            .params(CircuitsParams {
+            .params(FixedCParams {
                 max_rws: 500,
                 ..Default::default()
             })
@@ -999,7 +1018,7 @@ mod test {
         .unwrap();
 
         CircuitTestBuilder::new_from_test_ctx(ctx)
-            .params(CircuitsParams {
+            .params(FixedCParams {
                 max_rws: 300000,
                 ..Default::default()
             })

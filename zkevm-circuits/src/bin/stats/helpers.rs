@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use bus_mapping::{
-    circuit_input_builder::{self, CircuitsParams, ExecState},
+    circuit_input_builder::{self, ExecState},
     mock::BlockData,
 };
 use cli_table::{
@@ -195,16 +195,8 @@ pub(crate) fn print_circuit_stats_by_states(
             )
             .unwrap()
             .into();
-            let mut builder = BlockData::new_from_geth_data_with_params(
-                block.clone(),
-                CircuitsParams {
-                    max_rws: 16_000,
-                    max_copy_rows: 8_000,
-                    ..CircuitsParams::default()
-                },
-            )
-            .new_circuit_input_builder();
-            builder
+            let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+            let builder = builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
             // Find the step that executed our opcode by filtering on second call (because
@@ -213,7 +205,7 @@ pub(crate) fn print_circuit_stats_by_states(
                 .steps()
                 .iter()
                 .enumerate()
-                .find(|(_, s)| s.call_index == 1 && s.pc.0 == opcode_pc)
+                .find(|(_, s)| s.call_index == 1 && s.pc == (opcode_pc as u64))
                 .unwrap();
             assert_eq!(ExecState::Op(opcode), step.exec_state);
             let height = fn_height(&builder.block, state, step_index);
@@ -222,7 +214,7 @@ pub(crate) fn print_circuit_stats_by_states(
             // in the geth trace.
             let geth_step = &block.geth_traces[0].struct_logs[step_index - 1];
             assert_eq!(opcode, geth_step.op);
-            let gas_cost = geth_step.gas_cost.0;
+            let gas_cost = geth_step.gas_cost;
             rows.push(Row {
                 state,
                 opcode,

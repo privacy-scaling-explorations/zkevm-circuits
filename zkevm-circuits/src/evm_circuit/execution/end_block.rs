@@ -148,7 +148,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let max_txs_assigned = self.max_txs.assign(region, offset, Value::known(max_txs))?;
         // When rw_indices is not empty, we're at the last row (at a fixed offset),
         // where we need to access the max_rws and max_txs constant.
-        if !step.rw_indices_len() == 0 {
+        if step.rw_indices_len() != 0 {
             region.constrain_constant(max_rws_assigned, max_rws)?;
             region.constrain_constant(max_txs_assigned, max_txs)?;
         }

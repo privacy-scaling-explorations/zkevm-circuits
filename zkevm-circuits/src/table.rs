@@ -11,7 +11,7 @@ use crate::{
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep};
 use core::iter::once;
-use eth_types::{Field, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{Field, Keccak, ToLittleEndian, ToScalar, Word, U256};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     util::{split_u256, split_u256_limb64},
@@ -22,7 +22,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use keccak256::plain::Keccak;
 use std::array;
 use strum_macros::{EnumCount, EnumIter};
 

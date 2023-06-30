@@ -24,7 +24,6 @@ rand_xorshift = "0.3"
 rand = "0.8"
 itertools = "0.10.3"
 lazy_static = "1.4"
-keccak256 = { path = "../keccak256"}
 log = "0.4"
 env_logger = "0.9"
 ecdsa = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_04_20" }
@@ -34,7 +33,7 @@ integer =   { git = "https://github.com/privacy-scaling-explorations/halo2wrong"
 libsecp256k1 = "0.7"
 num-bigint = { version = "0.4" }
 rand_chacha = "0.3"
-snark-verifier = { git = "https://github.com/privacy-scaling-explorations/snark-verifier", tag = "v2023_04_20", default-features = false, features = ["loader_halo2", "system_halo2"] }
+snark-verifier = { git = "https://github.com/privacy-scaling-explorations/snark-verifier", tag = "v2023_04_20", default-features = false, features = ["loader_halo2", "system_halo2", "loader_evm"] }
 cli-table = { version = "0.4", optional = true }
 
 [dev-dependencies]

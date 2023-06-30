@@ -212,8 +212,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         self.insufficient_gas.assign_value(
             region,
             offset,
-            Value::known(F::from(step.gas_left.into())),
-            Value::known(F::from(constant_gas_cost.0 + memory_copier_gas)),
+            Value::known(F::from(step.gas_left)),
+            Value::known(F::from(constant_gas_cost + memory_copier_gas)),
         )?;
         self.is_extcodecopy.assign(
             region,
@@ -301,8 +301,8 @@ mod tests {
 
             let memory_word_size = (dst_offset + copy_size + 31) / 32;
 
-            let gas_cost = OpcodeId::PUSH32.constant_gas_cost().0 * 3
-                + opcode.constant_gas_cost().0
+            let gas_cost = OpcodeId::PUSH32.constant_gas_cost() * 3
+                + opcode.constant_gas_cost()
                 + memory_copier_gas_cost(0, memory_word_size, copy_size);
 
             Self { bytecode, gas_cost }
@@ -321,8 +321,8 @@ mod tests {
 
             let memory_word_size = (dst_offset + copy_size + 31) / 32;
 
-            let mut gas_cost = OpcodeId::PUSH32.constant_gas_cost().0 * 4
-                + GasCost::COLD_ACCOUNT_ACCESS.0
+            let mut gas_cost = OpcodeId::PUSH32.constant_gas_cost() * 4
+                + GasCost::COLD_ACCOUNT_ACCESS
                 + memory_copier_gas_cost(0, memory_word_size, copy_size);
 
             if is_warm {
@@ -334,8 +334,8 @@ mod tests {
                     EXTCODECOPY
                 });
 
-                gas_cost += OpcodeId::PUSH32.constant_gas_cost().0 * 4
-                    + GasCost::WARM_ACCESS.0
+                gas_cost += OpcodeId::PUSH32.constant_gas_cost() * 4
+                    + GasCost::WARM_ACCESS
                     + memory_copier_gas_cost(memory_word_size, memory_word_size, copy_size);
             }
 
@@ -352,7 +352,7 @@ mod tests {
                 txs[0]
                     .from(accs[1].address)
                     .to(accs[0].address)
-                    .gas((GasCost::TX.0 + testing_data.gas_cost - 1).into());
+                    .gas((GasCost::TX + testing_data.gas_cost - 1).into());
             },
             |block, _tx| block.number(0xcafe_u64),
         )

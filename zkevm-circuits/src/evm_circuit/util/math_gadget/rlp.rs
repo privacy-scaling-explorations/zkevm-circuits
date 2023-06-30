@@ -46,10 +46,15 @@ impl<F: Field> RlpU64Gadget<F> {
                 .map(|(byte, indicator)| byte.expr() * indicator.expr()),
         );
         let most_significant_byte_is_zero = IsZeroGadget::construct(cb, most_significant_byte);
+        let is_lt_128 = cb.query_bool();
 
         let value = expr_from_bytes(&value_rlc.cells);
         cb.condition(most_significant_byte_is_zero.expr(), |cb| {
             cb.require_zero("if most significant byte is 0, value is 0", value.clone());
+            cb.require_zero(
+                "if most significant byte is 0, value is less than 128",
+                1.expr() - is_lt_128.expr(),
+            );
         });
 
         for (i, is_most_significant) in is_most_significant_byte.iter().enumerate() {
@@ -67,10 +72,18 @@ impl<F: Field> RlpU64Gadget<F> {
             });
         }
 
-        let is_lt_128 = cb.query_bool();
-        cb.condition(is_lt_128.expr(), |cb| {
-            cb.range_lookup(value, 128);
-        });
+        // If is_lt_128, then value < 128, checked by a lookup.
+
+        // Otherwise, then value >= 128, checked as follows:
+        // - Either the first byte is not the most significant, and there is a more significant one;
+        // - Or the first byte is the most significant, and it is >= 128. value ∈ [128, 256) (value
+        //   - 128) ∈ [0, 128)
+        let byte_128 = value_rlc.cells[0].expr() - 128.expr();
+        let is_first = is_most_significant_byte[0].expr();
+        let byte_128_or_zero = byte_128 * is_first;
+
+        let value_lt_128 = select::expr(is_lt_128.expr(), value, byte_128_or_zero);
+        cb.range_lookup(value_lt_128, 128);
 
         Self {
             value_rlc,
@@ -194,7 +207,7 @@ pub struct ContractCreateGadget<F, const IS_CREATE2: bool> {
     /// appropriate RLC wherever needed.
     code_hash: [Cell<F>; N_BYTES_WORD],
     /// Random salt for CREATE2.
-    salt: RandomLinearCombination<F, N_BYTES_WORD>,
+    salt: [Cell<F>; N_BYTES_WORD],
 }
 
 impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
@@ -203,7 +216,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
         let caller_address = cb.query_keccak_rlc();
         let nonce = RlpU64Gadget::construct(cb);
         let code_hash = array_init::array_init(|_| cb.query_byte());
-        let salt = cb.query_keccak_rlc();
+        let salt = array_init::array_init(|_| cb.query_byte());
 
         Self {
             caller_address,
@@ -230,15 +243,17 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
 
         self.nonce.assign(region, offset, caller_nonce)?;
 
-        self.salt.assign(
-            region,
-            offset,
-            Some(salt.map(|v| v.to_le_bytes()).unwrap_or_default()),
-        )?;
         for (c, v) in self
             .code_hash
             .iter()
             .zip(code_hash.map(|v| v.to_le_bytes()).unwrap_or_default())
+        {
+            c.assign(region, offset, Value::known(F::from(v as u64)))?;
+        }
+        for (c, v) in self
+            .salt
+            .iter()
+            .zip(salt.map(|v| v.to_le_bytes()).unwrap_or_default())
         {
             c.assign(region, offset, Value::known(F::from(v as u64)))?;
         }
@@ -280,9 +295,28 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
         )
     }
 
+    /// Salt EVM word RLC.
+    pub(crate) fn salt_word_rlc(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
+        cb.word_rlc::<N_BYTES_WORD>(
+            self.salt
+                .iter()
+                .map(Expr::expr)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        )
+    }
+
     /// Salt keccak RLC.
-    pub(crate) fn salt_keccak_rlc(&self) -> Expression<F> {
-        self.salt.expr()
+    pub(crate) fn salt_keccak_rlc(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
+        cb.keccak_rlc::<N_BYTES_WORD>(
+            self.salt
+                .iter()
+                .map(Expr::expr)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        )
     }
 
     /// Caller address' RLC value.
@@ -326,7 +360,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
             let challenge_power_84 = challenge_power_64.clone() * challenge_power_20;
             (0xff.expr() * challenge_power_84)
                 + (self.caller_address_rlc() * challenge_power_64)
-                + (self.salt_keccak_rlc() * challenge_power_32)
+                + (self.salt_keccak_rlc(cb) * challenge_power_32)
                 + self.code_hash_keccak_rlc(cb)
         } else {
             // RLC(RLP([caller_address, caller_nonce]))

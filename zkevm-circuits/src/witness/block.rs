@@ -7,7 +7,7 @@ use crate::{
     util::{log2_ceil, SubCircuit},
 };
 use bus_mapping::{
-    circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
+    circuit_input_builder::{self, CopyEvent, ExpEvent, FixedCParams},
     Error,
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
@@ -42,7 +42,7 @@ pub struct Block<F> {
     /// Pad exponentiation circuit to make selectors fixed.
     pub exp_circuit_pad_to: usize,
     /// Circuit Setup Parameters
-    pub circuits_params: CircuitsParams,
+    pub circuits_params: FixedCParams,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
     /// State root of the previous block
@@ -54,6 +54,20 @@ pub struct Block<F> {
 }
 
 impl<F: Field> Block<F> {
+    /// For each tx, for each step, print the rwc at the beginning of the step,
+    /// and all the rw operations of the step.
+    pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
+        for (tx_idx, tx) in self.txs.iter().enumerate() {
+            println!("tx {}", tx_idx);
+            for step in &tx.steps {
+                println!(" step {:?} rwc: {}", step.exec_state, step.rwc.0);
+                for rw_idx in 0..step.bus_mapping_instance.len() {
+                    println!("  - {:?}", self.get_rws(step, rw_idx));
+                }
+            }
+        }
+    }
+
     /// Get a read-write record
     pub(crate) fn get_rws(&self, step: &ExecStep, index: usize) -> Rw {
         self.rws[step.rw_index(index)]
@@ -217,9 +231,10 @@ impl From<&circuit_input_builder::Block> for BlockContext {
 
 /// Convert a block struct in bus-mapping to a witness block used in circuits
 pub fn block_convert<F: Field>(
-    block: &circuit_input_builder::Block,
-    code_db: &bus_mapping::state_db::CodeDB,
+    builder: &circuit_input_builder::CircuitInputBuilder<FixedCParams>,
 ) -> Result<Block<F>, Error> {
+    let block = &builder.block;
+    let code_db = &builder.code_db;
     let rws = RwMap::from(&block.container);
     rws.check_value();
     Ok(Block {
@@ -246,7 +261,7 @@ pub fn block_convert<F: Field>(
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
-        circuits_params: block.circuits_params,
+        circuits_params: builder.circuits_params,
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,

@@ -25,7 +25,7 @@ pub use external_tracer::LoggerConfig;
 ///
 /// ## Example
 /// ```rust
-/// use eth_types::evm_types::{stack::Stack, Gas, OpcodeId};
+/// use eth_types::evm_types::{stack::Stack, OpcodeId};
 /// use eth_types::{address, bytecode, geth_types::GethData, word, Bytecode, ToWord, Word};
 /// use lazy_static::lazy_static;
 /// use mock::test_ctx::{helpers::*, TestContext};
@@ -65,8 +65,7 @@ pub use external_tracer::LoggerConfig;
 ///         txs[0].to(accs[0].address).from(accs[2].address);
 ///         txs[1]
 ///             .to(accs[1].address)
-///             .from(accs[2].address)
-///             .nonce(1);
+///             .from(accs[2].address);
 ///     },
 ///     |block, _tx| block.number(0xcafeu64),
 /// )
@@ -76,7 +75,7 @@ pub use external_tracer::LoggerConfig;
 /// // Now we can start generating the traces and items we need to inspect
 /// // the behaviour of the generated env.
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TestContext<const NACC: usize, const NTX: usize> {
     /// chain id
     pub chain_id: Word,
@@ -132,22 +131,26 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             .expect("Mismatched acc len");
 
         let mut transactions = vec![MockTransaction::default(); NTX];
-        // By default, set the TxIndex and the Nonce values of the multiple transactions
-        // of the context correlative so that any Ok test passes by default.
-        // If the user decides to override these values, they'll then be set to whatever
-        // inputs were provided by the user.
-        transactions
-            .iter_mut()
-            .enumerate()
-            .skip(1)
-            .for_each(|(idx, tx)| {
-                let idx = u64::try_from(idx).expect("Unexpected idx conversion error");
-                tx.transaction_idx(idx).nonce(idx);
-            });
         let tx_refs = transactions.iter_mut().collect();
 
         // Build Tx modifiers.
         func_tx(tx_refs, accounts.clone());
+
+        // Sets the transaction_idx and nonce after building the tx modifiers. Hence, if user has
+        // overridden these values above using the tx modifiers, that will be ignored.
+        let mut acc_tx_count = vec![0u64; NACC];
+        transactions.iter_mut().enumerate().for_each(|(idx, tx)| {
+            let idx = u64::try_from(idx).expect("Unexpected idx conversion error");
+            tx.transaction_idx(idx);
+            if let Some((pos, from_acc)) = accounts
+                .iter()
+                .find_position(|acc| acc.address == tx.from.address())
+            {
+                tx.nonce(from_acc.nonce + acc_tx_count[pos]);
+                acc_tx_count[pos] += 1;
+            }
+        });
+
         let transactions: Vec<MockTransaction> =
             transactions.iter_mut().map(|tx| tx.build()).collect();
 
@@ -288,5 +291,50 @@ pub mod helpers {
     /// first one.
     pub fn tx_from_1_to_0(mut txs: Vec<&mut MockTransaction>, accs: [MockAccount; 2]) {
         txs[0].from(accs[1].address).to(accs[0].address);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use eth_types::{address, U256, U64};
+
+    use super::{eth, TestContext};
+
+    #[test]
+    fn test_nonce() {
+        let block = TestContext::<2, 5>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .balance(eth(10));
+                accs[1]
+                    .address(address!("0x000000000000000000000000000000000cafe001"))
+                    .balance(eth(10))
+                    .nonce(100);
+            },
+            |mut txs, accs| {
+                txs[0].from(accs[0].address);
+                txs[1].from(accs[0].address);
+                txs[2].from(accs[1].address);
+                txs[3].from(accs[1].address);
+                txs[4].from(accs[1].address).nonce(12345); // set nonce here is ignored
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        // account 0 starts with nonce default 0
+        assert_eq!(block.eth_block.transactions[0].nonce, U256::from(0));
+        assert_eq!(block.eth_block.transactions[1].nonce, U256::from(1));
+
+        // account 1 starts with nonce specified 100
+        assert_eq!(block.eth_block.transactions[2].nonce, U256::from(100));
+        assert_eq!(block.eth_block.transactions[3].nonce, U256::from(101));
+        assert_eq!(block.eth_block.transactions[4].nonce, U256::from(102)); // 12345 is ignored
+
+        // nonce in accounts is the nonce before the block processing
+        assert_eq!(block.accounts[0].nonce, U64::from(0));
+        assert_eq!(block.accounts[1].nonce, U64::from(100));
     }
 }

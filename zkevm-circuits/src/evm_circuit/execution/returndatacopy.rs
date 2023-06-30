@@ -268,16 +268,16 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use bus_mapping::circuit_input_builder::CircuitsParams;
+    use bus_mapping::circuit_input_builder::FixedCParams;
     use eth_types::{bytecode, Word};
     use mock::{generate_mock_call_bytecode, test_ctx::TestContext, MockCallBytecodeParams};
 
     fn test_ok_internal(
         return_data_offset: usize,
         return_data_size: usize,
-        dest_offset: usize,
-        offset: usize,
         size: usize,
+        offset: usize,
+        dest_offset: Word,
     ) {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
@@ -321,7 +321,7 @@ mod test {
         .unwrap();
 
         CircuitTestBuilder::new_from_test_ctx(ctx)
-            .params(CircuitsParams {
+            .params(FixedCParams {
                 max_rws: 2048,
                 ..Default::default()
             })
@@ -330,38 +330,43 @@ mod test {
 
     #[test]
     fn returndatacopy_gadget_do_nothing() {
-        test_ok_internal(0x00, 0x02, 0x10, 0x00, 0x00);
+        test_ok_internal(0, 2, 0, 0, 0x10.into());
     }
 
     #[test]
     fn returndatacopy_gadget_simple() {
-        test_ok_internal(0x00, 0x02, 0x10, 0x00, 0x02);
+        test_ok_internal(0, 2, 2, 0, 0x10.into());
     }
 
     #[test]
     fn returndatacopy_gadget_large() {
-        test_ok_internal(0x00, 0x20, 0x20, 0x00, 0x20);
+        test_ok_internal(0, 0x20, 0x20, 0, 0x20.into());
     }
 
     #[test]
     fn returndatacopy_gadget_large_partial() {
-        test_ok_internal(0x00, 0x20, 0x20, 0x10, 0x10);
+        test_ok_internal(0, 0x20, 0x10, 0x10, 0x20.into());
     }
 
     #[test]
     fn returndatacopy_gadget_zero_length() {
-        test_ok_internal(0x00, 0x00, 0x20, 0x00, 0x00);
+        test_ok_internal(0, 0, 0, 0, 0x20.into());
     }
 
     #[test]
     fn returndatacopy_gadget_long_length() {
         // rlc value matters only if length > 255, i.e., size.cells.len() > 1
-        test_ok_internal(0x00, 0x200, 0x20, 0x00, 0x150);
+        test_ok_internal(0, 0x200, 0x150, 0, 0x20.into());
     }
 
     #[test]
     fn returndatacopy_gadget_big_offset() {
         // rlc value matters only if length > 255, i.e., size.cells.len() > 1
-        test_ok_internal(0x200, 0x200, 0x200, 0x00, 0x150);
+        test_ok_internal(0x200, 0x200, 0x150, 0, 0x200.into());
+    }
+
+    #[test]
+    fn returndatacopy_gadget_overflow_offset_and_zero_length() {
+        test_ok_internal(0, 0x20, 0, 0x20, Word::MAX);
     }
 }

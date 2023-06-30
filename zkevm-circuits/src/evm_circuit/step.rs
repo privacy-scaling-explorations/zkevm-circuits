@@ -1,15 +1,20 @@
-use super::util::{CachedRegion, CellManager, CellType};
+use super::{
+    param::MAX_STEP_HEIGHT,
+    util::{evm_cm_distribute_advice, CachedRegion},
+};
 use crate::{
     evm_circuit::{
-        param::{EXECUTION_STATE_HEIGHT_MAP, MAX_STEP_HEIGHT, STEP_STATE_HEIGHT, STEP_WIDTH},
-        util::Cell,
+        param::{EXECUTION_STATE_HEIGHT_MAP, STEP_WIDTH},
         witness::{Block, Call, ExecStep},
     },
-    util::Expr,
+    util::{
+        cell_manager::{CMFixedWidthStrategy, Cell, CellManager, CellType},
+        Expr,
+    },
 };
 use bus_mapping::{
     circuit_input_builder::ExecState,
-    error::{ExecError, OogError},
+    error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
     evm::OpcodeId,
 };
 use eth_types::{evm_unimplemented, Field, ToWord};
@@ -131,9 +136,23 @@ impl From<&ExecError> for ExecutionState {
             ExecError::InvalidOpcode => ExecutionState::ErrorInvalidOpcode,
             ExecError::StackOverflow | ExecError::StackUnderflow => ExecutionState::ErrorStack,
             ExecError::WriteProtection => ExecutionState::ErrorWriteProtection,
-            ExecError::Depth => ExecutionState::ErrorDepth,
-            ExecError::InsufficientBalance => ExecutionState::ErrorInsufficientBalance,
-            ExecError::ContractAddressCollision => ExecutionState::ErrorContractAddressCollision,
+            ExecError::Depth(depth_error) => match depth_error {
+                DepthError::Call => ExecutionState::CALL_OP,
+                DepthError::Create => ExecutionState::CREATE,
+                DepthError::Create2 => ExecutionState::CREATE2,
+            },
+            ExecError::InsufficientBalance(insufficient_balance_err) => {
+                match insufficient_balance_err {
+                    InsufficientBalanceError::Call => ExecutionState::CALL_OP,
+                    InsufficientBalanceError::Create => ExecutionState::CREATE,
+                    InsufficientBalanceError::Create2 => ExecutionState::CREATE2,
+                }
+            }
+            ExecError::NonceUintOverflow(nonce_overflow_err) => match nonce_overflow_err {
+                NonceUintOverflowError::Create => ExecutionState::CREATE,
+                NonceUintOverflowError::Create2 => ExecutionState::CREATE2,
+            },
+            ExecError::ContractAddressCollision => ExecutionState::CREATE2,
             ExecError::InvalidCreationCode => ExecutionState::ErrorInvalidCreationCode,
             ExecError::InvalidJump => ExecutionState::ErrorInvalidJump,
             ExecError::ReturnDataOutOfBounds => ExecutionState::ErrorReturnDataOutOfBound,
@@ -250,9 +269,9 @@ impl From<&ExecStep> for ExecutionState {
                     OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN_REVERT,
                     OpcodeId::RETURNDATASIZE => ExecutionState::RETURNDATASIZE,
                     OpcodeId::RETURNDATACOPY => ExecutionState::RETURNDATACOPY,
+                    OpcodeId::CREATE => ExecutionState::CREATE,
+                    OpcodeId::CREATE2 => ExecutionState::CREATE2,
                     // dummy ops
-                    OpcodeId::CREATE => dummy!(ExecutionState::CREATE),
-                    OpcodeId::CREATE2 => dummy!(ExecutionState::CREATE2),
                     OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
@@ -523,9 +542,13 @@ pub(crate) struct DynamicSelectorHalf<F> {
 }
 
 impl<F: Field> DynamicSelectorHalf<F> {
-    pub(crate) fn new(cell_manager: &mut CellManager<F>, count: usize) -> Self {
-        let target_pairs = cell_manager.query_cells(CellType::StoragePhase1, (count + 1) / 2);
-        let target_odd = cell_manager.query_cell(CellType::StoragePhase1);
+    pub(crate) fn new(
+        meta: &mut ConstraintSystem<F>,
+        cell_manager: &mut CellManager<CMFixedWidthStrategy>,
+        count: usize,
+    ) -> Self {
+        let target_pairs = cell_manager.query_cells(meta, CellType::StoragePhase1, (count + 1) / 2);
+        let target_odd = cell_manager.query_cell(meta, CellType::StoragePhase1);
         Self {
             count,
             target_pairs,
@@ -641,7 +664,7 @@ pub(crate) struct StepState<F> {
 #[derive(Clone, Debug)]
 pub(crate) struct Step<F> {
     pub(crate) state: StepState<F>,
-    pub(crate) cell_manager: CellManager<F>,
+    pub(crate) cell_manager: CellManager<CMFixedWidthStrategy>,
 }
 
 impl<F: Field> Step<F> {
@@ -649,31 +672,31 @@ impl<F: Field> Step<F> {
         meta: &mut ConstraintSystem<F>,
         advices: [Column<Advice>; STEP_WIDTH],
         offset: usize,
-        is_next: bool,
     ) -> Self {
-        let height = if is_next {
-            STEP_STATE_HEIGHT // Query only the state of the next step.
-        } else {
-            MAX_STEP_HEIGHT // Query the entire current step.
-        };
-        let mut cell_manager = CellManager::new(meta, height, &advices, offset);
+        let cell_manager_strategy =
+            CMFixedWidthStrategy::new(evm_cm_distribute_advice::<F>(meta, &advices), offset)
+                .with_perm_substitution()
+                .with_max_height(MAX_STEP_HEIGHT);
+
+        let mut cell_manager = CellManager::new(cell_manager_strategy);
         let state = {
             StepState {
                 execution_state: DynamicSelectorHalf::new(
+                    meta,
                     &mut cell_manager,
                     ExecutionState::amount(),
                 ),
-                rw_counter: cell_manager.query_cell(CellType::StoragePhase1),
-                call_id: cell_manager.query_cell(CellType::StoragePhase1),
-                is_root: cell_manager.query_cell(CellType::StoragePhase1),
-                is_create: cell_manager.query_cell(CellType::StoragePhase1),
-                code_hash: cell_manager.query_cell(CellType::StoragePhase2),
-                program_counter: cell_manager.query_cell(CellType::StoragePhase1),
-                stack_pointer: cell_manager.query_cell(CellType::StoragePhase1),
-                gas_left: cell_manager.query_cell(CellType::StoragePhase1),
-                memory_word_size: cell_manager.query_cell(CellType::StoragePhase1),
-                reversible_write_counter: cell_manager.query_cell(CellType::StoragePhase1),
-                log_id: cell_manager.query_cell(CellType::StoragePhase1),
+                rw_counter: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                call_id: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                is_root: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                is_create: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                code_hash: cell_manager.query_cell(meta, CellType::StoragePhase2),
+                program_counter: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                stack_pointer: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                gas_left: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                memory_word_size: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                reversible_write_counter: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                log_id: cell_manager.query_cell(meta, CellType::StoragePhase1),
             }
         };
         Self {
@@ -719,11 +742,9 @@ impl<F: Field> Step<F> {
         self.state
             .code_hash
             .assign(region, offset, region.word_rlc(call.code_hash.to_word()))?;
-        self.state.program_counter.assign(
-            region,
-            offset,
-            Value::known(F::from(step.program_counter())),
-        )?;
+        self.state
+            .program_counter
+            .assign(region, offset, Value::known(F::from(step.pc)))?;
         self.state.stack_pointer.assign(
             region,
             offset,
@@ -731,7 +752,7 @@ impl<F: Field> Step<F> {
         )?;
         self.state
             .gas_left
-            .assign(region, offset, Value::known(F::from(step.gas_left.0)))?;
+            .assign(region, offset, Value::known(F::from(step.gas_left)))?;
         self.state.memory_word_size.assign(
             region,
             offset,

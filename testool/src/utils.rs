@@ -125,10 +125,10 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
     ]);
     for step in trace.struct_logs {
         table.add_row(row![
-            format!("{}", step.pc.0),
+            format!("{}", step.pc),
             format!("{:?}", step.op),
-            format!("{}", step.gas.0),
-            format!("{}", step.gas_cost.0),
+            format!("{}", step.gas),
+            format!("{}", step.gas_cost),
             format!("{}", step.depth),
             step.error.unwrap_or_default(),
             split(step.stack.0.iter().map(u256_to_str).collect(), 30),

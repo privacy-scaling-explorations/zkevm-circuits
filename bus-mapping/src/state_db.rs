@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 
 lazy_static! {
     static ref ACCOUNT_ZERO: Account = Account::zero();
+    /// Hash value for empty code hash.
     static ref EMPTY_CODE_HASH: Hash = CodeDB::hash(&[]);
     /// bytes of empty code hash, in little endian order.
     pub static ref EMPTY_CODE_HASH_LE: [u8; 32] = {
@@ -199,6 +200,12 @@ impl StateDB {
     pub fn get_nonce(&self, addr: &Address) -> u64 {
         let (_, account) = self.get_account(addr);
         account.nonce
+    }
+
+    /// Get balance of account with the given address.
+    pub fn get_balance(&self, addr: &Address) -> Word {
+        let (_, account) = self.get_account(addr);
+        account.balance
     }
 
     /// Increase nonce of account with `addr` and return the previous value.

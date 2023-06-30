@@ -54,7 +54,6 @@
 //!     self, address, Address, Word, Hash, U64, GethExecTrace, GethExecStep, geth_types::GethData, bytecode
 //! };
 //! use mock::test_ctx::{TestContext, helpers::*};
-//! use eth_types::evm_types::Gas;
 //! use bus_mapping::circuit_input_builder::{Block, CircuitInputBuilder};
 //!
 //! let input_trace = r#"
@@ -131,15 +130,15 @@
 //! .into();
 //!
 //! // Here we update the circuit input with the data from the transaction trace.
-//! let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-//! builder
+//! let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+//! let builder = builder
 //!     .handle_block(&block.eth_block, &block.geth_traces)
 //!     .unwrap();
 //!
 //! let geth_steps: Vec<GethExecStep> = serde_json::from_str(input_trace).unwrap();
 //! let geth_trace = GethExecTrace {
 //!     return_value: "".to_string(),
-//!     gas: Gas(block.eth_block.transactions[0].gas.as_u64()),
+//!     gas: block.eth_block.transactions[0].gas.as_u64(),
 //!     failed: false,
 //!     invalid: false,
 //!     struct_logs: geth_steps,
@@ -222,6 +221,7 @@
 //#![deny(unsafe_code)] Allowed now until we find a
 // better way to handle downcasting from Operation into it's variants.
 #![allow(clippy::upper_case_acronyms)] // Too pedantic
+#![feature(type_changing_struct_update)]
 
 extern crate alloc;
 extern crate core;
