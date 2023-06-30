@@ -689,7 +689,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let init_code = get_create_init_code(call_ctx, step)?.to_vec();
         Ok(get_create2_address(
             self.call()?.address,
-            salt.to_be_bytes(),
+            salt.to_be_bytes().to_vec(),
             init_code,
         ))
     }

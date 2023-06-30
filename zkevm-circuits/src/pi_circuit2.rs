@@ -765,7 +765,8 @@ mod pi_circuit_test {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
-        prover.verify()
+        let res = prover.verify();
+        res
     }
 
     #[test]

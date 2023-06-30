@@ -72,7 +72,7 @@ impl From<geth_types::Account> for Account {
             nonce: account.nonce.as_u64(),
             balance: account.balance,
             storage: account.storage.clone(),
-            code_hash: CodeDB::hash(&account.code),
+            code_hash: CodeDB::hash(&account.code.to_vec()),
         }
     }
 }
