@@ -167,6 +167,57 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct StoredExpression<F> {
+    pub(crate) name: String,
+    cell: Cell<F>,
+    cell_type: CellType,
+    expr: Expression<F>,
+    expr_id: String,
+}
+
+impl<F> Hash for StoredExpression<F> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.expr_id.hash(state);
+        self.cell_type.hash(state);
+    }
+}
+
+impl<F: Field> StoredExpression<F> {
+    pub fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+    ) -> Result<Value<F>, Error> {
+        let value = self.expr.evaluate(
+            &|scalar| Value::known(scalar),
+            &|_| unimplemented!("selector column"),
+            &|fixed_query| {
+                Value::known(region.get_fixed(
+                    offset,
+                    fixed_query.column_index(),
+                    fixed_query.rotation(),
+                ))
+            },
+            &|advice_query| {
+                Value::known(region.get_advice(
+                    offset,
+                    advice_query.column_index(),
+                    advice_query.rotation(),
+                ))
+            },
+            &|_| unimplemented!("instance column"),
+            &|challenge| *region.challenges().indexed()[challenge.index()],
+            &|a| -a,
+            &|a, b| a + b,
+            &|a, b| a * b,
+            &|a, scalar| a * Value::known(scalar),
+        );
+        self.cell.assign(region, offset, value)?;
+        Ok(value)
+    }
+}
+
 #[allow(clippy::mut_range_bound)]
 pub(crate) fn evm_cm_distribute_advice<F: Field>(
     meta: &mut ConstraintSystem<F>,
@@ -219,57 +270,6 @@ pub(crate) fn evm_cm_distribute_advice<F: Field>(
     }
 
     dist
-}
-
-#[derive(Debug, Clone)]
-pub struct StoredExpression<F> {
-    pub(crate) name: String,
-    cell: Cell<F>,
-    cell_type: CellType,
-    expr: Expression<F>,
-    expr_id: String,
-}
-
-impl<F> Hash for StoredExpression<F> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.expr_id.hash(state);
-        self.cell_type.hash(state);
-    }
-}
-
-impl<F: Field> StoredExpression<F> {
-    pub fn assign(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-    ) -> Result<Value<F>, Error> {
-        let value = self.expr.evaluate(
-            &|scalar| Value::known(scalar),
-            &|_| unimplemented!("selector column"),
-            &|fixed_query| {
-                Value::known(region.get_fixed(
-                    offset,
-                    fixed_query.column_index(),
-                    fixed_query.rotation(),
-                ))
-            },
-            &|advice_query| {
-                Value::known(region.get_advice(
-                    offset,
-                    advice_query.column_index(),
-                    advice_query.rotation(),
-                ))
-            },
-            &|_| unimplemented!("instance column"),
-            &|challenge| *region.challenges().indexed()[challenge.index()],
-            &|a| -a,
-            &|a, b| a + b,
-            &|a, b| a * b,
-            &|a, scalar| a * Value::known(scalar),
-        );
-        self.cell.assign(region, offset, value)?;
-        Ok(value)
-    }
 }
 
 #[derive(Clone, Debug)]

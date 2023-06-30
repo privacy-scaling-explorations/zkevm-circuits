@@ -38,7 +38,7 @@ fn prover_error() {
     // change any of these values to your needs
     const MOCK_RANDOMNESS: u64 = 0x100;
     let k = 19;
-    let chain_id: U256 = Word::from(99);
+    let chain_id = Word::from(99);
 
     env_logger::Builder::from_env(Env::default().default_filter_or("trace")).init();
     let eth_block = load_json("../block/block.json");

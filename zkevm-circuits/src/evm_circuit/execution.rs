@@ -26,6 +26,7 @@ use crate::{
         Challenges, Expr,
     },
 };
+use bus_mapping::operation::Target;
 use eth_types::{evm_unimplemented, Field};
 use gadgets::util::not;
 use halo2_proofs::{
@@ -1394,6 +1395,15 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
+        // TODO: We should find a better way to avoid this kind of special case.
+        // #1489 is the issue for this refactor.
+        if copy_lookup_count > 1 {
+            log::warn!("The number of copy events is more than 1, it's not supported by current design. Stop checking this step: {:?}",
+                step
+            );
+            return;
+        }
+
         let rlc_assignments: BTreeSet<_> = (0..step.rw_indices_len())
             .map(|index| block.get_rws(step, index))
             .map(|rw| rw.table_assignment().unwrap().rlc(lookup_randomness))
@@ -1420,20 +1430,24 @@ impl<F: Field> ExecutionConfig<F> {
 
         // Check that the number of rw operations generated from the bus-mapping
         // correspond to the number of assigned rw lookups by the EVM Circuit
-        // plus the number of rw lookups done by the copy circuit.
-        if step.rw_indices_len() != assigned_rw_values.len() + step.copy_rw_counter_delta as usize {
+        // plus the number of rw lookups done by the copy circuit
+        // minus the number of copy lookup event.
+        if step.rw_indices_len()
+            != assigned_rw_values.len() + step.copy_rw_counter_delta as usize - copy_lookup_count
+        {
             log::error!(
-                "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} in step: {:?}",
+                "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} - copy_lookup_count: {} in step: {:?}",
                 step.rw_indices_len(),
                 assigned_rw_values.len(),
                 step.copy_rw_counter_delta,
                 copy_lookup_count,
+                step
             );
         }
 
         let mut rev_count = 0;
-        let offset = 0;
-        let copy_lookup_processed = false;
+        let mut offset = 0;
+        let mut copy_lookup_processed = false;
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             let is_rev = if assigned_rw_value.0.contains(" with reversion") {
                 rev_count += 1;
@@ -1456,6 +1470,27 @@ impl<F: Field> ExecutionConfig<F> {
             } else {
                 idx - rev_count + offset - copy_lookup_processed as usize
             };
+
+            // If assigned_rw_value is a `copy lookup` event, the following
+            // `step.copy_rw_counter_delta` rw lookups must be memory operations.
+            if assigned_rw_value.0.starts_with("copy lookup") {
+                for i in 0..step.copy_rw_counter_delta as usize {
+                    let index = idx + i;
+                    let rw = block.get_rws(step, index);
+                    if rw.tag() != Target::Memory {
+                        log::error!(
+                                "incorrect rw memory witness from copy lookup.\n lookup name: \"{}\"\n {}th rw of step {:?}, rw: {:?}",
+                                assigned_rw_value.0,
+                                index,
+                                step.execution_state(),
+                                rw);
+                    }
+                }
+
+                offset = step.copy_rw_counter_delta as usize;
+                copy_lookup_processed = true;
+                continue;
+            }
 
             let rw = block.get_rws(step, idx);
             let table_assignments = rw.table_assignment();

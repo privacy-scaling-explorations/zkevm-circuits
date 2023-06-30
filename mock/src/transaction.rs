@@ -206,8 +206,8 @@ impl MockTransaction {
         self
     }
 
-    /// Set nonce field for the MockTransaction.
-    pub fn nonce(&mut self, nonce: u64) -> &mut Self {
+    /// Set nonce field for the MockTransaction. Overridden in TestContext.
+    pub(crate) fn nonce(&mut self, nonce: u64) -> &mut Self {
         self.nonce = nonce;
         self
     }

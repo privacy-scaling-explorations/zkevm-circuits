@@ -65,8 +65,7 @@ pub use external_tracer::LoggerConfig;
 ///         txs[0].to(accs[0].address).from(accs[2].address);
 ///         txs[1]
 ///             .to(accs[1].address)
-///             .from(accs[2].address)
-///             .nonce(1);
+///             .from(accs[2].address);
 ///     },
 ///     |block, _tx| block.number(0xcafeu64),
 /// )
@@ -132,18 +131,6 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             .expect("Mismatched acc len");
 
         let mut transactions = vec![MockTransaction::default(); NTX];
-        // By default, set the TxIndex and the Nonce values of the multiple transactions
-        // of the context correlative so that any Ok test passes by default.
-        // If the user decides to override these values, they'll then be set to whatever
-        // inputs were provided by the user.
-        transactions
-            .iter_mut()
-            .enumerate()
-            .skip(1)
-            .for_each(|(idx, tx)| {
-                let idx = u64::try_from(idx).expect("Unexpected idx conversion error");
-                tx.transaction_idx(idx).nonce(idx);
-            });
         let tx_refs = transactions.iter_mut().collect();
 
         // Build Tx modifiers.
