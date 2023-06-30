@@ -55,11 +55,6 @@ macro_rules! declare_tests {
             async fn [<serial_test_pi_ $name>]() {
                 run_test! (PI_CIRCUIT_TEST, $block_tag, $root, $real_prover);
             }
-
-            #[tokio::test]
-            async fn [<serial_test_pi_ $name>]() {
-                run_test! (PI_CIRCUIT_TEST, $block_tag, $real_prover);
-            }
         }
     };
 }

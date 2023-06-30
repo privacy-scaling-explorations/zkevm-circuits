@@ -3,7 +3,7 @@
 // as `block` and run via `cargo test -p zkevm-circuits --features test
 // prover_error -- --nocapture --ignored`. Change any circuit parameters like
 // `max_txs` to suit your needs.
-use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+use bus_mapping::mock::BlockData;
 use env_logger::Env;
 use eth_types::{
     geth_types::{Account, GethData},
@@ -38,13 +38,7 @@ fn prover_error() {
     // change any of these values to your needs
     const MOCK_RANDOMNESS: u64 = 0x100;
     let k = 19;
-    let chain_id = Word::from(99);
-    let circuit_params = CircuitsParams {
-        max_txs: 1,
-        max_calldata: 256,
-        max_rws: 16388,
-        ..Default::default()
-    };
+    let chain_id: U256 = Word::from(99);
 
     env_logger::Builder::from_env(Env::default().default_filter_or("trace")).init();
     let eth_block = load_json("../block/block.json");

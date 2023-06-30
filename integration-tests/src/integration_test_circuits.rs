@@ -35,6 +35,9 @@ use zkevm_circuits::{
     exp_circuit::TestExpCircuit,
     keccak_circuit::TestKeccakCircuit,
     pi_circuit::TestPiCircuit,
+    root_circuit::{
+        compile, Config, EvmTranscript, NativeLoader, PoseidonTranscript, RootCircuit, Shplonk,
+    },
     state_circuit::TestStateCircuit,
     super_circuit::SuperCircuit,
     tx_circuit::TestTxCircuit,
@@ -82,6 +85,9 @@ const KECCAK_CIRCUIT_DEGREE: u32 = 16;
 const SUPER_CIRCUIT_DEGREE: u32 = 20;
 const EXP_CIRCUIT_DEGREE: u32 = 16;
 const PI_CIRCUIT_DEGREE: u32 = 17;
+const ROOT_CIRCUIT_SMALL_DEGREE: u32 = 24;
+// Big is for SuperCircuit only
+const ROOT_CIRCUIT_BIG_DEGREE: u32 = 26;
 
 lazy_static! {
     /// Data generation.
@@ -123,15 +129,115 @@ lazy_static! {
 
     /// Integration test for Copy circuit
     pub static ref SUPER_CIRCUIT_TEST: TokioMutex<IntegrationTest<SuperCircuit::<Fr>>> =
-    TokioMutex::new(IntegrationTest::new("Super", SUPER_CIRCUIT_DEGREE));
+    TokioMutex::new(IntegrationTest::new("Super", SUPER_CIRCUIT_DEGREE, ROOT_CIRCUIT_BIG_DEGREE));
 
      /// Integration test for Exp circuit
      pub static ref EXP_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestExpCircuit::<Fr>>> =
-     TokioMutex::new(IntegrationTest::new("Exp", EXP_CIRCUIT_DEGREE));
+     TokioMutex::new(IntegrationTest::new("Exp", EXP_CIRCUIT_DEGREE, ROOT_CIRCUIT_SMALL_DEGREE));
 
      /// Integration test for Pi circuit
      pub static ref PI_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestPiCircuit::<Fr>>> =
-     TokioMutex::new(IntegrationTest::new("Pi", PI_CIRCUIT_DEGREE));
+     TokioMutex::new(IntegrationTest::new("Pi", PI_CIRCUIT_DEGREE, ROOT_CIRCUIT_SMALL_DEGREE));
+}
+
+lazy_static! {
+    /// Cache of real proofs from each block to be reused with the Root circuit tests
+    static ref PROOF_CACHE: TokioMutex<HashMap<String, Vec<u8>>> = TokioMutex::new(HashMap::new());
+}
+
+/// Generate a real proof of a Circuit with Poseidon transcript and Shplonk accumulation scheme.
+/// Verify the proof and return it.  The proof is suitable to be verified by the Root Circuit.
+fn test_actual_circuit<C: Circuit<Fr>>(
+    circuit: C,
+    degree: u32,
+    instance: Vec<Vec<Fr>>,
+    proving_key: ProvingKey<G1Affine>,
+) -> Vec<u8> {
+    let general_params = get_general_params(degree);
+    let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
+
+    let mut transcript = PoseidonTranscript::new(Vec::new());
+
+    // change instace to slice
+    let instance: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
+
+    log::info!("gen circuit proof");
+    create_proof::<KZGCommitmentScheme<Bn256>, ProverSHPLONK<'_, Bn256>, _, _, _, _>(
+        &general_params,
+        &proving_key,
+        &[circuit],
+        &[&instance],
+        RNG.clone(),
+        &mut transcript,
+    )
+    .expect("proof generation should not fail");
+    let proof = transcript.finalize();
+
+    log::info!("verify circuit proof");
+    let verifying_key = proving_key.get_vk();
+    let mut verifier_transcript = PoseidonTranscript::new(proof.as_slice());
+    let strategy = SingleStrategy::new(&general_params);
+
+    verify_proof::<KZGCommitmentScheme<Bn256>, VerifierSHPLONK<'_, Bn256>, _, _, _>(
+        &verifier_params,
+        verifying_key,
+        strategy,
+        &[&instance],
+        &mut verifier_transcript,
+    )
+    .expect("failed to verify circuit");
+
+    proof
+}
+
+/// Generate a real proof of the RootCircuit with Keccak transcript and Shplonk accumulation
+/// scheme.  Verify the proof and return it.  By using the Keccak transcript (via EvmTranscript)
+/// the resulting proof is suitable for verification by the EVM.
+///
+/// NOTE: MockProver Root Circuit with 64 GiB RAM (2023-06-12):
+/// - degree=26 -> OOM
+/// - degree=25 -> OK (peak ~35 GiB)
+fn test_actual_root_circuit<C: Circuit<Fr>>(
+    circuit: C,
+    degree: u32,
+    instance: Vec<Vec<Fr>>,
+    proving_key: ProvingKey<G1Affine>,
+) -> Vec<u8> {
+    let general_params = get_general_params(degree);
+    let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
+
+    let mut transcript = EvmTranscript::<_, NativeLoader, _, _>::new(vec![]);
+
+    // change instace to slice
+    let instance: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
+
+    log::info!("gen root circuit proof");
+    create_proof::<KZGCommitmentScheme<Bn256>, ProverSHPLONK<'_, Bn256>, _, _, _, _>(
+        &general_params,
+        &proving_key,
+        &[circuit],
+        &[&instance],
+        RNG.clone(),
+        &mut transcript,
+    )
+    .expect("proof generation should not fail");
+    let proof = transcript.finalize();
+
+    log::info!("verify root circuit proof");
+    let verifying_key = proving_key.get_vk();
+    let mut verifier_transcript = EvmTranscript::<_, NativeLoader, _, _>::new(proof.as_slice());
+    let strategy = SingleStrategy::new(&general_params);
+
+    verify_proof::<KZGCommitmentScheme<Bn256>, VerifierSHPLONK<'_, Bn256>, _, _, _>(
+        &verifier_params,
+        verifying_key,
+        strategy,
+        &[&instance],
+        &mut verifier_transcript,
+    )
+    .expect("failed to verify circuit");
+
+    proof
 }
 
 /// Generic implementation for integration tests

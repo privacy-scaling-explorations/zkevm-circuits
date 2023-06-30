@@ -1,6 +1,6 @@
 use super::{
     param::MAX_STEP_HEIGHT,
-    util::{evm_cm_distribute_advice, CachedRegion},
+    util::{evm_cm_distribute_advice, CachedRegion, Cell, CellType},
 };
 use crate::{
     evm_circuit::{
@@ -8,6 +8,7 @@ use crate::{
         witness::{Block, Call, ExecStep},
     },
     util::{
+        cell_manager::{CMFixedWidthStrategy, CellManager},
         word::{Word, WordCell},
         Expr,
     },
@@ -690,20 +691,20 @@ impl<F: Field> Step<F> {
                     &mut cell_manager,
                     ExecutionState::amount(),
                 ),
-                rw_counter: cell_manager.query_cell(CellType::StoragePhase1),
-                call_id: cell_manager.query_cell(CellType::StoragePhase1),
-                is_root: cell_manager.query_cell(CellType::StoragePhase1),
-                is_create: cell_manager.query_cell(CellType::StoragePhase1),
+                rw_counter: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                call_id: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                is_root: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                is_create: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 code_hash: Word::new([
-                    cell_manager.query_cell(CellType::StoragePhase1),
-                    cell_manager.query_cell(CellType::StoragePhase1),
+                    cell_manager.query_cell(meta, CellType::StoragePhase1),
+                    cell_manager.query_cell(meta, CellType::StoragePhase1),
                 ]),
-                program_counter: cell_manager.query_cell(CellType::StoragePhase1),
-                stack_pointer: cell_manager.query_cell(CellType::StoragePhase1),
-                gas_left: cell_manager.query_cell(CellType::StoragePhase1),
-                memory_word_size: cell_manager.query_cell(CellType::StoragePhase1),
-                reversible_write_counter: cell_manager.query_cell(CellType::StoragePhase1),
-                log_id: cell_manager.query_cell(CellType::StoragePhase1),
+                program_counter: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                stack_pointer: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                gas_left: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                memory_word_size: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                reversible_write_counter: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                log_id: cell_manager.query_cell(meta, CellType::StoragePhase1),
             }
         };
         Self {

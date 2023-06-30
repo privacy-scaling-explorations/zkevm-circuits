@@ -84,8 +84,6 @@ pub struct Block {
     pub sha3_inputs: Vec<Vec<u8>>,
     /// Exponentiation events in the block.
     pub exp_events: Vec<ExpEvent>,
-    /// Circuits Setup Paramteres
-    pub circuits_params: CircuitsParams,
     /// Original block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
 }

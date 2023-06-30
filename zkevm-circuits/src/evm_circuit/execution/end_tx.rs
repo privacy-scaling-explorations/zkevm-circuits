@@ -297,7 +297,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::test_util::CircuitTestBuilder;
-    use bus_mapping::circuit_input_builder::CircuitsParams;
+    use bus_mapping::circuit_input_builder::FixedCParams;
     use eth_types::{self, bytecode, Word};
     use mock::{
         eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,

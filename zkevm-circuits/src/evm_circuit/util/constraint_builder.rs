@@ -10,7 +10,7 @@ use crate::{
         TxReceiptFieldTag,
     },
     util::{
-        build_tx_log_expression,
+        build_tx_log_expression, query_expression,
         word::{Word, Word16, Word32, Word32Cell, Word4, WordCell, WordExpr, WordLimbs},
         Challenges, Expr,
     },

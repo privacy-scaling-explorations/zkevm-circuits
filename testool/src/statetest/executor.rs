@@ -272,7 +272,7 @@ pub fn run_test(
     } else {
         geth_data.sign(&wallets);
 
-        let circuits_params = CircuitsParams {
+        let circuits_params = FixedCParams {
             max_txs: 1,
             max_calldata: 32,
             max_rws: 256,

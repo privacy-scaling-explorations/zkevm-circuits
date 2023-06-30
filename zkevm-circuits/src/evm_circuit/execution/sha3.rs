@@ -163,9 +163,9 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 #[cfg(test)]
 mod tests {
     use crate::test_util::CircuitTestBuilder;
-    use bus_mapping::{circuit_input_builder::CircuitsParams, evm::Sha3CodeGen};
+    use bus_mapping::circuit_input_builder::FixedCParams;
     use eth_types::{bytecode, U256};
-    use mock::TestContext;
+    use mock::{Sha3CodeGen, TestContext};
 
     fn test_ok(mut gen: Sha3CodeGen) {
         let (code, _) = gen.gen_sha3_code();

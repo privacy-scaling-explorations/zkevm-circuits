@@ -4,7 +4,10 @@ use std::collections::HashMap;
 use crate::{pi_circuit::dev::PiCircuitParams, util::unusable_rows, witness::block_convert};
 
 use super::*;
-use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+use bus_mapping::{
+    circuit_input_builder::{CircuitsParams, FixedCParams},
+    mock::BlockData,
+};
 use eth_types::{bytecode, geth_types::GethData, Word, H160};
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::{
@@ -114,7 +117,7 @@ fn test_1tx_1maxtx() {
     let mut block: GethData = test_ctx.into();
     let mut builder = BlockData::new_from_geth_data_with_params(
         block.clone(),
-        CircuitsParams {
+        FixedCParams {
             max_txs: MAX_TXS,
             max_calldata: MAX_CALLDATA,
             max_rws: 1 << (degree - 1),
@@ -129,7 +132,7 @@ fn test_1tx_1maxtx() {
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
 
-    let block = block_convert(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert(&builder).unwrap();
     // MAX_TXS, MAX_TXS align with `CircuitsParams`
     let circuit = PiCircuit::<Fr>::new_from_block(&block);
     let public_inputs = circuit.instance();

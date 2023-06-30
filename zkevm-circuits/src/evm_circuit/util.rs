@@ -4,13 +4,10 @@ pub use crate::util::{
     Challenges, Expr,
 };
 use crate::{
-    evm_circuit::{
-        param::{
-            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_COPY_COLUMNS, N_PHASE2_COLUMNS, N_U8_LOOKUPS,
-        },
-        table::Table,
+    evm_circuit::param::{
+        LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_COPY_COLUMNS, N_PHASE2_COLUMNS, N_U8_LOOKUPS,
     },
-    util::int_decomposition::IntDecomposition,
+    util::{cell_manager::CMFixedWidthStrategyDistribution, int_decomposition::IntDecomposition},
     witness::{Block, ExecStep, Rw, RwMap},
 };
 use eth_types::{Address, Field, ToLittleEndian, U256};
@@ -32,15 +29,8 @@ pub use gadgets::util::{and, not, or, select, sum};
 
 use super::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_U16_LOOKUPS};
 
-#[derive(Clone, Debug)]
-pub struct Cell<F> {
-    // expression for constraint
-    expression: Expression<F>,
-    column: Column<Advice>,
-    // relative position to selector for synthesis
-    rotation: usize,
-    cell_column_index: usize,
-}
+#[deprecated(note = "Removing this would require to edit almost all gadget")]
+pub(crate) use crate::util::cell_manager::{Cell, CellType};
 
 pub struct CachedRegion<'r, 'b, F: Field> {
     region: &'r mut Region<'b, F>,
@@ -161,12 +151,6 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
         Word::from(n).into_value()
     }
 
-    pub fn code_hash(&self, n: U256) -> Value<F> {
-        self.challenges
-            .evm_word()
-            .map(|r| rlc::value(&n.to_le_bytes(), r))
-    }
-
     /// Constrains a cell to have a constant value.
     ///
     /// Returns an error if the cell is in a column where equality has not been
@@ -183,11 +167,65 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
     }
 }
 
+#[allow(clippy::mut_range_bound)]
+pub(crate) fn evm_cm_distribute_advice<F: Field>(
+    meta: &mut ConstraintSystem<F>,
+    advices: &[Column<Advice>],
+) -> CMFixedWidthStrategyDistribution {
+    let mut dist = CMFixedWidthStrategyDistribution::default();
+
+    let mut column_idx = 0;
+    // Mark columns used for lookups in Phase3
+    for &(table, count) in LOOKUP_CONFIG {
+        for _ in 0usize..count {
+            dist.add(CellType::Lookup(table), advices[column_idx]);
+            column_idx += 1;
+        }
+    }
+
+    // Mark columns used for Phase2 constraints
+    for _ in 0..N_PHASE2_COLUMNS {
+        dist.add(CellType::StoragePhase2, advices[column_idx]);
+        column_idx += 1;
+    }
+
+    // Mark columns used for copy constraints
+    for _ in 0..N_COPY_COLUMNS {
+        meta.enable_equality(advices[column_idx]);
+        dist.add(CellType::StoragePermutation, advices[column_idx]);
+        column_idx += 1;
+    }
+
+    // Mark columns used for byte lookup
+    #[allow(clippy::reversed_empty_ranges)]
+    for _ in 0..N_U8_LOOKUPS {
+        dist.add(CellType::LookupU8, advices[column_idx]);
+        assert_eq!(advices[column_idx].column_type().phase(), 0);
+        column_idx += 1;
+    }
+
+    // Mark columns used for byte lookup
+    #[allow(clippy::reversed_empty_ranges)]
+    for _ in 0..N_U16_LOOKUPS {
+        dist.add(CellType::LookupU16, advices[column_idx]);
+        assert_eq!(advices[column_idx].column_type().phase(), 0);
+        column_idx += 1;
+    }
+
+    // Mark columns used for for Phase1 constraints
+    for _ in column_idx..advices.len() {
+        dist.add(CellType::StoragePhase1, advices[column_idx]);
+        column_idx += 1;
+    }
+
+    dist
+}
+
 #[derive(Debug, Clone)]
 pub struct StoredExpression<F> {
     pub(crate) name: String,
     cell: Cell<F>,
-    cell_type: crate::util::cell_manager::CellType,
+    cell_type: CellType,
     expr: Expression<F>,
     expr_id: String,
 }
@@ -232,86 +270,6 @@ impl<F: Field> StoredExpression<F> {
         self.cell.assign(region, offset, value)?;
         Ok(value)
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum CellType {
-    StoragePhase1,
-    StoragePhase2,
-    StoragePermutation,
-    // TODO combine LookupU8, LookupU16 with Lookup(Table::U8 | Table::U16)
-    LookupU8,
-    LookupU16,
-    Lookup(Table),
-}
-
-    let mut column_idx = 0;
-
-    // Mark columns used for lookups in Phase3
-    for &(table, count) in LOOKUP_CONFIG {
-        for _ in 0usize..count {
-            dist.add(CellType::Lookup(table), advices[column_idx]);
-            column_idx += 1;
-        }
-
-        // Mark columns used for copy constraints
-        for _ in 0..N_COPY_COLUMNS {
-            meta.enable_equality(advices[column_idx]);
-            columns[column_idx].cell_type = CellType::StoragePermutation;
-            column_idx += 1;
-        }
-
-        // Mark columns used for byte lookup
-        #[allow(clippy::reversed_empty_ranges)]
-        for _ in 0..N_U8_LOOKUPS {
-            columns[column_idx].cell_type = CellType::LookupU8;
-            assert_eq!(advices[column_idx].column_type().phase(), 0);
-            column_idx += 1;
-        }
-
-        // Mark columns used for byte lookup
-        #[allow(clippy::reversed_empty_ranges)]
-        for _ in 0..N_U16_LOOKUPS {
-            columns[column_idx].cell_type = CellType::LookupU16;
-            assert_eq!(advices[column_idx].column_type().phase(), 0);
-            column_idx += 1;
-        }
-
-        Self {
-            width,
-            height,
-            cells,
-            columns,
-        }
-    }
-
-    // Mark columns used for Phase2 constraints
-    for _ in 0..N_PHASE2_COLUMNS {
-        dist.add(CellType::StoragePhase2, advices[column_idx]);
-        column_idx += 1;
-    }
-
-    // Mark columns used for copy constraints
-    for _ in 0..N_COPY_COLUMNS {
-        meta.enable_equality(advices[column_idx]);
-        dist.add(CellType::StoragePermutation, advices[column_idx]);
-        column_idx += 1;
-    }
-
-    // Mark columns used for byte lookup
-    for _ in 0..N_BYTE_LOOKUPS {
-        dist.add(CellType::LookupByte, advices[column_idx]);
-        assert_eq!(advices[column_idx].column_type().phase(), 0);
-        column_idx += 1;
-    }
-
-    // Mark columns used for for Phase1 constraints
-    for _ in column_idx..advices.len() {
-        dist.add(CellType::StoragePhase1, advices[column_idx]);
-        column_idx += 1;
-    }
-
-    dist
 }
 
 #[derive(Clone, Debug)]

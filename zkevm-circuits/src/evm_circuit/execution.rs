@@ -5,7 +5,7 @@ use super::{
         N_U8_LOOKUPS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
     step::HasExecutionState,
-    util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
+    util::{instrumentation::Instrument, CachedRegion, StoredExpression},
 };
 use crate::{
     evm_circuit::{
@@ -26,7 +26,6 @@ use crate::{
         Challenges, Expr,
     },
 };
-use bus_mapping::operation::Target;
 use eth_types::{evm_unimplemented, Field};
 use gadgets::util::not;
 use halo2_proofs::{
@@ -836,10 +835,11 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
         for column in cell_manager.columns().iter() {
+            let column_expr = column.expr(meta);
             match column.cell_type {
                 CellType::LookupU8 => {
                     meta.lookup_any("u8 lookup", |meta| {
-                        vec![column.expr()]
+                        vec![column_expr]
                             .into_iter()
                             .zip(u8_table.table_exprs(meta).into_iter())
                             .map(|(expr, table)| (expr, table))
@@ -848,7 +848,7 @@ impl<F: Field> ExecutionConfig<F> {
                 }
                 CellType::LookupU16 => {
                     meta.lookup_any("u16 lookup", |meta| {
-                        vec![column.expr()]
+                        vec![column_expr]
                             .into_iter()
                             .zip(u16_table.table_exprs(meta).into_iter())
                             .map(|(expr, table)| (expr, table))
@@ -1428,13 +1428,12 @@ impl<F: Field> ExecutionConfig<F> {
                 assigned_rw_values.len(),
                 step.copy_rw_counter_delta,
                 copy_lookup_count,
-                step
             );
         }
 
         let mut rev_count = 0;
-        let mut offset = 0;
-        let mut copy_lookup_processed = false;
+        let offset = 0;
+        let copy_lookup_processed = false;
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             let is_rev = if assigned_rw_value.0.contains(" with reversion") {
                 rev_count += 1;

@@ -16,6 +16,11 @@ use eth_types::{keccak256, Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
 
+/// Cell Manager
+pub mod cell_manager;
+/// Cell Manager strategies
+pub mod cell_manager_strategy;
+
 /// Steal the expression from gate
 pub fn query_expression<F: Field, T>(
     meta: &mut ConstraintSystem<F>,

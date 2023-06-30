@@ -59,7 +59,7 @@ impl<C: CircuitsParams> BlockData<C> {
             sdb.set_account(addr, state_db::Account::zero());
         }
 
-        for account in geth_data.accounts {
+        for account in &geth_data.accounts {
             code_db.insert(account.code.to_vec());
             sdb.set_account(&account.address, state_db::Account::from(account.clone()));
         }

@@ -259,7 +259,7 @@ pub struct SuperCircuit<F: Field> {
     /// Keccak Circuit
     pub keccak_circuit: KeccakCircuit<F>,
     /// Circuits Parameters
-    pub circuits_params: CircuitsParams,
+    pub circuits_params: FixedCParams,
     /// Mock randomness
     pub mock_randomness: F,
 }
@@ -456,9 +456,10 @@ impl<F: Field> SuperCircuit<F> {
     #[allow(clippy::type_complexity)]
     pub fn build(
         geth_data: GethData,
-        circuits_params: CircuitsParams,
+        circuits_params: FixedCParams,
         mock_randomness: F,
-    ) -> Result<(u32, Self, Vec<Vec<F>>, CircuitInputBuilder), bus_mapping::Error> {
+    ) -> Result<(u32, Self, Vec<Vec<F>>, CircuitInputBuilder<FixedCParams>), bus_mapping::Error>
+    {
         let block_data =
             BlockData::new_from_geth_data_with_params(geth_data.clone(), circuits_params);
         let mut builder = block_data.new_circuit_input_builder();
@@ -476,10 +477,10 @@ impl<F: Field> SuperCircuit<F> {
     /// Also, return with it the minimum required SRS degree for the circuit and
     /// the Public Inputs needed.
     pub fn build_from_circuit_input_builder(
-        builder: &CircuitInputBuilder,
+        builder: &CircuitInputBuilder<FixedCParams>,
         mock_randomness: F,
     ) -> Result<(u32, Self, Vec<Vec<F>>), bus_mapping::Error> {
-        let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let mut block = block_convert(builder).unwrap();
         block.randomness = mock_randomness;
 
         let (_, rows_needed) = Self::min_num_rows_block(&block);
