@@ -101,6 +101,9 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         )
     };
 
+    // Set the gas cost
+    exec_step.gas_cost = gas_cost;
+
     // Get code_hash of callee
     let (_, callee_account) = state.sdb.get_account(&call.address);
     let callee_exists = !callee_account.is_empty();
