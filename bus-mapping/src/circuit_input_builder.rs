@@ -376,7 +376,7 @@ impl CircuitInputBuilder<DynamicCParams> {
             // needed.
             let max_keccak_rows = 0;
             FixedCParams {
-                max_rws: max_rws + 1,
+                max_rws: max_rws + 3,
                 max_txs,
                 max_calldata,
                 max_copy_rows,
