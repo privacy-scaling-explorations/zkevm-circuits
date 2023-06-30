@@ -33,8 +33,8 @@ impl<F: Field> TestAnchorTxCircuit<F> {
 
     /// Modify the sign hash for test
     pub fn sign_hash(&mut self, hash: H256) {
-        self.circuit.anchor_tx.tx_sign_hash = Some(hash);
-        self.circuit.txs[0].tx_sign_hash = Some(hash);
+        self.circuit.anchor_tx.tx_sign_hash = hash;
+        self.circuit.txs[0].tx_sign_hash = hash;
     }
 }
 

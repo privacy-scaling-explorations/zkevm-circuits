@@ -12,22 +12,30 @@
 //!
 //! ### The formula of signature with K = 1
 //!
+//! ```
 //! s = (GX1 * GOLDEN_TOUCH_PRIVATEKEY + msg_hash) (mod N) (K = 1)
+//! ```
 //!
 //! #### Formula deformation
 //!
+//! ```
 //! s = (GX1 * GOLDEN_TOUCH_PRIVATEKEY (mod N) + msg_hash (mod N)) (mod N)
+//! ```
 //!
 //! - Our `GX1_MUL_PRIVATEKEY` is equal to `GX1 * GOLDEN_TOUCH_PRIVATEKEY (mod N)`
 //! - Our `msg_hash` has already been (mod N) in [zkevm-circuit](https://github.com/taikoxyz/zkevm-circuits/blob/839152c04ab3ddd1b8ce32632a407e5e7ef823a8/eth-types/src/geth_types.rs#L236)
 //!
+//! ```rust
 //! let msg_hash = msg_hash.mod_floor(&*SECP256K1_Q);
+//! ```
 //!
 //! ### Summary
 //!
+//! ```
 //! because: 0 < GX1_MUL_PRIVATEKEY + msg_hash < 2N
 //! need prove: (GX1_MUL_PRIVATEKEY + msg_hash) (mod N) == 0
 //! so: GX1_MUL_PRIVATEKEY + msg_hash == N
+//! ```
 
 use crate::{
     evm_circuit::util::{
@@ -428,8 +436,7 @@ impl<F: Field> SignVerifyConfig<F> {
             |ref mut region| {
                 self.q_check.enable(region, 0)?;
 
-                let msg_hash =
-                    U256::from_little_endian(&anchor_tx.tx_sign_hash.unwrap().to_fixed_bytes());
+                let msg_hash = U256::from_little_endian(&anchor_tx.tx_sign_hash.to_fixed_bytes());
                 self.load_mul_add(region, msg_hash)?;
                 let mut offset = 0;
                 for (annotation, tag, do_check_equal_to_gx2, value) in [
