@@ -12,8 +12,8 @@ use crate::{
             },
             is_precompiled,
             math_gadget::{
-                AddWordsGadget, ConstantDivisionGadget, ContractCreateGadget, IsEqualGadget, IsZeroGadget, LtGadget,
-                LtWordGadget, MulWordByU64Gadget,
+                AddWordsGadget, ConstantDivisionGadget, ContractCreateGadget, IsEqualGadget,
+                IsZeroGadget, LtGadget, LtWordGadget, MulWordByU64Gadget,
             },
             not, or, select, CachedRegion, Cell, StepRws, Word,
         },
