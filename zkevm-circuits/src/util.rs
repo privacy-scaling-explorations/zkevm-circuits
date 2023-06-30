@@ -30,14 +30,6 @@ pub(crate) fn random_linear_combine_word<F: Field>(bytes: [u8; 32], randomness: 
     rlc::value(&bytes, randomness)
 }
 
-pub(crate) fn rlc_be_bytes<F: Field>(bytes: &[u8], rand: Value<F>) -> Value<F> {
-    rand.map(|rand| {
-        bytes
-            .iter()
-            .fold(F::ZERO, |acc, byte| acc * rand + F::from(*byte as u64))
-    })
-}
-
 /// All challenges used in `SuperCircuit`.
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Challenges<T = Challenge> {

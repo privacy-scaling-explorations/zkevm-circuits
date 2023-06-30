@@ -28,8 +28,6 @@ use strum_macros::{EnumCount, EnumIter};
 
 /// block table
 pub(crate) mod block_table;
-/// byte table
-pub(crate) mod byte_table;
 /// bytecode table
 pub(crate) mod bytecode_table;
 /// copy Table
@@ -40,8 +38,6 @@ pub(crate) mod exp_table;
 pub(crate) mod keccak_table;
 /// mpt table
 pub(crate) mod mpt_table;
-/// pi table
-pub(crate) mod pi_table;
 /// rw table
 pub(crate) mod rw_table;
 /// tx table
@@ -54,7 +50,6 @@ pub(crate) use exp_table::ExpTable;
 pub(crate) use keccak_table::KeccakTable;
 
 pub(crate) use mpt_table::{MPTProofType, MptTable};
-pub(crate) use pi_table::{PiFieldTag, PiTable};
 pub(crate) use rw_table::RwTable;
 pub(crate) use tx_table::{
     TxContextFieldTag, TxFieldTag, TxLogFieldTag, TxReceiptFieldTag, TxTable,

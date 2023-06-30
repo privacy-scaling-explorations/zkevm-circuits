@@ -3032,9 +3032,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.17.2"
+version = "1.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9670a07f94779e00908f3e686eab508878ebb390ba6e604d3a284c00e8d0487b"
+checksum = "b7e5500299e16ebb147ae15a00a942af264cf3688f47923b8fc2cd5858f23ad3"
 
 [[package]]
 name = "opaque-debug"
@@ -5331,7 +5331,6 @@ dependencies = [
  "mock",
  "num",
  "num-bigint",
- "once_cell",
  "pretty_assertions",
  "rand",
  "rand_chacha",
