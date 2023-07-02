@@ -9,7 +9,7 @@ use std::collections::HashMap;
 // Step dimension
 pub(crate) const STEP_WIDTH: usize = 128;
 /// Step height
-pub const MAX_STEP_HEIGHT: usize = 21;
+pub const MAX_STEP_HEIGHT: usize = 19;
 /// The height of the state of a step, used by gates that connect two
 /// consecutive steps. We target 1, which is also convenient for padding with
 /// EndBlock steps.
