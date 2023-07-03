@@ -12,10 +12,7 @@ use super::{
 };
 use crate::{
     circuit,
-    circuit_tools::{
-        cached_region::{CachedRegion, ChallengeSet},
-        cell_manager::Cell,
-    },
+    circuit_tools::{cached_region::CachedRegion, cell_manager::Cell},
     mpt_circuit::{
         helpers::{key_memory, parent_memory, Indexable, KeyData, ParentData},
         witness_row::ExtensionBranchRowType,
@@ -183,10 +180,9 @@ impl<F: Field> ExtensionBranchConfig<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
-        _challenges: &S,
+        region: &mut CachedRegion<'_, '_, F>,
         mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,

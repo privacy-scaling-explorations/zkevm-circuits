@@ -4,7 +4,8 @@ use crate::{
         cached_region::{CachedRegion, ChallengeSet},
         cell_manager::{Cell, CellManager, CellType},
         constraint_builder::{
-            ConstraintBuilder, RLCChainable, RLCChainableValue, RLCable, RLCableValue,
+            ConstraintBuilder, RLCChainable, RLCChainable2, RLCChainableValue, RLCable,
+            RLCableValue,
         },
         gadgets::{IsEqualGadget, LtGadget},
         memory::MemoryBank,
@@ -44,14 +45,20 @@ impl<F: Field> ChallengeSet<F> for crate::util::Challenges<Value<F>> {
 pub enum MptCellType {
     StoragePhase1,
     StoragePhase2,
+    StoragePhase3,
     StoragePermutation,
     LookupByte,
     Lookup(Table),
-    MemParentS,
-    MemParentC,
-    MemKeyS,
-    MemKeyC,
-    MemMain,
+    MemParentSInput,
+    MemParentSTable,
+    MemParentCInput,
+    MemParentCTable,
+    MemKeySInput,
+    MemKeySTable,
+    MemKeyCInput,
+    MemKeyCTable,
+    MemMainInput,
+    MemMainTable,
 }
 
 impl Default for MptCellType {
@@ -69,6 +76,7 @@ impl CellType for MptCellType {
         match phase {
             0 => MptCellType::StoragePhase1,
             1 => MptCellType::StoragePhase2,
+            2 => MptCellType::StoragePhase3,
             _ => unreachable!(),
         }
     }
@@ -76,6 +84,8 @@ impl CellType for MptCellType {
 
 pub const FIXED: MptCellType = MptCellType::Lookup(Table::Fixed);
 pub const KECCAK: MptCellType = MptCellType::Lookup(Table::Keccak);
+// TODO(Brecht): fix
+pub const MULT: MptCellType = MptCellType::Lookup(Table::Exp);
 
 /// Indexable object
 pub trait Indexable {
@@ -144,9 +154,9 @@ impl<F: Field> LeafKeyGadget<F> {
         })
     }
 
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         bytes: &[u8],
     ) -> Result<LeafKeyWitness, Error> {
@@ -316,9 +326,9 @@ impl<F: Field> ListKeyGadget<F> {
         }
     }
 
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         list_bytes: &[u8],
         key_item: &RLPItemWitness,
@@ -340,6 +350,13 @@ impl<F: Field> ListKeyGadget<F> {
         self.rlp_list
             .rlc_rlp_only(r)
             .rlc_chain(self.key_value.rlc_rlp())
+    }
+
+    pub(crate) fn rlc2(&self, r: &Expression<F>) -> Expression<F> {
+        self.rlp_list
+            .rlc_rlp_only2(r)
+            .0
+            .rlc_chain2(self.key_value.rlc_chain_data())
     }
 }
 
@@ -461,8 +478,8 @@ impl<F: Field> KeyData<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn witness_store<S: ChallengeSet<F>>(
-        _region: &mut CachedRegion<'_, '_, F, S>,
+    pub(crate) fn witness_store(
+        _region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         memory: &mut MemoryBank<F, MptCellType>,
         rlc: F,
@@ -487,9 +504,9 @@ impl<F: Field> KeyData<F> {
         Ok(())
     }
 
-    pub(crate) fn witness_load<S: ChallengeSet<F>>(
+    pub(crate) fn witness_load(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         memory: &MemoryBank<F, MptCellType>,
         load_offset: usize,
@@ -542,7 +559,7 @@ impl<F: Field> ParentData<F> {
         offset: Expression<F>,
     ) -> Self {
         let parent_data = ParentData {
-            rlc: cb.query_cell(),
+            rlc: cb.query_cell_with_type(MptCellType::StoragePhase2),
             is_root: cb.query_cell(),
             is_placeholder: cb.query_cell(),
             drifted_parent_rlc: cb.query_cell(),
@@ -577,8 +594,8 @@ impl<F: Field> ParentData<F> {
         );
     }
 
-    pub(crate) fn witness_store<S: ChallengeSet<F>>(
-        _region: &mut CachedRegion<'_, '_, F, S>,
+    pub(crate) fn witness_store(
+        _region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         memory: &mut MemoryBank<F, MptCellType>,
         rlc: F,
@@ -598,9 +615,9 @@ impl<F: Field> ParentData<F> {
         Ok(())
     }
 
-    pub(crate) fn witness_load<S: ChallengeSet<F>>(
+    pub(crate) fn witness_load(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         memory: &MemoryBank<F, MptCellType>,
         load_offset: usize,
@@ -683,8 +700,8 @@ impl<F: Field> MainData<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn witness_store<S: ChallengeSet<F>>(
-        _region: &mut CachedRegion<'_, '_, F, S>,
+    pub(crate) fn witness_store(
+        _region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         memory: &mut MemoryBank<F, MptCellType>,
         proof_type: usize,
@@ -707,9 +724,9 @@ impl<F: Field> MainData<F> {
         Ok(())
     }
 
-    pub(crate) fn witness_load<S: ChallengeSet<F>>(
+    pub(crate) fn witness_load(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         memory: &MemoryBank<F, MptCellType>,
         load_offset: usize,
@@ -849,22 +866,22 @@ pub(crate) mod num_nibbles {
 
 pub(crate) fn parent_memory(is_s: bool) -> MptCellType {
     if is_s {
-        MptCellType::MemParentS
+        MptCellType::MemParentSInput
     } else {
-        MptCellType::MemParentC
+        MptCellType::MemParentCInput
     }
 }
 
 pub(crate) fn key_memory(is_s: bool) -> MptCellType {
     if is_s {
-        MptCellType::MemKeyS
+        MptCellType::MemKeySInput
     } else {
-        MptCellType::MemKeyC
+        MptCellType::MemKeyCInput
     }
 }
 
 pub(crate) fn main_memory() -> MptCellType {
-    MptCellType::MemMain
+    MptCellType::MemMainInput
 }
 
 /// MPTConstraintBuilder
@@ -872,6 +889,8 @@ pub(crate) fn main_memory() -> MptCellType {
 pub struct MPTConstraintBuilder<F> {
     pub base: ConstraintBuilder<F, MptCellType>,
     pub challenges: Option<Challenges<Expression<F>>>,
+    pub r: Expression<F>,
+    pub keccak_r: Expression<F>,
 }
 
 impl<F: Field> MPTConstraintBuilder<F> {
@@ -879,6 +898,7 @@ impl<F: Field> MPTConstraintBuilder<F> {
         max_degree: usize,
         challenges: Option<Challenges<Expression<F>>>,
         cell_manager: Option<CellManager<F, MptCellType>>,
+        r: Expression<F>,
     ) -> Self {
         MPTConstraintBuilder {
             base: ConstraintBuilder::new(
@@ -886,12 +906,10 @@ impl<F: Field> MPTConstraintBuilder<F> {
                 cell_manager,
                 Some(challenges.clone().unwrap().lookup_input().expr()),
             ),
+            r: r.expr(),
+            keccak_r: challenges.clone().unwrap().keccak_input().expr(),
             challenges,
         }
-    }
-
-    pub(crate) fn set_use_dynamic_lookup(&mut self, use_dynamic_lookup: bool) {
-        self.base.set_use_dynamic_lookup(use_dynamic_lookup);
     }
 
     pub(crate) fn push_condition(&mut self, condition: Expression<F>) {
@@ -932,6 +950,10 @@ impl<F: Field> MPTConstraintBuilder<F> {
             .unwrap()
     }
 
+    pub(crate) fn query_cell_with_type(&mut self, cell_type: MptCellType) -> Cell<F> {
+        self.base.query_cell_with_type(cell_type)
+    }
+
     pub(crate) fn require_equal(
         &mut self,
         name: &'static str,
@@ -959,8 +981,12 @@ impl<F: Field> MPTConstraintBuilder<F> {
         description: &'static str,
         tag: MptCellType,
         values: Vec<Expression<F>>,
+        is_fixed: bool,
+        compress: bool,
+        is_split: bool,
     ) {
-        self.base.add_dynamic_lookup(description, tag, values)
+        self.base
+            .add_dynamic_lookup(description, tag, values, is_fixed, compress, is_split)
     }
 
     pub(crate) fn add_lookup(
@@ -977,8 +1003,11 @@ impl<F: Field> MPTConstraintBuilder<F> {
         description: &'static str,
         tag: MptCellType,
         values: Vec<Expression<F>>,
+        compress: bool,
+        is_split: bool,
     ) {
-        self.base.store_dynamic_table(description, tag, values)
+        self.base
+            .store_dynamic_table(description, tag, values, compress, is_split)
     }
 }
 
@@ -1017,9 +1046,9 @@ impl<F: Field> IsEmptyTreeGadget<F> {
         or::expr(&[self.is_in_empty_trie.expr(), self.is_in_empty_branch.expr()])
     }
 
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         parent_rlc: F,
         r: F,
@@ -1047,6 +1076,7 @@ impl<F: Field> DriftedGadget<F> {
         key_data: &[KeyData<F>],
         expected_key_rlc: &[Expression<F>],
         leaf_no_key_rlc: &[Expression<F>],
+        leaf_no_key_rlc_mult: &[Expression<F>],
         drifted_item: &RLPItemView<F>,
         r: &Expression<F>,
     ) -> Self {
@@ -1087,11 +1117,9 @@ impl<F: Field> DriftedGadget<F> {
                         let num_nibbles = num_nibbles::expr(config.drifted_rlp_key.key_value.len(), is_key_odd.expr());
                         require!(key_num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
 
-                        // Multiplier after list and key
-                        let mult = config.drifted_rlp_key.rlp_list.rlp_mult(r) * drifted_item.mult();
-
                         // Complete the drifted leaf rlc by adding the bytes on the value row
-                        let leaf_rlc = (config.drifted_rlp_key.rlc(r), mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
+                        //let leaf_rlc = (config.drifted_rlp_key.rlc(be_r), mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
+                        let leaf_rlc = config.drifted_rlp_key.rlc2(&cb.keccak_r).rlc_chain2((leaf_no_key_rlc[is_s.idx()].expr(), leaf_no_key_rlc_mult[is_s.idx()].expr()));
                         // The drifted leaf needs to be stored in the branch at `drifted_index`.
                         require!((1, leaf_rlc, config.drifted_rlp_key.rlp_list.num_bytes(), parent_data[is_s.idx()].drifted_parent_rlc.expr()) => @KECCAK);
                     }
@@ -1101,9 +1129,9 @@ impl<F: Field> DriftedGadget<F> {
         })
     }
 
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         parent_data: &[ParentDataWitness<F>],
         drifted_list_bytes: &[u8],
@@ -1171,9 +1199,9 @@ impl<F: Field> WrongGadget<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         is_non_existing: bool,
         key_rlc: &[F],
@@ -1218,6 +1246,8 @@ pub struct MainRLPGadget<F> {
     below_limit: LtGadget<F, 1>,
     num_bytes: Cell<F>,
     len: Cell<F>,
+    mult_inv: Cell<F>,
+    mult_diff_keccak: Cell<F>,
     mult_diff: Cell<F>,
     rlc_content: Cell<F>,
     rlc_rlp: Cell<F>,
@@ -1226,11 +1256,7 @@ pub struct MainRLPGadget<F> {
 }
 
 impl<F: Field> MainRLPGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut MPTConstraintBuilder<F>,
-        r: &Expression<F>,
-        params: MPTCircuitParams,
-    ) -> Self {
+    pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>, params: MPTCircuitParams) -> Self {
         circuit!([meta, cb], {
             let mut config = MainRLPGadget {
                 bytes: cb.query_cells::<RLP_UNIT_NUM_BYTES>().to_vec(),
@@ -1238,9 +1264,11 @@ impl<F: Field> MainRLPGadget<F> {
                 below_limit: LtGadget::default(),
                 num_bytes: cb.query_cell(),
                 len: cb.query_cell(),
-                mult_diff: cb.query_cell(),
+                mult_inv: cb.query_cell(),
+                mult_diff_keccak: cb.query_cell_with_type(MptCellType::StoragePhase2),
+                mult_diff: cb.query_cell(), // TODO: remove
                 rlc_content: cb.query_cell(),
-                rlc_rlp: cb.query_cell(),
+                rlc_rlp: cb.query_cell_with_type(MptCellType::StoragePhase2),
                 tag: cb.query_cell(),
                 max_len: cb.query_cell(),
             };
@@ -1266,10 +1294,13 @@ impl<F: Field> MainRLPGadget<F> {
             // Store RLP properties for easy access
             require!(config.num_bytes => config.rlp.num_bytes());
             require!(config.len => config.rlp.len());
-            require!(config.rlc_content => config.rlp.rlc_content(r));
-            require!(config.rlc_rlp => config.rlp.rlc_rlp(cb, r));
-            let mult_diff = config.mult_diff.expr();
-            require!((FixedTableTag::RMult, config.rlp.num_bytes(), mult_diff) => @FIXED);
+            require!(config.rlc_content => config.rlp.rlc_content(&cb.r));
+            require!(config.rlc_rlp => config.rlp.rlc_rlp2(cb) * config.mult_inv.expr());
+
+            // TODO(Brecht): cleanup inv challenge
+            require!(config.mult_inv.expr() * pow::expr(cb.keccak_r.expr(), HASH_WIDTH + 2) => config.mult_diff_keccak.expr());
+            require!((FixedTableTag::RMult, config.rlp.num_bytes(), config.mult_diff.expr()) => @FIXED);
+            require!((config.rlp.num_bytes(), config.mult_diff_keccak.expr()) => @MULT);
             // `tag` and `max_len` are "free" input that needs to be constrained externally!
 
             // Range/zero checks
@@ -1278,7 +1309,14 @@ impl<F: Field> MainRLPGadget<F> {
             // the byte index >= num_bytes.
             // We enable dynamic lookups because otherwise these lookup would require a lot of extra
             // cells.
-            cb.set_use_dynamic_lookup(true);
+            /*for (idx, byte) in config.bytes.iter().enumerate() {
+                require!(
+                    format!("byte {:?}", byte.identifier()),
+                    vec![config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()]
+                    // is_fixed, compress, is_split
+                    => @FIXED, true, true, false
+                );*/
+            //cb.set_use_dynamic_lookup(true);
             if params.is_two_byte_lookup_enabled() {
                 assert!(config.bytes.len() % 2 == 0);
                 for idx in (0..config.bytes.len()).step_by(2) {
@@ -1287,25 +1325,23 @@ impl<F: Field> MainRLPGadget<F> {
                         config.num_bytes.expr() - idx.expr(),
                         config.bytes[idx],
                         config.bytes[idx + 1]
-                    ) => @FIXED);
+                    ) => @FIXED, true, true, false);
                 }
             } else {
                 for (idx, byte) in config.bytes.iter().enumerate() {
-                    require!((config.tag.expr(), config.num_bytes.expr() - idx.expr(), byte.expr()) => @FIXED);
+                    require!((config.tag.expr(), config.num_bytes.expr() - idx.expr(), byte.expr()) => @FIXED, true, true, false);
                 }
             }
-            cb.set_use_dynamic_lookup(false);
 
             config
         })
     }
 
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         bytes: &[u8],
-        r: F,
         item_type: RlpItemType,
     ) -> Result<RLPItemWitness, Error> {
         // Assign the bytes
@@ -1334,17 +1370,35 @@ impl<F: Field> MainRLPGadget<F> {
             (max_len + 1).scalar(),
         )?;
 
+        // Compute the denominator needed for BE
+        let mult_inv = pow::value(region.keccak_r, HASH_WIDTH + 2 - rlp_witness.num_bytes())
+            .invert()
+            .unwrap_or(F::ZERO);
+
         // Store RLP properties for easy access
         self.num_bytes
             .assign(region, offset, rlp_witness.num_bytes().scalar())?;
         self.len
             .assign(region, offset, rlp_witness.len().scalar())?;
-        self.mult_diff
-            .assign(region, offset, pow::value(r, rlp_witness.num_bytes()))?;
         self.rlc_content
-            .assign(region, offset, rlp_witness.rlc_content(r))?;
-        self.rlc_rlp
-            .assign(region, offset, rlp_witness.rlc_rlp(r))?;
+            .assign(region, offset, rlp_witness.rlc_content(region.r))?;
+        self.rlc_rlp.assign(
+            region,
+            offset,
+            rlp_witness.rlc_rlp2(region.keccak_r) * mult_inv,
+        )?;
+
+        self.mult_inv.assign(region, offset, mult_inv)?;
+        self.mult_diff_keccak.assign(
+            region,
+            offset,
+            pow::value(region.keccak_r, rlp_witness.num_bytes()),
+        )?;
+        self.mult_diff.assign(
+            region,
+            offset,
+            pow::value(region.r, rlp_witness.num_bytes()),
+        )?;
 
         // Assign tag
         assign!(region, self.tag, offset => self.tag(item_type).scalar())?;
@@ -1390,7 +1444,7 @@ impl<F: Field> MainRLPGadget<F> {
         RLPItemView {
             num_bytes: Some(self.num_bytes.rot(meta, rot)),
             len: Some(self.len.rot(meta, rot)),
-            mult_diff: Some(self.mult_diff.rot(meta, rot)),
+            mult_diff_be: Some(self.mult_diff_keccak.rot(meta, rot)),
             rlc_content: Some(self.rlc_content.rot(meta, rot)),
             rlc_rlp: Some(self.rlc_rlp.rot(meta, rot)),
             bytes: self.bytes.iter().map(|byte| byte.rot(meta, rot)).collect(),
@@ -1424,7 +1478,7 @@ pub struct RLPItemView<F> {
     pub(crate) bytes: Vec<Expression<F>>,
     pub(crate) num_bytes: Option<Expression<F>>,
     pub(crate) len: Option<Expression<F>>,
-    pub(crate) mult_diff: Option<Expression<F>>,
+    pub(crate) mult_diff_be: Option<Expression<F>>,
     pub(crate) rlc_content: Option<Expression<F>>,
     pub(crate) rlc_rlp: Option<Expression<F>>,
     pub(crate) is_short: Option<Expression<F>>,
@@ -1441,7 +1495,7 @@ impl<F: Field> RLPItemView<F> {
     }
 
     pub(crate) fn mult(&self) -> Expression<F> {
-        self.mult_diff.clone().unwrap()
+        self.mult_diff_be.clone().unwrap()
     }
 
     pub(crate) fn rlc_content(&self) -> Expression<F> {
@@ -1454,6 +1508,14 @@ impl<F: Field> RLPItemView<F> {
 
     pub(crate) fn rlc(&self) -> (Expression<F>, Expression<F>) {
         (self.rlc_content(), self.rlc_rlp())
+    }
+
+    pub(crate) fn rlc2(&self) -> (Expression<F>, (Expression<F>, Expression<F>)) {
+        (self.rlc_content(), self.rlc_chain_data())
+    }
+
+    pub(crate) fn rlc_chain_data(&self) -> (Expression<F>, Expression<F>) {
+        (self.rlc_rlp(), self.mult())
     }
 
     pub(crate) fn bytes(&self) -> Vec<Expression<F>> {

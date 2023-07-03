@@ -5,10 +5,7 @@ use super::{
 };
 use crate::{
     circuit,
-    circuit_tools::{
-        cached_region::{CachedRegion, ChallengeSet},
-        cell_manager::Cell,
-    },
+    circuit_tools::{cached_region::CachedRegion, cell_manager::Cell},
     mpt_circuit::{
         helpers::{
             key_memory, main_memory, parent_memory, KeyData, MPTConstraintBuilder, MainData,
@@ -82,10 +79,9 @@ impl<F: Field> StartConfig<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn assign<S: ChallengeSet<F>>(
+    pub fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
-        _challenges: &S,
+        region: &mut CachedRegion<'_, '_, F>,
         _mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
@@ -104,8 +100,7 @@ impl<F: Field> StartConfig<F> {
 
         let mut root = vec![0.scalar(); 2];
         for is_s in [true, false] {
-            root[is_s.idx()] = rlp_values[is_s.idx()].rlc_content(pv.r);
-            // println!("root {}: {:?}", is_s, root[is_s.idx()]);
+            root[is_s.idx()] = rlp_values[is_s.idx()].rlc_content(region.r);
         }
 
         MainData::witness_store(
