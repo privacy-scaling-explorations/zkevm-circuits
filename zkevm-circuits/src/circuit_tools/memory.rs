@@ -2,13 +2,15 @@
 use crate::util::{query_expression, Expr};
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::{Value},
+    circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
     poly::Rotation,
 };
 use std::ops::{Index, IndexMut};
 
-use super::{cell_manager::CellType, constraint_builder::ConstraintBuilder, cached_region::{CachedRegion}};
+use super::{
+    cached_region::CachedRegion, cell_manager::CellType, constraint_builder::ConstraintBuilder,
+};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Memory<F, C> {
@@ -24,9 +26,18 @@ impl<F: Field, C: CellType> Memory<F, C> {
         }
     }
 
-    pub(crate) fn allocate(&mut self, meta: &mut ConstraintSystem<F>, tag: C, table_tag: C) -> &MemoryBank<F, C> {
-        self.banks
-            .push(MemoryBank::new(meta, self.columns[self.banks.len()], tag, table_tag));
+    pub(crate) fn allocate(
+        &mut self,
+        meta: &mut ConstraintSystem<F>,
+        tag: C,
+        table_tag: C,
+    ) -> &MemoryBank<F, C> {
+        self.banks.push(MemoryBank::new(
+            meta,
+            self.columns[self.banks.len()],
+            tag,
+            table_tag,
+        ));
         self.banks.last().unwrap()
     }
 
@@ -59,7 +70,7 @@ impl<F: Field, C: CellType> Memory<F, C> {
     ) {
         for bank in self.banks.iter() {
             bank.build_constraints(cb, is_first_row.expr());
-            //cb.generate_lookup_table_checks(bank.tag());
+            // cb.generate_lookup_table_checks(bank.tag());
         }
     }
 
@@ -121,7 +132,12 @@ pub(crate) struct MemoryBank<F, C> {
 }
 
 impl<F: Field, C: CellType> MemoryBank<F, C> {
-    pub(crate) fn new(meta: &mut ConstraintSystem<F>, column: Column<Advice>, tag: C, table_tag: C) -> Self {
+    pub(crate) fn new(
+        meta: &mut ConstraintSystem<F>,
+        column: Column<Advice>,
+        tag: C,
+        table_tag: C,
+    ) -> Self {
         let mut cur = 0.expr();
         let mut next = 0.expr();
         query_expression(meta, |meta| {
@@ -160,11 +176,7 @@ impl<F: Field, C: CellType> MemoryBank<F, C> {
         key: Expression<F>,
         values: &[Expression<F>],
     ) {
-        cb.add_lookup(
-            description,
-            self.tag(),
-            self.insert_key(key, values),
-        );
+        cb.add_lookup(description, self.tag(), self.insert_key(key, values));
     }
 
     pub(crate) fn store(
@@ -209,8 +221,13 @@ impl<F: Field, C: CellType> MemoryBank<F, C> {
         is_first_row: Expression<F>,
     ) {
         let lookups = cb.lookups.get(&self.table_tag()).unwrap();
-        let lookups = lookups.iter().filter(|l| l.region_id == cb.region_id).collect::<Vec<_>>();
-        let condition = lookups.iter().fold(0.expr(), |acc, c| acc + c.condition.expr());
+        let lookups = lookups
+            .iter()
+            .filter(|l| l.region_id == cb.region_id)
+            .collect::<Vec<_>>();
+        let condition = lookups
+            .iter()
+            .fold(0.expr(), |acc, c| acc + c.condition.expr());
         crate::circuit!([meta, cb], {
             ifx! {is_first_row => {
                 require!(self.cur.expr() => 0);
@@ -218,7 +235,8 @@ impl<F: Field, C: CellType> MemoryBank<F, C> {
             let description = format!("Dynamic lookup table {:?}", self.tag());
             require!(condition => bool);
             require!(description, self.next => self.cur.expr() + condition.expr());
-            // TODO(Brecht): add constraint that makes sure the table value remains the same when not written
+            // TODO(Brecht): add constraint that makes sure the table value remains the same when
+            // not written
         });
     }
 

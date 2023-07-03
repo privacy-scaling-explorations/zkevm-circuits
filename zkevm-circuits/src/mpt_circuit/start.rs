@@ -5,16 +5,13 @@ use super::{
 };
 use crate::{
     circuit,
-    circuit_tools::{
-        cached_region::{CachedRegion},
-        cell_manager::Cell,
-    },
+    circuit_tools::{cached_region::CachedRegion, cell_manager::Cell},
     mpt_circuit::{
         helpers::{
             key_memory, main_memory, parent_memory, KeyData, MPTConstraintBuilder, MainData,
             ParentData,
         },
-        MPTConfig, MPTContext, MPTState,
+        MPTConfig, MPTContext, MPTState, RlpItemType,
     },
 };
 use eth_types::Field;
@@ -41,8 +38,8 @@ impl<F: Field> StartConfig<F> {
 
         circuit!([meta, cb], {
             let root_items = [
-                ctx.rlp_item(meta, cb, StartRowType::RootS as usize),
-                ctx.rlp_item(meta, cb, StartRowType::RootC as usize),
+                ctx.rlp_item(meta, cb, StartRowType::RootS as usize, RlpItemType::Value),
+                ctx.rlp_item(meta, cb, StartRowType::RootC as usize, RlpItemType::Value),
             ];
 
             config.proof_type = cb.query_cell();
@@ -57,6 +54,7 @@ impl<F: Field> StartConfig<F> {
                 &ctx.memory[main_memory()],
                 [
                     config.proof_type.expr(),
+                    false.expr(),
                     false.expr(),
                     0.expr(),
                     root[true.idx()].expr(),
@@ -111,6 +109,7 @@ impl<F: Field> StartConfig<F> {
             &mut pv.memory[main_memory()],
             start.proof_type as usize,
             false,
+            false.scalar(),
             0.scalar(),
             root[true.idx()],
             root[false.idx()],

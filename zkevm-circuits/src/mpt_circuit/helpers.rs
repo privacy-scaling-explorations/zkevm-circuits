@@ -7,13 +7,16 @@ use crate::{
             ConstraintBuilder, RLCChainable, RLCChainable2, RLCChainableValue, RLCable,
             RLCableValue,
         },
-        gadgets::IsEqualGadget,
+        gadgets::{IsEqualGadget, LtGadget},
         memory::MemoryBank,
     },
     evm_circuit::table::Table,
     matchw,
     mpt_circuit::{
-        param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN},
+        param::{
+            EMPTY_TRIE_HASH, HASH_WIDTH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN,
+            KEY_TERMINAL_PREFIX_EVEN, RLP_UNIT_NUM_BYTES,
+        },
         rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble},
     },
     util::{Challenges, Expr},
@@ -26,11 +29,10 @@ use halo2_proofs::{
 };
 
 use super::{
-    param::HASH_WIDTH,
     rlp_gadgets::{
         get_ext_odd_nibble_value, RLPItemGadget, RLPItemWitness, RLPListGadget, RLPListWitness,
     },
-    FixedTableTag,
+    FixedTableTag, MPTCircuitParams, RlpItemType,
 };
 
 impl<F: Field> ChallengeSet<F> for crate::util::Challenges<Value<F>> {
@@ -640,6 +642,7 @@ impl<F: Field> ParentData<F> {
 pub(crate) struct MainData<F> {
     pub(crate) proof_type: Cell<F>,
     pub(crate) is_below_account: Cell<F>,
+    pub(crate) is_non_existing_account: Cell<F>,
     pub(crate) address_rlc: Cell<F>,
     pub(crate) root_prev: Cell<F>,
     pub(crate) root: Cell<F>,
@@ -649,6 +652,7 @@ pub(crate) struct MainData<F> {
 pub(crate) struct MainDataWitness<F> {
     pub(crate) proof_type: usize,
     pub(crate) is_below_account: bool,
+    pub(crate) is_non_existing_account: bool,
     pub(crate) address_rlc: F,
     pub(crate) root_prev: F,
     pub(crate) root: F,
@@ -664,6 +668,7 @@ impl<F: Field> MainData<F> {
         let main_data = MainData {
             proof_type: cb.query_cell(),
             is_below_account: cb.query_cell(),
+            is_non_existing_account: cb.query_cell(),
             address_rlc: cb.query_cell(),
             root_prev: cb.query_cell(),
             root: cb.query_cell(),
@@ -676,6 +681,7 @@ impl<F: Field> MainData<F> {
                 &[
                     main_data.proof_type.expr(),
                     main_data.is_below_account.expr(),
+                    main_data.is_non_existing_account.expr(),
                     main_data.address_rlc.expr(),
                     main_data.root_prev.expr(),
                     main_data.root.expr(),
@@ -688,7 +694,7 @@ impl<F: Field> MainData<F> {
     pub(crate) fn store(
         cb: &mut MPTConstraintBuilder<F>,
         memory: &MemoryBank<F, MptCellType>,
-        values: [Expression<F>; 5],
+        values: [Expression<F>; 6],
     ) {
         memory.store(&mut cb.base, &values);
     }
@@ -700,6 +706,7 @@ impl<F: Field> MainData<F> {
         memory: &mut MemoryBank<F, MptCellType>,
         proof_type: usize,
         is_below_account: bool,
+        is_non_existing_account: F,
         address_rlc: F,
         root_prev: F,
         root: F,
@@ -707,6 +714,7 @@ impl<F: Field> MainData<F> {
         let values = [
             proof_type.scalar(),
             is_below_account.scalar(),
+            is_non_existing_account,
             address_rlc,
             root_prev,
             root,
@@ -727,16 +735,19 @@ impl<F: Field> MainData<F> {
 
         self.proof_type.assign(region, offset, values[0])?;
         self.is_below_account.assign(region, offset, values[1])?;
-        self.address_rlc.assign(region, offset, values[2])?;
-        self.root_prev.assign(region, offset, values[3])?;
-        self.root.assign(region, offset, values[4])?;
+        self.is_non_existing_account
+            .assign(region, offset, values[2])?;
+        self.address_rlc.assign(region, offset, values[3])?;
+        self.root_prev.assign(region, offset, values[4])?;
+        self.root.assign(region, offset, values[5])?;
 
         Ok(MainDataWitness {
             proof_type: values[0].get_lower_32() as usize,
             is_below_account: values[1] == 1.scalar(),
-            address_rlc: values[2],
-            root_prev: values[3],
-            root: values[4],
+            is_non_existing_account: values[2] == 1.scalar(),
+            address_rlc: values[3],
+            root_prev: values[4],
+            root: values[5],
         })
     }
 }
@@ -984,8 +995,7 @@ impl<F: Field> MPTConstraintBuilder<F> {
         cell_type: MptCellType,
         values: Vec<Expression<F>>,
     ) {
-        self.base
-            .add_lookup(description, cell_type, values)
+        self.base.add_lookup(description, cell_type, values)
     }
 
     pub(crate) fn store_dynamic_table(
@@ -1058,8 +1068,10 @@ pub struct DriftedGadget<F> {
 }
 
 impl<F: Field> DriftedGadget<F> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut MPTConstraintBuilder<F>,
+        value_list_num_bytes: &[Expression<F>],
         parent_data: &[ParentData<F>],
         key_data: &[KeyData<F>],
         expected_key_rlc: &[Expression<F>],
@@ -1075,7 +1087,12 @@ impl<F: Field> DriftedGadget<F> {
                 for is_s in [true, false] {
                     ifx! {parent_data[is_s.idx()].is_placeholder.expr() => {
                         // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
-                        // TODO(Brecht): Length can change so need to add RLP consistency checks?
+
+                        // Make sure the RLP is still consistent with the new key part
+                        require!(
+                            config.drifted_rlp_key.rlp_list.len()
+                                => config.drifted_rlp_key.key_value.num_bytes() + value_list_num_bytes[is_s.idx()].clone()
+                            );
 
                         // Calculate the drifted key RLC
                         // Get the key RLC for the drifted branch
@@ -1134,7 +1151,7 @@ impl<F: Field> DriftedGadget<F> {
 pub struct WrongGadget<F> {
     wrong_rlp_key: ListKeyGadget<F>,
     wrong_mult: Cell<F>,
-    is_key_equal: IsEqualGadget<F>,
+    pub(crate) is_key_equal: IsEqualGadget<F>,
     wrong_key: Option<Expression<F>>,
 }
 
@@ -1193,7 +1210,7 @@ impl<F: Field> WrongGadget<F> {
         for_placeholder_s: bool,
         key_data: KeyDataWitness<F>,
         r: F,
-    ) -> Result<F, Error> {
+    ) -> Result<(F, F), Error> {
         if is_non_existing {
             let wrong_witness = self
                 .wrong_rlp_key
@@ -1205,15 +1222,18 @@ impl<F: Field> WrongGadget<F> {
                 r,
             );
 
-            self.is_key_equal.assign(
+            let is_key_equal_witness = self.is_key_equal.assign(
                 region,
                 offset,
                 key_rlc[for_placeholder_s.idx()],
                 key_rlc_wrong,
             )?;
-            Ok(key_rlc_wrong)
+
+            // When key is not equal, we have a non existing account
+            Ok((key_rlc_wrong, is_key_equal_witness.neg()))
         } else {
-            Ok(key_rlc[for_placeholder_s.idx()])
+            // existing account
+            Ok((key_rlc[for_placeholder_s.idx()], false.scalar()))
         }
     }
 }
@@ -1223,6 +1243,7 @@ impl<F: Field> WrongGadget<F> {
 pub struct MainRLPGadget<F> {
     bytes: Vec<Cell<F>>,
     rlp: RLPItemGadget<F>,
+    below_limit: LtGadget<F, 1>,
     num_bytes: Cell<F>,
     len: Cell<F>,
     mult_inv: Cell<F>,
@@ -1231,14 +1252,16 @@ pub struct MainRLPGadget<F> {
     rlc_content: Cell<F>,
     rlc_rlp: Cell<F>,
     tag: Cell<F>,
+    max_len: Cell<F>,
 }
 
 impl<F: Field> MainRLPGadget<F> {
-    pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>) -> Self {
+    pub(crate) fn construct(cb: &mut MPTConstraintBuilder<F>, params: MPTCircuitParams) -> Self {
         circuit!([meta, cb], {
             let mut config = MainRLPGadget {
-                bytes: cb.query_cells::<34>().to_vec(),
+                bytes: cb.query_cells::<RLP_UNIT_NUM_BYTES>().to_vec(),
                 rlp: RLPItemGadget::default(),
+                below_limit: LtGadget::default(),
                 num_bytes: cb.query_cell(),
                 len: cb.query_cell(),
                 mult_inv: cb.query_cell(),
@@ -1247,7 +1270,10 @@ impl<F: Field> MainRLPGadget<F> {
                 rlc_content: cb.query_cell(),
                 rlc_rlp: cb.query_cell_with_type(MptCellType::StoragePhase2),
                 tag: cb.query_cell(),
+                max_len: cb.query_cell(),
             };
+
+            // Decode the RLP item
             config.rlp = RLPItemGadget::construct(
                 cb,
                 &config
@@ -1257,6 +1283,15 @@ impl<F: Field> MainRLPGadget<F> {
                     .collect::<Vec<_>>(),
             );
 
+            // Make sure the RLP item is within a valid range
+            config.below_limit = LtGadget::construct(
+                &mut cb.base,
+                config.rlp.len(),
+                config.max_len.expr() + 1.expr(),
+            );
+            require!(config.below_limit.expr() => true);
+
+            // Store RLP properties for easy access
             require!(config.num_bytes => config.rlp.num_bytes());
             require!(config.len => config.rlp.len());
             require!(config.rlc_content => config.rlp.rlc_content(&cb.r));
@@ -1266,21 +1301,36 @@ impl<F: Field> MainRLPGadget<F> {
             require!(config.mult_inv.expr() * pow::expr(cb.keccak_r.expr(), HASH_WIDTH + 2) => config.mult_diff_keccak.expr());
             require!((FixedTableTag::RMult, config.rlp.num_bytes(), config.mult_diff.expr()) => @FIXED);
             require!((config.rlp.num_bytes(), config.mult_diff_keccak.expr()) => @MULT);
+            // `tag` and `max_len` are "free" input that needs to be constrained externally!
 
             // Range/zero checks
             // These range checks ensure that the value in the RLP columns are all byte
             // value. These lookups also enforce the byte value to be zero when
             // the byte index >= num_bytes.
-            // TODO(Brecht): do 2 bytes/lookup when circuit height >= 2**21
             // We enable dynamic lookups because otherwise these lookup would require a lot of extra
             // cells.
-            for (idx, byte) in config.bytes.iter().enumerate() {
+            /*for (idx, byte) in config.bytes.iter().enumerate() {
                 require!(
                     format!("byte {:?}", byte.identifier()),
                     vec![config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()]
                     // is_fixed, compress, is_split
                     => @FIXED, true, true, false
-                );
+                );*/
+            //cb.set_use_dynamic_lookup(true);
+            if params.is_two_byte_lookup_enabled() {
+                assert!(config.bytes.len() % 2 == 0);
+                for idx in (0..config.bytes.len()).step_by(2) {
+                    require!((
+                        config.tag.expr(),
+                        config.num_bytes.expr() - idx.expr(),
+                        config.bytes[idx],
+                        config.bytes[idx + 1]
+                    ) => @FIXED, true, true, false);
+                }
+            } else {
+                for (idx, byte) in config.bytes.iter().enumerate() {
+                    require!((config.tag.expr(), config.num_bytes.expr() - idx.expr(), byte.expr()) => @FIXED, true, true, false);
+                }
             }
 
             config
@@ -1292,7 +1342,7 @@ impl<F: Field> MainRLPGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         bytes: &[u8],
-        is_nibbles: bool,
+        item_type: RlpItemType,
     ) -> Result<RLPItemWitness, Error> {
         // Assign the bytes
         for (byte, column) in bytes.iter().zip(self.bytes.iter()) {
@@ -1301,6 +1351,24 @@ impl<F: Field> MainRLPGadget<F> {
 
         // Decode the RLP item
         let rlp_witness = self.rlp.assign(region, offset, bytes)?;
+
+        // Make sure the RLP item is within a valid range
+        let max_len = if item_type == RlpItemType::Node {
+            if rlp_witness.is_string() {
+                self.max_length(item_type)
+            } else {
+                HASH_WIDTH - 1
+            }
+        } else {
+            self.max_length(item_type)
+        };
+        self.max_len.assign(region, offset, max_len.scalar())?;
+        self.below_limit.assign(
+            region,
+            offset,
+            rlp_witness.len().scalar(),
+            (max_len + 1).scalar(),
+        )?;
 
         // Compute the denominator needed for BE
         let mult_inv = pow::value(region.keccak_r, HASH_WIDTH + 2 - rlp_witness.num_bytes())
@@ -1314,8 +1382,11 @@ impl<F: Field> MainRLPGadget<F> {
             .assign(region, offset, rlp_witness.len().scalar())?;
         self.rlc_content
             .assign(region, offset, rlp_witness.rlc_content(region.r))?;
-        self.rlc_rlp
-            .assign(region, offset, rlp_witness.rlc_rlp2(region.keccak_r) * mult_inv)?;
+        self.rlc_rlp.assign(
+            region,
+            offset,
+            rlp_witness.rlc_rlp2(region.keccak_r) * mult_inv,
+        )?;
 
         self.mult_inv.assign(region, offset, mult_inv)?;
         self.mult_diff_keccak.assign(
@@ -1329,7 +1400,8 @@ impl<F: Field> MainRLPGadget<F> {
             pow::value(region.r, rlp_witness.num_bytes()),
         )?;
 
-        assign!(region, self.tag, offset => self.tag(is_nibbles).scalar())?;
+        // Assign tag
+        assign!(region, self.tag, offset => self.tag(item_type).scalar())?;
 
         Ok(rlp_witness)
     }
@@ -1339,10 +1411,35 @@ impl<F: Field> MainRLPGadget<F> {
         meta: &mut VirtualCells<F>,
         cb: &mut MPTConstraintBuilder<F>,
         rot: usize,
-        is_nibbles: bool,
+        item_type: RlpItemType,
     ) -> RLPItemView<F> {
         circuit!([meta, cb.base], {
-            require!(self.tag.rot(meta, rot) => self.tag(is_nibbles).expr());
+            let is_string = self.rlp.is_string_at(meta, rot);
+            let tag = self.tag.rot(meta, rot);
+            let max_len = self.max_len.rot(meta, rot);
+            let len = self.len.rot(meta, rot);
+
+            // Check the tag value
+            require!(tag => self.tag(item_type).expr());
+            // Check the is_string value
+            if item_type == RlpItemType::Value || item_type == RlpItemType::Key {
+                require!(is_string => true);
+            }
+            // Hashes always have length 32
+            if item_type == RlpItemType::Hash {
+                require!(len => HASH_WIDTH);
+            }
+            if item_type == RlpItemType::Node {
+                // Nodes always have length 0 or 32 when a string, or are < 32 when a list
+                ifx! {is_string => {
+                    require!(max_len => self.max_length(item_type).expr());
+                    require!(len => [0, HASH_WIDTH]);
+                } elsex {
+                    require!(max_len => HASH_WIDTH - 1);
+                }}
+            } else {
+                require!(max_len => self.max_length(item_type).expr());
+            }
         });
         RLPItemView {
             num_bytes: Some(self.num_bytes.rot(meta, rot)),
@@ -1356,11 +1453,21 @@ impl<F: Field> MainRLPGadget<F> {
         }
     }
 
-    fn tag(&self, is_nibbles: bool) -> FixedTableTag {
-        if is_nibbles {
+    fn tag(&self, item_type: RlpItemType) -> FixedTableTag {
+        if item_type == RlpItemType::Nibbles {
             FixedTableTag::RangeKeyLen16
         } else {
             FixedTableTag::RangeKeyLen256
+        }
+    }
+
+    fn max_length(&self, item_type: RlpItemType) -> usize {
+        match item_type {
+            RlpItemType::Node => 32,
+            RlpItemType::Value => 32,
+            RlpItemType::Hash => 32,
+            RlpItemType::Key => 33,
+            RlpItemType::Nibbles => 32,
         }
     }
 }

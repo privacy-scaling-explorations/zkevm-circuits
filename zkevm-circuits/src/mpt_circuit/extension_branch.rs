@@ -12,10 +12,7 @@ use super::{
 };
 use crate::{
     circuit,
-    circuit_tools::{
-        cached_region::{CachedRegion},
-        cell_manager::Cell,
-    },
+    circuit_tools::{cached_region::CachedRegion, cell_manager::Cell},
     mpt_circuit::{
         helpers::{key_memory, parent_memory, Indexable, KeyData, ParentData},
         witness_row::ExtensionBranchRowType,

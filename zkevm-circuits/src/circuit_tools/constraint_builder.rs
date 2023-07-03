@@ -391,7 +391,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         let mut values = if compress {
             vec![rlc::expr(&values, self.lookup_challenge.clone().unwrap())]
         } else {
-            values.clone()
+            values
         };
         if store {
             values.iter_mut().for_each(|v| {
@@ -400,7 +400,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                     v.clone(),
                 )
             });
-            //values = vec![self.store_expression(description, values[0].expr(), tag)];
+            // values = vec![self.store_expression(description, values[0].expr(), tag)];
         }
         let lookup = DynamicData {
             description,
@@ -431,7 +431,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         let mut values = if compress {
             vec![rlc::expr(&values, self.lookup_challenge.clone().unwrap())]
         } else {
-            values.clone()
+            values
         };
         if store {
             values.iter_mut().for_each(|v| {
@@ -503,12 +503,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         merge_values_unsafe(
             table_values
                 .iter()
-                .map(|table| {
-                    (
-                        table.condition.clone(),
-                        table.values.clone(),
-                    )
-                })
+                .map(|table| (table.condition.clone(), table.values.clone()))
                 .collect::<Vec<_>>(),
         )
     }

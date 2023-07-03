@@ -1,26 +1,20 @@
 //! Cell manager
 use crate::{
-    circuit_tools::cached_region::{CachedRegion},
+    circuit_tools::cached_region::CachedRegion,
     util::{query_expression, Expr},
 };
 
+use crate::table::LookupTable;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Value},
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, ThirdPhase,
-        VirtualCells,
+        Advice, Any, Column, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase,
+        ThirdPhase, VirtualCells,
     },
     poly::Rotation,
 };
-use std::{
-    cmp::{Ordering},
-    collections::{BTreeMap},
-    fmt::Debug,
-    hash::Hash,
-};
-use halo2_proofs::plonk::Any;
-use crate::table::LookupTable;
+use std::{cmp::Ordering, collections::BTreeMap, fmt::Debug, hash::Hash};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Cell<F> {
@@ -368,7 +362,6 @@ impl<F: Field, C: CellType> CellManager<F, C> {
     }
 }
 
-
 /// LookupTable created dynamically and stored in an advice column
 #[derive(Clone, Debug)]
 pub struct DynamicLookupTable {
@@ -393,8 +386,6 @@ impl<F: Field> LookupTable<F> for DynamicLookupTable {
     }
 
     fn annotations(&self) -> Vec<String> {
-        vec![
-            String::from("generated"),
-        ]
+        vec![String::from("generated")]
     }
 }

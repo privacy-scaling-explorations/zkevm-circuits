@@ -5,11 +5,12 @@ use halo2_proofs::{
     plonk::{Error, VirtualCells},
     poly::Rotation,
 };
+use itertools::Itertools;
 
 use crate::{
     circuit,
     circuit_tools::{
-        cached_region::{CachedRegion},
+        cached_region::CachedRegion,
         cell_manager::Cell,
         constraint_builder::RLCChainable2,
         gadgets::{IsEqualGadget, LtGadget},
@@ -20,7 +21,7 @@ use crate::{
             KeyData, MPTConstraintBuilder, MainData, ParentData, ParentDataWitness, KECCAK,
         },
         param::KEY_LEN_IN_NIBBLES,
-        MPTConfig, MPTContext, MPTState,
+        MPTConfig, MPTContext, MPTState, RlpItemType,
     },
     table::MPTProofType,
     witness::MptUpdateRow,
@@ -64,16 +65,28 @@ impl<F: Field> StorageLeafConfig<F> {
 
         circuit!([meta, cb], {
             let key_items = [
-                ctx.rlp_item(meta, cb, StorageRowType::KeyS as usize),
-                ctx.rlp_item(meta, cb, StorageRowType::KeyC as usize),
+                ctx.rlp_item(meta, cb, StorageRowType::KeyS as usize, RlpItemType::Key),
+                ctx.rlp_item(meta, cb, StorageRowType::KeyC as usize, RlpItemType::Key),
             ];
             config.value_rlp_bytes = [cb.base.query_bytes(), cb.base.query_bytes()];
             let value_item = [
-                ctx.rlp_item(meta, cb, StorageRowType::ValueS as usize),
-                ctx.rlp_item(meta, cb, StorageRowType::ValueC as usize),
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    StorageRowType::ValueS as usize,
+                    RlpItemType::Value,
+                ),
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    StorageRowType::ValueC as usize,
+                    RlpItemType::Value,
+                ),
             ];
-            let drifted_item = ctx.rlp_item(meta, cb, StorageRowType::Drifted as usize);
-            let wrong_item = ctx.rlp_item(meta, cb, StorageRowType::Wrong as usize);
+            let drifted_item =
+                ctx.rlp_item(meta, cb, StorageRowType::Drifted as usize, RlpItemType::Key);
+            let wrong_item =
+                ctx.rlp_item(meta, cb, StorageRowType::Wrong as usize, RlpItemType::Key);
 
             config.main_data =
                 MainData::load("main storage", cb, &ctx.memory[main_memory()], 0.expr());
@@ -196,9 +209,19 @@ impl<F: Field> StorageLeafConfig<F> {
                 MPTProofType::StorageDoesNotExist.expr(),
             );
 
+            // If we were in a non-existing account, all storage is non-existing
+            ifx! {config.main_data.is_non_existing_account.expr() => {
+                require!(config.is_non_existing_storage_proof => true);
+            }};
+
             // Drifted leaf handling
             config.drifted = DriftedGadget::construct(
                 cb,
+                &config
+                    .rlp_value
+                    .iter()
+                    .map(|value| value.num_bytes())
+                    .collect_vec(),
                 &config.parent_data,
                 &config.key_data,
                 &key_rlc,
@@ -393,7 +416,7 @@ impl<F: Field> StorageLeafConfig<F> {
         )?;
 
         // Wrong leaf handling
-        let key_rlc = self.wrong.assign(
+        let (key_rlc, _) = self.wrong.assign(
             region,
             offset,
             is_non_existing_proof,

@@ -2,9 +2,7 @@ use super::*;
 use crate::{
     circuit,
     circuit_tools::{
-        cached_region::{CachedRegion},
-        cell_manager::CellType,
-        constraint_builder::ConstraintBuilder,
+        cached_region::CachedRegion, cell_manager::CellType, constraint_builder::ConstraintBuilder,
     },
 };
 

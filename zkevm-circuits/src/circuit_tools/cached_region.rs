@@ -64,7 +64,7 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
     ) -> Result<(), Error> {
         for (offset, region_id) in self.regions.clone() {
             for stored_expression in cb.get_stored_expressions(region_id).iter() {
-                //println!("stored expression: {}", stored_expression.name);
+                // println!("stored expression: {}", stored_expression.name);
                 stored_expression.assign(self, challenges, offset)?;
             }
         }
