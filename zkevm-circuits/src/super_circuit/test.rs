@@ -20,7 +20,7 @@ fn super_circuit_degree() {
     SuperCircuit::configure_with_params(&mut cs, params);
     log::info!("super circuit degree: {}", cs.degree());
     log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
-    assert!(cs.degree() <= 12);
+    assert!(cs.degree() <= 10);
 }
 
 fn test_super_circuit(block: GethData, circuits_params: CircuitsParams, mock_randomness: Fr) {
