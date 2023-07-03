@@ -668,7 +668,10 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
     };
     nodes.push(Node {
         start: Some(start_node),
-        values: vec![(RlpItemType::Value, vec![0]); StartRowType::Count as usize],
+        values: vec![
+            (RlpItemType::Value, [vec![160], vec![0; 33]].concat());
+            StartRowType::Count as usize
+        ],
         ..Default::default()
     });
 
