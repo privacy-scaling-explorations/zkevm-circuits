@@ -57,21 +57,18 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
             &self.external_data.txs,
             self.external_data.max_txs,
             self.external_data.max_calldata,
-            &challenge_values,
         )?;
 
         config.0.rw_table.load(
             &mut layouter,
             &self.external_data.rws.table_assignments(),
             self.external_data.max_rws,
-            challenge_values.evm_word(),
         )?;
 
-        config.0.bytecode_table.load(
-            &mut layouter,
-            self.external_data.bytecodes.values(),
-            &challenge_values,
-        )?;
+        config
+            .0
+            .bytecode_table
+            .load(&mut layouter, self.external_data.bytecodes.values())?;
         self.synthesize_sub(&config.0, &challenge_values, &mut layouter)
     }
 }

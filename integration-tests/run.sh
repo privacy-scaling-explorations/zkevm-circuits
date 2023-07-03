@@ -1,5 +1,6 @@
 #!/bin/sh
 set -e
+set -o xtrace
 
 ARG_DEFAULT_SUDO=
 ARG_DEFAULT_STEPS="setup gendata tests cleanup"

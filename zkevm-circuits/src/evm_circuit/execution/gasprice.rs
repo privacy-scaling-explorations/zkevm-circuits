@@ -10,7 +10,10 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
-    util::Expr,
+    util::{
+        word::{WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
@@ -19,7 +22,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct GasPriceGadget<F> {
     tx_id: Cell<F>,
-    gas_price: Cell<F>,
+    gas_price: WordCell<F>,
     same_context: SameContextGadget<F>,
 }
 
@@ -30,7 +33,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         // Query gasprice value
-        let gas_price = cb.query_cell_phase2();
+        let gas_price = cb.query_word_unchecked();
 
         // Lookup in call_ctx the TxId
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -39,11 +42,11 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
             tx_id.expr(),
             TxContextFieldTag::GasPrice,
             None,
-            gas_price.expr(),
+            gas_price.to_word(),
         );
 
         // Push the value to the stack
-        cb.stack_push(gas_price.expr());
+        cb.stack_push(gas_price.to_word());
 
         // State transition
         let opcode = cb.query_cell();
@@ -77,8 +80,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
 
-        self.gas_price
-            .assign(region, offset, region.word_rlc(gas_price))?;
+        self.gas_price.assign_u256(region, offset, gas_price)?;
 
         self.same_context.assign_exec_step(region, offset, step)?;
 

@@ -32,7 +32,7 @@ pub struct BlockTable {
     /// Index
     pub index: Column<Advice>,
     /// Value
-    pub value: Column<Advice>,
+    pub value: word::Word<Column<Advice>>,
 }
 
 impl BlockTable {
@@ -41,7 +41,7 @@ impl BlockTable {
         Self {
             tag: meta.advice_column(),
             index: meta.advice_column(),
-            value: meta.advice_column_in(SecondPhase),
+            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
 
@@ -50,7 +50,6 @@ impl BlockTable {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &BlockContext,
-        randomness: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "block table",
@@ -67,7 +66,7 @@ impl BlockTable {
                 offset += 1;
 
                 let block_table_columns = <BlockTable as LookupTable<F>>::advice_columns(self);
-                for row in block.table_assignments(randomness) {
+                for row in block.table_assignments::<F>() {
                     for (&column, value) in block_table_columns.iter().zip_eq(row) {
                         region.assign_advice(
                             || format!("block table row {}", offset),
@@ -87,14 +86,20 @@ impl BlockTable {
 
 impl<F: Field> LookupTable<F> for BlockTable {
     fn columns(&self) -> Vec<Column<Any>> {
-        vec![self.tag.into(), self.index.into(), self.value.into()]
+        vec![
+            self.tag.into(),
+            self.index.into(),
+            self.value.lo().into(),
+            self.value.hi().into(),
+        ]
     }
 
     fn annotations(&self) -> Vec<String> {
         vec![
             String::from("tag"),
             String::from("index"),
-            String::from("value"),
+            String::from("value_lo"),
+            String::from("value_hi"),
         ]
     }
 }

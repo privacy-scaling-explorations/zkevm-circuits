@@ -23,6 +23,7 @@ use crate::{
     evm_circuit::param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
     table::{
         BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable, TxTable,
+        UXTable,
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
@@ -38,7 +39,8 @@ use witness::Block;
 #[derive(Clone, Debug)]
 pub struct EvmCircuitConfig<F> {
     fixed_table: [Column<Fixed>; 4],
-    byte_table: [Column<Fixed>; 1],
+    u8_table: UXTable<8>,
+    u16_table: UXTable<16>,
     pub execution: Box<ExecutionConfig<F>>,
     // External tables
     tx_table: TxTable,
@@ -68,6 +70,10 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub keccak_table: KeccakTable,
     /// ExpTable
     pub exp_table: ExpTable,
+    /// U8Table
+    pub u8_table: UXTable<8>,
+    /// U16Table
+    pub u16_table: UXTable<16>,
 }
 
 impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
@@ -85,15 +91,17 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             copy_table,
             keccak_table,
             exp_table,
+            u8_table,
+            u16_table,
         }: Self::ConfigArgs,
     ) -> Self {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
-        let byte_table = [(); 1].map(|_| meta.fixed_column());
         let execution = Box::new(ExecutionConfig::configure(
             meta,
             challenges,
             &fixed_table,
-            &byte_table,
+            &u8_table,
+            &u16_table,
             &tx_table,
             &rw_table,
             &bytecode_table,
@@ -103,7 +111,8 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &exp_table,
         ));
 
-        meta.annotate_lookup_any_column(byte_table[0], || "byte_range");
+        u8_table.annotate_columns(meta);
+        u16_table.annotate_columns(meta);
         fixed_table.iter().enumerate().for_each(|(idx, &col)| {
             meta.annotate_lookup_any_column(col, || format!("fix_table_{}", idx))
         });
@@ -114,10 +123,13 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         copy_table.annotate_columns(meta);
         keccak_table.annotate_columns(meta);
         exp_table.annotate_columns(meta);
+        u8_table.annotate_columns(meta);
+        u16_table.annotate_columns(meta);
 
         Self {
             fixed_table,
-            byte_table,
+            u8_table,
+            u16_table,
             execution,
             tx_table,
             rw_table,
@@ -147,25 +159,6 @@ impl<F: Field> EvmCircuitConfig<F> {
                     for (column, value) in self.fixed_table.iter().zip_eq(row) {
                         region.assign_fixed(|| "", *column, offset, || Value::known(value))?;
                     }
-                }
-
-                Ok(())
-            },
-        )
-    }
-
-    /// Load byte table
-    pub fn load_byte_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        layouter.assign_region(
-            || "byte table",
-            |mut region| {
-                for offset in 0..256 {
-                    region.assign_fixed(
-                        || "",
-                        self.byte_table[0],
-                        offset,
-                        || Value::known(F::from(offset as u64)),
-                    )?;
                 }
 
                 Ok(())
@@ -270,7 +263,6 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         let block = self.block.as_ref().unwrap();
 
         config.load_fixed_table(layouter, self.fixed_table_tags.clone())?;
-        config.load_byte_table(layouter)?;
         config.execution.assign_block(layouter, block, challenges)
     }
 }
@@ -375,6 +367,8 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         let copy_table = CopyTable::construct(meta, q_copy_table);
         let keccak_table = KeccakTable::construct(meta);
         let exp_table = ExpTable::construct(meta);
+        let u8_table = UXTable::construct(meta);
+        let u16_table = UXTable::construct(meta);
         let challenges = Challenges::construct(meta);
         let challenges_expr = challenges.exprs(meta);
 
@@ -390,6 +384,8 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
                     copy_table,
                     keccak_table,
                     exp_table,
+                    u8_table,
+                    u16_table,
                 },
             ),
             challenges,
@@ -411,26 +407,25 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             &block.txs,
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
-            &challenges,
         )?;
         block.rws.check_rw_counter_sanity();
         config.rw_table.load(
             &mut layouter,
             &block.rws.table_assignments(),
             block.circuits_params.max_rws,
-            challenges.evm_word(),
         )?;
         config
             .bytecode_table
-            .load(&mut layouter, block.bytecodes.values(), &challenges)?;
-        config
-            .block_table
-            .load(&mut layouter, &block.context, challenges.evm_word())?;
+            .load(&mut layouter, block.bytecodes.values())?;
+        config.block_table.load(&mut layouter, &block.context)?;
         config.copy_table.load(&mut layouter, block, &challenges)?;
         config
             .keccak_table
             .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;
         config.exp_table.load(&mut layouter, block)?;
+
+        config.u8_table.load(&mut layouter)?;
+        config.u16_table.load(&mut layouter)?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }

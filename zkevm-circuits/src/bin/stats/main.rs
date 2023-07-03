@@ -10,7 +10,10 @@ use itertools::Itertools;
 use mock::MOCK_ACCOUNTS;
 use std::env;
 use zkevm_circuits::evm_circuit::{
-    param::{LOOKUP_CONFIG, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS},
+    param::{
+        LOOKUP_CONFIG, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS, N_U16_LOOKUPS,
+        N_U8_LOOKUPS,
+    },
     step::ExecutionState,
     EvmCircuit,
 };
@@ -163,8 +166,10 @@ fn get_exec_steps_occupancy() {
         N_PHASE2_COLUMNS,
         storage_perm,
         N_COPY_COLUMNS,
-        byte_lookup,
-        N_BYTE_LOOKUPS,
+        u8_lookup,
+        N_U8_LOOKUPS,
+        u16_lookup,
+        N_U16_LOOKUPS,
         fixed_table,
         LOOKUP_CONFIG[0].1,
         tx_table,

@@ -1,6 +1,6 @@
 use super::*;
 
-type CopyTableRow<F> = [(Value<F>, &'static str); 8];
+type CopyTableRow<F> = [(Value<F>, &'static str); 9];
 type CopyCircuitRow<F> = [(Value<F>, &'static str); 5];
 
 /// Copy Table, used to verify copies of byte chunks between Memory, Bytecode,
@@ -12,9 +12,9 @@ pub struct CopyTable {
     /// The relevant ID for the read-write row, represented as a random linear
     /// combination. The ID may be one of the below:
     /// 1. Call ID/Caller ID for CopyDataType::Memory
-    /// 2. RLC encoding of bytecode hash for CopyDataType::Bytecode
+    /// 2. The hi/lo limbs of bytecode hash for CopyDataType::Bytecode
     /// 3. Transaction ID for CopyDataType::TxCalldata, CopyDataType::TxLog
-    pub id: Column<Advice>,
+    pub id: word::Word<Column<Advice>>,
     /// The source/destination address for this copy step.  Can be memory
     /// address, byte index in the bytecode, tx call data, and tx log data.
     pub addr: Column<Advice>,
@@ -45,7 +45,7 @@ impl CopyTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>, q_enable: Column<Fixed>) -> Self {
         Self {
             is_first: meta.advice_column(),
-            id: meta.advice_column_in(SecondPhase),
+            id: word::Word::new([meta.advice_column(), meta.advice_column()]),
             q_enable,
             tag: BinaryNumberChip::configure(meta, q_enable, None),
             addr: meta.advice_column(),
@@ -110,9 +110,9 @@ impl CopyTable {
 
             // id
             let id = if is_read_step {
-                number_or_hash_to_field(&copy_event.src_id, challenges.evm_word())
+                number_or_hash_to_word(&copy_event.src_id)
             } else {
-                number_or_hash_to_field(&copy_event.dst_id, challenges.evm_word())
+                number_or_hash_to_word(&copy_event.dst_id)
             };
 
             // tag binary bumber chip
@@ -164,7 +164,8 @@ impl CopyTable {
                 tag,
                 [
                     (is_first, "is_first"),
-                    (id, "id"),
+                    (id.lo(), "id_lo"),
+                    (id.hi(), "id_hi"),
                     (addr, "addr"),
                     (
                         Value::known(F::from(copy_event.src_addr_end)),
@@ -259,7 +260,8 @@ impl<F: Field> LookupTable<F> for CopyTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
             self.is_first.into(),
-            self.id.into(),
+            self.id.lo().into(),
+            self.id.hi().into(),
             self.addr.into(),
             self.src_addr_end.into(),
             self.bytes_left.into(),
@@ -272,7 +274,8 @@ impl<F: Field> LookupTable<F> for CopyTable {
     fn annotations(&self) -> Vec<String> {
         vec![
             String::from("is_first"),
-            String::from("id"),
+            String::from("id_lo"),
+            String::from("id_hi"),
             String::from("addr"),
             String::from("src_addr_end"),
             String::from("bytes_left"),
@@ -285,13 +288,15 @@ impl<F: Field> LookupTable<F> for CopyTable {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
             meta.query_advice(self.is_first, Rotation::cur()),
-            meta.query_advice(self.id, Rotation::cur()), // src_id
-            self.tag.value(Rotation::cur())(meta),       // src_tag
-            meta.query_advice(self.id, Rotation::next()), // dst_id
-            self.tag.value(Rotation::next())(meta),      // dst_tag
-            meta.query_advice(self.addr, Rotation::cur()), // src_addr
+            meta.query_advice(self.id.lo(), Rotation::cur()), // src_id
+            meta.query_advice(self.id.hi(), Rotation::cur()), // src_id
+            self.tag.value(Rotation::cur())(meta),            // src_tag
+            meta.query_advice(self.id.lo(), Rotation::next()), // dst_id
+            meta.query_advice(self.id.hi(), Rotation::next()), // dst_id
+            self.tag.value(Rotation::next())(meta),           // dst_tag
+            meta.query_advice(self.addr, Rotation::cur()),    // src_addr
             meta.query_advice(self.src_addr_end, Rotation::cur()), // src_addr_end
-            meta.query_advice(self.addr, Rotation::next()), // dst_addr
+            meta.query_advice(self.addr, Rotation::next()),   // dst_addr
             meta.query_advice(self.bytes_left, Rotation::cur()), // length
             meta.query_advice(self.rlc_acc, Rotation::cur()), // rlc_acc
             meta.query_advice(self.rw_counter, Rotation::cur()), // rw_counter

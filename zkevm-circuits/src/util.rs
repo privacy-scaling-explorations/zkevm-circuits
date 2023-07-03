@@ -1,4 +1,7 @@
 //! Common utility traits and functions.
+pub mod int_decomposition;
+pub mod word;
+
 use bus_mapping::evm::OpcodeId;
 use halo2_proofs::{
     circuit::{Layouter, Value},
@@ -18,7 +21,8 @@ pub mod cell_manager;
 /// Cell Manager strategies
 pub mod cell_manager_strategy;
 
-pub(crate) fn query_expression<F: Field, T>(
+/// Steal the expression from gate
+pub fn query_expression<F: Field, T>(
     meta: &mut ConstraintSystem<F>,
     mut f: impl FnMut(&mut VirtualCells<F>) -> T,
 ) -> T {
