@@ -1313,14 +1313,6 @@ impl<F: Field> MainRLPGadget<F> {
             // the byte index >= num_bytes.
             // We enable dynamic lookups because otherwise these lookup would require a lot of extra
             // cells.
-            /*for (idx, byte) in config.bytes.iter().enumerate() {
-                require!(
-                    format!("byte {:?}", byte.identifier()),
-                    vec![config.tag.expr(), byte.expr(), config.num_bytes.expr() - idx.expr()]
-                    // is_fixed, compress, is_split
-                    => @FIXED, true, true, false
-                );*/
-            //cb.set_use_dynamic_lookup(true);
             if params.is_two_byte_lookup_enabled() {
                 assert!(config.bytes.len() % 2 == 0);
                 for idx in (0..config.bytes.len()).step_by(2) {
@@ -1381,7 +1373,7 @@ impl<F: Field> MainRLPGadget<F> {
         } else {
             self.leading_zero.assign(region, offset, 0.scalar())?;
         }
-        
+
         // Compute the denominator needed for BE
         let mult_inv = pow::value(region.keccak_r, HASH_WIDTH + 2 - rlp_witness.num_bytes())
             .invert()
@@ -1434,9 +1426,11 @@ impl<F: Field> MainRLPGadget<F> {
 
             // Check the tag value
             require!(tag => self.tag(item_type).expr());
-            // Check the is_string value
+            // Check that values and keys are always strings
             if item_type == RlpItemType::Value || item_type == RlpItemType::Key {
                 require!(is_string => true);
+            }
+            if item_type == RlpItemType::Value {
                 ifx!(is_long => {
                     require!(self.leading_zero.expr() => false)
                 });
