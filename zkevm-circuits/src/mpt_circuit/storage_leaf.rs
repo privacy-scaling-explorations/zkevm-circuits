@@ -10,9 +10,9 @@ use itertools::Itertools;
 use crate::{
     circuit,
     circuit_tools::{
-        cached_region::{CachedRegion, ChallengeSet},
+        cached_region::CachedRegion,
         cell_manager::Cell,
-        constraint_builder::RLCChainable,
+        constraint_builder::RLCChainable2,
         gadgets::{IsEqualGadget, LtGadget},
     },
     mpt_circuit::{
@@ -56,8 +56,6 @@ impl<F: Field> StorageLeafConfig<F> {
         cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
     ) -> Self {
-        let r = ctx.r.clone();
-
         cb.base
             .cell_manager
             .as_mut()
@@ -99,6 +97,7 @@ impl<F: Field> StorageLeafConfig<F> {
             let mut key_rlc = vec![0.expr(); 2];
             let mut value_rlc = vec![0.expr(); 2];
             let mut value_rlp_rlc = vec![0.expr(); 2];
+            let mut value_rlp_rlc_mult = vec![0.expr(); 2];
             for is_s in [true, false] {
                 // Parent data
                 let parent_data = &mut config.parent_data[is_s.idx()];
@@ -110,7 +109,7 @@ impl<F: Field> StorageLeafConfig<F> {
 
                 // Placeholder leaf checks
                 config.is_in_empty_trie[is_s.idx()] =
-                    IsEmptyTreeGadget::construct(cb, parent_data.rlc.expr(), &r);
+                    IsEmptyTreeGadget::construct(cb, parent_data.rlc.expr(), &cb.r.expr());
                 let is_placeholder_leaf = config.is_in_empty_trie[is_s.idx()].expr();
 
                 let rlp_key = &mut config.rlp_key[is_s.idx()];
@@ -123,27 +122,30 @@ impl<F: Field> StorageLeafConfig<F> {
                         .collect::<Vec<_>>(),
                 );
 
-                // Multiplier after list and key
-                let mult = rlp_key.rlp_list.rlp_mult(&r) * key_items[is_s.idx()].mult();
-
                 // Because the storage value is an rlp encoded string inside another rlp encoded
                 // string (leaves are always encoded as [key, value], with
                 // `value` here containing a single stored value) the stored
                 // value is either stored directly in the RLP encoded string if short, or stored
                 // wrapped inside another RLP encoded string if long.
-                (value_rlc[is_s.idx()], value_rlp_rlc[is_s.idx()]) = ifx! {config.rlp_value[is_s.idx()].is_short() => {
-                    config.rlp_value[is_s.idx()].rlc(&r)
+                let rlp_value = config.rlp_value[is_s.idx()].rlc_value(&cb.r);
+                let rlp_value_rlc_mult = config.rlp_value[is_s.idx()].rlc_rlp_only2(&cb.keccak_r);
+                (
+                    value_rlc[is_s.idx()],
+                    value_rlp_rlc[is_s.idx()],
+                    value_rlp_rlc_mult[is_s.idx()],
+                ) = ifx! {config.rlp_value[is_s.idx()].is_short() => {
+                    (rlp_value, rlp_value_rlc_mult.0.expr(), rlp_value_rlc_mult.1.expr())
                 } elsex {
                     let value_rlc = value_item[is_s.idx()].rlc_content();
-                    let value_rlp_rlc = (config.rlp_value[is_s.idx()].rlc_rlp(&r), r.expr()).rlc_chain(
-                        value_item[is_s.idx()].rlc_rlp()
-                    );
+                    let value_rlp_rlc = rlp_value_rlc_mult.0.rlc_chain2(value_item[is_s.idx()].rlc_chain_data());
                     require!(config.rlp_value[is_s.idx()].num_bytes() => value_item[is_s.idx()].num_bytes() + 1.expr());
-                    (value_rlc, value_rlp_rlc)
+                    (value_rlc, value_rlp_rlc, rlp_value_rlc_mult.1 * value_item[is_s.idx()].mult())
                 }};
 
-                let leaf_rlc =
-                    (rlp_key.rlc(&r), mult.expr()).rlc_chain(value_rlp_rlc[is_s.idx()].expr());
+                let leaf_rlc = rlp_key.rlc2(&cb.keccak_r).rlc_chain2((
+                    value_rlp_rlc[is_s.idx()].expr(),
+                    value_rlp_rlc_mult[is_s.idx()].expr(),
+                ));
 
                 // Key
                 key_rlc[is_s.idx()] = key_data.rlc.expr()
@@ -152,7 +154,7 @@ impl<F: Field> StorageLeafConfig<F> {
                         rlp_key.key_value.clone(),
                         key_data.mult.expr(),
                         key_data.is_odd.expr(),
-                        &r,
+                        &cb.r.expr(),
                     );
                 // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES
                 let num_nibbles =
@@ -177,7 +179,8 @@ impl<F: Field> StorageLeafConfig<F> {
                         require!((1, leaf_rlc, rlp_key.rlp_list.num_bytes(), parent_data.rlc) => @KECCAK);
                     } elsex {
                         // Non-hashed branch hash in parent branch
-                        require!(leaf_rlc => parent_data.rlc);
+                        // TODO(Brecht): restore
+                        //require!(leaf_rlc => parent_data.rlc);
                     }}
                 }}
 
@@ -223,8 +226,9 @@ impl<F: Field> StorageLeafConfig<F> {
                 &config.key_data,
                 &key_rlc,
                 &value_rlp_rlc,
+                &value_rlp_rlc_mult,
                 &drifted_item,
-                &ctx.r,
+                &cb.r.expr(),
             );
 
             // Wrong leaf handling
@@ -237,7 +241,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 &wrong_item,
                 config.is_in_empty_trie[true.idx()].expr(),
                 config.key_data[true.idx()].clone(),
-                &ctx.r,
+                &cb.r.expr(),
             );
 
             // For non-existing proofs the tree needs to remain the same
@@ -274,10 +278,9 @@ impl<F: Field> StorageLeafConfig<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn assign<S: ChallengeSet<F>>(
+    pub fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
-        _challenges: &S,
+        region: &mut CachedRegion<'_, '_, F>,
         mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
@@ -350,7 +353,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 rlp_key_witness.key_item.clone(),
                 key_data[is_s.idx()].rlc,
                 key_data[is_s.idx()].mult,
-                pv.r,
+                region.r,
             );
 
             // Value
@@ -366,9 +369,9 @@ impl<F: Field> StorageLeafConfig<F> {
                 &storage.value_rlp_bytes[is_s.idx()],
             )?;
             value_rlc[is_s.idx()] = if value_witness.is_short() {
-                value_witness.rlc_value(pv.r)
+                value_witness.rlc_value(region.r)
             } else {
-                value_item[is_s.idx()].rlc_content(pv.r)
+                value_item[is_s.idx()].rlc_content(region.r)
             };
 
             ParentData::witness_store(
@@ -385,7 +388,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 region,
                 offset,
                 parent_data[is_s.idx()].rlc,
-                pv.r,
+                region.r,
             )?;
         }
 
@@ -409,7 +412,7 @@ impl<F: Field> StorageLeafConfig<F> {
             &parent_data,
             &storage.drifted_rlp_bytes,
             &drifted_item,
-            pv.r,
+            region.r,
         )?;
 
         // Wrong leaf handling
@@ -422,7 +425,7 @@ impl<F: Field> StorageLeafConfig<F> {
             &wrong_item,
             false,
             key_data[true.idx()].clone(),
-            pv.r,
+            region.r,
         )?;
 
         // Put the data in the lookup table

@@ -1,19 +1,20 @@
 //! Cell manager
 use crate::{
-    circuit_tools::cached_region::{CachedRegion, ChallengeSet},
+    circuit_tools::cached_region::CachedRegion,
     util::{query_expression, Expr},
 };
 
+use crate::table::LookupTable;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Value},
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, ThirdPhase,
-        VirtualCells,
+        Advice, Any, Column, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase,
+        ThirdPhase, VirtualCells,
     },
     poly::Rotation,
 };
-use std::{collections::BTreeMap, fmt::Debug, hash::Hash};
+use std::{cmp::Ordering, collections::BTreeMap, fmt::Debug, hash::Hash};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Cell<F> {
@@ -33,9 +34,9 @@ impl<F: Field> Cell<F> {
         }
     }
 
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         value: F,
     ) -> Result<AssignedCell<F, F>, Error> {
@@ -52,9 +53,9 @@ impl<F: Field> Cell<F> {
         )
     }
 
-    pub(crate) fn assign_value<S: ChallengeSet<F>>(
+    pub(crate) fn assign_value(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         value: Value<F>,
     ) -> Result<AssignedCell<F, F>, Error> {
@@ -125,9 +126,9 @@ impl<C: CellType> CellConfig<C> {
         let mut columns = Vec::with_capacity(self.num_columns);
         for _ in 0..self.num_columns {
             let tmp = match self.phase {
-                0 => meta.advice_column_in(FirstPhase),
-                1 => meta.advice_column_in(SecondPhase),
-                2 => meta.advice_column_in(ThirdPhase),
+                1 => meta.advice_column_in(FirstPhase),
+                2 => meta.advice_column_in(SecondPhase),
+                3 => meta.advice_column_in(ThirdPhase),
                 _ => unreachable!(),
             };
             columns.push(tmp);
@@ -172,6 +173,7 @@ pub trait CellType:
 pub enum DefaultCellType {
     StoragePhase1,
     StoragePhase2,
+    StoragePhase3,
 }
 
 impl Default for DefaultCellType {
@@ -186,21 +188,52 @@ impl CellType for DefaultCellType {
     }
 
     fn storage_for_phase(phase: u8) -> Self {
+        // println!("phase: {}", phase);
         match phase {
-            0 => DefaultCellType::StoragePhase1,
-            1 => DefaultCellType::StoragePhase2,
+            1 => DefaultCellType::StoragePhase1,
+            2 => DefaultCellType::StoragePhase2,
+            3 => DefaultCellType::StoragePhase3,
             _ => unreachable!(),
         }
     }
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct CellColumn<F, C> {
+pub(crate) struct CellColumn<F, C: CellType> {
+    pub(crate) column: Column<Advice>,
     index: usize,
     pub(crate) cell_type: C,
     height: usize,
     cells: Vec<Cell<F>>,
     pub(crate) expr: Expression<F>,
+}
+
+impl<F: Field, C: CellType> PartialEq for CellColumn<F, C> {
+    fn eq(&self, other: &Self) -> bool {
+        self.index == other.index
+            && self.cell_type == other.cell_type
+            && self.height == other.height
+    }
+}
+
+impl<F: Field, C: CellType> Eq for CellColumn<F, C> {}
+
+impl<F: Field, C: CellType> PartialOrd for CellColumn<F, C> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.height.partial_cmp(&other.height)
+    }
+}
+
+impl<F: Field, C: CellType> Ord for CellColumn<F, C> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.height.cmp(&other.height)
+    }
+}
+
+impl<F: Field, C: CellType> Expr<F> for CellColumn<F, C> {
+    fn expr(&self) -> Expression<F> {
+        self.expr.clone()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -234,6 +267,7 @@ impl<F: Field, C: CellType> CellManager<F, C> {
                     });
                 }
                 columns.push(CellColumn {
+                    column: *col,
                     index: columns.len(),
                     cell_type: config.cell_type,
                     height: 0,
@@ -242,7 +276,6 @@ impl<F: Field, C: CellType> CellManager<F, C> {
                 });
             }
         }
-
         Self {
             configs,
             columns,
@@ -326,5 +359,33 @@ impl<F: Field, C: CellType> CellManager<F, C> {
             }
         }
         columns
+    }
+}
+
+/// LookupTable created dynamically and stored in an advice column
+#[derive(Clone, Debug)]
+pub struct DynamicLookupTable {
+    /// Table
+    pub table: Column<Advice>,
+}
+
+impl DynamicLookupTable {
+    /// Construct a new BlockTable
+    pub fn from<F: Field, C: CellType>(cm: &CellManager<F, C>, cell_type: C) -> Self {
+        let table_columns = cm.get_typed_columns(cell_type);
+        assert_eq!(table_columns.len(), 1);
+        Self {
+            table: table_columns[0].column,
+        }
+    }
+}
+
+impl<F: Field> LookupTable<F> for DynamicLookupTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![self.table.into()]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![String::from("generated")]
     }
 }

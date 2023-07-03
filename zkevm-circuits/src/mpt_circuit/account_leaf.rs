@@ -14,9 +14,9 @@ use super::{
 use crate::{
     circuit,
     circuit_tools::{
-        cached_region::{CachedRegion, ChallengeSet},
+        cached_region::CachedRegion,
         cell_manager::Cell,
-        constraint_builder::{RLCChainable, RLCable, RLCableValue},
+        constraint_builder::{RLCChainable2, RLCable, RLCableValue},
         gadgets::IsEqualGadget,
     },
     mpt_circuit::{
@@ -56,8 +56,6 @@ impl<F: Field> AccountLeafConfig<F> {
         cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
     ) -> Self {
-        let r = ctx.r.clone();
-
         cb.base
             .cell_manager
             .as_mut()
@@ -145,6 +143,7 @@ impl<F: Field> AccountLeafConfig<F> {
             let mut storage_rlc = vec![0.expr(); 2];
             let mut codehash_rlc = vec![0.expr(); 2];
             let mut leaf_no_key_rlc = vec![0.expr(); 2];
+            let mut leaf_no_key_rlc_mult = vec![0.expr(); 2];
             let mut value_list_num_bytes = vec![0.expr(); 2];
             for is_s in [true, false] {
                 // Key data
@@ -162,41 +161,44 @@ impl<F: Field> AccountLeafConfig<F> {
 
                 // Placeholder leaf checks
                 config.is_in_empty_trie[is_s.idx()] =
-                    IsEmptyTreeGadget::construct(cb, parent_data.rlc.expr(), &r);
+                    IsEmptyTreeGadget::construct(cb, parent_data.rlc.expr(), &cb.r.expr());
 
                 // Calculate the key RLC
                 let rlp_key = &mut config.rlp_key[is_s.idx()];
                 *rlp_key = ListKeyGadget::construct(cb, &key_items[is_s.idx()]);
 
-                // Multiplier after list and key
-                let mult = rlp_key.rlp_list.rlp_mult(&r) * key_items[is_s.idx()].mult();
-
                 let nonce_rlp_rlc;
                 let balance_rlp_rlc;
                 let storage_rlp_rlc;
                 let codehash_rlp_rlc;
-                (nonce_rlc[is_s.idx()], nonce_rlp_rlc) = nonce_items[is_s.idx()].rlc();
-                (balance_rlc[is_s.idx()], balance_rlp_rlc) = balance_items[is_s.idx()].rlc();
-                (storage_rlc[is_s.idx()], storage_rlp_rlc) = storage_items[is_s.idx()].rlc();
-                (codehash_rlc[is_s.idx()], codehash_rlp_rlc) = codehash_items[is_s.idx()].rlc();
+                (nonce_rlc[is_s.idx()], nonce_rlp_rlc) = nonce_items[is_s.idx()].rlc2();
+                (balance_rlc[is_s.idx()], balance_rlp_rlc) = balance_items[is_s.idx()].rlc2();
+                (storage_rlc[is_s.idx()], storage_rlp_rlc) = storage_items[is_s.idx()].rlc2();
+                (codehash_rlc[is_s.idx()], codehash_rlp_rlc) = codehash_items[is_s.idx()].rlc2();
 
                 // Calculate the leaf RLC
+                let keccak_r = &cb.keccak_r;
                 let value_rlp_bytes = config.value_rlp_bytes[is_s.idx()].to_expr_vec();
                 let value_list_rlp_bytes = config.value_list_rlp_bytes[is_s.idx()].to_expr_vec();
-                leaf_no_key_rlc[is_s.idx()] = (value_rlp_bytes.rlc(&r), pow::expr(r.expr(), 2))
-                    .rlc_chain(
-                        (value_list_rlp_bytes.rlc(&r), pow::expr(r.expr(), 2)).rlc_chain(
-                            (nonce_rlp_rlc.expr(), nonce_items[is_s.idx()].mult()).rlc_chain(
-                                (balance_rlp_rlc.expr(), balance_items[is_s.idx()].mult())
-                                    .rlc_chain(
-                                        (storage_rlp_rlc.expr(), pow::expr(r.expr(), 33))
-                                            .rlc_chain(codehash_rlp_rlc.expr()),
-                                    ),
-                            ),
-                        ),
-                    );
-                let leaf_rlc =
-                    (rlp_key.rlc(&r), mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
+                leaf_no_key_rlc[is_s.idx()] = value_rlp_bytes
+                    .rlc_rev(keccak_r)
+                    .rlc_chain2((
+                        value_list_rlp_bytes.rlc_rev(keccak_r),
+                        pow::expr(keccak_r.expr(), 2),
+                    ))
+                    .rlc_chain2(nonce_rlp_rlc.clone())
+                    .rlc_chain2(balance_rlp_rlc.clone())
+                    .rlc_chain2(storage_rlp_rlc.clone())
+                    .rlc_chain2(codehash_rlp_rlc.clone());
+                leaf_no_key_rlc_mult[is_s.idx()] = pow::expr(keccak_r.expr(), 4)
+                    * nonce_rlp_rlc.1
+                    * balance_rlp_rlc.1
+                    * storage_rlp_rlc.1
+                    * codehash_rlp_rlc.1;
+                let leaf_rlc = rlp_key.rlc2(&cb.keccak_r).rlc_chain2((
+                    leaf_no_key_rlc[is_s.idx()].expr(),
+                    leaf_no_key_rlc_mult[is_s.idx()].expr(),
+                ));
 
                 // Key
                 key_rlc[is_s.idx()] = key_data.rlc.expr()
@@ -205,7 +207,7 @@ impl<F: Field> AccountLeafConfig<F> {
                         rlp_key.key_value.clone(),
                         key_data.mult.expr(),
                         key_data.is_odd.expr(),
-                        &r,
+                        &cb.r.expr(),
                     );
                 // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES.
                 let num_nibbles =
@@ -287,8 +289,9 @@ impl<F: Field> AccountLeafConfig<F> {
                 &config.key_data,
                 &key_rlc,
                 &leaf_no_key_rlc,
+                &leaf_no_key_rlc_mult,
                 &drifted_bytes,
-                &ctx.r,
+                &cb.r.expr(),
             );
 
             // Wrong leaf handling
@@ -301,7 +304,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 &wrong_bytes,
                 config.is_in_empty_trie[true.idx()].expr(),
                 config.key_data[true.idx()].clone(),
-                &ctx.r,
+                &cb.r.expr(),
             );
             let is_non_existing_account = not::expr(config.wrong.is_key_equal.clone().expr());
 
@@ -396,10 +399,9 @@ impl<F: Field> AccountLeafConfig<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn assign<S: ChallengeSet<F>>(
+    pub fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
-        _challenges: &S,
+        region: &mut CachedRegion<'_, '_, F>,
         mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
@@ -476,7 +478,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 region,
                 offset,
                 parent_data[is_s.idx()].rlc,
-                pv.r,
+                region.r,
             )?;
 
             let rlp_key_witness = self.rlp_key[is_s.idx()].assign(
@@ -486,17 +488,17 @@ impl<F: Field> AccountLeafConfig<F> {
                 &key_items[is_s.idx()],
             )?;
 
-            nonce_rlc[is_s.idx()] = nonce_items[is_s.idx()].rlc_content(pv.r);
-            balance_rlc[is_s.idx()] = balance_items[is_s.idx()].rlc_content(pv.r);
-            storage_rlc[is_s.idx()] = storage_items[is_s.idx()].rlc_content(pv.r);
-            codehash_rlc[is_s.idx()] = codehash_items[is_s.idx()].rlc_content(pv.r);
+            nonce_rlc[is_s.idx()] = nonce_items[is_s.idx()].rlc_content(region.r);
+            balance_rlc[is_s.idx()] = balance_items[is_s.idx()].rlc_content(region.r);
+            storage_rlc[is_s.idx()] = storage_items[is_s.idx()].rlc_content(region.r);
+            codehash_rlc[is_s.idx()] = codehash_items[is_s.idx()].rlc_content(region.r);
 
             // Key
             (key_rlc[is_s.idx()], _) = rlp_key_witness.key.key(
                 rlp_key_witness.key_item.clone(),
                 key_data[is_s.idx()].rlc,
                 key_data[is_s.idx()].mult,
-                pv.r,
+                region.r,
             );
 
             // Update key and parent state
@@ -521,6 +523,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 storage_rlc[is_s.idx()],
             )?;
         }
+
         // Proof types
         let is_non_existing_proof = self.is_non_existing_account_proof.assign(
             region,
@@ -565,7 +568,7 @@ impl<F: Field> AccountLeafConfig<F> {
             &parent_data,
             &account.drifted_rlp_bytes,
             &drifted_item,
-            pv.r,
+            region.r,
         )?;
 
         // Wrong leaf handling
@@ -578,7 +581,7 @@ impl<F: Field> AccountLeafConfig<F> {
             &wrong_item,
             true,
             key_data[true.idx()].clone(),
-            pv.r,
+            region.r,
         )?;
 
         // Anything following this node is below the account
@@ -589,7 +592,7 @@ impl<F: Field> AccountLeafConfig<F> {
             main_data.proof_type,
             true,
             is_non_existing_account,
-            account.address.rlc_value(pv.r),
+            account.address.rlc_value(region.r),
             main_data.root_prev,
             main_data.root,
         )?;
@@ -614,7 +617,7 @@ impl<F: Field> AccountLeafConfig<F> {
             region,
             offset,
             &MptUpdateRow {
-                address_rlc: Value::known(account.address.rlc_value(pv.r)),
+                address_rlc: Value::known(account.address.rlc_value(region.r)),
                 proof_type: Value::known(proof_type.scalar()),
                 key_rlc: Value::known(0.scalar()),
                 value_prev: Value::known(value[true.idx()]),
