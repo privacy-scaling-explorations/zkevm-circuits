@@ -36,6 +36,8 @@ rand_chacha = "0.3"
 snark-verifier = { git = "https://github.com/privacy-scaling-explorations/snark-verifier", tag = "v2023_04_20", default-features = false, features = ["loader_halo2", "system_halo2"] }
 cli-table = { version = "0.4", optional = true }
 num_enum = "0.5.7"
+serde = { version = "1.0.130", features = ["derive"] }
+serde_json = "1.0.78"
 
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }
@@ -45,8 +47,6 @@ hex = "0.4.3"
 itertools = "0.10.1"
 mock = { path = "../mock" }
 pretty_assertions = "1.0.0"
-serde = { version = "1.0.130", features = ["derive"] }
-serde_json = "1.0.78"
 
 [features]
 default = []

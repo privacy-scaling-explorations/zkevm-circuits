@@ -5,9 +5,10 @@ use crate::{
         cached_region::CachedRegion, cell_manager::CellType, constraint_builder::ConstraintBuilder,
     },
 };
+use serde::{Deserialize, Serialize};
 
 /// The types of proofs in the MPT table
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum MPTProofType {
     /// Disabled
     Disabled,

@@ -95,11 +95,7 @@ pub trait Indexable {
 
 impl Indexable for bool {
     fn idx(&self) -> usize {
-        if *self {
-            0
-        } else {
-            1
-        }
+        usize::from(!(*self))
     }
 }
 

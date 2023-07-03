@@ -24,14 +24,19 @@ mod param;
 mod rlp_gadgets;
 mod start;
 mod storage_leaf;
-mod witness_row;
+/// MPT witness row
+pub mod witness_row;
 
 use self::{
     account_leaf::AccountLeafConfig,
     helpers::{key_memory, RLPItemView},
     param::RLP_UNIT_NUM_BYTES,
     rlp_gadgets::decode_rlp,
-    witness_row::{AccountRowType, ExtensionBranchRowType, Node, StartRowType, StorageRowType},
+    witness_row::{
+        AccountRowType, ExtensionBranchRowType, Node, StartRowType, StorageRowType,
+        NODE_RLP_TYPES_ACCOUNT, NODE_RLP_TYPES_BRANCH, NODE_RLP_TYPES_START,
+        NODE_RLP_TYPES_STORAGE,
+    },
 };
 use crate::{
     assign, assignf, circuit,
@@ -476,10 +481,22 @@ impl<F: Field> MPTConfig<F> {
                         keccak_r,
                     );
 
+                    let item_types = if node.start.is_some() {
+                        NODE_RLP_TYPES_START.to_vec()
+                    } else if node.extension_branch.is_some() {
+                        NODE_RLP_TYPES_BRANCH.to_vec()
+                    } else if node.account.is_some() {
+                        NODE_RLP_TYPES_ACCOUNT.to_vec()
+                    } else if node.storage.is_some() {
+                        NODE_RLP_TYPES_STORAGE.to_vec()
+                    } else {
+                        unreachable!()
+                    };
+
                     // Assign bytes
                     let mut rlp_values = Vec::new();
                     // Decompose RLP
-                    for (idx, (item_type, bytes)) in node.values.iter().enumerate() {
+                    for (idx, (bytes, item_type)) in node.values.iter().zip(item_types.iter()).enumerate() {
                         cached_region.push_region(offset + idx, MPTRegion::RLP as usize);
                         let rlp_value = self.rlp_item.assign(
                             &mut cached_region,
@@ -704,6 +721,7 @@ impl<F: Field> MPTConfig<F> {
     }
 }
 
+/// MPT Circuit for proving the storage modification is valid.
 #[derive(Default)]
 struct MPTCircuit<F> {
     nodes: Vec<Node>,
@@ -772,12 +790,8 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
 
 #[cfg(test)]
 mod tests {
-    use crate::mpt_circuit::witness_row::{prepare_witness, MptWitnessRow};
-
     use super::*;
-
     use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-
     use std::fs;
 
     #[test]
@@ -799,23 +813,19 @@ mod tests {
                 let mut parts = path.to_str().unwrap().split('-');
                 parts.next();
                 let file = std::fs::File::open(path.clone());
+
                 let reader = std::io::BufReader::new(file.unwrap());
-                let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
+                let nodes: Vec<Node> = serde_json::from_reader(reader).unwrap();
+                let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
 
                 let randomness: Fr = 123456.scalar();
 
                 let mut keccak_data = vec![];
-                let mut witness_rows = vec![];
-                for row in w.iter() {
-                    if row[row.len() - 1] == 5 {
-                        keccak_data.push(row[0..row.len() - 1].to_vec());
-                    } else {
-                        let row = MptWitnessRow::<Fr>::new(row[0..row.len()].to_vec());
-                        witness_rows.push(row);
+                for node in nodes.iter() {
+                    for k in node.keccak_data.iter() {
+                        keccak_data.push(k.clone());
                     }
                 }
-                let nodes = prepare_witness(&mut witness_rows);
-                let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
 
                 let degree = 14;
                 let circuit = MPTCircuit::<Fr> {
