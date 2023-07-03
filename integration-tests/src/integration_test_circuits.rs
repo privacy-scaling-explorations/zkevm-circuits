@@ -131,13 +131,13 @@ lazy_static! {
     pub static ref SUPER_CIRCUIT_TEST: TokioMutex<IntegrationTest<SuperCircuit::<Fr>>> =
     TokioMutex::new(IntegrationTest::new("Super", SUPER_CIRCUIT_DEGREE, ROOT_CIRCUIT_BIG_DEGREE));
 
-     /// Integration test for Exp circuit
-     pub static ref EXP_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestExpCircuit::<Fr>>> =
-     TokioMutex::new(IntegrationTest::new("Exp", EXP_CIRCUIT_DEGREE, ROOT_CIRCUIT_SMALL_DEGREE));
+    /// Integration test for Exp circuit
+    pub static ref EXP_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestExpCircuit::<Fr>>> =
+    TokioMutex::new(IntegrationTest::new("Exp", EXP_CIRCUIT_DEGREE, ROOT_CIRCUIT_SMALL_DEGREE));
 
-     /// Integration test for Pi circuit
-     pub static ref PI_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestPiCircuit::<Fr>>> =
-     TokioMutex::new(IntegrationTest::new("Pi", PI_CIRCUIT_DEGREE, ROOT_CIRCUIT_SMALL_DEGREE));
+    /// Integration test for Pi circuit
+    pub static ref PI_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestPiCircuit::<Fr>>> =
+    TokioMutex::new(IntegrationTest::new("Pi", PI_CIRCUIT_DEGREE, ROOT_CIRCUIT_SMALL_DEGREE));
 }
 
 lazy_static! {
