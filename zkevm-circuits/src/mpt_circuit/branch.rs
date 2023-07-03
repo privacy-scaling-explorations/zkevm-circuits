@@ -12,7 +12,7 @@ use super::{
 use crate::{
     circuit,
     circuit_tools::{
-        cached_region::{CachedRegion, ChallengeSet},
+        cached_region::{CachedRegion},
         cell_manager::Cell,
         constraint_builder::RLCChainable2,
         gadgets::LtGadget,
@@ -76,7 +76,7 @@ impl<F: Field> BranchGadget<F> {
                 // Start RLC encoding the RLP data starting with the list RLP bytes
                 node_rlc[is_s.idx()] = config.rlp_list[is_s.idx()]
                     .rlp_list
-                    .rlc_rlp_only2(&cb.be_r)
+                    .rlc_rlp_only2(&cb.keccak_r)
                     .0;
 
                 // Keep track of how many bytes the branch contains to make sure it's correct.
@@ -163,7 +163,7 @@ impl<F: Field> BranchGadget<F> {
                 require!(num_bytes_left[is_s.idx()] => 1);
                 // TODO: acc currently doesn't have branch ValueNode info
                 node_rlc[is_s.idx()] =
-                    node_rlc[is_s.idx()].rlc_chain2((RLP_NIL.expr(), cb.be_r.expr()));
+                    node_rlc[is_s.idx()].rlc_chain2((RLP_NIL.expr(), cb.keccak_r.expr()));
             }
 
             // `is_modified` needs to be set to 1 at exactly 1 branch child
@@ -207,7 +207,7 @@ impl<F: Field> BranchGadget<F> {
                 key_mult.expr(),
                 is_key_odd.expr(),
                 modified_index.expr(),
-                &cb.le_r.expr(),
+                &cb.r.expr(),
             );
             // Also calculate the key RLC and multiplier for the drifted nibble.
             let (key_rlc_post_drifted, key_mult_post_drifted) = nibble_rlc(
@@ -216,7 +216,7 @@ impl<F: Field> BranchGadget<F> {
                 key_mult.expr(),
                 is_key_odd.expr(),
                 drifted_index.expr(),
-                &cb.le_r.expr(),
+                &cb.r.expr(),
             );
 
             // Update the nibble counter
@@ -271,9 +271,9 @@ impl<F: Field> BranchGadget<F> {
 
     #[allow(clippy::collapsible_else_if)]
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         _mpt_config: &MPTConfig<F>,
         _pv: &mut MPTState<F>,
         offset: usize,
@@ -327,7 +327,7 @@ impl<F: Field> BranchGadget<F> {
         } else {
             // The nibble will be added as the least significant nibble, the multiplier
             // needs to advance
-            (1.scalar(), region.le_r)
+            (1.scalar(), region.r)
         };
         let key_rlc_post_branch =
             *key_rlc + F::from(branch.modified_index as u64) * nibble_mult * *key_mult;
@@ -339,12 +339,12 @@ impl<F: Field> BranchGadget<F> {
         let mut mod_node_hash_rlc = [0.scalar(); 2];
         for is_s in [true, false] {
             mod_node_hash_rlc[is_s.idx()] = if is_placeholder[is_s.idx()] {
-                rlp_values[1 + branch.drifted_index].rlc_content(region.le_r)
+                rlp_values[1 + branch.drifted_index].rlc_content(region.r)
             } else {
                 if is_s {
-                    rlp_values[1 + branch.modified_index].rlc_content(region.le_r)
+                    rlp_values[1 + branch.modified_index].rlc_content(region.r)
                 } else {
-                    rlp_values[0].rlc_content(region.le_r)
+                    rlp_values[0].rlc_content(region.r)
                 }
             };
             self.mod_rlc[is_s.idx()].assign(region, offset, mod_node_hash_rlc[is_s.idx()])?;

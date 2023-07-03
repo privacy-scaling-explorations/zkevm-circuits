@@ -50,15 +50,10 @@ impl KeccakTable {
         challenges: &Challenges<Value<F>>,
         is_big_endian: bool,
     ) -> Vec<[Value<F>; 4]> {
-        // let bytes = if is_big_endian {
-        // input.iter().cloned().rev().collect::<Vec<u8>>()
-        // } else {
-        // input.to_owned()
-        // };
-        let le_r = F::from(123456u64);
+        let r = F::from(123456u64);
         let input_rlc = challenges
             .keccak_input()
-            .map(|challenge| rlc::value(input.iter().rev(), challenge /* le_r + F::ONE */));
+            .map(|challenge| rlc::value(input.iter().rev(), challenge));
         let input_len = F::from(input.len() as u64);
         let mut keccak = Keccak::default();
         keccak.update(input);
@@ -72,7 +67,7 @@ impl KeccakTable {
                 }
                 .to_le_bytes(),
                 // challenge
-                le_r,
+                r,
             )
         });
 

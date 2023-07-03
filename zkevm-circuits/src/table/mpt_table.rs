@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     circuit,
     circuit_tools::{
-        cached_region::{CachedRegion, ChallengeSet},
+        cached_region::{CachedRegion},
         cell_manager::CellType,
         constraint_builder::ConstraintBuilder,
     },
@@ -144,9 +144,9 @@ impl MptTable {
         Ok(())
     }
 
-    pub(crate) fn assign_cached<F: Field, S: ChallengeSet<F>>(
+    pub(crate) fn assign_cached<F: Field>(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         row: &MptUpdateRow<Value<F>>,
     ) -> Result<(), Error> {

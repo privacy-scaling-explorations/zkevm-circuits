@@ -1,7 +1,7 @@
 use crate::{
     _cb, circuit,
     circuit_tools::{
-        cached_region::{CachedRegion, ChallengeSet},
+        cached_region::{CachedRegion},
         cell_manager::Cell,
         constraint_builder::{ConstraintBuilder, RLCable, RLCableValue},
     },
@@ -103,9 +103,9 @@ impl<F: Field> RLPListGadget<F> {
         })
     }
 
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         bytes: &[u8],
     ) -> Result<RLPListWitness, Error> {
@@ -294,9 +294,9 @@ impl<F: Field> RLPListDataGadget<F> {
         }
     }
 
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         list_bytes: &[u8],
     ) -> Result<RLPListWitness, Error> {
@@ -357,9 +357,9 @@ impl<F: Field> RLPValueGadget<F> {
         })
     }
 
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         bytes: &[u8],
     ) -> Result<RLPValueWitness, Error> {
@@ -668,9 +668,9 @@ impl<F: Field> RLPItemGadget<F> {
         }
     }
 
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         bytes: &[u8],
     ) -> Result<RLPItemWitness, Error> {
@@ -749,8 +749,8 @@ impl<F: Field> RLPItemGadget<F> {
     pub(crate) fn rlc_rlp(&self, cb: &mut MPTConstraintBuilder<F>) -> Expression<F> {
         circuit!([meta, cb], {
             matchx! {
-                self.value.is_string() => self.value.rlc_rlp(&cb.be_r),
-                self.list.is_list() => self.list.rlc_rlp(&cb.be_r),
+                self.value.is_string() => self.value.rlc_rlp(&cb.keccak_r),
+                self.list.is_list() => self.list.rlc_rlp(&cb.keccak_r),
             }
         })
     }
@@ -758,8 +758,8 @@ impl<F: Field> RLPItemGadget<F> {
     pub(crate) fn rlc_rlp2(&self, cb: &mut MPTConstraintBuilder<F>) -> Expression<F> {
         circuit!([meta, cb], {
             matchx! {
-                self.value.is_string() => self.value.rlc_rlp2(&cb.be_r),
-                self.list.is_list() => self.list.rlc_rlp2(&cb.be_r),
+                self.value.is_string() => self.value.rlc_rlp2(&cb.keccak_r),
+                self.list.is_list() => self.list.rlc_rlp2(&cb.keccak_r),
             }
         })
     }

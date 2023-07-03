@@ -11,7 +11,7 @@ use super::{
 use crate::{
     circuit,
     circuit_tools::{
-        cached_region::{CachedRegion, ChallengeSet},
+        cached_region::{CachedRegion},
         cell_manager::Cell,
         constraint_builder::RLCChainable2,
         gadgets::LtGadget,
@@ -90,7 +90,7 @@ impl<F: Field> ExtensionGadget<F> {
                 // Extension node RLC
                 let node_rlc = config
                     .rlp_key
-                    .rlc2(&cb.be_r)
+                    .rlc2(&cb.keccak_r)
                     .rlc_chain2(rlp_value[is_s.idx()].rlc_chain_data());
 
                 // The branch expected in the extension node
@@ -155,7 +155,7 @@ impl<F: Field> ExtensionGadget<F> {
                         .collect::<Vec<_>>()
                         .try_into()
                         .unwrap(),
-                    &cb.le_r.expr(),
+                    &cb.r.expr(),
                 );
 
             // Get the length of the key
@@ -165,7 +165,7 @@ impl<F: Field> ExtensionGadget<F> {
                 - ifx! {not!(key_data.is_odd.expr() * config.is_key_part_odd.expr()) => { 1.expr() }};
             // Get the multiplier for this key length
             config.mult_key = cb.query_cell();
-            require!((FixedTableTag::LERMult, key_num_bytes_for_mult, config.mult_key.expr()) => @FIXED);
+            require!((FixedTableTag::RMult, key_num_bytes_for_mult, config.mult_key.expr()) => @FIXED);
 
             // Store the post ext state
             config.post_state = Some(ExtState {
@@ -185,9 +185,9 @@ impl<F: Field> ExtensionGadget<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         _mpt_config: &MPTConfig<F>,
         _pv: &mut MPTState<F>,
         offset: usize,
@@ -263,12 +263,12 @@ impl<F: Field> ExtensionGadget<F> {
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap(),
-            region.le_r,
+            region.r,
         );
         *key_rlc = key_data.rlc + key_rlc_ext;
 
         // Key mult
-        let mult_key = pow::value(region.le_r, key_len_mult);
+        let mult_key = pow::value(region.r, key_len_mult);
         self.mult_key.assign(region, offset, mult_key)?;
         *key_mult = key_data.mult * mult_key;
 
