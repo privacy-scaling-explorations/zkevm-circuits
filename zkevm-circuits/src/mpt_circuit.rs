@@ -268,7 +268,7 @@ impl<F: Field> MPTConfig<F> {
             meta,
             // Type, #cols, phase, permutable
             vec![
-                (MptCellType::StoragePhase1, 50, 1, false),
+                (MptCellType::StoragePhase1, 51, 1, false),
                 (MptCellType::StoragePhase2, 5, 2, false),
                 (MptCellType::StoragePhase3, 5, 3, false),
                 (MptCellType::LookupByte, 4, 1, false),
@@ -815,8 +815,20 @@ mod tests {
                 let file = std::fs::File::open(path.clone());
 
                 let reader = std::io::BufReader::new(file.unwrap());
-                let nodes: Vec<Node> = serde_json::from_reader(reader).unwrap();
+                let mut nodes: Vec<Node> = serde_json::from_reader(reader).unwrap();
                 let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
+
+                // TODO(Brecht): move to the witness geration side
+                // Patch the hash value so its RLP encoding is valid
+                for node in nodes.iter_mut() {
+                    if node.start.is_some() {
+                        for value in node.values.iter_mut() {
+                            if value[0] == 0 {
+                                value[0] = 160;
+                            }
+                        }
+                    }
+                }
 
                 let randomness: Fr = 123456.scalar();
 

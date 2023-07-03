@@ -38,8 +38,8 @@ impl<F: Field> StartConfig<F> {
 
         circuit!([meta, cb], {
             let root_items = [
-                ctx.rlp_item(meta, cb, StartRowType::RootS as usize, RlpItemType::Value),
-                ctx.rlp_item(meta, cb, StartRowType::RootC as usize, RlpItemType::Value),
+                ctx.rlp_item(meta, cb, StartRowType::RootS as usize, RlpItemType::Hash),
+                ctx.rlp_item(meta, cb, StartRowType::RootC as usize, RlpItemType::Hash),
             ];
 
             config.proof_type = cb.query_cell();
