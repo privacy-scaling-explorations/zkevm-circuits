@@ -130,14 +130,16 @@ pub struct MemoryWordOp {
     pub address: MemoryAddress,
     /// Value
     pub value: Word,
+    /// The value before the operation.
+    pub value_prev: Word,
 }
 
 impl fmt::Debug for MemoryWordOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("MemoryWordOp { ")?;
         f.write_fmt(format_args!(
-            "call_id: {:?}, addr: {:?}, value: 0x{:?}",
-            self.call_id, self.address, self.value
+            "call_id: {:?}, addr: {:?}, value: 0x{:?} value_prev {:?}",
+            self.call_id, self.address, self.value, self.value_prev
         ))?;
         f.write_str(" }")
     }
@@ -146,10 +148,21 @@ impl fmt::Debug for MemoryWordOp {
 impl MemoryWordOp {
     /// Create a new instance of a `MemoryWordOp` from it's components.
     pub fn new(call_id: usize, address: MemoryAddress, value: Word) -> MemoryWordOp {
+        Self::new_write(call_id, address, value, value)
+    }
+
+    /// Create a new instance of a `MemoryOp` from it's components.
+    pub fn new_write(
+        call_id: usize,
+        address: MemoryAddress,
+        value: Word,
+        value_prev: Word,
+    ) -> MemoryWordOp {
         MemoryWordOp {
             call_id,
             address,
             value,
+            value_prev,
         }
     }
 
@@ -171,6 +184,11 @@ impl MemoryWordOp {
     /// Returns the bytes read or written by this operation.
     pub fn value(&self) -> Word {
         self.value
+    }
+
+    /// Returns the bytes as of before this operation.
+    pub fn value_prev(&self) -> Word {
+        self.value_prev
     }
 }
 
@@ -487,7 +505,7 @@ pub struct TxRefundOp {
     pub tx_id: usize,
     /// Refund Value in units of gas after the operation.
     pub value: u64,
-    /// Refund Value in units of gas after the operation.
+    /// Refund Value in units of gas before the operation.
     pub value_prev: u64,
 }
 

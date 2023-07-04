@@ -211,11 +211,13 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                     0.expr(),
                     address_align.addr_left(),
                     value_left.expr(),
+                    value_left.expr(),
                     Some(src_id.expr()),
                 );
                 cb.memory_lookup_word(
                     0.expr(),
                     address_align.addr_right(),
+                    value_right.expr(),
                     value_right.expr(),
                     Some(src_id.expr()),
                 );
@@ -307,10 +309,12 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         if !call.is_root && offset_not_overflow {
             // assign value_left, value_right word
             value_left_bytes = block.rws[step.rw_indices[4]]
-                .memory_word_value()
+                .memory_word_pair()
+                .0
                 .to_le_bytes();
             value_right_bytes = block.rws[step.rw_indices[5]]
-                .memory_word_value()
+                .memory_word_pair()
+                .0
                 .to_le_bytes();
 
             // Here we write exactly what is in the RW table.

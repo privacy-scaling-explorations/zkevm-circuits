@@ -1,6 +1,6 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     Error,
 };
@@ -37,13 +37,13 @@ impl Opcode for Sha3 {
                 .extend_at_least(offset.as_usize() + size.as_usize());
         }
 
-        let memory = state
+        let sha3_input = state
             .call_ctx()?
             .memory
             .read_chunk(offset.low_u64().into(), size.as_usize().into());
 
         // keccak-256 hash of the given data in memory.
-        let sha3 = keccak256(&memory);
+        let sha3 = keccak256(&sha3_input);
         debug_assert_eq!(Word::from_big_endian(&sha3), expected_sha3);
         state.stack_write(
             &mut exec_step,
@@ -60,24 +60,22 @@ impl Opcode for Sha3 {
             let (_, dst_end_slot) = state
                 .get_addr_shift_slot(offset.low_u64() + size.low_u64())
                 .unwrap();
-            let mut memory_clone = state.call_ctx_mut()?.memory.clone();
 
-            let minimal_length = dst_end_slot as usize + 32;
-            memory_clone.extend_at_least(minimal_length);
             // collect all memory bytes with padding word
-            let memory_slot_bytes =
-                memory_clone.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
+            let memory_slot_len = (dst_end_slot + 32 - dst_begin_slot) as usize;
 
             // Read step
             let mut first_set = true;
             let mut chunk_index = dst_begin_slot;
-            for chunk in memory_slot_bytes.chunks(32) {
-                let dest_word = Word::from_big_endian(chunk);
-                state.memory_read_word(&mut exec_step, chunk_index.into(), dest_word)?;
+            for _ in 0..memory_slot_len / 32 {
+                state.memory_read_word(&mut exec_step, chunk_index.into())?;
                 chunk_index += 32;
             }
-            for idx in 0..memory_slot_bytes.len() {
-                let value = memory_clone.0[dst_begin_slot as usize + idx];
+
+            let memory = &state.call_ctx()?.memory;
+
+            for idx in 0..memory_slot_len {
+                let value = *memory.0.get(dst_begin_slot as usize + idx).unwrap_or(&0);
                 if (idx as u64 + dst_begin_slot < offset.low_u64())
                     || (idx as u64 + dst_begin_slot >= offset.low_u64() + size.low_u64())
                 {
@@ -93,7 +91,7 @@ impl Opcode for Sha3 {
             }
         }
 
-        state.block.sha3_inputs.push(memory);
+        state.block.sha3_inputs.push(sha3_input);
         let call_id = state.call()?.call_id;
         state.push_copy(
             &mut exec_step,
@@ -110,8 +108,7 @@ impl Opcode for Sha3 {
                 dst_id: NumberOrHash::Number(call_id),
                 log_id: None,
                 rw_counter_start,
-                bytes: copy_steps,
-                aux_bytes: None,
+                copy_bytes: CopyBytes::new(copy_steps, None, None),
             },
         );
 
@@ -294,7 +291,7 @@ pub mod sha3_tests {
         //assert_eq!(copy_events[0].bytes.len(), size);
 
         let mut mask_count = 0;
-        for (idx, (value, is_code, is_mask)) in copy_events[0].bytes.iter().enumerate() {
+        for (idx, (value, is_code, is_mask)) in copy_events[0].copy_bytes.bytes.iter().enumerate() {
             if !is_mask {
                 assert_eq!(Some(value), memory_view.get(idx - mask_count));
                 assert!(!is_code);

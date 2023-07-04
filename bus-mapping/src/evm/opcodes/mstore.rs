@@ -32,7 +32,6 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
         let offset_u64 = offset.as_u64() as usize;
         let shift = offset_u64 % 32;
         let slot = offset_u64 - shift;
-        trace!("shift {shift}, slot {slot}");
 
         let (left_word, right_word) = {
             // Get the memory chunk that contains the word, starting at an aligned slot address.
@@ -52,10 +51,13 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
 
             // after memory construction, we can get the left and right words to fill bus mapping.
             (
-                Word::from_big_endian(&slots_content[..32]),
-                Word::from_big_endian(&slots_content[32..64]),
+                Word::from_big_endian(&slots_content[..32]),   // left
+                Word::from_big_endian(&slots_content[32..64]), // right
             )
         };
+
+        let minimal_length = offset_u64 + if IS_MSTORE8 { 1 } else { 32 };
+        state.call_ctx_mut()?.memory.extend_at_least(minimal_length);
 
         // memory write left word for mstore8 and mstore.
         state.memory_write_word(&mut exec_step, slot.into(), left_word)?;
@@ -67,26 +69,6 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
             // TODO: edge case: if shift = 0, we could skip the right word?
         }
 
-        // reconstruction
-
-        let minimal_length = offset_u64 + if IS_MSTORE8 { 1 } else { 32 };
-        state.call_ctx_mut()?.memory.extend_at_least(minimal_length);
-
-        match IS_MSTORE8 {
-            true => {
-                let val = *value.to_le_bytes().first().unwrap();
-                state.call_ctx_mut()?.memory.0[offset_u64] = val;
-            }
-            false => {
-                let bytes = value.to_be_bytes();
-                state.call_ctx_mut()?.memory[offset_u64..offset_u64 + 32].copy_from_slice(&bytes);
-            }
-        }
-
-        trace!(
-            "after mstore memory length {}",
-            state.call_ctx_mut()?.memory.0.len()
-        );
         Ok(vec![exec_step])
     }
 }
@@ -105,7 +87,7 @@ mod mstore_tests {
         Word,
     };
     use itertools::Itertools;
-    use mock::test_ctx::{helpers::*, TestContext};
+    use mock::test_ctx::{helpers::*, LoggerConfig, TestContext};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -119,11 +101,12 @@ mod mstore_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let block: GethData = TestContext::<2, 1>::new_with_logger_config(
             None,
             account_0_code_account_1_no_code(code),
             tx_from_1_to_0,
             |block, _tx| block.number(0xcafeu64),
+            LoggerConfig::enable_memory(),
         )
         .unwrap()
         .into();
@@ -167,11 +150,21 @@ mod mstore_tests {
             vec![
                 (
                     RW::WRITE,
-                    MemoryWordOp::new(1, MemoryAddress(slot), Word::from(0x1234u64))
+                    MemoryWordOp::new_write(
+                        1,
+                        MemoryAddress(slot),
+                        Word::from(0x1234u64),
+                        Word::zero()
+                    )
                 ),
                 (
                     RW::WRITE,
-                    MemoryWordOp::new(1, MemoryAddress(slot + 32), Word::from(0x00))
+                    MemoryWordOp::new_write(
+                        1,
+                        MemoryAddress(slot + 32),
+                        Word::from(0x00),
+                        Word::zero()
+                    )
                 ),
             ]
         )
@@ -233,7 +226,7 @@ mod mstore_tests {
         //     (memory_word_op.rw(), memory_word_op.op()),
         //     (
         //         RW::WRITE,
-        //         &MemoryWordOp::new(1, MemoryAddress(slot), Word::from(0x34))
+        //         &MemoryWordOp::new_write(1, MemoryAddress(slot), Word::from(0x34), Word::zero())
         //     )
         // )
     }

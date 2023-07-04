@@ -99,29 +99,31 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             value.expr(),
         );
 
+        // Read or update the left word.
+        cb.memory_lookup_word(
+            is_store.clone(),
+            address_word.addr_left(),
+            value_left.expr(),
+            value_left_prev.expr(),
+            None,
+        );
+
         cb.condition(is_mstore8.expr(), |cb| {
             // Check the byte that is written.
             let first_byte = value.cells[0].expr();
             mask.require_equal_unaligned_byte(cb, first_byte, &value_left);
-            // Update the memory word.
-            cb.memory_lookup_word(1.expr(), address_word.addr_left(), value_left.expr(), None);
         });
 
         cb.condition(is_not_mstore8, |cb| {
             // Check the bytes that are read or written from the left and right words.
             mask.require_equal_unaligned_word(cb, value.expr(), &value_left, &value_right);
 
-            // Read or update the left and right words.
-            cb.memory_lookup_word(
-                is_store.clone(),
-                address_word.addr_left(),
-                value_left.expr(),
-                None,
-            );
+            // Read or update the right word.
             cb.memory_lookup_word(
                 is_store.clone(),
                 address_word.addr_right(),
                 value_right.expr(),
+                value_right_prev.expr(),
                 None,
             );
         });
@@ -209,23 +211,22 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         )?;
 
         // assign value_left value_right word
-        let value_left = block.rws[step.rw_indices[2]].memory_word_value();
-        let value_right = if is_mstore8 == F::one() {
-            U256::zero() //Word::from(0x00u64)
+        let (value_left, value_left_prev) = block.rws[step.rw_indices[2]].memory_word_pair();
+        let (value_right, value_right_prev) = if is_mstore8 == F::one() {
+            (U256::zero(), U256::zero())
         } else {
-            block.rws[step.rw_indices[3]].memory_word_value()
+            block.rws[step.rw_indices[3]].memory_word_pair()
         };
 
-        // TODO: get previous values for MSTORE.
         self.value_left
             .assign(region, offset, Some(value_left.to_le_bytes()))?;
         self.value_left_prev
-            .assign(region, offset, Some(value_left.to_le_bytes()))?;
+            .assign(region, offset, Some(value_left_prev.to_le_bytes()))?;
 
         self.value_right
             .assign(region, offset, Some(value_right.to_le_bytes()))?;
         self.value_right_prev
-            .assign(region, offset, Some(value_right.to_le_bytes()))?;
+            .assign(region, offset, Some(value_right_prev.to_le_bytes()))?;
         Ok(())
     }
 }

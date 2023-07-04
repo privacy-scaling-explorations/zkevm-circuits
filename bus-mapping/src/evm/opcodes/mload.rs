@@ -35,23 +35,12 @@ impl Opcode for Mload {
         let offset = stack_value_read.as_u64();
         let shift = offset % 32;
         let slot = offset - shift;
-        trace!("shift {shift}, slot {slot}");
-
-        let (left_word, right_word) = {
-            // Get the memory chunk that contains the word, starting at an aligned slot address.
-            let slots_content = state.call_ctx()?.memory.read_chunk(slot.into(), 64.into());
-
-            (
-                Word::from_big_endian(&slots_content[..32]),
-                Word::from_big_endian(&slots_content[32..64]),
-            )
-        };
 
         // First stack write
         state.stack_write(&mut exec_step, stack_position, mem_read_value)?;
 
-        state.memory_read_word(&mut exec_step, slot.into(), left_word)?;
-        state.memory_read_word(&mut exec_step, (slot + 32).into(), right_word)?;
+        state.memory_read_word(&mut exec_step, slot.into())?;
+        state.memory_read_word(&mut exec_step, (slot + 32).into())?;
 
         // Expand memory if needed.
         state

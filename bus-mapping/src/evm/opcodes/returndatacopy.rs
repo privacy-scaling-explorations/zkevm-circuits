@@ -1,6 +1,6 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     evm::Opcode,
     operation::CallContextField,
@@ -19,19 +19,7 @@ impl Opcode for Returndatacopy {
         let geth_step = &geth_steps[0];
         let mut exec_steps = vec![gen_returndatacopy_step(state, geth_step)?];
 
-        // reconstruction
-        let geth_step = &geth_steps[0];
-        let dst_offset = geth_step.stack.nth_last(0)?;
-        let src_offset = geth_step.stack.nth_last(1)?;
-        let length = geth_step.stack.nth_last(2)?;
-
-        // can we reduce this clone?
-        let call_ctx = state.call_ctx_mut()?;
-        let memory = &mut call_ctx.memory;
-
-        memory.copy_from(dst_offset, src_offset, length, &call_ctx.return_data);
-
-        let copy_event = gen_copy_event(state, geth_step)?;
+        let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
         state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
@@ -90,13 +78,27 @@ fn gen_returndatacopy_step(
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
+    exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
     // Get low Uint64 of offset.
-    let dst_addr = geth_step.stack.nth_last(0)?.low_u64();
-    let data_offset = geth_step.stack.nth_last(1)?.as_u64();
-    let length = geth_step.stack.nth_last(2)?.as_u64();
+    let dst_addr = geth_step.stack.nth_last(0)?;
+    let data_offset = geth_step.stack.nth_last(1)?;
+    let length = geth_step.stack.nth_last(2)?;
+
+    let call_ctx = state.call_ctx_mut()?;
+    let memory = &mut call_ctx.memory;
+    memory.extend_for_range(dst_addr, length);
+
+    let memory_updated = {
+        let mut memory_updated = memory.clone();
+        memory_updated.copy_from(dst_addr, data_offset, length, &call_ctx.return_data);
+        memory_updated
+    };
+
+    let (dst_addr, data_offset, length) =
+        (dst_addr.low_u64(), data_offset.as_u64(), length.as_u64());
 
     let last_callee_return_data_offset = state.call()?.last_callee_return_data_offset;
     let last_callee_return_data_length = state.call()?.last_callee_return_data_length;
@@ -105,14 +107,13 @@ fn gen_copy_event(
         last_callee_return_data_offset + last_callee_return_data_length,
     );
 
-    let mut exec_step = state.new_step(geth_step)?;
-
-    let (read_steps, write_steps) = state.gen_copy_steps_for_return_data(
-        &mut exec_step,
+    let (read_steps, write_steps, prev_bytes) = state.gen_copy_steps_for_return_data(
+        exec_step,
         src_addr,
         src_addr_end,
         dst_addr,
         length,
+        memory_updated,
     )?;
 
     Ok(CopyEvent {
@@ -125,8 +126,7 @@ fn gen_copy_event(
         dst_addr,
         log_id: None,
         rw_counter_start,
-        bytes: read_steps,
-        aux_bytes: Some(write_steps),
+        copy_bytes: CopyBytes::new(read_steps, Some(write_steps), Some(prev_bytes)),
     })
 }
 
@@ -135,7 +135,10 @@ mod return_tests {
     use crate::mock::BlockData;
     use eth_types::{bytecode, geth_types::GethData};
     use mock::{
-        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        test_ctx::{
+            helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+            LoggerConfig,
+        },
         TestContext, MOCK_DEPLOYED_CONTRACT_BYTECODE,
     };
 
@@ -168,11 +171,12 @@ mod return_tests {
             STOP
         };
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let block: GethData = TestContext::<2, 1>::new_with_logger_config(
             None,
             account_0_code_account_1_no_code(code),
             tx_from_1_to_0,
             |block, _tx| block.number(0xcafeu64),
+            LoggerConfig::enable_memory(),
         )
         .unwrap()
         .into();

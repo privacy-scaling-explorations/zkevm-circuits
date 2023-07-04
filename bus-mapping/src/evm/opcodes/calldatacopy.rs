@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     operation::CallContextField,
     Error,
@@ -18,17 +18,7 @@ impl Opcode for Calldatacopy {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_steps = vec![gen_calldatacopy_step(state, geth_step)?];
-
-        // reconstruction
-        let memory_offset = geth_step.stack.nth_last(0)?;
-        let data_offset = geth_step.stack.nth_last(1)?;
-        let length = geth_step.stack.nth_last(2)?;
-        let call_ctx = state.call_ctx_mut()?;
-        let memory = &mut call_ctx.memory;
-
-        memory.copy_from(memory_offset, data_offset, length, &call_ctx.call_data);
-
-        let copy_event = gen_copy_event(state, geth_step)?;
+        let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
         state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
@@ -95,12 +85,25 @@ fn gen_calldatacopy_step(
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
+    exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
-    let memory_offset = geth_step.stack.nth_last(0)?.low_u64();
+    let memory_offset = geth_step.stack.nth_last(0)?;
     let data_offset = geth_step.stack.nth_last(1)?;
-    let length = geth_step.stack.nth_last(2)?.as_u64();
+    let length = geth_step.stack.nth_last(2)?;
+
+    let call_ctx = state.call_ctx_mut()?;
+    let memory = &mut call_ctx.memory;
+    memory.extend_for_range(memory_offset, length);
+
+    let memory_updated = {
+        let mut memory_updated = memory.clone();
+        memory_updated.copy_from(memory_offset, data_offset, length, &call_ctx.call_data);
+        memory_updated
+    };
+
+    let (memory_offset, length) = (memory_offset.low_u64(), length.as_u64());
 
     let call_data_offset = state.call()?.call_data_offset;
     let call_data_length = state.call()?.call_data_length;
@@ -113,16 +116,17 @@ fn gen_copy_event(
         .min(src_addr_end);
     let dst_addr = memory_offset;
 
-    let mut exec_step = state.new_step(geth_step)?;
-
     if state.call()?.is_root {
-        let copy_steps = state.gen_copy_steps_for_call_data_root(
-            &mut exec_step,
+        let (copy_steps, prev_bytes) = state.gen_copy_steps_for_call_data_root(
+            exec_step,
             src_addr,
             dst_addr,
-            src_addr_end,
             length,
+            memory_updated,
         )?;
+
+        //todo: fetch pre write bytes to fill 'bytes_write_prev' of CopyBytes
+        let copy_bytes = CopyBytes::new(copy_steps, None, Some(prev_bytes));
 
         Ok(CopyEvent {
             src_type: CopyDataType::TxCalldata,
@@ -134,16 +138,15 @@ fn gen_copy_event(
             dst_addr,
             log_id: None,
             rw_counter_start,
-            bytes: copy_steps,
-            aux_bytes: None,
+            copy_bytes: copy_bytes,
         })
     } else {
-        let (read_steps, write_steps) = state.gen_copy_steps_for_call_data_non_root(
-            &mut exec_step,
+        let (read_steps, write_steps, prev_bytes) = state.gen_copy_steps_for_call_data_non_root(
+            exec_step,
             src_addr,
-            src_addr_end,
             dst_addr,
             length,
+            memory_updated,
         )?;
 
         Ok(CopyEvent {
@@ -156,8 +159,8 @@ fn gen_copy_event(
             dst_addr,
             log_id: None,
             rw_counter_start,
-            bytes: read_steps,
-            aux_bytes: Some(write_steps),
+            //fetch pre read and write bytes of CopyBytes
+            copy_bytes: CopyBytes::new(read_steps, Some(write_steps), Some(prev_bytes)),
         })
     }
 }
@@ -178,7 +181,7 @@ mod calldatacopy_tests {
 
     use mock::{
         generate_mock_call_bytecode,
-        test_ctx::{helpers::*, TestContext},
+        test_ctx::{helpers::*, LoggerConfig, TestContext},
         MockCallBytecodeParams,
     };
     use pretty_assertions::assert_eq;
@@ -214,7 +217,7 @@ mod calldatacopy_tests {
         });
 
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<3, 1>::new(
+        let block: GethData = TestContext::<3, 1>::new_with_logger_config(
             None,
             |accs| {
                 accs[0].address(addr_b).code(code_b);
@@ -227,6 +230,7 @@ mod calldatacopy_tests {
                 txs[0].to(accs[1].address).from(accs[2].address);
             },
             |block, _tx| block,
+            LoggerConfig::enable_memory(),
         )
         .unwrap()
         .into();
@@ -245,8 +249,8 @@ mod calldatacopy_tests {
         let caller_id = builder.block.txs()[0].calls()[step.call_index].caller_id;
         let expected_call_id = builder.block.txs()[0].calls()[step.call_index].call_id;
 
-        // 3 stack reads + 3 call context reads.
-        assert_eq!(step.bus_mapping_instance.len(), 6);
+        // 3 stack reads + 3 call context reads + 1 copy read + 1 copy write.
+        assert_eq!(step.bus_mapping_instance.len(), 8);
 
         // 3 stack reads.
         assert_eq!(
@@ -326,7 +330,7 @@ mod calldatacopy_tests {
         );
         assert_eq!(copy_events[0].dst_addr as usize, dst_offset);
 
-        for (idx, (value, is_code, _)) in copy_events[0].bytes.iter().enumerate() {
+        for (idx, (value, is_code, _)) in copy_events[0].copy_bytes.bytes.iter().enumerate() {
             if idx < memory_a.len() {
                 assert_eq!(*value, memory_a[idx]);
             } else {
@@ -361,7 +365,7 @@ mod calldatacopy_tests {
         });
 
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<3, 1>::new(
+        let block: GethData = TestContext::<3, 1>::new_with_logger_config(
             None,
             |accs| {
                 accs[0].address(addr_b).code(code_b);
@@ -374,6 +378,7 @@ mod calldatacopy_tests {
                 txs[0].to(accs[1].address).from(accs[2].address);
             },
             |block, _tx| block,
+            LoggerConfig::enable_memory(),
         )
         .unwrap()
         .into();
@@ -397,7 +402,7 @@ mod calldatacopy_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let block: GethData = TestContext::<2, 1>::new_with_logger_config(
             None,
             account_0_code_account_1_no_code(code),
             |mut txs, accs| {
@@ -407,6 +412,7 @@ mod calldatacopy_tests {
                     .input(calldata.clone().into());
             },
             |block, _tx| block,
+            LoggerConfig::enable_memory(),
         )
         .unwrap()
         .into();
@@ -422,7 +428,8 @@ mod calldatacopy_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::CALLDATACOPY))
             .unwrap();
 
-        assert_eq!(step.bus_mapping_instance.len(), 5);
+        // 3 stack reads + 2 call context reads + 2 copy write.
+        assert_eq!(step.bus_mapping_instance.len(), 7);
 
         assert_eq!(
             [0, 1, 2]
@@ -478,14 +485,17 @@ mod calldatacopy_tests {
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
         let begin_slot = dst_offset - dst_offset % 32;
-        let end_slot = dst_offset + size - (dst_offset + size) % 32;
-        assert_eq!(copy_events[0].bytes.len(), end_slot - begin_slot + 32);
+        let end_slot = (dst_offset + size - 1) - (dst_offset + size - 1) % 32;
+        assert_eq!(
+            copy_events[0].copy_bytes.bytes.len(),
+            end_slot - begin_slot + 32
+        );
         assert_eq!(
             builder.block.container.memory_word.len(),
             (end_slot - begin_slot) / 32 + 1
         );
 
-        for (idx, (value, is_code, _)) in copy_events[0].bytes.iter().enumerate() {
+        for (idx, (value, is_code, _)) in copy_events[0].copy_bytes.bytes.iter().enumerate() {
             assert_eq!(value, calldata.get(offset as usize + idx).unwrap_or(&0));
             assert!(!is_code);
         }

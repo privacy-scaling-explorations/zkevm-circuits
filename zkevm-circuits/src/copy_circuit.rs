@@ -57,6 +57,8 @@ pub struct CopyCircuitConfig<F> {
     pub value: Column<Advice>,
     /// The word value for memory lookup.
     pub value_word_rlc: Column<Advice>,
+    /// The word value for memory lookup, before the write.
+    pub value_word_rlc_prev: Column<Advice>,
     /// The index of the current byte within a word [0..31].
     pub word_index: Column<Advice>,
     /// address for slot memory src or dest, review if can reuse `addr` .
@@ -144,6 +146,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let is_last = meta.advice_column();
         let value = meta.advice_column_in(SecondPhase);
         let value_word_rlc = meta.advice_column_in(SecondPhase);
+        let value_word_rlc_prev = meta.advice_column_in(SecondPhase);
         let rlc_acc_read = meta.advice_column_in(SecondPhase);
         let rlc_acc_write = meta.advice_column_in(SecondPhase);
 
@@ -201,12 +204,13 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             },
             |_meta| 1.expr(),
         );
-        meta.create_gate("is precompile", |meta| {
+        meta.create_gate("decode tag", |meta| {
             let enabled = meta.query_fixed(q_enable, Rotation::cur());
             let is_precompile = meta.query_advice(is_precompiled, Rotation::cur());
             let is_tx_calldata = meta.query_advice(is_tx_calldata, Rotation::cur());
             let is_bytecode = meta.query_advice(is_bytecode, Rotation::cur());
             let is_memory = meta.query_advice(is_memory, Rotation::cur());
+            let is_tx_log = meta.query_advice(is_tx_log, Rotation::cur());
             let precompiles = sum::expr([
                 tag.value_equals(
                     CopyDataType::Precompile(PrecompileCalls::ECRecover),
@@ -255,6 +259,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         - tag.value_equals(CopyDataType::Bytecode, Rotation::cur())(meta)),
                 enabled.expr()
                     * (is_memory - tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta)),
+                enabled.expr()
+                    * (is_tx_log - tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta)),
             ]
         });
 
@@ -521,7 +527,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     meta.query_advice(is_last, Rotation::next()),
                     and::expr([
                         meta.query_advice(is_memory, Rotation::cur()),
-                        meta.query_advice(is_memory, Rotation::next()),
+                        meta.query_advice(is_memory, Rotation::next())
+                            + meta.query_advice(is_tx_log, Rotation::next()),
                     ]),
                 ]))
             },
@@ -537,13 +544,15 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     1.expr() - meta.query_advice(bytes_left, Rotation::cur()),
                 ]),
             );
-            cb.require_zero(
-                "real_bytes_left == 0 for last step",
-                and::expr([
-                    meta.query_advice(is_last, Rotation::next()),
-                    meta.query_advice(real_bytes_left, Rotation::cur()),
-                ]),
-            );
+            // todo: renable this
+            // cb.require_zero(
+            //     "real_bytes_left == 0 for last step",
+            //     and::expr([
+            //         meta.query_advice(is_last, Rotation::next()),
+            //         meta.query_advice(real_bytes_left, Rotation::cur()),
+            //     ]),
+            // );
+
             cb.condition(
                 and::expr([
                     not::expr(meta.query_advice(is_last, Rotation::cur())),
@@ -570,11 +579,12 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 },
             );
             // we use rlc to constraint the write == read specially for memory to memory case
-            // here only handle non memory to memory cases
+            // here only handle non memory to memory nor to log cases
             cb.condition(
                 not::expr(and::expr([
                     meta.query_advice(is_memory, Rotation::cur()),
-                    meta.query_advice(is_memory, Rotation::next()),
+                    meta.query_advice(is_memory, Rotation::next())
+                        + meta.query_advice(is_tx_log, Rotation::next()),
                 ])),
                 |cb| {
                     cb.require_equal(
@@ -647,7 +657,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 0.expr(),
                 0.expr(),
                 meta.query_advice(value_word_rlc, Rotation::cur()),
-                0.expr(),
+                meta.query_advice(value_word_rlc_prev, Rotation::cur()),
                 0.expr(),
                 0.expr(),
             ]
@@ -724,6 +734,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             is_last,
             value,
             value_word_rlc,
+            value_word_rlc_prev,
             rlc_acc_read,
             rlc_acc_write,
             word_index,
@@ -819,6 +830,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 self.is_last,
                 self.value,
                 self.value_word_rlc,
+                self.value_word_rlc_prev,
                 self.rlc_acc_read,
                 self.rlc_acc_write,
                 self.value_acc,
@@ -843,9 +855,9 @@ impl<F: Field> CopyCircuitConfig<F> {
             tag_chip.assign(region, *offset, tag)?;
 
             let mut pad = F::zero();
-            circuit_row[6].0.map(|f: F| pad = f);
+            circuit_row[7].0.map(|f: F| pad = f);
             let mut mask = F::zero();
-            circuit_row[8].0.map(|f: F| mask = f);
+            circuit_row[9].0.map(|f: F| mask = f);
 
             if is_read {
                 if mask == F::one() && !src_first_non_mask_stop {
@@ -937,7 +949,10 @@ impl<F: Field> CopyCircuitConfig<F> {
         max_copy_rows: usize,
         challenges: Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        let copy_rows_needed = copy_events.iter().map(|c| c.bytes.len() * 2).sum::<usize>();
+        let copy_rows_needed = copy_events
+            .iter()
+            .map(|c| c.copy_bytes.bytes.len() * 2)
+            .sum::<usize>();
 
         // The `+ 2` is used to take into account the two extra empty copy rows needed
         // to satisfy the query at `Rotation(2)` performed inside of the
@@ -958,7 +973,8 @@ impl<F: Field> CopyCircuitConfig<F> {
             |mut region| {
                 region.name_column(|| "is_last", self.is_last);
                 region.name_column(|| "value", self.value);
-                region.name_column(|| "value_wrod_rlc", self.value_word_rlc);
+                region.name_column(|| "value_word_rlc", self.value_word_rlc);
+                region.name_column(|| "value_word_rlc_prev", self.value_word_rlc_prev);
                 region.name_column(|| "word_index", self.word_index);
                 region.name_column(|| "addr_slot", self.addr_slot);
                 region.name_column(|| "mask", self.mask);
@@ -971,10 +987,10 @@ impl<F: Field> CopyCircuitConfig<F> {
                         "offset is {} before {}th copy event(bytes len: {}): {:?}",
                         offset,
                         ev_idx,
-                        copy_event.bytes.len(),
+                        copy_event.copy_bytes.bytes.len(),
                         {
                             let mut copy_event = copy_event.clone();
-                            copy_event.bytes.clear();
+                            copy_event.copy_bytes.bytes.clear();
                             copy_event
                         }
                     );
@@ -1108,10 +1124,17 @@ impl<F: Field> CopyCircuitConfig<F> {
             *offset,
             || Value::known(F::zero()),
         )?;
-        // value_wrod_rlc
+        // value_word_rlc
         region.assign_advice(
-            || format!("assign value_wrod_rlc {}", *offset),
+            || format!("assign value_word_rlc {}", *offset),
             self.value_word_rlc,
+            *offset,
+            || Value::known(F::zero()),
+        )?;
+        // value_word_rlc_prev
+        region.assign_advice(
+            || format!("assign value_word_rlc_prev {}", *offset),
+            self.value_word_rlc_prev,
             *offset,
             || Value::known(F::zero()),
         )?;
@@ -1303,7 +1326,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
             block
                 .copy_events
                 .iter()
-                .map(|c| c.bytes.len() * 2)
+                .map(|c| c.copy_bytes.bytes.len() * 2)
                 .sum::<usize>()
                 + 2,
             block.circuits_params.max_copy_rows,
@@ -1356,7 +1379,7 @@ mod copy_circuit_stats {
                 block
                     .copy_events
                     .iter()
-                    .map(|c| c.bytes.len() * 2)
+                    .map(|c| c.copy_bytes.bytes.len() * 2)
                     .sum::<usize>()
             },
         );

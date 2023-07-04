@@ -6,7 +6,7 @@ use core::{
 };
 use itertools::Itertools;
 use serde::{Serialize, Serializer};
-use std::fmt;
+use std::{cmp, fmt};
 
 /// Represents a `MemoryAddress` of the EVM.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
@@ -315,9 +315,43 @@ impl Memory {
         chunk
     }
 
+    /// Write a chunk of memory[offset..offset+length]. If any data is written out-of-bound, it must
+    /// be zeros. This does not resize the memory.
+    pub fn write_chunk(&mut self, offset: MemoryAddress, data: &[u8]) {
+        let len = if self.0.len() > offset.0 {
+            let len = cmp::min(data.len(), self.0.len() - offset.0);
+            // Copy the data to the in-bound memory.
+            self.0[offset.0..offset.0 + len].copy_from_slice(&data[..len]);
+            len
+        } else {
+            0
+        };
+        // Check that the out-of-bound data is all zeros.
+        for b in &data[len..] {
+            assert_eq!(*b, 0);
+        }
+    }
+
     /// Returns the size of memory in word.
     pub fn word_size(&self) -> usize {
         self.0.len() / 32
+    }
+
+    /// Find the aligned range that contains an unaligned range.
+    ///
+    /// Given a range `[offset; offset+length)`, return:
+    /// - the `slot` offset, aligned to 32 bytes, at or just before `offset`.
+    /// - the `full_length` as a multiple of 32 bytes, such that `[slot, slot+full_length)` contains
+    ///   the given range. If `length=0`, then `full_length=0` too.
+    /// - the `shift` of the offset into the slot, such that `offset = slot + shift`.
+    pub fn align_range(offset: u64, length: u64) -> (u64, u64, u64) {
+        let shift = offset % 32;
+        let slot = offset - shift;
+
+        let slot_end = (offset + length + 31) / 32 * 32;
+        let full_length = if length == 0 { 0 } else { slot_end - slot };
+
+        (slot, full_length, shift)
     }
 
     /// Resize the memory for at least length and align to 32 bytes.
@@ -325,6 +359,18 @@ impl Memory {
         let memory_size = (minimal_length + 31) / 32 * 32;
         if memory_size > self.0.len() {
             self.0.resize(memory_size, 0);
+        }
+    }
+
+    /// Resize the memory for at least `offset+length` and align to 32 bytes, except if `length=0`
+    /// then do nothing.
+    pub fn extend_for_range(&mut self, offset: Word, length: Word) {
+        // `length` should be checked for overflow during gas cost calculation.
+        let length = length.as_usize();
+        if length != 0 {
+            // `dst_offset` should be within range if length is non-zero.
+            let offset = offset.as_usize();
+            self.extend_at_least(offset + length);
         }
     }
 
@@ -426,5 +472,48 @@ mod memory_tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn align_range() {
+        const WORD: u64 = 32;
+
+        // Adding 32 to an offsets or to a length does not change the logic of alignment,
+        // so we test different combinations of base `o` and base `l`.
+        let base_offsets = [0, WORD, 1000000 * WORD];
+        let base_lengths = [0, WORD, 1000000 * WORD];
+
+        for o in base_offsets {
+            // Get (slot, full_length, shift) from (offset, length).
+
+            // When length=0, full_length=0.
+            assert_eq!((o, 0, 0), Memory::align_range(o, 0));
+            assert_eq!((o, 0, 1), Memory::align_range(o + 1, 0));
+            assert_eq!((o, 0, 31), Memory::align_range(o + 31, 0));
+
+            for l in base_lengths {
+                // When length=1, it is always ONE WORD.
+                assert_eq!((o, l + WORD, 0), Memory::align_range(o, l + 1));
+                assert_eq!((o, l + WORD, 1), Memory::align_range(o + 1, l + 1));
+                assert_eq!((o, l + WORD, 31), Memory::align_range(o + 31, l + 1));
+
+                // When the range is still within ONE WORD.
+                assert_eq!((o, l + WORD, 0), Memory::align_range(o, l + 2));
+                assert_eq!((o, l + WORD, 0), Memory::align_range(o, l + 31));
+                assert_eq!((o, l + WORD, 1), Memory::align_range(o + 1, l + 30));
+                assert_eq!((o, l + WORD, 30), Memory::align_range(o + 30, l + 1));
+
+                // When the range ends exactly at a word boundary, it is still ONE WORD.
+                assert_eq!((o, l + WORD, 0), Memory::align_range(o, l + 32));
+                assert_eq!((o, l + WORD, 2), Memory::align_range(o + 2, l + 30));
+                assert_eq!((o, l + WORD, 30), Memory::align_range(o + 30, l + 2));
+
+                // When the range spills into a SECOND WORD.
+                assert_eq!((o, l + 2 * WORD, 1), Memory::align_range(o + 1, l + 32));
+                assert_eq!((o, l + 2 * WORD, 2), Memory::align_range(o + 2, l + 31));
+                assert_eq!((o, l + 2 * WORD, 31), Memory::align_range(o + 31, l + 2));
+                assert_eq!((o, l + 2 * WORD, 31), Memory::align_range(o + 31, l + 32));
+            }
+        }
     }
 }

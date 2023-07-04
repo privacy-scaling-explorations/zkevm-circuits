@@ -1225,6 +1225,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         is_write: Expression<F>,
         memory_address: Expression<F>, // slot
         value: Expression<F>,
+        value_prev: Expression<F>,
         call_id: Option<Expression<F>>,
     ) {
         self.rw_lookup(
@@ -1237,7 +1238,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 0.expr(),
                 0.expr(),
                 value,
-                0.expr(),
+                value_prev,
                 0.expr(),
                 0.expr(),
             ),
@@ -1349,6 +1350,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 rwc_inc: rwc_inc.clone(),
             },
         );
+        // TODO: constrain the value of rwc_inc.
         self.rw_counter_offset = self.rw_counter_offset.clone() + self.condition_expr() * rwc_inc;
     }
 

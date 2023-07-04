@@ -1,6 +1,6 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     Error,
 };
@@ -19,20 +19,7 @@ impl Opcode for Codecopy {
         let geth_step = &geth_steps[0];
         let mut exec_steps = vec![gen_codecopy_step(state, geth_step)?];
 
-        // reconstruction
-        let dst_offset = geth_step.stack.nth_last(0)?;
-        let code_offset = geth_step.stack.nth_last(1)?;
-        let length = geth_step.stack.nth_last(2)?;
-
-        let code_hash = state.call()?.code_hash;
-        let code = state.code(code_hash)?;
-
-        let call_ctx = state.call_ctx_mut()?;
-        let memory = &mut call_ctx.memory;
-
-        memory.copy_from(dst_offset, code_offset, length, &code);
-
-        let copy_event = gen_copy_event(state, geth_step)?;
+        let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
         state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
@@ -67,6 +54,7 @@ fn gen_codecopy_step(
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
+    exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
@@ -88,14 +76,23 @@ fn gen_copy_event(
         .unwrap_or(u64::MAX)
         .min(src_addr_end);
 
-    let mut exec_step = state.new_step(geth_step)?;
-    let copy_steps = state.gen_copy_steps_for_bytecode(
-        &mut exec_step,
+    let call_ctx = state.call_ctx_mut()?;
+    let memory = &mut call_ctx.memory;
+    memory.extend_for_range(dst_offset, length.into());
+    let memory_updated = {
+        let mut memory_updated = memory.clone();
+        memory_updated.copy_from(dst_offset, code_offset, length.into(), &bytecode.to_vec());
+        memory_updated
+    };
+
+    let (copy_steps, prev_bytes) = state.gen_copy_steps_for_bytecode(
+        exec_step,
         &bytecode,
         src_addr,
         dst_addr,
         src_addr_end,
         length,
+        memory_updated,
     )?;
 
     Ok(CopyEvent {
@@ -108,8 +105,8 @@ fn gen_copy_event(
         dst_addr,
         log_id: None,
         rw_counter_start,
-        bytes: copy_steps,
-        aux_bytes: None,
+        //fetch pre write bytes of CopyBytes
+        copy_bytes: CopyBytes::new(copy_steps, None, Some(prev_bytes)),
     })
 }
 
@@ -122,7 +119,10 @@ mod codecopy_tests {
         Word,
     };
     use mock::{
-        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        test_ctx::{
+            helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+            LoggerConfig,
+        },
         TestContext,
     };
 
@@ -148,11 +148,12 @@ mod codecopy_tests {
             STOP
         };
 
-        let block: GethData = TestContext::<2, 1>::new(
+        let block: GethData = TestContext::<2, 1>::new_with_logger_config(
             None,
             account_0_code_account_1_no_code(code.clone()),
             tx_from_1_to_0,
             |block, _tx| block.number(0xcafeu64),
+            LoggerConfig::enable_memory(),
         )
         .unwrap()
         .into();
@@ -209,7 +210,7 @@ mod codecopy_tests {
         assert_eq!(copy_events[0].dst_type, CopyDataType::Memory);
         assert!(copy_events[0].log_id.is_none());
 
-        for (idx, (value, is_code, is_mask)) in copy_events[0].bytes.iter().enumerate() {
+        for (idx, (value, is_code, is_mask)) in copy_events[0].copy_bytes.bytes.iter().enumerate() {
             let bytecode_element = code.get(code_offset + idx).unwrap_or_default();
             if !is_mask {
                 assert_eq!(*value, bytecode_element.value);

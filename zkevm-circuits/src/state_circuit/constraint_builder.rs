@@ -233,6 +233,8 @@ impl<F: Field> ConstraintBuilder<F> {
             self.require_zero("memory address fits into 2 limbs", limb.clone());
         }
 
+        // TODO: check address is aligned (addr%32==0)
+
         // 2.3. value is a word
         // 2.4. Start initial value is 0
         self.require_zero("initial Memory value is 0", q.initial_value());
@@ -242,11 +244,14 @@ impl<F: Field> ConstraintBuilder<F> {
             q.state_root(),
             q.state_root_prev(),
         );
-        self.require_equal(
-            "value_prev column equals initial_value for Memory",
-            q.value_prev_column(),
-            q.initial_value(),
-        );
+        // 2.6. The value on the previous row equals the value_prev column.
+        self.condition(q.not_first_access.clone(), |cb| {
+            cb.require_equal(
+                "value column at Rotation::prev() equals value_prev at Rotation::cur()",
+                q.rw_table.value_prev.clone(),
+                q.value_prev_column(),
+            );
+        });
     }
 
     fn build_stack_constraints(&mut self, q: &Queries<F>) {

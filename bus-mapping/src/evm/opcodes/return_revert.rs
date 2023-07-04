@@ -1,6 +1,8 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, CopyDataType, CopyEvent, NumberOrHash},
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, NumberOrHash,
+    },
     evm::opcodes::ExecStep,
     operation::{AccountField, AccountOp, CallContextField, MemoryWordOp, RW},
     state_db::CodeDB,
@@ -126,21 +128,21 @@ impl Opcode for ReturnRevert {
                 state.call_context_read(&mut exec_step, call.call_id, field, value.into());
             }
 
-            let callee_memory = state.call_ctx()?.memory.clone();
-            let caller_ctx = state.caller_ctx_mut()?;
-            caller_ctx.return_data = callee_memory
+            let return_data = state
+                .call_ctx()?
+                .memory
                 .0
                 .get(offset..offset + length)
                 .unwrap_or_default()
                 .to_vec();
+
+            state.caller_ctx_mut()?.return_data = return_data;
 
             let return_data_length = usize::try_from(call.return_data_length).unwrap();
             let copy_length = std::cmp::min(return_data_length, length);
             if copy_length > 0 {
                 // reconstruction
                 let return_offset = call.return_data_offset.try_into().unwrap();
-                caller_ctx.memory.0[return_offset..return_offset + copy_length]
-                    .copy_from_slice(&callee_memory.0[offset..offset + copy_length]);
 
                 handle_copy(
                     state,
@@ -186,48 +188,54 @@ fn handle_copy(
     let copy_length = std::cmp::min(source.length, destination.length);
 
     let rw_counter_start = state.block_ctx.rwc;
-    let (_, src_begin_slot) = state.get_addr_shift_slot(source.offset as u64).unwrap();
+
+    let (src_shift, src_begin_slot) = state.get_addr_shift_slot(source.offset as u64).unwrap();
     let (_, src_end_slot) = state
-        .get_addr_shift_slot((source.offset + copy_length) as u64)
+        .get_addr_shift_slot((source.offset + copy_length - 1) as u64)
         .unwrap();
-    let (_, dst_begin_slot) = state
+    let src_shift = src_shift as usize;
+
+    let (dst_shift, dst_begin_slot) = state
         .get_addr_shift_slot(destination.offset as u64)
         .unwrap();
     let (_, dst_end_slot) = state
-        .get_addr_shift_slot((destination.offset + copy_length) as u64)
+        .get_addr_shift_slot((destination.offset + copy_length - 1) as u64)
         .unwrap();
+    let dst_shift = dst_shift as usize;
 
-    let slot_count = max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot) as usize;
-    let src_end_slot = src_begin_slot as usize + slot_count;
-    let dst_end_slot = dst_begin_slot as usize + slot_count;
-    // callee‘s memory
-    let mut callee_memory = state.call_ctx_mut()?.memory.clone();
-    callee_memory.extend_at_least(src_end_slot + 32);
-    // caller's memory
-    let mut caller_memory = state.caller_ctx_mut()?.memory.clone();
-    caller_memory.extend_at_least(dst_end_slot + 32);
+    let full_length =
+        max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot) as usize + 32;
 
-    let src_slot_bytes = callee_memory.0[src_begin_slot as usize..(src_end_slot + 32)].to_vec();
-    let dst_slot_bytes = caller_memory.0[dst_begin_slot as usize..(dst_end_slot + 32)].to_vec();
+    let src_data = state
+        .call_ctx()?
+        .memory
+        .read_chunk(src_begin_slot.into(), full_length.into());
+
+    let dst_data_prev = state
+        .caller_ctx()?
+        .memory
+        .read_chunk(dst_begin_slot.into(), full_length.into());
+
+    let dst_data = {
+        // Copy src_data into dst_data
+        let mut dst_data = dst_data_prev.clone();
+        dst_data[dst_shift..dst_shift + copy_length]
+            .copy_from_slice(&src_data[src_shift..src_shift + copy_length]);
+        dst_data
+    };
+
     let mut src_chunk_index = src_begin_slot;
     let mut dst_chunk_index = dst_begin_slot;
 
     // memory word read from src
-    for (read_chunk, write_chunk) in src_slot_bytes.chunks(32).zip(dst_slot_bytes.chunks(32)) {
-        let src_word = Word::from_big_endian(read_chunk);
+    for write_chunk in dst_data.chunks(32) {
         // read memory
-        state.push_op(
-            step,
-            RW::READ,
-            MemoryWordOp::new(source.id, src_chunk_index.into(), src_word),
-        );
-        let dest_word = Word::from_big_endian(write_chunk);
+        state.memory_read_word(step, src_chunk_index.into())?;
+
         // write memory
-        state.push_op(
-            step,
-            RW::WRITE,
-            MemoryWordOp::new(destination.id, dst_chunk_index.into(), dest_word),
-        );
+        let write_word = Word::from_big_endian(write_chunk);
+        state.memory_write_caller(step, dst_chunk_index.into(), write_word)?;
+
         dst_chunk_index += 32;
         src_chunk_index += 32;
     }
@@ -236,8 +244,8 @@ fn handle_copy(
     let mut read_steps = Vec::with_capacity(source.length);
     CircuitInputStateRef::gen_memory_copy_steps(
         &mut read_steps,
-        &callee_memory.0,
-        slot_count + 32,
+        &src_data,
+        full_length,
         source.offset,
         src_begin_slot as usize,
         copy_length,
@@ -246,8 +254,8 @@ fn handle_copy(
     let mut write_steps = Vec::with_capacity(destination.length);
     CircuitInputStateRef::gen_memory_copy_steps(
         &mut write_steps,
-        &caller_memory.0,
-        slot_count + 32,
+        &dst_data, // TODO: this should be dst_data_prev.
+        full_length,
         destination.offset,
         dst_begin_slot as usize,
         copy_length,
@@ -265,8 +273,7 @@ fn handle_copy(
             dst_id: NumberOrHash::Number(destination.id),
             dst_addr: destination.offset.try_into().unwrap(),
             log_id: None,
-            bytes: read_steps,
-            aux_bytes: Some(write_steps),
+            copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None),
         },
     );
 
@@ -301,27 +308,26 @@ fn handle_create(
     let (_, dst_end_slot) = state
         .get_addr_shift_slot((source.offset + source.length) as u64)
         .unwrap();
-    let mut memory = state.call_ctx_mut()?.memory.clone();
 
+    let mut memory = state.call_ctx_mut()?.memory.clone();
     let minimal_length = dst_end_slot as usize + 32;
     memory.extend_at_least(minimal_length);
+
     // collect all bytecode to memory with padding word
-    let create_slot_bytes =
-        memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
+    let create_slot_len = (dst_end_slot + 32 - dst_begin_slot) as usize;
 
     let mut copy_start = 0u64;
     let mut first_set = true;
     let mut chunk_index = dst_begin_slot;
     // memory word writes to destination word
-    for chunk in create_slot_bytes.chunks(32) {
-        let dest_word = Word::from_big_endian(chunk);
+    for _ in 0..create_slot_len / 32 {
         // read memory
-        state.memory_read_word(step, chunk_index.into(), dest_word)?;
+        state.memory_read_word(step, chunk_index.into())?;
         chunk_index += 32;
     }
 
     let mut copy_steps = Vec::with_capacity(source.length);
-    for idx in 0..create_slot_bytes.len() {
+    for idx in 0..create_slot_len {
         let value = memory.0[dst_begin_slot as usize + idx];
         if (idx as u64 + dst_begin_slot < source.offset as u64)
             || (idx as u64 + dst_begin_slot >= (source.offset + source.length) as u64)
@@ -351,8 +357,7 @@ fn handle_create(
             dst_id,
             dst_addr: 0,
             log_id: None,
-            bytes: copy_steps,
-            aux_bytes: None, // FIXME
+            copy_bytes: CopyBytes::new(copy_steps, None, None),
         },
     );
 
@@ -368,7 +373,10 @@ mod return_tests {
     use crate::mock::BlockData;
     use eth_types::{bytecode, geth_types::GethData, word};
     use mock::{
-        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        test_ctx::{
+            helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+            LoggerConfig,
+        },
         TestContext, MOCK_DEPLOYED_CONTRACT_BYTECODE,
     };
 
@@ -395,11 +403,12 @@ mod return_tests {
             STOP
         };
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let block: GethData = TestContext::<2, 1>::new_with_logger_config(
             None,
             account_0_code_account_1_no_code(code),
             tx_from_1_to_0,
             |block, _tx| block.number(0xcafeu64),
+            LoggerConfig::enable_memory(),
         )
         .unwrap()
         .into();
@@ -453,11 +462,12 @@ mod return_tests {
             STOP
         };
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let block: GethData = TestContext::<2, 1>::new_with_logger_config(
             None,
             account_0_code_account_1_no_code(code),
             tx_from_1_to_0,
             |block, _tx| block.number(0xcafeu64),
+            LoggerConfig::enable_memory(),
         )
         .unwrap()
         .into();

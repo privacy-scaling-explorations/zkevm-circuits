@@ -1,6 +1,6 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     error::{ContractAddressCollisionError, ExecError},
     evm::{Opcode, OpcodeId},
@@ -345,22 +345,20 @@ fn handle_copy(
     let minimal_length = dst_end_slot as usize + 32;
     memory.extend_at_least(minimal_length);
     // collect all bytecode to memory with padding word
-    let create_slot_bytes =
-        memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
+    let create_slot_len = (dst_end_slot + 32 - dst_begin_slot) as usize;
 
     let mut copy_start = 0u64;
     let mut first_set = true;
     let mut chunk_index = dst_begin_slot;
     // memory word writes to destination word
-    for chunk in create_slot_bytes.chunks(32) {
-        let dest_word = Word::from_big_endian(chunk);
+    for _ in 0..create_slot_len / 32 {
         // read memory
-        state.memory_read_word(step, chunk_index.into(), dest_word)?;
+        state.memory_read_word(step, chunk_index.into())?;
         chunk_index += 32;
     }
 
     let mut copy_steps = Vec::with_capacity(length);
-    for idx in 0..create_slot_bytes.len() {
+    for idx in 0..create_slot_len {
         let value = memory.0[dst_begin_slot as usize + idx];
         if (idx as u64 + dst_begin_slot < offset as u64)
             || (idx as u64 + dst_begin_slot >= (offset + length) as u64)
@@ -390,8 +388,7 @@ fn handle_copy(
             dst_id: NumberOrHash::Hash(code_hash),
             dst_addr: 0,
             log_id: None,
-            bytes: copy_steps,
-            aux_bytes: None,
+            copy_bytes: CopyBytes::new(copy_steps, None, None),
         },
     );
 
@@ -403,7 +400,10 @@ mod tests {
     use super::*;
     use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::RW};
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, word};
-    use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
+    use mock::{
+        test_ctx::{helpers::account_0_code_account_1_no_code, LoggerConfig},
+        TestContext,
+    };
 
     #[test]
     fn test_create_address_collision_error() {
@@ -436,13 +436,14 @@ mod tests {
         };
 
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let block: GethData = TestContext::<2, 1>::new_with_logger_config(
             None,
             account_0_code_account_1_no_code(code),
             |mut txs, accs| {
                 txs[0].from(accs[1].address).to(accs[0].address);
             },
             |block, _tx| block.number(0xcafeu64),
+            LoggerConfig::enable_memory(),
         )
         .unwrap()
         .into();
