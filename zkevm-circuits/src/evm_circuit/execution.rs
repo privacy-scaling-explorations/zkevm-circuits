@@ -819,6 +819,8 @@ impl<F: Field> ExecutionConfig<F> {
                 meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                     let table_expressions = match table {
                         Table::Fixed => fixed_table,
+                        Table::U8 => u8_table,
+                        Table::U16 => u16_table,
                         Table::Tx => tx_table,
                         Table::Rw => rw_table,
                         Table::Bytecode => bytecode_table,
@@ -833,30 +835,6 @@ impl<F: Field> ExecutionConfig<F> {
                         rlc::expr(&table_expressions, challenges.lookup_input()),
                     )]
                 });
-            }
-        }
-        for column in cell_manager.columns().iter() {
-            let column_expr = column.expr(meta);
-            match column.cell_type {
-                CellType::LookupU8 => {
-                    meta.lookup_any("u8 lookup", |meta| {
-                        vec![column_expr]
-                            .into_iter()
-                            .zip(u8_table.table_exprs(meta).into_iter())
-                            .map(|(expr, table)| (expr, table))
-                            .collect()
-                    });
-                }
-                CellType::LookupU16 => {
-                    meta.lookup_any("u16 lookup", |meta| {
-                        vec![column_expr]
-                            .into_iter()
-                            .zip(u16_table.table_exprs(meta).into_iter())
-                            .map(|(expr, table)| (expr, table))
-                            .collect()
-                    });
-                }
-                _ => (),
             }
         }
     }
