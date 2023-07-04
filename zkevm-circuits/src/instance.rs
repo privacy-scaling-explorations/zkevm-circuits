@@ -271,9 +271,9 @@ pub fn public_data_convert<F: Field>(block: &Block<F>) -> PublicData {
         chain_id: block.context.chain_id,
         history_hashes: block.context.history_hashes.clone(),
         transactions: block.txs.iter().map(|tx| tx.tx.clone()).collect_vec(),
-        state_root: H256::from_uint(&block.state_root),
+        state_root: block.eth_block.state_root,
         prev_state_root: H256::from_uint(&block.prev_state_root),
-        block_hash: None,
+        block_hash: block.eth_block.hash,
         block_constants: BlockConstants {
             coinbase: block.context.coinbase,
             timestamp: block.context.timestamp,

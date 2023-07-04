@@ -336,6 +336,8 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
                 (tx_index + 1) as u64,
             )?;
         }
+        // set eth_block
+        self.block.eth_block = eth_block.clone();
         self.set_value_ops_call_context_rwc_eor();
         Ok(())
     }

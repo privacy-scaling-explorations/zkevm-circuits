@@ -46,12 +46,12 @@ pub struct Block<F> {
     pub circuits_params: FixedCParams,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
-    /// State root of the block
-    pub state_root: Word,
     /// State root of the previous block
     pub prev_state_root: Word, // TODO: Make this H256
     /// Keccak inputs
     pub keccak_inputs: Vec<Vec<u8>>,
+    /// Original Block from geth
+    pub eth_block: eth_types::Block<eth_types::Transaction>,
 }
 
 impl<F: Field> Block<F> {
@@ -264,9 +264,9 @@ pub fn block_convert<F: Field>(
         sha3_inputs: block.sha3_inputs.clone(),
         circuits_params: builder.circuits_params,
         exp_circuit_pad_to: <usize>::default(),
-        state_root: block.state_root,
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
+        eth_block: block.eth_block.clone(),
     };
     let public_data = public_data_convert(&block);
     let rpi_bytes = public_data.get_pi_bytes(
