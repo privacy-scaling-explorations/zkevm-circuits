@@ -16,8 +16,8 @@ pub enum MPTProofType {
     NonceChanged = AccountFieldTag::Nonce as isize,
     /// Balance updated
     BalanceChanged = AccountFieldTag::Balance as isize,
-    /// Code hash exists
-    CodeHashExists = AccountFieldTag::CodeHash as isize,
+    /// Code hash updated
+    CodeHashChanged = AccountFieldTag::CodeHash as isize,
     /// Account destroyed
     AccountDestructed,
     /// Account does not exist
@@ -34,7 +34,7 @@ impl From<AccountFieldTag> for MPTProofType {
         match tag {
             AccountFieldTag::Nonce => Self::NonceChanged,
             AccountFieldTag::Balance => Self::BalanceChanged,
-            AccountFieldTag::CodeHash => Self::CodeHashExists,
+            AccountFieldTag::CodeHash => Self::CodeHashChanged,
             AccountFieldTag::NonExisting => Self::AccountDoesNotExist,
         }
     }

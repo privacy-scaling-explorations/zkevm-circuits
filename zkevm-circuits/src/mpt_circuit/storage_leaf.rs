@@ -43,7 +43,7 @@ pub(crate) struct StorageLeafConfig<F> {
     rlp_value: [RLPValueGadget<F>; 2],
     is_wrong_leaf: Cell<F>,
     is_not_hashed: [LtGadget<F, 1>; 2],
-    is_in_empty_trie: [IsEmptyTreeGadget<F>; 2],
+    is_placeholder_leaf: [IsEmptyTreeGadget<F>; 2],
     drifted: DriftedGadget<F>,
     wrong: WrongGadget<F>,
     is_storage_mod_proof: IsEqualGadget<F>,
@@ -85,7 +85,7 @@ impl<F: Field> StorageLeafConfig<F> {
             ];
             let drifted_item =
                 ctx.rlp_item(meta, cb, StorageRowType::Drifted as usize, RlpItemType::Key);
-            let wrong_item =
+            let expected_item =
                 ctx.rlp_item(meta, cb, StorageRowType::Wrong as usize, RlpItemType::Key);
 
             config.main_data =
@@ -108,9 +108,9 @@ impl<F: Field> StorageLeafConfig<F> {
                 *key_data = KeyData::load(cb, &ctx.memory[key_memory(is_s)], 0.expr());
 
                 // Placeholder leaf checks
-                config.is_in_empty_trie[is_s.idx()] =
+                config.is_placeholder_leaf[is_s.idx()] =
                     IsEmptyTreeGadget::construct(cb, parent_data.rlc.expr(), &cb.r.expr());
-                let is_placeholder_leaf = config.is_in_empty_trie[is_s.idx()].expr();
+                let is_placeholder_leaf = config.is_placeholder_leaf[is_s.idx()].expr();
 
                 let rlp_key = &mut config.rlp_key[is_s.idx()];
                 *rlp_key = ListKeyGadget::construct(cb, &key_items[is_s.idx()]);
@@ -238,8 +238,8 @@ impl<F: Field> StorageLeafConfig<F> {
                 config.is_non_existing_storage_proof.expr(),
                 &config.rlp_key[true.idx()].key_value,
                 &key_rlc[true.idx()],
-                &wrong_item,
-                config.is_in_empty_trie[true.idx()].expr(),
+                &expected_item,
+                config.is_placeholder_leaf[true.idx()].expr(),
                 config.key_data[true.idx()].clone(),
                 &cb.r.expr(),
             );
@@ -298,7 +298,7 @@ impl<F: Field> StorageLeafConfig<F> {
             rlp_values[StorageRowType::ValueC as usize].clone(),
         ];
         let drifted_item = rlp_values[StorageRowType::Drifted as usize].clone();
-        let wrong_item = rlp_values[StorageRowType::Wrong as usize].clone();
+        let expected_item = rlp_values[StorageRowType::Wrong as usize].clone();
 
         let main_data =
             self.main_data
@@ -384,7 +384,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 F::ZERO,
             )?;
 
-            self.is_in_empty_trie[is_s.idx()].assign(
+            self.is_placeholder_leaf[is_s.idx()].assign(
                 region,
                 offset,
                 parent_data[is_s.idx()].rlc,
@@ -422,7 +422,7 @@ impl<F: Field> StorageLeafConfig<F> {
             is_non_existing_proof,
             &key_rlc,
             &storage.wrong_rlp_bytes,
-            &wrong_item,
+            &expected_item,
             false,
             key_data[true.idx()].clone(),
             region.r,

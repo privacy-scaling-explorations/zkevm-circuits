@@ -39,7 +39,7 @@ pub(crate) struct AccountLeafConfig<F> {
     rlp_key: [ListKeyGadget<F>; 2],
     value_rlp_bytes: [[Cell<F>; 2]; 2],
     value_list_rlp_bytes: [[Cell<F>; 2]; 2],
-    is_in_empty_trie: [IsEmptyTreeGadget<F>; 2],
+    is_placeholder_leaf: [IsEmptyTreeGadget<F>; 2],
     drifted: DriftedGadget<F>,
     wrong: WrongGadget<F>,
     is_non_existing_account_proof: IsEqualGadget<F>,
@@ -160,7 +160,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 );
 
                 // Placeholder leaf checks
-                config.is_in_empty_trie[is_s.idx()] =
+                config.is_placeholder_leaf[is_s.idx()] =
                     IsEmptyTreeGadget::construct(cb, parent_data.rlc.expr(), &cb.r.expr());
 
                 // Calculate the key RLC
@@ -216,7 +216,7 @@ impl<F: Field> AccountLeafConfig<F> {
 
                 // Check if the account is in its parent.
                 // Check is skipped for placeholder leaves which are dummy leaves
-                ifx! {not!(and::expr(&[not!(config.parent_data[is_s.idx()].is_placeholder), config.is_in_empty_trie[is_s.idx()].expr()])) => {
+                ifx! {not!(and::expr(&[not!(config.parent_data[is_s.idx()].is_placeholder), config.is_placeholder_leaf[is_s.idx()].expr()])) => {
                     require!((1, leaf_rlc, rlp_key.rlp_list.num_bytes(), config.parent_data[is_s.idx()].rlc) => @KECCAK);
                 }}
 
@@ -278,7 +278,7 @@ impl<F: Field> AccountLeafConfig<F> {
             config.is_codehash_mod = IsEqualGadget::construct(
                 &mut cb.base,
                 config.main_data.proof_type.expr(),
-                MPTProofType::CodeHashExists.expr(),
+                MPTProofType::CodeHashChanged.expr(),
             );
 
             // Drifted leaf handling
@@ -302,7 +302,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 &config.rlp_key[true.idx()].key_value,
                 &key_rlc[true.idx()],
                 &wrong_bytes,
-                config.is_in_empty_trie[true.idx()].expr(),
+                config.is_placeholder_leaf[true.idx()].expr(),
                 config.key_data[true.idx()].clone(),
                 &cb.r.expr(),
             );
@@ -335,7 +335,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 // have a branch placeholder.
                 // TODO(Brecht): For case 2: just having the parent branch be the placeholder seems not enough
                 require!(or::expr([
-                    config.is_in_empty_trie[false.idx()].expr(),
+                    config.is_placeholder_leaf[false.idx()].expr(),
                     config.parent_data[false.idx()].is_placeholder.expr()
                 ]) => true);
             } elsex {
@@ -368,7 +368,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 config.is_nonce_mod => (MPTProofType::NonceChanged.expr(), nonce_rlc[true.idx()].expr(), nonce_rlc[false.idx()].expr()),
                 config.is_balance_mod => (MPTProofType::BalanceChanged.expr(), balance_rlc[true.idx()].expr(), balance_rlc[false.idx()].expr()),
                 config.is_storage_mod => (MPTProofType::StorageChanged.expr(), storage_rlc[true.idx()].expr(), storage_rlc[false.idx()].expr()),
-                config.is_codehash_mod => (MPTProofType::CodeHashExists.expr(), codehash_rlc[true.idx()].expr(), codehash_rlc[false.idx()].expr()),
+                config.is_codehash_mod => (MPTProofType::CodeHashChanged.expr(), codehash_rlc[true.idx()].expr(), codehash_rlc[false.idx()].expr()),
                 config.is_account_delete_mod => (MPTProofType::AccountDestructed.expr(), 0.expr(), 0.expr()),
                 config.is_non_existing_account_proof => (MPTProofType::AccountDoesNotExist.expr(), 0.expr(), 0.expr()),
                 _ => (MPTProofType::Disabled.expr(), 0.expr(), 0.expr()),
@@ -431,7 +431,7 @@ impl<F: Field> AccountLeafConfig<F> {
             rlp_values[AccountRowType::CodehashC as usize].clone(),
         ];
         let drifted_item = rlp_values[AccountRowType::Drifted as usize].clone();
-        let wrong_item = rlp_values[AccountRowType::Wrong as usize].clone();
+        let expected_item = rlp_values[AccountRowType::Wrong as usize].clone();
 
         let main_data =
             self.main_data
@@ -474,7 +474,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 0,
             )?;
 
-            self.is_in_empty_trie[is_s.idx()].assign(
+            self.is_placeholder_leaf[is_s.idx()].assign(
                 region,
                 offset,
                 parent_data[is_s.idx()].rlc,
@@ -559,7 +559,7 @@ impl<F: Field> AccountLeafConfig<F> {
             region,
             offset,
             main_data.proof_type.scalar(),
-            MPTProofType::CodeHashExists.scalar(),
+            MPTProofType::CodeHashChanged.scalar(),
         )? == true.scalar();
         // Drifted leaf handling
         self.drifted.assign(
@@ -578,7 +578,7 @@ impl<F: Field> AccountLeafConfig<F> {
             is_non_existing_proof,
             &key_rlc,
             &account.wrong_rlp_bytes,
-            &wrong_item,
+            &expected_item,
             true,
             key_data[true.idx()].clone(),
             region.r,
@@ -605,7 +605,7 @@ impl<F: Field> AccountLeafConfig<F> {
         } else if is_storage_mod {
             (MPTProofType::StorageChanged, storage_rlc)
         } else if is_codehash_mod {
-            (MPTProofType::CodeHashExists, codehash_rlc)
+            (MPTProofType::CodeHashChanged, codehash_rlc)
         } else if is_account_delete_mod {
             (MPTProofType::AccountDestructed, vec![0.scalar(); 2])
         } else if is_non_existing_proof {

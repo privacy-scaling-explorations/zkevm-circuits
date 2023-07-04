@@ -1007,11 +1007,11 @@ impl<F: Field> MPTConstraintBuilder<F> {
     }
 }
 
-/// Returns `1` when `value == 0`, and returns `0` otherwise.
+/// Checks if we are in an empty tree
 #[derive(Clone, Debug, Default)]
 pub struct IsEmptyTreeGadget<F> {
-    is_in_empty_trie: IsEqualGadget<F>,
-    is_in_empty_branch: IsEqualGadget<F>,
+    is_empty_trie: IsEqualGadget<F>,
+    is_nil_in_branch_at_mod_index: IsEqualGadget<F>,
 }
 
 impl<F: Field> IsEmptyTreeGadget<F> {
@@ -1026,20 +1026,23 @@ impl<F: Field> IsEmptyTreeGadget<F> {
                 .map(|v| v.expr())
                 .collect::<Vec<_>>()
                 .rlc(r);
-            let is_in_empty_trie =
+            let is_empty_trie =
                 IsEqualGadget::construct(&mut cb.base, parent_rlc.expr(), empty_root_rlc.expr());
-            let is_in_empty_branch =
+            let is_nil_in_branch_at_mod_index =
                 IsEqualGadget::construct(&mut cb.base, parent_rlc.expr(), 0.expr());
 
             Self {
-                is_in_empty_trie,
-                is_in_empty_branch,
+                is_empty_trie,
+                is_nil_in_branch_at_mod_index,
             }
         })
     }
 
     pub(crate) fn expr(&self) -> Expression<F> {
-        or::expr(&[self.is_in_empty_trie.expr(), self.is_in_empty_branch.expr()])
+        or::expr(&[
+            self.is_empty_trie.expr(),
+            self.is_nil_in_branch_at_mod_index.expr(),
+        ])
     }
 
     pub(crate) fn assign(
@@ -1049,9 +1052,9 @@ impl<F: Field> IsEmptyTreeGadget<F> {
         parent_rlc: F,
         r: F,
     ) -> Result<(), Error> {
-        self.is_in_empty_trie
+        self.is_empty_trie
             .assign(region, offset, parent_rlc, EMPTY_TRIE_HASH.rlc_value(r))?;
-        self.is_in_empty_branch
+        self.is_nil_in_branch_at_mod_index
             .assign(region, offset, parent_rlc, 0.scalar())?;
         Ok(())
     }
@@ -1159,7 +1162,7 @@ impl<F: Field> WrongGadget<F> {
         is_non_existing: Expression<F>,
         key_value: &RLPItemView<F>,
         key_rlc: &Expression<F>,
-        wrong_item: &RLPItemView<F>,
+        expected_item: &RLPItemView<F>,
         is_in_empty_tree: Expression<F>,
         key_data: KeyData<F>,
         r: &Expression<F>,
@@ -1169,7 +1172,7 @@ impl<F: Field> WrongGadget<F> {
             // Get the previous key data
             ifx! {is_non_existing, not!(is_in_empty_tree) => {
                 // Calculate the key
-                config.wrong_rlp_key = ListKeyGadget::construct(cb, wrong_item);
+                config.wrong_rlp_key = ListKeyGadget::construct(cb, expected_item);
                 let key_rlc_wrong = key_data.rlc.expr() + config.wrong_rlp_key.key.expr(
                     cb,
                     config.wrong_rlp_key.key_value.clone(),
@@ -1202,15 +1205,15 @@ impl<F: Field> WrongGadget<F> {
         is_non_existing: bool,
         key_rlc: &[F],
         list_bytes: &[u8],
-        wrong_item: &RLPItemWitness,
+        expected_item: &RLPItemWitness,
         for_placeholder_s: bool,
         key_data: KeyDataWitness<F>,
         r: F,
     ) -> Result<(F, F), Error> {
         if is_non_existing {
-            let wrong_witness = self
-                .wrong_rlp_key
-                .assign(region, offset, list_bytes, wrong_item)?;
+            let wrong_witness =
+                self.wrong_rlp_key
+                    .assign(region, offset, list_bytes, expected_item)?;
             let (key_rlc_wrong, _) = wrong_witness.key.key(
                 wrong_witness.key_item.clone(),
                 key_data.rlc,
@@ -1298,7 +1301,7 @@ impl<F: Field> MainRLPGadget<F> {
             require!(config.rlc_rlp => config.rlp.rlc_rlp2(cb) * config.mult_inv.expr());
 
             // TODO(Brecht): cleanup inv challenge
-            require!(config.mult_inv.expr() * pow::expr(cb.keccak_r.expr(), HASH_WIDTH + 2) => config.mult_diff_keccak.expr());
+            require!(config.mult_inv.expr() * pow::expr(cb.keccak_r.expr(), RLP_UNIT_NUM_BYTES) => config.mult_diff_keccak.expr());
             require!((FixedTableTag::RMult, config.rlp.num_bytes(), config.mult_diff.expr()) => @FIXED);
             require!((config.rlp.num_bytes(), config.mult_diff_keccak.expr()) => @MULT);
             // `tag` and `max_len` are "free" input that needs to be constrained externally!
@@ -1371,9 +1374,12 @@ impl<F: Field> MainRLPGadget<F> {
         }
 
         // Compute the denominator needed for BE
-        let mult_inv = pow::value(region.keccak_r, HASH_WIDTH + 2 - rlp_witness.num_bytes())
-            .invert()
-            .unwrap_or(F::ZERO);
+        let mult_inv = pow::value(
+            region.keccak_r,
+            RLP_UNIT_NUM_BYTES - rlp_witness.num_bytes(),
+        )
+        .invert()
+        .unwrap_or(F::ZERO);
 
         // Store RLP properties for easy access
         self.num_bytes
