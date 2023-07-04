@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, Same},
             },
             math_gadget::{
-                AddWordsGadget, ConstantDivisionGadget, IsEqualGadget, MinMaxGadget,
+                AddWordsGadget, ConstantDivisionGadget, IsEqualGadget, IsZeroGadget, MinMaxGadget,
                 MulWordByU64Gadget,
             },
             CachedRegion, Cell, Word,
@@ -18,11 +18,13 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{
-        BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag, TxReceiptFieldTag,
+        AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
+        TxReceiptFieldTag,
     },
     util::Expr,
 };
 use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToLittleEndian, ToScalar};
+use gadgets::util::{and, not};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use strum::EnumCount;
 
@@ -40,6 +42,9 @@ pub(crate) struct EndTxGadget<F> {
     sub_gas_price_by_base_fee: AddWordsGadget<F, 2, true>,
     mul_effective_tip_by_gas_used: MulWordByU64Gadget<F>,
     coinbase: Cell<F>,
+    coinbase_codehash: Cell<F>,
+    coinbase_codehash_is_zero: IsZeroGadget<F>,
+    coinbase_reward_is_zero: IsZeroGadget<F>,
     coinbase_reward: UpdateBalanceGadget<F, 2, true>,
     current_cumulative_gas_used: Cell<F>,
     is_first_tx: IsEqualGadget<F>,
@@ -111,6 +116,32 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             effective_fee.expr(),
         );
 
+        let coinbase_codehash = cb.query_cell_phase2();
+        cb.account_read(
+            coinbase.expr(),
+            AccountFieldTag::CodeHash,
+            coinbase_codehash.expr(),
+        );
+        let coinbase_codehash_is_zero = IsZeroGadget::construct(cb, coinbase_codehash.expr());
+
+        let coinbase_reward_is_zero =
+            IsZeroGadget::construct(cb, mul_effective_tip_by_gas_used.product().expr());
+        // If coinbase account balance will become positive beecause of this tx, update its codehash
+        // from 0 to the empty codehash.
+        let create_coinbase_account = and::expr(&[
+            coinbase_codehash_is_zero.expr(),
+            not::expr(coinbase_reward_is_zero.expr()),
+        ]);
+        cb.condition(create_coinbase_account.clone(), |cb| {
+            cb.account_write(
+                coinbase.expr(),
+                AccountFieldTag::CodeHash,
+                cb.empty_code_hash_rlc(),
+                0.expr(),
+                None,
+            );
+        });
+
         let coinbase_reward =
             UpdateBalanceGadget::construct(cb, coinbase.expr(), vec![effective_fee.clone()], None);
 
@@ -165,7 +196,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                 );
 
                 cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(10.expr() - is_first_tx.expr()),
+                    rw_counter: Delta(
+                        11.expr() - is_first_tx.expr() + create_coinbase_account.clone(),
+                    ),
                     ..StepStateTransition::any()
                 });
             },
@@ -175,7 +208,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             cb.next.execution_state_selector([ExecutionState::EndBlock]),
             |cb| {
                 cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(9.expr() - is_first_tx.expr()),
+                    rw_counter: Delta(10.expr() - is_first_tx.expr() + create_coinbase_account),
                     // We propagate call_id so that EndBlock can get the last tx_id
                     // in order to count processed txs.
                     call_id: Same,
@@ -197,6 +230,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             sub_gas_price_by_base_fee,
             mul_effective_tip_by_gas_used,
             coinbase,
+            coinbase_codehash,
+            coinbase_codehash_is_zero,
+            coinbase_reward_is_zero,
             coinbase_reward,
             current_cumulative_gas_used,
             is_first_tx,
@@ -215,8 +251,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
     ) -> Result<(), Error> {
         let gas_used = tx.gas - step.gas_left;
         let (refund, _) = block.rws[step.rw_indices[2]].tx_refund_value_pair();
-        let [(caller_balance, caller_balance_prev), (coinbase_balance, coinbase_balance_prev)] =
-            [step.rw_indices[3], step.rw_indices[4]].map(|idx| block.rws[idx].account_value_pair());
+        let (caller_balance, caller_balance_prev) =
+            block.rws[step.rw_indices[3]].account_value_pair();
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
@@ -265,6 +301,13 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             tx.gas_price,
         )?;
         let coinbase_reward = effective_tip * (gas_used - effective_refund);
+        let (coinbase_codehash, _) = block.rws[step.rw_indices[4]].account_value_pair();
+        let coinbase_created = coinbase_codehash.is_zero() && !coinbase_reward.is_zero();
+        let coinbase_codehash_rlc = region.word_rlc(coinbase_codehash);
+        self.coinbase_codehash
+            .assign(region, offset, coinbase_codehash_rlc)?;
+        self.coinbase_codehash_is_zero
+            .assign_value(region, offset, coinbase_codehash_rlc)?;
         self.mul_effective_tip_by_gas_used.assign(
             region,
             offset,
@@ -282,6 +325,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
+
+        let (coinbase_balance, coinbase_balance_prev) =
+            block.rws[step.rw_indices[5 + usize::from(coinbase_created)]].account_value_pair();
         let effective_fee = coinbase_balance - coinbase_balance_prev;
         self.effective_fee
             .assign(region, offset, Some(effective_fee.to_le_bytes()))?;
@@ -291,6 +337,11 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             coinbase_balance_prev,
             vec![effective_fee],
             coinbase_balance,
+        )?;
+        self.coinbase_reward_is_zero.assign_value(
+            region,
+            offset,
+            region.word_rlc(effective_fee),
         )?;
 
         let current_cumulative_gas_used: u64 = if tx.id == 1 {

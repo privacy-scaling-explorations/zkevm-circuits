@@ -793,6 +793,31 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         log::error!("coinbase account not found: {}", block_info.coinbase);
         return Err(Error::AccountNotFound(block_info.coinbase));
     }
+    let coinbase_account = coinbase_account.clone();
+    state.account_read(
+        &mut exec_step,
+        block_info.coinbase,
+        AccountField::CodeHash,
+        if coinbase_account.is_empty() {
+            Word::zero()
+        } else {
+            coinbase_account.code_hash.to_word()
+        },
+    );
+    dbg!(
+        coinbase_account.clone(),
+        coinbase_account.is_empty(),
+        coinbase_reward
+    );
+    if coinbase_account.is_empty() && !coinbase_reward.is_zero() {
+        state.account_write(
+            &mut exec_step,
+            block_info.coinbase,
+            AccountField::CodeHash,
+            CodeDB::empty_code_hash().to_word(),
+            Word::zero(),
+        )?;
+    }
     let coinbase_balance_prev = coinbase_account.balance;
     let coinbase_balance = coinbase_balance_prev + coinbase_reward;
     state.account_write(
