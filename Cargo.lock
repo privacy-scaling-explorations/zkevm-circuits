@@ -30,6 +30,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "aggregator"
+version = "0.1.0"
+dependencies = [
+ "ark-std",
+ "env_logger 0.10.0",
+ "eth-types 0.1.0",
+ "ethers-core",
+ "halo2_proofs",
+ "itertools",
+ "log",
+ "rand",
+ "serde",
+ "serde_json",
+ "snark-verifier",
+ "snark-verifier-sdk",
+ "zkevm-circuits",
+]
+
+[[package]]
 name = "ahash"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
