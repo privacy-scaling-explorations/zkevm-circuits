@@ -359,14 +359,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         }
         trace!("assign calldata_bytes {calldata_bytes:?}");
 
-        self.buffer_reader.assign(
-            region,
-            offset,
-            src_addr,
-            src_addr_end,
-            &calldata_bytes,
-            &[true; N_BYTES_WORD],
-        )?;
+        self.buffer_reader
+            .assign(region, offset, src_addr, src_addr_end, &calldata_bytes)?;
 
         Ok(())
     }
