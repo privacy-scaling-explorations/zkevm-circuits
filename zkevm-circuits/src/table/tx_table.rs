@@ -161,58 +161,43 @@ impl TxTable {
                     let tx_data = vec![
                         (
                             TxContextFieldTag::Nonce,
-                            Value::known(F::from(tx.tx.nonce.as_u64())),
-                            Value::known(F::ZERO),
+                            word::Word::from(tx.tx.nonce.as_u64()),
                         ),
-                        (
-                            TxContextFieldTag::Gas,
-                            Value::known(F::from(tx.gas())),
-                            Value::known(F::ZERO),
-                        ),
+                        (TxContextFieldTag::Gas, word::Word::from(tx.gas())),
                         (
                             TxContextFieldTag::GasPrice,
-                            Value::known(word::Word::from(tx.tx.gas_price).lo()),
-                            Value::known(word::Word::from(tx.tx.gas_price).hi()),
+                            word::Word::from(tx.tx.gas_price),
                         ),
                         (
                             TxContextFieldTag::CallerAddress,
-                            Value::known(word::Word::from(tx.tx.from).lo()),
-                            Value::known(word::Word::from(tx.tx.from).hi()),
+                            word::Word::from(tx.tx.from),
                         ),
                         (
                             TxContextFieldTag::CalleeAddress,
-                            Value::known(word::Word::from(tx.tx.to_or_contract_addr()).lo()),
-                            Value::known(word::Word::from(tx.tx.to_or_contract_addr()).hi()),
+                            word::Word::from(tx.tx.to_or_contract_addr()),
                         ),
                         (
                             TxContextFieldTag::IsCreate,
-                            Value::known(F::from(tx.tx.is_create().into())),
-                            Value::known(F::ZERO),
+                            word::Word::from(tx.tx.is_create()),
                         ),
-                        (
-                            TxContextFieldTag::Value,
-                            Value::known(word::Word::from(tx.tx.value).lo()),
-                            Value::known(word::Word::from(tx.tx.value).hi()),
-                        ),
+                        (TxContextFieldTag::Value, word::Word::from(tx.tx.value)),
                         (
                             TxContextFieldTag::CallDataLength,
-                            Value::known(F::from(tx.tx.call_data.len() as u64)),
-                            Value::known(F::ZERO),
+                            word::Word::from(tx.tx.call_data.len() as u64),
                         ),
                         (
                             TxContextFieldTag::CallDataGasCost,
-                            Value::known(F::from(tx.tx.call_data_gas_cost())),
-                            Value::known(F::ZERO),
+                            word::Word::from(tx.tx.call_data_gas_cost()),
                         ),
                     ]
                     .iter()
-                    .map(|&(tag, lo, hi)| {
+                    .map(|&(tag, word)| {
                         [
                             tx_id,
                             Value::known(F::from(tag as u64)),
                             Value::known(F::ZERO),
-                            lo,
-                            hi,
+                            Value::known(word.lo()),
+                            Value::known(word.hi()),
                         ]
                     })
                     .collect_vec();
