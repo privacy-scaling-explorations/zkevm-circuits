@@ -4,7 +4,6 @@ mod tests {
     use ark_std::{end_timer, start_timer};
     use eth_types::Word;
     use halo2_proofs::{
-        arithmetic::Field,
         halo2curves::bn256::{Bn256, Fr, G1Affine},
         plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
         poly::{
@@ -20,13 +19,9 @@ mod tests {
         },
     };
     use rand::SeedableRng;
-    use rand_chacha::ChaCha20Rng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::{
-        pi_circuit::{PiCircuit, PublicData},
-        util::SubCircuit,
-    };
+    use zkevm_circuits::{instance::PublicData, pi_circuit::PiCircuit, util::SubCircuit};
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -45,12 +40,8 @@ mod tests {
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
-        let mut rng = ChaCha20Rng::seed_from_u64(2);
-        let randomness = Fr::random(&mut rng);
-        let rand_rpi = Fr::random(&mut rng);
         let public_data = generate_publicdata(MAX_TXS);
-        let circuit =
-            PiCircuit::<Fr>::new(MAX_TXS, MAX_CALLDATA, randomness, rand_rpi, public_data);
+        let circuit = PiCircuit::<Fr>::new(MAX_TXS, MAX_CALLDATA, public_data);
         let public_inputs = circuit.instance();
         let instance: Vec<&[Fr]> = public_inputs.iter().map(|input| &input[..]).collect();
         let instances = &[&instance[..]];

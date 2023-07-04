@@ -6,21 +6,24 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Word,
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{
+        word::{Word32Cell, WordExpr},
+        Expr,
+    },
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use eth_types::{evm_types::OpcodeId, Field};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BitwiseGadget<F> {
     same_context: SameContextGadget<F>,
-    a: Word<F>,
-    b: Word<F>,
-    c: Word<F>,
+    a: Word32Cell<F>,
+    b: Word32Cell<F>,
+    c: Word32Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
@@ -31,13 +34,13 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let a = cb.query_word_rlc();
-        let b = cb.query_word_rlc();
-        let c = cb.query_word_rlc();
+        let a = cb.query_word32();
+        let b = cb.query_word32();
+        let c = cb.query_word32();
 
-        cb.stack_pop(a.expr());
-        cb.stack_pop(b.expr());
-        cb.stack_push(c.expr());
+        cb.stack_pop(a.to_word());
+        cb.stack_pop(b.to_word());
+        cb.stack_push(c.to_word());
 
         // Because opcode AND, OR, and XOR are continuous, so we can make the
         // FixedTableTag of them also continuous, and use the opcode delta from
@@ -50,9 +53,9 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
                 Lookup::Fixed {
                     tag: tag.clone(),
                     values: [
-                        a.cells[idx].expr(),
-                        b.cells[idx].expr(),
-                        c.cells[idx].expr(),
+                        a.limbs[idx].expr(),
+                        b.limbs[idx].expr(),
+                        c.limbs[idx].expr(),
                     ],
                 },
             );
@@ -88,9 +91,9 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let [a, b, c] = [0, 1, 2].map(|index| block.get_rws(step, index).stack_value());
-        self.a.assign(region, offset, Some(a.to_le_bytes()))?;
-        self.b.assign(region, offset, Some(b.to_le_bytes()))?;
-        self.c.assign(region, offset, Some(c.to_le_bytes()))?;
+        self.a.assign_u256(region, offset, a)?;
+        self.b.assign_u256(region, offset, b)?;
+        self.c.assign_u256(region, offset, c)?;
 
         Ok(())
     }

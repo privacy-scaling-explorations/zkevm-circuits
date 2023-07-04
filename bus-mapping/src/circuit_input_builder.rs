@@ -322,6 +322,8 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
             let geth_trace = &geth_traces[tx_index];
             self.handle_tx(tx, geth_trace, tx_index + 1 == eth_block.transactions.len())?;
         }
+        // set eth_block
+        self.block.eth_block = eth_block.clone();
         self.set_value_ops_call_context_rwc_eor();
         Ok(())
     }
@@ -374,7 +376,7 @@ impl CircuitInputBuilder<DynamicCParams> {
             // needed.
             let max_keccak_rows = 0;
             FixedCParams {
-                max_rws: max_rws + 1,
+                max_rws: max_rws + 3,
                 max_txs,
                 max_calldata,
                 max_copy_rows,

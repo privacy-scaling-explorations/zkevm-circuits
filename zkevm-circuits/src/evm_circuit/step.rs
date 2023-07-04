@@ -1,6 +1,6 @@
 use super::{
     param::MAX_STEP_HEIGHT,
-    util::{evm_cm_distribute_advice, CachedRegion},
+    util::{evm_cm_distribute_advice, CachedRegion, Cell, CellType},
 };
 use crate::{
     evm_circuit::{
@@ -8,7 +8,8 @@ use crate::{
         witness::{Block, Call, ExecStep},
     },
     util::{
-        cell_manager::{CMFixedWidthStrategy, Cell, CellManager, CellType},
+        cell_manager::{CMFixedWidthStrategy, CellManager},
+        word::{Word, WordCell},
         Expr,
     },
 };
@@ -68,9 +69,7 @@ pub enum ExecutionState {
     RETURNDATACOPY,
     EXTCODEHASH,
     BLOCKHASH,
-    BLOCKCTXU64,  // TIMESTAMP, NUMBER, GASLIMIT
-    BLOCKCTXU160, // COINBASE
-    BLOCKCTXU256, // DIFFICULTY, BASEFEE
+    BLOCKCTX, // TIMESTAMP, NUMBER, GASLIMIT, COINBASE, DIFFICULTY, BASEFEE
     CHAINID,
     SELFBALANCE,
     POP,
@@ -241,11 +240,12 @@ impl From<&ExecStep> for ExecutionState {
                     OpcodeId::EXTCODEHASH => ExecutionState::EXTCODEHASH,
                     OpcodeId::EXTCODESIZE => ExecutionState::EXTCODESIZE,
                     OpcodeId::BLOCKHASH => ExecutionState::BLOCKHASH,
-                    OpcodeId::TIMESTAMP | OpcodeId::NUMBER | OpcodeId::GASLIMIT => {
-                        ExecutionState::BLOCKCTXU64
-                    }
-                    OpcodeId::COINBASE => ExecutionState::BLOCKCTXU160,
-                    OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
+                    OpcodeId::TIMESTAMP
+                    | OpcodeId::NUMBER
+                    | OpcodeId::GASLIMIT
+                    | OpcodeId::COINBASE
+                    | OpcodeId::DIFFICULTY
+                    | OpcodeId::BASEFEE => ExecutionState::BLOCKCTX,
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SAR => ExecutionState::SAR,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
@@ -381,9 +381,14 @@ impl ExecutionState {
             Self::RETURNDATACOPY => vec![OpcodeId::RETURNDATACOPY],
             Self::EXTCODEHASH => vec![OpcodeId::EXTCODEHASH],
             Self::BLOCKHASH => vec![OpcodeId::BLOCKHASH],
-            Self::BLOCKCTXU64 => vec![OpcodeId::TIMESTAMP, OpcodeId::NUMBER, OpcodeId::GASLIMIT],
-            Self::BLOCKCTXU160 => vec![OpcodeId::COINBASE],
-            Self::BLOCKCTXU256 => vec![OpcodeId::DIFFICULTY, OpcodeId::BASEFEE],
+            Self::BLOCKCTX => vec![
+                OpcodeId::TIMESTAMP,
+                OpcodeId::NUMBER,
+                OpcodeId::GASLIMIT,
+                OpcodeId::COINBASE,
+                OpcodeId::DIFFICULTY,
+                OpcodeId::BASEFEE,
+            ],
             Self::CHAINID => vec![OpcodeId::CHAINID],
             Self::SELFBALANCE => vec![OpcodeId::SELFBALANCE],
             Self::POP => vec![OpcodeId::POP],
@@ -646,7 +651,7 @@ pub(crate) struct StepState<F> {
     /// In the case of a contract creation internal call, this denotes the hash
     /// of the chunk of bytes from caller's memory that represent the
     /// contract init code.
-    pub(crate) code_hash: Cell<F>,
+    pub(crate) code_hash: WordCell<F>,
     /// The program counter
     pub(crate) program_counter: Cell<F>,
     /// The stack pointer
@@ -690,7 +695,10 @@ impl<F: Field> Step<F> {
                 call_id: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 is_root: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 is_create: cell_manager.query_cell(meta, CellType::StoragePhase1),
-                code_hash: cell_manager.query_cell(meta, CellType::StoragePhase2),
+                code_hash: Word::new([
+                    cell_manager.query_cell(meta, CellType::StoragePhase1),
+                    cell_manager.query_cell(meta, CellType::StoragePhase1),
+                ]),
                 program_counter: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 stack_pointer: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 gas_left: cell_manager.query_cell(meta, CellType::StoragePhase1),
@@ -741,7 +749,7 @@ impl<F: Field> Step<F> {
         )?;
         self.state
             .code_hash
-            .assign(region, offset, region.word_rlc(call.code_hash.to_word()))?;
+            .assign_u256(region, offset, call.code_hash.to_word())?;
         self.state
             .program_counter
             .assign(region, offset, Value::known(F::from(step.pc)))?;

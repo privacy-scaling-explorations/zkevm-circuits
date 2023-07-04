@@ -64,11 +64,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
         // Add callee to access list
         let is_warm = cb.query_bool();
-        cb.account_access_list_read(
-            tx_id.expr(),
-            call_gadget.callee_address_expr(),
-            is_warm.expr(),
-        );
+        cb.account_access_list_read(tx_id.expr(), call_gadget.callee_address(), is_warm.expr());
 
         cb.condition(call_gadget.has_value.expr(), |cb| {
             cb.require_zero(
@@ -156,7 +152,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             rd_offset,
             rd_length,
             step.memory_word_size(),
-            region.word_rlc(callee_code_hash),
+            callee_code_hash,
         )?;
 
         self.opcode

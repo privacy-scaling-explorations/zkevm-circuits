@@ -1,16 +1,17 @@
 use std::collections::HashMap;
 
 use crate::{
-    evm_circuit::{detect_fixed_table_tags, util::rlc, EvmCircuit},
+    evm_circuit::{detect_fixed_table_tags, EvmCircuit},
     exp_circuit::param::OFFSET_INCREMENT,
+    instance::public_data_convert,
     table::BlockContextFieldTag,
-    util::{log2_ceil, SubCircuit},
+    util::{log2_ceil, word, SubCircuit},
 };
 use bus_mapping::{
     circuit_input_builder::{self, CopyEvent, ExpEvent, FixedCParams},
     Error,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{Address, Field, ToScalar, Word};
 use halo2_proofs::circuit::Value;
 
 use super::{tx::tx_convert, Bytecode, ExecStep, Rw, RwMap, Transaction};
@@ -109,6 +110,7 @@ impl<F: Field> Block<F> {
             num_rows_required_for_keccak_table,
             num_rows_required_for_tx_table,
             num_rows_required_for_exp_table,
+            1 << 16, // u16 range lookup
         ])
         .unwrap();
 
@@ -152,46 +154,50 @@ pub struct BlockContext {
 
 impl BlockContext {
     /// Assignments for block table
-    pub fn table_assignments<F: Field>(&self, randomness: Value<F>) -> Vec<[Value<F>; 3]> {
+    pub fn table_assignments<F: Field>(&self) -> Vec<[Value<F>; 4]> {
         [
             vec![
                 [
                     Value::known(F::from(BlockContextFieldTag::Coinbase as u64)),
                     Value::known(F::ZERO),
-                    Value::known(self.coinbase.to_scalar().unwrap()),
+                    Value::known(word::Word::from(self.coinbase).lo()),
+                    Value::known(word::Word::from(self.coinbase).hi()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::Timestamp as u64)),
                     Value::known(F::ZERO),
                     Value::known(self.timestamp.to_scalar().unwrap()),
+                    Value::known(F::ZERO),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::Number as u64)),
                     Value::known(F::ZERO),
                     Value::known(self.number.to_scalar().unwrap()),
+                    Value::known(F::ZERO),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
                     Value::known(F::ZERO),
-                    randomness
-                        .map(|randomness| rlc::value(&self.difficulty.to_le_bytes(), randomness)),
+                    Value::known(word::Word::from(self.difficulty).lo()),
+                    Value::known(word::Word::from(self.difficulty).hi()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
                     Value::known(F::ZERO),
                     Value::known(F::from(self.gas_limit)),
+                    Value::known(F::ZERO),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::BaseFee as u64)),
                     Value::known(F::ZERO),
-                    randomness
-                        .map(|randomness| rlc::value(&self.base_fee.to_le_bytes(), randomness)),
+                    Value::known(word::Word::from(self.base_fee).lo()),
+                    Value::known(word::Word::from(self.base_fee).hi()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
                     Value::known(F::ZERO),
-                    randomness
-                        .map(|randomness| rlc::value(&self.chain_id.to_le_bytes(), randomness)),
+                    Value::known(word::Word::from(self.chain_id).lo()),
+                    Value::known(word::Word::from(self.chain_id).hi()),
                 ],
             ],
             {
@@ -203,8 +209,8 @@ impl BlockContext {
                         [
                             Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
                             Value::known((self.number - len_history + idx).to_scalar().unwrap()),
-                            randomness
-                                .map(|randomness| rlc::value(&hash.to_le_bytes(), randomness)),
+                            Value::known(word::Word::from(*hash).lo()),
+                            Value::known(word::Word::from(*hash).hi()),
                         ]
                     })
                     .collect()
@@ -237,7 +243,7 @@ pub fn block_convert<F: Field>(
     let code_db = &builder.code_db;
     let rws = RwMap::from(&block.container);
     rws.check_value();
-    Ok(Block {
+    let mut block = Block {
         // randomness: F::from(0x100), // Special value to reveal elements after RLC
         randomness: F::from(0xcafeu64),
         context: block.into(),
@@ -266,5 +272,13 @@ pub fn block_convert<F: Field>(
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         eth_block: block.eth_block.clone(),
-    })
+    };
+    let public_data = public_data_convert(&block);
+    let rpi_bytes = public_data.get_pi_bytes(
+        block.circuits_params.max_txs,
+        block.circuits_params.max_calldata,
+    );
+    // PI Circuit
+    block.keccak_inputs.extend_from_slice(&[rpi_bytes]);
+    Ok(block)
 }

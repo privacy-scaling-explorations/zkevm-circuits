@@ -21,7 +21,9 @@ pub(crate) enum CellType {
     StoragePhase1,
     StoragePhase2,
     StoragePermutation,
-    LookupByte,
+    // TODO combine LookupU8, LookupU16 with Lookup(Table::U8 | Table::U16)
+    LookupU8,
+    LookupU16,
     Lookup(Table),
 }
 
@@ -55,7 +57,7 @@ impl CellType {
 
 #[derive(Clone, Debug)]
 /// Cell is a (column, rotation) pair that has been placed and queried by the Cell Manager.
-pub(crate) struct Cell<F> {
+pub struct Cell<F> {
     pub(crate) expression: Expression<F>,
     pub(crate) column_expression: Expression<F>,
     pub(crate) column: Column<Advice>,
@@ -80,7 +82,7 @@ impl<F: Field> Cell<F> {
         }
     }
 
-    // Creates a Cell from ConstraintSystem.
+    /// Creates a Cell from ConstraintSystem.
     pub fn new_from_cs(
         meta: &mut ConstraintSystem<F>,
         column: Column<Advice>,
