@@ -3,15 +3,17 @@
 use eth_types::{address, bytecode, bytecode::Bytecode, word, Address, Bytes, Word};
 use ethers_signers::LocalWallet;
 use lazy_static::lazy_static;
-use rand::SeedableRng;
+use rand::{random, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 mod account;
 mod block;
+mod sha3;
 pub mod test_ctx;
 mod transaction;
 
 pub(crate) use account::MockAccount;
 pub(crate) use block::MockBlock;
+pub use sha3::Sha3CodeGen;
 pub use test_ctx::TestContext;
 pub use transaction::{AddrOrWallet, MockTransaction, CORRECT_MOCK_TXS};
 
@@ -124,6 +126,11 @@ impl Default for MockCallBytecodeParams {
             instructions_after_call: Bytecode::default(),
         }
     }
+}
+
+/// Generate random bytes for the specified size.
+pub fn rand_bytes(size: usize) -> Vec<u8> {
+    (0..size).map(|_| random()).collect::<Vec<u8>>()
 }
 
 /// Generate mock EVM bytecode that performs a contract call

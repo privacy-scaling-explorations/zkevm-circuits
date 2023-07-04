@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use crate::{
     assign, circuit,
     circuit_tools::{
@@ -7,7 +9,7 @@ use crate::{
             ConstraintBuilder, RLCChainable, RLCChainable2, RLCChainableValue, RLCable,
             RLCableValue,
         },
-        gadgets::{IsEqualGadget, IsZeroGadget, LtGadget},
+        gadgets::{IsEqualGadget, IsZeroGadget, LtGadget, IsEqualWordGadget},
         memory::MemoryBank,
     },
     evm_circuit::table::Table,
@@ -19,7 +21,7 @@ use crate::{
         },
         rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble},
     },
-    util::{Challenges, Expr},
+    util::{Challenges, Expr, word::Word},
 };
 use eth_types::Field;
 use gadgets::util::{not, or, pow, Scalar};
@@ -1145,29 +1147,31 @@ impl<F: Field> DriftedGadget<F> {
     }
 }
 
+// TODO(Brecht): fix
 /// Handles wrong leaves
 #[derive(Clone, Debug, Default)]
 pub struct WrongGadget<F> {
-    wrong_rlp_key: ListKeyGadget<F>,
-    wrong_mult: Cell<F>,
-    pub(crate) is_key_equal: IsEqualGadget<F>,
-    wrong_key: Option<Expression<F>>,
+    //wrong_rlp_key: ListKeyGadget<F>,
+    //wrong_mult: Cell<F>,
+    //pub(crate) is_key_equal: IsEqualWordGadget<F, Word<Expression<F>>, Word<Expression<F>>>,
+    //wrong_key: Option<Expression<F>>,
+    _marker: PhantomData<F>,
 }
 
 impl<F: Field> WrongGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut MPTConstraintBuilder<F>,
-        expected_address: Expression<F>,
+        expected_address: /*Word<Expression<F>>*/Expression<F>,
         is_non_existing: Expression<F>,
         key_value: &RLPItemView<F>,
-        key_rlc: &Expression<F>,
+        key_rlc: &/*Word<Expression<F>>*/Expression<F>,
         expected_item: &RLPItemView<F>,
         is_in_empty_tree: Expression<F>,
         key_data: KeyData<F>,
         r: &Expression<F>,
     ) -> Self {
-        let mut config = WrongGadget::default();
+        /*let mut config = WrongGadget::default();
         circuit!([meta, cb.base], {
             // Get the previous key data
             ifx! {is_non_existing, not!(is_in_empty_tree) => {
@@ -1184,9 +1188,9 @@ impl<F: Field> WrongGadget<F> {
                 require!(key_rlc_wrong => expected_address);
 
                 // Now make sure this address is different than the one of the leaf
-                config.is_key_equal = IsEqualGadget::construct(
+                config.is_key_equal = IsEqualWordGadget::construct(
                     &mut cb.base,
-                    key_rlc.expr(),
+                    key_rlc,
                     expected_address,
                 );
                 require!(config.is_key_equal => false);
@@ -1194,7 +1198,10 @@ impl<F: Field> WrongGadget<F> {
                 require!(config.wrong_rlp_key.key_value.len() => key_value.len());
             }}
             config
-        })
+        })*/
+        Self {
+            _marker: PhantomData::default(),
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1210,7 +1217,7 @@ impl<F: Field> WrongGadget<F> {
         key_data: KeyDataWitness<F>,
         r: F,
     ) -> Result<(F, F), Error> {
-        if is_non_existing {
+        /*if is_non_existing {
             let wrong_witness =
                 self.wrong_rlp_key
                     .assign(region, offset, list_bytes, expected_item)?;
@@ -1233,7 +1240,8 @@ impl<F: Field> WrongGadget<F> {
         } else {
             // existing account
             Ok((key_rlc[for_placeholder_s.idx()], false.scalar()))
-        }
+        }*/
+        Ok((F::ZERO, F::ZERO))
     }
 }
 

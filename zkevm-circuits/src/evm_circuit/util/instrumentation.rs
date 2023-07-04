@@ -1,7 +1,8 @@
-use crate::evm_circuit::{
-    step::ExecutionState,
-    table::Table,
-    util::{constraint_builder::EVMConstraintBuilder, CellType},
+use crate::{
+    evm_circuit::{
+        step::ExecutionState, table::Table, util::constraint_builder::EVMConstraintBuilder,
+    },
+    util::cell_manager::CellType,
 };
 use eth_types::Field;
 use itertools::Itertools;
@@ -73,8 +74,11 @@ impl Instrument {
                     CellType::StoragePermutation => {
                         report.storage_perm = data_entry;
                     }
-                    CellType::LookupByte => {
-                        report.byte_lookup = data_entry;
+                    CellType::LookupU8 => {
+                        report.u8_lookup = data_entry;
+                    }
+                    CellType::LookupU16 => {
+                        report.u16_lookup = data_entry;
                     }
                     CellType::Lookup(Table::Fixed) => {
                         report.fixed_table = data_entry;
@@ -116,6 +120,8 @@ pub struct ExecStateReport {
     pub storage_1: StateReportRow,
     pub storage_2: StateReportRow,
     pub storage_perm: StateReportRow,
+    pub u8_lookup: StateReportRow,
+    pub u16_lookup: StateReportRow,
     pub byte_lookup: StateReportRow,
     pub fixed_table: StateReportRow,
     pub tx_table: StateReportRow,

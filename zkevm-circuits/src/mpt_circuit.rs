@@ -392,7 +392,8 @@ impl<F: Field> MPTConfig<F> {
                 meta,
                 vec![rlp_cm, state_cm],
                 vec![
-                    (MptCellType::Lookup(Table::Keccak), &keccak_table),
+                    // TODO(Brecht): fix
+                    //(MptCellType::Lookup(Table::Keccak), &keccak_table),
                     (MptCellType::Lookup(Table::Fixed), &fixed_table),
                     (MptCellType::Lookup(Table::Exp), &mult_table),
                     (MptCellType::MemParentSInput, &parent_s_table),
@@ -782,7 +783,7 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         config.load_mult_table(&mut layouter, &challenges, height)?;
         config
             .keccak_table
-            .dev_load(&mut layouter, &self.keccak_data, &challenges, false)?;
+            .dev_load(&mut layouter, &self.keccak_data, &challenges)?;
 
         Ok(())
     }

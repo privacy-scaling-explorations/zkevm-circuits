@@ -33,7 +33,7 @@ integer =   { git = "https://github.com/privacy-scaling-explorations/halo2wrong"
 libsecp256k1 = "0.7"
 num-bigint = { version = "0.4" }
 rand_chacha = "0.3"
-snark-verifier = { git = "https://github.com/privacy-scaling-explorations/snark-verifier", tag = "v2023_04_20", default-features = false, features = ["loader_halo2", "system_halo2"] }
+snark-verifier = { git = "https://github.com/privacy-scaling-explorations/snark-verifier", tag = "v2023_04_20", default-features = false, features = ["loader_halo2", "system_halo2", "loader_evm"] }
 cli-table = { version = "0.4", optional = true }
 num_enum = "0.5.7"
 serde = { version = "1.0.130", features = ["derive"] }

@@ -7,11 +7,14 @@ use crate::{
             constraint_builder::EVMConstraintBuilder,
             math_gadget::{IsEqualGadget, IsZeroGadget, RangeCheckGadget},
             memory_gadget::{address_high, address_low, MemoryExpansionGadget},
-            CachedRegion, Cell, Word,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{
+        word::{Word32Cell, WordExpr},
+        Expr,
+    },
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
@@ -19,7 +22,7 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGStaticMemoryGadget<F> {
     opcode: Cell<F>,
-    address: Word<F>,
+    address: Word32Cell<F>,
     address_in_range: IsZeroGadget<F>,
     // Allow memory size to expand to 5 bytes, because memory address could be
     // at most 2^40 - 1, after constant division by 32, the memory word size
@@ -45,7 +48,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         let opcode = cb.query_cell();
 
         // Query address by a full word
-        let address = cb.query_word_rlc();
+        let address = cb.query_word32();
 
         // Check if this is an MSTORE8
         let is_mstore8 = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MSTORE8.expr());
@@ -71,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
 
         // Pop the address from the stack
         // We still have to do this to verify the correctness of `address`
-        cb.stack_pop(address.expr());
+        cb.stack_pop(address.to_word());
 
         // TODO: Use ContextSwitchGadget to switch call context to caller's and
         // consume all gas_left.
@@ -99,8 +102,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
 
         // Inputs/Outputs
         let address = block.get_rws(step, 0).stack_value();
-        self.address
-            .assign(region, offset, Some(address.to_le_bytes()))?;
+        self.address.assign_u256(region, offset, address)?;
 
         // Check if this is an MSTORE8
         let is_mstore8 = self.is_mstore8.assign(

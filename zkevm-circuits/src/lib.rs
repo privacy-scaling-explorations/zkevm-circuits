@@ -16,6 +16,8 @@
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 #![deny(clippy::debug_assert_with_mut_call)]
+#![allow(deprecated)]
+#![allow(unreachable_code)]
 
 pub mod bytecode_circuit;
 pub mod circuit_tools;
@@ -33,6 +35,7 @@ pub mod table;
 #[cfg(any(feature = "test", test))]
 pub mod test_util;
 
+pub mod instance;
 pub mod tx_circuit;
 pub mod util;
 pub mod witness;

@@ -28,7 +28,7 @@ use crate::{
         MPTConfig, MPTContext, MPTState, RlpItemType,
     },
     table::MPTProofType,
-    witness::MptUpdateRow,
+    witness::MptUpdateRow, util::word,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -306,7 +306,8 @@ impl<F: Field> AccountLeafConfig<F> {
                 config.key_data[true.idx()].clone(),
                 &cb.r.expr(),
             );
-            let is_non_existing_account = not::expr(config.wrong.is_key_equal.clone().expr());
+            // TODO(Brecht): fix
+            let is_non_existing_account = /*not::expr(config.wrong.is_key_equal.clone().expr())*/0.expr();
 
             // Anything following this node is below the account
             // TODO(Brecht): For non-existing accounts it should be impossible to prove
@@ -613,17 +614,19 @@ impl<F: Field> AccountLeafConfig<F> {
         } else {
             (MPTProofType::Disabled, vec![0.scalar(); 2])
         };
+        // TODO(Brecht):fix
+        let zero = word::Word::<F>::new([0.scalar(), 0.scalar()]).into_value();
         mpt_config.mpt_table.assign_cached(
             region,
             offset,
             &MptUpdateRow {
-                address_rlc: Value::known(account.address.rlc_value(region.r)),
+                address: Value::known(account.address.rlc_value(region.r)),
+                storage_key: word::Word::<F>::new([0.scalar(), 0.scalar()]).into_value(),
                 proof_type: Value::known(proof_type.scalar()),
-                key_rlc: Value::known(0.scalar()),
-                value_prev: Value::known(value[true.idx()]),
-                value: Value::known(value[false.idx()]),
-                root_prev: Value::known(main_data.root_prev),
-                root: Value::known(main_data.root),
+                new_root: /*Value::known(main_data.root)*/zero.clone(),
+                old_root: /*Value::known(main_data.root_prev)*/zero.clone(),
+                new_value: /*Value::known(value[false.idx()])*/zero.clone(),
+                old_value: /*Value::known(value[true.idx()]),*/zero.clone(),
             },
         )?;
 

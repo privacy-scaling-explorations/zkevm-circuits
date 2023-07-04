@@ -1,5 +1,5 @@
 use super::{cell_manager::*, param::*, util::*};
-use crate::{evm_circuit::util::rlc, util::Challenges};
+use crate::util::{word::Word, Challenges};
 use eth_types::Field;
 use halo2_proofs::{
     circuit::Value,
@@ -67,7 +67,7 @@ pub(crate) struct KeccakRow<F: Field> {
     pub(crate) cell_values: Vec<F>,
     pub(crate) length: usize,
     pub(crate) data_rlc: Value<F>,
-    pub(crate) hash_rlc: Value<F>,
+    pub(crate) hash: Word<Value<F>>,
 }
 
 /// Part
@@ -528,7 +528,7 @@ pub(crate) fn keccak<F: Field>(
         let mut cell_managers = Vec::new();
         let mut regions = Vec::new();
 
-        let mut hash_rlc = Value::known(F::ZERO);
+        let mut hash = Word::default();
         let mut round_lengths = Vec::new();
         let mut round_data_rlcs = Vec::new();
         for round in 0..NUM_ROUNDS + 1 {
@@ -747,18 +747,21 @@ pub(crate) fn keccak<F: Field>(
 
             // The rlc of the hash
             let is_final = is_final_block && round == NUM_ROUNDS;
-            hash_rlc = if is_final {
+            hash = if is_final {
                 let hash_bytes_le = s
                     .into_iter()
                     .take(4)
                     .flat_map(|a| to_bytes::value(&unpack(a[0])))
                     .rev()
                     .collect::<Vec<_>>();
-                challenges
-                    .evm_word()
-                    .map(|challenge_value| rlc::value(&hash_bytes_le, challenge_value))
+
+                let word: Word<Value<F>> = Word::from(eth_types::Word::from_little_endian(
+                    hash_bytes_le.as_slice(),
+                ))
+                .map(Value::known);
+                word
             } else {
-                Value::known(F::ZERO)
+                Word::default().into_value()
             };
 
             // The words to squeeze out
@@ -800,7 +803,7 @@ pub(crate) fn keccak<F: Field>(
                     is_final: is_final_block && round == NUM_ROUNDS && row_idx == 0,
                     length: round_lengths[round],
                     data_rlc: round_data_rlcs[round][row_idx],
-                    hash_rlc,
+                    hash,
                     cell_values: regions[round].rows[row_idx].clone(),
                 });
             }
@@ -845,7 +848,7 @@ pub(crate) fn multi_keccak<F: Field>(
             is_final: false,
             length: 0usize,
             data_rlc: Value::known(F::ZERO),
-            hash_rlc: Value::known(F::ZERO),
+            hash: Word::default().into_value(),
             cell_values: Vec::new(),
         });
     }

@@ -19,8 +19,8 @@ pub trait LtInstruction<F: Field> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        lhs: F,
-        rhs: F,
+        lhs: Value<F>,
+        rhs: Value<F>,
     ) -> Result<(), Error>;
 
     /// Load the u8 lookup table.
@@ -114,28 +114,37 @@ impl<F: Field, const N_BYTES: usize> LtInstruction<F> for LtChip<F, N_BYTES> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        lhs: F,
-        rhs: F,
+        lhs: Value<F>,
+        rhs: Value<F>,
     ) -> Result<(), Error> {
         let config = self.config();
 
-        let lt = lhs < rhs;
+        let lt = lhs.zip(rhs).map(|(lhs, rhs)| lhs < rhs);
+
         region.assign_advice(
             || "lt chip: lt",
             config.lt,
             offset,
-            || Value::known(F::from(lt as u64)),
+            || lt.map(|lt| F::from(lt as u64)),
         )?;
 
-        let diff = (lhs - rhs) + (if lt { config.range } else { F::ZERO });
-        let diff_bytes = diff.to_repr();
-        let diff_bytes = diff_bytes.as_ref();
+        let diff_bytes = lhs.zip(rhs).map(|(lhs, rhs)| {
+            let mut diff = lhs - rhs;
+            let lt = lhs < rhs;
+            if lt {
+                diff += config.range;
+            } else {
+                diff += F::ZERO;
+            }
+            diff.to_repr()
+        });
+
         for (idx, diff_column) in config.diff.iter().enumerate() {
             region.assign_advice(
                 || format!("lt chip: diff byte {}", idx),
                 *diff_column,
                 offset,
-                || Value::known(F::from(diff_bytes[idx] as u64)),
+                || diff_bytes.as_ref().map(|bytes| F::from(bytes[idx] as u64)),
             )?;
         }
 
@@ -323,7 +332,12 @@ mod test {
                                 idx + 1,
                                 || Value::known(*value),
                             )?;
-                            chip.assign(&mut region, idx + 1, value_prev, *value)?;
+                            chip.assign(
+                                &mut region,
+                                idx + 1,
+                                Value::known(value_prev),
+                                Value::known(*value),
+                            )?;
 
                             value_prev = *value;
                         }
@@ -448,7 +462,12 @@ mod test {
                                 idx + 1,
                                 || Value::known(*value_b),
                             )?;
-                            chip.assign(&mut region, idx + 1, *value_a, *value_b)?;
+                            chip.assign(
+                                &mut region,
+                                idx + 1,
+                                Value::known(*value_a),
+                                Value::known(*value_b),
+                            )?;
                         }
 
                         Ok(())

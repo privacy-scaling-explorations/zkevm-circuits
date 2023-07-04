@@ -24,7 +24,7 @@ use crate::{
         MPTConfig, MPTContext, MPTState, RlpItemType,
     },
     table::MPTProofType,
-    witness::MptUpdateRow,
+    witness::MptUpdateRow, util::word,
 };
 
 use super::{
@@ -234,7 +234,7 @@ impl<F: Field> StorageLeafConfig<F> {
             // Wrong leaf handling
             config.wrong = WrongGadget::construct(
                 cb,
-                a!(ctx.mpt_table.key_rlc),
+                a!(ctx.mpt_table.storage_key.lo()), //TODO(Brecht): fix
                 config.is_non_existing_storage_proof.expr(),
                 &config.rlp_key[true.idx()].key_value,
                 &key_rlc[true.idx()],
@@ -257,7 +257,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 _ => MPTProofType::Disabled.expr(),
             };
             let key_rlc = ifx! {config.is_non_existing_storage_proof => {
-                a!(ctx.mpt_table.key_rlc)
+                a!(ctx.mpt_table.storage_key.lo()) //TODO(Brecht): fix
             } elsex {
                 key_rlc[false.idx()].expr()
             }};
@@ -436,7 +436,7 @@ impl<F: Field> StorageLeafConfig<F> {
         } else {
             MPTProofType::Disabled
         };
-        mpt_config.mpt_table.assign_cached(
+        /*mpt_config.mpt_table.assign_cached(
             region,
             offset,
             &MptUpdateRow {
@@ -447,6 +447,21 @@ impl<F: Field> StorageLeafConfig<F> {
                 value: Value::known(value_rlc[false.idx()]),
                 root_prev: Value::known(main_data.root_prev),
                 root: Value::known(main_data.root),
+            },
+        )?;*/
+        // TODO(Brecht):fix
+        let zero = word::Word::<F>::new([0.scalar(), 0.scalar()]).into_value();
+        mpt_config.mpt_table.assign_cached(
+            region,
+            offset,
+            &MptUpdateRow {
+                address: Value::known(main_data.address_rlc),
+                storage_key: word::Word::<F>::new([0.scalar(), 0.scalar()]).into_value(),
+                proof_type: Value::known(proof_type.scalar()),
+                new_root: /*Value::known(main_data.root)*/zero.clone(),
+                old_root: /*Value::known(main_data.root_prev)*/zero.clone(),
+                new_value: /*Value::known(value[false.idx()])*/zero.clone(),
+                old_value: /*Value::known(value[true.idx()]),*/zero.clone(),
             },
         )?;
 
