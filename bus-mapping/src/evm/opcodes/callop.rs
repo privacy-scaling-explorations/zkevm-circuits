@@ -390,7 +390,10 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             bytes: input_bytes.iter().map(|s| (*s, false)).collect(),
                         },
                     );
-                }
+                    Some(bytes.iter().map(|t| t.0).collect())
+                } else {
+                    None
+                };
 
                 // write the result in the callee's memory
                 let rw_counter_start = state.block_ctx.rwc;
@@ -439,7 +442,10 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             bytes: return_bytes.iter().map(|s| (*s, false)).collect(),
                         },
                     );
-                }
+                    Some(bytes.iter().map(|t| t.0).collect())
+                } else {
+                    None
+                };
 
                 if has_oog_err {
                     let mut oog_step = ErrorOOGPrecompile::gen_associated_ops(

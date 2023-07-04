@@ -62,7 +62,7 @@ pub(crate) fn execute_precompiled(
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum PrecompileCalls {
     /// Elliptic Curve Recovery
-    ECRecover = 0x01,
+    Ecrecover = 0x01,
     /// SHA2-256 hash function
     Sha256 = 0x02,
     /// Ripemd-160 hash function
@@ -79,6 +79,12 @@ pub enum PrecompileCalls {
     Bn128Pairing = 0x08,
     /// Compression function
     Blake2F = 0x09,
+}
+
+impl Default for PrecompileCalls {
+    fn default() -> Self {
+        Self::Ecrecover
+    }
 }
 
 impl From<PrecompileCalls> for Address {
@@ -104,7 +110,7 @@ impl From<PrecompileCalls> for usize {
 impl From<u8> for PrecompileCalls {
     fn from(value: u8) -> Self {
         match value {
-            0x01 => Self::ECRecover,
+            0x01 => Self::Ecrecover,
             0x02 => Self::Sha256,
             0x03 => Self::Ripemd160,
             0x04 => Self::Identity,
@@ -122,7 +128,7 @@ impl PrecompileCalls {
     /// Get the base gas cost for the precompile call.
     pub fn base_gas_cost(&self) -> u64 {
         match self {
-            Self::ECRecover => GasCost::PRECOMPILE_ECRECOVER_BASE,
+            Self::Ecrecover => GasCost::PRECOMPILE_ECRECOVER_BASE,
             Self::Sha256 => GasCost::PRECOMPILE_SHA256_BASE,
             Self::Ripemd160 => GasCost::PRECOMPILE_RIPEMD160_BASE,
             Self::Identity => GasCost::PRECOMPILE_IDENTITY_BASE,
@@ -142,81 +148,68 @@ impl PrecompileCalls {
     /// Maximum length of input bytes considered for the precompile call.
     pub fn input_len(&self) -> Option<usize> {
         match self {
-            Self::ECRecover | Self::Bn128Add => Some(128),
+            Self::Ecrecover | Self::Bn128Add => Some(128),
             Self::Bn128Mul => Some(96),
             _ => None,
         }
     }
 }
 
-/// Precompile call args
-pub struct PrecompileCallArgs {
-    /// description for the instance of a precompile call.
-    pub name: &'static str,
-    /// the bytecode that when call can produce the desired precompile call.
-    pub setup_code: Bytecode,
-    /// the call's return data size.
-    pub ret_size: Word,
-    /// the call's return data offset.
-    pub ret_offset: Word,
-    /// the call's calldata offset.
-    pub call_data_offset: Word,
-    /// the call's calldata length.
-    pub call_data_length: Word,
-    /// the address to which the call is made, i.e. callee address.
-    pub address: Word,
-    /// the optional value sent along with the call.
-    pub value: Word,
-    /// the gas limit for the call.
-    pub gas: Word,
-    /// stack values during the call.
-    pub stack_value: Vec<(Word, Word)>,
-    /// maximum number of RW entries for the call.
-    pub max_rws: usize,
+/// Auxiliary data for Ecrecover
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EcrecoverAuxData {
+    /// Keccak hash of the message being signed.
+    pub msg_hash: Word,
+    /// v-component of signature.
+    pub sig_v: Word,
+    /// r-component of signature.
+    pub sig_r: Word,
+    /// s-component of signature.
+    pub sig_s: Word,
+    /// Address that was recovered.
+    pub recovered_addr: Address,
 }
 
-impl Default for PrecompileCallArgs {
-    fn default() -> Self {
-        PrecompileCallArgs {
-            name: "precompiled call",
-            setup_code: Bytecode::default(),
-            ret_size: Word::zero(),
-            ret_offset: Word::zero(),
-            call_data_offset: Word::zero(),
-            call_data_length: Word::zero(),
-            address: Word::zero(),
-            value: Word::zero(),
-            gas: Word::from(0xFFFFFFF),
-            stack_value: vec![],
-            max_rws: 1000,
+impl EcrecoverAuxData {
+    /// Create a new instance of ecrecover auxiliary data.
+    pub fn new(input: Vec<u8>, output: Vec<u8>) -> Self {
+        assert_eq!(input.len(), 128);
+        assert_eq!(output.len(), 32);
+
+        // assert that recovered address is 20 bytes.
+        assert!(output[0x00..0x0c].iter().all(|&b| b == 0));
+        let recovered_addr = Address::from_slice(&output[0x0c..0x20]);
+
+        Self {
+            msg_hash: Word::from_big_endian(&input[0x00..0x20]),
+            sig_v: Word::from_big_endian(&input[0x20..0x40]),
+            sig_r: Word::from_big_endian(&input[0x40..0x60]),
+            sig_s: Word::from_big_endian(&input[0x60..0x80]),
+            recovered_addr,
+        }
+    }
+
+    /// Sanity check and returns recovery ID.
+    pub fn recovery_id(&self) -> Option<u8> {
+        let sig_v_bytes = self.sig_v.to_be_bytes();
+        let sig_v = sig_v_bytes[31];
+        if sig_v_bytes.iter().take(31).all(|&b| b == 0) && (sig_v == 27 || sig_v == 28) {
+            Some(sig_v - 27)
+        } else {
+            None
         }
     }
 }
 
-impl PrecompileCallArgs {
-    /// Get the setup bytecode for call to a precompiled contract.
-    pub fn with_call_op(&self, call_op: OpcodeId) -> Bytecode {
-        assert!(
-            call_op.is_call(),
-            "invalid setup, {:?} is not a call op",
-            call_op
-        );
-        let mut code = self.setup_code.clone();
-        code.push(32, self.ret_size)
-            .push(32, self.ret_offset)
-            .push(32, self.call_data_length)
-            .push(32, self.call_data_offset);
-        if call_op == OpcodeId::CALL || call_op == OpcodeId::CALLCODE {
-            code.push(32, self.value);
-        }
-        code.push(32, self.address)
-            .push(32, self.gas)
-            .write_op(call_op)
-            .write_op(OpcodeId::POP);
-        for (offset, _) in self.stack_value.iter().rev() {
-            code.push(32, *offset).write_op(OpcodeId::MLOAD);
-        }
+/// Auxiliary data attached to an internal state for precompile verification.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PrecompileAuxData {
+    /// Ecrecover.
+    Ecrecover(EcrecoverAuxData),
+}
 
-        code
+impl Default for PrecompileAuxData {
+    fn default() -> Self {
+        Self::Ecrecover(EcrecoverAuxData::default())
     }
 }

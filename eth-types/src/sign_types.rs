@@ -1,6 +1,7 @@
 //! secp256k1 signature types and helper functions.
 
 use crate::{ToBigEndian, Word};
+use ethers_core::{types::Address, utils::keccak256};
 use halo2_proofs::{
     arithmetic::{CurveAffine, Field},
     halo2curves::{
@@ -51,6 +52,18 @@ pub struct SignData {
     pub pk: Secp256k1Affine,
     /// Hash of the message that is being signed
     pub msg_hash: secp256k1::Fq,
+}
+
+impl SignData {
+    /// Recover address of the signature
+    pub fn get_addr(&self) -> Address {
+        let pk_le = pk_bytes_le(&self.pk);
+        let pk_be = pk_bytes_swap_endianness(&pk_le);
+        let pk_hash = keccak256(pk_be);
+        let mut addr_bytes = [0u8; 20];
+        addr_bytes.copy_from_slice(&pk_hash[12..]);
+        Address::from_slice(&addr_bytes)
+    }
 }
 
 lazy_static! {

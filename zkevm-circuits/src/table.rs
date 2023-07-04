@@ -16,7 +16,7 @@ use core::iter::once;
 use eth_types::{Field, ToScalar, U256};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
-    util::{split_u256, split_u256_limb64},
+    util::{and, not, split_u256, split_u256_limb64, Expr},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},

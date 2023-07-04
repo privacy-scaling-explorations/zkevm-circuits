@@ -21,8 +21,8 @@ pub use crate::witness;
 use crate::{
     evm_circuit::param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
     table::{
-        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable, TxTable,
-        UXTable,
+        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, PowOfRandTable,
+        RwTable, SigTable, TxTable,
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
@@ -50,6 +50,11 @@ pub struct EvmCircuitConfig<F> {
     copy_table: CopyTable,
     keccak_table: KeccakTable,
     exp_table: ExpTable,
+<<<<<<< HEAD
+=======
+    sig_table: SigTable,
+    pow_of_rand_table: PowOfRandTable,
+>>>>>>> 4cd59565c (Precompile ECRECOVER (#529))
 }
 
 /// Circuit configuration arguments
@@ -74,6 +79,17 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub u8_table: UXTable<8>,
     /// U16Table
     pub u16_table: UXTable<16>,
+    /// SigTable
+    pub sig_table: SigTable,
+    // Power of Randomness Table.
+    pub pow_of_rand_table: PowOfRandTable,
+}
+
+/// Circuit exported cells after synthesis, used for subcircuit
+#[derive(Clone, Debug)]
+pub struct EvmCircuitExports<V> {
+    /// withdraw root
+    pub withdraw_root: (Cell, Value<V>),
 }
 
 impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
@@ -93,6 +109,8 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             exp_table,
             u8_table,
             u16_table,
+            sig_table,
+            pow_of_rand_table,
         }: Self::ConfigArgs,
     ) -> Self {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
@@ -109,6 +127,8 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &copy_table,
             &keccak_table,
             &exp_table,
+            &sig_table,
+            &pow_of_rand_table,
         ));
 
         u8_table.annotate_columns(meta);
@@ -125,6 +145,8 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         exp_table.annotate_columns(meta);
         u8_table.annotate_columns(meta);
         u16_table.annotate_columns(meta);
+        sig_table.annotate_columns(meta);
+        pow_of_rand_table.annotate_columns(meta);
 
         Self {
             fixed_table,
@@ -138,6 +160,8 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             copy_table,
             keccak_table,
             exp_table,
+            sig_table,
+            pow_of_rand_table,
         }
     }
 }
@@ -376,6 +400,8 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         let challenges = Challenges::construct(meta);
         let challenges_expr = challenges.exprs(meta);
 
+        let sig_table = SigTable::construct(meta);
+        let pow_of_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
         (
             EvmCircuitConfig::new(
                 meta,
@@ -390,6 +416,8 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
                     exp_table,
                     u8_table,
                     u16_table,
+                    sig_table,
+                    pow_of_rand_table,
                 },
             ),
             challenges,
@@ -426,10 +454,16 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         config
             .keccak_table
             .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;
-        config.exp_table.load(&mut layouter, block)?;
 
         config.u8_table.load(&mut layouter)?;
         config.u16_table.load(&mut layouter)?;
+        config.exp_table.dev_load(&mut layouter, block)?;
+        config
+            .sig_table
+            .dev_load(&mut layouter, block, &challenges)?;
+        config
+            .pow_of_rand_table
+            .dev_load(&mut layouter, &challenges)?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
@@ -480,6 +514,131 @@ mod evm_circuit_stats {
         .run();
     }
 
+    /// Prints the stats of EVM circuit per execution state.  See
+    /// `print_circuit_stats_by_states` for more details.
+    ///
+    /// Run with:
+    /// `cargo test -p zkevm-circuits --release --all-features
+    /// get_evm_states_stats -- --nocapture --ignored`
+    #[ignore]
+    #[test]
+    fn get_evm_states_stats() {
+        print_circuit_stats_by_states(
+            |state| {
+                !matches!(
+                    state,
+                    ExecutionState::ErrorInvalidOpcode | ExecutionState::SELFDESTRUCT
+                )
+            },
+            |opcode| match opcode {
+                OpcodeId::RETURNDATACOPY => {
+                    bytecode! {
+                    PUSH1(0x00) // retLength
+                    PUSH1(0x00) // retOffset
+                    PUSH1(0x00) // argsLength
+                    PUSH1(0x00) // argsOffset
+                    PUSH1(0x00) // value
+                    PUSH32(MOCK_ACCOUNTS[3].to_word())
+                    PUSH32(0x1_0000) // gas
+                    CALL
+                    PUSH2(0x01) // size
+                    PUSH2(0x00) // offset
+                    PUSH2(0x00) // destOffset
+                    }
+                }
+                _ => bytecode! {
+                    PUSH2(0x40)
+                    PUSH2(0x50)
+                },
+            },
+            |_, state, _| state.get_step_height_option().unwrap(),
+        );
+    }
+
+    /// This function prints to stdout a table with the top X ExecutionState
+    /// cell consumers of each EVM Cell type.
+    ///
+    /// Run with:
+    /// `cargo test -p zkevm-circuits --release get_exec_steps_occupancy
+    /// --features test -- --nocapture --ignored`
+    #[ignore]
+    #[test]
+    fn get_exec_steps_occupancy() {
+        let mut meta = ConstraintSystem::<Fr>::default();
+        let circuit = EvmCircuit::configure(&mut meta);
+
+        let report = circuit.0.execution.instrument().clone().analyze();
+        macro_rules! gen_report {
+            ($report:expr, $($id:ident, $cols:expr), +) => {
+                $(
+                let row_report = report
+                    .iter()
+                    .sorted_by(|a, b| a.$id.utilization.partial_cmp(&b.$id.utilization).unwrap())
+                    .rev()
+                    .take(10)
+                    .map(|exec| {
+                        vec![
+                            format!("{:?}", exec.state),
+                            format!("{:?}", exec.$id.available_cells),
+                            format!("{:?}", exec.$id.unused_cells),
+                            format!("{:?}", exec.$id.used_cells),
+                            format!("{:?}", exec.$id.top_height),
+                            format!("{:?}", exec.$id.used_columns),
+                            format!("{:?}", exec.$id.utilization),
+                        ]
+                    })
+                    .collect::<Vec<Vec<String>>>();
+
+                let table = row_report.table().title(vec![
+                    format!("{:?}", stringify!($id)).cell().bold(true),
+                    format!("total_available_cells").cell().bold(true),
+                    format!("unused_cells").cell().bold(true),
+                    format!("cells").cell().bold(true),
+                    format!("top_height").cell().bold(true),
+                    format!("used columns (Max: {:?})", $cols).cell().bold(true),
+                    format!("Utilization").cell().bold(true),
+                ]);
+                print_stdout(table).unwrap();
+                )*
+            };
+        }
+
+        gen_report!(
+            report,
+            storage_1,
+            N_PHASE1_COLUMNS,
+            storage_2,
+            N_PHASE2_COLUMNS,
+            storage_perm,
+            N_COPY_COLUMNS,
+            storage_perm_2,
+            N_PHASE2_COPY_COLUMNS,
+            byte_lookup,
+            N_BYTE_LOOKUPS,
+            fixed_table,
+            LOOKUP_CONFIG[0].1,
+            tx_table,
+            LOOKUP_CONFIG[1].1,
+            rw_table,
+            LOOKUP_CONFIG[2].1,
+            bytecode_table,
+            LOOKUP_CONFIG[3].1,
+            block_table,
+            LOOKUP_CONFIG[4].1,
+            copy_table,
+            LOOKUP_CONFIG[5].1,
+            keccak_table,
+            LOOKUP_CONFIG[6].1,
+            exp_table,
+            LOOKUP_CONFIG[7].1,
+            sig_table,
+            LOOKUP_CONFIG[8].1,
+            pow_of_rand_table,
+            LOOKUP_CONFIG[9].1
+        );
+    }
+
+    #[ignore = "need to make table dev_load padding to fix this"]
     #[test]
     fn variadic_size_check() {
         let params = FixedCParams {
