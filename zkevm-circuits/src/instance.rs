@@ -140,7 +140,7 @@ impl PublicData {
             tx_vals.push(TxValues {
                 nonce: tx.nonce.low_u64(),
                 gas_price: tx.gas_price,
-                gas_limit: tx.gas_limit.low_u64(),
+                gas_limit: tx.gas(),
                 from_addr: tx.from,
                 to_addr: tx.to.unwrap_or_else(Address::zero),
                 is_create: (tx.to.is_none() as u64),

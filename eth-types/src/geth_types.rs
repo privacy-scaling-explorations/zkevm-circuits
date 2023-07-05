@@ -125,7 +125,7 @@ pub struct Transaction {
     pub nonce: U64,
     /// Gas Limit / Supplied gas
     /// U64 type is required to serialize into proper hex with 0x prefix
-    pub gas_limit: U64,
+    gas_limit: U64,
     /// Transfered value
     pub value: Word,
     /// Gas Price
@@ -287,6 +287,10 @@ impl Transaction {
             chain_id: Some(chain_id),
             ..response::Transaction::default()
         }
+    }
+    /// Convinient method for gas limit
+    pub fn gas(&self) -> u64 {
+        self.gas_limit.as_u64()
     }
 }
 

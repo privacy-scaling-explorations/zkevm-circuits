@@ -206,10 +206,7 @@ impl<F: Field> TxCircuit<F> {
                             TxFieldTag::Nonce,
                             Word::from(tx.nonce.as_u64()).into_value(),
                         ),
-                        (
-                            TxFieldTag::Gas,
-                            Word::from(tx.gas_limit.as_u64()).into_value(),
-                        ),
+                        (TxFieldTag::Gas, Word::from(tx.gas()).into_value()),
                         (TxFieldTag::GasPrice, Word::from(tx.gas_price).into_value()),
                         (TxFieldTag::CallerAddress, Word::from(tx.from).into_value()),
                         (

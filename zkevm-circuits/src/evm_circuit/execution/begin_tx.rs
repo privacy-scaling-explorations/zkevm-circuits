@@ -506,7 +506,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
     ) -> Result<(), Error> {
         let tx_id = tx.id;
         let tx = &tx.tx;
-        let gas_fee = tx.gas_price * tx.gas_limit.as_u64();
+        let gas_fee = tx.gas_price * tx.gas();
         let zero = eth_types::Word::zero();
 
         let mut rws = StepRws::new(block, step);
@@ -536,16 +536,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.tx_nonce
             .assign(region, offset, Value::known(F::from(tx.nonce.as_u64())))?;
         self.tx_gas
-            .assign(region, offset, Value::known(F::from(tx.gas_limit.as_u64())))?;
+            .assign(region, offset, Value::known(F::from(tx.gas())))?;
         self.tx_gas_price
             .assign_u256(region, offset, tx.gas_price)?;
-        self.mul_gas_fee_by_gas.assign(
-            region,
-            offset,
-            tx.gas_price,
-            tx.gas_limit.as_u64(),
-            gas_fee,
-        )?;
+        self.mul_gas_fee_by_gas
+            .assign(region, offset, tx.gas_price, tx.gas(), gas_fee)?;
         self.tx_caller_address
             .assign_h160(region, offset, tx.from)?;
         self.tx_caller_address_is_zero.assign_u256(
@@ -582,11 +577,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
-        self.sufficient_gas_left.assign(
-            region,
-            offset,
-            F::from(tx.gas_limit.as_u64() - step.gas_cost),
-        )?;
+        self.sufficient_gas_left
+            .assign(region, offset, F::from(tx.gas() - step.gas_cost))?;
         self.transfer_with_gas_fee.assign(
             region,
             offset,
