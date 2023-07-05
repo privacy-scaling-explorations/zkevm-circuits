@@ -153,7 +153,7 @@ mod codecopy_tests {
             account_0_code_account_1_no_code(code.clone()),
             tx_from_1_to_0,
             |block, _tx| block.number(0xcafeu64),
-            LoggerConfig::enable_memory(),
+            LoggerConfig::default(),
         )
         .unwrap()
         .into();

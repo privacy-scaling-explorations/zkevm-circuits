@@ -443,7 +443,7 @@ mod tests {
                 txs[0].from(accs[1].address).to(accs[0].address);
             },
             |block, _tx| block.number(0xcafeu64),
-            LoggerConfig::enable_memory(),
+            LoggerConfig::default(),
         )
         .unwrap()
         .into();
