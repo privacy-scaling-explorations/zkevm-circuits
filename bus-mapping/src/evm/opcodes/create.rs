@@ -343,7 +343,7 @@ fn handle_copy(
         .map(|element| (element.value, element.is_code, false))
         .collect();
 
-    let (dst_begin_slot, full_length, _) = Memory::align_range(offset as u64, length as u64);
+    let (dst_begin_slot, full_length, _) = Memory::align_range(offset, length);
     let mem_read = memory.clone();
     // collect all bytecode to memory with padding word
     let create_slot_len = full_length;

@@ -263,7 +263,7 @@ pub mod sha3_tests {
         // Initial memory_len bytes are the memory writes from MSTORE instruction, so we
         // skip them.
         let memory = Memory(memory);
-        let (dst_begin_slot, full_length, _) = Memory::align_range(offset as u64, size as u64);
+        let (dst_begin_slot, full_length, _) = Memory::align_range(offset, size);
         assert_eq!(
             builder.block.container.memory_word
                 .iter()

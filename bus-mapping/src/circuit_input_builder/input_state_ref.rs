@@ -1724,7 +1724,7 @@ impl<'a> CircuitInputStateRef<'a> {
             return Ok((copy_steps, prev_bytes));
         }
 
-        let (_, full_length, _) = Memory::align_range(0, result.len() as u64);
+        let (_, full_length, _) = Memory::align_range(0, result.len());
         let mut memory = result.clone();
         if memory.len() < full_length {
             memory.resize(full_length, 0);
@@ -1770,9 +1770,9 @@ impl<'a> CircuitInputStateRef<'a> {
         }
         assert!(copy_length <= result.len());
         let src_begin_slot = 0;
-        let (_, src_full_length, _) = Memory::align_range(0, copy_length as u64);
+        let (_, src_full_length, _) = Memory::align_range(0, copy_length);
         let (dst_begin_slot, dst_full_length, _) =
-            Memory::align_range(dst_addr, copy_length as u64);
+            Memory::align_range(dst_addr, copy_length);
 
         let slot_count = max(src_full_length, dst_full_length);
 

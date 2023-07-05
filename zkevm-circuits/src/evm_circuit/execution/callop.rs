@@ -1001,7 +1001,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 } else {
                     let begin = cd_offset.as_usize();
                     let end = cd_offset.as_usize() + input_len;
-                    let (begin_slot, full_length, _) = Memory::align_range(begin as u64, input_len as u64);
+                    let (begin_slot, full_length, _) = Memory::align_range(begin, input_len);
 
                     // input may not be aligned to 32 bytes. actual input is
                     // [start_offset..end_offset]
@@ -1019,7 +1019,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     [0; 2]
                 } else {
                     let end = precompile_return_length.as_usize();
-                    let (_, full_length, _) = Memory::align_range(0, end as u64);
+                    let (_, full_length, _) = Memory::align_range(0, end);
 
                     [end, full_length / 32]
                 };
@@ -1035,8 +1035,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     let begin = rd_offset.as_usize();
                     let end = begin + length;
 
-                    let (_, src_full_length, _) = Memory::align_range(0, length as u64);
-                    let (begin_slot, full_length, _) = Memory::align_range(begin as u64, length as u64);
+                    let (_, src_full_length, _) = Memory::align_range(0, length);
+                    let (begin_slot, full_length, _) = Memory::align_range(begin, length);
                     let slot_count = max(src_full_length, full_length);
 
                     // return data may not be aligned to 32 bytes. actual return data is
