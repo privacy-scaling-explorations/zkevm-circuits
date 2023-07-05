@@ -125,7 +125,7 @@ pub struct Transaction {
     pub nonce: U64,
     /// Gas Limit / Supplied gas
     /// U64 type is required to serialize into proper hex with 0x prefix
-    gas_limit: U64,
+    pub gas_limit: U64,
     /// Transfered value
     pub value: Word,
     /// Gas Price
