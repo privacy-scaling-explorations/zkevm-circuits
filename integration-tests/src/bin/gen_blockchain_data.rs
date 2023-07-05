@@ -11,7 +11,7 @@ use ethers::{
     middleware::SignerMiddleware,
     providers::{Middleware, PendingTransaction},
     signers::Signer,
-    solc::Solc,
+    solc::{CompilerInput, EvmVersion, Solc},
 };
 use integration_tests::{
     get_client, get_provider, get_wallet, log_init, CompiledContract, GenDataOutput, CONTRACTS,
@@ -78,8 +78,16 @@ async fn main() {
     let mut contracts = HashMap::new();
     for (name, contract_path) in CONTRACTS {
         let path_sol = Path::new(CONTRACTS_PATH).join(contract_path);
+        let inputs = CompilerInput::new(&path_sol).expect("Compile success");
+        let input = inputs
+            .clone()
+            .first_mut()
+            .expect("first exists")
+            .clone()
+            .evm_version(EvmVersion::London);
+
         let compiled = Solc::default()
-            .compile_source(&path_sol)
+            .compile(&input)
             .unwrap_or_else(|_| panic!("solc compile error {:?}", path_sol));
         if !compiled.errors.is_empty() {
             panic!("Errors compiling {:?}:\n{:#?}", &path_sol, compiled.errors)
