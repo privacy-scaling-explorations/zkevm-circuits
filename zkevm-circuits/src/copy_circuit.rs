@@ -544,14 +544,13 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     1.expr() - meta.query_advice(bytes_left, Rotation::cur()),
                 ]),
             );
-            // todo: renable this
-            // cb.require_zero(
-            //     "real_bytes_left == 0 for last step",
-            //     and::expr([
-            //         meta.query_advice(is_last, Rotation::next()),
-            //         meta.query_advice(real_bytes_left, Rotation::cur()),
-            //     ]),
-            // );
+            cb.require_zero(
+                "real_bytes_left == 0 for last step",
+                and::expr([
+                    meta.query_advice(is_last, Rotation::next()),
+                    meta.query_advice(real_bytes_left, Rotation::next()),
+                ]),
+            );
 
             cb.condition(
                 and::expr([
@@ -564,6 +563,11 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         meta.query_advice(real_bytes_left, Rotation::cur()),
                         meta.query_advice(real_bytes_left, Rotation(2))
                             + not::expr(meta.query_advice(mask, Rotation::cur())),
+                    );
+                    cb.require_equal(
+                        "real_bytes_left[1] == real_bytes_left[2]",
+                        meta.query_advice(real_bytes_left, Rotation::next()),
+                        meta.query_advice(real_bytes_left, Rotation(2))
                     );
                 },
             );
@@ -797,11 +801,10 @@ impl<F: Field> CopyCircuitConfig<F> {
                     .iter()
                     .zip_eq(table_row)
             {
-                // Leave sr_addr_end and bytes_left and real_bytes_left unassigned when !is_read
+                // Leave sr_addr_end and bytes_left unassigned when !is_read
                 if !is_read
                     && (label == "src_addr_end"
-                        || label == "bytes_left"
-                        || label == "real_bytes_left")
+                        || label == "bytes_left")
                 {
                 } else {
                     region.assign_advice(
