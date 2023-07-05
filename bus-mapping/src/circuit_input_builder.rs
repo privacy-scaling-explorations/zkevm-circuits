@@ -34,7 +34,7 @@ pub use execution::{
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
 use log::warn;
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Deref};
 pub use transaction::{Transaction, TransactionContext};
 
 /// Circuit Setup Parameters
@@ -164,6 +164,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     /// Create a new Transaction from a [`eth_types::Transaction`].
     pub fn new_tx(
         &mut self,
+        id: u64,
         eth_tx: &eth_types::Transaction,
         is_success: bool,
     ) -> Result<Transaction, Error> {
@@ -180,7 +181,14 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             ),
         );
 
-        Transaction::new(call_id, &self.sdb, &mut self.code_db, eth_tx, is_success)
+        Transaction::new(
+            id,
+            call_id,
+            &self.sdb,
+            &mut self.code_db,
+            eth_tx,
+            is_success,
+        )
     }
 
     /// Iterate over all generated CallContext RwCounterEndOfReversion
@@ -214,8 +222,9 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         eth_tx: &eth_types::Transaction,
         geth_trace: &GethExecTrace,
         is_last_tx: bool,
+        tx_index: u64,
     ) -> Result<(), Error> {
-        let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
+        let mut tx = self.new_tx(tx_index, eth_tx, !geth_trace.failed)?;
         let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
 
         // Generate BeginTx step
@@ -318,9 +327,16 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<(), Error> {
         // accumulates gas across all txs in the block
-        for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
-            let geth_trace = &geth_traces[tx_index];
-            self.handle_tx(tx, geth_trace, tx_index + 1 == eth_block.transactions.len())?;
+        for (idx, tx) in eth_block.transactions.iter().enumerate() {
+            let geth_trace = &geth_traces[idx];
+            // Transaction index starts from 1
+            let tx_id = idx + 1;
+            self.handle_tx(
+                tx,
+                geth_trace,
+                tx_id == eth_block.transactions.len(),
+                tx_id as u64,
+            )?;
         }
         // set eth_block
         self.block.eth_block = eth_block.clone();
@@ -404,7 +420,7 @@ impl CircuitInputBuilder<DynamicCParams> {
 pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Error> {
     let mut keccak_inputs = Vec::new();
     // Tx Circuit
-    let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.tx.clone()).collect();
+    let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.deref().clone()).collect();
     keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs, block.chain_id.as_u64())?);
     // Bytecode Circuit
     for bytecode in code_db.0.values() {

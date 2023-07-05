@@ -127,7 +127,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         self.address_word.assign_u256(region, offset, address)?;
 
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id)))?;
 
         self.reversion_info.assign(
             region,

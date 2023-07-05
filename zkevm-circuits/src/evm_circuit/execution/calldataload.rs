@@ -213,12 +213,16 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         // Assign to the buffer reader gadget.
         let (src_id, call_data_offset, call_data_length) = if call.is_root {
-            (tx.id, 0, tx.call_data_length as u64)
+            (tx.id, 0, tx.call_data.len() as u64)
         } else {
-            (call.caller_id, call.call_data_offset, call.call_data_length)
+            (
+                call.caller_id as u64,
+                call.call_data_offset,
+                call.call_data_length,
+            )
         };
         self.src_id
-            .assign(region, offset, Value::known(F::from(src_id as u64)))?;
+            .assign(region, offset, Value::known(F::from(src_id)))?;
         self.call_data_length
             .assign(region, offset, Value::known(F::from(call_data_length)))?;
         self.call_data_offset
@@ -245,7 +249,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             for (i, byte) in calldata_bytes.iter_mut().enumerate() {
                 if call.is_root {
                     // Fetch from tx call data.
-                    if src_addr + (i as u64) < tx.call_data_length as u64 {
+                    if src_addr + (i as u64) < tx.call_data.len() as u64 {
                         *byte = tx.call_data[src_addr as usize + i];
                     }
                 } else {
