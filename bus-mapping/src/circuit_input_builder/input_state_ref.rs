@@ -1623,6 +1623,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
     // TODO: remove in favor of Memory::align_range.
     // get word slot and shift pair for a memory address.
+    #[deprecated]
     pub(crate) fn get_addr_shift_slot(&mut self, addr: u64) -> Result<(u64, u64), Error> {
         let shift = addr % 32;
         let slot = addr - shift;
