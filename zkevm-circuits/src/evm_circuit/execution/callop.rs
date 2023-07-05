@@ -223,6 +223,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let precompile_input_rws = cb.query_cell();
         let precompile_output_rws = cb.query_cell();
         let precompile_return_rws = cb.query_cell();
+        let precompile_input_len = cb.query_cell();
 
         // Verify transfer only for CALL opcode in the successful case.  If value == 0,
         // skip the transfer (this is necessary for non-existing accounts, which
@@ -435,10 +436,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                                 precompile_return_data_copy_size.min(),
                                 call_gadget.rd_address.offset(),
                                 precompile_return_data_copy_size.min(),
-                                precompile_return_bytes_rlc.expr(),
+                                0.expr(),
                                 precompile_return_rws.expr(), // writes
                             ); // rwc_delta += `return_data_copy_size.min()` for precompile
-                            return_bytes_rlc
+                        precompile_return_bytes_rlc
                         },
                     );
 
@@ -988,19 +989,19 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         ) = if is_precompiled(&callee_address.to_address()) {
             let precompile_call: PrecompileCalls = precompile_addr.0[19].into();
             let input_len = if let Some(input_len) = precompile_call.input_len() {
-                std::cmp::min(input_len, cd_length.as_usize())
+                min(input_len, cd_length.as_usize())
             } else {
                 cd_length.as_usize()
             };
             let [input_bytes_start_offset, input_bytes_end_offset, input_bytes_word_count] =
                 // Correspond to this check in bus-mapping.
                 // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/evm/opcodes/callop.rs#L349>
-                if cd_length.is_zero() {
+                if input_len == 0 {
                     [0; 3]
                 } else {
                     let begin = cd_offset.as_usize();
-                    let end = cd_offset.as_usize() + cd_length.as_usize();
-                    let (begin_slot, full_length, _) = Memory::align_range(begin as u64, cd_length.as_u64());
+                    let end = cd_offset.as_usize() + input_len;
+                    let (begin_slot, full_length, _) = Memory::align_range(begin as u64, input_len as u64);
 
                     // input may not be aligned to 32 bytes. actual input is
                     // [start_offset..end_offset]
@@ -1011,22 +1012,128 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     [start_offset, end_offset, word_count]
                 };
 
-                let input_bytes_rlc = region
-                    .challenges()
-                    .keccak_input()
-                    .map(|randomness| rlc::value(input_bytes.iter().rev(), randomness));
-                let output_bytes_rlc = region
-                    .challenges()
-                    .keccak_input()
-                    .map(|randomness| rlc::value(output_bytes.iter().rev(), randomness));
-                let return_bytes_rlc = region
-                    .challenges()
-                    .keccak_input()
-                    .map(|randomness| rlc::value(return_bytes.iter().rev(), randomness));
-                (input_len as u64, input_bytes_rlc, output_bytes_rlc, return_bytes_rlc)
+            let [output_bytes_end, output_bytes_word_count] =
+                // Correspond to this check in bus-mapping.
+                // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/evm/opcodes/callop.rs#L387>
+                if cd_length.is_zero() || precompile_return_length.is_zero() {
+                    [0; 2]
+                } else {
+                    let end = precompile_return_length.as_usize();
+                    let (_, full_length, _) = Memory::align_range(0, end as u64);
+
+                    [end, full_length as usize / 32]
+                };
+
+            let [return_bytes_start_offset, return_bytes_end_offset, return_bytes_word_count] =
+                // Correspond to this check in bus-mapping.
+                // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/evm/opcodes/callop.rs#L416>
+                if cd_length.is_zero() || precompile_return_length.is_zero() || rd_length.is_zero()
+                {
+                    [0; 3]
+                } else {
+                    let length = min(rd_length.as_usize(), output_bytes_end);
+                    let begin = rd_offset.as_usize();
+                    let end = begin + length;
+
+                    let (_, src_full_length, _) = Memory::align_range(0, length as u64);
+                    let (begin_slot, full_length, _) = Memory::align_range(begin as u64, length as u64);
+                    let slot_count = max(src_full_length, full_length);
+
+                    // return data may not be aligned to 32 bytes. actual return data is
+                    // [start_offset..end_offset]
+                    let start_offset = begin - begin_slot as usize;
+                    let end_offset = end - begin_slot as usize;
+                    let word_count = slot_count as usize / 32;
+
+                    [start_offset, end_offset, word_count]
+                };
+
+            trace!("rw_offset {rw_offset}");
+            trace!(
+                "input_bytes rws [{},{})",
+                33 + rw_offset,
+                33 + rw_offset + input_bytes_word_count
+            );
+            trace!(
+                "output_bytes rws [{},{})",
+                33 + rw_offset + input_bytes_word_count,
+                33 + rw_offset + input_bytes_word_count + output_bytes_word_count
+            );
+            trace!(
+                "return_bytes copy [{},{})",
+                33 + rw_offset + input_bytes_word_count + output_bytes_word_count,
+                33 + rw_offset
+                    + input_bytes_word_count
+                    + output_bytes_word_count
+                    + return_bytes_word_count * 2
+            );
+
+            let input_bytes_rw_start = 33 + rw_offset;
+            let input_bytes = (input_bytes_rw_start..input_bytes_rw_start + input_bytes_word_count)
+                .map(|i| block.rws[step.rw_indices[i]].memory_word_pair().0)
+                .flat_map(|word| word.to_be_bytes())
+                .collect::<Vec<_>>();
+            let output_bytes_rw_start = input_bytes_rw_start + input_bytes_word_count;
+            let output_bytes = (output_bytes_rw_start
+                ..output_bytes_rw_start + output_bytes_word_count)
+                .map(|i| block.rws[step.rw_indices[i]].memory_word_pair().0)
+                .flat_map(|word| word.to_be_bytes())
+                .collect::<Vec<_>>();
+            let return_bytes_rw_start = output_bytes_rw_start + output_bytes_word_count;
+            let return_bytes = (return_bytes_rw_start
+                ..return_bytes_rw_start + return_bytes_word_count * 2)
+                .step_by(2)
+                .map(|i| block.rws[step.rw_indices[i]].memory_word_pair().0)
+                .flat_map(|word| word.to_be_bytes())
+                .collect::<Vec<_>>();
+
+            trace!("input_bytes: {input_bytes:x?}");
+            trace!("output_bytes: {output_bytes:x?}");
+            trace!("return_bytes: {return_bytes:x?}");
+
+            let input_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
+                rlc::value(
+                    input_bytes[input_bytes_start_offset..input_bytes_end_offset]
+                        .iter()
+                        .rev(),
+                    randomness,
+                )
+            });
+            let output_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
+                rlc::value(output_bytes[..output_bytes_end].iter().rev(), randomness)
+            });
+            let return_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
+                rlc::value(
+                    return_bytes[return_bytes_start_offset..return_bytes_end_offset]
+                        .iter()
+                        .rev(),
+                    randomness,
+                )
+            });
+            trace!("input_bytes_rlc: {input_bytes_rlc:?}");
+            trace!("output_bytes_rlc: {output_bytes_rlc:?}");
+            trace!("return_bytes_rlc: {return_bytes_rlc:?}");
+            let input_rws = Value::known(F::from(input_bytes_word_count as u64));
+            let output_rws = Value::known(F::from(output_bytes_word_count as u64));
+            let return_rws = Value::known(F::from((return_bytes_word_count * 2) as u64));
+            trace!("input_rws: {input_rws:?}");
+            trace!("output_rws: {output_rws:?}");
+            trace!("return_rws: {return_rws:?}");
+            (
+                input_len as u64,
+                input_bytes_rlc,
+                output_bytes_rlc,
+                return_bytes_rlc,
+                input_rws,
+                output_rws,
+                return_rws,
+            )
             } else {
                 (
                     0,
+                    Value::known(F::zero()),
+                    Value::known(F::zero()),
+                    Value::known(F::zero()),
                     Value::known(F::zero()),
                     Value::known(F::zero()),
                     Value::known(F::zero()),
