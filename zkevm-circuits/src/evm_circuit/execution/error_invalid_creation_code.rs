@@ -50,7 +50,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
 
         let address_word = MemoryWordAddress::construct(cb, offset.clone());
         // lookup memory for first word
-        cb.memory_lookup_word(
+        cb.memory_lookup(
             0.expr(),
             address_word.addr_left(),
             value_left.expr(),

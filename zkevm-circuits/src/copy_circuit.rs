@@ -640,7 +640,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 1.expr(),
                 meta.query_advice(rw_counter, Rotation::cur()),
                 not::expr(meta.query_selector(q_step)),
-                RwTableTag::MemoryWord.expr(),
+                RwTableTag::Memory.expr(),
                 meta.query_advice(id, Rotation::cur()), // call_id
                 meta.query_advice(addr_slot, Rotation::cur()), // slot address of memory word
                 0.expr(),

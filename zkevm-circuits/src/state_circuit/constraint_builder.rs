@@ -102,7 +102,7 @@ impl<F: Field> ConstraintBuilder<F> {
         self.condition(q.tag_matches(RwTableTag::Start), |cb| {
             cb.build_start_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::MemoryWord), |cb| {
+        self.condition(q.tag_matches(RwTableTag::Memory), |cb| {
             cb.build_memory_constraints(q)
         });
         self.condition(q.tag_matches(RwTableTag::Stack), |cb| {

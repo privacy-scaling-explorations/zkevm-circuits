@@ -97,7 +97,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         );
 
         // Read or update the left word.
-        cb.memory_lookup_word(
+        cb.memory_lookup(
             is_store.clone(),
             address_word.addr_left(),
             value_left.expr(),
@@ -116,7 +116,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             mask.require_equal_unaligned_word(cb, value.expr(), &value_left, &value_right);
 
             // Read or update the right word.
-            cb.memory_lookup_word(
+            cb.memory_lookup(
                 is_store.clone(),
                 address_word.addr_right(),
                 value_right.expr(),

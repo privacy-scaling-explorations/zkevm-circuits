@@ -207,14 +207,14 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 mask.require_equal_unaligned_word(cb, value.expr(), &value_left, &value_right);
 
                 // Read the left and right words.
-                cb.memory_lookup_word(
+                cb.memory_lookup(
                     0.expr(),
                     address_align.addr_left(),
                     value_left.expr(),
                     value_left.expr(),
                     Some(src_id.expr()),
                 );
-                cb.memory_lookup_word(
+                cb.memory_lookup(
                     0.expr(),
                     address_align.addr_right(),
                     value_right.expr(),

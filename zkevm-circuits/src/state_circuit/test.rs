@@ -473,7 +473,7 @@ fn is_write_nonbinary() {
 
 #[test]
 fn nonlexicographic_order_tag() {
-    let first = Rw::MemoryWord {
+    let first = Rw::Memory {
         rw_counter: 1,
         is_write: true,
         call_id: 1,
@@ -673,7 +673,7 @@ fn lexicographic_ordering_previous_limb_differences_nonzero() {
 fn read_inconsistency() {
     // TODO: memory word checking read_inconsistency
     let rows = vec![
-        Rw::MemoryWord {
+        Rw::Memory {
             rw_counter: 10,
             is_write: false,
             call_id: 1,
@@ -681,7 +681,7 @@ fn read_inconsistency() {
             value: 0.into(),
             value_prev: 0.into(),
         },
-        Rw::MemoryWord {
+        Rw::Memory {
             rw_counter: 40,
             is_write: false,
             call_id: 1,
@@ -719,7 +719,7 @@ fn skipped_start_rw_counter() {
 
 #[test]
 fn invalid_memory_address() {
-    let rows = vec![Rw::MemoryWord {
+    let rows = vec![Rw::Memory {
         rw_counter: 1,
         is_write: true,
         call_id: 1,
@@ -733,7 +733,7 @@ fn invalid_memory_address() {
 
 #[test]
 fn bad_initial_memory_value() {
-    let rows = vec![Rw::MemoryWord {
+    let rows = vec![Rw::Memory {
         rw_counter: 1,
         is_write: true,
         call_id: 1,

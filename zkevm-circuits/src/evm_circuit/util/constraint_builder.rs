@@ -1201,32 +1201,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // Memory
-    pub(crate) fn memory_lookup(
-        &mut self,
-        is_write: Expression<F>,
-        memory_address: Expression<F>,
-        byte: Expression<F>,
-        call_id: Option<Expression<F>>,
-    ) {
-        self.rw_lookup(
-            "Memory lookup",
-            is_write,
-            RwTableTag::Memory,
-            RwValues::new(
-                call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
-                memory_address,
-                0.expr(),
-                0.expr(),
-                byte,
-                0.expr(),
-                0.expr(),
-                0.expr(),
-            ),
-        );
-    }
 
-    /// look up memory word
-    pub(crate) fn memory_lookup_word(
+    pub(crate) fn memory_lookup(
         &mut self,
         is_write: Expression<F>,
         memory_address: Expression<F>, // slot
@@ -1235,9 +1211,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         call_id: Option<Expression<F>>,
     ) {
         self.rw_lookup(
-            "Memory word lookup",
+            "Memory lookup",
             is_write,
-            RwTableTag::MemoryWord,
+            RwTableTag::Memory,
             RwValues::new(
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 memory_address,
