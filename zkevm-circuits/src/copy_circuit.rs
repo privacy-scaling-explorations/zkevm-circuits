@@ -423,13 +423,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 },
             );
 
-            let _rw_diff = and::expr([
-                or::expr([
-                    meta.query_advice(is_memory, Rotation::cur()),
-                    tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta),
-                ]),
-                not::expr(meta.query_advice(is_pad, Rotation::cur())),
-            ]);
             cb.condition(
                 not::expr(meta.query_advice(is_last, Rotation::cur())),
                 |cb| {
@@ -440,14 +433,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     );
                 },
             );
-            cb.condition(meta.query_advice(is_last, Rotation::cur()), |_cb| {
-                // cb.require_equal(
-                //     "rwc_inc_left == rw_diff for last row in the copy slot",
-                //     meta.query_advice(rwc_inc_left, Rotation::cur()),
-                //     rw_diff,
-                // );
-            });
-
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
@@ -567,7 +552,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     cb.require_equal(
                         "real_bytes_left[1] == real_bytes_left[2]",
                         meta.query_advice(real_bytes_left, Rotation::next()),
-                        meta.query_advice(real_bytes_left, Rotation(2))
+                        meta.query_advice(real_bytes_left, Rotation(2)),
                     );
                 },
             );
@@ -802,10 +787,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                     .zip_eq(table_row)
             {
                 // Leave sr_addr_end and bytes_left unassigned when !is_read
-                if !is_read
-                    && (label == "src_addr_end"
-                        || label == "bytes_left")
-                {
+                if !is_read && (label == "src_addr_end" || label == "bytes_left") {
                 } else {
                     region.assign_advice(
                         || format!("{label} at row: {offset}"),

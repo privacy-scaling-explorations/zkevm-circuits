@@ -428,46 +428,46 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     |cb| {
                         let precompile_return_bytes_rlc = cb.query_cell_phase2();
                         cb.copy_table_lookup(
-                                callee_call_id.expr(),
-                                CopyDataType::Memory.expr(), // refer u64::from(CopyDataType)
-                                cb.curr.state.call_id.expr(),
-                                CopyDataType::Memory.expr(),
-                                0.expr(),
-                                precompile_return_data_copy_size.min(),
-                                call_gadget.rd_address.offset(),
-                                precompile_return_data_copy_size.min(),
-                                0.expr(),
-                                precompile_return_rws.expr(), // writes
-                            ); // rwc_delta += `return_data_copy_size.min()` for precompile
+                            callee_call_id.expr(),
+                            CopyDataType::Memory.expr(), // refer u64::from(CopyDataType)
+                            cb.curr.state.call_id.expr(),
+                            CopyDataType::Memory.expr(),
+                            0.expr(),
+                            precompile_return_data_copy_size.min(),
+                            call_gadget.rd_address.offset(),
+                            precompile_return_data_copy_size.min(),
+                            0.expr(),
+                            precompile_return_rws.expr(), // writes
+                        ); // rwc_delta += `return_data_copy_size.min()` for precompile
                         precompile_return_bytes_rlc
-                        },
-                    );
+                    },
+                );
 
-                    let transfer_rwc_delta =
-                        is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
-                    // +15 call context lookups for precompile.
-                    let rw_counter_delta = 33.expr()
-                        + is_call.expr() * 1.expr()
-                        + transfer_rwc_delta
-                        + is_callcode.expr()
-                        + is_delegatecall.expr() * 2.expr()
-                        + precompile_input_rws.expr()
-                        + precompile_output_rws.expr()
-                        + precompile_return_rws.expr();
+                let transfer_rwc_delta =
+                    is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
+                // +15 call context lookups for precompile.
+                let rw_counter_delta = 33.expr()
+                    + is_call.expr() * 1.expr()
+                    + transfer_rwc_delta
+                    + is_callcode.expr()
+                    + is_delegatecall.expr() * 2.expr()
+                    + precompile_input_rws.expr()
+                    + precompile_output_rws.expr()
+                    + precompile_return_rws.expr();
 
-                    cb.require_step_state_transition(StepStateTransition {
-                        rw_counter: Delta(rw_counter_delta),
-                        call_id: To(callee_call_id.expr()),
-                        is_root: To(false.expr()),
-                        is_create: To(false.expr()),
-                        code_hash: To(cb.empty_code_hash_rlc()),
-                        program_counter: Delta(1.expr()),
-                        stack_pointer: Delta(stack_pointer_delta.expr()),
-                        gas_left: To(callee_gas_left.expr()),
-                        memory_word_size: To(precompile_output_rws.expr()),
-                        reversible_write_counter: To(0.expr()),
-                        ..StepStateTransition::default()
-                    });
+                cb.require_step_state_transition(StepStateTransition {
+                    rw_counter: Delta(rw_counter_delta),
+                    call_id: To(callee_call_id.expr()),
+                    is_root: To(false.expr()),
+                    is_create: To(false.expr()),
+                    code_hash: To(cb.empty_code_hash_rlc()),
+                    program_counter: Delta(1.expr()),
+                    stack_pointer: Delta(stack_pointer_delta.expr()),
+                    gas_left: To(callee_gas_left.expr()),
+                    memory_word_size: To(precompile_output_rws.expr()),
+                    reversible_write_counter: To(0.expr()),
+                    ..StepStateTransition::default()
+                });
 
                 (
                     PrecompileGadget::construct(
@@ -1128,17 +1128,17 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 output_rws,
                 return_rws,
             )
-            } else {
-                (
-                    0,
-                    Value::known(F::zero()),
-                    Value::known(F::zero()),
-                    Value::known(F::zero()),
-                    Value::known(F::zero()),
-                    Value::known(F::zero()),
-                    Value::known(F::zero()),
-                )
-            };
+        } else {
+            (
+                0,
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+            )
+        };
 
         self.precompile_input_len.assign(
             region,

@@ -414,15 +414,9 @@ impl CopyEvent {
     pub fn rw_counter_step(&self, step_index: usize) -> u64 {
         let mut rw_counter = u64::try_from(self.rw_counter_start.0).unwrap();
         let rw_counter_increase = self.rw_counter_increase(step_index);
-        // let mut rw_counter_increase_log = 0u64;
-        // if self.dst_type == CopyDataType::TxLog {
-        //     rw_counter_increase_log = self.rw_counter_increase_log(step_index);
-        //     rw_counter_increase =
-        //         rw_counter_increase - rw_counter_increase_log + rw_counter_increase_log / 2
-        // }
         rw_counter += rw_counter_increase;
 
-        // // step_index == self.bytes.len() when caculate total rw increasing.
+        // step_index == self.bytes.len() when caculate total rw increasing.
         if self.dst_type == CopyDataType::TxLog
             && step_index != self.copy_bytes.bytes.len() * 2
             && step_index % 64 == 63
@@ -457,12 +451,6 @@ impl CopyEvent {
         let source_rw_increase = match self.src_type {
             CopyDataType::Bytecode | CopyDataType::TxCalldata | CopyDataType::Precompile(_) => 0,
             CopyDataType::Memory => (step_index as u64 / 2) / 32,
-            // CopyDataType::Memory => std::cmp::min(
-            //     u64::try_from(step_index + 1).unwrap() / 2,
-            //     self.src_addr_end
-            //         .checked_sub(self.src_addr)
-            //         .unwrap_or_default(),
-            // ),
             CopyDataType::RlcAcc | CopyDataType::TxLog | CopyDataType::Padding => unreachable!(),
         };
         let destination_rw_increase = match self.dst_type {

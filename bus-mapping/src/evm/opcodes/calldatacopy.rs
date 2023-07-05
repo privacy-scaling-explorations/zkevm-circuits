@@ -316,7 +316,6 @@ mod calldatacopy_tests {
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
 
-        //assert_eq!(copy_events[0].bytes.len(), copy_size);
         assert_eq!(copy_events[0].src_id, NumberOrHash::Number(caller_id));
         assert_eq!(
             copy_events[0].dst_id,

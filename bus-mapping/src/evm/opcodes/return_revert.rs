@@ -252,7 +252,7 @@ fn handle_copy(
     let mut write_steps = Vec::with_capacity(destination.length);
     CircuitInputStateRef::gen_memory_copy_steps(
         &mut write_steps,
-        &dst_data, // TODO: this should be dst_data_prev.
+        &dst_data,
         full_length,
         destination.offset,
         dst_begin_slot as usize,
