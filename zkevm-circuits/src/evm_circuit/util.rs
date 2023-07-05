@@ -262,7 +262,7 @@ pub(crate) fn evm_cm_distribute_advice<F: Field>(
     // Mark columns used for byte lookup
     #[allow(clippy::reversed_empty_ranges)]
     for _ in 0..N_U16_LOOKUPS {
-        dist.add(CellType::Lookup(Table::U8), advices[column_idx]);
+        dist.add(CellType::Lookup(Table::U16), advices[column_idx]);
         assert_eq!(advices[column_idx].column_type().phase(), 0);
         column_idx += 1;
     }
