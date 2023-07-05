@@ -268,12 +268,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     callee_gas_left,
                 );
 
-                log::trace!(
-                    "precompile returned data len {} gas {}",
-                    result.len(),
-                    contract_gas_cost
-                );
-
                 // mutate the caller memory.
                 let length = min(result.len(), ret_length);
                 if length > 0 {
@@ -374,7 +368,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             src_id: NumberOrHash::Number(call.caller_id),
                             src_type: CopyDataType::Memory,
                             src_addr: call.call_data_offset,
-                            src_addr_end: call.call_data_offset + call.call_data_length,
+                            src_addr_end: call.call_data_offset + n_input_bytes as u64,
                             dst_id: NumberOrHash::Number(call.call_id),
                             dst_type: CopyDataType::Precompile(precompile_call),
                             dst_addr: 0,
@@ -383,7 +377,10 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             copy_bytes: CopyBytes::new(copy_steps, None, None),
                         },
                     );
-                }
+                    Some(bytes.iter().map(|t| t.0).collect())
+                } else {
+                    None
+                };
 
                 // write the result in the callee's memory.
                 let rw_counter_start = state.block_ctx.rwc;
@@ -437,15 +434,17 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             ),
                         },
                     );
-                }
+                    Some(bytes.iter().map(|t| t.0).collect())
+                } else {
+                    None
+                };
 
-                // TODO: when more precompiles are supported and each have their own different
-                // behaviour, we can separate out the logic specified here.
                 let mut precompile_step = precompile_associated_ops(
                     state,
                     geth_steps[1].clone(),
                     call.clone(),
                     precompile_call,
+                    (input_bytes, output_bytes, returned_bytes),
                 )?;
 
                 // Make the Precompile execution step to handle return logic and restore to caller
