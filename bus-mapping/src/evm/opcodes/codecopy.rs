@@ -114,7 +114,7 @@ fn gen_copy_event(
 mod codecopy_tests {
     use eth_types::{
         bytecode,
-        evm_types::{OpcodeId, StackAddress},
+        evm_types::{MemoryAddress, OpcodeId, StackAddress},
         geth_types::GethData,
         Word,
     };
@@ -129,7 +129,7 @@ mod codecopy_tests {
     use crate::{
         circuit_input_builder::{CopyDataType, ExecState, NumberOrHash},
         mock::BlockData,
-        operation::{StackOp, RW},
+        operation::{MemoryWordOp, StackOp, RW},
         state_db::CodeDB,
     };
 
@@ -139,11 +139,11 @@ mod codecopy_tests {
         test_ok(0x20, 0x40, 0xA0);
     }
 
-    fn test_ok(dst_offset: usize, code_offset: usize, size: usize) {
+    fn test_ok(memory_offset: usize, code_offset: usize, copy_size: usize) {
         let code = bytecode! {
-            PUSH32(size)
+            PUSH32(copy_size)
             PUSH32(code_offset)
-            PUSH32(dst_offset)
+            PUSH32(memory_offset)
             CODECOPY
             STOP
         };
@@ -178,7 +178,7 @@ mod codecopy_tests {
             [
                 (
                     RW::READ,
-                    &StackOp::new(1, StackAddress::from(1021), Word::from(dst_offset)),
+                    &StackOp::new(1, StackAddress::from(1021), Word::from(memory_offset)),
                 ),
                 (
                     RW::READ,
@@ -186,12 +186,50 @@ mod codecopy_tests {
                 ),
                 (
                     RW::READ,
-                    &StackOp::new(1, StackAddress::from(1023), Word::from(size)),
+                    &StackOp::new(1, StackAddress::from(1023), Word::from(copy_size)),
                 ),
             ]
         );
 
-        // TODO: add RW table memory word writes.
+        // add RW table memory word writes.
+        let length = memory_offset + copy_size;
+        let copy_start = memory_offset - memory_offset % 32;
+        let copy_end = length - length % 32;
+        let word_ops = (copy_end + 32 - copy_start) / 32 - 1;
+        let copied_bytes = builder.block.copy_events[0]
+            .copy_bytes
+            .bytes
+            .iter()
+            .map(|(b, _, _)| *b)
+            .collect::<Vec<_>>();
+        let prev_bytes = builder.block.copy_events[0]
+            .copy_bytes
+            .bytes_write_prev
+            .clone()
+            .unwrap();
+
+        assert_eq!(builder.block.container.memory_word.len(), word_ops);
+        assert_eq!(
+            (0..word_ops)
+                .map(|idx| &builder.block.container.memory_word[idx])
+                .map(|op| (op.rw(), op.op().clone()))
+                .collect::<Vec<(RW, MemoryWordOp)>>(),
+            (0..word_ops)
+                .map(|idx| {
+                    (
+                        RW::WRITE,
+                        MemoryWordOp::new_write(
+                            expected_call_id,
+                            MemoryAddress(copy_start + idx * 32),
+                            Word::from(&copied_bytes[idx * 32..(idx + 1) * 32]),
+                            // get previous value
+                            Word::from(&prev_bytes[idx * 32..(idx + 1) * 32]),
+                        ),
+                    )
+                })
+                .collect::<Vec<(RW, MemoryWordOp)>>(),
+        );
+
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
         assert_eq!(
@@ -205,7 +243,7 @@ mod codecopy_tests {
             copy_events[0].dst_id,
             NumberOrHash::Number(expected_call_id)
         );
-        assert_eq!(copy_events[0].dst_addr as usize, dst_offset);
+        assert_eq!(copy_events[0].dst_addr as usize, memory_offset);
         assert_eq!(copy_events[0].dst_type, CopyDataType::Memory);
         assert!(copy_events[0].log_id.is_none());
 

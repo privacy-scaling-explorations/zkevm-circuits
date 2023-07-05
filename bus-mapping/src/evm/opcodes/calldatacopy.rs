@@ -117,6 +117,7 @@ fn gen_copy_event(
     let dst_addr = memory_offset;
 
     if state.call()?.is_root {
+        // fetch pre write bytes to fill 'bytes_write_prev' of CopyBytes
         let (copy_steps, prev_bytes) = state.gen_copy_steps_for_call_data_root(
             exec_step,
             src_addr,
@@ -125,7 +126,6 @@ fn gen_copy_event(
             memory_updated,
         )?;
 
-        //todo: fetch pre write bytes to fill 'bytes_write_prev' of CopyBytes
         let copy_bytes = CopyBytes::new(copy_steps, None, Some(prev_bytes));
 
         Ok(CopyEvent {

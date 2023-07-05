@@ -234,7 +234,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(value)
     }
 
-    /// Push a read type [`MemoryOp`] into the
+    /// Push a read type [`MemoryWordOp`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter) and `caller_id`, and then
     /// adds a reference to the stored operation ([`OperationRef`]) inside
