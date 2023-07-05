@@ -327,13 +327,15 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<(), Error> {
         // accumulates gas across all txs in the block
-        for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
-            let geth_trace = &geth_traces[tx_index];
+        for (idx, tx) in eth_block.transactions.iter().enumerate() {
+            let geth_trace = &geth_traces[idx];
+            // Transaction index starts from 1
+            let tx_id = idx + 1;
             self.handle_tx(
                 tx,
                 geth_trace,
-                tx_index + 1 == eth_block.transactions.len(),
-                (tx_index + 1) as u64,
+                tx_id == eth_block.transactions.len(),
+                tx_id as u64,
             )?;
         }
         // set eth_block
