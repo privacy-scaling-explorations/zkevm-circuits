@@ -20,10 +20,7 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
-use eth_types::{
-    evm_types::GasCost,
-    Field, ToLittleEndian, ToScalar,
-};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use gadgets::util::Expr;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -135,9 +132,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         });
 
         let step_state_transition = StepStateTransition {
-            // rw_counter: Transition::Delta(
-            //     9.expr() + copy_rwc_inc.expr() + memory_address.has_length(),
-            // ),
+            // cb.rw_counter_offset() contains copy lookup rw counter increase
             rw_counter: Transition::Delta(cb.rw_counter_offset()),
             program_counter: Transition::Delta(1.expr()),
             stack_pointer: Transition::Delta(4.expr()),

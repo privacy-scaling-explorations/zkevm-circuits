@@ -38,7 +38,6 @@ impl RwMap {
             .sorted()
             .enumerate()
         {
-            //println!(" idx {}, rw_counter {}", idx, rw_counter);
             debug_assert_eq!(idx, rw_counter - 1);
         }
     }

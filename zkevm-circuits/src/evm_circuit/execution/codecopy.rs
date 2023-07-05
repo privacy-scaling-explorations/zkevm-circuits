@@ -115,9 +115,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
         // Expected state transition.
         let step_state_transition = StepStateTransition {
-            // rw_counter: Transition::Delta(
-            //     3.expr() + copy_rwc_inc.expr() + dst_memory_addr.has_length(),
-            // ),
+            // cb.rw_counter_offset() contains copy lookup rw counter increase
             rw_counter: Transition::Delta(cb.rw_counter_offset()),
             program_counter: Transition::Delta(1.expr()),
             stack_pointer: Transition::Delta(3.expr()),

@@ -1728,10 +1728,11 @@ impl CopyTable {
 
             // is_code
             let is_code = Value::known(copy_step.is_code.map_or(F::zero(), |v| F::from(v)));
-            //todo: rm
-            println!(
-                "step {step_idx},is_last {is_last:?}, real_bytes_left {real_length_left}",
-            );
+            // debug into: rm
+            // println!(
+            //     "step {step_idx},is_last {is_last:?}, real_bytes_left {real_length_left}",
+            // );
+
             assignments.push((
                 tag,
                 [

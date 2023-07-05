@@ -328,9 +328,9 @@ mod test {
 
     #[test]
     fn calldatacopy_gadget_simple() {
-        //test_root_ok(0x40, 10, 0x00.into(), 0x40.into());
+        test_root_ok(0x40, 10, 0x00.into(), 0x40.into());
         test_internal_ok(0x40, 0x40, 10, 0x10.into(), 0x00.into());
-        //test_internal_ok(0x40, 0x40, 10, 0x10.into(), 0xA0.into());
+        test_internal_ok(0x40, 0x40, 10, 0x10.into(), 0xA0.into());
     }
 
     #[test]

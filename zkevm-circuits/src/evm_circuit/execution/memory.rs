@@ -22,10 +22,7 @@ use crate::{
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
 use halo2_proofs::plonk::Error;
 
-// TODO:
-// change MemoryAddress(slot + offset),
-// MemoryExpansionGadget if needed.
-
+// MemoryGadget handles mload/msotre/msotre8 op codes gadget
 #[derive(Clone, Debug)]
 pub(crate) struct MemoryGadget<F> {
     same_context: SameContextGadget<F>,

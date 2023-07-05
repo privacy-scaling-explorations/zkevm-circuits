@@ -62,7 +62,6 @@ pub fn test_copy_circuit_from_block<F: Field>(
 
 fn gen_calldatacopy_data() -> CircuitInputBuilder {
     let length = 0x0fffusize;
-    // let length = 0x0fusize;
     let code = bytecode! {
         PUSH32(Word::from(length))
         PUSH32(Word::from(0x00))

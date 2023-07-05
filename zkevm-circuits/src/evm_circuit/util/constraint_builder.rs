@@ -1225,6 +1225,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
+    /// look up memory word
     pub(crate) fn memory_lookup_word(
         &mut self,
         is_write: Expression<F>,

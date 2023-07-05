@@ -104,7 +104,6 @@ impl Opcode for Calldataload {
 
 #[cfg(test)]
 mod calldataload_tests {
-    use log::trace;
     use crate::operation::{CallContextOp, MemoryWordOp, RW};
     use eth_types::{
         bytecode,
@@ -112,6 +111,7 @@ mod calldataload_tests {
         geth_types::GethData,
         Word,
     };
+    use log::trace;
     use mock::{
         generate_mock_call_bytecode, test_ctx::helpers::account_0_code_account_1_no_code,
         MockCallBytecodeParams, TestContext,

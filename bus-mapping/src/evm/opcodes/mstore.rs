@@ -216,17 +216,20 @@ mod mstore_tests {
             ]
         );
 
-        // let shift = 0x100 % 32;
-        // let slot = 0x100 - shift;
-        //let memory_word_op =
-        //    &builder.block.container.memory_word[step.bus_mapping_instance[2].as_usize()];
-        //todo: update it to pass it.
-        // assert_eq!(
-        //     (memory_word_op.rw(), memory_word_op.op()),
-        //     (
-        //         RW::WRITE,
-        //         &MemoryWordOp::new_write(1, MemoryAddress(slot), Word::from(0x34), Word::zero())
-        //     )
-        // )
+        let shift = 0x100 % 32;
+        let slot = 0x100 - shift;
+        let memory_word_op =
+            &builder.block.container.memory_word[step.bus_mapping_instance[2].as_usize()];
+
+        let mut slot_bytes = [0; 32];
+        slot_bytes[shift] = 0x34;
+        let left_word = Word::from_big_endian(&slot_bytes);
+        assert_eq!(
+            (memory_word_op.rw(), memory_word_op.op()),
+            (
+                RW::WRITE,
+                &MemoryWordOp::new_write(1, MemoryAddress(slot), left_word, Word::zero())
+            )
+        )
     }
 }
