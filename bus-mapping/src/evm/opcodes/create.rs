@@ -8,7 +8,7 @@ use crate::{
     state_db::CodeDB,
     Error,
 };
-use eth_types::{Bytecode, GethExecStep, ToBigEndian, ToWord, Word, H160, H256};
+use eth_types::{evm_types::Memory, Bytecode, GethExecStep, ToBigEndian, ToWord, Word, H160, H256};
 use ethers_core::utils::{get_create2_address, keccak256, rlp};
 use log::trace;
 
@@ -327,7 +327,13 @@ fn handle_copy(
     offset: usize,
     length: usize,
 ) -> Result<(Vec<u8>, H256, H256), Error> {
-    let initialization_bytes = state.call_ctx()?.memory.0[offset..offset + length].to_vec();
+    let rw_counter_start = state.block_ctx.rwc.clone();
+    let call_ctx = state.call_ctx_mut()?;
+    //let memory: &mut Memory = &mut call_ctx.memory;
+    let memory: &mut Memory = &mut call_ctx.memory;
+    memory.extend_for_range(Word::from(offset as u64), Word::from(length as u64));
+
+    let initialization_bytes = memory.0[offset..offset + length].to_vec();
     trace!("initialization_bytes bussmapping is {initialization_bytes:?}");
     let keccak_code_hash = H256(keccak256(&initialization_bytes));
     let code_hash = CodeDB::hash(&initialization_bytes);
@@ -337,19 +343,18 @@ fn handle_copy(
         .map(|element| (element.value, element.is_code, false))
         .collect();
 
-    let rw_counter_start = state.block_ctx.rwc;
-    let (_, dst_begin_slot) = state.get_addr_shift_slot(offset as u64).unwrap();
-    let (_, dst_end_slot) = state.get_addr_shift_slot((offset + length) as u64).unwrap();
-    let mut memory = state.call_ctx_mut()?.memory.clone();
-
-    let minimal_length = dst_end_slot as usize + 32;
-    memory.extend_at_least(minimal_length);
+    let (dst_begin_slot, full_length, _) = Memory::align_range(offset as u64, length as u64);
+    let mem_read = {
+        let memory_updated = memory.clone();
+        memory_updated
+    };
     // collect all bytecode to memory with padding word
-    let create_slot_len = (dst_end_slot + 32 - dst_begin_slot) as usize;
+    let create_slot_len = full_length as usize;
 
     let mut copy_start = 0u64;
     let mut first_set = true;
     let mut chunk_index = dst_begin_slot;
+
     // memory word writes to destination word
     for _ in 0..create_slot_len / 32 {
         // read memory
@@ -359,7 +364,7 @@ fn handle_copy(
 
     let mut copy_steps = Vec::with_capacity(length);
     for idx in 0..create_slot_len {
-        let value = memory.0[dst_begin_slot as usize + idx];
+        let value = mem_read.0[dst_begin_slot as usize + idx];
         if (idx as u64 + dst_begin_slot < offset as u64)
             || (idx as u64 + dst_begin_slot >= (offset + length) as u64)
         {

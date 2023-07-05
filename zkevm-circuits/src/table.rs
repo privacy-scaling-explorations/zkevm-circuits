@@ -1655,7 +1655,7 @@ impl CopyTable {
                     }
                     value_word_write_rlc = value_word_write_rlc * challenges.evm_word()
                         + Value::known(F::from(copy_step.value as u64));
-                    // TODO: use value_prev.
+                    // use value_prev.
                     value_word_write_rlc_prev = value_word_write_rlc_prev * challenges.evm_word()
                         + Value::known(F::from(copy_step.prev_value.unwrap_or(0u8) as u64));
                 }
