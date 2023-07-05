@@ -1322,7 +1322,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        let calldata_len = block.txs.iter().map(|tx| tx.tx.call_data.len()).sum();
+        let calldata_len = block.txs.iter().map(|tx| tx.call_data.len()).sum();
         (
             Self::Config::circuit_len_by_txs_calldata(block.txs.len(), calldata_len),
             Self::Config::circuit_len_by_txs_calldata(

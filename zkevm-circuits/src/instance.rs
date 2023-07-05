@@ -1,8 +1,7 @@
 //! The instance definition.
 
-use std::iter;
-
 use eth_types::{geth_types::BlockConstants, BigEndianHash, Field, Keccak};
+use std::{iter, ops::Deref};
 
 use eth_types::{geth_types::Transaction, Address, ToBigEndian, Word, H256};
 use itertools::Itertools;
@@ -270,7 +269,7 @@ pub fn public_data_convert<F: Field>(block: &Block<F>) -> PublicData {
     PublicData {
         chain_id: block.context.chain_id,
         history_hashes: block.context.history_hashes.clone(),
-        transactions: block.txs.iter().map(|tx| tx.tx.clone()).collect_vec(),
+        transactions: block.txs.iter().map(|tx| tx.deref().clone()).collect_vec(),
         state_root: block.eth_block.state_root,
         prev_state_root: H256::from_uint(&block.prev_state_root),
         block_hash: block.eth_block.hash,

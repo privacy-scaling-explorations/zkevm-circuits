@@ -182,7 +182,7 @@ pub struct Transaction {
     /// The transaction id
     pub id: u64,
     /// The raw transaction fields
-    pub tx: geth_types::Transaction,
+    tx: geth_types::Transaction,
     /// Calls made in the transaction
     pub(crate) calls: Vec<Call>,
     /// Execution steps
@@ -310,5 +310,13 @@ impl Transaction {
             id: id as u64,
             ..Default::default()
         }
+    }
+}
+
+impl std::ops::Deref for Transaction {
+    type Target = geth_types::Transaction;
+
+    fn deref(&self) -> &Self::Target {
+        &self.tx
     }
 }

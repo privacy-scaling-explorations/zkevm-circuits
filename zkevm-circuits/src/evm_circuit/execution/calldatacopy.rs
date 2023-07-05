@@ -196,7 +196,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
         // Call data length and call data offset
         let (call_data_length, call_data_offset) = if call.is_root {
-            (tx.tx.call_data.len() as u64, 0_u64)
+            (tx.call_data.len() as u64, 0_u64)
         } else {
             (call.call_data_length, call.call_data_offset)
         };

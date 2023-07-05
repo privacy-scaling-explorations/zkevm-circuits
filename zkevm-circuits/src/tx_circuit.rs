@@ -26,7 +26,7 @@ use halo2_proofs::{
 use itertools::Itertools;
 use log::error;
 use sign_verify::{AssignedSignatureVerify, SignVerifyChip, SignVerifyConfig};
-use std::marker::PhantomData;
+use std::{marker::PhantomData, ops::Deref};
 
 /// Number of static fields per tx: [nonce, gas, gas_price,
 /// caller_address, callee_address, is_create, value, call_data_length,
@@ -311,7 +311,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
             block.context.chain_id.as_u64(),
-            block.txs.iter().map(|tx| tx.tx.clone()).collect_vec(),
+            block.txs.iter().map(|tx| tx.deref().clone()).collect_vec(),
         )
     }
 
@@ -320,7 +320,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         (
             Self::min_num_rows(
                 block.txs.len(),
-                block.txs.iter().map(|tx| tx.tx.call_data.len()).sum(),
+                block.txs.iter().map(|tx| tx.call_data.len()).sum(),
             ),
             Self::min_num_rows(
                 block.circuits_params.max_txs,

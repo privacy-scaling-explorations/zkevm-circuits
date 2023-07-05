@@ -224,16 +224,16 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             F::from(refund),
         )?;
         let effective_refund = refund.min(max_refund as u64);
-        let gas_fee_refund = tx.tx.gas_price * (effective_refund + step.gas_left);
+        let gas_fee_refund = tx.gas_price * (effective_refund + step.gas_left);
         self.mul_gas_price_by_refund.assign(
             region,
             offset,
-            tx.tx.gas_price,
+            tx.gas_price,
             effective_refund + step.gas_left,
             gas_fee_refund,
         )?;
         self.tx_caller_address
-            .assign_h160(region, offset, tx.tx.from)?;
+            .assign_h160(region, offset, tx.from)?;
         self.gas_fee_refund.assign(
             region,
             offset,
@@ -241,12 +241,12 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             vec![gas_fee_refund],
             caller_balance,
         )?;
-        let effective_tip = tx.tx.gas_price - block.context.base_fee;
+        let effective_tip = tx.gas_price - block.context.base_fee;
         self.sub_gas_price_by_base_fee.assign(
             region,
             offset,
             [effective_tip, block.context.base_fee],
-            tx.tx.gas_price,
+            tx.gas_price,
         )?;
         self.mul_effective_tip_by_gas_used.assign(
             region,

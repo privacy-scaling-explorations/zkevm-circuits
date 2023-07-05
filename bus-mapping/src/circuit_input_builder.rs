@@ -34,7 +34,7 @@ pub use execution::{
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
 use log::warn;
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Deref};
 pub use transaction::{Transaction, TransactionContext};
 
 /// Circuit Setup Parameters
@@ -420,7 +420,7 @@ impl CircuitInputBuilder<DynamicCParams> {
 pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Error> {
     let mut keccak_inputs = Vec::new();
     // Tx Circuit
-    let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.tx.clone()).collect();
+    let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.deref().clone()).collect();
     keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs, block.chain_id.as_u64())?);
     // Bytecode Circuit
     for bytecode in code_db.0.values() {

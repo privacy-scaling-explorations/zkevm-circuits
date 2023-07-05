@@ -98,7 +98,7 @@ impl TxTable {
             txs.len(),
             max_txs
         );
-        let sum_txs_calldata = txs.iter().map(|tx| tx.tx.call_data.len()).sum();
+        let sum_txs_calldata = txs.iter().map(|tx| tx.call_data.len()).sum();
         assert!(
             sum_txs_calldata <= max_calldata,
             "sum_txs_calldata <= max_calldata: sum_txs_calldata={}, max_calldata={}",
@@ -161,33 +161,27 @@ impl TxTable {
                     let tx_data = vec![
                         (
                             TxContextFieldTag::Nonce,
-                            word::Word::from(tx.tx.nonce.as_u64()),
+                            word::Word::from(tx.nonce.as_u64()),
                         ),
                         (TxContextFieldTag::Gas, word::Word::from(tx.gas())),
-                        (
-                            TxContextFieldTag::GasPrice,
-                            word::Word::from(tx.tx.gas_price),
-                        ),
-                        (
-                            TxContextFieldTag::CallerAddress,
-                            word::Word::from(tx.tx.from),
-                        ),
+                        (TxContextFieldTag::GasPrice, word::Word::from(tx.gas_price)),
+                        (TxContextFieldTag::CallerAddress, word::Word::from(tx.from)),
                         (
                             TxContextFieldTag::CalleeAddress,
-                            word::Word::from(tx.tx.to_or_contract_addr()),
+                            word::Word::from(tx.to_or_contract_addr()),
                         ),
                         (
                             TxContextFieldTag::IsCreate,
-                            word::Word::from(tx.tx.is_create()),
+                            word::Word::from(tx.is_create()),
                         ),
-                        (TxContextFieldTag::Value, word::Word::from(tx.tx.value)),
+                        (TxContextFieldTag::Value, word::Word::from(tx.value)),
                         (
                             TxContextFieldTag::CallDataLength,
-                            word::Word::from(tx.tx.call_data.len() as u64),
+                            word::Word::from(tx.call_data.len() as u64),
                         ),
                         (
                             TxContextFieldTag::CallDataGasCost,
-                            word::Word::from(tx.tx.call_data_gas_cost()),
+                            word::Word::from(tx.call_data_gas_cost()),
                         ),
                     ]
                     .iter()
@@ -202,7 +196,6 @@ impl TxTable {
                     })
                     .collect_vec();
                     let tx_calldata = tx
-                        .tx
                         .call_data
                         .iter()
                         .enumerate()

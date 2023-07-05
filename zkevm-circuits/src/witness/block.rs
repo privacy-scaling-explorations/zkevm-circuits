@@ -94,7 +94,7 @@ impl<F: Field> Block<F> {
             self.copy_events.iter().map(|c| c.bytes.len() * 2).sum();
         let num_rows_required_for_keccak_table: usize = self.keccak_inputs.len();
         let num_rows_required_for_tx_table: usize =
-            self.txs.iter().map(|tx| 9 + tx.tx.call_data.len()).sum();
+            self.txs.iter().map(|tx| 9 + tx.call_data.len()).sum();
         let num_rows_required_for_exp_table: usize = self
             .exp_events
             .iter()
