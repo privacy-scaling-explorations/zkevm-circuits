@@ -115,10 +115,9 @@ impl RwMap {
             target_len - rows_len
         } else {
             if target_len != 0 {
-                log::error!(
+                panic!(
                     "RwMap::padding_len overflow, target_len: {}, rows_len: {}",
-                    target_len,
-                    rows_len
+                    target_len, rows_len
                 );
             }
             1
