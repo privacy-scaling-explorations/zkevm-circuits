@@ -68,10 +68,10 @@ impl Opcode for Sha3 {
 
             let memory = &state.call_ctx()?.memory;
 
-            for idx in 0..full_length as usize {
-                let value = *memory.0.get(dst_begin_slot as usize + idx).unwrap_or(&0);
-                if (idx as u64 + dst_begin_slot < offset.low_u64())
-                    || (idx as u64 + dst_begin_slot >= offset.low_u64() + size.low_u64())
+            for idx in 0..full_length {
+                let value = *memory.0.get(dst_begin_slot + idx).unwrap_or(&0);
+                if (idx + dst_begin_slot < offset.low_u64() as usize)
+                    || (idx + dst_begin_slot >= (offset.low_u64() + size.low_u64()) as usize)
                 {
                     // front and back mask byte
                     copy_steps.push((value, false, true));
@@ -268,7 +268,7 @@ pub mod sha3_tests {
             builder.block.container.memory_word
                 .iter()
                 .rev()
-                .take(full_length as usize/32)
+                .take(full_length / 32)
                 .rev()
                 .map(|op| (op.rw(), op.op().clone()))
                 .collect::<Vec<(RW, MemoryWordOp)>>(),

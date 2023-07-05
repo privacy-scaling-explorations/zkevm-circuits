@@ -7,6 +7,7 @@ use core::{
 use itertools::Itertools;
 use serde::{Serialize, Serializer};
 use std::{cmp, fmt};
+use num::ToPrimitive;
 
 /// Represents a `MemoryAddress` of the EVM.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
@@ -344,7 +345,11 @@ impl Memory {
     /// - the `full_length` as a multiple of 32 bytes, such that `[slot, slot+full_length)` contains
     ///   the given range. If `length=0`, then `full_length=0` too.
     /// - the `shift` of the offset into the slot, such that `offset = slot + shift`.
-    pub fn align_range(offset: u64, length: u64) -> (u64, u64, u64) {
+    pub fn align_range<O, L>(offset: O, length: L) -> (usize, usize, usize)
+    where O: ToPrimitive, L: ToPrimitive
+    {
+        let offset = offset.to_usize().unwrap();
+        let length = length.to_usize().unwrap();
         let shift = offset % 32;
         let slot = offset - shift;
 
@@ -476,7 +481,7 @@ mod memory_tests {
 
     #[test]
     fn align_range() {
-        const WORD: u64 = 32;
+        const WORD: usize = 32;
 
         // Adding 32 to an offsets or to a length does not change the logic of alignment,
         // so we test different combinations of base `o` and base `l`.

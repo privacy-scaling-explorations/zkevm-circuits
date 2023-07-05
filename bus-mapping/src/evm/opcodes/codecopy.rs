@@ -88,10 +88,10 @@ fn gen_copy_event(
     let (copy_steps, prev_bytes) = state.gen_copy_steps_for_bytecode(
         exec_step,
         &bytecode,
-        src_addr,
-        dst_addr,
-        src_addr_end,
-        length,
+        src_addr as usize,
+        dst_addr as usize,
+        src_addr_end as usize,
+        length as usize,
         memory_updated,
     )?;
 
