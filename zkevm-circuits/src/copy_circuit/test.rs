@@ -448,10 +448,7 @@ fn copy_circuit_invalid_tx_log() {
     let errors = result.expect_err("result is not an error");
     errors
         .iter()
-        .find(|err| match err {
-            VerifyFailure::Lookup { .. } => true,
-            _ => false,
-        })
+        .find(|err| matches!(err, VerifyFailure::Lookup { .. }))
         .expect("there should be a lookup error");
 }
 

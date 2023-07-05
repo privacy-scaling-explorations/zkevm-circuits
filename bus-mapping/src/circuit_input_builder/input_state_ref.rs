@@ -1624,6 +1624,7 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Generate copy steps for bytecode.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn gen_copy_steps_for_bytecode(
         &mut self,
         exec_step: &mut ExecStep,
@@ -1633,7 +1634,7 @@ impl<'a> CircuitInputStateRef<'a> {
         src_addr_end: u64,
         bytes_left: u64,
         memory_updated: Memory,
-    ) -> Result<(CopyEventSteps, Vec<u8>), Error> {
+    ) -> Result<(CopyEventSteps, CopyEventPrevBytes), Error> {
         let mut copy_steps = Vec::with_capacity(bytes_left as usize);
         let mut prev_bytes: Vec<u8> = vec![];
         if bytes_left == 0 {
@@ -1761,7 +1762,7 @@ impl<'a> CircuitInputStateRef<'a> {
         dst_addr: u64,
         copy_length: usize,
         result: &Vec<u8>,
-        mut memory_updated: Memory,
+        memory_updated: Memory,
     ) -> Result<(CopyEventSteps, CopyEventSteps, CopyEventPrevBytes), Error> {
         let mut read_steps = Vec::with_capacity(copy_length);
         let mut write_steps = Vec::with_capacity(copy_length);
@@ -1830,7 +1831,7 @@ impl<'a> CircuitInputStateRef<'a> {
         dst_addr: u64,    // memory dest starting addr
         copy_length: u64, // number of bytes to copy, without padding
         memory_updated: Memory,
-    ) -> Result<(Vec<(u8, bool, bool)>, Vec<u8>), Error> {
+    ) -> Result<(CopyEventSteps, CopyEventPrevBytes), Error> {
         assert!(self.call()?.is_root);
         let mut prev_bytes: Vec<u8> = vec![];
         let mut copy_steps = Vec::with_capacity(copy_length as usize);
@@ -2132,15 +2133,14 @@ impl<'a> CircuitInputStateRef<'a> {
         begin_slot: usize,
         length: usize,
     ) {
-        for idx in 0..slot_bytes_len {
-            let value = memory_at_begin[idx];
+        for (idx, value) in memory_at_begin.iter().enumerate().take(slot_bytes_len) {
             // padding unaligned copy of 32 bytes
             if (idx + begin_slot < offset_addr) || (idx + begin_slot >= offset_addr + length) {
                 // front and back mask byte
-                steps.push((value, false, true));
+                steps.push((*value, false, true));
             } else {
                 // real copy byte
-                steps.push((value, false, false));
+                steps.push((*value, false, false));
             }
         }
     }

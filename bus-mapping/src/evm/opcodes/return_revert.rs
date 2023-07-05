@@ -4,7 +4,7 @@ use crate::{
         CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, NumberOrHash,
     },
     evm::opcodes::ExecStep,
-    operation::{AccountField, AccountOp, CallContextField, MemoryWordOp, RW},
+    operation::{AccountField, AccountOp, CallContextField},
     state_db::CodeDB,
     Error,
 };
@@ -211,14 +211,12 @@ fn handle_copy(
         .memory
         .read_chunk(src_begin_slot.into(), full_length.into());
 
-    let dst_data_prev = state
-        .caller_ctx()?
-        .memory
-        .read_chunk(dst_begin_slot.into(), full_length.into());
-
     let dst_data = {
         // Copy src_data into dst_data
-        let mut dst_data = dst_data_prev.clone();
+        let mut dst_data = state
+            .caller_ctx()?
+            .memory
+            .read_chunk(dst_begin_slot.into(), full_length.into());
         dst_data[dst_shift..dst_shift + copy_length]
             .copy_from_slice(&src_data[src_shift..src_shift + copy_length]);
         dst_data

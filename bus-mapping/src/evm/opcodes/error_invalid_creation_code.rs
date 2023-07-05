@@ -4,7 +4,7 @@ use crate::{
     evm::Opcode,
     Error,
 };
-use eth_types::{GethExecStep, Word, U256};
+use eth_types::{GethExecStep, U256};
 use log::trace;
 
 #[derive(Debug, Copy, Clone)]

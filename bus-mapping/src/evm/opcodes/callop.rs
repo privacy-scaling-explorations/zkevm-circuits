@@ -5,7 +5,7 @@ use crate::{
         NumberOrHash,
     },
     evm::opcodes::precompiles::gen_associated_ops as precompile_associated_ops,
-    operation::{AccountField, CallContextField, MemoryWordOp, TxAccessListAccountOp, RW},
+    operation::{AccountField, CallContextField, TxAccessListAccountOp},
     precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
     state_db::CodeDB,
     Error,
@@ -17,7 +17,7 @@ use eth_types::{
     },
     GethExecStep, ToWord, Word,
 };
-use std::{cmp::min, fmt::DebugStruct};
+use std::cmp::min;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::CALL`, `OpcodeId::CALLCODE`,
@@ -607,7 +607,7 @@ fn write_memory_words(
     // Reconstruct memory (special for current code of precompile).
     let memory_updated = {
         let mut memory_updated = memory.clone();
-        memory_updated.copy_from(offset.into(), 0.into(), length.into(), &data);
+        memory_updated.copy_from(offset.into(), 0.into(), length.into(), data);
         memory_updated
     };
 

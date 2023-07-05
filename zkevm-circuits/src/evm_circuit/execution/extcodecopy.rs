@@ -21,7 +21,7 @@ use crate::{
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{
-    evm_types::{GasCost, Memory},
+    evm_types::GasCost,
     Field, ToLittleEndian, ToScalar,
 };
 use gadgets::util::Expr;

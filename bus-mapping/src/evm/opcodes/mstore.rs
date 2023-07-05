@@ -4,7 +4,6 @@ use crate::{
     Error,
 };
 use eth_types::{GethExecStep, ToBigEndian, ToLittleEndian, Word};
-use log::trace;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MSTORE`](crate::evm::OpcodeId::MSTORE)

@@ -1,10 +1,9 @@
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    operation::{CallContextField, MemoryWordOp, RW},
+    operation::CallContextField,
     Error,
 };
-use eth_types::{GethExecStep, Word, U256};
-use log::trace;
+use eth_types::{GethExecStep, U256};
 
 use super::Opcode;
 
@@ -105,7 +104,8 @@ impl Opcode for Calldataload {
 
 #[cfg(test)]
 mod calldataload_tests {
-    use crate::operation::CallContextOp;
+    use log::trace;
+    use crate::operation::{CallContextOp, MemoryWordOp, RW};
     use eth_types::{
         bytecode,
         evm_types::{OpcodeId, StackAddress},

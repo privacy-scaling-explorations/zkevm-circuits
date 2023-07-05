@@ -25,9 +25,6 @@ use eth_types::{evm_types::GasCost, Field, ToScalar};
 
 use halo2_proofs::{circuit::Value, plonk::Error};
 
-use log::trace;
-use std::cmp::max;
-
 #[derive(Clone, Debug)]
 pub(crate) struct CallDataCopyGadget<F> {
     same_context: SameContextGadget<F>,

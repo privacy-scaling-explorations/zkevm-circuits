@@ -26,8 +26,6 @@ use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};
-use log::trace;
-use std::cmp::max;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ReturnDataCopyGadget<F> {
@@ -175,7 +173,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         offset: usize,
         block: &Block<F>,
         _tx: &Transaction,
-        call: &Call,
+        _call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

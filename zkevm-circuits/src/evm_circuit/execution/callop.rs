@@ -990,7 +990,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     let begin = cd_offset.as_usize();
                     let end = cd_offset.as_usize() + cd_length.as_usize();
                     let (begin_slot, full_length, _) = Memory::align_range(begin as u64, cd_length.as_u64());
-                    let end_slot = begin_slot as usize + full_length as usize;
 
                     // input may not be aligned to 32 bytes. actual input is
                     // [start_offset..end_offset]

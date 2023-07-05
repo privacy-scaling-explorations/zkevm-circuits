@@ -138,7 +138,7 @@ fn gen_copy_event(
             dst_addr,
             log_id: None,
             rw_counter_start,
-            copy_bytes: copy_bytes,
+            copy_bytes,
         })
     } else {
         let (read_steps, write_steps, prev_bytes) = state.gen_copy_steps_for_call_data_non_root(
