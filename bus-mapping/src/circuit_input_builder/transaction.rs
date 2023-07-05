@@ -254,11 +254,6 @@ impl Transaction {
         })
     }
 
-    /// Whether this [`Transaction`] is a create one
-    pub fn is_create(&self) -> bool {
-        self.calls[0].is_create()
-    }
-
     /// Return the list of execution steps of this transaction.
     pub fn steps(&self) -> &[ExecStep] {
         &self.steps
@@ -297,11 +292,6 @@ impl Transaction {
     /// Return whether the steps in this transaction is empty
     pub fn is_steps_empty(&self) -> bool {
         self.steps.is_empty()
-    }
-
-    /// Convinient method for gas limit
-    pub fn gas(&self) -> u64 {
-        self.tx.gas()
     }
 
     /// Constructor for padding tx in tx circuit
