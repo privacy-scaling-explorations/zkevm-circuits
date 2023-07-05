@@ -378,7 +378,7 @@ impl CircuitInputBuilder<DynamicCParams> {
                 <RWCounter as Into<usize>>::into(self.block_ctx.rwc) - 1; // -1 since rwc start from index `1`
             let max_rws_after_padding = total_rws_before_padding
                 + 1 // fill 1 to have exactly one StartOp padding in below `set_end_block`
-                + if total_rws_before_padding > 0 { 1 /*CallContextFieldTag::TxId read*/ } else { 0 };
+                + if total_rws_before_padding > 0 { 1 /*end_block -> CallContextFieldTag::TxId lookup*/ } else { 0 };
             // Computing the number of rows for the EVM circuit requires the size of ExecStep,
             // which is determined in the code of zkevm-circuits and cannot be imported here.
             // When the evm circuit receives a 0 value it dynamically computes the minimum

@@ -500,17 +500,18 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                 config.assign_with_region(&mut region, &self.rows, &self.updates, self.n_rows)?;
                 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
                 {
-                    let padding_length = if self.rows.len() < self.n_rows {
+                    let first_non_padding_index = if self.rows.len() < self.n_rows {
                         RwMap::padding_len(self.rows.len(), self.n_rows)
                     } else {
-                        1 // at least 1 StartOp padding
+                        1 // at least 1 StartOp padding in idx 0, so idx 1 is first non-padding row
                     };
 
                     for ((column, row_offset), &f) in &self.overrides {
                         let advice_column = column.value(config);
-                        let offset =
-                            usize::try_from(isize::try_from(padding_length).unwrap() + *row_offset)
-                                .unwrap();
+                        let offset = usize::try_from(
+                            isize::try_from(first_non_padding_index).unwrap() + *row_offset,
+                        )
+                        .unwrap();
                         region.assign_advice(
                             || "override",
                             advice_column,
