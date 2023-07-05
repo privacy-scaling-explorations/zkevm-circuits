@@ -388,10 +388,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 // write the result in the callee's memory.
                 let rw_counter_start = state.block_ctx.rwc;
                 if call.is_success() && call.call_data_length > 0 && !result.is_empty() {
-                    let (copy_steps, prev_bytes) = state.gen_copy_steps_for_precompile_callee_memory(
-                        &mut exec_step,
-                        &result,
-                    )?;
+                    let (copy_steps, prev_bytes) = state
+                        .gen_copy_steps_for_precompile_callee_memory(&mut exec_step, &result)?;
                     state.push_copy(
                         &mut exec_step,
                         CopyEvent {
@@ -432,7 +430,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             dst_addr: call.return_data_offset,
                             log_id: None,
                             rw_counter_start,
-                            copy_bytes: CopyBytes::new(read_steps, Some(write_steps), Some(prev_bytes)),
+                            copy_bytes: CopyBytes::new(
+                                read_steps,
+                                Some(write_steps),
+                                Some(prev_bytes),
+                            ),
                         },
                     );
                 }

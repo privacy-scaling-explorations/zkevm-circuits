@@ -1528,22 +1528,22 @@ impl<F: Field> ExecutionConfig<F> {
         let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
 
         // enable with `CHECK_RW_LOOKUP=true`
-        // if *CHECK_RW_LOOKUP && verbose {
-        let is_padding_step =
-            matches!(step.execution_state, ExecutionState::EndBlock) && step.rw_indices.is_empty();
-        if !is_padding_step {
-            // expensive function call
-            Self::check_rw_lookup(
-                &assigned_stored_expressions,
-                offset,
-                step,
-                call,
-                transaction,
-                block,
-                region.challenges(),
-            );
+        if *CHECK_RW_LOOKUP && verbose {
+            let is_padding_step = matches!(step.execution_state, ExecutionState::EndBlock)
+                && step.rw_indices.is_empty();
+            if !is_padding_step {
+                // expensive function call
+                Self::check_rw_lookup(
+                    &assigned_stored_expressions,
+                    offset,
+                    step,
+                    call,
+                    transaction,
+                    block,
+                    region.challenges(),
+                );
+            }
         }
-        //}
         Ok(())
     }
 

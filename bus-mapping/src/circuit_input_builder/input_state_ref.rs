@@ -8,7 +8,7 @@ use super::{
 #[cfg(feature = "scroll")]
 use crate::util::KECCAK_CODE_HASH_ZERO;
 use crate::{
-    circuit_input_builder::execution::CopyEventSteps,
+    circuit_input_builder::execution::{CopyEventPrevBytes, CopyEventSteps},
     error::{
         get_step_reported_error, ContractAddressCollisionError, DepthError, ExecError,
         InsufficientBalanceError, NonceUintOverflowError,
@@ -33,7 +33,6 @@ use eth_types::{
 use ethers_core::utils::{get_contract_address, get_create2_address, keccak256};
 use log::trace;
 use std::cmp::max;
-use crate::circuit_input_builder::execution::CopyEventPrevBytes;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
 /// [`ExecStep`].
@@ -264,34 +263,8 @@ impl<'a> CircuitInputStateRef<'a> {
         step: &mut ExecStep,
         address: MemoryAddress, //Caution: make sure this address = slot passing
         value: Word,
-    ) -> Result<(), Error> {
-        let mem = &mut self.call_ctx_mut()?.memory;
-        let value_prev = mem.read_word(address);
-
-        let value_bytes = value.to_be_bytes();
-        mem.write_chunk(address, &value_bytes);
-
-        let call_id = self.call()?.call_id;
-        self.push_op(
-            step,
-            RW::WRITE,
-            MemoryWordOp::new_write(call_id, address, value, value_prev),
-        );
-        Ok(())
-    }
-
-    /// Push a write type [`MemoryWordOp`] into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter) and `call_id`, and then
-    /// adds a reference to the stored operation ([`OperationRef`]) inside
-    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
-    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
-    pub fn memory_write_word_prev_bytes(
-        &mut self,
-        step: &mut ExecStep,
-        address: MemoryAddress, //Caution: make sure this address = slot passing
-        value: Word,
     ) -> Result<Vec<u8>, Error> {
+        assert_eq!(address.0 % 32, 0);
         let mem = &mut self.call_ctx_mut()?.memory;
         let value_prev = mem.read_word(address);
         let value_prev_bytes = value_prev.to_be_bytes();
@@ -1697,9 +1670,8 @@ impl<'a> CircuitInputStateRef<'a> {
         // memory word writes to destination word
         for chunk in code_slot_bytes.chunks(32) {
             let dest_word = Word::from_big_endian(chunk);
-            //self.memory_write_word(exec_step, chunk_index.into(), dest_word)?;
             let mut prev_bytes_write =
-                self.memory_write_word_prev_bytes(exec_step, chunk_index.into(), dest_word)?;
+                self.memory_write_word(exec_step, chunk_index.into(), dest_word)?;
             prev_bytes.append(&mut prev_bytes_write);
             chunk_index += 32;
         }
@@ -1720,7 +1692,8 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         let (src_begin_slot, full_length, _) = Memory::align_range(src_addr, copy_length);
-        let calldata_slot_bytes = caller_memory.read_chunk(src_begin_slot.into(), full_length.into());
+        let calldata_slot_bytes =
+            caller_memory.read_chunk(src_begin_slot.into(), full_length.into());
 
         Self::gen_memory_copy_steps(
             &mut copy_steps,
@@ -1769,7 +1742,11 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let mut chunk_index = 0;
         for chunk in memory.chunks(32) {
-            let mut prev_bytes_write = self.memory_write_word_prev_bytes(exec_step, chunk_index.into(), Word::from_big_endian(chunk))?;
+            let mut prev_bytes_write = self.memory_write_word(
+                exec_step,
+                chunk_index.into(),
+                Word::from_big_endian(chunk),
+            )?;
             prev_bytes.append(&mut prev_bytes_write);
             chunk_index += 32;
         }
@@ -1795,7 +1772,8 @@ impl<'a> CircuitInputStateRef<'a> {
         assert!(copy_length <= result.len());
         let src_begin_slot = 0;
         let (_, src_full_length, _) = Memory::align_range(0, copy_length as u64);
-        let (dst_begin_slot, dst_full_length, _) = Memory::align_range(dst_addr, copy_length as u64);
+        let (dst_begin_slot, dst_full_length, _) =
+            Memory::align_range(dst_addr, copy_length as u64);
 
         let slot_count = max(src_full_length, dst_full_length) as usize;
 
@@ -1882,7 +1860,7 @@ impl<'a> CircuitInputStateRef<'a> {
         for chunk in calldata_slot_bytes.chunks(32) {
             let dest_word = Word::from_big_endian(chunk);
             let mut prev_bytes_write =
-                self.memory_write_word_prev_bytes(exec_step, chunk_index.into(), dest_word)?;
+                self.memory_write_word(exec_step, chunk_index.into(), dest_word)?;
             prev_bytes.append(&mut prev_bytes_write);
             chunk_index += 32;
         }
@@ -1947,9 +1925,8 @@ impl<'a> CircuitInputStateRef<'a> {
             src_chunk_index += 32;
 
             let write_word = Word::from_big_endian(write_chunk);
-            //self.memory_write_word(exec_step, dst_chunk_index.into(), write_word)?;
             let mut prev_bytes_write =
-                self.memory_write_word_prev_bytes(exec_step, dst_chunk_index.into(), write_word)?;
+                self.memory_write_word(exec_step, dst_chunk_index.into(), write_word)?;
             prev_bytes.append(&mut prev_bytes_write);
 
             dst_chunk_index += 32;
@@ -2052,7 +2029,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
             let write_word = Word::from_big_endian(write_chunk);
             let mut prev_bytes_write =
-                self.memory_write_word_prev_bytes(exec_step, dst_chunk_index.into(), write_word)?;
+                self.memory_write_word(exec_step, dst_chunk_index.into(), write_word)?;
             prev_bytes.append(&mut prev_bytes_write);
             trace!("write chunk: {current_call_id} {dst_chunk_index} {write_chunk:?}");
             dst_chunk_index += 32;
