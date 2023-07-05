@@ -637,7 +637,7 @@ fn write_memory_words(
 
     // Add memory word write ops.
     for (i, chunk) in slot_bytes.chunks(32).enumerate() {
-        let address = (begin_slot + 32 * i as u64).into();
+        let address = (begin_slot + 32 * i).into();
         let write_word = Word::from_big_endian(chunk);
 
         if is_caller {

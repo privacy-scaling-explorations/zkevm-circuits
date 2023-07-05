@@ -120,9 +120,9 @@ fn gen_copy_event(
         // fetch pre write bytes to fill 'bytes_write_prev' of CopyBytes
         let (copy_steps, prev_bytes) = state.gen_copy_steps_for_call_data_root(
             exec_step,
-            src_addr,
-            dst_addr,
-            length,
+            src_addr as usize,
+            dst_addr as usize,
+            length as usize,
             memory_updated,
         )?;
 

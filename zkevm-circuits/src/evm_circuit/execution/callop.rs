@@ -1005,9 +1005,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
                     // input may not be aligned to 32 bytes. actual input is
                     // [start_offset..end_offset]
-                    let start_offset = begin - begin_slot as usize;
-                    let end_offset = end - begin_slot as usize;
-                    let word_count = full_length as usize / 32;
+                    let start_offset = begin - begin_slot;
+                    let end_offset = end - begin_slot;
+                    let word_count = full_length / 32;
 
                     [start_offset, end_offset, word_count]
                 };
@@ -1021,7 +1021,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     let end = precompile_return_length.as_usize();
                     let (_, full_length, _) = Memory::align_range(0, end as u64);
 
-                    [end, full_length as usize / 32]
+                    [end, full_length / 32]
                 };
 
             let [return_bytes_start_offset, return_bytes_end_offset, return_bytes_word_count] =
@@ -1041,9 +1041,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
                     // return data may not be aligned to 32 bytes. actual return data is
                     // [start_offset..end_offset]
-                    let start_offset = begin - begin_slot as usize;
-                    let end_offset = end - begin_slot as usize;
-                    let word_count = slot_count as usize / 32;
+                    let start_offset = begin - begin_slot;
+                    let end_offset = end - begin_slot;
+                    let word_count = slot_count / 32;
 
                     [start_offset, end_offset, word_count]
                 };
