@@ -1343,11 +1343,9 @@ impl<F: Field> ExecutionConfig<F> {
         block: &Block<F>,
         challenges: &Challenges<Value<F>>,
     ) {
-        let mut evm_randomness = F::ZERO;
-        challenges.evm_word().map(|v| evm_randomness = v);
         let mut lookup_randomness = F::ZERO;
         challenges.lookup_input().map(|v| lookup_randomness = v);
-        if evm_randomness.is_zero_vartime() || lookup_randomness.is_zero_vartime() {
+        if lookup_randomness.is_zero_vartime() {
             // challenges not ready
             return;
         }

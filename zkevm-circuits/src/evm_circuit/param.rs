@@ -16,7 +16,7 @@ pub const MAX_STEP_HEIGHT: usize = 19;
 pub(crate) const STEP_STATE_HEIGHT: usize = 1;
 
 /// Number of Advice Phase2 columns in the EVM circuit
-pub const N_PHASE2_COLUMNS: usize = 4;
+pub const N_PHASE2_COLUMNS: usize = 1;
 
 /// Number of Advice Phase1 columns in the EVM circuit
 pub const N_PHASE1_COLUMNS: usize =
