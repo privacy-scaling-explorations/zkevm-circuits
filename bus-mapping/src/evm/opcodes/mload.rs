@@ -8,7 +8,7 @@ use eth_types::GethExecStep;
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MLOAD`](crate::evm::OpcodeId::MLOAD)
 /// `OpcodeId`. This is responsible of generating all of the associated
-/// [`crate::operation::StackOp`]s and [`crate::operation::MemoryWordOp`]s and place
+/// [`crate::operation::StackOp`]s and [`crate::operation::MemoryOp`]s and place
 /// them inside the trace's [`crate::operation::OperationContainer`].
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Mload;
@@ -56,7 +56,7 @@ mod mload_tests {
     use crate::{
         circuit_input_builder::ExecState,
         mock::BlockData,
-        operation::{MemoryWordOp, StackOp, RW},
+        operation::{MemoryOp, StackOp, RW},
     };
     use eth_types::{
         bytecode,
@@ -119,18 +119,18 @@ mod mload_tests {
         let slot = 0x40 - shift;
         assert_eq!(
             (2..4)
-                .map(|idx| &builder.block.container.memory_word
+                .map(|idx| &builder.block.container.memory
                     [step.bus_mapping_instance[idx].as_usize()])
                 .map(|operation| (operation.rw(), operation.op().clone()))
                 .collect_vec(),
             vec![
                 (
                     RW::READ,
-                    MemoryWordOp::new(1, MemoryAddress(slot), Word::from(0x80u64))
+                    MemoryOp::new(1, MemoryAddress(slot), Word::from(0x80u64))
                 ),
                 (
                     RW::READ,
-                    MemoryWordOp::new(1, MemoryAddress(slot + 32), Word::from(0x00))
+                    MemoryOp::new(1, MemoryAddress(slot + 32), Word::from(0x00))
                 ),
             ]
         )

@@ -1,5 +1,5 @@
 use super::{
-    AccountOp, CallContextOp, MemoryWordOp, Op, OpEnum, Operation, RWCounter, StackOp, StartOp,
+    AccountOp, CallContextOp, MemoryOp, Op, OpEnum, Operation, RWCounter, StackOp, StartOp,
     StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxLogOp, TxReceiptOp,
     TxRefundOp, RW,
 };
@@ -22,8 +22,8 @@ use itertools::Itertools;
 /// order to construct the State proof.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationContainer {
-    /// Operations of MemoryWordOp
-    pub memory_word: Vec<Operation<MemoryWordOp>>,
+    /// Operations of MemoryOp
+    pub memory: Vec<Operation<MemoryOp>>,
     /// Operations of StackOp
     pub stack: Vec<Operation<StackOp>>,
     /// Operations of StorageOp
@@ -57,7 +57,7 @@ impl OperationContainer {
     /// Generates a new instance of an `OperationContainer`.
     pub fn new() -> Self {
         Self {
-            memory_word: Vec::new(),
+            memory: Vec::new(),
             stack: Vec::new(),
             storage: Vec::new(),
             tx_access_list_account: Vec::new(),
@@ -94,10 +94,10 @@ impl OperationContainer {
         op_enum: OpEnum,
     ) -> OperationRef {
         match op_enum {
-            OpEnum::MemoryWord(op) => {
-                self.memory_word.push(Operation::new(rwc, rw, op));
+            OpEnum::Memory(op) => {
+                self.memory.push(Operation::new(rwc, rw, op));
                 //TODO: use new Target type i.e. MemoryWord
-                OperationRef::from((Target::MemoryWord, self.memory_word.len() - 1))
+                OperationRef::from((Target::Memory, self.memory.len() - 1))
             }
             OpEnum::Stack(op) => {
                 self.stack.push(Operation::new(rwc, rw, op));
@@ -168,10 +168,10 @@ impl OperationContainer {
         }
     }
 
-    /// Returns a sorted vector of all of the [`MemoryWordOp`]s contained inside of
+    /// Returns a sorted vector of all of the [`MemoryOp`]s contained inside of
     /// the container.
-    pub fn sorted_memory_word(&self) -> Vec<Operation<MemoryWordOp>> {
-        self.memory_word.iter().sorted().cloned().collect()
+    pub fn sorted_memory_word(&self) -> Vec<Operation<MemoryOp>> {
+        self.memory.iter().sorted().cloned().collect()
     }
 
     /// Returns a sorted vector of all of the [`StackOp`]s contained inside of
@@ -209,7 +209,7 @@ mod container_test {
         let memory_operation = Operation::new(
             global_counter.inc_pre(),
             RW::WRITE,
-            MemoryWordOp::new(1, MemoryAddress::from(1), 1.into()),
+            MemoryOp::new(1, MemoryAddress::from(1), 1.into()),
         );
         let storage_operation = Operation::new(
             global_counter.inc_pre(),
@@ -234,7 +234,7 @@ mod container_test {
         );
         assert_eq!(operation_container.sorted_storage()[0], storage_operation);
         assert_eq!(stack_ref, OperationRef::from((Target::Stack, 0)));
-        assert_eq!(memory_ref, OperationRef::from((Target::MemoryWord, 0)));
+        assert_eq!(memory_ref, OperationRef::from((Target::Memory, 0)));
         assert_eq!(storage_ref, OperationRef::from((Target::Storage, 0)));
     }
 }

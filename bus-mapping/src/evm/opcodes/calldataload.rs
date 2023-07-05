@@ -104,7 +104,7 @@ impl Opcode for Calldataload {
 
 #[cfg(test)]
 mod calldataload_tests {
-    use crate::operation::{CallContextOp, MemoryWordOp, RW};
+    use crate::operation::{CallContextOp, MemoryOp, RW};
     use eth_types::{
         bytecode,
         evm_types::{OpcodeId, StackAddress},
@@ -286,18 +286,18 @@ mod calldataload_tests {
         // 2 memory word reads from caller memory
         assert_eq!(
             (0..2)
-                .map(|idx| &builder.block.container.memory_word
+                .map(|idx| &builder.block.container.memory
                     [step.bus_mapping_instance[4 + idx].as_usize()])
                 .map(|op| (op.rw(), op.op().clone()))
-                .collect::<Vec<(RW, MemoryWordOp)>>(),
+                .collect::<Vec<(RW, MemoryOp)>>(),
             vec![
                 (
                     RW::READ,
-                    MemoryWordOp::new(caller_id, slot.into(), addr_left_Word,),
+                    MemoryOp::new(caller_id, slot.into(), addr_left_Word,),
                 ),
                 (
                     RW::READ,
-                    MemoryWordOp::new(caller_id, (slot + 32).into(), addr_right_Word,),
+                    MemoryOp::new(caller_id, (slot + 32).into(), addr_right_Word,),
                 ),
             ]
         );

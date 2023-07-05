@@ -490,7 +490,7 @@ mod calldatacopy_tests {
             end_slot - begin_slot + 32
         );
         assert_eq!(
-            builder.block.container.memory_word.len(),
+            builder.block.container.memory.len(),
             (end_slot - begin_slot) / 32 + 1
         );
 

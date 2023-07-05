@@ -631,7 +631,7 @@ fn write_memory_words(
         memory_updated
     };
 
-    // Generate aligned slot bytes for MemoryWordOp.
+    // Generate aligned slot bytes for MemoryOp.
     let (begin_slot, full_length, _) = Memory::align_range(offset, length);
     let slot_bytes = memory_updated.read_chunk(begin_slot.into(), full_length.into());
 

@@ -1,5 +1,5 @@
 //! Collection of structs and functions used to:
-//! - Define the internals of a [`MemoryWordOp`], [`StackOp`] and [`StorageOp`].
+//! - Define the internals of a [`MemoryOp`], [`StackOp`] and [`StorageOp`].
 //! - Define the actual operation types and a wrapper over them (the [`Operation`] enum).
 //! - Define structures that interact with operations such as [`OperationContainer`].
 pub(crate) mod container;
@@ -86,8 +86,8 @@ impl RWCounter {
 pub enum Target {
     /// Start is a padding operation.
     Start,
-    /// Means the target of the operation is the MemoryWord.
-    MemoryWord,
+    /// Means the target of the operation is the Memory.
+    Memory,
     /// Means the target of the operation is the Stack.
     Stack,
     /// Means the target of the operation is the Storage.
@@ -123,7 +123,7 @@ pub trait Op: Clone + Eq + Ord {
 /// by an specific [`OpcodeId`](eth_types::evm_types::opcode_ids::OpcodeId) of
 /// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
-pub struct MemoryWordOp {
+pub struct MemoryOp {
     /// Call ID
     pub call_id: usize,
     /// Memory Address
@@ -134,9 +134,9 @@ pub struct MemoryWordOp {
     pub value_prev: Word,
 }
 
-impl fmt::Debug for MemoryWordOp {
+impl fmt::Debug for MemoryOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("MemoryWordOp { ")?;
+        f.write_str("MemoryOp { ")?;
         f.write_fmt(format_args!(
             "call_id: {:?}, addr: {:?}, value: 0x{:?} value_prev {:?}",
             self.call_id, self.address, self.value, self.value_prev
@@ -145,9 +145,9 @@ impl fmt::Debug for MemoryWordOp {
     }
 }
 
-impl MemoryWordOp {
-    /// Create a new instance of a `MemoryWordOp` from it's components.
-    pub fn new(call_id: usize, address: MemoryAddress, value: Word) -> MemoryWordOp {
+impl MemoryOp {
+    /// Create a new instance of a `MemoryOp` from it's components.
+    pub fn new(call_id: usize, address: MemoryAddress, value: Word) -> MemoryOp {
         Self::new_write(call_id, address, value, value)
     }
 
@@ -157,8 +157,8 @@ impl MemoryWordOp {
         address: MemoryAddress,
         value: Word,
         value_prev: Word,
-    ) -> MemoryWordOp {
-        MemoryWordOp {
+    ) -> MemoryOp {
+        MemoryOp {
             call_id,
             address,
             value,
@@ -168,7 +168,7 @@ impl MemoryWordOp {
 
     /// Returns the [`Target`] (operation type) of this operation.
     pub const fn target(&self) -> Target {
-        Target::MemoryWord
+        Target::Memory
     }
 
     /// Returns the call id associated to this Operation.
@@ -192,29 +192,27 @@ impl MemoryWordOp {
     }
 }
 
-impl Op for MemoryWordOp {
+impl Op for MemoryOp {
     fn into_enum(self) -> OpEnum {
-        OpEnum::MemoryWord(self)
+        OpEnum::Memory(self)
     }
 
     fn reverse(&self) -> Self {
-        unreachable!("MemoryWordOp can't be reverted")
+        unreachable!("MemoryOp can't be reverted")
     }
 }
 
-impl PartialOrd for MemoryWordOp {
+impl PartialOrd for MemoryOp {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for MemoryWordOp {
+impl Ord for MemoryOp {
     fn cmp(&self, other: &Self) -> Ordering {
         (&self.call_id, &self.address).cmp(&(&other.call_id, &other.address))
     }
 }
-
-// end
 
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the stack implied
 /// by an specific [`OpcodeId`](eth_types::evm_types::opcode_ids::OpcodeId) of
@@ -924,13 +922,13 @@ impl Op for TxReceiptOp {
 }
 
 /// Generic enum that wraps over all the operation types possible.
-/// In particular [`StackOp`], [`MemoryWordOp`] and [`StorageOp`].
+/// In particular [`StackOp`], [`MemoryOp`] and [`StorageOp`].
 #[derive(Debug, Clone)]
 pub enum OpEnum {
     /// Stack
     Stack(StackOp),
     /// Memory word
-    MemoryWord(MemoryWordOp),
+    Memory(MemoryOp),
     /// Storage
     Storage(StorageOp),
     /// TxAccessListAccount
@@ -1096,7 +1094,7 @@ mod operation_tests {
 
         let stack_op_as_operation = Operation::new(RWCounter(1), RW::WRITE, stack_op.clone());
 
-        let memory_op = MemoryWordOp::new(1, MemoryAddress(0x40), Word::from(0x40));
+        let memory_op = MemoryOp::new(1, MemoryAddress(0x40), Word::from(0x40));
 
         let memory_op_as_operation = Operation::new(RWCounter(1), RW::WRITE, memory_op.clone());
 

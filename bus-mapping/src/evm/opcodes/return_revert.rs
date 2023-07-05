@@ -8,10 +8,9 @@ use crate::{
     state_db::CodeDB,
     Error,
 };
-use eth_types::{Bytecode, GethExecStep, ToWord, Word, H256};
+use eth_types::{evm_types::Memory, Bytecode, GethExecStep, ToWord, Word, H256};
 use ethers_core::utils::keccak256;
 use std::cmp::max;
-use eth_types::evm_types::Memory;
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ReturnRevert;
@@ -190,8 +189,10 @@ fn handle_copy(
 
     let rw_counter_start = state.block_ctx.rwc;
 
-    let (src_begin_slot, src_full_length, src_shift) = Memory::align_range(source.offset, copy_length);
-    let (dst_begin_slot, dst_full_length, dst_shift) = Memory::align_range(destination.offset, copy_length);
+    let (src_begin_slot, src_full_length, src_shift) =
+        Memory::align_range(source.offset, copy_length);
+    let (dst_begin_slot, dst_full_length, dst_shift) =
+        Memory::align_range(destination.offset, copy_length);
 
     let full_length = max(src_full_length, dst_full_length);
 
@@ -313,7 +314,7 @@ fn handle_create(
     let mut copy_steps = Vec::with_capacity(source.length);
     for idx in 0..create_slot_len {
         let value = memory.0[dst_begin_slot + idx];
-        if (idx + dst_begin_slot < source.offset )
+        if (idx + dst_begin_slot < source.offset)
             || (idx + dst_begin_slot >= source.offset + source.length)
         {
             // front and back mask byte

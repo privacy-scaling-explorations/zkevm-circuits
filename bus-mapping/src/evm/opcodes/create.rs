@@ -362,9 +362,7 @@ fn handle_copy(
     let mut copy_steps = Vec::with_capacity(length);
     for idx in 0..create_slot_len {
         let value = mem_read.0[dst_begin_slot + idx];
-        if (idx + dst_begin_slot < offset)
-            || (idx + dst_begin_slot >= offset + length)
-        {
+        if (idx + dst_begin_slot < offset) || (idx + dst_begin_slot >= offset + length) {
             // front and back mask byte
             copy_steps.push((value, false, true));
         } else {

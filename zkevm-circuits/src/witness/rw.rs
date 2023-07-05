@@ -862,7 +862,7 @@ impl From<&operation::OperationContainer> for RwMap {
         rws.insert(
             RwTableTag::MemoryWord,
             container
-                .memory_word
+                .memory
                 .iter()
                 .map(|op| Rw::MemoryWord {
                     rw_counter: op.rwc().into(),

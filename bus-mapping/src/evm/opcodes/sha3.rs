@@ -4,9 +4,8 @@ use crate::{
     },
     Error,
 };
-use eth_types::{GethExecStep, Word, U256};
+use eth_types::{evm_types::Memory, GethExecStep, Word, U256};
 use ethers_core::utils::keccak256;
-use eth_types::evm_types::Memory;
 
 use super::Opcode;
 
@@ -57,7 +56,8 @@ impl Opcode for Sha3 {
         let mut copy_steps = Vec::with_capacity(size.as_usize());
 
         if size.as_usize() != 0 {
-            let (dst_begin_slot, full_length, _) = Memory::align_range(offset.low_u64(), size.low_u64());
+            let (dst_begin_slot, full_length, _) =
+                Memory::align_range(offset.low_u64(), size.low_u64());
             // Read step
             let mut first_set = true;
             let mut chunk_index = dst_begin_slot;
@@ -112,21 +112,24 @@ impl Opcode for Sha3 {
 
 #[cfg(any(feature = "test", test))]
 pub mod sha3_tests {
-    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, Bytecode, Word};
+    use eth_types::{
+        bytecode,
+        evm_types::{Memory, OpcodeId},
+        geth_types::GethData,
+        Bytecode, Word,
+    };
     use ethers_core::utils::keccak256;
     use mock::{
         test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
         TestContext,
     };
     use rand::{random, Rng};
-    use eth_types::evm_types::Memory;
 
     use crate::{
         circuit_input_builder::{CircuitsParams, ExecState},
         mock::BlockData,
-        operation::{StackOp, RW},
+        operation::{MemoryOp, StackOp, RW},
     };
-    use crate::operation::MemoryWordOp;
 
     /// Generate bytecode for SHA3 opcode after having populated sufficient
     /// memory given the offset and size arguments for SHA3.
@@ -265,22 +268,22 @@ pub mod sha3_tests {
         let memory = Memory(memory);
         let (dst_begin_slot, full_length, _) = Memory::align_range(offset, size);
         assert_eq!(
-            builder.block.container.memory_word
+            builder
+                .block
+                .container
+                .memory
                 .iter()
                 .rev()
                 .take(full_length / 32)
                 .rev()
                 .map(|op| (op.rw(), op.op().clone()))
-                .collect::<Vec<(RW, MemoryWordOp)>>(),
+                .collect::<Vec<(RW, MemoryOp)>>(),
             {
                 let mut memory_ops = Vec::with_capacity(size);
                 let mut chunk_index = dst_begin_slot;
                 for _ in 0..full_length / 32 {
                     let word = memory.read_word(chunk_index.into());
-                    memory_ops.push((
-                        RW::READ,
-                        MemoryWordOp::new(call_id, chunk_index.into(), word),
-                    ));
+                    memory_ops.push((RW::READ, MemoryOp::new(call_id, chunk_index.into(), word)));
                     chunk_index += 32;
                 }
                 memory_ops

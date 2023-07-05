@@ -15,9 +15,9 @@ use crate::{
     },
     exec_trace::OperationRef,
     operation::{
-        AccountField, AccountOp, CallContextField, CallContextOp, MemoryWordOp, Op, OpEnum,
-        Operation, StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField,
-        TxReceiptOp, RW,
+        AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
+        StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField, TxReceiptOp,
+        RW,
     },
     precompile::is_precompiled,
     state_db::{CodeDB, StateDB},
@@ -215,7 +215,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
-    /// Push a read type [`MemoryWordOp`] into the
+    /// Push a read type [`MemoryOp`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter) and `call_id`, and then
     /// adds a reference to the stored operation ([`OperationRef`]) inside
@@ -230,11 +230,11 @@ impl<'a> CircuitInputStateRef<'a> {
         let value = mem.read_word(address);
 
         let call_id = self.call()?.call_id;
-        self.push_op(step, RW::READ, MemoryWordOp::new(call_id, address, value));
+        self.push_op(step, RW::READ, MemoryOp::new(call_id, address, value));
         Ok(value)
     }
 
-    /// Push a read type [`MemoryWordOp`] into the
+    /// Push a read type [`MemoryOp`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter) and `caller_id`, and then
     /// adds a reference to the stored operation ([`OperationRef`]) inside
@@ -249,11 +249,11 @@ impl<'a> CircuitInputStateRef<'a> {
         let value = mem.read_word(address);
 
         let caller_id = self.call()?.caller_id;
-        self.push_op(step, RW::READ, MemoryWordOp::new(caller_id, address, value));
+        self.push_op(step, RW::READ, MemoryOp::new(caller_id, address, value));
         Ok(value)
     }
 
-    /// Push a write type [`MemoryWordOp`] into the
+    /// Push a write type [`MemoryOp`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter) and `call_id`, and then
     /// adds a reference to the stored operation ([`OperationRef`]) inside
@@ -277,12 +277,12 @@ impl<'a> CircuitInputStateRef<'a> {
         self.push_op(
             step,
             RW::WRITE,
-            MemoryWordOp::new_write(call_id, address, value, value_prev),
+            MemoryOp::new_write(call_id, address, value, value_prev),
         );
         Ok(value_prev_bytes.to_vec())
     }
 
-    /// Push a write type [`MemoryWordOp`] into the
+    /// Push a write type [`MemoryOp`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter) and `caller_id`, and then
     /// adds a reference to the stored operation ([`OperationRef`]) inside
@@ -305,7 +305,7 @@ impl<'a> CircuitInputStateRef<'a> {
         self.push_op(
             step,
             RW::WRITE,
-            MemoryWordOp::new_write(call_id, address, value, value_prev),
+            MemoryOp::new_write(call_id, address, value, value_prev),
         );
         Ok(value_prev_bytes.to_vec())
     }
@@ -1645,8 +1645,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let copy_start = dst_addr - dst_begin_slot;
         for (idx, value) in code_slot_bytes.iter().enumerate() {
-            if (idx + dst_begin_slot < dst_addr)
-                || (idx + dst_begin_slot >= dst_addr + bytes_left)
+            if (idx + dst_begin_slot < dst_addr) || (idx + dst_begin_slot >= dst_addr + bytes_left)
             {
                 // front and back mask byte
                 copy_steps.push((*value, false, true));
@@ -1730,14 +1729,7 @@ impl<'a> CircuitInputStateRef<'a> {
             memory.resize(full_length, 0);
         }
 
-        Self::gen_memory_copy_steps(
-            &mut copy_steps,
-            &memory,
-            full_length,
-            0,
-            0,
-            result.len(),
-        );
+        Self::gen_memory_copy_steps(&mut copy_steps, &memory, full_length, 0, 0, result.len());
 
         let mut chunk_index = 0;
         for chunk in memory.chunks(32) {
@@ -1771,8 +1763,7 @@ impl<'a> CircuitInputStateRef<'a> {
         assert!(copy_length <= result.len());
         let src_begin_slot = 0;
         let (_, src_full_length, _) = Memory::align_range(0, copy_length);
-        let (dst_begin_slot, dst_full_length, _) =
-            Memory::align_range(dst_addr, copy_length);
+        let (dst_begin_slot, dst_full_length, _) = Memory::align_range(dst_addr, copy_length);
 
         let slot_count = max(src_full_length, dst_full_length);
 
@@ -1843,8 +1834,7 @@ impl<'a> CircuitInputStateRef<'a> {
             memory_updated.read_chunk(dst_begin_slot.into(), full_length.into());
 
         for (idx, value) in calldata_slot_bytes.iter().enumerate() {
-            if (idx + dst_begin_slot < dst_addr)
-                || (idx + dst_begin_slot >= dst_addr + copy_length)
+            if (idx + dst_begin_slot < dst_addr) || (idx + dst_begin_slot >= dst_addr + copy_length)
             {
                 // front and back mask byte
                 copy_steps.push((*value, false, true));
@@ -2017,7 +2007,7 @@ impl<'a> CircuitInputStateRef<'a> {
             self.push_op(
                 exec_step,
                 RW::READ,
-                MemoryWordOp::new(
+                MemoryOp::new(
                     last_callee_id,
                     src_chunk_index.into(),
                     Word::from_big_endian(read_chunk),

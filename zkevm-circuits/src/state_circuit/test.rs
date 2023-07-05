@@ -6,7 +6,7 @@ use crate::{
     witness::{MptUpdates, Rw, RwMap},
 };
 use bus_mapping::operation::{
-    MemoryWordOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
+    MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
 };
 use eth_types::{
     address,
@@ -37,12 +37,12 @@ fn state_circuit_unusable_rows() {
 }
 
 fn test_state_circuit_ok(
-    memory_ops: Vec<Operation<MemoryWordOp>>,
+    memory_ops: Vec<Operation<MemoryOp>>,
     stack_ops: Vec<Operation<StackOp>>,
     storage_ops: Vec<Operation<StorageOp>>,
 ) {
     let rw_map = RwMap::from(&OperationContainer {
-        memory_word: memory_ops,
+        memory: memory_ops,
         stack: stack_ops,
         storage: storage_ops,
         ..Default::default()
@@ -70,10 +70,10 @@ fn verifying_key_independent_of_rw_length() {
     let no_rows = StateCircuit::<Fr>::new(RwMap::default(), N_ROWS);
     let one_row = StateCircuit::<Fr>::new(
         RwMap::from(&OperationContainer {
-            memory_word: vec![Operation::new(
+            memory: vec![Operation::new(
                 RWCounter::from(1),
                 RW::WRITE,
-                MemoryWordOp::new(1, MemoryAddress::from(0), 32.into()),
+                MemoryOp::new(1, MemoryAddress::from(0), 32.into()),
             )],
             ..Default::default()
         }),
@@ -97,23 +97,23 @@ fn state_circuit_simple_2() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryWordOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
     );
     let memory_op_1 = Operation::new(
         RWCounter::from(24),
         RW::READ,
-        MemoryWordOp::new_write(1, MemoryAddress::from(0), 32.into(), 32.into()),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 32.into()),
     );
 
     let memory_op_2 = Operation::new(
         RWCounter::from(17),
         RW::WRITE,
-        MemoryWordOp::new_write(1, MemoryAddress::from(1), 32.into(), 0.into()),
+        MemoryOp::new_write(1, MemoryAddress::from(1), 32.into(), 0.into()),
     );
     let memory_op_3 = Operation::new(
         RWCounter::from(87),
         RW::READ,
-        MemoryWordOp::new_write(1, MemoryAddress::from(1), 32.into(), 32.into()),
+        MemoryOp::new_write(1, MemoryAddress::from(1), 32.into(), 32.into()),
     );
 
     let stack_op_0 = Operation::new(
@@ -176,12 +176,12 @@ fn state_circuit_simple_6() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryWordOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
     );
     let memory_op_1 = Operation::new(
         RWCounter::from(13),
         RW::READ,
-        MemoryWordOp::new_write(1, MemoryAddress::from(0), 32.into(), 32.into()),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 32.into()),
     );
     let storage_op_2 = Operation::new(
         RWCounter::from(19),
@@ -203,7 +203,7 @@ fn lexicographic_ordering_test_1() {
     let memory_op = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryWordOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
     );
     let storage_op = Operation::new(
         RWCounter::from(19),
@@ -225,12 +225,12 @@ fn lexicographic_ordering_test_2() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryWordOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
     );
     let memory_op_1 = Operation::new(
         RWCounter::from(13),
         RW::WRITE,
-        MemoryWordOp::new_write(1, MemoryAddress::from(0), 32.into(), 32.into()),
+        MemoryOp::new_write(1, MemoryAddress::from(0), 32.into(), 32.into()),
     );
     test_state_circuit_ok(vec![memory_op_0, memory_op_1], vec![], vec![]);
 }

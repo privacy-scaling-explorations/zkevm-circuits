@@ -77,7 +77,7 @@ mod mstore_tests {
     use crate::{
         circuit_input_builder::ExecState,
         mock::BlockData,
-        operation::{MemoryWordOp, StackOp, RW},
+        operation::{MemoryOp, StackOp, RW},
     };
     use eth_types::{
         bytecode,
@@ -142,14 +142,14 @@ mod mstore_tests {
         let slot = 0x100 - shift;
         assert_eq!(
             (2..4)
-                .map(|idx| &builder.block.container.memory_word
+                .map(|idx| &builder.block.container.memory
                     [step.bus_mapping_instance[idx].as_usize()])
                 .map(|operation| (operation.rw(), operation.op().clone()))
                 .collect_vec(),
             vec![
                 (
                     RW::WRITE,
-                    MemoryWordOp::new_write(
+                    MemoryOp::new_write(
                         1,
                         MemoryAddress(slot),
                         Word::from(0x1234u64),
@@ -158,7 +158,7 @@ mod mstore_tests {
                 ),
                 (
                     RW::WRITE,
-                    MemoryWordOp::new_write(
+                    MemoryOp::new_write(
                         1,
                         MemoryAddress(slot + 32),
                         Word::from(0x00),
@@ -219,7 +219,7 @@ mod mstore_tests {
         let shift = 0x100 % 32;
         let slot = 0x100 - shift;
         let memory_word_op =
-            &builder.block.container.memory_word[step.bus_mapping_instance[2].as_usize()];
+            &builder.block.container.memory[step.bus_mapping_instance[2].as_usize()];
 
         let mut slot_bytes = [0; 32];
         slot_bytes[shift] = 0x34;
@@ -228,7 +228,7 @@ mod mstore_tests {
             (memory_word_op.rw(), memory_word_op.op()),
             (
                 RW::WRITE,
-                &MemoryWordOp::new_write(1, MemoryAddress(slot), left_word, Word::zero())
+                &MemoryOp::new_write(1, MemoryAddress(slot), left_word, Word::zero())
             )
         )
     }

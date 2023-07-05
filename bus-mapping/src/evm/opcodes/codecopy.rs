@@ -129,7 +129,7 @@ mod codecopy_tests {
     use crate::{
         circuit_input_builder::{CopyDataType, ExecState, NumberOrHash},
         mock::BlockData,
-        operation::{MemoryWordOp, StackOp, RW},
+        operation::{MemoryOp, StackOp, RW},
         state_db::CodeDB,
     };
 
@@ -208,17 +208,17 @@ mod codecopy_tests {
             .clone()
             .unwrap();
 
-        assert_eq!(builder.block.container.memory_word.len(), word_ops);
+        assert_eq!(builder.block.container.memory.len(), word_ops);
         assert_eq!(
             (0..word_ops)
-                .map(|idx| &builder.block.container.memory_word[idx])
+                .map(|idx| &builder.block.container.memory[idx])
                 .map(|op| (op.rw(), op.op().clone()))
-                .collect::<Vec<(RW, MemoryWordOp)>>(),
+                .collect::<Vec<(RW, MemoryOp)>>(),
             (0..word_ops)
                 .map(|idx| {
                     (
                         RW::WRITE,
-                        MemoryWordOp::new_write(
+                        MemoryOp::new_write(
                             expected_call_id,
                             MemoryAddress(copy_start + idx * 32),
                             Word::from(&copied_bytes[idx * 32..(idx + 1) * 32]),
@@ -227,7 +227,7 @@ mod codecopy_tests {
                         ),
                     )
                 })
-                .collect::<Vec<(RW, MemoryWordOp)>>(),
+                .collect::<Vec<(RW, MemoryOp)>>(),
         );
 
         let copy_events = builder.block.copy_events.clone();
