@@ -11,6 +11,7 @@ use crate::{
 use eth_types::{Bytecode, GethExecStep, ToWord, Word, H256};
 use ethers_core::utils::keccak256;
 use std::cmp::max;
+use eth_types::evm_types::Memory;
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ReturnRevert;
@@ -189,22 +190,10 @@ fn handle_copy(
 
     let rw_counter_start = state.block_ctx.rwc;
 
-    let (src_shift, src_begin_slot) = state.get_addr_shift_slot(source.offset as u64).unwrap();
-    let (_, src_end_slot) = state
-        .get_addr_shift_slot((source.offset + copy_length - 1) as u64)
-        .unwrap();
-    let src_shift = src_shift as usize;
+    let (src_begin_slot, src_full_length, src_shift) = Memory::align_range(source.offset, copy_length);
+    let (dst_begin_slot, dst_full_length, dst_shift) = Memory::align_range(destination.offset, copy_length);
 
-    let (dst_shift, dst_begin_slot) = state
-        .get_addr_shift_slot(destination.offset as u64)
-        .unwrap();
-    let (_, dst_end_slot) = state
-        .get_addr_shift_slot((destination.offset + copy_length - 1) as u64)
-        .unwrap();
-    let dst_shift = dst_shift as usize;
-
-    let full_length =
-        max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot) as usize + 32;
+    let full_length = max(src_full_length, dst_full_length);
 
     let src_data = state
         .call_ctx()?
@@ -245,7 +234,7 @@ fn handle_copy(
         &src_data,
         full_length,
         source.offset,
-        src_begin_slot as usize,
+        src_begin_slot,
         copy_length,
     );
 
@@ -255,7 +244,7 @@ fn handle_copy(
         &dst_data,
         full_length,
         destination.offset,
-        dst_begin_slot as usize,
+        dst_begin_slot,
         copy_length,
     );
 
@@ -302,17 +291,14 @@ fn handle_create(
         .collect();
 
     let rw_counter_start = state.block_ctx.rwc;
-    let (_, dst_begin_slot) = state.get_addr_shift_slot(source.offset as u64).unwrap();
-    let (_, dst_end_slot) = state
-        .get_addr_shift_slot((source.offset + source.length) as u64)
-        .unwrap();
+    let (dst_begin_slot, full_length, _) = Memory::align_range(source.offset, source.length);
 
     let mut memory = state.call_ctx_mut()?.memory.clone();
-    let minimal_length = dst_end_slot as usize + 32;
+    let minimal_length = dst_begin_slot + full_length;
     memory.extend_at_least(minimal_length);
 
     // collect all bytecode to memory with padding word
-    let create_slot_len = (dst_end_slot + 32 - dst_begin_slot) as usize;
+    let create_slot_len = full_length;
 
     let mut copy_start = 0u64;
     let mut first_set = true;
@@ -326,9 +312,9 @@ fn handle_create(
 
     let mut copy_steps = Vec::with_capacity(source.length);
     for idx in 0..create_slot_len {
-        let value = memory.0[dst_begin_slot as usize + idx];
-        if (idx as u64 + dst_begin_slot < source.offset as u64)
-            || (idx as u64 + dst_begin_slot >= (source.offset + source.length) as u64)
+        let value = memory.0[dst_begin_slot + idx];
+        if (idx + dst_begin_slot < source.offset )
+            || (idx + dst_begin_slot >= source.offset + source.length)
         {
             // front and back mask byte
             copy_steps.push((value, false, true));
