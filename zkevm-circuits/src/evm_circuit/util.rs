@@ -530,9 +530,13 @@ mod tests {
             cm.get(CellType::Lookup(Table::U8)).unwrap().len(),
             N_U8_LOOKUPS
         );
-        assert_eq!(
-            cm.get(CellType::Lookup(Table::U16)).unwrap().len(),
-            N_U16_LOOKUPS
-        );
+        if N_U16_LOOKUPS == 0 {
+            assert!(cm.get(CellType::Lookup(Table::U16)).is_none());
+        } else {
+            assert_eq!(
+                cm.get(CellType::Lookup(Table::U16)).unwrap().len(),
+                N_U16_LOOKUPS
+            );
+        }
     }
 }
