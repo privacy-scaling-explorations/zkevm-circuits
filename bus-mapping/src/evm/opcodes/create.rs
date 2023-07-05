@@ -327,7 +327,7 @@ fn handle_copy(
     offset: usize,
     length: usize,
 ) -> Result<(Vec<u8>, H256, H256), Error> {
-    let rw_counter_start = state.block_ctx.rwc.clone();
+    let rw_counter_start = state.block_ctx.rwc;
     let call_ctx = state.call_ctx_mut()?;
     //let memory: &mut Memory = &mut call_ctx.memory;
     let memory: &mut Memory = &mut call_ctx.memory;
@@ -344,12 +344,9 @@ fn handle_copy(
         .collect();
 
     let (dst_begin_slot, full_length, _) = Memory::align_range(offset as u64, length as u64);
-    let mem_read = {
-        let memory_updated = memory.clone();
-        memory_updated
-    };
+    let mem_read = memory.clone();
     // collect all bytecode to memory with padding word
-    let create_slot_len = full_length as usize;
+    let create_slot_len = full_length;
 
     let mut copy_start = 0u64;
     let mut first_set = true;
@@ -364,9 +361,9 @@ fn handle_copy(
 
     let mut copy_steps = Vec::with_capacity(length);
     for idx in 0..create_slot_len {
-        let value = mem_read.0[dst_begin_slot as usize + idx];
-        if (idx as u64 + dst_begin_slot < offset as u64)
-            || (idx as u64 + dst_begin_slot >= (offset + length) as u64)
+        let value = mem_read.0[dst_begin_slot + idx];
+        if (idx + dst_begin_slot < offset)
+            || (idx + dst_begin_slot >= offset + length)
         {
             // front and back mask byte
             copy_steps.push((value, false, true));
