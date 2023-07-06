@@ -1,8 +1,8 @@
 use super::{
     param::{
         BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, EXP_TABLE_LOOKUPS,
-        FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
-        N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
+        FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_U16_LOOKUPS,
+        N_U8_LOOKUPS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
     step::HasExecutionState,
     util::{instrumentation::Instrument, CachedRegion, StoredExpression},
@@ -116,14 +116,13 @@ mod sstore;
 mod stop;
 mod swap;
 
-use self::sha3::Sha3Gadget;
+use self::{block_ctx::BlockCtxGadget, sha3::Sha3Gadget};
 use add_sub::AddSubGadget;
 use addmod::AddModGadget;
 use address::AddressGadget;
 use balance::BalanceGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
-use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
 use blockhash::BlockHashGadget;
 use byte::ByteGadget;
 use calldatacopy::CallDataCopyGadget;
@@ -287,9 +286,7 @@ pub struct ExecutionConfig<F> {
     stop_gadget: Box<StopGadget<F>>,
     swap_gadget: Box<SwapGadget<F>>,
     blockhash_gadget: Box<BlockHashGadget<F>>,
-    block_ctx_u64_gadget: Box<BlockCtxU64Gadget<F>>,
-    block_ctx_u160_gadget: Box<BlockCtxU160Gadget<F>>,
-    block_ctx_u256_gadget: Box<BlockCtxU256Gadget<F>>,
+    block_ctx_gadget: Box<BlockCtxGadget<F>>,
     // error gadgets
     error_oog_call: Box<ErrorOOGCallGadget<F>>,
     error_oog_constant: Box<ErrorOOGConstantGadget<F>>,
@@ -327,7 +324,8 @@ impl<F: Field> ExecutionConfig<F> {
         meta: &mut ConstraintSystem<F>,
         challenges: Challenges<Expression<F>>,
         fixed_table: &dyn LookupTable<F>,
-        byte_table: &dyn LookupTable<F>,
+        u8_table: &dyn LookupTable<F>,
+        u16_table: &dyn LookupTable<F>,
         tx_table: &dyn LookupTable<F>,
         rw_table: &dyn LookupTable<F>,
         bytecode_table: &dyn LookupTable<F>,
@@ -553,9 +551,7 @@ impl<F: Field> ExecutionConfig<F> {
             sstore_gadget: configure_gadget!(),
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),
-            block_ctx_u64_gadget: configure_gadget!(),
-            block_ctx_u160_gadget: configure_gadget!(),
-            block_ctx_u256_gadget: configure_gadget!(),
+            block_ctx_gadget: configure_gadget!(),
             // error gadgets
             error_oog_constant: configure_gadget!(),
             error_oog_static_memory_gadget: configure_gadget!(),
@@ -589,7 +585,8 @@ impl<F: Field> ExecutionConfig<F> {
         Self::configure_lookup(
             meta,
             fixed_table,
-            byte_table,
+            u8_table,
+            u16_table,
             tx_table,
             rw_table,
             bytecode_table,
@@ -804,7 +801,8 @@ impl<F: Field> ExecutionConfig<F> {
     fn configure_lookup(
         meta: &mut ConstraintSystem<F>,
         fixed_table: &dyn LookupTable<F>,
-        byte_table: &dyn LookupTable<F>,
+        u8_table: &dyn LookupTable<F>,
+        u16_table: &dyn LookupTable<F>,
         tx_table: &dyn LookupTable<F>,
         rw_table: &dyn LookupTable<F>,
         bytecode_table: &dyn LookupTable<F>,
@@ -822,6 +820,8 @@ impl<F: Field> ExecutionConfig<F> {
                 meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                     let table_expressions = match table {
                         Table::Fixed => fixed_table,
+                        Table::U8 => u8_table,
+                        Table::U16 => u16_table,
                         Table::Tx => tx_table,
                         Table::Rw => rw_table,
                         Table::Bytecode => bytecode_table,
@@ -835,15 +835,6 @@ impl<F: Field> ExecutionConfig<F> {
                         column_expr,
                         rlc::expr(&table_expressions, challenges.lookup_input()),
                     )]
-                });
-            }
-        }
-        for column in cell_manager.columns().iter() {
-            if let CellType::LookupByte = column.cell_type {
-                let column_expr = column.expr(meta);
-                meta.lookup_any("Byte lookup", |meta| {
-                    let byte_table_expression = byte_table.table_exprs(meta)[0].clone();
-                    vec![(column_expr, byte_table_expression)]
                 });
             }
         }
@@ -910,7 +901,7 @@ impl<F: Field> ExecutionConfig<F> {
                 let last_call = block
                     .txs
                     .last()
-                    .map(|tx| tx.calls[0].clone())
+                    .map(|tx| tx.calls()[0].clone())
                     .unwrap_or_else(Call::default);
                 let end_block_not_last = &block.end_block_not_last;
                 let end_block_last = &block.end_block_last;
@@ -919,9 +910,9 @@ impl<F: Field> ExecutionConfig<F> {
                     .txs
                     .iter()
                     .flat_map(|tx| {
-                        tx.steps
+                        tx.steps()
                             .iter()
-                            .map(move |step| (tx, &tx.calls[step.call_index], step))
+                            .map(move |step| (tx, &tx.calls()[step.call_index], step))
                     })
                     .chain(std::iter::once((&dummy_tx, &last_call, end_block_not_last)))
                     .peekable();
@@ -1045,7 +1036,8 @@ impl<F: Field> ExecutionConfig<F> {
             ("EVM_lookup_exp", EXP_TABLE_LOOKUPS),
             ("EVM_adv_phase2", N_PHASE2_COLUMNS),
             ("EVM_copy", N_COPY_COLUMNS),
-            ("EVM_lookup_byte", N_BYTE_LOOKUPS),
+            ("EVM_lookup_u8", N_U8_LOOKUPS),
+            ("EVM_lookup_u16", N_U16_LOOKUPS),
             ("EVM_adv_phase1", N_PHASE1_COLUMNS),
         ];
         let mut group_index = 0;
@@ -1222,9 +1214,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
             ExecutionState::SCMP => assign_exec_step!(self.signed_comparator_gadget),
             ExecutionState::SDIV_SMOD => assign_exec_step!(self.sdiv_smod_gadget),
-            ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
-            ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),
-            ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
+            ExecutionState::BLOCKCTX => assign_exec_step!(self.block_ctx_gadget),
             ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             // dummy gadgets
@@ -1395,10 +1385,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         let rlc_assignments: BTreeSet<_> = (0..step.rw_indices_len())
             .map(|index| block.get_rws(step, index))
-            .map(|rw| {
-                rw.table_assignment_aux(evm_randomness)
-                    .rlc(lookup_randomness)
-            })
+            .map(|rw| rw.table_assignment().unwrap().rlc(lookup_randomness))
             .fold(BTreeSet::<F>::new(), |mut set, value| {
                 set.insert(value);
                 set
@@ -1485,8 +1472,8 @@ impl<F: Field> ExecutionConfig<F> {
             }
 
             let rw = block.get_rws(step, idx);
-            let table_assignments = rw.table_assignment_aux(evm_randomness);
-            let rlc = table_assignments.rlc(lookup_randomness);
+            let table_assignments = rw.table_assignment();
+            let rlc = table_assignments.unwrap().rlc(lookup_randomness);
             if rlc != assigned_rw_value.1 {
                 log::error!(
                     "incorrect rw witness. lookup input name: \"{}\"\nassigned={:?}\nrlc     ={:?}\n{}th rw of step {:?}, rw: {:?}",

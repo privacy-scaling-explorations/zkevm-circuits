@@ -11,7 +11,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{word::WordExpr, Expr},
 };
 use eth_types::{evm_types::INVALID_INIT_CODE_FIRST_BYTE, Field};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -35,11 +35,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         let opcode = cb.query_cell();
         let first_byte = cb.query_cell();
 
-        let offset = cb.query_cell_phase2();
-        let length = cb.query_word_rlc();
+        let offset = cb.query_word_unchecked();
+        let length = cb.query_memory_address();
 
-        cb.stack_pop(offset.expr());
-        cb.stack_pop(length.expr());
+        cb.stack_pop(offset.to_word());
+        cb.stack_pop(length.to_word());
         cb.require_true("is_create is true", cb.curr.state.is_create.expr());
 
         let memory_address = MemoryAddressGadget::construct(cb, offset, length);

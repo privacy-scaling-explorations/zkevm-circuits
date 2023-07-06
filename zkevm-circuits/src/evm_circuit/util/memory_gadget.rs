@@ -1,37 +1,38 @@
-use super::{constraint_builder::ConstrainBuilderCommon, CachedRegion};
+use super::{constraint_builder::ConstrainBuilderCommon, CachedRegion, MemoryAddress, WordExpr};
 use crate::{
     evm_circuit::{
         param::{N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
         util::{
             constraint_builder::EVMConstraintBuilder,
-            from_bytes,
             math_gadget::{ConstantDivisionGadget, IsZeroGadget, MinMaxGadget, RangeCheckGadget},
-            select, sum, MemoryAddress,
+            select, sum, Cell,
         },
     },
     util::{
-        cell_manager::{Cell, CellType},
+        word::{Word, WordCell},
         Expr,
     },
 };
 use array_init::array_init;
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, U256};
+use gadgets::util::not;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
+use itertools::Itertools;
 
 /// Decodes the usable part of an address stored in a Word
 pub(crate) mod address_low {
-    use crate::evm_circuit::{
-        param::N_BYTES_MEMORY_ADDRESS,
-        util::{from_bytes, Word},
+    use crate::{
+        evm_circuit::{param::N_BYTES_MEMORY_ADDRESS, util::from_bytes},
+        util::word::Word32Cell,
     };
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: Field>(address: &Word<F>) -> Expression<F> {
-        from_bytes::expr(&address.cells[..N_BYTES_MEMORY_ADDRESS])
+    pub(crate) fn expr<F: Field>(address: &Word32Cell<F>) -> Expression<F> {
+        from_bytes::expr(&address.limbs[..N_BYTES_MEMORY_ADDRESS])
     }
 
     pub(crate) fn value(address: [u8; 32]) -> u64 {
@@ -44,15 +45,15 @@ pub(crate) mod address_low {
 /// The sum of bytes of the address that are unused for most calculations on the
 /// address
 pub(crate) mod address_high {
-    use crate::evm_circuit::{
-        param::N_BYTES_MEMORY_ADDRESS,
-        util::{sum, Word},
+    use crate::{
+        evm_circuit::{param::N_BYTES_MEMORY_ADDRESS, util::sum},
+        util::word::Word32Cell,
     };
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: Field>(address: &Word<F>) -> Expression<F> {
-        sum::expr(&address.cells[N_BYTES_MEMORY_ADDRESS..])
+    pub(crate) fn expr<F: Field>(address: &Word32Cell<F>) -> Expression<F> {
+        sum::expr(&address.limbs[N_BYTES_MEMORY_ADDRESS..])
     }
 
     pub(crate) fn value<F: Field>(address: [u8; 32]) -> F {
@@ -66,8 +67,8 @@ pub(crate) mod address_high {
 /// the RLC value for `memory_offset` need not match the bytes.
 #[derive(Clone, Debug)]
 pub(crate) struct MemoryAddressGadget<F> {
-    memory_offset: Cell<F>,
     memory_offset_bytes: MemoryAddress<F>,
+    memory_offset: WordCell<F>,
     memory_length: MemoryAddress<F>,
     memory_length_is_zero: IsZeroGadget<F>,
 }
@@ -75,28 +76,24 @@ pub(crate) struct MemoryAddressGadget<F> {
 impl<F: Field> MemoryAddressGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        memory_offset: Cell<F>,
+        memory_offset: WordCell<F>,
         memory_length: MemoryAddress<F>,
     ) -> Self {
-        debug_assert_eq!(
-            CellType::StoragePhase2,
-            cb.curr.cell_manager.columns()[memory_offset.column_idx].cell_type
-        );
-        let memory_length_is_zero = IsZeroGadget::construct(cb, sum::expr(&memory_length.cells));
-        let memory_offset_bytes = cb.query_word_rlc();
+        let memory_length_is_zero = IsZeroGadget::construct(cb, memory_length.sum_expr());
+        let memory_offset_bytes = cb.query_memory_address();
 
         let has_length = 1.expr() - memory_length_is_zero.expr();
         cb.condition(has_length, |cb| {
-            cb.require_equal(
+            cb.require_equal_word(
                 "Offset decomposition into 5 bytes",
-                memory_offset_bytes.expr(),
-                memory_offset.expr(),
+                Word::from_lo_unchecked(memory_offset_bytes.expr()),
+                memory_offset.to_word(),
             );
         });
 
         Self {
-            memory_offset,
             memory_offset_bytes,
+            memory_offset,
             memory_length,
             memory_length_is_zero,
         }
@@ -112,31 +109,21 @@ impl<F: Field> MemoryAddressGadget<F> {
         let memory_offset_bytes = memory_offset.to_le_bytes();
         let memory_length_bytes = memory_length.to_le_bytes();
         let memory_length_is_zero = memory_length.is_zero();
-        self.memory_offset.assign(
-            region,
-            offset,
-            region.word_rlc(U256::from_little_endian(&memory_offset_bytes)),
-        )?;
         self.memory_offset_bytes.assign(
             region,
             offset,
-            Some(if memory_length_is_zero {
-                [0; 5]
+            if memory_length_is_zero {
+                Some([0; 5])
             } else {
                 memory_offset_bytes[..N_BYTES_MEMORY_ADDRESS]
                     .try_into()
-                    .unwrap()
-            }),
+                    .ok()
+            },
         )?;
-        self.memory_length.assign(
-            region,
-            offset,
-            Some(
-                memory_length_bytes[..N_BYTES_MEMORY_ADDRESS]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+        self.memory_offset
+            .assign_u256(region, offset, memory_offset)?;
+        self.memory_length
+            .assign_u256(region, offset, memory_length)?;
         self.memory_length_is_zero
             .assign(region, offset, sum::value(&memory_length_bytes))?;
         Ok(if memory_length_is_zero {
@@ -150,19 +137,13 @@ impl<F: Field> MemoryAddressGadget<F> {
         1.expr() - self.memory_length_is_zero.expr()
     }
 
+    // offset is the valid offset. It might not equal the offset pop from stack if
+    // `self.has_length()` is zero
     pub(crate) fn offset(&self) -> Expression<F> {
-        self.has_length() * from_bytes::expr(&self.memory_offset_bytes.cells)
-    }
-
-    pub(crate) fn offset_rlc(&self) -> Expression<F> {
-        self.memory_offset.expr()
+        self.has_length() * self.memory_offset_bytes.expr()
     }
 
     pub(crate) fn length(&self) -> Expression<F> {
-        from_bytes::expr(&self.memory_length.cells)
-    }
-
-    pub(crate) fn length_rlc(&self) -> Expression<F> {
         self.memory_length.expr()
     }
 
@@ -415,11 +396,6 @@ pub(crate) struct BufferReaderGadget<F, const MAX_BYTES: usize, const N_BYTES_ME
     /// The selectors that indicate if the corrsponding byte contains real data
     /// or is padded
     selectors: [Cell<F>; MAX_BYTES],
-    /// `bound_dist` is defined as `max(addr_end - addr_start - i, 0)` for `i`
-    /// in 0..MAX_BYTES
-    bound_dist: [Cell<F>; MAX_BYTES],
-    /// Check if bound_dist is zero
-    bound_dist_is_zero: [IsZeroGadget<F>; MAX_BYTES],
     /// The min gadget to take the minimum of addr_start and addr_end
     min_gadget: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
 }
@@ -434,39 +410,6 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
     ) -> Self {
         let bytes = array_init(|_| cb.query_byte());
         let selectors = array_init(|_| cb.query_bool());
-        let bound_dist = array_init(|_| cb.query_cell());
-        let bound_dist_is_zero =
-            array_init(|idx| IsZeroGadget::construct(cb, bound_dist[idx].expr()));
-
-        // Define bound_dist[i] = max(addr_end - addr_start - i, 0)
-        // The purpose of bound_dist is to check if the access to the buffer
-        // is out of bound. When bound_dist[i] == 0, it indicates OOB access
-        // and so bytes[i] has to be 0.
-        // Because the bound_dist is decreasing by at most 1 each time, we can
-        // use this property to reduce the use of LtGadget by adding constraints
-        // to the diff between two consecutive bound_dists.
-
-        // The constraints on bound_dist[0].
-        //   bound_dist[0] == addr_end - addr_start if addr_start < addr_end
-        //   bound_dist[0] == 0 if addr_start >= addr_end
-        let min_gadget = MinMaxGadget::construct(cb, addr_start, addr_end.clone());
-        cb.require_equal(
-            "bound_dist[0] == addr_end - min(addr_start, add_end)",
-            bound_dist[0].expr(),
-            addr_end - min_gadget.min(),
-        );
-        // Constraints on bound_dist[1..MAX_BYTES]
-        //   diff = bound_dist[idx - 1] - bound_dist[idx]
-        //   diff == 1 if bound_dist[idx - 1] != 0
-        //   diff == 0 if bound_dist[idx - 1] == 0
-        for idx in 1..MAX_BYTES {
-            let diff = bound_dist[idx - 1].expr() - bound_dist[idx].expr();
-            cb.require_equal(
-                "diff == 0 if bound_dist[i - 1] == 0; otherwise 1",
-                diff,
-                select::expr(bound_dist_is_zero[idx - 1].expr(), 0.expr(), 1.expr()),
-            )
-        }
 
         // Constraints on bytes and selectors
         for i in 0..MAX_BYTES {
@@ -486,17 +429,38 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
                 "bytes[i] == 0 when selectors[i] == 0",
                 (1.expr() - selectors[i].expr()) * bytes[i].expr(),
             );
-            cb.add_constraint(
-                "bytes[i] == 0 when bound_dist[i] == 0",
-                bound_dist_is_zero[i].expr() * bytes[i].expr(),
-            )
         }
+
+        // Look at the data length, which can be negative, or within the buffer span, or larger.
+        // Decide what is the other operand of the MinMaxGadget gadget. If the buffer is empty
+        // because end <= start, compare the length to 0. Otherwise, compare to the buffer size.
+        let is_empty = not::expr(&selectors[0]);
+        let cap = select::expr(is_empty.expr(), 0.expr(), MAX_BYTES.expr());
+        let signed_len = addr_end - addr_start;
+        let min_gadget = MinMaxGadget::construct(cb, cap, signed_len);
+
+        // If we claim that the buffer is empty, we prove that the end is at or before the start.
+        //     buffer_len = max(0, signed_len) = 0
+        cb.condition(is_empty.expr(), |cb| {
+            cb.require_zero("addr_end <= addr_start", min_gadget.max());
+        });
+
+        // Otherwise, the buffer length equals the data length, capped at the buffer size.
+        //     buffer_len = min(MAX_BYTES, signed_len)
+        cb.condition(not::expr(is_empty), |cb| {
+            let buffer_len = sum::expr(&selectors);
+            let capped_len = min_gadget.min();
+
+            cb.require_equal(
+                "buffer length == end - start (capped)",
+                buffer_len,
+                capped_len,
+            );
+        });
 
         BufferReaderGadget {
             bytes,
             selectors,
-            bound_dist,
-            bound_dist_is_zero,
             min_gadget,
         }
     }
@@ -508,25 +472,32 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         addr_start: u64,
         addr_end: u64,
         bytes: &[u8],
-        selectors: &[bool],
     ) -> Result<(), Error> {
-        self.min_gadget
-            .assign(region, offset, F::from(addr_start), F::from(addr_end))?;
-
-        assert_eq!(selectors.len(), MAX_BYTES);
-        for (idx, selector) in selectors.iter().enumerate() {
-            self.selectors[idx].assign(region, offset, Value::known(F::from(*selector as u64)))?;
-            self.bytes[idx].assign(region, offset, Value::known(F::from(bytes[idx] as u64)))?;
-            // assign bound_dist and bound_dist_is_zero
-            let oob = addr_start + idx as u64 >= addr_end;
-            let bound_dist = if oob {
-                F::ZERO
-            } else {
-                F::from(addr_end - addr_start - idx as u64)
-            };
-            self.bound_dist[idx].assign(region, offset, Value::known(bound_dist))?;
-            self.bound_dist_is_zero[idx].assign(region, offset, bound_dist)?;
+        assert_eq!(bytes.len(), MAX_BYTES);
+        for (idx, ((byte_col, &byte_val), selector_col)) in self
+            .bytes
+            .iter()
+            .zip_eq(bytes.iter())
+            .zip_eq(self.selectors.iter())
+            .enumerate()
+        {
+            let selector = (addr_start + idx as u64) < addr_end;
+            selector_col.assign(region, offset, Value::known(F::from(selector as u64)))?;
+            byte_col.assign(region, offset, Value::known(F::from(byte_val as u64)))?;
         }
+
+        let is_empty = addr_start >= addr_end;
+        let cap = if is_empty { 0 } else { MAX_BYTES };
+        let signed_len = if is_empty {
+            -F::from(addr_start - addr_end)
+        } else {
+            F::from(addr_end - addr_start)
+        };
+        self.min_gadget
+            .assign(region, offset, F::from(cap as u64), signed_len)?;
+
+        // Completeness: MinMaxGadget requires `signed_len ∈ (cap-RANGE; cap+RANGE]`, covering all
+        // cases. If is_empty, signed_len ∈ (-RANGE; 0], otherwise signed_len ∈ [1; RANGE).
         Ok(())
     }
 
@@ -534,16 +505,8 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         self.bytes[idx].expr()
     }
 
-    pub(crate) fn has_data(&self, idx: usize) -> Expression<F> {
-        self.selectors[idx].expr()
-    }
-
     /// Indicate whether the bytes\[idx\] is read from the buffer
     pub(crate) fn read_flag(&self, idx: usize) -> Expression<F> {
-        self.has_data(idx) * (1.expr() - self.bound_dist_is_zero[idx].expr())
-    }
-
-    pub(crate) fn num_bytes(&self) -> Expression<F> {
-        sum::expr(&self.selectors)
+        self.selectors[idx].expr()
     }
 }
