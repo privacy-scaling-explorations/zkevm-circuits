@@ -1,4 +1,7 @@
-#![allow(missing_docs)]
+//! EVM execution state. We model the EVM execution as a finite state machine. The execution of a
+//! EVM block goes from one state to another, but never at an undefined state. The EVM circuit
+//! enables the selectors and thus activates the constraints for the state that the execution
+//! reaches.
 
 use super::{
     param::MAX_STEP_HEIGHT,
@@ -29,8 +32,12 @@ use std::{fmt::Display, iter};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
+// allow missing doc because some docs here are tedious and not helpful
+#[allow(missing_docs)]
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
+/// All the possible execution states that the computation of EVM can arrive.
+/// Some states are shared by multiple opcodes.
 pub enum ExecutionState {
     // Internal state
     BeginTx,
@@ -38,18 +45,25 @@ pub enum ExecutionState {
     EndBlock,
     // Opcode successful cases
     STOP,
-    ADD_SUB,     // ADD, SUB
-    MUL_DIV_MOD, // MUL, DIV, MOD
-    SDIV_SMOD,   // SDIV, SMOD
-    SHL_SHR,     // SHL, SHR
+    /// ADD and SUB opcodes share this state
+    ADD_SUB,
+    /// MUL, DIV, MOD
+    MUL_DIV_MOD,
+    /// SDIV, SMOD
+    SDIV_SMOD,
+    /// SHL, SHR
+    SHL_SHR,
     ADDMOD,
     MULMOD,
     EXP,
     SIGNEXTEND,
-    CMP,  // LT, GT, EQ
-    SCMP, // SLT, SGT
+    /// LT, GT, EQ
+    CMP,
+    /// SLT, SGT
+    SCMP,
     ISZERO,
-    BITWISE, // AND, OR, XOR
+    /// AND, OR, XOR
+    BITWISE,
     NOT,
     BYTE,
     SAR,
@@ -71,11 +85,13 @@ pub enum ExecutionState {
     RETURNDATACOPY,
     EXTCODEHASH,
     BLOCKHASH,
-    BLOCKCTX, // TIMESTAMP, NUMBER, GASLIMIT, COINBASE, DIFFICULTY, BASEFEE
+    /// TIMESTAMP, NUMBER, GASLIMIT, COINBASE, DIFFICULTY, BASEFEE
+    BLOCKCTX,
     CHAINID,
     SELFBALANCE,
     POP,
-    MEMORY, // MLOAD, MSTORE, MSTORE8
+    /// MLOAD, MSTORE, MSTORE8
+    MEMORY,
     SLOAD,
     SSTORE,
     JUMP,
@@ -84,13 +100,18 @@ pub enum ExecutionState {
     MSIZE,
     GAS,
     JUMPDEST,
-    PUSH, // PUSH1, PUSH2, ..., PUSH32
-    DUP,  // DUP1, DUP2, ..., DUP16
-    SWAP, // SWAP1, SWAP2, ..., SWAP16
-    LOG,  // LOG0, LOG1, ..., LOG4
+    /// PUSH1, PUSH2, ..., PUSH32
+    PUSH,
+    /// DUP1, DUP2, ..., DUP16
+    DUP,
+    /// SWAP1, SWAP2, ..., SWAP16
+    SWAP,
+    /// LOG0, LOG1, ..., LOG4
+    LOG,
     CREATE,
-    CALL_OP,       // CALL, CALLCODE, DELEGATECALL, STATICCALL
-    RETURN_REVERT, // RETURN, REVERT
+    /// CALL, CALLCODE, DELEGATECALL, STATICCALL
+    CALL_OP,
+    RETURN_REVERT,
     CREATE2,
     SELFDESTRUCT,
     // Error cases
@@ -338,6 +359,7 @@ impl ExecutionState {
             || self.halts_in_exception()
     }
 
+    /// Get the opocdes that are related to the execution state
     pub fn responsible_opcodes(&self) -> Vec<ResponsibleOp> {
         if matches!(self, Self::ErrorStack) {
             return OpcodeId::valid_opcodes()
@@ -502,11 +524,12 @@ impl ExecutionState {
         .collect()
     }
 
+    /// Get the state hight
     pub fn get_step_height_option(&self) -> Option<usize> {
         EXECUTION_STATE_HEIGHT_MAP.get(self).copied()
     }
 
-    pub fn get_step_height(&self) -> usize {
+    pub(crate) fn get_step_height(&self) -> usize {
         self.get_step_height_option()
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", self))
     }
@@ -529,6 +552,7 @@ impl From<OpcodeId> for ResponsibleOp {
 }
 
 impl ResponsibleOp {
+    /// Get the opcode
     pub fn opcode(&self) -> OpcodeId {
         *match self {
             ResponsibleOp::Op(opcode) => opcode,
