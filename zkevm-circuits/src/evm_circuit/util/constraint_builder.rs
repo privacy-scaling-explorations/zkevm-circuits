@@ -485,12 +485,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.query_cells(cell_type, 1).first().unwrap().clone()
     }
 
-    pub(crate) fn query_bool_with_type(&mut self, cell_type: CellType) -> Cell<F> {
-        let cell = self.query_cell_with_type(cell_type);
-        self.require_boolean("Constrain cell to be a bool", cell.expr());
-        cell
-    }
-
     fn query_cells(&mut self, cell_type: CellType, count: usize) -> Vec<Cell<F>> {
         if self.in_next_step {
             &mut self.next

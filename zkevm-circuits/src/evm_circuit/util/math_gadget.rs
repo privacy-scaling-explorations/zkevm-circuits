@@ -4,8 +4,6 @@ use halo2_proofs::plonk::Expression;
 
 mod abs_word;
 mod add_words;
-#[allow(dead_code)] // we might want to use batched is zero for something
-mod batched_is_zero;
 mod byte_size;
 mod cmp_words;
 mod comparison;
