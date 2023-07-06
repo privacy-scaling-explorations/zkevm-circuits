@@ -10,15 +10,14 @@ use bus_mapping::operation::{
 use eth_types::{
     address,
     evm_types::{MemoryAddress, StackAddress},
-    Address, Field, ToAddress, Word, U256,
+    Address, ToAddress, Word, U256,
 };
 use gadgets::binary_number::AsBits;
 use halo2_proofs::{
     arithmetic::Field as Halo2Field,
-    circuit::SimpleFloorPlanner,
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::{Bn256, Fr},
-    plonk::{keygen_vk, Advice, Circuit, Column, ConstraintSystem},
+    plonk::{keygen_vk, Circuit, ConstraintSystem},
     poly::kzg::commitment::ParamsKZG,
 };
 use rand::SeedableRng;

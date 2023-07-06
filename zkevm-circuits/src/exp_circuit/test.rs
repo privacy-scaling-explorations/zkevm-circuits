@@ -5,13 +5,10 @@ use crate::{
 };
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, FixedCParams},
-    evm::OpcodeId,
     mock::BlockData,
 };
 use eth_types::{bytecode, geth_types::GethData, Bytecode, Field, Word};
-use halo2_proofs::{
-    circuit::SimpleFloorPlanner, dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit,
-};
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use mock::TestContext;
 
 #[test]

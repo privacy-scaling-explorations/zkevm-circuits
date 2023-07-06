@@ -803,7 +803,6 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
 
 #[derive(Clone, Debug)]
 pub(crate) struct SloadGasGadget<F> {
-    is_warm: Expression<F>,
     gas_cost: Expression<F>,
 }
 
@@ -815,7 +814,7 @@ impl<F: Field> SloadGasGadget<F> {
             GasCost::COLD_SLOAD.expr(),
         );
 
-        Self { is_warm, gas_cost }
+        Self { gas_cost }
     }
 
     pub(crate) fn expr(&self) -> Expression<F> {

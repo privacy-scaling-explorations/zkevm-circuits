@@ -22,7 +22,7 @@ use halo2_proofs::{
     circuit::SimpleFloorPlanner,
     dev::MockProver,
     plonk::{
-        Circuit, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, Selector, ThirdPhase,
+        Circuit, ConstraintSystem, Error, FirstPhase, SecondPhase, Selector, ThirdPhase,
     },
 };
 
@@ -39,10 +39,6 @@ pub(crate) const WORD_CELL_MAX: Word = U256([
 // I256::MAX = 2^255 - 1, and I256::MIN = 2^255.
 pub(crate) const WORD_SIGNED_MAX: Word = U256([u64::MAX, u64::MAX, u64::MAX, i64::MAX as _]);
 pub(crate) const WORD_SIGNED_MIN: Word = U256([0, 0, 0, i64::MIN as _]);
-
-pub(crate) fn generate_power_of_randomness<F: Field>(randomness: F) -> Vec<F> {
-    (1..32).map(|exp| randomness.pow([exp, 0, 0, 0])).collect()
-}
 
 pub(crate) trait MathGadgetContainer<F: Field>: Clone {
     fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self
@@ -68,19 +64,16 @@ where
     stored_expressions: Vec<StoredExpression<F>>,
     math_gadget_container: G,
     _marker: PhantomData<F>,
-    challenges: Challenges<Expression<F>>,
 }
 
 pub(crate) struct UnitTestMathGadgetBaseCircuit<G> {
-    size: usize,
     witnesses: Vec<Word>,
     _marker: PhantomData<G>,
 }
 
 impl<G> UnitTestMathGadgetBaseCircuit<G> {
-    fn new(size: usize, witnesses: Vec<Word>) -> Self {
+    fn new(witnesses: Vec<Word>) -> Self {
         UnitTestMathGadgetBaseCircuit {
-            size,
             witnesses,
             _marker: PhantomData,
         }
@@ -94,7 +87,6 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
 
     fn without_witnesses(&self) -> Self {
         UnitTestMathGadgetBaseCircuit {
-            size: 0,
             witnesses: vec![],
             _marker: PhantomData,
         }
@@ -172,7 +164,6 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                 stored_expressions,
                 math_gadget_container,
                 _marker: PhantomData,
-                challenges: challenges_exprs,
             },
             challenges,
         )
@@ -257,7 +248,7 @@ pub(crate) fn test_math_gadget_container<F: Field, G: MathGadgetContainer<F>>(
     expected_success: bool,
 ) {
     const K: usize = 12;
-    let circuit = UnitTestMathGadgetBaseCircuit::<G>::new(K, witnesses);
+    let circuit = UnitTestMathGadgetBaseCircuit::<G>::new(witnesses);
 
     let prover = MockProver::<F>::run(K as u32, &circuit, vec![]).unwrap();
     if expected_success {

@@ -28,7 +28,7 @@ pub mod state_circuit;
 pub mod super_circuit;
 pub mod table;
 
-#[cfg(feature = "test-util")]
+#[cfg(any(test, feature = "test-util"))]
 pub mod test_util;
 
 pub mod instance;

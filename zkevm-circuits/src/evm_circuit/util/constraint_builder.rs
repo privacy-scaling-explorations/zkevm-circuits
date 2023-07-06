@@ -276,6 +276,7 @@ impl<F: Field> BaseConstraintBuilder<F> {
 enum ConstraintLocation {
     Step,
     StepFirst,
+    #[allow(dead_code)] // step last is meaningful
     StepLast,
     NotStepLast,
 }
@@ -302,13 +303,11 @@ pub(crate) struct EVMConstraintBuilder<'a, F: Field> {
     rw_counter_offset: Expression<F>,
     program_counter_offset: usize,
     stack_pointer_offset: Expression<F>,
-    log_id_offset: usize,
     in_next_step: bool,
     conditions: Vec<Expression<F>>,
     constraints_location: ConstraintLocation,
     stored_expressions: Vec<StoredExpression<F>>,
     pub(crate) debug_expressions: Vec<(String, Expression<F>)>,
-
     meta: &'a mut ConstraintSystem<F>,
 }
 
@@ -348,7 +347,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             rw_counter_offset: 0.expr(),
             program_counter_offset: 0,
             stack_pointer_offset: 0.expr(),
-            log_id_offset: 0,
             in_next_step: false,
             conditions: Vec::new(),
             constraints_location: ConstraintLocation::Step,
@@ -520,11 +518,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             "Constrain next execution state",
             1.expr() - next_state.expr(),
         );
-    }
-
-    pub(crate) fn require_next_state_not(&mut self, execution_state: ExecutionState) {
-        let next_state = self.next.execution_state_selector([execution_state]);
-        self.add_constraint("Constrain next execution state not", next_state.expr());
     }
 
     pub(crate) fn require_step_state_transition(
@@ -1435,32 +1428,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         ret
     }
 
-    /// This function needs to be used with extra precaution. You need to make
-    /// sure the layout is the same as the gadget for `next_step_state`.
-    /// `query_cell` will return cells in the next step in the `constraint`
-    /// function.
-    pub(crate) fn constrain_next_step<R>(
-        &mut self,
-        next_step_state: ExecutionState,
-        condition: Option<Expression<F>>,
-        constraint: impl FnOnce(&mut Self) -> R,
-    ) -> R {
-        assert!(!self.in_next_step, "Already in the next step");
-        self.in_next_step = true;
-        let ret = match condition {
-            None => {
-                self.require_next_state(next_step_state);
-                constraint(self)
-            }
-            Some(cond) => self.condition(cond, |cb| {
-                cb.require_next_state(next_step_state);
-                constraint(cb)
-            }),
-        };
-        self.in_next_step = false;
-        ret
-    }
-
     /// TODO: Doc
     fn constraint_at_location<R>(
         &mut self,
@@ -1481,10 +1448,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn step_first<R>(&mut self, constraint: impl FnOnce(&mut Self) -> R) -> R {
         self.constraint_at_location(ConstraintLocation::StepFirst, constraint)
     }
-    /// TODO: Doc
-    pub(crate) fn step_last<R>(&mut self, constraint: impl FnOnce(&mut Self) -> R) -> R {
-        self.constraint_at_location(ConstraintLocation::StepLast, constraint)
-    }
+
     /// TODO: Doc
     pub(crate) fn not_step_last<R>(&mut self, constraint: impl FnOnce(&mut Self) -> R) -> R {
         self.constraint_at_location(ConstraintLocation::NotStepLast, constraint)

@@ -1,11 +1,8 @@
 use crate::evm_circuit::util::{
-    constraint_builder::EVMConstraintBuilder, math_gadget::*, transpose_val_ret, CachedRegion,
+    constraint_builder::EVMConstraintBuilder, math_gadget::*, CachedRegion,
 };
 use eth_types::Field;
-use halo2_proofs::{
-    circuit::Value,
-    plonk::{Error, Expression},
-};
+use halo2_proofs::plonk::{Error, Expression};
 
 /// Returns `1` when `lhs == rhs`, and returns `0` otherwise.
 #[derive(Clone, Debug)]
