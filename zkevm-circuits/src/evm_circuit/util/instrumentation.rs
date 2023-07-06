@@ -74,10 +74,10 @@ impl Instrument {
                     CellType::StoragePermutation => {
                         report.storage_perm = data_entry;
                     }
-                    CellType::LookupU8 => {
+                    CellType::Lookup(Table::U8) => {
                         report.u8_lookup = data_entry;
                     }
-                    CellType::LookupU16 => {
+                    CellType::Lookup(Table::U16) => {
                         report.u16_lookup = data_entry;
                     }
                     CellType::Lookup(Table::Fixed) => {
