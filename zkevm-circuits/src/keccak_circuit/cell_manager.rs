@@ -1,8 +1,6 @@
-use crate::keccak_circuit::util::extract_field;
 use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::{
-    circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
@@ -62,16 +60,6 @@ impl<F: Field> Cell<F> {
 
     pub(crate) fn assign(&self, region: &mut KeccakRegion<F>, offset: i32, value: F) {
         region.assign(self.column_idx, (offset + self.rotation) as usize, value);
-    }
-
-    pub(crate) fn assign_value(&self, region: &mut KeccakRegion<F>, offset: i32, value: Value<F>) {
-        // This is really ugly. But since there's no way to easily adapt the CellManager
-        // API customized for this impl specifically, for now I'm opening the
-        // value and extracting it. Once https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/933 is resolved,
-        // this shouldn't be needed.
-        let value_f = extract_field(value);
-
-        region.assign(self.column_idx, (offset + self.rotation) as usize, value_f);
     }
 }
 

@@ -63,6 +63,9 @@ where
     }
 }
 
+#[cfg(test)]
+use halo2_proofs::plonk::{Advice, Column};
+
 // allow dead code for unconstructed variants
 #[allow(dead_code)]
 #[cfg(test)]

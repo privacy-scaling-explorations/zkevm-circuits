@@ -427,8 +427,6 @@ impl SortKeysConfig {
     }
 }
 
-type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
-
 /// State Circuit for proving RwTable is valid
 #[derive(Default, Clone, Debug)]
 pub struct StateCircuit<F> {

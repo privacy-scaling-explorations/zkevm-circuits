@@ -29,8 +29,6 @@ pub(crate) type Word2<T> = WordLimbs<T, 2>;
 
 pub(crate) type Word4<T> = WordLimbs<T, 4>;
 
-pub(crate) type Word16<T> = WordLimbs<T, 16>;
-
 pub(crate) type Word32<T> = WordLimbs<T, 32>;
 
 pub(crate) type WordCell<F> = Word<Cell<F>>;

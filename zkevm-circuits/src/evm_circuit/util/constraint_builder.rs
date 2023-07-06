@@ -11,7 +11,7 @@ use crate::{
     },
     util::{
         build_tx_log_expression, query_expression,
-        word::{Word, Word16, Word32, Word32Cell, Word4, WordCell, WordExpr, WordLimbs},
+        word::{Word, Word32, Word32Cell, WordCell, WordExpr},
         Challenges, Expr,
     },
 };
@@ -388,10 +388,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         )
     }
 
-    pub(crate) fn get_cs(&'a mut self) -> &'a mut ConstraintSystem<F> {
-        self.meta
-    }
-
     pub(crate) fn query_expression<T>(&mut self, f: impl FnMut(&mut VirtualCells<F>) -> T) -> T {
         query_expression(self.meta, f)
     }
@@ -417,16 +413,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_counter_offset.clone()
     }
 
-    pub(crate) fn program_counter_offset(&self) -> usize {
-        self.program_counter_offset
-    }
-
     pub(crate) fn stack_pointer_offset(&self) -> Expression<F> {
         self.stack_pointer_offset.clone()
-    }
-
-    pub(crate) fn log_id_offset(&self) -> usize {
-        self.log_id_offset
     }
 
     // Query
@@ -454,38 +442,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 .try_into()
                 .unwrap(),
         )
-    }
-
-    // default query_word is 2 limbs. constrain word equality with external word
-    pub fn query_word<const N: usize, const N2: usize>(
-        &mut self,
-        w_constrain: WordLimbs<Cell<F>, N2>,
-    ) -> Word<Cell<F>> {
-        let word = Word::new(
-            self.query_cells(CellType::StoragePhase1, N)
-                .try_into()
-                .unwrap(),
-        );
-        self.require_equal_word(
-            "word limbs equality constrain",
-            word.to_word(),
-            w_constrain.to_word(),
-        );
-        word
-    }
-
-    /// query_word4_unchecked get word with 4 limbs. Each limb is not guaranteed to be 64 bits.
-    pub fn query_word4_unchecked<const N: usize>(&mut self) -> Word4<Cell<F>> {
-        Word4::new(
-            self.query_cells(CellType::StoragePhase1, N)
-                .try_into()
-                .unwrap(),
-        )
-    }
-
-    // each limb is 16 bits, and any conversion to smaller limbs inherits the type check.
-    pub(crate) fn query_word16<const N: usize>(&mut self) -> Word16<Cell<F>> {
-        Word16::new(self.query_u16())
     }
 
     // query_word32 each limb is 8 bits, and any conversion to smaller limbs inherits the type
