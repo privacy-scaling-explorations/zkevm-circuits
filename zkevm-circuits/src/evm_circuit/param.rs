@@ -1,3 +1,4 @@
+//! Constants and parameters for the EVM circuit
 use super::table::Table;
 use crate::evm_circuit::{step::ExecutionState, EvmCircuit};
 use halo2_proofs::{
@@ -22,12 +23,14 @@ pub const N_PHASE2_COLUMNS: usize = 1;
 pub const N_PHASE1_COLUMNS: usize =
     STEP_WIDTH - EVM_LOOKUP_COLS - N_PHASE2_COLUMNS - N_COPY_COLUMNS - N_U8_LOOKUPS - N_U16_LOOKUPS;
 
-// Number of copy columns
+/// Number of copy columns
 pub const N_COPY_COLUMNS: usize = 2;
 
+/// Number of columns reserved for u8 lookup
 pub const N_U8_LOOKUPS: usize = 24;
 
 // TODO shift #column/2 from u8 to u16
+/// Number of columns reserved for u16 lookup
 pub const N_U16_LOOKUPS: usize = 0;
 
 /// Amount of lookup columns in the EVM circuit dedicated to lookups.

@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use super::{
     param::MAX_STEP_HEIGHT,
     util::{evm_cm_distribute_advice, CachedRegion, Cell, CellType},
@@ -283,7 +285,9 @@ impl From<&ExecStep> for ExecutionState {
     }
 }
 
+/// Has Execution state
 pub trait HasExecutionState {
+    /// Get the execution state
     fn execution_state(&self) -> ExecutionState;
 }
 

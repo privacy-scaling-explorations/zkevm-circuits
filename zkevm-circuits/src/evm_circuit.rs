@@ -1,6 +1,5 @@
 //! The EVM circuit implementation.
 
-#![allow(missing_docs)]
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::*,
@@ -41,6 +40,7 @@ pub struct EvmCircuitConfig<F> {
     fixed_table: [Column<Fixed>; 4],
     u8_table: UXTable<8>,
     u16_table: UXTable<16>,
+    /// The execution config
     pub execution: Box<ExecutionConfig<F>>,
     // External tables
     tx_table: TxTable,
@@ -183,7 +183,8 @@ impl<F: Field> EvmCircuit<F> {
             fixed_table_tags: FixedTableTag::iter().collect(),
         }
     }
-
+    /// Construct the EvmCircuit with only subset of Fixed table tags required by tests to save
+    /// testing time
     pub fn get_test_cicuit_from_block(block: Block<F>) -> Self {
         let fixed_table_tags = detect_fixed_table_tags(&block);
         Self {
@@ -201,7 +202,8 @@ impl<F: Field> EvmCircuit<F> {
         let lookup_row_ids = (0..max_offset).collect();
         (gates_row_ids, lookup_row_ids)
     }
-
+    /// Get the minimum number of rows required to process the block
+    /// If unspecified, then compute it
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
         let evm_rows = block.circuits_params.max_evm_rows;
         if evm_rows == 0 {
@@ -211,7 +213,7 @@ impl<F: Field> EvmCircuit<F> {
             block.circuits_params.max_evm_rows + 1
         }
     }
-
+    /// Compute the minimum number of rows required to process the block
     pub fn get_min_num_rows_required(block: &Block<F>) -> usize {
         let mut num_rows = 0;
         for transaction in &block.txs {
@@ -343,7 +345,7 @@ pub(crate) mod cached {
     }
 
     impl EvmCircuitCached {
-        pub fn get_test_cicuit_from_block(block: Block<Fr>) -> Self {
+        pub(crate) fn get_test_cicuit_from_block(block: Block<Fr>) -> Self {
             Self(EvmCircuit::<Fr>::get_test_cicuit_from_block(block))
         }
     }
