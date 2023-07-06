@@ -73,7 +73,7 @@ pub struct TxTable {
     /// Index for Tag = CallData
     pub index: Column<Advice>,
     /// Value
-    pub value: Column<Advice>,
+    pub value: word::Word<Column<Advice>>,
 }
 
 impl TxTable {
@@ -83,7 +83,7 @@ impl TxTable {
             tx_id: meta.advice_column(),
             tag: meta.fixed_column(),
             index: meta.advice_column(),
-            value: meta.advice_column_in(SecondPhase),
+            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
 
@@ -95,7 +95,6 @@ impl TxTable {
         txs: &[Transaction],
         max_txs: usize,
         max_calldata: usize,
-        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         assert!(
             txs.len() <= max_txs,
@@ -116,7 +115,7 @@ impl TxTable {
             offset: usize,
             advice_columns: &[Column<Advice>],
             tag: &Column<Fixed>,
-            row: &[Value<F>; 4],
+            row: &[Value<F>; 5],
             msg: &str,
         ) -> Result<(), Error> {
             for (index, column) in advice_columns.iter().enumerate() {
@@ -140,13 +139,13 @@ impl TxTable {
             || "tx table",
             |mut region| {
                 let mut offset = 0;
-                let advice_columns = [self.tx_id, self.index, self.value];
+                let advice_columns = [self.tx_id, self.index, self.value.lo(), self.value.hi()];
                 assign_row(
                     &mut region,
                     offset,
                     &advice_columns,
                     &self.tag,
-                    &[(); 4].map(|_| Value::known(F::ZERO)),
+                    &[(); 5].map(|_| Value::known(F::ZERO)),
                     "all-zero",
                 )?;
                 offset += 1;
@@ -156,16 +155,72 @@ impl TxTable {
                 // region that has a size parametrized by max_calldata with all
                 // the tx calldata.  This is required to achieve a constant fixed column tag
                 // regardless of the number of input txs or the calldata size of each tx.
-                let mut calldata_assignments: Vec<[Value<F>; 4]> = Vec::new();
+                let mut calldata_assignments: Vec<[Value<F>; 5]> = Vec::new();
                 // Assign Tx data (all tx fields except for calldata)
                 let padding_txs: Vec<_> = (txs.len()..max_txs)
-                    .map(|i| Transaction {
-                        id: i + 1,
-                        ..Default::default()
-                    })
+                    .map(|i| Transaction::padding_tx(i + 1))
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {
-                    let [tx_data, tx_calldata] = tx.table_assignments(*challenges);
+                    let tx_id = Value::known(F::from(tx.id));
+                    let tx_data = vec![
+                        (
+                            TxContextFieldTag::Nonce,
+                            word::Word::from(tx.nonce.as_u64()),
+                        ),
+                        (TxContextFieldTag::Gas, word::Word::from(tx.gas())),
+                        (TxContextFieldTag::GasPrice, word::Word::from(tx.gas_price)),
+                        (TxContextFieldTag::CallerAddress, word::Word::from(tx.from)),
+                        (
+                            TxContextFieldTag::CalleeAddress,
+                            word::Word::from(tx.to_or_contract_addr()),
+                        ),
+                        (
+                            TxContextFieldTag::IsCreate,
+                            word::Word::from(tx.is_create()),
+                        ),
+                        (TxContextFieldTag::Value, word::Word::from(tx.value)),
+                        (
+                            TxContextFieldTag::CallDataLength,
+                            word::Word::from(tx.call_data.len() as u64),
+                        ),
+                        (
+                            TxContextFieldTag::CallDataGasCost,
+                            word::Word::from(tx.call_data_gas_cost()),
+                        ),
+                        (
+                            TxContextFieldTag::TxInvalid,
+                            word::Word::from(tx.is_create()),
+                        ),
+                        (
+                            TxContextFieldTag::AccessListGasCost,
+                            word::Word::from(tx.is_create()),
+                        )
+                    ]
+                    .iter()
+                    .map(|&(tag, word)| {
+                        [
+                            tx_id,
+                            Value::known(F::from(tag as u64)),
+                            Value::known(F::ZERO),
+                            Value::known(word.lo()),
+                            Value::known(word.hi()),
+                        ]
+                    })
+                    .collect_vec();
+                    let tx_calldata = tx
+                        .call_data
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, byte)| {
+                            [
+                                tx_id,
+                                Value::known(F::from(TxContextFieldTag::CallData as u64)),
+                                Value::known(F::from(idx as u64)),
+                                Value::known(F::from(*byte as u64)),
+                                Value::known(F::ZERO),
+                            ]
+                        })
+                        .collect_vec();
                     for row in tx_data {
                         assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
                         offset += 1;
@@ -177,6 +232,7 @@ impl TxTable {
                     [
                         Value::known(F::ZERO),
                         Value::known(F::from(TxContextFieldTag::CallData as u64)),
+                        Value::known(F::ZERO),
                         Value::known(F::ZERO),
                         Value::known(F::ZERO),
                     ]
@@ -197,7 +253,8 @@ impl<F: Field> LookupTable<F> for TxTable {
             self.tx_id.into(),
             self.tag.into(),
             self.index.into(),
-            self.value.into(),
+            self.value.lo().into(),
+            self.value.hi().into(),
         ]
     }
 
@@ -206,7 +263,8 @@ impl<F: Field> LookupTable<F> for TxTable {
             String::from("tx_id"),
             String::from("tag"),
             String::from("index"),
-            String::from("value"),
+            String::from("value_lo"),
+            String::from("value_hi"),
         ]
     }
 
@@ -215,7 +273,8 @@ impl<F: Field> LookupTable<F> for TxTable {
             meta.query_advice(self.tx_id, Rotation::cur()),
             meta.query_fixed(self.tag, Rotation::cur()),
             meta.query_advice(self.index, Rotation::cur()),
-            meta.query_advice(self.value, Rotation::cur()),
+            meta.query_advice(self.value.lo(), Rotation::cur()),
+            meta.query_advice(self.value.hi(), Rotation::cur()),
         ]
     }
 }

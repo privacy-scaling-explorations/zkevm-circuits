@@ -65,6 +65,7 @@ use crate::{
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
         BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RwTable, TxTable,
+        UXTable,
     },
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
@@ -87,6 +88,9 @@ use std::array;
 pub struct SuperCircuitConfig<F: Field> {
     block_table: BlockTable,
     mpt_table: MptTable,
+    u8_table: UXTable<8>,
+    u10_table: UXTable<10>,
+    u16_table: UXTable<16>,
     evm_circuit: EvmCircuitConfig<F>,
     state_circuit: StateCircuitConfig<F>,
     tx_circuit: TxCircuitConfig<F>,
@@ -128,6 +132,9 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         let copy_table = CopyTable::construct(meta, q_copy_table);
         let exp_table = ExpTable::construct(meta);
         let keccak_table = KeccakTable::construct(meta);
+        let u8_table = UXTable::construct(meta);
+        let u10_table = UXTable::construct(meta);
+        let u16_table = UXTable::construct(meta);
 
         // Use a mock randomness instead of the randomness derived from the challange
         // (either from mock or real prover) to help debugging assignments.
@@ -155,6 +162,8 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 max_calldata,
                 block_table: block_table.clone(),
                 tx_table: tx_table.clone(),
+                keccak_table: keccak_table.clone(),
+                challenges: challenges.clone(),
             },
         );
         let tx_circuit = TxCircuitConfig::new(
@@ -189,6 +198,9 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             StateCircuitConfigArgs {
                 rw_table,
                 mpt_table,
+                u8_table,
+                u10_table,
+                u16_table,
                 challenges: challenges.clone(),
             },
         );
@@ -204,12 +216,17 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 copy_table,
                 keccak_table,
                 exp_table,
+                u8_table,
+                u16_table,
             },
         );
 
         Self {
             block_table,
             mpt_table,
+            u8_table,
+            u10_table,
+            u16_table,
             evm_circuit,
             state_circuit,
             copy_circuit,
@@ -416,17 +433,15 @@ impl<F: Field> Circuit<F> for SuperCircuit<F> {
         );
         let rws = &self.state_circuit.rows;
 
-        config.block_table.load(
-            &mut layouter,
-            &block.context,
-            Value::known(block.randomness),
-        )?;
+        config.block_table.load(&mut layouter, &block.context)?;
 
-        config.mpt_table.load(
-            &mut layouter,
-            &MptUpdates::mock_from(rws),
-            Value::known(block.randomness),
-        )?;
+        config
+            .mpt_table
+            .load(&mut layouter, &MptUpdates::mock_from(rws))?;
+
+        config.u8_table.load(&mut layouter)?;
+        config.u10_table.load(&mut layouter)?;
+        config.u16_table.load(&mut layouter)?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }

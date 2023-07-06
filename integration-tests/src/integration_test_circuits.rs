@@ -63,7 +63,7 @@ const MAX_EVM_ROWS: usize = 10000;
 /// MAX_EXP_STEPS
 const MAX_EXP_STEPS: usize = 1000;
 
-const MAX_KECCAK_ROWS: usize = 15000;
+const MAX_KECCAK_ROWS: usize = 38000;
 
 const CIRCUITS_PARAMS: FixedCParams = FixedCParams {
     max_rws: MAX_RWS,

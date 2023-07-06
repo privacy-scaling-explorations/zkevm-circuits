@@ -12,9 +12,10 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
-    util::Expr,
+    util::{word::Word, Expr},
 };
 use eth_types::Field;
+use gadgets::util::select;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -44,10 +45,13 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         // Note that rw_counter starts at 1
         let is_empty_block =
             IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
-        // If the block is empty, we do 0 rw_table lookups
-        // If the block is not empty, we will do 1 call_context lookup
-        let total_rws = not::expr(is_empty_block.expr())
-            * (cb.curr.state.rw_counter.clone().expr() - 1.expr() + 1.expr());
+
+        let total_rws_before_padding = cb.curr.state.rw_counter.clone().expr() - 1.expr()
+            + select::expr(
+                is_empty_block.expr(),
+                0.expr(),
+                1.expr(), // If the block is not empty, we will do 1 call_context lookup below
+            );
 
         // 1. Constraint total_valid_txs and total_txs witness values depending on the
         // empty block case.
@@ -61,8 +65,12 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             );
         });
         cb.condition(not::expr(is_empty_block.expr()), |cb| {
-            // 1b. total_valid_txs matches the tx_id that corresponds to the final step.
-            cb.call_context_lookup(0.expr(), None, CallContextFieldTag::TxId, total_txs.expr());
+            // 1b. total_txs matches the tx_id that corresponds to the final step.
+            cb.call_context_lookup_read(
+                None,
+                CallContextFieldTag::TxId,
+                Word::from_lo_unchecked(total_txs.expr()),
+            );
         });
 
         // 2. If total_txs == max_txs, we know we have covered all txs from the
@@ -76,7 +84,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
                 total_txs.expr() + 1.expr(),
                 TxContextFieldTag::CallerAddress,
                 None,
-                0.expr(),
+                Word::zero(),
             );
             // Since every tx lookup done in the EVM circuit must succeed
             // and uses a unique tx_id, we know that at
@@ -89,7 +97,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         // rw_table to ensure there is no malicious insertion.
         // Verify that there are at most total_rws meaningful entries in the rw_table
         cb.rw_table_start_lookup(1.expr());
-        cb.rw_table_start_lookup(max_rws.expr() - total_rws.expr());
+        cb.rw_table_start_lookup(max_rws.expr() - total_rws_before_padding.expr());
         // Since every lookup done in the EVM circuit must succeed and uses
         // a unique rw_counter, we know that at least there are
         // total_rws meaningful entries in the rw_table.

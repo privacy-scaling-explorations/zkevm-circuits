@@ -78,7 +78,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
 
     let init_code_gas_cost = if state.tx.is_create() {
         // Calculate gas cost of init code for EIP-3860.
-        (state.tx.tx.call_data.len() as u64 + 31) / 32 * eth_types::evm_types::INIT_CODE_WORD_GAS
+        (state.tx.call_data.len() as u64 + 31) / 32 * eth_types::evm_types::INIT_CODE_WORD_GAS
     } else {
         0
     };
@@ -87,7 +87,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         GasCost::CREATION_TX
     } else {
         GasCost::TX
-    } + state.tx.tx.call_data_gas_cost()
+    } + state.tx.call_data_gas_cost()
         + init_code_gas_cost;
 
     // Don't pay any fee or transfer any ETH for invalid transactions
@@ -97,7 +97,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         (
             intrinsic_gas_cost,
             call.value,
-            Some(state.tx.tx.gas_price * state.tx.gas()),
+            Some(state.tx.gas_price * state.tx.gas()),
         )
     };
 
@@ -187,7 +187,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
                 ),
                 (
                     CallContextField::CallDataLength,
-                    state.tx.tx.call_data.len().into(),
+                    state.tx.call_data.len().into(),
                 ),
                 (CallContextField::Value, call.value),
                 (CallContextField::IsStatic, (call.is_static as usize).into()),
@@ -282,7 +282,7 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
     }
     let caller_balance_prev = caller_account.balance;
     let caller_balance =
-        caller_balance_prev + state.tx.tx.gas_price * (exec_step.gas_left + effective_refund);
+        caller_balance_prev + state.tx.gas_price * (exec_step.gas_left + effective_refund);
     state.account_write(
         &mut exec_step,
         call.caller_address,
@@ -291,7 +291,7 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
         caller_balance_prev,
     )?;
 
-    let effective_tip = state.tx.tx.gas_price - state.block.base_fee;
+    let effective_tip = state.tx.gas_price - state.block.base_fee;
     let (found, coinbase_account) = state.sdb.get_account(&state.block.coinbase);
     if !found {
         return Err(Error::AccountNotFound(state.block.coinbase));

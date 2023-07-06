@@ -249,11 +249,11 @@ impl Transaction {
             .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 })
     }
 
-    /// Get the "to" address. If `to` is None then zero adddress
+    /// Get the "to" address. If `to` is None then zero address
     pub fn to_or_zero(&self) -> Address {
         self.to.unwrap_or_default()
     }
-    /// Get the "to" address. If `to` is None then compute contract adddress
+    /// Get the "to" address. If `to` is None then compute contract address
     pub fn to_or_contract_addr(&self) -> Address {
         self.to
             .unwrap_or_else(|| get_contract_address(self.from, self.nonce.to_word()))
@@ -287,6 +287,10 @@ impl Transaction {
             chain_id: Some(chain_id),
             ..response::Transaction::default()
         }
+    }
+    /// Convinient method for gas limit
+    pub fn gas(&self) -> u64 {
+        self.gas_limit.as_u64()
     }
 }
 
