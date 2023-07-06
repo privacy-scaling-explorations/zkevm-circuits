@@ -248,10 +248,6 @@ impl SignVerifyConfig {
     pub(crate) fn ecc_chip_config(&self) -> EccConfig {
         EccConfig::new(self.range_config.clone(), self.main_gate_config.clone())
     }
-
-    pub(crate) fn integer_chip_config(&self) -> IntegerConfig {
-        IntegerConfig::new(self.range_config.clone(), self.main_gate_config.clone())
-    }
 }
 
 /// Term provides a wrapper of possible assigned cell with value or unassigned
@@ -271,10 +267,6 @@ pub(crate) enum Term<F> {
 impl<F: Field> Term<F> {
     fn assigned(cell: Cell, value: Value<F>) -> Self {
         Self::Assigned(cell, value)
-    }
-
-    fn unassigned(value: Value<F>) -> Self {
-        Self::Unassigned(value)
     }
 
     fn cell(&self) -> Option<Cell> {
@@ -718,12 +710,6 @@ impl<F: Field> SignVerifyChip<F> {
             },
         )
     }
-}
-
-fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
-    pk_hash[32 - 20..]
-        .iter()
-        .fold(F::ZERO, |acc, b| acc * F::from(256) + F::from(*b as u64))
 }
 
 #[cfg(test)]

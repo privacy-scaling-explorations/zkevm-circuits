@@ -8,7 +8,7 @@ use crate::{
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
+    plonk::{Circuit, ConstraintSystem, Error},
 };
 
 impl<F: Field> Circuit<F> for StateCircuit<F>
@@ -63,8 +63,11 @@ where
     }
 }
 
+// allow dead code for unconstructed variants
+#[allow(dead_code)]
+#[cfg(test)]
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
-pub enum AdviceColumn {
+pub(crate) enum AdviceColumn {
     IsWrite,
     Address,
     AddressLimb0,
@@ -98,8 +101,9 @@ pub enum AdviceColumn {
     NonEmptyWitness,
 }
 
+#[cfg(test)]
 impl AdviceColumn {
-    pub fn value<F: Field>(&self, config: &StateCircuitConfig<F>) -> Column<Advice> {
+    pub(crate) fn value<F: Field>(&self, config: &StateCircuitConfig<F>) -> Column<Advice> {
         match self {
             Self::IsWrite => config.rw_table.is_write,
             Self::Address => config.rw_table.address,

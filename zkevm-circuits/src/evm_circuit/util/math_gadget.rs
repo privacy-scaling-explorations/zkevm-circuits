@@ -17,7 +17,6 @@ mod is_zero_word;
 mod lt;
 mod lt_word;
 mod min_max;
-mod min_max_word;
 mod modulo;
 mod mul_add_words;
 mod mul_add_words512;

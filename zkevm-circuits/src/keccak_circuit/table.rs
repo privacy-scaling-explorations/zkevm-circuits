@@ -172,10 +172,6 @@ mod tests {
                 CHI_BASE_LOOKUP_TABLE[3 - 2 * a + b - c],
                 (a ^ ((!b) & c)) as u8
             );
-            assert_eq!(
-                CHI_EXT_LOOKUP_TABLE[5 - 2 * a - b + c - 2 * d],
-                (a ^ ((!b) & c) ^ d) as u8
-            );
         }
 
         // Check the table with multiple parts per row.
