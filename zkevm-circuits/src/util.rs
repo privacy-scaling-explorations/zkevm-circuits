@@ -6,8 +6,7 @@ use bus_mapping::evm::OpcodeId;
 use halo2_proofs::{
     circuit::{Layouter, Value},
     plonk::{
-        Challenge, Circuit, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase,
-        VirtualCells,
+        Challenge, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, VirtualCells,
     },
 };
 
@@ -199,6 +198,10 @@ pub(crate) fn get_push_size(byte: u8) -> u64 {
     }
 }
 
+#[cfg(test)]
+use halo2_proofs::plonk::Circuit;
+
+#[cfg(test)]
 /// Returns number of unusable rows of the Circuit.
 /// The minimum unusable rows of a circuit is currently 6, where
 /// - 3 comes from minimum number of distinct queries to permutation argument witness column

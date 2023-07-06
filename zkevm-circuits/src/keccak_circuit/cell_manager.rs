@@ -85,7 +85,6 @@ pub(crate) struct CellColumn<F> {
 /// CellManager
 #[derive(Clone, Debug)]
 pub(crate) struct CellManager<F> {
-    height: usize,
     columns: Vec<CellColumn<F>>,
     rows: Vec<usize>,
     num_unused_cells: usize,
@@ -94,7 +93,6 @@ pub(crate) struct CellManager<F> {
 impl<F: Field> CellManager<F> {
     pub(crate) fn new(height: usize) -> Self {
         Self {
-            height,
             columns: Vec::new(),
             rows: vec![0; height],
             num_unused_cells: 0,

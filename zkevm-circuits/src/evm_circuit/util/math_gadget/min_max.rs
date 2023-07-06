@@ -52,19 +52,6 @@ impl<F: Field, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
             (lhs, rhs)
         })
     }
-
-    pub(crate) fn assign_value(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        lhs: Value<F>,
-        rhs: Value<F>,
-    ) -> Result<Value<(F, F)>, Error> {
-        transpose_val_ret(
-            lhs.zip(rhs)
-                .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs)),
-        )
-    }
 }
 
 #[cfg(test)]

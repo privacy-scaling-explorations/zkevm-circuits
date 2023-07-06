@@ -423,12 +423,4 @@ impl<F: Field> Lookup<F> {
                 .collect(),
         }
     }
-
-    pub(crate) fn degree(&self) -> usize {
-        self.input_exprs()
-            .iter()
-            .map(|expr| expr.degree())
-            .max()
-            .unwrap()
-    }
 }

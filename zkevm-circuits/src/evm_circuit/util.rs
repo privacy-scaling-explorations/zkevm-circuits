@@ -288,8 +288,6 @@ pub struct RandomLinearCombination<F, const N: usize> {
 }
 
 impl<F: Field, const N: usize> RandomLinearCombination<F, N> {
-    const N_BYTES: usize = N;
-
     /// XXX for randomness 256.expr(), consider using IntDecomposition instead
     pub(crate) fn new(cells: [Cell<F>; N], randomness: Expression<F>) -> Self {
         Self {
