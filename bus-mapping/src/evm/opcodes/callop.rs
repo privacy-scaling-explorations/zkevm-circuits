@@ -429,7 +429,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             call.return_data_offset,
                             length,
                             &result,
-                            updated_memory,
+                            &updated_memory,
                         )?;
                     let returned_bytes = read_steps
                         .iter()

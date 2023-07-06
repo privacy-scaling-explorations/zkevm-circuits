@@ -113,7 +113,7 @@ fn gen_copy_event(
         src_addr_end,
         dst_addr,
         length,
-        memory_updated,
+        &memory_updated,
     )?;
 
     Ok(CopyEvent {

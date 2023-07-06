@@ -123,7 +123,7 @@ fn gen_copy_event(
             src_addr as usize,
             dst_addr as usize,
             length as usize,
-            memory_updated,
+            &memory_updated,
         )?;
 
         let copy_bytes = CopyBytes::new(copy_steps, None, Some(prev_bytes));
@@ -146,7 +146,7 @@ fn gen_copy_event(
             src_addr,
             dst_addr,
             length,
-            memory_updated,
+            &memory_updated,
         )?;
 
         Ok(CopyEvent {
