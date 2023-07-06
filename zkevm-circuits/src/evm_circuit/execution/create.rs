@@ -7,7 +7,7 @@ use crate::{
         },
         step::ExecutionState,
         util::{
-            common_gadget::TransferGadget,
+            common_gadget::{get_copy_bytes, TransferGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
@@ -540,25 +540,14 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let shift = init_code_start.low_u64() % 32;
         let copy_rwc_inc: u64 = step.copy_rw_counter_delta;
 
-        let padded_bytes: Vec<u8> = (4 + rw_offset..4 + rw_offset + copy_rwc_inc as usize)
-            .map(|i| {
-                let mut bytes = block.rws[step.rw_indices[i]]
-                    .memory_word_pair()
-                    .0
-                    .to_le_bytes();
-                bytes.reverse();
-                bytes
-            })
-            .into_iter()
-            .flatten()
-            .collect();
-
-        let values: Vec<u8> = if init_code_length.is_zero() {
-            vec![0; 0]
-        } else {
-            padded_bytes[shift as usize..shift as usize + init_code_length.as_usize()].to_vec()
-        };
-
+        let values: Vec<u8> = get_copy_bytes(
+            block,
+            step,
+            4 + rw_offset,
+            4 + rw_offset + copy_rwc_inc as usize,
+            shift,
+            init_code_length.as_u64(),
+        );
         let keccak_code_hash = keccak256(&values);
 
         let init_code_address =

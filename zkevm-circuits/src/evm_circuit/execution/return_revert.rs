@@ -4,7 +4,7 @@ use crate::{
         param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE, STACK_CAPACITY},
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget,
+            common_gadget::{get_copy_bytes, RestoreContextGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
@@ -21,7 +21,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, state_db::CodeDB};
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, Field, ToScalar, U256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -344,24 +344,14 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         if call.is_create && call.is_success {
             // read memory word and get real copy bytes
-            let padded_bytes: Vec<u8> = (3..3 + copy_rwc_inc as usize)
-                .map(|i| {
-                    let mut bytes = block.rws[step.rw_indices[i]]
-                        .memory_word_pair()
-                        .0
-                        .to_le_bytes();
-                    bytes.reverse();
-                    bytes
-                })
-                .into_iter()
-                .flatten()
-                .collect();
-
-            let values: Vec<u8> = if valid_length == 0 {
-                vec![0; 0]
-            } else {
-                padded_bytes[shift as usize..shift as usize + valid_length as usize].to_vec()
-            };
+            let values: Vec<u8> = get_copy_bytes(
+                block,
+                step,
+                3,
+                3 + copy_rwc_inc as usize,
+                shift,
+                valid_length,
+            );
 
             self.init_code_rlc.assign(
                 region,

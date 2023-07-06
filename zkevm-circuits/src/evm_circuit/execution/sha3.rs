@@ -7,7 +7,7 @@ use crate::evm_circuit::{
     param::N_BYTES_MEMORY_WORD_SIZE,
     step::ExecutionState,
     util::{
-        common_gadget::SameContextGadget,
+        common_gadget::{get_copy_bytes, SameContextGadget},
         constraint_builder::{
             ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
         },
@@ -138,25 +138,14 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
             ),
         )?;
 
-        // read real bytes from padded memory words
-        let padded_bytes: Vec<u8> = (3..3 + (copy_rwc_inc as usize))
-            .map(|i| {
-                let mut bytes = block.rws[step.rw_indices[i]]
-                    .memory_word_pair()
-                    .0
-                    .to_le_bytes();
-                bytes.reverse();
-                bytes
-            })
-            .into_iter()
-            .flatten()
-            .collect();
-
-        let values: Vec<u8> = if size.is_zero() {
-            vec![0; 0]
-        } else {
-            padded_bytes[shift as usize..shift as usize + size.as_usize()].to_vec()
-        };
+        let values: Vec<u8> = get_copy_bytes(
+            block,
+            step,
+            3,
+            3 + (copy_rwc_inc as usize),
+            shift,
+            size.as_u64(),
+        );
 
         let rlc_acc = region
             .challenges()
