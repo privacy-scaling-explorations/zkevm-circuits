@@ -92,7 +92,7 @@ fn gen_copy_event(
         dst_addr as usize,
         src_addr_end as usize,
         length as usize,
-        memory_updated,
+        &memory_updated,
     )?;
 
     Ok(CopyEvent {

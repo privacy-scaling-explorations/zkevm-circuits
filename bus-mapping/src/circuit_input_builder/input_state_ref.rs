@@ -1631,7 +1631,7 @@ impl<'a> CircuitInputStateRef<'a> {
         dst_addr: usize,
         src_addr_end: usize,
         bytes_left: usize,
-        memory_updated: Memory,
+        memory_updated: &Memory,
     ) -> Result<(CopyEventSteps, CopyEventPrevBytes), Error> {
         let mut copy_steps = Vec::with_capacity(bytes_left);
         let mut prev_bytes: Vec<u8> = vec![];
@@ -1752,7 +1752,7 @@ impl<'a> CircuitInputStateRef<'a> {
         dst_addr: u64,
         copy_length: usize,
         result: &Vec<u8>,
-        memory_updated: Memory,
+        memory_updated: &Memory,
     ) -> Result<(CopyEventSteps, CopyEventSteps, CopyEventPrevBytes), Error> {
         let mut read_steps = Vec::with_capacity(copy_length);
         let mut write_steps = Vec::with_capacity(copy_length);
@@ -1819,7 +1819,7 @@ impl<'a> CircuitInputStateRef<'a> {
         _src_addr: usize,
         dst_addr: usize,    // memory dest starting addr
         copy_length: usize, // number of bytes to copy, without padding
-        memory_updated: Memory,
+        memory_updated: &Memory,
     ) -> Result<(CopyEventSteps, CopyEventPrevBytes), Error> {
         assert!(self.call()?.is_root);
         let mut prev_bytes: Vec<u8> = vec![];
@@ -1863,7 +1863,7 @@ impl<'a> CircuitInputStateRef<'a> {
         src_addr: u64,
         dst_addr: u64,    // memory dest starting addr
         copy_length: u64, // number of bytes to copy, without padding
-        memory_updated: Memory,
+        memory_updated: &Memory,
     ) -> Result<(CopyEventSteps, CopyEventSteps, Vec<u8>), Error> {
         assert!(!self.call()?.is_root);
 
@@ -1953,7 +1953,7 @@ impl<'a> CircuitInputStateRef<'a> {
         src_addr_end: u64,
         dst_addr: u64,    // memory dest starting addr
         copy_length: u64, // number of bytes to copy, without padding
-        memory_updated: Memory,
+        memory_updated: &Memory,
     ) -> Result<(CopyEventSteps, CopyEventSteps, Vec<u8>), Error> {
         let mut read_steps = Vec::with_capacity(copy_length as usize);
         let mut write_steps = Vec::with_capacity(copy_length as usize);
