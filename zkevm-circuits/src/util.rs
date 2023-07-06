@@ -11,7 +11,7 @@ use halo2_proofs::{
     },
 };
 
-use crate::{evm_circuit::util::rlc, table::TxLogFieldTag, witness};
+use crate::{table::TxLogFieldTag, witness};
 use eth_types::{keccak256, Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
@@ -32,10 +32,6 @@ pub fn query_expression<F: Field, T>(
         Some(0.expr())
     });
     expr.unwrap()
-}
-
-pub(crate) fn random_linear_combine_word<F: Field>(bytes: [u8; 32], randomness: F) -> F {
-    rlc::value(&bytes, randomness)
 }
 
 /// All challenges used in `SuperCircuit`.

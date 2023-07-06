@@ -1,3 +1,5 @@
+// Temporarly allow dead code before the strategy is fully implemented
+#![allow(dead_code)]
 use std::collections::HashMap;
 
 use eth_types::Field;
