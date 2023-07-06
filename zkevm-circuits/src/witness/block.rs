@@ -55,11 +55,10 @@ pub struct Block<F> {
 }
 
 impl<F: Field> Block<F> {
-    // This function is useful for debug so we allow it as a deadcode
-    #[allow(dead_code)]
     /// For each tx, for each step, print the rwc at the beginning of the step,
     /// and all the rw operations of the step.
-    pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
+    /// This function is useful for debug so we allow it as a deadcode
+    pub(crate) fn _debug_print_txs_steps_rw_ops(&self) {
         for (tx_idx, tx) in self.txs.iter().enumerate() {
             println!("tx {}", tx_idx);
             for step in tx.steps() {

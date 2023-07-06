@@ -1,5 +1,3 @@
-// Temporarly allow dead code before the strategy is fully implemented
-#![allow(dead_code)]
 use std::collections::HashMap;
 
 use eth_types::Field;
@@ -58,9 +56,9 @@ impl CellType {
 /// Cell is a (column, rotation) pair that has been placed and queried by the Cell Manager.
 pub struct Cell<F> {
     pub(crate) expression: Expression<F>,
-    pub(crate) column_expression: Expression<F>,
+    pub(crate) _column_expression: Expression<F>,
     pub(crate) column: Column<Advice>,
-    pub(crate) column_idx: usize,
+    pub(crate) _column_idx: usize,
     pub(crate) rotation: usize,
 }
 
@@ -69,14 +67,14 @@ impl<F: Field> Cell<F> {
     pub fn new(
         meta: &mut VirtualCells<F>,
         column: Column<Advice>,
-        column_idx: usize,
+        _column_idx: usize,
         rotation: usize,
     ) -> Cell<F> {
         Cell {
             expression: meta.query_advice(column, Rotation(rotation as i32)),
-            column_expression: meta.query_advice(column, Rotation::cur()),
+            _column_expression: meta.query_advice(column, Rotation::cur()),
             column,
-            column_idx,
+            _column_idx,
             rotation,
         }
     }
@@ -217,7 +215,7 @@ impl CellManagerColumns {
     }
 
     /// Returns the number of columns.
-    pub fn get_width(&self) -> usize {
+    pub fn _get_width(&self) -> usize {
         self.columns_list.len()
     }
 }
@@ -272,8 +270,8 @@ impl<Stats, S: CellManagerStrategy<Stats = Stats>> CellManager<S> {
     }
 
     /// Returns the number of columns managed by this Cell Manager.
-    pub fn get_width(&self) -> usize {
-        self.columns.get_width()
+    pub fn _get_width(&self) -> usize {
+        self.columns._get_width()
     }
 
     /// Returns the statistics about this Cell Manager.

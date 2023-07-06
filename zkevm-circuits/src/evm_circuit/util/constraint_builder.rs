@@ -276,8 +276,7 @@ impl<F: Field> BaseConstraintBuilder<F> {
 enum ConstraintLocation {
     Step,
     StepFirst,
-    #[allow(dead_code)] // step last is meaningful
-    StepLast,
+    _StepLast,
     NotStepLast,
 }
 
@@ -1457,7 +1456,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         match self.constraints_location {
             ConstraintLocation::Step => self.constraints.step.push((name, constraint)),
             ConstraintLocation::StepFirst => self.constraints.step_first.push((name, constraint)),
-            ConstraintLocation::StepLast => self.constraints.step_last.push((name, constraint)),
+            ConstraintLocation::_StepLast => self.constraints.step_last.push((name, constraint)),
             ConstraintLocation::NotStepLast => {
                 self.constraints.not_step_last.push((name, constraint))
             }

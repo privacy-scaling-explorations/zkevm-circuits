@@ -112,7 +112,7 @@ pub struct Chip<F: Field, T, const N_LIMBS: usize, const N_VALUES: usize>
 where
     T: ToLimbs<N_LIMBS>,
 {
-    config: Config<T, N_LIMBS>,
+    _config: Config<T, N_LIMBS>,
     _marker: PhantomData<F>,
 }
 

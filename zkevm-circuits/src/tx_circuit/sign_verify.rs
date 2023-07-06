@@ -125,8 +125,7 @@ pub(crate) struct SignVerifyConfig {
     rlc: Column<Advice>,
     // Keccak
     q_keccak: Selector,
-    #[allow(dead_code)] // We need keccak_table for test
-    keccak_table: KeccakTable,
+    _keccak_table: KeccakTable,
 }
 
 impl SignVerifyConfig {
@@ -198,7 +197,7 @@ impl SignVerifyConfig {
         Self {
             range_config,
             main_gate_config,
-            keccak_table,
+            _keccak_table: keccak_table,
             q_rlc_keccak_input,
             rlc,
             q_keccak,
@@ -262,8 +261,7 @@ impl SignVerifyConfig {
 #[derive(Clone, Debug)]
 pub(crate) enum Term<F> {
     Assigned(Cell, Value<F>),
-    #[allow(dead_code)] // We need Unassigned for match
-    Unassigned(Value<F>),
+    _Unassigned(Value<F>),
 }
 
 impl<F: Field> Term<F> {
@@ -274,14 +272,14 @@ impl<F: Field> Term<F> {
     fn cell(&self) -> Option<Cell> {
         match self {
             Self::Assigned(cell, _) => Some(*cell),
-            Self::Unassigned(_) => None,
+            Self::_Unassigned(_) => None,
         }
     }
 
     fn value(&self) -> Value<F> {
         match self {
             Self::Assigned(_, value) => *value,
-            Self::Unassigned(value) => *value,
+            Self::_Unassigned(value) => *value,
         }
     }
 }
@@ -789,7 +787,7 @@ mod sign_verify_tests {
                 &self.signatures,
                 &challenges,
             )?;
-            config.sign_verify.keccak_table.dev_load(
+            config.sign_verify._keccak_table.dev_load(
                 &mut layouter,
                 &keccak_inputs_sign_verify(&self.signatures),
                 &challenges,

@@ -1,5 +1,3 @@
-// Temporarly allow dead code before the strategy is fully implemented
-#![allow(dead_code)]
 use std::collections::{BTreeMap, HashMap};
 
 use eth_types::Field;
@@ -19,7 +17,7 @@ impl CMFixedWidthStrategyDistribution {
         }
     }
 
-    pub(crate) fn get(&self, cell_type: CellType) -> Option<&Vec<Column<Advice>>> {
+    pub(crate) fn _get(&self, cell_type: CellType) -> Option<&Vec<Column<Advice>>> {
         self.0.get(&cell_type)
     }
 }
@@ -192,7 +190,7 @@ pub(crate) struct CMFixedHeigthStrategy {
 }
 
 impl CMFixedHeigthStrategy {
-    pub(crate) fn new(height: usize, cell_type: CellType) -> CMFixedHeigthStrategy {
+    pub(crate) fn _new(height: usize, cell_type: CellType) -> CMFixedHeigthStrategy {
         CMFixedHeigthStrategy {
             row_width: vec![0; height],
             cell_type,

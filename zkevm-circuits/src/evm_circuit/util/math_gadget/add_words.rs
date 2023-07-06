@@ -135,7 +135,7 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
         Ok(())
     }
 
-    pub(crate) fn addends(&self) -> &[Word32Cell<F>] {
+    pub(crate) fn _addends(&self) -> &[Word32Cell<F>] {
         &self.addends
     }
 
@@ -179,7 +179,7 @@ mod tests {
                 sum.clone(),
             );
 
-            assert_eq!(addwords_gadget.addends().len(), N_ADDENDS);
+            assert_eq!(addwords_gadget._addends().len(), N_ADDENDS);
             if !CHECK_OVERFLOW {
                 let carry_hi = addwords_gadget.carry().as_ref().unwrap();
                 cb.require_equal("carry_hi is correct", carry_hi.expr(), CARRY_HI.expr())

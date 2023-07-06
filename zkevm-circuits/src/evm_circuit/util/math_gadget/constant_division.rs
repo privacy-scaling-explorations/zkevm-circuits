@@ -60,8 +60,7 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
         self.quotient.expr()
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn remainder(&self) -> Expression<F> {
+    pub(crate) fn _remainder(&self) -> Expression<F> {
         self.remainder.expr()
     }
 
@@ -123,7 +122,7 @@ mod tests {
 
             cb.require_equal(
                 "correct reminder",
-                constdiv_gadget.remainder(),
+                constdiv_gadget._remainder(),
                 REMAINDER.expr(),
             );
 

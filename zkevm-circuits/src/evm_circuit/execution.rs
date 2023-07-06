@@ -311,10 +311,8 @@ pub struct ExecutionConfig<F> {
     error_oog_code_store: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>>,
     error_invalid_jump: Box<ErrorInvalidJumpGadget<F>>,
     error_invalid_opcode: Box<ErrorInvalidOpcodeGadget<F>>,
-    #[allow(dead_code)] // will be implemented soon
-    error_depth: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>>,
-    #[allow(dead_code)] // will be implemented soon
-    error_contract_address_collision:
+    _error_depth: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>>,
+    _error_contract_address_collision:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>>,
     error_invalid_creation_code: Box<ErrorInvalidCreationCodeGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
@@ -576,8 +574,8 @@ impl<F: Field> ExecutionConfig<F> {
             error_invalid_jump: configure_gadget!(),
             error_invalid_opcode: configure_gadget!(),
             error_write_protection: configure_gadget!(),
-            error_depth: configure_gadget!(),
-            error_contract_address_collision: configure_gadget!(),
+            _error_depth: configure_gadget!(),
+            _error_contract_address_collision: configure_gadget!(),
             error_invalid_creation_code: configure_gadget!(),
             error_return_data_out_of_bound: configure_gadget!(),
             // step and presets
