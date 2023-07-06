@@ -4,7 +4,6 @@
 pub mod bytecode_unroller;
 /// Bytecode circuit
 pub mod circuit;
-pub(crate) mod param;
 
 #[cfg(any(test, feature = "test-circuits"))]
 mod dev;
