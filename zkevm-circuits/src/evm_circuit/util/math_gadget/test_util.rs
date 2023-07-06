@@ -21,9 +21,7 @@ pub(crate) use halo2_proofs::circuit::{Layouter, Value};
 use halo2_proofs::{
     circuit::SimpleFloorPlanner,
     dev::MockProver,
-    plonk::{
-        Circuit, ConstraintSystem, Error, FirstPhase, SecondPhase, Selector, ThirdPhase,
-    },
+    plonk::{Circuit, ConstraintSystem, Error, FirstPhase, SecondPhase, Selector, ThirdPhase},
 };
 
 pub(crate) const WORD_LOW_MAX: Word = U256([u64::MAX, u64::MAX, 0, 0]);
