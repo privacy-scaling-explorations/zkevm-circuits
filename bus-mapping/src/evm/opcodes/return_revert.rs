@@ -230,7 +230,7 @@ fn handle_copy(
 
     // memory word write to destination
     let mut read_steps = Vec::with_capacity(source.length);
-    CircuitInputStateRef::gen_memory_copy_steps(
+    CircuitInputStateRef::gen_copy_steps(
         &mut read_steps,
         &src_data,
         full_length,
@@ -240,7 +240,7 @@ fn handle_copy(
     );
 
     let mut write_steps = Vec::with_capacity(destination.length);
-    CircuitInputStateRef::gen_memory_copy_steps(
+    CircuitInputStateRef::gen_copy_steps(
         &mut write_steps,
         &dst_data,
         full_length,

@@ -1664,15 +1664,7 @@ impl<'a> CircuitInputStateRef<'a> {
             }
         }
 
-        let mut chunk_index = dst_begin_slot;
-        // memory word writes to destination word
-        for chunk in code_slot_bytes.chunks(32) {
-            let dest_word = Word::from_big_endian(chunk);
-            let mut prev_bytes_write =
-                self.memory_write_word(exec_step, chunk_index.into(), dest_word)?;
-            prev_bytes.append(&mut prev_bytes_write);
-            chunk_index += 32;
-        }
+        self.write_chunks(exec_step, &code_slot_bytes, dst_begin_slot, &mut prev_bytes)?;
 
         Ok((copy_steps, prev_bytes))
     }
@@ -1693,7 +1685,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let calldata_slot_bytes =
             caller_memory.read_chunk(src_begin_slot.into(), full_length.into());
 
-        Self::gen_memory_copy_steps(
+        Self::gen_copy_steps(
             &mut copy_steps,
             &calldata_slot_bytes,
             full_length,
@@ -1729,18 +1721,9 @@ impl<'a> CircuitInputStateRef<'a> {
             memory.resize(full_length, 0);
         }
 
-        Self::gen_memory_copy_steps(&mut copy_steps, &memory, full_length, 0, 0, result.len());
-
-        let mut chunk_index = 0;
-        for chunk in memory.chunks(32) {
-            let mut prev_bytes_write = self.memory_write_word(
-                exec_step,
-                chunk_index.into(),
-                Word::from_big_endian(chunk),
-            )?;
-            prev_bytes.append(&mut prev_bytes_write);
-            chunk_index += 32;
-        }
+        Self::gen_copy_steps(&mut copy_steps, &memory, full_length, 0, 0, result.len());
+        let chunk_index: usize = 0;
+        self.write_chunks(exec_step, &memory, chunk_index, &mut prev_bytes)?;
 
         Ok((copy_steps, prev_bytes))
     }
@@ -1773,7 +1756,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let write_slot_bytes = memory_updated.read_chunk(dst_begin_slot.into(), slot_count.into());
         debug_assert_eq!(read_slot_bytes.len(), write_slot_bytes.len());
 
-        Self::gen_memory_copy_steps(
+        Self::gen_copy_steps(
             &mut read_steps,
             &read_slot_bytes,
             slot_count,
@@ -1782,7 +1765,7 @@ impl<'a> CircuitInputStateRef<'a> {
             copy_length,
         );
 
-        Self::gen_memory_copy_steps(
+        Self::gen_copy_steps(
             &mut write_steps,
             &write_slot_bytes,
             slot_count,
@@ -1833,26 +1816,21 @@ impl<'a> CircuitInputStateRef<'a> {
         let calldata_slot_bytes =
             memory_updated.read_chunk(dst_begin_slot.into(), full_length.into());
 
-        for (idx, value) in calldata_slot_bytes.iter().enumerate() {
-            if (idx + dst_begin_slot < dst_addr) || (idx + dst_begin_slot >= dst_addr + copy_length)
-            {
-                // front and back mask byte
-                copy_steps.push((*value, false, true));
-            } else {
-                // real copy byte
-                copy_steps.push((*value, false, false));
-            }
-        }
-
-        let mut chunk_index = dst_begin_slot;
-        // memory word writes to destination word
-        for chunk in calldata_slot_bytes.chunks(32) {
-            let dest_word = Word::from_big_endian(chunk);
-            let mut prev_bytes_write =
-                self.memory_write_word(exec_step, chunk_index.into(), dest_word)?;
-            prev_bytes.append(&mut prev_bytes_write);
-            chunk_index += 32;
-        }
+        Self::gen_copy_steps(
+            &mut copy_steps,
+            &calldata_slot_bytes,
+            full_length,
+            dst_addr,
+            dst_begin_slot,
+            copy_length,
+        );
+        let chunk_index = dst_begin_slot;
+        self.write_chunks(
+            exec_step,
+            &calldata_slot_bytes,
+            chunk_index,
+            &mut prev_bytes,
+        )?;
 
         Ok((copy_steps, prev_bytes))
     }
@@ -1869,7 +1847,6 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let mut read_steps = Vec::with_capacity(copy_length as usize);
         let mut write_steps = Vec::with_capacity(copy_length as usize);
-
         let mut prev_bytes: Vec<u8> = vec![];
         if copy_length == 0 {
             return Ok((read_steps, write_steps, prev_bytes));
@@ -1886,7 +1863,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let write_slot_bytes = memory_updated.read_chunk(dst_begin_slot.into(), full_length.into());
 
-        Self::gen_memory_copy_steps(
+        Self::gen_copy_steps(
             &mut read_steps,
             &read_slot_bytes,
             full_length,
@@ -1895,7 +1872,7 @@ impl<'a> CircuitInputStateRef<'a> {
             copy_length as usize,
         );
 
-        Self::gen_memory_copy_steps(
+        Self::gen_copy_steps(
             &mut write_steps,
             &write_slot_bytes,
             full_length,
@@ -1912,11 +1889,12 @@ impl<'a> CircuitInputStateRef<'a> {
             self.memory_read_caller(exec_step, src_chunk_index.into())?;
 
             src_chunk_index += 32;
-
-            let write_word = Word::from_big_endian(write_chunk);
-            let mut prev_bytes_write =
-                self.memory_write_word(exec_step, dst_chunk_index.into(), write_word)?;
-            prev_bytes.append(&mut prev_bytes_write);
+            self.write_chunk_for_copy_step(
+                exec_step,
+                write_chunk,
+                dst_chunk_index,
+                &mut prev_bytes,
+            )?;
 
             dst_chunk_index += 32;
             copy_rwc_inc += 2;
@@ -1964,7 +1942,6 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         let last_callee_id = self.call()?.last_callee_id;
-        let current_call_id = self.call()?.call_id;
 
         // won't be copy out of bound, it should be handle by geth error ReturnDataOutOfBounds
         assert!(src_addr + copy_length <= src_addr_end);
@@ -1980,7 +1957,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let write_slot_bytes = memory_updated.read_chunk(dst_begin_slot.into(), full_length.into());
 
-        Self::gen_memory_copy_steps(
+        Self::gen_copy_steps(
             &mut read_steps,
             &read_slot_bytes,
             full_length,
@@ -1989,7 +1966,7 @@ impl<'a> CircuitInputStateRef<'a> {
             copy_length as usize,
         );
 
-        Self::gen_memory_copy_steps(
+        Self::gen_copy_steps(
             &mut write_steps,
             &write_slot_bytes,
             full_length,
@@ -2016,11 +1993,13 @@ impl<'a> CircuitInputStateRef<'a> {
             trace!("read chunk: {last_callee_id} {src_chunk_index} {read_chunk:?}");
             src_chunk_index += 32;
 
-            let write_word = Word::from_big_endian(write_chunk);
-            let mut prev_bytes_write =
-                self.memory_write_word(exec_step, dst_chunk_index.into(), write_word)?;
-            prev_bytes.append(&mut prev_bytes_write);
-            trace!("write chunk: {current_call_id} {dst_chunk_index} {write_chunk:?}");
+            self.write_chunk_for_copy_step(
+                exec_step,
+                write_chunk,
+                dst_chunk_index,
+                &mut prev_bytes,
+            )?;
+
             dst_chunk_index += 32;
 
             copy_rwc_inc += 2;
@@ -2091,7 +2070,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         let mut read_steps = Vec::with_capacity(full_length);
-        Self::gen_memory_copy_steps(
+        Self::gen_copy_steps(
             &mut read_steps,
             &read_slot_bytes,
             full_length,
@@ -2101,7 +2080,7 @@ impl<'a> CircuitInputStateRef<'a> {
         );
 
         let mut write_steps = Vec::with_capacity(full_length);
-        Self::gen_memory_copy_steps(
+        Self::gen_copy_steps(
             &mut write_steps,
             &log_slot_bytes,
             full_length,
@@ -2112,8 +2091,10 @@ impl<'a> CircuitInputStateRef<'a> {
 
         Ok((read_steps, write_steps))
     }
-    // TODO: add new gen_copy_steps for common use
-    pub(crate) fn gen_memory_copy_steps(
+
+    // common use helpers
+    // gen memory copy steps(bytes) for non bytecode(is_code is different)
+    pub(crate) fn gen_copy_steps(
         steps: &mut CopyEventSteps,
         memory_at_begin: &[u8],
         slot_bytes_len: usize,
@@ -2131,5 +2112,43 @@ impl<'a> CircuitInputStateRef<'a> {
                 steps.push((*value, false, false));
             }
         }
+    }
+
+    /// write work chunk to RW table and add prev bytes
+    pub(crate) fn write_chunk_for_copy_step(
+        &mut self,
+        exec_step: &mut ExecStep,
+        write_chunk: &[u8],
+        dst_chunk_index: usize,
+        prev_bytes: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        assert_eq!(write_chunk.len(), 32);
+        let write_word = Word::from_big_endian(write_chunk);
+        let mut prev_bytes_write =
+            self.memory_write_word(exec_step, dst_chunk_index.into(), write_word)?;
+        prev_bytes.append(&mut prev_bytes_write);
+        let call_id = self.call()?.call_id;
+        trace!("write chunk: {call_id} {dst_chunk_index} {write_chunk:?}");
+
+        Ok(())
+    }
+
+    // write all chunks to memroy word and add prev bytes
+    pub(crate) fn write_chunks(
+        &mut self,
+        exec_step: &mut ExecStep,
+        write_slot_chunks: &[u8],
+        dst_chunk_index: usize,
+        prev_bytes: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        assert_eq!(write_slot_chunks.len() % 32, 0);
+        let mut chunk_index = dst_chunk_index;
+        // memory word writes to destination word
+        for chunk in write_slot_chunks.chunks(32) {
+            self.write_chunk_for_copy_step(exec_step, chunk, chunk_index, prev_bytes)?;
+            chunk_index += 32;
+        }
+
+        Ok(())
     }
 }
