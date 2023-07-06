@@ -564,8 +564,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let init_code_address =
             self.init_code
                 .assign(region, offset, init_code_start, init_code_length)?;
-        let rlc_acc = region.keccak_rlc(&values.iter().rev().cloned().collect::<Vec<u8>>());
-        trace!("rlc_acc of assign {rlc_acc:?}");
+        trace!(
+            "initcode keccak {:?} keccak_rlc {:?}",
+            keccak_code_hash,
+            region.keccak_rlc(&values.iter().rev().cloned().collect::<Vec<u8>>())
+        );
         self.init_code_rlc.assign(
             region,
             offset,
@@ -592,8 +595,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
-
-        let tx_access_rw = block.rws[step.rw_indices[7 + rw_offset + copy_rwc_inc as usize]];
+        rw_offset += copy_rwc_inc as usize;
+        let tx_access_rw = block.rws[step.rw_indices[7 + rw_offset]];
         self.was_warm.assign(
             region,
             offset,
@@ -606,11 +609,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             ),
         )?;
 
-        let caller_balance = block.rws[step.rw_indices[10 + rw_offset + copy_rwc_inc as usize]]
+        let caller_balance = block.rws[step.rw_indices[10 + rw_offset]]
             .account_balance_pair()
             .1;
 
-        let caller_nonce = block.rws[step.rw_indices[11 + rw_offset + copy_rwc_inc as usize]]
+        let caller_nonce = block.rws[step.rw_indices[11 + rw_offset]]
             .account_nonce_pair()
             .1
             .low_u64();
@@ -623,7 +626,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             };
         rw_offset += is_precheck_ok;
         let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [12, 13].map(|i| {
-            let rw = block.rws[step.rw_indices[i + rw_offset + copy_rwc_inc as usize]];
+            let rw = block.rws[step.rw_indices[i + rw_offset]];
             rw.call_context_value()
         });
 
@@ -638,8 +641,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         )?;
 
         // retrieve code_hash for creating address
-        let code_hash_previous = block.rws[step.rw_indices[14 + rw_offset + copy_rwc_inc as usize]]
-            .account_codehash_pair();
+        let code_hash_previous = block.rws[step.rw_indices[14 + rw_offset]].account_codehash_pair();
         let code_hash_previous_rlc = region.code_hash(code_hash_previous.0);
         self.code_hash_previous
             .assign(region, offset, code_hash_previous_rlc)?;
@@ -654,17 +656,10 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         if is_precheck_ok == 1 && !is_address_collision {
             let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
-                let account_balance_pair = [16, 17].map(|i| {
-                    block.rws[step.rw_indices[i + rw_offset + copy_rwc_inc as usize]]
-                        .account_balance_pair()
-                });
+                let account_balance_pair = [16, 17]
+                    .map(|i| block.rws[step.rw_indices[i + rw_offset]].account_balance_pair());
                 rw_offset += 2;
                 account_balance_pair
-                // [16, 17].map(|i| {
-                //     block.rws[step.rw_indices
-                //         [i + usize::from(is_create2) + copy_rwc_inc as usize + is_precheck_ok]]
-                //         .account_balance_pair()
-                // })
             } else {
                 [(0.into(), 0.into()), (0.into(), 0.into())]
             };
@@ -707,7 +702,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             Value::known(if is_precheck_ok == 0 || is_address_collision {
                 F::zero()
             } else {
-                block.rws[step.rw_indices[23 + rw_offset + copy_rwc_inc as usize]]
+                block.rws[step.rw_indices[23 + rw_offset]]
                     .call_context_value()
                     .to_scalar()
                     .unwrap()
