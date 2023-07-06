@@ -51,6 +51,7 @@ serde_json = "1.0.78"
 default = []
 # We export some test circuits for other crates to consume
 test-circuits = ["eth-types/warn-unimplemented"]
+# Test utilities for testool crate to consume
 test-util = ["dep:mock"]
 
 stats = ["eth-types/warn-unimplemented", "dep:cli-table"]
