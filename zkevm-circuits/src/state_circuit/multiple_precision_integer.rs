@@ -2,7 +2,7 @@ use super::{lookups, param::*};
 use crate::util::Expr;
 use eth_types::{Address, Field, ToLittleEndian, Word};
 use halo2_proofs::{
-    circuit::{Layouter, Region, Value},
+    circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -120,13 +120,6 @@ impl<F: Field, T, const N_LIMBS: usize, const N_VALUES: usize> Chip<F, T, N_LIMB
 where
     T: ToLimbs<N_LIMBS>,
 {
-    pub fn construct(config: Config<T, N_LIMBS>) -> Self {
-        Self {
-            config,
-            _marker: PhantomData,
-        }
-    }
-
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         selector: Column<Fixed>,
@@ -160,10 +153,6 @@ where
             limbs,
             _marker: PhantomData,
         }
-    }
-
-    pub fn load(&self, _layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        Ok(())
     }
 }
 

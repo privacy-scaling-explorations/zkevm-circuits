@@ -225,22 +225,6 @@ pub(crate) fn get_num_bits_per_lookup_impl(range: usize, log_height: usize) -> u
     num_bits as usize
 }
 
-/// Encodes the data using rlc
-pub(crate) mod compose_rlc {
-    use eth_types::Field;
-    use halo2_proofs::plonk::Expression;
-
-    pub(crate) fn expr<F: Field>(expressions: &[Expression<F>], r: Expression<F>) -> Expression<F> {
-        let mut rlc = expressions[0].clone();
-        let mut multiplier = r.clone();
-        for expression in expressions[1..].iter() {
-            rlc = rlc + expression.clone() * multiplier.clone();
-            multiplier = multiplier * r.clone();
-        }
-        rlc
-    }
-}
-
 /// Scatters a value into a packed word constant
 pub(crate) mod scatter {
     use super::pack;

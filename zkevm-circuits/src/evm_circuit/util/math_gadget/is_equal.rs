@@ -37,19 +37,6 @@ impl<F: Field> IsEqualGadget<F> {
     ) -> Result<F, Error> {
         self.is_zero.assign(region, offset, lhs - rhs)
     }
-
-    pub(crate) fn assign_value(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        lhs: Value<F>,
-        rhs: Value<F>,
-    ) -> Result<Value<F>, Error> {
-        transpose_val_ret(
-            lhs.zip(rhs)
-                .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs)),
-        )
-    }
 }
 
 #[cfg(test)]

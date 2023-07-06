@@ -125,6 +125,7 @@ pub(crate) struct SignVerifyConfig {
     rlc: Column<Advice>,
     // Keccak
     q_keccak: Selector,
+    #[allow(dead_code)] // We need keccak_table for test
     keccak_table: KeccakTable,
 }
 
@@ -261,6 +262,7 @@ impl SignVerifyConfig {
 #[derive(Clone, Debug)]
 pub(crate) enum Term<F> {
     Assigned(Cell, Value<F>),
+    #[allow(dead_code)] // We need Unassigned for match
     Unassigned(Value<F>),
 }
 

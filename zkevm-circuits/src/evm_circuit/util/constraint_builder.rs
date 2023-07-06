@@ -474,14 +474,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.query_cells(CellType::Lookup(Table::U8), count)
     }
 
-    pub(crate) fn query_u16<const N: usize>(&mut self) -> [Cell<F>; N] {
-        self.query_u16_dyn(N).try_into().unwrap()
-    }
-
-    pub(crate) fn query_u16_dyn(&mut self, count: usize) -> Vec<Cell<F>> {
-        self.query_cells(CellType::Lookup(Table::U16), count)
-    }
-
     pub(crate) fn query_cell(&mut self) -> Cell<F> {
         self.query_cell_with_type(CellType::StoragePhase1)
     }
