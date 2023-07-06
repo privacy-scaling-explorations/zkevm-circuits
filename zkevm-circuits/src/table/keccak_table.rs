@@ -11,9 +11,6 @@ pub struct KeccakTable {
     pub input_len: Column<Advice>,
     /// Output hash word
     pub output: word::Word<Column<Advice>>,
-    #[deprecated]
-    /// RLC of the hash result
-    pub output_rlc: Column<Advice>,
 }
 
 impl<F: Field> LookupTable<F> for KeccakTable {
@@ -46,7 +43,6 @@ impl KeccakTable {
             input_rlc: meta.advice_column_in(SecondPhase),
             input_len: meta.advice_column(),
             output: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            output_rlc: meta.advice_column_in(SecondPhase),
         }
     }
 
