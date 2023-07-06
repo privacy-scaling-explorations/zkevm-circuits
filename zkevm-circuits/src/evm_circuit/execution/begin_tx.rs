@@ -53,7 +53,7 @@ pub(crate) struct BeginTxGadget<F> {
     effective_tx_value: Word<F>,
     tx_call_data_word_length: ConstantDivisionGadget<F, N_BYTES_U64>,
     reversion_info: ReversionInfo<F>,
-    is_gas_not_enough: LtGadget<F, N_BYTES_GAS>,
+    // is_gas_not_enough: LtGadget<F, N_BYTES_GAS>,
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     phase2_code_hash: Cell<F>,
     is_empty_code_hash: IsEqualGadget<F>,
@@ -179,7 +179,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Check gas_left is sufficient
         let gas_left = tx_gas.expr() - intrinsic_gas_cost.clone();
-        let is_gas_not_enough = LtGadget::construct(cb, tx_gas.expr(), intrinsic_gas_cost);
+        // let is_gas_not_enough = LtGadget::construct(cb, tx_gas.expr(), intrinsic_gas_cost);
 
         // Prepare access list of caller and callee
         cb.account_access_list_write(
@@ -296,7 +296,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             "is_tx_invalid is correct",
             or::expr([
                 balance_not_enough.expr(),
-                is_gas_not_enough.expr(),
+                // is_gas_not_enough.expr(),
                 not::expr(is_nonce_valid.expr()),
             ]),
             tx_is_invalid.expr(),
@@ -539,7 +539,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             effective_tx_value,
             tx_call_data_word_length,
             reversion_info,
-            is_gas_not_enough,
+            // is_gas_not_enough,
             transfer_with_gas_fee,
             phase2_code_hash,
             is_empty_code_hash,
@@ -686,8 +686,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             + F::from(tx.access_list_gas_cost);
 
         // Check gas_left is sufficient
-        self.is_gas_not_enough
-            .assign(region, offset, F::from(tx.gas), intrinsic_gas)?;
+        // self.is_gas_not_enough
+        //     .assign(region, offset, F::from(tx.gas), intrinsic_gas)?;
 
         // Transfer value from caller to callee, creating account if necessary.
         let (intrinsic_tx_value, intrinsic_gas_fee) = if !tx.invalid_tx {
@@ -1060,10 +1060,12 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
+
     #[test]
     fn begin_tx_deploy_nonce_zero() {
         begin_tx_deploy(0);
     }
+
     #[test]
     fn begin_tx_deploy_nonce_small_1byte() {
         begin_tx_deploy(1);
