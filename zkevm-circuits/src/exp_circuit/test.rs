@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use crate::{
     evm_circuit::witness::{block_convert, Block},
     exp_circuit::ExpCircuit,

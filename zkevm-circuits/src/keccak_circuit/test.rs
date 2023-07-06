@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use super::*;
 use crate::util::unusable_rows;
 use eth_types::Field;

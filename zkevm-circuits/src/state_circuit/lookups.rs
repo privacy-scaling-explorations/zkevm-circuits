@@ -1,4 +1,4 @@
-use crate::table::CallContextFieldTag;
+use crate::table::{CallContextFieldTag, LookupTable, UXTable};
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, Value},
@@ -8,8 +8,6 @@ use halo2_proofs::{
 use itertools::Itertools;
 use std::marker::PhantomData;
 use strum::IntoEnumIterator;
-
-use super::test::{LookupTable, UXTable};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Config {
@@ -22,36 +20,6 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn range_check_u8<F: Field>(
-        &self,
-        meta: &mut ConstraintSystem<F>,
-        msg: &'static str,
-        exp_fn: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
-    ) {
-        meta.lookup_any(msg, |meta| {
-            let exp = exp_fn(meta);
-            vec![exp]
-                .into_iter()
-                .zip_eq(self.u8_table.table_exprs(meta))
-                .map(|(exp, table_expr)| (exp, table_expr))
-                .collect()
-        });
-    }
-    pub fn range_check_u10<F: Field>(
-        &self,
-        meta: &mut ConstraintSystem<F>,
-        msg: &'static str,
-        exp_fn: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
-    ) {
-        meta.lookup_any(msg, |meta| {
-            let exp = exp_fn(meta);
-            vec![exp]
-                .into_iter()
-                .zip_eq(self.u10_table.table_exprs(meta))
-                .map(|(exp, table_expr)| (exp, table_expr))
-                .collect()
-        });
-    }
     pub fn range_check_u16<F: Field>(
         &self,
         meta: &mut ConstraintSystem<F>,

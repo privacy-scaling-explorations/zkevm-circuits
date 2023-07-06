@@ -1,5 +1,15 @@
-pub use super::PiCircuit;
-use super::*;
+use super::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs};
+
+use eth_types::{self, Field};
+
+use crate::{
+    table::{BlockTable, KeccakTable, TxTable},
+    util::{Challenges, SubCircuit, SubCircuitConfig},
+};
+use halo2_proofs::{
+    circuit::{Layouter, SimpleFloorPlanner},
+    plonk::{Circuit, ConstraintSystem, Error},
+};
 
 /// Public Input Circuit configuration parameters
 #[derive(Default)]

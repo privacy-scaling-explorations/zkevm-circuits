@@ -48,7 +48,7 @@ pub struct Challenges<T = Challenge> {
 impl Challenges {
     /// Construct `Challenges` by allocating challenges in specific phases.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
-        #[cfg(any(feature = "test", test, feature = "test-circuits"))]
+        #[cfg(any(test, feature = "test-circuits"))]
         let _dummy_cols = [meta.advice_column(), meta.advice_column_in(SecondPhase)];
 
         Self {

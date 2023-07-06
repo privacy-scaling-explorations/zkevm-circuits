@@ -5,12 +5,12 @@ mod lookups;
 mod multiple_precision_integer;
 mod param;
 
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(any(test, feature = "test-circuits"))]
 mod dev;
-#[cfg(any(feature = "test", test))]
+#[cfg(test)]
 mod test;
 use bus_mapping::operation::Target;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(feature = "test-circuits")]
 pub use dev::StateCircuit as TestStateCircuit;
 
 use self::{
@@ -42,7 +42,7 @@ use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries a
 use param::*;
 use std::marker::PhantomData;
 
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(test)]
 use std::collections::HashMap;
 
 /// Config for StateCircuit
@@ -436,7 +436,7 @@ pub struct StateCircuit<F> {
     pub rows: Vec<Rw>,
     updates: MptUpdates,
     pub(crate) n_rows: usize,
-    #[cfg(any(feature = "test", test, feature = "test-circuits"))]
+    #[cfg(test)]
     overrides: HashMap<(dev::AdviceColumn, isize), F>,
     _marker: PhantomData<F>,
 }
@@ -450,7 +450,7 @@ impl<F: Field> StateCircuit<F> {
             rows,
             updates,
             n_rows,
-            #[cfg(any(feature = "test", test, feature = "test-circuits"))]
+            #[cfg(test)]
             overrides: HashMap::new(),
             _marker: PhantomData::default(),
         }
@@ -498,7 +498,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     .load_with_region(&mut region, &self.rows, self.n_rows)?;
 
                 config.assign_with_region(&mut region, &self.rows, &self.updates, self.n_rows)?;
-                #[cfg(any(feature = "test", test, feature = "test-circuits"))]
+                #[cfg(test)]
                 {
                     let first_non_padding_index = if self.rows.len() < self.n_rows {
                         RwMap::padding_len(self.rows.len(), self.n_rows)

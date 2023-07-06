@@ -1,9 +1,8 @@
-use super::test::UXTable;
 pub use super::StateCircuit;
 
 use crate::{
     state_circuit::{StateCircuitConfig, StateCircuitConfigArgs},
-    table::{MptTable, RwTable},
+    table::{MptTable, RwTable, UXTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
 use eth_types::Field;

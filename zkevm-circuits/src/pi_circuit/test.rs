@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use std::collections::HashMap;
 
 use crate::{pi_circuit::dev::PiCircuitParams, util::unusable_rows, witness::block_convert};

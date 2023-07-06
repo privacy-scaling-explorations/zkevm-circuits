@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 pub use super::{dev::*, *};
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, TxLogFieldTag, TxReceiptFieldTag},

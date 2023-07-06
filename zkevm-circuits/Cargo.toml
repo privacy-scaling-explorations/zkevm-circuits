@@ -49,10 +49,11 @@ serde_json = "1.0.78"
 
 [features]
 default = []
-test = ["ethers-signers", "mock", "bus-mapping/test"]
-test-circuits = []
-warn-unimplemented = ["eth-types/warn-unimplemented"]
-stats = ["warn-unimplemented", "dep:cli-table"]
+# We export some test circuits for other crates to consume
+test-circuits = ["eth-types/warn-unimplemented"]
+test-util = ["dep:mock"]
+
+stats = ["eth-types/warn-unimplemented", "dep:cli-table"]
 
 [[bin]]
 name = "stats"

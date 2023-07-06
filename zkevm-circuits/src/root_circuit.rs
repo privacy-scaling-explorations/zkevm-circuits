@@ -25,7 +25,7 @@ mod aggregation;
 
 #[cfg(any(feature = "test", test))]
 mod test;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(test)]
 pub use self::RootCircuit as TestRootCircuit;
 
 pub use aggregation::{

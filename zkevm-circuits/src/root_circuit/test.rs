@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use crate::{
     root_circuit::{compile, Config, Gwc, PoseidonTranscript, RootCircuit},
     super_circuit::{test::block_1tx, SuperCircuit},
