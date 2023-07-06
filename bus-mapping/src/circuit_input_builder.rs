@@ -295,6 +295,7 @@ impl CircuitInputBuilder<FixedCParams> {
             step.bus_mapping_instance.push(op_ref);
         };
 
+        // rwc index start from 1
         let total_rws = state.block_ctx.rwc.0 - 1;
         // We need at least 1 extra Start row
         #[allow(clippy::int_plus_one)]
@@ -306,13 +307,21 @@ impl CircuitInputBuilder<FixedCParams> {
                 max_rws
             );
         }
-        push_op(&mut end_block_last, RWCounter(1), RW::READ, StartOp {});
+        let (padding_start, padding_end) = (1, max_rws - total_rws); // rw counter start from 1
         push_op(
             &mut end_block_last,
-            RWCounter(max_rws - total_rws),
+            RWCounter(padding_start),
             RW::READ,
             StartOp {},
         );
+        if padding_end != padding_start {
+            push_op(
+                &mut end_block_last,
+                RWCounter(padding_end),
+                RW::READ,
+                StartOp {},
+            );
+        }
 
         self.block.block_steps.end_block_not_last = end_block_not_last;
         self.block.block_steps.end_block_last = end_block_last;
@@ -380,7 +389,12 @@ impl CircuitInputBuilder<DynamicCParams> {
                 .fold(0, |acc, c| acc + c.bytes.len())
                 * 2
                 + 2;
-            let max_rws: usize = self.block_ctx.rwc.into();
+
+            let total_rws_before_padding: usize =
+                <RWCounter as Into<usize>>::into(self.block_ctx.rwc) - 1; // -1 since rwc start from index `1`
+            let max_rws_after_padding = total_rws_before_padding
+                + 1 // fill 1 to have exactly one StartOp padding in below `set_end_block`
+                + if total_rws_before_padding > 0 { 1 /*end_block -> CallContextFieldTag::TxId lookup*/ } else { 0 };
             // Computing the number of rows for the EVM circuit requires the size of ExecStep,
             // which is determined in the code of zkevm-circuits and cannot be imported here.
             // When the evm circuit receives a 0 value it dynamically computes the minimum
@@ -392,7 +406,7 @@ impl CircuitInputBuilder<DynamicCParams> {
             // needed.
             let max_keccak_rows = 0;
             FixedCParams {
-                max_rws: max_rws + 3,
+                max_rws: max_rws_after_padding,
                 max_txs,
                 max_calldata,
                 max_copy_rows,
