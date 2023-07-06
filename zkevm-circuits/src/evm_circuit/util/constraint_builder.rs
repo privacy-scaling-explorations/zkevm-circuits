@@ -294,7 +294,6 @@ pub(crate) struct Constraints<F> {
 }
 
 pub(crate) struct EVMConstraintBuilder<'a, F: Field> {
-    pub max_degree: usize,
     pub(crate) curr: Step<F>,
     pub(crate) next: Step<F>,
     challenges: &'a Challenges<Expression<F>>,
@@ -333,7 +332,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         execution_state: ExecutionState,
     ) -> Self {
         Self {
-            max_degree: MAX_DEGREE,
             curr,
             next,
             challenges,
