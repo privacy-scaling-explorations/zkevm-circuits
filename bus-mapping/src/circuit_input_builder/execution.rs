@@ -446,7 +446,7 @@ impl CopyEvent {
     // increase in rw counter from the start of the copy event to step index
     fn rw_counter_increase(&self, step_index: usize) -> u64 {
         if let (CopyDataType::Memory, CopyDataType::Memory) = (self.src_type, self.dst_type) {
-            return step_index as u64 % 2 + 2 * (step_index as f32 / 64.0).floor() as u64;
+            return step_index as u64 % 2 + 2 * (step_index as u64 / 64);
         }
         let source_rw_increase = match self.src_type {
             CopyDataType::Bytecode | CopyDataType::TxCalldata | CopyDataType::Precompile(_) => 0,

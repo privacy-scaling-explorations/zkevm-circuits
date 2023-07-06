@@ -219,7 +219,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             precompile_return_length.expr(),
             call_gadget.rd_address.length(),
         );
-        // FIXME: soundness problem
+
         let precompile_input_rws = cb.query_cell();
         let precompile_output_rws = cb.query_cell();
         let precompile_return_rws = cb.query_cell();
