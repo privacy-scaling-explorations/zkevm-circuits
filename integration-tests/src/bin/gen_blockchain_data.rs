@@ -75,6 +75,8 @@ async fn main() {
 
     // Compile contracts
     info!("Compiling contracts...");
+    let solc = Solc::default();
+    info!("Solc version {}", solc.version().expect("version works"));
     let mut contracts = HashMap::new();
     for (name, contract_path) in CONTRACTS {
         let path_sol = Path::new(CONTRACTS_PATH).join(contract_path);
@@ -89,7 +91,7 @@ async fn main() {
             .clone()
             .evm_version(EvmVersion::London);
 
-        let compiled = Solc::default()
+        let compiled = solc
             .compile(&input)
             .unwrap_or_else(|_| panic!("solc compile error {:?}", path_sol));
         if !compiled.errors.is_empty() {
