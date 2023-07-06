@@ -132,7 +132,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         });
 
         let step_state_transition = StepStateTransition {
-            // cb.rw_counter_offset() contains copy lookup rw counter increase
             rw_counter: Transition::Delta(cb.rw_counter_offset()),
             program_counter: Transition::Delta(1.expr()),
             stack_pointer: Transition::Delta(4.expr()),

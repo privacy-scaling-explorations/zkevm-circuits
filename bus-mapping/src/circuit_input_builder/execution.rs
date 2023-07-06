@@ -351,9 +351,9 @@ pub struct CopyBytes {
     /// Represents the list of (bytes, is_code, mask) copied during this copy event
     pub bytes: Vec<(u8, bool, bool)>,
     /// Represents the list of (bytes, is_code, mask) read to copy during this copy event, used for
-    /// memory to memoryb write case
+    /// memory to memory write case
     pub aux_bytes: Option<Vec<(u8, bool, bool)>>,
-    /// Represents the list of bytes before this copy event, it is reuqired for memory write copy
+    /// Represents the list of bytes before this copy event, it is required for memory write copy
     /// event
     pub bytes_write_prev: Option<Vec<u8>>,
 }
