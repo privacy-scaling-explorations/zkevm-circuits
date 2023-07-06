@@ -1561,8 +1561,8 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
                 let mut call_data_offset = TX_LEN * self.max_txs + EMPTY_TX_ROW_COUNT;
 
-                let txs = self.public_data.txs();
-                for (i, tx) in self.public_data.txs().iter().enumerate() {
+                let txs = self.public_data.transactions.clone();
+                for (i, tx) in self.public_data.transactions.iter().enumerate() {
                     let call_data_length = tx.call_data.0.len();
                     let mut gas_cost = F::ZERO;
                     for (index, byte) in tx.call_data.0.iter().enumerate() {

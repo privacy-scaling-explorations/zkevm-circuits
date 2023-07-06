@@ -288,6 +288,10 @@ impl Transaction {
             ..response::Transaction::default()
         }
     }
+    /// Convinient method for gas limit
+    pub fn gas(&self) -> u64 {
+        self.gas_limit.as_u64()
+    }
 }
 
 /// GethData is a type that contains all the information of a Ethereum block

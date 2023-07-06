@@ -18,6 +18,7 @@ mod tests {
             Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
         },
     };
+    use itertools::Itertools;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
@@ -112,15 +113,16 @@ mod tests {
     }
 
     fn generate_publicdata(max_txs: usize) -> PublicData {
-        let mut public_data = PublicData::default();
-        let chain_id = 1337u64;
-        public_data.chain_id = Word::from(chain_id);
+        let transactions = std::iter::repeat(eth_types::geth_types::Transaction::from(
+            mock::CORRECT_MOCK_TXS[0].clone(),
+        ))
+        .take(max_txs)
+        .collect_vec();
 
-        let n_tx = max_txs;
-        for _ in 0..n_tx {
-            let eth_tx = eth_types::Transaction::from(mock::CORRECT_MOCK_TXS[0].clone());
-            public_data.transactions.push(eth_tx);
+        PublicData {
+            chain_id: Word::from(1337),
+            transactions,
+            ..Default::default()
         }
-        public_data
     }
 }
