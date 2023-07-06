@@ -31,7 +31,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, SecondPhase, Selector},
     poly::Rotation,
 };
-use integer::{AssignedInteger, IntegerChip, IntegerConfig, IntegerInstructions, Range};
+use integer::{AssignedInteger, IntegerChip, IntegerInstructions, Range};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 

@@ -27,8 +27,6 @@ pub(crate) struct EndBlockGadget<F> {
     max_txs: Cell<F>,
 }
 
-const EMPTY_BLOCK_N_RWS: u64 = 0;
-
 impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
     const NAME: &'static str = "EndBlock";
 

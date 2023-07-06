@@ -2,7 +2,6 @@
 
 use super::{keccak_packed_multi::keccak_unusable_rows, param::*};
 use eth_types::{Field, ToScalar, Word};
-use halo2_proofs::circuit::Value;
 use std::env::var;
 
 /// Description of which bits (positions) a part contains
