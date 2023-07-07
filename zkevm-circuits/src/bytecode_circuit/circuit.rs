@@ -10,7 +10,7 @@ use crate::{
         word::{empty_code_hash_word_value, Word, Word32, WordExpr},
         Challenges, Expr, SubCircuit, SubCircuitConfig,
     },
-    witness::{self, BytecodeCollection},
+    witness::{self, BytecodeCollection, BytecodeTableAssignment},
 };
 use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
 use eth_types::Field;
@@ -485,7 +485,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         size: usize,
-        witness: &[UnrolledBytecode<F>],
+        witness: &BytecodeTableAssignment<F>,
         overwrite: &UnrolledBytecode<F>,
         challenges: &Challenges<Value<F>>,
         fail_fast: bool,
@@ -788,7 +788,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 #[derive(Clone, Default, Debug)]
 pub struct BytecodeCircuit<F: Field> {
     /// Unrolled bytecodes
-    pub bytecodes: BytecodeCollection,
+    pub bytecodes: BytecodeTableAssignment<F>,
     /// Circuit size
     pub size: usize,
     /// Overwrite
@@ -797,9 +797,9 @@ pub struct BytecodeCircuit<F: Field> {
 
 impl<F: Field> BytecodeCircuit<F> {
     /// new BytecodeCircuitTester
-    pub fn new(bytecodes: BytecodeCollection, size: usize) -> Self {
+    pub fn new(bytecodes: &BytecodeTableAssignment<F>, size: usize) -> Self {
         Self {
-            bytecodes,
+            bytecodes: bytecodes.clone(),
             size,
             overwrite: Default::default(),
         }
@@ -807,7 +807,7 @@ impl<F: Field> BytecodeCircuit<F> {
 
     /// Creates bytecode circuit from block and bytecode_size.
     pub fn new_from_block_sized(block: &witness::Block<F>, bytecode_size: usize) -> Self {
-        Self::new(block.bytecodes.clone(), bytecode_size)
+        Self::new(&block.bytecodes.into(), bytecode_size)
     }
 }
 
@@ -844,12 +844,7 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
         config.assign_internal(
             layouter,
             self.size,
-            &self
-                .bytecodes
-                .clone()
-                .into_iter()
-                .map(|b| unroll(b.code()))
-                .collect_vec(),
+            &self.bytecodes,
             &self.overwrite,
             challenges,
             false,

@@ -2,7 +2,7 @@ use crate::{
     bytecode_circuit::{bytecode_unroller::*, circuit::BytecodeCircuit},
     table::BytecodeFieldTag,
     util::{is_push, unusable_rows, SubCircuit},
-    witness::BytecodeCollection,
+    witness::{BytecodeCollection, BytecodeTableAssignment},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Bytecode, Field, Word};
@@ -18,12 +18,7 @@ fn bytecode_circuit_unusable_rows() {
 }
 
 impl<F: Field> BytecodeCircuit<F> {
-    /// Verify that the selected bytecode fulfills the circuit
-    pub fn verify_raw(k: u32, bytecodes: Vec<Vec<u8>>) {
-        Self::verify(k, BytecodeCollection::from_raw(bytecodes), true);
-    }
-
-    pub(crate) fn verify(k: u32, bytecodes: BytecodeCollection, success: bool) {
+    pub(crate) fn verify(k: u32, bytecodes: &impl Into<BytecodeTableAssignment<F>>, success: bool) {
         let circuit = BytecodeCircuit::<F>::new(bytecodes, 2usize.pow(k));
 
         let prover = MockProver::<F>::run(k, &circuit, Vec::new()).unwrap();
@@ -40,7 +35,7 @@ impl<F: Field> BytecodeCircuit<F> {
 /// Test bytecode circuit with unrolled bytecode
 pub fn test_bytecode_circuit_unrolled<F: Field>(
     k: u32,
-    bytecodes: BytecodeCollection,
+    bytecodes: &impl Into<BytecodeTableAssignment<F>>,
     success: bool,
 ) {
     let circuit = BytecodeCircuit::<F>::new(bytecodes, 2usize.pow(k));
@@ -132,13 +127,13 @@ fn bytecode_unrolling() {
 #[test]
 fn bytecode_empty() {
     let k = 9;
-    test_bytecode_circuit_unrolled::<Fr>(k, vec![unroll(vec![])], true);
+    test_bytecode_circuit_unrolled::<Fr>(k, vec![vec![]], true);
 }
 
 #[test]
 fn bytecode_simple() {
     let k = 9;
-    let bytecodes = vec![unroll(vec![7u8]), unroll(vec![6u8]), unroll(vec![5u8])];
+    let bytecodes = vec![vec![7u8], vec![6u8], vec![5u8]];
     test_bytecode_circuit_unrolled::<Fr>(k, bytecodes, true);
 }
 
@@ -146,21 +141,21 @@ fn bytecode_simple() {
 #[test]
 fn bytecode_full() {
     let k = 9;
-    test_bytecode_circuit_unrolled::<Fr>(k, vec![unroll(vec![7u8; 2usize.pow(k) - 8])], true);
+    test_bytecode_circuit_unrolled::<Fr>(k, vec![vec![7u8; 2usize.pow(k) - 8]], true);
 }
 
 #[test]
 fn bytecode_last_row_with_byte() {
     let k = 9;
     // Last row must be a padding row, so we have one row less for actual bytecode
-    test_bytecode_circuit_unrolled::<Fr>(k, vec![unroll(vec![7u8; 2usize.pow(k) - 7])], false);
+    test_bytecode_circuit_unrolled::<Fr>(k, vec![vec![7u8; 2usize.pow(k) - 7]], false);
 }
 
 /// Tests a circuit with incomplete bytecode
 #[test]
 fn bytecode_incomplete() {
     let k = 9;
-    test_bytecode_circuit_unrolled::<Fr>(k, vec![unroll(vec![7u8; 2usize.pow(k) + 1])], false);
+    test_bytecode_circuit_unrolled::<Fr>(k, vec![vec![7u8; 2usize.pow(k) + 1]], false);
 }
 
 /// Tests multiple bytecodes in a single circuit
@@ -170,15 +165,15 @@ fn bytecode_push() {
     test_bytecode_circuit_unrolled::<Fr>(
         k,
         vec![
-            unroll(vec![]),
-            unroll(vec![OpcodeId::PUSH32.as_u8()]),
-            unroll(vec![OpcodeId::PUSH32.as_u8(), OpcodeId::ADD.as_u8()]),
-            unroll(vec![OpcodeId::ADD.as_u8(), OpcodeId::PUSH32.as_u8()]),
-            unroll(vec![
+            vec![],
+            vec![OpcodeId::PUSH32.as_u8()],
+            vec![OpcodeId::PUSH32.as_u8(), OpcodeId::ADD.as_u8()],
+            vec![OpcodeId::ADD.as_u8(), OpcodeId::PUSH32.as_u8()],
+            vec![
                 OpcodeId::ADD.as_u8(),
                 OpcodeId::PUSH32.as_u8(),
                 OpcodeId::ADD.as_u8(),
-            ]),
+            ],
         ],
         true,
     );
@@ -189,11 +184,10 @@ fn bytecode_push() {
 fn bytecode_invalid_hash_data() {
     let k = 9;
     let bytecode = vec![8u8, 2, 3, 8, 9, 7, 128];
-    let unrolled = unroll(bytecode);
-    test_bytecode_circuit_unrolled::<Fr>(k, vec![unrolled.clone()], true);
+    test_bytecode_circuit_unrolled::<Fr>(k, vec![bytecode.clone()], true);
     // Change the code_hash on the first position (header row)
     {
-        let mut invalid = unrolled;
+        let mut invalid = bytecode;
         invalid.rows[0].code_hash += Word::one();
         log::trace!("bytecode_invalid_hash_data: Change the code_hash on the first position");
         test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);

@@ -2,7 +2,7 @@ use crate::{table::BytecodeFieldTag, util};
 use bus_mapping::state_db::CodeDB;
 use eth_types::{Bytecode, Field, Word};
 use itertools::Itertools;
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Deref};
 
 /// A collection of bytecode to prove
 #[derive(Clone, Debug, Default)]
@@ -11,16 +11,6 @@ pub struct BytecodeCollection {
 }
 
 impl BytecodeCollection {
-    /// Construct from raw bytes
-    pub fn from_raw(bytecodes: Vec<Vec<u8>>) -> Self {
-        Self {
-            codes: HashMap::from_iter(bytecodes.iter().map(|bytecode| {
-                let code = Bytecode::from(bytecode.clone());
-                (code.hash(), code)
-            })),
-        }
-    }
-
     /// Compute number of rows required for bytecode table.
     pub fn num_rows_required_for_bytecode_table(&self) -> usize {
         self.codes
@@ -51,6 +41,17 @@ impl From<&CodeDB> for BytecodeCollection {
                     (bytecode.hash(), bytecode)
                 })
                 .collect(),
+        }
+    }
+}
+
+impl From<Vec<Vec<u8>>> for BytecodeCollection {
+    fn from(bytecodes: Vec<Vec<u8>>) -> Self {
+        Self {
+            codes: HashMap::from_iter(bytecodes.iter().map(|bytecode| {
+                let code = Bytecode::from(bytecode.clone());
+                (code.hash(), code)
+            })),
         }
     }
 }
@@ -142,5 +143,39 @@ impl<F: Field> BytecodeRow<F> {
             is_code: F::from(is_code.into()),
             value: F::from(value.into()),
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct BytecodeTableAssignment<F: Field>(Vec<BytecodeRow<F>>);
+
+impl<F: Field> From<BytecodeCollection> for BytecodeTableAssignment<F> {
+    fn from(collection: BytecodeCollection) -> Self {
+        let mut rows = Vec::with_capacity(collection.num_rows_required_for_bytecode_table());
+        for bytecode in collection.clone().into_iter() {
+            let code_hash = bytecode.hash();
+            let head = BytecodeRow::<F>::head(code_hash, bytecode.codesize());
+            rows.push(head);
+            for (index, &(byte, is_code)) in bytecode.code_vec().iter().enumerate() {
+                let body = BytecodeRow::<F>::body(code_hash, index, is_code, byte);
+                rows.push(body);
+            }
+        }
+        Self(rows)
+    }
+}
+
+impl<F: Field> From<Vec<Vec<u8>>> for BytecodeTableAssignment<F> {
+    fn from(codes: Vec<Vec<u8>>) -> Self {
+        let collections: BytecodeCollection = codes.into();
+        collections.into()
+    }
+}
+
+impl<F: Field> Deref for BytecodeTableAssignment<F> {
+    type Target = Vec<BytecodeRow<F>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
