@@ -43,6 +43,10 @@ pub struct Challenges<T = Challenge> {
 impl Challenges {
     /// Construct `Challenges` by allocating challenges in specific phases.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        // Dummy columns are required in the test circuits
+        // In some tests there might be no advice columns before the phase, so Halo2 will panic with
+        // "No Column<Advice> is used in phase Phase(1) while allocating a new 'Challenge usable
+        // after phase Phase(1)'"
         #[cfg(any(test, feature = "test-circuits"))]
         let _dummy_cols = [meta.advice_column(), meta.advice_column_in(SecondPhase)];
 
