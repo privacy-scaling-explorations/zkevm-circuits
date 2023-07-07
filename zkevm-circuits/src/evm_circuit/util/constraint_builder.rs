@@ -180,6 +180,10 @@ pub(crate) trait ConstrainBuilderCommon<F: Field> {
         self.add_constraint(name, value.clone() * (1.expr() - value));
     }
 
+    fn require_true(&mut self, name: &'static str, value: Expression<F>) {
+        self.require_equal(name, value, 1.expr());
+    }
+
     fn require_in_set(
         &mut self,
         name: &'static str,

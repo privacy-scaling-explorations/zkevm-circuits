@@ -44,6 +44,7 @@ mod stackonlyop;
 mod stop;
 mod swap;
 
+mod error_invalid_creation_code;
 mod error_invalid_jump;
 mod error_oog_call;
 mod error_oog_exp;
@@ -71,6 +72,7 @@ use codecopy::Codecopy;
 use codesize::Codesize;
 use create::Create;
 use dup::Dup;
+use error_invalid_creation_code::ErrorCreationCode;
 use error_invalid_jump::InvalidJump;
 use error_oog_call::OOGCall;
 use error_oog_exp::OOGExp;
@@ -297,6 +299,7 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         }
         ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
+        ExecError::InvalidCreationCode => Some(ErrorCreationCode::gen_associated_ops),
         // call, callcode, create & create2 can encounter DepthError error,
         ExecError::Depth(DepthError::Call) => Some(CallOpcode::<7>::gen_associated_ops),
         ExecError::Depth(DepthError::Create) => Some(Create::<false>::gen_associated_ops),
