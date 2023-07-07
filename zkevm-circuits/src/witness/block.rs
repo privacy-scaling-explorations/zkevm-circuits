@@ -246,7 +246,7 @@ pub fn block_convert<F: Field>(
         txs: block.txs().to_vec(),
         end_block_not_last: block.block_steps.end_block_not_last.clone(),
         end_block_last: block.block_steps.end_block_last.clone(),
-        bytecodes: BytecodeCollection::from_codedb(code_db),
+        bytecodes: code_db.into(),
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),

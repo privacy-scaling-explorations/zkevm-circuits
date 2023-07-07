@@ -11,20 +11,6 @@ pub struct BytecodeCollection {
 }
 
 impl BytecodeCollection {
-    /// Construct from codedb
-    pub fn from_codedb(code_db: &CodeDB) -> Self {
-        Self {
-            codes: code_db
-                .0
-                .values()
-                .map(|v| {
-                    let bytecode = Bytecode::from(v.clone());
-                    (bytecode.hash(), bytecode)
-                })
-                .collect(),
-        }
-    }
-
     /// Construct from raw bytes
     pub fn from_raw(bytecodes: Vec<Vec<u8>>) -> Self {
         Self {
@@ -51,6 +37,21 @@ impl BytecodeCollection {
     #[deprecated()]
     pub fn to_raw(&self) -> Vec<Vec<u8>> {
         self.codes.values().map(|code| code.code()).collect_vec()
+    }
+}
+
+impl From<&CodeDB> for BytecodeCollection {
+    fn from(code_db: &CodeDB) -> Self {
+        Self {
+            codes: code_db
+                .0
+                .values()
+                .map(|v| {
+                    let bytecode = Bytecode::from(v.clone());
+                    (bytecode.hash(), bytecode)
+                })
+                .collect(),
+        }
     }
 }
 
