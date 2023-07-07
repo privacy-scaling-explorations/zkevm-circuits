@@ -1,4 +1,4 @@
-use crate::witness::{Bytecode, BytecodeCollection};
+use crate::witness::{BytecodeCollection, BytecodeRow};
 
 use super::*;
 
@@ -65,8 +65,17 @@ impl BytecodeTable {
                 let bytecode_table_columns =
                     <BytecodeTable as LookupTable<F>>::advice_columns(self);
                 for bytecode in bytecodes.clone().into_iter() {
-                    let unroller: Bytecode<F> = (&bytecode).into();
-                    for row in unroller.to_rows().iter() {
+                    let rows = {
+                        let code_hash = bytecode.hash();
+                        std::iter::once(BytecodeRow::<F>::head(code_hash, bytecode.codesize()))
+                            .chain(bytecode.code_vec().iter().enumerate().map(
+                                |(index, &(byte, is_code))| {
+                                    BytecodeRow::<F>::body(code_hash, index, is_code, byte)
+                                },
+                            ))
+                            .collect_vec()
+                    };
+                    for row in rows.iter() {
                         for (&column, value) in bytecode_table_columns.iter().zip_eq(row.to_vec()) {
                             region.assign_advice(
                                 || format!("bytecode table row {}", offset),

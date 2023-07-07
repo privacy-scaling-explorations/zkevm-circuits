@@ -798,7 +798,7 @@ pub struct BytecodeCircuit<F: Field> {
 impl<F: Field> BytecodeCircuit<F> {
     /// new BytecodeCircuitTester
     pub fn new(bytecodes: BytecodeCollection, size: usize) -> Self {
-        BytecodeCircuit {
+        Self {
             bytecodes,
             size,
             overwrite: Default::default(),

@@ -64,28 +64,12 @@ impl IntoIterator for BytecodeCollection {
 }
 /// Bytecode
 #[derive(Clone, Debug)]
-pub struct BytecodeUnroller<F: Field> {
+pub struct BytecodeUnroller {
     /// We assume the is_code field is properly set.
     bytecode: Bytecode,
-    rows: Vec<BytecodeRow<F>>,
 }
 
-impl<F: Field> BytecodeUnroller<F> {
-    pub(crate) fn to_rows(&self) -> Vec<BytecodeRow<F>> {
-        let code_hash = self.bytecode.hash();
-        std::iter::once(BytecodeRow::head(code_hash, self.bytecode.codesize()))
-            .chain(
-                self.bytecode
-                    .code_vec()
-                    .iter()
-                    .enumerate()
-                    .map(|(index, &(byte, is_code))| {
-                        BytecodeRow::body(code_hash, index, is_code, byte)
-                    }),
-            )
-            .collect_vec()
-    }
-
+impl BytecodeUnroller {
     #[deprecated()]
     /// get byte value and is_code pair
     pub fn get(&self, dest: usize) -> Option<(u8, bool)> {
@@ -100,7 +84,7 @@ impl<F: Field> BytecodeUnroller<F> {
 
     /// The length of the bytecode table
     pub fn table_len(&self) -> usize {
-        self.rows.len()
+        self.bytecode.codesize() + 1
     }
 
     #[deprecated()]
@@ -116,44 +100,15 @@ impl<F: Field> BytecodeUnroller<F> {
     }
 }
 
-impl<F: Field> From<&Bytecode> for BytecodeUnroller<F> {
-    fn from(bytecode: &Bytecode) -> Self {
-        let s = Self {
-            bytecode: bytecode.clone(),
-            rows: vec![],
-        };
-        Self {
-            bytecode: bytecode.clone(),
-            rows: s.to_rows(),
-        }
-    }
-}
-
-impl<F: Field> From<Vec<u8>> for BytecodeUnroller<F> {
-    fn from(b: Vec<u8>) -> Self {
-        b.into()
-    }
-}
-
-impl<F: Field> IntoIterator for BytecodeUnroller<F> {
-    type Item = BytecodeRow<F>;
-
-    type IntoIter = std::vec::IntoIter<BytecodeRow<F>>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.rows.into_iter()
-    }
-}
-
 /// Public data for the bytecode
 #[derive(Clone, Debug, PartialEq)]
-pub struct BytecodeRow<F: Field> {
+pub(crate) struct BytecodeRow<F: Field> {
     /// We don't assign it now
     code_hash: Word,
-    pub tag: F,
-    pub index: F,
-    pub is_code: F,
-    pub value: F,
+    pub(crate) tag: F,
+    pub(crate) index: F,
+    pub(crate) is_code: F,
+    pub(crate) value: F,
 }
 
 impl<F: Field> BytecodeRow<F> {
@@ -169,7 +124,7 @@ impl<F: Field> BytecodeRow<F> {
         ]
     }
 
-    pub fn head(code_hash: Word, code_size: usize) -> Self {
+    pub(crate) fn head(code_hash: Word, code_size: usize) -> Self {
         Self {
             code_hash,
             tag: F::from(BytecodeFieldTag::Header as u64),
@@ -178,7 +133,7 @@ impl<F: Field> BytecodeRow<F> {
             value: F::from(code_size as u64),
         }
     }
-    pub fn body(code_hash: Word, index: usize, is_code: bool, value: u8) -> Self {
+    pub(crate) fn body(code_hash: Word, index: usize, is_code: bool, value: u8) -> Self {
         Self {
             code_hash,
             tag: F::from(BytecodeFieldTag::Byte as u64),

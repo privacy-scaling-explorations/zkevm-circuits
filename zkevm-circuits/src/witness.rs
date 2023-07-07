@@ -5,6 +5,7 @@
 mod block;
 pub use block::{block_convert, Block, BlockContext};
 mod bytecode;
+pub(crate) use bytecode::BytecodeRow;
 pub use bytecode::{BytecodeCollection, BytecodeUnroller as Bytecode};
 mod mpt;
 pub use mpt::{MptUpdate, MptUpdateRow, MptUpdates};
