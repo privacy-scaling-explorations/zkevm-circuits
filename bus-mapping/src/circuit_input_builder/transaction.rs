@@ -179,8 +179,10 @@ impl TransactionContext {
 #[derive(Debug, Clone, Default)]
 /// Result of the parsing of an Ethereum Transaction.
 pub struct Transaction {
+    /// The transaction id
+    pub id: u64,
     /// The raw transaction fields
-    pub tx: geth_types::Transaction,
+    tx: geth_types::Transaction,
     /// Calls made in the transaction
     pub(crate) calls: Vec<Call>,
     /// Execution steps
@@ -190,6 +192,7 @@ pub struct Transaction {
 impl Transaction {
     /// Create a new Self.
     pub fn new(
+        id: u64,
         call_id: usize,
         sdb: &StateDB,
         code_db: &mut CodeDB,
@@ -244,15 +247,11 @@ impl Transaction {
         };
 
         Ok(Self {
+            id,
             tx: eth_tx.into(),
             calls: vec![call],
             steps: Vec::new(),
         })
-    }
-
-    /// Whether this [`Transaction`] is a create one
-    pub fn is_create(&self) -> bool {
-        self.calls[0].is_create()
     }
 
     /// Return the list of execution steps of this transaction.
@@ -295,8 +294,19 @@ impl Transaction {
         self.steps.is_empty()
     }
 
-    /// Convinient method for gas limit
-    pub fn gas(&self) -> u64 {
-        self.tx.gas_limit.as_u64()
+    /// Constructor for padding tx in tx circuit
+    pub fn padding_tx(id: usize) -> Self {
+        Self {
+            id: id as u64,
+            ..Default::default()
+        }
+    }
+}
+
+impl std::ops::Deref for Transaction {
+    type Target = geth_types::Transaction;
+
+    fn deref(&self) -> &Self::Target {
+        &self.tx
     }
 }

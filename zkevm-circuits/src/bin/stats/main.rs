@@ -151,9 +151,31 @@ fn get_exec_steps_occupancy() {
                 format!("cells").cell().bold(true),
                 format!("top_height").cell().bold(true),
                 format!("used columns (Max: {:?})", $cols).cell().bold(true),
-                format!("Utilization").cell().bold(true),
+                format!("Utilization (%)").cell().bold(true),
             ]);
             print_stdout(table).unwrap();
+
+            // consider use stats package, e.g. https://github.com/statrs-dev/statrs to output more insightful result
+            let raw_statistics_data = report
+                .iter()
+                .fold(vec![0; 2], |mut accu, exec| {
+                    accu[0] += exec.$id.available_cells;
+                    accu[1] += exec.$id.used_cells;
+                    accu
+                });
+
+            let table = vec![vec![
+                format!("{:?}", raw_statistics_data[0]),
+                format!("{:?}", raw_statistics_data[1]),
+                format!("{:.1}", (raw_statistics_data[1] as f64/raw_statistics_data[0] as f64) * 100.0),
+            ]].table().title(vec![
+                format!("{:?} total_available_cells", stringify!($id)).cell().bold(true),
+                format!("{:?} total_used_cells", stringify!($id)).cell().bold(true),
+                format!("{:?} Utilization (%)", stringify!($id)).cell().bold(true),
+            ]);
+
+            print_stdout(table).unwrap();
+
             )*
         };
     }

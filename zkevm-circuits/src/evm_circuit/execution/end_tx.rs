@@ -205,15 +205,15 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let gas_used = tx.gas - step.gas_left;
+        let gas_used = tx.gas() - step.gas_left;
         let (refund, _) = block.get_rws(step, 2).tx_refund_value_pair();
         let [(caller_balance, caller_balance_prev), (coinbase_balance, coinbase_balance_prev)] =
             [3, 4].map(|index| block.get_rws(step, index).account_value_pair());
 
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id)))?;
         self.tx_gas
-            .assign(region, offset, Value::known(F::from(tx.gas)))?;
+            .assign(region, offset, Value::known(F::from(tx.gas())))?;
         let (max_refund, _) = self.max_refund.assign(region, offset, gas_used as u128)?;
         self.refund
             .assign(region, offset, Value::known(F::from(refund)))?;
@@ -233,7 +233,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             gas_fee_refund,
         )?;
         self.tx_caller_address
-            .assign_h160(region, offset, tx.caller_address)?;
+            .assign_h160(region, offset, tx.from)?;
         self.gas_fee_refund.assign(
             region,
             offset,
@@ -272,7 +272,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             // while later transactions need 4 (with one extra cumulative gas read) lookups
             let rw = &block.rws[(
                 Target::TxReceipt,
-                (tx.id - 2) * (TxReceiptFieldTag::COUNT + 1) + 2,
+                (tx.id as usize - 2) * (TxReceiptFieldTag::COUNT + 1) + 2,
             )];
             rw.receipt_value()
         };
@@ -283,7 +283,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             Value::known(F::from(current_cumulative_gas_used)),
         )?;
         self.is_first_tx
-            .assign(region, offset, F::from(tx.id as u64), F::ONE)?;
+            .assign(region, offset, F::from(tx.id), F::ONE)?;
         self.is_persistent.assign(
             region,
             offset,

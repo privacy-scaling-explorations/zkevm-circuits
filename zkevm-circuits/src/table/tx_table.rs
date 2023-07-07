@@ -154,13 +154,61 @@ impl TxTable {
                 let mut calldata_assignments: Vec<[Value<F>; 5]> = Vec::new();
                 // Assign Tx data (all tx fields except for calldata)
                 let padding_txs: Vec<_> = (txs.len()..max_txs)
-                    .map(|i| Transaction {
-                        id: i + 1,
-                        ..Default::default()
-                    })
+                    .map(|i| Transaction::padding_tx(i + 1))
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {
-                    let [tx_data, tx_calldata] = tx.table_assignments();
+                    let tx_id = Value::known(F::from(tx.id));
+                    let tx_data = vec![
+                        (
+                            TxContextFieldTag::Nonce,
+                            word::Word::from(tx.nonce.as_u64()),
+                        ),
+                        (TxContextFieldTag::Gas, word::Word::from(tx.gas())),
+                        (TxContextFieldTag::GasPrice, word::Word::from(tx.gas_price)),
+                        (TxContextFieldTag::CallerAddress, word::Word::from(tx.from)),
+                        (
+                            TxContextFieldTag::CalleeAddress,
+                            word::Word::from(tx.to_or_contract_addr()),
+                        ),
+                        (
+                            TxContextFieldTag::IsCreate,
+                            word::Word::from(tx.is_create()),
+                        ),
+                        (TxContextFieldTag::Value, word::Word::from(tx.value)),
+                        (
+                            TxContextFieldTag::CallDataLength,
+                            word::Word::from(tx.call_data.len() as u64),
+                        ),
+                        (
+                            TxContextFieldTag::CallDataGasCost,
+                            word::Word::from(tx.call_data_gas_cost()),
+                        ),
+                    ]
+                    .iter()
+                    .map(|&(tag, word)| {
+                        [
+                            tx_id,
+                            Value::known(F::from(tag as u64)),
+                            Value::known(F::ZERO),
+                            Value::known(word.lo()),
+                            Value::known(word.hi()),
+                        ]
+                    })
+                    .collect_vec();
+                    let tx_calldata = tx
+                        .call_data
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, byte)| {
+                            [
+                                tx_id,
+                                Value::known(F::from(TxContextFieldTag::CallData as u64)),
+                                Value::known(F::from(idx as u64)),
+                                Value::known(F::from(*byte as u64)),
+                                Value::known(F::ZERO),
+                            ]
+                        })
+                        .collect_vec();
                     for row in tx_data {
                         assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
                         offset += 1;

@@ -2,7 +2,7 @@ use crate::{
     evm_circuit::{
         param::STACK_CAPACITY,
         step::{ExecutionState, Step},
-        table::{FixedTableTag, Lookup, RwValues},
+        table::{FixedTableTag, Lookup, RwValues, Table},
         util::{Cell, RandomLinearCombination},
     },
     table::{
@@ -178,6 +178,10 @@ pub(crate) trait ConstrainBuilderCommon<F: Field> {
 
     fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
         self.add_constraint(name, value.clone() * (1.expr() - value));
+    }
+
+    fn require_true(&mut self, name: &'static str, value: Expression<F>) {
+        self.require_equal(name, value, 1.expr());
     }
 
     fn require_in_set(
@@ -440,7 +444,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_byte(&mut self) -> Cell<F> {
-        self.query_cell_with_type(CellType::LookupU8)
+        self.query_cell_with_type(CellType::Lookup(Table::U8))
     }
 
     // default query_word is 2 limbs. Each limb is not guaranteed to be 128 bits.
@@ -511,7 +515,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_u8_dyn(&mut self, count: usize) -> Vec<Cell<F>> {
-        self.query_cells(CellType::LookupU8, count)
+        self.query_cells(CellType::Lookup(Table::U8), count)
     }
 
     pub(crate) fn query_u16<const N: usize>(&mut self) -> [Cell<F>; N] {
@@ -519,7 +523,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_u16_dyn(&mut self, count: usize) -> Vec<Cell<F>> {
-        self.query_cells(CellType::LookupU16, count)
+        self.query_cells(CellType::Lookup(Table::U16), count)
     }
 
     pub(crate) fn query_cell(&mut self) -> Cell<F> {

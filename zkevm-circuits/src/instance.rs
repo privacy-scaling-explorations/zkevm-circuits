@@ -1,8 +1,7 @@
 //! The instance definition.
 
-use std::iter;
-
 use eth_types::{geth_types::BlockConstants, BigEndianHash, Field, Keccak};
+use std::{iter, ops::Deref};
 
 use eth_types::{geth_types::Transaction, Address, ToBigEndian, Word, H256};
 use itertools::Itertools;
@@ -78,7 +77,7 @@ pub struct PublicData {
     /// where the latest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// Block Transactions
-    pub transactions: Vec<eth_types::Transaction>,
+    pub transactions: Vec<Transaction>,
     /// Block State Root
     pub state_root: H256,
     /// Previous block root
@@ -133,14 +132,14 @@ impl PublicData {
             .try_into()
             .expect("Error converting chain_id to u64");
         let mut tx_vals = vec![];
-        for tx in &self.txs() {
+        for tx in &self.transactions {
             let sign_data_res = tx.sign_data(chain_id);
             let msg_hash_le =
                 sign_data_res.map_or_else(|_| [0u8; 32], |sign_data| sign_data.msg_hash.to_bytes());
             tx_vals.push(TxValues {
                 nonce: tx.nonce.low_u64(),
                 gas_price: tx.gas_price,
-                gas_limit: tx.gas_limit.low_u64(),
+                gas_limit: tx.gas(),
                 from_addr: tx.from,
                 to_addr: tx.to.unwrap_or_else(Address::zero),
                 is_create: (tx.to.is_none() as u64),
@@ -166,14 +165,6 @@ impl PublicData {
             state_root: self.state_root,
             prev_state_root: self.prev_state_root,
         }
-    }
-
-    /// Return converted transaction
-    pub fn txs(&self) -> Vec<Transaction> {
-        self.transactions
-            .iter()
-            .map(Transaction::from)
-            .collect_vec()
     }
 
     /// get the serialized public data bytes
@@ -247,8 +238,8 @@ impl PublicData {
             .chain(all_tx_bytes);
 
         // Tx Table CallData
-        let txs = self.txs();
-        let all_calldata = txs
+        let all_calldata = self
+            .transactions
             .iter()
             .flat_map(|tx| tx.call_data.0.as_ref().iter().copied())
             .collect_vec();
@@ -278,7 +269,7 @@ pub fn public_data_convert<F: Field>(block: &Block<F>) -> PublicData {
     PublicData {
         chain_id: block.context.chain_id,
         history_hashes: block.context.history_hashes.clone(),
-        transactions: block.eth_block.transactions.clone(),
+        transactions: block.txs.iter().map(|tx| tx.deref().clone()).collect_vec(),
         state_root: block.eth_block.state_root,
         prev_state_root: H256::from_uint(&block.prev_state_root),
         block_hash: block.eth_block.hash,

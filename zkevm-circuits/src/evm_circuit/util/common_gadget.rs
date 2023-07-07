@@ -976,6 +976,16 @@ impl<F: Field> CommonErrorGadget<F> {
         opcode: Expression<F>,
         rw_counter_delta: Expression<F>,
     ) -> Self {
+        Self::construct_with_return_data(cb, opcode, rw_counter_delta, 0.expr(), 0.expr())
+    }
+
+    pub(crate) fn construct_with_return_data(
+        cb: &mut EVMConstraintBuilder<F>,
+        opcode: Expression<F>,
+        rw_counter_delta: Expression<F>,
+        return_data_offset: Expression<F>,
+        return_data_length: Expression<F>,
+    ) -> Self {
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
         let rw_counter_end_of_reversion = cb.query_word_unchecked(); // rw_counter_end_of_reversion just used for read lookup, therefore skip range check
@@ -1014,8 +1024,8 @@ impl<F: Field> CommonErrorGadget<F> {
                 cb,
                 0.expr(),
                 0.expr(),
-                0.expr(),
-                0.expr(),
+                return_data_offset,
+                return_data_length,
                 0.expr(),
                 0.expr(),
             )

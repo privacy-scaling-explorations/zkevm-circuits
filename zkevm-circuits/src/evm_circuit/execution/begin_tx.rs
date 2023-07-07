@@ -28,8 +28,7 @@ use crate::{
     },
 };
 use bus_mapping::state_db::CodeDB;
-use eth_types::{evm_types::GasCost, Field, ToWord, U256};
-use ethers_core::utils::{get_contract_address, keccak256};
+use eth_types::{evm_types::GasCost, keccak256, Field, ToWord, U256};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -505,7 +504,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let gas_fee = tx.gas_price * tx.gas;
+        let gas_fee = tx.gas_price * tx.gas();
         let zero = eth_types::Word::zero();
 
         let mut rws = StepRws::new(block, step);
@@ -513,13 +512,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
         let mut callee_code_hash = zero;
-        if !is_precompiled(&tx.callee_address) && !tx.is_create {
+        if !is_precompiled(&tx.to_or_contract_addr()) && !tx.is_create() {
             callee_code_hash = rws.next().account_value_pair().1;
         }
-        let callee_exists =
-            is_precompiled(&tx.callee_address) || (!tx.is_create && !callee_code_hash.is_zero());
+        let callee_exists = is_precompiled(&tx.to_or_contract_addr())
+            || (!tx.is_create() && !callee_code_hash.is_zero());
         let caller_balance_sub_fee_pair = rws.next().account_value_pair();
-        let must_create = tx.is_create;
+        let must_create = tx.is_create();
         if (!callee_exists && !tx.value.is_zero()) || must_create {
             callee_code_hash = rws.next().account_value_pair().1;
         }
@@ -531,52 +530,45 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         };
 
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id)))?;
         self.tx_nonce
-            .assign(region, offset, Value::known(F::from(tx.nonce)))?;
+            .assign(region, offset, Value::known(F::from(tx.nonce.as_u64())))?;
         self.tx_gas
-            .assign(region, offset, Value::known(F::from(tx.gas)))?;
+            .assign(region, offset, Value::known(F::from(tx.gas())))?;
         self.tx_gas_price
             .assign_u256(region, offset, tx.gas_price)?;
         self.mul_gas_fee_by_gas
-            .assign(region, offset, tx.gas_price, tx.gas, gas_fee)?;
+            .assign(region, offset, tx.gas_price, tx.gas(), gas_fee)?;
         self.tx_caller_address
-            .assign_h160(region, offset, tx.caller_address)?;
+            .assign_h160(region, offset, tx.from)?;
         self.tx_caller_address_is_zero.assign_u256(
             region,
             offset,
-            U256::from_big_endian(&tx.caller_address.to_fixed_bytes()),
+            U256::from_big_endian(&tx.from.to_fixed_bytes()),
         )?;
         self.tx_callee_address
-            .assign_h160(region, offset, tx.callee_address)?;
-        self.call_callee_address.assign_h160(
-            region,
-            offset,
-            if tx.is_create {
-                get_contract_address(tx.caller_address, tx.nonce)
-            } else {
-                tx.callee_address
-            },
-        )?;
+            .assign_h160(region, offset, tx.to_or_contract_addr())?;
+        self.call_callee_address
+            .assign_h160(region, offset, tx.to_or_contract_addr())?;
         self.is_caller_callee_equal.assign(
             region,
             offset,
-            Value::known(F::from((tx.caller_address == tx.callee_address) as u64)),
+            Value::known(F::from((tx.from == tx.to_or_contract_addr()) as u64)),
         )?;
         self.tx_is_create
-            .assign(region, offset, Value::known(F::from(tx.is_create as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.is_create().into())))?;
         self.tx_call_data_length.assign(
             region,
             offset,
-            Value::known(F::from(tx.call_data_length as u64)),
+            Value::known(F::from(tx.call_data.len() as u64)),
         )?;
         self.tx_call_data_gas_cost.assign(
             region,
             offset,
-            Value::known(F::from(tx.call_data_gas_cost)),
+            Value::known(F::from(tx.call_data_gas_cost())),
         )?;
         self.tx_call_data_word_length
-            .assign(region, offset, tx.call_data_length as u128 + 31)?;
+            .assign(region, offset, tx.call_data.len() as u128 + 31)?;
         self.reversion_info.assign(
             region,
             offset,
@@ -584,7 +576,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             call.is_persistent,
         )?;
         self.sufficient_gas_left
-            .assign(region, offset, F::from(tx.gas - step.gas_cost))?;
+            .assign(region, offset, F::from(tx.gas() - step.gas_cost))?;
         self.transfer_with_gas_fee.assign(
             region,
             offset,
@@ -608,10 +600,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let untrimmed_contract_addr = {
             let mut stream = ethers_core::utils::rlp::RlpStream::new();
             stream.begin_list(2);
-            stream.append(&tx.caller_address);
-            stream.append(&eth_types::U256::from(tx.nonce));
+            stream.append(&tx.from);
+            stream.append(&tx.nonce.to_word());
             let rlp_encoding = stream.out().to_vec();
-            keccak256(rlp_encoding)
+            keccak256(&rlp_encoding)
         };
         self.caller_nonce_hash_bytes.assign_u256(
             region,
@@ -621,8 +613,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.create.assign(
             region,
             offset,
-            tx.caller_address,
-            tx.nonce,
+            tx.from,
+            tx.nonce.as_u64(),
             Some(callee_code_hash),
             None,
         )?;

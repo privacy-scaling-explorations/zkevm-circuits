@@ -21,9 +21,6 @@ pub(crate) enum CellType {
     StoragePhase1,
     StoragePhase2,
     StoragePermutation,
-    // TODO combine LookupU8, LookupU16 with Lookup(Table::U8 | Table::U16)
-    LookupU8,
-    LookupU16,
     Lookup(Table),
 }
 

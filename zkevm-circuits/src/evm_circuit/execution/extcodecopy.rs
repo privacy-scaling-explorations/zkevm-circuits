@@ -188,7 +188,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
                 .assign(region, offset, memory_offset, memory_length)?;
 
         self.tx_id
-            .assign(region, offset, Value::known(F::from(transaction.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(transaction.id)))?;
         self.reversion_info.assign(
             region,
             offset,

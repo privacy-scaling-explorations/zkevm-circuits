@@ -67,6 +67,7 @@ mod dummy;
 mod dup;
 mod end_block;
 mod end_tx;
+mod error_invalid_creation_code;
 mod error_invalid_jump;
 mod error_invalid_opcode;
 mod error_oog_call;
@@ -139,6 +140,7 @@ use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
+use error_invalid_creation_code::ErrorInvalidCreationCodeGadget;
 use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_call::ErrorOOGCallGadget;
@@ -312,8 +314,7 @@ pub struct ExecutionConfig<F> {
     error_depth: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>>,
     error_contract_address_collision:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>>,
-    error_invalid_creation_code:
-        Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>>,
+    error_invalid_creation_code: Box<ErrorInvalidCreationCodeGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
 }
 
@@ -828,6 +829,8 @@ impl<F: Field> ExecutionConfig<F> {
                 meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                     let table_expressions = match table {
                         Table::Fixed => fixed_table,
+                        Table::U8 => u8_table,
+                        Table::U16 => u16_table,
                         Table::Tx => tx_table,
                         Table::Rw => rw_table,
                         Table::Bytecode => bytecode_table,
@@ -842,30 +845,6 @@ impl<F: Field> ExecutionConfig<F> {
                         rlc::expr(&table_expressions, challenges.lookup_input()),
                     )]
                 });
-            }
-        }
-        for column in cell_manager.columns().iter() {
-            let column_expr = column.expr(meta);
-            match column.cell_type {
-                CellType::LookupU8 => {
-                    meta.lookup_any("u8 lookup", |meta| {
-                        vec![column_expr]
-                            .into_iter()
-                            .zip(u8_table.table_exprs(meta).into_iter())
-                            .map(|(expr, table)| (expr, table))
-                            .collect()
-                    });
-                }
-                CellType::LookupU16 => {
-                    meta.lookup_any("u16 lookup", |meta| {
-                        vec![column_expr]
-                            .into_iter()
-                            .zip(u16_table.table_exprs(meta).into_iter())
-                            .map(|(expr, table)| (expr, table))
-                            .collect()
-                    });
-                }
-                _ => (),
             }
         }
     }
@@ -933,7 +912,7 @@ impl<F: Field> ExecutionConfig<F> {
                 let last_call = block
                     .txs
                     .last()
-                    .map(|tx| tx.calls[0].clone())
+                    .map(|tx| tx.calls()[0].clone())
                     .unwrap_or_else(Call::default);
                 let end_block_not_last = &block.end_block_not_last;
                 let end_block_last = &block.end_block_last;
@@ -942,9 +921,9 @@ impl<F: Field> ExecutionConfig<F> {
                     .txs
                     .iter()
                     .flat_map(|tx| {
-                        tx.steps
+                        tx.steps()
                             .iter()
-                            .map(move |step| (tx, &tx.calls[step.call_index], step))
+                            .map(move |step| (tx, &tx.calls()[step.call_index], step))
                     })
                     .chain(std::iter::once((&dummy_tx, &last_call, end_block_not_last)))
                     .peekable();

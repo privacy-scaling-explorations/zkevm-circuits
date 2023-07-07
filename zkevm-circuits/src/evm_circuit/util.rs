@@ -4,8 +4,11 @@ pub use crate::util::{
     Challenges, Expr,
 };
 use crate::{
-    evm_circuit::param::{
-        LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_COPY_COLUMNS, N_PHASE2_COLUMNS, N_U8_LOOKUPS,
+    evm_circuit::{
+        param::{
+            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_COPY_COLUMNS, N_PHASE2_COLUMNS, N_U8_LOOKUPS,
+        },
+        table::Table,
     },
     util::{cell_manager::CMFixedWidthStrategyDistribution, int_decomposition::IntDecomposition},
     witness::{Block, ExecStep, Rw, RwMap},
@@ -227,6 +230,7 @@ impl<F: Field> StoredExpression<F> {
     }
 }
 
+//
 #[allow(clippy::mut_range_bound)]
 pub(crate) fn evm_cm_distribute_advice<F: Field>(
     meta: &mut ConstraintSystem<F>,
@@ -259,7 +263,7 @@ pub(crate) fn evm_cm_distribute_advice<F: Field>(
     // Mark columns used for byte lookup
     #[allow(clippy::reversed_empty_ranges)]
     for _ in 0..N_U8_LOOKUPS {
-        dist.add(CellType::LookupU8, advices[column_idx]);
+        dist.add(CellType::Lookup(Table::U8), advices[column_idx]);
         assert_eq!(advices[column_idx].column_type().phase(), 0);
         column_idx += 1;
     }
@@ -267,7 +271,7 @@ pub(crate) fn evm_cm_distribute_advice<F: Field>(
     // Mark columns used for byte lookup
     #[allow(clippy::reversed_empty_ranges)]
     for _ in 0..N_U16_LOOKUPS {
-        dist.add(CellType::LookupU16, advices[column_idx]);
+        dist.add(CellType::Lookup(Table::U16), advices[column_idx]);
         assert_eq!(advices[column_idx].column_type().phase(), 0);
         column_idx += 1;
     }
@@ -486,5 +490,62 @@ impl<'a> StepRws<'a> {
         let rw = self.rws[self.step.rw_index(self.offset)];
         self.offset += 1;
         rw
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use halo2_proofs::halo2curves::bn256::Fr;
+
+    use crate::evm_circuit::param::STEP_WIDTH;
+
+    use super::*;
+
+    #[test]
+    fn test_evm_cm_distribute_advice_1() {
+        let mut cs = ConstraintSystem::<Fr>::default();
+        let advices = vec![cs.advice_column(); STEP_WIDTH];
+
+        let cm = evm_cm_distribute_advice(&mut cs, &advices);
+
+        let lookup_config_size = LOOKUP_CONFIG
+            .iter()
+            .map(|(_, size)| size.to_owned())
+            .sum::<usize>();
+
+        assert_eq!(
+            cm.get(CellType::StoragePhase1).unwrap().len(),
+            STEP_WIDTH
+                - N_PHASE2_COLUMNS
+                - N_COPY_COLUMNS
+                - lookup_config_size
+                - N_U8_LOOKUPS
+                - N_U16_LOOKUPS
+        );
+        assert_eq!(
+            cm.get(CellType::StoragePhase2).unwrap().len(),
+            N_PHASE2_COLUMNS
+        );
+        assert_eq!(
+            cm.get(CellType::StoragePermutation).unwrap().len(),
+            N_COPY_COLUMNS
+        );
+
+        // CellType::Lookup
+        for &(table, count) in LOOKUP_CONFIG {
+            assert_eq!(cm.get(CellType::Lookup(table)).unwrap().len(), count);
+        }
+        assert_eq!(
+            cm.get(CellType::Lookup(Table::U8)).unwrap().len(),
+            N_U8_LOOKUPS
+        );
+        if N_U16_LOOKUPS == 0 {
+            assert!(cm.get(CellType::Lookup(Table::U16)).is_none());
+        } else {
+            assert_eq!(
+                cm.get(CellType::Lookup(Table::U16)).unwrap().len(),
+                N_U16_LOOKUPS
+            );
+        }
     }
 }

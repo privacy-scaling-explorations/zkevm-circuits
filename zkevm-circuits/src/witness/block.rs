@@ -14,7 +14,7 @@ use bus_mapping::{
 use eth_types::{Address, Field, ToScalar, Word};
 use halo2_proofs::circuit::Value;
 
-use super::{tx::tx_convert, Bytecode, ExecStep, Rw, RwMap, Transaction};
+use super::{Bytecode, ExecStep, Rw, RwMap, Transaction};
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -60,7 +60,7 @@ impl<F: Field> Block<F> {
     pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
         for (tx_idx, tx) in self.txs.iter().enumerate() {
             println!("tx {}", tx_idx);
-            for step in &tx.steps {
+            for step in tx.steps() {
                 println!(" step {:?} rwc: {}", step.exec_state, step.rwc.0);
                 for rw_idx in 0..step.bus_mapping_instance.len() {
                     println!("  - {:?}", self.get_rws(step, rw_idx));
@@ -248,12 +248,7 @@ pub fn block_convert<F: Field>(
         randomness: F::from(0xcafeu64),
         context: block.into(),
         rws,
-        txs: block
-            .txs()
-            .iter()
-            .enumerate()
-            .map(|(idx, tx)| tx_convert(tx, idx + 1))
-            .collect(),
+        txs: block.txs().to_vec(),
         end_block_not_last: block.block_steps.end_block_not_last.clone(),
         end_block_last: block.block_steps.end_block_last.clone(),
         bytecodes: code_db

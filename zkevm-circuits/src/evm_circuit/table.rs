@@ -123,6 +123,8 @@ impl FixedTableTag {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
 pub enum Table {
+    U8,
+    U16,
     Fixed,
     Tx,
     Rw,

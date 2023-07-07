@@ -16,6 +16,10 @@ impl CMFixedWidthStrategyDistribution {
             self.0.insert(cell_type, vec![advice]);
         }
     }
+
+    pub(crate) fn get(&self, cell_type: CellType) -> Option<&Vec<Column<Advice>>> {
+        self.0.get(&cell_type)
+    }
 }
 
 /// CMFixedWidthStrategy is a Cell Manager strategy that places the cells in the column that has
