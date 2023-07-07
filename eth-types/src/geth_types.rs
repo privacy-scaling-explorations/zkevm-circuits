@@ -318,7 +318,9 @@ impl GethData {
             assert_eq!(Word::from(wallet.chain_id()), self.chain_id);
             let geth_tx: Transaction = (&*tx).into();
             let req: TransactionRequest = (&geth_tx).into();
-            let sig = wallet.sign_transaction_sync(&req.chain_id(self.chain_id.as_u64()).into());
+            let sig = wallet
+                .sign_transaction_sync(&req.chain_id(self.chain_id.as_u64()).into())
+                .unwrap();
             tx.v = U64::from(sig.v);
             tx.r = sig.r;
             tx.s = sig.s;
