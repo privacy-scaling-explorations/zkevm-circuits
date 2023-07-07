@@ -16,7 +16,7 @@ use crate::{
             constraint_builder::{
                 BaseConstraintBuilder, ConstrainBuilderCommon, EVMConstraintBuilder,
             },
-            rlc,
+            evaluate_expression, rlc,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -225,6 +225,7 @@ pub struct ExecutionConfig<F> {
     step: Step<F>,
     pub(crate) height_map: HashMap<ExecutionState, usize>,
     stored_expressions_map: HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+    debug_expressions_map: HashMap<ExecutionState, Vec<(String, Expression<F>)>>,
     instrument: Instrument,
     // internal state gadgets
     begin_tx_gadget: Box<BeginTxGadget<F>>,
@@ -453,6 +454,7 @@ impl<F: Field> ExecutionConfig<F> {
         });
 
         let mut stored_expressions_map = HashMap::new();
+        let mut debug_expressions_map = HashMap::new();
 
         macro_rules! configure_gadget {
             () => {
@@ -474,6 +476,7 @@ impl<F: Field> ExecutionConfig<F> {
                         &step_curr,
                         &mut height_map,
                         &mut stored_expressions_map,
+                        &mut debug_expressions_map,
                         &mut instrument,
                     ))
                 })()
@@ -579,6 +582,7 @@ impl<F: Field> ExecutionConfig<F> {
             step: step_curr,
             height_map,
             stored_expressions_map,
+            debug_expressions_map,
             instrument,
         };
 
@@ -617,6 +621,7 @@ impl<F: Field> ExecutionConfig<F> {
         step_curr: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+        debug_expressions_map: &mut HashMap<ExecutionState, Vec<(String, Expression<F>)>>,
         instrument: &mut Instrument,
     ) -> G {
         // Configure the gadget with the max height first so we can find out the actual
@@ -657,6 +662,7 @@ impl<F: Field> ExecutionConfig<F> {
             step_next,
             height_map,
             stored_expressions_map,
+            debug_expressions_map,
             instrument,
             G::NAME,
             G::EXECUTION_STATE,
@@ -678,6 +684,7 @@ impl<F: Field> ExecutionConfig<F> {
         step_next: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+        debug_expressions_map: &mut HashMap<ExecutionState, Vec<(String, Expression<F>)>>,
         instrument: &mut Instrument,
         name: &'static str,
         execution_state: ExecutionState,
@@ -695,6 +702,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         instrument.on_gadget_built(execution_state, &cb);
 
+        let debug_expressions = cb.debug_expressions.clone();
         let (constraints, stored_expressions, _, meta) = cb.build();
         debug_assert!(
             !height_map.contains_key(&execution_state),
@@ -707,6 +715,7 @@ impl<F: Field> ExecutionConfig<F> {
             "execution state already configured"
         );
         stored_expressions_map.insert(execution_state, stored_expressions);
+        debug_expressions_map.insert(execution_state, debug_expressions);
 
         // Enforce the logic for this opcode
         let sel_step: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
@@ -887,6 +896,8 @@ impl<F: Field> ExecutionConfig<F> {
         block: &Block<F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
+        // Track number of calls to `layouter.assign_region` as layouter assignment passes.
+        let mut assign_pass = 0;
         layouter.assign_region(
             || "Execution step",
             |mut region| {
@@ -940,6 +951,7 @@ impl<F: Field> ExecutionConfig<F> {
                         height,
                         next.copied(),
                         challenges,
+                        assign_pass,
                     )?;
 
                     // q_step logic
@@ -976,6 +988,7 @@ impl<F: Field> ExecutionConfig<F> {
                         end_block_not_last,
                         height,
                         challenges,
+                        assign_pass,
                     )?;
 
                     for row_idx in offset..last_row {
@@ -998,6 +1011,7 @@ impl<F: Field> ExecutionConfig<F> {
                     height,
                     None,
                     challenges,
+                    assign_pass,
                 )?;
                 self.assign_q_step(&mut region, offset, height)?;
                 // enable q_step_last
@@ -1019,6 +1033,7 @@ impl<F: Field> ExecutionConfig<F> {
                     || Value::known(F::ZERO),
                 )?;
 
+                assign_pass += 1;
                 Ok(())
             },
         )
@@ -1070,6 +1085,7 @@ impl<F: Field> ExecutionConfig<F> {
         step: &ExecStep,
         height: usize,
         challenges: &Challenges<Value<F>>,
+        assign_pass: usize,
     ) -> Result<(), Error> {
         if offset_end <= offset_begin {
             return Ok(());
@@ -1086,7 +1102,16 @@ impl<F: Field> ExecutionConfig<F> {
             1,
             offset_begin,
         );
-        self.assign_exec_step_int(region, offset_begin, block, transaction, call, step)?;
+        self.assign_exec_step_int(
+            region,
+            offset_begin,
+            block,
+            transaction,
+            call,
+            step,
+            false,
+            assign_pass,
+        )?;
 
         region.replicate_assignment_for_range(
             || format!("repeat {:?} rows", step.execution_state()),
@@ -1109,6 +1134,7 @@ impl<F: Field> ExecutionConfig<F> {
         height: usize,
         next: Option<(&Transaction, &Call, &ExecStep)>,
         challenges: &Challenges<Value<F>>,
+        assign_pass: usize,
     ) -> Result<(), Error> {
         if !matches!(step.execution_state(), ExecutionState::EndBlock) {
             log::trace!(
@@ -1142,12 +1168,24 @@ impl<F: Field> ExecutionConfig<F> {
                 transaction_next,
                 call_next,
                 step_next,
+                true,
+                assign_pass,
             )?;
         }
 
-        self.assign_exec_step_int(region, offset, block, transaction, call, step)
+        self.assign_exec_step_int(
+            region,
+            offset,
+            block,
+            transaction,
+            call,
+            step,
+            false,
+            assign_pass,
+        )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn assign_exec_step_int(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -1156,6 +1194,12 @@ impl<F: Field> ExecutionConfig<F> {
         transaction: &Transaction,
         call: &Call,
         step: &ExecStep,
+        // Set to true when we're assigning the next step before the current step to have
+        // next step assignments for evaluation of the stored expressions in current step that
+        // depend on the next step.
+        is_next: bool,
+        // Layouter assignment pass
+        assign_pass: usize,
     ) -> Result<(), Error> {
         self.step
             .assign_exec_step(region, offset, block, call, step)?;
@@ -1299,19 +1343,32 @@ impl<F: Field> ExecutionConfig<F> {
 
         // Fill in the witness values for stored expressions
         let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
+        // Both `SimpleFloorPlanner` and `V1` do two passes; we only enter here once (on the second
+        // pass).
+        if !is_next && assign_pass == 1 {
+            // We only want to print at the latest possible Phase.  Currently halo2 implements 3
+            // phases.  The `lookup_input` randomness is calculated after SecondPhase, so we print
+            // the debug expressions only once when we're at third phase, when `lookup_input` has
+            // a `Value::known`.  This gets called for every `synthesize` call that the Layouter
+            // does.
+            region.challenges().lookup_input().assert_if_known(|_| {
+                self.print_debug_expressions(region, offset, step);
+                true
+            });
 
-        // enable with `RUST_LOG=debug`
-        if log::log_enabled!(log::Level::Debug) {
-            let is_padding_step = matches!(step.execution_state(), ExecutionState::EndBlock)
-                && step.rw_indices_len() == 0;
-            if !is_padding_step {
-                // expensive function call
-                Self::check_rw_lookup(
-                    &assigned_stored_expressions,
-                    step,
-                    block,
-                    region.challenges(),
-                );
+            // enable with `RUST_LOG=debug`
+            if log::log_enabled!(log::Level::Debug) {
+                let is_padding_step = matches!(step.execution_state(), ExecutionState::EndBlock)
+                    && step.rw_indices_len() == 0;
+                if !is_padding_step {
+                    // expensive function call
+                    Self::check_rw_lookup(
+                        &assigned_stored_expressions,
+                        step,
+                        block,
+                        region.challenges(),
+                    );
+                }
             }
         }
         Ok(())
@@ -1336,6 +1393,30 @@ impl<F: Field> ExecutionConfig<F> {
             });
         }
         Ok(assigned_stored_expressions)
+    }
+
+    fn print_debug_expressions(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        step: &ExecStep,
+    ) {
+        for (name, expression) in self
+            .debug_expressions_map
+            .get(&step.execution_state())
+            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state()))
+        {
+            let value = evaluate_expression(expression, region, offset);
+            let mut value_string = "unknown".to_string();
+            value.assert_if_known(|f| {
+                value_string = format!("{:?}", f);
+                true
+            });
+            println!(
+                "Debug expression \"{}\"={} [offset={}, step={:?}, expr={:?}]",
+                name, value_string, offset, step.exec_state, expression
+            );
+        }
     }
 
     fn check_rw_lookup(
