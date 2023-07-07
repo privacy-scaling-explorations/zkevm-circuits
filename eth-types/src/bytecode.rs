@@ -79,6 +79,11 @@ impl Bytecode {
         self.code.get(index).map(|elem| (elem.value, elem.is_code))
     }
 
+    /// Get the bytecode element at an index.
+    pub fn get_byte(&self, index: usize) -> Option<u8> {
+        self.code.get(index).map(|elem| elem.value)
+    }
+
     /// Append
     pub fn append(&mut self, other: &Bytecode) {
         self.code.extend_from_slice(&other.code);

@@ -410,11 +410,7 @@ mod extcodecopy_tests {
                         MemoryOp::new(
                             expected_call_id,
                             MemoryAddress::from(memory_offset + idx),
-                            if data_offset + idx < bytecode_ext.to_vec().len() {
-                                bytecode_ext.to_vec()[data_offset + idx]
-                            } else {
-                                0
-                            },
+                            bytecode_ext.get_byte(data_offset + idx).unwrap_or(0),
                         ),
                     )
                 })
