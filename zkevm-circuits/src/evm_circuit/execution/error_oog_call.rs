@@ -223,7 +223,7 @@ mod test {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{
         address, bytecode, bytecode::Bytecode, evm_types::OpcodeId, geth_types::Account, Address,
-        ToWord, Word, U64,
+        ToWord, Word,
     };
     use mock::TestContext;
     use std::default::Default;
@@ -269,25 +269,11 @@ mod test {
 
     fn caller(opcode: OpcodeId, stack: Stack) -> Account {
         let bytecode = call_bytecode(opcode, Address::repeat_byte(0xff), stack);
-
-        Account {
-            address: Address::repeat_byte(0xfe),
-            balance: Word::from(10).pow(20.into()),
-            code: bytecode.to_vec().into(),
-            ..Default::default()
-        }
+        Account::mock_100_ether(bytecode)
     }
 
     fn callee(code: Bytecode) -> Account {
-        let code = code.to_vec();
-        let is_empty = code.is_empty();
-        Account {
-            address: Address::repeat_byte(0xff),
-            code: code.into(),
-            nonce: U64::from(!is_empty as u64),
-            balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
-            ..Default::default()
-        }
+        Account::mock_code_or_balance(code)
     }
 
     fn test_oog(caller: &Account, callee: &Account, is_root: bool) {

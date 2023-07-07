@@ -640,7 +640,6 @@ mod test {
     use bus_mapping::circuit_input_builder::FixedCParams;
     use eth_types::{
         address, bytecode, evm_types::OpcodeId, geth_types::Account, word, Address, ToWord, Word,
-        U64,
     };
 
     use itertools::Itertools;
@@ -780,15 +779,7 @@ mod test {
     }
 
     fn callee(code: bytecode::Bytecode) -> Account {
-        let code = code.to_vec();
-        let is_empty = code.is_empty();
-        Account {
-            address: Address::repeat_byte(0xff),
-            code: code.into(),
-            nonce: U64::from(!is_empty as u64),
-            balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
-            ..Default::default()
-        }
+        Account::mock_code_or_balance(code)
     }
 
     fn caller(opcode: &OpcodeId, stack: Stack, caller_is_success: bool) -> Account {
@@ -830,12 +821,7 @@ mod test {
             .write_op(terminator)
         });
 
-        Account {
-            address: Address::repeat_byte(0xfe),
-            balance: Word::from(10).pow(20.into()),
-            code: bytecode.to_vec().into(),
-            ..Default::default()
-        }
+        Account::mock_100_ether(bytecode)
     }
 
     fn caller_for_insufficient_balance(opcode: &OpcodeId, stack: Stack) -> Account {
@@ -995,12 +981,7 @@ mod test {
             STOP
         });
         test_ok(
-            Account {
-                address: Address::repeat_byte(0xfe),
-                balance: Word::from(10).pow(20.into()),
-                code: caller_bytecode.into(),
-                ..Default::default()
-            },
+            Account::mock_100_ether(caller_bytecode),
             callee(callee_bytecode),
         );
     }

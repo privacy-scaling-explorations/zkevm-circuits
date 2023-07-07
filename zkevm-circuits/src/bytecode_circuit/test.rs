@@ -1,7 +1,7 @@
 use crate::{
     bytecode_circuit::{bytecode_unroller::*, circuit::BytecodeCircuit},
     table::BytecodeFieldTag,
-    util::{is_push, keccak, unusable_rows, SubCircuit},
+    util::{is_push, unusable_rows, SubCircuit},
     witness::BytecodeCollection,
 };
 use bus_mapping::evm::OpcodeId;
@@ -100,7 +100,7 @@ fn bytecode_unrolling() {
         }
     }
     // Set the code_hash of the complete bytecode in the rows
-    let code_hash = keccak(&bytecode.to_vec()[..]);
+    let code_hash: eth_types::U256 = bytecode.hash();
     for row in rows.iter_mut() {
         row.code_hash = code_hash;
     }
@@ -111,15 +111,15 @@ fn bytecode_unrolling() {
             tag: Fr::from(BytecodeFieldTag::Header as u64),
             index: Fr::ZERO,
             is_code: Fr::ZERO,
-            value: Fr::from(bytecode.to_vec().len() as u64),
+            value: Fr::from(bytecode.codesize() as u64),
         },
     );
     // Unroll the bytecode
-    let unrolled = unroll(bytecode.to_vec());
+    let unrolled = unroll(bytecode.code());
     // Check if the bytecode was unrolled correctly
     assert_eq!(
         UnrolledBytecode {
-            bytes: bytecode.to_vec(),
+            bytes: bytecode.code(),
             rows,
         },
         unrolled,

@@ -3,8 +3,8 @@
 use crate::{
     keccak256,
     sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
-    AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian,
-    ToWord, Word, U64,
+    AccessList, Address, Block, Bytecode, Bytes, Error, GethExecTrace, Hash, ToBigEndian,
+    ToLittleEndian, ToWord, Word, U64,
 };
 use ethers_core::{
     types::{transaction::response, NameOrAddress, TransactionRequest},
@@ -43,6 +43,29 @@ impl Account {
             && self.balance.is_zero()
             && self.code.is_empty()
             && self.storage.is_empty()
+    }
+
+    #[deprecated]
+    /// Generate an account that has either code or balance
+    pub fn mock_code_or_balance(code: Bytecode) -> Self {
+        let is_empty = code.codesize() == 0;
+        Self {
+            address: Address::repeat_byte(0xff),
+            code: code.into(),
+            nonce: U64::from(!is_empty as u64),
+            balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
+            ..Default::default()
+        }
+    }
+    #[deprecated]
+    /// Generate an account that has 100 ETH
+    pub fn mock_100_ether(code: Bytecode) -> Self {
+        Self {
+            address: Address::repeat_byte(0xfe),
+            balance: Word::from(10).pow(20.into()),
+            code: code.into(),
+            ..Default::default()
+        }
     }
 }
 
