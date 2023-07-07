@@ -13,7 +13,7 @@ use crate::{
     util::{cell_manager::CMFixedWidthStrategyDistribution, int_decomposition::IntDecomposition},
     witness::{Block, ExecStep, Rw, RwMap},
 };
-use eth_types::{Address, Field, ToLittleEndian, U256};
+use eth_types::{Address, Field, U256};
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
     plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression},
@@ -136,12 +136,6 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
 
     pub fn challenges(&self) -> &Challenges<Value<F>> {
         self.challenges
-    }
-
-    pub fn word_rlc(&self, n: U256) -> Value<F> {
-        self.challenges
-            .evm_word()
-            .map(|r| rlc::value(&n.to_le_bytes(), r))
     }
 
     pub fn keccak_rlc(&self, le_bytes: &[u8]) -> Value<F> {

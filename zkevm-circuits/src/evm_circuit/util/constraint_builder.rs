@@ -556,10 +556,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         .query_cells(self.meta, cell_type, count)
     }
 
-    pub(crate) fn word_rlc<const N: usize>(&self, bytes: [Expression<F>; N]) -> Expression<F> {
-        rlc::expr(&bytes, self.challenges.evm_word())
-    }
-
     pub(crate) fn keccak_rlc<const N: usize>(&self, bytes: [Expression<F>; N]) -> Expression<F> {
         rlc::expr(&bytes, self.challenges.keccak_input())
     }

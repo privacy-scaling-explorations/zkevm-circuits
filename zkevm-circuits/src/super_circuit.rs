@@ -144,7 +144,6 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         let challenges = Challenges::mock(
             power_of_randomness[0].clone(),
             power_of_randomness[0].clone(),
-            power_of_randomness[0].clone(),
         );
 
         let keccak_circuit = KeccakCircuitConfig::new(
@@ -427,7 +426,6 @@ impl<F: Field> Circuit<F> for SuperCircuit<F> {
     ) -> Result<(), Error> {
         let block = self.evm_circuit.block.as_ref().unwrap();
         let challenges = Challenges::mock(
-            Value::known(block.randomness),
             Value::known(block.randomness),
             Value::known(block.randomness),
         );

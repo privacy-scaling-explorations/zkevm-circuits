@@ -41,7 +41,6 @@ pub(crate) fn random_linear_combine_word<F: Field>(bytes: [u8; 32], randomness: 
 /// All challenges used in `SuperCircuit`.
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Challenges<T = Challenge> {
-    evm_word: T,
     keccak_input: T,
     lookup_input: T,
 }
@@ -50,14 +49,9 @@ impl Challenges {
     /// Construct `Challenges` by allocating challenges in specific phases.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         #[cfg(any(feature = "test", test, feature = "test-circuits"))]
-        let _dummy_cols = [
-            meta.advice_column(),
-            meta.advice_column_in(SecondPhase),
-            meta.advice_column_in(halo2_proofs::plonk::ThirdPhase),
-        ];
+        let _dummy_cols = [meta.advice_column(), meta.advice_column_in(SecondPhase)];
 
         Self {
-            evm_word: meta.challenge_usable_after(FirstPhase),
             keccak_input: meta.challenge_usable_after(FirstPhase),
             lookup_input: meta.challenge_usable_after(SecondPhase),
         }
@@ -65,12 +59,10 @@ impl Challenges {
 
     /// Returns `Expression` of challenges from `ConstraintSystem`.
     pub fn exprs<F: Field>(&self, meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
-        let [evm_word, keccak_input, lookup_input] = query_expression(meta, |meta| {
-            [self.evm_word, self.keccak_input, self.lookup_input]
-                .map(|challenge| meta.query_challenge(challenge))
+        let [keccak_input, lookup_input] = query_expression(meta, |meta| {
+            [self.keccak_input, self.lookup_input].map(|challenge| meta.query_challenge(challenge))
         });
         Challenges {
-            evm_word,
             keccak_input,
             lookup_input,
         }
@@ -79,7 +71,6 @@ impl Challenges {
     /// Returns `Value` of challenges from `Layouter`.
     pub fn values<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Challenges<Value<F>> {
         Challenges {
-            evm_word: layouter.get_challenge(self.evm_word),
             keccak_input: layouter.get_challenge(self.keccak_input),
             lookup_input: layouter.get_challenge(self.lookup_input),
         }
@@ -87,11 +78,6 @@ impl Challenges {
 }
 
 impl<T: Clone> Challenges<T> {
-    /// Returns challenge of `evm_word`.
-    pub fn evm_word(&self) -> T {
-        self.evm_word.clone()
-    }
-
     /// Returns challenge of `keccak_input`.
     pub fn keccak_input(&self) -> T {
         self.keccak_input.clone()
@@ -103,13 +89,12 @@ impl<T: Clone> Challenges<T> {
     }
 
     /// Returns the challenges indexed by the challenge index
-    pub fn indexed(&self) -> [&T; 3] {
-        [&self.evm_word, &self.keccak_input, &self.lookup_input]
+    pub fn indexed(&self) -> [&T; 2] {
+        [&self.keccak_input, &self.lookup_input]
     }
 
-    pub(crate) fn mock(evm_word: T, keccak_input: T, lookup_input: T) -> Self {
+    pub(crate) fn mock(keccak_input: T, lookup_input: T) -> Self {
         Self {
-            evm_word,
             keccak_input,
             lookup_input,
         }
@@ -126,11 +111,6 @@ impl<F: Field> Challenges<Expression<F>> {
         .collect::<Vec<_>>()
         .try_into()
         .unwrap()
-    }
-
-    /// Returns powers of randomness for word RLC encoding
-    pub fn evm_word_powers_of_randomness<const S: usize>(&self) -> [Expression<F>; S] {
-        Self::powers_of(self.evm_word.clone())
     }
 
     /// Returns powers of randomness for keccak circuit's input
