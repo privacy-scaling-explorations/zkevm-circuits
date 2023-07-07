@@ -307,7 +307,7 @@ pub(crate) struct EVMConstraintBuilder<'a, F: Field> {
     conditions: Vec<Expression<F>>,
     constraints_location: ConstraintLocation,
     stored_expressions: Vec<StoredExpression<F>>,
-    pub(crate) debug_expressions: Vec<(Expression<F>, String)>,
+    pub(crate) debug_expressions: Vec<(String, Expression<F>)>,
 
     meta: &'a mut ConstraintSystem<F>,
 }
@@ -1678,7 +1678,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         }
     }
 
-    pub fn debug_expression(&mut self, expr: Expression<F>, name: String) {
-        self.debug_expressions.push((expr, name));
+    pub fn debug_expression<S: Into<String>>(&mut self, name: S, expr: Expression<F>) {
+        self.debug_expressions.push((name.into(), expr));
     }
 }

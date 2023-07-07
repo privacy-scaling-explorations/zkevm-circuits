@@ -225,7 +225,7 @@ pub struct ExecutionConfig<F> {
     step: Step<F>,
     pub(crate) height_map: HashMap<ExecutionState, usize>,
     stored_expressions_map: HashMap<ExecutionState, Vec<StoredExpression<F>>>,
-    debug_expressions_map: HashMap<ExecutionState, Vec<(Expression<F>, String)>>,
+    debug_expressions_map: HashMap<ExecutionState, Vec<(String, Expression<F>)>>,
     instrument: Instrument,
     // internal state gadgets
     begin_tx_gadget: Box<BeginTxGadget<F>>,
@@ -621,7 +621,7 @@ impl<F: Field> ExecutionConfig<F> {
         step_curr: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
-        debug_expressions_map: &mut HashMap<ExecutionState, Vec<(Expression<F>, String)>>,
+        debug_expressions_map: &mut HashMap<ExecutionState, Vec<(String, Expression<F>)>>,
         instrument: &mut Instrument,
     ) -> G {
         // Configure the gadget with the max height first so we can find out the actual
@@ -684,7 +684,7 @@ impl<F: Field> ExecutionConfig<F> {
         step_next: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
-        debug_expressions_map: &mut HashMap<ExecutionState, Vec<(Expression<F>, String)>>,
+        debug_expressions_map: &mut HashMap<ExecutionState, Vec<(String, Expression<F>)>>,
         instrument: &mut Instrument,
         name: &'static str,
         execution_state: ExecutionState,
@@ -1401,7 +1401,7 @@ impl<F: Field> ExecutionConfig<F> {
         offset: usize,
         step: &ExecStep,
     ) {
-        for (expression, name) in self
+        for (name, expression) in self
             .debug_expressions_map
             .get(&step.execution_state())
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state()))
