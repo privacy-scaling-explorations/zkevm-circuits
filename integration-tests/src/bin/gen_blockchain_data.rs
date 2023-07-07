@@ -81,9 +81,8 @@ async fn main() {
     for (name, contract_path) in CONTRACTS {
         let path_sol = Path::new(CONTRACTS_PATH).join(contract_path);
         let inputs = CompilerInput::new(&path_sol).expect("Compile success");
-        // ethers-solc defaults evm version to Shanghai
-        // We explicitly specify EvmVersion here for some old Solidity version to work.
-        // We can change to Shanghai later.
+        // ethers-solc: explicitly indicate the EvmVersion that corresponds to the zkevm circuit's
+        // supported Upgrade, e.g. `London/Shanghai/...` specifications.
         let input = inputs
             .clone()
             .first_mut()
