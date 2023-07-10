@@ -506,7 +506,7 @@ mod tests {
             .sum::<usize>();
 
         assert_eq!(
-            cm._get(CellType::StoragePhase1).unwrap().len(),
+            cm.get(CellType::StoragePhase1).unwrap().len(),
             STEP_WIDTH
                 - N_PHASE2_COLUMNS
                 - N_COPY_COLUMNS
@@ -515,27 +515,27 @@ mod tests {
                 - N_U16_LOOKUPS
         );
         assert_eq!(
-            cm._get(CellType::StoragePhase2).unwrap().len(),
+            cm.get(CellType::StoragePhase2).unwrap().len(),
             N_PHASE2_COLUMNS
         );
         assert_eq!(
-            cm._get(CellType::StoragePermutation).unwrap().len(),
+            cm.get(CellType::StoragePermutation).unwrap().len(),
             N_COPY_COLUMNS
         );
 
         // CellType::Lookup
         for &(table, count) in LOOKUP_CONFIG {
-            assert_eq!(cm._get(CellType::Lookup(table)).unwrap().len(), count);
+            assert_eq!(cm.get(CellType::Lookup(table)).unwrap().len(), count);
         }
         assert_eq!(
-            cm._get(CellType::Lookup(Table::U8)).unwrap().len(),
+            cm.get(CellType::Lookup(Table::U8)).unwrap().len(),
             N_U8_LOOKUPS
         );
         if N_U16_LOOKUPS == 0 {
-            assert!(cm._get(CellType::Lookup(Table::U16)).is_none());
+            assert!(cm.get(CellType::Lookup(Table::U16)).is_none());
         } else {
             assert_eq!(
-                cm._get(CellType::Lookup(Table::U16)).unwrap().len(),
+                cm.get(CellType::Lookup(Table::U16)).unwrap().len(),
                 N_U16_LOOKUPS
             );
         }

@@ -214,8 +214,9 @@ impl CellManagerColumns {
         self.columns_list.clone()
     }
 
+    #[allow(dead_code, reason = "under active development")]
     /// Returns the number of columns.
-    pub fn _get_width(&self) -> usize {
+    pub fn get_width(&self) -> usize {
         self.columns_list.len()
     }
 }
@@ -269,9 +270,10 @@ impl<Stats, S: CellManagerStrategy<Stats = Stats>> CellManager<S> {
         self.columns.columns()
     }
 
+    #[allow(dead_code, reason = "under active development")]
     /// Returns the number of columns managed by this Cell Manager.
-    pub fn _get_width(&self) -> usize {
-        self.columns._get_width()
+    pub fn get_width(&self) -> usize {
+        self.columns.get_width()
     }
 
     /// Returns the statistics about this Cell Manager.
