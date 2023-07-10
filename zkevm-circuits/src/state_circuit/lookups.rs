@@ -88,6 +88,9 @@ impl<F: Field> Chip<F> {
     }
 
     pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        self.config.u8_table.load(layouter)?;
+        self.config.u10_table.load(layouter)?;
+        self.config.u16_table.load(layouter)?;
         layouter.assign_region(
             || "assign call_context_field_tags fixed column",
             |mut region| {
