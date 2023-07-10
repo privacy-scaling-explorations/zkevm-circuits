@@ -152,10 +152,10 @@ impl RwMap {
     }
 }
 
-// Allow missing docs for sub properties.
-// Some of the docs are tedious and can be found at
-// https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/tables.md
-#[allow(missing_docs)]
+#[allow(
+    missing_docs,
+    reason = "Some of the docs are tedious and can be found at https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/tables.md"
+)]
 /// Read-write records in execution. Rws are used for connecting evm circuit and
 /// state circuits.
 #[derive(Clone, Copy, Debug)]

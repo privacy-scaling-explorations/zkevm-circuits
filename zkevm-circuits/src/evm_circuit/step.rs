@@ -32,8 +32,7 @@ use std::{fmt::Display, iter};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
-// allow missing doc because some docs here are tedious and not helpful
-#[allow(missing_docs)]
+#[allow(missing_docs, reason = "some docs here are tedious and not helpful")]
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
 /// All the possible execution states that the computation of EVM can arrive.
