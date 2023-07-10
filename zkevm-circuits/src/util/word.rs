@@ -29,8 +29,6 @@ pub(crate) type Word2<T> = WordLimbs<T, 2>;
 
 pub(crate) type Word4<T> = WordLimbs<T, 4>;
 
-pub(crate) type Word16<T> = WordLimbs<T, 16>;
-
 pub(crate) type Word32<T> = WordLimbs<T, 32>;
 
 pub(crate) type WordCell<F> = Word<Cell<F>>;
@@ -81,31 +79,6 @@ pub trait WordExpr<F> {
 }
 
 impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
-    /// assign limbs
-    /// N1 is number of bytes to assign, while N is number of limbs.
-    /// N1 % N = 0 (also implies N1 >= N, assuming N1 and N are not 0)
-    /// If N1 > N, then N1 will be chunk into N1 / N size then aggregate to single expression
-    /// then assign to N limbs respectively.
-    /// e.g. N1 = 4 bytes, [b1, b2, b3, b4], and N = 2 limbs [l1, l2]
-    /// It equivalent `l1.assign(b1.expr() + b2.expr * F(256))`, `l2.assign(b3.expr() + b4.expr *
-    /// F(256))`
-    fn assign<const N1: usize>(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        bytes: Option<[u8; N1]>,
-    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
-        assert_eq!(N1 % N, 0); // TODO assure N|N1, find way to use static_assertion instead
-        bytes.map_or(Err(Error::Synthesis), |bytes| {
-            bytes
-                .chunks(N1 / N) // chunk in little endian
-                .map(|chunk| from_bytes::value(chunk))
-                .zip(self.limbs.iter())
-                .map(|(value, cell)| cell.assign(region, offset, Value::known(value)))
-                .collect()
-        })
-    }
-
     /// assign bytes to wordlimbs first half/second half respectively
     // N_LO, N_HI are number of bytes to assign to first half and second half of size N limbs,
     // respectively N_LO and N_HI can be different size, the only requirement is N_LO % (N/2)

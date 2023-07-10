@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use super::*;
 use crate::util::{log2_ceil, unusable_rows};
 use eth_types::address;

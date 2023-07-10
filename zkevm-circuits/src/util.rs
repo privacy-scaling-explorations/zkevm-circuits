@@ -6,12 +6,11 @@ use bus_mapping::evm::OpcodeId;
 use halo2_proofs::{
     circuit::{Layouter, Value},
     plonk::{
-        Challenge, Circuit, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase,
-        VirtualCells,
+        Challenge, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, VirtualCells,
     },
 };
 
-use crate::{evm_circuit::util::rlc, table::TxLogFieldTag, witness};
+use crate::{table::TxLogFieldTag, witness};
 use eth_types::{keccak256, Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
@@ -34,10 +33,6 @@ pub fn query_expression<F: Field, T>(
     expr.unwrap()
 }
 
-pub(crate) fn random_linear_combine_word<F: Field>(bytes: [u8; 32], randomness: F) -> F {
-    rlc::value(&bytes, randomness)
-}
-
 /// All challenges used in `SuperCircuit`.
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Challenges<T = Challenge> {
@@ -48,7 +43,11 @@ pub struct Challenges<T = Challenge> {
 impl Challenges {
     /// Construct `Challenges` by allocating challenges in specific phases.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
-        #[cfg(any(feature = "test", test, feature = "test-circuits"))]
+        // Dummy columns are required in the test circuits
+        // In some tests there might be no advice columns before the phase, so Halo2 will panic with
+        // "No Column<Advice> is used in phase Phase(1) while allocating a new 'Challenge usable
+        // after phase Phase(1)'"
+        #[cfg(any(test, feature = "test-circuits"))]
         let _dummy_cols = [meta.advice_column(), meta.advice_column_in(SecondPhase)];
 
         Self {
@@ -203,6 +202,10 @@ pub(crate) fn get_push_size(byte: u8) -> u64 {
     }
 }
 
+#[cfg(test)]
+use halo2_proofs::plonk::Circuit;
+
+#[cfg(test)]
 /// Returns number of unusable rows of the Circuit.
 /// The minimum unusable rows of a circuit is currently 6, where
 /// - 3 comes from minimum number of distinct queries to permutation argument witness column

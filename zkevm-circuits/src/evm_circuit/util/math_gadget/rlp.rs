@@ -312,11 +312,6 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
         )
     }
 
-    /// Caller nonce's RLC value.
-    pub(crate) fn caller_nonce_rlc(&self) -> Expression<F> {
-        self.nonce.value_rlc.expr()
-    }
-
     /// Length of the input data to the keccak hash function.
     pub(crate) fn input_length(&self) -> Expression<F> {
         if IS_CREATE2 {

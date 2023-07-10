@@ -25,10 +25,9 @@ use halo2_proofs::{
 use log::trace;
 use std::vec;
 
-use super::{
-    bytecode_unroller::{unroll, UnrolledBytecode},
-    param::PUSH_TABLE_WIDTH,
-};
+use super::bytecode_unroller::{unroll, UnrolledBytecode};
+
+const PUSH_TABLE_WIDTH: usize = 2;
 
 #[derive(Debug, Clone, Default)]
 /// Row for assignment

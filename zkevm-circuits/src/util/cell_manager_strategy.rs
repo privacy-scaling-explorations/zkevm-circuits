@@ -17,6 +17,7 @@ impl CMFixedWidthStrategyDistribution {
         }
     }
 
+    #[allow(dead_code, reason = "this method will be used outside tests")]
     pub(crate) fn get(&self, cell_type: CellType) -> Option<&Vec<Column<Advice>>> {
         self.0.get(&cell_type)
     }
@@ -190,7 +191,8 @@ pub(crate) struct CMFixedHeigthStrategy {
 }
 
 impl CMFixedHeigthStrategy {
-    pub fn new(height: usize, cell_type: CellType) -> CMFixedHeigthStrategy {
+    #[allow(dead_code, reason = "under active development")]
+    pub(crate) fn new(height: usize, cell_type: CellType) -> CMFixedHeigthStrategy {
         CMFixedHeigthStrategy {
             row_width: vec![0; height],
             cell_type,

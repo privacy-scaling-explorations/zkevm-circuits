@@ -138,6 +138,11 @@ mod test {
     }
 
     #[test]
+    fn invalid_jump_err() {
+        test_invalid_jump(34);
+    }
+
+    #[test]
     #[ignore]
     fn jump_gadget_rand_huge_bytecode() {
         test_ok(rand_range(1 << 11..0x5fff));

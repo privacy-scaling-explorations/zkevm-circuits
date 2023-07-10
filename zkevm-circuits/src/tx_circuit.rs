@@ -6,11 +6,11 @@
 
 pub mod sign_verify;
 
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(any(test, feature = "test-circuits"))]
 mod dev;
-#[cfg(any(feature = "test", test))]
+#[cfg(test)]
 mod test;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(feature = "test-circuits")]
 pub use dev::TxCircuit as TestTxCircuit;
 
 use crate::{
@@ -44,8 +44,6 @@ pub struct TxCircuitConfig<F: Field> {
     value: Word<Column<Advice>>,
     sign_verify: SignVerifyConfig,
     _marker: PhantomData<F>,
-    // External tables
-    keccak_table: KeccakTable,
 }
 
 /// Circuit configuration arguments
@@ -77,7 +75,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.enable_equality(value.lo());
         meta.enable_equality(value.hi());
 
-        let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone(), challenges);
+        let sign_verify = SignVerifyConfig::new(meta, keccak_table, challenges);
 
         Self {
             tx_id,
@@ -85,7 +83,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             index,
             value,
             sign_verify,
-            keccak_table,
             _marker: PhantomData,
         }
     }

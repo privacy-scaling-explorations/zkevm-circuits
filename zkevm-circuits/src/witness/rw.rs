@@ -295,10 +295,6 @@ impl<F: Field> RwRow<F> {
             .rev()
             .fold(F::ZERO, |acc, value| acc * randomness + value)
     }
-
-    pub(crate) fn rlc_value(&self, randomness: Value<F>) -> Value<F> {
-        randomness.map(|randomness| self.rlc(randomness))
-    }
 }
 
 impl<F: Field> RwRow<Value<F>> {
@@ -399,13 +395,6 @@ impl Rw {
     pub(crate) fn stack_value(&self) -> Word {
         match self {
             Self::Stack { value, .. } => *value,
-            _ => unreachable!(),
-        }
-    }
-
-    pub(crate) fn log_value(&self) -> Word {
-        match self {
-            Self::TxLog { value, .. } => *value,
             _ => unreachable!(),
         }
     }

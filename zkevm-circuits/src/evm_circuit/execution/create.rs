@@ -689,7 +689,6 @@ mod test {
     use lazy_static::lazy_static;
     use mock::{eth, TestContext};
 
-    const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
     lazy_static! {
         static ref CALLER_ADDRESS: Address = address!("0x00bbccddee000000000000000000000000002400");
     }

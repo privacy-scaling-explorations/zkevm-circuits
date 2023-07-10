@@ -12,10 +12,10 @@ pub mod step;
 pub mod table;
 pub(crate) mod util;
 
-#[cfg(any(feature = "test", test))]
+#[cfg(test)]
 pub(crate) mod test;
 use self::step::HasExecutionState;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(feature = "test-circuits")]
 pub use self::EvmCircuit as TestEvmCircuit;
 
 pub use crate::witness;
@@ -184,7 +184,8 @@ impl<F: Field> EvmCircuit<F> {
         }
     }
 
-    pub fn new_dev(block: Block<F>, fixed_table_tags: Vec<FixedTableTag>) -> Self {
+    pub fn get_test_cicuit_from_block(block: Block<F>) -> Self {
+        let fixed_table_tags = detect_fixed_table_tags(&block);
         Self {
             block: Some(block),
             fixed_table_tags,
@@ -290,7 +291,7 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
         .collect()
 }
 
-#[cfg(any(feature = "test", test))]
+#[cfg(any(feature = "test-util", test))]
 pub(crate) mod cached {
     use super::*;
     use halo2_proofs::halo2curves::bn256::Fr;
