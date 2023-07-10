@@ -305,9 +305,7 @@ impl From<&ExecStep> for ExecutionState {
     }
 }
 
-/// Has Execution state
-pub trait HasExecutionState {
-    /// Get the execution state
+pub(crate) trait HasExecutionState {
     fn execution_state(&self) -> ExecutionState;
 }
 

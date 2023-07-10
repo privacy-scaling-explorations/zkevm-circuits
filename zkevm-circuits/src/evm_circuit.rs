@@ -183,18 +183,19 @@ impl<F: Field> EvmCircuit<F> {
             fixed_table_tags: FixedTableTag::iter().collect(),
         }
     }
+    #[cfg(feature = "test-circuits")]
     /// Construct the EvmCircuit with only subset of Fixed table tags required by tests to save
     /// testing time
-    pub fn get_test_cicuit_from_block(block: Block<F>) -> Self {
+    pub(crate) fn get_test_cicuit_from_block(block: Block<F>) -> Self {
         let fixed_table_tags = detect_fixed_table_tags(&block);
         Self {
             block: Some(block),
             fixed_table_tags,
         }
     }
-
+    #[cfg(feature = "test-circuits")]
     /// Calculate which rows are "actually" used in the circuit
-    pub fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
+    pub(crate) fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
         let max_offset = Self::get_num_rows_required(block);
         // some gates are enabled on all rows
         let gates_row_ids = (0..max_offset).collect();
@@ -204,7 +205,7 @@ impl<F: Field> EvmCircuit<F> {
     }
     /// Get the minimum number of rows required to process the block
     /// If unspecified, then compute it
-    pub fn get_num_rows_required(block: &Block<F>) -> usize {
+    pub(crate) fn get_num_rows_required(block: &Block<F>) -> usize {
         let evm_rows = block.circuits_params.max_evm_rows;
         if evm_rows == 0 {
             Self::get_min_num_rows_required(block)
@@ -214,7 +215,7 @@ impl<F: Field> EvmCircuit<F> {
         }
     }
     /// Compute the minimum number of rows required to process the block
-    pub fn get_min_num_rows_required(block: &Block<F>) -> usize {
+    fn get_min_num_rows_required(block: &Block<F>) -> usize {
         let mut num_rows = 0;
         for transaction in &block.txs {
             for step in transaction.steps() {

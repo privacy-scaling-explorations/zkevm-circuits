@@ -168,7 +168,7 @@ pub enum Table {
 
 #[derive(Clone, Debug)]
 /// Read-Write Table fields
-pub struct RwValues<F> {
+pub(crate) struct RwValues<F> {
     /// The unique identifier for the Read or Write. Depending on context, this field could be used
     /// for Transaction ID or call ID
     id: Expression<F>,
