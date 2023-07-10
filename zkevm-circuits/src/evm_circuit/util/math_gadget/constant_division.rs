@@ -59,8 +59,8 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
     pub(crate) fn quotient(&self) -> Expression<F> {
         self.quotient.expr()
     }
-
-    pub(crate) fn _remainder(&self) -> Expression<F> {
+    #[allow(dead_code, reason = "remainder is a valid API but only used in tests")]
+    pub(crate) fn remainder(&self) -> Expression<F> {
         self.remainder.expr()
     }
 
@@ -122,7 +122,7 @@ mod tests {
 
             cb.require_equal(
                 "correct remainder",
-                constdiv_gadget._remainder(),
+                constdiv_gadget.remainder(),
                 REMAINDER.expr(),
             );
 
