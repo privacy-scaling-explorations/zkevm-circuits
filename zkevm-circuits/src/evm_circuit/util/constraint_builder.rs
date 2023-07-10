@@ -814,11 +814,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                     reversion_info.rw_counter_of_reversion(reversible_write_counter_inc_selector),
                     true.expr(),
                     tag,
-                    RwValues {
-                        value_prev: values.value,
-                        value: values.value_prev,
-                        ..values
-                    },
+                    values.revert_value(),
                 )
             });
         }
@@ -1302,15 +1298,15 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             counter,
             0.expr(),
             Target::Start,
-            RwValues {
-                id: 0.expr(),
-                address: 0.expr(),
-                field_tag: 0.expr(),
-                storage_key: Word::zero(),
-                value: Word::zero(),
-                value_prev: Word::zero(),
-                init_val: Word::zero(),
-            },
+            RwValues::new(
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                Word::zero(),
+                Word::zero(),
+                Word::zero(),
+                Word::zero(),
+            ),
         );
     }
 

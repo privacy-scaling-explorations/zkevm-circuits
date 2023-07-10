@@ -52,7 +52,7 @@ impl_expr!(FixedTableTag);
 
 impl FixedTableTag {
     /// build up the fixed table row values
-    pub fn build<F: Field>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
+    pub(crate) fn build<F: Field>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
         let tag = F::from(*self as u64);
         match self {
             Self::Zero => Box::new((0..1).map(move |_| [tag, F::ZERO, F::ZERO, F::ZERO])),
@@ -171,28 +171,28 @@ pub enum Table {
 pub struct RwValues<F> {
     /// The unique identifier for the Read or Write. Depending on context, this field could be used
     /// for Transaction ID or call ID
-    pub id: Expression<F>,
+    id: Expression<F>,
     /// The position to Stack, Memory, or account, where the read or write takes place, depending
     /// on the cell value of the [`bus_mapping::operation::Target`].
-    pub address: Expression<F>,
+    address: Expression<F>,
     /// Could be [`crate::table::CallContextFieldTag`], [`crate::table::AccountFieldTag`],
     /// [`crate::table::TxLogFieldTag`], or [`crate::table::TxReceiptFieldTag`] depending on
     /// the cell value of the [`bus_mapping::operation::Target`]
-    pub field_tag: Expression<F>,
+    field_tag: Expression<F>,
     /// Storage key of two limbs
-    pub storage_key: Word<Expression<F>>,
+    storage_key: Word<Expression<F>>,
     /// The current storage value
-    pub value: Word<Expression<F>>,
+    value: Word<Expression<F>>,
     /// The previous storage value
-    pub value_prev: Word<Expression<F>>,
+    value_prev: Word<Expression<F>>,
     /// The initial storage value before the current transaction
-    pub init_val: Word<Expression<F>>,
+    init_val: Word<Expression<F>>,
 }
 
 impl<F: Field> RwValues<F> {
     /// Constructor for RwValues
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(crate) fn new(
         id: Expression<F>,
         address: Expression<F>,
         field_tag: Expression<F>,
@@ -209,6 +209,15 @@ impl<F: Field> RwValues<F> {
             value,
             value_prev,
             init_val,
+        }
+    }
+
+    pub(crate) fn revert_value(&self) -> Self {
+        let new_self = self.clone();
+        Self {
+            value_prev: new_self.value,
+            value: new_self.value_prev,
+            ..new_self
         }
     }
 }
