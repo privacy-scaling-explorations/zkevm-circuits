@@ -69,12 +69,6 @@ pub struct StateCircuitConfig<F> {
     lookups: LookupsConfig,
     // External tables
     mpt_table: MptTable,
-    // External U8Table
-    u8_table: UXTable<8>,
-    // External U10Table
-    u10_table: UXTable<10>,
-    // External U16Table
-    u16_table: UXTable<16>,
     _marker: PhantomData<F>,
 }
 
@@ -174,9 +168,6 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             lookups,
             rw_table,
             mpt_table,
-            u8_table,
-            u10_table,
-            u16_table,
             _marker: PhantomData::default(),
         };
 

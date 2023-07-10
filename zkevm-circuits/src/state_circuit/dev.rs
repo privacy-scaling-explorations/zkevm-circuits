@@ -56,9 +56,7 @@ where
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
         config.mpt_table.load(&mut layouter, &self.updates)?;
-        config.u8_table.load(&mut layouter)?;
-        config.u10_table.load(&mut layouter)?;
-        config.u16_table.load(&mut layouter)?;
+        config.load_aux_tables(&mut layouter)?;
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
