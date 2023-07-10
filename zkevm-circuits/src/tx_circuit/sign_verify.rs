@@ -197,10 +197,10 @@ impl SignVerifyConfig {
         Self {
             range_config,
             main_gate_config,
-            _keccak_table: keccak_table,
             q_rlc_keccak_input,
             rlc,
             q_keccak,
+            _keccak_table: keccak_table.clone(),
         }
     }
 
