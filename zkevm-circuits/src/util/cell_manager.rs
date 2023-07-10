@@ -56,9 +56,9 @@ impl CellType {
 /// Cell is a (column, rotation) pair that has been placed and queried by the Cell Manager.
 pub struct Cell<F> {
     pub(crate) expression: Expression<F>,
-    pub(crate) _column_expression: Expression<F>,
+    _column_expression: Expression<F>,
     pub(crate) column: Column<Advice>,
-    pub(crate) _column_idx: usize,
+    _column_idx: usize,
     pub(crate) rotation: usize,
 }
 
