@@ -121,7 +121,7 @@ mod tests {
                 ConstantDivisionGadget::<F, N_BYTES>::construct(cb, a.expr(), DENOMINATOR);
 
             cb.require_equal(
-                "correct reminder",
+                "correct remainder",
                 constdiv_gadget._remainder(),
                 REMAINDER.expr(),
             );
