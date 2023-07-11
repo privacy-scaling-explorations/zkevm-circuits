@@ -77,6 +77,8 @@ pub struct CopyCircuitConfig<F> {
     /// In case of a bytecode tag, this denotes whether or not the copied byte
     /// is an opcode or push data byte.
     pub is_code: Column<Advice>,
+    /// Whether this row is part of an event (versus filler rows).
+    pub is_event: Column<Advice>,
     /// Indicates whether or not the copy event copies bytes to a precompiled call or copies bytes
     /// from a precompiled call back to caller.
     pub is_precompiled: Column<Advice>,
@@ -152,7 +154,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
         let value_acc = meta.advice_column_in(SecondPhase);
         let is_code = meta.advice_column();
-        let (is_precompiled, is_tx_calldata, is_bytecode, is_memory, is_tx_log) = (
+        let (is_event, is_precompiled, is_tx_calldata, is_bytecode, is_memory, is_tx_log) = (
+            meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
@@ -204,8 +207,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             },
             |_meta| 1.expr(),
         );
+
         meta.create_gate("decode tag", |meta| {
             let enabled = meta.query_fixed(q_enable, Rotation::cur());
+            let is_event = meta.query_advice(is_event, Rotation::cur());
             let is_precompile = meta.query_advice(is_precompiled, Rotation::cur());
             let is_tx_calldata = meta.query_advice(is_tx_calldata, Rotation::cur());
             let is_bytecode = meta.query_advice(is_bytecode, Rotation::cur());
@@ -250,6 +255,15 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 )(meta),
             ]);
             vec![
+                // If a row is not enabled (fixed), it is not in an event.
+                // TODO: not currently possible due to API limitations.
+                // (1.expr() - enabled.expr()) * is_event.expr(),
+                
+                // If a row is anything but padding (filler of the table), it is in an event.
+                enabled.expr()
+                    * ((1.expr() - is_event.expr())
+                        - tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
+                // Match boolean indicators to their respective tag values.
                 enabled.expr() * (is_precompile - precompiles),
                 enabled.expr()
                     * (is_tx_calldata
@@ -292,15 +306,37 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 ]),
             );
 
+            // Whether this row is part of an event.
+            let is_event = meta.query_advice(is_event, Rotation::cur());
+
+            // Whether this row is part of an event but not the last step. When true, the next step is derived from the current step.
+            let is_continue = is_event.expr()
+                - meta.query_advice(is_last, Rotation::cur())
+                - meta.query_advice(is_last, Rotation::next());
+
+            // Whether this row is not the last step, or not part of an event at all.
             let not_last_two_rows = 1.expr()
                 - meta.query_advice(is_last, Rotation::cur())
                 - meta.query_advice(is_last, Rotation::next());
 
+            // Whether this row is part of a memory or log word.
+            let is_word = meta.query_advice(is_memory, Rotation::cur()) + meta.query_advice(is_tx_log, Rotation::cur());
+           
+            cb.condition(
+                is_continue.expr(),
+                |cb| {
+                    cb.require_equal(
+                        "bytes_left == bytes_left_next + 1 for non-last step",
+                        meta.query_advice(bytes_left, Rotation::cur()),
+                        meta.query_advice(bytes_left, Rotation(2)) + 1.expr(),
+                    );
+                },
+            );
+
             cb.condition(
                 and::expr([
+                    is_continue.expr(),
                     is_word_continue.is_lt(meta, None),
-                    not_last_two_rows.expr(),
-                    non_pad_non_mask.is_lt(meta, None),
                 ]),
                 |cb| {
                     cb.require_equal(
@@ -313,9 +349,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             cb.condition(
                 and::expr([
+                    is_continue.expr(),
                     not::expr(is_word_continue.is_lt(meta, None)),
-                    not_last_two_rows.expr(),
-                    non_pad_non_mask.is_lt(meta, None),
                 ]),
                 |cb| {
                     cb.require_equal(
@@ -331,12 +366,9 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 },
             );
 
-            // for all cases, rw_counter + rwc_inc_left keeps same
+            // for all cases, rw_counter + rwc_inc_left stays the same
             cb.condition(
-                and::expr([
-                    not::expr(meta.query_advice(is_last, Rotation::cur())),
-                    non_pad_non_mask.is_lt(meta, None),
-                ]),
+                not::expr(meta.query_advice(is_last, Rotation::cur())),
                 |cb| {
                     cb.require_equal(
                         "rows[0].rw_counter + rows[0].rwc_inc_left == rows[1].rw_counter + rows[1].rwc_inc_left",
@@ -350,7 +382,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 and::expr([
                     is_word_continue.is_lt(meta, None),
                     not_last_two_rows.expr(),
-                    non_pad_non_mask.is_lt(meta, None),
                 ]),
                 |cb| {
                     let is_memory2memory = and::expr([
@@ -374,8 +405,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 and::expr([
                     not::expr(is_word_continue.is_lt(meta, None)),
                     not::expr(meta.query_advice(is_last, Rotation::cur())),
-                    not::expr(meta.query_selector(q_step)),
-                    non_pad_non_mask.is_lt(meta, None)
+                    not::expr(meta.query_selector(q_step)), // TODO: rm
+                    is_word.expr(),
                 ]),
                 |cb| {
                     cb.require_equal(
@@ -401,7 +432,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             );
 
             cb.condition(
-                not_last_two_rows.expr() * non_pad_non_mask.is_lt(meta, None),
+                not_last_two_rows.expr() * is_event,
                 |cb| {
                     cb.require_equal(
                         "rows[0].id == rows[2].id",
@@ -537,10 +568,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             );
 
             cb.condition(
-                and::expr([
-                    not::expr(meta.query_advice(is_last, Rotation::cur())),
-                    not::expr(meta.query_advice(is_last, Rotation::next())),
-                ]),
+                not::expr(meta.query_advice(is_last, Rotation::next())),
                 |cb| {
                     cb.require_equal(
                         "real_bytes_left[0] == real_bytes_left[2] + !mask",
@@ -555,33 +583,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     );
                 },
             );
-            cb.condition(
-                not::expr(meta.query_advice(is_last, Rotation::next()))
-                    * (non_pad_non_mask.is_lt(meta, None)),
-                |cb| {
-                    cb.require_equal(
-                        "bytes_left == bytes_left_next + 1 for non-last step",
-                        meta.query_advice(bytes_left, Rotation::cur()),
-                        meta.query_advice(bytes_left, Rotation(2)) + 1.expr(),
-                    );
-                },
-            );
-            // we use rlc to constraint the write == read specially for memory to memory case
-            // here only handle non memory to memory nor to log cases
-            // cb.condition(
-            //     not::expr(and::expr([
-            //         meta.query_advice(is_memory, Rotation::cur()),
-            //         meta.query_advice(is_memory, Rotation::next())
-            //             + meta.query_advice(is_tx_log, Rotation::next()),
-            //     ])),
-            //     |cb| {
-            //         cb.require_equal(
-            //             "write value == read value",
-            //             meta.query_advice(value, Rotation::cur()),
-            //             meta.query_advice(value, Rotation::next()),
-            //         );
-            //     },
-            // );
 
             cb.require_equal(
                 "value_acc is same for read-write rows",
@@ -736,6 +737,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             value_acc,
             is_pad,
             is_code,
+            is_event,
             is_precompiled,
             is_tx_calldata,
             is_bytecode,
@@ -787,16 +789,12 @@ impl<F: Field> CopyCircuitConfig<F> {
                     .iter()
                     .zip_eq(table_row)
             {
-                // Leave sr_addr_end and bytes_left unassigned when !is_read
-                if !is_read && (label == "src_addr_end" || label == "bytes_left") {
-                } else {
                     region.assign_advice(
                         || format!("{label} at row: {offset}"),
                         column,
                         *offset,
                         || value,
                     )?;
-                }
             }
 
             // q_step
@@ -807,6 +805,13 @@ impl<F: Field> CopyCircuitConfig<F> {
             region.assign_fixed(
                 || "q_enable",
                 self.q_enable,
+                *offset,
+                || Value::known(F::one()),
+            )?;
+            // is_event = true
+            region.assign_advice(
+                || format!("is_event at row: {}", *offset),
+                self.is_event,
                 *offset,
                 || Value::known(F::one()),
             )?;
@@ -940,6 +945,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 region.name_column(|| "front_mask", self.front_mask);
                 region.name_column(|| "is_code", self.is_code);
                 region.name_column(|| "is_pad", self.is_pad);
+                region.name_column(|| "is_event", self.is_event);
 
                 let mut offset = 0;
                 for (ev_idx, copy_event) in copy_events.iter().enumerate() {
@@ -1028,6 +1034,13 @@ impl<F: Field> CopyCircuitConfig<F> {
             }
         }
 
+        // is_event = false
+        region.assign_advice(
+            || format!("is_event at row: {}", *offset),
+            self.is_event,
+            *offset,
+            || Value::known(F::zero()),
+        )?;
         // is_first
         region.assign_advice(
             || format!("assign is_first {}", *offset),

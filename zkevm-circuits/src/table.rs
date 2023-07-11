@@ -1536,13 +1536,14 @@ impl CopyTable {
         let mut rlc_acc_read = Value::known(F::zero());
         let mut rlc_acc_write = Value::known(F::zero());
 
+        let full_length = copy_event.copy_bytes.bytes.len();
+
         let mut real_length_left = copy_event
             .copy_bytes
             .bytes
             .iter()
             .filter(|&step| !step.2)
             .count();
-        let mut word_index;
 
         let read_steps = copy_event.copy_bytes.bytes.iter();
         let copy_steps = if let Some(ref write_steps) = copy_event.copy_bytes.aux_bytes {
@@ -1658,7 +1659,7 @@ impl CopyTable {
             // value
             let value = Value::known(F::from(copy_step.value as u64));
 
-            word_index = (step_idx as u64 / 2) % 32;
+            let word_index = (step_idx as u64 / 2) % 32;
 
             // value_acc
             if is_read_step && !copy_step.mask {
@@ -1681,6 +1682,12 @@ impl CopyTable {
                 F::from(addr)
             };
 
+            let addr_end = if is_read_step {
+                copy_event.src_addr_end
+            } else {
+                copy_event.dst_addr + full_length as u64
+            };
+
             assignments.push((
                 tag,
                 [
@@ -1688,7 +1695,7 @@ impl CopyTable {
                     (id, "id"),
                     (Value::known(addr), "addr"),
                     (
-                        Value::known(F::from(copy_event.src_addr_end)),
+                        Value::known(F::from(addr_end)),
                         "src_addr_end",
                     ),
                     (Value::known(F::from(bytes_left)), "bytes_left"),
