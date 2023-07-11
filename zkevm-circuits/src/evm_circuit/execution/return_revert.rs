@@ -411,7 +411,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             )?;
 
             if !deployed_bytecode.is_empty() {
-                let prev_code_hash = block.rws[step.rw_indices[3 + deployed_bytecode.len() + 4]]
+                let prev_code_hash = block.rws[step.rw_indices[3 + copy_rwc_inc as usize + 4]]
                     .account_codehash_pair()
                     .0;
                 self.prev_code_hash
