@@ -1,8 +1,11 @@
 use crate::{
-    bytecode_circuit::{bytecode_unroller::*, circuit::BytecodeCircuit},
+    bytecode_circuit::{
+        bytecode_unroller::*,
+        circuit::{BytecodeCircuit, BytecodeTableAssignment},
+    },
     table::BytecodeFieldTag,
     util::{is_push, unusable_rows, SubCircuit},
-    witness::{BytecodeCollection, BytecodeTableAssignment},
+    witness::BytecodeCollection,
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Bytecode, Field, Word};
@@ -95,7 +98,7 @@ fn bytecode_unrolling() {
         }
     }
     // Set the code_hash of the complete bytecode in the rows
-    let code_hash: eth_types::U256 = bytecode.hash();
+    let code_hash = bytecode.hash();
     for row in rows.iter_mut() {
         row.code_hash = code_hash;
     }
@@ -120,42 +123,42 @@ fn bytecode_unrolling() {
         unrolled,
     );
     // Verify the unrolling in the circuit
-    test_bytecode_circuit_unrolled::<Fr>(k, vec![unrolled], true);
+    test_bytecode_circuit_unrolled::<Fr>(k, &vec![bytecode.code()], true);
 }
 
 /// Tests a fully empty circuit
 #[test]
 fn bytecode_empty() {
     let k = 9;
-    test_bytecode_circuit_unrolled::<Fr>(k, vec![vec![]], true);
+    test_bytecode_circuit_unrolled::<Fr>(k, &vec![vec![]], true);
 }
 
 #[test]
 fn bytecode_simple() {
     let k = 9;
     let bytecodes = vec![vec![7u8], vec![6u8], vec![5u8]];
-    test_bytecode_circuit_unrolled::<Fr>(k, bytecodes, true);
+    test_bytecode_circuit_unrolled::<Fr>(k, &bytecodes, true);
 }
 
 /// Tests a fully full circuit
 #[test]
 fn bytecode_full() {
     let k = 9;
-    test_bytecode_circuit_unrolled::<Fr>(k, vec![vec![7u8; 2usize.pow(k) - 8]], true);
+    test_bytecode_circuit_unrolled::<Fr>(k, &vec![vec![7u8; 2usize.pow(k) - 8]], true);
 }
 
 #[test]
 fn bytecode_last_row_with_byte() {
     let k = 9;
     // Last row must be a padding row, so we have one row less for actual bytecode
-    test_bytecode_circuit_unrolled::<Fr>(k, vec![vec![7u8; 2usize.pow(k) - 7]], false);
+    test_bytecode_circuit_unrolled::<Fr>(k, &vec![vec![7u8; 2usize.pow(k) - 7]], false);
 }
 
 /// Tests a circuit with incomplete bytecode
 #[test]
 fn bytecode_incomplete() {
     let k = 9;
-    test_bytecode_circuit_unrolled::<Fr>(k, vec![vec![7u8; 2usize.pow(k) + 1]], false);
+    test_bytecode_circuit_unrolled::<Fr>(k, &vec![vec![7u8; 2usize.pow(k) + 1]], false);
 }
 
 /// Tests multiple bytecodes in a single circuit
@@ -164,7 +167,7 @@ fn bytecode_push() {
     let k = 9;
     test_bytecode_circuit_unrolled::<Fr>(
         k,
-        vec![
+        &vec![
             vec![],
             vec![OpcodeId::PUSH32.as_u8()],
             vec![OpcodeId::PUSH32.as_u8(), OpcodeId::ADD.as_u8()],
@@ -183,14 +186,17 @@ fn bytecode_push() {
 #[test]
 fn bytecode_invalid_hash_data() {
     let k = 9;
-    let bytecode = vec![8u8, 2, 3, 8, 9, 7, 128];
-    test_bytecode_circuit_unrolled::<Fr>(k, vec![bytecode.clone()], true);
+    let bytecodes = vec![vec![8u8, 2, 3, 8, 9, 7, 128]];
+    test_bytecode_circuit_unrolled::<Fr>(k, &bytecodes, true);
     // Change the code_hash on the first position (header row)
     {
-        let mut invalid = bytecode;
-        invalid.rows[0].code_hash += Word::one();
+        let mut invalid: BytecodeTableAssignment<Fr> = bytecodes.into();
+        let code_hash = invalid.0[0].code_hash;
+        // Add 1 to both limbs
+        invalid.0[0].code_hash = code_hash.map(|limb| limb.map(|limb| limb + Fr::one()));
+
         log::trace!("bytecode_invalid_hash_data: Change the code_hash on the first position");
-        test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
+        test_bytecode_circuit_unrolled::<Fr>(k, &invalid, false);
     }
     // TODO: other rows code_hash are ignored by the witness generation, to
     // test other rows invalid code_hash, we would need to inject an evil
@@ -202,22 +208,21 @@ fn bytecode_invalid_hash_data() {
 #[ignore]
 fn bytecode_invalid_index() {
     let k = 9;
-    let bytecode = vec![8u8, 2, 3, 8, 9, 7, 128];
-    let unrolled = unroll(bytecode);
-    test_bytecode_circuit_unrolled::<Fr>(k, vec![unrolled.clone()], true);
+    let bytecodes = vec![vec![8u8, 2, 3, 8, 9, 7, 128]];
+    test_bytecode_circuit_unrolled::<Fr>(k, &bytecodes, true);
     // Start the index at 1
     {
-        let mut invalid = unrolled.clone();
-        for row in invalid.rows.iter_mut() {
+        let mut invalid: BytecodeTableAssignment<Fr> = bytecodes.into();
+        for row in invalid.0.iter_mut() {
             row.index += Fr::ONE;
         }
-        test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
+        test_bytecode_circuit_unrolled::<Fr>(k, &invalid, false);
     }
     // Don't increment an index once
     {
-        let mut invalid = unrolled;
-        invalid.rows.last_mut().unwrap().index -= Fr::ONE;
-        test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
+        let mut invalid: BytecodeTableAssignment<Fr> = bytecodes.into();
+        invalid.0.last_mut().unwrap().index -= Fr::ONE;
+        test_bytecode_circuit_unrolled::<Fr>(k, &invalid, false);
     }
 }
 
@@ -225,26 +230,25 @@ fn bytecode_invalid_index() {
 #[test]
 fn bytecode_invalid_byte_data() {
     let k = 9;
-    let bytecode = vec![8u8, 2, 3, 8, 9, 7, 128];
-    let unrolled = unroll(bytecode);
-    test_bytecode_circuit_unrolled::<Fr>(k, vec![unrolled.clone()], true);
+    let bytecodes = vec![vec![8u8, 2, 3, 8, 9, 7, 128]];
+    test_bytecode_circuit_unrolled::<Fr>(k, &bytecodes, true);
     // Change the first byte
     {
-        let mut invalid = unrolled.clone();
-        invalid.rows[1].value = Fr::from(9u64);
-        test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
+        let mut invalid: BytecodeTableAssignment<Fr> = bytecodes.into();
+        invalid.0[1].value = Fr::from(9u64);
+        test_bytecode_circuit_unrolled::<Fr>(k, &invalid, false);
     }
     // Change a byte on another position
     {
-        let mut invalid = unrolled.clone();
-        invalid.rows[5].value = Fr::from(6u64);
-        test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
+        let mut invalid: BytecodeTableAssignment<Fr> = bytecodes.into();
+        invalid.0[5].value = Fr::from(6u64);
+        test_bytecode_circuit_unrolled::<Fr>(k, &invalid, false);
     }
     // Set a byte value out of range
     {
-        let mut invalid = unrolled;
-        invalid.rows[3].value = Fr::from(256u64);
-        test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
+        let mut invalid: BytecodeTableAssignment<Fr> = bytecodes.into();
+        invalid.0[3].value = Fr::from(256u64);
+        test_bytecode_circuit_unrolled::<Fr>(k, &invalid, false);
     }
 }
 
@@ -252,7 +256,7 @@ fn bytecode_invalid_byte_data() {
 #[test]
 fn bytecode_invalid_is_code() {
     let k = 9;
-    let bytecode = vec![
+    let bytecodes = vec![vec![
         OpcodeId::ADD.as_u8(),
         OpcodeId::PUSH1.as_u8(),
         OpcodeId::PUSH1.as_u8(),
@@ -260,26 +264,25 @@ fn bytecode_invalid_is_code() {
         OpcodeId::PUSH7.as_u8(),
         OpcodeId::ADD.as_u8(),
         OpcodeId::PUSH6.as_u8(),
-    ];
-    let unrolled = unroll(bytecode);
-    test_bytecode_circuit_unrolled::<Fr>(k, vec![unrolled.clone()], true);
+    ]];
+    test_bytecode_circuit_unrolled::<Fr>(k, &bytecodes, true);
     // Mark the 3rd byte as code (is push data from the first PUSH1)
     {
-        let mut invalid = unrolled.clone();
-        invalid.rows[3].is_code = Fr::ONE;
-        test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
+        let mut invalid: BytecodeTableAssignment<Fr> = bytecodes.into();
+        invalid.0[3].is_code = Fr::ONE;
+        test_bytecode_circuit_unrolled::<Fr>(k, &invalid, false);
     }
     // Mark the 4rd byte as data (is code)
     {
-        let mut invalid = unrolled.clone();
-        invalid.rows[4].is_code = Fr::ZERO;
-        test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
+        let mut invalid: BytecodeTableAssignment<Fr> = bytecodes.into();
+        invalid.0[4].is_code = Fr::ZERO;
+        test_bytecode_circuit_unrolled::<Fr>(k, &invalid, false);
     }
     // Mark the 7th byte as code (is data for the PUSH7)
     {
-        let mut invalid = unrolled;
-        invalid.rows[7].is_code = Fr::ONE;
-        test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
+        let mut invalid: BytecodeTableAssignment<Fr> = bytecodes.into();
+        invalid.0[7].is_code = Fr::ONE;
+        test_bytecode_circuit_unrolled::<Fr>(k, &invalid, false);
     }
 }
 
@@ -290,9 +293,9 @@ fn bytecode_soundness_bug_1() {
     let k = 9;
     let bytecode = vec![1, 2, 3, 4];
     let bytecode_len = bytecode.len();
-    let unrolled = unroll(bytecode);
-    let unrolled_len = unrolled.rows.len();
-    let code_hash = unrolled.rows[0].code_hash.clone();
+    let unrolled: BytecodeTableAssignment<Fr> = vec![bytecode].into();
+    let unrolled_len = unrolled.0.len();
+    let code_hash = unrolled.0[0].code_hash.clone();
     let mut index = bytecode_len as u64;
     let size = 100;
     let minimum_rows = 8;
