@@ -10,7 +10,7 @@ use crate::{
         word::{empty_code_hash_word_value, Word, Word32, WordExpr},
         Challenges, Expr, SubCircuit, SubCircuitConfig,
     },
-    witness::{self, BytecodeCollection, BytecodeTableAssignment},
+    witness::{self, BytecodeTableAssignment},
 };
 use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
 use eth_types::Field;
@@ -22,11 +22,10 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
-use itertools::Itertools;
 use log::trace;
 use std::vec;
 
-use super::bytecode_unroller::{unroll, UnrolledBytecode};
+use super::bytecode_unroller::UnrolledBytecode;
 
 const PUSH_TABLE_WIDTH: usize = 2;
 
@@ -46,6 +45,17 @@ pub struct BytecodeCircuitRow<F: Field> {
     push_data_size: F,
 }
 impl<F: Field> BytecodeCircuitRow<F> {
+    fn pad(offset: usize, last_row_offset: usize) -> Self {
+        Self {
+            offset,
+            last_row_offset,
+            code_hash: empty_code_hash_word_value(),
+            tag: F::from(BytecodeFieldTag::Header as u64),
+            value_rlc: Value::known(F::ZERO),
+            ..Default::default()
+        }
+    }
+
     /// enable selector if we are within the range of table size.
     pub fn enable(&self) -> bool {
         self.offset <= self.last_row_offset
@@ -521,7 +531,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 
                 // Padding
                 for idx in offset..=last_row_offset {
-                    self.set_padding_row(&mut region, idx, last_row_offset)?;
+                    self.set_row(&mut region, BytecodeCircuitRow::pad(idx, last_row_offset))?;
                 }
 
                 // Overwrite the witness assignment by using the values in the `overwrite`
@@ -636,30 +646,11 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 push_data_left = next_push_data_left
             }
             if *offset == last_row_offset {
-                self.set_padding_row(region, *offset, last_row_offset)?;
+                self.set_row(region, BytecodeCircuitRow::pad(*offset, last_row_offset))?;
             }
         }
 
         Ok(())
-    }
-
-    fn set_padding_row(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        last_row_offset: usize,
-    ) -> Result<(), Error> {
-        self.set_row(
-            region,
-            BytecodeCircuitRow {
-                offset,
-                last_row_offset,
-                code_hash: empty_code_hash_word_value(),
-                tag: F::from(BytecodeFieldTag::Header as u64),
-                value_rlc: Value::known(F::ZERO),
-                ..Default::default()
-            },
-        )
     }
 
     fn set_row(&self, region: &mut Region<'_, F>, row: BytecodeCircuitRow<F>) -> Result<(), Error> {

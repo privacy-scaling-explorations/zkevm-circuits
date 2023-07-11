@@ -146,7 +146,7 @@ impl<F: Field> BytecodeRow<F> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Default, Debug)]
 pub(crate) struct BytecodeTableAssignment<F: Field>(Vec<BytecodeRow<F>>);
 
 impl<F: Field> From<BytecodeCollection> for BytecodeTableAssignment<F> {
