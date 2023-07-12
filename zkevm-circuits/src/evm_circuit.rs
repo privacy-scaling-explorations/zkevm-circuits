@@ -186,7 +186,7 @@ impl<F: Field> EvmCircuit<F> {
     #[cfg(feature = "test-circuits")]
     /// Construct the EvmCircuit with only subset of Fixed table tags required by tests to save
     /// testing time
-    pub(crate) fn get_test_cicuit_from_block(block: Block<F>) -> Self {
+    pub(crate) fn get_test_circuit_from_block(block: Block<F>) -> Self {
         let fixed_table_tags = detect_fixed_table_tags(&block);
         Self {
             block: Some(block),
@@ -346,8 +346,8 @@ pub(crate) mod cached {
     }
 
     impl EvmCircuitCached {
-        pub(crate) fn get_test_cicuit_from_block(block: Block<Fr>) -> Self {
-            Self(EvmCircuit::<Fr>::get_test_cicuit_from_block(block))
+        pub(crate) fn get_test_circuit_from_block(block: Block<Fr>) -> Self {
+            Self(EvmCircuit::<Fr>::get_test_circuit_from_block(block))
         }
     }
 }
@@ -498,7 +498,7 @@ mod evm_circuit_stats {
         let block = block_convert::<Fr>(&builder).unwrap();
         let k = block.get_test_degree();
 
-        let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block);
+        let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block);
         let prover1 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
         let code = bytecode! {
@@ -519,7 +519,7 @@ mod evm_circuit_stats {
             .unwrap();
         let block = block_convert::<Fr>(&builder).unwrap();
         let k = block.get_test_degree();
-        let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block);
+        let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block);
         let prover2 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
         assert_eq!(prover1.fixed(), prover2.fixed());
