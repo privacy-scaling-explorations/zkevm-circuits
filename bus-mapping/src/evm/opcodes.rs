@@ -630,7 +630,7 @@ pub fn gen_begin_tx_ops(
             stream.out().to_vec()
         });
         // 2. add init code to keccak circuit.
-        let init_code = state.tx.input.as_slice().clone();
+        let init_code = state.tx.input.as_slice();
         let length = init_code.len();
         state.block.sha3_inputs.push(init_code.to_vec());
         // 3. add init code to copy circuit.
