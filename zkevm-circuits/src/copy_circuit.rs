@@ -391,9 +391,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             // for all cases, rw_counter increase by 1 on word end for write step
             cb.condition(
                 and::expr([
-                    // exclude tx_calldata --> bytecode, which doesn't affect rw counter
-                    not::expr(meta.query_advice(is_tx_calldata, Rotation::cur()) +
-                    meta.query_advice(is_bytecode, Rotation::cur())),
                     not::expr(is_word_continue.is_lt(meta, None)),
                     not::expr(meta.query_advice(is_last, Rotation::cur())),
                     not::expr(meta.query_selector(q_step)), // TODO: rm
