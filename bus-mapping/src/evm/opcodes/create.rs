@@ -291,8 +291,10 @@ fn handle_copy(
     length: usize,
 ) -> Result<(Vec<u8>, H256), Error> {
     let initialization_bytes = state.caller_ctx()?.memory.0[offset..(offset + length)].to_vec();
-    let code_hash = CodeDB::hash(&initialization_bytes);
-    let bytes = Bytecode::from(initialization_bytes.clone()).code_vec();
+
+    let initialization = Bytecode::from(initialization_bytes.clone());
+    let code_hash = initialization.hash_h256();
+    let bytes = initialization.code_vec();
 
     let rw_counter_start = state.block_ctx.rwc;
     for (i, (byte, _)) in bytes.iter().enumerate() {
