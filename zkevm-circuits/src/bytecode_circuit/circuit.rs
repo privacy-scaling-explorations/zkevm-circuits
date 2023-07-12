@@ -598,7 +598,12 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             self.minimum_rows,
             last_row_offset
         );
-        assert!(witness.len() < last_row_offset);
+        assert!(
+            witness.len() <= last_row_offset + 1,
+            "the witness has size {}, but last_row_offset + 1 is {}",
+            witness.len(),
+            last_row_offset + 1
+        );
 
         layouter.assign_region(
             || "assign bytecode",
@@ -760,17 +765,22 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 /// BytecodeCircuit
 #[derive(Clone, Default, Debug)]
 pub struct BytecodeCircuit<F: Field> {
+    pub(crate) bytecodes: BytecodeCollection,
     /// Unrolled bytecodes
-    pub(crate) bytecodes: BytecodeTableAssignment<F>,
+    pub(crate) rows: BytecodeTableAssignment<F>,
     /// Circuit size
     pub size: usize,
 }
 
 impl<F: Field> BytecodeCircuit<F> {
     /// new BytecodeCircuitTester
-    pub(crate) fn new(bytecodes: impl Into<BytecodeTableAssignment<F>>, size: usize) -> Self {
-        let bytecodes = bytecodes.into();
-        Self { bytecodes, size }
+    pub(crate) fn new(bytecodes: BytecodeCollection, size: usize) -> Self {
+        let rows = bytecodes.clone().into();
+        Self {
+            bytecodes,
+            rows,
+            size,
+        }
     }
 }
 
@@ -803,11 +813,6 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         config.load_aux_tables(layouter)?;
-        config.assign_internal(
-            layouter,
-            self.size,
-            &(self.bytecodes.clone().into()),
-            challenges,
-        )
+        config.assign_internal(layouter, self.size, &self.rows, challenges)
     }
 }
