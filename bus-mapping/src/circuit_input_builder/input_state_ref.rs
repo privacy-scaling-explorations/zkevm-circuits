@@ -28,8 +28,7 @@ use eth_types::{
     evm_types::{
         gas_utils::memory_expansion_gas_cost,
         memory::{MemoryRange, MemoryWordRange},
-        Gas, GasCost, Memory, MemoryAddress, OpcodeId, StackAddress,
-        MAX_CODE_SIZE,
+        Gas, GasCost, Memory, MemoryAddress, OpcodeId, StackAddress, MAX_CODE_SIZE,
     },
     sign_types::SignData,
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
