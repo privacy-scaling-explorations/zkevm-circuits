@@ -391,6 +391,9 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             // for all cases, rw_counter increase by 1 on word end for write step
             cb.condition(
                 and::expr([
+                    // exclude tx_calldata --> bytecode, which doesn't affect rw counter
+                    not::expr(meta.query_advice(is_tx_calldata, Rotation::cur()) +
+                    meta.query_advice(is_bytecode, Rotation::cur())),
                     not::expr(is_word_continue.is_lt(meta, None)),
                     not::expr(meta.query_advice(is_last, Rotation::cur())),
                     not::expr(meta.query_selector(q_step)), // TODO: rm
@@ -511,6 +514,28 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     meta.query_advice(is_last, Rotation::next()),
                     and::expr([
                         meta.query_advice(is_memory, Rotation::cur()),
+                        meta.query_advice(is_bytecode, Rotation::next()),
+                    ]),
+                ]))
+            },
+        );
+
+        meta.create_gate(
+            "Last Step (check value accumulator) TxCalldata => Bytecode",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
+
+                cb.require_equal(
+                    "value_acc == rlc_acc on the last row",
+                    meta.query_advice(value_acc, Rotation::next()),
+                    meta.query_advice(rlc_acc, Rotation::next()),
+                );
+
+                cb.gate(and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(is_last, Rotation::next()),
+                    and::expr([
+                        meta.query_advice(is_tx_calldata, Rotation::cur()),
                         meta.query_advice(is_bytecode, Rotation::next()),
                     ]),
                 ]))
