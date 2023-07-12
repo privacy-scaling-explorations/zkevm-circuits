@@ -1,6 +1,5 @@
 //! The EVM circuit implementation.
 
-#![allow(missing_docs)]
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::*,
@@ -41,6 +40,7 @@ pub struct EvmCircuitConfig<F> {
     fixed_table: [Column<Fixed>; 4],
     u8_table: UXTable<8>,
     u16_table: UXTable<16>,
+    /// The execution config
     pub execution: Box<ExecutionConfig<F>>,
     // External tables
     tx_table: TxTable,
@@ -183,17 +183,19 @@ impl<F: Field> EvmCircuit<F> {
             fixed_table_tags: FixedTableTag::iter().collect(),
         }
     }
-
-    pub fn get_test_cicuit_from_block(block: Block<F>) -> Self {
+    #[cfg(feature = "test-circuits")]
+    /// Construct the EvmCircuit with only subset of Fixed table tags required by tests to save
+    /// testing time
+    pub(crate) fn get_test_circuit_from_block(block: Block<F>) -> Self {
         let fixed_table_tags = detect_fixed_table_tags(&block);
         Self {
             block: Some(block),
             fixed_table_tags,
         }
     }
-
+    #[cfg(feature = "test-circuits")]
     /// Calculate which rows are "actually" used in the circuit
-    pub fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
+    pub(crate) fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
         let max_offset = Self::get_num_rows_required(block);
         // some gates are enabled on all rows
         let gates_row_ids = (0..max_offset).collect();
@@ -201,8 +203,9 @@ impl<F: Field> EvmCircuit<F> {
         let lookup_row_ids = (0..max_offset).collect();
         (gates_row_ids, lookup_row_ids)
     }
-
-    pub fn get_num_rows_required(block: &Block<F>) -> usize {
+    /// Get the minimum number of rows required to process the block
+    /// If unspecified, then compute it
+    pub(crate) fn get_num_rows_required(block: &Block<F>) -> usize {
         let evm_rows = block.circuits_params.max_evm_rows;
         if evm_rows == 0 {
             Self::get_min_num_rows_required(block)
@@ -211,8 +214,8 @@ impl<F: Field> EvmCircuit<F> {
             block.circuits_params.max_evm_rows + 1
         }
     }
-
-    pub fn get_min_num_rows_required(block: &Block<F>) -> usize {
+    /// Compute the minimum number of rows required to process the block
+    fn get_min_num_rows_required(block: &Block<F>) -> usize {
         let mut num_rows = 0;
         for transaction in &block.txs {
             for step in transaction.steps() {
@@ -343,8 +346,8 @@ pub(crate) mod cached {
     }
 
     impl EvmCircuitCached {
-        pub fn get_test_cicuit_from_block(block: Block<Fr>) -> Self {
-            Self(EvmCircuit::<Fr>::get_test_cicuit_from_block(block))
+        pub(crate) fn get_test_circuit_from_block(block: Block<Fr>) -> Self {
+            Self(EvmCircuit::<Fr>::get_test_circuit_from_block(block))
         }
     }
 }
@@ -495,7 +498,7 @@ mod evm_circuit_stats {
         let block = block_convert::<Fr>(&builder).unwrap();
         let k = block.get_test_degree();
 
-        let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block);
+        let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block);
         let prover1 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
         let code = bytecode! {
@@ -516,7 +519,7 @@ mod evm_circuit_stats {
             .unwrap();
         let block = block_convert::<Fr>(&builder).unwrap();
         let k = block.get_test_degree();
-        let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block);
+        let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block);
         let prover2 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
         assert_eq!(prover1.fixed(), prover2.fixed());
