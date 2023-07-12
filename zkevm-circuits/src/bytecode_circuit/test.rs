@@ -231,7 +231,6 @@ fn bytecode_soundness_bug_1() {
             let unrolled_len = rows.len();
             for i in unrolled_len..size - minimum_rows + 3 {
                 rows.push(BytecodeCircuitRow::new(
-                    i,
                     code_hash.clone(),
                     Fr::ONE,
                     Fr::from(index),
