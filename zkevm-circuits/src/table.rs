@@ -1599,7 +1599,7 @@ impl CopyTable {
             // is_first
             let is_first = Value::known(if step_idx == 0 { F::one() } else { F::zero() });
             // is last
-            let is_last = if step_idx == copy_event.copy_bytes.bytes.len() * 2 - 1 {
+            let is_last = if step_idx == full_length * 2 - 1 {
                 Value::known(F::one())
             } else {
                 Value::known(F::zero())
@@ -1654,8 +1654,7 @@ impl CopyTable {
             };
 
             // bytes_left (final padding word length )
-            let bytes_left =
-                u64::try_from(copy_event.copy_bytes.bytes.len() * 2 - step_idx).unwrap() / 2;
+            let bytes_left = u64::try_from(full_length * 2 - step_idx).unwrap() / 2;
             // value
             let value = Value::known(F::from(copy_step.value as u64));
 
@@ -1694,10 +1693,7 @@ impl CopyTable {
                     (is_first, "is_first"),
                     (id, "id"),
                     (Value::known(addr), "addr"),
-                    (
-                        Value::known(F::from(addr_end)),
-                        "src_addr_end",
-                    ),
+                    (Value::known(F::from(addr_end)), "src_addr_end"),
                     (Value::known(F::from(bytes_left)), "bytes_left"),
                     (
                         Value::known(F::from(real_length_left as u64)),

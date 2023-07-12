@@ -258,7 +258,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 // If a row is not enabled (fixed), it is not in an event.
                 // TODO: not currently possible due to API limitations.
                 // (1.expr() - enabled.expr()) * is_event.expr(),
-                
+
                 // If a row is anything but padding (filler of the table), it is in an event.
                 enabled.expr()
                     * ((1.expr() - is_event.expr())
@@ -290,7 +290,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(is_last, Rotation::cur()),
             );
             cb.require_boolean("mask is boolean", meta.query_advice(mask, Rotation::cur()));
-            cb.require_boolean("front_mask is boolean", meta.query_advice(front_mask, Rotation::cur()));
             cb.require_zero(
                 "is_first == 0 when q_step == 0",
                 and::expr([
@@ -321,17 +320,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             // Whether this row is part of a memory or log word.
             let is_word = meta.query_advice(is_memory, Rotation::cur()) + meta.query_advice(is_tx_log, Rotation::cur());
-           
-            cb.condition(
-                is_continue.expr(),
-                |cb| {
-                    cb.require_equal(
-                        "bytes_left == bytes_left_next + 1 for non-last step",
-                        meta.query_advice(bytes_left, Rotation::cur()),
-                        meta.query_advice(bytes_left, Rotation(2)) + 1.expr(),
-                    );
-                },
-            );
 
             cb.condition(
                 and::expr([
@@ -417,23 +405,43 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 }
             );
 
-            // The address is incremented by 1, except in the front mask because the row address has not caught up with the address of the event yet.
-            cb.condition(not_last_two_rows.expr(),
-                |cb| {
+            let front_mask_next = meta.query_advice(front_mask, Rotation(2));
+            let front_mask = meta.query_advice(front_mask, Rotation::cur());
+            cb.require_boolean("front_mask is boolean", front_mask.expr());
 
-                    let addr_diff = not::expr(meta.query_advice(front_mask, Rotation::cur()));
+            cb.require_zero("front_mask=1 implies mask=1",
+                and::expr([
+                    front_mask.expr(),
+                    not::expr(meta.query_advice(mask, Rotation::cur())),
+                ]),
+            );
 
+            cb.condition(not::expr(is_word_continue.is_lt(meta, None)), |cb| {
+                // The first 31 bytes may be front_mask, but at least the 32nd byte is not masked.
+                cb.require_zero("front_mask = 0 by the end of the first word", front_mask.expr());
+            });
+
+            cb.condition(is_continue.expr(),
+            |cb| {
+
+                    cb.require_boolean("front_mask can go from 1 to 0", front_mask.expr() - front_mask_next);
+
+                    // The address is incremented by 1, except in the front mask because the row address has not caught up with the address of the event yet.
+                    let addr_diff = not::expr(front_mask.expr());
                     cb.require_equal(
-                        "rows[0].addr + 1 == rows[2].addr",
+                        "rows[0].addr + !front_mask == rows[2].addr",
                         meta.query_advice(addr, Rotation::cur()) + addr_diff,
                         meta.query_advice(addr, Rotation(2)),
                     );
-                },
-            );
 
-            cb.condition(
-                not_last_two_rows.expr() * is_event,
-                |cb| {
+                    // The byte count including mask always decrements.
+                    cb.require_equal(
+                        "bytes_left == bytes_left_next + 1 for non-last step",
+                        meta.query_advice(bytes_left, Rotation::cur()),
+                        meta.query_advice(bytes_left, Rotation(2)) + 1.expr(),
+                    );
+
+                    // Forward other fields to the next step.
                     cb.require_equal(
                         "rows[0].id == rows[2].id",
                         meta.query_advice(id, Rotation::cur()),
@@ -444,7 +452,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         tag.value(Rotation::cur())(meta),
                         tag.value(Rotation(2))(meta),
                     );
-
                     cb.require_equal(
                         "rows[0].src_addr_end == rows[2].src_addr_end for non-last step",
                         meta.query_advice(src_addr_end, Rotation::cur()),
@@ -789,12 +796,12 @@ impl<F: Field> CopyCircuitConfig<F> {
                     .iter()
                     .zip_eq(table_row)
             {
-                    region.assign_advice(
-                        || format!("{label} at row: {offset}"),
-                        column,
-                        *offset,
-                        || value,
-                    )?;
+                region.assign_advice(
+                    || format!("{label} at row: {offset}"),
+                    column,
+                    *offset,
+                    || value,
+                )?;
             }
 
             // q_step
