@@ -225,13 +225,13 @@ fn bytecode_soundness_bug_1() {
     let bytecode_len = bytecodes[0].len();
     BytecodeCircuit::<Fr>::from_bytes(bytecodes, k)
         .mut_rows(|rows| {
-            let code_hash = rows[0].code_hash.clone();
+            let code_hash = rows[0].code_hash;
             let mut index = bytecode_len as u64;
             let size = 100;
             let minimum_rows = 8;
             for i in rows.len()..size - minimum_rows + 3 {
                 rows.push(BytecodeCircuitRow::new(
-                    code_hash.clone(),
+                    code_hash,
                     Fr::ONE,
                     Fr::from(index),
                     Fr::ONE,

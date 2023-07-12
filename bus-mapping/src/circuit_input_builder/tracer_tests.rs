@@ -2169,9 +2169,9 @@ fn test_gen_access_trace_create_push_call_stack() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.to_vec().len();
+    let len = code_creator.codesize();
     let code_creator: Vec<u8> = code_creator
-        .to_vec()
+        .code()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))

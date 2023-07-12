@@ -45,7 +45,6 @@ impl Account {
             && self.storage.is_empty()
     }
 
-    #[deprecated]
     /// Generate an account that has either code or balance
     pub fn mock_code_or_balance(code: Bytecode) -> Self {
         let is_empty = code.codesize() == 0;
@@ -57,7 +56,7 @@ impl Account {
             ..Default::default()
         }
     }
-    #[deprecated]
+
     /// Generate an account that has 100 ETH
     pub fn mock_100_ether(code: Bytecode) -> Self {
         Self {

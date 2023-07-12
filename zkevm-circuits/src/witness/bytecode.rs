@@ -24,7 +24,6 @@ impl BytecodeCollection {
     }
 
     /// Get raw bytes
-    #[deprecated()]
     pub fn to_raw(&self) -> Vec<Vec<u8>> {
         self.codes.values().map(|code| code.code()).collect_vec()
     }
