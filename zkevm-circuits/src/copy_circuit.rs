@@ -61,8 +61,6 @@ pub struct CopyCircuitConfig<F> {
     pub value_word_rlc_prev: Column<Advice>,
     /// The index of the current byte within a word [0..31].
     pub word_index: Column<Advice>,
-    /// address for slot memory src or dest, review if can reuse `addr` .
-    pub addr_slot: Column<Advice>,
     /// Random linear combination of the read value
     pub rlc_acc_read: Column<Advice>,
     /// Random linear combination of the write value
@@ -70,6 +68,8 @@ pub struct CopyCircuitConfig<F> {
     /// mask indicates when a row is not part of the copy, but it is needed to complete the front
     /// or the back of the first or last memory word.
     pub mask: Column<Advice>,
+    /// Whether the row is part of the front mask, before the copy data.
+    pub front_mask: Column<Advice>,
     /// Random linear combination accumulator value.
     pub value_acc: Column<Advice>,
     /// Whether the row is padding for out-of-bound reads when source address >= src_addr_end.
@@ -167,8 +167,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let bytes_left = copy_table.bytes_left;
         let real_bytes_left = copy_table.real_bytes_left;
         let word_index = meta.advice_column();
-        let addr_slot = meta.advice_column();
         let mask = meta.advice_column();
+        let front_mask = meta.advice_column();
 
         let rlc_acc = copy_table.rlc_acc;
         let rw_counter = copy_table.rw_counter;
@@ -190,7 +190,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
         let is_word_continue = LtChip::configure(
             meta,
-            |meta| meta.query_selector(q_step),
+            |meta| meta.query_selector(q_step), // TODO: always enable.
             |meta| meta.query_advice(word_index, Rotation::cur()),
             |_meta| 31.expr(),
         );
@@ -276,6 +276,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(is_last, Rotation::cur()),
             );
             cb.require_boolean("mask is boolean", meta.query_advice(mask, Rotation::cur()));
+            cb.require_boolean("front_mask is boolean", meta.query_advice(front_mask, Rotation::cur()));
             cb.require_zero(
                 "is_first == 0 when q_step == 0",
                 and::expr([
@@ -385,17 +386,15 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 }
             );
 
-            // addr change: for tx log, addr use addr_slot as index, not increase by 1
-            cb.condition(
-                and::expr([
-                    not_last_two_rows.expr(),
-                    non_pad_non_mask.is_lt(meta, None),
-                    not::expr(tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta)),
-                ]),
+            // The address is incremented by 1, except in the front mask because the row address has not caught up with the address of the event yet.
+            cb.condition(not_last_two_rows.expr(),
                 |cb| {
+
+                    let addr_diff = not::expr(meta.query_advice(front_mask, Rotation::cur()));
+
                     cb.require_equal(
                         "rows[0].addr + 1 == rows[2].addr",
-                        meta.query_advice(addr, Rotation::cur()) + 1.expr(),
+                        meta.query_advice(addr, Rotation::cur()) + addr_diff,
                         meta.query_advice(addr, Rotation(2)),
                     );
                 },
@@ -658,13 +657,16 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * meta.query_advice(is_memory, Rotation::cur())
                 * not::expr(is_word_continue.is_lt(meta, None));
+
+            let addr_slot = meta.query_advice(addr, Rotation::cur()) - 31.expr();
+
             vec![
                 1.expr(),
                 meta.query_advice(rw_counter, Rotation::cur()),
                 not::expr(meta.query_selector(q_step)),
                 RwTableTag::Memory.expr(),
                 meta.query_advice(id, Rotation::cur()), // call_id
-                meta.query_advice(addr_slot, Rotation::cur()), // slot address of memory word
+                addr_slot,
                 0.expr(),
                 0.expr(),
                 meta.query_advice(value_word_rlc, Rotation::cur()),
@@ -683,13 +685,15 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 * meta.query_advice(is_tx_log, Rotation::cur())
                 * not::expr(is_word_continue.is_lt(meta, None));
 
+            let addr_slot = meta.query_advice(addr, Rotation::cur()) - 31.expr();
+
             vec![
                 1.expr(),
                 meta.query_advice(rw_counter, Rotation::cur()),
                 1.expr(),
                 RwTableTag::TxLog.expr(),
                 meta.query_advice(id, Rotation::cur()), // tx_id
-                meta.query_advice(addr, Rotation::cur()), // byte_index || field_tag || log_id
+                addr_slot,                              // byte_index || field_tag || log_id
                 0.expr(),
                 0.expr(),
                 meta.query_advice(value_word_rlc, Rotation::cur()),
@@ -749,8 +753,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             rlc_acc_read,
             rlc_acc_write,
             word_index,
-            addr_slot,
             mask,
+            front_mask,
             value_acc,
             is_pad,
             is_code,
@@ -785,9 +789,6 @@ impl<F: Field> CopyCircuitConfig<F> {
         challenges: Challenges<Value<F>>,
         copy_event: &CopyEvent,
     ) -> Result<(), Error> {
-        let mut src_first_non_mask = 0u64;
-        let mut src_first_non_mask_stop = false;
-
         for (step_idx, (tag, table_row, circuit_row)) in
             CopyTable::assignments(copy_event, challenges)
                 .iter()
@@ -844,8 +845,8 @@ impl<F: Field> CopyCircuitConfig<F> {
                 self.is_pad,
                 self.is_code,
                 self.mask,
+                self.front_mask,
                 self.word_index,
-                self.addr_slot,
             ]
             .iter()
             .zip_eq(circuit_row)
@@ -861,39 +862,10 @@ impl<F: Field> CopyCircuitConfig<F> {
             // tag
             tag_chip.assign(region, *offset, tag)?;
 
-            let mut pad = F::zero();
-            circuit_row[7].0.map(|f: F| pad = f);
-            let mut mask = F::zero();
-            circuit_row[9].0.map(|f: F| mask = f);
-
-            if is_read {
-                if mask == F::one() && !src_first_non_mask_stop {
-                    src_first_non_mask += 1;
-                } else {
-                    src_first_non_mask_stop = true
-                }
-            }
-
             // lt chip
             if is_read {
-                // for bytecode, front mask rows not increase addr
-                let src_addr_increase =
-                    if tag.eq(&CopyDataType::Bytecode) || tag.eq(&CopyDataType::TxCalldata) {
-                        if step_idx as u64 <= 2 * src_first_non_mask {
-                            0
-                        } else {
-                            u64::try_from(step_idx).unwrap() / 2u64 - src_first_non_mask
-                        }
-                    } else {
-                        u64::try_from(step_idx).unwrap() / 2u64
-                    };
-
-                lt_chip.assign(
-                    region,
-                    *offset,
-                    F::from(copy_event.src_addr + src_addr_increase),
-                    F::from(copy_event.src_addr_end),
-                )?;
+                let addr = unwrap_value(table_row[2].0);
+                lt_chip.assign(region, *offset, addr, F::from(copy_event.src_addr_end))?;
             }
 
             lt_word_end_chip.assign(
@@ -902,6 +874,9 @@ impl<F: Field> CopyCircuitConfig<F> {
                 F::from((step_idx as u64 / 2) % 32), // word index
                 F::from(31u64),
             )?;
+
+            let pad = unwrap_value(circuit_row[7].0);
+            let mask = unwrap_value(circuit_row[9].0);
 
             non_pad_non_mask_chip.assign(
                 region,
@@ -983,8 +958,8 @@ impl<F: Field> CopyCircuitConfig<F> {
                 region.name_column(|| "value_word_rlc", self.value_word_rlc);
                 region.name_column(|| "value_word_rlc_prev", self.value_word_rlc_prev);
                 region.name_column(|| "word_index", self.word_index);
-                region.name_column(|| "addr_slot", self.addr_slot);
                 region.name_column(|| "mask", self.mask);
+                region.name_column(|| "front_mask", self.front_mask);
                 region.name_column(|| "is_code", self.is_code);
                 region.name_column(|| "is_pad", self.is_pad);
 
@@ -1152,17 +1127,17 @@ impl<F: Field> CopyCircuitConfig<F> {
             *offset,
             || Value::known(F::zero()),
         )?;
-        // addr_slot
-        region.assign_advice(
-            || format!("assign addr_slot {}", *offset),
-            self.addr_slot,
-            *offset,
-            || Value::known(F::zero()),
-        )?;
         // mask
         region.assign_advice(
             || format!("assign mask {}", *offset),
             self.mask,
+            *offset,
+            || Value::known(F::one()),
+        )?;
+        // front mask
+        region.assign_advice(
+            || format!("assign front mask {}", *offset),
+            self.front_mask,
             *offset,
             || Value::known(F::one()),
         )?;
@@ -1349,6 +1324,12 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     ) -> Result<(), Error> {
         config.assign_copy_events(layouter, &self.copy_events, self.max_copy_rows, *challenges)
     }
+}
+
+fn unwrap_value<F: Field>(value: Value<F>) -> F {
+    let mut f = F::zero();
+    value.map(|v| f = v);
+    f
 }
 
 #[cfg(test)]

@@ -1456,8 +1456,6 @@ pub struct CopyTable {
     /// The source/destination address for this copy step.  Can be memory
     /// address, byte index in the bytecode, tx call data, and tx log data.
     pub addr: Column<Advice>,
-    /// address for slot memory src or dest, review if can reuse `addr` .
-    // pub addr_slot: Column<Advice>,
     /// The end of the source buffer for the copy event.  Any data read from an
     /// address greater than or equal to this value will be 0.
     pub src_addr_end: Column<Advice>,
@@ -1538,12 +1536,6 @@ impl CopyTable {
         let mut rlc_acc_read = Value::known(F::zero());
         let mut rlc_acc_write = Value::known(F::zero());
 
-        let non_mask_pos = copy_event
-            .copy_bytes
-            .bytes
-            .iter()
-            .position(|&step| !step.2)
-            .unwrap_or(0);
         let mut real_length_left = copy_event
             .copy_bytes
             .bytes
@@ -1551,17 +1543,6 @@ impl CopyTable {
             .filter(|&step| !step.2)
             .count();
         let mut word_index;
-        let mut read_addr_slot = if copy_event.src_type == CopyDataType::Memory {
-            copy_event.src_addr - copy_event.src_addr % 32
-        } else {
-            0
-        };
-
-        let mut write_addr_slot = if copy_event.dst_type == CopyDataType::Memory {
-            copy_event.dst_addr - copy_event.dst_addr % 32
-        } else {
-            0
-        };
 
         let read_steps = copy_event.copy_bytes.bytes.iter();
         let copy_steps = if let Some(ref write_steps) = copy_event.copy_bytes.aux_bytes {
@@ -1575,6 +1556,12 @@ impl CopyTable {
             .bytes_write_prev
             .clone()
             .unwrap_or(vec![]);
+
+        let mut src_addr = copy_event.src_addr;
+        let mut dst_addr = copy_event.dst_addr;
+
+        let mut src_front_mask = true;
+        let mut dst_front_mask = true;
 
         for (step_idx, (is_read_step, mut copy_step)) in copy_steps
             .flat_map(|(read_step, write_step)| {
@@ -1621,42 +1608,34 @@ impl CopyTable {
             // assume copy events bytes is already word aligned for copy steps.
             // only change by skip 32
 
-            if copy_event.dst_type == CopyDataType::Memory
-                || copy_event.src_type == CopyDataType::Memory
-            {
-                if is_read_step {
-                    if !copy_step.mask {
-                        rlc_acc_read = rlc_acc_read * challenges.evm_word()
-                            + Value::known(F::from(copy_step.value as u64));
-                    }
-                    if step_idx / 64 > 0 && step_idx % 64 == 0 {
-                        // reset
-                        value_word_read_rlc = Value::known(F::zero());
-                        value_word_read_rlc = value_word_read_rlc * challenges.evm_word()
-                            + Value::known(F::from(copy_step.value as u64));
-
-                        read_addr_slot += 32;
-                    } else {
-                        value_word_read_rlc = value_word_read_rlc * challenges.evm_word()
-                            + Value::known(F::from(copy_step.value as u64));
-                    }
-                } else {
-                    if !copy_step.mask {
-                        rlc_acc_write = rlc_acc_write * challenges.evm_word()
-                            + Value::known(F::from(copy_step.value as u64));
-                    }
-                    if step_idx / 64 > 0 && step_idx % 64 == 1 {
-                        // reset
-                        value_word_write_rlc = Value::known(F::zero());
-                        value_word_write_rlc_prev = Value::known(F::zero());
-                        write_addr_slot += 32;
-                    }
-                    value_word_write_rlc = value_word_write_rlc * challenges.evm_word()
+            if is_read_step {
+                if !copy_step.mask {
+                    src_front_mask = false;
+                    rlc_acc_read = rlc_acc_read * challenges.evm_word()
                         + Value::known(F::from(copy_step.value as u64));
-                    // use value_prev.
-                    value_word_write_rlc_prev = value_word_write_rlc_prev * challenges.evm_word()
-                        + Value::known(F::from(copy_step.prev_value.unwrap_or(0u8) as u64));
                 }
+                if (step_idx / 2) % 32 == 0 {
+                    // reset
+                    value_word_read_rlc = Value::known(F::zero());
+                }
+                value_word_read_rlc = value_word_read_rlc * challenges.evm_word()
+                    + Value::known(F::from(copy_step.value as u64));
+            } else {
+                if !copy_step.mask {
+                    dst_front_mask = false;
+                    rlc_acc_write = rlc_acc_write * challenges.evm_word()
+                        + Value::known(F::from(copy_step.value as u64));
+                }
+                if (step_idx / 2) % 32 == 0 {
+                    // reset
+                    value_word_write_rlc = Value::known(F::zero());
+                    value_word_write_rlc_prev = Value::known(F::zero());
+                }
+                value_word_write_rlc = value_word_write_rlc * challenges.evm_word()
+                    + Value::known(F::from(copy_step.value as u64));
+                // use value_prev.
+                value_word_write_rlc_prev = value_word_write_rlc_prev * challenges.evm_word()
+                    + Value::known(F::from(copy_step.prev_value.unwrap_or(0u8) as u64));
             }
 
             // id
@@ -1673,43 +1652,6 @@ impl CopyTable {
                 copy_event.dst_type
             };
 
-            // addr
-            let copy_step_addr: u64 =
-                if is_read_step {
-                    copy_event.src_addr
-                } else {
-                    copy_event.dst_addr
-                } + (u64::try_from(step_idx).unwrap() - if is_read_step { 0 } else { 1 }) / 2u64;
-
-            let addr: F = if tag == CopyDataType::TxLog {
-                build_tx_log_address(
-                    write_addr_slot,
-                    TxLogFieldTag::Data,
-                    copy_event.log_id.unwrap(),
-                )
-                .to_scalar()
-                .unwrap()
-            } else if tag == CopyDataType::Bytecode && copy_event.dst_type == CopyDataType::Bytecode
-            {
-                // get real bytecode addr
-                let bytecode_addr_increase = if step_idx > non_mask_pos * 2 {
-                    step_idx as u64 / 2 - non_mask_pos as u64
-                } else {
-                    0
-                };
-                F::from(copy_event.dst_addr + bytecode_addr_increase)
-            } else if tag == CopyDataType::Bytecode || tag == CopyDataType::TxCalldata {
-                // get real bytecode or tx calldata addr
-                let bytecode_addr_increase = if step_idx > non_mask_pos * 2 {
-                    step_idx as u64 / 2 - non_mask_pos as u64
-                } else {
-                    0
-                };
-                F::from(copy_event.src_addr + bytecode_addr_increase)
-            } else {
-                F::from(copy_step_addr)
-            };
-
             // bytes_left (final padding word length )
             let bytes_left =
                 u64::try_from(copy_event.copy_bytes.bytes.len() * 2 - step_idx).unwrap() / 2;
@@ -1722,17 +1664,22 @@ impl CopyTable {
             if is_read_step && !copy_step.mask {
                 value_acc = value_acc * challenges.keccak_input() + value;
             }
+
             // is_pad
-            let is_pad = Value::known(F::from(
-                is_read_step && addr >= F::from(copy_event.src_addr_end),
-            ));
+            let addr = if is_read_step { src_addr } else { dst_addr };
+            let is_pad = Value::known(F::from(is_read_step && addr >= copy_event.src_addr_end));
 
             // is_code
             let is_code = Value::known(copy_step.is_code.map_or(F::zero(), |v| F::from(v)));
-            // debug into: rm
-            // println!(
-            //     "step {step_idx},is_last {is_last:?}, real_bytes_left {real_length_left}",
-            // );
+
+            // For LOG, format the address including the log_id.
+            let addr = if tag == CopyDataType::TxLog {
+                build_tx_log_address(addr, TxLogFieldTag::Data, copy_event.log_id.unwrap())
+                    .to_scalar()
+                    .unwrap()
+            } else {
+                F::from(addr)
+            };
 
             assignments.push((
                 tag,
@@ -1794,17 +1741,25 @@ impl CopyTable {
                     (is_pad, "is_pad"),
                     (is_code, "is_code"),
                     (is_mask, "mask"),
-                    (Value::known(F::from(word_index)), "word_index"),
                     (
-                        Value::known(F::from(if is_read_step {
-                            read_addr_slot
+                        if is_read_step {
+                            Value::known(F::from(src_front_mask))
                         } else {
-                            write_addr_slot
-                        })),
-                        "addr_slot",
+                            Value::known(F::from(dst_front_mask))
+                        },
+                        "front_mask",
                     ),
+                    (Value::known(F::from(word_index)), "word_index"),
                 ],
             ));
+
+            // Increment the address.
+            if is_read_step && !src_front_mask {
+                src_addr += 1;
+            }
+            if !is_read_step && !dst_front_mask {
+                dst_addr += 1;
+            }
 
             if is_read_step && !copy_step.mask {
                 real_length_left -= 1;
@@ -1900,7 +1855,6 @@ impl<F: Field> LookupTable<F> for CopyTable {
             String::from("src_addr_end"),
             String::from("bytes_left"),
             String::from("real_bytes_left"),
-            String::from("mask"),
             String::from("rlc_acc"),
             String::from("rw_counter"),
             String::from("rwc_inc_left"),
