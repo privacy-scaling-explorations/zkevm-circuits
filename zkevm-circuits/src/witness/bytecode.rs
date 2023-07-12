@@ -63,43 +63,6 @@ impl IntoIterator for BytecodeCollection {
         self.codes.values().cloned().collect_vec().into_iter()
     }
 }
-/// Bytecode
-#[derive(Clone, Debug)]
-pub struct BytecodeUnroller {
-    /// We assume the is_code field is properly set.
-    bytecode: Bytecode,
-}
-
-impl BytecodeUnroller {
-    #[deprecated()]
-    /// get byte value and is_code pair
-    pub fn get(&self, dest: usize) -> Option<(u8, bool)> {
-        self.bytecode.get(dest)
-    }
-
-    #[deprecated()]
-    /// The length of the bytecode
-    pub fn codesize(&self) -> usize {
-        self.bytecode.codesize()
-    }
-
-    /// The length of the bytecode table
-    pub fn table_len(&self) -> usize {
-        self.bytecode.codesize() + 1
-    }
-
-    #[deprecated()]
-    /// The code hash
-    pub fn hash(&self) -> Word {
-        self.bytecode.hash()
-    }
-
-    #[deprecated()]
-    /// The code in bytes
-    pub fn code(&self) -> Vec<u8> {
-        self.bytecode.code()
-    }
-}
 
 /// Public data for the bytecode
 #[derive(Clone, Debug, PartialEq)]
