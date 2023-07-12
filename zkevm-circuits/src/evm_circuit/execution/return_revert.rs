@@ -419,7 +419,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 #[cfg(feature = "scroll")]
                 {
                     let prev_keccak_code_hash = block.rws
-                        [step.rw_indices[3 + deployed_bytecode.len() + 6]]
+                        [step.rw_indices[3 + copy_rwc_inc as usize + 6]]
                         .account_keccak_codehash_pair()
                         .0;
                     self.prev_keccak_code_hash.assign(
