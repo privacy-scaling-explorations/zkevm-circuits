@@ -49,7 +49,7 @@ impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
 
         config
             .keccak_table
-            .dev_load(&mut layouter, &self.bytecodes.to_raw(), &challenges)?;
+            .dev_load(&mut layouter, &self.bytecodes.iter(), &challenges)?;
         self.synthesize_sub(&config, &challenges, &mut layouter)?;
         Ok(())
     }

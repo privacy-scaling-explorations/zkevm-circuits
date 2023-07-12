@@ -844,12 +844,7 @@ mod test {
             .write_op(terminator)
         });
 
-        Account {
-            address: Address::repeat_byte(0xfe),
-            balance: Word::from(10).pow(18.into()),
-            code: bytecode.to_vec().into(),
-            ..Default::default()
-        }
+        Account::mock_100_ether(bytecode)
     }
 
     fn test_nested(opcode: &OpcodeId) {

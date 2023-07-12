@@ -43,6 +43,30 @@ pub(crate) struct BytecodeCircuitRow<F: Field> {
     push_data_size: F,
 }
 impl<F: Field> BytecodeCircuitRow<F> {
+    #[cfg(test)]
+    pub(crate) fn new(
+        offset: usize,
+        code_hash: Word<Value<F>>,
+        tag: F,
+        index: F,
+        is_code: F,
+        value: F,
+    ) -> Self {
+        Self {
+            offset,
+            last_row_offset: 0,
+            code_hash,
+            tag,
+            index,
+            is_code,
+            value,
+            push_data_left: 0,
+            value_rlc: Value::known(F::ZERO),
+            length: F::ZERO,
+            push_data_size: F::ZERO,
+        }
+    }
+
     fn pad(offset: usize, last_row_offset: usize) -> Self {
         Self {
             offset,
@@ -62,11 +86,6 @@ impl<F: Field> BytecodeCircuitRow<F> {
     /// Determine if we are at last row of the bytecode table.
     pub fn last(&self) -> bool {
         self.offset == self.last_row_offset
-    }
-
-    /// Get offset
-    pub fn offset(&self) -> usize {
-        self.offset
     }
 
     /// Witness to IsZero chip to determine if we are at the last row of a bytecode instance
@@ -742,18 +761,16 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 #[derive(Clone, Default, Debug)]
 pub struct BytecodeCircuit<F: Field> {
     /// Unrolled bytecodes
-    pub bytecodes: BytecodeTableAssignment<F>,
+    pub(crate) bytecodes: BytecodeTableAssignment<F>,
     /// Circuit size
     pub size: usize,
 }
 
 impl<F: Field> BytecodeCircuit<F> {
     /// new BytecodeCircuitTester
-    pub fn new(bytecodes: &impl Into<BytecodeTableAssignment<F>>, size: usize) -> Self {
-        Self {
-            bytecodes: (*bytecodes).into(),
-            size,
-        }
+    pub(crate) fn new(bytecodes: impl Into<BytecodeTableAssignment<F>>, size: usize) -> Self {
+        let bytecodes = bytecodes.into();
+        Self { bytecodes, size }
     }
 }
 
@@ -767,7 +784,7 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
     }
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
-        Self::new(&block.bytecodes, block.circuits_params.max_bytecode)
+        Self::new(block.bytecodes.clone(), block.circuits_params.max_bytecode)
     }
 
     /// Return the minimum number of rows required to prove the block

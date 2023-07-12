@@ -183,7 +183,7 @@ impl<F: Field> EvmCircuit<F> {
             fixed_table_tags: FixedTableTag::iter().collect(),
         }
     }
-    #[cfg(feature = "test-circuits")]
+    #[cfg(any(test, feature = "test-circuits"))]
     /// Construct the EvmCircuit with only subset of Fixed table tags required by tests to save
     /// testing time
     pub(crate) fn get_test_circuit_from_block(block: Block<F>) -> Self {
@@ -193,7 +193,7 @@ impl<F: Field> EvmCircuit<F> {
             fixed_table_tags,
         }
     }
-    #[cfg(feature = "test-circuits")]
+    #[cfg(any(test, feature = "test-circuits"))]
     /// Calculate which rows are "actually" used in the circuit
     pub(crate) fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
         let max_offset = Self::get_num_rows_required(block);
