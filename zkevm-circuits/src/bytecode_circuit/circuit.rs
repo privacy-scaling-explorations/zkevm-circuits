@@ -13,7 +13,7 @@ use crate::{
     witness::{self, BytecodeCollection},
 };
 use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
-use eth_types::Field;
+use eth_types::{Bytecode, Field};
 use gadgets::is_zero::{IsZeroChip, IsZeroInstruction};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -22,8 +22,9 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
+use itertools::Itertools;
 use log::trace;
-use std::{ops::Deref, vec};
+use std::{iter, ops::Deref, vec};
 
 const PUSH_TABLE_WIDTH: usize = 2;
 
@@ -42,13 +43,7 @@ pub(crate) struct BytecodeCircuitRow<F: Field> {
 }
 impl<F: Field> BytecodeCircuitRow<F> {
     #[cfg(test)]
-    pub(crate) fn new(
-        code_hash: Word<Value<F>>,
-        tag: F,
-        index: F,
-        is_code: F,
-        value: F,
-    ) -> Self {
+    pub(crate) fn new(code_hash: Word<Value<F>>, tag: F, index: F, is_code: F, value: F) -> Self {
         Self {
             code_hash,
             tag,
@@ -62,6 +57,7 @@ impl<F: Field> BytecodeCircuitRow<F> {
         }
     }
 
+    /// Padding must be a header, acording to the q_last constraints
     fn pad() -> Self {
         Self {
             code_hash: empty_code_hash_word_value(),
@@ -72,7 +68,7 @@ impl<F: Field> BytecodeCircuitRow<F> {
     }
 
     /// Witness to IsZero chip to determine if we are at the last row of a bytecode instance
-    pub fn diff(&self) -> F {
+    fn diff(&self) -> F {
         self.index + F::ONE - self.length
     }
 }
@@ -80,10 +76,10 @@ impl<F: Field> BytecodeCircuitRow<F> {
 #[derive(Clone, Default, Debug)]
 pub(crate) struct BytecodeTableAssignment<F: Field>(pub(crate) Vec<BytecodeCircuitRow<F>>);
 
-impl<F: Field> From<BytecodeCollection> for BytecodeTableAssignment<F> {
-    fn from(collection: BytecodeCollection) -> Self {
-        let mut rows = Vec::with_capacity(collection.num_rows_required_for_bytecode_table());
-        for bytecode in collection.into_iter() {
+impl<F: Field> From<Vec<Bytecode>> for BytecodeTableAssignment<F> {
+    fn from(codes: Vec<Bytecode>) -> Self {
+        let mut rows = vec![];
+        for bytecode in codes.iter() {
             let code_hash = util::word::Word::from(bytecode.hash()).into_value();
             let code_size = bytecode.codesize();
             let head = BytecodeCircuitRow {
@@ -104,12 +100,6 @@ impl<F: Field> From<BytecodeCollection> for BytecodeTableAssignment<F> {
                 let push_data_size = get_push_size(value);
                 let value = F::from(value.into());
 
-                push_data_left = if is_code {
-                    push_data_size
-                } else {
-                    push_data_left - 1
-                };
-
                 let body = BytecodeCircuitRow {
                     code_hash,
                     tag: F::from(BytecodeFieldTag::Byte as u64),
@@ -122,16 +112,32 @@ impl<F: Field> From<BytecodeCollection> for BytecodeTableAssignment<F> {
                     push_data_size: F::from(push_data_size),
                 };
                 rows.push(body);
+                push_data_left = if is_code {
+                    push_data_size
+                } else {
+                    push_data_left - 1
+                };
             }
         }
         Self(rows)
     }
 }
 
+impl<F: Field> From<BytecodeCollection> for BytecodeTableAssignment<F> {
+    fn from(collection: BytecodeCollection) -> Self {
+        // BytecodeCollection use hash maps, so the bytecodes will be reordered.
+        collection.into_iter().collect_vec().into()
+    }
+}
+
 impl<F: Field> From<Vec<Vec<u8>>> for BytecodeTableAssignment<F> {
     fn from(codes: Vec<Vec<u8>>) -> Self {
-        let collections: BytecodeCollection = codes.into();
-        collections.into()
+        // We don't go through BytecodeCollection struct to preserve bytecode order.
+        codes
+            .iter()
+            .map(|bytes| Bytecode::from(bytes.clone()))
+            .collect_vec()
+            .into()
     }
 }
 
@@ -566,6 +572,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
     ) -> Result<(), Error> {
         // Subtract the unusable rows from the size
         assert!(size > self.minimum_rows);
+
         let last_row_offset = size - self.minimum_rows + 1;
 
         trace!(
@@ -574,13 +581,15 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             self.minimum_rows,
             last_row_offset
         );
-        assert!(
-            witness.len() <= last_row_offset + 1,
-            "the witness has size {}, but last_row_offset + 1 is {}",
-            witness.len(),
-            last_row_offset + 1
-        );
-
+        if witness.len() > last_row_offset {
+            // The last_row_offset-th row must be reserved for padding.
+            // so we have "last_row_offset rows" usable
+            log::error!(
+                "the witness has size {}, but only {} rows usable. Some witness will not be assigned",
+                witness.len(),
+                last_row_offset
+            );
+        }
         layouter.assign_region(
             || "assign bytecode",
             |mut region| {
@@ -588,8 +597,18 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 self.annotate_circuit(&mut region);
 
                 let mut value_rlc = Value::known(F::ZERO);
-                for (offset, row) in witness.iter().enumerate() {
+                // Chain the witness rows with as many padding rows as we like.
+                // We take only the first "last_row_offset" rows.
+                for (offset, row) in witness
+                    .iter()
+                    .chain(iter::repeat(&BytecodeCircuitRow::pad()))
+                    .take(last_row_offset)
+                    .enumerate()
+                {
                     let mut row = row.clone();
+                    // unfortunately this is the only place we can set the RLC.
+                    // The RLC of the padding rows are unaffected. As they are always with the
+                    // Header tag, the RLC value for them are always zero.
                     if row.tag == F::from(BytecodeFieldTag::Byte as u64) {
                         value_rlc.as_mut().zip(challenges.keccak_input()).map(
                             |(value_rlc, challenge)| {
@@ -603,15 +622,14 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     self.set_row(&mut region, offset, last_row_offset, &row)?;
                 }
 
-                // Padding
-                for offset in witness.len()..=last_row_offset {
-                    self.set_row(
-                        &mut region,
-                        offset,
-                        last_row_offset,
-                        &BytecodeCircuitRow::pad(),
-                    )?;
-                }
+                // Last row must be a padding row
+                self.set_row(
+                    &mut region,
+                    last_row_offset,
+                    last_row_offset,
+                    &BytecodeCircuitRow::pad(),
+                )?;
+
                 Ok(())
             },
         )
@@ -757,7 +775,7 @@ pub struct BytecodeCircuit<F: Field> {
 impl<F: Field> BytecodeCircuit<F> {
     /// new BytecodeCircuitTester
     pub(crate) fn new(bytecodes: BytecodeCollection, size: usize) -> Self {
-        let rows = bytecodes.clone().into();
+        let rows: BytecodeTableAssignment<F> = bytecodes.clone().into();
         Self {
             bytecodes,
             rows,

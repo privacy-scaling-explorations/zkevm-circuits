@@ -31,9 +31,11 @@ impl<F: Field> BytecodeCircuit<F> {
     fn verify(&self, success: bool) {
         let prover = MockProver::<F>::run(log2_ceil(self.size), self, Vec::new()).unwrap();
         let result = prover.verify_par();
-        if let Err(failures) = &result {
-            for failure in failures.iter() {
-                error!("{}", failure);
+        if success {
+            if let Err(failures) = &result {
+                for failure in failures.iter() {
+                    error!("{}", failure);
+                }
             }
         }
         let error_msg = if success { "valid" } else { "invalid" };
@@ -121,7 +123,6 @@ fn bytecode_invalid_hash_data() {
 
 /// Test invalid index
 #[test]
-#[ignore]
 fn bytecode_invalid_index() {
     let k = 9;
     let bytecodes = vec![vec![8u8, 2, 3, 8, 9, 7, 128]];
@@ -228,8 +229,7 @@ fn bytecode_soundness_bug_1() {
             let mut index = bytecode_len as u64;
             let size = 100;
             let minimum_rows = 8;
-            let unrolled_len = rows.len();
-            for i in unrolled_len..size - minimum_rows + 3 {
+            for i in rows.len()..size - minimum_rows + 3 {
                 rows.push(BytecodeCircuitRow::new(
                     code_hash.clone(),
                     Fr::ONE,
