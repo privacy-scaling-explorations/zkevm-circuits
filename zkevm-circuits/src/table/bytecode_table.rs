@@ -1,4 +1,4 @@
-use crate::witness::{BytecodeCollection, BytecodeRow};
+use crate::{util, witness::BytecodeCollection};
 
 use super::*;
 
@@ -66,14 +66,28 @@ impl BytecodeTable {
                     <BytecodeTable as LookupTable<F>>::advice_columns(self);
                 for bytecode in bytecodes.clone().into_iter() {
                     let rows = {
-                        let code_hash = bytecode.hash();
-                        std::iter::once(BytecodeRow::<F>::head(code_hash, bytecode.codesize()))
-                            .chain(bytecode.code_vec().iter().enumerate().map(
-                                |(index, &(byte, is_code))| {
-                                    BytecodeRow::<F>::body(code_hash, index, is_code, byte)
-                                },
-                            ))
-                            .collect_vec()
+                        let code_hash = util::word::Word::from(bytecode.hash());
+                        std::iter::once([
+                            code_hash.lo(),
+                            code_hash.hi(),
+                            F::from(BytecodeFieldTag::Header as u64),
+                            F::ZERO,
+                            F::ZERO,
+                            F::from(bytecode.codesize() as u64),
+                        ])
+                        .chain(bytecode.code_vec().iter().enumerate().map(
+                            |(index, &(byte, is_code))| {
+                                [
+                                    code_hash.lo(),
+                                    code_hash.hi(),
+                                    F::from(BytecodeFieldTag::Byte as u64),
+                                    F::from(index as u64),
+                                    F::from(is_code.into()),
+                                    F::from(byte.into()),
+                                ]
+                            },
+                        ))
+                        .collect_vec()
                     };
                     for row in rows.iter() {
                         for (&column, value) in bytecode_table_columns.iter().zip_eq(row.to_vec()) {
