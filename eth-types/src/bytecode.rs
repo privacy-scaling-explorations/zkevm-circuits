@@ -196,6 +196,22 @@ impl Bytecode {
         self.write_op(OpcodeId::JUMPDEST);
         self.code.len()
     }
+
+    /// Store another code to memory
+    pub fn store_code_to_mem(&mut self, code: &Self) {
+        let len = code.codesize();
+        // pad to multiple of 32 bytes
+        let code: Vec<u8> = code
+            .code()
+            .iter()
+            .cloned()
+            .chain(0u8..((32 - len % 32) as u8))
+            .collect();
+
+        for (index, word) in code.chunks(32).enumerate() {
+            self.op_mstore(index * 32, Word::from_big_endian(word));
+        }
+    }
 }
 
 /// An ASM entry
