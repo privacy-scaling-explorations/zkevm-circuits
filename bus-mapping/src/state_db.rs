@@ -23,7 +23,7 @@ const VALUE_ZERO: Word = Word::zero();
 
 /// Memory storage for contract code by code hash.
 #[derive(Debug, Clone, Default)]
-pub struct CodeDB(pub HashMap<Hash, Vec<u8>>);
+pub struct CodeDB(HashMap<Hash, Vec<u8>>);
 
 impl CodeDB {
     /// Insert code indexed by code hash, and return the code hash.
@@ -47,8 +47,14 @@ impl CodeDB {
     pub fn num_rows_required_for_bytecode_table(&self) -> usize {
         self.0.values().map(|bytecode| bytecode.len() + 1).sum()
     }
+
     /// Query code by hash
-    pub fn get(&self, codehash: &Word) -> Option<Bytecode> {
+    pub fn get(&self, codehash: &H256) -> Option<&Vec<u8>> {
+        self.0.get(codehash)
+    }
+
+    /// Query code by hash
+    pub fn get_from_word(&self, codehash: &Word) -> Option<Bytecode> {
         self.0
             .get(&H256::from_uint(codehash))
             .cloned()
@@ -57,7 +63,7 @@ impl CodeDB {
 
     /// Get raw bytes
     pub fn to_raw(&self) -> Vec<Vec<u8>> {
-        self.0.values().into_iter().cloned().collect_vec()
+        self.0.values().cloned().collect_vec()
     }
 }
 

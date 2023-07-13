@@ -78,9 +78,13 @@ fn check_post(
 
         if let Some(expected_code) = &expected.code {
             let actual_code = if actual.code_hash.is_zero() {
-                std::borrow::Cow::Owned(Vec::new())
+                vec![]
             } else {
-                std::borrow::Cow::Borrowed(&builder.code_db.0[&actual.code_hash])
+                builder
+                    .code_db
+                    .get(&actual.code_hash)
+                    .cloned()
+                    .expect("code exists")
             };
             if &actual_code as &[u8] != expected_code.0 {
                 return Err(StateTestError::CodeMismatch {

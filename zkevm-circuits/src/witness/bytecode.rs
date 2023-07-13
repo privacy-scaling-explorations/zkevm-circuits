@@ -29,17 +29,8 @@ impl BytecodeCollection {
 }
 
 impl From<&CodeDB> for BytecodeCollection {
-    fn from(code_db: &CodeDB) -> Self {
-        Self {
-            codes: code_db
-                .0
-                .values()
-                .map(|v| {
-                    let bytecode = Bytecode::from(v.clone());
-                    (bytecode.hash(), bytecode)
-                })
-                .collect(),
-        }
+    fn from(_code_db: &CodeDB) -> Self {
+        todo!()
     }
 }
 
