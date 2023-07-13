@@ -1,7 +1,5 @@
 //! The bytecode circuit implementation.
 
-/// Bytecode unroller
-pub mod bytecode_unroller;
 /// Bytecode circuit
 pub mod circuit;
 
