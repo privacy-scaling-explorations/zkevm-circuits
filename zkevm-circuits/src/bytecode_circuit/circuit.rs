@@ -74,9 +74,9 @@ impl<F: Field> BytecodeCircuitRow<F> {
 }
 
 #[derive(Clone, Default, Debug)]
-pub(crate) struct BytecodeTableAssignment<F: Field>(pub(crate) Vec<BytecodeCircuitRow<F>>);
+pub(crate) struct BytecodeCircuitAssignment<F: Field>(pub(crate) Vec<BytecodeCircuitRow<F>>);
 
-impl<F: Field> From<Vec<Bytecode>> for BytecodeTableAssignment<F> {
+impl<F: Field> From<Vec<Bytecode>> for BytecodeCircuitAssignment<F> {
     fn from(codes: Vec<Bytecode>) -> Self {
         let mut rows = vec![];
         for bytecode in codes.iter() {
@@ -123,14 +123,14 @@ impl<F: Field> From<Vec<Bytecode>> for BytecodeTableAssignment<F> {
     }
 }
 
-impl<F: Field> From<BytecodeCollection> for BytecodeTableAssignment<F> {
+impl<F: Field> From<BytecodeCollection> for BytecodeCircuitAssignment<F> {
     fn from(collection: BytecodeCollection) -> Self {
         // BytecodeCollection use hash maps, so the bytecodes will be reordered.
         collection.into_iter().collect_vec().into()
     }
 }
 
-impl<F: Field> From<Vec<Vec<u8>>> for BytecodeTableAssignment<F> {
+impl<F: Field> From<Vec<Vec<u8>>> for BytecodeCircuitAssignment<F> {
     fn from(codes: Vec<Vec<u8>>) -> Self {
         // We don't go through BytecodeCollection struct to preserve bytecode order.
         codes
@@ -141,7 +141,7 @@ impl<F: Field> From<Vec<Vec<u8>>> for BytecodeTableAssignment<F> {
     }
 }
 
-impl<F: Field> Deref for BytecodeTableAssignment<F> {
+impl<F: Field> Deref for BytecodeCircuitAssignment<F> {
     type Target = Vec<BytecodeCircuitRow<F>>;
 
     fn deref(&self) -> &Self::Target {
@@ -567,7 +567,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         size: usize,
-        witness: &BytecodeTableAssignment<F>,
+        witness: &BytecodeCircuitAssignment<F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         // Subtract the unusable rows from the size
@@ -767,7 +767,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 pub struct BytecodeCircuit<F: Field> {
     pub(crate) bytecodes: BytecodeCollection,
     /// Unrolled bytecodes
-    pub(crate) rows: BytecodeTableAssignment<F>,
+    pub(crate) rows: BytecodeCircuitAssignment<F>,
     /// Circuit size
     pub size: usize,
 }
@@ -775,7 +775,7 @@ pub struct BytecodeCircuit<F: Field> {
 impl<F: Field> BytecodeCircuit<F> {
     /// new BytecodeCircuitTester
     pub fn new(bytecodes: BytecodeCollection, size: usize) -> Self {
-        let rows: BytecodeTableAssignment<F> = bytecodes.clone().into();
+        let rows: BytecodeCircuitAssignment<F> = bytecodes.clone().into();
         Self {
             bytecodes,
             rows,
