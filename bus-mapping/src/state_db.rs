@@ -1,8 +1,9 @@
 //! Implementation of an in-memory key-value database to represent the
 //! Ethereum State Trie.
 
-use eth_types::{geth_types, Address, Hash, Word, H256, U256};
+use eth_types::{geth_types, Address, BigEndianHash, Bytecode, Hash, Word, H256, U256};
 use ethers_core::utils::keccak256;
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use std::collections::{HashMap, HashSet};
 
@@ -40,6 +41,23 @@ impl CodeDB {
     /// Code hash of empty code.
     pub fn empty_code_hash() -> Hash {
         *EMPTY_CODE_HASH
+    }
+
+    /// Compute number of rows required for bytecode table.
+    pub fn num_rows_required_for_bytecode_table(&self) -> usize {
+        self.0.values().map(|bytecode| bytecode.len() + 1).sum()
+    }
+    /// Query code by hash
+    pub fn get(&self, codehash: &Word) -> Option<Bytecode> {
+        self.0
+            .get(&H256::from_uint(codehash))
+            .cloned()
+            .map(|code| code.into())
+    }
+
+    /// Get raw bytes
+    pub fn to_raw(&self) -> Vec<Vec<u8>> {
+        self.0.values().into_iter().cloned().collect_vec()
     }
 }
 
