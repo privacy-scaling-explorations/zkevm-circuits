@@ -774,7 +774,7 @@ pub struct BytecodeCircuit<F: Field> {
 
 impl<F: Field> BytecodeCircuit<F> {
     /// new BytecodeCircuitTester
-    pub(crate) fn new(bytecodes: BytecodeCollection, size: usize) -> Self {
+    pub fn new(bytecodes: BytecodeCollection, size: usize) -> Self {
         let rows: BytecodeTableAssignment<F> = bytecodes.clone().into();
         Self {
             bytecodes,

@@ -4,7 +4,6 @@
 mod tests {
     use ark_std::{end_timer, start_timer};
     use bus_mapping::evm::OpcodeId;
-    use eth_types::Field;
     use halo2_proofs::{
         halo2curves::bn256::{Bn256, Fr, G1Affine},
         plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
@@ -22,13 +21,9 @@ mod tests {
     };
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
-    use std::env::var;
+    use std::{env::var, iter};
     use zkevm_circuits::{
-        bytecode_circuit::{
-            bytecode_unroller::{unroll, UnrolledBytecode},
-            TestBytecodeCircuit,
-        },
-        util::SubCircuit,
+        bytecode_circuit::TestBytecodeCircuit, util::SubCircuit, witness::BytecodeCollection,
     };
 
     #[cfg_attr(not(feature = "benches"), ignore)]
@@ -127,10 +122,7 @@ mod tests {
     }
 
     /// fill bytecodes_num * bytecode_len bytes to the witness table
-    fn fillup_codebytes<F: Field>(
-        bytecodes_num: usize,
-        bytecode_len: usize,
-    ) -> Vec<UnrolledBytecode<F>> {
+    fn fillup_codebytes(bytecodes_num: usize, bytecode_len: usize) -> BytecodeCollection {
         fn valid_or(base: OpcodeId, or: OpcodeId) -> OpcodeId {
             match base {
                 OpcodeId::INVALID(_) => or,
@@ -138,14 +130,13 @@ mod tests {
             }
         }
 
-        let mut codebytes = vec![];
-        (0..bytecodes_num).for_each(|_| {
-            let bytecodes = (0..bytecode_len)
+        let codebytes = iter::repeat(
+            (0..bytecode_len)
                 .map(|v| valid_or(OpcodeId::from(v as u8), OpcodeId::STOP).as_u8())
-                .collect::<Vec<u8>>();
-            let unrolled_bytes = unroll::<F>(bytecodes);
-            codebytes.push(unrolled_bytes);
-        });
-        codebytes
+                .collect::<Vec<u8>>(),
+        )
+        .take(bytecodes_num)
+        .collect::<Vec<Vec<u8>>>();
+        BytecodeCollection::from(codebytes)
     }
 }
