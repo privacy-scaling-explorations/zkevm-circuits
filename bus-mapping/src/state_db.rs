@@ -48,22 +48,49 @@ impl CodeDB {
         self.0.values().map(|bytecode| bytecode.len() + 1).sum()
     }
 
-    /// Query code by hash
+    /// Query code in raw bytes by H256
     pub fn get(&self, codehash: &H256) -> Option<&Vec<u8>> {
         self.0.get(codehash)
     }
 
-    /// Query code by hash
+    /// Query Bytecode by H256
+    pub fn get_bytecode(&self, codehash: &H256) -> Option<Bytecode> {
+        self.0.get(codehash).cloned().map(|code| code.into())
+    }
+
+    /// Query Bytecode by U256
     pub fn get_from_word(&self, codehash: &Word) -> Option<Bytecode> {
-        self.0
-            .get(&H256::from_uint(codehash))
-            .cloned()
-            .map(|code| code.into())
+        self.get_bytecode(&H256::from_uint(codehash))
     }
 
     /// Get raw bytes
     pub fn to_raw(&self) -> Vec<Vec<u8>> {
         self.0.values().cloned().collect_vec()
+    }
+}
+
+impl From<Vec<Vec<u8>>> for CodeDB {
+    fn from(bytecodes: Vec<Vec<u8>>) -> Self {
+        Self(HashMap::from_iter(
+            bytecodes
+                .iter()
+                .cloned()
+                .map(|bytecode| (Self::hash(&bytecode), bytecode)),
+        ))
+    }
+}
+
+impl IntoIterator for CodeDB {
+    type Item = Bytecode;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0
+            .values()
+            .cloned()
+            .map(Bytecode::from)
+            .collect_vec()
+            .into_iter()
     }
 }
 

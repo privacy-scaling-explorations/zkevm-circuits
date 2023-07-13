@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use ark_std::{end_timer, start_timer};
-    use bus_mapping::evm::OpcodeId;
+    use bus_mapping::{evm::OpcodeId, state_db::CodeDB};
     use halo2_proofs::{
         halo2curves::bn256::{Bn256, Fr, G1Affine},
         plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
@@ -22,9 +22,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::{env::var, iter};
-    use zkevm_circuits::{
-        bytecode_circuit::TestBytecodeCircuit, util::SubCircuit, witness::BytecodeCollection,
-    };
+    use zkevm_circuits::{bytecode_circuit::TestBytecodeCircuit, util::SubCircuit};
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -122,7 +120,7 @@ mod tests {
     }
 
     /// fill bytecodes_num * bytecode_len bytes to the witness table
-    fn fillup_codebytes(bytecodes_num: usize, bytecode_len: usize) -> BytecodeCollection {
+    fn fillup_codebytes(bytecodes_num: usize, bytecode_len: usize) -> CodeDB {
         fn valid_or(base: OpcodeId, or: OpcodeId) -> OpcodeId {
             match base {
                 OpcodeId::INVALID(_) => or,
@@ -137,6 +135,6 @@ mod tests {
         )
         .take(bytecodes_num)
         .collect::<Vec<Vec<u8>>>();
-        BytecodeCollection::from(codebytes)
+        CodeDB::from(codebytes)
     }
 }

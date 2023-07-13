@@ -10,9 +10,9 @@ use crate::{
         word::{empty_code_hash_word_value, Word, Word32, WordExpr},
         Challenges, Expr, SubCircuit, SubCircuitConfig,
     },
-    witness::{self, BytecodeCollection},
+    witness::{self},
 };
-use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
+use bus_mapping::state_db::{CodeDB, EMPTY_CODE_HASH_LE};
 use eth_types::{Bytecode, Field};
 use gadgets::is_zero::{IsZeroChip, IsZeroInstruction};
 use halo2_proofs::{
@@ -123,10 +123,10 @@ impl<F: Field> From<Vec<Bytecode>> for BytecodeCircuitAssignment<F> {
     }
 }
 
-impl<F: Field> From<BytecodeCollection> for BytecodeCircuitAssignment<F> {
-    fn from(collection: BytecodeCollection) -> Self {
-        // BytecodeCollection use hash maps, so the bytecodes will be reordered.
-        collection.into_iter().collect_vec().into()
+impl<F: Field> From<CodeDB> for BytecodeCircuitAssignment<F> {
+    fn from(code_db: CodeDB) -> Self {
+        // CodeDB use hash maps, so the bytecodes will be reordered.
+        code_db.to_raw().into()
     }
 }
 
@@ -765,7 +765,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 /// BytecodeCircuit
 #[derive(Clone, Default, Debug)]
 pub struct BytecodeCircuit<F: Field> {
-    pub(crate) bytecodes: BytecodeCollection,
+    pub(crate) bytecodes: CodeDB,
     /// Unrolled bytecodes
     pub(crate) rows: BytecodeCircuitAssignment<F>,
     /// Circuit size
@@ -774,7 +774,7 @@ pub struct BytecodeCircuit<F: Field> {
 
 impl<F: Field> BytecodeCircuit<F> {
     /// new BytecodeCircuitTester
-    pub fn new(bytecodes: BytecodeCollection, size: usize) -> Self {
+    pub fn new(bytecodes: CodeDB, size: usize) -> Self {
         let rows: BytecodeCircuitAssignment<F> = bytecodes.clone().into();
         Self {
             bytecodes,

@@ -1,4 +1,6 @@
-use crate::{util, witness::BytecodeCollection};
+use bus_mapping::state_db::CodeDB;
+
+use crate::util;
 
 use super::*;
 
@@ -46,7 +48,7 @@ impl BytecodeTable {
     pub fn load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        bytecodes: BytecodeCollection,
+        bytecodes: CodeDB,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "bytecode table",

@@ -18,11 +18,12 @@ use crate::{
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
-    witness::{BytecodeCollection, RwMap, Transaction},
+    witness::{RwMap, Transaction},
 };
 use bus_mapping::{
     circuit_input_builder::{CopyDataType, CopyEvent},
     operation::Target,
+    state_db::CodeDB,
 };
 use eth_types::Field;
 use gadgets::{
@@ -752,7 +753,7 @@ pub struct ExternalData {
     /// StateCircuit -> rws
     pub rws: RwMap,
     /// BytecodeCircuit -> bytecodes
-    pub bytecodes: BytecodeCollection,
+    pub bytecodes: CodeDB,
 }
 
 /// Copy Circuit

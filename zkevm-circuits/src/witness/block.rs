@@ -1,4 +1,4 @@
-use super::{BytecodeCollection, ExecStep, Rw, RwMap, Transaction};
+use super::{ExecStep, Rw, RwMap, Transaction};
 use crate::{
     evm_circuit::{detect_fixed_table_tags, EvmCircuit},
     exp_circuit::param::OFFSET_INCREMENT,
@@ -8,6 +8,7 @@ use crate::{
 };
 use bus_mapping::{
     circuit_input_builder::{self, CopyEvent, ExpEvent, FixedCParams},
+    state_db::CodeDB,
     Error,
 };
 use eth_types::{Address, Field, ToScalar, Word};
@@ -30,7 +31,7 @@ pub struct Block<F> {
     /// Read write events in the RwTable
     pub rws: RwMap,
     /// Bytecode used in the block
-    pub bytecodes: BytecodeCollection,
+    pub bytecodes: CodeDB,
     /// The block context
     pub context: BlockContext,
     /// Copy events for the copy circuit's table.
@@ -246,7 +247,7 @@ pub fn block_convert<F: Field>(
         txs: block.txs().to_vec(),
         end_block_not_last: block.block_steps.end_block_not_last.clone(),
         end_block_last: block.block_steps.end_block_last.clone(),
-        bytecodes: code_db.into(),
+        bytecodes: code_db.clone(),
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
