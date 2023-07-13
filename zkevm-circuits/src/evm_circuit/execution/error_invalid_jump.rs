@@ -139,16 +139,16 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
         // set default value in case can not find value, is_code from bytecode table
         let dest = usize::try_from(dest).unwrap_or(code.codesize());
-        let code_pair = code.get(dest).unwrap_or((0, false));
+        let (value, is_code) = code.get(dest).unwrap_or((0, false));
 
         self.value
-            .assign(region, offset, Value::known(F::from(code_pair.0 as u64)))?;
+            .assign(region, offset, Value::known(F::from(value.into())))?;
         self.is_code
-            .assign(region, offset, Value::known(F::from(code_pair.1.into())))?;
+            .assign(region, offset, Value::known(F::from(is_code.into())))?;
         self.is_jump_dest.assign(
             region,
             offset,
-            F::from(code_pair.0 as u64),
+            F::from(value.into()),
             F::from(OpcodeId::JUMPDEST.as_u64()),
         )?;
 
