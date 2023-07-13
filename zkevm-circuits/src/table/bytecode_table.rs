@@ -1,8 +1,6 @@
-use bus_mapping::state_db::CodeDB;
-
-use crate::util;
-
 use super::*;
+use crate::util;
+use bus_mapping::state_db::CodeDB;
 
 /// Tag to identify the field in a Bytecode Table row
 #[derive(Clone, Copy, Debug)]
