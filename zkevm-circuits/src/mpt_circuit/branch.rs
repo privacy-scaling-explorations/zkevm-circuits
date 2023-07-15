@@ -12,14 +12,17 @@ use super::{
 use crate::{
     circuit,
     circuit_tools::{
-        cached_region::CachedRegion, cell_manager::Cell, constraint_builder::RLCChainable2,
+        cached_region::CachedRegion,
+        cell_manager::{Cell, WordCell},
+        constraint_builder::RLCChainableRev,
         gadgets::LtGadget,
     },
     mpt_circuit::{
-        helpers::{nibble_rlc, Indexable, KECCAK},
+        helpers::{nibble_rlc, Indexable, MptCellType, KECCAK},
         param::{HASH_WIDTH, RLP_NIL},
         MPTConfig, MPTState, RlpItemType,
     },
+    util::word::{self, Word},
 };
 
 #[derive(Clone, Debug)]
@@ -30,6 +33,7 @@ pub(crate) struct BranchState<F> {
     pub(crate) key_mult_post_drifted: Expression<F>,
     pub(crate) num_nibbles: Expression<F>,
     pub(crate) is_key_odd: Expression<F>,
+    pub(crate) mod_word: [Word<Expression<F>>; 2],
     pub(crate) mod_rlc: [Expression<F>; 2],
 }
 
@@ -38,6 +42,7 @@ pub(crate) struct BranchGadget<F> {
     rlp_list: [RLPListDataGadget<F>; 2],
     is_modified: [Cell<F>; ARITY],
     is_drifted: [Cell<F>; ARITY],
+    mod_word: [WordCell<F>; 2],
     mod_rlc: [Cell<F>; 2],
     is_not_hashed: [LtGadget<F, 2>; 2],
 
@@ -52,6 +57,7 @@ impl<F: Field> BranchGadget<F> {
         cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
         is_placeholder: &[Cell<F>; 2],
+        parent_hash: &[word::Word<Expression<F>>; 2],
         parent_rlc: &[Expression<F>; 2],
         is_root: &[Expression<F>; 2],
         key_rlc: Expression<F>,
@@ -74,13 +80,14 @@ impl<F: Field> BranchGadget<F> {
                 // Start RLC encoding the RLP data starting with the list RLP bytes
                 node_rlc[is_s.idx()] = config.rlp_list[is_s.idx()]
                     .rlp_list
-                    .rlc_rlp_only2(&cb.keccak_r)
+                    .rlc_rlp_only_rev(&cb.keccak_r)
                     .0;
 
                 // Keep track of how many bytes the branch contains to make sure it's correct.
                 num_bytes_left[is_s.idx()] = config.rlp_list[is_s.idx()].rlp_list.len();
 
-                config.mod_rlc[is_s.idx()] = cb.query_cell();
+                config.mod_word[is_s.idx()] = cb.query_word_unchecked();
+                config.mod_rlc[is_s.idx()] = cb.query_cell_with_type(MptCellType::StoragePhase2);
 
                 // Check if the branch is hashed or not
                 config.is_not_hashed[is_s.idx()] = LtGadget::construct(
@@ -131,7 +138,7 @@ impl<F: Field> BranchGadget<F> {
                         num_bytes_left[is_s.idx()].expr() - num_bytes.expr();
 
                     // Update the full branch node RLC with the data of this branch
-                    node_rlc[is_s.idx()] = node_rlc[is_s.idx()].rlc_chain2((rlc, rlc_mult));
+                    node_rlc[is_s.idx()] = node_rlc[is_s.idx()].rlc_chain_rev((rlc, rlc_mult));
 
                     // When in a placeholder branch, both branches are the same - the placeholder
                     // branch and its parallel counterpart, which is not a
@@ -161,7 +168,7 @@ impl<F: Field> BranchGadget<F> {
                 require!(num_bytes_left[is_s.idx()] => 1);
                 // TODO: acc currently doesn't have branch ValueNode info
                 node_rlc[is_s.idx()] =
-                    node_rlc[is_s.idx()].rlc_chain2((RLP_NIL.expr(), cb.keccak_r.expr()));
+                    node_rlc[is_s.idx()].rlc_chain_rev((RLP_NIL.expr(), cb.keccak_r.expr()));
             }
 
             // `is_modified` needs to be set to 1 at exactly 1 branch child
@@ -189,11 +196,11 @@ impl<F: Field> BranchGadget<F> {
                 ifx! {not!(is_placeholder[is_s.idx()]) => {
                     ifx!{or::expr(&[is_root[is_s.idx()].expr(), not!(is_not_hashed)]) => {
                         // Hashed branch hash in parent branch
-                        require!((1, rlc, num_bytes, parent_rlc[is_s.idx()].expr()) => @KECCAK);
+                        let hash = &parent_hash[is_s.idx()];
+                        require!(vec![1.expr(), rlc.expr(), num_bytes, hash.lo(), hash.hi()] => @KECCAK);
                     } elsex {
                         // Non-hashed branch hash in parent branch
-                        // TODO(Brecht): restore
-                        //require!(rlc => parent_rlc[is_s.idx()].expr());
+                        require!(rlc => parent_rlc[is_s.idx()].expr());
                     }}
                 }}
             }
@@ -205,7 +212,7 @@ impl<F: Field> BranchGadget<F> {
                 key_mult.expr(),
                 is_key_odd.expr(),
                 modified_index.expr(),
-                &cb.r.expr(),
+                &cb.key_r.expr(),
             );
             // Also calculate the key RLC and multiplier for the drifted nibble.
             let (key_rlc_post_drifted, key_mult_post_drifted) = nibble_rlc(
@@ -214,7 +221,7 @@ impl<F: Field> BranchGadget<F> {
                 key_mult.expr(),
                 is_key_odd.expr(),
                 drifted_index.expr(),
-                &cb.r.expr(),
+                &cb.key_r.expr(),
             );
 
             // Update the nibble counter
@@ -228,7 +235,9 @@ impl<F: Field> BranchGadget<F> {
                     for node_index in 0..ARITY {
                         ifx!{config.is_drifted[node_index].expr() => {
                             require!(config.mod_rlc[is_s.idx()] =>
-                                children[node_index + 1].rlc_content());
+                                children[node_index + 1].rlc_rlp());
+                            require!(config.mod_word[is_s.idx()] =>
+                                children[node_index + 1].word());
                         }}
                     }
                 } elsex {
@@ -236,16 +245,19 @@ impl<F: Field> BranchGadget<F> {
                         for node_index in 0..ARITY {
                             ifx!{config.is_modified[node_index].expr() => {
                                 require!(config.mod_rlc[is_s.idx()] =>
-                                    children[node_index + 1].rlc_content());
+                                    children[node_index + 1].rlc_rlp());
+                                require!(config.mod_word[is_s.idx()] =>
+                                    children[node_index + 1].word());
                             }}
                         }
                     } else {
-                        require!(config.mod_rlc[is_s.idx()] => children[0].rlc_content());
+                        require!(config.mod_rlc[is_s.idx()] => children[0].rlc_rlp());
+                        require!(config.mod_word[is_s.idx()] => children[0].word());
                     }
                 }}
             }
 
-            // Store the post ext state
+            // Store the post branch state
             config.post_state = Some(BranchState {
                 key_rlc_post_branch,
                 key_mult_post_branch,
@@ -253,6 +265,10 @@ impl<F: Field> BranchGadget<F> {
                 key_mult_post_drifted,
                 num_nibbles,
                 is_key_odd,
+                mod_word: [
+                    config.mod_word[true.idx()].expr(),
+                    config.mod_word[false.idx()].expr(),
+                ],
                 mod_rlc: [
                     config.mod_rlc[true.idx()].expr(),
                     config.mod_rlc[false.idx()].expr(),
@@ -269,6 +285,7 @@ impl<F: Field> BranchGadget<F> {
 
     #[allow(clippy::collapsible_else_if)]
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::type_complexity)]
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -282,7 +299,7 @@ impl<F: Field> BranchGadget<F> {
         is_key_odd: &mut bool,
         node: &Node,
         rlp_values: &[RLPItemWitness],
-    ) -> Result<(F, F, F, [F; 2]), Error> {
+    ) -> Result<(F, F, F, [word::Word<F>; 2], [F; 2]), Error> {
         let branch = &node.extension_branch.clone().unwrap().branch;
 
         for is_s in [true, false] {
@@ -325,7 +342,7 @@ impl<F: Field> BranchGadget<F> {
         } else {
             // The nibble will be added as the least significant nibble, the multiplier
             // needs to advance
-            (1.scalar(), region.r)
+            (1.scalar(), region.key_r)
         };
         let key_rlc_post_branch =
             *key_rlc + F::from(branch.modified_index as u64) * nibble_mult * *key_mult;
@@ -334,17 +351,41 @@ impl<F: Field> BranchGadget<F> {
         let key_mult_post_branch = *key_mult * mult;
 
         // Set the branch we'll take
+        let mut mod_node_hash_word = [word::Word::<F>::new([0.scalar(), 0.scalar()]); 2];
         let mut mod_node_hash_rlc = [0.scalar(); 2];
         for is_s in [true, false] {
-            mod_node_hash_rlc[is_s.idx()] = if is_placeholder[is_s.idx()] {
-                rlp_values[1 + branch.drifted_index].rlc_content(region.r)
+            (
+                mod_node_hash_rlc[is_s.idx()],
+                mod_node_hash_word[is_s.idx()],
+            ) = if is_placeholder[is_s.idx()] {
+                (
+                    rlp_values[1 + branch.drifted_index].rlc_rlp_rev(region.keccak_r),
+                    rlp_values[1 + branch.drifted_index].word(),
+                )
             } else {
                 if is_s {
-                    rlp_values[1 + branch.modified_index].rlc_content(region.r)
+                    (
+                        rlp_values[1 + branch.modified_index].rlc_rlp_rev(region.keccak_r),
+                        rlp_values[1 + branch.modified_index].word(),
+                    )
                 } else {
-                    rlp_values[0].rlc_content(region.r)
+                    (
+                        rlp_values[0].rlc_rlp_rev(region.keccak_r),
+                        rlp_values[0].word(),
+                    )
                 }
             };
+            self.mod_word[is_s.idx()].lo().assign(
+                region,
+                offset,
+                mod_node_hash_word[is_s.idx()].lo(),
+            )?;
+            self.mod_word[is_s.idx()].hi().assign(
+                region,
+                offset,
+                mod_node_hash_word[is_s.idx()].hi(),
+            )?;
+
             self.mod_rlc[is_s.idx()].assign(region, offset, mod_node_hash_rlc[is_s.idx()])?;
         }
 
@@ -352,6 +393,7 @@ impl<F: Field> BranchGadget<F> {
             key_rlc_post_branch,
             key_rlc_post_drifted,
             key_mult_post_branch,
+            mod_node_hash_word,
             mod_node_hash_rlc,
         ))
     }

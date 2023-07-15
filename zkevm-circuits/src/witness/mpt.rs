@@ -188,17 +188,17 @@ impl<F: Clone> MptUpdateRow<F> {
     pub fn values(&self) -> [F; 12] {
         [
             self.address.clone(),
-            self.storage_key.lo().clone(),
-            self.storage_key.hi().clone(),
+            self.storage_key.lo(),
+            self.storage_key.hi(),
             self.proof_type.clone(),
-            self.new_root.lo().clone(),
-            self.new_root.hi().clone(),
-            self.old_root.lo().clone(),
-            self.old_root.hi().clone(),
-            self.new_value.lo().clone(),
-            self.new_value.hi().clone(),
-            self.old_value.lo().clone(),
-            self.old_value.hi().clone(),
+            self.new_root.lo(),
+            self.new_root.hi(),
+            self.old_root.lo(),
+            self.old_root.hi(),
+            self.new_value.lo(),
+            self.new_value.hi(),
+            self.old_value.lo(),
+            self.old_value.hi(),
         ]
     }
 }

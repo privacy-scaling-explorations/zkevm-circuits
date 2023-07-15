@@ -1,6 +1,6 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
-use halo2_proofs::plonk::{Error, VirtualCells};
+use halo2_proofs::plonk::{Error, Expression, VirtualCells};
 
 use super::{
     branch::BranchGadget,
@@ -18,6 +18,7 @@ use crate::{
         witness_row::ExtensionBranchRowType,
         MPTConfig, MPTState,
     },
+    util::word::Word,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -76,6 +77,10 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 key_mult_post_ext,
                 is_root_s,
                 is_root_c,
+                parent_word_s_lo,
+                parent_word_s_hi,
+                parent_word_c_lo,
+                parent_word_c_hi,
                 parent_rlc_s,
                 parent_rlc_c,
             ) = ifx! {config.is_extension => {
@@ -95,6 +100,10 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     ext.key_mult,
                     false.expr(),
                     false.expr(),
+                    ext.branch_rlp_word[true.idx()].lo(),
+                    ext.branch_rlp_word[true.idx()].hi(),
+                    ext.branch_rlp_word[false.idx()].lo(),
+                    ext.branch_rlp_word[false.idx()].hi(),
                     ext.branch_rlp_rlc[true.idx()].expr(),
                     ext.branch_rlp_rlc[false.idx()].expr(),
                 )
@@ -106,10 +115,18 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     config.key_data.mult.expr(),
                     config.parent_data[true.idx()].is_root.expr(),
                     config.parent_data[false.idx()].is_root.expr(),
+                    config.parent_data[true.idx()].hash.lo().expr(),
+                    config.parent_data[true.idx()].hash.hi().expr(),
+                    config.parent_data[false.idx()].hash.lo().expr(),
+                    config.parent_data[false.idx()].hash.hi().expr(),
                     config.parent_data[true.idx()].rlc.expr(),
                     config.parent_data[false.idx()].rlc.expr(),
                 )
             }};
+            let parent_word = [
+                Word::<Expression<F>>::new([parent_word_s_lo, parent_word_s_hi]),
+                Word::<Expression<F>>::new([parent_word_c_lo, parent_word_c_hi]),
+            ];
             let parent_rlc = [parent_rlc_s, parent_rlc_c];
             let is_root = [is_root_s, is_root_c];
 
@@ -119,6 +136,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 cb,
                 ctx.clone(),
                 &config.is_placeholder,
+                &parent_word,
                 &parent_rlc,
                 &is_root,
                 key_rlc_post_ext.expr(),
@@ -146,10 +164,11 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     ParentData::store(
                         cb,
                         &ctx.memory[parent_memory(is_s)],
+                        branch.mod_word[is_s.idx()].clone(),
                         branch.mod_rlc[is_s.idx()].expr(),
                         false.expr(),
                         false.expr(),
-                        0.expr(),
+                        Word::<Expression<F>>::new([0.expr(), 0.expr()])
                     );
                  } elsex {
                     KeyData::store(
@@ -167,10 +186,11 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     ParentData::store(
                         cb,
                         &ctx.memory[parent_memory(is_s)],
+                        config.parent_data[is_s.idx()].hash.expr(),
                         config.parent_data[is_s.idx()].rlc.expr(),
                         config.parent_data[is_s.idx()].is_root.expr(),
                         true.expr(),
-                        branch.mod_rlc[is_s.idx()].expr(),
+                        branch.mod_word[is_s.idx()].clone(),
                     );
                 }}
             }
@@ -235,20 +255,25 @@ impl<F: Field> ExtensionBranchConfig<F> {
         }
 
         // Branch
-        let (key_rlc_post_branch, key_rlc_post_drifted, key_mult_post_branch, mod_node_hash_rlc) =
-            self.branch.assign(
-                region,
-                mpt_config,
-                pv,
-                offset,
-                &extension_branch.is_placeholder,
-                &mut key_rlc,
-                &mut key_mult,
-                &mut num_nibbles,
-                &mut is_key_odd,
-                node,
-                rlp_values,
-            )?;
+        let (
+            key_rlc_post_branch,
+            key_rlc_post_drifted,
+            key_mult_post_branch,
+            mod_node_hash_word,
+            mod_node_hash_rlc,
+        ) = self.branch.assign(
+            region,
+            mpt_config,
+            pv,
+            offset,
+            &extension_branch.is_placeholder,
+            &mut key_rlc,
+            &mut key_mult,
+            &mut num_nibbles,
+            &mut is_key_odd,
+            node,
+            rlp_values,
+        )?;
 
         // Set the new parent and key
         for is_s in [true, false] {
@@ -268,10 +293,11 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     region,
                     offset,
                     &mut pv.memory[parent_memory(is_s)],
+                    mod_node_hash_word[is_s.idx()],
                     mod_node_hash_rlc[is_s.idx()],
                     false,
                     false,
-                    0.scalar(),
+                    Word::<F>::new([0.scalar(), 0.scalar()]),
                 )?;
             } else {
                 KeyData::witness_store(
@@ -289,10 +315,11 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     region,
                     offset,
                     &mut pv.memory[parent_memory(is_s)],
+                    parent_data[is_s.idx()].hash,
                     parent_data[is_s.idx()].rlc,
                     parent_data[is_s.idx()].is_root,
                     true,
-                    mod_node_hash_rlc[is_s.idx()],
+                    mod_node_hash_word[is_s.idx()],
                 )?;
             }
         }

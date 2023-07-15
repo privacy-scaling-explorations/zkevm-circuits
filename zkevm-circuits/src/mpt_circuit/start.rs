@@ -13,6 +13,7 @@ use crate::{
         },
         MPTConfig, MPTContext, MPTState, RlpItemType,
     },
+    util::word::Word,
 };
 use eth_types::Field;
 use gadgets::util::Scalar;
@@ -44,9 +45,9 @@ impl<F: Field> StartConfig<F> {
 
             config.proof_type = cb.query_cell();
 
-            let mut root = vec![0.expr(); 2];
+            let mut root = vec![Word::new([0.expr(), 0.expr()]); 2];
             for is_s in [true, false] {
-                root[is_s.idx()] = root_items[is_s.idx()].rlc_content();
+                root[is_s.idx()] = root_items[is_s.idx()].word();
             }
 
             MainData::store(
@@ -55,10 +56,11 @@ impl<F: Field> StartConfig<F> {
                 [
                     config.proof_type.expr(),
                     false.expr(),
-                    false.expr(),
                     0.expr(),
-                    root[true.idx()].expr(),
-                    root[false.idx()].expr(),
+                    root[true.idx()].lo().expr(),
+                    root[true.idx()].hi().expr(),
+                    root[false.idx()].lo().expr(),
+                    root[false.idx()].hi().expr(),
                 ],
             );
 
@@ -66,10 +68,11 @@ impl<F: Field> StartConfig<F> {
                 ParentData::store(
                     cb,
                     &ctx.memory[parent_memory(is_s)],
-                    root[is_s.idx()].expr(),
+                    root[is_s.idx()].clone(),
+                    0.expr(),
                     true.expr(),
                     false.expr(),
-                    root[is_s.idx()].expr(),
+                    root[is_s.idx()].clone(),
                 );
                 KeyData::store_defaults(cb, &ctx.memory[key_memory(is_s)]);
             }
@@ -98,9 +101,9 @@ impl<F: Field> StartConfig<F> {
         self.proof_type
             .assign(region, offset, start.proof_type.scalar())?;
 
-        let mut root = vec![0.scalar(); 2];
+        let mut root = vec![Word::new([0.scalar(), 0.scalar()]); 2];
         for is_s in [true, false] {
-            root[is_s.idx()] = rlp_values[is_s.idx()].rlc_content(region.r);
+            root[is_s.idx()] = rlp_values[is_s.idx()].word();
         }
 
         MainData::witness_store(
@@ -109,7 +112,6 @@ impl<F: Field> StartConfig<F> {
             &mut pv.memory[main_memory()],
             start.proof_type as usize,
             false,
-            false.scalar(),
             0.scalar(),
             root[true.idx()],
             root[false.idx()],
@@ -121,6 +123,7 @@ impl<F: Field> StartConfig<F> {
                 offset,
                 &mut pv.memory[parent_memory(is_s)],
                 root[is_s.idx()],
+                0.scalar(),
                 true,
                 false,
                 root[is_s.idx()],

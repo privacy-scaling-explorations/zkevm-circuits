@@ -44,36 +44,36 @@ impl From<AccountFieldTag> for MPTProofType {
 #[derive(Clone, Copy, Debug)]
 pub struct MptTable {
     /// Account address
-    pub address_rlc: Column<Advice>,
+    pub address: Column<Advice>,
     /// Storage address
     pub storage_key: word::Word<Column<Advice>>,
     /// Proof type
     pub proof_type: Column<Advice>,
     /// New MPT root
-    pub root: word::Word<Column<Advice>>,
+    pub new_root: word::Word<Column<Advice>>,
     /// Previous MPT root
-    pub root_prev: word::Word<Column<Advice>>,
+    pub old_root: word::Word<Column<Advice>>,
     /// New value
-    pub value: word::Word<Column<Advice>>,
+    pub new_value: word::Word<Column<Advice>>,
     /// Old value
-    pub value_prev: word::Word<Column<Advice>>,
+    pub old_value: word::Word<Column<Advice>>,
 }
 
 impl<F: Field> LookupTable<F> for MptTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.address_rlc,
+            self.address,
             self.storage_key.lo(),
             self.storage_key.hi(),
             self.proof_type,
-            self.root.lo(),
-            self.root.hi(),
-            self.root_prev.lo(),
-            self.root_prev.hi(),
-            self.value.lo(),
-            self.value.hi(),
-            self.value_prev.lo(),
-            self.value_prev.hi(),
+            self.new_root.lo(),
+            self.new_root.hi(),
+            self.old_root.lo(),
+            self.old_root.hi(),
+            self.new_value.lo(),
+            self.new_value.hi(),
+            self.old_value.lo(),
+            self.old_value.hi(),
         ]
         .into_iter()
         .map(|col| col.into())
@@ -102,13 +102,13 @@ impl MptTable {
     /// Construct a new MptTable
     pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
-            address_rlc: meta.advice_column(),
+            address: meta.advice_column(),
             storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
             proof_type: meta.advice_column(),
-            root: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            root_prev: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            value_prev: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            new_root: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            old_root: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            new_value: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            old_value: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
 
@@ -117,23 +117,22 @@ impl MptTable {
         &self,
         meta: &mut VirtualCells<'_, F>,
         cb: &mut ConstraintBuilder<F, C>,
-        address_rlc: Expression<F>,
+        address: Expression<F>,
         proof_type: Expression<F>,
-        key_rlc: Expression<F>,
-        value_prev: Expression<F>,
-        value: Expression<F>,
-        root_prev: Expression<F>,
-        root: Expression<F>,
+        storage_key: word::Word<Expression<F>>,
+        new_root: word::Word<Expression<F>>,
+        old_root: word::Word<Expression<F>>,
+        new_value: word::Word<Expression<F>>,
+        old_value: word::Word<Expression<F>>,
     ) {
         circuit!([meta, cb], {
-            // TODO(Brecht): fix
-            //require!(a!(self.address_rlc) => address_rlc);
-            //require!(a!(self.storage_key) => key_rlc);
+            require!(a!(self.address) => address);
+            require!([a!(self.storage_key.lo()), a!(self.storage_key.hi())] => storage_key);
             require!(a!(self.proof_type) => proof_type);
-            //require!(a!(self.root) => root);
-            //require!(a!(self.root_prev) => root_prev);
-            //require!(a!(self.value) => value);
-            //require!(a!(self.value_prev) => value_prev);
+            require!([a!(self.new_root.lo()), a!(self.new_root.hi())] => new_root);
+            require!([a!(self.old_root.lo()), a!(self.old_root.hi())] => old_root);
+            require!([a!(self.new_value.lo()), a!(self.new_value.hi())] => new_value);
+            require!([a!(self.old_value.lo()), a!(self.old_value.hi())] => old_value);
         })
     }
 

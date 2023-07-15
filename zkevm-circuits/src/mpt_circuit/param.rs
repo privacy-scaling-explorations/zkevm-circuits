@@ -29,3 +29,4 @@ pub const EMPTY_TRIE_HASH: [u8; 32] = [
 
 // Number of bytes required to decode an RLP item
 pub const RLP_UNIT_NUM_BYTES: usize = 34;
+pub const RLP_UNIT_NUM_VALUE_BYTES: usize = RLP_UNIT_NUM_BYTES - 1;

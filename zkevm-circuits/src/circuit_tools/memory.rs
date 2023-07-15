@@ -235,8 +235,6 @@ impl<F: Field, C: CellType> MemoryBank<F, C> {
             let description = format!("Dynamic lookup table {:?}", self.tag());
             require!(condition => bool);
             require!(description, self.next => self.cur.expr() + condition.expr());
-            // TODO(Brecht): add constraint that makes sure the table value remains the same when
-            // not written
         });
     }
 

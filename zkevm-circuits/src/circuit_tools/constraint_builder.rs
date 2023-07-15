@@ -5,7 +5,11 @@ use std::{
     vec,
 };
 
-use crate::{evm_circuit::util::rlc, table::LookupTable, util::Expr};
+use crate::{
+    evm_circuit::util::rlc,
+    table::LookupTable,
+    util::{word::Word, Expr},
+};
 use eth_types::Field;
 use gadgets::util::{and, sum, Scalar};
 use halo2_proofs::{
@@ -16,7 +20,7 @@ use itertools::Itertools;
 
 use super::{
     cached_region::StoredExpression,
-    cell_manager::{Cell, CellManager, CellType},
+    cell_manager::{Cell, CellManager, CellType, WordCell},
 };
 
 fn get_condition_expr<F: Field>(conditions: &Vec<Expression<F>>) -> Expression<F> {
@@ -254,6 +258,11 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
 
     pub(crate) fn query_cell_with_type(&mut self, cell_type: C) -> Cell<F> {
         self.query_cells_dyn(cell_type, 1).first().unwrap().clone()
+    }
+
+    // default query_word is 2 limbs. Each limb is not guaranteed to be 128 bits.
+    pub(crate) fn query_word_unchecked(&mut self) -> WordCell<F> {
+        Word::new(self.query_cells_dyn(C::default(), 2).try_into().unwrap())
     }
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
@@ -720,6 +729,27 @@ impl_to_vec!((T, T, T, T, T), (a, b, c, d, e));
 impl_to_vec!((T, T, T, T, T, T), (a, b, c, d, e, f));
 impl_to_vec!((T, T, T, T, T, T, T), (a, b, c, d, e, f, g));
 impl_to_vec!((T, T, T, T, T, T, T, T), (a, b, c, d, e, f, g, h));
+impl_to_vec!((T, T, T, T, T, T, T, T, T), (a, b, c, d, e, f, g, h, i));
+impl_to_vec!(
+    (T, T, T, T, T, T, T, T, T, T),
+    (a, b, c, d, e, f, g, h, i, j)
+);
+impl_to_vec!(
+    (T, T, T, T, T, T, T, T, T, T, T),
+    (a, b, c, d, e, f, g, h, i, j, k)
+);
+impl_to_vec!(
+    (T, T, T, T, T, T, T, T, T, T, T, T),
+    (a, b, c, d, e, f, g, h, i, j, k, l)
+);
+impl_to_vec!(
+    (T, T, T, T, T, T, T, T, T, T, T, T, T),
+    (a, b, c, d, e, f, g, h, i, j, k, l, m)
+);
+impl_to_vec!(
+    (T, T, T, T, T, T, T, T, T, T, T, T, T, T),
+    (a, b, c, d, e, f, g, h, i, j, k, l, m, n)
+);
 
 /// Trait that generates a vector of expressions
 pub trait ExprVec<F> {
@@ -748,6 +778,12 @@ impl<F: Field, E: Expr<F>> ExprVec<F> for [E] {
 impl<F: Field, E: Expr<F>> ExprVec<F> for &[E] {
     fn to_expr_vec(&self) -> Vec<Expression<F>> {
         self.iter().map(|e| e.expr()).collect::<Vec<_>>()
+    }
+}
+
+impl<F: Field, E: Expr<F> + Clone> ExprVec<F> for Word<E> {
+    fn to_expr_vec(&self) -> Vec<Expression<F>> {
+        vec![self.lo().expr(), self.hi().expr()]
     }
 }
 
@@ -889,6 +925,45 @@ impl_expr_result!(
     Expression<F>,
     Expression<F>
 );
+impl_expr_result!(
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>
+);
+impl_expr_result!(
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>
+);
+impl_expr_result!(
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>
+);
 
 /// Trait around RLC
 pub trait RLCable<F: Field> {
@@ -924,13 +999,13 @@ impl<F: Field> RLCChainable<F> for (Expression<F>, Expression<F>) {
 }
 
 /// Trait around RLC
-pub trait RLCChainable2<F> {
+pub trait RLCChainableRev<F> {
     /// Returns the RLC of itself with a starting rlc/multiplier
-    fn rlc_chain2(&self, other: (Expression<F>, Expression<F>)) -> Expression<F>;
+    fn rlc_chain_rev(&self, other: (Expression<F>, Expression<F>)) -> Expression<F>;
 }
 
-impl<F: Field> RLCChainable2<F> for Expression<F> {
-    fn rlc_chain2(&self, other: (Expression<F>, Expression<F>)) -> Expression<F> {
+impl<F: Field> RLCChainableRev<F> for Expression<F> {
+    fn rlc_chain_rev(&self, other: (Expression<F>, Expression<F>)) -> Expression<F> {
         self.expr() * other.1.expr() + other.0.expr()
     }
 }
@@ -939,17 +1014,25 @@ impl<F: Field> RLCChainable2<F> for Expression<F> {
 pub trait RLCableValue<F> {
     /// Returns the RLC of itself
     fn rlc_value(&self, r: F) -> F;
+    /// Returns the RLC of the reverse of itself
+    fn rlc_value_rev(&self, r: F) -> F;
 }
 
 impl<F: Field> RLCableValue<F> for Vec<u8> {
     fn rlc_value(&self, r: F) -> F {
         rlc::value(self, r)
     }
+    fn rlc_value_rev(&self, r: F) -> F {
+        rlc::value(&self.iter().rev().cloned().collect_vec(), r)
+    }
 }
 
 impl<F: Field> RLCableValue<F> for [u8] {
     fn rlc_value(&self, r: F) -> F {
         rlc::value(self, r)
+    }
+    fn rlc_value_rev(&self, r: F) -> F {
+        rlc::value(&self.iter().rev().cloned().collect_vec(), r)
     }
 }
 
@@ -1073,19 +1156,24 @@ macro_rules! _require {
     }};
 
     ($cb:expr, $descr:expr, $lhs:expr => $rhs:expr) => {{
+        let lhs = $lhs.to_expr_vec();
         let rhs = $rhs.to_expr_vec();
-        if rhs.len() == 1 {
-            $cb.require_equal(
-                Box::leak($descr.to_string().into_boxed_str()),
-                $lhs.expr(),
-                rhs[0].expr(),
-            );
-        } else {
+        if lhs.len() == rhs.len() {
+            for (lhs, rhs) in lhs.iter().zip(rhs.iter()) {
+                $cb.require_equal(
+                    Box::leak($descr.to_string().into_boxed_str()),
+                    lhs.expr(),
+                    rhs.expr(),
+                );
+            }
+        } else if lhs.len() == 1 && rhs.len() > 1 {
             $cb.require_in_set(
                 Box::leak($descr.to_string().into_boxed_str()),
-                $lhs.expr(),
+                lhs[0].expr(),
                 rhs.clone(),
             );
+        } else {
+            unreachable!()
         }
     }};
 

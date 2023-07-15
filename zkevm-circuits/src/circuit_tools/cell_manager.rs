@@ -1,7 +1,7 @@
 //! Cell manager
 use crate::{
     circuit_tools::cached_region::CachedRegion,
-    util::{query_expression, Expr},
+    util::{query_expression, word::Word, Expr},
 };
 
 use crate::table::LookupTable;
@@ -99,6 +99,14 @@ impl<F: Field> Expr<F> for Cell<F> {
 impl<F: Field> Expr<F> for &Cell<F> {
     fn expr(&self) -> Expression<F> {
         self.expression.as_ref().unwrap().clone()
+    }
+}
+
+pub(crate) type WordCell<F> = Word<Cell<F>>;
+
+impl<F: Field> WordCell<F> {
+    pub fn expr(&self) -> Word<Expression<F>> {
+        Word::new([self.lo().expr(), self.hi().expr()])
     }
 }
 

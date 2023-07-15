@@ -1,11 +1,15 @@
 //! Circuit gadgets
-use std::marker::PhantomData;
-
 use eth_types::Field;
-use gadgets::util::{Expr, and};
-use halo2_proofs::{plonk::{Error, Expression}, circuit::Value};
+use gadgets::util::{and, Expr};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 
-use crate::{evm_circuit::util::{from_bytes, pow_of_two, transpose_val_ret}, util::word::{WordExpr, Word}};
+use crate::{
+    evm_circuit::util::{from_bytes, pow_of_two, transpose_val_ret},
+    util::word::{Word, WordExpr},
+};
 
 use super::{
     cached_region::CachedRegion,
@@ -26,7 +30,7 @@ impl<F: Field> IsZeroGadget<F> {
         value: Expression<F>,
     ) -> Self {
         circuit!([meta, cb], {
-            let inverse = cb.query_default();
+            let inverse = cb.query_cell_with_type(CellType::storage_for_expr(&value));
 
             let is_zero = 1.expr() - (value.expr() * inverse.expr());
             // `value != 0` => check `inverse = a.invert()`: value * (1 - value * inverse)
@@ -96,31 +100,32 @@ impl<F: Field> IsEqualGadget<F> {
     }
 }
 
-
 /// Returns `1` when `lhs == rhs`, and returns `0` otherwise.
 #[derive(Clone, Debug, Default)]
-pub struct IsEqualWordGadget<F, T1, T2> {
-    is_zero_lo: IsZeroGadget<F>,
-    is_zero_hi: IsZeroGadget<F>,
-    _marker: PhantomData<(T1, T2)>,
+pub struct IsEqualWordGadget<F> {
+    is_equal_lo: IsEqualGadget<F>,
+    is_equal_hi: IsEqualGadget<F>,
 }
 
-impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> IsEqualWordGadget<F, T1, T2> {
-    pub(crate) fn construct<C: CellType>(cb: &mut ConstraintBuilder<F, C>, lhs: &T1, rhs: &T2) -> Self {
+impl<F: Field> IsEqualWordGadget<F> {
+    pub(crate) fn construct<C: CellType>(
+        cb: &mut ConstraintBuilder<F, C>,
+        lhs: &Word<Expression<F>>,
+        rhs: &Word<Expression<F>>,
+    ) -> Self {
         let (lhs_lo, lhs_hi) = lhs.to_word().to_lo_hi();
         let (rhs_lo, rhs_hi) = rhs.to_word().to_lo_hi();
-        let is_zero_lo = IsZeroGadget::construct(cb, lhs_lo - rhs_lo);
-        let is_zero_hi = IsZeroGadget::construct(cb, lhs_hi - rhs_hi);
+        let is_equal_lo = IsEqualGadget::construct(cb, lhs_lo, rhs_lo);
+        let is_equal_hi = IsEqualGadget::construct(cb, lhs_hi, rhs_hi);
 
         Self {
-            is_zero_lo,
-            is_zero_hi,
-            _marker: Default::default(),
+            is_equal_lo,
+            is_equal_hi,
         }
     }
 
     pub(crate) fn expr(&self) -> Expression<F> {
-        and::expr([self.is_zero_lo.expr(), self.is_zero_hi.expr()])
+        and::expr([self.is_equal_lo.expr(), self.is_equal_hi.expr()])
     }
 
     pub(crate) fn assign(
@@ -132,8 +137,8 @@ impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> IsEqualWordGadget<F, T1, T2> {
     ) -> Result<F, Error> {
         let (lhs_lo, lhs_hi) = lhs.to_lo_hi();
         let (rhs_lo, rhs_hi) = rhs.to_lo_hi();
-        self.is_zero_lo.assign(region, offset, lhs_lo - rhs_lo)?;
-        self.is_zero_hi.assign(region, offset, lhs_hi - rhs_hi)?;
+        self.is_equal_lo.assign(region, offset, lhs_lo, rhs_lo)?;
+        self.is_equal_hi.assign(region, offset, lhs_hi, rhs_hi)?;
         Ok(F::from(2))
     }
 
@@ -160,7 +165,6 @@ impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> IsEqualWordGadget<F, T1, T2> {
         self.assign(region, offset, Word::from(lhs), Word::from(rhs))
     }
 }
-
 
 /// Returns `1` when `lhs < rhs`, and returns `0` otherwise.
 /// lhs and rhs `< 256**N_BYTES`
