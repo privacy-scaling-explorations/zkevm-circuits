@@ -4661,7 +4661,7 @@ dependencies = [
  "mock",
  "num",
  "num-bigint",
- "num_enum",
+ "num_enum 0.5.11",
  "pretty_assertions",
  "rand",
  "rand_chacha",
