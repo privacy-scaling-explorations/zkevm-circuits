@@ -15,8 +15,8 @@ array-init = "2.0.0"
 bus-mapping = { path = "../bus-mapping" }
 eth-types = { path = "../eth-types" }
 gadgets = { path = "../gadgets" }
-ethers-core = "0.17.0"
-ethers-signers = { version = "0.17.0", optional = true }
+ethers-core = "2.0.7"
+ethers-signers = { version = "2.0.7", optional = true }
 mock = { path = "../mock", optional = true }
 strum = "0.24"
 strum_macros = "0.24"
@@ -42,7 +42,7 @@ serde_json = "1.0.78"
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }
 ctor = "0.1.22"
-ethers-signers = "0.17.0"
+ethers-signers = "2.0.7"
 hex = "0.4.3"
 itertools = "0.10.1"
 mock = { path = "../mock" }
@@ -50,8 +50,10 @@ pretty_assertions = "1.0.0"
 
 [features]
 default = []
-test = ["ethers-signers", "mock", "bus-mapping/test"]
+# We export some test circuits for other crates to consume
 test-circuits = []
+# Test utilities for testool crate to consume
+test-util = ["dep:mock"]
 warn-unimplemented = ["eth-types/warn-unimplemented"]
 stats = ["warn-unimplemented", "dep:cli-table"]
 

@@ -315,22 +315,6 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
         Self { add_words }
     }
 
-    pub(crate) fn balance(&self) -> &Word32Cell<F> {
-        if INCREASE {
-            self.add_words.sum()
-        } else {
-            &self.add_words.addends()[0]
-        }
-    }
-
-    pub(crate) fn balance_prev(&self) -> &Word32Cell<F> {
-        if INCREASE {
-            &self.add_words.addends()[0]
-        } else {
-            self.add_words.sum()
-        }
-    }
-
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -555,14 +539,6 @@ impl<F: Field> TransferGadget<F> {
             receiver_exists,
             value_is_zero,
         }
-    }
-
-    pub(crate) fn sender(&self) -> &UpdateBalanceGadget<F, 2, false> {
-        &self.sender
-    }
-
-    pub(crate) fn receiver(&self) -> &UpdateBalanceGadget<F, 2, true> {
-        &self.receiver
     }
 
     pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
@@ -827,7 +803,6 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
 
 #[derive(Clone, Debug)]
 pub(crate) struct SloadGasGadget<F> {
-    is_warm: Expression<F>,
     gas_cost: Expression<F>,
 }
 
@@ -839,7 +814,7 @@ impl<F: Field> SloadGasGadget<F> {
             GasCost::COLD_SLOAD.expr(),
         );
 
-        Self { is_warm, gas_cost }
+        Self { gas_cost }
     }
 
     pub(crate) fn expr(&self) -> Expression<F> {
@@ -976,6 +951,16 @@ impl<F: Field> CommonErrorGadget<F> {
         opcode: Expression<F>,
         rw_counter_delta: Expression<F>,
     ) -> Self {
+        Self::construct_with_return_data(cb, opcode, rw_counter_delta, 0.expr(), 0.expr())
+    }
+
+    pub(crate) fn construct_with_return_data(
+        cb: &mut EVMConstraintBuilder<F>,
+        opcode: Expression<F>,
+        rw_counter_delta: Expression<F>,
+        return_data_offset: Expression<F>,
+        return_data_length: Expression<F>,
+    ) -> Self {
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
         let rw_counter_end_of_reversion = cb.query_word_unchecked(); // rw_counter_end_of_reversion just used for read lookup, therefore skip range check
@@ -1014,8 +999,8 @@ impl<F: Field> CommonErrorGadget<F> {
                 cb,
                 0.expr(),
                 0.expr(),
-                0.expr(),
-                0.expr(),
+                return_data_offset,
+                return_data_length,
                 0.expr(),
                 0.expr(),
             )

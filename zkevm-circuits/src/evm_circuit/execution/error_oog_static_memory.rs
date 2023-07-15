@@ -17,7 +17,7 @@ use crate::{
     },
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGStaticMemoryGadget<F> {
@@ -99,6 +99,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode().unwrap();
+        self.opcode
+            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
         // Inputs/Outputs
         let address = block.get_rws(step, 0).stack_value();

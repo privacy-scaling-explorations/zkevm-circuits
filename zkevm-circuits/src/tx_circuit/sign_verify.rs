@@ -31,7 +31,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, SecondPhase, Selector},
     poly::Rotation,
 };
-use integer::{AssignedInteger, IntegerChip, IntegerConfig, IntegerInstructions, Range};
+use integer::{AssignedInteger, IntegerChip, IntegerInstructions, Range};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
@@ -125,7 +125,7 @@ pub(crate) struct SignVerifyConfig {
     rlc: Column<Advice>,
     // Keccak
     q_keccak: Selector,
-    keccak_table: KeccakTable,
+    _keccak_table: KeccakTable,
 }
 
 impl SignVerifyConfig {
@@ -197,10 +197,10 @@ impl SignVerifyConfig {
         Self {
             range_config,
             main_gate_config,
-            keccak_table,
             q_rlc_keccak_input,
             rlc,
             q_keccak,
+            _keccak_table: keccak_table.clone(),
         }
     }
 
@@ -248,10 +248,6 @@ impl SignVerifyConfig {
     pub(crate) fn ecc_chip_config(&self) -> EccConfig {
         EccConfig::new(self.range_config.clone(), self.main_gate_config.clone())
     }
-
-    pub(crate) fn integer_chip_config(&self) -> IntegerConfig {
-        IntegerConfig::new(self.range_config.clone(), self.main_gate_config.clone())
-    }
 }
 
 /// Term provides a wrapper of possible assigned cell with value or unassigned
@@ -265,7 +261,7 @@ impl SignVerifyConfig {
 #[derive(Clone, Debug)]
 pub(crate) enum Term<F> {
     Assigned(Cell, Value<F>),
-    Unassigned(Value<F>),
+    _Unassigned(Value<F>),
 }
 
 impl<F: Field> Term<F> {
@@ -273,21 +269,17 @@ impl<F: Field> Term<F> {
         Self::Assigned(cell, value)
     }
 
-    fn unassigned(value: Value<F>) -> Self {
-        Self::Unassigned(value)
-    }
-
     fn cell(&self) -> Option<Cell> {
         match self {
             Self::Assigned(cell, _) => Some(*cell),
-            Self::Unassigned(_) => None,
+            Self::_Unassigned(_) => None,
         }
     }
 
     fn value(&self) -> Value<F> {
         match self {
             Self::Assigned(_, value) => *value,
-            Self::Unassigned(value) => *value,
+            Self::_Unassigned(value) => *value,
         }
     }
 }
@@ -720,12 +712,6 @@ impl<F: Field> SignVerifyChip<F> {
     }
 }
 
-fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
-    pk_hash[32 - 20..]
-        .iter()
-        .fold(F::ZERO, |acc, b| acc * F::from(256) + F::from(*b as u64))
-}
-
 #[cfg(test)]
 mod sign_verify_tests {
     use super::*;
@@ -801,7 +787,7 @@ mod sign_verify_tests {
                 &self.signatures,
                 &challenges,
             )?;
-            config.sign_verify.keccak_table.dev_load(
+            config.sign_verify._keccak_table.dev_load(
                 &mut layouter,
                 &keccak_inputs_sign_verify(&self.signatures),
                 &challenges,

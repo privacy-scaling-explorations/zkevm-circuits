@@ -716,7 +716,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let init_code = get_create_init_code(call_ctx, step)?.to_vec();
         Ok(get_create2_address(
             self.call()?.address,
-            salt.to_be_bytes().to_vec(),
+            salt.to_be_bytes(),
             init_code,
         ))
     }
@@ -1064,9 +1064,10 @@ impl<'a> CircuitInputStateRef<'a> {
         let geth_step = steps
             .get(0)
             .ok_or(Error::InternalError("invalid index 0"))?;
-        let is_return_revert = geth_step.op == OpcodeId::REVERT || geth_step.op == OpcodeId::RETURN;
+        let is_revert_or_return_call_success = geth_step.op == OpcodeId::REVERT
+            || geth_step.op == OpcodeId::RETURN && exec_step.error.is_none();
 
-        if !is_return_revert && !call.is_success {
+        if !is_revert_or_return_call_success && !call.is_success {
             // add call failure ops for exception cases
             self.call_context_read(
                 exec_step,
@@ -1138,7 +1139,7 @@ impl<'a> CircuitInputStateRef<'a> {
         };
         let gas_refund = geth_step.gas - memory_expansion_gas_cost - code_deposit_cost;
 
-        let caller_gas_left = if is_return_revert || call.is_success {
+        let caller_gas_left = if is_revert_or_return_call_success || call.is_success {
             geth_step_next.gas - gas_refund
         } else {
             geth_step_next.gas

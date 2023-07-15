@@ -6,11 +6,11 @@
 
 pub mod sign_verify;
 
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(any(test, feature = "test-circuits"))]
 mod dev;
-#[cfg(any(feature = "test", test))]
+#[cfg(test)]
 mod test;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(feature = "test-circuits")]
 pub use dev::TxCircuit as TestTxCircuit;
 
 use crate::{
@@ -26,7 +26,7 @@ use halo2_proofs::{
 use itertools::Itertools;
 use log::error;
 use sign_verify::{AssignedSignatureVerify, SignVerifyChip, SignVerifyConfig};
-use std::marker::PhantomData;
+use std::{marker::PhantomData, ops::Deref};
 
 /// Number of static fields per tx: [nonce, gas, gas_price,
 /// caller_address, callee_address, is_create, value, call_data_length,
@@ -44,8 +44,6 @@ pub struct TxCircuitConfig<F: Field> {
     value: Word<Column<Advice>>,
     sign_verify: SignVerifyConfig,
     _marker: PhantomData<F>,
-    // External tables
-    keccak_table: KeccakTable,
 }
 
 /// Circuit configuration arguments
@@ -77,7 +75,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.enable_equality(value.lo());
         meta.enable_equality(value.hi());
 
-        let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone(), challenges);
+        let sign_verify = SignVerifyConfig::new(meta, keccak_table, challenges);
 
         Self {
             tx_id,
@@ -85,7 +83,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             index,
             value,
             sign_verify,
-            keccak_table,
             _marker: PhantomData,
         }
     }
@@ -206,10 +203,7 @@ impl<F: Field> TxCircuit<F> {
                             TxFieldTag::Nonce,
                             Word::from(tx.nonce.as_u64()).into_value(),
                         ),
-                        (
-                            TxFieldTag::Gas,
-                            Word::from(tx.gas_limit.as_u64()).into_value(),
-                        ),
+                        (TxFieldTag::Gas, Word::from(tx.gas()).into_value()),
                         (TxFieldTag::GasPrice, Word::from(tx.gas_price).into_value()),
                         (TxFieldTag::CallerAddress, Word::from(tx.from).into_value()),
                         (
@@ -314,12 +308,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
             block.context.chain_id.as_u64(),
-            block
-                .eth_block
-                .transactions
-                .iter()
-                .map(|tx| tx.into())
-                .collect(),
+            block.txs.iter().map(|tx| tx.deref().clone()).collect_vec(),
         )
     }
 

@@ -2,7 +2,7 @@ use crate::{
     evm_circuit::{
         param::STACK_CAPACITY,
         step::{ExecutionState, Step},
-        table::{FixedTableTag, Lookup, RwValues},
+        table::{FixedTableTag, Lookup, RwValues, Table},
         util::{Cell, RandomLinearCombination},
     },
     table::{
@@ -11,7 +11,7 @@ use crate::{
     },
     util::{
         build_tx_log_expression, query_expression,
-        word::{Word, Word16, Word32, Word32Cell, Word4, WordCell, WordExpr, WordLimbs},
+        word::{Word, Word32, Word32Cell, WordCell, WordExpr},
         Challenges, Expr,
     },
 };
@@ -180,6 +180,10 @@ pub(crate) trait ConstrainBuilderCommon<F: Field> {
         self.add_constraint(name, value.clone() * (1.expr() - value));
     }
 
+    fn require_true(&mut self, name: &'static str, value: Expression<F>) {
+        self.require_equal(name, value, 1.expr());
+    }
+
     fn require_in_set(
         &mut self,
         name: &'static str,
@@ -272,7 +276,6 @@ impl<F: Field> BaseConstraintBuilder<F> {
 enum ConstraintLocation {
     Step,
     StepFirst,
-    StepLast,
     NotStepLast,
 }
 
@@ -289,7 +292,6 @@ pub(crate) struct Constraints<F> {
 }
 
 pub(crate) struct EVMConstraintBuilder<'a, F: Field> {
-    pub max_degree: usize,
     pub(crate) curr: Step<F>,
     pub(crate) next: Step<F>,
     challenges: &'a Challenges<Expression<F>>,
@@ -298,12 +300,11 @@ pub(crate) struct EVMConstraintBuilder<'a, F: Field> {
     rw_counter_offset: Expression<F>,
     program_counter_offset: usize,
     stack_pointer_offset: Expression<F>,
-    log_id_offset: usize,
     in_next_step: bool,
     conditions: Vec<Expression<F>>,
     constraints_location: ConstraintLocation,
     stored_expressions: Vec<StoredExpression<F>>,
-
+    pub(crate) debug_expressions: Vec<(String, Expression<F>)>,
     meta: &'a mut ConstraintSystem<F>,
 }
 
@@ -329,7 +330,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         execution_state: ExecutionState,
     ) -> Self {
         Self {
-            max_degree: MAX_DEGREE,
             curr,
             next,
             challenges,
@@ -343,12 +343,12 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             rw_counter_offset: 0.expr(),
             program_counter_offset: 0,
             stack_pointer_offset: 0.expr(),
-            log_id_offset: 0,
             in_next_step: false,
             conditions: Vec::new(),
             constraints_location: ConstraintLocation::Step,
             stored_expressions: Vec::new(),
             meta,
+            debug_expressions: Vec::new(),
         }
     }
 
@@ -382,10 +382,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         )
     }
 
-    pub(crate) fn get_cs(&'a mut self) -> &'a mut ConstraintSystem<F> {
-        self.meta
-    }
-
     pub(crate) fn query_expression<T>(&mut self, f: impl FnMut(&mut VirtualCells<F>) -> T) -> T {
         query_expression(self.meta, f)
     }
@@ -411,16 +407,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_counter_offset.clone()
     }
 
-    pub(crate) fn program_counter_offset(&self) -> usize {
-        self.program_counter_offset
-    }
-
     pub(crate) fn stack_pointer_offset(&self) -> Expression<F> {
         self.stack_pointer_offset.clone()
-    }
-
-    pub(crate) fn log_id_offset(&self) -> usize {
-        self.log_id_offset
     }
 
     // Query
@@ -438,7 +426,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_byte(&mut self) -> Cell<F> {
-        self.query_cell_with_type(CellType::LookupU8)
+        self.query_cell_with_type(CellType::Lookup(Table::U8))
     }
 
     // default query_word is 2 limbs. Each limb is not guaranteed to be 128 bits.
@@ -448,38 +436,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 .try_into()
                 .unwrap(),
         )
-    }
-
-    // default query_word is 2 limbs. constrain word equality with external word
-    pub fn query_word<const N: usize, const N2: usize>(
-        &mut self,
-        w_constrain: WordLimbs<Cell<F>, N2>,
-    ) -> Word<Cell<F>> {
-        let word = Word::new(
-            self.query_cells(CellType::StoragePhase1, N)
-                .try_into()
-                .unwrap(),
-        );
-        self.require_equal_word(
-            "word limbs equality constrain",
-            word.to_word(),
-            w_constrain.to_word(),
-        );
-        word
-    }
-
-    /// query_word4_unchecked get word with 4 limbs. Each limb is not guaranteed to be 64 bits.
-    pub fn query_word4_unchecked<const N: usize>(&mut self) -> Word4<Cell<F>> {
-        Word4::new(
-            self.query_cells(CellType::StoragePhase1, N)
-                .try_into()
-                .unwrap(),
-        )
-    }
-
-    // each limb is 16 bits, and any conversion to smaller limbs inherits the type check.
-    pub(crate) fn query_word16<const N: usize>(&mut self) -> Word16<Cell<F>> {
-        Word16::new(self.query_u16())
     }
 
     // query_word32 each limb is 8 bits, and any conversion to smaller limbs inherits the type
@@ -509,15 +465,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_u8_dyn(&mut self, count: usize) -> Vec<Cell<F>> {
-        self.query_cells(CellType::LookupU8, count)
-    }
-
-    pub(crate) fn query_u16<const N: usize>(&mut self) -> [Cell<F>; N] {
-        self.query_u16_dyn(N).try_into().unwrap()
-    }
-
-    pub(crate) fn query_u16_dyn(&mut self, count: usize) -> Vec<Cell<F>> {
-        self.query_cells(CellType::LookupU16, count)
+        self.query_cells(CellType::Lookup(Table::U8), count)
     }
 
     pub(crate) fn query_cell(&mut self) -> Cell<F> {
@@ -536,12 +484,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.query_cells(cell_type, 1).first().unwrap().clone()
     }
 
-    pub(crate) fn query_bool_with_type(&mut self, cell_type: CellType) -> Cell<F> {
-        let cell = self.query_cell_with_type(cell_type);
-        self.require_boolean("Constrain cell to be a bool", cell.expr());
-        cell
-    }
-
     fn query_cells(&mut self, cell_type: CellType, count: usize) -> Vec<Cell<F>> {
         if self.in_next_step {
             &mut self.next
@@ -550,10 +492,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         }
         .cell_manager
         .query_cells(self.meta, cell_type, count)
-    }
-
-    pub(crate) fn word_rlc<const N: usize>(&self, bytes: [Expression<F>; N]) -> Expression<F> {
-        rlc::expr(&bytes, self.challenges.evm_word())
     }
 
     pub(crate) fn keccak_rlc<const N: usize>(&self, bytes: [Expression<F>; N]) -> Expression<F> {
@@ -570,11 +508,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             "Constrain next execution state",
             1.expr() - next_state.expr(),
         );
-    }
-
-    pub(crate) fn require_next_state_not(&mut self, execution_state: ExecutionState) {
-        let next_state = self.next.execution_state_selector([execution_state]);
-        self.add_constraint("Constrain next execution state not", next_state.expr());
     }
 
     pub(crate) fn require_step_state_transition(
@@ -881,11 +814,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                     reversion_info.rw_counter_of_reversion(reversible_write_counter_inc_selector),
                     true.expr(),
                     tag,
-                    RwValues {
-                        value_prev: values.value,
-                        value: values.value_prev,
-                        ..values
-                    },
+                    values.revert_value(),
                 )
             });
         }
@@ -1369,15 +1298,15 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             counter,
             0.expr(),
             Target::Start,
-            RwValues {
-                id: 0.expr(),
-                address: 0.expr(),
-                field_tag: 0.expr(),
-                storage_key: Word::zero(),
-                value: Word::zero(),
-                value_prev: Word::zero(),
-                init_val: Word::zero(),
-            },
+            RwValues::new(
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                Word::zero(),
+                Word::zero(),
+                Word::zero(),
+                Word::zero(),
+            ),
         );
     }
 
@@ -1485,32 +1414,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         ret
     }
 
-    /// This function needs to be used with extra precaution. You need to make
-    /// sure the layout is the same as the gadget for `next_step_state`.
-    /// `query_cell` will return cells in the next step in the `constraint`
-    /// function.
-    pub(crate) fn constrain_next_step<R>(
-        &mut self,
-        next_step_state: ExecutionState,
-        condition: Option<Expression<F>>,
-        constraint: impl FnOnce(&mut Self) -> R,
-    ) -> R {
-        assert!(!self.in_next_step, "Already in the next step");
-        self.in_next_step = true;
-        let ret = match condition {
-            None => {
-                self.require_next_state(next_step_state);
-                constraint(self)
-            }
-            Some(cond) => self.condition(cond, |cb| {
-                cb.require_next_state(next_step_state);
-                constraint(cb)
-            }),
-        };
-        self.in_next_step = false;
-        ret
-    }
-
     /// TODO: Doc
     fn constraint_at_location<R>(
         &mut self,
@@ -1531,10 +1434,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn step_first<R>(&mut self, constraint: impl FnOnce(&mut Self) -> R) -> R {
         self.constraint_at_location(ConstraintLocation::StepFirst, constraint)
     }
-    /// TODO: Doc
-    pub(crate) fn step_last<R>(&mut self, constraint: impl FnOnce(&mut Self) -> R) -> R {
-        self.constraint_at_location(ConstraintLocation::StepLast, constraint)
-    }
+
     /// TODO: Doc
     pub(crate) fn not_step_last<R>(&mut self, constraint: impl FnOnce(&mut Self) -> R) -> R {
         self.constraint_at_location(ConstraintLocation::NotStepLast, constraint)
@@ -1545,7 +1445,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         match self.constraints_location {
             ConstraintLocation::Step => self.constraints.step.push((name, constraint)),
             ConstraintLocation::StepFirst => self.constraints.step_first.push((name, constraint)),
-            ConstraintLocation::StepLast => self.constraints.step_last.push((name, constraint)),
             ConstraintLocation::NotStepLast => {
                 self.constraints.not_step_last.push((name, constraint))
             }
@@ -1670,5 +1569,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Some(condition) => condition,
             None => 1.expr(),
         }
+    }
+
+    pub fn debug_expression<S: Into<String>>(&mut self, name: S, expr: Expression<F>) {
+        self.debug_expressions.push((name.into(), expr));
     }
 }

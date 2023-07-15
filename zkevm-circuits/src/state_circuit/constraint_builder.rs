@@ -528,21 +528,6 @@ impl<F: Field> ConstraintBuilder<F> {
         );
     }
 
-    fn build_tx_receipt_constraints(&mut self, q: &Queries<F>) {
-        // TODO: implement TxReceipt constraints
-        self.require_equal("TxReceipt rows not implemented", 1.expr(), 0.expr());
-
-        self.require_word_equal(
-            "state_root is unchanged for TxReceipt",
-            q.state_root(),
-            q.state_root_prev(),
-        );
-        self.require_word_zero(
-            "value_prev_column is 0 for TxReceipt",
-            q.value_prev_column(),
-        );
-    }
-
     fn require_zero(&mut self, name: &'static str, e: Expression<F>) {
         self.constraints.push((name, self.condition.clone() * e));
     }
@@ -605,10 +590,6 @@ impl<F: Field> ConstraintBuilder<F> {
 }
 
 impl<F: Field> Queries<F> {
-    fn selector(&self) -> Expression<F> {
-        self.selector.clone()
-    }
-
     fn is_write(&self) -> Expression<F> {
         self.rw_table.is_write.clone()
     }
@@ -617,16 +598,8 @@ impl<F: Field> Queries<F> {
         not::expr(self.is_write())
     }
 
-    fn tag(&self) -> Expression<F> {
-        self.rw_table.tag.clone()
-    }
-
     fn id(&self) -> Expression<F> {
         self.rw_table.id.clone()
-    }
-
-    fn id_change(&self) -> Expression<F> {
-        self.id() - self.rw_table.prev_id.clone()
     }
 
     fn field_tag(&self) -> Expression<F> {
@@ -635,10 +608,6 @@ impl<F: Field> Queries<F> {
 
     fn value(&self) -> word::Word<Expression<F>> {
         self.rw_table.value.clone()
-    }
-
-    fn value_prev(&self) -> word::Word<Expression<F>> {
-        self.rw_table.value_prev.clone()
     }
 
     fn initial_value(&self) -> word::Word<Expression<F>> {
@@ -673,22 +642,6 @@ impl<F: Field> Queries<F> {
         self.rw_table.rw_counter.clone() - self.rw_table.prev_rw_counter.clone()
     }
 
-    fn tx_log_index(&self) -> Expression<F> {
-        from_digits(&self.address.limbs[0..2], (1u64 << 16).expr())
-    }
-
-    fn tx_log_index_prev(&self) -> Expression<F> {
-        from_digits(&self.address.limbs_prev[0..2], (1u64 << 16).expr())
-    }
-
-    fn tx_log_id(&self) -> Expression<F> {
-        from_digits(&self.address.limbs[3..5], (1u64 << 16).expr())
-    }
-
-    fn tx_log_id_prev(&self) -> Expression<F> {
-        from_digits(&self.address.limbs_prev[3..5], (1u64 << 16).expr())
-    }
-
     fn last_access(&self) -> Expression<F> {
         self.last_access.clone()
     }
@@ -704,15 +657,6 @@ impl<F: Field> Queries<F> {
     fn value_prev_column(&self) -> word::Word<Expression<F>> {
         self.rw_table.value_prev_column.clone()
     }
-}
-
-fn from_digits<F: Field>(digits: &[Expression<F>], base: Expression<F>) -> Expression<F> {
-    digits
-        .iter()
-        .rev()
-        .fold(Expression::Constant(F::ZERO), |result, digit| {
-            digit.clone() + result * base.clone()
-        })
 }
 
 fn set<F: Field, T: IntoEnumIterator + Expr<F>>() -> Vec<Expression<F>> {

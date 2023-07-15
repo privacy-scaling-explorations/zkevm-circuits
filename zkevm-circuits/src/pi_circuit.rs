@@ -1,14 +1,14 @@
 //! Public Input Circuit implementation
 mod param;
 
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(any(test, feature = "test-circuits"))]
 mod dev;
-#[cfg(any(feature = "test", test))]
+#[cfg(test)]
 mod test;
 use std::{cmp::min, iter, marker::PhantomData};
 
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-pub use dev::PiCircuit as TestPiCircuit;
+#[cfg(feature = "test-circuits")]
+pub use PiCircuit as TestPiCircuit;
 
 use eth_types::{self, Field, ToLittleEndian};
 use halo2_proofs::plonk::{Expression, Instance, SecondPhase};
@@ -44,9 +44,6 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
     poly::Rotation,
 };
-
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// Config for PiCircuit
 #[derive(Clone, Debug)]
@@ -1561,8 +1558,8 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
                 let mut call_data_offset = TX_LEN * self.max_txs + EMPTY_TX_ROW_COUNT;
 
-                let txs = self.public_data.txs();
-                for (i, tx) in self.public_data.txs().iter().enumerate() {
+                let txs = self.public_data.transactions.clone();
+                for (i, tx) in self.public_data.transactions.iter().enumerate() {
                     let call_data_length = tx.call_data.0.len();
                     let mut gas_cost = F::ZERO;
                     for (index, byte) in tx.call_data.0.iter().enumerate() {

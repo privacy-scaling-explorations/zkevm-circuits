@@ -1,13 +1,9 @@
-#![allow(unused_imports)]
 use std::collections::HashMap;
 
 use crate::{pi_circuit::dev::PiCircuitParams, util::unusable_rows, witness::block_convert};
 
 use super::*;
-use bus_mapping::{
-    circuit_input_builder::{CircuitsParams, FixedCParams},
-    mock::BlockData,
-};
+use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
 use eth_types::{bytecode, geth_types::GethData, Word, H160};
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::{

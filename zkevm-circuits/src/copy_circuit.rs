@@ -3,11 +3,11 @@
 //! etc.
 pub(crate) mod util;
 
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(any(test, feature = "test-circuits"))]
 mod dev;
 #[cfg(test)]
 mod test;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(feature = "test-circuits")]
 pub use dev::CopyCircuit as TestCopyCircuit;
 
 use bus_mapping::{

@@ -135,6 +135,10 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
         Ok(())
     }
 
+    #[allow(
+        dead_code,
+        reason = "this method is a legit API but is currently only used in the tests"
+    )]
     pub(crate) fn addends(&self) -> &[Word32Cell<F>] {
         &self.addends
     }

@@ -1,3 +1,5 @@
+//! Fixed lookup tables and dynamic lookup tables for the EVM circuit
+
 use crate::{
     evm_circuit::step::{ExecutionState, ResponsibleOp},
     impl_expr,
@@ -11,28 +13,46 @@ use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
 #[derive(Clone, Copy, Debug, EnumIter)]
+/// Tags for different fixed tables
 pub enum FixedTableTag {
+    /// x == 0
     Zero = 0,
+    /// 0 <= x < 5
     Range5,
+    /// 0 <= x < 16
     Range16,
+    /// 0 <= x < 32
     Range32,
+    /// 0 <= x < 64
     Range64,
+    /// 0 <= x < 128
     Range128,
+    /// 0 <= x < 256
     Range256,
+    /// 0 <= x < 512
     Range512,
+    /// 0 <= x < 1024
     Range1024,
+    /// -128 <= x < 128
     SignByte,
+    /// bitwise AND
     BitwiseAnd,
+    /// bitwise OR
     BitwiseOr,
+    /// bitwise XOR
     BitwiseXor,
+    /// lookup for corresponding opcode
     ResponsibleOpcode,
+    /// power of 2
     Pow2,
+    /// Lookup constant gas cost for opcodes
     ConstantGasCost,
 }
 impl_expr!(FixedTableTag);
 
 impl FixedTableTag {
-    pub fn build<F: Field>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
+    /// build up the fixed table row values
+    pub(crate) fn build<F: Field>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
         let tag = F::from(*self as u64);
         match self {
             Self::Zero => Box::new((0..1).map(move |_| [tag, F::ZERO, F::ZERO, F::ZERO])),
@@ -122,31 +142,57 @@ impl FixedTableTag {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
+/// Each item represents the lookup table to query
 pub enum Table {
+    /// The range check table for u8
+    U8,
+    /// The range check table for u16
+    U16,
+    /// The rest of the fixed table. See [`FixedTableTag`]
     Fixed,
+    /// Lookup for transactions
     Tx,
+    /// Lookup for read write operations
     Rw,
+    /// Lookup for bytecode table
     Bytecode,
+    /// Lookup for block constants
     Block,
+    /// Lookup for copy table
     Copy,
+    /// Lookup for keccak table
     Keccak,
+    /// Lookup for exp table
     Exp,
 }
 
 #[derive(Clone, Debug)]
-pub struct RwValues<F> {
-    pub id: Expression<F>,
-    pub address: Expression<F>,
-    pub field_tag: Expression<F>,
-    pub storage_key: Word<Expression<F>>,
-    pub value: Word<Expression<F>>,
-    pub value_prev: Word<Expression<F>>,
-    pub init_val: Word<Expression<F>>,
+/// Read-Write Table fields
+pub(crate) struct RwValues<F> {
+    /// The unique identifier for the Read or Write. Depending on context, this field could be used
+    /// for Transaction ID or call ID
+    id: Expression<F>,
+    /// The position to Stack, Memory, or account, where the read or write takes place, depending
+    /// on the cell value of the [`bus_mapping::operation::Target`].
+    address: Expression<F>,
+    /// Could be [`crate::table::CallContextFieldTag`], [`crate::table::AccountFieldTag`],
+    /// [`crate::table::TxLogFieldTag`], or [`crate::table::TxReceiptFieldTag`] depending on
+    /// the cell value of the [`bus_mapping::operation::Target`]
+    field_tag: Expression<F>,
+    /// Storage key of two limbs
+    storage_key: Word<Expression<F>>,
+    /// The current storage value
+    value: Word<Expression<F>>,
+    /// The previous storage value
+    value_prev: Word<Expression<F>>,
+    /// The initial storage value before the current transaction
+    init_val: Word<Expression<F>>,
 }
 
 impl<F: Field> RwValues<F> {
+    /// Constructor for RwValues
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(crate) fn new(
         id: Expression<F>,
         address: Expression<F>,
         field_tag: Expression<F>,
@@ -163,6 +209,15 @@ impl<F: Field> RwValues<F> {
             value,
             value_prev,
             init_val,
+        }
+    }
+
+    pub(crate) fn revert_value(&self) -> Self {
+        let new_self = self.clone();
+        Self {
+            value_prev: new_self.value,
+            value: new_self.value_prev,
+            ..new_self
         }
     }
 }
@@ -420,13 +475,5 @@ impl<F: Field> Lookup<F> {
                 .map(|expr| condition.clone() * expr)
                 .collect(),
         }
-    }
-
-    pub(crate) fn degree(&self) -> usize {
-        self.input_exprs()
-            .iter()
-            .map(|expr| expr.degree())
-            .max()
-            .unwrap()
     }
 }

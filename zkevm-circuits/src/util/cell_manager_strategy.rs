@@ -16,6 +16,11 @@ impl CMFixedWidthStrategyDistribution {
             self.0.insert(cell_type, vec![advice]);
         }
     }
+
+    #[allow(dead_code, reason = "this method will be used outside tests")]
+    pub(crate) fn get(&self, cell_type: CellType) -> Option<&Vec<Column<Advice>>> {
+        self.0.get(&cell_type)
+    }
 }
 
 /// CMFixedWidthStrategy is a Cell Manager strategy that places the cells in the column that has
@@ -186,7 +191,8 @@ pub(crate) struct CMFixedHeigthStrategy {
 }
 
 impl CMFixedHeigthStrategy {
-    pub fn new(height: usize, cell_type: CellType) -> CMFixedHeigthStrategy {
+    #[allow(dead_code, reason = "under active development")]
+    pub(crate) fn new(height: usize, cell_type: CellType) -> CMFixedHeigthStrategy {
         CMFixedHeigthStrategy {
             row_width: vec![0; height],
             cell_type,

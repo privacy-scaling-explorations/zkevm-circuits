@@ -4,13 +4,16 @@ pub use crate::util::{
     Challenges, Expr,
 };
 use crate::{
-    evm_circuit::param::{
-        LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_COPY_COLUMNS, N_PHASE2_COLUMNS, N_U8_LOOKUPS,
+    evm_circuit::{
+        param::{
+            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_COPY_COLUMNS, N_PHASE2_COLUMNS, N_U8_LOOKUPS,
+        },
+        table::Table,
     },
     util::{cell_manager::CMFixedWidthStrategyDistribution, int_decomposition::IntDecomposition},
     witness::{Block, ExecStep, Rw, RwMap},
 };
-use eth_types::{Address, Field, ToLittleEndian, U256};
+use eth_types::{Address, Field, U256};
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
     plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression},
@@ -135,12 +138,6 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
         self.challenges
     }
 
-    pub fn word_rlc(&self, n: U256) -> Value<F> {
-        self.challenges
-            .evm_word()
-            .map(|r| rlc::value(&n.to_le_bytes(), r))
-    }
-
     pub fn keccak_rlc(&self, le_bytes: &[u8]) -> Value<F> {
         self.challenges
             .keccak_input()
@@ -183,41 +180,51 @@ impl<F> Hash for StoredExpression<F> {
     }
 }
 
+/// Evaluate an expression using a `CachedRegion` at `offset`.
+pub(crate) fn evaluate_expression<F: Field>(
+    expr: &Expression<F>,
+    region: &CachedRegion<'_, '_, F>,
+    offset: usize,
+) -> Value<F> {
+    expr.evaluate(
+        &|scalar| Value::known(scalar),
+        &|_| unimplemented!("selector column"),
+        &|fixed_query| {
+            Value::known(region.get_fixed(
+                offset,
+                fixed_query.column_index(),
+                fixed_query.rotation(),
+            ))
+        },
+        &|advice_query| {
+            Value::known(region.get_advice(
+                offset,
+                advice_query.column_index(),
+                advice_query.rotation(),
+            ))
+        },
+        &|_| unimplemented!("instance column"),
+        &|challenge| *region.challenges().indexed()[challenge.index()],
+        &|a| -a,
+        &|a, b| a + b,
+        &|a, b| a * b,
+        &|a, scalar| a * Value::known(scalar),
+    )
+}
+
 impl<F: Field> StoredExpression<F> {
     pub fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
     ) -> Result<Value<F>, Error> {
-        let value = self.expr.evaluate(
-            &|scalar| Value::known(scalar),
-            &|_| unimplemented!("selector column"),
-            &|fixed_query| {
-                Value::known(region.get_fixed(
-                    offset,
-                    fixed_query.column_index(),
-                    fixed_query.rotation(),
-                ))
-            },
-            &|advice_query| {
-                Value::known(region.get_advice(
-                    offset,
-                    advice_query.column_index(),
-                    advice_query.rotation(),
-                ))
-            },
-            &|_| unimplemented!("instance column"),
-            &|challenge| *region.challenges().indexed()[challenge.index()],
-            &|a| -a,
-            &|a, b| a + b,
-            &|a, b| a * b,
-            &|a, scalar| a * Value::known(scalar),
-        );
+        let value = evaluate_expression(&self.expr, region, offset);
         self.cell.assign(region, offset, value)?;
         Ok(value)
     }
 }
 
+//
 #[allow(clippy::mut_range_bound)]
 pub(crate) fn evm_cm_distribute_advice<F: Field>(
     meta: &mut ConstraintSystem<F>,
@@ -250,7 +257,7 @@ pub(crate) fn evm_cm_distribute_advice<F: Field>(
     // Mark columns used for byte lookup
     #[allow(clippy::reversed_empty_ranges)]
     for _ in 0..N_U8_LOOKUPS {
-        dist.add(CellType::LookupU8, advices[column_idx]);
+        dist.add(CellType::Lookup(Table::U8), advices[column_idx]);
         assert_eq!(advices[column_idx].column_type().phase(), 0);
         column_idx += 1;
     }
@@ -258,7 +265,7 @@ pub(crate) fn evm_cm_distribute_advice<F: Field>(
     // Mark columns used for byte lookup
     #[allow(clippy::reversed_empty_ranges)]
     for _ in 0..N_U16_LOOKUPS {
-        dist.add(CellType::LookupU16, advices[column_idx]);
+        dist.add(CellType::Lookup(Table::U16), advices[column_idx]);
         assert_eq!(advices[column_idx].column_type().phase(), 0);
         column_idx += 1;
     }
@@ -281,8 +288,6 @@ pub struct RandomLinearCombination<F, const N: usize> {
 }
 
 impl<F: Field, const N: usize> RandomLinearCombination<F, N> {
-    const N_BYTES: usize = N;
-
     /// XXX for randomness 256.expr(), consider using IntDecomposition instead
     pub(crate) fn new(cells: [Cell<F>; N], randomness: Expression<F>) -> Self {
         Self {
@@ -477,5 +482,62 @@ impl<'a> StepRws<'a> {
         let rw = self.rws[self.step.rw_index(self.offset)];
         self.offset += 1;
         rw
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use halo2_proofs::halo2curves::bn256::Fr;
+
+    use crate::evm_circuit::param::STEP_WIDTH;
+
+    use super::*;
+
+    #[test]
+    fn test_evm_cm_distribute_advice_1() {
+        let mut cs = ConstraintSystem::<Fr>::default();
+        let advices = vec![cs.advice_column(); STEP_WIDTH];
+
+        let cm = evm_cm_distribute_advice(&mut cs, &advices);
+
+        let lookup_config_size = LOOKUP_CONFIG
+            .iter()
+            .map(|(_, size)| size.to_owned())
+            .sum::<usize>();
+
+        assert_eq!(
+            cm.get(CellType::StoragePhase1).unwrap().len(),
+            STEP_WIDTH
+                - N_PHASE2_COLUMNS
+                - N_COPY_COLUMNS
+                - lookup_config_size
+                - N_U8_LOOKUPS
+                - N_U16_LOOKUPS
+        );
+        assert_eq!(
+            cm.get(CellType::StoragePhase2).unwrap().len(),
+            N_PHASE2_COLUMNS
+        );
+        assert_eq!(
+            cm.get(CellType::StoragePermutation).unwrap().len(),
+            N_COPY_COLUMNS
+        );
+
+        // CellType::Lookup
+        for &(table, count) in LOOKUP_CONFIG {
+            assert_eq!(cm.get(CellType::Lookup(table)).unwrap().len(), count);
+        }
+        assert_eq!(
+            cm.get(CellType::Lookup(Table::U8)).unwrap().len(),
+            N_U8_LOOKUPS
+        );
+        if N_U16_LOOKUPS == 0 {
+            assert!(cm.get(CellType::Lookup(Table::U16)).is_none());
+        } else {
+            assert_eq!(
+                cm.get(CellType::Lookup(Table::U16)).unwrap().len(),
+                N_U16_LOOKUPS
+            );
+        }
     }
 }

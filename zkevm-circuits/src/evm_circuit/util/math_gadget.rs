@@ -4,8 +4,6 @@ use halo2_proofs::plonk::Expression;
 
 mod abs_word;
 mod add_words;
-mod batched_is_zero;
-mod binary_number;
 mod byte_size;
 mod cmp_words;
 mod comparison;
@@ -17,7 +15,6 @@ mod is_zero_word;
 mod lt;
 mod lt_word;
 mod min_max;
-mod min_max_word;
 mod modulo;
 mod mul_add_words;
 mod mul_add_words512;

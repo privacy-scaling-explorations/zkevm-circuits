@@ -21,9 +21,6 @@ pub(crate) enum CellType {
     StoragePhase1,
     StoragePhase2,
     StoragePermutation,
-    // TODO combine LookupU8, LookupU16 with Lookup(Table::U8 | Table::U16)
-    LookupU8,
-    LookupU16,
     Lookup(Table),
 }
 
@@ -59,9 +56,9 @@ impl CellType {
 /// Cell is a (column, rotation) pair that has been placed and queried by the Cell Manager.
 pub struct Cell<F> {
     pub(crate) expression: Expression<F>,
-    pub(crate) column_expression: Expression<F>,
+    _column_expression: Expression<F>,
     pub(crate) column: Column<Advice>,
-    pub(crate) column_idx: usize,
+    _column_idx: usize,
     pub(crate) rotation: usize,
 }
 
@@ -70,14 +67,14 @@ impl<F: Field> Cell<F> {
     pub fn new(
         meta: &mut VirtualCells<F>,
         column: Column<Advice>,
-        column_idx: usize,
+        _column_idx: usize,
         rotation: usize,
     ) -> Cell<F> {
         Cell {
             expression: meta.query_advice(column, Rotation(rotation as i32)),
-            column_expression: meta.query_advice(column, Rotation::cur()),
+            _column_expression: meta.query_advice(column, Rotation::cur()),
             column,
-            column_idx,
+            _column_idx,
             rotation,
         }
     }
@@ -217,6 +214,7 @@ impl CellManagerColumns {
         self.columns_list.clone()
     }
 
+    #[allow(dead_code, reason = "under active development")]
     /// Returns the number of columns.
     pub fn get_width(&self) -> usize {
         self.columns_list.len()
@@ -272,6 +270,7 @@ impl<Stats, S: CellManagerStrategy<Stats = Stats>> CellManager<S> {
         self.columns.columns()
     }
 
+    #[allow(dead_code, reason = "under active development")]
     /// Returns the number of columns managed by this Cell Manager.
     pub fn get_width(&self) -> usize {
         self.columns.get_width()

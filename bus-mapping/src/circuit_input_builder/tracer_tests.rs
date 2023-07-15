@@ -10,7 +10,7 @@ use crate::{
 };
 use eth_types::{
     address, bytecode,
-    evm_types::{stack::Stack, OpcodeId},
+    evm_types::{stack::Stack, OpcodeId, INVALID_INIT_CODE_FIRST_BYTE},
     geth_types::GethData,
     word, Bytecode, Hash, ToAddress, ToWord, Word,
 };
@@ -37,7 +37,7 @@ impl CircuitInputBuilderTx {
         let block = crate::mock::BlockData::new_from_geth_data(geth_data.clone());
         let mut builder = block.new_circuit_input_builder();
         let tx = builder
-            .new_tx(&block.eth_block.transactions[0], true)
+            .new_tx(0, &block.eth_block.transactions[0], true)
             .unwrap();
         let tx_ctx = TransactionContext::new(
             &block.eth_block.transactions[0],
@@ -742,11 +742,11 @@ fn check_err_invalid_code(step: &GethExecStep, next_step: Option<&GethExecStep>)
         && result(next_step).is_zero()
         && length > Word::zero()
         && !step.memory.is_empty()
-        && step.memory.0.get(offset.low_u64() as usize) == Some(&0xef)
+        && step.memory.0.get(offset.low_u64() as usize) == Some(&INVALID_INIT_CODE_FIRST_BYTE)
 }
 
 #[test]
-fn tracer_err_invalid_code() {
+fn tracer_err_invalid_code_for_create_opcode() {
     // code_creator outputs byte array that starts with 0xef, which is
     // invalid code.
     let code_creator = bytecode! {
@@ -826,6 +826,61 @@ fn tracer_err_invalid_code() {
     // Set up call context at RETURN
     builder.tx_ctx.call_is_success.push(false);
     builder.state_ref().push_call(mock_internal_create());
+    builder.state_ref().call_ctx_mut().unwrap().memory = step.memory.clone();
+    assert_eq!(
+        builder.state_ref().get_step_err(step, next_step).unwrap(),
+        Some(ExecError::InvalidCreationCode)
+    );
+}
+
+// Test ErrInvalidCode in transaction deployment (`tx.to == null`).
+#[test]
+fn tracer_err_invalid_code_for_tx_deployment() {
+    // Code creator outputs a byte array that starts with 0xef, which is the
+    // invalid code.
+    let code_creator = bytecode! {
+        PUSH32(word!("0xef00000000000000000000000000000000000000000000000000000000000000")) // value
+        PUSH1(0x00) // offset
+        MSTORE
+        PUSH1(0x01) // length
+        PUSH1(0x00) // offset
+        RETURN
+    };
+
+    // Get the execution steps from external tracer.
+    let block: GethData = TestContext::<2, 1>::new_with_logger_config(
+        None,
+        |accs| {
+            accs[0].address(address!("0x0000000000000000000000000000000000000000"));
+            accs[1].address(*ADDR_B).balance(Word::from(1u64 << 30));
+        },
+        |mut txs, accs| {
+            txs[0]
+                .from(accs[1].address)
+                .gas(60000u64.into())
+                .input(code_creator.into());
+        },
+        |block, _tx| block.number(0x0264),
+        LoggerConfig::enable_memory(),
+    )
+    .unwrap()
+    .into();
+
+    // Get last RETURN.
+    let (index, step) = block.geth_traces[0]
+        .struct_logs
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, s)| s.op == OpcodeId::RETURN)
+        .unwrap();
+    let next_step = block.geth_traces[0].struct_logs.get(index + 1);
+    assert!(check_err_invalid_code(step, next_step));
+
+    // Setup call context at RETURN.
+    let mut builder = CircuitInputBuilderTx::new(&block, step);
+    builder.tx_ctx.call_is_success.push(false);
+    builder.state_ref().push_call(mock_root_create());
     builder.state_ref().call_ctx_mut().unwrap().memory = step.memory.clone();
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),

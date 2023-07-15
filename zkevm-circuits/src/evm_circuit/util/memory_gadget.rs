@@ -339,8 +339,6 @@ pub(crate) struct MemoryCopierGasGadget<F, const GAS_COPY: u64> {
 }
 
 impl<F: Field, const GAS_COPY: u64> MemoryCopierGasGadget<F, GAS_COPY> {
-    pub const WORD_SIZE: u64 = 32u64;
-
     /// Input requirements:
     /// - `curr_memory_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
     /// - `address < 32 * 256**MAX_MEMORY_SIZE_IN_BYTES`

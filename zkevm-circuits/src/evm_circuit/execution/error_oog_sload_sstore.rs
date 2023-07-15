@@ -189,7 +189,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id)))?;
         self.is_static
             .assign(region, offset, Value::known(F::from(call.is_static as u64)))?;
         self.callee_address
@@ -367,10 +367,7 @@ mod test {
     #[derive(Default)]
     struct TestingData {
         key: U256,
-        value: U256,
-        value_prev: U256,
         original_value: U256,
-        is_warm: bool,
         gas_cost: u64,
         bytecode: Bytecode,
     }
@@ -443,10 +440,7 @@ mod test {
 
             Self {
                 key,
-                value,
-                value_prev,
                 original_value,
-                is_warm,
                 gas_cost,
                 bytecode,
             }

@@ -15,6 +15,7 @@ use crate::{
     util::{word::Word, Expr},
 };
 use eth_types::Field;
+use gadgets::util::select;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -25,8 +26,6 @@ pub(crate) struct EndBlockGadget<F> {
     max_rws: Cell<F>,
     max_txs: Cell<F>,
 }
-
-const EMPTY_BLOCK_N_RWS: u64 = 0;
 
 impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
     const NAME: &'static str = "EndBlock";
@@ -41,10 +40,13 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         // Note that rw_counter starts at 1
         let is_empty_block =
             IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
-        // If the block is empty, we do 0 rw_table lookups
-        // If the block is not empty, we will do 1 call_context lookup
-        let total_rws = not::expr(is_empty_block.expr())
-            * (cb.curr.state.rw_counter.clone().expr() - 1.expr() + 1.expr());
+
+        let total_rws_before_padding = cb.curr.state.rw_counter.clone().expr() - 1.expr()
+            + select::expr(
+                is_empty_block.expr(),
+                0.expr(),
+                1.expr(), // If the block is not empty, we will do 1 call_context lookup below
+            );
 
         // 1. Constraint total_rws and total_txs witness values depending on the empty
         // block case.
@@ -85,7 +87,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         // rw_table to ensure there is no malicious insertion.
         // Verify that there are at most total_rws meaningful entries in the rw_table
         cb.rw_table_start_lookup(1.expr());
-        cb.rw_table_start_lookup(max_rws.expr() - total_rws.expr());
+        cb.rw_table_start_lookup(max_rws.expr() - total_rws_before_padding.expr());
         // Since every lookup done in the EVM circuit must succeed and uses
         // a unique rw_counter, we know that at least there are
         // total_rws meaningful entries in the rw_table.

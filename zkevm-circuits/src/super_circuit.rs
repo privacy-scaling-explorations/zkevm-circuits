@@ -50,7 +50,7 @@
 //!   - [x] Tx Circuit
 //!   - [ ] MPT Circuit
 
-#[cfg(any(feature = "test", test))]
+#[cfg(test)]
 pub(crate) mod test;
 
 use crate::{
@@ -142,7 +142,6 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             array::from_fn(|i| Expression::Constant(mock_randomness.pow([1 + i as u64, 0, 0, 0])));
 
         let challenges = Challenges::mock(
-            power_of_randomness[0].clone(),
             power_of_randomness[0].clone(),
             power_of_randomness[0].clone(),
         );
@@ -427,7 +426,6 @@ impl<F: Field> Circuit<F> for SuperCircuit<F> {
     ) -> Result<(), Error> {
         let block = self.evm_circuit.block.as_ref().unwrap();
         let challenges = Challenges::mock(
-            Value::known(block.randomness),
             Value::known(block.randomness),
             Value::known(block.randomness),
         );

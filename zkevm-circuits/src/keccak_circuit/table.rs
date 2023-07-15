@@ -167,14 +167,10 @@ mod tests {
     fn chi_table() {
         // Check the base pattern for all combinations of bits.
         for i in 0..16_usize {
-            let (a, b, c, d) = (i & 1, (i >> 1) & 1, (i >> 2) & 1, (i >> 3) & 1);
+            let (a, b, c) = (i & 1, (i >> 1) & 1, (i >> 2) & 1);
             assert_eq!(
                 CHI_BASE_LOOKUP_TABLE[3 - 2 * a + b - c],
                 (a ^ ((!b) & c)) as u8
-            );
-            assert_eq!(
-                CHI_EXT_LOOKUP_TABLE[5 - 2 * a - b + c - 2 * d],
-                (a ^ ((!b) & c) ^ d) as u8
             );
         }
 
