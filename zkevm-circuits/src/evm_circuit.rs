@@ -1,6 +1,5 @@
 //! The EVM circuit implementation.
 
-#![allow(missing_docs)]
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::*,
@@ -12,10 +11,10 @@ pub mod step;
 pub mod table;
 pub(crate) mod util;
 
-#[cfg(any(feature = "test", test))]
+#[cfg(test)]
 pub(crate) mod test;
 use self::step::HasExecutionState;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(feature = "test-circuits")]
 pub use self::EvmCircuit as TestEvmCircuit;
 
 pub use crate::witness;
@@ -23,6 +22,7 @@ use crate::{
     evm_circuit::param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
     table::{
         BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable, TxTable,
+        UXTable,
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
@@ -38,7 +38,9 @@ use witness::Block;
 #[derive(Clone, Debug)]
 pub struct EvmCircuitConfig<F> {
     fixed_table: [Column<Fixed>; 4],
-    byte_table: [Column<Fixed>; 1],
+    u8_table: UXTable<8>,
+    u16_table: UXTable<16>,
+    /// The execution config
     pub execution: Box<ExecutionConfig<F>>,
     // External tables
     tx_table: TxTable,
@@ -68,6 +70,10 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub keccak_table: KeccakTable,
     /// ExpTable
     pub exp_table: ExpTable,
+    /// U8Table
+    pub u8_table: UXTable<8>,
+    /// U16Table
+    pub u16_table: UXTable<16>,
 }
 
 impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
@@ -85,15 +91,17 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             copy_table,
             keccak_table,
             exp_table,
+            u8_table,
+            u16_table,
         }: Self::ConfigArgs,
     ) -> Self {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
-        let byte_table = [(); 1].map(|_| meta.fixed_column());
         let execution = Box::new(ExecutionConfig::configure(
             meta,
             challenges,
             &fixed_table,
-            &byte_table,
+            &u8_table,
+            &u16_table,
             &tx_table,
             &rw_table,
             &bytecode_table,
@@ -103,7 +111,8 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &exp_table,
         ));
 
-        meta.annotate_lookup_any_column(byte_table[0], || "byte_range");
+        u8_table.annotate_columns(meta);
+        u16_table.annotate_columns(meta);
         fixed_table.iter().enumerate().for_each(|(idx, &col)| {
             meta.annotate_lookup_any_column(col, || format!("fix_table_{}", idx))
         });
@@ -114,10 +123,13 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         copy_table.annotate_columns(meta);
         keccak_table.annotate_columns(meta);
         exp_table.annotate_columns(meta);
+        u8_table.annotate_columns(meta);
+        u16_table.annotate_columns(meta);
 
         Self {
             fixed_table,
-            byte_table,
+            u8_table,
+            u16_table,
             execution,
             tx_table,
             rw_table,
@@ -153,25 +165,6 @@ impl<F: Field> EvmCircuitConfig<F> {
             },
         )
     }
-
-    /// Load byte table
-    pub fn load_byte_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        layouter.assign_region(
-            || "byte table",
-            |mut region| {
-                for offset in 0..256 {
-                    region.assign_fixed(
-                        || "",
-                        self.byte_table[0],
-                        offset,
-                        || Value::known(F::from(offset as u64)),
-                    )?;
-                }
-
-                Ok(())
-            },
-        )
-    }
 }
 
 /// Tx Circuit for verifying transaction signatures
@@ -190,16 +183,19 @@ impl<F: Field> EvmCircuit<F> {
             fixed_table_tags: FixedTableTag::iter().collect(),
         }
     }
-
-    pub fn new_dev(block: Block<F>, fixed_table_tags: Vec<FixedTableTag>) -> Self {
+    #[cfg(feature = "test-circuits")]
+    /// Construct the EvmCircuit with only subset of Fixed table tags required by tests to save
+    /// testing time
+    pub(crate) fn get_test_circuit_from_block(block: Block<F>) -> Self {
+        let fixed_table_tags = detect_fixed_table_tags(&block);
         Self {
             block: Some(block),
             fixed_table_tags,
         }
     }
-
+    #[cfg(feature = "test-circuits")]
     /// Calculate which rows are "actually" used in the circuit
-    pub fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
+    pub(crate) fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
         let max_offset = Self::get_num_rows_required(block);
         // some gates are enabled on all rows
         let gates_row_ids = (0..max_offset).collect();
@@ -207,8 +203,9 @@ impl<F: Field> EvmCircuit<F> {
         let lookup_row_ids = (0..max_offset).collect();
         (gates_row_ids, lookup_row_ids)
     }
-
-    pub fn get_num_rows_required(block: &Block<F>) -> usize {
+    /// Get the minimum number of rows required to process the block
+    /// If unspecified, then compute it
+    pub(crate) fn get_num_rows_required(block: &Block<F>) -> usize {
         let evm_rows = block.circuits_params.max_evm_rows;
         if evm_rows == 0 {
             Self::get_min_num_rows_required(block)
@@ -217,11 +214,11 @@ impl<F: Field> EvmCircuit<F> {
             block.circuits_params.max_evm_rows + 1
         }
     }
-
-    pub fn get_min_num_rows_required(block: &Block<F>) -> usize {
+    /// Compute the minimum number of rows required to process the block
+    fn get_min_num_rows_required(block: &Block<F>) -> usize {
         let mut num_rows = 0;
         for transaction in &block.txs {
-            for step in &transaction.steps {
+            for step in transaction.steps() {
                 num_rows += step.execution_state().get_step_height();
             }
         }
@@ -270,7 +267,6 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         let block = self.block.as_ref().unwrap();
 
         config.load_fixed_table(layouter, self.fixed_table_tags.clone())?;
-        config.load_byte_table(layouter)?;
         config.execution.assign_block(layouter, block, challenges)
     }
 }
@@ -278,7 +274,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
 /// create fixed_table_tags needed given witness block
 pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTableTag> {
     let need_bitwise_lookup = block.txs.iter().any(|tx| {
-        tx.steps.iter().any(|step| {
+        tx.steps().iter().any(|step| {
             matches!(
                 step.opcode(),
                 Some(OpcodeId::AND)
@@ -298,7 +294,7 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
         .collect()
 }
 
-#[cfg(any(feature = "test", test))]
+#[cfg(any(feature = "test-util", test))]
 pub(crate) mod cached {
     use super::*;
     use halo2_proofs::halo2curves::bn256::Fr;
@@ -350,8 +346,8 @@ pub(crate) mod cached {
     }
 
     impl EvmCircuitCached {
-        pub fn get_test_cicuit_from_block(block: Block<Fr>) -> Self {
-            Self(EvmCircuit::<Fr>::get_test_cicuit_from_block(block))
+        pub(crate) fn get_test_circuit_from_block(block: Block<Fr>) -> Self {
+            Self(EvmCircuit::<Fr>::get_test_circuit_from_block(block))
         }
     }
 }
@@ -375,6 +371,8 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         let copy_table = CopyTable::construct(meta, q_copy_table);
         let keccak_table = KeccakTable::construct(meta);
         let exp_table = ExpTable::construct(meta);
+        let u8_table = UXTable::construct(meta);
+        let u16_table = UXTable::construct(meta);
         let challenges = Challenges::construct(meta);
         let challenges_expr = challenges.exprs(meta);
 
@@ -390,6 +388,8 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
                     copy_table,
                     keccak_table,
                     exp_table,
+                    u8_table,
+                    u16_table,
                 },
             ),
             challenges,
@@ -411,26 +411,25 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             &block.txs,
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
-            &challenges,
         )?;
         block.rws.check_rw_counter_sanity();
         config.rw_table.load(
             &mut layouter,
             &block.rws.table_assignments(),
             block.circuits_params.max_rws,
-            challenges.evm_word(),
         )?;
         config
             .bytecode_table
-            .load(&mut layouter, block.bytecodes.values(), &challenges)?;
-        config
-            .block_table
-            .load(&mut layouter, &block.context, challenges.evm_word())?;
+            .load(&mut layouter, block.bytecodes.values())?;
+        config.block_table.load(&mut layouter, &block.context)?;
         config.copy_table.load(&mut layouter, block, &challenges)?;
         config
             .keccak_table
             .dev_load(&mut layouter, &block.sha3_inputs, &challenges, true)?;
         config.exp_table.load(&mut layouter, block)?;
+
+        config.u8_table.load(&mut layouter)?;
+        config.u16_table.load(&mut layouter)?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
@@ -444,7 +443,7 @@ mod evm_circuit_stats {
         util::{unusable_rows, SubCircuit},
         witness::block_convert,
     };
-    use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+    use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
 
     use eth_types::{bytecode, geth_types::GethData};
     use halo2_proofs::{self, dev::MockProver, halo2curves::bn256::Fr};
@@ -483,7 +482,7 @@ mod evm_circuit_stats {
 
     #[test]
     fn variadic_size_check() {
-        let params = CircuitsParams {
+        let params = FixedCParams {
             max_evm_rows: 1 << 12,
             ..Default::default()
         };
@@ -496,10 +495,10 @@ mod evm_circuit_stats {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder).unwrap();
         let k = block.get_test_degree();
 
-        let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block);
+        let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block);
         let prover1 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
         let code = bytecode! {
@@ -518,9 +517,9 @@ mod evm_circuit_stats {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder).unwrap();
         let k = block.get_test_degree();
-        let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block);
+        let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block);
         let prover2 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
         assert_eq!(prover1.fixed(), prover2.fixed());

@@ -1,92 +1,57 @@
-use serde::{Deserialize, Serialize};
-
 use super::*;
-use crate::{
-    circuit,
-    circuit_tools::{
-        cached_region::{CachedRegion, ChallengeSet},
-        cell_manager::CellType,
-        constraint_builder::ConstraintBuilder,
-    },
-};
 
 /// The types of proofs in the MPT table
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug)]
 pub enum MPTProofType {
-    /// Disabled
-    Disabled,
     /// Nonce updated
-    NonceChanged = AccountFieldTag::Nonce as isize,
+    NonceMod = AccountFieldTag::Nonce as isize,
     /// Balance updated
-    BalanceChanged = AccountFieldTag::Balance as isize,
+    BalanceMod = AccountFieldTag::Balance as isize,
     /// Code hash exists
-    CodeHashExists = AccountFieldTag::CodeHash as isize,
-    /// Account destroyed
-    AccountDestructed,
+    CodeHashMod = AccountFieldTag::CodeHash as isize,
     /// Account does not exist
-    AccountDoesNotExist,
+    NonExistingAccountProof = AccountFieldTag::NonExisting as isize,
     /// Storage updated
-    StorageChanged,
+    StorageMod,
     /// Storage does not exist
-    StorageDoesNotExist,
+    NonExistingStorageProof,
 }
 impl_expr!(MPTProofType);
 
 impl From<AccountFieldTag> for MPTProofType {
     fn from(tag: AccountFieldTag) -> Self {
         match tag {
-            AccountFieldTag::Nonce => Self::NonceChanged,
-            AccountFieldTag::Balance => Self::BalanceChanged,
-            AccountFieldTag::CodeHash => Self::CodeHashExists,
-            AccountFieldTag::NonExisting => Self::AccountDoesNotExist,
+            AccountFieldTag::Nonce => Self::NonceMod,
+            AccountFieldTag::Balance => Self::BalanceMod,
+            AccountFieldTag::CodeHash => Self::CodeHashMod,
+            AccountFieldTag::NonExisting => Self::NonExistingAccountProof,
         }
     }
 }
 
 /// The MptTable shared between MPT Circuit and State Circuit
 #[derive(Clone, Copy, Debug)]
-pub struct MptTable {
-    /// Account address
-    pub address_rlc: Column<Advice>,
-    /// Proof type
-    pub proof_type: Column<Advice>,
-    /// Storage address
-    pub key_rlc: Column<Advice>,
-    /// Old value
-    pub value_prev: Column<Advice>,
-    /// New value
-    pub value: Column<Advice>,
-    /// Previous MPT root
-    pub root_prev: Column<Advice>,
-    /// New MPT root
-    pub root: Column<Advice>,
-}
+pub struct MptTable([Column<Advice>; 12]);
 
 impl<F: Field> LookupTable<F> for MptTable {
     fn columns(&self) -> Vec<Column<Any>> {
-        vec![
-            self.address_rlc,
-            self.proof_type,
-            self.key_rlc,
-            self.value_prev,
-            self.value,
-            self.root_prev,
-            self.root,
-        ]
-        .into_iter()
-        .map(|col| col.into())
-        .collect::<Vec<Column<Any>>>()
+        self.0.iter().map(|&col| col.into()).collect()
     }
 
     fn annotations(&self) -> Vec<String> {
         vec![
             String::from("address"),
+            String::from("storage_key_lo"),
+            String::from("storage_key_hi"),
             String::from("proof_type"),
-            String::from("storage_key"),
-            String::from("old_value"),
-            String::from("new_value"),
-            String::from("old_root"),
-            String::from("new_root"),
+            String::from("new_root_lo"),
+            String::from("new_root_hi"),
+            String::from("old_root_lo"),
+            String::from("old_root_hi"),
+            String::from("new_value_lo"),
+            String::from("new_value_hi"),
+            String::from("old_value_lo"),
+            String::from("old_value_hi"),
         ]
     }
 }
@@ -94,41 +59,20 @@ impl<F: Field> LookupTable<F> for MptTable {
 impl MptTable {
     /// Construct a new MptTable
     pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
-        // TODO(Brecht): everything except address and proof type needs to be
-        // advice_column_in(SecondPhase)
-        Self {
-            address_rlc: meta.advice_column(),
-            proof_type: meta.advice_column(),
-            key_rlc: meta.advice_column(),
-            value_prev: meta.advice_column(),
-            value: meta.advice_column(),
-            root_prev: meta.advice_column(),
-            root: meta.advice_column(),
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn constrain<F: Field, C: CellType>(
-        &self,
-        meta: &mut VirtualCells<'_, F>,
-        cb: &mut ConstraintBuilder<F, C>,
-        address_rlc: Expression<F>,
-        proof_type: Expression<F>,
-        key_rlc: Expression<F>,
-        value_prev: Expression<F>,
-        value: Expression<F>,
-        root_prev: Expression<F>,
-        root: Expression<F>,
-    ) {
-        circuit!([meta, cb], {
-            require!(a!(self.proof_type) => proof_type);
-            require!(a!(self.address_rlc) => address_rlc);
-            require!(a!(self.key_rlc) => key_rlc);
-            require!(a!(self.value_prev) => value_prev);
-            require!(a!(self.value) => value);
-            require!(a!(self.root_prev) => root_prev);
-            require!(a!(self.root) => root);
-        })
+        Self([
+            meta.advice_column(), // Address
+            meta.advice_column(), // Storage key lo
+            meta.advice_column(), // Storage key hi
+            meta.advice_column(), // Proof type
+            meta.advice_column(), // New root lo
+            meta.advice_column(), // New root hi
+            meta.advice_column(), // Old root lo
+            meta.advice_column(), // Old root hi
+            meta.advice_column(), // New value lo
+            meta.advice_column(), // New value hi
+            meta.advice_column(), // Old value lo
+            meta.advice_column(), // Old value hi
+        ])
     }
 
     pub(crate) fn assign<F: Field>(
@@ -137,26 +81,8 @@ impl MptTable {
         offset: usize,
         row: &MptUpdateRow<Value<F>>,
     ) -> Result<(), Error> {
-        for (column, value) in <MptTable as LookupTable<F>>::advice_columns(self)
-            .iter()
-            .zip_eq(row.values())
-        {
-            region.assign_advice(|| "assign mpt table row value", *column, offset, || value)?;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn assign_cached<F: Field, S: ChallengeSet<F>>(
-        &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
-        offset: usize,
-        row: &MptUpdateRow<Value<F>>,
-    ) -> Result<(), Error> {
-        for (column, value) in <MptTable as LookupTable<F>>::advice_columns(self)
-            .iter()
-            .zip_eq(row.values())
-        {
-            region.assign_advice(|| "assign mpt table row value", *column, offset, || value)?;
+        for (column, value) in self.0.iter().zip_eq(row.values()) {
+            region.assign_advice(|| "assign mpt table row value", *column, offset, || *value)?;
         }
         Ok(())
     }
@@ -165,11 +91,10 @@ impl MptTable {
         &self,
         layouter: &mut impl Layouter<F>,
         updates: &MptUpdates,
-        randomness: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "mpt table",
-            |mut region| self.load_with_region(&mut region, updates, randomness),
+            |mut region| self.load_with_region(&mut region, updates),
         )
     }
 
@@ -177,9 +102,8 @@ impl MptTable {
         &self,
         region: &mut Region<'_, F>,
         updates: &MptUpdates,
-        randomness: Value<F>,
     ) -> Result<(), Error> {
-        for (offset, row) in updates.table_assignments(randomness).iter().enumerate() {
+        for (offset, row) in updates.table_assignments().iter().enumerate() {
             self.assign(region, offset, row)?;
         }
         Ok(())

@@ -6,7 +6,7 @@ use crate::{
     state_db::CodeDB,
     Error,
 };
-use eth_types::{Bytecode, GethExecStep, ToWord, H256};
+use eth_types::{evm_types::INVALID_INIT_CODE_FIRST_BYTE, Bytecode, GethExecStep, ToWord, H256};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ReturnRevert;
@@ -47,6 +47,11 @@ impl Opcode for ReturnRevert {
 
         // Case A in the spec.
         if call.is_create() && call.is_success && length > 0 {
+            // Read the first byte of init code and check it must not be 0xef (EIP-3541).
+            let init_code_first_byte = state.call_ctx()?.memory.0[offset];
+            state.memory_read(&mut exec_step, offset.into(), init_code_first_byte)?;
+            assert_ne!(init_code_first_byte, INVALID_INIT_CODE_FIRST_BYTE);
+
             // Note: handle_return updates state.code_db. All we need to do here is push the
             // copy event.
             let code_hash = handle_create(
@@ -279,7 +284,7 @@ mod return_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
@@ -337,7 +342,7 @@ mod return_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();

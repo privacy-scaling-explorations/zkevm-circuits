@@ -22,7 +22,10 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
-    util::Expr,
+    util::{
+        word::{Word, Word32, WordExpr},
+        Expr,
+    },
 };
 
 use super::ExecutionGadget;
@@ -65,22 +68,20 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         let call_data_offset = cb.query_cell();
 
         let data_offset = WordByteCapGadget::construct(cb, call_data_length.expr());
-        cb.stack_pop(data_offset.original_word());
+        cb.stack_pop(data_offset.original_word().to_word());
 
         cb.condition(
             and::expr([data_offset.not_overflow(), cb.curr.state.is_root.expr()]),
             |cb| {
-                cb.call_context_lookup(
-                    false.expr(),
+                cb.call_context_lookup_read(
                     None,
                     CallContextFieldTag::TxId,
-                    src_id.expr(),
+                    Word::from_lo_unchecked(src_id.expr()),
                 );
-                cb.call_context_lookup(
-                    false.expr(),
+                cb.call_context_lookup_read(
                     None,
                     CallContextFieldTag::CallDataLength,
-                    call_data_length.expr(),
+                    Word::from_lo_unchecked(call_data_length.expr()),
                 );
                 cb.require_equal(
                     "if is_root then call_data_offset == 0",
@@ -96,23 +97,20 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 not::expr(cb.curr.state.is_root.expr()),
             ]),
             |cb| {
-                cb.call_context_lookup(
-                    false.expr(),
+                cb.call_context_lookup_read(
                     None,
                     CallContextFieldTag::CallerId,
-                    src_id.expr(),
+                    Word::from_lo_unchecked(src_id.expr()),
                 );
-                cb.call_context_lookup(
-                    false.expr(),
+                cb.call_context_lookup_read(
                     None,
                     CallContextFieldTag::CallDataLength,
-                    call_data_length.expr(),
+                    Word::from_lo_unchecked(call_data_length.expr()),
                 );
-                cb.call_context_lookup(
-                    false.expr(),
+                cb.call_context_lookup_read(
                     None,
                     CallContextFieldTag::CallDataOffset,
-                    call_data_offset.expr(),
+                    Word::from_lo_unchecked(call_data_offset.expr()),
                 );
             },
         );
@@ -143,7 +141,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                             src_id.expr(),
                             TxContextFieldTag::CallData,
                             Some(src_addr.expr() + idx.expr()),
-                            buffer_reader.byte(idx),
+                            Word::from_lo_unchecked(buffer_reader.byte(idx)),
                         );
                     },
                 );
@@ -174,13 +172,13 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         // Add a lookup constraint for the 32-bytes that should have been pushed
         // to the stack.
         let calldata_word: [Expression<F>; N_BYTES_WORD] = calldata_word.try_into().unwrap();
-        let calldata_word = cb.word_rlc(calldata_word);
-        cb.require_zero(
+        let calldata_word = Word32::new(calldata_word);
+        cb.require_zero_word(
             "Stack push result must be 0 if stack pop offset is Uint64 overflow",
-            data_offset.overflow() * calldata_word.expr(),
+            calldata_word.to_word().mul_selector(data_offset.overflow()),
         );
 
-        cb.stack_push(calldata_word);
+        cb.stack_push(calldata_word.to_word());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(cb.rw_counter_offset()),
@@ -215,12 +213,16 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         // Assign to the buffer reader gadget.
         let (src_id, call_data_offset, call_data_length) = if call.is_root {
-            (tx.id, 0, tx.call_data_length as u64)
+            (tx.id, 0, tx.call_data.len() as u64)
         } else {
-            (call.caller_id, call.call_data_offset, call.call_data_length)
+            (
+                call.caller_id as u64,
+                call.call_data_offset,
+                call.call_data_length,
+            )
         };
         self.src_id
-            .assign(region, offset, Value::known(F::from(src_id as u64)))?;
+            .assign(region, offset, Value::known(F::from(src_id)))?;
         self.call_data_length
             .assign(region, offset, Value::known(F::from(call_data_length)))?;
         self.call_data_offset
@@ -247,7 +249,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             for (i, byte) in calldata_bytes.iter_mut().enumerate() {
                 if call.is_root {
                     // Fetch from tx call data.
-                    if src_addr + (i as u64) < tx.call_data_length as u64 {
+                    if src_addr + (i as u64) < tx.call_data.len() as u64 {
                         *byte = tx.call_data[src_addr as usize + i];
                     }
                 } else {
@@ -261,14 +263,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             }
         }
 
-        self.buffer_reader.assign(
-            region,
-            offset,
-            src_addr,
-            src_addr_end,
-            &calldata_bytes,
-            &[true; N_BYTES_WORD],
-        )?;
+        self.buffer_reader
+            .assign(region, offset, src_addr, src_addr_end, &calldata_bytes)?;
 
         Ok(())
     }

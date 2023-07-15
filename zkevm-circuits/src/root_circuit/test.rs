@@ -1,7 +1,8 @@
-#![allow(unused_imports)]
-pub use super::*;
-use crate::super_circuit::{test::block_1tx, SuperCircuit};
-use bus_mapping::circuit_input_builder::CircuitsParams;
+use crate::{
+    root_circuit::{compile, Config, Gwc, PoseidonTranscript, RootCircuit},
+    super_circuit::{test::block_1tx, SuperCircuit},
+};
+use bus_mapping::circuit_input_builder::FixedCParams;
 use halo2_proofs::{
     circuit::Value,
     dev::MockProver,
@@ -21,7 +22,7 @@ fn test_root_circuit() {
     let (params, protocol, proof, instance) = {
         // Preprocess
         const TEST_MOCK_RANDOMNESS: u64 = 0x100;
-        let circuits_params = CircuitsParams {
+        let circuits_params = FixedCParams {
             max_txs: 1,
             max_calldata: 32,
             max_rws: 256,
@@ -61,7 +62,7 @@ fn test_root_circuit() {
         (params, protocol, proof, instance)
     };
 
-    let root_circuit = RootCircuit::new(
+    let root_circuit = RootCircuit::<Bn256, Gwc<_>>::new(
         &params,
         &protocol,
         Value::known(&instance),

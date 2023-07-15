@@ -8,22 +8,20 @@ use crate::{
         step::{ExecutionState, Step},
         table::{FixedTableTag, Table},
         util::{
-            constraint_builder::EVMConstraintBuilder, rlc, CachedRegion, CellType, Expr,
-            StoredExpression, LOOKUP_CONFIG,
+            constraint_builder::EVMConstraintBuilder, rlc, CachedRegion, StoredExpression,
+            LOOKUP_CONFIG,
         },
         Advice, Column, Fixed,
     },
     table::LookupTable,
-    util::Challenges,
+    util::{cell_manager::CellType, Challenges},
 };
 use eth_types::{Field, Word, U256};
 pub(crate) use halo2_proofs::circuit::{Layouter, Value};
 use halo2_proofs::{
     circuit::SimpleFloorPlanner,
     dev::MockProver,
-    plonk::{
-        Circuit, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, Selector, ThirdPhase,
-    },
+    plonk::{Circuit, ConstraintSystem, Error, FirstPhase, SecondPhase, Selector, ThirdPhase},
 };
 
 pub(crate) const WORD_LOW_MAX: Word = U256([u64::MAX, u64::MAX, 0, 0]);
@@ -39,10 +37,6 @@ pub(crate) const WORD_CELL_MAX: Word = U256([
 // I256::MAX = 2^255 - 1, and I256::MIN = 2^255.
 pub(crate) const WORD_SIGNED_MAX: Word = U256([u64::MAX, u64::MAX, u64::MAX, i64::MAX as _]);
 pub(crate) const WORD_SIGNED_MIN: Word = U256([0, 0, 0, i64::MIN as _]);
-
-pub(crate) fn generate_power_of_randomness<F: Field>(randomness: F) -> Vec<F> {
-    (1..32).map(|exp| randomness.pow([exp, 0, 0, 0])).collect()
-}
 
 pub(crate) trait MathGadgetContainer<F: Field>: Clone {
     fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self
@@ -68,19 +62,16 @@ where
     stored_expressions: Vec<StoredExpression<F>>,
     math_gadget_container: G,
     _marker: PhantomData<F>,
-    challenges: Challenges<Expression<F>>,
 }
 
 pub(crate) struct UnitTestMathGadgetBaseCircuit<G> {
-    size: usize,
     witnesses: Vec<Word>,
     _marker: PhantomData<G>,
 }
 
 impl<G> UnitTestMathGadgetBaseCircuit<G> {
-    fn new(size: usize, witnesses: Vec<Word>) -> Self {
+    fn new(witnesses: Vec<Word>) -> Self {
         UnitTestMathGadgetBaseCircuit {
-            size,
             witnesses,
             _marker: PhantomData,
         }
@@ -94,7 +85,6 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
 
     fn without_witnesses(&self) -> Self {
         UnitTestMathGadgetBaseCircuit {
-            size: 0,
             witnesses: vec![],
             _marker: PhantomData,
         }
@@ -124,16 +114,17 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
             .try_into()
             .unwrap();
 
-        let step_curr = Step::new(meta, advices, 0, false);
-        let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
+        let step_curr = Step::new(meta, advices, 0);
+        let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT);
         let mut cb = EVMConstraintBuilder::new(
+            meta,
             step_curr.clone(),
             step_next,
             &challenges_exprs,
             ExecutionState::STOP,
         );
         let math_gadget_container = G::configure_gadget_container(&mut cb);
-        let (constraints, stored_expressions, _) = cb.build();
+        let (constraints, stored_expressions, _, _) = cb.build();
 
         if !constraints.step.is_empty() {
             let step_constraints = constraints.step;
@@ -148,12 +139,13 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
         let cell_manager = step_curr.cell_manager.clone();
         for column in cell_manager.columns().iter() {
             if let CellType::Lookup(table) = column.cell_type {
+                let column_expr = column.expr(meta);
                 if table == Table::Fixed {
                     let name = format!("{:?}", table);
                     meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                         let table_expressions = fixed_table.table_exprs(meta);
                         vec![(
-                            column.expr(),
+                            column_expr,
                             rlc::expr(&table_expressions, challenges_exprs.lookup_input()),
                         )]
                     });
@@ -170,7 +162,6 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                 stored_expressions,
                 math_gadget_container,
                 _marker: PhantomData,
-                challenges: challenges_exprs,
             },
             challenges,
         )
@@ -255,7 +246,7 @@ pub(crate) fn test_math_gadget_container<F: Field, G: MathGadgetContainer<F>>(
     expected_success: bool,
 ) {
     const K: usize = 12;
-    let circuit = UnitTestMathGadgetBaseCircuit::<G>::new(K, witnesses);
+    let circuit = UnitTestMathGadgetBaseCircuit::<G>::new(witnesses);
 
     let prover = MockProver::<F>::run(K as u32, &circuit, vec![]).unwrap();
     if expected_success {

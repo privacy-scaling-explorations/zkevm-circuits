@@ -5,10 +5,10 @@
 #![allow(incomplete_features)]
 // Needed by DummyGadget in evm circuit
 #![feature(adt_const_params)]
+// Required for adding reasons in allow(dead_code)
+#![feature(lint_reasons)]
 // Needed by some builder patterns in testing modules.
 #![cfg_attr(docsrs, feature(doc_cfg))]
-// Temporary until we have more of the crate implemented.
-#![allow(dead_code)]
 // We want to have UPPERCASE idents sometimes.
 #![allow(clippy::upper_case_acronyms)]
 // Catch documentation errors caused by code changes.
@@ -30,9 +30,10 @@ pub mod state_circuit;
 pub mod super_circuit;
 pub mod table;
 
-#[cfg(any(feature = "test", test))]
+#[cfg(any(test, feature = "test-util"))]
 pub mod test_util;
 
+pub mod instance;
 pub mod tx_circuit;
 pub mod util;
 pub mod witness;

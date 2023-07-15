@@ -206,8 +206,8 @@ impl MockTransaction {
         self
     }
 
-    /// Set nonce field for the MockTransaction.
-    pub fn nonce(&mut self, nonce: u64) -> &mut Self {
+    /// Set nonce field for the MockTransaction. Overridden in TestContext.
+    pub(crate) fn nonce(&mut self, nonce: u64) -> &mut Self {
         self.nonce = nonce;
         self
     }
@@ -224,8 +224,8 @@ impl MockTransaction {
         self
     }
 
-    /// Set transaction_idx field for the MockTransaction.
-    pub fn transaction_idx(&mut self, transaction_idx: u64) -> &mut Self {
+    /// Set transaction_idx field for the MockTransaction. Overridden in TestContext.
+    pub(crate) fn transaction_idx(&mut self, transaction_idx: u64) -> &mut Self {
         self.transaction_index = U64::from(transaction_idx);
         self
     }
@@ -325,7 +325,8 @@ impl MockTransaction {
                         .from
                         .as_wallet()
                         .with_chain_id(self.chain_id.low_u64())
-                        .sign_transaction_sync(&tx.into());
+                        .sign_transaction_sync(&tx.into())
+                        .unwrap();
                     // Set sig parameters
                     self.sig_data((sig.v, sig.r, sig.s));
                 }

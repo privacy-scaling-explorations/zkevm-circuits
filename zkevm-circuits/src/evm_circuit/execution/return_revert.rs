@@ -9,17 +9,23 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
-            math_gadget::{IsZeroGadget, MinMaxGadget},
+            math_gadget::{IsEqualGadget, IsZeroGadget, MinMaxGadget},
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
             not, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
-    util::Expr,
+    util::{
+        word::{Word, Word32Cell, WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, state_db::CodeDB};
-use eth_types::{Field, ToScalar, U256};
+use eth_types::{
+    evm_types::{GasCost, INVALID_INIT_CODE_FIRST_BYTE},
+    Field, ToScalar, U256,
+};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -32,6 +38,10 @@ pub(crate) struct ReturnRevertGadget<F> {
     is_success: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 
+    // Used to check first byte of create init code must not be 0xef (EIP-3541).
+    init_code_first_byte: Cell<F>,
+    is_init_code_first_byte_invalid: IsEqualGadget<F>,
+
     copy_length: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
     copy_rw_increase: Cell<F>,
     copy_rw_increase_is_zero: IsZeroGadget<F>,
@@ -40,10 +50,10 @@ pub(crate) struct ReturnRevertGadget<F> {
     return_data_length: Cell<F>,
 
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
-    code_hash: Cell<F>,
+    code_hash: Word32Cell<F>,
 
     caller_id: Cell<F>,
-    address: Cell<F>,
+    address: WordCell<F>,
     reversion_info: ReversionInfo<F>,
 }
 
@@ -56,10 +66,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        let offset = cb.query_cell_phase2();
-        let length = cb.query_word_rlc();
-        cb.stack_pop(offset.expr());
-        cb.stack_pop(length.expr());
+        let offset = cb.query_word_unchecked();
+        let length = cb.query_memory_address();
+        cb.stack_pop(offset.to_word());
+        cb.stack_pop(length.to_word());
         let range = MemoryAddressGadget::construct(cb, offset, length);
 
         let is_success = cb.call_context(None, CallContextFieldTag::IsSuccess);
@@ -95,57 +105,79 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         let is_contract_deployment =
             is_create.clone() * is_success.expr() * not::expr(copy_rw_increase_is_zero.expr());
-        let (caller_id, address, reversion_info, code_hash, deployed_code_rlc) =
-            cb.condition(is_contract_deployment.clone(), |cb| {
-                // We don't need to place any additional constraints on code_hash because the
-                // copy circuit enforces that it is the hash of the bytes in the copy lookup.
-                let code_hash = cb.query_cell_phase2();
-                let deployed_code_rlc = cb.query_cell_phase2();
-                cb.copy_table_lookup(
-                    cb.curr.state.call_id.expr(),
-                    CopyDataType::Memory.expr(),
-                    code_hash.expr(),
-                    CopyDataType::Bytecode.expr(),
-                    range.offset(),
-                    range.address(),
-                    0.expr(),
-                    range.length(),
-                    deployed_code_rlc.expr(),
-                    copy_rw_increase.expr(),
-                );
+        let code_deposit_cost = is_contract_deployment.clone()
+            * GasCost::CODE_DEPOSIT_BYTE_COST.expr()
+            * range.length();
+        let (
+            caller_id,
+            address,
+            reversion_info,
+            code_hash,
+            deployed_code_rlc,
+            init_code_first_byte,
+            is_init_code_first_byte_invalid,
+        ) = cb.condition(is_contract_deployment.clone(), |cb| {
+            // Read the first byte and check it must not be 0xef (EIP-3541).
+            let init_code_first_byte = cb.query_byte();
+            cb.memory_lookup(0.expr(), range.offset(), init_code_first_byte.expr(), None);
+            let is_init_code_first_byte_invalid = IsEqualGadget::construct(
+                cb,
+                init_code_first_byte.expr(),
+                INVALID_INIT_CODE_FIRST_BYTE.expr(),
+            );
+            cb.require_zero(
+                "First byte of create init code must not be 0xef",
+                is_init_code_first_byte_invalid.expr(),
+            );
 
-                let [caller_id, address] = [
-                    CallContextFieldTag::CallerId,
-                    CallContextFieldTag::CalleeAddress,
-                ]
-                .map(|tag| cb.call_context(None, tag));
-                let mut reversion_info = cb.reversion_info_read(None);
+            // We don't need to place any additional constraints on code_hash because the
+            // copy circuit enforces that it is the hash of the bytes in the copy lookup.
+            let code_hash = cb.query_word32();
+            let deployed_code_rlc = cb.query_cell_phase2();
+            cb.copy_table_lookup(
+                Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                CopyDataType::Memory.expr(),
+                code_hash.to_word(),
+                CopyDataType::Bytecode.expr(),
+                range.offset(),
+                range.address(),
+                0.expr(),
+                range.length(),
+                deployed_code_rlc.expr(),
+                copy_rw_increase.expr(),
+            );
 
-                cb.account_write(
-                    address.expr(),
-                    AccountFieldTag::CodeHash,
-                    code_hash.expr(),
-                    cb.empty_code_hash_rlc(),
-                    Some(&mut reversion_info),
-                );
+            let caller_id = cb.call_context(None, CallContextFieldTag::CallerId);
+            let address = cb.call_context_read_as_word(None, CallContextFieldTag::CalleeAddress);
 
-                (
-                    caller_id,
-                    address,
-                    reversion_info,
-                    code_hash,
-                    deployed_code_rlc,
-                )
-            });
+            let mut reversion_info = cb.reversion_info_read(None);
+
+            cb.account_write(
+                address.to_word(),
+                AccountFieldTag::CodeHash,
+                code_hash.to_word(),
+                cb.empty_code_hash(),
+                Some(&mut reversion_info),
+            );
+
+            (
+                caller_id,
+                address,
+                reversion_info,
+                code_hash,
+                deployed_code_rlc,
+                init_code_first_byte,
+                is_init_code_first_byte_invalid,
+            )
+        });
 
         // Case B in the specs.
         cb.condition(is_root.expr(), |cb| {
             cb.require_next_state(ExecutionState::EndTx);
-            cb.call_context_lookup(
-                false.expr(),
+            cb.call_context_lookup_read(
                 None,
                 CallContextFieldTag::IsPersistent,
-                is_success.expr(),
+                Word::from_lo_unchecked(is_success.expr()),
             );
             cb.require_step_state_transition(StepStateTransition {
                 program_counter: To(0.expr()),
@@ -155,7 +187,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                         + not::expr(is_success.expr())
                             * cb.curr.state.reversible_write_counter.expr(),
                 ),
-                gas_left: Delta(-memory_expansion.gas_cost()),
+                gas_left: Delta(-memory_expansion.gas_cost() - code_deposit_cost.expr()),
                 reversible_write_counter: To(0.expr()),
                 memory_word_size: To(0.expr()),
                 ..StepStateTransition::default()
@@ -200,9 +232,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 * not::expr(copy_rw_increase_is_zero.expr()),
             |cb| {
                 cb.copy_table_lookup(
-                    cb.curr.state.call_id.expr(),
+                    Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
                     CopyDataType::Memory.expr(),
-                    cb.next.state.call_id.expr(),
+                    Word::from_lo_unchecked(cb.next.state.call_id.expr()),
                     CopyDataType::Memory.expr(),
                     range.offset(),
                     range.address(),
@@ -228,6 +260,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             range,
             deployed_code_rlc,
             is_success,
+            init_code_first_byte,
+            is_init_code_first_byte_invalid,
             copy_length,
             copy_rw_increase,
             copy_rw_increase_is_zero,
@@ -285,7 +319,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         }
 
         if call.is_create() && call.is_success {
-            let values: Vec<_> = (3..3 + length.as_usize())
+            let values: Vec<_> = (4..4 + length.as_usize())
                 .map(|index| block.get_rws(step, index).memory_value())
                 .collect();
             self.deployed_code_rlc.assign(
@@ -295,11 +329,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             )?;
             let mut code_hash = CodeDB::hash(&values).to_fixed_bytes();
             code_hash.reverse();
-            self.code_hash.assign(
-                region,
-                offset,
-                region.word_rlc(U256::from_little_endian(&code_hash)),
-            )?;
+            self.code_hash
+                .assign_u256(region, offset, U256::from_little_endian(&code_hash))?;
         }
 
         let copy_rw_increase = if call.is_create() && call.is_success {
@@ -315,9 +346,28 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             .assign(region, offset, F::from(copy_rw_increase))?;
 
         let is_contract_deployment = call.is_create() && call.is_success && !length.is_zero();
+
+        let init_code_first_byte = if is_contract_deployment {
+            block.get_rws(step, 3).memory_value()
+        } else {
+            0
+        }
+        .into();
+        self.init_code_first_byte.assign(
+            region,
+            offset,
+            Value::known(F::from(init_code_first_byte)),
+        )?;
+        self.is_init_code_first_byte_invalid.assign(
+            region,
+            offset,
+            F::from(init_code_first_byte),
+            F::from(INVALID_INIT_CODE_FIRST_BYTE.into()),
+        )?;
+
         if !call.is_root {
             let rw_counter_offset = 3 + if is_contract_deployment {
-                5 + length.as_u64()
+                6 + length.as_u64()
             } else {
                 0
             };
@@ -337,11 +387,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             Value::known(call.caller_id.to_scalar().unwrap()),
         )?;
 
-        self.address.assign(
-            region,
-            offset,
-            Value::known(call.address.to_scalar().unwrap()),
-        )?;
+        self.address.assign_h160(region, offset, call.address)?;
 
         self.reversion_info.assign(
             region,
@@ -498,7 +544,7 @@ mod test {
         {
             let initializer = callee_bytecode(*is_return, *offset, *length).code();
 
-            let root_code = bytecode! {
+            let mut root_code = bytecode! {
                 PUSH32(Word::from_big_endian(&initializer))
                 PUSH1(0)
                 MSTORE
@@ -509,6 +555,13 @@ mod test {
 
                 CREATE
             };
+            if !is_return {
+                root_code.append(&bytecode! {
+                    PUSH1(0)
+                    PUSH1(0)
+                    REVERT
+                });
+            }
 
             let ctx = TestContext::<2, 1>::new(
                 None,
@@ -537,7 +590,7 @@ mod test {
     }
 
     #[test]
-    fn test_nonpersistent_nonroot_create() {
+    fn test_return_nonpersistent_nonroot_create() {
         // Test the case where the initialization call is successful, but the CREATE
         // call is reverted.
         let initializer = callee_bytecode(true, 0, 10).code();

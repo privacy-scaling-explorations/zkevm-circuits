@@ -2,7 +2,7 @@ use crate::{
     evm_circuit::util::{
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         math_gadget::*,
-        transpose_val_ret, CachedRegion, Cell, CellType,
+        CachedRegion, Cell, CellType,
     },
     util::Expr,
 };
@@ -59,7 +59,7 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
     pub(crate) fn quotient(&self) -> Expression<F> {
         self.quotient.expr()
     }
-
+    #[allow(dead_code, reason = "remainder is a valid API but only used in tests")]
     pub(crate) fn remainder(&self) -> Expression<F> {
         self.remainder.expr()
     }
@@ -83,17 +83,6 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
             .assign(region, offset, F::from_u128(quotient))?;
 
         Ok((quotient, remainder))
-    }
-
-    pub(crate) fn assign_value(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        numerator: Value<F>,
-    ) -> Result<Value<(u128, u128)>, Error> {
-        transpose_val_ret(
-            numerator.map(|numerator| self.assign(region, offset, numerator.get_lower_128())),
-        )
     }
 }
 
@@ -132,7 +121,7 @@ mod tests {
                 ConstantDivisionGadget::<F, N_BYTES>::construct(cb, a.expr(), DENOMINATOR);
 
             cb.require_equal(
-                "correct reminder",
+                "correct remainder",
                 constdiv_gadget.remainder(),
                 REMAINDER.expr(),
             );

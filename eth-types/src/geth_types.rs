@@ -249,11 +249,11 @@ impl Transaction {
             .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 })
     }
 
-    /// Get the "to" address. If `to` is None then zero adddress
+    /// Get the "to" address. If `to` is None then zero address
     pub fn to_or_zero(&self) -> Address {
         self.to.unwrap_or_default()
     }
-    /// Get the "to" address. If `to` is None then compute contract adddress
+    /// Get the "to" address. If `to` is None then compute contract address
     pub fn to_or_contract_addr(&self) -> Address {
         self.to
             .unwrap_or_else(|| get_contract_address(self.from, self.nonce.to_word()))
@@ -288,6 +288,10 @@ impl Transaction {
             ..response::Transaction::default()
         }
     }
+    /// Convinient method for gas limit
+    pub fn gas(&self) -> u64 {
+        self.gas_limit.as_u64()
+    }
 }
 
 /// GethData is a type that contains all the information of a Ethereum block
@@ -314,7 +318,9 @@ impl GethData {
             assert_eq!(Word::from(wallet.chain_id()), self.chain_id);
             let geth_tx: Transaction = (&*tx).into();
             let req: TransactionRequest = (&geth_tx).into();
-            let sig = wallet.sign_transaction_sync(&req.chain_id(self.chain_id.as_u64()).into());
+            let sig = wallet
+                .sign_transaction_sync(&req.chain_id(self.chain_id.as_u64()).into())
+                .unwrap();
             tx.v = U64::from(sig.v);
             tx.r = sig.r;
             tx.s = sig.s;

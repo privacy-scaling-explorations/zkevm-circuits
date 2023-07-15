@@ -73,7 +73,7 @@ impl From<geth_types::Account> for Account {
             nonce: account.nonce.as_u64(),
             balance: account.balance,
             storage: account.storage.clone(),
-            code_hash: CodeDB::hash(&account.code.to_vec()),
+            code_hash: CodeDB::hash(&account.code),
         }
     }
 }
@@ -200,6 +200,12 @@ impl StateDB {
     pub fn get_nonce(&self, addr: &Address) -> u64 {
         let (_, account) = self.get_account(addr);
         account.nonce
+    }
+
+    /// Get balance of account with the given address.
+    pub fn get_balance(&self, addr: &Address) -> Word {
+        let (_, account) = self.get_account(addr);
+        account.balance
     }
 
     /// Increase nonce of account with `addr` and return the previous value.
