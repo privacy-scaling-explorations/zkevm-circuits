@@ -48,3 +48,11 @@ The following software needs to be installed to run the integration tests script
 - docker compose
 - Rust toolchain
 - `solc` version 0.7.x or 0.8.x
+
+## How to run circuits for Taiko
+Block explorer URL is https://explorer.internal.taiko.xyz
+```
+export GETH0_URL="https://rpc.internal.taiko.xyz"
+./run.sh --steps tests --tests taiko_circuit_input_builder
+./run.sh --steps tests --tests taiko_circuits::mock_prover
+```

@@ -3,7 +3,12 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(missing_docs)]
 
-use bus_mapping::rpc::GethClient;
+use bus_mapping::{
+    circuit_input_builder::{
+        build_state_code_db, get_state_accesses, BuilderClient, CircuitsParams,
+    },
+    rpc::GethClient,
+};
 use env_logger::Env;
 use eth_types::Address;
 use ethers::{
@@ -13,6 +18,7 @@ use ethers::{
     signers::{coins_bip39::English, MnemonicBuilder, Signer, Wallet},
 };
 use lazy_static::lazy_static;
+use log::trace;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -48,6 +54,9 @@ lazy_static! {
         Err(VarError::NotPresent) => GETH0_URL_DEFAULT.to_string(),
         Err(e) => panic!("Error in GETH0_URL env var: {:?}", e),
     };
+
+    /// create GEN_DATA
+    pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
 }
 
 static LOG_INIT: Once = Once::new();
@@ -138,6 +147,62 @@ pub struct CompiledContract {
     /// Runtime Bytecode
     pub bin_runtime: Bytes,
 }
+
+/// Build circuit input builder for a block
+pub async fn build_circuit_input_builder_block(block_num: u64) {
+    let cli = get_client();
+    let cli = BuilderClient::new(
+        cli,
+        CircuitsParams {
+            max_rws: 800000,
+            max_txs: 10,
+            max_calldata: 4000,
+            max_bytecode: 4000,
+            max_copy_rows: 800000,
+            max_evm_rows: 0,
+            max_exp_steps: 1000,
+            max_keccak_rows: 0,
+        },
+    )
+    .await
+    .unwrap();
+
+    // 1. Query geth for Block, Txs and TxExecTraces
+    let (eth_block, geth_trace, history_hashes, prev_state_root) =
+        cli.get_block(block_num).await.unwrap();
+
+    // 2. Get State Accesses from TxExecTraces
+    let access_set = get_state_accesses(&eth_block, &geth_trace).unwrap();
+    trace!("AccessSet: {:#?}", access_set);
+
+    // 3. Query geth for all accounts, storage keys, and codes from Accesses
+    let (proofs, codes) = cli.get_state(block_num, access_set).await.unwrap();
+
+    // 4. Build a partial StateDB from step 3
+    let (state_db, code_db) = build_state_code_db(proofs, codes);
+    trace!("StateDB: {:#?}", state_db);
+
+    // 5. For each step in TxExecTraces, gen the associated ops and state
+    // circuit inputs
+    let builder = cli
+        .gen_inputs_from_state(
+            state_db,
+            code_db,
+            &eth_block,
+            &geth_trace,
+            history_hashes,
+            prev_state_root,
+        )
+        .unwrap();
+
+    trace!("CircuitInputBuilder: {:#?}", builder);
+}
+
+/// Block explorer URL is https://explorer.internal.taiko.xyz
+/// The block that has only one anchor
+pub const TAIKO_BLOCK_ANCHOR_ONLY: u64 = 5368;
+/// The block that has ERC20 transfer
+pub const TAIKO_BLOCK_TRANSFER_SUCCEED: u64 = 1270;
 
 /// Common code for integration tests of circuits.
 pub mod integration_test_circuits;

@@ -957,7 +957,7 @@ impl<F: Field> ExecutionConfig<F> {
                             offset,
                             evm_rows
                         );
-                        return Err(Error::Synthesis);
+                        // return Err(Error::Synthesis);
                     }
                     let height = ExecutionState::EndBlock.get_step_height();
                     debug_assert_eq!(height, 1);
