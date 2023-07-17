@@ -9,3 +9,8 @@ jobs:
       - uses: actions/labeler@v3
         with:
           repo-token: "${{ secrets.GITHUB_TOKEN }}"
+
+permissions:
+  contents: 'read'
+  id-token: 'write'
+  issues: 'write' #__This fixed the HttpError: Resource not accessible by integration
