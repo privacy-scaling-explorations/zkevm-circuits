@@ -1,22 +1,44 @@
-# Circuits for zkEVM
+# zkEVM Circuits
 
-[![CI checks](https://github.com/privacy-scaling-explorations/zkevm-circuits/actions/workflows/ci.yml/badge.svg)](https://github.com/privacy-scaling-explorations/zkevm-circuits/actions/workflows/ci.yml)
+This repo contains all the zkEVM circuits code.
 
-Check out the work in progress [specification](https://github.com/privacy-scaling-explorations/zkevm-specs) to learn how it works.
+To learn about internal mechanics, please refer to [specification](https://github.com/privacy-scaling-explorations/zkevm-specs).
 
+## Code Structure
 
-## Getting started
-
-### Install Dependencies
 ```
-# install Golang
-# https://go.dev/doc/install
+.
+├── README.md
+├── bus-mapping               // a crate designed to parse EVM execution traces and manipulate all of the data they provide in order to obtain structured witness inputs for the EVM Proof and the State Proof.
+├── circuit-benchmarks        // Measures performance of each circuit based on proving and verifying time and execution trace parsing and generation for each subcircuit
+├── eth-types                 // Different types helpful for various components of the zkevm, such as execution trace parsing or circuits
+├── external-tracer           // Generates traces by connecting to an external tracer
+├── gadgets                   // Custom circuits that abstracts away low-level circuit detail. [What are gadgets?](https://zcash.github.io/halo2/concepts/gadgets.html)
+├── geth-utils                // Provides output from latest geth APIs (debug_trace) as test vectors
+├── integration-tests         // Integration tests for all circuits
+├── keccak256                 // Modules for Keccak hash circuit
+├── mock                      // Mock definitions and methods that are used to test circuits or opcodes
+├── testool                   // CLI that provides tools for testing
+├── zkevm-circuits            // Main package that contains all circuit logic
+├── prover                    // Main package that contains all circuit logic (TODO)
+└── zktrie                    // Modules for Merkle Patricia Trie circuit (TODO)
 ```
 
-### Testing
-To run the same tests as the CI, please use: `make test-all`.
+## Development
 
-## Running benchmarks
+### Run Tests
+
+```
+# install packages
+# install Golang: https://go.dev/doc/install
+```
+
+To run the same tests as the CI
+```
+make test-all
+```
+
+### Run Benchmarks
 
 There are currently several benchmarks to run in the workspace in regards to the circuits.
 All use the `DEGREE` env var to specify the degree of the `K` parameter that you want 
@@ -26,8 +48,6 @@ to use for your circuit in the bench process.
 -   State Circuit prover benches. -> `DEGREE=18 make state_bench`
 
 You can also run all benchmarks by running: `make circuit_benches DEGREE=18`.
-
-## GH Actions Benchmark Results
 
 Circuit Benchmark Results are accessible here: https://grafana.zkevm-testnet.org/d/vofy8DAVz/circuit-benchmarks?orgId=1
 
