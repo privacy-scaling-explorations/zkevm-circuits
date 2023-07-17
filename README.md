@@ -7,6 +7,13 @@ Check out the work in progress [specification](https://github.com/privacy-scalin
 
 ## Getting started
 
+### Install Dependencies
+```
+# install Golang
+# https://go.dev/doc/install
+```
+
+### Testing
 To run the same tests as the CI, please use: `make test-all`.
 
 ## Running benchmarks
