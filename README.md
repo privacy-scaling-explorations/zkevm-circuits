@@ -9,7 +9,8 @@ To learn about internal mechanics, please refer to [specification](https://githu
 ```
 .
 ├── README.md
-├── bus-mapping               // a crate designed to parse EVM execution traces and manipulate all of the data they provide in order to obtain structured witness inputs for the EVM Proof and the State Proof.
+├── aggregator                // An aggregation circuit takes in a batch of k proofs, each for a chunk of blocks. It generates a single proof asserting the validity of all the proofs (TODO)
+├── bus-mapping               // A crate designed to parse EVM execution traces and manipulate all of the data they provide in order to obtain structured witness inputs for the EVM Proof and the State Proof
 ├── circuit-benchmarks        // Measures performance of each circuit based on proving and verifying time and execution trace parsing and generation for each subcircuit
 ├── eth-types                 // Different types helpful for various components of the zkevm, such as execution trace parsing or circuits
 ├── external-tracer           // Generates traces by connecting to an external tracer
