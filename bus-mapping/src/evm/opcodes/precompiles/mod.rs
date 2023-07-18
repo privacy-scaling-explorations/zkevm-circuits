@@ -5,7 +5,7 @@ use eth_types::{
 use halo2_proofs::halo2curves::secp256k1::Fq;
 
 use crate::{
-    circuit_input_builder::{Call, CircuitInputStateRef, ExecState, ExecStep},
+    circuit_input_builder::{Call, CircuitInputStateRef, ExecState, ExecStep, PrecompileEvent},
     operation::CallContextField,
     precompile::{EcrecoverAuxData, PrecompileAuxData, PrecompileCalls},
     Error,
@@ -57,7 +57,7 @@ pub fn gen_associated_ops(
                     msg_hash: Fq::from_bytes(&aux_data.msg_hash.to_be_bytes()).unwrap(),
                 };
                 assert_eq!(aux_data.recovered_addr, sign_data.get_addr());
-                state.push_ecrecover(sign_data);
+                state.push_precompile_event(PrecompileEvent::Ecrecover(sign_data));
             }
         }
 
