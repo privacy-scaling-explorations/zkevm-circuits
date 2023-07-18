@@ -1,41 +1,48 @@
 <HTML>
+
 <HEAD>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/skeleton-framework/1.1.1/skeleton.css">
-<style>
-table#table tr th:first-child { display: none; }
-table#table tr td:first-child { display: none; }
-</style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/skeleton-framework/1.1.1/skeleton.css">
+    <style>
+        table#table tr th:first-child {
+            display: none;
+        }
+
+        table#table tr td:first-child {
+            display: none;
+        }
+    </style>
 </HEAD>
+
 <BODY>
 
-<H1>Report</H1>
-This file contains:<br>
-<ul>
-<li><a href="#diffs">Diffs from previous commit</a></li>
-<li><a href="#by_folder">Results by folder</a></li>
-<li><a href="#by_type"> Top results by type</a></li>
-<li><a href="#all"> All results</a></li>
-</ul>
+    <H1>Report</H1>
+    This file contains:<br>
+    <ul>
+        <li><a href="#diffs">Diffs from previous commit</a></li>
+        <li><a href="#by_folder">Results by folder</a></li>
+        <li><a href="#by_type"> Top results by type</a></li>
+        <li><a href="#all"> All results</a></li>
+    </ul>
 
-<H2 id="diffs">Diffs</H2>
-{{{ diffs }}}
+    <H2 id="diffs">Diffs</H2>
+    {{{ diffs }}}
 
-<H2 id="by_folder">Results by folder</H2>
-{{{ by_folder }}}
+    <H2 id="by_folder">Results by folder</H2>
+    {{{ by_folder }}}
 
-<H2 id="by_type">Results by type</H2>
-{{{ by_result }}}
+    <H2 id="by_type">Results by type</H2>
+    {{{ by_result }}}
 
-<H2 id="all">All results</H2>
-<table id="table">
-<tr>
-    <th>id</th>
-    <th>test_id</th>
-    <th>level</th>
-    <th>details</th>
-    <th>path</th>
-</tr>
-{{#each all_results as |result|}}
+    <H2 id="all">All results</H2>
+    <table id="table">
+        <tr>
+            <th>id</th>
+            <th>test_id</th>
+            <th>level</th>
+            <th>details</th>
+            <th>path</th>
+        </tr>
+        {{#each all_results as |result|}}
         <tr>
             <td>
                 {{@key}}
@@ -55,6 +62,8 @@ This file contains:<br>
                 </a>
             </td>
         </tr>
-{{/each}}
-</table>
+        {{/each}}
+    </table>
 </BODY>
+
+</HTML>
