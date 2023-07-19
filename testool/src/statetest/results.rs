@@ -1,3 +1,4 @@
+use crate::assets::TEMPLATE;
 use anyhow::Result;
 use handlebars::Handlebars;
 use prettytable::{row, Row, Table};
@@ -144,7 +145,6 @@ impl Report {
         Ok(())
     }
     pub fn gen_html(&self, githash: String) -> Result<String> {
-        let template = include_str!("report.handlebars");
         let reg = Handlebars::new();
         let mut by_folder = Vec::new();
         let mut by_result = Vec::new();
@@ -174,7 +174,7 @@ impl Report {
                 "githash": githash,
         });
 
-        let html = reg.render_template(template, data)?;
+        let html = reg.render_template(TEMPLATE, data)?;
         Ok(html)
     }
 }
