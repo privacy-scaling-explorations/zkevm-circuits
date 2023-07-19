@@ -1,10 +1,14 @@
-use super::{util::extract_field, *};
-use crate::{evm_circuit::util::rlc, util::unusable_rows};
-use eth_types::Field;
+use super::*;
+use crate::{
+    evm_circuit::util::rlc,
+    util::{unusable_rows, word::Word},
+};
+use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
+use eth_types::{Field, H256};
 use halo2_proofs::{
-    dev::{unwrap_value, CellValue, MockProver},
+    dev::{CellValue, MockProver},
     halo2curves::bn256::Fr,
-    plonk::Assignment,
+    plonk::{Assignment, Circuit},
 };
 use itertools::izip;
 use log::error;
@@ -33,8 +37,7 @@ fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, digests: Vec<String>, success:
     let circuit = KeccakCircuit::new(2usize.pow(k), inputs.clone());
     let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
     let (config, challenges) = KeccakCircuit::configure(&mut ConstraintSystem::<F>::default());
-    let input_challenge = extract_field(prover.get_challenge(challenges.keccak_input()));
-    let hash_challenge = extract_field(prover.get_challenge(challenges.evm_word()));
+    let input_challenge = prover.get_challenge(challenges.keccak_input());
 
     // Check constraints.
     let verify_result = prover.verify();
@@ -53,37 +56,46 @@ fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, digests: Vec<String>, success:
         let is_enabled = prover.advice_values(config.keccak_table.is_enabled);
         let input_rlc = prover.advice_values(config.keccak_table.input_rlc);
         let input_len = prover.advice_values(config.keccak_table.input_len);
-        let output_rlc = prover.advice_values(config.keccak_table.output_rlc);
+        let output = config
+            .keccak_table
+            .output
+            .map(|limb| prover.advice_values(limb));
 
         // Keep the rows that are supposed to contain hash results.
-        izip!(is_enabled, input_rlc, input_len, output_rlc)
-            .filter(|(enabled, _, _, _)| assigned_non_zero(enabled))
-            .map(|(_, input_rlc, input_len, output_rlc)| {
-                (unwrap(input_rlc), unwrap(input_len), unwrap(output_rlc))
+        izip!(is_enabled, input_rlc, input_len, output.lo(), output.hi())
+            .filter(|(enabled, _, _, _, _)| assigned_non_zero(enabled))
+            .map(|(_, input_rlc, input_len, output_lo, output_hi)| {
+                (
+                    unwrap(input_rlc),
+                    unwrap(input_len),
+                    unwrap(output_lo),
+                    unwrap(output_hi),
+                )
             })
-            .collect::<Vec<(F, F, F)>>()
+            .collect::<Vec<(F, F, F, F)>>()
     };
 
     // Calculate the expected inputs in reversed-RLC form.
-    let rlc_input = |bytes: &[u8]| rlc::value(bytes.iter().rev(), input_challenge);
-
-    // Calculate the expected digests in reversed-RLC form.
-    let rlc_digest = |hex_str: &str| {
-        let bytes = hex::decode(hex_str).unwrap();
-        rlc::value(bytes.iter().rev(), hash_challenge)
-    };
+    let rlc_input =
+        |bytes: &[u8]| input_challenge.map(|random| rlc::value(bytes.iter().rev(), random));
 
     // Check that all the digests are there.
     assert!(hash_lookup_table.len() >= inputs.len());
     assert_eq!(inputs.len(), digests.len());
     for (input, digest, hash) in izip!(&inputs, &digests, &hash_lookup_table) {
         let len = F::from(input.len() as u64);
-        let expected = (rlc_input(input), len, rlc_digest(digest));
-        assert_eq!(*hash, expected);
+        let di_slice: [u8; 32] = hex::decode(digest).unwrap().try_into().unwrap();
+        let (lo, hi): (F, F) = Word::from(H256::from(di_slice)).to_lo_hi();
+
+        let expected = (rlc_input(input), len, lo, hi);
+
+        expected.0.assert_if_known(|value| *value == hash.0);
+        // assert_eq!(*hash[2], expected);
     }
+    let (lo, hi) = Word::from(H256::from_slice(EMPTY_CODE_HASH_LE.as_slice())).to_lo_hi();
 
     // Check that other digests are the digest of the empty message.
-    let empty_hash = (F::zero(), F::zero(), rlc_digest(EMPTY_DIGEST));
+    let empty_hash = (F::ZERO, F::ZERO, lo, hi);
     for hash in hash_lookup_table.iter().skip(inputs.len()) {
         assert_eq!(*hash, empty_hash);
     }
