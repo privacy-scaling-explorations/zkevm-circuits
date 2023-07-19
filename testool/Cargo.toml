@@ -29,7 +29,7 @@ strum_macros = "0.24"
 thiserror = "1.0"
 toml = "0.5"
 yaml-rust = "0.4.5"
-zkevm-circuits = { path="../zkevm-circuits", features=["test-util"] }
+zkevm-circuits = { path="../zkevm-circuits", features=["test-util", "test-circuits"] }
 rand_chacha = "0.3"
 rand = "0.8"
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_04_20" }
