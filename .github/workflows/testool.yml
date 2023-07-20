@@ -1,0 +1,48 @@
+name: Testool
+
+on:
+  #push:
+  workflow_dispatch:
+    inputs:
+      suites:
+        description: "Suites"
+        required: true
+        default: "light"
+        type: choice
+        options:
+          - light
+          - nightly
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  testool:
+    if: github.event.pull_request.draft == false
+
+    name: Testool
+    runs-on: [cirunner]
+    env:
+      DATA: ${{ github.event.inputs.suites || 'light' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          persist-credentials: false
+
+      - name: Wakeup testool
+        run: .github/testoolScripts/wakeUpRunner.sh
+
+      - name: Prepare repo
+        run: ssh testool "bash -s" -- < .github/testoolScripts/prepare.sh "$GITHUB_REF_NAME"
+
+      - name: Cargo build
+        run: ssh testool "bash -s" -- < .github/testoolScripts/build.sh
+
+      - name: Run tests
+        run: ssh testool "bash -s" -- < .github/testoolScripts/run.sh ${{ env.DATA }}
+
+      - name: Sync reports
+        run: ssh testool "bash -s" -- < .github/testoolScripts/sync.sh
