@@ -7,6 +7,10 @@ error() {
 
 trap 'error' ERR
 
-aws s3 sync report/ s3://testool-public/
+cd report
+rm index.html
+for i in `ls -r *.html`; do echo "<a href=\"$i\">$i</a> <br>" >> index.html; done
+
+aws s3 sync . s3://testool-public/
 
 exit 0
