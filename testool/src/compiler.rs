@@ -291,7 +291,14 @@ impl Compiler {
         let compiler_input = CompilerInput::new_default(language, src);
 
         let stdout = Self::exec(
-            &["run", "-i", "--rm", "solc", "--standard-json", "-"],
+            &[
+                "run",
+                "-i",
+                "--rm",
+                "ethereum/solc:stable",
+                "--standard-json",
+                "-",
+            ],
             serde_json::to_string(&compiler_input).unwrap().as_str(),
         )?;
         let mut compilation_result: CompilationResult = serde_json::from_str(&stdout)?;
