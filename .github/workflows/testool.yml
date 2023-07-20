@@ -2,8 +2,7 @@ name: Testool
 
 on:
   schedule:
-    #- cron: '30 11 * * *'
-    - cron: '*/5 * * * *'
+    - cron: '30 23 * * *'
   workflow_dispatch:
     inputs:
       suites:
