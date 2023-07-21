@@ -6,6 +6,14 @@ To use it, just compile with `cargo build --release` and run `../target/release/
 
 This tool at this moment has 2 main functionalities: run raw bytecode and run ethereum tests.
 
+
+## Setup docker
+
+Code is precompiled and kept in the `codehash.txt`` file, if you need to compile more code (mainly because you are updating the testspecs commit), you have to setup docker:
+
+- `docker build docker/lllc -t lllc`
+- `docker build docker/solc -t solc`
+
 ## Run oneliner spec
 
 The oneliner spec is invoked by using `--oneliner` parameter
