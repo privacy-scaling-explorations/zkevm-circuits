@@ -77,19 +77,19 @@ fn check_post(
         }
 
         if let Some(expected_code) = &expected.code {
-            let actual_code = if actual.code_hash.is_zero() {
-                vec![]
-            } else {
-                builder
-                    .code_db
-                    .get(&actual.code_hash)
-                    .cloned()
-                    .expect("code exists")
-            };
-            if &actual_code as &[u8] != expected_code.0 {
+            let actual_code = (!actual.code_hash.is_zero())
+                .then(|| {
+                    builder
+                        .code_db
+                        .get(&actual.code_hash)
+                        .cloned()
+                        .expect("code exists")
+                })
+                .unwrap_or_default();
+            if actual_code != expected_code.0 {
                 return Err(StateTestError::CodeMismatch {
                     expected: expected_code.clone(),
-                    found: Bytes::from(actual_code.to_vec()),
+                    found: Bytes::from(actual_code),
                 });
             }
         }
