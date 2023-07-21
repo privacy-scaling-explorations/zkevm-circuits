@@ -49,4 +49,5 @@ jobs:
         run: ssh testool "bash -s" -- < .github/testoolScripts/sync.sh
 
       - name: Cleanup
-        run: ssh testool "bash -s" -- < .github/testoolScripts/cleanup.sh
+        run: .github/testoolScripts/cleanup.sh
+
