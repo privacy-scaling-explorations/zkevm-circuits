@@ -23,7 +23,7 @@ jobs:
     if: github.event.pull_request.draft == false
 
     name: Testool
-    runs-on: [cirunner]
+    runs-on: [pse-runner]
     env:
       DATA: ${{ github.event.inputs.suites || 'nightly' }}
 
