@@ -126,7 +126,7 @@ impl<F: Field> From<Vec<Bytecode>> for BytecodeCircuitAssignment<F> {
 impl<F: Field> From<CodeDB> for BytecodeCircuitAssignment<F> {
     fn from(code_db: CodeDB) -> Self {
         // CodeDB use hash maps, so the bytecodes will be reordered.
-        code_db.to_raw().into()
+        code_db.into_iter().collect_vec().into()
     }
 }
 

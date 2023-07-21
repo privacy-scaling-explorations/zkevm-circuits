@@ -437,8 +437,8 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
     let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.deref().clone()).collect();
     keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs, block.chain_id.as_u64())?);
     // Bytecode Circuit
-    for bytecode in code_db.to_raw() {
-        keccak_inputs.push(bytecode.clone());
+    for bytecode in code_db.clone().into_iter() {
+        keccak_inputs.push(bytecode.code());
     }
     // EVM Circuit
     keccak_inputs.extend_from_slice(&block.sha3_inputs);

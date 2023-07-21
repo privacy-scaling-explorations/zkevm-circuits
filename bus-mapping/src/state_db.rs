@@ -62,11 +62,6 @@ impl CodeDB {
     pub fn get_from_word(&self, codehash: &Word) -> Option<Bytecode> {
         self.get_bytecode(&H256::from_uint(codehash))
     }
-
-    /// Get raw bytes
-    pub fn to_raw(&self) -> Vec<Vec<u8>> {
-        self.0.values().cloned().collect_vec()
-    }
 }
 
 impl From<Vec<Vec<u8>>> for CodeDB {
