@@ -76,7 +76,11 @@ jobs:
         with:
           command: test
           args: --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks serial_ -- --ignored --test-threads 1
-
+      - name: Run testool internal tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --release --manifest-path testool/Cargo.toml
   build:
     needs: [skip_check]
     if: |
