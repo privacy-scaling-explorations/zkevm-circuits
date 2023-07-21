@@ -57,8 +57,8 @@ pub(crate) struct BeginTxGadget<F> {
     nonce: Cell<F>,
     nonce_prev: Cell<F>,
     is_nonce_valid: IsEqualGadget<F>,
-    effective_gas_fee: Word<F>,
-    effective_tx_value: Word<F>,
+    effective_gas_fee: Word32Cell<F>,
+    effective_tx_value: Word32Cell<F>,
     tx_call_data_word_length: ConstantDivisionGadget<F, N_BYTES_U64>,
     reversion_info: ReversionInfo<F>,
     is_gas_not_enough: LtGadget<F, N_BYTES_GAS>,
@@ -70,7 +70,7 @@ pub(crate) struct BeginTxGadget<F> {
     callee_not_exists: IsZeroWordGadget<F, WordCell<F>>,
     is_caller_callee_equal: Cell<F>,
     total_eth_cost: AddWordsGadget<F, 2, true>,
-    total_eth_cost_sum: Word<F>,
+    total_eth_cost_sum: Word32Cell<F>,
     balance_not_enough: LtWordGadget<F>,
     // EIP-3651 (Warm COINBASE)
     coinbase: WordCell<F>,
@@ -258,25 +258,25 @@ Word::from_lo_unchecked(nonce_prev.expr()),
         cb.condition(tx_is_invalid.expr(), |cb| {
             cb.require_equal(
                 "effective_tx_value == 0",
-                effective_tx_value.clone().to_word(),
+                effective_tx_value.clone().to_word().lo(),
                 0.expr(),
             );
             cb.require_equal(
                 "effective_gas_fee == 0",
-                effective_gas_fee.clone().to_word(),
+                effective_gas_fee.clone().to_word().lo(),
                 0.expr(),
             );
         });
         cb.condition(not::expr(tx_is_invalid.expr()), |cb| {
             cb.require_equal(
                 "effective_tx_value == tx_value",
-                effective_tx_value.expr(),
-                tx_value.expr(),
+                effective_tx_value.to_word().lo(),
+                tx_value.to_word().lo(),
             );
             cb.require_equal(
                 "effective_gas_fee == gas_fee",
-                effective_gas_fee.expr(),
-                mul_gas_fee_by_gas.product().expr(),
+                effective_gas_fee.to_word().lo(),
+                mul_gas_fee_by_gas.product().to_word().lo(),
             );
         });
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
@@ -296,14 +296,17 @@ Word::from_lo_unchecked(nonce_prev.expr()),
 
         // Check if the account ETH balance is sufficient
         let sender_balance_prev = transfer_with_gas_fee.sender_sub_fee.balance_prev();
-        let total_eth_cost_sum = cb.query_word_rlc();
+        let total_eth_cost_sum = cb.query_word32();
         let total_eth_cost = AddWordsGadget::construct(
             cb,
             [tx_value.clone(), mul_gas_fee_by_gas.product().clone()],
             total_eth_cost_sum.clone(),
         );
         let balance_not_enough =
-            LtWordGadget::construct(cb, sender_balance_prev, total_eth_cost.sum());
+            LtWordGadget::construct(cb,
+                &Word::from_lo_unchecked(sender_balance_prev.to_word().lo()),
+                &Word::from_lo_unchecked(total_eth_cost.sum().to_word().lo())
+            );
 
         // Check if the `is_invalid` value in the tx table is correct.
         // A transaction is invalid when
