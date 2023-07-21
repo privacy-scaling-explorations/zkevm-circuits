@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! The Read-Write table related structs
 use std::collections::HashMap;
 
 use bus_mapping::{
@@ -152,6 +152,10 @@ impl RwMap {
     }
 }
 
+#[allow(
+    missing_docs,
+    reason = "Some of the docs are tedious and can be found at https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/tables.md"
+)]
 /// Read-write records in execution. Rws are used for connecting evm circuit and
 /// state circuits.
 #[derive(Clone, Copy, Debug)]
@@ -236,11 +240,12 @@ pub enum Rw {
         tx_id: usize,
         log_id: u64, // pack this can index together into address?
         field_tag: TxLogFieldTag,
-        // topic index (0..4) if field_tag is TxLogFieldTag:Topic
-        // byte index if field_tag is TxLogFieldTag:Data
-        // 0 for other field tags
+        /// index has 3 usages depends on [`crate::table::TxLogFieldTag`]
+        /// - topic index (0..4) if field_tag is TxLogFieldTag::Topic
+        /// - byte index if field_tag is TxLogFieldTag:Data
+        /// - 0 for other field tags
         index: usize,
-        // when it is topic field, value can be word type
+        /// when it is topic field, value can be word type
         value: Word,
     },
     /// TxReceipt
@@ -294,10 +299,6 @@ impl<F: Field> RwRow<F> {
             .iter()
             .rev()
             .fold(F::ZERO, |acc, value| acc * randomness + value)
-    }
-
-    pub(crate) fn rlc_value(&self, randomness: Value<F>) -> Value<F> {
-        randomness.map(|randomness| self.rlc(randomness))
     }
 }
 
@@ -399,13 +400,6 @@ impl Rw {
     pub(crate) fn stack_value(&self) -> Word {
         match self {
             Self::Stack { value, .. } => *value,
-            _ => unreachable!(),
-        }
-    }
-
-    pub(crate) fn log_value(&self) -> Word {
-        match self {
-            Self::TxLog { value, .. } => *value,
             _ => unreachable!(),
         }
     }

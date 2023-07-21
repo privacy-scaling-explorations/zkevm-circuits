@@ -23,10 +23,15 @@ use std::{iter, marker::PhantomData, rc::Rc};
 
 mod aggregation;
 
-#[cfg(any(feature = "test", test))]
+#[cfg(any(test, feature = "test-circuits"))]
+mod dev;
+#[cfg(test)]
 mod test;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(feature = "test-circuits")]
 pub use self::RootCircuit as TestRootCircuit;
+
+#[cfg(any(feature = "test-circuits", test))]
+pub use dev::TestAggregationCircuit;
 
 pub use aggregation::{
     aggregate, AggregationConfig, EccChip, Gwc, Halo2Loader, KzgDk, KzgSvk, PlonkSuccinctVerifier,
@@ -36,9 +41,6 @@ pub use snark_verifier::{
     loader::native::NativeLoader,
     system::halo2::{compile, transcript::evm::EvmTranscript, Config},
 };
-
-#[cfg(any(feature = "test", test))]
-pub use aggregation::TestAggregationCircuit;
 
 /// RootCircuit for aggregating SuperCircuit into a much smaller proof.
 #[derive(Clone)]

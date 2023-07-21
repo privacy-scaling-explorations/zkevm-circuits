@@ -1,14 +1,14 @@
 //! Public Input Circuit implementation
 mod param;
 
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(any(test, feature = "test-circuits"))]
 mod dev;
-#[cfg(any(feature = "test", test))]
+#[cfg(test)]
 mod test;
 use std::{cmp::min, iter, marker::PhantomData};
 
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-pub use dev::PiCircuit as TestPiCircuit;
+#[cfg(feature = "test-circuits")]
+pub use PiCircuit as TestPiCircuit;
 
 use eth_types::{self, Field, ToLittleEndian};
 use halo2_proofs::plonk::{Expression, Instance, SecondPhase};
@@ -44,9 +44,6 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
     poly::Rotation,
 };
-
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// Config for PiCircuit
 #[derive(Clone, Debug)]

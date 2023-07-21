@@ -50,7 +50,6 @@ pub(crate) struct BeginTxGadget<F> {
     tx_callee_address: WordCell<F>,
     call_callee_address: AccountAddress<F>,
     tx_is_create: Cell<F>,
-    tx_value: Word32Cell<F>,
     tx_call_data_length: Cell<F>,
     tx_call_data_gas_cost: Cell<F>,
     tx_is_invalid: Cell<F>,
@@ -91,6 +90,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let call_id = cb.curr.state.rw_counter.clone();
 
         let tx_id = cb.query_cell(); // already constrain `if step_first && tx_id = 1` and `tx_id += 1` at EndTx
+
+        cb.debug_expression("tx_id", tx_id.expr());
         cb.call_context_lookup_write(
             Some(call_id.expr()),
             CallContextFieldTag::TxId,
@@ -102,6 +103,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             CallContextFieldTag::IsSuccess,
             Word::from_lo_unchecked(reversion_info.is_persistent()),
         ); // rwc_delta += 1
+        cb.debug_expression(format!("call_id {}", 3), call_id.expr());
 
         let [tx_nonce, tx_gas, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, tx_is_invalid, tx_access_list_gas_cost] =
             [
@@ -569,7 +571,6 @@ Word::from_lo_unchecked(nonce_prev.expr()),
             tx_callee_address,
             call_callee_address,
             tx_is_create,
-            tx_value,
             tx_call_data_length,
             tx_call_data_gas_cost,
             tx_is_invalid,

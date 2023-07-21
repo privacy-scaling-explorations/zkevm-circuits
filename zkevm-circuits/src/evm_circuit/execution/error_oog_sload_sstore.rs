@@ -367,10 +367,7 @@ mod test {
     #[derive(Default)]
     struct TestingData {
         key: U256,
-        value: U256,
-        value_prev: U256,
         original_value: U256,
-        is_warm: bool,
         gas_cost: u64,
         bytecode: Bytecode,
     }
@@ -443,10 +440,7 @@ mod test {
 
             Self {
                 key,
-                value,
-                value_prev,
                 original_value,
-                is_warm,
                 gas_cost,
                 bytecode,
             }

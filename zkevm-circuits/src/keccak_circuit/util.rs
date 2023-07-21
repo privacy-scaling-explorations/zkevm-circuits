@@ -2,7 +2,6 @@
 
 use super::{keccak_packed_multi::keccak_unusable_rows, param::*};
 use eth_types::{Field, ToScalar, Word};
-use halo2_proofs::circuit::Value;
 use std::env::var;
 
 /// Description of which bits (positions) a part contains
@@ -78,13 +77,6 @@ pub(crate) fn rotate_rev<T>(parts: Vec<T>, count: usize, part_size: usize) -> Ve
     let mut rotated_parts = parts;
     rotated_parts.rotate_left(get_rotate_count(count, part_size));
     rotated_parts
-}
-
-/// Rotates bits left
-pub(crate) fn rotate_left(bits: &[u8], count: usize) -> [u8; NUM_BITS_PER_WORD] {
-    let mut rotated = bits.to_vec();
-    rotated.rotate_left(count);
-    rotated.try_into().unwrap()
 }
 
 /// The words that absorb data
@@ -233,31 +225,6 @@ pub(crate) fn get_num_bits_per_lookup_impl(range: usize, log_height: usize) -> u
     num_bits as usize
 }
 
-pub(crate) fn extract_field<F: Field>(value: Value<F>) -> F {
-    let mut field = F::ZERO;
-    let _ = value.map(|f| {
-        field = f;
-        f
-    });
-    field
-}
-
-/// Encodes the data using rlc
-pub(crate) mod compose_rlc {
-    use eth_types::Field;
-    use halo2_proofs::plonk::Expression;
-
-    pub(crate) fn expr<F: Field>(expressions: &[Expression<F>], r: Expression<F>) -> Expression<F> {
-        let mut rlc = expressions[0].clone();
-        let mut multiplier = r.clone();
-        for expression in expressions[1..].iter() {
-            rlc = rlc + expression.clone() * multiplier.clone();
-            multiplier = multiplier * r.clone();
-        }
-        rlc
-    }
-}
-
 /// Scatters a value into a packed word constant
 pub(crate) mod scatter {
     use super::pack;
@@ -271,24 +238,6 @@ pub(crate) mod scatter {
 
 /// Packs bits into bytes
 pub(crate) mod to_bytes {
-    use eth_types::Field;
-    use gadgets::util::Expr;
-    use halo2_proofs::plonk::Expression;
-
-    pub(crate) fn expr<F: Field>(bits: &[Expression<F>]) -> Vec<Expression<F>> {
-        debug_assert!(bits.len() % 8 == 0, "bits not a multiple of 8");
-        let mut bytes = Vec::new();
-        for byte_bits in bits.chunks(8) {
-            let mut value = 0.expr();
-            let mut multiplier = F::ONE;
-            for byte in byte_bits.iter() {
-                value = value + byte.expr() * multiplier;
-                multiplier *= F::from(2);
-            }
-            bytes.push(value);
-        }
-        bytes
-    }
 
     pub(crate) fn value(bits: &[u8]) -> Vec<u8> {
         debug_assert!(bits.len() % 8 == 0, "bits not a multiple of 8");

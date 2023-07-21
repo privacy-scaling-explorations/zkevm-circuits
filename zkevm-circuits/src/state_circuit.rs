@@ -5,12 +5,12 @@ mod lookups;
 mod multiple_precision_integer;
 mod param;
 
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(any(test, feature = "test-circuits"))]
 mod dev;
-#[cfg(any(feature = "test", test))]
+#[cfg(test)]
 mod test;
 use bus_mapping::operation::Target;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(feature = "test-circuits")]
 pub use dev::StateCircuit as TestStateCircuit;
 
 use self::{
@@ -42,7 +42,7 @@ use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries a
 use param::*;
 use std::marker::PhantomData;
 
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(test)]
 use std::collections::HashMap;
 
 /// Config for StateCircuit
@@ -69,12 +69,6 @@ pub struct StateCircuitConfig<F> {
     lookups: LookupsConfig,
     // External tables
     mpt_table: MptTable,
-    // External U8Table
-    u8_table: UXTable<8>,
-    // External U10Table
-    u10_table: UXTable<10>,
-    // External U16Table
-    u16_table: UXTable<16>,
     _marker: PhantomData<F>,
 }
 
@@ -174,9 +168,6 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             lookups,
             rw_table,
             mpt_table,
-            u8_table,
-            u10_table,
-            u16_table,
             _marker: PhantomData::default(),
         };
 
@@ -427,8 +418,6 @@ impl SortKeysConfig {
     }
 }
 
-type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
-
 /// State Circuit for proving RwTable is valid
 #[derive(Default, Clone, Debug)]
 pub struct StateCircuit<F> {
@@ -436,7 +425,7 @@ pub struct StateCircuit<F> {
     pub rows: Vec<Rw>,
     updates: MptUpdates,
     pub(crate) n_rows: usize,
-    #[cfg(any(feature = "test", test, feature = "test-circuits"))]
+    #[cfg(test)]
     overrides: HashMap<(dev::AdviceColumn, isize), F>,
     _marker: PhantomData<F>,
 }
@@ -450,7 +439,7 @@ impl<F: Field> StateCircuit<F> {
             rows,
             updates,
             n_rows,
-            #[cfg(any(feature = "test", test, feature = "test-circuits"))]
+            #[cfg(test)]
             overrides: HashMap::new(),
             _marker: PhantomData::default(),
         }
@@ -498,7 +487,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     .load_with_region(&mut region, &self.rows, self.n_rows)?;
 
                 config.assign_with_region(&mut region, &self.rows, &self.updates, self.n_rows)?;
-                #[cfg(any(feature = "test", test, feature = "test-circuits"))]
+                #[cfg(test)]
                 {
                     let first_non_padding_index = if self.rows.len() < self.n_rows {
                         RwMap::padding_len(self.rows.len(), self.n_rows)

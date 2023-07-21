@@ -1,8 +1,7 @@
-#![allow(unused_imports)]
 use crate::{
     bytecode_circuit::{bytecode_unroller::*, circuit::BytecodeCircuit},
     table::BytecodeFieldTag,
-    util::{is_push, keccak, unusable_rows, Challenges, SubCircuit},
+    util::{is_push, keccak, unusable_rows, SubCircuit},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Bytecode, Field, Word};
