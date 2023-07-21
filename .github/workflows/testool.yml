@@ -47,3 +47,6 @@ jobs:
 
       - name: Sync reports
         run: ssh testool "bash -s" -- < .github/testoolScripts/sync.sh
+
+      - name: Cleanup
+        run: ssh testool "bash -s" -- < .github/testoolScripts/cleanup.sh
