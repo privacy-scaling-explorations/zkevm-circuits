@@ -189,11 +189,11 @@ impl TxTable {
                         ),
                         (
                             TxContextFieldTag::TxInvalid,
-                            word::Word::from(tx.is_create()),
+                            word::Word::from(tx.invalid_tx),
                         ),
                         (
                             TxContextFieldTag::AccessListGasCost,
-                            word::Word::from(tx.is_create()),
+                            word::Word::from(tx.access_list_gas_cost),
                         )
                     ]
                     .iter()

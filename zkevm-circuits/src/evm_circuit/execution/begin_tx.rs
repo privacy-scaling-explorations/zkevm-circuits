@@ -61,7 +61,7 @@ pub(crate) struct BeginTxGadget<F> {
     effective_tx_value: Word<F>,
     tx_call_data_word_length: ConstantDivisionGadget<F, N_BYTES_U64>,
     reversion_info: ReversionInfo<F>,
-    // is_gas_not_enough: LtGadget<F, N_BYTES_GAS>,
+    is_gas_not_enough: LtGadget<F, N_BYTES_GAS>,
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     code_hash: WordCell<F>,
     is_empty_code_hash: IsEqualWordGadget<F, Word<Expression<F>>, Word<Expression<F>>>,
@@ -193,7 +193,7 @@ Word::from_lo_unchecked(nonce_prev.expr()),
 
         // Check gas_left is sufficient
         let gas_left = tx_gas.expr() - intrinsic_gas_cost.clone();
-        // let is_gas_not_enough = LtGadget::construct(cb, tx_gas.expr(), intrinsic_gas_cost);
+        let is_gas_not_enough = LtGadget::construct(cb, tx_gas.expr(), intrinsic_gas_cost);
 
         // Prepare access list of caller and callee
         cb.account_access_list_write_unchecked(
@@ -258,12 +258,12 @@ Word::from_lo_unchecked(nonce_prev.expr()),
         cb.condition(tx_is_invalid.expr(), |cb| {
             cb.require_equal(
                 "effective_tx_value == 0",
-                effective_tx_value.clone(),
+                effective_tx_value.clone().to_word(),
                 0.expr(),
             );
             cb.require_equal(
                 "effective_gas_fee == 0",
-                effective_gas_fee.clone().expr(),
+                effective_gas_fee.clone().to_word(),
                 0.expr(),
             );
         });
@@ -314,7 +314,7 @@ Word::from_lo_unchecked(nonce_prev.expr()),
             "is_tx_invalid is correct",
             or::expr([
                 balance_not_enough.expr(),
-                // is_gas_not_enough.expr(),
+                is_gas_not_enough.expr(),
                 not::expr(is_nonce_valid.expr()),
             ]),
             tx_is_invalid.expr(),
@@ -582,7 +582,7 @@ Word::from_lo_unchecked(nonce_prev.expr()),
             effective_tx_value,
             tx_call_data_word_length,
             reversion_info,
-            // is_gas_not_enough,
+            is_gas_not_enough,
             transfer_with_gas_fee,
             code_hash,
             is_empty_code_hash,
@@ -692,7 +692,7 @@ Word::from_lo_unchecked(nonce_prev.expr()),
         self.is_nonce_valid.assign(
             region,
             offset,
-            tx.nonce.to_scalar().unwrap(),
+            tx.nonce.to_word().to_scalar().unwrap(),
             nonce_prev.to_scalar().unwrap(),
         )?;
 
@@ -705,15 +705,15 @@ Word::from_lo_unchecked(nonce_prev.expr()),
             call.is_persistent,
         )?;
         let intrinsic_gas = select::value(
-            F::from(tx.is_create as u64),
+            F::from(tx.is_create() as u64),
             F::from(GasCost::CREATION_TX),
             F::from(GasCost::TX),
-        ) + F::from(tx.call_data_gas_cost)
+        ) + F::from(tx.call_data_gas_cost())
             + F::from(tx.access_list_gas_cost);
 
         // Check gas_left is sufficient
-        // self.is_gas_not_enough
-        //     .assign(region, offset, F::from(tx.gas()), intrinsic_gas)?;
+        self.is_gas_not_enough
+            .assign(region, offset, F::from(tx.gas()), intrinsic_gas)?;
 
         // Transfer value from caller to callee, creating account if necessary.
         let (intrinsic_tx_value, intrinsic_gas_fee) = if !tx.invalid_tx {
