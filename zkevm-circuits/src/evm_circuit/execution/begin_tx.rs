@@ -1146,7 +1146,7 @@ mod test {
     }
 
     #[test]
-    // #[should_panic]
+    #[should_panic]
     fn begin_tx_disable_skipping_invalid_tx_invalid_nonce() {
         begin_tx_invalid_nonce(false);
     }
@@ -1194,7 +1194,8 @@ mod test {
                     .to(to)
                     .from(from)
                     .nonce(1)
-                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
+                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx)
+                    .overwrite_nonce(true);
             },
             |block, _| block,
         )

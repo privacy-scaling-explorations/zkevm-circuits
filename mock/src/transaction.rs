@@ -138,6 +138,7 @@ pub struct MockTransaction {
     pub max_fee_per_gas: Word,
     pub chain_id: Word,
     pub enable_skipping_invalid_tx: bool,
+    pub overwrite_nonce: bool,
 }
 
 impl Default for MockTransaction {
@@ -163,6 +164,7 @@ impl Default for MockTransaction {
             max_fee_per_gas: Word::zero(),
             chain_id: *MOCK_CHAIN_ID,
             enable_skipping_invalid_tx: false,
+            overwrite_nonce: false,
         }
     }
 }
@@ -285,6 +287,12 @@ impl MockTransaction {
     /// Set enable_skipping_invalid_tx field for the MockTransaction.
     pub fn enable_skipping_invalid_tx(&mut self, enable_skipping_invalid_tx: bool) -> &mut Self {
         self.enable_skipping_invalid_tx = enable_skipping_invalid_tx;
+        self
+    }
+
+    /// Set overwrite_nonce field for the MockTransaction.
+    pub fn overwrite_nonce(&mut self, overwrite_nonce: bool) -> &mut Self {
+        self.overwrite_nonce = overwrite_nonce;
         self
     }
 

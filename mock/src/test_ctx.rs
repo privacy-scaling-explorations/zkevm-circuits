@@ -146,7 +146,9 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
                 .iter()
                 .find_position(|acc| acc.address == tx.from.address())
             {
-                tx.nonce(from_acc.nonce + acc_tx_count[pos]);
+                if !tx.overwrite_nonce {
+                    tx.nonce(from_acc.nonce + acc_tx_count[pos]);
+                }
                 acc_tx_count[pos] += 1;
             }
         });
