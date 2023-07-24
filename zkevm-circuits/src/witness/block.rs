@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-
+use super::{ExecStep, Rw, RwMap, Transaction};
 use crate::{
     evm_circuit::{detect_fixed_table_tags, EvmCircuit},
     exp_circuit::param::OFFSET_INCREMENT,
@@ -9,12 +8,11 @@ use crate::{
 };
 use bus_mapping::{
     circuit_input_builder::{self, CopyEvent, ExpEvent, FixedCParams},
+    state_db::CodeDB,
     Error,
 };
 use eth_types::{Address, Field, ToScalar, Word};
 use halo2_proofs::circuit::Value;
-
-use super::{Bytecode, ExecStep, Rw, RwMap, Transaction};
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -33,7 +31,7 @@ pub struct Block<F> {
     /// Read write events in the RwTable
     pub rws: RwMap,
     /// Bytecode used in the block
-    pub bytecodes: HashMap<Word, Bytecode>,
+    pub bytecodes: CodeDB,
     /// The block context
     pub context: BlockContext,
     /// Copy events for the copy circuit's table.
@@ -86,11 +84,8 @@ impl<F: Field> Block<F> {
             .iter()
             .map(|tag| tag.build::<F>().count())
             .sum();
-        let num_rows_required_for_bytecode_table: usize = self
-            .bytecodes
-            .values()
-            .map(|bytecode| bytecode.bytes.len() + 1)
-            .sum();
+        let num_rows_required_for_bytecode_table =
+            self.bytecodes.num_rows_required_for_bytecode_table();
         let num_rows_required_for_copy_table: usize =
             self.copy_events.iter().map(|c| c.bytes.len() * 2).sum();
         let num_rows_required_for_keccak_table: usize = self.keccak_inputs.len();
@@ -252,14 +247,7 @@ pub fn block_convert<F: Field>(
         txs: block.txs().to_vec(),
         end_block_not_last: block.block_steps.end_block_not_last.clone(),
         end_block_last: block.block_steps.end_block_last.clone(),
-        bytecodes: code_db
-            .0
-            .values()
-            .map(|v| {
-                let bytecode = Bytecode::new(v.clone());
-                (bytecode.hash, bytecode)
-            })
-            .collect(),
+        bytecodes: code_db.clone(),
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),

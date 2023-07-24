@@ -10,12 +10,22 @@ mod test;
 #[cfg(feature = "test-circuits")]
 pub use dev::CopyCircuit as TestCopyCircuit;
 
+use crate::{
+    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+    table::{
+        BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, TxContextFieldTag,
+        TxTable,
+    },
+    util::{Challenges, SubCircuit, SubCircuitConfig},
+    witness,
+    witness::{RwMap, Transaction},
+};
 use bus_mapping::{
     circuit_input_builder::{CopyDataType, CopyEvent},
     operation::Target,
+    state_db::CodeDB,
 };
-use eth_types::{Field, Word};
-
+use eth_types::Field;
 use gadgets::{
     binary_number::BinaryNumberChip,
     less_than::{LtChip, LtConfig, LtInstruction},
@@ -27,18 +37,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::{collections::HashMap, marker::PhantomData};
-
-use crate::{
-    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::{
-        BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, TxContextFieldTag,
-        TxTable,
-    },
-    util::{Challenges, SubCircuit, SubCircuitConfig},
-    witness,
-    witness::{Bytecode, RwMap, Transaction},
-};
+use std::marker::PhantomData;
 
 /// The rw table shared between evm circuit and state circuit
 #[derive(Clone, Debug)]
@@ -754,7 +753,7 @@ pub struct ExternalData {
     /// StateCircuit -> rws
     pub rws: RwMap,
     /// BytecodeCircuit -> bytecodes
-    pub bytecodes: HashMap<Word, Bytecode>,
+    pub bytecodes: CodeDB,
 }
 
 /// Copy Circuit

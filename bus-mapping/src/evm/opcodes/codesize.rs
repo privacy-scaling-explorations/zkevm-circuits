@@ -67,7 +67,7 @@ mod codesize_tests {
             STOP
         };
         code.append(&tail);
-        let codesize = code.to_vec().len();
+        let codesize = code.codesize();
 
         let block: GethData = TestContext::<2, 1>::new(
             None,

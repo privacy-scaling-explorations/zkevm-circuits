@@ -4,8 +4,6 @@
 
 mod block;
 pub use block::{block_convert, Block, BlockContext};
-mod bytecode;
-pub use bytecode::Bytecode;
 mod mpt;
 pub use mpt::{MptUpdate, MptUpdateRow, MptUpdates};
 mod rw;
