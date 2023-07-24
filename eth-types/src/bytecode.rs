@@ -1,6 +1,6 @@
 //! EVM byte code generator
 use crate::{evm_types::OpcodeId, keccak256, Bytes, Hash, ToBigEndian, ToWord, Word};
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, iter, str::FromStr};
 
 /// Error type for Bytecode related failures
 #[derive(Debug)]
@@ -188,7 +188,7 @@ impl Bytecode {
         self.code.len()
     }
 
-    /// Store another code to memory
+    /// Append the instructions to store another code to memory
     pub fn store_code_to_mem(&mut self, code: &Self) {
         let len = code.codesize();
         // pad to multiple of 32 bytes
@@ -196,7 +196,7 @@ impl Bytecode {
             .code()
             .iter()
             .cloned()
-            .chain(0u8..((32 - len % 32) as u8))
+            .chain(iter::repeat(0).take(32 - len % 32))
             .collect();
 
         for (index, word) in code.chunks(32).enumerate() {
