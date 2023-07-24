@@ -45,8 +45,8 @@ impl Account {
             && self.storage.is_empty()
     }
 
-    /// Generate an account that has either code or balance
-    pub fn mock_code_or_balance(code: Bytecode) -> Self {
+    /// Generate an account that is either empty or has code, balance, and non-zero nonce
+    pub fn mock_code_balance(code: Bytecode) -> Self {
         let is_empty = code.codesize() == 0;
         Self {
             address: Address::repeat_byte(0xff),

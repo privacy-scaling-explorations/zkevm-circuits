@@ -779,7 +779,7 @@ mod test {
     }
 
     fn callee(code: bytecode::Bytecode) -> Account {
-        Account::mock_code_or_balance(code)
+        Account::mock_code_balance(code)
     }
 
     fn caller(opcode: &OpcodeId, stack: Stack, caller_is_success: bool) -> Account {

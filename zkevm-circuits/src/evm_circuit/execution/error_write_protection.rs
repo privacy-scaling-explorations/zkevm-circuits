@@ -149,7 +149,7 @@ mod test {
     use mock::TestContext;
 
     fn callee(code: Bytecode) -> Account {
-        Account::mock_code_or_balance(code)
+        Account::mock_code_balance(code)
     }
 
     #[test]
