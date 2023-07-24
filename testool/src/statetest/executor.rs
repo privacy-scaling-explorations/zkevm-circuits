@@ -81,8 +81,8 @@ fn check_post(
                 .then(|| {
                     builder
                         .code_db
-                        .get(&actual.code_hash)
-                        .cloned()
+                        .get_from_h256(&actual.code_hash)
+                        .map(|bytecode| bytecode.code())
                         .expect("code exists")
                 })
                 .unwrap_or_default();

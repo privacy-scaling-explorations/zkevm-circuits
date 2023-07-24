@@ -614,8 +614,8 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Fetch and return code for the given code hash from the code DB.
     pub fn code(&self, code_hash: H256) -> Result<Vec<u8>, Error> {
         self.code_db
-            .get(&code_hash)
-            .cloned()
+            .get_from_h256(&code_hash)
+            .map(|bytecode| bytecode.code())
             .ok_or(Error::CodeNotFound(code_hash))
     }
 

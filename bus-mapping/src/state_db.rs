@@ -48,11 +48,6 @@ impl CodeDB {
         self.0.values().map(|bytecode| bytecode.len() + 1).sum()
     }
 
-    /// Query code in raw bytes by H256
-    pub fn get(&self, codehash: &H256) -> Option<&Vec<u8>> {
-        self.0.get(codehash)
-    }
-
     /// Query Bytecode by H256
     pub fn get_from_h256(&self, codehash: &H256) -> Option<Bytecode> {
         self.0.get(codehash).cloned().map(|code| code.into())
