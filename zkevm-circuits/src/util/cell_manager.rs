@@ -58,7 +58,7 @@ pub struct Cell<F> {
     pub(crate) expression: Expression<F>,
     _column_expression: Expression<F>,
     pub(crate) column: Column<Advice>,
-    _column_idx: usize,
+    pub(crate) column_idx: usize,
     pub(crate) rotation: usize,
 }
 
@@ -74,7 +74,7 @@ impl<F: Field> Cell<F> {
             expression: meta.query_advice(column, Rotation(rotation as i32)),
             _column_expression: meta.query_advice(column, Rotation::cur()),
             column,
-            _column_idx,
+            column_idx: _column_idx,
             rotation,
         }
     }
@@ -108,6 +108,15 @@ impl<F: Field> Cell<F> {
             || value,
         )
     }
+
+    pub(crate) fn at_offset(&self, meta: &mut ConstraintSystem<F>, offset: i32) -> Self {
+        Self::new_from_cs(
+            meta,
+            self.column,
+            self.column_idx,
+            (self.rotation as i32 + offset) as usize,
+        )
+    }
 }
 
 impl<F: Field> Expr<F> for Cell<F> {
@@ -119,6 +128,27 @@ impl<F: Field> Expr<F> for Cell<F> {
 impl<F: Field> Expr<F> for &Cell<F> {
     fn expr(&self) -> Expression<F> {
         self.expression.clone()
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct CellValueOnly {
+    pub(crate) column_idx: usize,
+    pub(crate) rotation: usize,
+}
+
+impl CellValueOnly {
+    pub fn new(column_idx: usize, rotation: usize) -> Self {
+        Self {
+            column_idx,
+            rotation,
+        }
+    }
+}
+
+impl<F> From<Cell<F>> for CellValueOnly {
+    fn from(value: Cell<F>) -> Self {
+        CellValueOnly::new(value.column_idx, value.rotation)
     }
 }
 
@@ -144,11 +174,17 @@ impl CellColumn {
     pub fn expr<F: Field>(&self, meta: &mut ConstraintSystem<F>) -> Expression<F> {
         query_expression(meta, |meta| meta.query_advice(self.advice, Rotation::cur()))
     }
+
+    pub fn expr_vc<F: Field>(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        meta.query_advice(self.advice, Rotation::cur())
+    }
 }
 
 /// CellManagerStrategy is a strategy to place cells by the Cell Manager.
 pub(crate) trait CellManagerStrategy {
     type Stats;
+
+    type Affinity;
 
     /// The cell manager will call on_creation when built, so the columns can be set up by the
     /// strategy.
@@ -161,6 +197,27 @@ pub(crate) trait CellManagerStrategy {
         meta: &mut ConstraintSystem<F>,
         cell_type: CellType,
     ) -> Cell<F>;
+
+    fn query_cell_with_affinity<F: Field>(
+        &mut self,
+        columns: &mut CellManagerColumns,
+        meta: &mut ConstraintSystem<F>,
+        cell_type: CellType,
+        affinity: Self::Affinity,
+    ) -> Cell<F>;
+
+    fn query_cell_value(
+        &mut self,
+        columns: &mut CellManagerColumns,
+        cell_type: CellType,
+    ) -> CellValueOnly;
+
+    fn query_cell_value_with_affinity(
+        &mut self,
+        columns: &mut CellManagerColumns,
+        cell_type: CellType,
+        affinity: Self::Affinity,
+    ) -> CellValueOnly;
 
     /// Gets the current height of the cell manager, the max rotation of any cell (without
     /// considering offset).
@@ -247,6 +304,16 @@ impl<Stats, S: CellManagerStrategy<Stats = Stats>> CellManager<S> {
         self.strategy.query_cell(&mut self.columns, meta, cell_type)
     }
 
+    pub fn query_cell_with_affinity<F: Field>(
+        &mut self,
+        meta: &mut ConstraintSystem<F>,
+        cell_type: CellType,
+        affinity: S::Affinity,
+    ) -> Cell<F> {
+        self.strategy
+            .query_cell_with_affinity(&mut self.columns, meta, cell_type, affinity)
+    }
+
     /// Places, and returns `count` Cells for a given cell type following the strategy.
     pub fn query_cells<F: Field>(
         &mut self,
@@ -257,6 +324,19 @@ impl<Stats, S: CellManagerStrategy<Stats = Stats>> CellManager<S> {
         (0..count)
             .map(|_| self.query_cell(meta, cell_type))
             .collect()
+    }
+
+    pub fn query_cell_value(&mut self, cell_type: CellType) -> CellValueOnly {
+        self.strategy.query_cell_value(&mut self.columns, cell_type)
+    }
+
+    pub fn query_cell_value_with_affinity(
+        &mut self,
+        cell_type: CellType,
+        affinity: S::Affinity,
+    ) -> CellValueOnly {
+        self.strategy
+            .query_cell_value_with_affinity(&mut self.columns, cell_type, affinity)
     }
 
     /// Gets the current height of the cell manager, the max rotation of any cell (without
@@ -279,5 +359,9 @@ impl<Stats, S: CellManagerStrategy<Stats = Stats>> CellManager<S> {
     /// Returns the statistics about this Cell Manager.
     pub fn get_stats(&self) -> Stats {
         self.strategy.get_stats(&self.columns)
+    }
+
+    pub fn get_strategy(&mut self) -> &mut S {
+        &mut self.strategy
     }
 }
