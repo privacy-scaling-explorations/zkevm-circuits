@@ -107,6 +107,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         call.is_create(),
         call.value,
         Some(state.tx.tx.gas_price * state.tx.gas()),
+        state.tx_ctx.is_anchor_tx(),
     )?;
 
     // In case of contract creation we wish to verify the correctness of the

@@ -3,7 +3,7 @@ use crate::{
     anchor_tx_circuit::{AnchorTxCircuitConfig, AnchorTxCircuitConfigArgs},
     table::{byte_table::ByteTable, PiTable, TxTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
-    witness::{self, Taiko},
+    witness::{self, ProtocolInstance},
 };
 use eth_types::{Field, H256};
 use halo2_proofs::{
@@ -14,9 +14,7 @@ use halo2_proofs::{
 /// Test circuit for the anchor tx circuit.
 #[derive(Clone, Debug, Default)]
 pub struct TestAnchorTxCircuit<F: Field> {
-    txs: Vec<witness::Transaction>,
-    taiko: Taiko,
-    max_calldata: usize,
+    protocol_instance: ProtocolInstance,
     circuit: AnchorTxCircuit<F>,
 }
 
@@ -24,9 +22,7 @@ impl<F: Field> TestAnchorTxCircuit<F> {
     /// Create a new test circuit from a block.
     pub fn new_from_block(block: &witness::Block<F>) -> Self {
         TestAnchorTxCircuit {
-            txs: block.txs.clone(),
-            taiko: block.taiko.clone(),
-            max_calldata: block.circuits_params.max_calldata,
+            protocol_instance: block.protocol_instance.clone(),
             circuit: AnchorTxCircuit::new_from_block(block),
         }
     }
@@ -77,7 +73,7 @@ impl<F: Field> Circuit<F> for TestAnchorTxCircuit<F> {
         let challenges = challenges.values(&mut layouter);
         config
             .pi_table
-            .load(&mut layouter, &self.taiko, &challenges)?;
+            .load(&mut layouter, &self.protocol_instance, &challenges)?;
         config.byte_table.load(&mut layouter)?;
         self.circuit
             .synthesize_sub(&config, &challenges, &mut layouter)

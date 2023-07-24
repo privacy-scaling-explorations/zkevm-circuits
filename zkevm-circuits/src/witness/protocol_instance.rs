@@ -8,11 +8,11 @@ use halo2_proofs::circuit::Value;
 use keccak256::plain::Keccak;
 
 // hash(anchor)
-const ANCHOR_TX_METHOD_SIGNATURE: u32 = 0x3d384a4b;
+const ANCHOR_TX_METHOD_SIGNATURE: u32 = 0xda69d3db;
 
 /// Taiko witness
 #[derive(Debug, Default, Clone)]
-pub struct Taiko {
+pub struct ProtocolInstance {
     /// l1 signal service address
     pub l1_signal_service: Address,
     /// l2 signal service address
@@ -42,8 +42,8 @@ pub struct Taiko {
     /// maxBytesPerTxList
     pub max_bytes_per_tx_list: u64,
 
-    /// anchor gas cost
-    pub anchor_gas_cost: u64,
+    /// anchor gas limit
+    pub anchor_gas_limit: u64,
 }
 
 /// l1 meta hash
@@ -117,7 +117,7 @@ impl MetaHash {
     }
 }
 
-impl Taiko {
+impl ProtocolInstance {
     /// gen anchor call
     // anchor(l1_hash,signal_root,l1_height,parent_gas_used)
     pub fn anchor_call(&self) -> Bytes {
@@ -125,8 +125,8 @@ impl Taiko {
         result.extend_from_slice(&ANCHOR_TX_METHOD_SIGNATURE.to_be_bytes());
         result.extend_from_slice(&self.meta_hash.l1_hash.to_fixed_bytes());
         result.extend_from_slice(&self.signal_root.to_fixed_bytes());
-        result.extend_from_slice(&self.meta_hash.l1_height.to_be_bytes());
-        result.extend_from_slice(&(self.parent_gas_used as u64).to_be_bytes());
+        result.extend_from_slice(&self.meta_hash.l1_height.to_word().to_be_bytes());
+        result.extend_from_slice(&(self.parent_gas_used as u64).to_word().to_be_bytes());
         result.into()
     }
 
@@ -151,12 +151,50 @@ impl Taiko {
             ],
             [
                 Value::known(F::from(PiFieldTag::L1Height as u64)),
-                Value::known(F::from(self.meta_hash.l1_height)),
+                rlc_be_bytes(
+                    &self.meta_hash.l1_height.to_word().to_be_bytes(),
+                    randomness,
+                ),
             ],
             [
                 Value::known(F::from(PiFieldTag::ParentGasUsed as u64)),
-                Value::known(F::from(self.parent_gas_used as u64)),
+                rlc_be_bytes(
+                    &(self.parent_gas_used as u64).to_word().to_be_bytes(),
+                    randomness,
+                ),
             ],
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use super::*;
+    #[test]
+    fn test_left_shift() {
+        let _field0 = left_shift(1u64, 192) + left_shift(1688574587u64, 128) + left_shift(9u64, 64);
+
+        let _field5 = left_shift(0u32 as u64, 232)
+            + left_shift(124u32 as u64, 208)
+            + left_shift(21000u32 as u64, 176)
+            + left_shift(
+                Address::from_str("0000777700000000000000000000000000000001").unwrap(),
+                16,
+            );
+        let _field6 = left_shift(
+            Address::from_str("df09A0afD09a63fb04ab3573922437e1e637dE8b").unwrap(),
+            96,
+        );
+
+        let _field9 = left_shift(
+            Address::from_str("70997970C51812dc3A010C7d01b50e0d17dc79C8").unwrap(),
+            96,
+        ) + left_shift(0u64, 64)
+            + left_shift(141003u64, 32);
+
+        let _field10 =
+            left_shift(6000000u64, 192) + left_shift(79u64, 128) + left_shift(120000u64, 64);
     }
 }

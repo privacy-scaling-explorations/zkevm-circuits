@@ -13,6 +13,9 @@ use snark_verifier::{util::arithmetic::MultiMillerLoop, verifier::plonk::PlonkPr
 use std::iter;
 
 mod aggregation;
+pub mod taiko_aggregation;
+
+pub use taiko_aggregation::TaikoAggregationCircuit;
 
 #[cfg(any(feature = "test", test))]
 mod test;

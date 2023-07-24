@@ -2,14 +2,11 @@
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::{byte_table::ByteTable, BlockTable, KeccakTable, LookupTable},
+    table::{byte_table::ByteTable, BlockContextFieldTag, BlockTable, KeccakTable, LookupTable},
     util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig},
-    witness,
+    witness::{self, BlockContext},
 };
-use eth_types::{
-    geth_types::BlockConstants, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, ToWord,
-    Word, H256,
-};
+use eth_types::{Address, Field, ToBigEndian, ToWord, Word, H256};
 use ethers_core::utils::keccak256;
 use gadgets::util::{or, select, Expr};
 use halo2_proofs::{
@@ -23,27 +20,14 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 const MAX_DEGREE: usize = 9;
-const MIN_DEGREE: usize = 8;
 const RPI_CELL_IDX: usize = 0;
 const RPI_RLC_ACC_CELL_IDX: usize = 1;
 const BYTE_POW_BASE: u64 = 1 << 8;
 const RPI_BYTES_LEN: usize = 32 * 10;
+// 10 fields * 32B + lo(16B) + hi(16B) + keccak(32B)
 const USED_ROWS: usize = RPI_BYTES_LEN + 64;
 
-/// Values of the block table (as in the spec)
-#[derive(Clone, Default, Debug)]
-pub struct BlockValues {
-    coinbase: Address,
-    gas_limit: u64,
-    number: u64,
-    timestamp: u64,
-    difficulty: Word,
-    base_fee: Word, // NOTE: BaseFee was added by EIP-1559 and is ignored in legacy headers.
-    chain_id: u64,
-    block_hash: Word,
-}
-
-/// PublicData contains all the values that the PiCircuit recieves as input
+/// PublicData contains all the values that the PiCircuit receives as input
 #[derive(Debug, Clone, Default)]
 pub struct PublicData {
     /// l1 signal service address
@@ -82,19 +66,12 @@ pub struct PublicData {
     // maxBytesPerTxList: u64,
     max_bytes_per_tx_list: u64,
 
-    block_constants: BlockConstants,
+    block_context: BlockContext,
     chain_id: Word,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FieldType {
-    None,
-    BlockHash,
-}
-
 impl PublicData {
-    fn assignments(&self) -> [(&'static str, FieldType, [u8; 32]); 10] {
-        use FieldType::*;
+    fn assignments(&self) -> [(&'static str, Option<Word>, [u8; 32]); 10] {
         [
             (
                 "l1_signal_service",
@@ -108,8 +85,16 @@ impl PublicData {
             ),
             ("l2_contract", None, self.l2_contract.to_be_bytes()),
             ("meta_hash", None, self.meta_hash.to_be_bytes()),
-            ("parent_hash", None, self.parent_hash.to_be_bytes()),
-            ("block_hash", BlockHash, self.block_hash.to_be_bytes()),
+            (
+                "parent_hash",
+                Some(self.block_context.number - 1),
+                self.parent_hash.to_be_bytes(),
+            ),
+            (
+                "block_hash",
+                Some(self.block_context.number),
+                self.block_hash.to_be_bytes(),
+            ),
             ("signal_root", None, self.signal_root.to_be_bytes()),
             ("graffiti", None, self.graffiti.to_be_bytes()),
             (
@@ -125,49 +110,43 @@ impl PublicData {
         ]
     }
 
-    fn rpi_bytes(&self) -> Vec<u8> {
+    /// get rpi bytes
+    pub fn rpi_bytes(&self) -> Vec<u8> {
         self.assignments().iter().flat_map(|v| v.2).collect()
     }
 
     fn default<F: Default>() -> Self {
-        Self::new::<F>(&witness::Block::default(), &witness::Taiko::default())
+        Self::new::<F>(&witness::Block::default())
     }
 
     /// create PublicData from block and taiko
-    pub fn new<F>(block: &witness::Block<F>, taiko: &witness::Taiko) -> Self {
+    pub fn new<F>(block: &witness::Block<F>) -> Self {
         use witness::left_shift;
-        let field9 = left_shift(taiko.prover, 96)
-            + left_shift(taiko.parent_gas_used as u64, 64)
-            + left_shift(taiko.gas_used as u64, 32);
+        let field9 = left_shift(block.protocol_instance.prover, 96)
+            + left_shift(block.protocol_instance.parent_gas_used as u64, 64)
+            + left_shift(block.protocol_instance.gas_used as u64, 32);
 
-        let field10 = left_shift(taiko.block_max_gas_limit, 192)
-            + left_shift(taiko.max_transactions_per_block, 128)
-            + left_shift(taiko.max_bytes_per_tx_list, 64);
+        let field10 = left_shift(block.protocol_instance.block_max_gas_limit, 192)
+            + left_shift(block.protocol_instance.max_transactions_per_block, 128)
+            + left_shift(block.protocol_instance.max_bytes_per_tx_list, 64);
         PublicData {
-            l1_signal_service: taiko.l1_signal_service.to_word(),
-            l2_signal_service: taiko.l2_signal_service.to_word(),
-            l2_contract: taiko.l2_contract.to_word(),
-            meta_hash: taiko.meta_hash.hash().to_word(),
-            block_hash: taiko.block_hash.to_word(),
-            parent_hash: taiko.parent_hash.to_word(),
-            signal_root: taiko.signal_root.to_word(),
-            graffiti: taiko.graffiti.to_word(),
-            prover: taiko.prover,
-            parent_gas_used: taiko.parent_gas_used,
-            gas_used: taiko.gas_used,
-            block_max_gas_limit: taiko.block_max_gas_limit,
-            max_transactions_per_block: taiko.max_transactions_per_block,
-            max_bytes_per_tx_list: taiko.max_bytes_per_tx_list,
+            l1_signal_service: block.protocol_instance.l1_signal_service.to_word(),
+            l2_signal_service: block.protocol_instance.l2_signal_service.to_word(),
+            l2_contract: block.protocol_instance.l2_contract.to_word(),
+            meta_hash: block.protocol_instance.meta_hash.hash().to_word(),
+            block_hash: block.protocol_instance.block_hash.to_word(),
+            parent_hash: block.protocol_instance.parent_hash.to_word(),
+            signal_root: block.protocol_instance.signal_root.to_word(),
+            graffiti: block.protocol_instance.graffiti.to_word(),
+            prover: block.protocol_instance.prover,
+            parent_gas_used: block.protocol_instance.parent_gas_used,
+            gas_used: block.protocol_instance.gas_used,
+            block_max_gas_limit: block.protocol_instance.block_max_gas_limit,
+            max_transactions_per_block: block.protocol_instance.max_transactions_per_block,
+            max_bytes_per_tx_list: block.protocol_instance.max_bytes_per_tx_list,
             field9,
             field10,
-            block_constants: BlockConstants {
-                coinbase: block.context.coinbase,
-                timestamp: block.context.timestamp,
-                number: block.context.number.as_u64().into(),
-                difficulty: block.context.difficulty,
-                gas_limit: block.context.gas_limit.into(),
-                base_fee: block.context.base_fee,
-            },
+            block_context: block.context.clone(),
             chain_id: block.context.chain_id,
         }
     }
@@ -177,25 +156,11 @@ impl PublicData {
         let rpi_keccak = keccak256(rpi_bytes);
         H256(rpi_keccak)
     }
-
-    /// Returns struct with values for the block table
-    pub fn get_block_table_values(&self) -> BlockValues {
-        BlockValues {
-            coinbase: self.block_constants.coinbase,
-            gas_limit: self.block_constants.gas_limit.as_u64(),
-            number: self.block_constants.number.as_u64(),
-            timestamp: self.block_constants.timestamp.as_u64(),
-            difficulty: self.block_constants.difficulty,
-            base_fee: self.block_constants.base_fee,
-            chain_id: self.chain_id.as_u64(),
-            block_hash: self.block_hash,
-        }
-    }
 }
 
 /// Config for PiCircuit
 #[derive(Clone, Debug)]
-pub struct PiCircuitConfig<F: Field> {
+pub struct TaikoPiCircuitConfig<F: Field> {
     rpi_field_bytes: Column<Advice>,
     rpi_field_bytes_acc: Column<Advice>,
     rpi_rlc_acc: Column<Advice>,
@@ -203,9 +168,6 @@ pub struct PiCircuitConfig<F: Field> {
     q_field_step: Selector,
     q_field_end: Selector,
     is_field_rlc: Column<Fixed>,
-
-    q_start: Selector,
-    q_not_end: Selector,
 
     byte_table: ByteTable,
 
@@ -215,13 +177,15 @@ pub struct PiCircuitConfig<F: Field> {
     keccak_table: KeccakTable,
 
     // External tables
+    q_block_table: Selector,
+    block_index: Column<Advice>,
     block_table: BlockTable,
 
     _marker: PhantomData<F>,
 }
 
 /// Circuit configuration arguments
-pub struct PiCircuitConfigArgs<F: Field> {
+pub struct TaikoPiCircuitConfigArgs<F: Field> {
     /// BlockTable
     pub block_table: BlockTable,
     /// KeccakTable
@@ -232,10 +196,10 @@ pub struct PiCircuitConfigArgs<F: Field> {
     pub challenges: Challenges<Expression<F>>,
 }
 
-impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
-    type ConfigArgs = PiCircuitConfigArgs<F>;
+impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
+    type ConfigArgs = TaikoPiCircuitConfigArgs<F>;
 
-    /// Return a new PiCircuitConfig
+    /// Return a new TaikoPiCircuitConfig
     fn new(
         meta: &mut ConstraintSystem<F>,
         Self::ConfigArgs {
@@ -251,13 +215,13 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let q_field_start = meta.complex_selector();
         let q_field_step = meta.complex_selector();
         let q_field_end = meta.complex_selector();
-        let q_start = meta.complex_selector();
-        let q_not_end = meta.complex_selector();
         let is_field_rlc = meta.fixed_column();
 
         let pi = meta.instance_column();
 
         let q_keccak = meta.complex_selector();
+        let q_block_table = meta.complex_selector();
+        let block_index = meta.advice_column();
 
         meta.enable_equality(rpi_field_bytes);
         meta.enable_equality(rpi_field_bytes_acc);
@@ -304,23 +268,31 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
 
         // keccak in rpi
         meta.lookup_any("keccak(rpi)", |meta| {
-            let is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
-            let input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
-            let input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
-            let output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
             let q_keccak = meta.query_selector(q_keccak);
-
             let rpi_rlc = meta.query_advice(rpi_field_bytes_acc, Rotation::cur());
             let output = meta.query_advice(rpi_rlc_acc, Rotation::cur());
-
-            vec![
-                (q_keccak.expr() * 1.expr(), is_enabled),
-                (q_keccak.expr() * rpi_rlc, input_rlc),
-                (q_keccak.expr() * RPI_BYTES_LEN.expr(), input_len),
-                (q_keccak * output, output_rlc),
-            ]
+            [1.expr(), rpi_rlc, RPI_BYTES_LEN.expr(), output]
+                .into_iter()
+                .zip(keccak_table.table_exprs(meta).into_iter())
+                .map(|(arg, table)| (q_keccak.expr() * arg, table))
+                .collect::<Vec<_>>()
         });
 
+        // in block table
+        meta.lookup_any("in block table", |meta| {
+            let q_block_table = meta.query_selector(q_block_table);
+            let block_index = meta.query_advice(block_index, Rotation::cur());
+            let block_hash = meta.query_advice(rpi_field_bytes_acc, Rotation::cur());
+            [
+                BlockContextFieldTag::BlockHash.expr(),
+                block_index,
+                block_hash,
+            ]
+            .into_iter()
+            .zip(block_table.table_exprs(meta).into_iter())
+            .map(|(arg, table)| (q_block_table.expr() * arg, table))
+            .collect::<Vec<_>>()
+        });
         // is byte
         meta.lookup_any("is_byte", |meta| {
             let q_field_step = meta.query_selector(q_field_start);
@@ -342,8 +314,6 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             q_field_step,
             q_field_end,
 
-            q_start,
-            q_not_end,
             byte_table,
             is_field_rlc,
 
@@ -352,6 +322,8 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             q_keccak,
             keccak_table,
 
+            q_block_table,
+            block_index,
             block_table,
 
             _marker: PhantomData,
@@ -359,7 +331,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
     }
 }
 
-impl<F: Field> PiCircuitConfig<F> {
+impl<F: Field> TaikoPiCircuitConfig<F> {
     #[allow(clippy::too_many_arguments)]
     fn assign_pi_field(
         &self,
@@ -370,6 +342,7 @@ impl<F: Field> PiCircuitConfig<F> {
         rpi_rlc_acc: &mut Value<F>,
         challenges: &Challenges<Value<F>>,
         keccak_hi_lo: bool,
+        block_number: Option<Word>,
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
         let len = field_bytes.len();
         let mut field_rlc_acc = Value::known(F::ZERO);
@@ -426,6 +399,15 @@ impl<F: Field> PiCircuitConfig<F> {
                 self.q_field_end.enable(region, row_offset)?;
                 cells[RPI_CELL_IDX] = Some(rpi_cell);
                 cells[RPI_RLC_ACC_CELL_IDX] = Some(rpi_rlc_acc_cell);
+                if let Some(block_number) = block_number {
+                    self.q_block_table.enable(region, row_offset)?;
+                    region.assign_advice(
+                        || "block_index",
+                        self.block_index,
+                        row_offset,
+                        || Value::known(F::from(block_number.as_u64())),
+                    )?;
+                }
             } else {
                 self.q_field_step.enable(region, row_offset)?;
             }
@@ -433,48 +415,6 @@ impl<F: Field> PiCircuitConfig<F> {
         }
         *offset += field_bytes.len();
         Ok(cells.into_iter().map(|cell| cell.unwrap()).collect())
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn assign_block_table(
-        &self,
-        region: &mut Region<'_, F>,
-        public_data: &PublicData,
-        challenges: &Challenges<Value<F>>,
-    ) -> Result<AssignedCell<F, F>, Error> {
-        let block_values = public_data.get_block_table_values();
-        let randomness = challenges.evm_word();
-        let mut block_hash_cell = None;
-        for (offset, (name, val)) in [
-            (
-                "coinbase",
-                Value::known(block_values.coinbase.to_scalar().unwrap()),
-            ),
-            ("timestamp", Value::known(F::from(block_values.timestamp))),
-            ("number", Value::known(F::from(block_values.number))),
-            (
-                "difficulty",
-                randomness.map(|randomness| rlc(block_values.difficulty.to_le_bytes(), randomness)),
-            ),
-            ("gas_limit", Value::known(F::from(block_values.gas_limit))),
-            (
-                "base_fee",
-                randomness.map(|randomness| rlc(block_values.base_fee.to_le_bytes(), randomness)),
-            ),
-            ("chain_id", Value::known(F::from(block_values.chain_id))),
-            (
-                "block_hash",
-                randomness.map(|randomness| rlc(block_values.block_hash.to_le_bytes(), randomness)),
-            ),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            block_hash_cell =
-                Some(region.assign_advice(|| name, self.block_table.value, offset, || val)?);
-        }
-
-        Ok(block_hash_cell.unwrap())
     }
 
     fn assign(
@@ -486,13 +426,10 @@ impl<F: Field> PiCircuitConfig<F> {
         let pi = layouter.assign_region(
             || "region 0",
             |ref mut region| {
-                // Assign block table
-                let block_table_hash_cell =
-                    self.assign_block_table(region, public_data, challenges)?;
                 let mut rpi_rlc_acc = Value::known(F::ZERO);
                 let mut offset = 0;
                 let mut rpi_rlc_acc_cell = None;
-                for (annotation, field_type, field_bytes) in public_data.assignments() {
+                for (annotation, block_number, field_bytes) in public_data.assignments() {
                     let cells = self.assign_pi_field(
                         region,
                         &mut offset,
@@ -501,13 +438,8 @@ impl<F: Field> PiCircuitConfig<F> {
                         &mut rpi_rlc_acc,
                         challenges,
                         false,
+                        block_number,
                     )?;
-                    if field_type == FieldType::BlockHash {
-                        region.constrain_equal(
-                            block_table_hash_cell.cell(),
-                            cells[RPI_CELL_IDX].cell(),
-                        )?;
-                    }
                     rpi_rlc_acc_cell = Some(cells[RPI_RLC_ACC_CELL_IDX].clone());
                 }
 
@@ -558,6 +490,7 @@ impl<F: Field> PiCircuitConfig<F> {
                         &mut rpi_rlc_acc,
                         challenges,
                         true,
+                        None,
                     )?;
                     pi.push(cells[RPI_CELL_IDX].clone());
                     if idx == 1 {
@@ -580,33 +513,29 @@ impl<F: Field> PiCircuitConfig<F> {
 
 /// Public Inputs Circuit
 #[derive(Clone, Default, Debug)]
-pub struct PiCircuit<F: Field> {
+pub struct TaikoPiCircuit<F: Field> {
     /// PublicInputs data known by the verifier
     pub public_data: PublicData,
-
     _marker: PhantomData<F>,
 }
 
-impl<F: Field> PiCircuit<F> {
-    /// Creates a new PiCircuit
+impl<F: Field> TaikoPiCircuit<F> {
+    /// Creates a new TaikoPiCircuit
     pub fn new(public_data: PublicData) -> Self {
         Self {
             public_data,
             _marker: PhantomData,
         }
     }
-
-    /// create a new PiCircuit with extra data
-    pub fn new_from_block_with_extra(block: &witness::Block<F>, taiko: &witness::Taiko) -> Self {
-        PiCircuit::new(PublicData::new(block, taiko))
-    }
 }
 
-impl<F: Field> SubCircuit<F> for PiCircuit<F> {
-    type Config = PiCircuitConfig<F>;
+impl<F: Field> SubCircuit<F> for TaikoPiCircuit<F> {
+    type Config = TaikoPiCircuitConfig<F>;
 
     fn unusable_rows() -> usize {
-        2usize.pow(MIN_DEGREE as u32) - USED_ROWS + 2
+        // No column queried at more than 3 distinct rotations, so returns 6 as
+        // minimum unusable rows.
+        6
     }
 
     fn min_num_rows_block(_block: &witness::Block<F>) -> (usize, usize) {
@@ -614,7 +543,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     }
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
-        PiCircuit::new(PublicData::new(block, &witness::Taiko::default()))
+        TaikoPiCircuit::new(PublicData::new(block))
     }
 
     /// Compute the public inputs for this circuit.
@@ -661,11 +590,11 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 /// Test Circuit for PiCircuit
 #[cfg(any(feature = "test", test))]
 #[derive(Default, Clone)]
-pub struct PiTestCircuit<F: Field>(pub PiCircuit<F>);
+pub struct TaikoPiTestCircuit<F: Field>(pub TaikoPiCircuit<F>);
 
 #[cfg(any(feature = "test", test))]
-impl<F: Field> Circuit<F> for PiTestCircuit<F> {
-    type Config = (PiCircuitConfig<F>, Challenges);
+impl<F: Field> Circuit<F> for TaikoPiTestCircuit<F> {
+    type Config = (TaikoPiCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
     type Params = ();
 
@@ -679,12 +608,10 @@ impl<F: Field> Circuit<F> for PiTestCircuit<F> {
         let byte_table = ByteTable::construct(meta);
         let challenges = Challenges::construct(meta);
         let challenge_exprs = challenges.exprs(meta);
-        // let challenge_exprs = Challenges::mock(100.expr(), 100.expr());
-
         (
-            PiCircuitConfig::new(
+            TaikoPiCircuitConfig::new(
                 meta,
-                PiCircuitConfigArgs {
+                TaikoPiCircuitConfigArgs {
                     block_table,
                     keccak_table,
                     byte_table,
@@ -701,10 +628,12 @@ impl<F: Field> Circuit<F> for PiTestCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
-        // let challenges = Challenges::mock(Value::known(F::from(100)),
-        // Value::known(F::from(100)));
-
         let public_data = &self.0.public_data;
+        // assign block table
+        let randomness = challenges.evm_word();
+        config
+            .block_table
+            .load(&mut layouter, &public_data.block_context, randomness)?;
         // assign keccak table
         config
             .keccak_table
@@ -716,11 +645,11 @@ impl<F: Field> Circuit<F> for PiTestCircuit<F> {
 }
 
 #[cfg(test)]
-mod pi_circuit_test {
+mod taiko_pi_circuit_test {
 
     use super::*;
 
-    use eth_types::{H64, U256, U64};
+    use eth_types::ToScalar;
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
@@ -740,7 +669,7 @@ mod pi_circuit_test {
         public_data: PublicData,
         pi: Option<Vec<Vec<F>>>,
     ) -> Result<(), Vec<VerifyFailure>> {
-        let circuit = PiTestCircuit::<F>(PiCircuit::new(public_data));
+        let circuit = TaikoPiTestCircuit::<F>(TaikoPiCircuit::new(public_data));
         let public_inputs = pi.unwrap_or_else(|| circuit.0.instance());
 
         let prover = match MockProver::run(k, &circuit, public_inputs) {
@@ -750,13 +679,19 @@ mod pi_circuit_test {
         prover.verify()
     }
 
-    #[test]
-    fn test_default_pi() {
-        const MAX_TXS: usize = 2;
-        const MAX_CALLDATA: usize = 8;
+    fn mock_public_data() -> PublicData {
         let mut public_data = PublicData::default::<Fr>();
         public_data.meta_hash = OMMERS_HASH.to_word();
         public_data.block_hash = OMMERS_HASH.to_word();
+        public_data.block_context.block_hash = OMMERS_HASH.to_word();
+        public_data.block_context.history_hashes = vec![Default::default(); 256];
+        public_data.block_context.number = 300.into();
+        public_data
+    }
+
+    #[test]
+    fn test_default_pi() {
+        let public_data = mock_public_data();
 
         let k = 17;
         assert_eq!(run::<Fr>(k, public_data, None), Ok(()));
@@ -764,9 +699,7 @@ mod pi_circuit_test {
 
     #[test]
     fn test_fail_pi_hash() {
-        const MAX_TXS: usize = 2;
-        const MAX_CALLDATA: usize = 8;
-        let public_data = PublicData::default::<Fr>();
+        let public_data = mock_public_data();
 
         let k = 17;
         match run::<Fr>(k, public_data, Some(vec![vec![Fr::zero(), Fr::one()]])) {
@@ -785,9 +718,7 @@ mod pi_circuit_test {
 
     #[test]
     fn test_fail_pi_prover() {
-        const MAX_TXS: usize = 2;
-        const MAX_CALLDATA: usize = 8;
-        let mut public_data = PublicData::default::<Fr>();
+        let mut public_data = mock_public_data();
         let address_bytes = [
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
         ];
@@ -816,7 +747,7 @@ mod pi_circuit_test {
 
     #[test]
     fn test_simple_pi() {
-        let mut public_data = PublicData::default::<Fr>();
+        let mut public_data = mock_public_data();
         let chain_id = 1337u64;
         public_data.chain_id = Word::from(chain_id);
 
@@ -826,29 +757,17 @@ mod pi_circuit_test {
 
     #[test]
     fn test_verify() {
-        let prover =
-            Address::from_slice(&hex::decode("Df08F82De32B8d460adbE8D72043E3a7e25A3B39").unwrap());
-
-        let logs_bloom:[u8;256] = hex::decode("112d60abc05141f1302248e0f4329627f002380f1413820692911863e7d0871261aa07e90cc01a10c3ce589153570dc2db27b8783aa52bc19a5a4a836722e813190401b4214c3908cb8b468b510c3fe482603b00ca694c806206bf099279919c334541094bd2e085210373c0b064083242d727790d2eecdb2e0b90353b66461050447626366328f0965602e8a9802d25740ad4a33162142b08a1b15292952de423fac45d235622bb0ef3b2d2d4c21690d280a0b948a8a3012136542c1c4d0955a501a022e1a1a4582220d1ae50ba475d88ce0310721a9076702d29a27283e68c2278b93a1c60d8f812069c250042cc3180a8fd54f034a2da9a03098c32b03445").unwrap().try_into().unwrap();
-
         let mut block = witness::Block::<Fr>::default();
-        block.eth_block.parent_hash = *OMMERS_HASH;
-        block.eth_block.author = Some(prover);
-        block.eth_block.state_root = *OMMERS_HASH;
-        block.eth_block.transactions_root = *OMMERS_HASH;
-        block.eth_block.receipts_root = *OMMERS_HASH;
-        block.eth_block.logs_bloom = Some(logs_bloom.into());
-        block.eth_block.difficulty = U256::from(0);
-        block.eth_block.number = Some(U64::from(0));
-        block.eth_block.gas_limit = U256::from(0);
-        block.eth_block.gas_used = U256::from(0);
-        block.eth_block.timestamp = U256::from(0);
-        block.eth_block.extra_data = eth_types::Bytes::from([0; 0]);
-        block.eth_block.mix_hash = Some(*OMMERS_HASH);
-        block.eth_block.nonce = Some(H64::from([0, 0, 0, 0, 0, 0, 0, 0]));
-        block.eth_block.base_fee_per_gas = Some(U256::from(0));
 
-        let public_data = PublicData::new(&block, &witness::Taiko::default());
+        block.eth_block.parent_hash = *OMMERS_HASH;
+        block.eth_block.hash = Some(*OMMERS_HASH);
+        block.protocol_instance.block_hash = *OMMERS_HASH;
+        block.protocol_instance.parent_hash = *OMMERS_HASH;
+        block.context.history_hashes = vec![OMMERS_HASH.to_word()];
+        block.context.block_hash = OMMERS_HASH.to_word();
+        block.context.number = 300.into();
+
+        let public_data = PublicData::new(&block);
 
         let k = 17;
 

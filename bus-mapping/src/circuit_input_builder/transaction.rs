@@ -19,6 +19,7 @@ pub struct TransactionContext {
     id: usize,
     /// The index of logs made in the transaction.
     pub(crate) log_id: usize,
+    is_anchor_tx: bool,
     /// Identifier if this transaction is last one of the block or not.
     is_last_tx: bool,
     /// Call stack.
@@ -38,6 +39,7 @@ impl TransactionContext {
     pub fn new(
         eth_tx: &eth_types::Transaction,
         geth_trace: &GethExecTrace,
+        is_anchor_tx: bool,
         is_last_tx: bool,
     ) -> Result<Self, Error> {
         // Iterate over geth_trace to inspect and collect each call's is_success, which
@@ -74,6 +76,7 @@ impl TransactionContext {
                 .as_u64() as usize
                 + 1,
             log_id: 0,
+            is_anchor_tx,
             is_last_tx,
             call_is_success,
             calls: Vec::new(),
@@ -87,6 +90,11 @@ impl TransactionContext {
     /// Return id of the this transaction.
     pub fn id(&self) -> usize {
         self.id
+    }
+
+    /// Return is_anchor_tx of the this transaction.
+    pub fn is_anchor_tx(&self) -> bool {
+        self.is_anchor_tx
     }
 
     /// Return is_last_tx of the this transaction.

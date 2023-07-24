@@ -43,7 +43,6 @@ fn run<F: Field>(
 }
 
 #[test]
-#[ignore]
 fn test_default_pi() {
     let max_txs = 2;
     let max_calldata = 8;
@@ -54,7 +53,6 @@ fn test_default_pi() {
 }
 
 #[test]
-#[ignore]
 fn test_simple_pi() {
     let max_txs = 8;
     let max_calldata = 200;

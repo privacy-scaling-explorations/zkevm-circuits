@@ -1,4 +1,4 @@
-use crate::witness::Taiko;
+use crate::witness::ProtocolInstance;
 
 use super::*;
 
@@ -33,15 +33,17 @@ impl PiTable {
     pub fn load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        taiko: &Taiko,
+        protocol_instance: &ProtocolInstance,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "pi table",
             |mut region| {
                 let randomness = challenges.evm_word();
-                for (offset, [tag, value]) in
-                    taiko.table_assignments(randomness).into_iter().enumerate()
+                for (offset, [tag, value]) in protocol_instance
+                    .table_assignments(randomness)
+                    .into_iter()
+                    .enumerate()
                 {
                     region.assign_fixed(|| "tag", self.tag, offset, || tag)?;
                     region.assign_advice(|| "value", self.value, offset, || value)?;

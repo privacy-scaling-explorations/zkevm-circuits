@@ -4,16 +4,18 @@
 mod dev;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::TestAnchorTxCircuit;
-mod sign_verify;
+pub(crate) mod sign_verify;
 #[cfg(any(feature = "test", test))]
 mod test;
+#[cfg(any(feature = "test", test))]
+pub(crate) use test::{add_anchor_accounts, add_anchor_tx, sign_tx};
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{byte_table::ByteTable, LookupTable, PiFieldTag, PiTable, TxFieldTag, TxTable},
     tx_circuit::TX_LEN,
     util::{Challenges, SubCircuit, SubCircuitConfig},
-    witness::{self, Taiko, Transaction},
+    witness::{self, ProtocolInstance, Transaction},
 };
 use eth_types::{Field, ToScalar};
 use gadgets::util::{select, Expr};
@@ -31,7 +33,7 @@ use self::sign_verify::GOLDEN_TOUCH_ADDRESS;
 const ANCHOR_TX_ID: usize = 1;
 const ANCHOR_TX_VALUE: u64 = 0;
 const ANCHOR_TX_IS_CREATE: bool = false;
-const ANCHOR_TX_GAS_PRICE: u64 = 0;
+const ANCHOR_TX_GAS_PRICE: u64 = 1;
 const MAX_DEGREE: usize = 9;
 const BYTE_POW_BASE: u64 = 1 << 8;
 
@@ -42,8 +44,8 @@ const BYTE_POW_BASE: u64 = 1 << 8;
 //     uint64 parentGasUsed
 // )
 // anchor(bytes32,bytes32,uint64,uint64) =
-// method_signature(4B)+l1Hash(32B)+l1SignalRoot(32B)+l1Height(8B)+parentGasUsed(8B)
-const ANCHOR_CALL_DATA_LEN: usize = 84;
+// method_signature(4B)+l1Hash(32B)+l1SignalRoot(32B)+l1Height(32B)+parentGasUsed(32B)
+const ANCHOR_CALL_DATA_LEN: usize = 132;
 
 struct CallData {
     start: usize,
@@ -131,37 +133,38 @@ impl<F: Field> SubCircuitConfig<F> for AnchorTxCircuitConfig<F> {
 
         // RLC/decode the calldata (per part) of the anchor tx (all bytes except the first one)
         meta.create_gate(
-            "call_data_rlc_acc[i+1] = call_data_rlc_acc[i] * t + call_data[i+1]",
+            "call_data_part_rlc_acc[i+1] = call_data_part_rlc_acc[i] * t + call_data[i+1]",
             |meta| {
                 let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
 
                 let q_call_data_step = meta.query_selector(q_call_data_part_step);
-                let call_data_rlc_acc_next =
+                let call_data_part_rlc_acc_next =
                     meta.query_advice(call_data_part_rlc_acc, Rotation::next());
-                let call_data_rlc_acc = meta.query_advice(call_data_part_rlc_acc, Rotation::cur());
+                let call_data_part_rlc_acc =
+                    meta.query_advice(call_data_part_rlc_acc, Rotation::cur());
                 let call_data_next = meta.query_advice(tx_table.value, Rotation::next());
                 let use_rlc = meta.query_fixed(use_rlc, Rotation::cur());
-                let randomness = challenges.lookup_input();
+                let randomness = challenges.evm_word();
                 let t = select::expr(use_rlc, randomness, BYTE_POW_BASE.expr());
                 cb.require_equal(
-                    "call_data_rlc_acc[i+1] = call_data_rlc_acc[i] * t + call_data[i+1]",
-                    call_data_rlc_acc_next,
-                    call_data_rlc_acc * t + call_data_next,
+                    "call_data_part_rlc_acc[i+1] = call_data_part_rlc_acc[i] * t + call_data[i+1]",
+                    call_data_part_rlc_acc_next,
+                    call_data_part_rlc_acc * t + call_data_next,
                 );
                 cb.gate(q_call_data_step)
             },
         );
         // RLC/decode the calldata (per part) of the anchor tx (first byte)
-        meta.create_gate("call_data_rlc_acc[0] = call_data[0]", |meta| {
+        meta.create_gate("call_data_part_rlc_acc[0] = call_data[0]", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
 
             let q_call_data_start = meta.query_selector(q_call_data_part_start);
-            let call_data_rlc_acc = meta.query_advice(call_data_part_rlc_acc, Rotation::cur());
+            let call_data_part_rlc_acc = meta.query_advice(call_data_part_rlc_acc, Rotation::cur());
             let call_data = meta.query_advice(tx_table.value, Rotation::cur());
 
             cb.require_equal(
-                "call_data_rlc_acc[0] = call_data[0]",
-                call_data_rlc_acc,
+                "call_data_part_rlc_acc[0] = call_data[0]",
+                call_data_part_rlc_acc,
                 call_data,
             );
             cb.gate(q_call_data_start)
@@ -171,10 +174,10 @@ impl<F: Field> SubCircuitConfig<F> for AnchorTxCircuitConfig<F> {
         // value in the public input table.
         meta.lookup_any("call data in pi_table", |meta| {
             let q_call_data_end = meta.query_selector(q_call_data_part_end);
-            let call_data_rlc_acc = meta.query_advice(call_data_part_rlc_acc, Rotation::cur());
+            let call_data_part_rlc_acc = meta.query_advice(call_data_part_rlc_acc, Rotation::cur());
             let call_data_tag = meta.query_fixed(call_data_part_tag, Rotation::cur());
 
-            [call_data_tag, call_data_rlc_acc]
+            [call_data_tag, call_data_part_rlc_acc]
                 .into_iter()
                 .zip(pi_table.table_exprs(meta).into_iter())
                 .map(|(arg, table)| (q_call_data_end.expr() * arg, table))
@@ -205,7 +208,7 @@ impl<F: Field> AnchorTxCircuitConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         _anchor_tx: &Transaction,
-        taiko: &Taiko,
+        protocol_instance: &ProtocolInstance,
         _challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         // Gas, GasPrice, CallerAddress, CalleeAddress, IsCreate, Value, CallDataLength,
@@ -213,7 +216,7 @@ impl<F: Field> AnchorTxCircuitConfig<F> {
         for (tag, value) in [
             (
                 TxFieldTag::Gas,
-                Value::known(F::from(taiko.anchor_gas_cost)),
+                Value::known(F::from(protocol_instance.anchor_gas_limit)),
             ),
             (
                 TxFieldTag::GasPrice,
@@ -229,7 +232,12 @@ impl<F: Field> AnchorTxCircuitConfig<F> {
             ),
             (
                 TxFieldTag::CalleeAddress,
-                Value::known(taiko.l2_contract.to_scalar().expect("anchor_tx.to too big")),
+                Value::known(
+                    protocol_instance
+                        .l2_contract
+                        .to_scalar()
+                        .expect("anchor_tx.to too big"),
+                ),
             ),
             (
                 TxFieldTag::IsCreate,
@@ -277,12 +285,12 @@ impl<F: Field> AnchorTxCircuitConfig<F> {
             ),
             (
                 "l1_height",
-                &anchor_tx.call_data[68..76],
+                &anchor_tx.call_data[68..100],
                 PiFieldTag::L1Height,
             ),
             (
                 "parent_gas_used",
-                &anchor_tx.call_data[76..84],
+                &anchor_tx.call_data[100..132],
                 PiFieldTag::ParentGasUsed,
             ),
         ] {
@@ -339,7 +347,7 @@ impl<F: Field> AnchorTxCircuitConfig<F> {
         txs: &[Transaction],
         max_txs: usize,
         max_calldata: usize,
-        taiko: &Taiko,
+        protocol_instance: &ProtocolInstance,
         call_data: &CallData,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
@@ -351,7 +359,7 @@ impl<F: Field> AnchorTxCircuitConfig<F> {
                 // gate with TxTable's column
                 self.tx_table
                     .load_with_region(region, txs, max_txs, max_calldata, challenges)?;
-                self.assign_anchor_tx_values(region, anchor_tx, taiko, challenges)?;
+                self.assign_anchor_tx_values(region, anchor_tx, protocol_instance, challenges)?;
                 self.assign_call_data(region, anchor_tx, call_data, challenges)?;
                 Ok(())
             },
@@ -367,7 +375,7 @@ pub struct AnchorTxCircuit<F: Field> {
     max_calldata: usize,
     anchor_tx: Transaction,
     txs: Vec<Transaction>,
-    taiko: Taiko,
+    protocol_instance: ProtocolInstance,
     _marker: PhantomData<F>,
 }
 
@@ -378,14 +386,14 @@ impl<F: Field> AnchorTxCircuit<F> {
         max_calldata: usize,
         anchor_tx: Transaction,
         txs: Vec<Transaction>,
-        taiko: Taiko,
+        protocol_instance: ProtocolInstance,
     ) -> Self {
         AnchorTxCircuit {
             max_txs,
             max_calldata,
             anchor_tx,
             txs,
-            taiko,
+            protocol_instance,
             _marker: PhantomData,
         }
     }
@@ -421,7 +429,7 @@ impl<F: Field> SubCircuit<F> for AnchorTxCircuit<F> {
             block.circuits_params.max_calldata,
             block.txs.first().unwrap().clone(),
             block.txs.clone(),
-            block.taiko.clone(),
+            block.protocol_instance.clone(),
         )
     }
 
@@ -443,7 +451,7 @@ impl<F: Field> SubCircuit<F> for AnchorTxCircuit<F> {
             &self.txs,
             self.max_txs,
             self.max_calldata,
-            &self.taiko,
+            &self.protocol_instance,
             &call_data,
             challenges,
         )

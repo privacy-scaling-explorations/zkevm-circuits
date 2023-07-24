@@ -13,6 +13,9 @@ pub mod tx_circuit;
 pub mod super_circuit;
 
 #[cfg(test)]
+pub mod taiko_super_circuit;
+
+#[cfg(test)]
 #[cfg(feature = "benches")]
 pub mod packed_multi_keccak;
 
@@ -33,5 +36,5 @@ pub mod copy_circuit;
 pub mod exp_circuit;
 
 #[cfg(test)]
-#[cfg(feature = "benches")]
+//#[cfg(feature = "benches")]
 pub mod constants;

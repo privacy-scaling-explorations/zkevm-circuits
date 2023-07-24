@@ -39,7 +39,6 @@ use crate::{
     witness::Transaction,
 };
 use eth_types::{address, word, Address, Field, ToBigEndian, ToLittleEndian, Word, U256};
-use ethers_signers::LocalWallet;
 use gadgets::{
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
     mul_add::{MulAddChip, MulAddConfig},
@@ -51,7 +50,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use once_cell::sync::Lazy;
-use std::str::FromStr;
 
 const MAX_DEGREE: usize = 9;
 const BYTE_POW_BASE: u64 = 1 << 8;
@@ -62,11 +60,6 @@ pub(crate) static GOLDEN_TOUCH_ADDRESS: Lazy<Address> =
 // 0x92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38
 pub(crate) static GOLDEN_TOUCH_PRIVATEKEY: Lazy<Word> =
     Lazy::new(|| word!("0x92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38"));
-
-pub(crate) static GOLDEN_TOUCH_WALLET: Lazy<LocalWallet> = Lazy::new(|| {
-    LocalWallet::from_str("0x92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38")
-        .unwrap()
-});
 
 // 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798
 pub(crate) static GX1: Lazy<Word> =

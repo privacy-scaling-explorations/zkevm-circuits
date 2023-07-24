@@ -474,21 +474,29 @@ impl<'a> CircuitInputStateRef<'a> {
         must_create: bool,
         value: Word,
         fee: Option<Word>,
+        is_anchor_tx: bool,
     ) -> Result<(), Error> {
         let (found, sender_account) = self.sdb.get_account(&sender);
         if !found {
             return Err(Error::AccountNotFound(sender));
         }
         let mut sender_balance_prev = sender_account.balance;
-        debug_assert!(
-            sender_account.balance >= value + fee.unwrap_or_default(),
-            "invalid amount balance {:?} value {:?} fee {:?}",
-            sender_balance_prev,
-            value,
-            fee
-        );
+        if !is_anchor_tx {
+            debug_assert!(
+                sender_account.balance >= value + fee.unwrap_or_default(),
+                "invalid amount balance {:?} value {:?} fee {:?}",
+                sender_balance_prev,
+                value,
+                fee
+            );
+        }
         if let Some(fee) = fee {
-            let sender_balance = sender_balance_prev - fee;
+            let sender_balance = if is_anchor_tx {
+                // anchor tx doesn't need fee
+                sender_balance_prev
+            } else {
+                sender_balance_prev - fee
+            };
             log::trace!(
                 "sender balance update with fee (not reversible): {:?} {:?}->{:?}",
                 sender,
@@ -575,6 +583,7 @@ impl<'a> CircuitInputStateRef<'a> {
             must_create,
             value,
             None,
+            false,
         )
     }
 

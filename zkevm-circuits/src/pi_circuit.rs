@@ -61,6 +61,10 @@ pub struct TxValues {
     call_data_len: u64,
     call_data_gas_cost: u64,
     tx_sign_hash: [u8; 32],
+
+    v: u64,
+    r: Word,
+    s: Word,
 }
 
 /// Extra values (not contained in block or tx tables)
@@ -149,6 +153,9 @@ impl PublicData {
                 call_data_len: tx.call_data.len() as u64,
                 call_data_gas_cost: tx.call_data_gas_cost(),
                 tx_sign_hash: msg_hash_le,
+                r: tx.r,
+                s: tx.s,
+                v: tx.v,
             });
         }
         tx_vals
@@ -1342,6 +1349,9 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                             TxFieldTag::TxSignHash,
                             rlc(tx.tx_sign_hash, self.randomness),
                         ),
+                        (TxFieldTag::SigV, F::from(tx.v)),
+                        (TxFieldTag::SigR, rlc(tx.r.to_le_bytes(), self.randomness)),
+                        (TxFieldTag::SigS, rlc(tx.s.to_le_bytes(), self.randomness)),
                     ] {
                         config.assign_tx_row(
                             &mut region,
@@ -1527,6 +1537,9 @@ fn raw_public_inputs_col<F: Field>(
             F::from(tx.call_data_len),
             F::from(tx.call_data_gas_cost),
             rlc(tx.tx_sign_hash, randomness),
+            F::from(tx.v),
+            rlc(tx.r.to_le_bytes(), randomness),
+            rlc(tx.s.to_le_bytes(), randomness),
         ] {
             result[id_offset + offset] = F::from((i + 1) as u64);
             result[index_offset + offset] = F::ZERO;

@@ -205,6 +205,17 @@ impl From<&Transaction> for TransactionRequest {
     }
 }
 
+fn recover_v(v: u64, chain_id: u64) -> u64 {
+    let addition = chain_id * 2 + 35;
+    if v >= addition {
+        return v - addition;
+    }
+    if v == 27 || v == 28 {
+        return v - 27;
+    }
+    v
+}
+
 impl Transaction {
     /// Return the SignData associated with this Transaction.
     pub fn sign_data(&self, chain_id: u64) -> Result<SignData, Error> {
@@ -226,10 +237,7 @@ impl Transaction {
             .to_vec()
             .try_into()
             .expect("hash length isn't 32 bytes");
-        let v = self
-            .v
-            .checked_sub(35 + chain_id * 2)
-            .ok_or(Error::Signature(libsecp256k1::Error::InvalidSignature))? as u8;
+        let v = recover_v(self.v, chain_id) as u8;
         let pk = recover_pk(v, &self.r, &self.s, &msg_hash)?;
         // msg_hash = msg_hash % q
         let msg_hash = BigUint::from_bytes_be(msg_hash.as_slice());

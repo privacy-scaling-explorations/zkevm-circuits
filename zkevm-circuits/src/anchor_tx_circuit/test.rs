@@ -1,11 +1,8 @@
 #![allow(unused_imports)]
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 use super::{
-    sign_verify::{
-        GOLDEN_TOUCH_ADDRESS, GOLDEN_TOUCH_PRIVATEKEY, GOLDEN_TOUCH_WALLET, GX1,
-        GX1_MUL_PRIVATEKEY, GX2, N,
-    },
+    sign_verify::{GOLDEN_TOUCH_ADDRESS, GOLDEN_TOUCH_PRIVATEKEY, GX1, GX1_MUL_PRIVATEKEY, GX2, N},
     *,
 };
 use crate::{
@@ -44,7 +41,7 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use log::error;
-use mock::{AddrOrWallet, MockTransaction, TestContext, MOCK_CHAIN_ID};
+use mock::{AddrOrWallet, MockAccount, MockTransaction, TestContext, MOCK_CHAIN_ID};
 use num::Integer;
 use num_bigint::BigUint;
 use once_cell::sync::Lazy;
@@ -116,19 +113,13 @@ fn run<F: Field>(block: &Block<F>, sign_hash: Option<H256>) -> Result<(), Vec<Ve
     prover.verify()
 }
 
-fn gen_block<const NUM_TXS: usize>(
-    max_txs: usize,
-    max_calldata: usize,
-    taiko: Taiko,
-    extra_func_tx: fn(&mut MockTransaction),
-) -> Block<Fr> {
-    let chain_id = (*MOCK_CHAIN_ID).as_u64();
-    let mut wallets = HashMap::new();
-    wallets.insert(
-        *GOLDEN_TOUCH_ADDRESS,
-        GOLDEN_TOUCH_WALLET.clone().with_chain_id(chain_id),
-    );
-
+pub(crate) fn add_anchor_accounts<const NACC: usize, FAcc>(
+    accs: [&mut MockAccount; NACC],
+    acc_fns: FAcc,
+    protocol_instance: &ProtocolInstance,
+) where
+    FAcc: FnOnce([&mut MockAccount; NACC]),
+{
     let code = bytecode! {
         PUSH1(0x01) // value
         PUSH1(0x02) // key
@@ -136,25 +127,57 @@ fn gen_block<const NUM_TXS: usize>(
 
         PUSH3(0xbb)
     };
+    accs[0]
+        .address(*GOLDEN_TOUCH_ADDRESS)
+        .balance(Word::from(1u64 << 20));
+    accs[1].address(protocol_instance.l2_contract).code(code);
+    acc_fns(accs);
+}
+
+pub(crate) fn add_anchor_tx<const NACC: usize, FTx>(
+    mut txs: Vec<&mut MockTransaction>,
+    accs: [MockAccount; NACC],
+    func_tx: FTx,
+    extra_func_tx: fn(&mut MockTransaction),
+    protocol_instance: &ProtocolInstance,
+) where
+    FTx: FnOnce(Vec<&mut MockTransaction>, [MockAccount; NACC]),
+{
+    txs[0]
+        .gas(protocol_instance.anchor_gas_limit.to_word())
+        .gas_price(ANCHOR_TX_GAS_PRICE.to_word())
+        .from(*GOLDEN_TOUCH_ADDRESS)
+        .to(protocol_instance.l2_contract)
+        .input(protocol_instance.anchor_call())
+        .nonce(0)
+        .value(ANCHOR_TX_VALUE.to_word());
+    extra_func_tx(txs[0]);
+    func_tx(txs, accs);
+}
+
+fn gen_block<const NUM_TXS: usize>(
+    max_txs: usize,
+    max_calldata: usize,
+    protocol_instance: ProtocolInstance,
+    extra_func_tx: fn(&mut MockTransaction),
+) -> Block<Fr> {
+    let chain_id = (*MOCK_CHAIN_ID).as_u64();
+    let mut wallets = HashMap::new();
+
+    let wallet =
+        LocalWallet::from_str("0x92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38")
+            .unwrap()
+            .with_chain_id(chain_id);
+
+    wallets.insert(*GOLDEN_TOUCH_ADDRESS, wallet);
 
     let block: GethData = TestContext::<2, NUM_TXS>::new(
         None,
         |accs| {
-            accs[0]
-                .address(*GOLDEN_TOUCH_ADDRESS)
-                .balance(Word::from(1u64 << 20));
-            accs[1].address(taiko.l2_contract).code(code);
+            add_anchor_accounts(accs, |_| {}, &protocol_instance);
         },
-        |mut txs, _accs| {
-            txs[0]
-                .gas(taiko.anchor_gas_cost.to_word())
-                .gas_price(ANCHOR_TX_GAS_PRICE.to_word())
-                .from(*GOLDEN_TOUCH_ADDRESS)
-                .to(taiko.l2_contract)
-                .input(taiko.anchor_call())
-                .nonce(0)
-                .value(ANCHOR_TX_VALUE.to_word());
-            extra_func_tx(txs[0]);
+        |txs, accs| {
+            add_anchor_tx(txs, accs, |_, _| {}, extra_func_tx, &protocol_instance);
         },
         |block, _tx| block,
     )
@@ -171,11 +194,11 @@ fn gen_block<const NUM_TXS: usize>(
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
     let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-    block.taiko = taiko;
+    block.protocol_instance = protocol_instance;
     block
 }
 
-fn sign_tx(tx: &mut MockTransaction) {
+pub(crate) fn sign_tx(tx: &mut MockTransaction) {
     let chain_id = (*MOCK_CHAIN_ID).as_u64();
     let _tx: Transaction = tx.to_owned().into();
     let sig_data = anchor_sign(&_tx, chain_id).unwrap();
@@ -213,22 +236,22 @@ fn anchor_tx_circuit_unusable_rows() {
 
 #[test]
 fn anchor_test() {
-    let taiko = Taiko {
-        anchor_gas_cost: 150000,
+    let protocol_instance = ProtocolInstance {
+        anchor_gas_limit: 150000,
         ..Default::default()
     };
-    let block = gen_block::<1>(2, 100, taiko, sign_tx);
+    let block = gen_block::<1>(2, 200, protocol_instance, sign_tx);
     assert_eq!(run::<Fr>(&block, None), Ok(()));
 }
 
 #[test]
 fn anchor_test_when_sign_r_is_gx2() {
-    let taiko = Taiko {
-        anchor_gas_cost: 150000,
+    let protocol_instance = ProtocolInstance {
+        anchor_gas_limit: 150000,
         ..Default::default()
     };
     let msg_hash = *N - *GX1_MUL_PRIVATEKEY;
     let msg_hash = H256::from(msg_hash.to_le_bytes());
-    let block = gen_block::<1>(2, 100, taiko, sign_tx_r_is_gx2);
+    let block = gen_block::<1>(2, 200, protocol_instance, sign_tx_r_is_gx2);
     assert_eq!(run::<Fr>(&block, Some(msg_hash)), Ok(()));
 }

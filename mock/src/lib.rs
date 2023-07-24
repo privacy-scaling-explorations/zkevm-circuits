@@ -10,7 +10,7 @@ mod block;
 pub mod test_ctx;
 mod transaction;
 
-pub(crate) use account::MockAccount;
+pub use account::MockAccount;
 pub(crate) use block::MockBlock;
 pub use test_ctx::TestContext;
 pub use transaction::{AddrOrWallet, MockTransaction, CORRECT_MOCK_TXS};
