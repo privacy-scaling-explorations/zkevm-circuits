@@ -228,7 +228,8 @@ fn bytecode_soundness_bug_1() {
             let mut index = bytecode_len as u64;
             let size = 100;
             let minimum_rows = 8;
-            for i in rows.len()..size - minimum_rows + 3 {
+            let len = rows.len();
+            for i in len..size - minimum_rows {
                 rows.push(BytecodeCircuitRow::new(
                     code_hash,
                     Fr::ONE,
