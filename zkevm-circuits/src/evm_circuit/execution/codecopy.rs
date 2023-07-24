@@ -159,7 +159,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
         let bytecode = block
             .bytecodes
-            .get_bytecode(&call.code_hash)
+            .get_from_h256(&call.code_hash)
             .expect("could not find current environment's bytecode");
 
         let code_size = bytecode.codesize() as u64;

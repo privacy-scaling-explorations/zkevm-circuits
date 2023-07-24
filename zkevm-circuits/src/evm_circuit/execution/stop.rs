@@ -108,7 +108,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
     ) -> Result<(), Error> {
         let code = block
             .bytecodes
-            .get_bytecode(&call.code_hash)
+            .get_from_h256(&call.code_hash)
             .expect("could not find current environment's bytecode");
         self.code_length.assign(
             region,

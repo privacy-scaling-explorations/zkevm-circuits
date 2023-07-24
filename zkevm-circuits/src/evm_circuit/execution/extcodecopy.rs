@@ -209,7 +209,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         } else {
             block
                 .bytecodes
-                .get_from_word(&code_hash)
+                .get_from_u256(&code_hash)
                 .expect("could not find external bytecode")
                 .codesize() as u64
         };

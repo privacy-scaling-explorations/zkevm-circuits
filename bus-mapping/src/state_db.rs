@@ -54,13 +54,13 @@ impl CodeDB {
     }
 
     /// Query Bytecode by H256
-    pub fn get_bytecode(&self, codehash: &H256) -> Option<Bytecode> {
+    pub fn get_from_h256(&self, codehash: &H256) -> Option<Bytecode> {
         self.0.get(codehash).cloned().map(|code| code.into())
     }
 
     /// Query Bytecode by U256
-    pub fn get_from_word(&self, codehash: &Word) -> Option<Bytecode> {
-        self.get_bytecode(&H256::from_uint(codehash))
+    pub fn get_from_u256(&self, codehash: &Word) -> Option<Bytecode> {
+        self.get_from_h256(&H256::from_uint(codehash))
     }
 }
 

@@ -128,7 +128,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
         let code = block
             .bytecodes
-            .get_bytecode(&call.code_hash)
+            .get_from_h256(&call.code_hash)
             .expect("could not find current environment's bytecode");
         let code_len = code.codesize() as u64;
         self.code_len
