@@ -14,12 +14,14 @@ use ethers::{
     solc::{CompilerInput, EvmVersion, Solc},
 };
 use integration_tests::{
-    get_client, get_provider, get_wallet, log_init, CompiledContract, GenDataOutput, CONTRACTS,
-    CONTRACTS_PATH,
+    get_client, get_provider, get_wallet, log_init, CompiledContract, EvmVersionEnum,
+    GenDataOutput, SolcVersion, CONTRACTS, CONTRACTS_PATH,
 };
 use log::{error, info};
-use std::{collections::HashMap, fs::File, path::Path, sync::Arc, thread::sleep, time::Duration};
-
+use std::{
+    collections::HashMap, fs::File, io, path::Path, process::Command, sync::Arc, thread::sleep,
+    time::Duration,
+};
 async fn deploy<T, M>(prov: Arc<M>, compiled: &CompiledContract, args: T) -> Contract<M>
 where
     T: Tokenize,
@@ -77,11 +79,28 @@ async fn main() {
 
     // Compile contracts
     info!("Compiling contracts...");
-    let solc = Solc::default();
-    info!("Solc version {}", solc.version().expect("version works"));
+    // let solc = Solc::default();
+    // info!("Solc version {}", solc.version().expect("version works"));
     let mut contracts = HashMap::new();
-    for (name, contract_path) in CONTRACTS {
+    for (name, contract_path, version, evm_version) in CONTRACTS {
         let path_sol = Path::new(CONTRACTS_PATH).join(contract_path);
+        let version_string = match version {
+            SolcVersion::V0_7_6 => "0.7.6",
+            SolcVersion::V0_8_20 => "0.8.20",
+        };
+        Command::new("solc-select")
+            .arg("use")
+            .arg(version_string)
+            .output()
+            .expect("Failed to switch solc version");
+
+        let solc = Solc::default();
+        info!("Solc version {}", solc.version().expect("version works"));
+        let evm_version_selected = match evm_version {
+            EvmVersionEnum::London => EvmVersion::London,
+            EvmVersionEnum::Berlin => EvmVersion::Berlin,
+        };
+
         let inputs = CompilerInput::new(&path_sol).expect("Compile success");
         // ethers-solc: explicitly indicate the EvmVersion that corresponds to the zkevm circuit's
         // supported Upgrade, e.g. `London/Shanghai/...` specifications.
@@ -90,7 +109,7 @@ async fn main() {
             .first_mut()
             .expect("first exists")
             .clone()
-            .evm_version(EvmVersion::London);
+            .evm_version(evm_version_selected);
 
         let compiled = solc
             .compile(&input)

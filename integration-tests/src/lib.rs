@@ -23,18 +23,51 @@ use std::{
 };
 use url::Url;
 
+/// solc版本信息
+#[allow(missing_docs)]
+pub enum SolcVersion {
+    V0_7_6,
+    V0_8_20,
+}
+#[allow(missing_docs)]
+pub enum EvmVersionEnum {
+    London,
+    Berlin,
+    // Add other versions here as needed
+}
+
 /// Geth dev chain ID
 pub const CHAIN_ID: u64 = 1337;
 /// Path to the test contracts
 pub const CONTRACTS_PATH: &str = "contracts";
-/// List of contracts as (ContractName, ContractSolidityFile)
-pub const CONTRACTS: &[(&str, &str)] = &[
-    ("Greeter", "greeter/Greeter.sol"),
+/// List of contracts as (ContractName, ContractSolidityFile, SolcVersion, EvmVersionEnum)
+pub const CONTRACTS: &[(&str, &str, SolcVersion, EvmVersionEnum)] = &[
+    (
+        "Greeter",
+        "greeter/Greeter.sol",
+        SolcVersion::V0_8_20,
+        EvmVersionEnum::London,
+    ),
     (
         "OpenZeppelinERC20TestToken",
         "ERC20/OpenZeppelinERC20TestToken.sol",
+        SolcVersion::V0_8_20,
+        EvmVersionEnum::London,
+    ),
+    (
+        "OpenZeppelinERC20TestToken_Swap",
+        "ERC20/OpenZeppelinERC20TestToken_Swap.sol",
+        SolcVersion::V0_8_20,
+        EvmVersionEnum::London,
+    ),
+    (
+        "UniswapV3Factory",
+        "vendor/v3-core/contracts/UniswapV3Factory.sol",
+        SolcVersion::V0_7_6,
+        EvmVersionEnum::Berlin,
     ),
 ];
+
 /// Path to gen_blockchain_data output file
 pub const GENDATA_OUTPUT_PATH: &str = "gendata_output.json";
 
