@@ -7,3 +7,9 @@
 	update = none
 	path = integration-tests/contracts/vendor/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "integration-tests/contracts/vendor/v3-core"]
+	path = integration-tests/contracts/vendor/v3-core
+	url = https://github.com/Uniswap/v3-core.git
+[submodule "integration-tests/contracts/vendor/v3-periphery"]
+	path = integration-tests/contracts/vendor/v3-periphery
+	url = https://github.com/Uniswap/v3-periphery.git
