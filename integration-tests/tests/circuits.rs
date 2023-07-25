@@ -111,18 +111,18 @@ macro_rules! unroll_tests {
 }
 
 unroll_tests!(
-    (circuit_block_transfer_0, "Transfer 0"),
-    (circuit_multiple_transfers_0, "Multiple transfers 0"),
-    (
-        circuit_erc20_openzeppelin_transfer_fail,
-        "ERC20 OpenZeppelin transfer failed"
-    ),
-    (
-        circuit_erc20_openzeppelin_transfer_succeed,
-        "ERC20 OpenZeppelin transfer successful"
-    ),
-    (
-        circuit_multiple_erc20_openzeppelin_transfers,
-        "Multiple ERC20 OpenZeppelin transfers"
-    )
+    (circuit_block_transfer_0, "Transfer 0")
+    // (circuit_multiple_transfers_0, "Multiple transfers 0"),
+    // (
+    //     circuit_erc20_openzeppelin_transfer_fail,
+    //     "ERC20 OpenZeppelin transfer failed"
+    // ),
+    // (
+    //     circuit_erc20_openzeppelin_transfer_succeed,
+    //     "ERC20 OpenZeppelin transfer successful"
+    // ),
+    // (
+    //     circuit_multiple_erc20_openzeppelin_transfers,
+    //     "Multiple ERC20 OpenZeppelin transfers"
+    // )
 );

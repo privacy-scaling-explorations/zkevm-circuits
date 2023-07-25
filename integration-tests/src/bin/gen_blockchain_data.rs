@@ -36,6 +36,7 @@ where
         .expect("cannot confirm deploy")
 }
 
+// erc20转账交易信息
 fn erc20_transfer<M>(
     prov: Arc<M>,
     contract_address: Address,
@@ -56,9 +57,10 @@ where
     call.tx
 }
 
+// 发送并确认以太坊交易，获取交易收据TransactionReceipt类型
 async fn send_confirm_tx<M>(prov: &Arc<M>, tx: TypedTransaction) -> TransactionReceipt
 where
-    M: Middleware,
+    M: Middleware, // 与以太坊交互的中间件提供商
 {
     prov.send_transaction(tx, None)
         .await
@@ -172,13 +174,13 @@ async fn main() {
     let block_num = prov.get_block_number().await.expect("cannot get block_num");
     blocks.insert("Transfer 0".to_string(), block_num.as_u64());
 
-    // Deploy smart contracts
-    //
-
+    // 合约部署
+    // HashMap（名为 deployments）来跟踪已部署的合约及其相关信息
+    // SignerMiddleware，这是一个包含提供程序和钱包信息的对象，用于签名交易
     let mut deployments = HashMap::new();
     let prov_wallet0 = Arc::new(SignerMiddleware::new(get_provider(), wallet0));
 
-    // Greeter
+    // Greeter合约部署
     let contract = deploy(
         prov_wallet0.clone(),
         contracts.get("Greeter").expect("contract not found"),
@@ -192,7 +194,7 @@ async fn main() {
         (block_num.as_u64(), contract.address()),
     );
 
-    // OpenZeppelinERC20TestToken
+    // TT1合约部署 OpenZeppelinERC20TestToken
     let contract = deploy(
         prov_wallet0.clone(),
         contracts
@@ -208,6 +210,25 @@ async fn main() {
     );
     deployments.insert(
         "OpenZeppelinERC20TestToken".to_string(),
+        (block_num.as_u64(), contract.address()),
+    );
+
+    // TT2合约部署 OpenZeppelinERC20TestToken
+    let contract = deploy(
+        prov_wallet0.clone(),
+        contracts
+            .get("OpenZeppelinERC20TestToken_Swap")
+            .expect("contract not found"),
+        prov_wallet0.address(),
+    )
+    .await;
+    let block_num = prov.get_block_number().await.expect("cannot get block_num");
+    blocks.insert(
+        "Deploy OpenZeppelinERC20TestToken_Swap".to_string(),
+        block_num.as_u64(),
+    );
+    deployments.insert(
+        "OpenZeppelinERC20TestToken_Swap".to_string(),
         (block_num.as_u64(), contract.address()),
     );
 
