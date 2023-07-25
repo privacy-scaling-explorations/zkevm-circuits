@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let code_size = cb.query_cell();
-        let code_size_left = code_size.expr() - cb.curr.state.program_counter.expr();
+        let code_size_left = code_size.expr() - cb.curr.state.program_counter.expr() - 1.expr();
 
         let value = cb.query_word32();
         // Query selectors for each opcode_lookup to know whether the current byte needs to be
@@ -65,8 +65,8 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             LtGadget::construct(cb, code_size_left.clone(), num_pushed.clone());
 
         // Expected number of padding
-        let num_padding: halo2_proofs::plonk::Expression<F> = 32.expr() - num_pushed.clone()
-            + is_out_of_range.expr() * (num_pushed.clone() - code_size_left + 1.expr());
+        let num_padding: halo2_proofs::plonk::Expression<F> =
+            is_out_of_range.expr() * (num_pushed.clone() - code_size_left);
 
         // The pushed bytes are viewed as left-padded big-endian, but our random
         // linear combination uses little-endian, so we lookup from the LSB
@@ -86,8 +86,8 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         let mut pa_prev = 1.expr();
         for (idx, (pu, pa)) in is_pushed.iter().zip(is_padding.iter()).enumerate() {
             let byte = &value.limbs[idx];
-            let index = cb.curr.state.program_counter.expr() + opcode.expr()
-                - (OpcodeId::PUSH1.as_u8() - 1 + idx as u8).expr();
+            let index: halo2_proofs::plonk::Expression<F> =
+                cb.curr.state.program_counter.expr() + num_pushed.clone() - idx.expr();
 
             // is_pushed can transit from 1 to 0 only once
             // as 1 - [1, 1, 1, ..., 1, 0, 0, 0]
@@ -96,13 +96,12 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
                 pu_prev - pu.expr(),
             );
 
-            // when is_pushed = 0, is_padding = 1
-            // otherwise, is_padding can transit from 1 to 0 only once
-            // as 1 - [1, 1, 0, ..., 0, 1, 1, 1] (out of bound)
-            // as 1 - [0, 0, 0, ..., 0, 1, 1, 1] (not out of bound)
+            // is_padding can transit from 1 to 0 only once
+            // as 1 - [1, 1, 0, ..., 0, 0, 0, 0] (out of bound)
+            // as 1 - [0, 0, 0, ..., 0, 0, 0, 0] (not out of bound)
             cb.require_boolean(
-                "Constrain is_padding can only transit from 1 to 0 when is_pushed = 1, else is 1",
-                pu.expr() * (pa_prev - pa.expr()) + (1.expr() - pu.expr()) * (pa.expr() - 1.expr()),
+                "Constrain is_padding can only transit from 1 to 0",
+                pa_prev - pa.expr(),
             );
 
             // byte is 0 if it is either not pushed or padding
@@ -183,7 +182,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         self.code_size
             .assign(region, offset, Value::known(F::from(code_size)))?;
 
-        let code_size_left = (code_size - step.pc) as usize;
+        let code_size_left = (code_size - step.pc - 1) as usize;
         self.is_out_of_range.assign(
             region,
             offset,
@@ -195,11 +194,9 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         self.value.assign_u256(region, offset, value)?;
 
         let is_out_of_bound = code_size_left < npushed;
-        // let mut num_padding = 32 - n;
         let mut out_of_bound_padding = 0;
         if is_out_of_bound {
-            out_of_bound_padding = npushed - code_size_left + 1;
-            // num_padding += out_of_bound_padding
+            out_of_bound_padding += npushed - code_size_left
         };
         for (i, (pu, pa)) in self
             .is_pushed
@@ -208,7 +205,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             .enumerate()
         {
             let pushed = i < npushed;
-            let padding = !pushed || (is_out_of_bound && i < out_of_bound_padding);
+            let padding = i < out_of_bound_padding;
             pu.assign(region, offset, Value::known(F::from(pushed as u64)))?;
             pa.assign(region, offset, Value::known(F::from(padding as u64)))?;
         }
