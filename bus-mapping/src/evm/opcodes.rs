@@ -54,6 +54,7 @@ mod error_oog_sload_sstore;
 mod error_return_data_outofbound;
 mod error_simple;
 mod error_write_protection;
+mod error_code_store;
 
 #[cfg(test)]
 mod memory_expansion_test;
@@ -82,6 +83,7 @@ use error_oog_sload_sstore::OOGSloadSstore;
 use error_return_data_outofbound::ErrorReturnDataOutOfBound;
 use error_simple::ErrorSimple;
 use error_write_protection::ErrorWriteProtection;
+use error_code_store::ErrorCodeStore;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
@@ -304,6 +306,8 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::Depth(DepthError::Call) => Some(CallOpcode::<7>::gen_associated_ops),
         ExecError::Depth(DepthError::Create) => Some(Create::<false>::gen_associated_ops),
         ExecError::Depth(DepthError::Create2) => Some(Create::<true>::gen_associated_ops),
+        ExecError::CodeStoreOutOfGas | ExecError::MaxCodeSizeExceeded => Some(ErrorCodeStore::gen_associated_ops),
+
         // more future errors place here
         _ => {
             evm_unimplemented!("TODO: error state {:?} not implemented", error);
