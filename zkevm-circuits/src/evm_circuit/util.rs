@@ -26,6 +26,7 @@ pub(crate) mod constraint_builder;
 pub(crate) mod instrumentation;
 pub(crate) mod math_gadget;
 pub(crate) mod memory_gadget;
+pub(crate) mod precompile;
 
 pub use gadgets::util::{and, not, or, select, sum};
 

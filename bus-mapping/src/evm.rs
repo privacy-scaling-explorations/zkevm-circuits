@@ -6,3 +6,6 @@ pub use eth_types::evm_types::opcode_ids::OpcodeId;
 pub use opcodes::Opcode;
 
 pub use opcodes::Sha3CodeGen;
+
+#[cfg(feature = "test")]
+pub use opcodes::PrecompileCallArgs;

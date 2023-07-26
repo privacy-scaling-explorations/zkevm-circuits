@@ -56,6 +56,8 @@ mod error_return_data_outofbound;
 mod error_simple;
 mod error_write_protection;
 
+mod precompiles;
+
 #[cfg(test)]
 mod memory_expansion_test;
 
@@ -100,6 +102,9 @@ use sstore::Sstore;
 use stackonlyop::StackOnlyOpcode;
 use stop::Stop;
 use swap::Swap;
+
+#[cfg(feature = "test")]
+pub use callop::tests::PrecompileCallArgs;
 
 /// Generic opcode trait which defines the logic of the
 /// [`Operation`](crate::operation::Operation) that should be generated for one
