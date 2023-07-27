@@ -42,4 +42,73 @@ impl Opcode for ErrorCodeStore {
     }
 }
 
-//todo: add tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::RW};
+    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData};
+    use mock::{
+        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        TestContext,
+    };
+
+    #[test]
+    fn test_max_code_size_exceed() {
+        // code_creator outputs an empty array of length 0x6000 + 1, which will
+        // trigger the max code size limit.
+        let code_len = 0x6000 + 1;
+        let code_creator = bytecode! {
+            .op_mstore(code_len, 0x00)
+            .op_return(0x00, code_len)
+        };
+        let mut code = bytecode! {};
+        code.store_code_to_mem(&code_creator);
+
+        code.append(&bytecode! {
+            PUSH1 (code_creator.codesize())
+            PUSH1 (0x0)
+            PUSH1 (0)
+            CREATE
+
+            PUSH1 (0x20)
+            PUSH1 (0x20)
+            PUSH1 (0x20)
+            PUSH1 (0)
+            PUSH1 (0)
+            DUP6
+            PUSH2 (0xFFFF)
+            CALL
+            STOP
+        });
+
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+
+        let tx_id = 1;
+        let transaction = &builder.block.txs()[tx_id - 1];
+        let step = transaction
+            .steps()
+            .iter()
+            .filter(|step| step.exec_state == ExecState::Op(OpcodeId::RETURN))
+            .last()
+            .unwrap();
+
+        assert_eq!(step.error, Some(ExecError::MaxCodeSizeExceeded));
+
+        let container = builder.block.container.clone();
+        let operation = &container.stack[step.bus_mapping_instance[0].as_usize()];
+        assert_eq!(operation.rw(), RW::READ);
+    }
+}

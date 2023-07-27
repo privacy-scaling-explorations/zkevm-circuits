@@ -7,7 +7,7 @@ use crate::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::LtGadget,
-            memory_gadget::{MemoryAddressGadget},
+            memory_gadget::MemoryAddressGadget,
             CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -100,7 +100,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         let opcode = step.opcode().unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
-        //block.get_rws(step, index).stack_value());
+        // block.get_rws(step, index).stack_value());
         let [memory_offset, length] = [0, 1].map(|i| block.get_rws(step, i).stack_value());
         self.memory_address
             .assign(region, offset, memory_offset, length)?;
@@ -129,13 +129,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
 mod test {
     use bus_mapping::circuit_input_builder::FixedCParams;
     use eth_types::{
-        address,
-        bytecode,
-        evm_types::OpcodeId,
-        geth_types::Account,
-        Address,
-        Bytecode,
-        Word,
+        address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, Word,
     };
 
     use lazy_static::lazy_static;
