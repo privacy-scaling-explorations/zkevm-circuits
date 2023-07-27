@@ -12,10 +12,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::{
-        word::{Word, Word32Cell, WordCell, WordExpr},
-        Expr,
-    },
+    util::{word::WordExpr, Expr},
 };
 
 use eth_types::{evm_types::GasCost, Field};
