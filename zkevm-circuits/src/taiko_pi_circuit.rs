@@ -8,6 +8,7 @@ use crate::{
         constraint_builder::ConstraintBuilder,
         cell_manager::{CellManager, CellType},
     },
+    
     witness::{self, BlockContext}, circuit,
 };
 use eth_types::{Address, Field, ToBigEndian, ToWord, Word, H256};
@@ -75,7 +76,6 @@ pub struct PublicData {
 }
 
 impl PublicData {
-    // 需要的信息全部串起来，（名字，block#，raw_bytes）
     fn assignments(&self) -> [(&'static str, Option<Word>, [u8; 32]); 10] {
         [
             (
@@ -115,7 +115,6 @@ impl PublicData {
         ]
     }
 
-    // 取 raw_bytes 串起来
     /// get rpi bytes
     pub fn rpi_bytes(&self) -> Vec<u8> {
         self.assignments().iter().flat_map(|v| v.2).collect()
@@ -157,7 +156,6 @@ impl PublicData {
         }
     }
 
-    // raw_bytes -> keccak -> H256 整数
     fn get_pi(&self) -> H256 {
         let rpi_bytes = self.rpi_bytes();
         let rpi_keccak = keccak256(rpi_bytes);
@@ -266,7 +264,7 @@ impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
 
         meta.create_gate("Pi Gate", |meta| {
             circuit!([meta, cb], {
-
+                cb.add_constraint("", 0.expr());
             });
             cb.build_constraints()
         });
