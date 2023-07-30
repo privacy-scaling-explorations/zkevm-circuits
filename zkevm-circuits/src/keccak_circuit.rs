@@ -1,6 +1,6 @@
 //! The keccak circuit implementation.
 mod cell_manager;
-/// Keccak packed multi
+/// Keccak packed multiz
 pub mod keccak_packed_multi;
 mod param;
 mod table;

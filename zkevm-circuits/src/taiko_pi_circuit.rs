@@ -4,7 +4,11 @@ use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{byte_table::ByteTable, BlockContextFieldTag, BlockTable, KeccakTable, LookupTable},
     util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig},
-    witness::{self, BlockContext},
+    circuit_tools::{
+        constraint_builder::ConstraintBuilder,
+        cell_manager::{CellManager, CellType},
+    },
+    witness::{self, BlockContext}, circuit,
 };
 use eth_types::{Address, Field, ToBigEndian, ToWord, Word, H256};
 use ethers_core::utils::keccak256;
@@ -71,6 +75,7 @@ pub struct PublicData {
 }
 
 impl PublicData {
+    // 需要的信息全部串起来，（名字，block#，raw_bytes）
     fn assignments(&self) -> [(&'static str, Option<Word>, [u8; 32]); 10] {
         [
             (
@@ -110,6 +115,7 @@ impl PublicData {
         ]
     }
 
+    // 取 raw_bytes 串起来
     /// get rpi bytes
     pub fn rpi_bytes(&self) -> Vec<u8> {
         self.assignments().iter().flat_map(|v| v.2).collect()
@@ -151,6 +157,7 @@ impl PublicData {
         }
     }
 
+    // raw_bytes -> keccak -> H256 整数
     fn get_pi(&self) -> H256 {
         let rpi_bytes = self.rpi_bytes();
         let rpi_keccak = keccak256(rpi_bytes);
@@ -196,6 +203,23 @@ pub struct TaikoPiCircuitConfigArgs<F: Field> {
     pub challenges: Challenges<Expression<F>>,
 }
 
+/// 
+#[derive(Clone, Copy, Debug, num_enum::Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(u8)]
+pub enum PiCellType {
+    ///
+    #[num_enum(default)]
+    Storage,
+}
+impl CellType for PiCellType {
+    fn byte_type() -> Option<Self> {
+        unimplemented!()
+    }
+    fn storage_for_phase(phase: u8) -> Self {
+        unimplemented!()
+    }
+}
+
 impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
     type ConfigArgs = TaikoPiCircuitConfigArgs<F>;
 
@@ -229,11 +253,29 @@ impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
         meta.enable_equality(block_table.value);
         meta.enable_equality(pi);
 
+        let cm = CellManager::new(
+            meta,
+            vec![
+                (PiCellType::Storage, 3, 1, false),
+            ],
+            0,
+            1,
+        );
+        let mut cb: ConstraintBuilder<F, PiCellType> =  ConstraintBuilder::new(4,  Some(cm), Some(challenges.evm_word()));
+
+
+        meta.create_gate("Pi Gate", |meta| {
+            circuit!([meta, cb], {
+
+            });
+            cb.build_constraints()
+        });
+
         // field bytes
         meta.create_gate(
             "rpi_field_bytes_acc[i+1] = rpi_field_bytes_acc[i] * t + rpi_bytes[i+1]",
             |meta| {
-                let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+                let mut bcb = BaseConstraintBuilder::new(MAX_DEGREE);
 
                 let q_field_step = meta.query_selector(q_field_step);
                 let rpi_field_bytes_acc_next =
@@ -243,27 +285,27 @@ impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
                 let is_field_rlc = meta.query_fixed(is_field_rlc, Rotation::next());
                 let randomness = challenges.evm_word();
                 let t = select::expr(is_field_rlc, randomness, BYTE_POW_BASE.expr());
-                cb.require_equal(
+                bcb.require_equal(
                     "rpi_field_bytes_acc[i+1] = rpi_field_bytes_acc[i] * t + rpi_bytes[i+1]",
                     rpi_field_bytes_acc_next,
                     rpi_field_bytes_acc * t + rpi_field_bytes_next,
                 );
-                cb.gate(q_field_step)
+                bcb.gate(q_field_step)
             },
         );
         meta.create_gate("rpi_field_bytes_acc[0] = rpi_field_bytes[0]", |meta| {
-            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+            let mut bcb = BaseConstraintBuilder::new(MAX_DEGREE);
 
             let q_field_start = meta.query_selector(q_field_start);
             let rpi_field_bytes_acc = meta.query_advice(rpi_field_bytes_acc, Rotation::cur());
             let rpi_field_bytes = meta.query_advice(rpi_field_bytes, Rotation::cur());
 
-            cb.require_equal(
+            bcb.require_equal(
                 "rpi_field_bytes_acc[0] = rpi_field_bytes[0]",
                 rpi_field_bytes_acc,
                 rpi_field_bytes,
             );
-            cb.gate(q_field_start)
+            bcb.gate(q_field_start)
         });
 
         // keccak in rpi

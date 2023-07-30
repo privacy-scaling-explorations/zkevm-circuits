@@ -141,6 +141,35 @@ pub mod select {
     }
 }
 
+/// Trait that implements functionality to get a scalar from
+/// commonly used types.
+pub trait Scalar<F: Field> {
+    /// Returns a scalar for the type.
+    fn scalar(&self) -> F;
+}
+
+/// Implementation trait `Scalar` for type able to be casted to u64
+#[macro_export]
+macro_rules! impl_scalar {
+    ($type:ty) => {
+        impl<F: eth_types::Field> $crate::util::Scalar<F> for $type {
+            #[inline]
+            fn scalar(&self) -> F {
+                F::from(*self as u64)
+            }
+        }
+    };
+    ($type:ty, $method:path) => {
+        impl<F: eth_types::Field> $crate::util::Scalar<F> for $type {
+            #[inline]
+            fn scalar(&self) -> F {
+                F::from($method(self) as u64)
+            }
+        }
+    };
+}
+
+
 /// Trait that implements functionality to get a constant expression from
 /// commonly used types.
 pub trait Expr<F: Field> {
@@ -152,6 +181,7 @@ pub trait Expr<F: Field> {
 #[macro_export]
 macro_rules! impl_expr {
     ($type:ty) => {
+        $crate::impl_scalar!($type);
         impl<F: eth_types::Field> $crate::util::Expr<F> for $type {
             #[inline]
             fn expr(&self) -> Expression<F> {
@@ -160,6 +190,7 @@ macro_rules! impl_expr {
         }
     };
     ($type:ty, $method:path) => {
+        $crate::impl_scalar!($type, $method);
         impl<F: eth_types::Field> $crate::util::Expr<F> for $type {
             #[inline]
             fn expr(&self) -> Expression<F> {
@@ -173,8 +204,23 @@ impl_expr!(bool);
 impl_expr!(u8);
 impl_expr!(u64);
 impl_expr!(usize);
+impl_expr!(isize);
 impl_expr!(OpcodeId, OpcodeId::as_u8);
 impl_expr!(GasCost, GasCost::as_u64);
+
+impl<F: Field> Scalar<F> for i32 {
+    #[inline]
+    fn scalar(&self) -> F {
+        F::from(self.unsigned_abs() as u64) * if self.is_negative() { -F::ONE } else { F::ONE }
+    }
+}
+
+impl<F: Field> Scalar<F> for &F {
+    #[inline]
+    fn scalar(&self) -> F {
+        *(*self)
+    }
+}
 
 impl<F: Field> Expr<F> for Expression<F> {
     #[inline]

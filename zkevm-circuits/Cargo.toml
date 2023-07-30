@@ -33,6 +33,7 @@ maingate =  { git = "https://github.com/privacy-scaling-explorations/halo2wrong"
 integer =   { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_04_20" }
 libsecp256k1 = "0.7"
 num-bigint = { version = "0.4" }
+num_enum = "0.5.7"
 rand_chacha = "0.3"
 snark-verifier = { git = "https://github.com/brechtpd/snark-verifier.git", branch = "feat/add-sdk", default-features = false, features = ["loader_halo2", "system_halo2", "loader_evm", "parallel"] }
 snark-verifier-sdk = { git = "https://github.com/brechtpd/snark-verifier.git", branch = "feat/add-sdk", default-features = false, features = ["loader_halo2", "loader_evm", "parallel", "display", "halo2_circuit_params"] }
