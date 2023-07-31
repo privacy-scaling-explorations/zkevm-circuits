@@ -1,6 +1,6 @@
 use super::{param::*, util::*, DEFAULT_CELL_TYPE};
 use crate::util::{
-    cell_manager::{CMFixedHeigthStrategy, Cell, CellManager, CellValueOnly},
+    cell_manager::{CMFixedHeightStrategy, Cell, CellManager, CellValueOnly},
     word::Word,
     Challenges,
 };
@@ -158,7 +158,7 @@ pub(crate) mod split {
             DEFAULT_CELL_TYPE,
         },
         util::{
-            cell_manager::{CMFixedHeigthStrategy, CellManager},
+            cell_manager::{CMFixedHeightStrategy, CellManager},
             Expr,
         },
     };
@@ -168,7 +168,7 @@ pub(crate) mod split {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn expr<F: Field>(
         meta: &mut ConstraintSystem<F>,
-        cell_manager: &mut CellManager<CMFixedHeigthStrategy>,
+        cell_manager: &mut CellManager<CMFixedHeightStrategy>,
         cb: &mut BaseConstraintBuilder<F>,
         input: Expression<F>,
         rot: usize,
@@ -190,7 +190,7 @@ pub(crate) mod split {
     }
 
     pub(crate) fn value<F: Field>(
-        cell_manager: &mut CellManager<CMFixedHeigthStrategy>,
+        cell_manager: &mut CellManager<CMFixedHeightStrategy>,
         region: &mut KeccakRegion<F>,
         input: F,
         rot: usize,
@@ -228,7 +228,7 @@ pub(crate) mod split_uniform {
             DEFAULT_CELL_TYPE,
         },
         util::{
-            cell_manager::{CMFixedHeigthStrategy, Cell, CellManager, CellValueOnly},
+            cell_manager::{CMFixedHeightStrategy, Cell, CellManager, CellValueOnly},
             Expr,
         },
     };
@@ -239,7 +239,7 @@ pub(crate) mod split_uniform {
     pub(crate) fn expr<F: Field>(
         meta: &mut ConstraintSystem<F>,
         output_cells: &[Cell<F>],
-        cell_manager: &mut CellManager<CMFixedHeigthStrategy>,
+        cell_manager: &mut CellManager<CMFixedHeightStrategy>,
         cb: &mut BaseConstraintBuilder<F>,
         input: Expression<F>,
         rot: usize,
@@ -313,7 +313,7 @@ pub(crate) mod split_uniform {
 
     pub(crate) fn value<F: Field>(
         output_cells: &[CellValueOnly],
-        cell_manager: &mut CellManager<CMFixedHeigthStrategy>,
+        cell_manager: &mut CellManager<CMFixedHeightStrategy>,
         region: &mut KeccakRegion<F>,
         input: F,
         rot: usize,
@@ -395,7 +395,7 @@ pub(crate) mod split_uniform {
 pub(crate) mod transform {
     use crate::{
         keccak_circuit::DEFAULT_CELL_TYPE,
-        util::cell_manager::{CMFixedHeigthStrategy, CellManager},
+        util::cell_manager::{CMFixedHeightStrategy, CellManager},
     };
 
     use super::{transform_to, KeccakRegion, Part, PartValue};
@@ -406,7 +406,7 @@ pub(crate) mod transform {
     pub(crate) fn expr<F: Field>(
         name: &'static str,
         meta: &mut ConstraintSystem<F>,
-        cell_manager: &mut CellManager<CMFixedHeigthStrategy>,
+        cell_manager: &mut CellManager<CMFixedHeightStrategy>,
         lookup_counter: &mut usize,
         input: Vec<Part<F>>,
         transform_table: [TableColumn; 2],
@@ -436,7 +436,7 @@ pub(crate) mod transform {
     }
 
     pub(crate) fn value<F: Field>(
-        cell_manager: &mut CellManager<CMFixedHeigthStrategy>,
+        cell_manager: &mut CellManager<CMFixedHeightStrategy>,
         region: &mut KeccakRegion<F>,
         input: Vec<PartValue<F>>,
         do_packing: bool,
@@ -572,7 +572,7 @@ pub(crate) fn keccak<F: Field>(
         let mut round_lengths = Vec::new();
         let mut round_data_rlcs = Vec::new();
         for round in 0..NUM_ROUNDS + 1 {
-            let mut cell_manager = CellManager::new(CMFixedHeigthStrategy::new(
+            let mut cell_manager = CellManager::new(CMFixedHeightStrategy::new(
                 get_num_rows_per_round(),
                 DEFAULT_CELL_TYPE,
             ));

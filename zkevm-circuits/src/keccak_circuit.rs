@@ -31,7 +31,7 @@ use crate::{
     },
     table::{KeccakTable, LookupTable},
     util::{
-        cell_manager::{CMFixedHeigthStrategy, Cell, CellManager, CellType},
+        cell_manager::{CMFixedHeightStrategy, Cell, CellManager, CellType},
         word::{self, WordExpr},
         Challenges, SubCircuit, SubCircuitConfig,
     },
@@ -60,7 +60,7 @@ pub struct KeccakCircuitConfig<F> {
     q_padding_last: Column<Fixed>,
     /// The columns for other circuits to lookup Keccak hash results
     pub keccak_table: KeccakTable,
-    cell_manager: CellManager<CMFixedHeigthStrategy>,
+    cell_manager: CellManager<CMFixedHeightStrategy>,
     round_cst: Column<Fixed>,
     normalize_3: [TableColumn; 2],
     normalize_4: [TableColumn; 2],
@@ -113,7 +113,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         let chi_base_table = array_init::array_init(|_| meta.lookup_table_column());
         let pack_table = array_init::array_init(|_| meta.lookup_table_column());
 
-        let mut cell_manager = CellManager::new(CMFixedHeigthStrategy::new(
+        let mut cell_manager = CellManager::new(CMFixedHeightStrategy::new(
             get_num_rows_per_round(),
             DEFAULT_CELL_TYPE,
         ));

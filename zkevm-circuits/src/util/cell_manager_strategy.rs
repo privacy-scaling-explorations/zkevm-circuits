@@ -213,16 +213,16 @@ impl CellManagerStrategy for CMFixedWidthStrategy {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct CMFixedHeigthStrategy {
+pub(crate) struct CMFixedHeightStrategy {
     row_width: Vec<usize>,
     cell_type: CellType,
 
     num_unused_cells: usize,
 }
 
-impl CMFixedHeigthStrategy {
-    pub(crate) fn new(height: usize, cell_type: CellType) -> CMFixedHeigthStrategy {
-        CMFixedHeigthStrategy {
+impl CMFixedHeightStrategy {
+    pub(crate) fn new(height: usize, cell_type: CellType) -> CMFixedHeightStrategy {
+        CMFixedHeightStrategy {
             row_width: vec![0; height],
             cell_type,
 
@@ -231,7 +231,7 @@ impl CMFixedHeigthStrategy {
     }
 }
 
-impl CellManagerStrategy for CMFixedHeigthStrategy {
+impl CellManagerStrategy for CMFixedHeightStrategy {
     type Affinity = usize;
 
     fn on_creation(&mut self, _columns: &mut CellManagerColumns) {
@@ -246,7 +246,7 @@ impl CellManagerStrategy for CMFixedHeigthStrategy {
     ) -> Cell<F> {
         assert_eq!(
             cell_type, self.cell_type,
-            "CMFixedHeigthStrategy can only work with one cell type"
+            "CMFixedHeightStrategy can only work with one cell type"
         );
 
         let (row_idx, column_idx) = self.get_next();
@@ -275,7 +275,7 @@ impl CellManagerStrategy for CMFixedHeigthStrategy {
     ) -> CellValueOnly {
         assert_eq!(
             cell_type, self.cell_type,
-            "CMFixedHeigthStrategy can only work with one cell type"
+            "CMFixedHeightStrategy can only work with one cell type"
         );
 
         let (row_idx, column_idx) = self.get_next();
@@ -294,7 +294,7 @@ impl CellManagerStrategy for CMFixedHeigthStrategy {
     ) -> Cell<F> {
         assert_eq!(
             cell_type, self.cell_type,
-            "CMFixedHeigthStrategy can only work with one cell type"
+            "CMFixedHeightStrategy can only work with one cell type"
         );
 
         let row_idx = affnity;
@@ -315,7 +315,7 @@ impl CellManagerStrategy for CMFixedHeigthStrategy {
     ) -> CellValueOnly {
         assert_eq!(
             cell_type, self.cell_type,
-            "CMFixedHeigthStrategy can only work with one cell type"
+            "CMFixedHeightStrategy can only work with one cell type"
         );
 
         let row_idx = affinity;
@@ -327,7 +327,7 @@ impl CellManagerStrategy for CMFixedHeigthStrategy {
     }
 }
 
-impl CMFixedHeigthStrategy {
+impl CMFixedHeightStrategy {
     pub fn start_region(&mut self) -> usize {
         // Make sure all rows start at the same column
         let width = *self.row_width.iter().max().unwrap_or(&0usize);
