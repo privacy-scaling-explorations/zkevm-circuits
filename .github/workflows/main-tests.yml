@@ -127,12 +127,8 @@ jobs:
       github.event.pull_request.draft == false &&
       (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
 
-    name: Build target ${{ matrix.target }}
+    name: Linux Build
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        target:
-          - x86_64-unknown-linux-gnu
 
     steps:
       - uses: actions/checkout@v2
@@ -140,7 +136,7 @@ jobs:
         with:
           override: false
       - name: Add target
-        run: rustup target add ${{ matrix.target }}
+        run: rustup target add x86_64-unknown-linux-gnu
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -160,7 +156,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: build-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: cargo build
         uses: actions-rs/cargo@v1
         with:
