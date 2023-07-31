@@ -11,7 +11,7 @@ use crate::{
             },
             math_gadget::{
                 AddWordsGadget, ConstantDivisionGadget, IsEqualGadget, MinMaxGadget,
-                MulWordByU64Gadget,
+                MinMaxWordGadget, MulWordByU64Gadget,
             },
             CachedRegion, Cell,
         },
@@ -36,6 +36,7 @@ pub(crate) struct EndTxGadget<F> {
     tx_caller_address: Cell<F>,
     gas_fee_refund: UpdateBalanceGadget<F, 2, true>,
     sub_gas_price_by_base_fee: AddWordsGadget<F, 2, true>,
+    add_base_fee_and_tip: AddWordsGadget<F, 2, true>,
     mul_effective_tip_by_gas_used: MulWordByU64Gadget<F>,
     mul_base_fee_by_gas_used: MulWordByU64Gadget<F>,
     coinbase: Cell<F>,
@@ -58,6 +59,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         //    a. gas_price == effective_gas_price
         // 2. no need update GOLDEN_TOUCH account in Anchor(-effective_gas_price, +refund)
         // 3. Anchor's gas_tip_cap == 0
+        // 4. check gas_price == min(gas_tip_cap + base_fee, gas_fee_cap)
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
@@ -65,7 +67,12 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let [tx_gas, tx_caller_address] =
             [TxContextFieldTag::Gas, TxContextFieldTag::CallerAddress]
                 .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
-        let tx_gas_price = cb.tx_context_as_word(tx_id.expr(), TxContextFieldTag::GasPrice, None);
+        let [tx_gas_price, tx_gas_tip_cap, tx_gas_fee_cap] = [
+            TxContextFieldTag::GasPrice,
+            TxContextFieldTag::GasTipCap,
+            TxContextFieldTag::GasFeeCap,
+        ]
+        .map(|field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag, None));
 
         let is_first_tx = IsEqualGadget::construct(cb, tx_id.expr(), 1.expr());
 
@@ -97,13 +104,27 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             cb.block_lookup(tag.expr(), None, value);
         }
         let effective_tip = cb.query_word_rlc();
-        let sub_gas_price_by_base_fee =
-            AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee.clone()], tx_gas_price);
+        let sub_gas_price_by_base_fee = AddWordsGadget::construct(
+            cb,
+            [effective_tip.clone(), base_fee.clone()],
+            tx_gas_price.clone(),
+        );
         let mul_effective_tip_by_gas_used =
             MulWordByU64Gadget::construct(cb, effective_tip, gas_used.clone());
         let mul_base_fee_by_gas_used =
-            MulWordByU64Gadget::construct(cb, base_fee, gas_used.clone());
+            MulWordByU64Gadget::construct(cb, base_fee.clone(), gas_used.clone());
 
+        // check gas_price == min(base_fee + gas_tip_cap, gas_fee_cap)
+        let base_fee_plus_tip = cb.query_word_rlc();
+        let add_base_fee_and_tip =
+            AddWordsGadget::construct(cb, [tx_gas_tip_cap, base_fee], base_fee_plus_tip.clone());
+        let effective_gas_price =
+            MinMaxWordGadget::construct(cb, &base_fee_plus_tip, &tx_gas_fee_cap).min();
+        cb.require_equal(
+            "gas_price == min(gas_tip_cap + base_fee, gas_fee_cap)",
+            tx_gas_price.expr(),
+            effective_gas_price,
+        );
         // send base fee to treasury account
         let treasury = cb.query_cell();
 
@@ -208,6 +229,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             tx_caller_address,
             gas_fee_refund,
             sub_gas_price_by_base_fee,
+            add_base_fee_and_tip,
             mul_effective_tip_by_gas_used,
             mul_base_fee_by_gas_used,
             coinbase,
@@ -278,6 +300,12 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             offset,
             [effective_tip, block.context.base_fee],
             tx.gas_price,
+        )?;
+        self.add_base_fee_and_tip.assign(
+            region,
+            offset,
+            [tx.gas_tip_cap, block.context.base_fee],
+            tx.gas_tip_cap + block.context.base_fee,
         )?;
         self.mul_effective_tip_by_gas_used.assign(
             region,

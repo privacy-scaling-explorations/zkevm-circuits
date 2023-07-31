@@ -180,10 +180,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ); // rwc_delta += 1
         });
 
-        let is_first_tx = IsEqualGadget::construct(cb, tx_id.expr(), 1.expr());
+        // Anchor is always the first tx of the list
+        let not_anchor_tx = not::expr(IsEqualGadget::construct(cb, tx_id.expr(), 1.expr()).expr());
 
         // Transfer value from caller to callee, creating account if necessary.
-        let transfer_with_gas_fee = cb.condition(1.expr() - is_first_tx.expr(), |cb| {
+        // only update caller and callee account when tx is not anchor
+        let transfer_with_gas_fee = cb.condition(not_anchor_tx, |cb| {
             TransferWithGasFeeGadget::construct(
                 cb,
                 tx_caller_address.expr(),
