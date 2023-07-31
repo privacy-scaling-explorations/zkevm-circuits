@@ -9,10 +9,10 @@ use crate::{
     table::{byte_table::ByteTable, BlockTable, KeccakTable, PiTable, TxTable},
     taiko_pi_circuit::{TaikoPiCircuit, TaikoPiCircuitConfig, TaikoPiCircuitConfigArgs},
     util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
-    witness::{block_convert, Block, ProtocolInstance},
+    witness::{block_convert, Block},
 };
 use bus_mapping::{
-    circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+    circuit_input_builder::{CircuitInputBuilder, CircuitsParams, ProtocolInstance},
     mock::BlockData,
 };
 use eth_types::{geth_types::GethData, Field};

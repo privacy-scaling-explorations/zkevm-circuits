@@ -40,6 +40,7 @@ impl BlockData {
                 Word::default(),
                 &self.eth_block,
                 self.circuits_params,
+                Default::default(),
             )
             .unwrap(),
         )

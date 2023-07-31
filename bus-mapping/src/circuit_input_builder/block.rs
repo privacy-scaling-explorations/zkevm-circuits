@@ -2,6 +2,7 @@
 
 use super::{
     execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep, ExpEvent,
+    ProtocolInstance,
 };
 use crate::{
     operation::{OperationContainer, RWCounter},
@@ -90,6 +91,8 @@ pub struct Block {
     pub circuits_params: CircuitsParams,
     /// Original block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
+    /// Protocol instance from protocol
+    pub protocol_instance: ProtocolInstance,
 }
 
 impl Block {
@@ -100,6 +103,7 @@ impl Block {
         prev_state_root: Word,
         eth_block: &eth_types::Block<eth_types::Transaction>,
         circuits_params: CircuitsParams,
+        protocol_instance: ProtocolInstance,
     ) -> Result<Self, Error> {
         if eth_block.base_fee_per_gas.is_none() {
             // FIXME: resolve this once we have proper EIP-1559 support
@@ -141,6 +145,7 @@ impl Block {
             sha3_inputs: Vec::new(),
             circuits_params,
             eth_block: eth_block.clone(),
+            protocol_instance,
         })
     }
 

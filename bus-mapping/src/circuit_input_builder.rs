@@ -6,6 +6,7 @@ mod block;
 mod call;
 mod execution;
 mod input_state_ref;
+mod protocol_instance;
 #[cfg(test)]
 mod tracer_tests;
 mod transaction;
@@ -34,6 +35,7 @@ pub use execution::{
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
 use log::warn;
+pub use protocol_instance::{left_shift, MetaHash, ProtocolInstance, ANCHOR_TX_METHOD_SIGNATURE};
 use std::collections::HashMap;
 pub use transaction::{Transaction, TransactionContext};
 
@@ -409,6 +411,7 @@ pub struct BuilderClient<P: JsonRpcClient> {
     cli: GethClient<P>,
     chain_id: Word,
     circuits_params: CircuitsParams,
+    protocol_instance: ProtocolInstance,
 }
 
 /// Get State Accesses from TxExecTraces
@@ -468,6 +471,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     pub async fn new(
         client: GethClient<P>,
         circuits_params: CircuitsParams,
+        protocol_instance: ProtocolInstance,
     ) -> Result<Self, Error> {
         let chain_id = client.get_chain_id().await?;
 
@@ -475,6 +479,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             cli: client,
             chain_id: chain_id.into(),
             circuits_params,
+            protocol_instance,
         })
     }
 
@@ -615,6 +620,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             prev_state_root,
             eth_block,
             self.circuits_params,
+            self.protocol_instance.clone(),
         )?;
         let mut builder = CircuitInputBuilder::new(sdb, code_db, block);
         builder.handle_block_with_anchor(eth_block, geth_traces, has_anchor_tx)?;

@@ -281,6 +281,25 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
         coinbase_balance_prev,
     )?;
 
+    // add treasury account
+    let (found, treasury_account) = state
+        .sdb
+        .get_account(&state.block.protocol_instance.meta_hash.treasury);
+    if !found {
+        return Err(Error::AccountNotFound(
+            state.block.protocol_instance.meta_hash.treasury,
+        ));
+    }
+    let treasury_balance_prev = treasury_account.balance;
+    let treasury_balance =
+        treasury_balance_prev + state.block.base_fee * (state.tx.gas() - exec_step.gas_left.0);
+    state.account_write(
+        &mut exec_step,
+        state.block.coinbase,
+        AccountField::Balance,
+        treasury_balance,
+        treasury_balance_prev,
+    )?;
     // handle tx receipt tag
     state.tx_receipt_write(
         &mut exec_step,

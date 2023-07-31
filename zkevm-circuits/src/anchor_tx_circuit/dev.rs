@@ -3,8 +3,9 @@ use crate::{
     anchor_tx_circuit::{AnchorTxCircuitConfig, AnchorTxCircuitConfigArgs},
     table::{byte_table::ByteTable, PiTable, TxTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
-    witness::{self, ProtocolInstance},
+    witness,
 };
+use bus_mapping::circuit_input_builder::ProtocolInstance;
 use eth_types::{Field, H256};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},

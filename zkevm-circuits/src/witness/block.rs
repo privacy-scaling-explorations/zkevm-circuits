@@ -3,17 +3,19 @@ use std::collections::HashMap;
 use crate::{
     evm_circuit::{detect_fixed_table_tags, util::rlc, EvmCircuit},
     exp_circuit::param::OFFSET_INCREMENT,
-    table::BlockContextFieldTag,
-    util::{log2_ceil, SubCircuit},
+    table::{BlockContextFieldTag, PiFieldTag},
+    util::{log2_ceil, rlc_be_bytes, SubCircuit},
 };
 use bus_mapping::{
-    circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
+    circuit_input_builder::{
+        self, CircuitsParams, CopyEvent, ExpEvent, ProtocolInstance, ANCHOR_TX_METHOD_SIGNATURE,
+    },
     Error,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
+use eth_types::{Address, Field, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word};
 use halo2_proofs::circuit::Value;
 
-use super::{tx::tx_convert, Bytecode, ExecStep, ProtocolInstance, Rw, RwMap, Transaction};
+use super::{tx::tx_convert, Bytecode, ExecStep, Rw, RwMap, Transaction};
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -53,6 +55,54 @@ pub struct Block<F> {
     pub eth_block: eth_types::Block<eth_types::Transaction>,
     /// Protocol Instance
     pub protocol_instance: ProtocolInstance,
+}
+
+/// Assignments for pi table
+pub fn protocol_instance_table_assignments<F: Field>(
+    protocol_instance: &ProtocolInstance,
+    randomness: Value<F>,
+) -> [[Value<F>; 2]; 6] {
+    [
+        [
+            Value::known(F::from(PiFieldTag::Null as u64)),
+            Value::known(F::ZERO),
+        ],
+        [
+            Value::known(F::from(PiFieldTag::MethodSign as u64)),
+            Value::known(F::from(ANCHOR_TX_METHOD_SIGNATURE as u64)),
+        ],
+        [
+            Value::known(F::from(PiFieldTag::L1Hash as u64)),
+            rlc_be_bytes(
+                &protocol_instance.meta_hash.l1_hash.to_fixed_bytes(),
+                randomness,
+            ),
+        ],
+        [
+            Value::known(F::from(PiFieldTag::L1SignalRoot as u64)),
+            rlc_be_bytes(&protocol_instance.signal_root.to_fixed_bytes(), randomness),
+        ],
+        [
+            Value::known(F::from(PiFieldTag::L1Height as u64)),
+            rlc_be_bytes(
+                &protocol_instance
+                    .meta_hash
+                    .l1_height
+                    .to_word()
+                    .to_be_bytes(),
+                randomness,
+            ),
+        ],
+        [
+            Value::known(F::from(PiFieldTag::ParentGasUsed as u64)),
+            rlc_be_bytes(
+                &(protocol_instance.parent_gas_used as u64)
+                    .to_word()
+                    .to_be_bytes(),
+                randomness,
+            ),
+        ],
+    ]
 }
 
 impl<F: Field> Block<F> {
@@ -269,6 +319,6 @@ pub fn block_convert<F: Field>(
         // keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         keccak_inputs: block.sha3_inputs.clone(),
         eth_block: block.eth_block.clone(),
-        protocol_instance: ProtocolInstance::default(),
+        protocol_instance: block.protocol_instance.clone(),
     })
 }

@@ -121,7 +121,7 @@ impl PublicData {
 
     /// create PublicData from block and taiko
     pub fn new<F>(block: &witness::Block<F>) -> Self {
-        use witness::left_shift;
+        use bus_mapping::circuit_input_builder::left_shift;
         let field9 = left_shift(block.protocol_instance.prover, 96)
             + left_shift(block.protocol_instance.parent_gas_used as u64, 64)
             + left_shift(block.protocol_instance.gas_used as u64, 32);

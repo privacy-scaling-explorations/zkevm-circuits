@@ -1,9 +1,6 @@
 #![allow(unused_imports)]
 pub use super::*;
-use crate::{
-    anchor_tx_circuit::{add_anchor_accounts, add_anchor_tx, sign_tx},
-    witness::MetaHash,
-};
+use crate::anchor_tx_circuit::{add_anchor_accounts, add_anchor_tx, sign_tx};
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use log::error;

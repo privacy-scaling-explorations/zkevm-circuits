@@ -15,8 +15,9 @@ use crate::{
     table::{byte_table::ByteTable, LookupTable, PiFieldTag, PiTable, TxFieldTag, TxTable},
     tx_circuit::TX_LEN,
     util::{Challenges, SubCircuit, SubCircuitConfig},
-    witness::{self, ProtocolInstance, Transaction},
+    witness::{self, Transaction},
 };
+use bus_mapping::circuit_input_builder::ProtocolInstance;
 use eth_types::{Field, ToScalar};
 use gadgets::util::{select, Expr};
 use halo2_proofs::{

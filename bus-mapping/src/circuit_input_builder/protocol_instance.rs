@@ -2,13 +2,11 @@
 
 use std::iter;
 
-use crate::{table::PiFieldTag, util::rlc_be_bytes};
-use eth_types::{Address, Bytes, Field, Hash, ToBigEndian, ToWord, Word, H256};
-use halo2_proofs::circuit::Value;
+use eth_types::{Address, Bytes, Hash, ToBigEndian, ToWord, Word, H256};
 use keccak256::plain::Keccak;
 
-// hash(anchor)
-const ANCHOR_TX_METHOD_SIGNATURE: u32 = 0xda69d3db;
+/// hash(anchor)
+pub const ANCHOR_TX_METHOD_SIGNATURE: u32 = 0xda69d3db;
 
 /// Taiko witness
 #[derive(Debug, Default, Clone)]
@@ -128,42 +126,6 @@ impl ProtocolInstance {
         result.extend_from_slice(&self.meta_hash.l1_height.to_word().to_be_bytes());
         result.extend_from_slice(&(self.parent_gas_used as u64).to_word().to_be_bytes());
         result.into()
-    }
-
-    /// Assignments for pi table
-    pub fn table_assignments<F: Field>(&self, randomness: Value<F>) -> [[Value<F>; 2]; 6] {
-        [
-            [
-                Value::known(F::from(PiFieldTag::Null as u64)),
-                Value::known(F::ZERO),
-            ],
-            [
-                Value::known(F::from(PiFieldTag::MethodSign as u64)),
-                Value::known(F::from(ANCHOR_TX_METHOD_SIGNATURE as u64)),
-            ],
-            [
-                Value::known(F::from(PiFieldTag::L1Hash as u64)),
-                rlc_be_bytes(&self.meta_hash.l1_hash.to_fixed_bytes(), randomness),
-            ],
-            [
-                Value::known(F::from(PiFieldTag::L1SignalRoot as u64)),
-                rlc_be_bytes(&self.signal_root.to_fixed_bytes(), randomness),
-            ],
-            [
-                Value::known(F::from(PiFieldTag::L1Height as u64)),
-                rlc_be_bytes(
-                    &self.meta_hash.l1_height.to_word().to_be_bytes(),
-                    randomness,
-                ),
-            ],
-            [
-                Value::known(F::from(PiFieldTag::ParentGasUsed as u64)),
-                rlc_be_bytes(
-                    &(self.parent_gas_used as u64).to_word().to_be_bytes(),
-                    randomness,
-                ),
-            ],
-        ]
     }
 }
 
