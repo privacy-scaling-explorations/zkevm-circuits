@@ -56,7 +56,6 @@ impl CellType {
 /// Cell is a (column, rotation) pair that has been placed and queried by the Cell Manager.
 pub struct Cell<F> {
     pub(crate) expression: Expression<F>,
-    _column_expression: Expression<F>,
     pub(crate) column: Column<Advice>,
     pub(crate) column_idx: usize,
     pub(crate) rotation: usize,
@@ -67,14 +66,13 @@ impl<F: Field> Cell<F> {
     pub fn new(
         meta: &mut VirtualCells<F>,
         column: Column<Advice>,
-        _column_idx: usize,
+        column_idx: usize,
         rotation: usize,
     ) -> Cell<F> {
         Cell {
             expression: meta.query_advice(column, Rotation(rotation as i32)),
-            _column_expression: meta.query_advice(column, Rotation::cur()),
             column,
-            column_idx: _column_idx,
+            column_idx,
             rotation,
         }
     }
