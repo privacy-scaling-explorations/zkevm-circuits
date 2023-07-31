@@ -36,7 +36,7 @@ pub(crate) struct EndTxGadget<F> {
     tx_caller_address: Cell<F>,
     gas_fee_refund: UpdateBalanceGadget<F, 2, true>,
     sub_gas_price_by_base_fee: AddWordsGadget<F, 2, true>,
-    add_base_fee_and_tip: AddWordsGadget<F, 2, true>,
+    add_tip_cap_and_base_fee: AddWordsGadget<F, 2, true>,
     mul_effective_tip_by_gas_used: MulWordByU64Gadget<F>,
     mul_base_fee_by_gas_used: MulWordByU64Gadget<F>,
     coinbase: Cell<F>,
@@ -116,7 +116,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         // check gas_price == min(base_fee + gas_tip_cap, gas_fee_cap)
         let base_fee_plus_tip = cb.query_word_rlc();
-        let add_base_fee_and_tip =
+        let add_tip_cap_and_base_fee =
             AddWordsGadget::construct(cb, [tx_gas_tip_cap, base_fee], base_fee_plus_tip.clone());
         let effective_gas_price =
             MinMaxWordGadget::construct(cb, &base_fee_plus_tip, &tx_gas_fee_cap).min();
@@ -229,7 +229,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             tx_caller_address,
             gas_fee_refund,
             sub_gas_price_by_base_fee,
-            add_base_fee_and_tip,
+            add_tip_cap_and_base_fee,
             mul_effective_tip_by_gas_used,
             mul_base_fee_by_gas_used,
             coinbase,
@@ -301,7 +301,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             [effective_tip, block.context.base_fee],
             tx.gas_price,
         )?;
-        self.add_base_fee_and_tip.assign(
+        self.add_tip_cap_and_base_fee.assign(
             region,
             offset,
             [tx.gas_tip_cap, block.context.base_fee],

@@ -10,7 +10,6 @@ pub enum TxFieldTag {
     Nonce,
     /// Gas
     Gas,
-    // TODO: check in TxCircuit, gas_price == min(base_fee + gas_tip_cap, gas_fee_cap)
     /// GasPrice
     GasPrice,
     /// GasTipCap
