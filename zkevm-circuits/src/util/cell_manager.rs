@@ -159,7 +159,7 @@ pub(crate) struct CellColumn {
 }
 
 impl CellColumn {
-    // Creates a CellColumn from a Column and Cell Type.
+    /// Creates a CellColumn from a Column and Cell Type.
     pub fn new(advice: Column<Advice>, cell_type: CellType, idx: usize) -> CellColumn {
         CellColumn {
             advice,
@@ -180,8 +180,11 @@ impl CellColumn {
 
 /// CellManagerStrategy is a strategy to place cells by the Cell Manager.
 pub(crate) trait CellManagerStrategy {
+    /// Stats is the type of the returned statistics.
     type Stats;
 
+    /// Affinity is used as extra information when querying cells that is used for their correct
+    /// placement.
     type Affinity;
 
     /// The cell manager will call on_creation when built, so the columns can be set up by the
@@ -196,6 +199,7 @@ pub(crate) trait CellManagerStrategy {
         cell_type: CellType,
     ) -> Cell<F>;
 
+    /// Queries a cell from the strategy, using an affinity attribute.
     fn query_cell_with_affinity<F: Field>(
         &mut self,
         columns: &mut CellManagerColumns,
@@ -204,12 +208,16 @@ pub(crate) trait CellManagerStrategy {
         affinity: Self::Affinity,
     ) -> Cell<F>;
 
+    /// Queries a cell from the strategy returning CellValueOnly, which does not require
+    /// ConstraintSystem. This is useful when assigning values.
     fn query_cell_value(
         &mut self,
         columns: &mut CellManagerColumns,
         cell_type: CellType,
     ) -> CellValueOnly;
 
+    /// Queries a cell from the strategy returning CellValueOnly, which does not require
+    /// ConstraintSystem. This is useful when assigning values. Also, using an affinity attribute.
     fn query_cell_value_with_affinity(
         &mut self,
         columns: &mut CellManagerColumns,
