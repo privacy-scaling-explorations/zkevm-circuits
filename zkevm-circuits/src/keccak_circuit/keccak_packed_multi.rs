@@ -44,26 +44,18 @@ pub(crate) fn get_num_bits_per_base_chi_lookup() -> usize {
 }
 
 pub(crate) trait AssignKeccakRegion {
-    fn assign_keccak_region<F: Field>(&self, region: &mut KeccakRegion<F>, offset: i32, value: F);
+    fn assign_keccak_region<F: Field>(&self, region: &mut KeccakRegion<F>, value: F);
 }
 
 impl AssignKeccakRegion for CellValueOnly {
-    fn assign_keccak_region<F: Field>(&self, region: &mut KeccakRegion<F>, offset: i32, value: F) {
-        region.assign(
-            self.column_idx,
-            (offset + self.rotation as i32) as usize,
-            value,
-        );
+    fn assign_keccak_region<F: Field>(&self, region: &mut KeccakRegion<F>, value: F) {
+        region.assign(self.column_idx, self.rotation, value);
     }
 }
 
 impl<F2> AssignKeccakRegion for Cell<F2> {
-    fn assign_keccak_region<F: Field>(&self, region: &mut KeccakRegion<F>, offset: i32, value: F) {
-        region.assign(
-            self.column_idx,
-            (offset + self.rotation as i32) as usize,
-            value,
-        );
+    fn assign_keccak_region<F: Field>(&self, region: &mut KeccakRegion<F>, value: F) {
+        region.assign(self.column_idx, self.rotation, value);
     }
 }
 
@@ -212,7 +204,7 @@ pub(crate) mod split {
             let value = pack_part(&input_bits, &word_part);
             let cell = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
 
-            cell.assign_keccak_region(region, 0, F::from(value));
+            cell.assign_keccak_region(region, F::from(value));
             parts.push(PartValue {
                 num_bits: word_part.bits.len(),
                 rot: cell.rotation as i32,
@@ -342,7 +334,7 @@ pub(crate) mod split_uniform {
         while let Some(word_part) = word_iter.next() {
             if word_part.bits.len() == target_sizes[counter] {
                 let value = pack_part(&input_bits, word_part);
-                output_cells[counter].assign_keccak_region(region, 0, F::from(value));
+                output_cells[counter].assign_keccak_region(region, F::from(value));
                 input_parts.push(PartValue {
                     num_bits: word_part.bits.len(),
                     rot: output_cells[counter].rotation as i32,
@@ -366,12 +358,12 @@ pub(crate) mod split_uniform {
                 let value_a = pack_part(&input_bits, word_part);
                 let value_b = pack_part(&input_bits, extra_part);
 
-                part_a.assign_keccak_region(region, 0, F::from(value_a));
-                part_b.assign_keccak_region(region, 0, F::from(value_b));
+                part_a.assign_keccak_region(region, F::from(value_a));
+                part_b.assign_keccak_region(region, F::from(value_b));
 
                 let value = value_a + value_b * (1u64 << (BIT_COUNT * word_part.bits.len()));
 
-                output_cells[counter].assign_keccak_region(region, 0, F::from(value));
+                output_cells[counter].assign_keccak_region(region, F::from(value));
 
                 input_parts.push(PartValue {
                     num_bits: word_part.bits.len(),
@@ -522,7 +514,7 @@ pub(crate) mod transform_to {
                 F::from(to_bytes::value(&output_bits)[0] as u64)
             };
             let output_part = cells[idx].clone();
-            output_part.assign_keccak_region(region, 0, value);
+            output_part.assign_keccak_region(region, value);
             output.push(PartValue {
                 num_bits: input_part.num_bits,
                 rot: output_part.rotation as i32,
@@ -595,7 +587,7 @@ pub(crate) fn keccak<F: Field>(
             for s in &s {
                 for s in s {
                     let cell = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
-                    cell.assign_keccak_region(&mut region, 0, *s);
+                    cell.assign_keccak_region(&mut region, *s);
                 }
             }
 
@@ -603,9 +595,9 @@ pub(crate) fn keccak<F: Field>(
             let absorb_from = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
             let absorb_data = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
             let absorb_result = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
-            absorb_from.assign_keccak_region(&mut region, 0, absorb_row.from);
-            absorb_data.assign_keccak_region(&mut region, 0, absorb_row.absorb);
-            absorb_result.assign_keccak_region(&mut region, 0, absorb_row.result);
+            absorb_from.assign_keccak_region(&mut region, absorb_row.from);
+            absorb_data.assign_keccak_region(&mut region, absorb_row.absorb);
+            absorb_result.assign_keccak_region(&mut region, absorb_row.result);
 
             // Absorb
             cell_manager.get_strategy().start_region();
@@ -647,11 +639,8 @@ pub(crate) fn keccak<F: Field>(
                         false
                     };
                     paddings.push(padding);
-                    is_padding.assign_keccak_region(
-                        &mut region,
-                        0,
-                        if padding { F::ONE } else { F::ZERO },
-                    );
+                    is_padding
+                        .assign_keccak_region(&mut region, if padding { F::ONE } else { F::ZERO });
                 }
 
                 data_rlcs[NUM_BYTES_PER_WORD] = data_rlc; // Start at 0 or forward the previous value.
@@ -838,7 +827,7 @@ pub(crate) fn keccak<F: Field>(
 
             cell_manager.get_strategy().start_region();
             let squeeze_packed = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
-            squeeze_packed.assign_keccak_region(region, 0, *word);
+            squeeze_packed.assign_keccak_region(region, *word);
 
             cell_manager.get_strategy().start_region();
             let packed = split::value(cell_manager, region, *word, 0, 8);

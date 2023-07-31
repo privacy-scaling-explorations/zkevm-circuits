@@ -113,7 +113,6 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         let chi_base_table = array_init::array_init(|_| meta.lookup_table_column());
         let pack_table = array_init::array_init(|_| meta.lookup_table_column());
 
-        // let mut cell_manager = CellManager::new(get_num_rows_per_round());
         let mut cell_manager = CellManager::new(CMFixedHeigthStrategy::new(
             get_num_rows_per_round(),
             DEFAULT_CELL_TYPE,
