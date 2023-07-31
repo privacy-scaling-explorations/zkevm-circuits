@@ -29,8 +29,8 @@ pub(crate) struct PushGadget<F> {
     value: Word32Cell<F>,
     is_pushed: [Cell<F>; 32],
     is_padding: [Cell<F>; 32],
-    code_size: Cell<F>,
-    is_out_of_range: LtGadget<F, N_BYTES_PROGRAM_COUNTER>,
+    code_length: Cell<F>,
+    is_out_of_bound: LtGadget<F, N_BYTES_PROGRAM_COUNTER>,
 }
 
 impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
@@ -40,8 +40,8 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let code_size = cb.query_cell();
-        let code_size_left = code_size.expr() - cb.curr.state.program_counter.expr() - 1.expr();
+        let code_length = cb.query_cell();
+        let code_length_left = code_length.expr() - cb.curr.state.program_counter.expr() - 1.expr();
 
         let value = cb.query_word32();
         // Query selectors for each opcode_lookup to know whether the current byte needs to be
@@ -54,19 +54,19 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 
         // Fetch the bytecode length from the bytecode table.
         let code_hash = cb.curr.state.code_hash.clone();
-        cb.bytecode_length(code_hash.to_word(), code_size.expr());
+        cb.bytecode_length(code_hash.to_word(), code_length.expr());
 
         // Deduce the number of bytes to push.
         let num_pushed = opcode.expr() - OpcodeId::PUSH1.as_u64().expr() + 1.expr();
 
         // If the number of bytes that needs to be pushed is greater
         // than the size of the bytecode left, then we are out of range.
-        let is_out_of_range: LtGadget<F, N_BYTES_PROGRAM_COUNTER> =
-            LtGadget::construct(cb, code_size_left.clone(), num_pushed.clone());
+        let is_out_of_bound: LtGadget<F, N_BYTES_PROGRAM_COUNTER> =
+            LtGadget::construct(cb, code_length_left.clone(), num_pushed.clone());
 
         // Expected number of padding
         let num_padding: halo2_proofs::plonk::Expression<F> =
-            is_out_of_range.expr() * (num_pushed.clone() - code_size_left);
+            is_out_of_bound.expr() * (num_pushed.clone() - code_length_left);
 
         // The pushed bytes are viewed as left-padded big-endian, but our random
         // linear combination uses little-endian, so we lookup from the LSB
@@ -153,8 +153,8 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             value,
             is_pushed,
             is_padding,
-            code_size,
-            is_out_of_range,
+            code_length,
+            is_out_of_bound,
         }
     }
 
@@ -178,25 +178,26 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             .get_from_h256(&call.code_hash)
             .expect("could not find current environment's bytecode");
 
-        let code_size = bytecode.codesize() as u64;
-        self.code_size
-            .assign(region, offset, Value::known(F::from(code_size)))?;
+        let code_length = bytecode.codesize() as u64;
+        self.code_length
+            .assign(region, offset, Value::known(F::from(code_length)))?;
 
-        let code_size_left = (code_size - step.pc - 1) as usize;
-        self.is_out_of_range.assign(
+        let code_length_left = (code_length - step.pc - 1) as usize;
+        self.is_out_of_bound.assign(
             region,
             offset,
-            F::from(code_size_left as u64),
+            F::from(code_length_left as u64),
             F::from(num_pushed as u64),
         )?;
 
         let value = block.get_rws(step, 0).stack_value();
         self.value.assign_u256(region, offset, value)?;
 
-        let is_out_of_bound = code_size_left < npushed;
-        let mut out_of_bound_padding = 0;
-        if is_out_of_bound {
-            out_of_bound_padding += npushed - code_size_left
+        let is_out_of_bound = code_length_left < npushed;
+        let out_of_bound_padding = if is_out_of_bound {
+            npushed - code_length_left
+        } else {
+            0
         };
         for (i, (pu, pa)) in self
             .is_pushed
