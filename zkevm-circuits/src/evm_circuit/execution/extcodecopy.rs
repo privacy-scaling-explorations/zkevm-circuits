@@ -209,10 +209,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         } else {
             block
                 .bytecodes
-                .get(&code_hash)
+                .get_from_u256(&code_hash)
                 .expect("could not find external bytecode")
-                .bytes
-                .len() as u64
+                .codesize() as u64
         };
         self.code_size
             .assign(region, offset, Value::known(F::from(code_size)))?;

@@ -77,15 +77,19 @@ fn check_post(
         }
 
         if let Some(expected_code) = &expected.code {
-            let actual_code = if actual.code_hash.is_zero() {
-                std::borrow::Cow::Owned(Vec::new())
-            } else {
-                std::borrow::Cow::Borrowed(&builder.code_db.0[&actual.code_hash])
-            };
-            if &actual_code as &[u8] != expected_code.0 {
+            let actual_code = (!actual.code_hash.is_zero())
+                .then(|| {
+                    builder
+                        .code_db
+                        .get_from_h256(&actual.code_hash)
+                        .map(|bytecode| bytecode.code())
+                        .expect("code exists")
+                })
+                .unwrap_or_default();
+            if actual_code != expected_code.0 {
                 return Err(StateTestError::CodeMismatch {
                     expected: expected_code.clone(),
-                    found: Bytes::from(actual_code.to_vec()),
+                    found: Bytes::from(actual_code),
                 });
             }
         }

@@ -20,7 +20,7 @@ use crate::{
     },
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToWord};
+use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -108,18 +108,18 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
     ) -> Result<(), Error> {
         let code = block
             .bytecodes
-            .get(&call.code_hash.to_word())
+            .get_from_h256(&call.code_hash)
             .expect("could not find current environment's bytecode");
         self.code_length.assign(
             region,
             offset,
-            Value::known(F::from(code.bytes.len() as u64)),
+            Value::known(F::from(code.codesize() as u64)),
         )?;
 
         self.is_out_of_range.assign(
             region,
             offset,
-            F::from(code.bytes.len() as u64) - F::from(step.pc),
+            F::from(code.codesize() as u64) - F::from(step.pc),
         )?;
 
         let opcode = step.opcode().unwrap();

@@ -1,5 +1,5 @@
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, Field, ToScalar, ToWord};
+use eth_types::{evm_types::GasCost, Field, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::{
@@ -159,10 +159,10 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
         let bytecode = block
             .bytecodes
-            .get(&call.code_hash.to_word())
+            .get_from_h256(&call.code_hash)
             .expect("could not find current environment's bytecode");
 
-        let code_size = bytecode.bytes.len() as u64;
+        let code_size = bytecode.codesize() as u64;
         self.code_size
             .assign(region, offset, Value::known(F::from(code_size)))?;
 
