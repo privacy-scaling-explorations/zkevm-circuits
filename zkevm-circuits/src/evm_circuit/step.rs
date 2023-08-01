@@ -340,7 +340,6 @@ impl ExecutionState {
                 | Self::ErrorOutOfGasDynamicMemoryExpansion
                 | Self::ErrorOutOfGasMemoryCopy
                 | Self::ErrorOutOfGasAccountAccess
-                //| Self::ErrorOutOfGasCodeStore
                 | Self::ErrorOutOfGasLOG
                 | Self::ErrorOutOfGasEXP
                 | Self::ErrorOutOfGasSHA3

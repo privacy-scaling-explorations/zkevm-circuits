@@ -97,7 +97,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         let opcode = step.opcode().unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
-        // block.get_rws(step, index).stack_value());
         let [memory_offset, length] = [0, 1].map(|i| block.get_rws(step, i).stack_value());
         self.memory_address
             .assign(region, offset, memory_offset, length)?;
@@ -160,8 +159,6 @@ mod test {
             MSTORE
             PUSH2(if is_oog { 5 } else { code_len}) // length to copy
             PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap()) // offset
-            //PUSH2(0x00) // offset
-
         };
         code.write_op(OpcodeId::RETURN);
 
