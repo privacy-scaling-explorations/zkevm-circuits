@@ -55,10 +55,10 @@ impl CellType {
 #[derive(Clone, Debug)]
 /// Cell is a (column, rotation) pair that has been placed and queried by the Cell Manager.
 pub struct Cell<F> {
-    pub(crate) expression: Expression<F>,
-    pub(crate) column: Column<Advice>,
-    pub(crate) column_idx: usize,
-    pub(crate) rotation: usize,
+    expression: Option<Expression<F>>,
+    column: Option<Column<Advice>>,
+    column_idx: usize,
+    rotation: usize,
 }
 
 impl<F: Field> Cell<F> {
@@ -70,8 +70,8 @@ impl<F: Field> Cell<F> {
         rotation: usize,
     ) -> Cell<F> {
         Cell {
-            expression: meta.query_advice(column, Rotation(rotation as i32)),
-            column,
+            expression: Some(meta.query_advice(column, Rotation(rotation as i32))),
+            column: Some(column),
             column_idx,
             rotation,
         }
@@ -101,7 +101,7 @@ impl<F: Field> Cell<F> {
                     self.column, self.rotation
                 )
             },
-            self.column,
+            self.column.expect("wrong operation on value only cell"),
             offset + self.rotation,
             || value,
         )
@@ -110,43 +110,45 @@ impl<F: Field> Cell<F> {
     pub(crate) fn at_offset(&self, meta: &mut ConstraintSystem<F>, offset: i32) -> Self {
         Self::new_from_cs(
             meta,
-            self.column,
+            self.column.expect("wrong operation on value only cell"),
             self.column_idx,
             (self.rotation as i32 + offset) as usize,
         )
     }
 }
 
+impl<F> Cell<F> {
+    pub(crate) fn new_value(column_idx: usize, rotation: usize) -> Self {
+        Self {
+            expression: None,
+            column: None,
+            column_idx,
+            rotation,
+        }
+    }
+
+    pub(crate) fn get_column_idx(&self) -> usize {
+        self.column_idx
+    }
+
+    pub(crate) fn get_rotation(&self) -> usize {
+        self.rotation
+    }
+}
+
 impl<F: Field> Expr<F> for Cell<F> {
     fn expr(&self) -> Expression<F> {
-        self.expression.clone()
+        self.expression
+            .clone()
+            .expect("wrong operation on value only cell")
     }
 }
 
 impl<F: Field> Expr<F> for &Cell<F> {
     fn expr(&self) -> Expression<F> {
-        self.expression.clone()
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct CellValueOnly {
-    pub(crate) column_idx: usize,
-    pub(crate) rotation: usize,
-}
-
-impl CellValueOnly {
-    pub fn new(column_idx: usize, rotation: usize) -> Self {
-        Self {
-            column_idx,
-            rotation,
-        }
-    }
-}
-
-impl<F> From<Cell<F>> for CellValueOnly {
-    fn from(value: Cell<F>) -> Self {
-        CellValueOnly::new(value.column_idx, value.rotation)
+        self.expression
+            .clone()
+            .expect("wrong operation on value only cell")
     }
 }
 
@@ -210,20 +212,20 @@ pub(crate) trait CellManagerStrategy {
 
     /// Queries a cell from the strategy returning CellValueOnly, which does not require
     /// ConstraintSystem. This is useful when assigning values.
-    fn query_cell_value(
+    fn query_cell_value<F>(
         &mut self,
         columns: &mut CellManagerColumns,
         cell_type: CellType,
-    ) -> CellValueOnly;
+    ) -> Cell<F>;
 
     /// Queries a cell from the strategy returning CellValueOnly, which does not require
     /// ConstraintSystem. This is useful when assigning values. Also, using an affinity attribute.
-    fn query_cell_value_with_affinity(
+    fn query_cell_value_with_affinity<F>(
         &mut self,
         columns: &mut CellManagerColumns,
         cell_type: CellType,
         affinity: Self::Affinity,
-    ) -> CellValueOnly;
+    ) -> Cell<F>;
 
     /// Gets the current height of the cell manager, the max rotation of any cell (without
     /// considering offset).
@@ -332,15 +334,15 @@ impl<Stats, S: CellManagerStrategy<Stats = Stats>> CellManager<S> {
             .collect()
     }
 
-    pub fn query_cell_value(&mut self, cell_type: CellType) -> CellValueOnly {
+    pub fn query_cell_value<F>(&mut self, cell_type: CellType) -> Cell<F> {
         self.strategy.query_cell_value(&mut self.columns, cell_type)
     }
 
-    pub fn query_cell_value_with_affinity(
+    pub fn query_cell_value_with_affinity<F>(
         &mut self,
         cell_type: CellType,
         affinity: S::Affinity,
-    ) -> CellValueOnly {
+    ) -> Cell<F> {
         self.strategy
             .query_cell_value_with_affinity(&mut self.columns, cell_type, affinity)
     }

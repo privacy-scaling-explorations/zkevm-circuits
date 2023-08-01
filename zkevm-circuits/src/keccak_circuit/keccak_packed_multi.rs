@@ -1,6 +1,6 @@
 use super::{param::*, util::*, DEFAULT_CELL_TYPE};
 use crate::util::{
-    cell_manager::{CMFixedHeightStrategy, Cell, CellManager, CellValueOnly},
+    cell_manager::{CMFixedHeightStrategy, Cell, CellManager},
     word::Word,
     Challenges,
 };
@@ -47,15 +47,9 @@ pub(crate) trait AssignKeccakRegion {
     fn assign_keccak_region<F: Field>(&self, region: &mut KeccakRegion<F>, value: F);
 }
 
-impl AssignKeccakRegion for CellValueOnly {
-    fn assign_keccak_region<F: Field>(&self, region: &mut KeccakRegion<F>, value: F) {
-        region.assign(self.column_idx, self.rotation, value);
-    }
-}
-
 impl<F2> AssignKeccakRegion for Cell<F2> {
     fn assign_keccak_region<F: Field>(&self, region: &mut KeccakRegion<F>, value: F) {
-        region.assign(self.column_idx, self.rotation, value);
+        region.assign(self.get_column_idx(), self.get_rotation(), value);
     }
 }
 
@@ -158,7 +152,7 @@ pub(crate) mod split {
             DEFAULT_CELL_TYPE,
         },
         util::{
-            cell_manager::{CMFixedHeightStrategy, CellManager},
+            cell_manager::{CMFixedHeightStrategy, Cell, CellManager},
             Expr,
         },
     };
@@ -202,12 +196,12 @@ pub(crate) mod split {
         let word = WordParts::new(target_part_size, rot, false);
         for word_part in word.parts {
             let value = pack_part(&input_bits, &word_part);
-            let cell = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
+            let cell: Cell<F> = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
 
             cell.assign_keccak_region(region, F::from(value));
             parts.push(PartValue {
                 num_bits: word_part.bits.len(),
-                rot: cell.rotation as i32,
+                rot: cell.get_rotation() as i32,
                 value: F::from(value),
             });
         }
@@ -228,7 +222,7 @@ pub(crate) mod split_uniform {
             DEFAULT_CELL_TYPE,
         },
         util::{
-            cell_manager::{CMFixedHeightStrategy, Cell, CellManager, CellValueOnly},
+            cell_manager::{CMFixedHeightStrategy, Cell, CellManager},
             Expr,
         },
     };
@@ -312,7 +306,7 @@ pub(crate) mod split_uniform {
     }
 
     pub(crate) fn value<F: Field>(
-        output_cells: &[CellValueOnly],
+        output_cells: &[Cell<F>],
         cell_manager: &mut CellManager<CMFixedHeightStrategy>,
         region: &mut KeccakRegion<F>,
         input: F,
@@ -337,12 +331,12 @@ pub(crate) mod split_uniform {
                 output_cells[counter].assign_keccak_region(region, F::from(value));
                 input_parts.push(PartValue {
                     num_bits: word_part.bits.len(),
-                    rot: output_cells[counter].rotation as i32,
+                    rot: output_cells[counter].get_rotation() as i32,
                     value: F::from(value),
                 });
                 output_parts.push(PartValue {
                     num_bits: word_part.bits.len(),
-                    rot: output_cells[counter].rotation as i32,
+                    rot: output_cells[counter].get_rotation() as i32,
                     value: F::from(value),
                 });
                 counter += 1;
@@ -352,8 +346,8 @@ pub(crate) mod split_uniform {
                     target_sizes[counter]
                 );
 
-                let part_a = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
-                let part_b = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
+                let part_a: Cell<F> = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
+                let part_b: Cell<F> = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
 
                 let value_a = pack_part(&input_bits, word_part);
                 let value_b = pack_part(&input_bits, extra_part);
@@ -368,17 +362,17 @@ pub(crate) mod split_uniform {
                 input_parts.push(PartValue {
                     num_bits: word_part.bits.len(),
                     value: F::from(value_a),
-                    rot: part_a.rotation as i32,
+                    rot: part_a.get_rotation() as i32,
                 });
                 input_parts.push(PartValue {
                     num_bits: extra_part.bits.len(),
                     value: F::from(value_b),
-                    rot: part_b.rotation as i32,
+                    rot: part_b.get_rotation() as i32,
                 });
                 output_parts.push(PartValue {
                     num_bits: target_sizes[counter],
                     value: F::from(value),
-                    rot: output_cells[counter].rotation as i32,
+                    rot: output_cells[counter].get_rotation() as i32,
                 });
                 counter += 1;
             } else {
@@ -418,7 +412,7 @@ pub(crate) mod transform {
                 cell_manager.query_cell_with_affinity(
                     meta,
                     DEFAULT_CELL_TYPE,
-                    input_part.cell.rotation,
+                    input_part.cell.get_rotation(),
                 )
             } else {
                 cell_manager.query_cell(meta, DEFAULT_CELL_TYPE)
@@ -461,7 +455,7 @@ pub(crate) mod transform_to {
     use super::{AssignKeccakRegion, Cell, KeccakRegion, Part, PartValue};
     use crate::{
         keccak_circuit::util::{pack, to_bytes, unpack},
-        util::{cell_manager::CellValueOnly, Expr},
+        util::Expr,
     };
     use eth_types::Field;
     use halo2_proofs::plonk::{ConstraintSystem, TableColumn};
@@ -479,7 +473,7 @@ pub(crate) mod transform_to {
         let mut output = Vec::new();
         for (idx, input_part) in input.iter().enumerate() {
             let output_part = cells[idx].clone();
-            if !uniform_lookup || input_part.cell.rotation == 0 {
+            if !uniform_lookup || input_part.cell.get_rotation() == 0 {
                 meta.lookup(name, |_| {
                     vec![
                         (input_part.expr.clone(), transform_table[0]),
@@ -498,7 +492,7 @@ pub(crate) mod transform_to {
     }
 
     pub(crate) fn value<F: Field>(
-        cells: &[CellValueOnly],
+        cells: &[Cell<F>],
         region: &mut KeccakRegion<F>,
         input: Vec<PartValue<F>>,
         do_packing: bool,
@@ -517,7 +511,7 @@ pub(crate) mod transform_to {
             output_part.assign_keccak_region(region, value);
             output.push(PartValue {
                 num_bits: input_part.num_bits,
-                rot: output_part.rotation as i32,
+                rot: output_part.get_rotation() as i32,
                 value,
             });
         }
@@ -586,15 +580,15 @@ pub(crate) fn keccak<F: Field>(
             // State data
             for s in &s {
                 for s in s {
-                    let cell = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
+                    let cell: Cell<F> = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
                     cell.assign_keccak_region(&mut region, *s);
                 }
             }
 
             // Absorb data
-            let absorb_from = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
-            let absorb_data = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
-            let absorb_result = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
+            let absorb_from: Cell<F> = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
+            let absorb_data: Cell<F> = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
+            let absorb_result: Cell<F> = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
             absorb_from.assign_keccak_region(&mut region, absorb_row.from);
             absorb_data.assign_keccak_region(&mut region, absorb_row.absorb);
             absorb_result.assign_keccak_region(&mut region, absorb_row.result);
@@ -623,7 +617,7 @@ pub(crate) fn keccak<F: Field>(
             let input_bytes =
                 transform::value(&mut cell_manager, &mut region, packed, false, |v| *v, true);
             cell_manager.get_strategy().start_region();
-            let mut is_paddings = Vec::new();
+            let mut is_paddings: Vec<Cell<F>> = Vec::new();
             let mut data_rlcs = vec![Value::known(F::ZERO); get_num_rows_per_round()];
             for _ in input_bytes.iter() {
                 is_paddings.push(cell_manager.query_cell_value(DEFAULT_CELL_TYPE));
@@ -697,7 +691,7 @@ pub(crate) fn keccak<F: Field>(
                 let part_size = get_num_bits_per_base_chi_lookup();
                 let target_word_sizes = target_part_sizes(part_size);
                 let num_word_parts = target_word_sizes.len();
-                let mut rho_pi_chi_cells: [[[Vec<CellValueOnly>; 5]; 5]; 3] =
+                let mut rho_pi_chi_cells: [[[Vec<Cell<F>>; 5]; 5]; 3] =
                     array_init::array_init(|_| {
                         array_init::array_init(|_| array_init::array_init(|_| Vec::new()))
                     });
@@ -826,7 +820,7 @@ pub(crate) fn keccak<F: Field>(
             let region = &mut regions[num_rounds - 2 - idx];
 
             cell_manager.get_strategy().start_region();
-            let squeeze_packed = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
+            let squeeze_packed: Cell<F> = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
             squeeze_packed.assign_keccak_region(region, *word);
 
             cell_manager.get_strategy().start_region();

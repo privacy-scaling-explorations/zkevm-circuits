@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use eth_types::Field;
 use halo2_proofs::plonk::{Advice, Column, ConstraintSystem};
 
-use super::cell_manager::{Cell, CellManagerColumns, CellManagerStrategy, CellType, CellValueOnly};
+use super::cell_manager::{Cell, CellManagerColumns, CellManagerStrategy, CellType};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct CMFixedWidthStrategyDistribution(HashMap<CellType, Vec<Column<Advice>>>);
@@ -184,11 +184,11 @@ impl CellManagerStrategy for CMFixedWidthStrategy {
         data
     }
 
-    fn query_cell_value(
+    fn query_cell_value<F>(
         &mut self,
         _columns: &mut CellManagerColumns,
         _cell_type: CellType,
-    ) -> super::cell_manager::CellValueOnly {
+    ) -> Cell<F> {
         unimplemented!()
     }
 
@@ -202,12 +202,12 @@ impl CellManagerStrategy for CMFixedWidthStrategy {
         unimplemented!()
     }
 
-    fn query_cell_value_with_affinity(
+    fn query_cell_value_with_affinity<F>(
         &mut self,
         _columns: &mut CellManagerColumns,
         _cell_type: CellType,
         _affinity: Self::Affinity,
-    ) -> super::cell_manager::CellValueOnly {
+    ) -> Cell<F> {
         unimplemented!()
     }
 }
@@ -268,11 +268,11 @@ impl CellManagerStrategy for CMFixedHeightStrategy {
         // This CM strategy has not statistics.
     }
 
-    fn query_cell_value(
+    fn query_cell_value<F>(
         &mut self,
         _columns: &mut CellManagerColumns,
         cell_type: CellType,
-    ) -> CellValueOnly {
+    ) -> Cell<F> {
         assert_eq!(
             cell_type, self.cell_type,
             "CMFixedHeightStrategy can only work with one cell type"
@@ -282,7 +282,7 @@ impl CellManagerStrategy for CMFixedHeightStrategy {
 
         self.inc_row_width(row_idx);
 
-        CellValueOnly::new(column_idx, row_idx)
+        Cell::new_value(column_idx, row_idx)
     }
 
     fn query_cell_with_affinity<F: Field>(
@@ -307,12 +307,12 @@ impl CellManagerStrategy for CMFixedHeightStrategy {
         cell
     }
 
-    fn query_cell_value_with_affinity(
+    fn query_cell_value_with_affinity<F>(
         &mut self,
         _columns: &mut CellManagerColumns,
         cell_type: CellType,
         affinity: Self::Affinity,
-    ) -> CellValueOnly {
+    ) -> Cell<F> {
         assert_eq!(
             cell_type, self.cell_type,
             "CMFixedHeightStrategy can only work with one cell type"
@@ -323,7 +323,7 @@ impl CellManagerStrategy for CMFixedHeightStrategy {
 
         self.inc_row_width(row_idx);
 
-        CellValueOnly::new(column_idx, row_idx)
+        Cell::new_value(column_idx, row_idx)
     }
 }
 
