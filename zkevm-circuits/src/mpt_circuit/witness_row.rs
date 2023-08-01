@@ -87,6 +87,7 @@ pub struct StartNode {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExtensionBranchNode {
     pub(crate) is_extension: bool,
+    pub(crate) is_mod_extension: [bool; 2],
     pub(crate) is_placeholder: [bool; 2],
     pub(crate) extension: ExtensionNode,
     pub(crate) branch: BranchNode,

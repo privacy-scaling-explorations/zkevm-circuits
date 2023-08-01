@@ -205,6 +205,7 @@ impl<F: Field> AccountLeafConfig<F> {
                     storage_rlc[is_s.idx()].expr(),
                     true.expr(),
                     false.expr(),
+                    false.expr(),
                     storage_rlc[is_s.idx()].expr(),
                 );
             }
@@ -477,6 +478,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 &mut pv.memory[parent_memory(is_s)],
                 storage_rlc[is_s.idx()],
                 true,
+                false,
                 false,
                 storage_rlc[is_s.idx()],
             )?;

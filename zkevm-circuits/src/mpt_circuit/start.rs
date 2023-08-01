@@ -72,6 +72,7 @@ impl<F: Field> StartConfig<F> {
                     root[is_s.idx()].expr(),
                     true.expr(),
                     false.expr(),
+                    false.expr(),
                     root[is_s.idx()].expr(),
                 );
                 KeyData::store_defaults(cb, &ctx.memory[key_memory(is_s)]);
@@ -127,6 +128,7 @@ impl<F: Field> StartConfig<F> {
                 &mut pv.memory[parent_memory(is_s)],
                 root[is_s.idx()],
                 true,
+                false,
                 false,
                 root[is_s.idx()],
             )?;
