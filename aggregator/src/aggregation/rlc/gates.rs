@@ -16,12 +16,7 @@ impl RlcConfig {
         region.assign_fixed(|| "const one", self.fixed, 1, || Value::known(Fr::one()))?;
         region.assign_fixed(|| "const two", self.fixed, 2, || Value::known(Fr::from(2)))?;
         region.assign_fixed(|| "const four", self.fixed, 3, || Value::known(Fr::from(4)))?;
-        region.assign_fixed(
-            || "const eight",
-            self.fixed,
-            4,
-            || Value::known(Fr::from(8)),
-        )?;
+        region.assign_fixed(|| "const nine", self.fixed, 4, || Value::known(Fr::from(9)))?;
         region.assign_fixed(
             || "const thirty two",
             self.fixed,
@@ -68,7 +63,7 @@ impl RlcConfig {
     }
 
     #[inline]
-    pub(crate) fn eight_cell(&self, region_index: RegionIndex) -> Cell {
+    pub(crate) fn nine_cell(&self, region_index: RegionIndex) -> Cell {
         Cell {
             region_index,
             row_offset: 4,
@@ -288,7 +283,7 @@ impl RlcConfig {
         self.mul_add(region, b, &cond_not, &tmp, offset)
     }
 
-    // Returns inputs[0] + challenge * inputs[1] + ... + challenge^k * inputs[k]
+    // Returns challenge^k * inputs[0] + ... + challenge * inputs[k-1] + inputs[k]
     #[allow(dead_code)]
     pub(crate) fn rlc(
         &self,
@@ -304,7 +299,8 @@ impl RlcConfig {
         Ok(acc)
     }
 
-    // Returns inputs[0] + challenge * inputs[1] + ... + challenge^k * inputs[k]
+    // Returns challenge^k * inputs[0] * flag[0] + ... + challenge * inputs[k-1] * flag[k-1]] +
+    // inputs[k]* flag[k]
     pub(crate) fn rlc_with_flag(
         &self,
         region: &mut Region<Fr>,

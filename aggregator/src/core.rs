@@ -100,7 +100,7 @@ pub(crate) fn extract_accumulators_and_proof(
 // 4. chunks are continuous: they are linked via the state roots
 // 5. batch and all its chunks use a same chain id
 // 6. chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
-// 7. chunk[i]'s data_hash == "" when chunk[i] is padded
+// 7. chunk[i]'s data_hash == keccak("") when chunk[i] is padded
 #[allow(clippy::type_complexity)]
 pub(crate) fn assign_batch_hashes(
     config: &AggregationConfig,
@@ -127,7 +127,7 @@ pub(crate) fn assign_batch_hashes(
     // 3. batch_data_hash and chunk[i].pi_hash use a same chunk[i].data_hash when chunk[i] is not
     // padded
     // 6. chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
-    // 7. chunk[i]'s data_hash == "" when chunk[i] is padded
+    // 7. chunk[i]'s data_hash == keccak("") when chunk[i] is padded
     let num_valid_snarks = conditional_constraints(
         &config.rlc_config,
         // config.flex_gate(),
@@ -405,7 +405,7 @@ fn copy_constraints(
 // 1. batch_data_hash digest is reused for public input hash
 // 3. batch_data_hash and chunk[i].pi_hash use a same chunk[i].data_hash when chunk[i] is not padded
 // 6. chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
-// 7. chunk[i]'s data_hash == "" when chunk[i] is padded
+// 7. chunk[i]'s data_hash == keccak("") when chunk[i] is padded
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn conditional_constraints(
     rlc_config: &RlcConfig,
@@ -462,11 +462,11 @@ pub(crate) fn conditional_constraints(
                     region.constrain_equal(four_cell, four.cell())?;
                     four
                 };
-                let eight = {
-                    let eight = rlc_config.load_private(&mut region, &Fr::from(8), &mut offset)?;
-                    let eight_cell = rlc_config.eight_cell(eight.cell().region_index);
-                    region.constrain_equal(eight_cell, eight.cell())?;
-                    eight
+                let nine = {
+                    let nine = rlc_config.load_private(&mut region, &Fr::from(9), &mut offset)?;
+                    let nine_cell = rlc_config.nine_cell(nine.cell().region_index);
+                    region.constrain_equal(nine_cell, nine.cell())?;
+                    nine
                 };
                 let flag1 = rlc_config.is_smaller_than(
                     &mut region,
@@ -478,7 +478,7 @@ pub(crate) fn conditional_constraints(
                 let not_flag3 = rlc_config.is_smaller_than(
                     &mut region,
                     &num_of_valid_snarks_cell[0],
-                    &eight,
+                    &nine,
                     &mut offset,
                 )?;
                 let flag3 = rlc_config.not(&mut region, &not_flag3, &mut offset)?;
@@ -511,6 +511,11 @@ pub(crate) fn conditional_constraints(
                 //
                 // 1 batch_data_hash digest is reused for public input hash
                 //
+                // the following part of the code is hard coded for the case where
+                //   MAX_AGG_SNARKS <= 10
+                // in theory it may support up to 12 SNARKS (not tested)
+                // more SNARKs beyond 12 will require a revamp of the circuit
+                //
                 // public input hash is build as
                 //  keccak(
                 //      chain_id ||
@@ -518,6 +523,8 @@ pub(crate) fn conditional_constraints(
                 //      chunk[k-1].post_state_root ||
                 //      chunk[k-1].withdraw_root ||
                 //      batch_data_hash )
+                //
+                // batchDataHash = keccak(chunk[0].dataHash || ... || chunk[k-1].dataHash)
                 //
                 // #valid snarks | offset of data hash | flags
                 // 1,2,3,4       | 0                   | 1, 0, 0
@@ -658,7 +665,7 @@ pub(crate) fn conditional_constraints(
                     }
                 }
 
-                // 7. chunk[i]'s data_hash == "" when chunk[i] is padded
+                // 7. chunk[i]'s data_hash == keccak("") when chunk[i] is padded
                 // that means the data_hash length is 32 * number_of_valid_snarks
                 let const32 = rlc_config.load_private(&mut region, &Fr::from(32), &mut offset)?;
                 let const32_cell = rlc_config.thirty_two_cell(const32.cell().region_index);
