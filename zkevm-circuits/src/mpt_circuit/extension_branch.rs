@@ -288,7 +288,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     mod_node_hash_rlc[is_s.idx()],
                     false,
                     false,
-                    parent_data[is_s.idx()].is_mod_extension,
+                    extension_branch.is_mod_extension[is_s.idx()],
                     0.scalar(),
                 )?;
             } else {
@@ -310,7 +310,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     parent_data[is_s.idx()].rlc,
                     parent_data[is_s.idx()].is_root,
                     true,
-                    parent_data[is_s.idx()].is_mod_extension,
+                    extension_branch.is_mod_extension[is_s.idx()],
                     mod_node_hash_rlc[is_s.idx()],
                 )?;
             }
