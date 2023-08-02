@@ -57,10 +57,6 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
         // Nothing to do
     }
 
-    pub(crate) fn lookup_challenge(&self) -> F {
-        self.r.clone()
-    }
-
     pub(crate) fn assign_stored_expressions<C: CellType, S: ChallengeSet<F>>(
         &mut self,
         cb: &ConstraintBuilder<F, C>,
