@@ -14,9 +14,8 @@ use ethers::{
     solc::{CompilerInput, EvmVersion},
 };
 use integration_tests::{
-    worst_case::Solcwc,
-    get_client, get_provider, get_wallet, log_init, CompiledContract, GenDataOutput, CONTRACTS,
-    CONTRACTS_PATH, WARN,
+    get_client, get_provider, get_wallet, log_init, worst_case::Solcwc, CompiledContract,
+    GenDataOutput, CONTRACTS, CONTRACTS_PATH, WARN,
 };
 use log::{error, info};
 use std::{collections::HashMap, fs::File, path::Path, sync::Arc, thread::sleep, time::Duration};
@@ -222,6 +221,53 @@ async fn main() {
     );
     deployments.insert(
         "OpenZeppelinERC20TestToken".to_string(),
+        (block_num.as_u64(), contract.address()),
+    );
+
+    // Deploy smart contracts for worst case block benches
+    //
+
+    // CheckMload
+    let contract = deploy(
+        prov_wallet0.clone(),
+        contracts.get("CheckMload").expect("contract not found"),
+        (),
+    )
+    .await;
+    let block_num = prov.get_block_number().await.expect("cannot get block_num");
+    blocks.insert("Deploy CheckMload".to_string(), block_num.as_u64());
+    deployments.insert(
+        "CheckMload".to_string(),
+        (block_num.as_u64(), contract.address()),
+    );
+
+    // CheckSdiv
+    let contract = deploy(
+        prov_wallet0.clone(),
+        contracts.get("CheckSdiv").expect("contract not found"),
+        (),
+    )
+    .await;
+    let block_num = prov.get_block_number().await.expect("cannot get block_num");
+    blocks.insert("Deploy CheckSdiv".to_string(), block_num.as_u64());
+    deployments.insert(
+        "CheckSdiv".to_string(),
+        (block_num.as_u64(), contract.address()),
+    );
+
+    // CheckExtCodeSize100
+    let contract = deploy(
+        prov_wallet0.clone(),
+        contracts
+            .get("CheckExtCodeSize100")
+            .expect("contract not found"),
+        (),
+    )
+    .await;
+    let block_num = prov.get_block_number().await.expect("cannot get block_num");
+    blocks.insert("Deploy CheckExtCodeSize100".to_string(), block_num.as_u64());
+    deployments.insert(
+        "CheckExtCodeSize100".to_string(),
         (block_num.as_u64(), contract.address()),
     );
 

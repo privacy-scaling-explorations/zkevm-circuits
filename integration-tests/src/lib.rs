@@ -31,7 +31,7 @@ pub const CONTRACTS_PATH: &str = "contracts";
 /// 2018: Warning - "Function state mutability can be restricted to pure"
 /// 5667: Warning - "Unused function parameter. Remove or comment out the
 /// variable name to silence this warning."
-pub const WARN: &[u64] = &[2018,5667];
+pub const WARN: &[u64] = &[2018, 5667];
 /// List of contracts as (ContractName, ContractSolidityFile)
 pub const CONTRACTS: &[(&str, &str)] = &[
     ("Greeter", "greeter/Greeter.sol"),
