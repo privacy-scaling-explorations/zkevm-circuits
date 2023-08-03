@@ -15,7 +15,7 @@ use ethers::{
 };
 use integration_tests::{
     get_client, get_provider, get_wallet, log_init, CompiledContract, GenDataOutput, CONTRACTS,
-    CONTRACTS_PATH,
+    CONTRACTS_PATH, WARN,
 };
 use log::{error, info};
 use std::{collections::HashMap, fs::File, path::Path, sync::Arc, thread::sleep, time::Duration};
@@ -90,11 +90,24 @@ async fn main() {
             .clone()
             .evm_version(EvmVersion::London);
 
-        let compiled = solc
-            .compile(&input)
-            .unwrap_or_else(|_| panic!("solc compile error {:?}", path_sol));
-        if !compiled.errors.is_empty() {
-            panic!("Errors compiling {:?}:\n{:#?}", &path_sol, compiled.errors)
+        // .compile() call will either fail with Err variant or return Ok(CompilerOutput)
+        // which may contain Errors or Warnings
+        let compiled = match solc.compile(&input) {
+            Err(error) => {
+                panic!("COMPILATION ERROR {:?}\n{:?}", &path_sol, error);
+            }
+            // CompilationOutput is succesfully created (might contain Errors or Warnings)
+            Ok(output) => {
+                info!("COMPILATION OK: {:?}", name);
+                output
+            }
+        };
+
+        if compiled.has_error() || compiled.has_warning(WARN) {
+            panic!(
+                "... but CompilerOutput contains errors/warnings: {:?}:\n{:#?}",
+                &path_sol, compiled.errors
+            );
         }
 
         let contract = compiled
