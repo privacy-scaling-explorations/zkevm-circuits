@@ -44,6 +44,7 @@ mod stackonlyop;
 mod stop;
 mod swap;
 
+mod error_code_store;
 mod error_invalid_creation_code;
 mod error_invalid_jump;
 mod error_oog_call;
@@ -72,6 +73,7 @@ use codecopy::Codecopy;
 use codesize::Codesize;
 use create::Create;
 use dup::Dup;
+use error_code_store::ErrorCodeStore;
 use error_invalid_creation_code::ErrorCreationCode;
 use error_invalid_jump::InvalidJump;
 use error_oog_call::OOGCall;
@@ -304,6 +306,10 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::Depth(DepthError::Call) => Some(CallOpcode::<7>::gen_associated_ops),
         ExecError::Depth(DepthError::Create) => Some(Create::<false>::gen_associated_ops),
         ExecError::Depth(DepthError::Create2) => Some(Create::<true>::gen_associated_ops),
+        ExecError::CodeStoreOutOfGas | ExecError::MaxCodeSizeExceeded => {
+            Some(ErrorCodeStore::gen_associated_ops)
+        }
+
         // more future errors place here
         _ => {
             evm_unimplemented!("TODO: error state {:?} not implemented", error);
