@@ -12,10 +12,14 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::CallContextFieldTag,
     util::{word::WordExpr, Expr},
 };
 
-use eth_types::{evm_types::GasCost, Field};
+use eth_types::{
+    evm_types::{GasCost, OpcodeId},
+    Field,
+};
 
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -26,6 +30,8 @@ const MAXCODESIZE: u64 = 0x6000u64;
 pub(crate) struct ErrorCodeStoreGadget<F> {
     opcode: Cell<F>,
     memory_address: MemoryAddressGadget<F>,
+    // check not static call
+    is_static: Cell<F>,
     // check for CodeStoreOutOfGas error
     code_store_gas_insufficient: LtGadget<F, N_BYTES_GAS>,
     // check for MaxCodeSizeExceeded error
@@ -40,12 +46,20 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
+        cb.require_equal(
+            "ErrorCodeStore checking at RETURN in create context ",
+            opcode.expr(),
+            OpcodeId::RETURN.expr(),
+        );
 
         let offset = cb.query_word_unchecked();
         let length = cb.query_memory_address();
         cb.stack_pop(offset.to_word());
         cb.stack_pop(length.to_word());
         let memory_address = MemoryAddressGadget::construct(cb, offset, length);
+        // constrain not in static call
+        let is_static = cb.call_context(None, CallContextFieldTag::IsStatic);
+        cb.require_zero("is_static is false in ErrorCodeStore", is_static.expr());
 
         cb.require_true("is_create is true", cb.curr.state.is_create.expr());
 
@@ -71,7 +85,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         let common_error_gadget = CommonErrorGadget::construct_with_return_data(
             cb,
             opcode.expr(),
-            4.expr(),
+            5.expr(),
             memory_address.offset(),
             memory_address.length(),
         );
@@ -79,6 +93,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         Self {
             opcode,
             memory_address,
+            is_static,
             code_store_gas_insufficient,
             max_code_size_exceed,
             common_error_gadget,
@@ -101,6 +116,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         self.memory_address
             .assign(region, offset, memory_offset, length)?;
 
+        self.is_static
+            .assign(region, offset, Value::known(F::from(call.is_static as u64)))?;
         self.code_store_gas_insufficient.assign(
             region,
             offset,
@@ -116,7 +133,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         )?;
 
         self.common_error_gadget
-            .assign(region, offset, block, call, step, 4)?;
+            .assign(region, offset, block, call, step, 5)?;
         Ok(())
     }
 }

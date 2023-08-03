@@ -2,9 +2,10 @@ use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     error::ExecError,
     evm::Opcode,
+    operation::CallContextField,
     Error,
 };
-use eth_types::GethExecStep;
+use eth_types::{GethExecStep, Word};
 
 #[derive(Debug, Copy, Clone)]
 pub struct ErrorCodeStore;
@@ -31,11 +32,15 @@ impl Opcode for ErrorCodeStore {
         state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), offset)?;
         state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), length)?;
 
-        // in internal call context
-        let call = state.call()?;
-
+        // read static call property
+        state.call_context_read(
+            &mut exec_step,
+            state.call()?.call_id,
+            CallContextField::IsStatic,
+            Word::from(state.call()?.is_static as u8),
+        );
         // create context check
-        assert!(call.is_create());
+        assert!(state.call()?.is_create());
 
         state.handle_return(&mut exec_step, geth_steps, true)?;
         Ok(vec![exec_step])
