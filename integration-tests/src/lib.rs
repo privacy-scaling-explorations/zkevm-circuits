@@ -29,7 +29,9 @@ pub const CHAIN_ID: u64 = 1337;
 pub const CONTRACTS_PATH: &str = "contracts";
 /// Solidity compilation warnings to ignore (by error code)
 /// 2018: Warning - "Function state mutability can be restricted to pure"
-pub const WARN: &[u64] = &[2018];
+/// 5667: Warning - "Unused function parameter. Remove or comment out the
+/// variable name to silence this warning."
+pub const WARN: &[u64] = &[2018,5667];
 /// List of contracts as (ContractName, ContractSolidityFile)
 pub const CONTRACTS: &[(&str, &str)] = &[
     ("Greeter", "greeter/Greeter.sol"),
