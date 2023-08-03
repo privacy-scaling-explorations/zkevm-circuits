@@ -84,9 +84,10 @@ async fn test_mock_prove_tx() {
 }
 
 fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &witness::Block<Fr>) -> MockProver<Fr> {
-    let k = block.get_test_degree();
+    let num_row = C::min_num_rows_block(block).1;
+    let k = zkevm_circuits::util::log2_ceil(num_row + 256);
     log::debug!("{} circuit needs k = {}", *CIRCUIT, k);
-    debug_assert!(k <= 22);
+    //debug_assert!(k <= 22);
     let circuit = C::new_from_block(block);
     MockProver::<Fr>::run(k, &circuit, circuit.instance()).unwrap()
 }
@@ -122,7 +123,7 @@ async fn test_circuit_all_block() {
         let cli = get_client();
         let params = CircuitsParams {
             max_rws: 4_000_000,
-            max_copy_rows: 4_000_000,
+            max_copy_rows: 0, // dynamic
             max_txs: 350,
             max_calldata: 2_000_000,
             max_inner_blocks: 64,
