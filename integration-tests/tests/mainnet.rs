@@ -10,6 +10,7 @@ use halo2_proofs::{
 };
 use integration_tests::{get_client, log_init, CIRCUIT, END_BLOCK, START_BLOCK, TX_ID};
 use zkevm_circuits::{
+    copy_circuit::CopyCircuit,
     evm_circuit::{witness::block_convert, EvmCircuit},
     keccak_circuit::keccak_packed_multi::multi_keccak,
     rlp_circuit_fsm::RlpCircuit,
@@ -92,6 +93,8 @@ fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &witness::Block<Fr>) -> Moc
 fn test_witness_block(block: &witness::Block<Fr>) -> Vec<VerifyFailure> {
     let prover = if *CIRCUIT == "evm" {
         test_with::<EvmCircuit<Fr>>(block)
+    } else if *CIRCUIT == "copy" {
+        test_with::<CopyCircuit<Fr>>(block)
     } else if *CIRCUIT == "rlp" {
         test_with::<RlpCircuit<Fr, Transaction>>(block)
     } else if *CIRCUIT == "tx" {
