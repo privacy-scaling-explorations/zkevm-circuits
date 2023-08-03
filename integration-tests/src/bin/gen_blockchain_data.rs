@@ -92,7 +92,11 @@ async fn main() {
 
         // .compile() call will either fail with Err variant or return Ok(CompilerOutput)
         // which may contain Errors or Warnings
-        let compiled = match solc.compile(&input) {
+        let output = solc.compile_output(&input).unwrap();
+        let mut deserializer: serde_json::Deserializer<serde_json::de::SliceRead<'_>> =
+            serde_json::Deserializer::from_slice(&output);
+        deserializer.disable_recursion_limit();
+        let compiled = match CompilerOutput::deserialize(&mut deserializer) {
             Err(error) => {
                 panic!("COMPILATION ERROR {:?}\n{:?}", &path_sol, error);
             }
