@@ -168,13 +168,13 @@ mod test {
     fn initialization_bytecode(is_oog: bool) -> Bytecode {
         let memory_bytes = [0x60; 10];
         let memory_value = Word::from_big_endian(&memory_bytes);
-        let code_len = if is_oog { 0 } else { MAXCODESIZE + 1 };
+        let code_len = if is_oog { 5 } else { MAXCODESIZE + 1 };
 
         let mut code = bytecode! {
             PUSH10(memory_value)
             PUSH32(code_len)
             MSTORE
-            PUSH2(if is_oog { 5 } else { code_len}) // length to copy
+            PUSH2(code_len) // length to copy
             PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap()) // offset
         };
         code.write_op(OpcodeId::RETURN);
@@ -289,7 +289,7 @@ mod test {
             |mut txs, _accs| {
                 txs[0]
                     .from(MOCK_ACCOUNTS[0])
-                    .gas(53446u64.into())
+                    .gas(538006u64.into())
                     .value(eth(2))
                     .input(code.into());
             },
