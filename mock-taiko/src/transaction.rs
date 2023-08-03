@@ -1,0 +1,368 @@
+//! Mock Transaction definition and builder related methods.
+
+use super::{
+    GOLDEN_TOUCH, MOCK_ACCOUNTS, MOCK_ANCHOR_GAS_LIMIT, MOCK_ANCHOR_GAS_PRICE,
+    MOCK_ANCHOR_TX_VALUE, MOCK_CHAIN_ID, MOCK_GASFEECAP, MOCK_GASPRICE, MOCK_GASTIPCAP,
+    MOCK_TAIKO_L2_ADDRESS,
+};
+use eth_types::{
+    geth_types::Transaction as GethTransaction, word, AccessList, Address, Bytes, Hash,
+    Transaction, Word, U64,
+};
+use ethers_core::{
+    rand::{CryptoRng, RngCore},
+    types::{OtherFields, TransactionRequest},
+};
+use ethers_signers::{LocalWallet, Signer};
+use lazy_static::lazy_static;
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
+
+lazy_static! {
+    /// Collection of correctly hashed and signed Transactions which can be used to test circuits or opcodes that have to check integrity of the Tx itself.
+    /// Some of the parameters of the Tx are hardcoded such as `nonce`, `value`, `gas_price` etc...
+    pub static ref CORRECT_MOCK_TXS: Vec<MockTransaction> = {
+        let mut rng = ChaCha20Rng::seed_from_u64(2u64);
+
+        vec![MockTransaction::default()
+            .from(AddrOrWallet::random(&mut rng))
+            .to(MOCK_ACCOUNTS[0])
+            .nonce(0x103u64)
+            .value(word!("0x3e8"))
+            .gas_price(word!("0x4d2"))
+            .input(Bytes::from(b"hello"))
+            .build(),
+            MockTransaction::default()
+            .from(AddrOrWallet::random(&mut rng))
+            .to(MOCK_ACCOUNTS[1])
+            .nonce(0x104u64)
+            .value(word!("0x3e8"))
+            .gas_price(word!("0x4d2"))
+            .input(Bytes::from(b"hello"))
+            .build(),
+            MockTransaction::default()
+            .from(AddrOrWallet::random(&mut rng))
+            .to(MOCK_ACCOUNTS[2])
+            .nonce(0x105u64)
+            .value(word!("0x3e8"))
+            .gas_price(word!("0x4d2"))
+            .input(Bytes::from(b"hello"))
+            .build(),
+            MockTransaction::default()
+            .from(AddrOrWallet::random(&mut rng))
+            .to(MOCK_ACCOUNTS[0])
+            .nonce(0x106u64)
+            .value(word!("0x3e8"))
+            .gas_price(word!("0x4d2"))
+            .input(Bytes::from(b"hello"))
+            .build(),]
+    };
+}
+
+#[derive(Debug, Clone)]
+pub enum AddrOrWallet {
+    Addr(Address),
+    Wallet(LocalWallet),
+}
+
+impl Default for AddrOrWallet {
+    fn default() -> Self {
+        AddrOrWallet::Addr(Address::default())
+    }
+}
+
+impl From<Address> for AddrOrWallet {
+    fn from(addr: Address) -> Self {
+        AddrOrWallet::Addr(addr)
+    }
+}
+
+impl From<LocalWallet> for AddrOrWallet {
+    fn from(wallet: LocalWallet) -> Self {
+        AddrOrWallet::Wallet(wallet)
+    }
+}
+
+impl AddrOrWallet {
+    /// Generates a random Wallet from a random secpk256 keypair
+    pub fn random<R: RngCore + CryptoRng>(rng: &mut R) -> Self {
+        AddrOrWallet::Wallet(LocalWallet::new(rng))
+    }
+}
+
+impl AddrOrWallet {
+    /// Returns the underlying address associated to the `AddrOrWallet` enum.
+    pub fn address(&self) -> Address {
+        match self {
+            Self::Addr(addr) => *addr,
+            Self::Wallet(wallet) => wallet.address(),
+        }
+    }
+
+    /// Returns true if the enum variant of `self` corresponds to a
+    /// [`LocalWallet`] structure and not simply and [`Address`].
+    const fn is_wallet(&self) -> bool {
+        matches!(self, Self::Wallet(_))
+    }
+
+    /// Returns the underlying wallet stored in the enum.
+    /// # Panics
+    /// This function will panic if the enum does not contain a [`LocalWallet`]
+    /// and instead contains the [`Address`] variant.
+    pub fn as_wallet(&self) -> LocalWallet {
+        match self {
+            Self::Wallet(wallet) => wallet.to_owned(),
+            _ => panic!("Broken AddrOrWallet invariant"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+/// Mock structure which represents a Transaction and can be used for tests.
+/// It contains all the builder-pattern methods required to be able to specify
+/// any of it's details.
+pub struct MockTransaction {
+    pub hash: Option<Hash>,
+    pub nonce: u64,
+    pub block_hash: Hash,
+    pub block_number: U64,
+    pub transaction_index: U64,
+    pub from: AddrOrWallet,
+    pub to: Option<AddrOrWallet>,
+    pub value: Word,
+    // gas_price == min(max_fee_per_gas, max_priority_fee_per_gas + base_fee_per_gas)
+    pub gas_price: Word,
+    pub gas: Word,
+    pub input: Bytes,
+    pub v: Option<U64>,
+    pub r: Option<Word>,
+    pub s: Option<Word>,
+    pub transaction_type: U64,
+    pub access_list: AccessList,
+    pub max_priority_fee_per_gas: Word,
+    pub max_fee_per_gas: Word,
+    pub chain_id: Word,
+}
+
+impl Default for MockTransaction {
+    fn default() -> Self {
+        MockTransaction {
+            hash: None,
+            nonce: 0,
+            block_hash: Hash::zero(),
+            block_number: U64::zero(),
+            transaction_index: U64::zero(),
+            from: AddrOrWallet::Addr(MOCK_ACCOUNTS[0]),
+            to: None,
+            value: Word::zero(),
+            gas_price: *MOCK_GASPRICE,
+            gas: Word::from(1_000_000u64),
+            input: Bytes::default(),
+            v: None,
+            r: None,
+            s: None,
+            transaction_type: U64::zero(),
+            access_list: AccessList::default(),
+            max_priority_fee_per_gas: *MOCK_GASTIPCAP,
+            max_fee_per_gas: *MOCK_GASFEECAP,
+            chain_id: *MOCK_CHAIN_ID,
+        }
+    }
+}
+
+impl From<MockTransaction> for Transaction {
+    fn from(mock: MockTransaction) -> Self {
+        Transaction {
+            hash: mock.hash.unwrap_or_default(),
+            nonce: mock.nonce.into(),
+            block_hash: Some(mock.block_hash),
+            block_number: Some(mock.block_number),
+            transaction_index: Some(mock.transaction_index),
+            from: mock.from.address(),
+            to: mock.to.map(|addr| addr.address()),
+            value: mock.value,
+            gas_price: Some(mock.gas_price),
+            gas: mock.gas,
+            input: mock.input,
+            v: mock.v.unwrap_or_default(),
+            r: mock.r.unwrap_or_default(),
+            s: mock.s.unwrap_or_default(),
+            transaction_type: Some(mock.transaction_type),
+            access_list: Some(mock.access_list),
+            max_priority_fee_per_gas: Some(mock.max_priority_fee_per_gas),
+            max_fee_per_gas: Some(mock.max_fee_per_gas),
+            chain_id: Some(mock.chain_id),
+            other: OtherFields::default(),
+        }
+    }
+}
+
+impl From<MockTransaction> for GethTransaction {
+    fn from(mock: MockTransaction) -> Self {
+        GethTransaction::from(&Transaction::from(mock))
+    }
+}
+
+impl MockTransaction {
+    /// create a mock anchor transaction
+    pub fn new_anchor() -> Self {
+        let mut tx = MockTransaction::default();
+        tx.from(*GOLDEN_TOUCH);
+        tx.to(*MOCK_TAIKO_L2_ADDRESS);
+        tx.gas(*MOCK_ANCHOR_GAS_LIMIT)
+            .gas_price(*MOCK_ANCHOR_GAS_PRICE)
+            .from(*GOLDEN_TOUCH)
+            .to(*MOCK_TAIKO_L2_ADDRESS)
+            .input(crate::anchor::anchor_call())
+            .nonce(0)
+            .value(*MOCK_ANCHOR_TX_VALUE);
+        crate::anchor::sign(&mut tx);
+        tx
+    }
+}
+
+impl MockTransaction {
+    /// Tx Hash computed based on the fields of the Tx by
+    /// default unless `Some(hash)` is specified on build process.
+    pub fn hash(&mut self, hash: Hash) -> &mut Self {
+        self.hash = Some(hash);
+        self
+    }
+
+    /// Set nonce field for the MockTransaction.
+    pub fn nonce(&mut self, nonce: u64) -> &mut Self {
+        self.nonce = nonce;
+        self
+    }
+
+    /// Set block_hash field for the MockTransaction.
+    pub fn block_hash(&mut self, block_hash: Hash) -> &mut Self {
+        self.block_hash = block_hash;
+        self
+    }
+
+    /// Set block_number field for the MockTransaction.
+    pub fn block_number(&mut self, block_number: u64) -> &mut Self {
+        self.block_number = U64::from(block_number);
+        self
+    }
+
+    /// Set transaction_idx field for the MockTransaction.
+    pub fn transaction_idx(&mut self, transaction_idx: u64) -> &mut Self {
+        self.transaction_index = U64::from(transaction_idx);
+        self
+    }
+
+    /// Set from field for the MockTransaction.
+    pub fn from<T: Into<AddrOrWallet>>(&mut self, from: T) -> &mut Self {
+        self.from = from.into();
+        self
+    }
+
+    /// Set to field for the MockTransaction.
+    pub fn to<T: Into<AddrOrWallet>>(&mut self, to: T) -> &mut Self {
+        self.to = Some(to.into());
+        self
+    }
+
+    /// Set value field for the MockTransaction.
+    pub fn value(&mut self, value: Word) -> &mut Self {
+        self.value = value;
+        self
+    }
+
+    /// Set gas_price field for the MockTransaction.
+    pub fn gas_price(&mut self, gas_price: Word) -> &mut Self {
+        self.gas_price = gas_price;
+        self
+    }
+
+    /// Set gas field for the MockTransaction.
+    pub fn gas(&mut self, gas: Word) -> &mut Self {
+        self.gas = gas;
+        self
+    }
+
+    /// Set input field for the MockTransaction.
+    pub fn input(&mut self, input: Bytes) -> &mut Self {
+        self.input = input;
+        self
+    }
+
+    /// Set sig_data field for the MockTransaction.
+    pub fn sig_data(&mut self, data: (u64, Word, Word)) -> &mut Self {
+        self.v = Some(U64::from(data.0));
+        self.r = Some(data.1);
+        self.s = Some(data.2);
+        self
+    }
+
+    /// Set transaction_type field for the MockTransaction.
+    pub fn transaction_type(&mut self, transaction_type: u64) -> &mut Self {
+        self.transaction_type = U64::from(transaction_type);
+        self
+    }
+
+    /// Set access_list field for the MockTransaction.
+    pub fn access_list(&mut self, access_list: AccessList) -> &mut Self {
+        self.access_list = access_list;
+        self
+    }
+
+    /// Set max_priority_fee_per_gas field for the MockTransaction.
+    pub fn max_priority_fee_per_gas(&mut self, max_priority_fee_per_gas: Word) -> &mut Self {
+        self.max_priority_fee_per_gas = max_priority_fee_per_gas;
+        self
+    }
+
+    /// Set max_fee_per_gas field for the MockTransaction.
+    pub fn max_fee_per_gas(&mut self, max_fee_per_gas: Word) -> &mut Self {
+        self.max_fee_per_gas = max_fee_per_gas;
+        self
+    }
+
+    /// Set chain_id field for the MockTransaction.
+    pub(crate) fn chain_id(&mut self, chain_id: Word) -> &mut Self {
+        self.chain_id = chain_id;
+        self
+    }
+
+    /// Consumes the mutable ref to the MockTransaction returning the structure
+    /// by value.
+    pub fn build(&mut self) -> Self {
+        let tx = TransactionRequest::new()
+            .from(self.from.address())
+            .to(self.to.clone().unwrap_or_default().address())
+            .nonce(self.nonce)
+            .value(self.value)
+            .data(self.input.clone())
+            .gas(self.gas)
+            .gas_price(self.gas_price)
+            .chain_id(self.chain_id.low_u64());
+
+        match (self.v, self.r, self.s) {
+            (None, None, None) => {
+                // Compute sig params and set them in case we have a wallet as `from` attr.
+                if self.from.is_wallet() && self.hash.is_none() {
+                    let sig = self
+                        .from
+                        .as_wallet()
+                        .with_chain_id(self.chain_id.low_u64())
+                        .sign_transaction_sync(&tx.into());
+                    // Set sig parameters
+                    self.sig_data((sig.v, sig.r, sig.s));
+                }
+            }
+            (Some(_), Some(_), Some(_)) => (),
+            _ => panic!("Either all or none of the SigData params have to be set"),
+        }
+
+        // Compute tx hash in case is not already set
+        if self.hash.is_none() {
+            let tmp_tx = Transaction::from(self.to_owned());
+            self.hash(tmp_tx.hash());
+        }
+
+        self.to_owned()
+    }
+}
