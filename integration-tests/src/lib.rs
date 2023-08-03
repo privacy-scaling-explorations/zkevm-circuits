@@ -31,6 +31,7 @@ pub const CONTRACTS_PATH: &str = "contracts";
 /// 2018: Warning - "Function state mutability can be restricted to pure"
 /// 5667: Warning - "Unused function parameter. Remove or comment out the
 /// variable name to silence this warning."
+/// For smart contracts that are optimized for worst case block generation, we want to allow contracts that do not interfere with state, without setting state mutability to view. otherwise compiler optimizations will not allow recursive execution of targeted opcodes
 pub const WARN: &[u64] = &[2018, 5667];
 /// List of contracts as (ContractName, ContractSolidityFile)
 pub const CONTRACTS: &[(&str, &str)] = &[
