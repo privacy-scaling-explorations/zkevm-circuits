@@ -36,6 +36,10 @@ pub const CONTRACTS: &[(&str, &str)] = &[
         "OpenZeppelinERC20TestToken",
         "ERC20/OpenZeppelinERC20TestToken.sol",
     ),
+    // worst case block SCs
+    ("CheckMload", "MLOAD/MLOAD.sol"),
+    ("CheckExtCodeSize100", "EXTCODESIZE/EXTCODESIZE100.sol"),
+    ("CheckSdiv", "SDIV/SDIV.sol"),
 ];
 /// Path to gen_blockchain_data output file
 pub const GENDATA_OUTPUT_PATH: &str = "gendata_output.json";
