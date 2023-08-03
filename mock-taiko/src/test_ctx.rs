@@ -1,6 +1,6 @@
 //! Mock types and functions to generate Test enviroments for ZKEVM tests
 
-use crate::{eth, MockAccount, MockBlock, MockTransaction, GOLDEN_TOUCH};
+use crate::{eth, MockAccount, MockBlock, MockTransaction, GOLDEN_TOUCH, MOCK_TAIKO_L2_ADDRESS};
 use eth_types::{
     geth_types::{Account, BlockConstants, GethData},
     Block, Bytecode, Error, GethExecTrace, Transaction, Word,
@@ -116,31 +116,34 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         Fb: FnOnce(&mut MockBlock, Vec<MockTransaction>) -> &mut MockBlock,
         FAcc: FnOnce([&mut MockAccount; NACC]),
     {
+        let mut accounts: Vec<MockAccount> = vec![MockAccount::default(); NACC + 2];
         // add the GOLDEN_TOUCH account in the first position
-        let mut accounts: Vec<MockAccount> = vec![MockAccount::default(); NACC + 1];
         accounts[0].address(*GOLDEN_TOUCH);
+        // add the l2 contract account in the second position
+        accounts[1].address(*MOCK_TAIKO_L2_ADDRESS);
         // Build Accounts modifiers
         let account_refs = accounts
             .iter_mut()
-            .skip(1)
+            .skip(2)
             .collect_vec()
             .try_into()
             .expect("Mismatched len err");
         acc_fns(account_refs);
         let accounts: [MockAccount; NACC] = accounts
             .iter_mut()
-            .skip(1)
+            .skip(2)
             .map(|acc| acc.build())
             .collect_vec()
             .try_into()
             .expect("Mismatched acc len");
 
-        // add the anchor transaction in the first position
         let mut transactions = vec![MockTransaction::default(); NTX + 1];
         // By default, set the TxIndex and the Nonce values of the multiple transactions
         // of the context correlative so that any Ok test passes by default.
         // If the user decides to override these values, they'll then be set to whatever
         // inputs were provided by the user.
+
+        // add the anchor transaction in the first position
         transactions[0] = MockTransaction::new_anchor();
         transactions
             .iter_mut()
