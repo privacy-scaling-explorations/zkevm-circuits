@@ -96,6 +96,7 @@ async fn main() {
         let output = solc.compile_output(&input).unwrap();
         let mut deserializer: serde_json::Deserializer<serde_json::de::SliceRead<'_>> =
             serde_json::Deserializer::from_slice(&output);
+        // The contracts to test the worst-case usage of certain opcodes, such as SDIV, MLOAD, and EXTCODESIZE, generate big JSON compilation outputs. We disable the recursion limit to avoid parsing failure.
         deserializer.disable_recursion_limit();
         let compiled = match CompilerOutput::deserialize(&mut deserializer) {
             Err(error) => {
