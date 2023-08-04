@@ -26,10 +26,7 @@ fn main() {
     }
 
     // Files the lib depends on that should recompile the lib
-    let dep_files = vec![
-        "./gethutil/trace.go",
-        "./go.mod",
-    ];
+    let dep_files = vec!["./gethutil/trace.go", "./go.mod"];
     for file in dep_files {
         println!("cargo:rerun-if-changed={}", file);
     }
