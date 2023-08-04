@@ -94,7 +94,6 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     &config.key_data,
                     &config.parent_data,
                     &config.is_placeholder,
-                    &config.is_mod_extension,
                 );
                 let ext = config.extension.get_post_state();
                 (
@@ -158,7 +157,6 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         branch.mod_rlc[is_s.idx()].expr(),
                         false.expr(),
                         false.expr(),
-                        config.is_mod_extension[is_s.idx()].expr(),
                         0.expr(),
                     );
                  } elsex {
@@ -180,7 +178,6 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         config.parent_data[is_s.idx()].rlc.expr(),
                         config.parent_data[is_s.idx()].is_root.expr(),
                         true.expr(),
-                        config.is_mod_extension[is_s.idx()].expr(),
                         branch.mod_rlc[is_s.idx()].expr(),
                     );
                 }}
@@ -288,7 +285,6 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     mod_node_hash_rlc[is_s.idx()],
                     false,
                     false,
-                    extension_branch.is_mod_extension[is_s.idx()],
                     0.scalar(),
                 )?;
             } else {
@@ -310,7 +306,6 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     parent_data[is_s.idx()].rlc,
                     parent_data[is_s.idx()].is_root,
                     true,
-                    extension_branch.is_mod_extension[is_s.idx()],
                     mod_node_hash_rlc[is_s.idx()],
                 )?;
             }

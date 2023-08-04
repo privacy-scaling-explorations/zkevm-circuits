@@ -47,6 +47,7 @@ pub(crate) struct StorageLeafConfig<F> {
     wrong: WrongGadget<F>,
     is_storage_mod_proof: IsEqualGadget<F>,
     is_non_existing_storage_proof: IsEqualGadget<F>,
+    is_mod_extension: [Cell<F>; 2],
 }
 
 impl<F: Field> StorageLeafConfig<F> {
@@ -77,6 +78,10 @@ impl<F: Field> StorageLeafConfig<F> {
             let drifted_item = ctx.rlp_item(meta, cb, StorageRowType::Drifted as usize);
             let wrong_item = ctx.rlp_item(meta, cb, StorageRowType::Wrong as usize);
 
+            for is_s in [true, false] {
+                config.is_mod_extension[is_s.idx()] = cb.query_bool();
+            }
+
             config.main_data =
                 MainData::load("main storage", cb, &ctx.memory[main_memory()], 0.expr());
 
@@ -86,13 +91,14 @@ impl<F: Field> StorageLeafConfig<F> {
             let mut key_rlc = vec![0.expr(); 2];
             let mut value_rlc = vec![0.expr(); 2];
             let mut value_rlp_rlc = vec![0.expr(); 2];
-            for is_s in [true, false] {
-                // Parent data
-                let parent_data = &mut config.parent_data[is_s.idx()];
-                *parent_data =
-                    ParentData::load("leaf load", cb, &ctx.memory[parent_memory(is_s)], 0.expr());
 
-                ifx! {not!(parent_data.is_mod_extension) => {
+            for is_s in [true, false] {
+                ifx! {not!(config.is_mod_extension[is_s.idx()].expr()) => {
+                    // Parent data
+                    let parent_data = &mut config.parent_data[is_s.idx()];
+                    *parent_data =
+                        ParentData::load("leaf load", cb, &ctx.memory[parent_memory(is_s)], 0.expr());
+
                     // Key data
                     let key_data = &mut config.key_data[is_s.idx()];
                     *key_data = KeyData::load(cb, &ctx.memory[key_memory(is_s)], 0.expr());
@@ -169,27 +175,20 @@ impl<F: Field> StorageLeafConfig<F> {
                             require!(leaf_rlc => parent_data.rlc);
                         }}
                     }}
-
-                    // Key done, set the default values
-                    KeyData::store_defaults(cb, &ctx.memory[key_memory(is_s)]);
-                    // Store the new parent
-                    ParentData::store(
-                        cb,
-                        &ctx.memory[parent_memory(is_s)],
-                        0.expr(),
-                        true.expr(),
-                        false.expr(),
-                        false.expr(),
-                        0.expr(),
-                    );
                 }};
-            }
 
-            /*
-            TODO
-            ifx!{and::expr(&[not!(config.parent_data[0].is_mod_extension.expr()), not!(config.parent_data[1].is_mod_extension.expr())]) => {
-            }};
-            */
+                // Key done, set the default values
+                KeyData::store_defaults(cb, &ctx.memory[key_memory(is_s)]);
+                // Store the new parent
+                ParentData::store(
+                    cb,
+                    &ctx.memory[parent_memory(is_s)],
+                    0.expr(),
+                    true.expr(),
+                    false.expr(),
+                    0.expr(),
+                );
+            }
 
             // Proof types
             config.is_storage_mod_proof = IsEqualGadget::construct(
@@ -216,6 +215,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 &key_rlc,
                 &value_rlp_rlc,
                 &drifted_item,
+                &config.is_mod_extension,
                 &ctx.r,
             );
 
@@ -298,6 +298,12 @@ impl<F: Field> StorageLeafConfig<F> {
         let mut key_rlc = vec![0.scalar(); 2];
         let mut value_rlc = vec![0.scalar(); 2];
         for is_s in [true, false] {
+            self.is_mod_extension[is_s.idx()].assign(
+                region,
+                offset,
+                storage.is_mod_extension[is_s.idx()].scalar(),
+            )?;
+
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
                 region,
                 offset,
@@ -369,7 +375,6 @@ impl<F: Field> StorageLeafConfig<F> {
                 &mut pv.memory[parent_memory(is_s)],
                 F::ZERO,
                 true,
-                false,
                 false,
                 F::ZERO,
             )?;

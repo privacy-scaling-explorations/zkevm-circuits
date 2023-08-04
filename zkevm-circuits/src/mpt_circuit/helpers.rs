@@ -516,7 +516,6 @@ pub(crate) struct ParentData<F> {
     pub(crate) rlc: Cell<F>,
     pub(crate) is_root: Cell<F>,
     pub(crate) is_placeholder: Cell<F>,
-    pub(crate) is_mod_extension: Cell<F>,
     pub(crate) drifted_parent_rlc: Cell<F>,
 }
 
@@ -525,7 +524,6 @@ pub(crate) struct ParentDataWitness<F> {
     pub(crate) rlc: F,
     pub(crate) is_root: bool,
     pub(crate) is_placeholder: bool,
-    pub(crate) is_mod_extension: bool,
     pub(crate) drifted_parent_rlc: F,
 }
 
@@ -540,7 +538,6 @@ impl<F: Field> ParentData<F> {
             rlc: cb.query_cell(),
             is_root: cb.query_cell(),
             is_placeholder: cb.query_cell(),
-            is_mod_extension: cb.query_cell(),
             drifted_parent_rlc: cb.query_cell(),
         };
         circuit!([meta, cb.base], {
@@ -552,7 +549,6 @@ impl<F: Field> ParentData<F> {
                     parent_data.rlc.expr(),
                     parent_data.is_root.expr(),
                     parent_data.is_placeholder.expr(),
-                    parent_data.is_mod_extension.expr(),
                     parent_data.drifted_parent_rlc.expr(),
                 ],
             );
@@ -566,12 +562,11 @@ impl<F: Field> ParentData<F> {
         rlc: Expression<F>,
         is_root: Expression<F>,
         is_placeholder: Expression<F>,
-        is_mod_extension: Expression<F>,
         drifted_parent_rlc: Expression<F>,
     ) {
         memory.store(
             &mut cb.base,
-            &[rlc, is_root, is_placeholder, is_mod_extension, drifted_parent_rlc],
+            &[rlc, is_root, is_placeholder, drifted_parent_rlc],
         );
     }
 
@@ -582,7 +577,6 @@ impl<F: Field> ParentData<F> {
         rlc: F,
         force_hashed: bool,
         is_placeholder: bool,
-        is_mod_extension: bool,
         placeholder_rlc: F,
     ) -> Result<(), Error> {
         memory.witness_store(
@@ -591,7 +585,6 @@ impl<F: Field> ParentData<F> {
                 rlc,
                 force_hashed.scalar(),
                 is_placeholder.scalar(),
-                is_mod_extension.scalar(),
                 placeholder_rlc,
             ],
         );
@@ -610,15 +603,13 @@ impl<F: Field> ParentData<F> {
         self.rlc.assign(region, offset, values[0])?;
         self.is_root.assign(region, offset, values[1])?;
         self.is_placeholder.assign(region, offset, values[2])?;
-        self.is_mod_extension.assign(region, offset, values[3])?;
-        self.drifted_parent_rlc.assign(region, offset, values[4])?;
+        self.drifted_parent_rlc.assign(region, offset, values[3])?;
 
         Ok(ParentDataWitness {
             rlc: values[0],
             is_root: values[1] == 1.scalar(),
             is_placeholder: values[2] == 1.scalar(),
-            is_mod_extension: values[3] == 1.scalar(),
-            drifted_parent_rlc: values[4],
+            drifted_parent_rlc: values[3],
         })
     }
 }
@@ -1048,6 +1039,7 @@ impl<F: Field> DriftedGadget<F> {
         expected_key_rlc: &[Expression<F>],
         leaf_no_key_rlc: &[Expression<F>],
         drifted_item: &RLPItemView<F>,
+        is_mod_extension: &[Cell<F>; 2],
         r: &Expression<F>,
     ) -> Self {
         let mut config = DriftedGadget::default();
@@ -1055,7 +1047,7 @@ impl<F: Field> DriftedGadget<F> {
             ifx! {parent_data[true.idx()].is_placeholder.expr() + parent_data[false.idx()].is_placeholder.expr() => {
                 config.drifted_rlp_key = ListKeyGadget::construct(cb, drifted_item);
                 for is_s in [true, false] {
-                    ifx! {and::expr(&[parent_data[is_s.idx()].is_placeholder.expr(), not!(parent_data[is_s.idx()].is_mod_extension.expr())]) => {
+                    ifx! {and::expr(&[parent_data[is_s.idx()].is_placeholder.expr(), not!(is_mod_extension[is_s.idx()].expr())]) => {
                         // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
                         // TODO(Brecht): Length can change so need to add RLP consistency checks?
 

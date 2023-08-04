@@ -55,7 +55,6 @@ impl<F: Field> ExtensionGadget<F> {
         key_data: &KeyData<F>,
         parent_data: &[ParentData<F>; 2],
         is_placeholder: &[Cell<F>; 2],
-        is_mod_extension: &[Cell<F>; 2],
     ) -> Self {
         let r = ctx.r.clone();
 
