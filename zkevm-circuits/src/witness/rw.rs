@@ -77,7 +77,10 @@ impl RwMap {
                         .map(|u| u.value_assignments(mock_rand).1)
                         .unwrap_or_default();
                     if value != init_value {
-                        errs.push((idx, err_msg_first, *row, *prev_row));
+                        // EIP2930
+                        if row.tag() != RwTableTag::TxAccessListAccountStorage {
+                            errs.push((idx, err_msg_first, *row, *prev_row));
+                        }
                     }
                 } else {
                     // value == prev_value
