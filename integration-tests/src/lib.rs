@@ -42,7 +42,7 @@ pub const CONTRACTS: &[(&str, &str)] = &[
         "OpenZeppelinERC20TestToken",
         "ERC20/OpenZeppelinERC20TestToken.sol",
     ),
-    // worst case block SCs
+    // Contracts to test worst-case usage of opcodes.
     ("CheckMload", "MLOAD/MLOAD.sol"),
     ("CheckExtCodeSize100", "EXTCODESIZE/EXTCODESIZE100.sol"),
     ("CheckSdiv", "SDIV/SDIV.sol"),
