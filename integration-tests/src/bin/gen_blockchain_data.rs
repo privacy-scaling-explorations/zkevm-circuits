@@ -91,7 +91,7 @@ async fn main() {
             .clone()
             .evm_version(EvmVersion::London);
 
-        // .compile() call will either fail with Err variant or return Ok(CompilerOutput)
+        // compilation will either fail with Err variant or return Ok(CompilerOutput)
         // which may contain Errors or Warnings
         let output = solc.compile_output(&input).unwrap();
         let mut deserializer: serde_json::Deserializer<serde_json::de::SliceRead<'_>> =
