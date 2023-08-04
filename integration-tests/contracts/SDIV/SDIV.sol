@@ -11,7 +11,6 @@ contract CheckSdiv {
         assembly {
             let input := calldataload(4)
             let len := div(input, 100)
-            // let a := 83
             let b := 77
             for {
                 let i := 0
