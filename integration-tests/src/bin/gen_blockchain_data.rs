@@ -11,13 +11,14 @@ use ethers::{
     middleware::SignerMiddleware,
     providers::{Middleware, PendingTransaction},
     signers::Signer,
-    solc::{CompilerInput, EvmVersion, Solc},
+    solc::{CompilerInput, CompilerOutput, EvmVersion, Solc},
 };
 use integration_tests::{
     get_client, get_provider, get_wallet, log_init, CompiledContract, GenDataOutput, CONTRACTS,
-    CONTRACTS_PATH,
+    CONTRACTS_PATH, WARN,
 };
 use log::{error, info};
+use serde::de::Deserialize;
 use std::{collections::HashMap, fs::File, path::Path, sync::Arc, thread::sleep, time::Duration};
 
 async fn deploy<T, M>(prov: Arc<M>, compiled: &CompiledContract, args: T) -> Contract<M>
@@ -90,11 +91,31 @@ async fn main() {
             .clone()
             .evm_version(EvmVersion::London);
 
-        let compiled = solc
-            .compile(&input)
-            .unwrap_or_else(|_| panic!("solc compile error {:?}", path_sol));
-        if !compiled.errors.is_empty() {
-            panic!("Errors compiling {:?}:\n{:#?}", &path_sol, compiled.errors)
+        // compilation will either fail with Err variant or return Ok(CompilerOutput)
+        // which may contain Errors or Warnings
+        let output = solc.compile_output(&input).unwrap();
+        let mut deserializer: serde_json::Deserializer<serde_json::de::SliceRead<'_>> =
+            serde_json::Deserializer::from_slice(&output);
+        // The contracts to test the worst-case usage of certain opcodes, such as SDIV, MLOAD, and
+        // EXTCODESIZE, generate big JSON compilation outputs. We disable the recursion limit to
+        // avoid parsing failure.
+        deserializer.disable_recursion_limit();
+        let compiled = match CompilerOutput::deserialize(&mut deserializer) {
+            Err(error) => {
+                panic!("COMPILATION ERROR {:?}\n{:?}", &path_sol, error);
+            }
+            // CompilationOutput is succesfully created (might contain Errors or Warnings)
+            Ok(output) => {
+                info!("COMPILATION OK: {:?}", name);
+                output
+            }
+        };
+
+        if compiled.has_error() || compiled.has_warning(WARN) {
+            panic!(
+                "... but CompilerOutput contains errors/warnings: {:?}:\n{:#?}",
+                &path_sol, compiled.errors
+            );
         }
 
         let contract = compiled
@@ -208,6 +229,53 @@ async fn main() {
     );
     deployments.insert(
         "OpenZeppelinERC20TestToken".to_string(),
+        (block_num.as_u64(), contract.address()),
+    );
+
+    // Deploy smart contracts for worst case block benches
+    //
+
+    // CheckMload
+    let contract = deploy(
+        prov_wallet0.clone(),
+        contracts.get("CheckMload").expect("contract not found"),
+        (),
+    )
+    .await;
+    let block_num = prov.get_block_number().await.expect("cannot get block_num");
+    blocks.insert("Deploy CheckMload".to_string(), block_num.as_u64());
+    deployments.insert(
+        "CheckMload".to_string(),
+        (block_num.as_u64(), contract.address()),
+    );
+
+    // CheckSdiv
+    let contract = deploy(
+        prov_wallet0.clone(),
+        contracts.get("CheckSdiv").expect("contract not found"),
+        (),
+    )
+    .await;
+    let block_num = prov.get_block_number().await.expect("cannot get block_num");
+    blocks.insert("Deploy CheckSdiv".to_string(), block_num.as_u64());
+    deployments.insert(
+        "CheckSdiv".to_string(),
+        (block_num.as_u64(), contract.address()),
+    );
+
+    // CheckExtCodeSize100
+    let contract = deploy(
+        prov_wallet0.clone(),
+        contracts
+            .get("CheckExtCodeSize100")
+            .expect("contract not found"),
+        (),
+    )
+    .await;
+    let block_num = prov.get_block_number().await.expect("cannot get block_num");
+    blocks.insert("Deploy CheckExtCodeSize100".to_string(), block_num.as_u64());
+    deployments.insert(
+        "CheckExtCodeSize100".to_string(),
         (block_num.as_u64(), contract.address()),
     );
 
