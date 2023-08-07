@@ -49,6 +49,7 @@ lazy_static! {
     pub static ref GOLDEN_TOUCH_PRIVATEKEY: Word = word!("0x92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38");
     /// Taiko l2 contract address
     pub static ref MOCK_TAIKO_L2_ADDRESS: Address = address!("0x000000000000000000000000000000000cafe666");
+    pub static ref MOCK_TAIKO_TREASURY_ADDRESS: Address = address!("0x000000000000000000000000000000000cafe777");
     /// Mock anchor
     pub static ref MOCK_ANCHOR_GAS_LIMIT: Word = Word::from(180000);
     pub static ref MOCK_ANCHOR_GAS_PRICE: Word = *MOCK_BASEFEE;

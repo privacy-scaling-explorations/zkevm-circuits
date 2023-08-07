@@ -247,6 +247,7 @@ pub fn gen_geth_traces(
             .map(eth_types::geth_types::Transaction::from)
             .collect(),
         logger_config,
+        ..Default::default()
     };
     let traces = trace(&trace_config)?;
     Ok(traces)

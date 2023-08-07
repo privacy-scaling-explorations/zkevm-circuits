@@ -4564,31 +4564,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "taiko-external-tracer"
-version = "0.1.0"
-dependencies = [
- "eth-types",
- "serde",
- "serde_json",
- "taiko-geth-utils",
-]
-
-[[package]]
-name = "taiko-geth-utils"
-version = "0.1.0"
-dependencies = [
- "env_logger",
- "gobuild",
- "log",
-]
-
-[[package]]
 name = "taiko-mock"
 version = "0.1.0"
 dependencies = [
  "eth-types",
  "ethers-core",
  "ethers-signers",
+ "external-tracer",
  "halo2_proofs 0.2.0",
  "itertools",
  "lazy_static",
@@ -4599,7 +4581,6 @@ dependencies = [
  "rand",
  "rand_chacha",
  "sha3 0.10.7",
- "taiko-external-tracer",
 ]
 
 [[package]]

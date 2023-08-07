@@ -1,15 +1,17 @@
 //! Mock types and functions to generate Test enviroments for ZKEVM tests
 
-use crate::{eth, MockAccount, MockBlock, MockTransaction, GOLDEN_TOUCH, MOCK_TAIKO_L2_ADDRESS};
+use crate::{
+    eth, MockAccount, MockBlock, MockTransaction, GOLDEN_TOUCH, MOCK_TAIKO_L2_ADDRESS,
+    MOCK_TAIKO_TREASURY_ADDRESS,
+};
 use eth_types::{
     geth_types::{Account, BlockConstants, GethData},
     Block, Bytecode, Error, GethExecTrace, Transaction, Word,
 };
+pub use external_tracer::LoggerConfig;
+use external_tracer::{trace, TraceConfig};
 use helpers::*;
 use itertools::Itertools;
-use taiko_external_tracer::{trace, TraceConfig};
-
-pub use taiko_external_tracer::LoggerConfig;
 
 /// TestContext is a type that contains all the information from a block
 /// required to build the circuit inputs.
@@ -250,6 +252,8 @@ pub fn gen_geth_traces(
             .map(eth_types::geth_types::Transaction::from)
             .collect(),
         logger_config,
+        taiko: true,
+        treasury: *MOCK_TAIKO_TREASURY_ADDRESS,
     };
     let traces = trace(&trace_config)?;
     Ok(traces)

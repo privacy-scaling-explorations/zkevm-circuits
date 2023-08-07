@@ -23,6 +23,10 @@ pub struct TraceConfig {
     pub transactions: Vec<Transaction>,
     /// logger
     pub logger_config: LoggerConfig,
+    /// taiko
+    pub taiko: bool,
+    /// treasury
+    pub treasury: Address,
 }
 
 /// Configuration structure for `logger.Config`

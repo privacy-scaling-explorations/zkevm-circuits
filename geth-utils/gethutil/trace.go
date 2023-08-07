@@ -122,6 +122,8 @@ type TraceConfig struct {
 	Accounts      map[common.Address]Account `json:"accounts"`
 	Transactions  []Transaction              `json:"transactions"`
 	LoggerConfig  *logger.Config             `json:"logger_config"`
+	Taiko         bool                       `json:"taiko"`
+	Treasury      common.Address             `json:"treasury"`
 }
 
 func newUint64(val uint64) *uint64 { return &val }
@@ -143,6 +145,8 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		MuirGlacierBlock:    big.NewInt(0),
 		BerlinBlock:         big.NewInt(0),
 		LondonBlock:         big.NewInt(0),
+		Taiko:               config.Taiko,
+		Treasury:            config.Treasury,
 	}
 
 	var txsGasLimit uint64
@@ -161,17 +165,18 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 			txAccessList[i].StorageKeys = accessList.StorageKeys
 		}
 		messages[i] = core.Message{
-			From: tx.From,
-			To: tx.To,
-			Nonce: uint64(tx.Nonce),
-			Value: toBigInt(tx.Value),
-			GasLimit: uint64(tx.GasLimit),
-			GasPrice: toBigInt(tx.GasPrice),
-			GasFeeCap: toBigInt(tx.GasFeeCap),
-			GasTipCap: toBigInt(tx.GasTipCap),
-			Data: tx.CallData,
-			AccessList: txAccessList,
+			From:              tx.From,
+			To:                tx.To,
+			Nonce:             uint64(tx.Nonce),
+			Value:             toBigInt(tx.Value),
+			GasLimit:          uint64(tx.GasLimit),
+			GasPrice:          toBigInt(tx.GasPrice),
+			GasFeeCap:         toBigInt(tx.GasFeeCap),
+			GasTipCap:         toBigInt(tx.GasTipCap),
+			Data:              tx.CallData,
+			AccessList:        txAccessList,
 			SkipAccountChecks: false,
+			IsFirstTx:         i == 0,
 		}
 
 		txsGasLimit += uint64(tx.GasLimit)
