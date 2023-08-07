@@ -121,7 +121,7 @@ pub enum ExecutionState {
     ErrorInsufficientBalance,
     ErrorContractAddressCollision,
     ErrorInvalidCreationCode,
-    ErrorMaxCodeSizeExceeded,
+    ErrorCodeStore, // combine ErrorMaxCodeSizeExceeded and ErrorOutOfGasCodeStore
     ErrorInvalidJump,
     ErrorReturnDataOutOfBound,
     ErrorOutOfGasConstant,
@@ -129,7 +129,7 @@ pub enum ExecutionState {
     ErrorOutOfGasDynamicMemoryExpansion,
     ErrorOutOfGasMemoryCopy,
     ErrorOutOfGasAccountAccess,
-    ErrorOutOfGasCodeStore,
+    // ErrorOutOfGasCodeStore,
     ErrorOutOfGasLOG,
     ErrorOutOfGasEXP,
     ErrorOutOfGasSHA3,
@@ -177,8 +177,9 @@ impl From<&ExecError> for ExecutionState {
             ExecError::InvalidCreationCode => ExecutionState::ErrorInvalidCreationCode,
             ExecError::InvalidJump => ExecutionState::ErrorInvalidJump,
             ExecError::ReturnDataOutOfBounds => ExecutionState::ErrorReturnDataOutOfBound,
-            ExecError::CodeStoreOutOfGas => ExecutionState::ErrorOutOfGasCodeStore,
-            ExecError::MaxCodeSizeExceeded => ExecutionState::ErrorMaxCodeSizeExceeded,
+            ExecError::CodeStoreOutOfGas | ExecError::MaxCodeSizeExceeded => {
+                ExecutionState::ErrorCodeStore
+            }
             ExecError::OutOfGas(oog_error) => match oog_error {
                 OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
                 OogError::StaticMemoryExpansion => {
@@ -189,7 +190,7 @@ impl From<&ExecError> for ExecutionState {
                 }
                 OogError::MemoryCopy => ExecutionState::ErrorOutOfGasMemoryCopy,
                 OogError::AccountAccess => ExecutionState::ErrorOutOfGasAccountAccess,
-                OogError::CodeStore => ExecutionState::ErrorOutOfGasCodeStore,
+                OogError::CodeStore => ExecutionState::ErrorCodeStore,
                 OogError::Log => ExecutionState::ErrorOutOfGasLOG,
                 OogError::Exp => ExecutionState::ErrorOutOfGasEXP,
                 OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
@@ -330,7 +331,7 @@ impl ExecutionState {
                 | Self::ErrorStack
                 | Self::ErrorWriteProtection
                 | Self::ErrorInvalidCreationCode
-                | Self::ErrorMaxCodeSizeExceeded
+                | Self::ErrorCodeStore
                 | Self::ErrorInvalidJump
                 | Self::ErrorReturnDataOutOfBound
                 | Self::ErrorOutOfGasConstant
@@ -338,7 +339,6 @@ impl ExecutionState {
                 | Self::ErrorOutOfGasDynamicMemoryExpansion
                 | Self::ErrorOutOfGasMemoryCopy
                 | Self::ErrorOutOfGasAccountAccess
-                | Self::ErrorOutOfGasCodeStore
                 | Self::ErrorOutOfGasLOG
                 | Self::ErrorOutOfGasEXP
                 | Self::ErrorOutOfGasSHA3

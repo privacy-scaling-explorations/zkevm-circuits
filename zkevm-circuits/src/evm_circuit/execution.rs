@@ -67,6 +67,7 @@ mod dummy;
 mod dup;
 mod end_block;
 mod end_tx;
+mod error_code_store;
 mod error_invalid_creation_code;
 mod error_invalid_jump;
 mod error_invalid_opcode;
@@ -140,6 +141,7 @@ use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
+use error_code_store::ErrorCodeStoreGadget;
 use error_invalid_creation_code::ErrorInvalidCreationCodeGadget;
 use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_invalid_opcode::ErrorInvalidOpcodeGadget;
@@ -308,7 +310,7 @@ pub struct ExecutionConfig<F> {
     error_oog_create2: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>>,
     error_oog_self_destruct:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>>,
-    error_oog_code_store: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>>,
+    error_oog_code_store: Box<ErrorCodeStoreGadget<F>>,
     error_invalid_jump: Box<ErrorInvalidJumpGadget<F>>,
     error_invalid_opcode: Box<ErrorInvalidOpcodeGadget<F>>,
     #[allow(dead_code, reason = "under active development")]
@@ -1317,7 +1319,7 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_oog_self_destruct)
             }
 
-            ExecutionState::ErrorOutOfGasCodeStore => {
+            ExecutionState::ErrorCodeStore => {
                 assign_exec_step!(self.error_oog_code_store)
             }
             ExecutionState::ErrorStack => {
