@@ -4,7 +4,7 @@ use std::{
 };
 
 fn main() {
-    let lib_name = "go-geth-utils";
+    let lib_name = "go-taiko-geth-utils";
     let out_dir = env::var("OUT_DIR").unwrap();
 
     // Build

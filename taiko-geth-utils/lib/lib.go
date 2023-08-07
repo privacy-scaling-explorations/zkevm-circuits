@@ -13,8 +13,9 @@ import (
 
 // TODO: Add proper error handling.  For example, return an int, where 0 means
 // ok, and !=0 means error.
-//export CreateTrace
-func CreateTrace(configStr *C.char) *C.char {
+//
+//export TaikoCreateTrace
+func TaikoCreateTrace(configStr *C.char) *C.char {
 	var config gethutil.TraceConfig
 	err := json.Unmarshal([]byte(C.GoString(configStr)), &config)
 	if err != nil {
@@ -34,8 +35,8 @@ func CreateTrace(configStr *C.char) *C.char {
 	return C.CString(string(bytes))
 }
 
-//export FreeString
-func FreeString(str *C.char) {
+//export TaikoFreeString
+func TaikoFreeString(str *C.char) {
 	C.free(unsafe.Pointer(str))
 }
 

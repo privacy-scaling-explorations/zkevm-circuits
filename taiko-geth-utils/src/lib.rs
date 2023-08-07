@@ -7,8 +7,8 @@ use std::{
 };
 
 extern "C" {
-    fn CreateTrace(str: *const c_char) -> *const c_char;
-    fn FreeString(str: *const c_char);
+    fn TaikoCreateTrace(str: *const c_char) -> *const c_char;
+    fn TaikoFreeString(str: *const c_char);
 }
 
 /// Creates the trace
@@ -17,7 +17,7 @@ pub fn trace(config: &str) -> Result<String, Error> {
     let c_config = CString::new(config).expect("invalid config");
 
     // Generate the trace externally
-    let result = unsafe { CreateTrace(c_config.as_ptr()) };
+    let result = unsafe { TaikoCreateTrace(c_config.as_ptr()) };
 
     // Convert the returned string to something we can use in Rust again.
     // Also make sure the returned data is copied to rust managed memory.
@@ -28,7 +28,7 @@ pub fn trace(config: &str) -> Result<String, Error> {
         .to_string();
 
     // We can now free the returned string (memory managed by Go)
-    unsafe { FreeString(c_result.as_ptr()) };
+    unsafe { TaikoFreeString(c_result.as_ptr()) };
 
     // Return the trace
     match result.is_empty() || result.starts_with("Failed") {
