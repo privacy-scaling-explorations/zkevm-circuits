@@ -315,14 +315,6 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
         Self { add_words }
     }
 
-    pub(crate) fn balance(&self) -> &Word32Cell<F> {
-        if INCREASE {
-            self.add_words.sum()
-        } else {
-            &self.add_words.addends()[0]
-        }
-    }
-
     pub(crate) fn balance_prev(&self) -> &Word32Cell<F> {
         if INCREASE {
             &self.add_words.addends()[0]

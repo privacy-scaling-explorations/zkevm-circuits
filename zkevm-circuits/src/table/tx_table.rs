@@ -194,7 +194,7 @@ impl TxTable {
                         (
                             TxContextFieldTag::AccessListGasCost,
                             word::Word::from(tx.access_list_gas_cost),
-                        )
+                        ),
                     ]
                     .iter()
                     .map(|&(tag, word)| {

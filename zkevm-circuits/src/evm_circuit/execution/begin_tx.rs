@@ -12,8 +12,8 @@ use crate::{
             },
             is_precompiled,
             math_gadget::{
-                AddWordsGadget, ConstantDivisionGadget, ContractCreateGadget, IsEqualGadget, IsEqualWordGadget, IsZeroWordGadget,
-                IsZeroGadget, LtGadget, LtWordGadget, MulWordByU64Gadget, RangeCheckGadget,
+                AddWordsGadget, ConstantDivisionGadget, ContractCreateGadget, IsEqualGadget,
+                IsEqualWordGadget, IsZeroWordGadget, LtGadget, LtWordGadget, MulWordByU64Gadget,
             },
             not, or, select, AccountAddress, CachedRegion, Cell, StepRws,
         },
@@ -28,14 +28,11 @@ use crate::{
     },
 };
 use bus_mapping::state_db::CodeDB;
-use eth_types::{evm_types::GasCost, keccak256, Field, ToWord, U256};
+use eth_types::{evm_types::GasCost, keccak256, Field, ToScalar, ToWord, U256};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
-use eth_types::{ToLittleEndian, ToScalar};
-use ethers_core::utils::{get_contract_address};
-use gadgets::util::expr_from_bytes;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
@@ -159,8 +156,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         cb.account_write(
             tx_caller_address.to_word(),
             AccountFieldTag::Nonce,
-Word::from_lo_unchecked(nonce.expr()),
-Word::from_lo_unchecked(nonce_prev.expr()),
+            Word::from_lo_unchecked(nonce.expr()),
+            Word::from_lo_unchecked(nonce_prev.expr()),
             None,
         ); // rwc_delta += 1
 
@@ -303,11 +300,11 @@ Word::from_lo_unchecked(nonce_prev.expr()),
             [tx_value.clone(), mul_gas_fee_by_gas.product().clone()],
             total_eth_cost_sum.clone(),
         );
-        let balance_not_enough =
-            LtWordGadget::construct(cb,
-                &Word::from_lo_unchecked(sender_balance_prev.to_word().lo()),
-                &Word::from_lo_unchecked(total_eth_cost.sum().to_word().lo())
-            );
+        let balance_not_enough = LtWordGadget::construct(
+            cb,
+            &Word::from_lo_unchecked(sender_balance_prev.to_word().lo()),
+            &Word::from_lo_unchecked(total_eth_cost.sum().to_word().lo()),
+        );
 
         // Check if the `is_invalid` value in the tx table is correct.
         // A transaction is invalid when
@@ -734,16 +731,10 @@ Word::from_lo_unchecked(nonce_prev.expr()),
         } else {
             (U256::zero(), U256::zero())
         };
-        self.effective_gas_fee.assign_u256(
-            region,
-            offset,
-            intrinsic_gas_fee.clone(),
-        )?;
-        self.effective_tx_value.assign_u256(
-            region,
-            offset,
-            intrinsic_tx_value.clone(),
-        )?;
+        self.effective_gas_fee
+            .assign_u256(region, offset, intrinsic_gas_fee)?;
+        self.effective_tx_value
+            .assign_u256(region, offset, intrinsic_tx_value)?;
         self.transfer_with_gas_fee.assign(
             region,
             offset,
@@ -758,11 +749,8 @@ Word::from_lo_unchecked(nonce_prev.expr()),
         let total_eth_cost = tx.value + gas_fee;
         self.total_eth_cost
             .assign(region, offset, [tx.value, gas_fee], total_eth_cost)?;
-        self.total_eth_cost_sum.assign_u256(
-            region,
-            offset,
-            total_eth_cost.clone(),
-        )?;
+        self.total_eth_cost_sum
+            .assign_u256(region, offset, total_eth_cost)?;
         self.balance_not_enough.assign(
             region,
             offset,
