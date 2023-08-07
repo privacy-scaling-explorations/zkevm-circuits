@@ -1,5 +1,4 @@
 //! Mock types and functions to generate GethData used for tests
-
 use eth_types::{address, bytecode, bytecode::Bytecode, word, Address, Bytes, Hash, Word};
 use ethers_signers::LocalWallet;
 use lazy_static::lazy_static;
@@ -51,8 +50,8 @@ lazy_static! {
     /// Taiko l2 contract address
     pub static ref MOCK_TAIKO_L2_ADDRESS: Address = address!("0x000000000000000000000000000000000cafe666");
     /// Mock anchor
-    pub static ref MOCK_ANCHOR_GAS_LIMIT: Word = Word::from(18000);
-    pub static ref MOCK_ANCHOR_GAS_PRICE: Word = Word::from(0);
+    pub static ref MOCK_ANCHOR_GAS_LIMIT: Word = Word::from(180000);
+    pub static ref MOCK_ANCHOR_GAS_PRICE: Word = *MOCK_BASEFEE;
     pub static ref MOCK_ANCHOR_L1_HASH: Hash = Hash::from_slice(&[0u8; 32]);
     pub static ref MOCK_ANCHOR_SIGNAL_ROOT: Hash = Hash::from_slice(&[0u8; 32]);
     pub static ref MOCK_ANCHOR_L1_HIGHT: u64 = 0;

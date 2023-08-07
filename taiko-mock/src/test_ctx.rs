@@ -5,11 +5,11 @@ use eth_types::{
     geth_types::{Account, BlockConstants, GethData},
     Block, Bytecode, Error, GethExecTrace, Transaction, Word,
 };
-use external_tracer::{trace, TraceConfig};
 use helpers::*;
 use itertools::Itertools;
+use taiko_external_tracer::{trace, TraceConfig};
 
-pub use external_tracer::LoggerConfig;
+pub use taiko_external_tracer::LoggerConfig;
 
 /// TestContext is a type that contains all the information from a block
 /// required to build the circuit inputs.
@@ -81,7 +81,7 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
     /// chain id
     pub chain_id: Word,
     /// Account list
-    pub accounts: [Account; NACC],
+    pub accounts: Vec<Account>,
     /// history hashes contains most recent 256 block hashes in history, where
     /// the lastest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
@@ -98,7 +98,7 @@ impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethD
             history_hashes: ctx.history_hashes,
             eth_block: ctx.eth_block,
             geth_traces: ctx.geth_traces.to_vec(),
-            accounts: ctx.accounts.into(),
+            accounts: ctx.accounts,
         }
     }
 }
@@ -129,7 +129,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             .try_into()
             .expect("Mismatched len err");
         acc_fns(account_refs);
-        let accounts: [MockAccount; NACC] = accounts
+        let accounts_cloned: [MockAccount; NACC] = accounts
             .iter_mut()
             .skip(2)
             .map(|acc| acc.build())
@@ -151,12 +151,12 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             .skip(1)
             .for_each(|(idx, tx)| {
                 let idx = u64::try_from(idx).expect("Unexpected idx conversion error");
-                tx.transaction_idx(idx).nonce(idx);
+                tx.transaction_idx(idx).nonce(idx - 1);
             });
         let tx_refs = transactions.iter_mut().skip(1).collect();
 
         // Build Tx modifiers.
-        func_tx(tx_refs, accounts.clone());
+        func_tx(tx_refs, accounts_cloned);
         let transactions: Vec<MockTransaction> =
             transactions.iter_mut().map(|tx| tx.build()).collect();
 
@@ -167,18 +167,12 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
 
         let chain_id = block.chain_id;
         let block = Block::<Transaction>::from(block);
-        let accounts: [Account; NACC] = accounts
-            .iter()
-            .cloned()
-            .map(Account::from)
-            .collect_vec()
-            .try_into()
-            .expect("Mismatched acc len");
+        let accounts = accounts.iter().cloned().map(Account::from).collect_vec();
 
         let geth_traces = gen_geth_traces(
             chain_id,
             block.clone(),
-            accounts.to_vec(),
+            accounts.clone(),
             history_hashes.clone(),
             logger_config,
         )?;
@@ -224,7 +218,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
     /// account_0_code_account_1_no_code`]. Extra accounts, txs and/or block
     /// configs are set as [`Default`].
     pub fn simple_ctx_with_bytecode(bytecode: Bytecode) -> Result<TestContext<2, 1>, Error> {
-        TestContext::new(
+        TestContext::<2, 1>::new(
             None,
             account_0_code_account_1_no_code(bytecode),
             tx_from_1_to_0,

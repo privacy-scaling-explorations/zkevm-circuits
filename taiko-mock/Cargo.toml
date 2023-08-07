@@ -1,5 +1,5 @@
 [package]
-name = "mock-taiko"
+name = "taiko-mock"
 version = "0.1.0"
 edition = "2021"
 authors = ["The appliedzkp team"]
@@ -10,7 +10,7 @@ halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.gi
   "circuit-params",
 ], tag = "v2023_04_20" }
 eth-types = { path = "../eth-types" }
-external-tracer = { path = "../external-tracer" }
+taiko-external-tracer = { path = "../taiko-external-tracer" }
 lazy_static = "1.4"
 itertools = "0.10.3"
 ethers-signers = "=2.0.0"
