@@ -296,7 +296,7 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
             treasury_balance_prev + state.block.base_fee * (state.tx.gas() - exec_step.gas_left.0);
         state.account_write(
             &mut exec_step,
-            state.block.coinbase,
+            state.block.protocol_instance.meta_hash.treasury,
             AccountField::Balance,
             treasury_balance,
             treasury_balance_prev,
