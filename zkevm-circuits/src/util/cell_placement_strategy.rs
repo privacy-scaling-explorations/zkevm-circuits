@@ -273,6 +273,7 @@ impl CellPlacementStrategy for CMFixedHeightStrategy {
         // This CM strategy has not statistics.
     }
 
+    /// Deprecated: share cells between configure and synthesize instead.
     fn place_cell_value(
         &mut self,
         _columns: &mut CellManagerColumns,
@@ -315,6 +316,7 @@ impl CellPlacementStrategy for CMFixedHeightStrategy {
         placement
     }
 
+    /// Deprecated: share cells between configure and synthesize instead.
     fn place_cell_value_with_affinity(
         &mut self,
         _columns: &mut CellManagerColumns,

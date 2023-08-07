@@ -222,6 +222,7 @@ pub(crate) trait CellPlacementStrategy {
 
     /// Queries a cell from the strategy returning CellValueOnly, which does not require
     /// ConstraintSystem. This is useful when assigning values.
+    /// Deprecated: share cells between configure and synthesize instead.
     fn place_cell_value(
         &mut self,
         columns: &mut CellManagerColumns,
@@ -230,6 +231,7 @@ pub(crate) trait CellPlacementStrategy {
 
     /// Queries a cell from the strategy returning CellValueOnly, which does not require
     /// ConstraintSystem. This is useful when assigning values. Also, using an affinity attribute.
+    /// Deprecated: share cells between configure and synthesize instead.
     fn place_cell_value_with_affinity(
         &mut self,
         columns: &mut CellManagerColumns,
@@ -359,12 +361,14 @@ impl<Stats, S: CellPlacementStrategy<Stats = Stats>> CellManager<S> {
             .collect()
     }
 
+    /// Deprecated: share cells between configure and synthesize instead.
     pub fn query_cell_value<F>(&mut self, cell_type: CellType) -> Cell<F> {
         let placement = self.strategy.place_cell_value(&mut self.columns, cell_type);
 
         Cell::new_value(placement.column_idx, placement.rotation)
     }
 
+    /// Deprecated: share cells between configure and synthesize instead.
     pub fn query_cell_value_with_affinity<F>(
         &mut self,
         cell_type: CellType,
