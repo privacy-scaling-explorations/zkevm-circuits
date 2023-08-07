@@ -3,7 +3,9 @@ use std::collections::{BTreeMap, HashMap};
 use eth_types::Field;
 use halo2_proofs::plonk::{Advice, Column, ConstraintSystem};
 
-use super::cell_manager::{Cell, CellManagerColumns, CellManagerStrategy, CellType};
+use super::cell_manager::{
+    CellManagerColumns, CellPlacement, CellPlacementStrategy, CellPlacementValue, CellType,
+};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct CMFixedWidthStrategyDistribution(HashMap<CellType, Vec<Column<Advice>>>);
@@ -23,7 +25,7 @@ impl CMFixedWidthStrategyDistribution {
     }
 }
 
-/// CMFixedWidthStrategy is a Cell Manager strategy that places the cells in the column that has
+/// CMFixedWidthStrategy is a Cell Placement strategy that places the cells in the column that has
 /// less height for a given CellType.
 /// When a cell is queried for a CellType the strategy will find the column of that Cell Type that
 /// has a lower height and add it there.
@@ -102,7 +104,7 @@ impl CMFixedWidthStrategy {
     }
 }
 
-impl CellManagerStrategy for CMFixedWidthStrategy {
+impl CellPlacementStrategy for CMFixedWidthStrategy {
     type Stats = BTreeMap<CellType, (usize, usize, usize)>;
     type Affinity = ();
 
@@ -114,17 +116,17 @@ impl CellManagerStrategy for CMFixedWidthStrategy {
         }
     }
 
-    fn query_cell<F: Field>(
+    fn place_cell<F: Field>(
         &mut self,
         columns: &mut CellManagerColumns,
         meta: &mut ConstraintSystem<F>,
         cell_type: CellType,
-    ) -> Cell<F> {
+    ) -> CellPlacement {
         let (mut column_idx, mut row) = self.get_next(&cell_type);
         if self.perm_substitution && cell_type == CellType::StoragePhase1 {
             let (_, row_perm) = self.get_next(&CellType::StoragePermutation);
             if row_perm < row {
-                return self.query_cell(columns, meta, CellType::StoragePermutation);
+                return self.place_cell(columns, meta, CellType::StoragePermutation);
             }
         }
 
@@ -138,8 +140,11 @@ impl CellManagerStrategy for CMFixedWidthStrategy {
         let column = columns
             .get_column(cell_type, column_idx)
             .expect("column not found");
-
-        let cell = Cell::new_from_cs(meta, column.advice, column.idx, self.height_offset + row);
+        let rotation = self.height_offset + row;
+        let placement = CellPlacement {
+            column: column.clone(),
+            rotation,
+        };
 
         column_idx += 1;
         if column_idx >= columns.get_cell_type_width(cell_type) {
@@ -149,7 +154,7 @@ impl CellManagerStrategy for CMFixedWidthStrategy {
 
         self.set_next(&cell_type, column_idx, row);
 
-        cell
+        placement
     }
 
     fn get_height(&self) -> usize {
@@ -184,30 +189,30 @@ impl CellManagerStrategy for CMFixedWidthStrategy {
         data
     }
 
-    fn query_cell_value<F>(
+    fn place_cell_value(
         &mut self,
         _columns: &mut CellManagerColumns,
         _cell_type: CellType,
-    ) -> Cell<F> {
+    ) -> CellPlacementValue {
         unimplemented!()
     }
 
-    fn query_cell_with_affinity<F: Field>(
+    fn place_cell_with_affinity<F: Field>(
         &mut self,
         _columns: &mut CellManagerColumns,
         _meta: &mut ConstraintSystem<F>,
         _cell_type: CellType,
         _affinity: Self::Affinity,
-    ) -> Cell<F> {
+    ) -> CellPlacement {
         unimplemented!()
     }
 
-    fn query_cell_value_with_affinity<F>(
+    fn place_cell_value_with_affinity(
         &mut self,
         _columns: &mut CellManagerColumns,
         _cell_type: CellType,
         _affinity: Self::Affinity,
-    ) -> Cell<F> {
+    ) -> CellPlacementValue {
         unimplemented!()
     }
 }
@@ -231,19 +236,19 @@ impl CMFixedHeightStrategy {
     }
 }
 
-impl CellManagerStrategy for CMFixedHeightStrategy {
+impl CellPlacementStrategy for CMFixedHeightStrategy {
     type Affinity = usize;
 
     fn on_creation(&mut self, _columns: &mut CellManagerColumns) {
         // We don't need to do anything as the columns are created on demand
     }
 
-    fn query_cell<F: Field>(
+    fn place_cell<F: Field>(
         &mut self,
         columns: &mut CellManagerColumns,
         meta: &mut ConstraintSystem<F>,
         cell_type: CellType,
-    ) -> Cell<F> {
+    ) -> CellPlacement {
         assert_eq!(
             cell_type, self.cell_type,
             "CMFixedHeightStrategy can only work with one cell type"
@@ -251,11 +256,11 @@ impl CellManagerStrategy for CMFixedHeightStrategy {
 
         let (row_idx, column_idx) = self.get_next();
 
-        let cell = self.query_cell_at_pos(columns, meta, row_idx, column_idx);
+        let placement = self.place_cell_at_pos(columns, meta, row_idx, column_idx);
 
         self.inc_row_width(row_idx);
 
-        cell
+        placement
     }
 
     fn get_height(&self) -> usize {
@@ -268,11 +273,11 @@ impl CellManagerStrategy for CMFixedHeightStrategy {
         // This CM strategy has not statistics.
     }
 
-    fn query_cell_value<F>(
+    fn place_cell_value(
         &mut self,
         _columns: &mut CellManagerColumns,
         cell_type: CellType,
-    ) -> Cell<F> {
+    ) -> CellPlacementValue {
         assert_eq!(
             cell_type, self.cell_type,
             "CMFixedHeightStrategy can only work with one cell type"
@@ -282,16 +287,19 @@ impl CellManagerStrategy for CMFixedHeightStrategy {
 
         self.inc_row_width(row_idx);
 
-        Cell::new_value(column_idx, row_idx)
+        CellPlacementValue {
+            column_idx,
+            rotation: row_idx,
+        }
     }
 
-    fn query_cell_with_affinity<F: Field>(
+    fn place_cell_with_affinity<F: Field>(
         &mut self,
         columns: &mut CellManagerColumns,
         meta: &mut ConstraintSystem<F>,
         cell_type: CellType,
         affnity: Self::Affinity,
-    ) -> Cell<F> {
+    ) -> CellPlacement {
         assert_eq!(
             cell_type, self.cell_type,
             "CMFixedHeightStrategy can only work with one cell type"
@@ -300,19 +308,19 @@ impl CellManagerStrategy for CMFixedHeightStrategy {
         let row_idx = affnity;
         let column_idx = self.row_width[row_idx];
 
-        let cell = self.query_cell_at_pos(columns, meta, row_idx, column_idx);
+        let placement = self.place_cell_at_pos(columns, meta, row_idx, column_idx);
 
         self.inc_row_width(row_idx);
 
-        cell
+        placement
     }
 
-    fn query_cell_value_with_affinity<F>(
+    fn place_cell_value_with_affinity(
         &mut self,
         _columns: &mut CellManagerColumns,
         cell_type: CellType,
         affinity: Self::Affinity,
-    ) -> Cell<F> {
+    ) -> CellPlacementValue {
         assert_eq!(
             cell_type, self.cell_type,
             "CMFixedHeightStrategy can only work with one cell type"
@@ -323,7 +331,10 @@ impl CellManagerStrategy for CMFixedHeightStrategy {
 
         self.inc_row_width(row_idx);
 
-        Cell::new_value(column_idx, row_idx)
+        CellPlacementValue {
+            column_idx,
+            rotation: row_idx,
+        }
     }
 }
 
@@ -359,26 +370,30 @@ impl CMFixedHeightStrategy {
         self.row_width[row_idx] += 1;
     }
 
-    fn query_cell_at_pos<F: Field>(
+    fn place_cell_at_pos<F: Field>(
         &mut self,
         columns: &mut CellManagerColumns,
         meta: &mut ConstraintSystem<F>,
         row_idx: usize,
         column_idx: usize,
-    ) -> Cell<F> {
-        let advice = if column_idx < columns.get_cell_type_width(self.cell_type) {
+    ) -> CellPlacement {
+        let column = if column_idx < columns.get_cell_type_width(self.cell_type) {
             columns
                 .get_column(self.cell_type, column_idx)
                 .expect("column not found")
-                .advice
         } else {
             let advice = meta.advice_column();
 
             columns.add_column(self.cell_type, advice);
 
-            advice
+            columns
+                .get_column(self.cell_type, column_idx)
+                .expect("column not found")
         };
 
-        Cell::new_from_cs(meta, advice, column_idx, row_idx)
+        CellPlacement {
+            column: column.clone(),
+            rotation: row_idx,
+        }
     }
 }

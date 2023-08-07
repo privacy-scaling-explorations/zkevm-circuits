@@ -13,7 +13,7 @@ use crate::{
     util::query_expression,
 };
 
-pub(crate) use super::cell_manager_strategy::*;
+pub(crate) use super::cell_placement_strategy::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// CellType represent a category of cell (and column).
@@ -180,8 +180,18 @@ impl CellColumn {
     }
 }
 
-/// CellManagerStrategy is a strategy to place cells by the Cell Manager.
-pub(crate) trait CellManagerStrategy {
+pub(crate) struct CellPlacement {
+    pub column: CellColumn,
+    pub rotation: usize,
+}
+
+pub(crate) struct CellPlacementValue {
+    pub column_idx: usize,
+    pub rotation: usize,
+}
+
+/// CellPlacementStrategy is a strategy to place cells by the Cell Manager.
+pub(crate) trait CellPlacementStrategy {
     /// Stats is the type of the returned statistics.
     type Stats;
 
@@ -194,38 +204,38 @@ pub(crate) trait CellManagerStrategy {
     fn on_creation(&mut self, columns: &mut CellManagerColumns);
 
     /// Queries a cell from the strategy.
-    fn query_cell<F: Field>(
+    fn place_cell<F: Field>(
         &mut self,
         columns: &mut CellManagerColumns,
         meta: &mut ConstraintSystem<F>,
         cell_type: CellType,
-    ) -> Cell<F>;
+    ) -> CellPlacement;
 
     /// Queries a cell from the strategy, using an affinity attribute.
-    fn query_cell_with_affinity<F: Field>(
+    fn place_cell_with_affinity<F: Field>(
         &mut self,
         columns: &mut CellManagerColumns,
         meta: &mut ConstraintSystem<F>,
         cell_type: CellType,
         affinity: Self::Affinity,
-    ) -> Cell<F>;
+    ) -> CellPlacement;
 
     /// Queries a cell from the strategy returning CellValueOnly, which does not require
     /// ConstraintSystem. This is useful when assigning values.
-    fn query_cell_value<F>(
+    fn place_cell_value(
         &mut self,
         columns: &mut CellManagerColumns,
         cell_type: CellType,
-    ) -> Cell<F>;
+    ) -> CellPlacementValue;
 
     /// Queries a cell from the strategy returning CellValueOnly, which does not require
     /// ConstraintSystem. This is useful when assigning values. Also, using an affinity attribute.
-    fn query_cell_value_with_affinity<F>(
+    fn place_cell_value_with_affinity(
         &mut self,
         columns: &mut CellManagerColumns,
         cell_type: CellType,
         affinity: Self::Affinity,
-    ) -> Cell<F>;
+    ) -> CellPlacementValue;
 
     /// Gets the current height of the cell manager, the max rotation of any cell (without
     /// considering offset).
@@ -288,12 +298,12 @@ impl CellManagerColumns {
 
 /// CellManager places and return cells in an area of the plonkish table given a strategy.
 #[derive(Clone, Debug)]
-pub(crate) struct CellManager<S: CellManagerStrategy> {
+pub(crate) struct CellManager<S: CellPlacementStrategy> {
     columns: CellManagerColumns,
     strategy: S,
 }
 
-impl<Stats, S: CellManagerStrategy<Stats = Stats>> CellManager<S> {
+impl<Stats, S: CellPlacementStrategy<Stats = Stats>> CellManager<S> {
     /// Creates a Cell Manager with a given strategy.
     pub fn new(mut strategy: S) -> CellManager<S> {
         let mut columns = CellManagerColumns::default();
@@ -309,7 +319,14 @@ impl<Stats, S: CellManagerStrategy<Stats = Stats>> CellManager<S> {
         meta: &mut ConstraintSystem<F>,
         cell_type: CellType,
     ) -> Cell<F> {
-        self.strategy.query_cell(&mut self.columns, meta, cell_type)
+        let placement = self.strategy.place_cell(&mut self.columns, meta, cell_type);
+
+        Cell::new_from_cs(
+            meta,
+            placement.column.advice,
+            placement.column.idx,
+            placement.rotation,
+        )
     }
 
     pub fn query_cell_with_affinity<F: Field>(
@@ -318,8 +335,16 @@ impl<Stats, S: CellManagerStrategy<Stats = Stats>> CellManager<S> {
         cell_type: CellType,
         affinity: S::Affinity,
     ) -> Cell<F> {
-        self.strategy
-            .query_cell_with_affinity(&mut self.columns, meta, cell_type, affinity)
+        let placement =
+            self.strategy
+                .place_cell_with_affinity(&mut self.columns, meta, cell_type, affinity);
+
+        Cell::new_from_cs(
+            meta,
+            placement.column.advice,
+            placement.column.idx,
+            placement.rotation,
+        )
     }
 
     /// Places, and returns `count` Cells for a given cell type following the strategy.
@@ -335,7 +360,9 @@ impl<Stats, S: CellManagerStrategy<Stats = Stats>> CellManager<S> {
     }
 
     pub fn query_cell_value<F>(&mut self, cell_type: CellType) -> Cell<F> {
-        self.strategy.query_cell_value(&mut self.columns, cell_type)
+        let placement = self.strategy.place_cell_value(&mut self.columns, cell_type);
+
+        Cell::new_value(placement.column_idx, placement.rotation)
     }
 
     pub fn query_cell_value_with_affinity<F>(
@@ -343,8 +370,11 @@ impl<Stats, S: CellManagerStrategy<Stats = Stats>> CellManager<S> {
         cell_type: CellType,
         affinity: S::Affinity,
     ) -> Cell<F> {
-        self.strategy
-            .query_cell_value_with_affinity(&mut self.columns, cell_type, affinity)
+        let placement =
+            self.strategy
+                .place_cell_value_with_affinity(&mut self.columns, cell_type, affinity);
+
+        Cell::new_value(placement.column_idx, placement.rotation)
     }
 
     /// Gets the current height of the cell manager, the max rotation of any cell (without
