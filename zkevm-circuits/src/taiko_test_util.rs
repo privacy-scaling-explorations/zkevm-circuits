@@ -81,7 +81,10 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     fn empty() -> Self {
         CircuitTestBuilder {
             test_ctx: None,
-            circuits_params: None,
+            circuits_params: Some(CircuitsParams {
+                max_txs: 2,
+                ..Default::default()
+            }),
             block: None,
             evm_checks: Box::new(|prover, gate_rows, lookup_rows| {
                 prover.assert_satisfied_at_rows_par(

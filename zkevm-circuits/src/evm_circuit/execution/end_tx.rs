@@ -253,8 +253,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
     ) -> Result<(), Error> {
         let gas_used = tx.gas - step.gas_left.0;
         let (refund, _) = block.get_rws(step, 2).tx_refund_value_pair();
-        let [(caller_balance, caller_balance_prev), (coinbase_balance, coinbase_balance_prev), (treasury_balance, treasury_balance_prev)] =
-            [3, 4, 5].map(|index| block.get_rws(step, index).account_value_pair());
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
@@ -269,6 +267,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             F::from(max_refund as u64),
             F::from(refund),
         )?;
+
         let effective_refund = refund.min(max_refund as u64);
         let gas_fee_refund = tx.gas_price * (effective_refund + step.gas_left.0);
         self.mul_gas_price_by_refund.assign(
@@ -286,13 +285,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                     .to_scalar()
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
-        )?;
-        self.gas_fee_refund.assign(
-            region,
-            offset,
-            caller_balance_prev,
-            vec![gas_fee_refund],
-            caller_balance,
         )?;
         let effective_tip = tx.gas_price - block.context.base_fee;
         self.sub_gas_price_by_base_fee.assign(
@@ -314,6 +306,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             gas_used,
             effective_tip * gas_used,
         )?;
+
         self.coinbase.assign(
             region,
             offset,
@@ -324,13 +317,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                     .to_scalar()
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
-        )?;
-        self.coinbase_reward.assign(
-            region,
-            offset,
-            coinbase_balance_prev,
-            vec![effective_tip * gas_used],
-            coinbase_balance,
         )?;
         self.treasury.assign(
             region,
@@ -344,13 +330,35 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-        self.treasury_reward.assign(
-            region,
-            offset,
-            treasury_balance_prev,
-            vec![block.context.base_fee * gas_used],
-            treasury_balance,
-        )?;
+
+        if tx.id != 1 {
+            let [(caller_balance, caller_balance_prev), (coinbase_balance, coinbase_balance_prev), (treasury_balance, treasury_balance_prev)] =
+                [3, 4, 5].map(|index| block.get_rws(step, index).account_value_pair());
+            self.gas_fee_refund.assign(
+                region,
+                offset,
+                caller_balance_prev,
+                vec![gas_fee_refund],
+                caller_balance,
+            )?;
+
+            self.coinbase_reward.assign(
+                region,
+                offset,
+                coinbase_balance_prev,
+                vec![effective_tip * gas_used],
+                coinbase_balance,
+            )?;
+
+            self.treasury_reward.assign(
+                region,
+                offset,
+                treasury_balance_prev,
+                vec![block.context.base_fee * gas_used],
+                treasury_balance,
+            )?;
+        }
+
         let current_cumulative_gas_used: u64 = if tx.id == 1 {
             0
         } else {

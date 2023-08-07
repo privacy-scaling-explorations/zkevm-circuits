@@ -25,7 +25,7 @@ pub const N_PHASE1_COLUMNS: usize =
 // Number of copy columns
 pub const N_COPY_COLUMNS: usize = 2;
 
-pub const N_BYTE_LOOKUPS: usize = 24;
+pub const N_BYTE_LOOKUPS: usize = 28;
 
 /// Amount of lookup columns in the EVM circuit dedicated to lookups.
 pub(crate) const EVM_LOOKUP_COLS: usize = FIXED_TABLE_LOOKUPS

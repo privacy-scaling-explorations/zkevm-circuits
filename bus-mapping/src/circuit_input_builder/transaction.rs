@@ -191,6 +191,8 @@ pub struct Transaction {
     pub tx: geth_types::Transaction,
     /// Calls made in the transaction
     pub(crate) calls: Vec<Call>,
+    /// Whether this transaction is an anchor transaction
+    pub is_anchor: bool,
     /// Execution steps
     steps: Vec<ExecStep>,
 }
@@ -203,6 +205,7 @@ impl Transaction {
         code_db: &mut CodeDB,
         eth_tx: &eth_types::Transaction,
         is_success: bool,
+        is_anchor: bool,
     ) -> Result<Self, Error> {
         let (found, _) = sdb.get_account(&eth_tx.from);
         if !found {
@@ -255,6 +258,7 @@ impl Transaction {
             tx: eth_tx.into(),
             calls: vec![call],
             steps: Vec::new(),
+            is_anchor,
         })
     }
 
