@@ -60,7 +60,7 @@ impl Opcode for ErrorOOGAccountAccess {
 }
 
 #[cfg(test)]
-mod oog_account_access_tests {
+mod tests {
     use crate::{
         circuit_input_builder::ExecState,
         error::{ExecError, OogError},
@@ -135,13 +135,13 @@ mod oog_account_access_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 
         // Check if account address is in access list as a result of bus mapping.
-        assert!(builder.sdb.add_account_to_access_list(address));
+        assert!(builder.sdb.clone().add_account_to_access_list(address));
 
         let tx_id = 1;
         let transaction = &builder.block.txs()[tx_id - 1];

@@ -279,7 +279,9 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
         ExecError::OutOfGas(OogError::MemoryCopy) => Some(OOGMemoryCopy::gen_associated_ops),
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
-        ExecError::OutOfGas(OogError::AccountAccess) => Some(OOGSloadSstore::gen_associated_ops),
+        ExecError::OutOfGas(OogError::AccountAccess) => {
+            Some(ErrorOOGAccountAccess::gen_associated_ops)
+        }
         ExecError::StackOverflow => Some(ErrorSimple::gen_associated_ops),
         ExecError::StackUnderflow => Some(ErrorSimple::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
