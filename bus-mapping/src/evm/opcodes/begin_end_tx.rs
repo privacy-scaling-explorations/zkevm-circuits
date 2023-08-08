@@ -264,11 +264,13 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
         caller_balance_prev,
     )?;
 
-    let effective_tip = if state.tx_ctx.is_anchor_tx() {
+    let base_fee = if state.tx_ctx.is_anchor_tx() {
         0.into()
     } else {
-        state.tx.tx.gas_price - state.block.base_fee
+        state.block.base_fee
     };
+
+    let effective_tip = state.tx.tx.gas_price - base_fee;
     let (found, coinbase_account) = state.sdb.get_account(&state.block.coinbase);
     if !found {
         return Err(Error::AccountNotFound(state.block.coinbase));
@@ -294,12 +296,8 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
         ));
     }
     let treasury_balance_prev = treasury_account.balance;
-    let treasury_balance = treasury_balance_prev
-        + if state.tx_ctx.is_anchor_tx() {
-            0.into()
-        } else {
-            state.block.base_fee * (state.tx.gas() - exec_step.gas_left.0)
-        };
+    let treasury_balance =
+        treasury_balance_prev + base_fee * (state.tx.gas() - exec_step.gas_left.0);
     state.account_write(
         &mut exec_step,
         state.block.protocol_instance.meta_hash.treasury,

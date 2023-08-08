@@ -614,6 +614,8 @@ mod test {
                     .to(tx.to.unwrap())
                     .from(tx.from)
                     .gas_price(tx.gas_price.unwrap())
+                    .max_fee_per_gas(tx.max_fee_per_gas.unwrap())
+                    .max_priority_fee_per_gas(tx.max_priority_fee_per_gas.unwrap())
                     .gas(tx.gas)
                     .input(tx.input)
                     .value(tx.value);
@@ -635,6 +637,8 @@ mod test {
             .value(value)
             .gas(gas(&calldata))
             .gas_price(gas_price)
+            .max_priority_fee_per_gas(gas_price)
+            .max_fee_per_gas(gas_price)
             .input(calldata.into())
             .build();
 

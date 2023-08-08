@@ -1,5 +1,7 @@
 //! Mock Transaction definition and builder related methods.
 
+use crate::MOCK_BASEFEE;
+
 use super::{
     GOLDEN_TOUCH, MOCK_ACCOUNTS, MOCK_ANCHOR_GAS_LIMIT, MOCK_ANCHOR_GAS_PRICE,
     MOCK_ANCHOR_TX_VALUE, MOCK_CHAIN_ID, MOCK_GASFEECAP, MOCK_GASPRICE, MOCK_GASTIPCAP,
@@ -211,6 +213,8 @@ impl MockTransaction {
         tx.to(*MOCK_TAIKO_L2_ADDRESS);
         tx.gas(*MOCK_ANCHOR_GAS_LIMIT)
             .gas_price(*MOCK_ANCHOR_GAS_PRICE)
+            .max_priority_fee_per_gas(Word::zero())
+            .max_fee_per_gas(*MOCK_BASEFEE)
             .from(*GOLDEN_TOUCH)
             .to(*MOCK_TAIKO_L2_ADDRESS)
             .input(crate::anchor::anchor_call())

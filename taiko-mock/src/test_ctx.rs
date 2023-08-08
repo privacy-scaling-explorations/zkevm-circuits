@@ -1,7 +1,7 @@
 //! Mock types and functions to generate Test enviroments for ZKEVM tests
 
 use crate::{
-    eth, MockAccount, MockBlock, MockTransaction, GOLDEN_TOUCH, MOCK_TAIKO_L2_ADDRESS,
+    eth, MockAccount, MockBlock, MockTransaction, GOLDEN_TOUCH, MOCK_CODES, MOCK_TAIKO_L2_ADDRESS,
     MOCK_TAIKO_TREASURY_ADDRESS,
 };
 use eth_types::{
@@ -122,7 +122,9 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         // add the GOLDEN_TOUCH account in the first position
         accounts[0].address(*GOLDEN_TOUCH);
         // add the l2 contract account in the second position
-        accounts[1].address(*MOCK_TAIKO_L2_ADDRESS);
+        accounts[1]
+            .address(*MOCK_TAIKO_L2_ADDRESS)
+            .code(MOCK_CODES[0].clone());
         // Build Accounts modifiers
         let account_refs = accounts
             .iter_mut()

@@ -13,7 +13,7 @@ use crate::{
                 AddWordsGadget, ConstantDivisionGadget, IsEqualGadget, MinMaxGadget,
                 MinMaxWordGadget, MulWordByU64Gadget,
             },
-            CachedRegion, Cell,
+            CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -21,7 +21,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::operation::Target;
-use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToScalar};
+use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToLittleEndian, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use strum::EnumCount;
 
@@ -32,6 +32,7 @@ pub(crate) struct EndTxGadget<F> {
     max_refund: ConstantDivisionGadget<F, N_BYTES_GAS>,
     refund: Cell<F>,
     effective_refund: MinMaxGadget<F, N_BYTES_GAS>,
+    effective_gas_price: MinMaxWordGadget<F>,
     mul_gas_price_by_refund: MulWordByU64Gadget<F>,
     tx_caller_address: Cell<F>,
     gas_fee_refund: UpdateBalanceGadget<F, 2, true>,
@@ -46,6 +47,7 @@ pub(crate) struct EndTxGadget<F> {
     current_cumulative_gas_used: Cell<F>,
     is_first_tx: IsEqualGadget<F>,
     is_persistent: Cell<F>,
+    tx_gas_fee_cap: Word<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
@@ -66,8 +68,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             TxContextFieldTag::GasFeeCap,
         ]
         .map(|field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag, None));
-
-        let is_first_tx = IsEqualGadget::construct(cb, tx_id.expr(), 1.expr());
 
         // Calculate effective gas to refund
         let gas_used = tx_gas.expr() - cb.curr.state.gas_left.expr();
@@ -93,24 +93,26 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             None,
         );
 
+        let is_first_tx = IsEqualGadget::construct(cb, tx_id.expr(), 1.expr());
+
         // Add gas_used * effective_tip to coinbase's balance
         let coinbase = cb.query_cell();
+        cb.block_lookup(BlockContextFieldTag::Coinbase.expr(), None, coinbase.expr());
         let base_fee = cb.query_word_rlc();
-        for (tag, value) in [
-            (BlockContextFieldTag::Coinbase, coinbase.expr()),
-            (BlockContextFieldTag::BaseFee, base_fee.expr()),
-        ] {
-            cb.block_lookup(tag.expr(), None, value);
-        }
-        let effective_tip = cb.query_word_rlc();
-        // in anchor, we let tx_gas_price equals to zero
-        let sub_gas_price_by_base_fee = cb.condition(1.expr() - is_first_tx.expr(), |cb| {
-            AddWordsGadget::construct(
-                cb,
-                [effective_tip.clone(), base_fee.clone()],
-                tx_gas_price.clone(),
-            )
+        cb.condition(is_first_tx.expr(), |cb| {
+            cb.require_zero("base_fee is zero when tx is first tx", base_fee.expr());
         });
+        cb.condition(1.expr() - is_first_tx.expr(), |cb| {
+            cb.block_lookup(BlockContextFieldTag::BaseFee.expr(), None, base_fee.expr());
+        });
+
+        let effective_tip = cb.query_word_rlc();
+        // anchor's gas_price is 0, so gas_price != effective_tip + base_fee
+        let sub_gas_price_by_base_fee = AddWordsGadget::construct(
+            cb,
+            [effective_tip.clone(), base_fee.clone()],
+            tx_gas_price.clone(),
+        );
         let mul_effective_tip_by_gas_used =
             MulWordByU64Gadget::construct(cb, effective_tip, gas_used.clone());
         let mul_base_fee_by_gas_used =
@@ -121,21 +123,12 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let add_tip_cap_and_base_fee =
             AddWordsGadget::construct(cb, [tx_gas_tip_cap, base_fee], base_fee_plus_tip.clone());
         let effective_gas_price =
-            MinMaxWordGadget::construct(cb, &base_fee_plus_tip, &tx_gas_fee_cap).min();
-        cb.condition(is_first_tx.expr(), |cb| {
-            cb.require_equal(
-                "gas_price == 0 when tx is first tx",
-                tx_gas_price.expr(),
-                0.expr(),
-            );
-        });
-        cb.condition(1.expr() - is_first_tx.expr(), |cb| {
-            cb.require_equal(
-                "gas_price == min(gas_tip_cap + base_fee, gas_fee_cap)",
-                tx_gas_price.expr(),
-                effective_gas_price,
-            );
-        });
+            MinMaxWordGadget::construct(cb, &base_fee_plus_tip, &tx_gas_fee_cap);
+        cb.require_equal(
+            "gas_price == min(gas_tip_cap + base_fee, gas_fee_cap)",
+            tx_gas_price.expr(),
+            effective_gas_price.min(),
+        );
 
         // send base fee to treasury account
         let treasury = cb.query_cell();
@@ -203,7 +196,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                 );
 
                 cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(10.expr() - is_first_tx.expr()),
+                    rw_counter: Delta(11.expr() - is_first_tx.expr()),
                     ..StepStateTransition::any()
                 });
             },
@@ -213,7 +206,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             cb.next.execution_state_selector([ExecutionState::EndBlock]),
             |cb| {
                 cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(9.expr() - is_first_tx.expr()),
+                    rw_counter: Delta(10.expr() - is_first_tx.expr()),
                     // We propagate call_id so that EndBlock can get the last tx_id
                     // in order to count processed txs.
                     call_id: Same,
@@ -228,6 +221,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             max_refund,
             refund,
             effective_refund,
+            effective_gas_price,
             mul_gas_price_by_refund,
             tx_caller_address,
             gas_fee_refund,
@@ -242,6 +236,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             current_cumulative_gas_used,
             is_first_tx,
             is_persistent,
+            tx_gas_fee_cap,
         }
     }
 
@@ -272,6 +267,25 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             F::from(refund),
         )?;
 
+        let base_fee = if tx.id == 1 {
+            0.into()
+        } else {
+            block.context.base_fee
+        };
+        self.tx_gas_fee_cap
+            .assign(region, offset, Some(tx.gas_fee_cap.to_le_bytes()))?;
+        self.add_tip_cap_and_base_fee.assign(
+            region,
+            offset,
+            [tx.gas_tip_cap, base_fee],
+            tx.gas_tip_cap + base_fee,
+        )?;
+        self.effective_gas_price.assign(
+            region,
+            offset,
+            base_fee + tx.gas_tip_cap,
+            tx.gas_fee_cap,
+        )?;
         let effective_refund = refund.min(max_refund as u64);
         let gas_fee_refund = tx.gas_price * (effective_refund + step.gas_left.0);
         self.mul_gas_price_by_refund.assign(
@@ -297,30 +311,27 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             vec![gas_fee_refund],
             caller_balance,
         )?;
-        let is_anchor_tx = tx.id == 1;
-        let effective_tip = if is_anchor_tx {
-            0.into()
-        } else {
-            tx.gas_price - block.context.base_fee
-        };
+        let effective_tip = tx.gas_price - base_fee;
         self.sub_gas_price_by_base_fee.assign(
             region,
             offset,
-            [effective_tip, block.context.base_fee],
-            tx.gas_price,
+            [effective_tip, base_fee],
+            effective_tip + base_fee,
         )?;
-        self.add_tip_cap_and_base_fee.assign(
-            region,
-            offset,
-            [tx.gas_tip_cap, block.context.base_fee],
-            tx.gas_tip_cap + block.context.base_fee,
-        )?;
+
         self.mul_effective_tip_by_gas_used.assign(
             region,
             offset,
             effective_tip,
             gas_used,
             effective_tip * gas_used,
+        )?;
+        self.mul_base_fee_by_gas_used.assign(
+            region,
+            offset,
+            base_fee,
+            gas_used,
+            base_fee * gas_used,
         )?;
         self.coinbase.assign(
             region,
@@ -340,11 +351,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             vec![effective_tip * gas_used],
             coinbase_balance,
         )?;
-        let treasury_reward = if is_anchor_tx {
-            0.into()
-        } else {
-            block.context.base_fee * gas_used
-        };
         self.treasury.assign(
             region,
             offset,
@@ -361,7 +367,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             region,
             offset,
             treasury_balance_prev,
-            vec![treasury_reward],
+            vec![base_fee * gas_used],
             treasury_balance,
         )?;
 
