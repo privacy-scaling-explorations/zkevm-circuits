@@ -459,11 +459,11 @@ pub(crate) fn conditional_constraints(
                 // 5,6,7,8       | 32                  | 0, 1, 0
                 // 9,10          | 64                  | 0, 0, 1
 
-                let four = {
-                    let four = rlc_config.load_private(&mut region, &Fr::from(4), &mut offset)?;
-                    let four_cell = rlc_config.four_cell(four.cell().region_index);
-                    region.constrain_equal(four_cell, four.cell())?;
-                    four
+                let five = {
+                    let five = rlc_config.load_private(&mut region, &Fr::from(5), &mut offset)?;
+                    let five_cell = rlc_config.five_cell(five.cell().region_index);
+                    region.constrain_equal(five_cell, five.cell())?;
+                    five
                 };
                 let nine = {
                     let nine = rlc_config.load_private(&mut region, &Fr::from(9), &mut offset)?;
@@ -474,7 +474,7 @@ pub(crate) fn conditional_constraints(
                 let flag1 = rlc_config.is_smaller_than(
                     &mut region,
                     &num_valid_snarks,
-                    &four,
+                    &five,
                     &mut offset,
                 )?;
                 let not_flag1 = rlc_config.not(&mut region, &flag1, &mut offset)?;
