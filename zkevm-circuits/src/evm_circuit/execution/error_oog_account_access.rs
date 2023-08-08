@@ -1,14 +1,13 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS},
+        param::N_BYTES_GAS,
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            from_bytes,
             math_gadget::LtGadget,
-            select, AccountAddress, CachedRegion, Cell, Word,
+            select, AccountAddress, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -17,12 +16,12 @@ use crate::{
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    Field, ToLittleEndian,ToAddress, 
+    Field, ToAddress,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget to implement the corresponding out of gas errors for
-/// [`OpcodeId::EXP`].
+/// [`OpcodeId::BALANCE`,`OpcodeId::EXTCODESIZE`, `OpcodeId::EXTCODEHASH`].
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGAccountAccessGadget<F> {
     opcode: Cell<F>,
@@ -101,7 +100,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGAccountAccessGadget<F> {
             .assign_h160(region, offset, address.to_address())?;
 
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id)))?;
 
         let (_, is_warm) = block.get_rws(step, 2).tx_access_list_value_pair();
         self.is_warm
