@@ -248,7 +248,7 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
         },
     );
 
-    if !state.tx.is_anchor {
+    if !state.tx_ctx.is_anchor_tx() {
         let effective_refund = refund
             .min((state.tx.gas() - exec_step.gas_left.0) / MAX_REFUND_QUOTIENT_OF_GAS_USED as u64);
         let (found, caller_account) = state.sdb.get_account(&call.caller_address);
