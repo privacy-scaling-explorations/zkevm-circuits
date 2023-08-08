@@ -17,8 +17,8 @@ pub use gadgets::util::Expr;
 
 /// Cell Manager
 pub mod cell_manager;
-/// Cell Manager strategies
-pub mod cell_manager_strategy;
+/// Cell Placement strategies
+pub mod cell_placement_strategy;
 
 /// Steal the expression from gate
 pub fn query_expression<F: Field, T>(
