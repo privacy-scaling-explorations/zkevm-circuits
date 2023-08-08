@@ -52,7 +52,7 @@ lazy_static! {
     pub static ref MOCK_TAIKO_TREASURY_ADDRESS: Address = address!("0x000000000000000000000000000000000cafe777");
     /// Mock anchor
     pub static ref MOCK_ANCHOR_GAS_LIMIT: Word = Word::from(180000);
-    pub static ref MOCK_ANCHOR_GAS_PRICE: Word = *MOCK_BASEFEE;
+    pub static ref MOCK_ANCHOR_GAS_PRICE: Word = Word::zero();
     pub static ref MOCK_ANCHOR_L1_HASH: Hash = Hash::from_slice(&[0u8; 32]);
     pub static ref MOCK_ANCHOR_SIGNAL_ROOT: Hash = Hash::from_slice(&[0u8; 32]);
     pub static ref MOCK_ANCHOR_L1_HIGHT: u64 = 0;

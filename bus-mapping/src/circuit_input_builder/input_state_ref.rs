@@ -309,10 +309,11 @@ impl<'a> CircuitInputStateRef<'a> {
             && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero())))
             && account.is_empty()
         {
-            panic!(
-                "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
-                rw, self.block_ctx.rwc.0, op
-            );
+
+            // panic!(
+            //     "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
+            //     rw, self.block_ctx.rwc.0, op
+            // );
         }
         // -- sanity check end --
         // Perform the write to the account in the StateDB

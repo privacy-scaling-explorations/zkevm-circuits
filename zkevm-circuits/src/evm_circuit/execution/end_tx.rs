@@ -54,13 +54,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::EndTx;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        // additions for taiko's eip-1559:
-        // 1. effective_gas_price = min(gas_tip_cap + base_fee, gas_fee_cap)
-        //    a. gas_price == effective_gas_price
-        // 2. no need update GOLDEN_TOUCH account in Anchor(-effective_gas_price, +refund)
-        // 3. Anchor's gas_tip_cap == 0
-        // 4. check gas_price == min(gas_tip_cap + base_fee, gas_fee_cap)
-
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
 
@@ -93,6 +86,12 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             tx_gas_price.clone(),
             effective_refund.min() + cb.curr.state.gas_left.expr(),
         );
+        let gas_fee_refund = UpdateBalanceGadget::construct(
+            cb,
+            tx_caller_address.expr(),
+            vec![mul_gas_price_by_refund.product().clone()],
+            None,
+        );
 
         // Add gas_used * effective_tip to coinbase's balance
         let coinbase = cb.query_cell();
@@ -104,11 +103,14 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             cb.block_lookup(tag.expr(), None, value);
         }
         let effective_tip = cb.query_word_rlc();
-        let sub_gas_price_by_base_fee = AddWordsGadget::construct(
-            cb,
-            [effective_tip.clone(), base_fee.clone()],
-            tx_gas_price.clone(),
-        );
+        // in anchor, we let tx_gas_price equals to zero
+        let sub_gas_price_by_base_fee = cb.condition(1.expr() - is_first_tx.expr(), |cb| {
+            AddWordsGadget::construct(
+                cb,
+                [effective_tip.clone(), base_fee.clone()],
+                tx_gas_price.clone(),
+            )
+        });
         let mul_effective_tip_by_gas_used =
             MulWordByU64Gadget::construct(cb, effective_tip, gas_used.clone());
         let mul_base_fee_by_gas_used =
@@ -120,37 +122,38 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             AddWordsGadget::construct(cb, [tx_gas_tip_cap, base_fee], base_fee_plus_tip.clone());
         let effective_gas_price =
             MinMaxWordGadget::construct(cb, &base_fee_plus_tip, &tx_gas_fee_cap).min();
-        cb.require_equal(
-            "gas_price == min(gas_tip_cap + base_fee, gas_fee_cap)",
-            tx_gas_price.expr(),
-            effective_gas_price,
-        );
+        cb.condition(is_first_tx.expr(), |cb| {
+            cb.require_equal(
+                "gas_price == 0 when tx is first tx",
+                tx_gas_price.expr(),
+                0.expr(),
+            );
+        });
+        cb.condition(1.expr() - is_first_tx.expr(), |cb| {
+            cb.require_equal(
+                "gas_price == min(gas_tip_cap + base_fee, gas_fee_cap)",
+                tx_gas_price.expr(),
+                effective_gas_price,
+            );
+        });
+
         // send base fee to treasury account
         let treasury = cb.query_cell();
 
-        let (gas_fee_refund, coinbase_reward, treasury_reward) =
-            cb.condition(1.expr() - is_first_tx.expr(), |cb| {
-                (
-                    UpdateBalanceGadget::construct(
-                        cb,
-                        tx_caller_address.expr(),
-                        vec![mul_gas_price_by_refund.product().clone()],
-                        None,
-                    ),
-                    UpdateBalanceGadget::construct(
-                        cb,
-                        coinbase.expr(),
-                        vec![mul_effective_tip_by_gas_used.product().clone()],
-                        None,
-                    ),
-                    UpdateBalanceGadget::construct(
-                        cb,
-                        treasury.expr(),
-                        vec![mul_base_fee_by_gas_used.product().clone()],
-                        None,
-                    ),
-                )
-            });
+        let coinbase_reward = UpdateBalanceGadget::construct(
+            cb,
+            coinbase.expr(),
+            vec![mul_effective_tip_by_gas_used.product().clone()],
+            None,
+        );
+
+        let treasury_reward = UpdateBalanceGadget::construct(
+            cb,
+            treasury.expr(),
+            vec![mul_base_fee_by_gas_used.product().clone()],
+            None,
+        );
+
         // constrain tx receipt fields
         cb.tx_receipt_lookup(
             1.expr(),
@@ -253,7 +256,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
     ) -> Result<(), Error> {
         let gas_used = tx.gas - step.gas_left.0;
         let (refund, _) = block.get_rws(step, 2).tx_refund_value_pair();
-
+        let [(caller_balance, caller_balance_prev), (coinbase_balance, coinbase_balance_prev), (treasury_balance, treasury_balance_prev)] =
+            [3, 4, 5].map(|index| block.get_rws(step, index).account_value_pair());
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
         self.tx_gas
@@ -286,7 +290,19 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-        let effective_tip = tx.gas_price - block.context.base_fee;
+        self.gas_fee_refund.assign(
+            region,
+            offset,
+            caller_balance_prev,
+            vec![gas_fee_refund],
+            caller_balance,
+        )?;
+        let is_anchor_tx = tx.id == 1;
+        let effective_tip = if is_anchor_tx {
+            0.into()
+        } else {
+            tx.gas_price - block.context.base_fee
+        };
         self.sub_gas_price_by_base_fee.assign(
             region,
             offset,
@@ -306,7 +322,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             gas_used,
             effective_tip * gas_used,
         )?;
-
         self.coinbase.assign(
             region,
             offset,
@@ -318,6 +333,18 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
+        self.coinbase_reward.assign(
+            region,
+            offset,
+            coinbase_balance_prev,
+            vec![effective_tip * gas_used],
+            coinbase_balance,
+        )?;
+        let treasury_reward = if is_anchor_tx {
+            0.into()
+        } else {
+            block.context.base_fee * gas_used
+        };
         self.treasury.assign(
             region,
             offset,
@@ -330,34 +357,13 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-
-        if tx.id != 1 {
-            let [(caller_balance, caller_balance_prev), (coinbase_balance, coinbase_balance_prev), (treasury_balance, treasury_balance_prev)] =
-                [3, 4, 5].map(|index| block.get_rws(step, index).account_value_pair());
-            self.gas_fee_refund.assign(
-                region,
-                offset,
-                caller_balance_prev,
-                vec![gas_fee_refund],
-                caller_balance,
-            )?;
-
-            self.coinbase_reward.assign(
-                region,
-                offset,
-                coinbase_balance_prev,
-                vec![effective_tip * gas_used],
-                coinbase_balance,
-            )?;
-
-            self.treasury_reward.assign(
-                region,
-                offset,
-                treasury_balance_prev,
-                vec![block.context.base_fee * gas_used],
-                treasury_balance,
-            )?;
-        }
+        self.treasury_reward.assign(
+            region,
+            offset,
+            treasury_balance_prev,
+            vec![treasury_reward],
+            treasury_balance,
+        )?;
 
         let current_cumulative_gas_used: u64 = if tx.id == 1 {
             0

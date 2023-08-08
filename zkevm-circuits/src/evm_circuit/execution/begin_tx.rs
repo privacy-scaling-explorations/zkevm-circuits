@@ -59,9 +59,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::BeginTx;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        // additions for taiko's eip-1559
-        // 1. no need update GOLDEN_TOUCH account for Anchor
-
         // Use rw_counter of the step which triggers next call as its call_id.
         let call_id = cb.curr.state.rw_counter.clone();
 
@@ -180,29 +177,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ); // rwc_delta += 1
         });
 
-        // Anchor is always the first tx of the list
-        let is_anchor_tx = IsEqualGadget::construct(cb, tx_id.expr(), 1.expr());
-        let not_anchor_tx = not::expr(is_anchor_tx.expr());
-
         // Transfer value from caller to callee, creating account if necessary.
-        // only update caller and callee account when tx is not anchor
-        let transfer_with_gas_fee = cb.condition(not_anchor_tx.expr(), |cb| {
-            TransferWithGasFeeGadget::construct(
-                cb,
-                tx_caller_address.expr(),
-                tx_callee_address.expr(),
-                not::expr(callee_not_exists.expr()),
-                or::expr([tx_is_create.expr(), callee_not_exists.expr()]),
-                tx_value.clone(),
-                mul_gas_fee_by_gas.product().clone(),
-                &mut reversion_info,
-            )
-        });
-        // ignore anchor's transfer
-        let transfer_with_gas_fee_rw_delta = select::expr(
-            is_anchor_tx.expr(),
-            0.expr(),
-            transfer_with_gas_fee.rw_delta(),
+        let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
+            cb,
+            tx_caller_address.expr(),
+            tx_callee_address.expr(),
+            not::expr(callee_not_exists.expr()),
+            or::expr([tx_is_create.expr(), callee_not_exists.expr()]),
+            tx_value.clone(),
+            mul_gas_fee_by_gas.product().clone(),
+            &mut reversion_info,
         );
 
         let caller_nonce_hash_bytes = array_init::array_init(|_| cb.query_byte());
@@ -295,7 +279,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsRoot
                 //   - Write CallContext IsCreate
                 //   - Write CallContext CodeHash
-                rw_counter: Delta(21.expr() + transfer_with_gas_fee_rw_delta.expr()),
+                rw_counter: Delta(21.expr() + transfer_with_gas_fee.rw_delta()),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
                 is_create: To(tx_is_create.expr()),
@@ -338,7 +322,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write TxAccessListAccount
                     //   - Read Account CodeHash
                     //   - a TransferWithGasFeeGadget
-                    rw_counter: Delta(8.expr() + transfer_with_gas_fee_rw_delta.expr()),
+                    rw_counter: Delta(8.expr() + transfer_with_gas_fee.rw_delta()),
                     call_id: To(call_id.expr()),
                     ..StepStateTransition::any()
                 });
@@ -395,7 +379,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsRoot
                     //   - Write CallContext IsCreate
                     //   - Write CallContext CodeHash
-                    rw_counter: Delta(21.expr() + transfer_with_gas_fee_rw_delta.expr()),
+                    rw_counter: Delta(21.expr() + transfer_with_gas_fee.rw_delta()),
                     call_id: To(call_id.expr()),
                     is_root: To(true.expr()),
                     is_create: To(tx_is_create.expr()),
