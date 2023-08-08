@@ -98,6 +98,13 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         );
     }
 
+    // anchor tx does not pay fee
+    let fee = if state.tx_ctx.is_anchor_tx() {
+        0.into()
+    } else {
+        state.tx.tx.gas_price * state.tx.gas()
+    };
+
     // Transfer with fee
     state.transfer_with_fee(
         &mut exec_step,
@@ -106,8 +113,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         callee_exists,
         call.is_create(),
         call.value,
-        Some(state.tx.tx.gas_price * state.tx.gas()),
-        state.tx_ctx.is_anchor_tx(),
+        Some(fee),
     )?;
 
     // In case of contract creation we wish to verify the correctness of the
@@ -248,60 +254,71 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
         },
     );
 
-    if !state.tx_ctx.is_anchor_tx() {
-        let effective_refund = refund
-            .min((state.tx.gas() - exec_step.gas_left.0) / MAX_REFUND_QUOTIENT_OF_GAS_USED as u64);
-        let (found, caller_account) = state.sdb.get_account(&call.caller_address);
-        if !found {
-            return Err(Error::AccountNotFound(call.caller_address));
-        }
-        let caller_balance_prev = caller_account.balance;
-        let caller_balance =
-            caller_balance_prev + state.tx.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
-        state.account_write(
-            &mut exec_step,
-            call.caller_address,
-            AccountField::Balance,
-            caller_balance,
-            caller_balance_prev,
-        )?;
-
-        let effective_tip = state.tx.tx.gas_price - state.block.base_fee;
-        let (found, coinbase_account) = state.sdb.get_account(&state.block.coinbase);
-        if !found {
-            return Err(Error::AccountNotFound(state.block.coinbase));
-        }
-        let coinbase_balance_prev = coinbase_account.balance;
-        let coinbase_reward = effective_tip * (state.tx.gas() - exec_step.gas_left.0);
-        let coinbase_balance = coinbase_balance_prev + coinbase_reward;
-        state.account_write(
-            &mut exec_step,
-            state.block.coinbase,
-            AccountField::Balance,
-            coinbase_balance,
-            coinbase_balance_prev,
-        )?;
-
-        // add treasury account
-        let (found, treasury_account) = state
-            .sdb
-            .get_account(&state.block.protocol_instance.meta_hash.treasury);
-        if !found {
-            return Err(Error::AccountNotFound(
-                state.block.protocol_instance.meta_hash.treasury,
-            ));
-        }
-        let treasury_balance_prev = treasury_account.balance;
-        let treasury_balance =
-            treasury_balance_prev + state.block.base_fee * (state.tx.gas() - exec_step.gas_left.0);
-        state.account_write(
-            &mut exec_step,
-            state.block.protocol_instance.meta_hash.treasury,
-            AccountField::Balance,
-            treasury_balance,
-            treasury_balance_prev,
-        )?;
+    let effective_refund = refund
+        .min((state.tx.gas() - exec_step.gas_left.0) / MAX_REFUND_QUOTIENT_OF_GAS_USED as u64);
+    let (found, caller_account) = state.sdb.get_account(&call.caller_address);
+    if !found {
+        return Err(Error::AccountNotFound(call.caller_address));
     }
+    let caller_balance_prev = caller_account.balance;
+    let caller_balance = caller_balance_prev
+        + if state.tx_ctx.is_anchor_tx() {
+            0.into()
+        } else {
+            state.tx.tx.gas_price * (exec_step.gas_left.0 + effective_refund)
+        };
+    state.account_write(
+        &mut exec_step,
+        call.caller_address,
+        AccountField::Balance,
+        caller_balance,
+        caller_balance_prev,
+    )?;
+
+    let effective_tip = state.tx.tx.gas_price - state.block.base_fee;
+    let (found, coinbase_account) = state.sdb.get_account(&state.block.coinbase);
+    if !found {
+        return Err(Error::AccountNotFound(state.block.coinbase));
+    }
+    let coinbase_balance_prev = coinbase_account.balance;
+    let coinbase_balance = coinbase_balance_prev
+        + if state.tx_ctx.is_anchor_tx() {
+            0.into()
+        } else {
+            effective_tip * (state.tx.gas() - exec_step.gas_left.0)
+        };
+    state.account_write(
+        &mut exec_step,
+        state.block.coinbase,
+        AccountField::Balance,
+        coinbase_balance,
+        coinbase_balance_prev,
+    )?;
+
+    // add treasury account
+    let (found, treasury_account) = state
+        .sdb
+        .get_account(&state.block.protocol_instance.meta_hash.treasury);
+    if !found {
+        return Err(Error::AccountNotFound(
+            state.block.protocol_instance.meta_hash.treasury,
+        ));
+    }
+    let treasury_balance_prev = treasury_account.balance;
+    let treasury_balance = treasury_balance_prev
+        + if state.tx_ctx.is_anchor_tx() {
+            0.into()
+        } else {
+            state.block.base_fee * (state.tx.gas() - exec_step.gas_left.0)
+        };
+    state.account_write(
+        &mut exec_step,
+        state.block.protocol_instance.meta_hash.treasury,
+        AccountField::Balance,
+        treasury_balance,
+        treasury_balance_prev,
+    )?;
+
     // handle tx receipt tag
     state.tx_receipt_write(
         &mut exec_step,
