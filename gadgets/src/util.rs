@@ -138,7 +138,7 @@ pub mod select {
     }
 }
 
-/// Returns the power of number using straigtforward multiplications
+/// Returns the power of a number using straightforward multiplications
 pub mod pow {
     use crate::util::Expr;
     use eth_types::Field;
@@ -146,8 +146,7 @@ pub mod pow {
 
     use super::Scalar;
 
-    /// Returns the `when_true` expression when the selector is true, else
-    /// returns the `when_false` expression.
+    /// Raises `value` to the power of `exponent`
     pub fn expr<F: Field>(value: Expression<F>, exponent: usize) -> Expression<F> {
         let mut result = 1.expr();
         for _ in 0..exponent {
@@ -156,8 +155,7 @@ pub mod pow {
         result
     }
 
-    /// Returns the `when_true` value when the selector is true, else returns
-    /// the `when_false` value.
+    /// Raises `value` to the power of `exponent`
     pub fn value<F: Field>(value: F, exponent: usize) -> F {
         let mut result = 1.scalar();
         for _ in 0..exponent {
