@@ -1,8 +1,9 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::evm::Opcode;
-use crate::Error;
-use eth_types::evm_types::OpcodeId;
-use eth_types::GethExecStep;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    evm::Opcode,
+    Error,
+};
+use eth_types::{evm_types::OpcodeId, GethExecStep};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct OOGStaticMemory {}
@@ -27,9 +28,7 @@ impl Opcode for OOGStaticMemory {
             geth_step.stack.last()?,
         )?;
 
-        state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
-        state.handle_return(geth_step)?;
-
+        state.handle_return(&mut exec_step, geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

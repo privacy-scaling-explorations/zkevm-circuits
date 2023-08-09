@@ -301,7 +301,7 @@ pub struct ExecutionConfig<F> {
     error_oog_exp: Box<ErrorOOGExpGadget<F>>,
     error_oog_memory_copy: Box<ErrorOOGMemoryCopyGadget<F>>,
     error_oog_sload_sstore: Box<ErrorOOGSloadSstoreGadget<F>>,
-    error_oog_static_memory_gadget:Box<ErrorOOGStaticMemoryGadget<F>>,
+    error_oog_static_memory_gadget: Box<ErrorOOGStaticMemoryGadget<F>>,
     error_stack: Box<ErrorStackGadget<F>>,
     error_write_protection: Box<ErrorWriteProtectionGadget<F>>,
     error_oog_dynamic_memory_gadget:
