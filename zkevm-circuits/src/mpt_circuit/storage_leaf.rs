@@ -16,8 +16,9 @@ use crate::{
     },
     mpt_circuit::{
         helpers::{
-            key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, IsEmptyTreeGadget,
-            KeyData, MPTConstraintBuilder, MainData, ParentData, ParentDataWitness, KECCAK,
+            key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget,
+            IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, MainData, ParentData,
+            ParentDataWitness, KECCAK,
         },
         param::KEY_LEN_IN_NIBBLES,
         MPTConfig, MPTContext, MPTState, RlpItemType,
@@ -43,7 +44,7 @@ pub(crate) struct StorageLeafConfig<F> {
     rlp_value: [RLPValueGadget<F>; 2],
     is_wrong_leaf: Cell<F>,
     is_not_hashed: [LtGadget<F, 1>; 2],
-    is_placeholder_leaf: [IsEmptyTreeGadget<F>; 2],
+    is_placeholder_leaf: [IsPlaceholderLeafGadget<F>; 2],
     drifted: DriftedGadget<F>,
     wrong: WrongGadget<F>,
     is_storage_mod_proof: IsEqualGadget<F>,
@@ -116,7 +117,7 @@ impl<F: Field> StorageLeafConfig<F> {
 
                 // Placeholder leaf checks
                 config.is_placeholder_leaf[is_s.idx()] =
-                    IsEmptyTreeGadget::construct(cb, parent_data.hash.expr());
+                    IsPlaceholderLeafGadget::construct(cb, parent_data.hash.expr());
                 let is_placeholder_leaf = config.is_placeholder_leaf[is_s.idx()].expr();
 
                 let rlp_key = &mut config.rlp_key[is_s.idx()];
@@ -250,6 +251,22 @@ impl<F: Field> StorageLeafConfig<F> {
                 config.is_placeholder_leaf[true.idx()].expr(),
                 config.key_data[true.idx()].clone(),
                 &cb.key_r.expr(),
+            );
+
+            // Reset the main memory
+            // This need to be the last node for this proof
+            MainData::store(
+                cb,
+                &ctx.memory[main_memory()],
+                [
+                    MPTProofType::Disabled.expr(),
+                    false.expr(),
+                    0.expr(),
+                    0.expr(),
+                    0.expr(),
+                    0.expr(),
+                    0.expr(),
+                ],
             );
 
             // For non-existing proofs the tree needs to remain the same
@@ -445,6 +462,18 @@ impl<F: Field> StorageLeafConfig<F> {
             false,
             key_data[true.idx()].clone(),
             region.key_r,
+        )?;
+
+        // Reset the main memory
+        MainData::witness_store(
+            region,
+            offset,
+            &mut pv.memory[main_memory()],
+            MPTProofType::Disabled as usize,
+            false,
+            F::ZERO,
+            Word::new([F::ZERO, F::ZERO]),
+            Word::new([F::ZERO, F::ZERO]),
         )?;
 
         // Put the data in the lookup table

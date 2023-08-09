@@ -22,7 +22,8 @@ use crate::{
     mpt_circuit::{
         helpers::{
             key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, Indexable,
-            IsEmptyTreeGadget, KeyData, MPTConstraintBuilder, ParentData, WrongGadget, KECCAK,
+            IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, ParentData, WrongGadget,
+            KECCAK,
         },
         param::{KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
         MPTConfig, MPTContext, MPTState, RlpItemType,
@@ -40,7 +41,7 @@ pub(crate) struct AccountLeafConfig<F> {
     rlp_key: [ListKeyGadget<F>; 2],
     value_rlp_bytes: [[Cell<F>; 2]; 2],
     value_list_rlp_bytes: [[Cell<F>; 2]; 2],
-    is_placeholder_leaf: [IsEmptyTreeGadget<F>; 2],
+    is_placeholder_leaf: [IsPlaceholderLeafGadget<F>; 2],
     drifted: DriftedGadget<F>,
     wrong: WrongGadget<F>,
     is_non_existing_account_proof: IsEqualGadget<F>,
@@ -169,7 +170,7 @@ impl<F: Field> AccountLeafConfig<F> {
 
                 // Placeholder leaf checks
                 config.is_placeholder_leaf[is_s.idx()] =
-                    IsEmptyTreeGadget::construct(cb, parent_data.hash.expr());
+                    IsPlaceholderLeafGadget::construct(cb, parent_data.hash.expr());
 
                 // Calculate the key RLC
                 let rlp_key = &mut config.rlp_key[is_s.idx()];

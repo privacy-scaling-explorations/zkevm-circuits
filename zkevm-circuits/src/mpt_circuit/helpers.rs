@@ -1045,14 +1045,14 @@ impl<F: Field> MPTConstraintBuilder<F> {
     }
 }
 
-/// Checks if we are in an empty tree
+/// Checks if a leaf is a placeholder leaf (a leaf in an empty tree)
 #[derive(Clone, Debug, Default)]
-pub struct IsEmptyTreeGadget<F> {
+pub struct IsPlaceholderLeafGadget<F> {
     is_empty_trie: IsEqualWordGadget<F>,
     is_nil_in_branch_at_mod_index: IsEqualWordGadget<F>,
 }
 
-impl<F: Field> IsEmptyTreeGadget<F> {
+impl<F: Field> IsPlaceholderLeafGadget<F> {
     pub(crate) fn construct(
         cb: &mut MPTConstraintBuilder<F>,
         parent_word: Word<Expression<F>>,
