@@ -16,6 +16,7 @@ mod account_leaf;
 mod branch;
 mod extension;
 mod extension_branch;
+mod modified_extension;
 mod helpers;
 mod param;
 mod rlp_gadgets;
@@ -46,6 +47,7 @@ use crate::{
     util::Challenges,
 };
 use extension_branch::ExtensionBranchConfig;
+use modified_extension::ModExtensionConfig;
 use param::HASH_WIDTH;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -66,11 +68,13 @@ pub struct StateMachineConfig<F> {
     is_branch: Column<Advice>,
     is_account: Column<Advice>,
     is_storage: Column<Advice>,
+    is_mod_extension: Column<Advice>,
 
     start_config: StartConfig<F>,
     branch_config: ExtensionBranchConfig<F>,
     storage_config: StorageLeafConfig<F>,
     account_config: AccountLeafConfig<F>,
+    mod_extension_config: ModExtensionConfig<F>,
 }
 
 impl<F: Field> StateMachineConfig<F> {
@@ -81,10 +85,12 @@ impl<F: Field> StateMachineConfig<F> {
             is_branch: meta.advice_column(),
             is_account: meta.advice_column(),
             is_storage: meta.advice_column(),
+            is_mod_extension: meta.advice_column(),
             start_config: StartConfig::default(),
             branch_config: ExtensionBranchConfig::default(),
             storage_config: StorageLeafConfig::default(),
             account_config: AccountLeafConfig::default(),
+            mod_extension_config: ModExtensionConfig::default(),
         }
     }
 

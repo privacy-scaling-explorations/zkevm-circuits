@@ -4,6 +4,7 @@ pub mod branch_node;
 pub mod columns;
 pub mod extension;
 pub mod helpers;
+pub mod modified_extension;
 pub mod mpt;
 pub mod param;
 pub mod storage_leaf;

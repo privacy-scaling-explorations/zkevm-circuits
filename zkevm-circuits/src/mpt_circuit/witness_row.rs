@@ -57,6 +57,16 @@ pub(crate) enum ExtensionBranchRowType {
 }
 
 #[derive(Debug, Eq, PartialEq)]
+pub(crate) enum ModExtensionRowType {
+    Mod,
+    KeyS,
+    ValueS,
+    KeyC,
+    ValueC,
+    Count,
+}
+
+#[derive(Debug, Eq, PartialEq)]
 pub(crate) enum StartRowType {
     RootS,
     RootC,
@@ -93,6 +103,12 @@ pub struct ExtensionBranchNode {
     pub(crate) branch: BranchNode,
 }
 
+/// Modified extension node
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ModExtensionNode {
+    pub(crate) list_rlp_bytes: Vec<u8>,
+}
+
 /// MPT account node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AccountNode {
@@ -122,6 +138,7 @@ pub struct Node {
     pub(crate) extension_branch: Option<ExtensionBranchNode>,
     pub(crate) account: Option<AccountNode>,
     pub(crate) storage: Option<StorageNode>,
+    pub(crate) mod_extension: Option<ModExtensionNode>,
     /// MPT node values
     pub values: Vec<Vec<u8>>,
     /// MPT keccak data
