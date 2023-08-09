@@ -10,7 +10,10 @@ use itertools::Itertools;
 use mock::MOCK_ACCOUNTS;
 use std::env;
 use zkevm_circuits::evm_circuit::{
-    param::{LOOKUP_CONFIG, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS},
+    param::{
+        LOOKUP_CONFIG, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS, N_U16_LOOKUPS,
+        N_U8_LOOKUPS,
+    },
     step::ExecutionState,
     EvmCircuit,
 };
@@ -148,9 +151,31 @@ fn get_exec_steps_occupancy() {
                 format!("cells").cell().bold(true),
                 format!("top_height").cell().bold(true),
                 format!("used columns (Max: {:?})", $cols).cell().bold(true),
-                format!("Utilization").cell().bold(true),
+                format!("Utilization (%)").cell().bold(true),
             ]);
             print_stdout(table).unwrap();
+
+            // consider use stats package, e.g. https://github.com/statrs-dev/statrs to output more insightful result
+            let raw_statistics_data = report
+                .iter()
+                .fold(vec![0; 2], |mut accu, exec| {
+                    accu[0] += exec.$id.available_cells;
+                    accu[1] += exec.$id.used_cells;
+                    accu
+                });
+
+            let table = vec![vec![
+                format!("{:?}", raw_statistics_data[0]),
+                format!("{:?}", raw_statistics_data[1]),
+                format!("{:.1}", (raw_statistics_data[1] as f64/raw_statistics_data[0] as f64) * 100.0),
+            ]].table().title(vec![
+                format!("{:?} total_available_cells", stringify!($id)).cell().bold(true),
+                format!("{:?} total_used_cells", stringify!($id)).cell().bold(true),
+                format!("{:?} Utilization (%)", stringify!($id)).cell().bold(true),
+            ]);
+
+            print_stdout(table).unwrap();
+
             )*
         };
     }
@@ -163,8 +188,10 @@ fn get_exec_steps_occupancy() {
         N_PHASE2_COLUMNS,
         storage_perm,
         N_COPY_COLUMNS,
-        byte_lookup,
-        N_BYTE_LOOKUPS,
+        u8_lookup,
+        N_U8_LOOKUPS,
+        u16_lookup,
+        N_U16_LOOKUPS,
         fixed_table,
         LOOKUP_CONFIG[0].1,
         tx_table,

@@ -5,9 +5,12 @@
 // - *_le: Little-Endian bytes
 
 use crate::{
-    evm_circuit::util::{not, rlc},
+    evm_circuit::{
+        param::N_BYTES_ACCOUNT_ADDRESS,
+        util::{from_bytes, not, rlc},
+    },
     table::KeccakTable,
-    util::{Challenges, Expr},
+    util::{word::Word, Challenges, Expr},
 };
 use ecc::{maingate, EccConfig, GeneralEccChip};
 use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
@@ -28,7 +31,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, SecondPhase, Selector},
     poly::Rotation,
 };
-use integer::{AssignedInteger, IntegerChip, IntegerConfig, IntegerInstructions, Range};
+use integer::{AssignedInteger, IntegerChip, IntegerInstructions, Range};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
@@ -59,7 +62,7 @@ impl<F: Field> SignVerifyChip<F> {
     /// Return a new SignVerifyChip
     pub fn new(max_verif: usize) -> Self {
         // TODO: Investigate if it is safe to use a random point as aux generator that
-        // is choosen by the prover.  If this is unsafe, we will need to update the
+        // is chosen by the prover.  If this is unsafe, we will need to update the
         // EccChip to calculate an aux generator using the challange API.
         // https://github.com/privacy-scaling-explorations/halo2wrong/issues/53
         let mut rng = ChaCha20Rng::seed_from_u64(0);
@@ -81,7 +84,7 @@ impl<F: Field> SignVerifyChip<F> {
         // the tx circuit with max_txs=1. For example:
         // `RUST_LOG=debug RUST_BACKTRACE=1 cargo test tx_circuit_1tx_1max_tx --release
         // --all-features -- --nocapture`
-        // The value rows_range_chip_table has been optained by patching the halo2
+        // The value rows_range_chip_table has been obtained by patching the halo2
         // library to report the number of rows used in the range chip table
         // region. TODO: Figure out a way to get these numbers automatically.
         let rows_range_chip_table = 295188;
@@ -118,12 +121,11 @@ pub(crate) struct SignVerifyConfig {
     main_gate_config: MainGateConfig,
     range_config: RangeConfig,
     // RLC
-    q_rlc_evm_word: Selector,
     q_rlc_keccak_input: Selector,
     rlc: Column<Advice>,
     // Keccak
     q_keccak: Selector,
-    keccak_table: KeccakTable,
+    _keccak_table: KeccakTable,
 }
 
 impl SignVerifyConfig {
@@ -144,19 +146,10 @@ impl SignVerifyConfig {
         );
 
         // RLC
-        let q_rlc_evm_word = meta.selector();
         let q_rlc_keccak_input = meta.selector();
         let rlc = meta.advice_column_in(SecondPhase);
         meta.enable_equality(rlc);
 
-        Self::configure_rlc(
-            meta,
-            "evm_word_rlc",
-            main_gate_config.clone(),
-            q_rlc_evm_word,
-            rlc,
-            challenges.evm_word(),
-        );
         Self::configure_rlc(
             meta,
             "keccak_input_rlc",
@@ -172,28 +165,29 @@ impl SignVerifyConfig {
         let q_keccak = meta.complex_selector();
         meta.lookup_any("keccak", |meta| {
             // When address is 0, we disable the signature verification by using a dummy pk,
-            // msg_hash and signature which is not constrainted to match msg_hash_rlc nor
-            // the address.
+            // msg_hash and signature which is not constrained to match msg_hash nor the address.
             // Layout:
-            // | q_keccak |        a        |     rlc     |
-            // | -------- | --------------- | ----------- |
-            // |     1    | is_address_zero |    pk_rlc   |
-            // |          |                 | pk_hash_rlc |
+            // | q_keccak |        a        |    b     |     c     |   rlc   |
+            // | -------- | --------------- |--------- | --------- | ------- |
+            // |     1    |   is_addr_zero  | word_lo  |  word_hi  |  pk_rlc |
             let q_keccak = meta.query_selector(q_keccak);
             let is_address_zero = meta.query_advice(main_gate_config.advices()[0], Rotation::cur());
             let is_enable = q_keccak * not::expr(is_address_zero);
-
+            let word_lo = meta.query_advice(main_gate_config.advices()[1], Rotation::cur());
+            let word_hi = meta.query_advice(main_gate_config.advices()[2], Rotation::cur());
             let input = [
                 is_enable.clone(),
                 is_enable.clone() * meta.query_advice(rlc, Rotation::cur()),
                 is_enable.clone() * 64usize.expr(),
-                is_enable * meta.query_advice(rlc, Rotation::next()),
+                is_enable.clone() * word_lo,
+                is_enable * word_hi,
             ];
             let table = [
                 keccak_table.is_enabled,
                 keccak_table.input_rlc,
                 keccak_table.input_len,
-                keccak_table.output_rlc,
+                keccak_table.output.lo(),
+                keccak_table.output.hi(),
             ]
             .map(|column| meta.query_advice(column, Rotation::cur()));
 
@@ -203,11 +197,10 @@ impl SignVerifyConfig {
         Self {
             range_config,
             main_gate_config,
-            keccak_table,
-            q_rlc_evm_word,
             q_rlc_keccak_input,
             rlc,
             q_keccak,
+            _keccak_table: keccak_table.clone(),
         }
     }
 
@@ -255,10 +248,6 @@ impl SignVerifyConfig {
     pub(crate) fn ecc_chip_config(&self) -> EccConfig {
         EccConfig::new(self.range_config.clone(), self.main_gate_config.clone())
     }
-
-    pub(crate) fn integer_chip_config(&self) -> IntegerConfig {
-        IntegerConfig::new(self.range_config.clone(), self.main_gate_config.clone())
-    }
 }
 
 /// Term provides a wrapper of possible assigned cell with value or unassigned
@@ -272,7 +261,7 @@ impl SignVerifyConfig {
 #[derive(Clone, Debug)]
 pub(crate) enum Term<F> {
     Assigned(Cell, Value<F>),
-    Unassigned(Value<F>),
+    _Unassigned(Value<F>),
 }
 
 impl<F: Field> Term<F> {
@@ -280,21 +269,17 @@ impl<F: Field> Term<F> {
         Self::Assigned(cell, value)
     }
 
-    fn unassigned(value: Value<F>) -> Self {
-        Self::Unassigned(value)
-    }
-
     fn cell(&self) -> Option<Cell> {
         match self {
             Self::Assigned(cell, _) => Some(*cell),
-            Self::Unassigned(_) => None,
+            Self::_Unassigned(_) => None,
         }
     }
 
     fn value(&self) -> Value<F> {
         match self {
             Self::Assigned(_, value) => *value,
-            Self::Unassigned(value) => *value,
+            Self::_Unassigned(value) => *value,
         }
     }
 }
@@ -307,8 +292,8 @@ pub(crate) struct AssignedECDSA<F: Field> {
 
 #[derive(Debug)]
 pub(crate) struct AssignedSignatureVerify<F: Field> {
-    pub(crate) address: AssignedValue<F>,
-    pub(crate) msg_hash_rlc: AssignedValue<F>,
+    pub(crate) address: Word<AssignedValue<F>>,
+    pub(crate) msg_hash: Word<AssignedValue<F>>,
 }
 
 // Return an array of bytes that corresponds to the little endian representation
@@ -336,7 +321,7 @@ fn integer_to_bytes_le<F: Field, FE: PrimeField>(
 }
 
 /// Helper structure pass around references to all the chips required for an
-/// ECDSA veficication.
+/// ECDSA verification.
 struct ChipsRef<'a, F: Field, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> {
     main_gate: &'a MainGate<F>,
     range_chip: &'a RangeChip<F>,
@@ -466,7 +451,7 @@ impl<F: Field> SignVerifyChip<F> {
         ctx: &mut RegionCtx<F>,
         is_address_zero: &AssignedCell<F, F>,
         pk_rlc: &AssignedCell<F, F>,
-        pk_hash_rlc: &AssignedCell<F, F>,
+        pk_hash: &Word<AssignedCell<F, F>>,
     ) -> Result<(), Error> {
         let copy = |ctx: &mut RegionCtx<F>, name, column, assigned: &AssignedCell<F, F>| {
             let copied = ctx.assign_advice(|| name, column, assigned.value().copied())?;
@@ -474,12 +459,26 @@ impl<F: Field> SignVerifyChip<F> {
             Ok::<_, Error>(())
         };
 
-        let a = config.main_gate_config.advices()[0];
         ctx.enable(config.q_keccak)?;
-        copy(ctx, "is_address_zero", a, is_address_zero)?;
+        copy(
+            ctx,
+            "is_address_zero",
+            config.main_gate_config.advices()[0],
+            is_address_zero,
+        )?;
         copy(ctx, "pk_rlc", config.rlc, pk_rlc)?;
-        ctx.next();
-        copy(ctx, "pk_hash_rlc", config.rlc, pk_hash_rlc)?;
+        copy(
+            ctx,
+            "pk_hash_lo",
+            config.main_gate_config.advices()[1],
+            &pk_hash.lo(),
+        )?;
+        copy(
+            ctx,
+            "pk_hash_hi",
+            config.main_gate_config.advices()[2],
+            &pk_hash.hi(),
+        )?;
         ctx.next();
 
         Ok(())
@@ -496,6 +495,7 @@ impl<F: Field> SignVerifyChip<F> {
         challenges: &Challenges<Value<F>>,
     ) -> Result<AssignedSignatureVerify<F>, Error> {
         let main_gate = chips.main_gate;
+        let range_chip = chips.range_chip;
 
         let (padding, sign_data) = match sign_data {
             Some(sign_data) => (false, sign_data.clone()),
@@ -504,60 +504,97 @@ impl<F: Field> SignVerifyChip<F> {
 
         let pk_le = pk_bytes_le(&sign_data.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
-        let pk_hash = (!padding)
-            .then(|| keccak256(&pk_be))
-            .unwrap_or_default()
-            .map(|byte| Value::known(F::from(byte as u64)));
-        let pk_hash_hi = pk_hash[..12].to_vec();
+        let mut pk_hash = (!padding).then(|| keccak256(&pk_be)).unwrap_or_default();
+        pk_hash.reverse();
+
+        let powers_of_256 = iter::successors(Some(F::ONE), |coeff| Some(F::from(256) * coeff))
+            .take(16)
+            .collect_vec();
+
         // Ref. spec SignVerifyChip 2. Verify that the first 20 bytes of the
         // pub_key_hash equal the address
-        let (address, pk_hash_lo) = {
-            let powers_of_256 = iter::successors(Some(F::ONE), |coeff| Some(F::from(256) * coeff))
-                .take(20)
-                .collect_vec();
-            let terms = pk_hash[12..]
-                .iter()
-                .zip(powers_of_256.into_iter().rev())
-                .map(|(byte, coeff)| maingate::Term::Unassigned(*byte, coeff))
-                .collect_vec();
-            let (address, pk_hash_lo) = main_gate.decompose(ctx, &terms, F::ZERO, |_, _| Ok(()))?;
+        let (address_cells, pk_hash_cells) = {
+            // Diagram of byte decomposition of little-endian pk_hash, and how address is built
+            // from it:
+            //
+            // byte 0             15 16           20 21   32
+            //      [ address_lo   ] [ address_hi  ] [     ]
+            //      [ pk_hash_lo   ] [ pk_hash_hi          ]
+
+            let pk_hash_lo_bytes = &pk_hash[..16];
+            let pk_hash_hi_bytes = &pk_hash[16..];
+            let pk_hash_lo = from_bytes::value::<F>(pk_hash_lo_bytes);
+            let pk_hash_hi = from_bytes::value::<F>(pk_hash_hi_bytes);
+            // Assign all bytes of pk_hash to cells which are range constrained to be 8 bits.  Then
+            // constrain the lower 16 cell bytes to build the lo cell, and the higher 16 bytes to
+            // build the hi cell.
+            let (pk_hash_cell_lo, pk_hash_lo_cell_bytes) =
+                range_chip.decompose(ctx, Value::known(pk_hash_lo), 8, 128)?;
+            let (pk_hash_cell_hi, pk_hash_hi_cell_bytes) =
+                range_chip.decompose(ctx, Value::known(pk_hash_hi), 8, 128)?;
+
+            // Take the 20 lowest assigned byte cells of pk_hash and constrain them to build
+            // address. From the lower 16 build the lo cell, and from the higher 4 build the hi
+            // cell.
+            let (address_cell_lo, _) = main_gate.decompose(
+                ctx,
+                &pk_hash_lo_cell_bytes
+                    .iter()
+                    .zip_eq(&powers_of_256)
+                    .map(|(cell, coeff)| maingate::Term::Assigned(cell, *coeff))
+                    .collect_vec(),
+                F::ZERO,
+                |_, _| Ok(()),
+            )?;
+            let (address_cell_hi, _) = main_gate.decompose(
+                ctx,
+                &pk_hash_hi_cell_bytes
+                    .iter()
+                    .take(N_BYTES_ACCOUNT_ADDRESS - 16)
+                    .zip(&powers_of_256)
+                    .map(|(cell, coeff)| maingate::Term::Assigned(cell, *coeff))
+                    .collect_vec(),
+                F::ZERO,
+                |_, _| Ok(()),
+            )?;
 
             (
-                address,
-                pk_hash_lo
-                    .into_iter()
-                    .zip(pk_hash[12..].iter())
-                    .map(|(assigned, byte)| Term::assigned(assigned.cell(), *byte))
-                    .collect_vec(),
+                Word::new([address_cell_lo, address_cell_hi]),
+                Word::new([pk_hash_cell_lo, pk_hash_cell_hi]),
             )
         };
-        let is_address_zero = main_gate.is_zero(ctx, &address)?;
+
+        let iz_zero_hi = main_gate.is_zero(ctx, &address_cells.hi())?;
+        let iz_zero_lo = main_gate.is_zero(ctx, &address_cells.lo())?;
+        let is_address_zero = main_gate.and(ctx, &iz_zero_lo, &iz_zero_hi)?;
 
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
-        // with RLC encoding corresponds to msg_hash_rlc
-        let msg_hash_rlc = {
-            let zero = main_gate.assign_constant(ctx, F::ZERO)?;
-            let assigned_msg_hash_le = assigned_ecdsa
-                .msg_hash_le
-                .iter()
-                .map(|byte| main_gate.select(ctx, &zero, byte, &is_address_zero))
-                .collect::<Result<Vec<_>, _>>()?;
-            let msg_hash_le = (!padding)
-                .then(|| sign_data.msg_hash.to_bytes())
-                .unwrap_or_default()
-                .map(|byte| Value::known(F::from(byte as u64)));
-            self.assign_rlc_le(
-                config,
+        // corresponds to msg_hash
+        let msg_hash_cells = {
+            let msg_hash_lo_cell_bytes = &assigned_ecdsa.msg_hash_le[..16];
+            let msg_hash_hi_cell_bytes = &assigned_ecdsa.msg_hash_le[16..];
+            let (msg_hash_cell_lo, _) = main_gate.decompose(
                 ctx,
-                chips,
-                "msg_hash",
-                config.q_rlc_evm_word,
-                challenges.evm_word(),
-                assigned_msg_hash_le
+                &msg_hash_lo_cell_bytes
                     .iter()
-                    .zip(msg_hash_le)
-                    .map(|(assigned, byte)| Term::assigned(assigned.cell(), byte)),
-            )?
+                    .zip_eq(&powers_of_256)
+                    .map(|(cell, coeff)| maingate::Term::Assigned(cell, *coeff))
+                    .collect_vec(),
+                F::ZERO,
+                |_, _| Ok(()),
+            )?;
+            let (msg_hash_cell_hi, _) = main_gate.decompose(
+                ctx,
+                &msg_hash_hi_cell_bytes
+                    .iter()
+                    .zip_eq(&powers_of_256)
+                    .map(|(cell, coeff)| maingate::Term::Assigned(cell, *coeff))
+                    .collect_vec(),
+                F::ZERO,
+                |_, _| Ok(()),
+            )?;
+
+            Word::new([msg_hash_cell_lo, msg_hash_cell_hi])
         };
 
         let pk_rlc = {
@@ -581,23 +618,10 @@ impl<F: Field> SignVerifyChip<F> {
             )?
         };
 
-        let pk_hash_rlc = self.assign_rlc_le(
-            config,
-            ctx,
-            chips,
-            "pk_hash_rlc",
-            config.q_rlc_evm_word,
-            challenges.evm_word(),
-            iter::empty()
-                .chain(pk_hash_lo.into_iter().rev())
-                .chain(pk_hash_hi.into_iter().rev().map(Term::unassigned)),
-        )?;
-
-        self.enable_keccak_lookup(config, ctx, &is_address_zero, &pk_rlc, &pk_hash_rlc)?;
-
+        self.enable_keccak_lookup(config, ctx, &is_address_zero, &pk_rlc, &pk_hash_cells)?;
         Ok(AssignedSignatureVerify {
-            address,
-            msg_hash_rlc,
+            address: address_cells,
+            msg_hash: msg_hash_cells,
         })
     }
 
@@ -688,12 +712,6 @@ impl<F: Field> SignVerifyChip<F> {
     }
 }
 
-fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
-    pk_hash[32 - 20..]
-        .iter()
-        .fold(F::ZERO, |acc, b| acc * F::from(256) + F::from(*b as u64))
-}
-
 #[cfg(test)]
 mod sign_verify_tests {
     use super::*;
@@ -711,7 +729,6 @@ mod sign_verify_tests {
         },
         plonk::Circuit,
     };
-    use pretty_assertions::assert_eq;
     use rand::{RngCore, SeedableRng};
     use rand_xorshift::XorShiftRng;
 
@@ -770,11 +787,10 @@ mod sign_verify_tests {
                 &self.signatures,
                 &challenges,
             )?;
-            config.sign_verify.keccak_table.dev_load(
+            config.sign_verify._keccak_table.dev_load(
                 &mut layouter,
                 &keccak_inputs_sign_verify(&self.signatures),
                 &challenges,
-                true,
             )?;
             config.sign_verify.load_range(&mut layouter)?;
             Ok(())
@@ -801,7 +817,7 @@ mod sign_verify_tests {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
-        assert_eq!(prover.verify(), Ok(()));
+        prover.assert_satisfied_par();
     }
 
     // Generate a test key pair

@@ -5,25 +5,28 @@ use crate::{
         util::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            math_gadget::IsZeroGadget,
-            sum, CachedRegion, Cell, Word as RLCWord,
+            math_gadget::{IsZeroGadget, IsZeroWordGadget},
+            AccountAddress, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{Word, WordCell, WordExpr},
+        Expr,
+    },
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
+use eth_types::{evm_types::OpcodeId, Field, ToAddress, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorWriteProtectionGadget<F> {
     opcode: Cell<F>,
     is_call: IsZeroGadget<F>,
-    gas: RLCWord<F>,
-    code_address: RLCWord<F>,
-    value: RLCWord<F>,
-    is_value_zero: IsZeroGadget<F>,
+    gas: WordCell<F>,
+    code_address: AccountAddress<F>,
+    value: WordCell<F>,
+    is_value_zero: IsZeroWordGadget<F, WordCell<F>>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
@@ -35,10 +38,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
-        let gas_word = cb.query_word_rlc();
-        let code_address_word = cb.query_word_rlc();
-        let value = cb.query_word_rlc();
-        let is_value_zero = IsZeroGadget::construct(cb, value.expr());
+        let gas_word = cb.query_word_unchecked();
+        let code_address = cb.query_account_address();
+        let value = cb.query_word_unchecked();
+        let is_value_zero = IsZeroWordGadget::construct(cb, &value);
 
         // require_in_set method will spilit into more low degree expressions if exceed
         // max_degree. otherwise need to do fixed lookup for these opcodes
@@ -63,14 +66,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         // Lookup values from stack if opcode is call
         // Precondition: If there's a StackUnderflow CALL, is handled before this error
         cb.condition(is_call.expr(), |cb| {
-            cb.stack_pop(gas_word.expr());
-            cb.stack_pop(code_address_word.expr());
-            cb.stack_pop(value.expr());
+            cb.stack_pop(gas_word.to_word());
+            cb.stack_pop(code_address.to_word());
+            cb.stack_pop(value.to_word());
             cb.require_zero("value of call is not zero", is_value_zero.expr());
         });
 
         // current call context is readonly
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsStatic, 1.expr());
+        cb.call_context_lookup_read(None, CallContextFieldTag::IsStatic, Word::one());
 
         // constrain not root call as at least one previous staticcall preset.
         cb.require_zero(
@@ -84,7 +87,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             opcode,
             is_call,
             gas: gas_word,
-            code_address: code_address_word,
+            code_address,
             value,
             is_value_zero,
             common_error_gadget,
@@ -111,11 +114,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
                 [0, 1, 2].map(|index| block.get_rws(step, index).stack_value());
         }
 
-        self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
+        self.gas.assign_u256(region, offset, gas)?;
         self.code_address
-            .assign(region, offset, Some(code_address.to_le_bytes()))?;
-        self.value
-            .assign(region, offset, Some(value.to_le_bytes()))?;
+            .assign_h160(region, offset, code_address.to_address())?;
+        self.value.assign_u256(region, offset, value)?;
 
         self.is_call.assign(
             region,
@@ -123,7 +125,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             F::from(opcode.as_u64()) - F::from(OpcodeId::CALL.as_u64()),
         )?;
         self.is_value_zero
-            .assign(region, offset, sum::value(&value.to_le_bytes()))?;
+            .assign(region, offset, Word::from(value))?;
 
         self.common_error_gadget.assign(
             region,
@@ -142,20 +144,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
 mod test {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{
-        address, bytecode, bytecode::Bytecode, evm_types::OpcodeId, geth_types::Account, Address,
-        ToWord, Word, U64,
+        address, bytecode, bytecode::Bytecode, geth_types::Account, Address, ToWord, Word, U64,
     };
     use mock::TestContext;
-
-    // internal call test
-    struct Stack {
-        gas: u64,
-        value: Word,
-        cd_offset: u64,
-        cd_length: u64,
-        rd_offset: u64,
-        rd_length: u64,
-    }
 
     fn callee(code: Bytecode) -> Account {
         let code = code.to_vec();
@@ -166,52 +157,6 @@ mod test {
             code: code.into(),
             nonce: U64::from(!is_empty as u64),
             balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
-            ..Default::default()
-        }
-    }
-
-    fn caller(opcode: OpcodeId, stack: Stack, caller_is_success: bool) -> Account {
-        let is_call = opcode == OpcodeId::CALL;
-        let terminator = if caller_is_success {
-            OpcodeId::RETURN
-        } else {
-            OpcodeId::REVERT
-        };
-
-        let mut bytecode = bytecode! {
-            PUSH32(Word::from(stack.rd_length))
-            PUSH32(Word::from(stack.rd_offset))
-            PUSH32(Word::from(stack.cd_length))
-            PUSH32(Word::from(stack.cd_offset))
-        };
-        if is_call {
-            bytecode.push(32, stack.value);
-        }
-        bytecode.append(&bytecode! {
-            PUSH32(Address::repeat_byte(0xff).to_word())
-            PUSH32(Word::from(stack.gas))
-            .write_op(opcode)
-            PUSH32(Word::from(stack.rd_length))
-            PUSH32(Word::from(stack.rd_offset))
-            PUSH32(Word::from(stack.cd_length))
-            PUSH32(Word::from(stack.cd_offset))
-        });
-        if is_call {
-            bytecode.push(32, stack.value);
-        }
-        bytecode.append(&bytecode! {
-            PUSH32(Address::repeat_byte(0xff).to_word())
-            PUSH32(Word::from(stack.gas))
-            .write_op(opcode)
-            PUSH1(0)
-            PUSH1(0)
-            .write_op(terminator)
-        });
-
-        Account {
-            address: Address::repeat_byte(0xfe),
-            balance: Word::from(10).pow(20.into()),
-            code: bytecode.to_vec().into(),
             ..Default::default()
         }
     }

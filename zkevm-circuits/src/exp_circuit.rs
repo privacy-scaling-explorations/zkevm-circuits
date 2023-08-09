@@ -1,11 +1,11 @@
 //! Exponentiation verification circuit.
 
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(any(test, feature = "test-circuits"))]
 mod dev;
 pub(crate) mod param;
-#[cfg(any(feature = "test", test))]
+#[cfg(test)]
 mod test;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(feature = "test-circuits")]
 pub use dev::ExpCircuit as TestExpCircuit;
 
 use crate::{
@@ -291,11 +291,12 @@ impl<F: Field> ExpCircuitConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         exp_events: &[ExpEvent],
-        max_exp_steps: usize,
+        max_exp_rows: usize,
     ) -> Result<(), Error> {
-        let max_exp_rows = max_exp_steps * OFFSET_INCREMENT;
+        let min_n_rows = Self::min_num_rows(exp_events);
+        dbg!(max_exp_rows, min_n_rows);
         debug_assert!(
-            Self::min_num_rows(exp_events) <= max_exp_rows,
+            min_n_rows <= max_exp_rows,
             "insufficient rows to populate the exponentiation trace"
         );
 
@@ -484,7 +485,8 @@ pub struct ExpCircuit<F> {
 
 impl<F: Field> ExpCircuit<F> {
     /// Return a new ExpCircuit
-    pub fn new(exp_events: Vec<ExpEvent>, max_exp_rows: usize) -> Self {
+    pub fn new(exp_events: Vec<ExpEvent>, max_exp_steps: usize) -> Self {
+        let max_exp_rows = max_exp_steps * OFFSET_INCREMENT + UNUSABLE_EXP_ROWS;
         Self {
             exp_events,
             max_exp_rows,

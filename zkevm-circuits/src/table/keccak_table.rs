@@ -9,8 +9,8 @@ pub struct KeccakTable {
     pub input_rlc: Column<Advice>, // RLC of input bytes
     /// Byte array input length
     pub input_len: Column<Advice>,
-    /// RLC of the hash result
-    pub output_rlc: Column<Advice>, // RLC of hash of input bytes
+    /// Output hash word
+    pub output: word::Word<Column<Advice>>,
 }
 
 impl<F: Field> LookupTable<F> for KeccakTable {
@@ -19,7 +19,8 @@ impl<F: Field> LookupTable<F> for KeccakTable {
             self.is_enabled.into(),
             self.input_rlc.into(),
             self.input_len.into(),
-            self.output_rlc.into(),
+            self.output.lo().into(),
+            self.output.hi().into(),
         ]
     }
 
@@ -28,7 +29,8 @@ impl<F: Field> LookupTable<F> for KeccakTable {
             String::from("is_enabled"),
             String::from("input_rlc"),
             String::from("input_len"),
-            String::from("output_rlc"),
+            String::from("output_lo"),
+            String::from("output_hi"),
         ]
     }
 }
@@ -40,7 +42,7 @@ impl KeccakTable {
             is_enabled: meta.advice_column(),
             input_rlc: meta.advice_column_in(SecondPhase),
             input_len: meta.advice_column(),
-            output_rlc: meta.advice_column_in(SecondPhase),
+            output: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
 
@@ -48,37 +50,19 @@ impl KeccakTable {
     pub fn assignments<F: Field>(
         input: &[u8],
         challenges: &Challenges<Value<F>>,
-        is_big_endian: bool,
-    ) -> Vec<[Value<F>; 4]> {
-        let bytes = if is_big_endian {
-            input.iter().cloned().rev().collect::<Vec<u8>>()
-        } else {
-            input.to_owned()
-        };
+    ) -> Vec<[Value<F>; 5]> {
         let input_rlc = challenges
             .keccak_input()
-            .map(|challenge| rlc::value(&bytes, challenge));
+            .map(|challenge| rlc::value(input.iter().rev(), challenge));
         let input_len = F::from(input.len() as u64);
-        let mut keccak = Keccak::default();
-        keccak.update(input);
-        let output = keccak.digest();
-        let output_rlc = challenges.evm_word().map(|challenge| {
-            rlc::value(
-                &if is_big_endian {
-                    Word::from_big_endian(output.as_slice())
-                } else {
-                    Word::from_little_endian(output.as_slice())
-                }
-                .to_le_bytes(),
-                challenge,
-            )
-        });
+        let output = word::Word::from(keccak(input));
 
         vec![[
             Value::known(F::ONE),
             input_rlc,
             Value::known(input_len),
-            output_rlc,
+            Value::known(output.lo()),
+            Value::known(output.hi()),
         ]]
     }
 
@@ -87,7 +71,7 @@ impl KeccakTable {
         &self,
         region: &mut Region<F>,
         offset: usize,
-        values: [Value<F>; 4],
+        values: [Value<F>; 5],
     ) -> Result<(), Error> {
         for (&column, value) in <KeccakTable as LookupTable<F>>::advice_columns(self)
             .iter()
@@ -105,7 +89,6 @@ impl KeccakTable {
         layouter: &mut impl Layouter<F>,
         inputs: impl IntoIterator<Item = &'a Vec<u8>> + Clone,
         challenges: &Challenges<Value<F>>,
-        is_big_endian: bool,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "keccak table",
@@ -123,7 +106,7 @@ impl KeccakTable {
 
                 let keccak_table_columns = <KeccakTable as LookupTable<F>>::advice_columns(self);
                 for input in inputs.clone() {
-                    for row in Self::assignments(input, challenges, is_big_endian) {
+                    for row in Self::assignments(input, challenges) {
                         // let mut column_index = 0;
                         for (&column, value) in keccak_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
@@ -147,12 +130,13 @@ impl KeccakTable {
         &self,
         value_rlc: Column<Advice>,
         length: Column<Advice>,
-        code_hash: Column<Advice>,
+        code_hash: Word<Column<Advice>>,
     ) -> Vec<(Column<Advice>, Column<Advice>)> {
         vec![
             (value_rlc, self.input_rlc),
             (length, self.input_len),
-            (code_hash, self.output_rlc),
+            (code_hash.lo(), self.output.lo()),
+            (code_hash.hi(), self.output.hi()),
         ]
     }
 }

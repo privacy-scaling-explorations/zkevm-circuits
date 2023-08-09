@@ -51,7 +51,6 @@ impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
             &mut layouter,
             self.bytecodes.iter().map(|b| &b.bytes),
             &challenges,
-            true,
         )?;
         self.synthesize_sub(&config, &challenges, &mut layouter)?;
         Ok(())

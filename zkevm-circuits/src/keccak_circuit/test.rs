@@ -1,13 +1,7 @@
-#![allow(unused_imports)]
 use super::*;
 use crate::util::unusable_rows;
 use eth_types::Field;
-use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner},
-    dev::MockProver,
-    halo2curves::bn256::Fr,
-    plonk::{Circuit, ConstraintSystem, Error},
-};
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use log::error;
 use std::iter::zip;
 

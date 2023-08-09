@@ -22,22 +22,26 @@ impl<F: Field, V: AsRef<[Value<F>]>> ChallengeSet<F> for V {
     }
 }
 
-pub struct CachedRegion<'r, 'b, F: Field, S: ChallengeSet<F>> {
+pub struct CachedRegion<'r, 'b, F: Field> {
     region: &'r mut Region<'b, F>,
     pub advice: HashMap<(usize, usize), F>,
-    challenges: &'r S,
+    pub fixed: HashMap<(usize, usize), F>,
     disable_description: bool,
     regions: Vec<(usize, usize)>,
+    pub key_r: F,
+    pub keccak_r: F,
 }
 
-impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
-    pub(crate) fn new(region: &'r mut Region<'b, F>, challenges: &'r S) -> Self {
+impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
+    pub(crate) fn new(region: &'r mut Region<'b, F>, keccak_r: F) -> Self {
         Self {
             region,
             advice: HashMap::new(),
-            challenges,
+            fixed: HashMap::new(),
             disable_description: false,
             regions: Vec::new(),
+            key_r: keccak_r,
+            keccak_r,
         }
     }
 
@@ -53,13 +57,15 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
         // Nothing to do
     }
 
-    pub(crate) fn assign_stored_expressions<C: CellType>(
+    pub(crate) fn assign_stored_expressions<C: CellType, S: ChallengeSet<F>>(
         &mut self,
         cb: &ConstraintBuilder<F, C>,
+        challenges: &S,
     ) -> Result<(), Error> {
         for (offset, region_id) in self.regions.clone() {
             for stored_expression in cb.get_stored_expressions(region_id).iter() {
-                stored_expression.assign(self, offset)?;
+                // println!("stored expression: {}", stored_expression.name);
+                stored_expression.assign(self, challenges, offset)?;
             }
         }
         Ok(())
@@ -120,11 +126,30 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
         A: Fn() -> AR,
         AR: Into<String>,
     {
-        self.region.assign_fixed(annotation, column, offset, &to)
+        // Actually set the value
+        let res = self.region.assign_fixed(annotation, column, offset, &to);
+        // Cache the value
+        // Note that the `value_field` in `AssignedCell` might be `Value::unkonwn` if
+        // the column has different phase than current one, so we call to `to`
+        // again here to cache the value.
+        if res.is_ok() {
+            to().map(|f: VR| {
+                let existing = self
+                    .fixed
+                    .insert((column.index(), offset), Assigned::from(&f).evaluate());
+                assert!(existing.is_none());
+                existing
+            });
+        }
+        res
     }
 
-    pub fn get_fixed(&self, _row_index: usize, _column_index: usize, _rotation: Rotation) -> F {
-        unimplemented!("fixed column");
+    pub fn get_fixed(&self, row_index: usize, column_index: usize, rotation: Rotation) -> F {
+        let zero = F::ZERO;
+        *self
+            .fixed
+            .get(&(column_index, row_index + rotation.0 as usize))
+            .unwrap_or(&zero)
     }
 
     pub fn get_advice(&self, row_index: usize, column_index: usize, rotation: Rotation) -> F {
@@ -133,10 +158,6 @@ impl<'r, 'b, F: Field, S: ChallengeSet<F>> CachedRegion<'r, 'b, F, S> {
             .advice
             .get(&(column_index, row_index + rotation.0 as usize))
             .unwrap_or(&zero)
-    }
-
-    pub fn challenges(&self) -> &S {
-        self.challenges
     }
 
     /// Constrains a cell to have a constant value.
@@ -174,7 +195,8 @@ impl<F, C: CellType> Hash for StoredExpression<F, C> {
 impl<F: Field, C: CellType> StoredExpression<F, C> {
     pub fn assign<S: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
+        challenges: &S,
         offset: usize,
     ) -> Result<Value<F>, Error> {
         let value = self.expr.evaluate(
@@ -195,7 +217,7 @@ impl<F: Field, C: CellType> StoredExpression<F, C> {
                 ))
             },
             &|_| unimplemented!("instance column"),
-            &|challenge| *region.challenges().indexed()[challenge.index()],
+            &|challenge| *challenges.indexed()[challenge.index()],
             &|a| -a,
             &|a, b| a + b,
             &|a, b| a * b,

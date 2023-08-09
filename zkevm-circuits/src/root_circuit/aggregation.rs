@@ -1,11 +1,10 @@
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, SimpleFloorPlanner, Value},
+    circuit::{AssignedCell, Layouter, Value},
     halo2curves::{
-        ff::Field as Halo2Field, group::prime::PrimeCurveAffine, pairing::Engine,
-        serde::SerdeObject, CurveAffine,
+        group::prime::PrimeCurveAffine, pairing::Engine, serde::SerdeObject, CurveAffine,
     },
-    plonk::{Circuit, ConstraintSystem, Error},
+    plonk::{ConstraintSystem, Error},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use itertools::Itertools;
@@ -20,8 +19,8 @@ use snark_verifier::{
         native::NativeLoader,
     },
     pcs::{
-        kzg::{self, *},
-        AccumulationDecider, AccumulationScheme, AccumulationSchemeProver,
+        kzg::*, AccumulationDecider, AccumulationScheme, AccumulationSchemeProver,
+        PolynomialCommitmentScheme,
     },
     system::halo2::transcript,
     util::arithmetic::{fe_to_limbs, MultiMillerLoop},
@@ -35,15 +34,17 @@ pub const LIMBS: usize = 4;
 pub const BITS: usize = 68;
 
 /// KZG accumulation scheme with GWC19 multiopen.
-pub type KzgAs<M> = kzg::KzgAs<M, Gwc19>;
+pub type Gwc<M> = KzgAs<M, Gwc19>;
+/// KZG accumulation scheme with BDFG21 multiopen.
+pub type Shplonk<M> = KzgAs<M, Bdfg21>;
 /// KZG succinct verifying key
 pub type KzgSvk<M> = KzgSuccinctVerifyingKey<<M as Engine>::G1Affine>;
 /// KZG deciding key
 pub type KzgDk<M> = KzgDecidingKey<M>;
 /// Plonk succinct verifier with `KzgAs`
-pub type PlonkSuccinctVerifier<M> = verifier::plonk::PlonkSuccinctVerifier<KzgAs<M>>;
+pub type PlonkSuccinctVerifier<As> = verifier::plonk::PlonkSuccinctVerifier<As>;
 /// Plonk verifier with `KzgAs` and `LimbsEncoding<LIMBS, BITS>`.
-pub type PlonkVerifier<M> = verifier::plonk::PlonkVerifier<KzgAs<M>, LimbsEncoding<LIMBS, BITS>>;
+pub type PlonkVerifier<As> = verifier::plonk::PlonkVerifier<As, LimbsEncoding<LIMBS, BITS>>;
 
 const T: usize = 5;
 const RATE: usize = 4;
@@ -63,7 +64,7 @@ pub type PoseidonTranscript<C, S> =
 #[derive(Clone, Copy)]
 pub struct Snark<'a, C: CurveAffine> {
     protocol: &'a PlonkProtocol<C>,
-    instances: &'a Vec<Vec<C::Scalar>>,
+    pub(crate) instances: &'a Vec<Vec<C::Scalar>>,
     proof: &'a [u8],
 }
 
@@ -205,7 +206,7 @@ impl AggregationConfig {
     /// `4 * LIMBS` limbs.
     /// Returns assigned instances of snarks and aggregated accumulator limbs.
     #[allow(clippy::type_complexity)]
-    pub fn aggregate<'a, M: MultiMillerLoop>(
+    pub fn aggregate<'a, M, As>(
         &self,
         layouter: &mut impl Layouter<M::Scalar>,
         svk: &KzgSvk<M>,
@@ -218,7 +219,19 @@ impl AggregationConfig {
         Error,
     >
     where
+        M: MultiMillerLoop,
         M::Scalar: Field,
+        for<'b> As: PolynomialCommitmentScheme<
+                M::G1Affine,
+                Rc<Halo2Loader<'b, M::G1Affine>>,
+                VerifyingKey = KzgSvk<M>,
+                Output = KzgAccumulator<M::G1Affine, Rc<Halo2Loader<'b, M::G1Affine>>>,
+            > + AccumulationScheme<
+                M::G1Affine,
+                Rc<Halo2Loader<'b, M::G1Affine>>,
+                Accumulator = KzgAccumulator<M::G1Affine, Rc<Halo2Loader<'b, M::G1Affine>>>,
+                VerifyingKey = KzgAsVerifyingKey,
+            >,
     {
         type PoseidonTranscript<'a, C, S> =
             transcript::halo2::PoseidonTranscript<C, Rc<Halo2Loader<'a, C>>, S, T, RATE, R_F, R_P>;
@@ -245,7 +258,7 @@ impl AggregationConfig {
                         let protocol = snark.protocol.loaded(&loader);
                         let instances = snark.loaded_instances(&loader);
                         let mut transcript = PoseidonTranscript::new(&loader, snark.proof());
-                        let proof = PlonkSuccinctVerifier::<M>::read_proof(
+                        let proof = PlonkSuccinctVerifier::<As>::read_proof(
                             svk,
                             &protocol,
                             &instances,
@@ -268,9 +281,13 @@ impl AggregationConfig {
                     let accumulators = accumulators.into_iter().flatten().collect_vec();
                     let mut transcript =
                         PoseidonTranscript::new(&loader, Value::known(as_proof.as_slice()));
-                    let proof =
-                        KzgAs::<M>::read_proof(&as_vk, &accumulators, &mut transcript).unwrap();
-                    KzgAs::<M>::verify(&as_vk, &accumulators, &proof).unwrap()
+                    let proof = <As as AccumulationScheme<_, _>>::read_proof(
+                        &as_vk,
+                        &accumulators,
+                        &mut transcript,
+                    )
+                    .unwrap();
+                    <As as AccumulationScheme<_, _>>::verify(&as_vk, &accumulators, &proof).unwrap()
                 };
 
                 let instances = instances
@@ -308,14 +325,25 @@ impl AggregationConfig {
 /// Aggregate snarks into a single accumulator and decompose it into
 /// `4 * LIMBS` limbs.
 /// Returns `None` if any given snarks is invalid.
-pub fn aggregate<'a, M: MultiMillerLoop>(
+pub fn aggregate<'a, M, As>(
     params: &ParamsKZG<M>,
     snarks: impl IntoIterator<Item = Snark<'a, M::G1Affine>>,
 ) -> Result<[M::Scalar; 4 * LIMBS], snark_verifier::Error>
 where
+    M: MultiMillerLoop,
     M::G1Affine: SerdeObject,
     M::G2Affine: SerdeObject,
     M::Scalar: Field,
+    for<'b> As: PolynomialCommitmentScheme<
+            M::G1Affine,
+            NativeLoader,
+            VerifyingKey = KzgSvk<M>,
+            Output = KzgAccumulator<M::G1Affine, NativeLoader>,
+        > + AccumulationSchemeProver<
+            M::G1Affine,
+            Accumulator = KzgAccumulator<M::G1Affine, NativeLoader>,
+            ProvingKey = KzgAsProvingKey<M::G1Affine>,
+        > + AccumulationDecider<M::G1Affine, NativeLoader, DecidingKey = KzgDecidingKey<M>>,
 {
     let svk = KzgSvk::<M>::new(params.get_g()[0]);
     let dk = KzgDk::new(svk, params.g2(), params.s_g2());
@@ -326,7 +354,7 @@ where
         .into_iter()
         .map(|snark| {
             let mut transcript = PoseidonTranscript::new(snark.proof);
-            let proof = PlonkSuccinctVerifier::<M>::read_proof(
+            let proof = PlonkSuccinctVerifier::<As>::read_proof(
                 &svk,
                 snark.protocol,
                 snark.instances,
@@ -358,11 +386,11 @@ where
         let as_pk = Default::default();
         let rng = StdRng::from_seed(Default::default());
         let mut transcript = PoseidonTranscript::new(Vec::new());
-        let accumulator = KzgAs::<M>::create_proof(&as_pk, &accumulators, &mut transcript, rng)?;
+        let accumulator = As::create_proof(&as_pk, &accumulators, &mut transcript, rng)?;
         assert!(transcript.finalize().is_empty());
         accumulator
     };
-    KzgAs::<M>::decide(&dk, accumulator.clone())?;
+    As::decide(&dk, accumulator.clone())?;
 
     let KzgAccumulator { lhs, rhs } = accumulator;
     let accumulator_limbs = [lhs, rhs]
@@ -378,122 +406,13 @@ where
     Ok(accumulator_limbs)
 }
 
-/// Aggregation circuit for testing purpose.
-#[derive(Clone)]
-pub struct TestAggregationCircuit<'a, M: MultiMillerLoop> {
-    svk: KzgSvk<M>,
-    snarks: Vec<SnarkWitness<'a, M::G1Affine>>,
-    instances: Vec<M::Scalar>,
-}
-
-impl<'a, M: MultiMillerLoop> TestAggregationCircuit<'a, M>
-where
-    M::G1Affine: SerdeObject,
-    M::G2Affine: SerdeObject,
-    M::Scalar: Field,
-{
-    /// Create an Aggregation circuit with aggregated accumulator computed.
-    /// Returns `None` if any given snark is invalid.
-    pub fn new(
-        params: &ParamsKZG<M>,
-        snarks: impl IntoIterator<Item = Snark<'a, M::G1Affine>>,
-    ) -> Result<Self, snark_verifier::Error> {
-        let snarks = snarks.into_iter().collect_vec();
-
-        let accumulator_limbs = aggregate(params, snarks.clone())?;
-        let instances = iter::empty()
-            // Propagate aggregated snarks' instances
-            .chain(
-                snarks
-                    .iter()
-                    .flat_map(|snark| snark.instances.clone())
-                    .flatten(),
-            )
-            // Output aggregated accumulator
-            .chain(accumulator_limbs)
-            .collect_vec();
-
-        Ok(Self {
-            svk: KzgSvk::<M>::new(params.get_g()[0]),
-            snarks: snarks.into_iter().map_into().collect(),
-            instances,
-        })
-    }
-
-    /// Returns accumulator indices in instance columns, which will be in
-    /// the last 4 * LIMBS rows of MainGate's instance column.
-    pub fn accumulator_indices(&self) -> Vec<(usize, usize)> {
-        (self.instances.len() - 4 * LIMBS..)
-            .map(|idx| (0, idx))
-            .take(4 * LIMBS)
-            .collect()
-    }
-
-    /// Returns number of instance
-    pub fn num_instance(&self) -> Vec<usize> {
-        vec![self.instances.len()]
-    }
-
-    /// Returns instances
-    pub fn instances(&self) -> Vec<Vec<M::Scalar>> {
-        vec![self.instances.clone()]
-    }
-}
-
-impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for TestAggregationCircuit<'a, M>
-where
-    M::Scalar: Field,
-{
-    type Config = AggregationConfig;
-    type FloorPlanner = SimpleFloorPlanner;
-    type Params = ();
-
-    fn without_witnesses(&self) -> Self {
-        Self {
-            svk: self.svk,
-            snarks: self
-                .snarks
-                .iter()
-                .map(SnarkWitness::without_witnesses)
-                .collect(),
-            instances: vec![M::Scalar::ZERO; self.instances.len()],
-        }
-    }
-
-    fn configure(meta: &mut ConstraintSystem<M::Scalar>) -> Self::Config {
-        AggregationConfig::configure::<M::G1Affine>(meta)
-    }
-
-    fn synthesize(
-        &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<M::Scalar>,
-    ) -> Result<(), Error> {
-        config.load_table(&mut layouter)?;
-        let (instances, accumulator_limbs) =
-            config.aggregate::<M>(&mut layouter, &self.svk, self.snarks.clone())?;
-
-        // Constrain equality to instance values
-        let main_gate = config.main_gate();
-        for (row, limb) in instances
-            .into_iter()
-            .flatten()
-            .flatten()
-            .chain(accumulator_limbs)
-            .enumerate()
-        {
-            main_gate.expose_public(layouter.namespace(|| ""), limb, row)?;
-        }
-
-        Ok(())
-    }
-}
-
 /// Contains TestAggregationCircuit to test whether aggregation is working for
 /// any given inputs.
 #[cfg(test)]
 pub mod test {
-    use crate::root_circuit::{PoseidonTranscript, Snark, TestAggregationCircuit};
+    use crate::root_circuit::{
+        aggregation::Gwc, PoseidonTranscript, Snark, TestAggregationCircuit,
+    };
     use eth_types::Field;
     use halo2_proofs::{
         arithmetic::Field as Halo2Field,
@@ -700,9 +619,11 @@ pub mod test {
 
         // Create Aggregation circuit and compute aggregated accumulator
         let snarks = rand_standard_plonk_snarks(&params, 2);
-        let aggregation =
-            TestAggregationCircuit::<Bn256>::new(&params, snarks.iter().map(SnarkOwned::as_snark))
-                .unwrap();
+        let aggregation = TestAggregationCircuit::<Bn256, Gwc<_>>::new(
+            &params,
+            snarks.iter().map(SnarkOwned::as_snark),
+        )
+        .unwrap();
         let instances = aggregation.instances();
         assert_eq!(
             MockProver::run(21, &aggregation, instances)
@@ -718,9 +639,11 @@ pub mod test {
 
         // Create Aggregation circuit and compute aggregated accumulator
         let snarks = rand_standard_plonk_snarks(&params, 2);
-        let aggregation =
-            TestAggregationCircuit::<Bn256>::new(&params, snarks.iter().map(SnarkOwned::as_snark))
-                .unwrap();
+        let aggregation = TestAggregationCircuit::<Bn256, Gwc<_>>::new(
+            &params,
+            snarks.iter().map(SnarkOwned::as_snark),
+        )
+        .unwrap();
         let mut instances = aggregation.instances();
         // Change the propagated inner snark's instance
         instances[0][0] += Fr::ONE;

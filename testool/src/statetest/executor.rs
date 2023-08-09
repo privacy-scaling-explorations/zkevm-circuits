@@ -1,7 +1,7 @@
 use super::{AccountMatch, StateTest, StateTestResult};
 use crate::config::TestSuite;
 use bus_mapping::{
-    circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+    circuit_input_builder::{CircuitInputBuilder, FixedCParams},
     mock::BlockData,
 };
 use eth_types::{geth_types, Address, Bytes, GethExecTrace, U256, U64};
@@ -55,7 +55,7 @@ pub struct CircuitsConfig {
 }
 
 fn check_post(
-    builder: &CircuitInputBuilder,
+    builder: &CircuitInputBuilder<FixedCParams>,
     post: &HashMap<Address, AccountMatch>,
 ) -> Result<(), StateTestError> {
     // check if the generated account data is the expected one
@@ -120,7 +120,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
     }
     let tx: TypedTransaction = tx.into();
 
-    let sig = wallet.sign_transaction_sync(&tx);
+    let sig = wallet.sign_transaction_sync(&tx).unwrap();
 
     (
         st.id,
@@ -229,7 +229,7 @@ pub fn run_test(
         ..eth_types::Block::default()
     };
 
-    let wallet: LocalWallet = SigningKey::from_bytes(&st.secret_key).unwrap().into();
+    let wallet: LocalWallet = SigningKey::from_slice(&st.secret_key).unwrap().into();
     let mut wallets = HashMap::new();
     wallets.insert(
         wallet.address(),
@@ -248,7 +248,7 @@ pub fn run_test(
     let mut builder;
 
     if !circuits_config.super_circuit {
-        let circuits_params = CircuitsParams {
+        let circuits_params = FixedCParams {
             max_txs: 1,
             max_rws: 55000,
             max_calldata: 5000,
@@ -266,14 +266,13 @@ pub fn run_test(
             .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
         let block: Block<Fr> =
-            zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db)
-                .unwrap();
+            zkevm_circuits::evm_circuit::witness::block_convert(&builder).unwrap();
 
         CircuitTestBuilder::<1, 1>::new_from_block(block).run();
     } else {
         geth_data.sign(&wallets);
 
-        let circuits_params = CircuitsParams {
+        let circuits_params = FixedCParams {
             max_txs: 1,
             max_calldata: 32,
             max_rws: 256,

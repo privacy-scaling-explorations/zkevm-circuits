@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod tests {
     use ark_std::{end_timer, start_timer};
+    use core::marker::PhantomData;
     use halo2_proofs::{
         halo2curves::bn256::{Bn256, Fr, G1Affine},
         plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
@@ -21,7 +22,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::mpt_circuit::{witness_row::Node, MPTCircuit};
+    use zkevm_circuits::mpt_circuit::{load_proof, witness_row::Node, MPTCircuit};
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -38,11 +39,7 @@ mod tests {
             .expect("Cannot parse DEGREE env var as u32");
 
         let path = "../zkevm-circuits/src/mpt_circuit/tests/UpdateOneLevel.json";
-        let file = std::fs::File::open(path);
-        let reader = std::io::BufReader::new(file.unwrap());
-
-        let randomness = Fr::from(123456u64);
-        let nodes: Vec<Node> = serde_json::from_reader(reader).unwrap();
+        let nodes: Vec<Node> = load_proof(path);
 
         let mut keccak_data = vec![];
         for node in nodes.iter() {
@@ -54,7 +51,9 @@ mod tests {
         let circuit = MPTCircuit::<Fr> {
             nodes,
             keccak_data,
-            randomness,
+            degree: degree as usize,
+            disable_preimage_check: false,
+            _marker: PhantomData,
         };
 
         // Initialize the polynomial commitment parameters

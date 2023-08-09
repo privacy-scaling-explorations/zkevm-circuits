@@ -1,19 +1,27 @@
 //! Common utility traits and functions.
+pub mod int_decomposition;
+pub mod word;
+
 use bus_mapping::evm::OpcodeId;
 use halo2_proofs::{
     circuit::{Layouter, Value},
     plonk::{
-        Challenge, Circuit, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase,
-        VirtualCells,
+        Challenge, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, VirtualCells,
     },
 };
 
-use crate::{evm_circuit::util::rlc, table::TxLogFieldTag, witness};
+use crate::{table::TxLogFieldTag, witness};
 use eth_types::{keccak256, Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
 
-pub(crate) fn query_expression<F: Field, T>(
+/// Cell Manager
+pub mod cell_manager;
+/// Cell Manager strategies
+pub mod cell_manager_strategy;
+
+/// Steal the expression from gate
+pub fn query_expression<F: Field, T>(
     meta: &mut ConstraintSystem<F>,
     mut f: impl FnMut(&mut VirtualCells<F>) -> T,
 ) -> T {
@@ -25,14 +33,9 @@ pub(crate) fn query_expression<F: Field, T>(
     expr.unwrap()
 }
 
-pub(crate) fn random_linear_combine_word<F: Field>(bytes: [u8; 32], randomness: F) -> F {
-    rlc::value(&bytes, randomness)
-}
-
 /// All challenges used in `SuperCircuit`.
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Challenges<T = Challenge> {
-    evm_word: T,
     keccak_input: T,
     lookup_input: T,
 }
@@ -40,15 +43,14 @@ pub struct Challenges<T = Challenge> {
 impl Challenges {
     /// Construct `Challenges` by allocating challenges in specific phases.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
-        #[cfg(any(feature = "test", test, feature = "test-circuits"))]
-        let _dummy_cols = [
-            meta.advice_column(),
-            meta.advice_column_in(SecondPhase),
-            meta.advice_column_in(halo2_proofs::plonk::ThirdPhase),
-        ];
+        // Dummy columns are required in the test circuits
+        // In some tests there might be no advice columns before the phase, so Halo2 will panic with
+        // "No Column<Advice> is used in phase Phase(1) while allocating a new 'Challenge usable
+        // after phase Phase(1)'"
+        #[cfg(any(test, feature = "test-circuits"))]
+        let _dummy_cols = [meta.advice_column(), meta.advice_column_in(SecondPhase)];
 
         Self {
-            evm_word: meta.challenge_usable_after(FirstPhase),
             keccak_input: meta.challenge_usable_after(FirstPhase),
             lookup_input: meta.challenge_usable_after(SecondPhase),
         }
@@ -56,12 +58,10 @@ impl Challenges {
 
     /// Returns `Expression` of challenges from `ConstraintSystem`.
     pub fn exprs<F: Field>(&self, meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
-        let [evm_word, keccak_input, lookup_input] = query_expression(meta, |meta| {
-            [self.evm_word, self.keccak_input, self.lookup_input]
-                .map(|challenge| meta.query_challenge(challenge))
+        let [keccak_input, lookup_input] = query_expression(meta, |meta| {
+            [self.keccak_input, self.lookup_input].map(|challenge| meta.query_challenge(challenge))
         });
         Challenges {
-            evm_word,
             keccak_input,
             lookup_input,
         }
@@ -70,7 +70,6 @@ impl Challenges {
     /// Returns `Value` of challenges from `Layouter`.
     pub fn values<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Challenges<Value<F>> {
         Challenges {
-            evm_word: layouter.get_challenge(self.evm_word),
             keccak_input: layouter.get_challenge(self.keccak_input),
             lookup_input: layouter.get_challenge(self.lookup_input),
         }
@@ -78,11 +77,6 @@ impl Challenges {
 }
 
 impl<T: Clone> Challenges<T> {
-    /// Returns challenge of `evm_word`.
-    pub fn evm_word(&self) -> T {
-        self.evm_word.clone()
-    }
-
     /// Returns challenge of `keccak_input`.
     pub fn keccak_input(&self) -> T {
         self.keccak_input.clone()
@@ -94,13 +88,12 @@ impl<T: Clone> Challenges<T> {
     }
 
     /// Returns the challenges indexed by the challenge index
-    pub fn indexed(&self) -> [&T; 3] {
-        [&self.evm_word, &self.keccak_input, &self.lookup_input]
+    pub fn indexed(&self) -> [&T; 2] {
+        [&self.keccak_input, &self.lookup_input]
     }
 
-    pub(crate) fn mock(evm_word: T, keccak_input: T, lookup_input: T) -> Self {
+    pub(crate) fn mock(keccak_input: T, lookup_input: T) -> Self {
         Self {
-            evm_word,
             keccak_input,
             lookup_input,
         }
@@ -117,11 +110,6 @@ impl<F: Field> Challenges<Expression<F>> {
         .collect::<Vec<_>>()
         .try_into()
         .unwrap()
-    }
-
-    /// Returns powers of randomness for word RLC encoding
-    pub fn evm_word_powers_of_randomness<const S: usize>(&self) -> [Expression<F>; S] {
-        Self::powers_of(self.evm_word.clone())
     }
 
     /// Returns powers of randomness for keccak circuit's input
@@ -214,6 +202,10 @@ pub(crate) fn get_push_size(byte: u8) -> u64 {
     }
 }
 
+#[cfg(test)]
+use halo2_proofs::plonk::Circuit;
+
+#[cfg(test)]
 /// Returns number of unusable rows of the Circuit.
 /// The minimum unusable rows of a circuit is currently 6, where
 /// - 3 comes from minimum number of distinct queries to permutation argument witness column

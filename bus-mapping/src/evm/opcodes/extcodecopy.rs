@@ -34,7 +34,7 @@ impl Opcode for Extcodecopy {
 
         memory.copy_from(dst_offset, code_offset, length, &code);
 
-        let copy_event = gen_copy_event(state, geth_step)?;
+        let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
         state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
@@ -111,6 +111,7 @@ fn gen_extcodecopy_step(
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
+    exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
@@ -144,9 +145,8 @@ fn gen_copy_event(
         .unwrap_or(src_addr_end)
         .min(src_addr_end);
 
-    let mut exec_step = state.new_step(geth_step)?;
     let copy_steps = state.gen_copy_steps_for_bytecode(
-        &mut exec_step,
+        exec_step,
         &bytecode,
         src_addr,
         dst_addr,
@@ -241,8 +241,8 @@ mod extcodecopy_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let mut builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 

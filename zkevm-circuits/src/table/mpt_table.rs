@@ -1,14 +1,11 @@
-use serde::{Deserialize, Serialize};
-
 use super::*;
 use crate::{
     circuit,
     circuit_tools::{
-        cached_region::{CachedRegion, ChallengeSet},
-        cell_manager::CellType,
-        constraint_builder::ConstraintBuilder,
+        cached_region::CachedRegion, cell_manager::CellType, constraint_builder::ConstraintBuilder,
     },
 };
+use serde::{Deserialize, Serialize};
 
 /// The types of proofs in the MPT table
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -19,8 +16,8 @@ pub enum MPTProofType {
     NonceChanged = AccountFieldTag::Nonce as isize,
     /// Balance updated
     BalanceChanged = AccountFieldTag::Balance as isize,
-    /// Code hash exists
-    CodeHashExists = AccountFieldTag::CodeHash as isize,
+    /// Code hash updated
+    CodeHashChanged = AccountFieldTag::CodeHash as isize,
     /// Account destroyed
     AccountDestructed,
     /// Account does not exist
@@ -37,7 +34,7 @@ impl From<AccountFieldTag> for MPTProofType {
         match tag {
             AccountFieldTag::Nonce => Self::NonceChanged,
             AccountFieldTag::Balance => Self::BalanceChanged,
-            AccountFieldTag::CodeHash => Self::CodeHashExists,
+            AccountFieldTag::CodeHash => Self::CodeHashChanged,
             AccountFieldTag::NonExisting => Self::AccountDoesNotExist,
         }
     }
@@ -47,31 +44,36 @@ impl From<AccountFieldTag> for MPTProofType {
 #[derive(Clone, Copy, Debug)]
 pub struct MptTable {
     /// Account address
-    pub address_rlc: Column<Advice>,
+    pub address: Column<Advice>,
+    /// Storage address
+    pub storage_key: word::Word<Column<Advice>>,
     /// Proof type
     pub proof_type: Column<Advice>,
-    /// Storage address
-    pub key_rlc: Column<Advice>,
-    /// Old value
-    pub value_prev: Column<Advice>,
-    /// New value
-    pub value: Column<Advice>,
-    /// Previous MPT root
-    pub root_prev: Column<Advice>,
     /// New MPT root
-    pub root: Column<Advice>,
+    pub new_root: word::Word<Column<Advice>>,
+    /// Previous MPT root
+    pub old_root: word::Word<Column<Advice>>,
+    /// New value
+    pub new_value: word::Word<Column<Advice>>,
+    /// Old value
+    pub old_value: word::Word<Column<Advice>>,
 }
 
 impl<F: Field> LookupTable<F> for MptTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.address_rlc,
+            self.address,
+            self.storage_key.lo(),
+            self.storage_key.hi(),
             self.proof_type,
-            self.key_rlc,
-            self.value_prev,
-            self.value,
-            self.root_prev,
-            self.root,
+            self.new_root.lo(),
+            self.new_root.hi(),
+            self.old_root.lo(),
+            self.old_root.hi(),
+            self.new_value.lo(),
+            self.new_value.hi(),
+            self.old_value.lo(),
+            self.old_value.hi(),
         ]
         .into_iter()
         .map(|col| col.into())
@@ -81,12 +83,17 @@ impl<F: Field> LookupTable<F> for MptTable {
     fn annotations(&self) -> Vec<String> {
         vec![
             String::from("address"),
+            String::from("storage_key_lo"),
+            String::from("storage_key_hi"),
             String::from("proof_type"),
-            String::from("storage_key"),
-            String::from("old_value"),
-            String::from("new_value"),
-            String::from("old_root"),
-            String::from("new_root"),
+            String::from("new_root_lo"),
+            String::from("new_root_hi"),
+            String::from("old_root_lo"),
+            String::from("old_root_hi"),
+            String::from("new_value_lo"),
+            String::from("new_value_hi"),
+            String::from("old_value_lo"),
+            String::from("old_value_hi"),
         ]
     }
 }
@@ -94,16 +101,14 @@ impl<F: Field> LookupTable<F> for MptTable {
 impl MptTable {
     /// Construct a new MptTable
     pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
-        // TODO(Brecht): everything except address and proof type needs to be
-        // advice_column_in(SecondPhase)
         Self {
-            address_rlc: meta.advice_column(),
+            address: meta.advice_column(),
+            storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
             proof_type: meta.advice_column(),
-            key_rlc: meta.advice_column(),
-            value_prev: meta.advice_column(),
-            value: meta.advice_column(),
-            root_prev: meta.advice_column(),
-            root: meta.advice_column(),
+            new_root: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            old_root: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            new_value: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            old_value: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
 
@@ -112,22 +117,22 @@ impl MptTable {
         &self,
         meta: &mut VirtualCells<'_, F>,
         cb: &mut ConstraintBuilder<F, C>,
-        address_rlc: Expression<F>,
+        address: Expression<F>,
         proof_type: Expression<F>,
-        key_rlc: Expression<F>,
-        value_prev: Expression<F>,
-        value: Expression<F>,
-        root_prev: Expression<F>,
-        root: Expression<F>,
+        storage_key: word::Word<Expression<F>>,
+        new_root: word::Word<Expression<F>>,
+        old_root: word::Word<Expression<F>>,
+        new_value: word::Word<Expression<F>>,
+        old_value: word::Word<Expression<F>>,
     ) {
         circuit!([meta, cb], {
+            require!(a!(self.address) => address);
+            require!([a!(self.storage_key.lo()), a!(self.storage_key.hi())] => storage_key);
             require!(a!(self.proof_type) => proof_type);
-            require!(a!(self.address_rlc) => address_rlc);
-            require!(a!(self.key_rlc) => key_rlc);
-            require!(a!(self.value_prev) => value_prev);
-            require!(a!(self.value) => value);
-            require!(a!(self.root_prev) => root_prev);
-            require!(a!(self.root) => root);
+            require!([a!(self.new_root.lo()), a!(self.new_root.hi())] => new_root);
+            require!([a!(self.old_root.lo()), a!(self.old_root.hi())] => old_root);
+            require!([a!(self.new_value.lo()), a!(self.new_value.hi())] => new_value);
+            require!([a!(self.old_value.lo()), a!(self.old_value.hi())] => old_value);
         })
     }
 
@@ -146,9 +151,9 @@ impl MptTable {
         Ok(())
     }
 
-    pub(crate) fn assign_cached<F: Field, S: ChallengeSet<F>>(
+    pub(crate) fn assign_cached<F: Field>(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         row: &MptUpdateRow<Value<F>>,
     ) -> Result<(), Error> {
@@ -165,11 +170,10 @@ impl MptTable {
         &self,
         layouter: &mut impl Layouter<F>,
         updates: &MptUpdates,
-        randomness: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "mpt table",
-            |mut region| self.load_with_region(&mut region, updates, randomness),
+            |mut region| self.load_with_region(&mut region, updates),
         )
     }
 
@@ -177,9 +181,8 @@ impl MptTable {
         &self,
         region: &mut Region<'_, F>,
         updates: &MptUpdates,
-        randomness: Value<F>,
     ) -> Result<(), Error> {
-        for (offset, row) in updates.table_assignments(randomness).iter().enumerate() {
+        for (offset, row) in updates.table_assignments().iter().enumerate() {
             self.assign(region, offset, row)?;
         }
         Ok(())

@@ -6,7 +6,7 @@ use crate::{
     util::SubCircuit,
     witness::{Block, Rw},
 };
-use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
 use eth_types::geth_types::GethData;
 use std::cmp;
 
@@ -76,7 +76,7 @@ const NUM_BLINDING_ROWS: usize = 64;
 /// ```
 pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     test_ctx: Option<TestContext<NACC, NTX>>,
-    circuits_params: Option<CircuitsParams>,
+    circuits_params: Option<FixedCParams>,
     block: Option<Block<Fr>>,
     evm_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
     state_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
@@ -125,9 +125,9 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         self
     }
 
-    /// Allows to pass a non-default [`CircuitsParams`] to the builder.
+    /// Allows to pass a non-default [`FixedCParams`] to the builder.
     /// This means that we can increase for example, the `max_rws` or `max_txs`.
-    pub fn params(mut self, params: CircuitsParams) -> Self {
+    pub fn params(mut self, params: FixedCParams) -> Self {
         assert!(
             self.block.is_none(),
             "circuit_params already provided in the block"
@@ -181,24 +181,16 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// into a [`Block`] and apply the default or provided block_modifiers or
     /// circuit checks to the provers generated for the State and EVM circuits.
     pub fn run(self) {
-        let params = if let Some(block) = self.block.as_ref() {
-            block.circuits_params
-        } else {
-            self.circuits_params.unwrap_or_default()
-        };
-
         let block: Block<Fr> = if self.block.is_some() {
             self.block.unwrap()
         } else if self.test_ctx.is_some() {
             let block: GethData = self.test_ctx.unwrap().into();
-            let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
-                .new_circuit_input_builder();
-            builder
+            let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+            let builder = builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
             // Build a witness block from trace result.
-            let mut block =
-                crate::witness::block_convert(&builder.block, &builder.code_db).unwrap();
+            let mut block = crate::witness::block_convert(&builder).unwrap();
 
             for modifier_fn in self.block_modifiers {
                 modifier_fn.as_ref()(&mut block);
@@ -207,6 +199,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         } else {
             panic!("No attribute to build a block was passed to the CircuitTestBuilder")
         };
+        let params = block.circuits_params;
 
         // Run evm circuit test
         {
@@ -214,7 +207,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
             let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
-            let circuit = EvmCircuitCached::get_test_cicuit_from_block(block.clone());
+            let circuit = EvmCircuitCached::get_test_circuit_from_block(block.clone());
             let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
             self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows)
