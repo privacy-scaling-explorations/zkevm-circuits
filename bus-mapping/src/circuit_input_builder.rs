@@ -367,7 +367,7 @@ impl CircuitInputBuilder<DynamicCParams> {
         // Compute subcircuits parameters
         let c_params = {
             let max_txs = eth_block.transactions.len();
-            let max_bytecode = self.code_db.0.values().fold(0, |acc, a| acc + a.len() + 1);
+            let max_bytecode = self.code_db.num_rows_required_for_bytecode_table();
 
             let max_calldata = eth_block
                 .transactions
@@ -437,8 +437,8 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
     let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.deref().clone()).collect();
     keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs, block.chain_id.as_u64())?);
     // Bytecode Circuit
-    for bytecode in code_db.0.values() {
-        keccak_inputs.push(bytecode.clone());
+    for bytecode in code_db.clone().into_iter() {
+        keccak_inputs.push(bytecode.code());
     }
     // EVM Circuit
     keccak_inputs.extend_from_slice(&block.sha3_inputs);
@@ -575,7 +575,7 @@ pub fn build_state_code_db(
         )
     }
 
-    let mut code_db = CodeDB::new();
+    let mut code_db = CodeDB::default();
     for (_address, code) in codes {
         code_db.insert(code.clone());
     }

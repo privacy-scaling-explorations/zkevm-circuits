@@ -16,7 +16,7 @@ use crate::{
         Expr,
     },
 };
-use eth_types::{evm_types::OpcodeId, Field, ToWord, U256};
+use eth_types::{evm_types::OpcodeId, Field, U256};
 
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -128,9 +128,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
         let code = block
             .bytecodes
-            .get(&call.code_hash.to_word())
+            .get_from_h256(&call.code_hash)
             .expect("could not find current environment's bytecode");
-        let code_len = code.bytes.len() as u64;
+        let code_len = code.codesize() as u64;
         self.code_len
             .assign(region, offset, Value::known(F::from(code_len)))?;
 
@@ -138,21 +138,17 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         self.dest.assign(region, offset, dest, F::from(code_len))?;
 
         // set default value in case can not find value, is_code from bytecode table
-        let dest = u64::try_from(dest).unwrap_or(code_len);
-        let mut code_pair = [0u8, 0u8];
-        if dest < code_len {
-            // get real value from bytecode table
-            code_pair = code.get(dest as usize);
-        }
+        let dest = usize::try_from(dest).unwrap_or(code.codesize());
+        let (value, is_code) = code.get(dest).unwrap_or((0, false));
 
         self.value
-            .assign(region, offset, Value::known(F::from(code_pair[0] as u64)))?;
+            .assign(region, offset, Value::known(F::from(value.into())))?;
         self.is_code
-            .assign(region, offset, Value::known(F::from(code_pair[1] as u64)))?;
+            .assign(region, offset, Value::known(F::from(is_code.into())))?;
         self.is_jump_dest.assign(
             region,
             offset,
-            F::from(code_pair[0] as u64),
+            F::from(value.into()),
             F::from(OpcodeId::JUMPDEST.as_u64()),
         )?;
 
@@ -186,7 +182,7 @@ mod test {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{
         address, bytecode, bytecode::Bytecode, evm_types::OpcodeId, geth_types::Account, Address,
-        ToWord, Word, U64,
+        ToWord, Word,
     };
 
     use mock::TestContext;
@@ -244,15 +240,7 @@ mod test {
     }
 
     fn callee(code: Bytecode) -> Account {
-        let code = code.to_vec();
-        let is_empty = code.is_empty();
-        Account {
-            address: Address::repeat_byte(0xff),
-            code: code.into(),
-            nonce: U64::from(!is_empty as u64),
-            balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
-            ..Default::default()
-        }
+        Account::mock_code_balance(code)
     }
 
     // jump or jumpi error happen in internal call
@@ -309,12 +297,7 @@ mod test {
             STOP
         });
         test_ok(
-            Account {
-                address: Address::repeat_byte(0xfe),
-                balance: Word::from(10).pow(20.into()),
-                code: caller_bytecode.into(),
-                ..Default::default()
-            },
+            Account::mock_100_ether(caller_bytecode),
             callee(callee_bytecode),
         );
     }

@@ -1,7 +1,6 @@
 //! EVM byte code generator
-
-use crate::{evm_types::OpcodeId, Bytes, ToWord, Word};
-use std::{collections::HashMap, str::FromStr};
+use crate::{evm_types::OpcodeId, keccak256, Bytes, Hash, ToBigEndian, ToWord, Word};
+use std::{collections::HashMap, iter, str::FromStr};
 
 /// Error type for Bytecode related failures
 #[derive(Debug)]
@@ -12,29 +11,25 @@ pub enum Error {
 
 /// Helper struct that represents a single element in a bytecode.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct BytecodeElement {
+struct BytecodeElement {
     /// The byte value of the element.
-    pub value: u8,
+    value: u8,
     /// Whether the element is an opcode or push data byte.
-    pub is_code: bool,
+    is_code: bool,
 }
 
 /// EVM Bytecode
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Bytecode {
     /// Vector for bytecode elements.
-    pub code: Vec<BytecodeElement>,
+    code: Vec<BytecodeElement>,
     num_opcodes: usize,
     markers: HashMap<String, usize>,
 }
 
 impl From<Bytecode> for Bytes {
     fn from(code: Bytecode) -> Self {
-        code.code
-            .iter()
-            .map(|e| e.value)
-            .collect::<Vec<u8>>()
-            .into()
+        code.code().into()
     }
 }
 
@@ -59,14 +54,34 @@ impl Bytecode {
         self.code.iter().map(|b| b.value).collect()
     }
 
-    /// Get the bytecode element at an index.
-    pub fn get(&self, index: usize) -> Option<BytecodeElement> {
-        self.code.get(index).cloned()
+    /// Get the code and is_code
+    pub fn code_vec(&self) -> Vec<(u8, bool)> {
+        self.code.iter().map(|b| (b.value, b.is_code)).collect()
     }
 
-    /// Get the generated code
-    pub fn to_vec(&self) -> Vec<u8> {
-        self.code.iter().map(|e| e.value).collect()
+    /// Geth the code size
+    pub fn codesize(&self) -> usize {
+        self.code.len()
+    }
+
+    /// Get the code hash
+    pub fn hash(&self) -> Word {
+        Word::from_big_endian(&keccak256(&self.code()))
+    }
+
+    /// Get the code hash
+    pub fn hash_h256(&self) -> Hash {
+        Hash::from_slice(&self.hash().to_be_bytes())
+    }
+
+    /// Get the bytecode element at an index.
+    pub fn get(&self, index: usize) -> Option<(u8, bool)> {
+        self.code.get(index).map(|elem| (elem.value, elem.is_code))
+    }
+
+    /// Get the bytecode element at an index.
+    pub fn get_byte(&self, index: usize) -> Option<u8> {
+        self.code.get(index).map(|elem| elem.value)
     }
 
     /// Append
@@ -149,25 +164,6 @@ impl Bytecode {
         self
     }
 
-    /// Generate the diassembly
-    pub fn disasm(&self) -> String {
-        let mut asm = String::new();
-        for op in self.iter() {
-            asm.push_str(&op.to_string());
-            asm.push('\n');
-        }
-        asm
-    }
-
-    /// Append asm
-    pub fn append_asm(&mut self, op: &str) -> Result<(), Error> {
-        match OpcodeWithData::from_str(op)? {
-            OpcodeWithData::Opcode(op) => self.write_op(op),
-            OpcodeWithData::Push(n, value) => self.push(n, value),
-        };
-        Ok(())
-    }
-
     /// Append an opcode
     pub fn append_op(&mut self, op: OpcodeWithData) -> &mut Self {
         match op {
@@ -190,6 +186,22 @@ impl Bytecode {
     pub fn op_jumpdest(&mut self) -> usize {
         self.write_op(OpcodeId::JUMPDEST);
         self.code.len()
+    }
+
+    /// Append the instructions to store another code to memory
+    pub fn store_code_to_mem(&mut self, code: &Self) {
+        let len = code.codesize();
+        // pad to multiple of 32 bytes
+        let code: Vec<u8> = code
+            .code()
+            .iter()
+            .cloned()
+            .chain(iter::repeat(0).take(32 - len % 32))
+            .collect();
+
+        for (index, word) in code.chunks(32).enumerate() {
+            self.op_mstore(index * 32, Word::from_big_endian(word));
+        }
     }
 }
 
@@ -531,9 +543,7 @@ impl_other_opcodes! {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::Bytecode;
-    use std::str::FromStr;
 
     #[test]
     fn test_bytecode_roundtrip() {
@@ -550,25 +560,6 @@ mod tests {
             POP
             STOP
         };
-        assert_eq!(Bytecode::try_from(code.to_vec()).unwrap(), code);
-    }
-
-    #[test]
-    fn test_asm_disasm() {
-        let code = bytecode! {
-            PUSH1(5)
-            PUSH2(0xa)
-            MUL
-            STOP
-        };
-        let mut code2 = Bytecode::default();
-        code.iter()
-            .map(|op| op.to_string())
-            .map(|op| OpcodeWithData::from_str(&op).unwrap())
-            .for_each(|op| {
-                code2.append_op(op);
-            });
-
-        assert_eq!(code.code, code2.code);
+        assert_eq!(Bytecode::try_from(code.code()).unwrap(), code);
     }
 }

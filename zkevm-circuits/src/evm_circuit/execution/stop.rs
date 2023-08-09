@@ -1,6 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
@@ -8,7 +9,7 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same},
             },
-            math_gadget::IsZeroGadget,
+            math_gadget::ComparisonGadget,
             CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -20,13 +21,13 @@ use crate::{
     },
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToWord};
+use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct StopGadget<F> {
     code_length: Cell<F>,
-    is_out_of_range: IsZeroGadget<F>,
+    out_of_range: ComparisonGadget<F, N_BYTES_PROGRAM_COUNTER>,
     opcode: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 }
@@ -39,12 +40,17 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let code_length = cb.query_cell();
         cb.bytecode_length(cb.curr.state.code_hash.to_word(), code_length.expr());
-        let is_out_of_range = IsZeroGadget::construct(
+
+        let out_of_range = ComparisonGadget::construct(
             cb,
-            code_length.expr() - cb.curr.state.program_counter.expr(),
+            code_length.expr(),
+            cb.curr.state.program_counter.expr(),
         );
+        let (lt, eq) = out_of_range.expr();
+        let is_out_of_range = lt + eq;
+
         let opcode = cb.query_cell();
-        cb.condition(1.expr() - is_out_of_range.expr(), |cb| {
+        cb.condition(1.expr() - is_out_of_range, |cb| {
             cb.opcode_lookup(opcode.expr(), 1.expr());
         });
 
@@ -91,7 +97,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
         Self {
             code_length,
-            is_out_of_range,
+            out_of_range,
             opcode,
             restore_context,
         }
@@ -108,19 +114,15 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
     ) -> Result<(), Error> {
         let code = block
             .bytecodes
-            .get(&call.code_hash.to_word())
+            .get_from_h256(&call.code_hash)
             .expect("could not find current environment's bytecode");
-        self.code_length.assign(
-            region,
-            offset,
-            Value::known(F::from(code.bytes.len() as u64)),
-        )?;
 
-        self.is_out_of_range.assign(
-            region,
-            offset,
-            F::from(code.bytes.len() as u64) - F::from(step.pc),
-        )?;
+        let code_length = code.codesize() as u64;
+        self.code_length
+            .assign(region, offset, Value::known(F::from(code_length)))?;
+
+        self.out_of_range
+            .assign(region, offset, F::from(code_length), F::from(step.pc))?;
 
         let opcode = step.opcode().unwrap();
         self.opcode
