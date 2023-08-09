@@ -9,7 +9,7 @@ use crate::{
             math_gadget::LtGadget,
             memory_gadget::{
                 MemoryCopierGasGadget, MemoryExpandedAddressGadget,
-                MemoryExpansionGadget,
+                MemoryExpansionGadget,CommonMemoryAddressGadget,
             },
             or, CachedRegion, Cell,
         },

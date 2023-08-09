@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{IsEqualGadget, IsZeroGadget, MinMaxGadget},
-            memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
+            memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget, CommonMemoryAddressGadget},
             not, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},

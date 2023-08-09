@@ -7,7 +7,7 @@ use crate::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::LtGadget,
-            memory_gadget::MemoryAddressGadget,
+            memory_gadget::{MemoryAddressGadget, CommonMemoryAddressGadget},
             CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},

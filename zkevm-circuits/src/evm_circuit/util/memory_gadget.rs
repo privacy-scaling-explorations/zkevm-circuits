@@ -76,10 +76,10 @@ pub(crate) trait CommonMemoryAddressGadget<F: Field> {
     ) -> Result<u64, Error>;
 
     /// Return original word of memory offset.
-    fn offset_rlc(&self) -> Expression<F>;
+    fn offset_rlc(&self) -> Word<Expression<F>>;
 
     /// Return original word of memory length.
-    fn length_rlc(&self) -> Expression<F>;
+    fn length_rlc(&self) -> Word<Expression<F>>;
 
     /// Return valid memory length of Uint64.
     fn length(&self) -> Expression<F>;
@@ -179,12 +179,12 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryAddressGadget<F> {
         })
     }
 
-    fn offset_rlc(&self) -> Expression<F> {
+    fn offset_rlc(&self) -> Word<Expression<F>> {
         //self.memory_offset.expr()
         self.memory_offset.to_word()
     }
 
-    fn length_rlc(&self) -> Expression<F> {
+    fn length_rlc(&self) -> Word<Expression<F>> {
         //self.memory_length.expr()
         self.memory_length.to_word()
     }
@@ -286,16 +286,16 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
         Ok(address)
     }
 
-    fn offset_rlc(&self) -> Expression<F> {
+    fn offset_rlc(&self) -> Word<Expression<F>> {
         let addends = self.offset_length_sum.addends();
         //addends[0].expr()
         addends[0].to_word()
     }
 
-    fn length_rlc(&self) -> Expression<F> {
+    fn length_rlc(&self) -> Word<Expression<F>>  {
         let addends = self.offset_length_sum.addends();
         //addends[1].expr()
-        addends[1].expr()
+        addends[1].to_word()
     }
 
     fn length(&self) -> Expression<F> {

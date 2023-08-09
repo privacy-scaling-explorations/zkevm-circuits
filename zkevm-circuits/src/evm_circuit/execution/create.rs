@@ -16,7 +16,7 @@ use crate::{
                 ConstantDivisionGadget, ContractCreateGadget, IsZeroGadget, IsZeroWordGadget,
                 LtGadget, LtWordGadget,
             },
-            memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
+            memory_gadget::{MemoryAddressGadget, CommonMemoryAddressGadget, MemoryExpansionGadget},
             not, AccountAddress, CachedRegion, Cell, Word, WordExpr,
         },
         witness::{Block, Call, ExecStep, Transaction},

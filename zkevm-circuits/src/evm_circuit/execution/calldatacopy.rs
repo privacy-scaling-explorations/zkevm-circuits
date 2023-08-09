@@ -9,7 +9,7 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
-            memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
+            memory_gadget::{MemoryAddressGadget, CommonMemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
             not, select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},

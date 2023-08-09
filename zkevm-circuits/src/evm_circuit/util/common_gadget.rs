@@ -2,7 +2,7 @@ use super::{
     constraint_builder::ConstrainBuilderCommon,
     from_bytes,
     math_gadget::{IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget, LtGadget},
-    memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
+    memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget, CommonMemoryAddressGadget},
     AccountAddress, CachedRegion,
 };
 use crate::{

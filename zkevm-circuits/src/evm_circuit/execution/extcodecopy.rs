@@ -9,7 +9,7 @@ use crate::{
                 Transition,
             },
             math_gadget::IsZeroWordGadget,
-            memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
+            memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, CommonMemoryAddressGadget, MemoryExpansionGadget},
             not, select, AccountAddress, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},

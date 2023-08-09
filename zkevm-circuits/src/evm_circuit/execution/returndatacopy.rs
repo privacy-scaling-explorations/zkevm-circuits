@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::RangeCheckGadget,
-            memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
+            memory_gadget::{MemoryAddressGadget,CommonMemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
             CachedRegion, Cell, MemoryAddress,
         },
         witness::{Block, Call, ExecStep, Transaction},
