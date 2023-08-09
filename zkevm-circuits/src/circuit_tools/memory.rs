@@ -2,13 +2,15 @@
 use crate::util::{query_expression, Expr};
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::{Layouter, Value},
+    circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
     poly::Rotation,
 };
 use std::ops::{Index, IndexMut};
 
-use super::{cell_manager::CellType, constraint_builder::ConstraintBuilder};
+use super::{
+    cached_region::CachedRegion, cell_manager::CellType, constraint_builder::ConstraintBuilder,
+};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Memory<F, C> {
@@ -24,9 +26,18 @@ impl<F: Field, C: CellType> Memory<F, C> {
         }
     }
 
-    pub(crate) fn allocate(&mut self, meta: &mut ConstraintSystem<F>, tag: C) -> &MemoryBank<F, C> {
-        self.banks
-            .push(MemoryBank::new(meta, self.columns[self.banks.len()], tag));
+    pub(crate) fn allocate(
+        &mut self,
+        meta: &mut ConstraintSystem<F>,
+        tag: C,
+        table_tag: C,
+    ) -> &MemoryBank<F, C> {
+        self.banks.push(MemoryBank::new(
+            meta,
+            self.columns[self.banks.len()],
+            tag,
+            table_tag,
+        ));
         self.banks.last().unwrap()
     }
 
@@ -59,7 +70,7 @@ impl<F: Field, C: CellType> Memory<F, C> {
     ) {
         for bank in self.banks.iter() {
             bank.build_constraints(cb, is_first_row.expr());
-            cb.generate_lookup_table_checks(bank.tag());
+            // cb.generate_lookup_table_checks(bank.tag());
         }
     }
 
@@ -71,11 +82,11 @@ impl<F: Field, C: CellType> Memory<F, C> {
 
     pub(crate) fn assign(
         &self,
-        layouter: &mut impl Layouter<F>,
+        region: &mut CachedRegion<'_, '_, F>,
         height: usize,
     ) -> Result<(), Error> {
         for bank in self.banks.iter() {
-            bank.assign(layouter, height)?;
+            bank.assign(region, height)?;
         }
         Ok(())
     }
@@ -113,6 +124,7 @@ impl<F: Field, C: CellType> IndexMut<C> for Memory<F, C> {
 pub(crate) struct MemoryBank<F, C> {
     column: Column<Advice>,
     tag: C,
+    table_tag: C,
     cur: Expression<F>,
     next: Expression<F>,
     store_offsets: Vec<usize>,
@@ -120,7 +132,12 @@ pub(crate) struct MemoryBank<F, C> {
 }
 
 impl<F: Field, C: CellType> MemoryBank<F, C> {
-    pub(crate) fn new(meta: &mut ConstraintSystem<F>, column: Column<Advice>, tag: C) -> Self {
+    pub(crate) fn new(
+        meta: &mut ConstraintSystem<F>,
+        column: Column<Advice>,
+        tag: C,
+        table_tag: C,
+    ) -> Self {
         let mut cur = 0.expr();
         let mut next = 0.expr();
         query_expression(meta, |meta| {
@@ -130,6 +147,7 @@ impl<F: Field, C: CellType> MemoryBank<F, C> {
         Self {
             column,
             tag,
+            table_tag,
             cur,
             next,
             store_offsets: Vec::new(),
@@ -158,7 +176,7 @@ impl<F: Field, C: CellType> MemoryBank<F, C> {
         key: Expression<F>,
         values: &[Expression<F>],
     ) {
-        cb.add_dynamic_lookup(description, self.tag(), self.insert_key(key, values));
+        cb.add_lookup(description, self.tag(), self.insert_key(key, values));
     }
 
     pub(crate) fn store(
@@ -177,7 +195,11 @@ impl<F: Field, C: CellType> MemoryBank<F, C> {
         key: Expression<F>,
         values: &[Expression<F>],
     ) {
-        cb.store_dynamic_table("memory store", self.tag(), self.insert_key(key, values));
+        cb.add_lookup(
+            "memory store",
+            self.table_tag(),
+            self.insert_key(key, values),
+        );
     }
 
     pub(crate) fn witness_store(&mut self, offset: usize, values: &[F]) {
@@ -198,47 +220,55 @@ impl<F: Field, C: CellType> MemoryBank<F, C> {
         cb: &mut ConstraintBuilder<F, C>,
         is_first_row: Expression<F>,
     ) {
-        let lookup_table = cb.get_dynamic_table(self.tag());
+        let lookups = cb.lookups.get(&self.table_tag()).unwrap();
+        let lookups = lookups
+            .iter()
+            .filter(|l| l.region_id == cb.region_id)
+            .collect::<Vec<_>>();
+        let condition = lookups
+            .iter()
+            .fold(0.expr(), |acc, c| acc + c.condition.expr());
         crate::circuit!([meta, cb], {
             ifx! {is_first_row => {
                 require!(self.cur.expr() => 0);
             }}
-            let description = format!("{:?}", self.tag());
-            require!(description, self.next => self.cur.expr() + lookup_table.0);
+            let description = format!("Dynamic lookup table {:?}", self.tag());
+            require!(condition => bool);
+            require!(description, self.next => self.cur.expr() + condition.expr());
         });
     }
 
     pub(crate) fn assign(
         &self,
-        layouter: &mut impl Layouter<F>,
+        region: &mut CachedRegion<'_, '_, F>,
         height: usize,
     ) -> Result<(), Error> {
-        layouter.assign_region(
-            || "memory bank",
-            |mut region| {
-                // Pad to the full circuit (necessary for reads)
-                let mut store_offsets = self.store_offsets.clone();
-                store_offsets.push(height);
+        // Pad to the full circuit (necessary for reads)
+        let mut store_offsets = self.store_offsets.clone();
+        store_offsets.push(height);
 
-                let mut offset = 0;
-                for (store_index, &stored_offset) in store_offsets.iter().enumerate() {
-                    while offset <= stored_offset {
-                        region.assign_advice(
-                            || "assign memory index".to_string(),
-                            self.column,
-                            offset,
-                            || Value::known(F::from(store_index as u64)),
-                        )?;
-                        offset += 1;
-                    }
-                }
-                Ok(())
-            },
-        )
+        // TODO(Brecht): partial updates
+        let mut offset = 0;
+        for (store_index, &stored_offset) in store_offsets.iter().enumerate() {
+            while offset <= stored_offset {
+                region.assign_advice(
+                    || "assign memory index".to_string(),
+                    self.column,
+                    offset,
+                    || Value::known(F::from(store_index as u64)),
+                )?;
+                offset += 1;
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn tag(&self) -> C {
         self.tag
+    }
+
+    pub(crate) fn table_tag(&self) -> C {
+        self.table_tag
     }
 
     pub(crate) fn insert_key<V: Clone>(&self, key: V, values: &[V]) -> Vec<V> {

@@ -2,6 +2,8 @@ use crate::table::MPTProofType;
 
 use serde::{Deserialize, Serialize};
 
+use super::RlpItemType;
+
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum StorageRowType {
     KeyS,
@@ -10,6 +12,8 @@ pub(crate) enum StorageRowType {
     ValueC,
     Drifted,
     Wrong,
+    Address,
+    Key,
     Count,
 }
 
@@ -27,6 +31,8 @@ pub(crate) enum AccountRowType {
     CodehashC,
     Drifted,
     Wrong,
+    Address,
+    Key,
     Count,
 }
 
@@ -80,6 +86,7 @@ pub struct ExtensionNode {
 /// MPT start node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StartNode {
+    pub(crate) disable_preimage_check: bool,
     pub(crate) proof_type: MPTProofType,
 }
 
@@ -96,6 +103,7 @@ pub struct ExtensionBranchNode {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AccountNode {
     pub(crate) address: Vec<u8>,
+    pub(crate) key: Vec<u8>,
     pub(crate) list_rlp_bytes: [Vec<u8>; 2],
     pub(crate) value_rlp_bytes: [Vec<u8>; 2],
     pub(crate) value_list_rlp_bytes: [Vec<u8>; 2],
@@ -106,6 +114,8 @@ pub struct AccountNode {
 /// MPT storage node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StorageNode {
+    pub(crate) address: Vec<u8>,
+    pub(crate) key: Vec<u8>,
     pub(crate) list_rlp_bytes: [Vec<u8>; 2],
     pub(crate) value_rlp_bytes: [Vec<u8>; 2],
     pub(crate) drifted_rlp_bytes: Vec<u8>,
@@ -124,3 +134,62 @@ pub struct Node {
     /// MPT keccak data
     pub keccak_data: Vec<Vec<u8>>,
 }
+
+/// RLP types start
+pub const NODE_RLP_TYPES_START: [RlpItemType; StartRowType::Count as usize] =
+    [RlpItemType::Hash, RlpItemType::Hash];
+
+/// RLP types branch
+pub const NODE_RLP_TYPES_BRANCH: [RlpItemType; ExtensionBranchRowType::Count as usize] = [
+    RlpItemType::Node,
+    RlpItemType::Node,
+    RlpItemType::Node,
+    RlpItemType::Node,
+    RlpItemType::Node,
+    RlpItemType::Node,
+    RlpItemType::Node,
+    RlpItemType::Node,
+    RlpItemType::Node,
+    RlpItemType::Node,
+    RlpItemType::Node,
+    RlpItemType::Node,
+    RlpItemType::Node,
+    RlpItemType::Node,
+    RlpItemType::Node,
+    RlpItemType::Node,
+    RlpItemType::Node,
+    RlpItemType::Key,
+    RlpItemType::Node,
+    RlpItemType::Nibbles,
+    RlpItemType::Node,
+];
+
+/// RLP types account
+pub const NODE_RLP_TYPES_ACCOUNT: [RlpItemType; AccountRowType::Count as usize] = [
+    RlpItemType::Key,
+    RlpItemType::Key,
+    RlpItemType::Value,
+    RlpItemType::Value,
+    RlpItemType::Hash,
+    RlpItemType::Hash,
+    RlpItemType::Value,
+    RlpItemType::Value,
+    RlpItemType::Hash,
+    RlpItemType::Hash,
+    RlpItemType::Key,
+    RlpItemType::Key,
+    RlpItemType::Value,
+    RlpItemType::Hash,
+];
+
+/// RLP types account
+pub const NODE_RLP_TYPES_STORAGE: [RlpItemType; StorageRowType::Count as usize] = [
+    RlpItemType::Key,
+    RlpItemType::Value,
+    RlpItemType::Key,
+    RlpItemType::Value,
+    RlpItemType::Key,
+    RlpItemType::Key,
+    RlpItemType::Value,
+    RlpItemType::Hash,
+];

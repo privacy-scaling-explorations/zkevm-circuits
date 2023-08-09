@@ -1,21 +1,22 @@
 use crate::{
     _cb, circuit,
     circuit_tools::{
-        cached_region::{CachedRegion, ChallengeSet},
+        cached_region::CachedRegion,
         cell_manager::Cell,
         constraint_builder::{ConstraintBuilder, RLCable, RLCableValue},
     },
+    evm_circuit::util::from_bytes,
     matchw,
     mpt_circuit::{
         helpers::FIXED,
         param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT},
         FixedTableTag,
     },
-    util::Expr,
+    util::{word, Expr},
 };
 use eth_types::Field;
 use gadgets::util::{not, pow, Scalar};
-use halo2_proofs::plonk::{Error, Expression};
+use halo2_proofs::plonk::{Error, Expression, VirtualCells};
 
 use super::{
     helpers::MPTConstraintBuilder,
@@ -102,9 +103,9 @@ impl<F: Field> RLPListGadget<F> {
         })
     }
 
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         bytes: &[u8],
     ) -> Result<RLPListWitness, Error> {
@@ -126,9 +127,12 @@ impl<F: Field> RLPListGadget<F> {
         })
     }
 
-    // Single RLP byte, length at most 55 bytes
     pub(crate) fn is_list(&self) -> Expression<F> {
         not::expr(self.is_string.expr())
+    }
+
+    pub(crate) fn is_list_at(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
+        not::expr(self.is_string.rot(meta, rot))
     }
 
     // Single RLP byte, length at most 55 bytes
@@ -139,6 +143,10 @@ impl<F: Field> RLPListGadget<F> {
     // RLP byte followed by the length in 1 byte, followed by the length
     pub(crate) fn is_long(&self) -> Expression<F> {
         self.is_long.expr()
+    }
+
+    pub(crate) fn is_long_at(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
+        self.is_long.rot(meta, rot)
     }
 
     // RLP byte followed by the length in 1 byte, followed by the length
@@ -178,6 +186,11 @@ impl<F: Field> RLPListGadget<F> {
         self.bytes.rlc(r)
     }
 
+    /// Returns the rlc of all the list data provided
+    pub(crate) fn rlc_rlp_rev(&self, r: &Expression<F>) -> Expression<F> {
+        self.bytes.rlc_rev(r)
+    }
+
     /// Returns the rlc of only the RLP bytes
     pub(crate) fn rlc_rlp_only(&self, r: &Expression<F>) -> (Expression<F>, Expression<F>) {
         circuit!([meta, _cb!()], {
@@ -189,8 +202,14 @@ impl<F: Field> RLPListGadget<F> {
         })
     }
 
-    pub(crate) fn rlp_mult(&self, r: &Expression<F>) -> Expression<F> {
-        self.rlc_rlp_only(r).1
+    pub(crate) fn rlc_rlp_only_rev(&self, r: &Expression<F>) -> (Expression<F>, Expression<F>) {
+        circuit!([meta, _cb!()], {
+            matchx! {
+                self.is_short() => (self.bytes[..1].rlc_rev(r), pow::expr(r.expr(), 1)),
+                self.is_long() => (self.bytes[..2].rlc_rev(r), pow::expr(r.expr(), 2)),
+                self.is_very_long() => (self.bytes[..3].rlc_rev(r), pow::expr(r.expr(), 3)),
+            }
+        })
     }
 }
 
@@ -246,6 +265,12 @@ impl RLPListWitness {
         self.bytes.rlc_value(r)
     }
 
+    /// Returns the rlc of the complete list value and the complete list
+    /// (including RLP bytes)
+    pub(crate) fn rlc_rlp_rev<F: Field>(&self, r: F) -> F {
+        self.bytes.rlc_value_rev(r)
+    }
+
     /// Returns the rlc of the RLP bytes
     pub(crate) fn rlc_rlp_only<F: Field>(&self, r: F) -> (F, F) {
         matchw! {
@@ -272,9 +297,9 @@ impl<F: Field> RLPListDataGadget<F> {
         }
     }
 
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         list_bytes: &[u8],
     ) -> Result<RLPListWitness, Error> {
@@ -335,9 +360,9 @@ impl<F: Field> RLPValueGadget<F> {
         })
     }
 
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         bytes: &[u8],
     ) -> Result<RLPValueWitness, Error> {
@@ -363,6 +388,10 @@ impl<F: Field> RLPValueGadget<F> {
         not::expr(self.is_list.expr())
     }
 
+    pub(crate) fn is_string_at(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
+        not::expr(self.is_list.rot(meta, rot))
+    }
+
     // Single RLP byte containing the byte value
     pub(crate) fn is_short(&self) -> Expression<F> {
         self.is_short.expr()
@@ -371,6 +400,10 @@ impl<F: Field> RLPValueGadget<F> {
     // Single RLP byte containing the length of the value
     pub(crate) fn is_long(&self) -> Expression<F> {
         self.is_long.expr()
+    }
+
+    pub(crate) fn is_long_at(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
+        self.is_long.rot(meta, rot)
     }
 
     // RLP byte containing the lenght of the length,
@@ -418,13 +451,25 @@ impl<F: Field> RLPValueGadget<F> {
         })
     }
 
-    /// RLC data
-    pub(crate) fn rlc(&self, r: &Expression<F>) -> (Expression<F>, Expression<F>) {
-        (self.rlc_value(r), self.rlc_rlp(r))
-    }
-
     pub(crate) fn rlc_rlp(&self, r: &Expression<F>) -> Expression<F> {
         self.bytes.rlc(r)
+    }
+
+    pub(crate) fn rlc_rlp_rev(&self, r: &Expression<F>) -> Expression<F> {
+        self.bytes.rlc_rev(r)
+    }
+
+    pub(crate) fn rlc_rlp_only_rev(&self, r: &Expression<F>) -> (Expression<F>, Expression<F>) {
+        circuit!([meta, _cb!()], {
+            matchx! {
+                self.is_short() => (self.bytes[..1].rlc_rev(r), pow::expr(r.expr(), 1)),
+                self.is_long() => (self.bytes[..1].rlc_rev(r), pow::expr(r.expr(), 1)),
+                self.is_very_long() => {
+                    unreachablex!();
+                    (0.expr(), 0.expr())
+                },
+            }
+        })
     }
 
     pub(crate) fn rlc_value(&self, r: &Expression<F>) -> Expression<F> {
@@ -493,13 +538,8 @@ impl RLPValueWitness {
         }
     }
 
-    /// RLC data
-    pub(crate) fn rlc<F: Field>(&self, r: F) -> (F, F) {
-        (self.rlc_value(r), self.rlc_rlp(r))
-    }
-
-    pub(crate) fn rlc_rlp<F: Field>(&self, r: F) -> F {
-        self.bytes.rlc_value(r)
+    pub(crate) fn rlc_rlp_rev<F: Field>(&self, r: F) -> F {
+        self.bytes.rlc_value_rev(r)
     }
 
     pub(crate) fn rlc_value<F: Field>(&self, r: F) -> F {
@@ -612,21 +652,36 @@ impl<F: Field> RLPItemGadget<F> {
         }
     }
 
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         bytes: &[u8],
     ) -> Result<RLPItemWitness, Error> {
         let value_witness = self.value.assign(region, offset, bytes)?;
         let list_witness = self.list.assign(region, offset, bytes)?;
         assert!(!(value_witness.is_string() && list_witness.is_list()));
-
         Ok(RLPItemWitness {
             value: value_witness,
             list: list_witness,
             bytes: bytes.to_vec(),
         })
+    }
+
+    pub(crate) fn is_string(&self) -> Expression<F> {
+        self.value.is_string()
+    }
+
+    pub(crate) fn is_string_at(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
+        self.value.is_string_at(meta, rot)
+    }
+
+    pub(crate) fn is_list(&self) -> Expression<F> {
+        self.list.is_list()
+    }
+
+    pub(crate) fn is_list_at(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
+        self.list.is_list_at(meta, rot)
     }
 
     // Single RLP byte containing the byte value
@@ -645,6 +700,16 @@ impl<F: Field> RLPItemGadget<F> {
             matchx! {
                 self.value.is_string() => self.value.is_long(),
                 self.list.is_list() => self.list.is_long(),
+            }
+        })
+    }
+
+    // Single RLP byte containing the length of the value
+    pub(crate) fn is_long_at(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
+        circuit!([meta, _cb!()], {
+            matchx! {
+                self.value.is_string() => self.value.is_long_at(meta, rot),
+                self.list.is_list() => self.list.is_long_at(meta, rot),
             }
         })
     }
@@ -690,19 +755,6 @@ impl<F: Field> RLPItemGadget<F> {
         })
     }
 
-    pub(crate) fn rlc_rlp(
-        &self,
-        cb: &mut MPTConstraintBuilder<F>,
-        r: &Expression<F>,
-    ) -> Expression<F> {
-        circuit!([meta, cb], {
-            matchx! {
-                self.value.is_string() => self.value.rlc_rlp(r),
-                self.list.is_list() => self.list.rlc_rlp(r),
-            }
-        })
-    }
-
     // Returns the RLC of the value if the RLP is a string,
     // returns the RLC of the full string if the RLP is a list.
     pub(crate) fn rlc_content(&self, r: &Expression<F>) -> Expression<F> {
@@ -740,6 +792,14 @@ impl RLPItemWitness {
         }
     }
 
+    pub(crate) fn is_string(&self) -> bool {
+        self.value.is_string()
+    }
+
+    pub(crate) fn is_list(&self) -> bool {
+        self.list.is_list()
+    }
+
     pub(crate) fn is_short(&self) -> bool {
         matchw! {
             self.value.is_string() => self.value.is_short(),
@@ -761,10 +821,74 @@ impl RLPItemWitness {
         }
     }
 
-    pub(crate) fn rlc_rlp<F: Field>(&self, r: F) -> F {
+    pub(crate) fn rlc_rlp_rev<F: Field>(&self, r: F) -> F {
+        // Compute the denominator needed for BE
+        let mult_inv = pow::value(r, 34 - self.num_bytes())
+            .invert()
+            .unwrap_or(F::ZERO);
         matchw! {
-            self.value.is_string() => self.value.rlc_rlp(r),
-            self.list.is_list() => self.list.rlc_rlp(r),
+            self.value.is_string() => self.value.rlc_rlp_rev(r) * mult_inv,
+            self.list.is_list() => self.list.rlc_rlp_rev(r) * mult_inv,
         }
+    }
+
+    pub(crate) fn word<F: Field>(&self) -> word::Word<F> {
+        // word::Word::from(Word::from_big_endian(&self.bytes[1..33]))
+        let (lo, hi) = if self.is_string() {
+            if self.is_short() {
+                let lo: F = self.bytes[0].scalar();
+                let hi: F = 0.scalar();
+                (lo, hi)
+            } else {
+                let mut bytes = self.bytes[1..].to_vec();
+                let mut len = self.len();
+                while len < 33 {
+                    bytes.insert(0, 0);
+                    len += 1;
+                }
+                let lo = from_bytes::value(
+                    bytes[17..33]
+                        .iter()
+                        .cloned()
+                        .rev()
+                        .collect::<Vec<u8>>()
+                        .as_slice(),
+                );
+                let hi = from_bytes::value(
+                    bytes[1..17]
+                        .iter()
+                        .cloned()
+                        .rev()
+                        .collect::<Vec<u8>>()
+                        .as_slice(),
+                );
+                (lo, hi)
+            }
+        } else {
+            let mut bytes = self.bytes[1..].to_vec();
+            let mut len = self.len();
+            while len < 33 {
+                bytes.insert(0, 0);
+                len += 1;
+            }
+            let lo = from_bytes::value(
+                bytes[17..33]
+                    .iter()
+                    .cloned()
+                    .rev()
+                    .collect::<Vec<u8>>()
+                    .as_slice(),
+            );
+            let hi = from_bytes::value(
+                bytes[1..17]
+                    .iter()
+                    .cloned()
+                    .rev()
+                    .collect::<Vec<u8>>()
+                    .as_slice(),
+            );
+            (lo, hi)
+        };
+        word::Word::new([lo, hi])
     }
 }

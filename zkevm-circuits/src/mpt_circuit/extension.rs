@@ -11,19 +11,18 @@ use super::{
 use crate::{
     circuit,
     circuit_tools::{
-        cached_region::{CachedRegion, ChallengeSet},
-        cell_manager::Cell,
-        constraint_builder::RLCChainable,
+        cached_region::CachedRegion, cell_manager::Cell, constraint_builder::RLCChainableRev,
         gadgets::LtGadget,
     },
     mpt_circuit::{
         helpers::{
-            ext_key_rlc_calc_value, ext_key_rlc_expr, num_nibbles, Indexable, KeyData, ParentData,
-            FIXED, KECCAK,
+            ext_key_rlc_calc_value, ext_key_rlc_expr, num_nibbles, Indexable, KeyData, MptCellType,
+            ParentData, FIXED, KECCAK, MULT,
         },
         param::HASH_WIDTH,
-        FixedTableTag, MPTConfig, MPTState,
+        FixedTableTag, MPTConfig, MPTState, RlpItemType,
     },
+    util::word::Word,
 };
 
 #[derive(Clone, Debug)]
@@ -33,6 +32,7 @@ pub(crate) struct ExtState<F> {
     pub(crate) num_nibbles: Expression<F>,
     pub(crate) is_key_odd: Expression<F>,
 
+    pub(crate) branch_rlp_word: [Word<Expression<F>>; 2],
     pub(crate) branch_rlp_rlc: [Expression<F>; 2],
 }
 
@@ -56,31 +56,51 @@ impl<F: Field> ExtensionGadget<F> {
         parent_data: &[ParentData<F>; 2],
         is_placeholder: &[Cell<F>; 2],
     ) -> Self {
-        let r = ctx.r.clone();
-
         let mut config = ExtensionGadget::default();
 
         circuit!([meta, cb], {
             // Data
             let key_items = [
-                ctx.rlp_item(meta, cb, ExtensionBranchRowType::KeyS as usize),
-                ctx.nibbles(meta, cb, ExtensionBranchRowType::KeyC as usize),
+                // Special case, requring string fail tests
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    ExtensionBranchRowType::KeyS as usize,
+                    RlpItemType::Key,
+                ),
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    ExtensionBranchRowType::KeyC as usize,
+                    RlpItemType::Nibbles,
+                ),
             ];
             let rlp_value = [
-                ctx.rlp_item(meta, cb, ExtensionBranchRowType::ValueS as usize),
-                ctx.rlp_item(meta, cb, ExtensionBranchRowType::ValueC as usize),
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    ExtensionBranchRowType::ValueS as usize,
+                    RlpItemType::Node,
+                ),
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    ExtensionBranchRowType::ValueC as usize,
+                    RlpItemType::Node,
+                ),
             ];
 
             config.rlp_key = ListKeyGadget::construct(cb, &key_items[0]);
             config.is_key_part_odd = cb.query_cell();
             let first_byte = matchx! {
-                key_items[true.idx()].is_short() => key_items[true.idx()].bytes[0].expr(),
-                key_items[true.idx()].is_long() => key_items[true.idx()].bytes[1].expr(),
-                key_items[true.idx()].is_very_long() => key_items[true.idx()].bytes[2].expr(),
+                key_items[true.idx()].is_short() => key_items[true.idx()].bytes_be()[0].expr(),
+                key_items[true.idx()].is_long() => key_items[true.idx()].bytes_be()[1].expr(),
+                key_items[true.idx()].is_very_long() => key_items[true.idx()].bytes_be()[2].expr(),
             };
             require!((FixedTableTag::ExtOddKey.expr(), first_byte, config.is_key_part_odd.expr()) => @FIXED);
 
             let mut branch_rlp_rlc = vec![0.expr(); 2];
+            let mut branch_rlp_word = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
             for is_s in [true, false] {
                 // In C we have the key nibbles, we check below only for S.
                 if is_s {
@@ -89,15 +109,15 @@ impl<F: Field> ExtensionGadget<F> {
                     require!(config.rlp_key.rlp_list.len() => config.rlp_key.key_value.num_bytes() + rlp_value[is_s.idx()].num_bytes());
                 }
 
-                // Multiplier after list and key
-                let mult = config.rlp_key.rlp_list.rlp_mult(&r) * key_items[true.idx()].mult();
-
                 // Extension node RLC
-                let node_rlc = (config.rlp_key.rlc(&r), mult.expr())
-                    .rlc_chain(rlp_value[is_s.idx()].rlc_rlp());
+                let node_rlc = config
+                    .rlp_key
+                    .rlc2(&cb.keccak_r)
+                    .rlc_chain_rev(rlp_value[is_s.idx()].rlc_chain_data());
 
                 // The branch expected in the extension node
-                branch_rlp_rlc[is_s.idx()] = rlp_value[is_s.idx()].rlc_content();
+                branch_rlp_rlc[is_s.idx()] = rlp_value[is_s.idx()].rlc_rlp();
+                branch_rlp_word[is_s.idx()] = rlp_value[is_s.idx()].word();
 
                 // Check if the extension node is in its parent.
                 let (rlc, num_bytes, is_not_hashed) = {
@@ -117,7 +137,7 @@ impl<F: Field> ExtensionGadget<F> {
                 ifx! {not!(is_placeholder[is_s.idx()]) => {
                     ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
                         // Hashed branch hash in parent branch
-                        require!((1, rlc, num_bytes, parent_data[is_s.idx()].rlc) => @KECCAK);
+                        require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data[is_s.idx()].hash.lo().expr(), parent_data[is_s.idx()].hash.hi().expr()] => @KECCAK);
                     } elsex {
                         // Non-hashed branch hash in parent branch
                         require!(rlc => parent_data[is_s.idx()].rlc);
@@ -154,11 +174,11 @@ impl<F: Field> ExtensionGadget<F> {
                     not!(is_key_odd),
                     key_items
                         .iter()
-                        .map(|item| item.bytes())
+                        .map(|item| item.bytes_be())
                         .collect::<Vec<_>>()
                         .try_into()
                         .unwrap(),
-                    &ctx.r,
+                    &cb.key_r.expr(),
                 );
 
             // Get the length of the key
@@ -167,8 +187,8 @@ impl<F: Field> ExtensionGadget<F> {
             let key_num_bytes_for_mult = key_len
                 - ifx! {not!(key_data.is_odd.expr() * config.is_key_part_odd.expr()) => { 1.expr() }};
             // Get the multiplier for this key length
-            config.mult_key = cb.query_cell();
-            require!((FixedTableTag::RMult, key_num_bytes_for_mult, config.mult_key.expr()) => @FIXED);
+            config.mult_key = cb.query_cell_with_type(MptCellType::StoragePhase2);
+            require!((key_num_bytes_for_mult, config.mult_key.expr()) => @MULT);
 
             // Store the post ext state
             config.post_state = Some(ExtState {
@@ -176,6 +196,7 @@ impl<F: Field> ExtensionGadget<F> {
                 key_mult: key_data.mult.expr() * config.mult_key.expr(),
                 num_nibbles,
                 is_key_odd,
+                branch_rlp_word: branch_rlp_word.try_into().unwrap(),
                 branch_rlp_rlc: branch_rlp_rlc.try_into().unwrap(),
             });
         });
@@ -188,11 +209,11 @@ impl<F: Field> ExtensionGadget<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn assign<S: ChallengeSet<F>>(
+    pub(crate) fn assign(
         &self,
-        region: &mut CachedRegion<'_, '_, F, S>,
+        region: &mut CachedRegion<'_, '_, F>,
         _mpt_config: &MPTConfig<F>,
-        pv: &mut MPTState<F>,
+        _pv: &mut MPTState<F>,
         offset: usize,
         key_data: &KeyDataWitness<F>,
         key_rlc: &mut F,
@@ -266,12 +287,12 @@ impl<F: Field> ExtensionGadget<F> {
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap(),
-            pv.r,
+            region.key_r,
         );
         *key_rlc = key_data.rlc + key_rlc_ext;
 
         // Key mult
-        let mult_key = pow::value(pv.r, key_len_mult);
+        let mult_key = pow::value(region.key_r, key_len_mult);
         self.mult_key.assign(region, offset, mult_key)?;
         *key_mult = key_data.mult * mult_key;
 
