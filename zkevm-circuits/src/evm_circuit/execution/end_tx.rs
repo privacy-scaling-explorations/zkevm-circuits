@@ -134,6 +134,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         // send base fee to treasury account
         let treasury = cb.query_cell();
+        cb.block_lookup(BlockContextFieldTag::Treasury.expr(), None, treasury.expr());
 
         let coinbase_reward = UpdateBalanceGadget::construct(
             cb,
