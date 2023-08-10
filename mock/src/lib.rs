@@ -17,6 +17,9 @@ pub use sha3::Sha3CodeGen;
 pub use test_ctx::TestContext;
 pub use transaction::{AddrOrWallet, MockTransaction, CORRECT_MOCK_TXS};
 
+/// Mock block gas limit
+pub const MOCK_BLOCK_GAS_LIMIT: u64 = 10_000_000_000_000_000;
+
 lazy_static! {
     /// Mock 1 ETH
     pub static ref MOCK_1_ETH: Word = eth(1);
