@@ -23,9 +23,9 @@ impl MptUpdate {
         let proof_type = match self.key {
             Key::AccountStorage { .. } => {
                 if self.old_value.is_zero() && self.new_value.is_zero() {
-                    MPTProofType::NonExistingStorageProof
+                    MPTProofType::StorageDoesNotExist
                 } else {
-                    MPTProofType::StorageMod
+                    MPTProofType::StorageChanged
                 }
             }
             Key::Account { field_tag, .. } => field_tag.into(),
@@ -42,8 +42,16 @@ pub struct MptUpdates {
 }
 
 /// The field element encoding of an MPT update, which is used by the MptTable
-#[derive(Debug, Clone, Copy)]
-pub struct MptUpdateRow<F>(pub(crate) [F; 12]);
+#[derive(Default, Clone, Copy, Debug)]
+pub struct MptUpdateRow<F: Clone> {
+    pub(crate) address: F,
+    pub(crate) storage_key: word::Word<F>,
+    pub(crate) proof_type: F,
+    pub(crate) new_root: word::Word<F>,
+    pub(crate) old_root: word::Word<F>,
+    pub(crate) new_value: word::Word<F>,
+    pub(crate) old_value: word::Word<F>,
+}
 
 impl MptUpdates {
     pub(crate) fn old_root(&self) -> Word {
@@ -91,31 +99,15 @@ impl MptUpdates {
             .map(|update| {
                 let (new_root, old_root) = update.root_assignments();
                 let (new_value, old_value) = update.value_assignments();
-                let (storage_key_lo, storage_key_hi) =
-                    word::Word::<F>::from(update.key.storage_key()).into_lo_hi();
-                let (new_root_lo, new_root_hi) = word::Word::<F>::from(new_root).into_lo_hi();
-                let (old_root_lo, old_root_hi) = word::Word::<F>::from(old_root).into_lo_hi();
-                let (new_value_lo, new_value_hi) = word::Word::<F>::from(new_value).into_lo_hi();
-                let (old_value_lo, old_value_hi) = word::Word::<F>::from(old_value).into_lo_hi();
-                let address = update.key.address().to_scalar().unwrap();
-
-                MptUpdateRow(
-                    [
-                        address,
-                        storage_key_lo,
-                        storage_key_hi,
-                        update.proof_type(),
-                        new_root_lo,
-                        new_root_hi,
-                        old_root_lo,
-                        old_root_hi,
-                        new_value_lo,
-                        new_value_hi,
-                        old_value_lo,
-                        old_value_hi,
-                    ]
-                    .map(|v| Value::known(v)),
-                )
+                MptUpdateRow {
+                    address: Value::known(update.key.address().to_scalar().unwrap()),
+                    storage_key: word::Word::<F>::from(update.key.storage_key()).into_value(),
+                    proof_type: Value::known(update.proof_type()),
+                    new_root: word::Word::<F>::from(new_root).into_value(),
+                    old_root: word::Word::<F>::from(old_root).into_value(),
+                    new_value: word::Word::<F>::from(new_value).into_value(),
+                    old_value: word::Word::<F>::from(old_value).into_value(),
+                }
             })
             .collect()
     }
@@ -190,11 +182,24 @@ impl Key {
     }
 }
 
-impl<F> MptUpdateRow<F> {
+impl<F: Clone> MptUpdateRow<F> {
     /// The individual values of the row, in the column order used by the
     /// MptTable
-    pub fn values(&self) -> impl Iterator<Item = &F> {
-        self.0.iter()
+    pub fn values(&self) -> [F; 12] {
+        [
+            self.address.clone(),
+            self.storage_key.lo(),
+            self.storage_key.hi(),
+            self.proof_type.clone(),
+            self.new_root.lo(),
+            self.new_root.hi(),
+            self.old_root.lo(),
+            self.old_root.hi(),
+            self.new_value.lo(),
+            self.new_value.hi(),
+            self.old_value.lo(),
+            self.old_value.hi(),
+        ]
     }
 }
 
