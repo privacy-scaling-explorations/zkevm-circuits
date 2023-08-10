@@ -7,7 +7,7 @@ use eth_types::{
     sign_types::{biguint_to_32bytes_le, ct_option_ok_or, sign as eth_sign, SignData, SECP256K1_Q},
     word, Bytes, ToBigEndian, ToLittleEndian, ToWord, Word, U256,
 };
-use ethers_core::types::TransactionRequest;
+use ethers_core::types::Eip1559TransactionRequest;
 use halo2_proofs::{
     arithmetic::Field as _,
     halo2curves::{
@@ -28,7 +28,7 @@ static GX2: Lazy<Word> =
 
 fn fixd_k_sign(anchor_tx: &Transaction, chain_id: u64) -> Result<SignData, eth_types::Error> {
     // msg = rlp([nonce, gasPrice, gas, to, value, data, sig_v, r, s])
-    let req: TransactionRequest = anchor_tx.into();
+    let req: Eip1559TransactionRequest = anchor_tx.into();
     let msg = req.chain_id(chain_id).rlp();
     let msg_hash: [u8; 32] = Keccak256::digest(&msg)
         .as_slice()

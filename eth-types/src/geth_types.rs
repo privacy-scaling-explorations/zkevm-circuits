@@ -6,7 +6,7 @@ use crate::{
     ToWord, Word, U64,
 };
 use ethers_core::{
-    types::{transaction::response, NameOrAddress, TransactionRequest},
+    types::{transaction::response, Eip1559TransactionRequest, NameOrAddress, TransactionRequest},
     utils::get_contract_address,
 };
 use ethers_signers::{LocalWallet, Signer};
@@ -197,6 +197,22 @@ impl From<&Transaction> for TransactionRequest {
             to: tx.to.map(NameOrAddress::Address),
             gas: Some(tx.gas_limit.to_word()),
             gas_price: Some(tx.gas_price),
+            value: Some(tx.value),
+            data: Some(tx.call_data.clone()),
+            nonce: Some(tx.nonce.to_word()),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<&Transaction> for Eip1559TransactionRequest {
+    fn from(tx: &Transaction) -> Eip1559TransactionRequest {
+        Eip1559TransactionRequest {
+            from: Some(tx.from),
+            to: tx.to.map(NameOrAddress::Address),
+            gas: Some(tx.gas_limit.to_word()),
+            max_priority_fee_per_gas: Some(tx.gas_tip_cap),
+            max_fee_per_gas: Some(tx.gas_fee_cap),
             value: Some(tx.value),
             data: Some(tx.call_data.clone()),
             nonce: Some(tx.nonce.to_word()),

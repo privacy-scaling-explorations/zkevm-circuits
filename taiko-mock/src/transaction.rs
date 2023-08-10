@@ -13,7 +13,7 @@ use eth_types::{
 };
 use ethers_core::{
     rand::{CryptoRng, RngCore},
-    types::{OtherFields, TransactionRequest},
+    types::{Eip1559TransactionRequest, OtherFields},
 };
 use ethers_signers::{LocalWallet, Signer};
 use lazy_static::lazy_static;
@@ -334,14 +334,15 @@ impl MockTransaction {
     /// Consumes the mutable ref to the MockTransaction returning the structure
     /// by value.
     pub fn build(&mut self) -> Self {
-        let tx = TransactionRequest::new()
+        let tx = Eip1559TransactionRequest::new()
             .from(self.from.address())
             .to(self.to.clone().unwrap_or_default().address())
             .nonce(self.nonce)
             .value(self.value)
             .data(self.input.clone())
             .gas(self.gas)
-            .gas_price(self.gas_price)
+            .max_priority_fee_per_gas(self.max_priority_fee_per_gas)
+            .max_fee_per_gas(self.max_fee_per_gas)
             .chain_id(self.chain_id.low_u64());
 
         match (self.v, self.r, self.s) {
