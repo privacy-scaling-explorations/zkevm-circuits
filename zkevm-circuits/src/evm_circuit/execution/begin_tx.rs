@@ -650,17 +650,17 @@ mod test {
         // Transfer 1 ether to account with empty code, successfully
         test_ok(mock_tx(eth(1), gwei(2), vec![]), None);
 
-        // // Transfer 1 ether, successfully
-        // test_ok(mock_tx(eth(1), gwei(2), vec![]), Some(code_with_return()));
+        // Transfer 1 ether, successfully
+        test_ok(mock_tx(eth(1), gwei(2), vec![]), Some(code_with_return()));
 
-        // // Transfer 1 ether, tx reverts
-        // test_ok(mock_tx(eth(1), gwei(2), vec![]), Some(code_with_revert()));
+        // Transfer 1 ether, tx reverts
+        test_ok(mock_tx(eth(1), gwei(2), vec![]), Some(code_with_revert()));
 
-        // // Transfer nothing with some calldata
-        // test_ok(
-        //     mock_tx(eth(0), gwei(2), vec![1, 2, 3, 4, 0, 0, 0, 0]),
-        //     Some(code_with_return()),
-        // );
+        // Transfer nothing with some calldata
+        test_ok(
+            mock_tx(eth(0), gwei(2), vec![1, 2, 3, 4, 0, 0, 0, 0]),
+            Some(code_with_return()),
+        );
     }
 
     #[test]
