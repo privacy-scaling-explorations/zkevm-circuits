@@ -121,7 +121,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         // check gas_price == min(base_fee + gas_tip_cap, gas_fee_cap)
         let base_fee_plus_tip = cb.query_word_rlc();
         let add_tip_cap_and_base_fee =
-            AddWordsGadget::construct(cb, [tx_gas_tip_cap, base_fee], base_fee_plus_tip.clone());
+            AddWordsGadget::construct(cb, [base_fee, tx_gas_tip_cap], base_fee_plus_tip.clone());
         let effective_gas_price =
             MinMaxWordGadget::construct(cb, &base_fee_plus_tip, &tx_gas_fee_cap);
         cb.require_equal(
