@@ -202,7 +202,7 @@ impl From<&crate::Transaction> for Transaction {
             value: tx.value,
             gas_price: tx.gas_price.unwrap_or_default(),
             gas_tip_cap: tx.max_priority_fee_per_gas.unwrap_or_default(),
-            gas_cap_cap: tx.max_fee_per_gas.unwrap_or_default(),
+            gas_fee_cap: tx.max_fee_per_gas.unwrap_or_default(),
             call_data: tx.input.clone(),
             access_list: tx.access_list.clone(),
             v: tx.v.as_u64(),
