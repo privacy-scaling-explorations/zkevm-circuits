@@ -29,7 +29,7 @@ use self::{
     account_leaf::AccountLeafConfig,
     helpers::{key_memory, RLPItemView},
     rlp_gadgets::decode_rlp,
-    witness_row::{AccountRowType, ExtensionBranchRowType, Node, StartRowType, StorageRowType},
+    witness_row::{AccountRowType, ExtensionBranchRowType, Node, StartRowType, StorageRowType, ModExtensionRowType},
 };
 use crate::{
     assign, assignf, circuit,
@@ -58,6 +58,7 @@ pub(crate) enum MPTRegion {
     Branch,
     Account,
     Storage,
+    ModExtension,
     Count,
 }
 
@@ -416,8 +417,9 @@ impl<F: Field> MPTConfig<F> {
                     // Decompose RLP
                     for (idx, bytes) in node.values.iter().enumerate() {
                         cached_region.push_region(offset + idx, MPTRegion::RLP as usize);
-                        let is_nibbles = node.extension_branch.is_some()
-                            && idx == ExtensionBranchRowType::KeyC as usize;
+                        let is_nibbles = (node.extension_branch.is_some() && idx == ExtensionBranchRowType::KeyC as usize) ||
+                            (node.mod_extension.is_some() &&
+                            ((idx == ModExtensionRowType::NibblesS as usize) || idx == ModExtensionRowType::NibblesC as usize));
                         let rlp_value = self.rlp_item.assign(
                             &mut cached_region,
                             offset + idx,
@@ -486,7 +488,21 @@ impl<F: Field> MPTConfig<F> {
                             &rlp_values,
                         )?;
                         cached_region.pop_region();
+                    } else if node.mod_extension.is_some() {
+                        cached_region.push_region(offset, MPTRegion::ModExtension as usize);
+                        assign!(cached_region, (self.state_machine.is_mod_extension, offset) => "is_mod_extension", true.scalar())?;
+                        self.state_machine.mod_extension_config.assign(
+                            &mut cached_region,
+                            challenges,
+                            self,
+                            &mut pv,
+                            offset,
+                            node,
+                            &rlp_values,
+                        )?;
+                        cached_region.pop_region();
                     }
+
 
                     cached_region.assign_stored_expressions(&self.cb.base)?;
 

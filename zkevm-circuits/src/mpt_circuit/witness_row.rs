@@ -58,10 +58,11 @@ pub(crate) enum ExtensionBranchRowType {
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum ModExtensionRowType {
-    Mod,
     KeyS,
+    NibblesS,
     ValueS,
     KeyC,
+    NibblesC,
     ValueC,
     Count,
 }
@@ -103,10 +104,10 @@ pub struct ExtensionBranchNode {
     pub(crate) branch: BranchNode,
 }
 
-/// Modified extension node
+/// MPT modified extension node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ModExtensionNode {
-    pub(crate) list_rlp_bytes: Vec<u8>,
+    pub(crate) list_rlp_bytes: [Vec<u8>; 2],
 }
 
 /// MPT account node
