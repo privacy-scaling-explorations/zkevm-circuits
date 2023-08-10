@@ -30,10 +30,10 @@ use std::{marker::PhantomData, ops::Deref};
 
 /// Number of static fields per tx: [nonce, gas, gas_price,
 /// caller_address, callee_address, is_create, value, call_data_length,
-/// call_data_gas_cost, tx_sign_hash].
+/// call_data_gas_cost, tx_sign_hash, invalid_tx, access_list_gas_cost].
 /// Note that call data bytes are layed out in the TxTable after all the static
 /// fields arranged by txs.
-pub(crate) const TX_LEN: usize = 10;
+pub(crate) const TX_LEN: usize = 12;
 
 /// Config for TxCircuit
 #[derive(Clone, Debug)]
@@ -214,6 +214,8 @@ impl<F: Field> TxCircuit<F> {
                             TxFieldTag::IsCreate,
                             Word::from(tx.is_create() as u64).into_value(),
                         ),
+                        (TxFieldTag::TxInvalid, Word::from(0u64).into_value()),
+                        (TxFieldTag::AccessListGasCost, Word::from(0u64).into_value()),
                         (TxFieldTag::Value, Word::from(tx.value).into_value()),
                         (
                             TxFieldTag::CallDataLength,

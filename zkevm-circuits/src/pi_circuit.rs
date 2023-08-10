@@ -1509,6 +1509,11 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                                     .collect_vec(),
                             ),
                             (TxFieldTag::IsCreate, tx.is_create.to_le_bytes().to_vec()),
+                            (TxFieldTag::TxInvalid, tx.invalid_tx.to_le_bytes().to_vec()),
+                            (
+                                TxFieldTag::AccessListGasCost,
+                                tx.access_list_gas_cost.to_le_bytes().to_vec(),
+                            ),
                             (TxFieldTag::Value, tx.value.to_le_bytes().to_vec()),
                             (
                                 TxFieldTag::CallDataLength,

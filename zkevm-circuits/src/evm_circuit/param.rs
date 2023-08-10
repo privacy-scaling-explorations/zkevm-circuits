@@ -145,6 +145,8 @@ pub(crate) const N_BYTES_TX_GASPRICE: usize = N_BYTES_WORD;
 pub(crate) const N_BYTES_TX_FROM: usize = N_BYTES_ACCOUNT_ADDRESS;
 pub(crate) const N_BYTES_TX_TO: usize = N_BYTES_ACCOUNT_ADDRESS;
 pub(crate) const N_BYTES_TX_IS_CREATE: usize = N_BYTES_U64;
+pub(crate) const N_BYTES_TX_INVALID_TX: usize = N_BYTES_U64;
+pub(crate) const N_BYTES_ACCESS_LIST_GAS_COST: usize = N_BYTES_U64;
 pub(crate) const N_BYTES_TX_VALUE: usize = N_BYTES_WORD;
 pub(crate) const N_BYTES_TX_CALLDATA_LEN: usize = N_BYTES_CALLDATASIZE;
 pub(crate) const N_BYTES_TX_CALLDATA_GASCOST: usize = N_BYTES_U64;
@@ -158,7 +160,9 @@ pub(crate) const N_BYTES_TX: usize = N_BYTES_TX_NONCE
     + N_BYTES_TX_VALUE
     + N_BYTES_TX_CALLDATA_LEN
     + N_BYTES_TX_CALLDATA_GASCOST
-    + N_BYTES_TX_TXSIGNHASH;
+    + N_BYTES_TX_TXSIGNHASH
+    + N_BYTES_TX_INVALID_TX
+    + N_BYTES_ACCESS_LIST_GAS_COST;
 
 lazy_static::lazy_static! {
     // Step slot height in evm circuit

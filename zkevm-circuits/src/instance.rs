@@ -53,6 +53,10 @@ pub struct TxValues {
     pub call_data_len: u64,
     /// call_data_gas_cost
     pub call_data_gas_cost: u64,
+    /// invalid_tx
+    pub invalid_tx: u64,
+    /// access_list_gas_cost
+    pub access_list_gas_cost: u64,
     /// tx_sign_hash
     pub tx_sign_hash: [u8; 32],
 }
@@ -152,6 +156,8 @@ impl PublicData {
                         NONZERO_BYTE_GAS_COST
                     }
                 }),
+                invalid_tx: 0u64,
+                access_list_gas_cost: 0u64,
                 tx_sign_hash: msg_hash_le,
             });
         }
@@ -209,6 +215,8 @@ impl PublicData {
                 tx.from_addr.as_fixed_bytes().to_vec(),              // from_addr
                 tx.to_addr.as_fixed_bytes().to_vec(),                // to_addr
                 tx.is_create.to_be_bytes().to_vec(),                 // is_create
+                tx.invalid_tx.to_be_bytes().to_vec(),                // invalid tx
+                tx.access_list_gas_cost.to_be_bytes().to_vec(),      // access_list_gas_cost
                 tx.value.to_be_bytes().to_vec(),                     // value
                 tx.call_data_len.to_be_bytes().to_vec(),             // call_data_len
                 tx.call_data_gas_cost.to_be_bytes().to_vec(),        // call_data_gas_cost

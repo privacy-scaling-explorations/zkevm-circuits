@@ -18,6 +18,10 @@ pub enum TxFieldTag {
     CalleeAddress,
     /// IsCreate
     IsCreate,
+    /// Invalid tx
+    TxInvalid,
+    /// AccessListGasCost
+    AccessListGasCost,
     /// Value
     Value,
     /// CallDataLength
@@ -29,10 +33,6 @@ pub enum TxFieldTag {
     TxSignHash,
     /// CallData
     CallData,
-    /// Invalid tx
-    TxInvalid,
-    /// AccessListGasCost
-    AccessListGasCost,
 }
 impl_expr!(TxFieldTag);
 
