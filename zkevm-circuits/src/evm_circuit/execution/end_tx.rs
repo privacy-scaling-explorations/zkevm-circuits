@@ -316,7 +316,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             region,
             offset,
             [effective_tip, base_fee],
-            effective_tip + base_fee,
+            tx.gas_price,
         )?;
 
         self.mul_effective_tip_by_gas_used.assign(
