@@ -9,7 +9,7 @@ use std::collections::HashMap;
 // Step dimension
 pub(crate) const STEP_WIDTH: usize = 128;
 /// Step height
-pub const MAX_STEP_HEIGHT: usize = 21;
+pub const MAX_STEP_HEIGHT: usize = 23;
 /// The height of the state of a step, used by gates that connect two
 /// consecutive steps. We target 1, which is also convenient for padding with
 /// EndBlock steps.
@@ -25,7 +25,7 @@ pub const N_PHASE1_COLUMNS: usize =
 // Number of copy columns
 pub const N_COPY_COLUMNS: usize = 2;
 
-pub const N_BYTE_LOOKUPS: usize = 28;
+pub const N_BYTE_LOOKUPS: usize = 24;
 
 /// Amount of lookup columns in the EVM circuit dedicated to lookups.
 pub(crate) const EVM_LOOKUP_COLS: usize = FIXED_TABLE_LOOKUPS
