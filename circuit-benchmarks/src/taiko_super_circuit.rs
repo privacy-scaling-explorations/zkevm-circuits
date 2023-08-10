@@ -9,10 +9,9 @@ use zkevm_circuits::{
         taiko_aggregation::AccumulationSchemeType, KzgDk, KzgSvk, TaikoAggregationCircuit,
     },
     taiko_super_circuit::{test::block_1tx, SuperCircuit},
-    witness::ProtocolInstance,
 };
 
-use bus_mapping::circuit_input_builder::CircuitsParams;
+use bus_mapping::circuit_input_builder::{CircuitsParams, ProtocolInstance};
 
 use rand::SeedableRng;
 
