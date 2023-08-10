@@ -181,7 +181,7 @@ impl From<&Transaction> for crate::Transaction {
             value: tx.value,
             gas_price: Some(tx.gas_price),
             max_priority_fee_per_gas: Some(tx.gas_tip_cap),
-            max_fee_per_gas: Some(tx.gas_cap_cap),
+            max_fee_per_gas: Some(tx.gas_fee_cap),
             input: tx.call_data.clone(),
             access_list: tx.access_list.clone(),
             v: tx.v.into(),
