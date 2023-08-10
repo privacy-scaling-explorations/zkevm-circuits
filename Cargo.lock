@@ -477,6 +477,8 @@ dependencies = [
  "rand",
  "rand_chacha",
  "rand_xorshift",
+ "serde",
+ "serde_json",
  "zkevm-circuits",
 ]
 
@@ -4659,6 +4661,7 @@ dependencies = [
  "mock",
  "num",
  "num-bigint",
+ "num_enum 0.5.11",
  "pretty_assertions",
  "rand",
  "rand_chacha",
