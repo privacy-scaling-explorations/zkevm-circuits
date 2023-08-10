@@ -50,7 +50,7 @@ impl<C: CircuitsParams> BlockData<C> {
 
     fn init_dbs(geth_data: &GethData) -> (StateDB, CodeDB) {
         let mut sdb = StateDB::new();
-        let mut code_db = CodeDB::new();
+        let mut code_db = CodeDB::default();
 
         let access_set = get_state_accesses(&geth_data.eth_block, &geth_data.geth_traces)
             .expect("state accesses");

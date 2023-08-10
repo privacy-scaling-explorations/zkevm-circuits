@@ -365,17 +365,8 @@ fn tracer_err_address_collision() {
     };
 
     let mut code_b = Bytecode::default();
-    // pad code_creator to multiple of 32 bytes
-    let len = code_creator.to_vec().len();
-    let code_creator: Vec<u8> = code_creator
-        .to_vec()
-        .iter()
-        .cloned()
-        .chain(0u8..((32 - len % 32) as u8))
-        .collect();
-    for (index, word) in code_creator.chunks(32).enumerate() {
-        code_b.op_mstore(index * 32, Word::from_big_endian(word));
-    }
+    code_b.store_code_to_mem(&code_creator);
+    let len = code_creator.codesize();
     let code_b_end = bytecode! {
         PUSH3(0x123456) // salt
         PUSH1(len) // length
@@ -487,17 +478,8 @@ fn tracer_create_collision_free() {
     };
 
     let mut code_b = Bytecode::default();
-    // pad code_creator to multiple of 32 bytes
-    let len = code_creator.to_vec().len();
-    let code_creator: Vec<u8> = code_creator
-        .to_vec()
-        .iter()
-        .cloned()
-        .chain(0u8..((32 - len % 32) as u8))
-        .collect();
-    for (index, word) in code_creator.chunks(32).enumerate() {
-        code_b.op_mstore(index * 32, Word::from_big_endian(word));
-    }
+    code_b.store_code_to_mem(&code_creator);
+    let len = code_creator.codesize();
     let code_b_end = bytecode! {
         PUSH1(len) // length
         PUSH1(0x00) // offset
@@ -622,19 +604,9 @@ fn tracer_err_code_store_out_of_gas() {
     };
 
     let mut code_b = Bytecode::default();
-    // pad code_creator to multiple of 32 bytes
-    let len = code_creator.to_vec().len();
-    let code_creator: Vec<u8> = code_creator
-        .to_vec()
-        .iter()
-        .cloned()
-        .chain(0..(32 - len % 32) as u8)
-        .collect();
-    for (index, word) in code_creator.chunks(32).enumerate() {
-        code_b.op_mstore(index * 32, Word::from_big_endian(word));
-    }
+    code_b.store_code_to_mem(&code_creator);
     let code_b_end = bytecode! {
-        PUSH32(len) // length
+        PUSH32(code_creator.codesize()) // length
         PUSH1(0x00) // offset
         PUSH1(0x00) // value
         CREATE
@@ -770,17 +742,8 @@ fn tracer_err_invalid_code_for_create_opcode() {
     };
 
     let mut code_b = Bytecode::default();
-    // pad code_creator to multiple of 32 bytes
-    let len = code_creator.to_vec().len();
-    let code_creator: Vec<u8> = code_creator
-        .to_vec()
-        .iter()
-        .cloned()
-        .chain(0u8..((32 - len % 32) as u8))
-        .collect();
-    for (index, word) in code_creator.chunks(32).enumerate() {
-        code_b.op_mstore(index * 32, Word::from_big_endian(word));
-    }
+    code_b.store_code_to_mem(&code_creator);
+    let len = code_creator.codesize();
     let code_b_end = bytecode! {
         PUSH1(len) // length
         PUSH1(0x00) // offset
@@ -922,19 +885,9 @@ fn tracer_err_max_code_size_exceeded() {
     };
 
     let mut code_b = Bytecode::default();
-    // pad code_creator to multiple of 32 bytes
-    let len = code_creator.to_vec().len();
-    let code_creator: Vec<u8> = code_creator
-        .to_vec()
-        .iter()
-        .cloned()
-        .chain(0u8..((32 - len % 32) as u8))
-        .collect();
-    for (index, word) in code_creator.chunks(32).enumerate() {
-        code_b.op_mstore(index * 32, Word::from_big_endian(word));
-    }
+    code_b.store_code_to_mem(&code_creator);
     let code_b_end = bytecode! {
-        PUSH32(len) // length
+        PUSH32(code_creator.codesize()) // length
         PUSH1(0x00) // offset
         PUSH1(0x00) // value
         CREATE
@@ -1060,19 +1013,9 @@ fn tracer_create_stop() {
     };
 
     let mut code_b = Bytecode::default();
-    // pad code_creator to multiple of 32 bytes
-    let len = code_creator.to_vec().len();
-    let code_creator: Vec<u8> = code_creator
-        .to_vec()
-        .iter()
-        .cloned()
-        .chain(0u8..((32 - len % 32) as u8))
-        .collect();
-    for (index, word) in code_creator.chunks(32).enumerate() {
-        code_b.op_mstore(index * 32, Word::from_big_endian(word));
-    }
+    code_b.store_code_to_mem(&code_creator);
     let code_b_end = bytecode! {
-        PUSH1(len) // length
+        PUSH1(code_creator.codesize()) // length
         PUSH1(0x00) // offset
         PUSH1(0x00) // value
         CREATE
@@ -1761,20 +1704,10 @@ fn create2_address() {
     };
 
     let mut code_b = Bytecode::default();
-    // pad code_creator to multiple of 32 bytes
-    let len = code_creator.to_vec().len();
-    let code_creator: Vec<u8> = code_creator
-        .to_vec()
-        .iter()
-        .cloned()
-        .chain(0u8..((32 - len % 32) as u8))
-        .collect();
-    for (index, word) in code_creator.chunks(32).enumerate() {
-        code_b.op_mstore(index * 32, Word::from_big_endian(word));
-    }
+    code_b.store_code_to_mem(&code_creator);
     let code_b_end = bytecode! {
         PUSH3(0x123456) // salt
-        PUSH1(len) // length
+        PUSH1(code_creator.codesize()) // length
         PUSH1(0x00) // offset
         PUSH1(0x00) // value
         CREATE2
@@ -1854,17 +1787,8 @@ fn create_address() {
     };
 
     let mut code_b = Bytecode::default();
-    // pad code_creator to multiple of 32 bytes
-    let len = code_creator.to_vec().len();
-    let code_creator: Vec<u8> = code_creator
-        .to_vec()
-        .iter()
-        .cloned()
-        .chain(0u8..((32 - len % 32) as u8))
-        .collect();
-    for (index, word) in code_creator.chunks(32).enumerate() {
-        code_b.op_mstore(index * 32, Word::from_big_endian(word));
-    }
+    code_b.store_code_to_mem(&code_creator);
+    let len = code_creator.codesize();
     // We do CREATE 2 times to use a nonce != 0 in the second one.
     let code_b_end = bytecode! {
         PUSH1(len) // length
@@ -2169,19 +2093,10 @@ fn test_gen_access_trace_create_push_call_stack() {
     };
 
     let mut code_b = Bytecode::default();
-    // pad code_creator to multiple of 32 bytes
-    let len = code_creator.to_vec().len();
-    let code_creator: Vec<u8> = code_creator
-        .to_vec()
-        .iter()
-        .cloned()
-        .chain(0u8..((32 - len % 32) as u8))
-        .collect();
-    for (index, word) in code_creator.chunks(32).enumerate() {
-        code_b.op_mstore(index * 32, Word::from_big_endian(word));
-    }
+    code_b.store_code_to_mem(&code_creator);
+
     let code_b_end = bytecode! {
-        PUSH1(len) // length
+        PUSH1(code_creator.codesize()) // length
         PUSH1(0x00) // offset
         PUSH1(0x00) // value
         CREATE

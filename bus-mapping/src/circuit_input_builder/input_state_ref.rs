@@ -620,9 +620,8 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Fetch and return code for the given code hash from the code DB.
     pub fn code(&self, code_hash: H256) -> Result<Vec<u8>, Error> {
         self.code_db
-            .0
-            .get(&code_hash)
-            .cloned()
+            .get_from_h256(&code_hash)
+            .map(|bytecode| bytecode.code())
             .ok_or(Error::CodeNotFound(code_hash))
     }
 
@@ -1454,12 +1453,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let mut copy_steps = Vec::with_capacity(bytes_left as usize);
         for idx in 0..bytes_left {
             let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
-            let step = if addr < src_addr_end {
-                let code = bytecode.code.get(addr as usize).unwrap();
-                (code.value, code.is_code)
-            } else {
-                (0, false)
-            };
+            let step = bytecode.get(addr as usize).unwrap_or_default();
             copy_steps.push(step);
             self.memory_write(exec_step, (dst_addr + idx).into(), step.0)?;
         }

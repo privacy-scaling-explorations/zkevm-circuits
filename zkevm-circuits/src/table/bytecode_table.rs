@@ -1,4 +1,6 @@
 use super::*;
+use crate::util;
+use bus_mapping::state_db::CodeDB;
 
 /// Tag to identify the field in a Bytecode Table row
 #[derive(Clone, Copy, Debug)]
@@ -41,10 +43,10 @@ impl BytecodeTable {
 
     /// Assign the `BytecodeTable` from a list of bytecodes, followig the same
     /// table layout that the Bytecode Circuit uses.
-    pub fn load<'a, F: Field>(
+    pub fn load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        bytecodes: impl IntoIterator<Item = &'a Bytecode> + Clone,
+        bytecodes: CodeDB,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "bytecode table",
@@ -62,14 +64,38 @@ impl BytecodeTable {
 
                 let bytecode_table_columns =
                     <BytecodeTable as LookupTable<F>>::advice_columns(self);
-                for bytecode in bytecodes.clone() {
-                    for row in bytecode.table_assignments::<F>() {
-                        for (&column, value) in bytecode_table_columns.iter().zip_eq(row) {
+                for bytecode in bytecodes.clone().into_iter() {
+                    let rows = {
+                        let code_hash = util::word::Word::from(bytecode.hash());
+                        std::iter::once([
+                            code_hash.lo(),
+                            code_hash.hi(),
+                            F::from(BytecodeFieldTag::Header as u64),
+                            F::ZERO,
+                            F::ZERO,
+                            F::from(bytecode.codesize() as u64),
+                        ])
+                        .chain(bytecode.code_vec().iter().enumerate().map(
+                            |(index, &(byte, is_code))| {
+                                [
+                                    code_hash.lo(),
+                                    code_hash.hi(),
+                                    F::from(BytecodeFieldTag::Byte as u64),
+                                    F::from(index as u64),
+                                    F::from(is_code.into()),
+                                    F::from(byte.into()),
+                                ]
+                            },
+                        ))
+                        .collect_vec()
+                    };
+                    for row in rows.iter() {
+                        for (&column, value) in bytecode_table_columns.iter().zip_eq(row.to_vec()) {
                             region.assign_advice(
                                 || format!("bytecode table row {}", offset),
                                 column,
                                 offset,
-                                || value,
+                                || Value::known(value),
                             )?;
                         }
                         offset += 1;

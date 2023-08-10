@@ -27,6 +27,14 @@ use url::Url;
 pub const CHAIN_ID: u64 = 1337;
 /// Path to the test contracts
 pub const CONTRACTS_PATH: &str = "contracts";
+/// Solidity compilation warnings to ignore (by error code)
+/// 2018: Warning - "Function state mutability can be restricted to pure"
+/// 5667: Warning - "Unused function parameter. Remove or comment out the
+/// variable name to silence this warning."
+/// For smart contracts that are optimized for worst case block generation, we want to allow
+/// contracts that do not interfere with state, without setting state mutability to view. otherwise
+/// compiler optimizations will not allow recursive execution of targeted opcodes
+pub const WARN: &[u64] = &[2018, 5667];
 /// List of contracts as (ContractName, ContractSolidityFile)
 pub const CONTRACTS: &[(&str, &str)] = &[
     ("Greeter", "greeter/Greeter.sol"),
@@ -34,6 +42,10 @@ pub const CONTRACTS: &[(&str, &str)] = &[
         "OpenZeppelinERC20TestToken",
         "ERC20/OpenZeppelinERC20TestToken.sol",
     ),
+    // Contracts to test worst-case usage of opcodes.
+    ("CheckMload", "MLOAD/MLOAD.sol"),
+    ("CheckExtCodeSize100", "EXTCODESIZE/EXTCODESIZE100.sol"),
+    ("CheckSdiv", "SDIV/SDIV.sol"),
 ];
 /// Path to gen_blockchain_data output file
 pub const GENDATA_OUTPUT_PATH: &str = "gendata_output.json";

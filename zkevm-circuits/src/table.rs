@@ -9,9 +9,7 @@ use crate::{
         word::{self, Word},
         Challenges,
     },
-    witness::{
-        Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
-    },
+    witness::{Block, BlockContext, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction},
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep};
 use core::iter::once;

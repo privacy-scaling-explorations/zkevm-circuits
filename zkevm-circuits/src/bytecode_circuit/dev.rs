@@ -10,6 +10,7 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},
 };
+use itertools::Itertools;
 
 impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
     type Config = (BytecodeCircuitConfig<F>, Challenges);
@@ -49,7 +50,12 @@ impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
 
         config.keccak_table.dev_load(
             &mut layouter,
-            self.bytecodes.iter().map(|b| &b.bytes),
+            &self
+                .bytecodes
+                .clone()
+                .into_iter()
+                .map(|b| b.code())
+                .collect_vec(),
             &challenges,
         )?;
         self.synthesize_sub(&config, &challenges, &mut layouter)?;
