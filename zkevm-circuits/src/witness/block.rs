@@ -172,6 +172,8 @@ impl<F: Field> Block<F> {
 pub struct BlockContext {
     /// The address of the miner for the block
     pub coinbase: Address,
+    /// The address of the treasury for the base fee
+    pub treasury: Address,
     /// The gas limit of the block
     pub gas_limit: u64,
     /// The number of the block
@@ -199,6 +201,11 @@ impl BlockContext {
                     Value::known(F::from(BlockContextFieldTag::Coinbase as u64)),
                     Value::known(F::ZERO),
                     Value::known(self.coinbase.to_scalar().unwrap()),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::Treasury as u64)),
+                    Value::known(F::ZERO),
+                    Value::known(self.treasury.to_scalar().unwrap()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::Timestamp as u64)),
@@ -264,6 +271,7 @@ impl From<&circuit_input_builder::Block> for BlockContext {
     fn from(block: &circuit_input_builder::Block) -> Self {
         Self {
             coinbase: block.coinbase,
+            treasury: block.protocol_instance.meta_hash.treasury,
             gas_limit: block.gas_limit,
             number: block.number,
             timestamp: block.timestamp,
