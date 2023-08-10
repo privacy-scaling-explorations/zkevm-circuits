@@ -102,7 +102,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         cb.condition(is_first_tx.expr(), |cb| {
             cb.require_zero("base_fee is zero when tx is first tx", base_fee.expr());
         });
-        cb.condition(1.expr() - is_first_tx.expr(), |cb| {
+        cb.condition(not::expr(is_first_tx.expr()), |cb| {
             cb.block_lookup(BlockContextFieldTag::BaseFee.expr(), None, base_fee.expr());
         });
 
