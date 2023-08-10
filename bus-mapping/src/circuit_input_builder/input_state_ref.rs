@@ -309,6 +309,8 @@ impl<'a> CircuitInputStateRef<'a> {
             && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero())))
             && account.is_empty()
         {
+            // FIXME: This is a temporary workaround for the above issue, which allows empty
+            // accounts to read for taiko's 1559
 
             // panic!(
             //     "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
