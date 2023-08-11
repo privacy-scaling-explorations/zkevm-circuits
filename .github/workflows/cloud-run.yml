@@ -1,0 +1,40 @@
+name: Tencent Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      BRANCH_NAME:
+        description: 'BRANCH_NAME'
+        required: true
+env:
+  BENCH_RESULTS_PASS: ${{ secrets.BENCH_RESULTS_PASS }}
+
+jobs:
+  taiko-cloud-run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v3
+
+      - name: Setup
+        run: |
+          cd .github/weeklyBenchScripts
+          ./github-action-setup.sh
+        env:
+          GITHUB_RUN_ID: ${{ vars.GITHUB_RUN_ID }}
+
+      - name: Trigger
+        run: |
+          cd .github/cloudRun
+          ./github-action-trigger.sh
+        env:
+          GITHUB_RUN_ID: ${{ vars.GITHUB_RUN_ID }}
+          BRANCH_NAME: ${{ inputs.BRANCH_NAME || github.event.client_payload.BRANCH_NAME }}
+
+      - name: Cleanup
+        run: |
+          cd .github/weeklyBenchScripts
+          ./github-action-cleanup.sh
+        if: always()
+        env:
+          GITHUB_RUN_ID: ${{ vars.GITHUB_RUN_ID }}
