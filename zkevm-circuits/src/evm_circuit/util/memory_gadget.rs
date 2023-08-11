@@ -197,8 +197,7 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryAddressGadget<F> {
 
     // real length
     fn length(&self) -> Expression<F> {
-        // todo: check self.memory_length.expr() rlc length ?
-        self.memory_length.sum_expr()
+        self.memory_length.expr()
     }
 
     fn address(&self) -> Expression<F> {
