@@ -58,8 +58,8 @@ pub struct StateCircuitConfig<F> {
     // others, it is 0.
     initial_value: word::Word<Column<Advice>>,
     // For Rw::AccountStorage, identify non-existing if both committed value and
-    // new value are zero. Will do lookup for MPTProofType::NonExistingStorageProof if
-    // non-existing, otherwise do lookup for MPTProofType::StorageMod.
+    // new value are zero. Will do lookup for MPTProofType::StorageDoesNotExist if
+    // non-existing, otherwise do lookup for MPTProofType::StorageChanged.
     is_non_exist: BatchedIsZeroConfig,
     // Intermediary witness used to reduce mpt lookup expression degree
     mpt_proof_type: Column<Advice>,
@@ -324,9 +324,9 @@ impl<F: Field> StateCircuitConfig<F> {
             let mpt_proof_type = match row {
                 Rw::AccountStorage { .. } => {
                     if committed_value.is_zero_vartime() && value.is_zero_vartime() {
-                        MPTProofType::NonExistingStorageProof as u64
+                        MPTProofType::StorageDoesNotExist as u64
                     } else {
-                        MPTProofType::StorageMod as u64
+                        MPTProofType::StorageChanged as u64
                     }
                 }
                 Rw::Account { field_tag, .. } => {
@@ -334,7 +334,7 @@ impl<F: Field> StateCircuitConfig<F> {
                         && value.is_zero_vartime()
                         && matches!(field_tag, AccountFieldTag::CodeHash)
                     {
-                        MPTProofType::NonExistingAccountProof as u64
+                        MPTProofType::AccountDoesNotExist as u64
                     } else {
                         *field_tag as u64
                     }
