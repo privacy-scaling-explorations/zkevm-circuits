@@ -8,8 +8,8 @@ use crate::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::LtGadget,
             memory_gadget::{
-                MemoryCopierGasGadget, MemoryExpandedAddressGadget,
-                MemoryExpansionGadget,CommonMemoryAddressGadget,
+                CommonMemoryAddressGadget, MemoryCopierGasGadget, MemoryExpandedAddressGadget,
+                MemoryExpansionGadget,
             },
             or, CachedRegion, Cell,
         },
@@ -63,11 +63,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSha3Gadget<F> {
             cb,
             cb.curr.state.gas_left.expr(),
             OpcodeId::SHA3.constant_gas_cost().expr() + memory_copier_gas.gas_cost(),
+            // OpcodeId::SHA3.constant_gas_cost().expr(),
         );
 
         cb.require_equal(
             "Memory address is overflow or gas left is less than cost",
             or::expr([memory_address.overflow(), insufficient_gas.expr()]),
+            // or::expr([memory_address.overflow(), 0.expr()]),
             1.expr(),
         );
 
@@ -98,13 +100,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSha3Gadget<F> {
             step.gas_left,
         );
 
-        let opcode = step.opcode(); 
-        self.opcode
-            .assign(region, offset, Value::known(F::from(opcode.unwrap().as_u64())))?;
+        let opcode = step.opcode();
+        self.opcode.assign(
+            region,
+            offset,
+            Value::known(F::from(opcode.unwrap().as_u64())),
+        )?;
 
         let [memory_offset, memory_length] =
-            [0, 1,].map(|idx| block.get_rws(step, idx).stack_value());
-        // let memory_address = self
+            [0, 1].map(|idx| block.get_rws(step, idx).stack_value());
 
         let expanded_address =
             self.memory_address
@@ -129,9 +133,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSha3Gadget<F> {
                 OpcodeId::SHA3.constant_gas_cost() + memory_copier_gas,
             )),
         )?;
-        println!("gas_left {}, gas cost {}", step.gas_left ,OpcodeId::SHA3.constant_gas_cost() + memory_copier_gas);
-        _tx.steps().into_iter().map(|s| println!("step {:?}",s.exec_state)).count();
-
         self.common_error_gadget
             .assign(region, offset, block, call, step, 4)?;
 
@@ -178,7 +179,7 @@ mod tests {
         let testing_data = TestingData::new(0xffffffff1, 0xffffffff0, MOCK_BLOCK_GAS_LIMIT);
 
         test_root(&testing_data);
-        //test_internal(&testing_data);
+        test_internal(&testing_data);
     }
 
     #[test]
@@ -186,7 +187,7 @@ mod tests {
         let testing_data = TestingData::new(u64::MAX, u64::MAX, MOCK_BLOCK_GAS_LIMIT);
 
         test_root(&testing_data);
-        //test_internal(&testing_data);
+        test_internal(&testing_data);
     }
 
     struct TestingData {
@@ -218,11 +219,7 @@ mod tests {
     fn dynamic_gas_cost(memory_offset: u64, memory_size: u64) -> u64 {
         let memory_word_size = (memory_offset + memory_size + 31) / 32;
 
-        memory_copier_gas_cost(
-            0,
-            memory_word_size,
-            memory_size,
-        )
+        memory_copier_gas_cost(0, memory_word_size, memory_size)
     }
 
     fn test_root(testing_data: &TestingData) {

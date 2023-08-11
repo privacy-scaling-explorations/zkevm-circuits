@@ -10,10 +10,10 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
-            memory_gadget::CommonMemoryAddressGadget,
             math_gadget::{
                 ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget,
             },
+            memory_gadget::CommonMemoryAddressGadget,
             not, or, select, CachedRegion, Cell,
         },
     },

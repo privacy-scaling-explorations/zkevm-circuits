@@ -1,12 +1,16 @@
 use super::{constraint_builder::ConstrainBuilderCommon, CachedRegion, MemoryAddress, WordExpr};
 use crate::{
     evm_circuit::{
-        param::{N_BYTES_GAS, N_BYTES_U64, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         util::{
+            and,
             constraint_builder::EVMConstraintBuilder,
-            math_gadget::{AddWordsGadget, ConstantDivisionGadget, IsZeroGadget, MinMaxGadget, 
-                RangeCheckGadget, LtGadget,},
-            select, sum, Cell, or, and, from_bytes,
+            from_bytes,
+            math_gadget::{
+                AddWordsGadget, ConstantDivisionGadget, IsZeroGadget, LtGadget, MinMaxGadget,
+                RangeCheckGadget,
+            },
+            or, select, sum, Cell,
         },
     },
     util::{
@@ -15,7 +19,10 @@ use crate::{
     },
 };
 use array_init::array_init;
-use eth_types::{evm_types::GasCost, evm_types::MAX_EXPANDED_MEMORY_ADDRESS, Field, ToLittleEndian, U256};
+use eth_types::{
+    evm_types::{GasCost, MAX_EXPANDED_MEMORY_ADDRESS},
+    Field, ToLittleEndian, U256,
+};
 use gadgets::util::not;
 use halo2_proofs::{
     circuit::Value,
@@ -106,8 +113,7 @@ impl<F: Field> MemoryAddressGadget<F> {
         memory_offset: WordCell<F>,
         memory_length: MemoryAddress<F>,
     ) -> Self {
-        let memory_length_is_zero =
-            IsZeroGadget::construct(cb, memory_length.sum_expr());
+        let memory_length_is_zero = IsZeroGadget::construct(cb, memory_length.sum_expr());
         let memory_offset_bytes = cb.query_memory_address();
 
         let has_length = 1.expr() - memory_length_is_zero.expr();
@@ -136,7 +142,7 @@ impl<F: Field> MemoryAddressGadget<F> {
     pub(crate) fn offset(&self) -> Expression<F> {
         self.has_length() * self.memory_offset_bytes.expr()
     }
-}   
+}
 
 impl<F: Field> CommonMemoryAddressGadget<F> for MemoryAddressGadget<F> {
     fn construct_self(cb: &mut EVMConstraintBuilder<F>) -> Self {
@@ -180,12 +186,12 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryAddressGadget<F> {
     }
 
     fn offset_rlc(&self) -> Word<Expression<F>> {
-        //self.memory_offset.expr()
+        // self.memory_offset.expr()
         self.memory_offset.to_word()
     }
 
     fn length_rlc(&self) -> Word<Expression<F>> {
-        //self.memory_length.expr()
+        // self.memory_length.expr()
         self.memory_length.to_word()
     }
 
@@ -222,9 +228,9 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
         let sum = cb.query_word32();
 
         let sum_lt_cap = LtGadget::construct(
-            cb, 
-            //from_bytes::expr(&sum.cells[..N_BYTES_U64]),
-            sum::expr(&sum.limbs[..N_BYTES_U64]),
+            cb,
+            from_bytes::expr(&sum.limbs[..N_BYTES_U64]),
+            // sum::expr(&sum.limbs[..N_BYTES_U64]),
             (MAX_EXPANDED_MEMORY_ADDRESS + 1).expr(),
         );
 
@@ -288,13 +294,13 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
 
     fn offset_rlc(&self) -> Word<Expression<F>> {
         let addends = self.offset_length_sum.addends();
-        //addends[0].expr()
+        // addends[0].expr()
         addends[0].to_word()
     }
 
-    fn length_rlc(&self) -> Word<Expression<F>>  {
+    fn length_rlc(&self) -> Word<Expression<F>> {
         let addends = self.offset_length_sum.addends();
-        //addends[1].expr()
+        // addends[1].expr()
         addends[1].to_word()
     }
 

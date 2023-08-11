@@ -18,7 +18,9 @@ pub(crate) struct StackOnlyOpcode<
     const IS_ERR: bool = { false },
 >;
 
-impl<const N_POP: usize, const N_PUSH: usize,  const IS_ERR: bool> Opcode for StackOnlyOpcode<N_POP, N_PUSH, IS_ERR> {
+impl<const N_POP: usize, const N_PUSH: usize, const IS_ERR: bool> Opcode
+    for StackOnlyOpcode<N_POP, N_PUSH, IS_ERR>
+{
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
