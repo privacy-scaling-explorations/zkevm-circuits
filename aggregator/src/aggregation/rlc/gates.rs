@@ -430,7 +430,16 @@ impl RlcConfig {
         }
 
         // sanity check
-        assert_equal(&acc, input);
+        assert_equal(
+            &acc,
+            input,
+            format!(
+                "acc does not match input: {:?} {:?}",
+                &acc.value(),
+                &input.value(),
+            )
+            .as_str(),
+        );
 
         region.constrain_equal(acc.cell(), input.cell())?;
 
