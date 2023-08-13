@@ -460,7 +460,7 @@ pub fn block_convert<F: Field>(
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         mpt_updates,
         chain_id,
-        start_l1_queue_index: 0,
+        start_l1_queue_index: block.start_l1_queue_index,
         precompile_events: block.precompile_events.clone(),
     })
 }
@@ -471,10 +471,13 @@ pub fn block_convert_with_l1_queue_index<F: Field>(
     code_db: &bus_mapping::state_db::CodeDB,
     start_l1_queue_index: u64,
 ) -> Result<Block<F>, Error> {
-    let mut block = block_convert(block, code_db)?;
+    let mut block = block.clone();
+    // keccak_inputs_pi_circuit needs correct start_l1_queue_index
+    // but at this time it can be start_l1_queue_index of last block inside the chunk
+    // TODO kunxian: any better solution
     block.start_l1_queue_index = start_l1_queue_index;
-
-    Ok(block)
+    let witness_block = block_convert(&block, code_db)?;
+    Ok(witness_block)
 }
 
 /// Attach witness block with mpt states
