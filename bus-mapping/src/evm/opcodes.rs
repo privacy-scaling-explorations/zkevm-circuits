@@ -33,7 +33,6 @@ mod mload;
 mod mstore;
 mod number;
 mod origin;
-mod push0;
 mod return_revert;
 mod returndatacopy;
 mod returndatasize;
@@ -96,7 +95,6 @@ use logs::Log;
 use mload::Mload;
 use mstore::Mstore;
 use origin::Origin;
-use push0::Push0;
 use return_revert::ReturnRevert;
 use returndatacopy::Returndatacopy;
 use returndatasize::Returndatasize;
@@ -154,8 +152,8 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
     }
 
     match opcode_id {
-        OpcodeId::PUSH0 => Push0::gen_associated_ops,
         OpcodeId::STOP => Stop::gen_associated_ops,
+        OpcodeId::PUSH0 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::ADD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::MUL => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SUB => StackOnlyOpcode::<2, 1>::gen_associated_ops,
