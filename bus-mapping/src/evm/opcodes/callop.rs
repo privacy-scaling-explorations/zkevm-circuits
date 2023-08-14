@@ -480,7 +480,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             // 2. Call to account with empty code.
             (false, _, true) => {
                 for (field, value) in [
-                    (CallContextField::LastCalleeId, 0.into()),
+                    (CallContextField::LastCalleeId, call.call_id.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                     (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 ] {
@@ -565,7 +565,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             // 4. insufficient balance or error depth cases.
             (true, _, _) => {
                 for (field, value) in [
-                    (CallContextField::LastCalleeId, 0.into()),
+                    (CallContextField::LastCalleeId, call.call_id.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                     (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 ] {
