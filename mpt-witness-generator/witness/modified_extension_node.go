@@ -6,11 +6,11 @@ import (
 	"github.com/privacy-scaling-explorations/mpt-witness-generator/trie"
 )
 
-// prepareModExtensionNode adds rows for a modified extension node before and after modification.
+// equipLeafWithModExtensionNode adds rows for a modified extension node before and after modification.
 // These rows are added only when an existing extension node gets shortened or elongated (in terms
 // of the extension node nibbles) because of another extension node being added or deleted.
 // The rows added are somewhat exceptional as otherwise they do not appear.
-func prepareModExtensionNode(statedb *state.StateDB, addr common.Address, rows *[][]byte, proof1, proof2,
+func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr common.Address, rows *[][]byte, proof1, proof2,
 	extNibblesS, extNibblesC [][]byte,
 	key, neighbourNode []byte,
 	keyIndex, extensionNodeInd, numberOfNibbles int,
@@ -175,9 +175,6 @@ func prepareModExtensionNode(statedb *state.StateDB, addr common.Address, rows *
 	 */
 
 	listRlpBytes := [2][]byte{extListRlpBytesS, extListRlpBytesC}
-	modExtensionNode := ModExtensionNode{
-		ListRlpBytes: listRlpBytes,
-	}
 
 	var values [][]byte
 	extValuesS = append(extValuesS[:1], extValuesS[2:]...)
@@ -189,9 +186,18 @@ func prepareModExtensionNode(statedb *state.StateDB, addr common.Address, rows *
 	keccakData = append(keccakData, longExtNode)
 	keccakData = append(keccakData, shortExtNode)
 
-	return Node{
-		ModExtension: &modExtensionNode,
-		Values:       values,
-		KeccakData:   keccakData,
+	if leafNode.Account == nil {
+		leafNode.Storage.ModListRlpBytes = listRlpBytes
+	} else {
+		leafNode.Account.ModListRlpBytes = listRlpBytes
 	}
+
+	l := len(leafNode.Values)
+	for i := 0; i < 6; i++ {
+		leafNode.Values[l-6+i] = values[i]
+	}
+
+	leafNode.KeccakData = append(leafNode.KeccakData, keccakData...)
+
+	return leafNode
 }

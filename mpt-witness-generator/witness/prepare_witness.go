@@ -1,7 +1,6 @@
 package witness
 
 import (
-	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -445,11 +444,11 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 
 			nodes = append(nodes, bNode)
 
+			var leafNode Node
 			if isAccountProof {
 				// Add account leaf after branch placeholder:
-				var node Node
 				if !isModifiedExtNode {
-					node = prepareAccountLeafNode(addr, addrh, proof1[len1-1], proof2[len2-1], neighbourNode, key, false, false, false)
+					leafNode = prepareAccountLeafNode(addr, addrh, proof1[len1-1], proof2[len2-1], neighbourNode, key, false, false, false)
 				} else {
 					isSModExtension := false
 					isCModExtension := false
@@ -458,14 +457,12 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 					} else {
 						isCModExtension = true
 					}
-					node = prepareLeafAndPlaceholderNode(addr, addrh, proof1, proof2, storage_key, key, nonExistingAccountProof, isAccountProof, isSModExtension, isCModExtension)
+					leafNode = prepareLeafAndPlaceholderNode(addr, addrh, proof1, proof2, storage_key, key, nonExistingAccountProof, isAccountProof, isSModExtension, isCModExtension)
 				}
-				nodes = append(nodes, node)
 			} else {
 				// Add storage leaf after branch placeholder
-				var node Node
 				if !isModifiedExtNode {
-					node = prepareStorageLeafNode(proof1[len1-1], proof2[len2-1], neighbourNode, storage_key, key, nonExistingStorageProof, false, false, false, false)
+					leafNode = prepareStorageLeafNode(proof1[len1-1], proof2[len2-1], neighbourNode, storage_key, key, nonExistingStorageProof, false, false, false, false)
 				} else {
 					isSModExtension := false
 					isCModExtension := false
@@ -474,22 +471,19 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 					} else {
 						isCModExtension = true
 					}
-					node = prepareLeafAndPlaceholderNode(addr, addrh, proof1, proof2, storage_key, key, nonExistingAccountProof, isAccountProof, isSModExtension, isCModExtension)
+					leafNode = prepareLeafAndPlaceholderNode(addr, addrh, proof1, proof2, storage_key, key, nonExistingAccountProof, isAccountProof, isSModExtension, isCModExtension)
 				}
-				nodes = append(nodes, node)
 			}
 
 			// When a proof element is a modified extension node (new extension node appears at the position
 			// of the existing extension node), additional rows are added (extension node before and after
 			// modification).
 			if isModifiedExtNode {
-				// TODO
-				modExtensionNode := prepareModExtensionNode(statedb, addr, &rows, proof1, proof2, extNibblesS, extNibblesC, key, neighbourNode,
+				leafNode = equipLeafWithModExtensionNode(statedb, leafNode, addr, &rows, proof1, proof2, extNibblesS, extNibblesC, key, neighbourNode,
 					keyIndex, extensionNodeInd, numberOfNibbles, additionalBranch,
 					isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf, branchC16, branchC1, &toBeHashed)
-				// node = append(nodes, modExtensionNode)
-				fmt.Println(modExtensionNode)
 			}
+			nodes = append(nodes, leafNode)
 		} else {
 			node := prepareLeafAndPlaceholderNode(addr, addrh, proof1, proof2, storage_key, key, nonExistingAccountProof, isAccountProof, false, false)
 			nodes = append(nodes, node)

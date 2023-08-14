@@ -275,6 +275,11 @@ func prepareAccountLeafNode(addr common.Address, addrh []byte, leafS, leafC, nei
 	values[AccountDrifted] = keyDrifted
 	values[AccountWrong] = wrongValue
 
+	for i := 0; i < 6; i++ {
+		row := make([]byte, rowLen)
+		values = append(values, row)
+	}
+
 	leaf := AccountNode{
 		Address:           addr,
 		Key:               addrh,
@@ -537,6 +542,11 @@ func prepareStorageLeafNode(leafS, leafC, neighbourNode []byte, storage_key comm
 		nonExistingStorageRow = prepareEmptyNonExistingStorageRow()
 	}
 	rows = append(rows, nonExistingStorageRow)
+
+	for i := 0; i < 6; i++ {
+		row := make([]byte, rowLen)
+		rows = append(rows, row)
+	}
 
 	leaf := StorageNode{
 		Address:         storage_key,
