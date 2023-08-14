@@ -306,7 +306,7 @@ pub struct ExecutionConfig<F> {
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasStaticMemoryExpansion }>>,
     error_stack: Box<ErrorStackGadget<F>>,
     error_write_protection: Box<ErrorWriteProtectionGadget<F>>,
-    error_oog_dynamic_memory_gadget:Box<ErrorOOGDynamicMemoryGadget<F>>,
+    error_oog_dynamic_memory_gadget: Box<ErrorOOGDynamicMemoryGadget<F>>,
     error_oog_log: Box<ErrorOOGLogGadget<F>>,
     error_oog_sha3: Box<ErrorOOGSha3Gadget<F>>,
     error_oog_account_access: Box<ErrorOOGAccountAccessGadget<F>>,
