@@ -78,6 +78,7 @@ pub enum ExecutionState {
     MSIZE,
     GAS,
     JUMPDEST,
+    PUSH0,
     PUSH, // PUSH1, PUSH2, ..., PUSH32
     DUP,  // DUP1, DUP2, ..., DUP16
     SWAP, // SWAP1, SWAP2, ..., SWAP16
@@ -170,6 +171,9 @@ impl From<&ExecStep> for ExecutionState {
             ExecState::Op(op) => {
                 if op.is_dup() {
                     return ExecutionState::DUP;
+                }
+                if op.is_push0() {
+                    return ExecutionState::PUSH0;
                 }
                 if op.is_push() {
                     return ExecutionState::PUSH;
@@ -379,6 +383,7 @@ impl ExecutionState {
             Self::MSIZE => vec![OpcodeId::MSIZE],
             Self::GAS => vec![OpcodeId::GAS],
             Self::JUMPDEST => vec![OpcodeId::JUMPDEST],
+            Self::PUSH0 => vec![OpcodeId::PUSH0],
             Self::PUSH => vec![
                 OpcodeId::PUSH1,
                 OpcodeId::PUSH2,

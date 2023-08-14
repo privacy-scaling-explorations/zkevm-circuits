@@ -95,6 +95,7 @@ mod origin;
 mod pc;
 mod pop;
 mod push;
+mod push0;
 mod return_revert;
 mod returndatacopy;
 mod returndatasize;
@@ -165,6 +166,7 @@ use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
+use push0::DummyPush0Gadget;
 use return_revert::ReturnRevertGadget;
 use returndatacopy::ReturnDataCopyGadget;
 use returndatasize::ReturnDataSizeGadget;
@@ -261,6 +263,7 @@ pub struct ExecutionConfig<F> {
     pc_gadget: Box<PcGadget<F>>,
     pop_gadget: Box<PopGadget<F>>,
     push_gadget: Box<PushGadget<F>>,
+    push0_gadget: Box<DummyPush0Gadget<F>>,
     return_revert_gadget: Box<ReturnRevertGadget<F>>,
     sar_gadget: Box<SarGadget<F>>,
     sdiv_smod_gadget: Box<SignedDivModGadget<F>>,
@@ -524,6 +527,7 @@ impl<F: Field> ExecutionConfig<F> {
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
+            push0_gadget: configure_gadget!(),
             return_revert_gadget: configure_gadget!(),
             sdiv_smod_gadget: configure_gadget!(),
             selfbalance_gadget: configure_gadget!(),

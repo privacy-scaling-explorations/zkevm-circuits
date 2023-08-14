@@ -95,6 +95,8 @@ pub enum OpcodeId {
     JUMPDEST,
 
     // PUSHn
+    /// `PUSH0`
+    PUSH0,
     /// `PUSH1`
     PUSH1,
     /// `PUSH2`
@@ -320,6 +322,11 @@ impl OpcodeId {
         self.as_u8() >= Self::PUSH1.as_u8() && self.as_u8() <= Self::PUSH32.as_u8()
     }
 
+    /// Returns `true` if the `OpcodeId` is a `PUSH0`.
+    pub fn is_push0(&self) -> bool {
+        self == &Self::PUSH0
+    }
+
     /// Returns `true` if the `OpcodeId` is a `DUPn`.
     pub fn is_dup(&self) -> bool {
         self.as_u8() >= Self::DUP1.as_u8() && self.as_u8() <= Self::DUP16.as_u8()
@@ -402,6 +409,7 @@ impl OpcodeId {
             OpcodeId::PC => 0x58u8,
             OpcodeId::MSIZE => 0x59u8,
             OpcodeId::JUMPDEST => 0x5bu8,
+            OpcodeId::PUSH0 => 0x5fu8,
             OpcodeId::PUSH1 => 0x60u8,
             OpcodeId::PUSH2 => 0x61u8,
             OpcodeId::PUSH3 => 0x62u8,
@@ -580,6 +588,7 @@ impl OpcodeId {
             OpcodeId::MSIZE => GasCost::QUICK,
             OpcodeId::GAS => GasCost::QUICK,
             OpcodeId::JUMPDEST => GasCost::ONE,
+            OpcodeId::PUSH0 => GasCost::QUICK,
             OpcodeId::PUSH1 => GasCost::FASTEST,
             OpcodeId::PUSH2 => GasCost::FASTEST,
             OpcodeId::PUSH3 => GasCost::FASTEST,
