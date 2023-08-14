@@ -28,12 +28,12 @@ use log::error;
 use sign_verify::{AssignedSignatureVerify, SignVerifyChip, SignVerifyConfig};
 use std::marker::PhantomData;
 
-/// Number of static fields per tx: [nonce, gas, gas_price,
+/// Number of static fields per tx: [nonce, gas, gas_price, gas_tip_cap, gas_fee_cap,
 /// caller_address, callee_address, is_create, value, call_data_length,
 /// call_data_gas_cost, tx_sign_hash, r, s, v].
 /// Note that call data bytes are layed out in the TxTable after all the static
 /// fields arranged by txs.
-pub(crate) const TX_LEN: usize = 13;
+pub(crate) const TX_LEN: usize = 15;
 
 /// Config for TxCircuit
 #[derive(Clone, Debug)]

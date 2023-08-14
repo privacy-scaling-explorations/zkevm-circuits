@@ -34,7 +34,7 @@ use self::sign_verify::GOLDEN_TOUCH_ADDRESS;
 const ANCHOR_TX_ID: usize = 1;
 const ANCHOR_TX_VALUE: u64 = 0;
 const ANCHOR_TX_IS_CREATE: bool = false;
-const ANCHOR_TX_GAS_PRICE: u64 = 1;
+const ANCHOR_TX_GAS_TIP_CAP: u64 = 0;
 const MAX_DEGREE: usize = 9;
 const BYTE_POW_BASE: u64 = 1 << 8;
 
@@ -220,8 +220,8 @@ impl<F: Field> AnchorTxCircuitConfig<F> {
                 Value::known(F::from(protocol_instance.anchor_gas_limit)),
             ),
             (
-                TxFieldTag::GasPrice,
-                Value::known(F::from(ANCHOR_TX_GAS_PRICE)),
+                TxFieldTag::GasTipCap,
+                Value::known(F::from(ANCHOR_TX_GAS_TIP_CAP)),
             ),
             (
                 TxFieldTag::CallerAddress,
