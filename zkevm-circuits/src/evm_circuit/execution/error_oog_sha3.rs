@@ -49,8 +49,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSha3Gadget<F> {
         );
 
         let memory_address = MemoryExpandedAddressGadget::construct_self(cb);
-        cb.stack_pop(memory_address.offset_rlc());
-        cb.stack_pop(memory_address.length_rlc());
+        cb.stack_pop(memory_address.offset_word());
+        cb.stack_pop(memory_address.length_word());
 
         let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
@@ -63,13 +63,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSha3Gadget<F> {
             cb,
             cb.curr.state.gas_left.expr(),
             OpcodeId::SHA3.constant_gas_cost().expr() + memory_copier_gas.gas_cost(),
-            // OpcodeId::SHA3.constant_gas_cost().expr(),
         );
 
         cb.require_equal(
             "Memory address is overflow or gas left is less than cost",
             or::expr([memory_address.overflow(), insufficient_gas.expr()]),
-            // or::expr([memory_address.overflow(), 0.expr()]),
             1.expr(),
         );
 
