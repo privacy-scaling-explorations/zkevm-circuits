@@ -145,7 +145,6 @@ pub(crate) fn add_anchor_tx<const NACC: usize, FTx>(
 {
     txs[0]
         .gas(protocol_instance.anchor_gas_limit.to_word())
-        .gas_price(ANCHOR_TX_GAS_PRICE.to_word())
         .from(*GOLDEN_TOUCH_ADDRESS)
         .to(protocol_instance.l2_contract)
         .input(protocol_instance.anchor_call())
