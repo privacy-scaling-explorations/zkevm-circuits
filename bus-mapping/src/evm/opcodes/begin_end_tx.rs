@@ -264,7 +264,7 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
         caller_balance_prev,
     )?;
 
-    let base_fee = if state.tx_ctx.is_anchor_tx() {
+    let base_fee = if state.tx_ctx.is_anchor() {
         0.into()
     } else {
         state.block.base_fee

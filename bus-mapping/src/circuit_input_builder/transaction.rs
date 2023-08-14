@@ -10,7 +10,7 @@ use crate::{
     Error,
 };
 
-use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecStep};
+use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, EthBlock, ExecStep};
 
 #[derive(Debug, Default)]
 /// Context of a [`Transaction`] which can mutate in an [`ExecStep`].
@@ -19,7 +19,6 @@ pub struct TransactionContext {
     id: usize,
     /// The index of logs made in the transaction.
     pub(crate) log_id: usize,
-    is_anchor_tx: bool,
     /// Identifier if this transaction is last one of the block or not.
     is_last_tx: bool,
     /// Call stack.
@@ -39,7 +38,6 @@ impl TransactionContext {
     pub fn new(
         eth_tx: &eth_types::Transaction,
         geth_trace: &GethExecTrace,
-        is_anchor_tx: bool,
         is_last_tx: bool,
     ) -> Result<Self, Error> {
         // Iterate over geth_trace to inspect and collect each call's is_success, which
@@ -76,7 +74,6 @@ impl TransactionContext {
                 .as_u64() as usize
                 + 1,
             log_id: 0,
-            is_anchor_tx,
             is_last_tx,
             call_is_success,
             calls: Vec::new(),
@@ -92,9 +89,9 @@ impl TransactionContext {
         self.id
     }
 
-    /// Return is_anchor_tx of the this transaction.
-    pub fn is_anchor_tx(&self) -> bool {
-        self.is_anchor_tx
+    /// Return true if it is the first transaction.
+    pub fn is_anchor(&self) -> bool {
+        self.id == 1
     }
 
     /// Return is_last_tx of the this transaction.
@@ -201,6 +198,7 @@ impl Transaction {
         call_id: usize,
         sdb: &StateDB,
         code_db: &mut CodeDB,
+        eth_block: &EthBlock,
         eth_tx: &eth_types::Transaction,
         is_success: bool,
     ) -> Result<Self, Error> {
@@ -250,9 +248,21 @@ impl Transaction {
                 ..Default::default()
             }
         };
+        let mut tx: geth_types::Transaction = eth_tx.into();
+        // reset gas_price
+        if eth_tx.transaction_index.unwrap_or_default() == 0.into() {
+            // anchor's gas_price is always 0
+            tx.gas_price = 0.into();
+        } else {
+            // gas_price = min(base_fee + gas_tip_cap, gas_fee_cap)
+            tx.gas_price = std::cmp::min(
+                eth_block.base_fee_per_gas.unwrap() + tx.gas_tip_cap,
+                tx.gas_fee_cap,
+            );
+        }
 
         Ok(Self {
-            tx: eth_tx.into(),
+            tx,
             calls: vec![call],
             steps: Vec::new(),
         })

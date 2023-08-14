@@ -56,6 +56,11 @@ pub struct Transaction {
 }
 
 impl Transaction {
+    /// The first transaction in a block is the anchor transaction
+    pub fn is_anchor(&self) -> bool {
+        self.id == 1
+    }
+
     /// Assignments for tx table, split into tx_data (all fields except
     /// calldata) and tx_calldata
     pub fn table_assignments<F: Field>(
