@@ -105,9 +105,7 @@ impl From<&OpcodeId> for OogError {
             OpcodeId::MLOAD | OpcodeId::MSTORE | OpcodeId::MSTORE8 => {
                 OogError::StaticMemoryExpansion
             }
-            OpcodeId::RETURN | OpcodeId::REVERT => {
-                OogError::DynamicMemoryExpansion
-            }
+            OpcodeId::RETURN | OpcodeId::REVERT => OogError::DynamicMemoryExpansion,
             OpcodeId::CALLDATACOPY
             | OpcodeId::CODECOPY
             | OpcodeId::EXTCODECOPY
@@ -124,7 +122,7 @@ impl From<&OpcodeId> for OogError {
                 OogError::Call
             }
             OpcodeId::SLOAD | OpcodeId::SSTORE => OogError::SloadSstore,
-            OpcodeId::CREATE |  OpcodeId::CREATE2 => OogError::Create,
+            OpcodeId::CREATE | OpcodeId::CREATE2 => OogError::Create,
             OpcodeId::SELFDESTRUCT => OogError::SelfDestruct,
             _ => OogError::Constant,
         }
