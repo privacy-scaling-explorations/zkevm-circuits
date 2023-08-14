@@ -1123,6 +1123,7 @@ impl<F: Field> DriftedGadget<F> {
         leaf_no_key_rlc: &[Expression<F>],
         leaf_no_key_rlc_mult: &[Expression<F>],
         drifted_item: &RLPItemView<F>,
+        is_mod_extension: &[Cell<F>; 2],
         r: &Expression<F>,
     ) -> Self {
         let mut config = DriftedGadget::default();
@@ -1130,7 +1131,7 @@ impl<F: Field> DriftedGadget<F> {
             ifx! {parent_data[true.idx()].is_placeholder.expr() + parent_data[false.idx()].is_placeholder.expr() => {
                 config.drifted_rlp_key = ListKeyGadget::construct(cb, drifted_item);
                 for is_s in [true, false] {
-                    ifx! {parent_data[is_s.idx()].is_placeholder.expr() => {
+                    ifx! {and::expr(&[parent_data[is_s.idx()].is_placeholder.expr(), not!(is_mod_extension[is_s.idx()].expr())]) => {
                         // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
 
                         // Make sure the RLP is still consistent with the new key part

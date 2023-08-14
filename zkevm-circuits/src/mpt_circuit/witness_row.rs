@@ -94,6 +94,7 @@ pub struct StartNode {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExtensionBranchNode {
     pub(crate) is_extension: bool,
+    pub(crate) is_mod_extension: [bool; 2],
     pub(crate) is_placeholder: [bool; 2],
     pub(crate) extension: ExtensionNode,
     pub(crate) branch: BranchNode,
@@ -109,6 +110,7 @@ pub struct AccountNode {
     pub(crate) value_list_rlp_bytes: [Vec<u8>; 2],
     pub(crate) drifted_rlp_bytes: Vec<u8>,
     pub(crate) wrong_rlp_bytes: Vec<u8>,
+    pub(crate) is_mod_extension: [bool; 2],
 }
 
 /// MPT storage node
@@ -120,6 +122,7 @@ pub struct StorageNode {
     pub(crate) value_rlp_bytes: [Vec<u8>; 2],
     pub(crate) drifted_rlp_bytes: Vec<u8>,
     pub(crate) wrong_rlp_bytes: Vec<u8>,
+    pub(crate) is_mod_extension: [bool; 2],
 }
 
 /// MPT node
