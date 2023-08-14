@@ -6,7 +6,11 @@ pub mod test;
 
 use crate::{
     anchor_tx_circuit::{AnchorTxCircuit, AnchorTxCircuitConfig, AnchorTxCircuitConfigArgs},
-    table::{byte_table::ByteTable, BlockTable, KeccakTable, PiTable, TxTable},
+    evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs},
+    table::{
+        BlockTable, ByteTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, PiTable, RwTable,
+        TxTable,
+    },
     taiko_pi_circuit::{TaikoPiCircuit, TaikoPiCircuitConfig, TaikoPiCircuitConfigArgs},
     util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
     witness::{block_convert, Block},
@@ -28,12 +32,17 @@ use snark_verifier_sdk::CircuitExt;
 #[derive(Clone)]
 pub struct SuperCircuitConfig<F: Field> {
     tx_table: TxTable,
+    rw_table: RwTable,
+    bytecode_table: BytecodeTable,
     pi_table: PiTable,
     keccak_table: KeccakTable,
     block_table: BlockTable,
     byte_table: ByteTable,
+    copy_table: CopyTable,
+    exp_table: ExpTable,
     pi_circuit: TaikoPiCircuitConfig<F>,
     anchor_tx_circuit: AnchorTxCircuitConfig<F>,
+    evm_circuit: EvmCircuitConfig<F>,
 }
 
 /// Circuit configuration arguments
@@ -51,10 +60,15 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         Self::ConfigArgs { challenges }: Self::ConfigArgs,
     ) -> Self {
         let tx_table = TxTable::construct(meta);
+        let rw_table = RwTable::construct(meta);
+        let bytecode_table = BytecodeTable::construct(meta);
         let pi_table = PiTable::construct(meta);
         let block_table = BlockTable::construct(meta);
         let keccak_table = KeccakTable::construct(meta);
         let byte_table = ByteTable::construct(meta);
+        let q_copy_table = meta.fixed_column();
+        let copy_table = CopyTable::construct(meta, q_copy_table);
+        let exp_table = ExpTable::construct(meta);
 
         let pi_circuit = TaikoPiCircuitConfig::new(
             meta,
@@ -72,18 +86,37 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 tx_table: tx_table.clone(),
                 pi_table: pi_table.clone(),
                 byte_table: byte_table.clone(),
+                challenges: challenges.clone(),
+            },
+        );
+
+        let evm_circuit = EvmCircuitConfig::new(
+            meta,
+            EvmCircuitConfigArgs {
                 challenges,
+                tx_table: tx_table.clone(),
+                rw_table,
+                bytecode_table: bytecode_table.clone(),
+                block_table: block_table.clone(),
+                copy_table,
+                keccak_table: keccak_table.clone(),
+                exp_table,
             },
         );
 
         Self {
             tx_table,
+            rw_table,
+            bytecode_table,
+            copy_table,
+            exp_table,
             pi_table,
             pi_circuit,
             block_table,
             keccak_table,
             byte_table,
             anchor_tx_circuit,
+            evm_circuit,
         }
     }
 }
@@ -95,6 +128,8 @@ pub struct SuperCircuit<F: Field> {
     pub pi_circuit: TaikoPiCircuit<F>,
     /// Anchor Transaction Circuit
     pub anchor_tx_circuit: AnchorTxCircuit<F>,
+    /// EVM Circuit
+    pub evm_circuit: EvmCircuit<F>,
     /// Block witness
     pub block: Block<F>,
 }
@@ -122,10 +157,12 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
     fn new_from_block(block: &Block<F>) -> Self {
         let pi_circuit = TaikoPiCircuit::new_from_block(block);
         let anchor_tx_circuit = AnchorTxCircuit::new_from_block(block);
+        let evm_circuit = EvmCircuit::new_from_block(block);
 
         SuperCircuit::<_> {
             pi_circuit,
             anchor_tx_circuit,
+            evm_circuit,
             block: block.clone(),
         }
     }
@@ -160,6 +197,8 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
             .synthesize_sub(&config.pi_circuit, challenges, layouter)?;
         self.anchor_tx_circuit
             .synthesize_sub(&config.anchor_tx_circuit, challenges, layouter)?;
+        self.evm_circuit
+            .synthesize_sub(&config.evm_circuit, challenges, layouter)?;
         Ok(())
     }
 }
@@ -213,6 +252,32 @@ impl<F: Field> Circuit<F> for SuperCircuit<F> {
         config
             .pi_table
             .load(&mut layouter, &self.block.protocol_instance, &challenges)?;
+        // rw_table,
+        // bytecode_table,
+        // copy_table,
+        // exp_table,
+
+        config.tx_table.load(
+            &mut layouter,
+            &self.block.txs,
+            self.block.circuits_params.max_txs,
+            self.block.circuits_params.max_calldata,
+            &challenges,
+        )?;
+        self.block.rws.check_rw_counter_sanity();
+        config.rw_table.load(
+            &mut layouter,
+            &self.block.rws.table_assignments(),
+            self.block.circuits_params.max_rws,
+            challenges.evm_word(),
+        )?;
+        config
+            .bytecode_table
+            .load(&mut layouter, self.block.bytecodes.values(), &challenges)?;
+        config
+            .copy_table
+            .load(&mut layouter, &self.block, &challenges)?;
+        config.exp_table.load(&mut layouter, &self.block)?;
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }

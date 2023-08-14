@@ -48,6 +48,7 @@ pub(crate) mod rw_table;
 pub(crate) mod tx_table;
 
 pub(crate) use block_table::{BlockContextFieldTag, BlockTable};
+pub(crate) use byte_table::ByteTable;
 pub(crate) use bytecode_table::{BytecodeFieldTag, BytecodeTable};
 pub(crate) use copy_table::CopyTable;
 pub(crate) use exp_table::ExpTable;
