@@ -189,6 +189,10 @@ impl TransactionContext {
 pub struct Transaction {
     /// The raw transaction fields
     pub tx: geth_types::Transaction,
+    /// Invalid tx
+    pub invalid_tx: bool,
+    /// AccessListGasCost
+    pub access_list_gas_cost: u64,
     /// Calls made in the transaction
     pub(crate) calls: Vec<Call>,
     /// Execution steps
@@ -203,6 +207,7 @@ impl Transaction {
         code_db: &mut CodeDB,
         eth_tx: &eth_types::Transaction,
         is_success: bool,
+        is_invalid: bool,
     ) -> Result<Self, Error> {
         let (found, _) = sdb.get_account(&eth_tx.from);
         if !found {
@@ -253,6 +258,8 @@ impl Transaction {
 
         Ok(Self {
             tx: eth_tx.into(),
+            invalid_tx: is_invalid,
+            access_list_gas_cost: 0,
             calls: vec![call],
             steps: Vec::new(),
         })

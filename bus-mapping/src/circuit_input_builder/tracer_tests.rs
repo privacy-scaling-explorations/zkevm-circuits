@@ -37,13 +37,14 @@ impl CircuitInputBuilderTx {
         let block = crate::mock::BlockData::new_from_geth_data(geth_data.clone());
         let mut builder = block.new_circuit_input_builder();
         let tx = builder
-            .new_tx(&block.eth_block.transactions[0], true)
+            .new_tx(&block.eth_block.transactions[0], true, false)
             .unwrap();
         let tx_ctx = TransactionContext::new(
             &block.eth_block.transactions[0],
             &GethExecTrace {
                 gas: Gas(0),
                 failed: false,
+                invalid: false,
                 return_value: "".to_owned(),
                 struct_logs: vec![geth_step.clone()],
             },

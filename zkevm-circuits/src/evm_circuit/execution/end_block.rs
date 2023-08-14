@@ -21,6 +21,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 pub(crate) struct EndBlockGadget<F> {
     total_txs: Cell<F>,
     total_txs_is_max_txs: IsEqualGadget<F>,
+    total_valid_txs: Cell<F>,
     is_empty_block: IsZeroGadget<F>,
     max_rws: Cell<F>,
     max_txs: Cell<F>,
@@ -38,6 +39,8 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let max_rws = cb.query_copy_cell();
         let total_txs = cb.query_cell();
         let total_txs_is_max_txs = IsEqualGadget::construct(cb, total_txs.expr(), max_txs.expr());
+        let total_valid_txs = cb.query_cell();
+
         // Note that rw_counter starts at 1
         let is_empty_block =
             IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
@@ -46,14 +49,19 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let total_rws = not::expr(is_empty_block.expr())
             * (cb.curr.state.rw_counter.clone().expr() - 1.expr() + 1.expr());
 
-        // 1. Constraint total_rws and total_txs witness values depending on the empty
-        // block case.
+        // 1. Constraint total_valid_txs and total_txs witness values depending on the
+        // empty block case.
         cb.condition(is_empty_block.expr(), |cb| {
             // 1a.
-            cb.require_equal("total_txs is 0 in empty block", total_txs.expr(), 0.expr());
+            // 1a. total_valid_txs is 0 in empty block
+            cb.require_equal(
+                "total_txs is 0 in empty block",
+                total_valid_txs.expr(),
+                0.expr(),
+            );
         });
         cb.condition(not::expr(is_empty_block.expr()), |cb| {
-            // 1b. total_txs matches the tx_id that corresponds to the final step.
+            // 1b. total_valid_txs matches the tx_id that corresponds to the final step.
             cb.call_context_lookup(0.expr(), None, CallContextFieldTag::TxId, total_txs.expr());
         });
 
@@ -106,6 +114,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             max_rws,
             total_txs,
             total_txs_is_max_txs,
+            total_valid_txs,
             is_empty_block,
         }
     }
@@ -130,6 +139,12 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             .assign(region, offset, Value::known(total_txs))?;
         self.total_txs_is_max_txs
             .assign(region, offset, total_txs, max_txs)?;
+        let total_invalid_txs = block.txs.iter().filter(|&tx| tx.invalid_tx).count();
+        self.total_valid_txs.assign(
+            region,
+            offset,
+            Value::known(F::from((block.txs.len() - total_invalid_txs) as u64)),
+        )?;
         let max_txs_assigned = self.max_txs.assign(region, offset, Value::known(max_txs))?;
         // When rw_indices is not empty, we're at the last row (at a fixed offset),
         // where we need to access the max_rws and max_txs constant.

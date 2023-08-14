@@ -35,6 +35,10 @@ pub enum TxFieldTag {
     SigR,
     /// Signature field S.
     SigS,
+    /// Invalid tx
+    TxInvalid,
+    /// AccessListGasCost
+    AccessListGasCost,
 }
 impl_expr!(TxFieldTag);
 
