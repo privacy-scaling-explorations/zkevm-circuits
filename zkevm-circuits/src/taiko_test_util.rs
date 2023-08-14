@@ -190,7 +190,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
                 .new_circuit_input_builder();
             builder
-                .handle_block_with_anchor(&block.eth_block, &block.geth_traces, true)
+                .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
             // Build a witness block from trace result.
             let mut block =

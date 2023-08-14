@@ -153,6 +153,7 @@ impl<'a> CircuitInputBuilder {
     /// Create a new Transaction from a [`eth_types::Transaction`].
     pub fn new_tx(
         &mut self,
+        eth_block: &EthBlock,
         eth_tx: &eth_types::Transaction,
         is_success: bool,
     ) -> Result<Transaction, Error> {
@@ -169,7 +170,14 @@ impl<'a> CircuitInputBuilder {
             ),
         );
 
-        Transaction::new(call_id, &self.sdb, &mut self.code_db, eth_tx, is_success)
+        Transaction::new(
+            call_id,
+            &self.sdb,
+            &mut self.code_db,
+            eth_block,
+            eth_tx,
+            is_success,
+        )
     }
 
     /// Iterate over all generated CallContext RwCounterEndOfReversion
@@ -200,24 +208,13 @@ impl<'a> CircuitInputBuilder {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<(), Error> {
-        self.handle_block_with_anchor(eth_block, geth_traces, false)
-    }
-
-    /// Handle a block by handling each transaction to generate all the
-    /// associated operations.
-    pub fn handle_block_with_anchor(
-        &mut self,
-        eth_block: &EthBlock,
-        geth_traces: &[eth_types::GethExecTrace],
-        has_anchor_tx: bool,
-    ) -> Result<(), Error> {
         // accumulates gas across all txs in the block
         for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
             let geth_trace = &geth_traces[tx_index];
             self.handle_tx(
+                eth_block,
                 tx,
                 geth_trace,
-                has_anchor_tx && tx_index == 0,
                 tx_index + 1 == eth_block.transactions.len(),
             )?;
         }
@@ -281,13 +278,13 @@ impl<'a> CircuitInputBuilder {
     /// generated operations.
     fn handle_tx(
         &mut self,
+        eth_block: &EthBlock,
         eth_tx: &eth_types::Transaction,
         geth_trace: &GethExecTrace,
-        is_anchor_tx: bool,
         is_last_tx: bool,
     ) -> Result<(), Error> {
-        let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
-        let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_anchor_tx, is_last_tx)?;
+        let mut tx = self.new_tx(eth_block, eth_tx, !geth_trace.failed)?;
+        let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
 
         // Generate BeginTx step
         let begin_tx_step = gen_associated_steps(
@@ -590,30 +587,6 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         history_hashes: Vec<Word>,
         prev_state_root: Word,
     ) -> Result<CircuitInputBuilder, Error> {
-        self.gen_inputs_from_state_with_anchor(
-            sdb,
-            code_db,
-            eth_block,
-            geth_traces,
-            history_hashes,
-            prev_state_root,
-            false,
-        )
-    }
-
-    /// Step 5. For each step in TxExecTraces, gen the associated ops and state
-    /// circuit inputs
-    #[allow(clippy::too_many_arguments)]
-    pub fn gen_inputs_from_state_with_anchor(
-        &self,
-        sdb: StateDB,
-        code_db: CodeDB,
-        eth_block: &EthBlock,
-        geth_traces: &[eth_types::GethExecTrace],
-        history_hashes: Vec<Word>,
-        prev_state_root: Word,
-        has_anchor_tx: bool,
-    ) -> Result<CircuitInputBuilder, Error> {
         let block = Block::new(
             self.chain_id,
             history_hashes,
@@ -623,7 +596,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             self.protocol_instance.clone(),
         )?;
         let mut builder = CircuitInputBuilder::new(sdb, code_db, block);
-        builder.handle_block_with_anchor(eth_block, geth_traces, has_anchor_tx)?;
+        builder.handle_block(eth_block, geth_traces)?;
         Ok(builder)
     }
 
@@ -638,34 +611,18 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         ),
         Error,
     > {
-        self.gen_inputs_with_anchor(block_num, false).await
-    }
-
-    /// Perform all the steps to generate the circuit inputs
-    pub async fn gen_inputs_with_anchor(
-        &self,
-        block_num: u64,
-        has_anchor_tx: bool,
-    ) -> Result<
-        (
-            CircuitInputBuilder,
-            eth_types::Block<eth_types::Transaction>,
-        ),
-        Error,
-    > {
         let (eth_block, geth_traces, history_hashes, prev_state_root) =
             self.get_block(block_num).await?;
         let access_set = Self::get_state_accesses(&eth_block, &geth_traces)?;
         let (proofs, codes) = self.get_state(block_num, access_set).await?;
         let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
-        let builder = self.gen_inputs_from_state_with_anchor(
+        let builder = self.gen_inputs_from_state(
             state_db,
             code_db,
             &eth_block,
             &geth_traces,
             history_hashes,
             prev_state_root,
-            has_anchor_tx,
         )?;
         Ok((builder, eth_block))
     }

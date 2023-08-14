@@ -270,7 +270,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             F::from(refund),
         )?;
 
-        let base_fee = if tx.id == 1 {
+        let base_fee = if tx.is_anchor() {
             0.into()
         } else {
             block.context.base_fee
