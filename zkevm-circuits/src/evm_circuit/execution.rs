@@ -77,6 +77,7 @@ mod error_oog_constant;
 mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_memory_copy;
+mod error_oog_sha3;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
 mod error_return_data_oo_bound;
@@ -152,6 +153,7 @@ use error_oog_constant::ErrorOOGConstantGadget;
 use error_oog_exp::ErrorOOGExpGadget;
 use error_oog_log::ErrorOOGLogGadget;
 use error_oog_memory_copy::ErrorOOGMemoryCopyGadget;
+use error_oog_sha3::ErrorOOGSha3Gadget;
 use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
 use error_return_data_oo_bound::ErrorReturnDataOutOfBoundGadget;
 use error_stack::ErrorStackGadget;
@@ -305,8 +307,8 @@ pub struct ExecutionConfig<F> {
     error_oog_dynamic_memory_gadget:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>>,
     error_oog_log: Box<ErrorOOGLogGadget<F>>,
+    error_oog_sha3: Box<ErrorOOGSha3Gadget<F>>,
     error_oog_account_access: Box<ErrorOOGAccountAccessGadget<F>>,
-    error_oog_sha3: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSHA3 }>>,
     error_oog_ext_codecopy: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXTCODECOPY }>>,
     error_oog_create2: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>>,
     error_oog_self_destruct:

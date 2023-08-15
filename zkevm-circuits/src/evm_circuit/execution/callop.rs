@@ -13,6 +13,7 @@ use crate::{
             math_gadget::{
                 ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget,
             },
+            memory_gadget::CommonMemoryAddressGadget,
             not, or, select, CachedRegion, Cell,
         },
     },
