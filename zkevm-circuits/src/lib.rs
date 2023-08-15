@@ -28,6 +28,7 @@ pub mod state_circuit;
 pub mod super_circuit;
 pub mod table;
 pub mod taiko_pi_circuit;
+#[macro_use]
 pub mod taiko_pi_circuit__;
 pub mod taiko_super_circuit;
 
