@@ -290,13 +290,11 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
 
     fn offset_word(&self) -> Word<Expression<F>> {
         let addends = self.offset_length_sum.addends();
-        // addends[0].expr()
         addends[0].to_word()
     }
 
     fn length_word(&self) -> Word<Expression<F>> {
         let addends = self.offset_length_sum.addends();
-        // addends[1].expr()
         addends[1].to_word()
     }
 
