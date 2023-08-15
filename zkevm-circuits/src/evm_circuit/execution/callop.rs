@@ -683,7 +683,6 @@ mod test {
         }
     }
 
-    #[ignore]
     #[test]
     fn callop_recursive() {
         for opcode in TEST_CALL_OPCODES {
@@ -691,7 +690,6 @@ mod test {
         }
     }
 
-    #[ignore]
     #[test]
     fn callop_simple() {
         let stacks = [
