@@ -9,9 +9,9 @@ use crate::{
             math_gadget::{IsZeroGadget, LtGadget},
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
-                MemoryExpansionGadget,
+                MemoryExpansionGadget, MemoryExpandedAddressGadget,
             },
-            select, AccountAddress, CachedRegion, Cell,
+            select, or, AccountAddress, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -41,7 +41,8 @@ pub(crate) struct ErrorOOGMemoryCopyGadget<F> {
     /// Source offset
     src_offset: WordCell<F>,
     /// Destination offset and size to copy
-    dst_memory_addr: MemoryAddressGadget<F>,
+    //dst_memory_addr: MemoryAddressGadget<F>,
+    dst_memory_addr: MemoryExpandedAddressGadget<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
@@ -67,9 +68,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             ],
         );
 
-        let dst_offset = cb.query_word_unchecked();
+        //let dst_offset = cb.query_word_unchecked();
         let src_offset = cb.query_word_unchecked();
-        let copy_size = cb.query_memory_address();
+        //let copy_size = cb.query_memory_address();
         let external_address = cb.query_account_address();
         let is_warm = cb.query_bool();
         let tx_id = cb.query_cell();
@@ -91,11 +92,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             cb.stack_pop(external_address.to_word());
         });
 
-        cb.stack_pop(dst_offset.to_word());
+        //let dst_memory_addr = MemoryAddressGadget::construct(cb, dst_offset, copy_size);
+        let dst_memory_addr = MemoryExpandedAddressGadget::construct_self(cb);
+        cb.stack_pop(dst_memory_addr.offset_word());
         cb.stack_pop(src_offset.to_word());
-        cb.stack_pop(copy_size.to_word());
+        cb.stack_pop(dst_memory_addr.length_word());
 
-        let dst_memory_addr = MemoryAddressGadget::construct(cb, dst_offset, copy_size);
         let memory_expansion = MemoryExpansionGadget::construct(cb, [dst_memory_addr.address()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
@@ -123,8 +125,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         );
 
         cb.require_equal(
-            "Gas left is less than gas cost",
-            insufficient_gas.expr(),
+            "Memory address is overflow or gas left is less than cost",
+            or::expr([dst_memory_addr.overflow(), insufficient_gas.expr()]),
             1.expr(),
         );
 

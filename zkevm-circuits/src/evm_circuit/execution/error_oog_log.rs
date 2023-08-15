@@ -8,9 +8,9 @@ use crate::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::LtGadget,
             memory_gadget::{
-                CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
+                CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget, MemoryExpandedAddressGadget,
             },
-            CachedRegion, Cell,
+            CachedRegion, Cell, or,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -27,7 +27,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 pub(crate) struct ErrorOOGLogGadget<F> {
     opcode: Cell<F>,
     // memory address
-    memory_address: MemoryAddressGadget<F>,
+    memory_address: MemoryExpandedAddressGadget<F>,
     is_static_call: Cell<F>,
     is_opcode_logn: LtGadget<F, 1>,
     // constrain gas left is less than gas cost
@@ -43,12 +43,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let mstart = cb.query_word_unchecked();
-        let msize = cb.query_memory_address();
-
+        // check memory
+        let memory_address = MemoryExpandedAddressGadget::construct_self(cb);
+        
         // Pop mstart_address, msize from stack
-        cb.stack_pop(mstart.to_word());
-        cb.stack_pop(msize.to_word());
+        cb.stack_pop(memory_address.offset_word());
+        cb.stack_pop(memory_address.length_word());
 
         // constrain not in static call
         let is_static_call = cb.call_context(None, CallContextFieldTag::IsStatic);
@@ -61,9 +61,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
             is_opcode_logn.expr(),
             1.expr(),
         );
-
-        // check memory
-        let memory_address = MemoryAddressGadget::construct(cb, mstart, msize);
 
         // Calculate the next memory size and the gas cost for this memory
         // access
@@ -78,8 +75,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         // required
         let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
         cb.require_equal(
-            "gas left is less than gas required ",
-            insufficient_gas.expr(),
+            "Memory address is overflow or gas left is less than cost",
+            or::expr([memory_address.overflow(), insufficient_gas.expr()]),
             1.expr(),
         );
 
