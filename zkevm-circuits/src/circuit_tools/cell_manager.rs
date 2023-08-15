@@ -188,7 +188,6 @@ impl CellType for DefaultCellType {
     }
 
     fn storage_for_phase(phase: u8) -> Self {
-        // println!("phase: {}", phase);
         match phase {
             1 => DefaultCellType::StoragePhase1,
             2 => DefaultCellType::StoragePhase2,
@@ -201,11 +200,11 @@ impl CellType for DefaultCellType {
 #[derive(Clone, Debug)]
 pub(crate) struct CellColumn<F, C: CellType> {
     pub(crate) column: Column<Advice>,
-    index: usize,
     pub(crate) cell_type: C,
-    height: usize,
-    cells: Vec<Cell<F>>,
+    pub(crate) cells: Vec<Cell<F>>,
     pub(crate) expr: Expression<F>,
+    height: usize,
+    index: usize,
 }
 
 impl<F: Field, C: CellType> PartialEq for CellColumn<F, C> {
@@ -236,7 +235,8 @@ impl<F: Field, C: CellType> Expr<F> for CellColumn<F, C> {
     }
 }
 
-#[derive(Clone, Debug)]
+
+#[derive(Clone, Debug, Default)]
 pub struct CellManager<F, C: CellType> {
     configs: Vec<CellConfig<C>>,
     columns: Vec<CellColumn<F, C>>,
@@ -251,37 +251,42 @@ impl<F: Field, C: CellType> CellManager<F, C> {
         offset: usize,
         max_height: usize,
     ) -> Self {
-        let configs = configs
+        let mut cm = CellManager::default();
+        cm.height_limit = max_height;
+        configs
             .into_iter()
-            .map(|c| c.into())
-            .collect::<Vec<CellConfig<C>>>();
+            .for_each(|c| cm.add_celltype(meta, c, offset));
+        cm.height = max_height;
+        cm
+    }
 
-        let mut columns = Vec::new();
-        for config in configs.iter() {
-            let cols = config.init_columns(meta);
-            for col in cols.iter() {
-                let mut cells = Vec::new();
-                for r in 0..max_height {
-                    query_expression(meta, |meta| {
-                        cells.push(Cell::new(meta, *col, offset + r));
-                    });
-                }
-                columns.push(CellColumn {
-                    column: *col,
-                    index: columns.len(),
-                    cell_type: config.cell_type,
-                    height: 0,
-                    expr: cells[0].expr(),
-                    cells,
+    pub(crate) fn add_celltype(
+        &mut self,
+        meta: &mut ConstraintSystem<F>,
+        config: (C, usize, u8, bool),
+        offset: usize,
+    ) {
+        if self.get_typed_columns(config.0).len() != 0 {
+            panic!("CellManager: cell type {:?} already exists", config.0);
+        }
+        let config = CellConfig::from(config);
+        for col in config.init_columns(meta).iter() {
+            let mut cells = Vec::new();
+            for r in 0..self.height_limit {
+                query_expression(meta, |meta| {
+                    cells.push(Cell::new(meta, *col, offset + r));
                 });
             }
+            self.columns.push(CellColumn {
+                column: *col,
+                index: self.columns.len(),
+                cell_type: config.cell_type,
+                height: 0,
+                expr: cells[0].expr(),
+                cells,
+            });
         }
-        Self {
-            configs,
-            columns,
-            height: max_height,
-            height_limit: max_height,
-        }
+        self.configs.push(config);
     }
 
     pub(crate) fn restart(&mut self) {
@@ -368,23 +373,13 @@ impl<F: Field, C: CellType> CellManager<F, C> {
         columns
     }
 
-    pub(crate) fn build_lookups_from_table(
-        &self,
-        meta: &mut ConstraintSystem<F>,
-        tables: &[(C, &dyn LookupTable<F>)],
-        challenge: Expression<F>,
-    ) {
-        for (cell_type, table) in tables {
-            for col in self.get_typed_columns(*cell_type) {
-                let name = format!("{:?}", cell_type);
-                meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
-                    vec![(
-                        col.expr,
-                        rlc::expr(&table.table_exprs(meta), challenge.expr()),
-                    )]
-                });
+    pub(crate) fn get_config(&self, cell_type: C) -> Option<CellConfig<C>> {
+        for config in self.configs.iter() {
+            if config.cell_type == cell_type {
+                return Some(config.clone());
             }
         }
+        None
     }
 }
 
