@@ -9,7 +9,7 @@ use crate::{evm_circuit::util::rlc, table::LookupTable, util::{Expr, query_expre
 use eth_types::Field;
 use gadgets::util::{and, sum, Scalar};
 use halo2_proofs::{
-    plonk::{ConstraintSystem, Expression},
+    plonk::{ConstraintSystem, Expression, Column, Advice},
 };
 use itertools::Itertools;
 
@@ -127,6 +127,8 @@ pub struct ConstraintBuilder<F, C: CellType> {
     max_degree: usize,
     /// conditions for constraints
     conditions: Vec<Expression<F>>,
+    /// Columns whoes equality constraints needed to be enable
+    equalities: Vec<Column<Advice>>,
     /// The lookups generated during synthesis
     /// assembles runtime access to RAM
     pub lookups: HashMap<C, Vec<LookupData<F>>>,
@@ -164,6 +166,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             max_global_degree: max_degree,
             max_degree,
             conditions: Vec::new(),
+            equalities: Vec::new(),
             lookups: HashMap::new(),
             dynamic_tables: HashMap::new(),
             fixed_tables: HashMap::new(),
@@ -328,6 +331,10 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         self.get_condition().unwrap_or_else(|| 1.expr())
     }
 
+    pub(crate) fn enable_equality(&mut self, column: Column<Advice>){
+        self.equalities.push(column);
+    }
+
     // Query
 
     pub(crate) fn query_bool(&mut self) -> Cell<F> {
@@ -384,6 +391,12 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             return vec![("No constraints", 0.expr())];
         }
         self.constraints.clone()
+    }
+
+    pub(crate) fn build_equalities(&self, meta: &mut ConstraintSystem<F>) {
+        self.equalities
+            .iter()
+            .for_each(|c| meta.enable_equality(c.clone()));
     }
 
     pub(crate) fn build_fixed_path(

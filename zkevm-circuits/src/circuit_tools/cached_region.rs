@@ -26,27 +26,21 @@ pub struct CachedRegion<'r, 'b, F: Field> {
     region: &'r mut Region<'b, F>,
     pub advice: HashMap<(usize, usize), F>,
     pub fixed: HashMap<(usize, usize), F>,
-    disable_description: bool,
     regions: Vec<(usize, usize)>,
-    pub r: F,
-    pub keccak_r: F,
 }
 
 impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
-    pub(crate) fn new(region: &'r mut Region<'b, F>, r: F, keccak_r: F) -> Self {
+    pub(crate) fn new(region: &'r mut Region<'b, F>) -> Self {
         Self {
             region,
             advice: HashMap::new(),
             fixed: HashMap::new(),
-            disable_description: false,
             regions: Vec::new(),
-            r,
-            keccak_r,
         }
     }
 
-    pub(crate) fn set_disable_description(&mut self, disable_description: bool) {
-        self.disable_description = disable_description;
+    pub(crate) fn inner(&mut self) -> &mut Region<'b, F> {
+        self.region
     }
 
     pub(crate) fn push_region(&mut self, offset: usize, region_id: usize) {
