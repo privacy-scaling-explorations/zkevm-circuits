@@ -1,8 +1,8 @@
 //! Mock types and functions to generate Test enviroments for ZKEVM tests
 
 use crate::{
-    eth, MockAccount, MockBlock, MockTransaction, GOLDEN_TOUCH, MOCK_CODES, MOCK_TAIKO_L2_ADDRESS,
-    MOCK_TAIKO_TREASURY_ADDRESS,
+    account, eth, MockAccount, MockBlock, MockTransaction, GOLDEN_TOUCH, MOCK_CODES,
+    MOCK_TAIKO_L2_ADDRESS, MOCK_TAIKO_TREASURY_ADDRESS,
 };
 use eth_types::{
     geth_types::{Account, BlockConstants, GethData},
@@ -79,7 +79,7 @@ use itertools::Itertools;
 /// // the behaviour of the generated env.
 /// ```
 #[derive(Debug)]
-pub struct TestContext<const NACC: usize, const NTX: usize> {
+pub struct TestContext<const NACC: usize, const NTX: usize, const IS_ANCHOR: bool> {
     /// chain id
     pub chain_id: Word,
     /// Account list
@@ -93,8 +93,10 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
     pub geth_traces: Vec<eth_types::GethExecTrace>,
 }
 
-impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethData {
-    fn from(ctx: TestContext<NACC, NTX>) -> GethData {
+impl<const NACC: usize, const NTX: usize, const IS_ANCHOR: bool>
+    From<TestContext<NACC, NTX, IS_ANCHOR>> for GethData
+{
+    fn from(ctx: TestContext<NACC, NTX, IS_ANCHOR>) -> GethData {
         GethData {
             chain_id: ctx.chain_id,
             history_hashes: ctx.history_hashes,
@@ -105,7 +107,7 @@ impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethD
     }
 }
 
-impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
+impl<const NACC: usize, const NTX: usize, const IS_ANCHOR: bool> TestContext<NACC, NTX, IS_ANCHOR> {
     pub fn new_with_logger_config<FAcc, FTx, Fb>(
         history_hashes: Option<Vec<Word>>,
         acc_fns: FAcc,
@@ -118,46 +120,54 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         Fb: FnOnce(&mut MockBlock, Vec<MockTransaction>) -> &mut MockBlock,
         FAcc: FnOnce([&mut MockAccount; NACC]),
     {
-        let mut accounts: Vec<MockAccount> = vec![MockAccount::default(); NACC + 2];
-        // add the GOLDEN_TOUCH account in the first position
-        accounts[0].address(*GOLDEN_TOUCH);
-        // add the l2 contract account in the second position
-        accounts[1]
-            .address(*MOCK_TAIKO_L2_ADDRESS)
-            .code(MOCK_CODES[0].clone());
+        let mut accounts: Vec<MockAccount> =
+            vec![MockAccount::default(); NACC + if IS_ANCHOR { 2 } else { 0 }];
+        if IS_ANCHOR {
+            // add the GOLDEN_TOUCH account in the first position
+            accounts[0].address(*GOLDEN_TOUCH);
+            // add the l2 contract account in the second position
+            accounts[1]
+                .address(*MOCK_TAIKO_L2_ADDRESS)
+                .code(MOCK_CODES[0].clone());
+        }
+        let account_skipped = if IS_ANCHOR { 2 } else { 0 };
         // Build Accounts modifiers
         let account_refs = accounts
             .iter_mut()
-            .skip(2)
+            .skip(account_skipped)
             .collect_vec()
             .try_into()
             .expect("Mismatched len err");
         acc_fns(account_refs);
         let accounts_cloned: [MockAccount; NACC] = accounts
             .iter_mut()
-            .skip(2)
+            .skip(account_skipped)
             .map(|acc| acc.build())
             .collect_vec()
             .try_into()
             .expect("Mismatched acc len");
 
-        let mut transactions = vec![MockTransaction::default(); NTX + 1];
+        let mut transactions =
+            vec![MockTransaction::default(); NTX + if IS_ANCHOR { 1 } else { 0 }];
         // By default, set the TxIndex and the Nonce values of the multiple transactions
         // of the context correlative so that any Ok test passes by default.
         // If the user decides to override these values, they'll then be set to whatever
         // inputs were provided by the user.
 
-        // add the anchor transaction in the first position
-        transactions[0] = MockTransaction::new_anchor();
+        if IS_ANCHOR {
+            // add the anchor transaction in the first position
+            transactions[0] = MockTransaction::new_anchor();
+        }
+        let tx_skipped = if IS_ANCHOR { 1 } else { 0 };
         transactions
             .iter_mut()
             .enumerate()
-            .skip(1)
+            .skip(tx_skipped)
             .for_each(|(idx, tx)| {
                 let idx = u64::try_from(idx).expect("Unexpected idx conversion error");
                 tx.transaction_idx(idx).nonce(idx - 1);
             });
-        let tx_refs = transactions.iter_mut().skip(1).collect();
+        let tx_refs = transactions.iter_mut().skip(tx_skipped).collect();
 
         // Build Tx modifiers.
         func_tx(tx_refs, accounts_cloned);
@@ -221,8 +231,10 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
     /// addresses are the ones used in [`TestContext::
     /// account_0_code_account_1_no_code`]. Extra accounts, txs and/or block
     /// configs are set as [`Default`].
-    pub fn simple_ctx_with_bytecode(bytecode: Bytecode) -> Result<TestContext<2, 1>, Error> {
-        TestContext::<2, 1>::new(
+    pub fn simple_ctx_with_bytecode(
+        bytecode: Bytecode,
+    ) -> Result<TestContext<2, 1, IS_ANCHOR>, Error> {
+        TestContext::<2, 1, IS_ANCHOR>::new(
             None,
             account_0_code_account_1_no_code(bytecode),
             tx_from_1_to_0,

@@ -68,7 +68,7 @@ const NUM_BLINDING_ROWS: usize = 64;
 ///     .run();
 /// ```
 pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
-    test_ctx: Option<TestContext<NACC, NTX>>,
+    test_ctx: Option<TestContext<NACC, NTX, true>>,
     circuits_params: Option<CircuitsParams>,
     block: Option<Block<Fr>>,
     evm_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
@@ -104,7 +104,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
     /// Generates a CTBC from a [`TestContext`] passed with all the other fields
     /// set to [`Default`].
-    pub fn new_from_test_ctx(ctx: TestContext<NACC, NTX>) -> Self {
+    pub fn new_from_test_ctx(ctx: TestContext<NACC, NTX, true>) -> Self {
         Self::empty().test_ctx(ctx)
     }
 
@@ -116,7 +116,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
     /// Allows to produce a [`TestContext`] which will serve as the generator of
     /// the Block.
-    pub fn test_ctx(mut self, ctx: TestContext<NACC, NTX>) -> Self {
+    pub fn test_ctx(mut self, ctx: TestContext<NACC, NTX, true>) -> Self {
         self.test_ctx = Some(ctx);
         self
     }
