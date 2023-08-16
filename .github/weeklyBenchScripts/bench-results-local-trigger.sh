@@ -60,7 +60,7 @@ for word in $words; do
   super)
     # Run script for super
     echo "Running script for super..."
-    run_single_benchmark 9 super
+    run_single_benchmark 19 super
     ;;
   bytecode)
     # Run script for bytecode
