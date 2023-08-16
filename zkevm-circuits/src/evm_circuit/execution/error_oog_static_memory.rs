@@ -161,18 +161,18 @@ mod tests {
         let codes = [
             bytecode! {
                 PUSH8(0xFF)
-                PUSH32(32u64) // offset
+                PUSH32(word!("0xFFFFF")) // offset
                 MSTORE
                 STOP
             },
             bytecode! {
                 PUSH8(0xFF)
-                PUSH32(32u64) // offset
+                PUSH32(word!("0xFFFFF")) // offset
                 MSTORE8
                 STOP
             },
             bytecode! {
-                PUSH32(32u64) // offset
+                PUSH32(word!("0xFFFFF")) // offset
                 MLOAD
                 STOP
             },
