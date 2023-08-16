@@ -8,7 +8,7 @@ use crate::{
     util::{Challenges, SubCircuitConfig},
     circuit_tools::{
         constraint_builder::{ConstraintBuilder, RLCable, RLCChainable, TO_FIX, COMPRESS, REDUCE, RLCableValue},
-        cell_manager::{CellManager, CellType, Cell}, gadgets::IsEqualGadget, cached_region::CachedRegion,
+        cell_manager::{CellManager, CellType, Cell}, gadgets::IsEqualGadget, cached_region::{CachedRegion, self},
     },
     
     witness::{self, BlockContext}, circuit,
@@ -236,7 +236,11 @@ enum PiState {
     KeccakLow,
 }
 impl_expr!(PiState);
-
+impl Into<usize> for PiState {
+    fn into(self) -> usize {
+        self as usize
+    }
+}
 
 impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
     type ConfigArgs = TaikoPiCircuitConfigArgs<F>;
@@ -332,6 +336,7 @@ impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
                     cb.build_constraints()
                 }
             );
+            cb.build_equalities(meta);
             cb.build_lookups(
                 meta, 
                 &[state_cm], 
@@ -385,6 +390,7 @@ impl<F: Field> TaikoPiCircuitConfig<F> {
                 PiState::L2Signal, 
                 PiState::L2Contract, 
                 PiState::MetaHash, 
+                PiState::ParentHash,
                 PiState::BlockHash,
                 PiState::SignalRoot, 
                 PiState::Graffiti, 
@@ -403,9 +409,47 @@ impl<F: Field> TaikoPiCircuitConfig<F> {
         layouter.assign_region(
             || "Pi",
             |mut region| {
-                let mut block_acc = Value::known(F::ZERO);
+                let mut cached_region = CachedRegion::new(&mut region);
+                let mut r = F::ZERO;
+                let mut block_acc = F::ZERO;
                 let mut offset = 0;
+                println!("\n===================");
+                for (i, (annotation, block_number, bytes)) in public_data
+                    .assignments()
+                    .iter()
+                    .enumerate() {
+                        println!("{:?}, len {:?}， offset {:?}", annotation, bytes.len(), offset);
+                        match i {
+                            i if i <= PiState::Field10.into() => {
+                                challenges.keccak_input().map(|v| r = v);
+                                block_acc += self.field_gadget.assign_bytes(&mut cached_region, r, offset, bytes.as_ref())?;
+                                let block_acc_cell = assign!(cached_region, (self.block_acc, offset) => block_acc)?;
+                                if let Some(block_number) = block_number {
+                                    self.field_gadget.assign_block_number(
+                                        &mut cached_region, 
+                                        offset, 
+                                        block_number.as_u64().scalar()
+                                    );                                    
+                                }
+                                
+                                if i == PiState::Field10 as usize {
+                                    self.field_gadget.assign_keccak_acc(
+                                        &mut cached_region, 
+                                        offset,
+                                        block_acc_cell
+                                    );
+                                    block_acc = F::ZERO;
+                                }
+                            },
+                            i if i >= PiState::KeccakHi.into() => {
+                                challenges.evm_word().map(|v| r = v);
+                                block_acc += self.field_gadget.assign_bytes(&mut cached_region, r, offset, bytes.as_ref())?;
+                                assign!(cached_region, (self.block_acc, offset) => block_acc)?;
 
+                            },
+                            _ => unreachable!(),
+                        }
+                    }
                 Ok(())
             },
         )
@@ -477,11 +521,12 @@ impl<F: Field> FieldBytesGadget<F> {
         keccak_input_acc: Expression<F>,
     ) -> Expression<F> {
         let keccak_input = cb.query_cell_with_type(PiCellType::Storage2);
-        cb.require_equal(
-            "Copy keccak input from acc column to temporary cell", 
-            keccak_input_acc, 
-            keccak_input.expr()
-        );
+        cb.enable_equality(keccak_input.column());
+        // cb.require_equal(
+        //     "Copy keccak input from acc column to temporary cell", 
+        //     keccak_input_acc, 
+        //     keccak_input.expr()
+        // );
         keccak_input.expr()
     }
 
@@ -494,6 +539,7 @@ impl<F: Field> FieldBytesGadget<F> {
 
     // ------------------ Assign ------------------
 
+    /// Returns the rlc of given bytes
     pub(crate) fn assign_bytes(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -527,10 +573,15 @@ impl<F: Field> FieldBytesGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        keccak_input: F
+        block_acc_cell: AssignedCell<F, F>,
     ) -> Result<(), Error> {
         if let Some(cell) = &self.keccak_input {
-            cell.assign(region, offset, keccak_input)?;
+            block_acc_cell.copy_advice(
+                || "Copy block acc into cell for keccak input", 
+                region.inner(), 
+                cell.column(), 
+                offset
+            )?;
             Ok(())
         } else {
             Err(Error::Synthesis)
