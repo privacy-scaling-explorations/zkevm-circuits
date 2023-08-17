@@ -386,17 +386,27 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         }
     }
 
-    pub(crate) fn build_constraints(&self) -> Vec<(&'static str, Expression<F>)> {
+    pub(crate) fn build_constraints(&self, selector: Option<Expression<F>>) -> Vec<(&'static str, Expression<F>)> {
         if self.constraints.is_empty() {
             return vec![("No constraints", 0.expr())];
         }
-        self.constraints.clone()
+        selector.map_or(
+            self.constraints.clone(), 
+            |s| {
+                    self.constraints
+                        .iter()
+                        .map(|(name, c)| (*name, s.expr() * c.clone()))
+                        .collect()
+                }
+        )
     }
 
     pub(crate) fn build_equalities(&self, meta: &mut ConstraintSystem<F>) {
         self.equalities
             .iter()
-            .for_each(|c| meta.enable_equality(c.clone()));
+            .for_each(|c| {
+                println!("Enable equality for {:?}", c.index());
+                meta.enable_equality(c.clone())});
     }
 
     pub(crate) fn build_fixed_path(
