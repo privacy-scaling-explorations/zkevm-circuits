@@ -443,7 +443,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // 3. Call to account with empty code.
         cb.condition(
             and::expr([
-                not::expr(tx_is_create.expr()),
                 no_callee_code.clone(),
                 tx_is_invalid.expr(),
             ]),
