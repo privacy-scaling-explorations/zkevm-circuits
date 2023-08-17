@@ -5,10 +5,10 @@ use crate::{
     evm_circuit::table::Table::*,
     evm_circuit::{util::{constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon}, rlc}, table::Table},
     table::{byte_table::ByteTable, BlockContextFieldTag, BlockTable, KeccakTable, LookupTable},
-    util::{Challenges, SubCircuitConfig},
+    util::{Challenges, SubCircuitConfig, SubCircuit},
     circuit_tools::{
         constraint_builder::{ConstraintBuilder, RLCable, RLCChainable, TO_FIX, COMPRESS, REDUCE, RLCableValue},
-        cell_manager::{CellManager, CellType, Cell}, gadgets::IsEqualGadget, cached_region::{CachedRegion, self},
+        cell_manager::{CellManager, CellType, Cell}, gadgets::{IsEqualGadget, IsZeroGadget}, cached_region::{CachedRegion, self},
     },
     
     witness::{self, BlockContext}, circuit,
@@ -25,11 +25,21 @@ use halo2_proofs::{
     },
     poly::{Rotation},
 };
+use rand_chacha::rand_core::block;
 use std::{marker::PhantomData, ops::Range, usize, default};
 
 const BYTE_POW_BASE: u64 = 1 << 8;
 const N: usize = 32;
+const H: usize = 12;
 const RPI_BYTES_LEN: usize = 32 * 10;
+const USED_ROWS: usize = RPI_BYTES_LEN + 64;
+const L1SIGNAL_IDX: usize = 0;
+const PARENT_HASH: usize = 4;
+const BLOCK_HASH: usize = 5;
+const FIELD9_IDX: usize = 8;
+const FIELD10_IDX: usize = 9;
+const KECCAK_HI: usize = 10;
+const KECCAK_LOW: usize = 11;
 
 
 /// PublicData contains all the values that the PiCircuit receives as input
@@ -166,15 +176,19 @@ impl PublicData {
         H256(rpi_keccak)
     }
 }
-
-
-
 /// Config for PiCircuit
 #[derive(Clone, Debug)]
 pub struct TaikoPiCircuitConfig<F: Field> {
-    field_idx: Column<Advice>,
+    q_enable: Selector,
+    public_input: Column<Instance>,
+    q_state: Column<Advice>,
     block_acc: Column<Advice>,
     field_gadget: FieldBytesGadget<F>,
+
+
+    block_table: BlockTable,
+    keccak_table: KeccakTable,
+    byte_table: ByteTable,
 }
 
 /// Circuit configuration arguments
@@ -189,16 +203,11 @@ pub struct TaikoPiCircuitConfigArgs<F: Field> {
     pub challenges: Challenges<Expression<F>>,
 }
 
-/// 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum PiCellType {
-    ///
+enum PiCellType {
     Storage1,
-    ///
     Storage2,
-    ///
     Byte,
-    ///
     Lookup(Table)
 }
 impl CellType for PiCellType {
@@ -219,28 +228,6 @@ impl Default for PiCellType {
     }
 }
 
-#[derive(Clone, Copy)]
-enum PiState {
-    L1Signal,
-    L2Signal,
-    L2Contract,
-    MetaHash,
-    ParentHash,
-    BlockHash,
-    SignalRoot,
-    Graffiti,
-    Field9,
-    Field10,
-    
-    KeccakHi,
-    KeccakLow,
-}
-impl_expr!(PiState);
-impl Into<usize> for PiState {
-    fn into(self) -> usize {
-        self as usize
-    }
-}
 
 impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
     type ConfigArgs = TaikoPiCircuitConfigArgs<F>;
@@ -255,22 +242,17 @@ impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
                 challenges,
             }: Self::ConfigArgs,
         ) -> Self {
-            let field_cm = CellManager::new(
-                meta,
-                vec![(PiCellType::Byte, 32, 1, false)],
-                0,
-                1,
-            );
-            let state_cm = CellManager::new(
+            let cm = CellManager::new(
                 meta,
                 vec![
+                    (PiCellType::Byte, 32, 1, false),
                     (PiCellType::Storage1, 2, 1, false),
                     (PiCellType::Storage2, 2, 2, false),
                     ],
                     0,
-                    5,
+                    H,
             );
-            let mut cb: ConstraintBuilder<F, PiCellType> =  ConstraintBuilder::new(4,  Some(field_cm), Some(challenges.evm_word()));
+            let mut cb: ConstraintBuilder<F, PiCellType> =  ConstraintBuilder::new(4,  Some(cm.clone()), Some(challenges.evm_word()));
             cb.preload_tables(meta,
                 &[
                    (PiCellType::Lookup(Keccak), &keccak_table), 
@@ -278,68 +260,65 @@ impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
                    (PiCellType::Lookup(Block), &block_table)
                    ]
                );
-
             
-            let field_idx = meta.advice_column();
-            let block_acc = meta.advice_column();
-            let mut field_gadget = FieldBytesGadget::default();
-            field_gadget.challenges = Some(challenges.clone());
+            let q_enable = meta.selector();
+            let public_input = meta.instance_column();
+            let q_state = meta.advice_column();
+            let block_acc = meta.advice_column_in(SecondPhase);
+            let mut field_gadget = FieldBytesGadget::config(&mut cb, challenges.clone());
             meta.create_gate(
                 "PI acc constraints", 
                 |meta| {
                     circuit!([meta, cb], {
-                        cb.set_cell_manager(state_cm.clone());
-                        let is_block_fields = Self::is_block_field(&mut cb, a!(field_idx));
-                        let q_block = Self::idx_range(&mut cb, a!(field_idx), &[PiState::ParentHash, PiState::BlockHash]);
-                        let q_keccak = Self::idx_range(&mut cb, a!(field_idx), &[PiState::KeccakLow]);
-                        let q_last_field = Self::idx_range(&mut cb, a!(field_idx), &[PiState::Field10]);
-
-                        field_gadget.config(&mut cb);
-                        ifx! (is_block_fields => {
-                            // do this directly in column
-                            // field_gadget.bytes_lookup(&mut cb);
-                            require!(
-                                a!(block_acc, 1) => field_gadget.block_input_acc(a!(block_acc))
-                            );
-                            ifx!(q_block.expr() => {
-                                let block_number = field_gadget.set_block_number(&mut cb);
-                                require!(
-                                    (
-                                        BlockContextFieldTag::BlockHash.expr(),
-                                        block_number.expr(),
-                                        field_gadget.evm_word_field()
-                                    ) => @PiCellType::Lookup(Table::Block), (COMPRESS, REDUCE)
-                                );
-                            }); 
-                            // On the last bytes of the last field
-                            // the we copy block_acc to a tmp cell in field_gadget
-                            ifx!(q_last_field.expr() => {
-                                field_gadget.set_keccak_input(&mut cb, a!(block_acc));
-                            });
-                        } elsex {
-                            // block_acc should be reset to 0
-                            require!(
-                                a!(block_acc, 1) => field_gadget.keccak_output_acc(a!(block_acc))
-                            );
-                            ifx!(q_keccak.expr() => {
-                                require!(
-                                    (
-                                        1.expr(),
-                                        field_gadget.keccak_input.clone().unwrap().expr(),
-                                        RPI_BYTES_LEN.expr(),
-                                        a!(block_acc)
-                                    )
-                                    => @PiCellType::Lookup(Table::Keccak), (COMPRESS, REDUCE));
-                            });
-                        });
+                        for idx in 0..H {
+                            match idx {
+                                L1SIGNAL_IDX => {
+                                    require!(a!(block_acc, idx) => field_gadget.evm_word_field(idx));
+                                },
+                                L1SIGNAL_IDX..=FIELD9_IDX => {
+                                    require!(a!(block_acc, idx + 1) => field_gadget.block_input_acc(a!(block_acc), idx + 1));
+                                    if idx == PARENT_HASH || idx == BLOCK_HASH {
+                                        let block_number = field_gadget.set_block_number(&mut cb);
+                                        // require!(
+                                        //     (
+                                        //         BlockContextFieldTag::BlockHash.expr(),
+                                        //         block_number.expr(),
+                                        //         field_gadget.evm_word_field(idx)
+                                        //     ) => @PiCellType::Lookup(Table::Block), (TO_FIX)
+                                        // );
+                                    }
+                                }
+                                FIELD10_IDX => {
+                                    field_gadget.set_keccak_input(&mut cb, block_acc.clone());
+                                    require!(a!(block_acc, idx + 1) => field_gadget.keccak_field(KECCAK_HI));
+                                },
+                                KECCAK_HI => {
+                                    require!(a!(block_acc, idx + 1) => field_gadget.keccak_output_acc(a!(block_acc), idx + 1));
+                                    require!(x!(public_input) => a!(block_acc, idx));
+                                },
+                                KECCAK_LOW => {
+                                    // require!(
+                                    //     (
+                                    //         1.expr(),
+                                    //         field_gadget.keccak_input.clone().unwrap().expr(),
+                                    //         RPI_BYTES_LEN.expr(),
+                                    //         a!(block_acc)
+                                    //     )
+                                    //     => @PiCellType::Lookup(Table::Keccak), (TO_FIX)
+                                    // );
+                                    require!(x!(public_input) => a!(block_acc, idx));
+                                }
+                                _ => unimplemented!()
+                            }
+                        }
                     });
-                    cb.build_constraints()
+                    cb.build_constraints(Some(meta.query_selector(q_enable)))
                 }
             );
             cb.build_equalities(meta);
             cb.build_lookups(
                 meta, 
-                &[state_cm], 
+                &[cm], 
                 &[
                     (PiCellType::Byte, PiCellType::Lookup(Bytecode)),
                     (PiCellType::Lookup(Table::Keccak), PiCellType::Lookup(Table::Keccak)),
@@ -347,58 +326,20 @@ impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
                 ]
             );
             Self {
-                field_idx,
+                q_enable,
+                public_input,
+                q_state,
                 block_acc,
-                field_gadget: field_gadget
+                field_gadget,
+                block_table,
+                keccak_table,
+                byte_table,
             }
         }
 
 }
 
 impl<F: Field> TaikoPiCircuitConfig<F> {
-
-    fn idx_range(
-        cb: &mut ConstraintBuilder<F, PiCellType>,
-        field_idx: Expression<F>,
-        range: &[PiState]
-    ) -> Expression<F> {
-        let mut expr = 0.expr();
-        circuit!([meta, cb], {
-            let is_block_field = range.iter()
-                .fold(1.expr(), |acc, item| acc * (field_idx.clone() - item.expr()));
-            expr = cb.local_processing(
-                "field idx range check", 
-                &[is_block_field], 
-                PiCellType::Storage1,
-                None, 
-                true, 
-                true
-            )[0].clone();
-        });
-        expr
-    }
-
-    fn is_block_field(
-        cb: &mut ConstraintBuilder<F, PiCellType>,
-        field_idx: Expression<F>
-    ) -> Expression<F> {
-        Self::idx_range(
-            cb, 
-            field_idx, 
-        &[
-                PiState::L1Signal, 
-                PiState::L2Signal, 
-                PiState::L2Contract, 
-                PiState::MetaHash, 
-                PiState::ParentHash,
-                PiState::BlockHash,
-                PiState::SignalRoot, 
-                PiState::Graffiti, 
-                PiState::Field9, 
-                PiState::Field10
-            ]
-        )
-    }
 
     pub(crate) fn assign(
         &self,
@@ -409,9 +350,10 @@ impl<F: Field> TaikoPiCircuitConfig<F> {
         layouter.assign_region(
             || "Pi",
             |mut region| {
+                self.q_enable.enable(&mut region, 0);
                 let mut cached_region = CachedRegion::new(&mut region);
-                let mut r = F::ZERO;
                 let mut block_acc = F::ZERO;
+                let mut r = F::ZERO;
                 let mut offset = 0;
                 println!("\n===================");
                 for (i, (annotation, block_number, bytes)) in public_data
@@ -420,35 +362,46 @@ impl<F: Field> TaikoPiCircuitConfig<F> {
                     .enumerate() {
                         println!("{:?}, len {:?}， offset {:?}", annotation, bytes.len(), offset);
                         match i {
-                            i if i <= PiState::Field10.into() => {
+                            i if i <= FIELD10_IDX => {
                                 challenges.keccak_input().map(|v| r = v);
-                                block_acc += self.field_gadget.assign_bytes(&mut cached_region, r, offset, bytes.as_ref())?;
+                                block_acc += self.field_gadget.assign_bytes(&mut cached_region, r, offset, i, bytes.as_ref())?;
                                 let block_acc_cell = assign!(cached_region, (self.block_acc, offset) => block_acc)?;
                                 if let Some(block_number) = block_number {
+                                    println!("  block_number {:?}", block_number);
                                     self.field_gadget.assign_block_number(
                                         &mut cached_region, 
                                         offset, 
                                         block_number.as_u64().scalar()
-                                    );                                    
+                                    )?;                                    
                                 }
                                 
-                                if i == PiState::Field10 as usize {
+                                if i == FIELD10_IDX {
+                                    println!("  PiState::Field10 {:?}", block_acc);
                                     self.field_gadget.assign_keccak_acc(
                                         &mut cached_region, 
                                         offset,
                                         block_acc_cell
-                                    );
+                                    )?;
                                     block_acc = F::ZERO;
                                 }
                             },
-                            i if i >= PiState::KeccakHi.into() => {
+                            i if i == KECCAK_HI => {
+                                println!("  PiState::Keccak {:?}", block_acc);
                                 challenges.evm_word().map(|v| r = v);
-                                block_acc += self.field_gadget.assign_bytes(&mut cached_region, r, offset, bytes.as_ref())?;
+                                block_acc += self.field_gadget.assign_bytes(&mut cached_region, r, offset, i, bytes.as_ref())?;
+                                assign!(cached_region, (self.block_acc, offset) => block_acc)?;
+
+                            },
+                            i if i == KECCAK_LOW => {
+                                println!("  PiState::Keccak {:?}", block_acc);
+                                challenges.evm_word().map(|v| r = v);
+                                block_acc += self.field_gadget.assign_bytes(&mut cached_region, r, offset, i, bytes.as_ref())?;
                                 assign!(cached_region, (self.block_acc, offset) => block_acc)?;
 
                             },
                             _ => unreachable!(),
                         }
+                        offset += 1;
                     }
                 Ok(())
             },
@@ -456,59 +409,75 @@ impl<F: Field> TaikoPiCircuitConfig<F> {
     }
 }
 
-/// Field Bytes
-#[derive(Clone, Debug, Default)]
-pub struct FieldBytesGadget<F> {
+#[derive(Clone, Debug)]
+struct FieldBytesGadget<F> {
     challenges: Option<Challenges<Expression<F>>>,
-    bytes: [Cell<F>; N],
+    bytes: [[Cell<F>; N]; H],
     block_number: Option<Cell<F>>,
     keccak_input: Option<Cell<F>>,
+
+    keccak_exp: Expression<F>,
+    evm_exp: Expression<F>
 }
 
 impl<F: Field> FieldBytesGadget<F> {
 
-    fn config(&mut self, cb: &mut ConstraintBuilder<F, PiCellType>) {
-        self.bytes = cb.query_bytes();
+    fn config(cb: &mut ConstraintBuilder<F, PiCellType>, challenges: Challenges<Expression<F>>) -> Self {
+        let mut bytes = Vec::new();
+        for idx in 0..H {
+            bytes.push(cb.query_bytes());
+        }
+        let keccak_exp = (0..N)
+            .fold(1.expr(), |acc: Expression<F>, _|{
+                acc * challenges.keccak_input()
+            });
+        let evm_exp = (0..N)
+            .fold(1.expr(), |acc: Expression<F>, _|{
+                acc * challenges.evm_word()
+            });  
+        Self {
+            challenges: Some(challenges),
+            bytes: bytes.try_into().unwrap(),
+            block_number: None,
+            keccak_input: None,
+            keccak_exp,
+            evm_exp,
+        }
     } 
 
-    fn bytes_expr(&self) -> Vec<Expression<F>> {
-        self.bytes.iter().map(|b| b.expr()).collect()
+    fn bytes_expr(&self, idx: usize) -> Vec<Expression<F>> {
+        self.bytes[idx].iter().map(|b| b.expr()).collect()
     }
 
     /// RLC of bytes of a field with evm_word 1<<8
-    fn hi_low_fields_(&self) -> Expression<F> {
-        self.bytes_expr().rlc(&BYTE_POW_BASE.expr())
+    fn hi_low_fields_(&self, idx: usize) -> Expression<F> {
+        self.bytes_expr(idx).rlc(&BYTE_POW_BASE.expr())
     }
 
     /// RLC of bytes of a field with evm_word
-    fn evm_word_field(&self) -> Expression<F> {
+    fn evm_word_field(&self, idx: usize) -> Expression<F> {
         let r = self.challenges.clone().unwrap().evm_word().expr();
-        self.bytes_expr().rlc(&r)
+        self.bytes_expr(idx).rlc(&r)
     }
 
     /// RLC of bytes of a field with keccak_input
-    fn keccak_field(&self) -> Expression<F> {
+    fn keccak_field(&self, idx: usize) -> Expression<F> {
         let r = self.challenges.clone().unwrap().keccak_input().expr();
-        self.bytes_expr().rlc(&r)
+        self.bytes_expr(idx).rlc(&r)
     }
     
     // ------------------ Acc ------------------
 
-    /// Next value of block field bytes RLC accumulator for keccak input
-    fn block_input_acc(&self, prev_field: Expression<F>) -> Expression<F> {
+    /// Next value of block field bytes RLC accumulator for keccak input, per row without offset
+    fn block_input_acc(&self, prev_field: Expression<F>, idx: usize) -> Expression<F> {
         let r = self.challenges.clone().unwrap().keccak_input().expr();
-        let raise_exp = (0..self.bytes.len())
-            .fold(1.expr(), |acc: Expression<F>, _|acc * r.clone());
-        prev_field * raise_exp + self.keccak_field()
+        prev_field * self.keccak_exp.expr() + self.keccak_field(idx)
     }
 
-    /// Next value of keccak output hi low bytes accumulator
-    fn keccak_output_acc(&self, hi: Expression<F>) -> Expression<F> {
-        let r = self.challenges.clone().unwrap().evm_word().expr();
-        let raise_exp = (0..self.bytes.len())
-            .fold(1.expr(), |acc: Expression<F>, _|acc * r.clone());
-        let low = self.hi_low_fields_();
-        hi * raise_exp + low
+    /// Next value of keccak output hi low bytes accumulator, per row without offset
+    fn keccak_output_acc(&self, hi: Expression<F>, idx: usize) -> Expression<F> {
+        let low = self.hi_low_fields_(idx);
+        hi * self.evm_exp.expr() + low
     }
 
     // ------------------ Set Cell ------------------
@@ -518,15 +487,12 @@ impl<F: Field> FieldBytesGadget<F> {
     fn set_keccak_input(
         &mut self, 
         cb: &mut ConstraintBuilder<F, PiCellType>,
-        keccak_input_acc: Expression<F>,
+        block_acc: Column<Advice>,
     ) -> Expression<F> {
         let keccak_input = cb.query_cell_with_type(PiCellType::Storage2);
         cb.enable_equality(keccak_input.column());
-        // cb.require_equal(
-        //     "Copy keccak input from acc column to temporary cell", 
-        //     keccak_input_acc, 
-        //     keccak_input.expr()
-        // );
+        cb.enable_equality(block_acc);
+        self.keccak_input = Some(keccak_input.clone());
         keccak_input.expr()
     }
 
@@ -545,10 +511,11 @@ impl<F: Field> FieldBytesGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         r: F,
         offset: usize,
+        idx: usize,
         bytes: &[u8],
     ) -> Result<F, Error> {
         // Assign the bytes
-        for (byte, column) in bytes.iter().zip(self.bytes.iter()) {
+        for (byte, column) in bytes.iter().zip(self.bytes[idx].iter()) {
             assign!(region, (column.column(), offset) => byte.scalar())?;
         }
         let mut rlc = bytes.rlc_value(r);
@@ -561,8 +528,8 @@ impl<F: Field> FieldBytesGadget<F> {
         offset: usize,
         block_number: F,
     ) -> Result<(), Error> {
-        if let Some(cell) = &self.block_number {
-            cell.assign(region, offset, block_number)?;
+        if let Some(c) = &self.block_number {
+            c.assign(region, offset, block_number)?;
             Ok(())
         } else {
             Err(Error::Synthesis)
@@ -575,16 +542,283 @@ impl<F: Field> FieldBytesGadget<F> {
         offset: usize,
         block_acc_cell: AssignedCell<F, F>,
     ) -> Result<(), Error> {
-        if let Some(cell) = &self.keccak_input {
+        if let Some(c) = &self.keccak_input {
             block_acc_cell.copy_advice(
                 || "Copy block acc into cell for keccak input", 
                 region.inner(), 
-                cell.column(), 
+                c.column(), 
                 offset
             )?;
             Ok(())
         } else {
             Err(Error::Synthesis)
         }
+    }
+}
+
+
+/// Public Inputs Circuit
+#[derive(Clone, Default, Debug)]
+pub struct TaikoPiCircuit<F: Field> {
+    /// PublicInputs data known by the verifier
+    pub public_data: PublicData,
+    _marker: PhantomData<F>,
+}
+
+impl<F: Field> TaikoPiCircuit<F> {
+    /// Creates a new TaikoPiCircuit
+    pub fn new(public_data: PublicData) -> Self {
+        Self {
+            public_data,
+            _marker: PhantomData,
+        }
+    }
+}
+
+
+impl<F: Field> SubCircuit<F> for TaikoPiCircuit<F> {
+    type Config = TaikoPiCircuitConfig<F>;
+
+    fn unusable_rows() -> usize {
+        // No column queried at more than 3 distinct rotations, so returns 6 as
+        // minimum unusable rows.
+        6
+    }
+
+    fn min_num_rows_block(_block: &witness::Block<F>) -> (usize, usize) {
+        (USED_ROWS, USED_ROWS)
+    }
+
+    fn new_from_block(block: &witness::Block<F>) -> Self {
+        TaikoPiCircuit::new(PublicData::new(block))
+    }
+
+    /// Compute the public inputs for this circuit.
+    fn instance(&self) -> Vec<Vec<F>> {
+        let keccak_rpi = self.public_data.get_pi();
+        let keccak_hi = keccak_rpi
+            .to_fixed_bytes()
+            .iter()
+            .take(16)
+            .fold(F::ZERO, |acc, byte| {
+                acc * F::from(BYTE_POW_BASE) + F::from(*byte as u64)
+            });
+
+        let keccak_lo = keccak_rpi
+            .to_fixed_bytes()
+            .iter()
+            .skip(16)
+            .fold(F::ZERO, |acc, byte| {
+                acc * F::from(BYTE_POW_BASE) + F::from(*byte as u64)
+            });
+
+        let public_inputs = vec![keccak_hi, keccak_lo];
+        vec![public_inputs]
+    }
+
+    /// Make the assignments to the PiCircuit
+    fn synthesize_sub(
+        &self,
+        config: &Self::Config,
+        challenges: &Challenges<Value<F>>,
+        layouter: &mut impl Layouter<F>,
+    ) -> Result<(), Error> {
+        config.byte_table.load(layouter)?;
+        config.assign(layouter, &self.public_data, challenges)
+    }
+}
+
+
+// We define the PiTestCircuit as a wrapper over PiCircuit extended to take the
+// generic const parameters MAX_TXS and MAX_CALLDATA.  This is necessary because
+// the trait Circuit requires an implementation of `configure` that doesn't take
+// any circuit parameters, and the PiCircuit defines gates that use rotations
+// that depend on MAX_TXS and MAX_CALLDATA, so these two values are required
+// during the configuration.
+/// Test Circuit for PiCircuit
+#[cfg(any(feature = "test", test))]
+#[derive(Default, Clone)]
+pub struct TaikoPiTestCircuit<F: Field>(pub TaikoPiCircuit<F>);
+
+#[cfg(any(feature = "test", test))]
+impl<F: Field> Circuit<F> for TaikoPiTestCircuit<F> {
+    type Config = (TaikoPiCircuitConfig<F>, Challenges);
+    type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let block_table = BlockTable::construct(meta);
+        let keccak_table = KeccakTable::construct(meta);
+        let byte_table = ByteTable::construct(meta);
+        let challenges = Challenges::construct(meta);
+        let challenge_exprs = challenges.exprs(meta);
+        (
+            TaikoPiCircuitConfig::new(
+                meta,
+                TaikoPiCircuitConfigArgs {
+                    block_table,
+                    keccak_table,
+                    byte_table,
+                    challenges: challenge_exprs,
+                },
+            ),
+            challenges,
+        )
+    }
+
+    fn synthesize(
+        &self,
+        (config, challenges): Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
+        let challenges = challenges.values(&mut layouter);
+        let public_data = &self.0.public_data;
+        // assign block table
+        let randomness = challenges.evm_word();
+        config
+            .block_table
+            .load(&mut layouter, &public_data.block_context, randomness)?;
+        // assign keccak table
+        config
+            .keccak_table
+            .dev_load(&mut layouter, vec![&public_data.rpi_bytes()], &challenges)?;
+        config.byte_table.load(&mut layouter)?;
+
+        self.0.synthesize_sub(&config, &challenges, &mut layouter)
+    }
+}
+
+#[cfg(test)]
+mod taiko_pi_circuit_test {
+
+    use super::*;
+
+    use eth_types::ToScalar;
+    use halo2_proofs::{
+        dev::{MockProver, VerifyFailure},
+        halo2curves::bn256::Fr,
+    };
+    use lazy_static::lazy_static;
+    use pretty_assertions::assert_eq;
+
+    lazy_static! {
+        static ref OMMERS_HASH: H256 = H256::from_slice(
+            &hex::decode("1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347")
+                .unwrap(),
+        );
+    }
+
+    fn run<F: Field>(
+        k: u32,
+        public_data: PublicData,
+        pi: Option<Vec<Vec<F>>>,
+    ) -> Result<(), Vec<VerifyFailure>> {
+        let circuit = TaikoPiTestCircuit::<F>(TaikoPiCircuit::new(public_data));
+        let public_inputs = pi.unwrap_or_else(|| circuit.0.instance());
+
+        let prover = match MockProver::run(k, &circuit, public_inputs) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+        prover.verify()
+    }
+
+    fn mock_public_data() -> PublicData {
+        let mut public_data = PublicData::default::<Fr>();
+        public_data.meta_hash = OMMERS_HASH.to_word();
+        public_data.block_hash = OMMERS_HASH.to_word();
+        public_data.block_context.block_hash = OMMERS_HASH.to_word();
+        public_data.block_context.history_hashes = vec![Default::default(); 256];
+        public_data.block_context.number = 300.into();
+        public_data
+    }
+
+    #[test]
+    fn test_default_pi() {
+        let public_data = mock_public_data();
+
+        let k = 17;
+        assert_eq!(run::<Fr>(k, public_data, None), Ok(()));
+    }
+
+    #[test]
+    fn test_fail_pi_hash() {
+        let public_data = mock_public_data();
+
+        let k = 17;
+        match run::<Fr>(k, public_data, Some(vec![vec![Fr::zero(), Fr::one()]])) {
+            Ok(_) => unreachable!("this case must fail"),
+            Err(errs) => {
+                assert_eq!(errs.len(), 4);
+                for err in errs {
+                    match err {
+                        VerifyFailure::Permutation { .. } => return,
+                        _ => unreachable!("unexpected error"),
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_fail_pi_prover() {
+        let mut public_data = mock_public_data();
+        let address_bytes = [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+        ];
+
+        public_data.prover = Address::from_slice(&address_bytes);
+
+        let prover: Fr = public_data.prover.to_scalar().unwrap();
+        let k = 17;
+        match run::<Fr>(
+            k,
+            public_data,
+            Some(vec![vec![prover, Fr::zero(), Fr::one()]]),
+        ) {
+            Ok(_) => unreachable!("this case must fail"),
+            Err(errs) => {
+                assert_eq!(errs.len(), 4);
+                for err in errs {
+                    match err {
+                        VerifyFailure::Permutation { .. } => return,
+                        _ => unreachable!("unexpected error"),
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_simple_pi() {
+        let mut public_data = mock_public_data();
+        let chain_id = 1337u64;
+        public_data.chain_id = Word::from(chain_id);
+
+        let k = 17;
+        assert_eq!(run::<Fr>(k, public_data, None), Ok(()));
+    }
+
+    #[test]
+    fn test_verify() {
+        let mut block = witness::Block::<Fr>::default();
+
+        block.eth_block.parent_hash = *OMMERS_HASH;
+        block.eth_block.hash = Some(*OMMERS_HASH);
+        block.protocol_instance.block_hash = *OMMERS_HASH;
+        block.protocol_instance.parent_hash = *OMMERS_HASH;
+        block.context.history_hashes = vec![OMMERS_HASH.to_word()];
+        block.context.block_hash = OMMERS_HASH.to_word();
+        block.context.number = 300.into();
+
+        let public_data = PublicData::new(&block);
+
+        let k = 17;
+
+        assert_eq!(run::<Fr>(k, public_data, None), Ok(()));
     }
 }

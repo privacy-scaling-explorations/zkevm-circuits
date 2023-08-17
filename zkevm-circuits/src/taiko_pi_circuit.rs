@@ -297,7 +297,7 @@ impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
                     require!(a!(rpi_field_bytes_acc) => a!(rpi_field_bytes));
                 });
             });
-            cb.build_constraints()
+            cb.build_constraints(None)
         });
 
         meta.create_gate("keccak(rpi)", |meta| {
@@ -311,7 +311,7 @@ impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
                     );
                 });
             });
-            cb.build_constraints()
+            cb.build_constraints(None)
         });
 
         meta.create_gate("in block table", |meta| {
@@ -327,7 +327,7 @@ impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
                     );
                 });
             });
-            cb.build_constraints()
+            cb.build_constraints(None)
         });
 
         meta.create_gate("is_byte", |meta| {
@@ -338,7 +338,7 @@ impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
                     );
                 });
             });
-            cb.build_constraints()
+            cb.build_constraints(None)
         });
 
         cb.build_lookups(
