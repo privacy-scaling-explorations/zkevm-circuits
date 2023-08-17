@@ -14,6 +14,12 @@ pub(crate) enum StorageRowType {
     Wrong,
     Address,
     Key,
+    LongExtNodeKey,
+    LongExtNodeNibbles,
+    LongExtNodeValue,
+    ShorExtNodeKey,
+    ShortExtNodeNibbles,
+    ShortExtNodeValue,
     Count,
 }
 
@@ -33,6 +39,12 @@ pub(crate) enum AccountRowType {
     Wrong,
     Address,
     Key,
+    LongExtNodeKey,
+    LongExtNodeNibbles,
+    LongExtNodeValue,
+    ShorExtNodeKey,
+    ShortExtNodeNibbles,
+    ShortExtNodeValue,
     Count,
 }
 
@@ -183,9 +195,15 @@ pub const NODE_RLP_TYPES_ACCOUNT: [RlpItemType; AccountRowType::Count as usize] 
     RlpItemType::Key,
     RlpItemType::Value,
     RlpItemType::Hash,
+    RlpItemType::Key,
+    RlpItemType::Nibbles,
+    RlpItemType::Value,
+    RlpItemType::Key,
+    RlpItemType::Nibbles,
+    RlpItemType::Value,
 ];
 
-/// RLP types account
+/// RLP types storage
 pub const NODE_RLP_TYPES_STORAGE: [RlpItemType; StorageRowType::Count as usize] = [
     RlpItemType::Key,
     RlpItemType::Value,
@@ -195,4 +213,10 @@ pub const NODE_RLP_TYPES_STORAGE: [RlpItemType; StorageRowType::Count as usize] 
     RlpItemType::Key,
     RlpItemType::Value,
     RlpItemType::Hash,
+    RlpItemType::Key,
+    RlpItemType::Nibbles,
+    RlpItemType::Value,
+    RlpItemType::Key,
+    RlpItemType::Nibbles,
+    RlpItemType::Value,
 ];
