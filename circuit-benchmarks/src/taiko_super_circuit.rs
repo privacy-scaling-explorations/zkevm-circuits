@@ -162,12 +162,8 @@ fn gen_application_snark(
         anchor_gas_limit: 150000,
         ..Default::default()
     };
-    let (_, super_circuit, _, _) = SuperCircuit::<_>::build(
-        block_1tx(&protocol_instance),
-        circuits_params,
-        protocol_instance,
-    )
-    .unwrap();
+    let (_, super_circuit, _, _) =
+        SuperCircuit::<_>::build(block_1tx(), circuits_params, protocol_instance).unwrap();
 
     // let pk = gen_pk(params, &super_circuit, Some(Path::new("./examples/app.pk")),
     // super_circuit.params());

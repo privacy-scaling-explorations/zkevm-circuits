@@ -77,7 +77,7 @@ impl Default for CircuitsParams {
     fn default() -> Self {
         CircuitsParams {
             max_rws: 1000,
-            max_txs: 1,
+            max_txs: 2, // one for anchor
             max_calldata: 256,
             // TODO: Check whether this value is correct or we should increase/decrease based on
             // this lib tests

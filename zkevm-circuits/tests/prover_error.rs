@@ -83,6 +83,7 @@ fn prover_error() {
         accounts.clone(),
         Some(history_hashes.clone()),
         LoggerConfig::default(),
+        false,
     )
     .expect("gen_geth_traces");
     let geth_data = GethData {

@@ -10,7 +10,6 @@ eth-types = { path = "../eth-types" }
 gadgets = { path = "../gadgets" }
 keccak256 = { path = "../keccak256" }
 mock = { path = "../mock", optional = true }
-taiko-mock = { path = "../taiko-mock", optional = true }
 
 ethers-core = "=2.0.0"
 ethers-providers = "=2.0.0"

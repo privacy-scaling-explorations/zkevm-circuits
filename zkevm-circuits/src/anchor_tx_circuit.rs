@@ -7,8 +7,6 @@ pub use dev::TestAnchorTxCircuit;
 pub(crate) mod sign_verify;
 #[cfg(any(feature = "test", test))]
 mod test;
-#[cfg(any(feature = "test", test))]
-pub(crate) use test::{add_anchor_accounts, add_anchor_tx, sign_tx};
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},

@@ -1,15 +1,17 @@
 //! Mock types and functions to generate Test enviroments for ZKEVM tests
 
-use crate::{eth, MockAccount, MockBlock, MockTransaction};
+use crate::{
+    eth, MockAccount, MockBlock, MockTransaction, GOLDEN_TOUCH, MOCK_CODES, MOCK_TAIKO_L2_ADDRESS,
+    MOCK_TAIKO_TREASURY_ADDRESS,
+};
 use eth_types::{
     geth_types::{Account, BlockConstants, GethData},
     Block, Bytecode, Error, GethExecTrace, Transaction, Word,
 };
+pub use external_tracer::LoggerConfig;
 use external_tracer::{trace, TraceConfig};
 use helpers::*;
 use itertools::Itertools;
-
-pub use external_tracer::LoggerConfig;
 
 /// TestContext is a type that contains all the information from a block
 /// required to build the circuit inputs.
@@ -81,7 +83,7 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
     /// chain id
     pub chain_id: Word,
     /// Account list
-    pub accounts: [Account; NACC],
+    pub accounts: Vec<Account>,
     /// history hashes contains most recent 256 block hashes in history, where
     /// the lastest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
@@ -98,7 +100,7 @@ impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethD
             history_hashes: ctx.history_hashes,
             eth_block: ctx.eth_block,
             geth_traces: ctx.geth_traces.to_vec(),
-            accounts: ctx.accounts.into(),
+            accounts: ctx.accounts,
         }
     }
 }
@@ -116,38 +118,80 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         Fb: FnOnce(&mut MockBlock, Vec<MockTransaction>) -> &mut MockBlock,
         FAcc: FnOnce([&mut MockAccount; NACC]),
     {
-        let mut accounts: Vec<MockAccount> = vec![MockAccount::default(); NACC];
+        Self::new_with_logger_config_and_taiko(
+            history_hashes,
+            acc_fns,
+            func_tx,
+            func_block,
+            logger_config,
+            false,
+        )
+    }
+
+    pub fn new_with_logger_config_and_taiko<FAcc, FTx, Fb>(
+        history_hashes: Option<Vec<Word>>,
+        acc_fns: FAcc,
+        func_tx: FTx,
+        func_block: Fb,
+        logger_config: LoggerConfig,
+        use_anchor: bool,
+    ) -> Result<Self, Error>
+    where
+        FTx: FnOnce(Vec<&mut MockTransaction>, [MockAccount; NACC]),
+        Fb: FnOnce(&mut MockBlock, Vec<MockTransaction>) -> &mut MockBlock,
+        FAcc: FnOnce([&mut MockAccount; NACC]),
+    {
+        let more_accounts = if use_anchor { 3 } else { 1 };
+        let mut accounts: Vec<MockAccount> = vec![MockAccount::default(); NACC + more_accounts];
+        accounts[0].address(*MOCK_TAIKO_TREASURY_ADDRESS);
+        if use_anchor {
+            // add the GOLDEN_TOUCH account in the first position
+            accounts[1].address(*GOLDEN_TOUCH);
+            // add the l2 contract account in the second position
+            accounts[2]
+                .address(*MOCK_TAIKO_L2_ADDRESS)
+                .code(MOCK_CODES[0].clone());
+        }
         // Build Accounts modifiers
         let account_refs = accounts
             .iter_mut()
+            .skip(more_accounts)
             .collect_vec()
             .try_into()
             .expect("Mismatched len err");
         acc_fns(account_refs);
-        let accounts: [MockAccount; NACC] = accounts
+        let accounts_cloned: [MockAccount; NACC] = accounts
             .iter_mut()
+            .skip(more_accounts)
             .map(|acc| acc.build())
             .collect_vec()
             .try_into()
             .expect("Mismatched acc len");
 
-        let mut transactions = vec![MockTransaction::default(); NTX];
+        let mut transactions =
+            vec![MockTransaction::default(); NTX + if use_anchor { 1 } else { 0 }];
         // By default, set the TxIndex and the Nonce values of the multiple transactions
         // of the context correlative so that any Ok test passes by default.
         // If the user decides to override these values, they'll then be set to whatever
         // inputs were provided by the user.
+
+        if use_anchor {
+            // add the anchor transaction in the first position
+            transactions[0] = MockTransaction::new_anchor();
+        }
         transactions
             .iter_mut()
             .enumerate()
             .skip(1)
             .for_each(|(idx, tx)| {
                 let idx = u64::try_from(idx).expect("Unexpected idx conversion error");
-                tx.transaction_idx(idx).nonce(idx);
+                tx.transaction_idx(idx).nonce(idx - 1);
             });
-        let tx_refs = transactions.iter_mut().collect();
+        let tx_skipped = if use_anchor { 1 } else { 0 };
+        let tx_refs = transactions.iter_mut().skip(tx_skipped).collect();
 
         // Build Tx modifiers.
-        func_tx(tx_refs, accounts.clone());
+        func_tx(tx_refs, accounts_cloned);
         let transactions: Vec<MockTransaction> =
             transactions.iter_mut().map(|tx| tx.build()).collect();
 
@@ -158,20 +202,15 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
 
         let chain_id = block.chain_id;
         let block = Block::<Transaction>::from(block);
-        let accounts: [Account; NACC] = accounts
-            .iter()
-            .cloned()
-            .map(Account::from)
-            .collect_vec()
-            .try_into()
-            .expect("Mismatched acc len");
+        let accounts = accounts.iter().cloned().map(Account::from).collect_vec();
 
         let geth_traces = gen_geth_traces(
             chain_id,
             block.clone(),
-            accounts.to_vec(),
+            accounts.clone(),
             history_hashes.clone(),
             logger_config,
+            use_anchor,
         )?;
 
         Ok(Self {
@@ -209,13 +248,35 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         )
     }
 
+    /// Create a new TestContext used for taiko environment.
+    pub fn new_with_taiko<FAcc, FTx, Fb>(
+        history_hashes: Option<Vec<Word>>,
+        acc_fns: FAcc,
+        func_tx: FTx,
+        func_block: Fb,
+    ) -> Result<Self, Error>
+    where
+        FTx: FnOnce(Vec<&mut MockTransaction>, [MockAccount; NACC]),
+        Fb: FnOnce(&mut MockBlock, Vec<MockTransaction>) -> &mut MockBlock,
+        FAcc: FnOnce([&mut MockAccount; NACC]),
+    {
+        Self::new_with_logger_config_and_taiko(
+            history_hashes,
+            acc_fns,
+            func_tx,
+            func_block,
+            LoggerConfig::default(),
+            true,
+        )
+    }
+
     /// Returns a simple TestContext setup with a single tx executing the
     /// bytecode passed as parameters. The balances of the 2 accounts and
     /// addresses are the ones used in [`TestContext::
     /// account_0_code_account_1_no_code`]. Extra accounts, txs and/or block
     /// configs are set as [`Default`].
     pub fn simple_ctx_with_bytecode(bytecode: Bytecode) -> Result<TestContext<2, 1>, Error> {
-        TestContext::new(
+        TestContext::<2, 1>::new_with_taiko(
             None,
             account_0_code_account_1_no_code(bytecode),
             tx_from_1_to_0,
@@ -232,6 +293,7 @@ pub fn gen_geth_traces(
     accounts: Vec<Account>,
     history_hashes: Option<Vec<Word>>,
     logger_config: LoggerConfig,
+    use_anchor: bool,
 ) -> Result<Vec<GethExecTrace>, Error> {
     let trace_config = TraceConfig {
         chain_id,
@@ -247,7 +309,7 @@ pub fn gen_geth_traces(
             .map(eth_types::geth_types::Transaction::from)
             .collect(),
         logger_config,
-        ..Default::default()
+        taiko: use_anchor,
     };
     let traces = trace(&trace_config)?;
     Ok(traces)

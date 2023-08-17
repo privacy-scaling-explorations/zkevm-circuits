@@ -564,11 +564,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 mod test {
     use std::vec;
 
-    use crate::{evm_circuit::test::rand_bytes, taiko_test_util::CircuitTestBuilder};
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::evm::OpcodeId;
     use eth_types::{self, bytecode, evm_types::GasCost, word, Bytecode, Word};
 
-    use taiko_mock::{eth, gwei, MockTransaction, TestContext, MOCK_ACCOUNTS};
+    use mock::{eth, gwei, MockTransaction, TestContext, MOCK_ACCOUNTS};
 
     fn gas(call_data: &[u8]) -> Word {
         Word::from(
@@ -599,7 +599,7 @@ mod test {
 
     fn test_ok(tx: eth_types::Transaction, code: Option<Bytecode>) {
         // Get the execution steps from the external tracer
-        let ctx = TestContext::<2, 1, true>::new(
+        let ctx = TestContext::<2, 1>::new_with_taiko(
             None,
             |accs| {
                 accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(10));
@@ -676,7 +676,7 @@ mod test {
             STOP
         };
 
-        let ctx = TestContext::<2, 1, true>::new(
+        let ctx = TestContext::<2, 1>::new_with_taiko(
             None,
             |accs| {
                 accs[0].address(to).balance(eth(1)).code(code);
@@ -719,7 +719,7 @@ mod test {
 
     #[test]
     fn begin_tx_no_code() {
-        let ctx = TestContext::<2, 1, true>::new(
+        let ctx = TestContext::<2, 1>::new_with_taiko(
             None,
             |accs| {
                 accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
@@ -742,7 +742,7 @@ mod test {
 
     #[test]
     fn begin_tx_no_account() {
-        let ctx = TestContext::<1, 1, true>::new(
+        let ctx = TestContext::<1, 1>::new_with_taiko(
             None,
             |accs| {
                 accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
@@ -773,7 +773,7 @@ mod test {
             PUSH1(0)
             RETURN
         };
-        let ctx = TestContext::<1, 1, true>::new(
+        let ctx = TestContext::<1, 1>::new_with_taiko(
             None,
             |accs| {
                 accs[0]

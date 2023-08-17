@@ -33,9 +33,6 @@ pub mod taiko_super_circuit;
 #[cfg(any(feature = "test", test))]
 pub mod test_util;
 
-#[cfg(any(feature = "test", test))]
-pub mod taiko_test_util;
-
 pub mod anchor_tx_circuit;
 pub mod tx_circuit;
 pub mod util;
