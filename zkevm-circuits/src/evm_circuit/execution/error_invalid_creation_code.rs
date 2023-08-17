@@ -52,13 +52,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
             is_first_byte_invalid.expr(),
         );
 
-        let common_error_gadget = CommonErrorGadget::construct_with_return_data(
-            cb,
-            opcode.expr(),
-            5.expr(),
-            memory_address.offset(),
-            memory_address.length(),
-        );
+        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 5.expr());
 
         Self {
             opcode,
