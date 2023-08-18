@@ -186,7 +186,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         func_tx(tx_refs, accounts_cloned);
         // Sets the transaction_idx and nonce after building the tx modifiers. Hence, if user has
         // overridden these values above using the tx modifiers, that will be ignored.
-        let mut acc_tx_count = vec![0u64; NACC];
+        let mut acc_tx_count = vec![0u64; NACC + more_accounts];
         transactions.iter_mut().enumerate().for_each(|(idx, tx)| {
             let idx = u64::try_from(idx).expect("Unexpected idx conversion error");
             tx.transaction_idx(idx);
@@ -283,7 +283,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
     /// account_0_code_account_1_no_code`]. Extra accounts, txs and/or block
     /// configs are set as [`Default`].
     pub fn simple_ctx_with_bytecode(bytecode: Bytecode) -> Result<TestContext<2, 1>, Error> {
-        TestContext::<2, 1>::new_with_taiko(
+        TestContext::<2, 1>::new(
             None,
             account_0_code_account_1_no_code(bytecode),
             tx_from_1_to_0,

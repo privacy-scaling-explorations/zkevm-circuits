@@ -18,7 +18,6 @@ use std::marker::PhantomData;
 
 use crate::{
     table::{BlockTable, LookupTable, TxFieldTag, TxTable},
-    tx_circuit::TX_LEN,
     util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
@@ -34,6 +33,9 @@ use halo2_proofs::{
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
+
+// FIXME: for now TX_LEN without gas_tip_cap and gas_fee_cap
+const TX_LEN: usize = 13;
 
 /// Values of the block table (as in the spec)
 #[derive(Clone, Default, Debug)]
