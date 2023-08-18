@@ -1426,7 +1426,7 @@ impl<F: Field> MainRLPGadget<F> {
         let rlp = self.rlp.assign(region, offset, &bytes)?;
 
         // Depending on the RLP item type, we store the data in little endian or big endian.
-        // Little endian makes it much easer to decode the lo/hi split representation.
+        // Little endian makes it much easier to decode the lo/hi split representation.
         let mut value_bytes = bytes[1..].to_vec();
         let mut len: usize = rlp.len();
         while len < 33 {
