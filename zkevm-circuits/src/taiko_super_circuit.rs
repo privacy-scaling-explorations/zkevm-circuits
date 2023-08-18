@@ -101,6 +101,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 copy_table,
                 keccak_table: keccak_table.clone(),
                 exp_table,
+                is_taiko: true,
             },
         );
 
@@ -249,9 +250,11 @@ impl<F: Field> Circuit<F> for SuperCircuit<F> {
             &challenges,
         )?;
         config.byte_table.load(&mut layouter)?;
-        config
-            .pi_table
-            .load(&mut layouter, &self.block.protocol_instance, &challenges)?;
+        config.pi_table.load(
+            &mut layouter,
+            self.block.protocol_instance.as_ref().unwrap(),
+            &challenges,
+        )?;
         // rw_table,
         // bytecode_table,
         // copy_table,
@@ -315,9 +318,9 @@ impl<F: Field> SuperCircuit<F> {
         protocol_instance: ProtocolInstance,
     ) -> Result<(u32, Self, Vec<Vec<F>>), bus_mapping::Error> {
         let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
-        block.protocol_instance = protocol_instance;
-        block.protocol_instance.block_hash = block.eth_block.hash.unwrap();
-        block.protocol_instance.parent_hash = block.eth_block.parent_hash;
+        block.protocol_instance = Some(protocol_instance);
+        block.protocol_instance.as_mut().unwrap().block_hash = block.eth_block.hash.unwrap();
+        block.protocol_instance.as_mut().unwrap().parent_hash = block.eth_block.parent_hash;
         let (_, rows_needed) = Self::min_num_rows_block(&block);
         let k = log2_ceil(Self::unusable_rows() + rows_needed);
         log::debug!("super circuit uses k = {}", k);

@@ -433,7 +433,7 @@ impl<F: Field> SubCircuit<F> for AnchorTxCircuit<F> {
             block.circuits_params.max_calldata,
             block.txs.first().unwrap().clone(),
             block.txs.clone(),
-            block.protocol_instance.clone(),
+            block.protocol_instance.clone().unwrap(),
         )
     }
 

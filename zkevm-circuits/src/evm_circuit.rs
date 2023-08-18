@@ -68,6 +68,8 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub keccak_table: KeccakTable,
     /// ExpTable
     pub exp_table: ExpTable,
+    /// Taiko
+    pub is_taiko: bool,
 }
 
 impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
@@ -85,6 +87,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             copy_table,
             keccak_table,
             exp_table,
+            is_taiko,
         }: Self::ConfigArgs,
     ) -> Self {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
@@ -101,6 +104,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &copy_table,
             &keccak_table,
             &exp_table,
+            is_taiko,
         ));
 
         meta.annotate_lookup_any_column(byte_table[0], || "byte_range");
@@ -356,17 +360,30 @@ pub(crate) mod cached {
     }
 }
 
+/// Super Circuit configuration parameters
+#[derive(Default)]
+pub struct EvmCircuitParams {
+    is_taiko: bool,
+}
+
 // Always exported because of `EXECUTION_STATE_HEIGHT_MAP`
 impl<F: Field> Circuit<F> for EvmCircuit<F> {
     type Config = (EvmCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
-    type Params = ();
+    type Params = EvmCircuitParams;
 
     fn without_witnesses(&self) -> Self {
         Self::default()
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        Self::configure_with_params(meta, Self::Params::default())
+    }
+
+    fn configure_with_params(
+        meta: &mut ConstraintSystem<F>,
+        EvmCircuitParams { is_taiko }: Self::Params,
+    ) -> Self::Config {
         let tx_table = TxTable::construct(meta);
         let rw_table = RwTable::construct(meta);
         let bytecode_table = BytecodeTable::construct(meta);
@@ -390,6 +407,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
                     copy_table,
                     keccak_table,
                     exp_table,
+                    is_taiko,
                 },
             ),
             challenges,
@@ -458,7 +476,7 @@ mod evm_circuit_stats {
     fn evm_circuit_unusable_rows() {
         assert_eq!(
             EvmCircuit::<Fr>::unusable_rows(),
-            unusable_rows::<Fr, EvmCircuit::<Fr>>(()),
+            unusable_rows::<Fr, EvmCircuit::<Fr>>(Default::default()),
         )
     }
 

@@ -40,15 +40,16 @@ pub(crate) struct EndTxGadget<F> {
     sub_gas_price_by_base_fee: AddWordsGadget<F, 2, true>,
     sub_fee_cap_by_base_fee: AddWordsGadget<F, 2, true>,
     mul_effective_tip_by_gas_used: MulWordByU64Gadget<F>,
-    mul_base_fee_by_gas_used: MulWordByU64Gadget<F>,
     coinbase: Cell<F>,
     coinbase_reward: UpdateBalanceGadget<F, 2, true>,
-    treasury: Cell<F>,
-    treasury_reward: UpdateBalanceGadget<F, 2, true>,
     current_cumulative_gas_used: Cell<F>,
     is_first_tx: IsEqualGadget<F>,
     is_persistent: Cell<F>,
     tx_gas_tip_cap: Word<F>,
+    // taiko
+    mul_base_fee_by_gas_used: Option<MulWordByU64Gadget<F>>,
+    treasury: Option<Cell<F>>,
+    treasury_reward: Option<UpdateBalanceGadget<F, 2, true>>,
 }
 
 impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
@@ -100,12 +101,17 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let coinbase = cb.query_cell();
         cb.block_lookup(BlockContextFieldTag::Coinbase.expr(), None, coinbase.expr());
         let base_fee = cb.query_word_rlc();
-        cb.condition(is_first_tx.expr(), |cb| {
-            cb.require_zero("base_fee is zero when tx is first tx", base_fee.expr());
-        });
-        cb.condition(not::expr(is_first_tx.expr()), |cb| {
+
+        if cb.is_taiko {
+            cb.condition(is_first_tx.expr(), |cb| {
+                cb.require_zero("base_fee is zero when tx is first tx", base_fee.expr());
+            });
+            cb.condition(not::expr(is_first_tx.expr()), |cb| {
+                cb.block_lookup(BlockContextFieldTag::BaseFee.expr(), None, base_fee.expr());
+            });
+        } else {
             cb.block_lookup(BlockContextFieldTag::BaseFee.expr(), None, base_fee.expr());
-        });
+        }
 
         // https://eips.ethereum.org/EIPS/eip-1559
         let effective_tip = cb.query_word_rlc();
@@ -114,8 +120,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee.clone()], tx_gas_price);
         let mul_effective_tip_by_gas_used =
             MulWordByU64Gadget::construct(cb, effective_tip.clone(), gas_used.clone());
-        let mul_base_fee_by_gas_used =
-            MulWordByU64Gadget::construct(cb, base_fee.clone(), gas_used.clone());
 
         // effective_tip == min(gas_tip_cap, gas_fee_cap - base_fee)
         let fee_cap_sub_base_fee = cb.query_word_rlc();
@@ -132,10 +136,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             min_max_effective_tip.min(),
         );
 
-        // send base fee to treasury account
-        let treasury = cb.query_cell();
-        cb.block_lookup(BlockContextFieldTag::Treasury.expr(), None, treasury.expr());
-
         let coinbase_reward = UpdateBalanceGadget::construct(
             cb,
             coinbase.expr(),
@@ -143,12 +143,27 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             None,
         );
 
-        let treasury_reward = UpdateBalanceGadget::construct(
-            cb,
-            treasury.expr(),
-            vec![mul_base_fee_by_gas_used.product().clone()],
-            None,
-        );
+        let (mul_base_fee_by_gas_used, treasury, treasury_reward) = if cb.is_taiko {
+            let mul_base_fee_by_gas_used =
+                MulWordByU64Gadget::construct(cb, base_fee.clone(), gas_used.clone());
+            // send base fee to treasury account
+            let treasury = cb.query_cell();
+            cb.block_lookup(BlockContextFieldTag::Treasury.expr(), None, treasury.expr());
+
+            let treasury_reward = UpdateBalanceGadget::construct(
+                cb,
+                treasury.expr(),
+                vec![mul_base_fee_by_gas_used.product().clone()],
+                None,
+            );
+            (
+                Some(mul_base_fee_by_gas_used),
+                Some(treasury),
+                Some(treasury_reward),
+            )
+        } else {
+            (None, None, None)
+        };
 
         // constrain tx receipt fields
         cb.tx_receipt_lookup(
@@ -188,6 +203,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             gas_used + current_cumulative_gas_used.expr(),
         );
 
+        let begin_tx_rw_counter = if cb.is_taiko { 11.expr() } else { 10.expr() };
+
         cb.condition(
             cb.next.execution_state_selector([ExecutionState::BeginTx]),
             |cb| {
@@ -199,17 +216,19 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                 );
 
                 cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(11.expr() - is_first_tx.expr()),
+                    rw_counter: Delta(begin_tx_rw_counter - is_first_tx.expr()),
                     ..StepStateTransition::any()
                 });
             },
         );
 
+        let end_block_rw_counter = if cb.is_taiko { 10.expr() } else { 9.expr() };
+
         cb.condition(
             cb.next.execution_state_selector([ExecutionState::EndBlock]),
             |cb| {
                 cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(10.expr() - is_first_tx.expr()),
+                    rw_counter: Delta(end_block_rw_counter - is_first_tx.expr()),
                     // We propagate call_id so that EndBlock can get the last tx_id
                     // in order to count processed txs.
                     call_id: Same,
@@ -231,15 +250,15 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             sub_gas_price_by_base_fee,
             sub_fee_cap_by_base_fee,
             mul_effective_tip_by_gas_used,
-            mul_base_fee_by_gas_used,
             coinbase,
             coinbase_reward,
-            treasury,
-            treasury_reward,
             current_cumulative_gas_used,
             is_first_tx,
             is_persistent,
             tx_gas_tip_cap,
+            mul_base_fee_by_gas_used,
+            treasury,
+            treasury_reward,
         }
     }
 
@@ -254,8 +273,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
     ) -> Result<(), Error> {
         let gas_used = tx.gas - step.gas_left.0;
         let (refund, _) = block.get_rws(step, 2).tx_refund_value_pair();
-        let [(caller_balance, caller_balance_prev), (coinbase_balance, coinbase_balance_prev), (treasury_balance, treasury_balance_prev)] =
-            [3, 4, 5].map(|index| block.get_rws(step, index).account_value_pair());
+        let [(caller_balance, caller_balance_prev), (coinbase_balance, coinbase_balance_prev)] =
+            [3, 4].map(|index| block.get_rws(step, index).account_value_pair());
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
         self.tx_gas
@@ -270,7 +289,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             F::from(refund),
         )?;
 
-        let base_fee = if tx.is_anchor() {
+        let base_fee = if block.is_taiko() && tx.is_first_tx() {
             0.into()
         } else {
             block.context.base_fee
@@ -329,13 +348,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             gas_used,
             effective_tip * gas_used,
         )?;
-        self.mul_base_fee_by_gas_used.assign(
-            region,
-            offset,
-            base_fee,
-            gas_used,
-            base_fee * gas_used,
-        )?;
         self.coinbase.assign(
             region,
             offset,
@@ -354,26 +366,38 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             vec![effective_tip * gas_used],
             coinbase_balance,
         )?;
-        self.treasury.assign(
-            region,
-            offset,
-            Value::known(
-                block
-                    .protocol_instance
-                    .meta_hash
-                    .treasury
-                    .to_scalar()
-                    .expect("unexpected Address -> Scalar conversion failure"),
-            ),
-        )?;
-        self.treasury_reward.assign(
-            region,
-            offset,
-            treasury_balance_prev,
-            vec![base_fee * gas_used],
-            treasury_balance,
-        )?;
-
+        if block.is_taiko() {
+            self.mul_base_fee_by_gas_used.as_ref().unwrap().assign(
+                region,
+                offset,
+                base_fee,
+                gas_used,
+                base_fee * gas_used,
+            )?;
+            self.treasury.as_ref().unwrap().assign(
+                region,
+                offset,
+                Value::known(
+                    block
+                        .protocol_instance
+                        .as_ref()
+                        .unwrap()
+                        .meta_hash
+                        .treasury
+                        .to_scalar()
+                        .expect("unexpected Address -> Scalar conversion failure"),
+                ),
+            )?;
+            let (treasury_balance, treasury_balance_prev) =
+                block.get_rws(step, 5).account_value_pair();
+            self.treasury_reward.as_ref().unwrap().assign(
+                region,
+                offset,
+                treasury_balance_prev,
+                vec![base_fee * gas_used],
+                treasury_balance,
+            )?;
+        }
         let current_cumulative_gas_used: u64 = if tx.id == 1 {
             0
         } else {

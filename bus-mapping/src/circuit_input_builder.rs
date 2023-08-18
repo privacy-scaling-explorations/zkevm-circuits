@@ -77,7 +77,7 @@ impl Default for CircuitsParams {
     fn default() -> Self {
         CircuitsParams {
             max_rws: 1000,
-            max_txs: 2, // one for anchor
+            max_txs: 2, // more one for anchor
             max_calldata: 256,
             // TODO: Check whether this value is correct or we should increase/decrease based on
             // this lib tests
@@ -177,6 +177,7 @@ impl<'a> CircuitInputBuilder {
             eth_block,
             eth_tx,
             is_success,
+            self.block.is_taiko(),
         )
     }
 
@@ -408,7 +409,7 @@ pub struct BuilderClient<P: JsonRpcClient> {
     cli: GethClient<P>,
     chain_id: Word,
     circuits_params: CircuitsParams,
-    protocol_instance: ProtocolInstance,
+    protocol_instance: Option<ProtocolInstance>,
 }
 
 /// Get State Accesses from TxExecTraces
@@ -468,7 +469,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     pub async fn new(
         client: GethClient<P>,
         circuits_params: CircuitsParams,
-        protocol_instance: ProtocolInstance,
+        protocol_instance: Option<ProtocolInstance>,
     ) -> Result<Self, Error> {
         let chain_id = client.get_chain_id().await?;
 

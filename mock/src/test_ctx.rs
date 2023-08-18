@@ -134,17 +134,18 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         func_tx: FTx,
         func_block: Fb,
         logger_config: LoggerConfig,
-        use_anchor: bool,
+        is_taiko: bool,
     ) -> Result<Self, Error>
     where
         FTx: FnOnce(Vec<&mut MockTransaction>, [MockAccount; NACC]),
         Fb: FnOnce(&mut MockBlock, Vec<MockTransaction>) -> &mut MockBlock,
         FAcc: FnOnce([&mut MockAccount; NACC]),
     {
-        let more_accounts = if use_anchor { 3 } else { 1 };
+        let more_accounts = if is_taiko { 3 } else { 0 };
         let mut accounts: Vec<MockAccount> = vec![MockAccount::default(); NACC + more_accounts];
-        accounts[0].address(*MOCK_TAIKO_TREASURY_ADDRESS);
-        if use_anchor {
+        if is_taiko {
+            accounts[0].address(*MOCK_TAIKO_TREASURY_ADDRESS);
+            // from golden touch to l2 contract
             // add the GOLDEN_TOUCH account in the first position
             accounts[1].address(*GOLDEN_TOUCH);
             // add the l2 contract account in the second position
@@ -168,30 +169,36 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             .try_into()
             .expect("Mismatched acc len");
 
-        let mut transactions =
-            vec![MockTransaction::default(); NTX + if use_anchor { 1 } else { 0 }];
+        let mut transactions = vec![MockTransaction::default(); NTX + if is_taiko { 1 } else { 0 }];
         // By default, set the TxIndex and the Nonce values of the multiple transactions
         // of the context correlative so that any Ok test passes by default.
         // If the user decides to override these values, they'll then be set to whatever
         // inputs were provided by the user.
 
-        if use_anchor {
+        if is_taiko {
             // add the anchor transaction in the first position
             transactions[0] = MockTransaction::new_anchor();
         }
-        transactions
-            .iter_mut()
-            .enumerate()
-            .skip(1)
-            .for_each(|(idx, tx)| {
-                let idx = u64::try_from(idx).expect("Unexpected idx conversion error");
-                tx.transaction_idx(idx).nonce(idx - 1);
-            });
-        let tx_skipped = if use_anchor { 1 } else { 0 };
+        let tx_skipped = if is_taiko { 1 } else { 0 };
         let tx_refs = transactions.iter_mut().skip(tx_skipped).collect();
 
         // Build Tx modifiers.
         func_tx(tx_refs, accounts_cloned);
+        // Sets the transaction_idx and nonce after building the tx modifiers. Hence, if user has
+        // overridden these values above using the tx modifiers, that will be ignored.
+        let mut acc_tx_count = vec![0u64; NACC];
+        transactions.iter_mut().enumerate().for_each(|(idx, tx)| {
+            let idx = u64::try_from(idx).expect("Unexpected idx conversion error");
+            tx.transaction_idx(idx);
+            if let Some((pos, from_acc)) = accounts
+                .iter()
+                .find_position(|acc| acc.address == tx.from.address())
+            {
+                tx.nonce(from_acc.nonce + acc_tx_count[pos]);
+                acc_tx_count[pos] += 1;
+            }
+        });
+
         let transactions: Vec<MockTransaction> =
             transactions.iter_mut().map(|tx| tx.build()).collect();
 
@@ -210,7 +217,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             accounts.clone(),
             history_hashes.clone(),
             logger_config,
-            use_anchor,
+            is_taiko,
         )?;
 
         Ok(Self {

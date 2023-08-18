@@ -97,7 +97,7 @@ fn gen_block<const NUM_TXS: usize>(
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
     let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-    block.protocol_instance = protocol_instance;
+    block.protocol_instance = Some(protocol_instance);
     block
 }
 

@@ -92,7 +92,8 @@ pub struct Block {
     /// Original block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
     /// Protocol instance from protocol
-    pub protocol_instance: ProtocolInstance,
+    /// If this is set, means we are in the taiko context
+    pub protocol_instance: Option<ProtocolInstance>,
 }
 
 impl Block {
@@ -103,7 +104,7 @@ impl Block {
         prev_state_root: Word,
         eth_block: &eth_types::Block<eth_types::Transaction>,
         circuits_params: CircuitsParams,
-        protocol_instance: ProtocolInstance,
+        protocol_instance: Option<ProtocolInstance>,
     ) -> Result<Self, Error> {
         if eth_block.base_fee_per_gas.is_none() {
             // FIXME: resolve this once we have proper EIP-1559 support
@@ -152,6 +153,11 @@ impl Block {
     /// Return the list of transactions of this block.
     pub fn txs(&self) -> &[Transaction] {
         &self.txs
+    }
+
+    /// Check if in the taiko context.
+    pub fn is_taiko(&self) -> bool {
+        self.protocol_instance.is_some()
     }
 
     #[cfg(test)]

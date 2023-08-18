@@ -204,6 +204,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 copy_table,
                 keccak_table,
                 exp_table,
+                is_taiko: false,
             },
         );
 

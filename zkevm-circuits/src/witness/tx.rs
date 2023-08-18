@@ -56,8 +56,8 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    /// The first transaction in a block is the anchor transaction
-    pub fn is_anchor(&self) -> bool {
+    /// Return true if it is the first transaction.
+    pub fn is_first_tx(&self) -> bool {
         self.id == 1
     }
 

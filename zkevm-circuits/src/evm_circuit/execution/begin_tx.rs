@@ -599,7 +599,7 @@ mod test {
 
     fn test_ok(tx: eth_types::Transaction, code: Option<Bytecode>) {
         // Get the execution steps from the external tracer
-        let ctx = TestContext::<2, 1>::new_with_taiko(
+        let ctx = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(10));
@@ -676,7 +676,7 @@ mod test {
             STOP
         };
 
-        let ctx = TestContext::<2, 1>::new_with_taiko(
+        let ctx = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0].address(to).balance(eth(1)).code(code);
@@ -719,7 +719,7 @@ mod test {
 
     #[test]
     fn begin_tx_no_code() {
-        let ctx = TestContext::<2, 1>::new_with_taiko(
+        let ctx = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
@@ -742,7 +742,7 @@ mod test {
 
     #[test]
     fn begin_tx_no_account() {
-        let ctx = TestContext::<1, 1>::new_with_taiko(
+        let ctx = TestContext::<1, 1>::new(
             None,
             |accs| {
                 accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
@@ -773,7 +773,7 @@ mod test {
             PUSH1(0)
             RETURN
         };
-        let ctx = TestContext::<1, 1>::new_with_taiko(
+        let ctx = TestContext::<1, 1>::new(
             None,
             |accs| {
                 accs[0]

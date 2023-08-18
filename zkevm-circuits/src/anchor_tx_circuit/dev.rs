@@ -23,7 +23,7 @@ impl<F: Field> TestAnchorTxCircuit<F> {
     /// Create a new test circuit from a block.
     pub fn new_from_block(block: &witness::Block<F>) -> Self {
         TestAnchorTxCircuit {
-            protocol_instance: block.protocol_instance.clone(),
+            protocol_instance: block.protocol_instance.clone().unwrap(),
             circuit: AnchorTxCircuit::new_from_block(block),
         }
     }
