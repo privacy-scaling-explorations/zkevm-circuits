@@ -133,6 +133,7 @@ impl<C: CellType> CellConfig<C> {
             };
             columns.push(tmp);
         }
+        println!("cm init {:?} column: {:?}", self.cell_type, self.num_columns);
         if self.is_permute {
             let _ = columns
                 .iter()
