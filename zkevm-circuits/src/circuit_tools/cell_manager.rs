@@ -204,8 +204,8 @@ pub(crate) struct CellColumn<F, C: CellType> {
     pub(crate) cell_type: C,
     pub(crate) cells: Vec<Cell<F>>,
     pub(crate) expr: Expression<F>,
-    height: usize,
-    index: usize,
+    pub(crate) height: usize,
+    pub(crate) index: usize,
 }
 
 impl<F: Field, C: CellType> PartialEq for CellColumn<F, C> {

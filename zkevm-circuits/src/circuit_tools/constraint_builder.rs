@@ -9,7 +9,7 @@ use crate::{evm_circuit::util::rlc, table::LookupTable, util::{Expr, query_expre
 use eth_types::Field;
 use gadgets::util::{and, sum, Scalar};
 use halo2_proofs::{
-    plonk::{ConstraintSystem, Expression, Column, Advice},
+    plonk::{ConstraintSystem, Expression, Column, Advice, Selector},
 };
 use itertools::Itertools;
 
@@ -417,7 +417,8 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         &mut self,
         meta: &mut ConstraintSystem<F>,
         cell_managers: &[CellManager<F, C>],
-        tag:&(C, C)
+        tag:&(C, C),
+        selector: Option<Selector>,
     ){
         let (data_tag, table_tag) = tag;
         let challenge = self.lookup_challenge.clone().unwrap();
@@ -425,8 +426,12 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             let table_expr = rlc::expr(&table, challenge.expr());
             for cm in cell_managers {
                 for col in cm.get_typed_columns(*data_tag) {
-                    meta.lookup_any(format!("{:?}", data_tag), |_meta| {
-                        vec![(col.expr(), table_expr.clone())]
+                    meta.lookup_any(format!("{:?}", data_tag), |meta| {
+                        let s = selector.map_or_else(
+                            || 1.expr(),
+                             |s| meta.query_selector(s)
+                            );
+                        vec![(col.expr() * s, table_expr.clone())]
                     });
                 }
             }
@@ -436,7 +441,8 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
     pub(crate) fn build_dynamic_path(
         &mut self,
         meta: &mut ConstraintSystem<F>,
-        tag: &(C, C)
+        tag: &(C, C),
+        selector: Option<Selector>,
     ){
         let (data_tag, table_tag) = tag;
         if let Some(lookups) = self.lookups.clone().get(data_tag) {
@@ -479,11 +485,15 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                 while values.len() < table.len() {
                     values.push(0.expr());
                 }
-                meta.lookup_any(description, |_meta| {
+                meta.lookup_any(description, |meta| {
+                    let s = selector.map_or_else(
+                        || 1.expr(),
+                         |s| meta.query_selector(s)
+                        );
                     values
                         .iter()
                         .zip(table.iter())
-                        .map(|(v, t)| (v.expr(), t.expr()))
+                        .map(|(v, t)| (v.expr() * s.clone(), t.expr()))
                         .collect()
                 });
             }
@@ -496,11 +506,12 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         meta: &mut ConstraintSystem<F>,
         cell_managers: &[CellManager<F, C>],
         tags: &[(C, C)],
+        selector: Option<Selector>,
     ) {
         let _challenge = self.lookup_challenge.clone().unwrap();
         for tag in tags {
-            self.build_fixed_path(meta, cell_managers, tag);
-            self.build_dynamic_path(meta, tag);
+            self.build_fixed_path(meta, cell_managers, tag, selector);
+            self.build_dynamic_path(meta, tag, selector);
         }
     }
 
