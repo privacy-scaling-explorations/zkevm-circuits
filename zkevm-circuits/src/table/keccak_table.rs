@@ -52,6 +52,7 @@ impl KeccakTable {
         let input_rlc = challenges
             .keccak_input()
             .map(|challenge| rlc::value(input.iter().rev(), challenge));
+
         let input_len = F::from(input.len() as u64);
         let mut keccak = Keccak::default();
         keccak.update(input);
@@ -62,6 +63,7 @@ impl KeccakTable {
                 challenge,
             )
         });
+        println!("assignments input {:?} - keccak_input {:?}| output {:?} - evm_word {:?}", input.len(), input_rlc, output.len(), output_rlc);
 
         vec![[
             Value::known(F::ONE),
@@ -111,6 +113,7 @@ impl KeccakTable {
 
                 let keccak_table_columns = <KeccakTable as LookupTable<F>>::advice_columns(self);
                 for input in inputs.clone() {
+                    println!("dev_load offset={:?} input: {:?}", offset, input);
                     for row in Self::assignments(input, challenges) {
                         // let mut column_index = 0;
                         for (&column, value) in keccak_table_columns.iter().zip_eq(row) {

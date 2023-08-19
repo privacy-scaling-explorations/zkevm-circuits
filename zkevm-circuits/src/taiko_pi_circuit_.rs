@@ -13,6 +13,7 @@ use crate::{
     
     witness::{self, BlockContext}, circuit, assignf,
 };
+use bus_mapping::evm;
 use gadgets::util::Scalar;
 use eth_types::{Address, Field, ToBigEndian, ToWord, Word, H256};
 use ethers_core::utils::keccak256;
@@ -176,12 +177,10 @@ impl PublicData {
 
     fn get_pi_hi_low(&self) -> [(&'static str, Option<Word>, Vec<u8>); 2] {
         let pi_bytes = self.get_pi().to_fixed_bytes();
-        let res = [
+        [
             ("high_16_bytes_of_keccak_rpi", None, pi_bytes[..16].to_vec()),
             ("low_16_bytes_of_keccak_rpi", None, pi_bytes[16..].to_vec()),
-        ];
-        println!("-----res {:?}", res);
-        res
+        ]
     }   
 }
 /// Config for PiCircuit
@@ -299,8 +298,9 @@ impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
                                 require!(a!(block_acc) => pi_field.keccak_field(meta, 0));
                             });
                             ifx!(not!(pi_field.is_last.expr()) => {
+                                let keccak_mult = (0..N).fold(1.expr(), |acc, _| acc * challenges.keccak_input());
                                 require!(
-                                    a!(block_acc, 1) => a!(block_acc) * challenges.keccak_input() + pi_field.keccak_field(meta, 0)
+                                    a!(block_acc, 1) => a!(block_acc) * keccak_mult + pi_field.keccak_field(meta, 0)
                                 );
                             })
                         } 
@@ -308,11 +308,12 @@ impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
                         // start with field bytes rlc with 1 << 8 and increment with evm_word
                          elsex {
                             ifx!(pi_field.is_first.expr() => {
-                                require!(a!(block_acc) => pi_field.hi_low_field(meta, 0));
+                                require!(a!(block_acc) => pi_field.evm_word_field(meta, 0));
                             });
                             ifx!(not!(pi_field.is_last.expr()) => {
+                                let evm_mult = (0..N/2).fold(1.expr(), |acc, _| acc * challenges.evm_word());
                                 require!(
-                                    a!(block_acc, 1) => a!(block_acc) * challenges.evm_word() + pi_field.hi_low_field(meta, 0)
+                                    a!(block_acc, 1) => a!(block_acc) * evm_mult + pi_field.evm_word_field(meta, 0)
                                 );
                             })
                         });
@@ -327,17 +328,17 @@ impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
                             );
                             offset += 1;
                         }
-                        // require!(keccak_output[0].expr() => pi_field.hi_low_field(meta, KECCAK_HI));
-                        // require!(keccak_output[1].expr() => pi_field.hi_low_field(meta, KECCAK_LOW));
-                        // require!(
-                        //     (
-                        //         1.expr(),
-                        //         a!(block_acc, FIELD10_IDX),
-                        //         RPI_BYTES_LEN.expr(),
-                        //         a!(block_acc, KECCAK_LOW)
-                        //     )
-                        //     => @PiCellType::Lookup(Table::Keccak), (TO_FIX)
-                        // );
+                        require!(keccak_output[0].expr() => pi_field.hi_low_field(meta, KECCAK_HI));
+                        require!(keccak_output[1].expr() => pi_field.hi_low_field(meta, KECCAK_LOW));
+                        require!(
+                            (
+                                1.expr(),
+                                a!(block_acc, FIELD10_IDX),
+                                RPI_BYTES_LEN.expr(),
+                                a!(block_acc, KECCAK_LOW)
+                            )
+                            => @PiCellType::Lookup(Table::Keccak), (TO_FIX)
+                        );
                     });
                     cb.build_constraints(Some(meta.query_selector(q_enable)))
                 }
@@ -392,17 +393,27 @@ impl<F: Field> TaikoPiCircuitConfig<F> {
                 let hi_low_r = F::from(BYTE_POW_BASE);
                 challenges.evm_word().map(|v| evm_word_r = v);
                 challenges.keccak_input().map(|v| keccak_r = v);
+                let mut k_cnt = 0;
+                let mut e_cnt = 0;
+                let keccak_mult = (0..N).fold(1.scalar(), |acc: F, _| {k_cnt += 1; acc * keccak_r});
+                let evm_mult = (0..N/2).fold(1.scalar(), |acc: F, _| {e_cnt += 1; acc * evm_word_r});
 
                 let mut assignments = public_data.assignments().to_vec();
                 assignments.append(&mut public_data.get_pi_hi_low().to_vec());
                 let mut i = 0;
                 let mut pi_cells = Vec::new();
                 for (annotation, block_number, bytes) in assignments {
-                    println!("{:?} {:?}, len {:?}", i, annotation, bytes.len());
+                    println!("{:?} {:?}, len {:?} \n    {:?}", i, annotation, bytes.len(), bytes);
                     match i {
                         L1SIGNAL_IDX..=FIELD10_IDX => {
                             let field = self.field_gadget.assign(&mut region, i, keccak_r, &bytes)?;
-                            block_acc = self.assign_acc(&mut region, i, keccak_r, block_acc, field)?;
+                            block_acc = self.assign_acc(&mut region, i, keccak_mult, block_acc, field)?;
+                            
+                            // // k_cnt += N;
+                            // if i == FIELD10_IDX {
+                            //     println!("FIELD10_IDX {:?}", block_acc);
+                            // }
+
                             if let Some(block_number) = block_number {
                                 println!("  block_number {:?} => {:?} {:?}", block_number, self.block_number[i - PARENT_HASH].expr().identifier(), field);
                                 println!("  {:?}", bytes);
@@ -411,14 +422,22 @@ impl<F: Field> TaikoPiCircuitConfig<F> {
                         }
                         KECCAK_HI..=KECCAK_LOW => {
                             let mut bytes = bytes.clone();
-                            bytes.reverse();
-                            let field = self.field_gadget.assign(&mut region, i, hi_low_r, &bytes)?;
-                            block_acc = self.assign_acc(&mut region, i, evm_word_r, block_acc, field)?;
-                            pi_cells.push(assign!(region, self.keccak_output[i - KECCAK_HI], 0 => field)?);
-                            println!("self.field_gadget.assign_bytes {:?}, {:?}", bytes, field);
+                            bytes.reverse(); 
+                            let field = self.field_gadget.assign(&mut region, i, evm_word_r, &bytes)?;
+                            block_acc = self.assign_acc(&mut region, i, evm_mult, block_acc, field)?;
+                            
+                            // // e_cnt += N/2;
+                            // if i == KECCAK_LOW {
+                            //     println!("KECCAK_LOW {:?}", block_acc);
+                            // }
+                            
+                            pi_cells.push(assign!(
+                                region, self.keccak_output[i - KECCAK_HI], 0 => rlc::value(&bytes, hi_low_r)
+                            )?);
                         },
                         _ => unimplemented!()
                     }
+                    println!("  block_acc {:?}", block_acc);
                     i += 1;
                 }
                 Ok(pi_cells)
@@ -499,6 +518,10 @@ impl<F: Field> FieldBytesGadget<F> {
         bytes: &[u8],
     ) -> Result<F, Error> {
         // Assign the bytes
+        let mut bytes = bytes.to_vec();
+        while bytes.len() < N {
+            bytes.push(0);
+        }
         for (byte, cell) in bytes.iter().zip(self.bytes.iter()) {
             assign!(region, cell, offset => byte.scalar())?;
         }
