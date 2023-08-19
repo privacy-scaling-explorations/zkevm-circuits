@@ -349,6 +349,7 @@ impl<F: Field> SubCircuitConfig<F> for TaikoPiCircuitConfig<F> {
                 (PiCellType::Lookup(Table::Block),PiCellType::Lookup(Table::Block)),
                 (PiCellType::Lookup(Table::Bytecode), PiCellType::Lookup(Table::Bytecode)),
             ],
+            None
         );
 
         Self {
@@ -459,7 +460,7 @@ impl<F: Field> TaikoPiCircuitConfig<F> {
                 cells[RPI_CELL_IDX] = Some(rpi_cell);
                 cells[RPI_RLC_ACC_CELL_IDX] = Some(rpi_rlc_acc_cell);
                 if let Some(block_number) = block_number {
-                    println!("---self.q_block_table.enable---");
+                    println!("---self.q_block_table.enable--- {:?} {:?}", block_number, field_bytes);
                     self.q_block_table.enable(region, row_offset)?;
                     region.assign_advice(
                         || "block_index",
