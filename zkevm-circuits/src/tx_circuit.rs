@@ -214,6 +214,18 @@ impl<F: Field> TxCircuit<F> {
                                 .map(|challenge| rlc(tx.gas_price.to_le_bytes(), challenge)),
                         ),
                         (
+                            TxFieldTag::GasTipCap,
+                            challenges
+                                .evm_word()
+                                .map(|challenge| rlc(tx.gas_tip_cap.to_le_bytes(), challenge)),
+                        ),
+                        (
+                            TxFieldTag::GasFeeCap,
+                            challenges
+                                .evm_word()
+                                .map(|challenge| rlc(tx.gas_fee_cap.to_le_bytes(), challenge)),
+                        ),
+                        (
                             TxFieldTag::CallerAddress,
                             Value::known(tx.from.to_scalar().expect("tx.from too big")),
                         ),

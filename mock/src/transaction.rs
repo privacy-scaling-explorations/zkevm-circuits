@@ -163,7 +163,7 @@ impl Default for MockTransaction {
             v: None,
             r: None,
             s: None,
-            transaction_type: U64::zero(),
+            transaction_type: U64::from(2),
             access_list: AccessList::default(),
             max_priority_fee_per_gas: *MOCK_GASTIPCAP,
             max_fee_per_gas: *MOCK_GASFEECAP,

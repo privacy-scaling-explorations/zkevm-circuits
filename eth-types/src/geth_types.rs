@@ -6,7 +6,10 @@ use crate::{
     ToWord, Word, U64,
 };
 use ethers_core::{
-    types::{transaction::response, Eip1559TransactionRequest, NameOrAddress, TransactionRequest},
+    types::{
+        transaction::{eip2718::TypedTransaction, response},
+        Eip1559TransactionRequest, NameOrAddress, TransactionRequest,
+    },
     utils::get_contract_address,
 };
 use ethers_signers::{LocalWallet, Signer};
@@ -245,9 +248,13 @@ impl Transaction {
             secp256k1::Fq::from_repr(sig_s_le),
             Error::Signature(libsecp256k1::Error::InvalidSignature),
         )?;
-        // msg = rlp([nonce, gasPrice, gas, to, value, data, sig_v, r, s])
-        let req: TransactionRequest = self.into();
-        let msg = req.chain_id(chain_id).rlp();
+        // msg = rlp([chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gas, to, value, data,
+        // accessList])
+        let req: Eip1559TransactionRequest = self.into();
+        let req = req.chain_id(chain_id);
+        // insert 0x2 at the begin of eip
+        let req: TypedTransaction = req.into();
+        let msg = req.rlp();
         let msg_hash: [u8; 32] = Keccak256::digest(&msg)
             .as_slice()
             .to_vec()
