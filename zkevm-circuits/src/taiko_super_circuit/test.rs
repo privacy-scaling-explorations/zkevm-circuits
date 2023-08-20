@@ -158,10 +158,7 @@ fn serial_test_super_circuit_1tx_1max_tx() {
 #[ignore]
 #[test]
 fn taiko_serial_test_super_circuit_1tx_3max_tx() {
-    let protocol_instance = ProtocolInstance {
-        anchor_gas_limit: 150000,
-        ..Default::default()
-    };
+    let protocol_instance = ProtocolInstance::default();
     let block = block_1tx();
     let circuits_params = CircuitsParams {
         max_txs: 3,
@@ -178,10 +175,7 @@ fn taiko_serial_test_super_circuit_1tx_3max_tx() {
 #[ignore]
 #[test]
 fn taiko_serial_test_super_circuit_2tx_3max_tx() {
-    let protocol_instance = ProtocolInstance {
-        anchor_gas_limit: 150000,
-        ..Default::default()
-    };
+    let protocol_instance = ProtocolInstance::default();
     let block = block_2tx();
     let circuits_params = CircuitsParams {
         max_txs: 3,

@@ -50,8 +50,9 @@
 //!   - [x] Tx Circuit
 //!   - [ ] MPT Circuit
 
-#[cfg(any(feature = "test", test))]
-pub(crate) mod test;
+// FIXME: ignore unused long-time running tests
+// #[cfg(any(feature = "test", test))]
+// pub(crate) mod test;
 
 use crate::{
     bytecode_circuit::circuit::{

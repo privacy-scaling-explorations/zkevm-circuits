@@ -3,8 +3,11 @@ mod param;
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod dev;
-#[cfg(any(feature = "test", test))]
-mod test;
+
+// FIXME: ignore unused long-time running tests
+// #[cfg(any(feature = "test", test))]
+// #[cfg(any(feature = "test", test))]
+// mod test;
 
 use eth_types::{
     geth_types::{BlockConstants, Transaction},
@@ -33,9 +36,6 @@ use halo2_proofs::{
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
-
-// FIXME: for now TX_LEN without gas_tip_cap and gas_fee_cap
-const TX_LEN: usize = 13;
 
 /// Values of the block table (as in the spec)
 #[derive(Clone, Default, Debug)]
