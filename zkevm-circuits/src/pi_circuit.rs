@@ -21,6 +21,7 @@ use std::marker::PhantomData;
 
 use crate::{
     table::{BlockTable, LookupTable, TxFieldTag, TxTable},
+    tx_circuit::TX_LEN,
     util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };

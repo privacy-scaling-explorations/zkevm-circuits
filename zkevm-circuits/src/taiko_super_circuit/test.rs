@@ -99,7 +99,7 @@ fn block_2tx() -> GethData {
     let addr_a = wallet_a.address();
     let addr_b = address!("0x000000000000000000000000000000000000BBBB");
 
-    let mut block: GethData = TestContext::<2, 2>::new(
+    let mut block: GethData = TestContext::<2, 2>::new_with_taiko(
         None,
         |accs| {
             accs[0]
