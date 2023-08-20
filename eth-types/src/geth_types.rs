@@ -8,7 +8,7 @@ use crate::{
 use ethers_core::{
     types::{
         transaction::{eip2718::TypedTransaction, response},
-        Eip1559TransactionRequest, NameOrAddress, TransactionRequest,
+        Eip1559TransactionRequest, NameOrAddress,
     },
     utils::get_contract_address,
 };
@@ -193,21 +193,6 @@ impl From<&crate::Transaction> for Transaction {
     }
 }
 
-impl From<&Transaction> for TransactionRequest {
-    fn from(tx: &Transaction) -> TransactionRequest {
-        TransactionRequest {
-            from: Some(tx.from),
-            to: tx.to.map(NameOrAddress::Address),
-            gas: Some(tx.gas_limit.to_word()),
-            gas_price: Some(tx.gas_price),
-            value: Some(tx.value),
-            data: Some(tx.call_data.clone()),
-            nonce: Some(tx.nonce.to_word()),
-            ..Default::default()
-        }
-    }
-}
-
 impl From<&Transaction> for Eip1559TransactionRequest {
     fn from(tx: &Transaction) -> Eip1559TransactionRequest {
         Eip1559TransactionRequest {
@@ -348,7 +333,7 @@ impl GethData {
             let wallet = wallets.get(&tx.from).unwrap();
             assert_eq!(Word::from(wallet.chain_id()), self.chain_id);
             let geth_tx: Transaction = (&*tx).into();
-            let req: TransactionRequest = (&geth_tx).into();
+            let req: Eip1559TransactionRequest = (&geth_tx).into();
             let sig = wallet.sign_transaction_sync(&req.chain_id(self.chain_id.as_u64()).into());
             tx.v = U64::from(sig.v);
             tx.r = sig.r;
