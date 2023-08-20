@@ -442,10 +442,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // 3. Call to account with empty code.
         cb.condition(
-            and::expr([
-                no_callee_code.clone(),
-                tx_is_invalid.expr(),
-            ]),
+            and::expr([no_callee_code.clone(), tx_is_invalid.expr()]),
             |cb| {
                 cb.require_equal(
                     "Tx to account with empty code should be persistent",
