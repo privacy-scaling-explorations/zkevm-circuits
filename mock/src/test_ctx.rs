@@ -303,7 +303,7 @@ pub fn gen_geth_traces(
     accounts: Vec<Account>,
     history_hashes: Option<Vec<Word>>,
     logger_config: LoggerConfig,
-    use_anchor: bool,
+    is_taiko: bool,
 ) -> Result<Vec<GethExecTrace>, Error> {
     let trace_config = TraceConfig {
         chain_id,
@@ -319,7 +319,7 @@ pub fn gen_geth_traces(
             .map(eth_types::geth_types::Transaction::from)
             .collect(),
         logger_config,
-        taiko: use_anchor,
+        taiko: is_taiko,
     };
     let traces = trace(&trace_config)?;
     Ok(traces)
