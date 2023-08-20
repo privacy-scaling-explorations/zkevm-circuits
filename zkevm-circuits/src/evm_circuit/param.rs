@@ -1,4 +1,4 @@
-use super::table::Table;
+use super::{table::Table, EvmCircuitParams};
 use crate::evm_circuit::{step::ExecutionState, EvmCircuit};
 use halo2_proofs::{
     halo2curves::bn256::Fr,
@@ -109,10 +109,18 @@ pub(crate) const N_BYTES_CALLDATASIZE: usize = N_BYTES_U64;
 lazy_static::lazy_static! {
     // Step slot height in evm circuit
     pub(crate) static ref EXECUTION_STATE_HEIGHT_MAP : HashMap<ExecutionState, usize> = get_step_height_map();
+    pub(crate) static ref EXECUTION_STATE_HEIGHT_MAP_WITH_TAIKO : HashMap<ExecutionState, usize> = get_step_height_map_with_taiko();
 }
 fn get_step_height_map() -> HashMap<ExecutionState, usize> {
     let mut meta = ConstraintSystem::<Fr>::default();
     let circuit = EvmCircuit::configure(&mut meta);
+
+    circuit.0.execution.height_map
+}
+
+fn get_step_height_map_with_taiko() -> HashMap<ExecutionState, usize> {
+    let mut meta = ConstraintSystem::<Fr>::default();
+    let circuit = EvmCircuit::configure_with_params(&mut meta, EvmCircuitParams { is_taiko: true });
 
     circuit.0.execution.height_map
 }

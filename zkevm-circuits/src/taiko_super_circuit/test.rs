@@ -4,7 +4,10 @@ use bus_mapping::circuit_input_builder::MetaHash;
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use log::error;
-use mock::{TestContext, MOCK_CHAIN_ID};
+use mock::{
+    TestContext, MOCK_ANCHOR_GAS_LIMIT, MOCK_ANCHOR_L1_HASH, MOCK_ANCHOR_L1_HIGHT,
+    MOCK_ANCHOR_PARENT_GAS_USED, MOCK_ANCHOR_SIGNAL_ROOT, MOCK_CHAIN_ID,
+};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use std::str::FromStr;
@@ -144,30 +147,9 @@ fn serial_test_super_circuit_1tx_1max_tx() {
     let parent_hash =
         Hash::from_str("0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49346")
             .unwrap();
-    let protocol_instance = ProtocolInstance {
-        anchor_gas_limit: 150000,
-        block_hash,
-        parent_hash,
-        meta_hash: MetaHash {
-            l1_hash: block_hash,
-            l1_height: 20,
-            ..Default::default()
-        },
-        signal_root: block_hash,
-        parent_gas_used: 2000,
-        ..Default::default()
-    };
+    let protocol_instance = ProtocolInstance::default();
     let mut block = block_1tx();
-    let circuits_params = CircuitsParams {
-        max_txs: 2,
-        max_calldata: 200,
-        max_rws: 256,
-        max_copy_rows: 256,
-        max_exp_steps: 256,
-        max_bytecode: 512,
-        max_evm_rows: 0,
-        max_keccak_rows: 0,
-    };
+    let circuits_params = CircuitsParams::default();
     block.eth_block.hash = Some(block_hash);
     block.eth_block.parent_hash = parent_hash;
     block.history_hashes = vec![block.eth_block.parent_hash.to_word()];

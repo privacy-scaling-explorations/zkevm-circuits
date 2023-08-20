@@ -91,6 +91,8 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
     pub eth_block: eth_types::Block<eth_types::Transaction>,
     /// Execution Trace from geth
     pub geth_traces: Vec<eth_types::GethExecTrace>,
+    /// In taiko context
+    pub is_taiko: bool,
 }
 
 impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethData {
@@ -226,6 +228,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             history_hashes: history_hashes.unwrap_or_default(),
             eth_block: block,
             geth_traces,
+            is_taiko,
         })
     }
 

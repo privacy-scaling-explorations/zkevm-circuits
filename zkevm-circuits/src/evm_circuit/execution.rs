@@ -937,7 +937,7 @@ impl<F: Field> ExecutionConfig<F> {
                     if next.is_none() {
                         break;
                     }
-                    let height = step.execution_state().get_step_height();
+                    let height = step.execution_state().get_step_height(block.is_taiko());
 
                     // Assign the step witness
                     self.assign_exec_step(
@@ -968,7 +968,7 @@ impl<F: Field> ExecutionConfig<F> {
                         );
                         // return Err(Error::Synthesis);
                     }
-                    let height = ExecutionState::EndBlock.get_step_height();
+                    let height = ExecutionState::EndBlock.get_step_height(block.is_taiko());
                     debug_assert_eq!(height, 1);
                     let last_row = evm_rows - 1;
                     log::trace!(
@@ -995,7 +995,7 @@ impl<F: Field> ExecutionConfig<F> {
                 }
 
                 // part3: assign the last EndBlock at offset `evm_rows - 1`
-                let height = ExecutionState::EndBlock.get_step_height();
+                let height = ExecutionState::EndBlock.get_step_height(block.is_taiko());
                 debug_assert_eq!(height, 1);
                 log::trace!("assign last EndBlock at offset {}", offset);
                 self.assign_exec_step(

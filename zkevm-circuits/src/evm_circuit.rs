@@ -226,7 +226,7 @@ impl<F: Field> EvmCircuit<F> {
         let mut num_rows = 0;
         for transaction in &block.txs {
             for step in &transaction.steps {
-                num_rows += step.execution_state().get_step_height();
+                num_rows += step.execution_state().get_step_height(block.is_taiko());
             }
         }
 
@@ -321,6 +321,15 @@ pub(crate) mod cached {
             let config = EvmCircuit::<Fr>::configure(&mut meta);
             Cache { cs: meta, config }
         };
+
+        static ref CACHE_WITH_TAIKO: Cache = {
+            let mut meta = ConstraintSystem::<Fr>::default();
+            let config = EvmCircuit::<Fr>::configure_with_params(
+                &mut meta,
+                EvmCircuitParams { is_taiko: true },
+            );
+            Cache { cs: meta, config }
+        };
     }
 
     /// Wrapper over the EvmCircuit that behaves the same way and also
@@ -333,15 +342,31 @@ pub(crate) mod cached {
     impl Circuit<Fr> for EvmCircuitCached {
         type Config = (EvmCircuitConfig<Fr>, Challenges);
         type FloorPlanner = SimpleFloorPlanner;
-        type Params = ();
+        type Params = EvmCircuitParams;
 
         fn without_witnesses(&self) -> Self {
             Self(self.0.without_witnesses())
         }
 
         fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-            *meta = CACHE.cs.clone();
-            CACHE.config.clone()
+            Self::configure_with_params(meta, Default::default())
+        }
+
+        fn params(&self) -> Self::Params {
+            self.0.params()
+        }
+
+        fn configure_with_params(
+            meta: &mut ConstraintSystem<Fr>,
+            EvmCircuitParams { is_taiko }: Self::Params,
+        ) -> Self::Config {
+            if is_taiko {
+                *meta = CACHE_WITH_TAIKO.cs.clone();
+                CACHE_WITH_TAIKO.config.clone()
+            } else {
+                *meta = CACHE.cs.clone();
+                CACHE.config.clone()
+            }
         }
 
         fn synthesize(
@@ -378,6 +403,12 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         Self::configure_with_params(meta, Self::Params::default())
+    }
+
+    fn params(&self) -> Self::Params {
+        EvmCircuitParams {
+            is_taiko: self.block.as_ref().unwrap().is_taiko(),
+        }
     }
 
     fn configure_with_params(

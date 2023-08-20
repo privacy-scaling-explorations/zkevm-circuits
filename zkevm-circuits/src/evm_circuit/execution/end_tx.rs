@@ -463,7 +463,7 @@ mod test {
         // Multiple txs
         test_ok(
             // Get the execution steps from the external tracer
-            TestContext::<2, 3>::new(
+            TestContext::<2, 3>::new_with_taiko(
                 None,
                 account_0_code_account_1_no_code(bytecode! { STOP }),
                 |mut txs, accs| {

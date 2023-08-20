@@ -4,7 +4,10 @@ use std::iter;
 
 use eth_types::{Address, Bytes, Hash, ToBigEndian, ToWord, Word, H256};
 use keccak256::plain::Keccak;
-use mock::{MOCK_ANCHOR_GAS_LIMIT, MOCK_TAIKO_L2_ADDRESS, MOCK_TAIKO_TREASURY_ADDRESS};
+use mock::{
+    MOCK_ANCHOR_GAS_LIMIT, MOCK_ANCHOR_L1_HASH, MOCK_ANCHOR_L1_HIGHT, MOCK_ANCHOR_PARENT_GAS_USED,
+    MOCK_ANCHOR_SIGNAL_ROOT, MOCK_TAIKO_L2_ADDRESS, MOCK_TAIKO_TREASURY_ADDRESS,
+};
 
 /// hash(anchor)
 pub const ANCHOR_TX_METHOD_SIGNATURE: u32 = 0xda69d3db;
@@ -48,21 +51,26 @@ pub struct ProtocolInstance {
 impl Default for ProtocolInstance {
     fn default() -> Self {
         Self {
+            anchor_gas_limit: MOCK_ANCHOR_GAS_LIMIT.as_u64(),
+            meta_hash: MetaHash {
+                l1_hash: *MOCK_ANCHOR_L1_HASH,
+                l1_height: *MOCK_ANCHOR_L1_HIGHT,
+                treasury: *MOCK_TAIKO_TREASURY_ADDRESS,
+                ..Default::default()
+            },
+            signal_root: *MOCK_ANCHOR_SIGNAL_ROOT,
+            parent_gas_used: *MOCK_ANCHOR_PARENT_GAS_USED,
             l1_signal_service: Address::default(),
             l2_signal_service: Address::default(),
             l2_contract: *MOCK_TAIKO_L2_ADDRESS,
-            meta_hash: MetaHash::default(),
             block_hash: Hash::default(),
             parent_hash: Hash::default(),
-            signal_root: Hash::default(),
             graffiti: H256::default(),
             prover: Address::default(),
             gas_used: 0,
-            parent_gas_used: 0,
             block_max_gas_limit: 0,
             max_transactions_per_block: 0,
             max_bytes_per_tx_list: 0,
-            anchor_gas_limit: MOCK_ANCHOR_GAS_LIMIT.as_u64(),
         }
     }
 }
