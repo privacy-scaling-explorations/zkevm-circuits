@@ -97,7 +97,8 @@ mod test {
                         "from": "0x00000000000000000000000000000000000000fe",
                         "to": "0x00000000000000000000000000000000000000ff",
                         "gas_limit": "0x5208",
-                        "gas_price": "0x77359400"
+                        "gas_tip_cap": "0x77359400",
+                        "gas_fee_cap": "0x77359400"
                     }
                 ]
             }"#,
@@ -131,7 +132,8 @@ mod test {
                         "from": "0x00000000000000000000000000000000000000fe",
                         "to": "0x00000000000000000000000000000000000000ff",
                         "gas_limit": "0x5208",
-                        "gas_price": "0x1111"
+                        "gas_tip_cap": "0x1111",
+                        "gas_fee_cap": "0x1111"
                     }
                 ]
             }"#,
@@ -150,7 +152,8 @@ mod test {
                 ]
             }"#,
         ] {
-            assert!(trace(config).is_err())
+            let _trace = trace(config);
+            assert!(_trace.is_err())
         }
     }
 }
