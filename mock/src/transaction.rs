@@ -1,13 +1,19 @@
 //! Mock Transaction definition and builder related methods.
 
-use super::{MOCK_ACCOUNTS, MOCK_CHAIN_ID, MOCK_GASPRICE};
+use crate::MOCK_BASEFEE;
+
+use super::{
+    GOLDEN_TOUCH, MOCK_ACCOUNTS, MOCK_ANCHOR_GAS_LIMIT, MOCK_ANCHOR_GAS_PRICE,
+    MOCK_ANCHOR_TX_VALUE, MOCK_CHAIN_ID, MOCK_GASFEECAP, MOCK_GASPRICE, MOCK_GASTIPCAP,
+    MOCK_TAIKO_L2_ADDRESS,
+};
 use eth_types::{
     geth_types::Transaction as GethTransaction, word, AccessList, Address, Bytes, Hash,
     Transaction, Word, U64,
 };
 use ethers_core::{
     rand::{CryptoRng, RngCore},
-    types::{OtherFields, TransactionRequest},
+    types::{Eip1559TransactionRequest, OtherFields},
 };
 use ethers_signers::{LocalWallet, Signer};
 use lazy_static::lazy_static;
@@ -126,6 +132,7 @@ pub struct MockTransaction {
     pub from: AddrOrWallet,
     pub to: Option<AddrOrWallet>,
     pub value: Word,
+    // gas_price == min(max_fee_per_gas, max_priority_fee_per_gas + base_fee_per_gas)
     pub gas_price: Word,
     pub gas: Word,
     pub input: Bytes,
@@ -156,10 +163,10 @@ impl Default for MockTransaction {
             v: None,
             r: None,
             s: None,
-            transaction_type: U64::zero(),
+            transaction_type: U64::from(2),
             access_list: AccessList::default(),
-            max_priority_fee_per_gas: Word::zero(),
-            max_fee_per_gas: Word::zero(),
+            max_priority_fee_per_gas: *MOCK_GASTIPCAP,
+            max_fee_per_gas: *MOCK_GASFEECAP,
             chain_id: *MOCK_CHAIN_ID,
         }
     }
@@ -195,6 +202,26 @@ impl From<MockTransaction> for Transaction {
 impl From<MockTransaction> for GethTransaction {
     fn from(mock: MockTransaction) -> Self {
         GethTransaction::from(&Transaction::from(mock))
+    }
+}
+
+impl MockTransaction {
+    /// create a mock anchor transaction
+    pub fn new_anchor() -> Self {
+        let mut tx = MockTransaction::default();
+        tx.from(*GOLDEN_TOUCH);
+        tx.to(*MOCK_TAIKO_L2_ADDRESS);
+        tx.gas(*MOCK_ANCHOR_GAS_LIMIT)
+            .gas_price(*MOCK_ANCHOR_GAS_PRICE)
+            .max_priority_fee_per_gas(Word::zero())
+            .max_fee_per_gas(*MOCK_BASEFEE)
+            .from(*GOLDEN_TOUCH)
+            .to(*MOCK_TAIKO_L2_ADDRESS)
+            .input(crate::anchor::anchor_call())
+            .nonce(0)
+            .value(*MOCK_ANCHOR_TX_VALUE);
+        crate::anchor::sign(&mut tx);
+        tx
     }
 }
 
@@ -307,14 +334,15 @@ impl MockTransaction {
     /// Consumes the mutable ref to the MockTransaction returning the structure
     /// by value.
     pub fn build(&mut self) -> Self {
-        let tx = TransactionRequest::new()
+        let tx = Eip1559TransactionRequest::new()
             .from(self.from.address())
             .to(self.to.clone().unwrap_or_default().address())
             .nonce(self.nonce)
             .value(self.value)
             .data(self.input.clone())
             .gas(self.gas)
-            .gas_price(self.gas_price)
+            .max_priority_fee_per_gas(self.max_priority_fee_per_gas)
+            .max_fee_per_gas(self.max_fee_per_gas)
             .chain_id(self.chain_id.low_u64());
 
         match (self.v, self.r, self.s) {

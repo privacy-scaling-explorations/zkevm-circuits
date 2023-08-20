@@ -10,7 +10,6 @@ members = [
     "eth-types",
     "external-tracer",
     "mock",
-    "taiko-mock",
     "testool",
 ]
 

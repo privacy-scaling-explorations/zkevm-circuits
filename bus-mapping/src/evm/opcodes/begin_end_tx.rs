@@ -264,7 +264,7 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
         caller_balance_prev,
     )?;
 
-    let base_fee = if state.tx_ctx.is_anchor() {
+    let base_fee = if state.is_anchor_tx() {
         0.into()
     } else {
         state.block.base_fee
@@ -286,25 +286,31 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
         coinbase_balance_prev,
     )?;
 
-    // add treasury account
-    let (found, treasury_account) = state
-        .sdb
-        .get_account(&state.block.protocol_instance.meta_hash.treasury);
-    if !found {
-        return Err(Error::AccountNotFound(
-            state.block.protocol_instance.meta_hash.treasury,
-        ));
+    // transfer base fee to treasury account in taiko context
+    if state.block.is_taiko() {
+        let treasury = state
+            .block
+            .protocol_instance
+            .clone()
+            .unwrap()
+            .meta_hash
+            .treasury;
+        // add treasury account
+        let (found, treasury_account) = state.sdb.get_account(&treasury);
+        if !found {
+            return Err(Error::AccountNotFound(treasury));
+        }
+        let treasury_balance_prev = treasury_account.balance;
+        let treasury_balance =
+            treasury_balance_prev + base_fee * (state.tx.gas() - exec_step.gas_left.0);
+        state.account_write(
+            &mut exec_step,
+            treasury,
+            AccountField::Balance,
+            treasury_balance,
+            treasury_balance_prev,
+        )?;
     }
-    let treasury_balance_prev = treasury_account.balance;
-    let treasury_balance =
-        treasury_balance_prev + base_fee * (state.tx.gas() - exec_step.gas_left.0);
-    state.account_write(
-        &mut exec_step,
-        state.block.protocol_instance.meta_hash.treasury,
-        AccountField::Balance,
-        treasury_balance,
-        treasury_balance_prev,
-    )?;
 
     // handle tx receipt tag
     state.tx_receipt_write(

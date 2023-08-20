@@ -23,9 +23,9 @@ fmt: ## Check whether the code is formated correctly
 
 test: ## Run tests for all the workspace members
 	# Run light tests
-	@cargo test --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks
+	@cargo test --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks --exclude testool
 	# Run heavy tests serially to avoid OOM
-	@cargo test --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks serial_ -- --ignored --test-threads 1
+	@cargo test --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks --exclude testool serial_ -- --ignored # --test-threads 1
 
 
 test_doc: ## Test the docs

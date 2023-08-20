@@ -6,7 +6,10 @@ use crate::{
     util::SubCircuit,
     witness::{Block, Rw},
 };
-use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+use bus_mapping::{
+    circuit_input_builder::{CircuitsParams, ProtocolInstance},
+    mock::BlockData,
+};
 use eth_types::geth_types::GethData;
 use std::cmp;
 
@@ -190,9 +193,14 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         let block: Block<Fr> = if self.block.is_some() {
             self.block.unwrap()
         } else if self.test_ctx.is_some() {
-            let block: GethData = self.test_ctx.unwrap().into();
+            let test_ctx = self.test_ctx.unwrap();
+            let is_taiko = test_ctx.is_taiko;
+            let block: GethData = test_ctx.into();
             let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
                 .new_circuit_input_builder();
+            if is_taiko {
+                builder.block.protocol_instance = Some(ProtocolInstance::default());
+            }
             builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();

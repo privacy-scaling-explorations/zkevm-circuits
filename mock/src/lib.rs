@@ -1,11 +1,11 @@
 //! Mock types and functions to generate GethData used for tests
-
-use eth_types::{address, bytecode, bytecode::Bytecode, word, Address, Bytes, Word};
+use eth_types::{address, bytecode, bytecode::Bytecode, word, Address, Bytes, Hash, Word};
 use ethers_signers::LocalWallet;
 use lazy_static::lazy_static;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 mod account;
+mod anchor;
 mod block;
 pub mod test_ctx;
 mod transaction;
@@ -24,8 +24,12 @@ lazy_static! {
     /// Mock gasprice value
     pub static ref MOCK_GASPRICE: Word = Word::from(1u8);
     /// Mock BASEFEE value
-    pub static ref MOCK_BASEFEE: Word = Word::zero();
-     /// Mock GASLIMIT value
+    pub static ref MOCK_BASEFEE: Word = Word::from(0u8);
+    /// Mock GASTIPCAP value
+    pub static ref MOCK_GASTIPCAP: Word = Word::from(1u8);
+    /// Mock GASFEECAP value
+    pub static ref MOCK_GASFEECAP: Word = Word::from(1u8);
+    /// Mock GASLIMIT value
     pub static ref MOCK_GASLIMIT: Word = Word::from(0x2386f26fc10000u64);
     /// Mock chain ID value
     pub static ref MOCK_CHAIN_ID: Word = Word::from(1338u64);
@@ -39,6 +43,23 @@ lazy_static! {
         address!("0x000000000000000000000000000000000cafe444"),
         address!("0x000000000000000000000000000000000cafe555"),
     ];
+    /// GOLDEN_TOUCH is Anchor's from address
+    pub static ref GOLDEN_TOUCH: Address = address!("0x0000777735367b36bC9B61C50022d9D0700dB4Ec");
+    /// GOLDEN_TOUCH's private key
+    pub static ref GOLDEN_TOUCH_PRIVATEKEY: Word = word!("0x92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38");
+    /// Taiko l2 contract address
+    pub static ref MOCK_TAIKO_L2_ADDRESS: Address = address!("0x000000000000000000000000000000000cafe666");
+    pub static ref MOCK_TAIKO_TREASURY_ADDRESS: Address = address!("0x000000000000000000000000000000000cafe777");
+    /// Mock anchor
+    pub static ref MOCK_ANCHOR_GAS_LIMIT: Word = Word::from(180000);
+    pub static ref MOCK_ANCHOR_GAS_PRICE: Word = Word::zero();
+    pub static ref MOCK_ANCHOR_L1_HASH: Hash = Hash::from_slice(&[0u8; 32]);
+    pub static ref MOCK_ANCHOR_SIGNAL_ROOT: Hash = Hash::from_slice(&[0u8; 32]);
+    pub static ref MOCK_ANCHOR_L1_HIGHT: u64 = 0;
+    pub static ref MOCK_ANCHOR_PARENT_GAS_USED: u32 = 0;
+    pub static ref MOCK_ANCHOR_TX_VALUE: Word = Word::from(0);
+
+    /// pub
     /// Mock EVM codes to use for test cases.
     pub static ref MOCK_CODES: Vec<Bytes> = vec![
         Bytes::from([0x60, 0x10, 0x00]), // PUSH1(0x10), STOP

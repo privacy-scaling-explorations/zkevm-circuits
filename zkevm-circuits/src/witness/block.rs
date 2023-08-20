@@ -54,7 +54,7 @@ pub struct Block<F> {
     /// Original Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
     /// Protocol Instance
-    pub protocol_instance: ProtocolInstance,
+    pub protocol_instance: Option<ProtocolInstance>,
 }
 
 /// Assignments for pi table
@@ -109,6 +109,11 @@ impl<F: Field> Block<F> {
     /// Get a read-write record
     pub(crate) fn get_rws(&self, step: &ExecStep, index: usize) -> Rw {
         self.rws[step.rw_index(index)]
+    }
+
+    /// Set protocol instance means in taiko context
+    pub fn is_taiko(&self) -> bool {
+        self.protocol_instance.is_some()
     }
 
     /// Obtains the expected Circuit degree needed in order to be able to test
@@ -173,7 +178,7 @@ pub struct BlockContext {
     /// The address of the miner for the block
     pub coinbase: Address,
     /// The address of the treasury for the base fee
-    pub treasury: Address,
+    pub treasury: Option<Address>,
     /// The gas limit of the block
     pub gas_limit: u64,
     /// The number of the block
@@ -205,7 +210,7 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::Treasury as u64)),
                     Value::known(F::ZERO),
-                    Value::known(self.treasury.to_scalar().unwrap()),
+                    Value::known(self.treasury.unwrap_or_default().to_scalar().unwrap()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::Timestamp as u64)),
@@ -271,7 +276,10 @@ impl From<&circuit_input_builder::Block> for BlockContext {
     fn from(block: &circuit_input_builder::Block) -> Self {
         Self {
             coinbase: block.coinbase,
-            treasury: block.protocol_instance.meta_hash.treasury,
+            treasury: block
+                .protocol_instance
+                .as_ref()
+                .map(|pi| pi.meta_hash.treasury),
             gas_limit: block.gas_limit,
             number: block.number,
             timestamp: block.timestamp,

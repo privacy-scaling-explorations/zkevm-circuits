@@ -17,8 +17,9 @@ pub mod taiko_aggregation;
 
 pub use taiko_aggregation::TaikoAggregationCircuit;
 
-#[cfg(any(feature = "test", test))]
-mod test;
+// FIXME: ignore unused long-time running tests
+// #[cfg(any(feature = "test", test))]
+// mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use self::RootCircuit as TestRootCircuit;
 

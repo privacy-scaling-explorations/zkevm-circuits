@@ -101,6 +101,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 copy_table,
                 keccak_table: keccak_table.clone(),
                 exp_table,
+                is_taiko: true,
             },
         );
 
@@ -249,9 +250,11 @@ impl<F: Field> Circuit<F> for SuperCircuit<F> {
             &challenges,
         )?;
         config.byte_table.load(&mut layouter)?;
-        config
-            .pi_table
-            .load(&mut layouter, &self.block.protocol_instance, &challenges)?;
+        config.pi_table.load(
+            &mut layouter,
+            self.block.protocol_instance.as_ref().unwrap(),
+            &challenges,
+        )?;
         // rw_table,
         // bytecode_table,
         // copy_table,
@@ -292,16 +295,19 @@ impl<F: Field> SuperCircuit<F> {
     pub fn build(
         geth_data: GethData,
         circuits_params: CircuitsParams,
-        protocol_instance: ProtocolInstance,
+        mut protocol_instance: ProtocolInstance,
     ) -> Result<(u32, Self, Vec<Vec<F>>, CircuitInputBuilder), bus_mapping::Error> {
         let block_data =
             BlockData::new_from_geth_data_with_params(geth_data.clone(), circuits_params);
         let mut builder = block_data.new_circuit_input_builder();
+        protocol_instance.block_hash = geth_data.eth_block.hash.unwrap();
+        protocol_instance.parent_hash = geth_data.eth_block.parent_hash;
+        builder.block.protocol_instance = Some(protocol_instance);
         builder
             .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
             .expect("could not handle block tx");
 
-        let ret = Self::build_from_circuit_input_builder(&builder, protocol_instance)?;
+        let ret = Self::build_from_circuit_input_builder(&builder)?;
         Ok((ret.0, ret.1, ret.2, builder))
     }
 
@@ -312,12 +318,8 @@ impl<F: Field> SuperCircuit<F> {
     /// the Public Inputs needed.
     pub fn build_from_circuit_input_builder(
         builder: &CircuitInputBuilder,
-        protocol_instance: ProtocolInstance,
     ) -> Result<(u32, Self, Vec<Vec<F>>), bus_mapping::Error> {
-        let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
-        block.protocol_instance = protocol_instance;
-        block.protocol_instance.block_hash = block.eth_block.hash.unwrap();
-        block.protocol_instance.parent_hash = block.eth_block.parent_hash;
+        let block = block_convert(&builder.block, &builder.code_db).unwrap();
         let (_, rows_needed) = Self::min_num_rows_block(&block);
         let k = log2_ceil(Self::unusable_rows() + rows_needed);
         log::debug!("super circuit uses k = {}", k);

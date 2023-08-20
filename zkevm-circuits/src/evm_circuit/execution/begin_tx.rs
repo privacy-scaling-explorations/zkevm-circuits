@@ -564,11 +564,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 mod test {
     use std::vec;
 
-    use crate::{evm_circuit::test::rand_bytes, taiko_test_util::CircuitTestBuilder};
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::evm::OpcodeId;
     use eth_types::{self, bytecode, evm_types::GasCost, word, Bytecode, Word};
 
-    use taiko_mock::{eth, gwei, MockTransaction, TestContext, MOCK_ACCOUNTS};
+    use mock::{eth, gwei, MockTransaction, TestContext, MOCK_ACCOUNTS};
 
     fn gas(call_data: &[u8]) -> Word {
         Word::from(

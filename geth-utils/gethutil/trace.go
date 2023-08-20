@@ -6,6 +6,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -123,7 +124,6 @@ type TraceConfig struct {
 	Transactions  []Transaction              `json:"transactions"`
 	LoggerConfig  *logger.Config             `json:"logger_config"`
 	Taiko         bool                       `json:"taiko"`
-	Treasury      common.Address             `json:"treasury"`
 }
 
 func newUint64(val uint64) *uint64 { return &val }
@@ -135,7 +135,6 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		DAOForkBlock:        big.NewInt(0),
 		DAOForkSupport:      true,
 		EIP150Block:         big.NewInt(0),
-		EIP150Hash:          common.Hash{},
 		EIP155Block:         big.NewInt(0),
 		EIP158Block:         big.NewInt(0),
 		ByzantiumBlock:      big.NewInt(0),
@@ -145,38 +144,41 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		MuirGlacierBlock:    big.NewInt(0),
 		BerlinBlock:         big.NewInt(0),
 		LondonBlock:         big.NewInt(0),
-		Taiko:               config.Taiko,
-		Treasury:            config.Treasury,
+		// FIXME: EIP-3860
+		// ShanghaiTime:                  newUint64(0),
+		MergeNetsplitBlock:            nil,
+		TerminalTotalDifficulty:       common.Big0,
+		TerminalTotalDifficultyPassed: true,
+		Taiko:                         config.Taiko,
 	}
 
 	var txsGasLimit uint64
 	blockGasLimit := toBigInt(config.Block.GasLimit).Uint64()
 	messages := make([]core.Message, len(config.Transactions))
 	for i, tx := range config.Transactions {
-		// If gas price is specified directly, the tx is treated as legacy type.
-		if tx.GasPrice != nil {
-			tx.GasFeeCap = tx.GasPrice
-			tx.GasTipCap = tx.GasPrice
-		}
+		// only support EIP-1559 txs
+		gasPrice := math.BigMin(new(big.Int).Add(toBigInt(tx.GasTipCap), toBigInt(config.Block.BaseFee)), toBigInt(tx.GasFeeCap))
 
 		txAccessList := make(types.AccessList, len(tx.AccessList))
 		for i, accessList := range tx.AccessList {
 			txAccessList[i].Address = accessList.Address
 			txAccessList[i].StorageKeys = accessList.StorageKeys
 		}
+
 		messages[i] = core.Message{
 			From:              tx.From,
 			To:                tx.To,
 			Nonce:             uint64(tx.Nonce),
 			Value:             toBigInt(tx.Value),
 			GasLimit:          uint64(tx.GasLimit),
-			GasPrice:          toBigInt(tx.GasPrice),
+			GasPrice:          gasPrice,
 			GasFeeCap:         toBigInt(tx.GasFeeCap),
 			GasTipCap:         toBigInt(tx.GasTipCap),
 			Data:              tx.CallData,
 			AccessList:        txAccessList,
 			SkipAccountChecks: false,
-			IsFirstTx:         i == 0,
+			// treat the first tx as anchor tx when Taiko is enabled
+			IsAnchor: config.Taiko && i == 0,
 		}
 
 		txsGasLimit += uint64(tx.GasLimit)
@@ -184,6 +186,8 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	if txsGasLimit > blockGasLimit {
 		return nil, fmt.Errorf("txs total gas: %d Exceeds block gas limit: %d", txsGasLimit, blockGasLimit)
 	}
+
+	random := common.BigToHash(toBigInt(config.Block.Difficulty))
 
 	blockCtx := vm.BlockContext{
 		CanTransfer: core.CanTransfer,
@@ -202,6 +206,7 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		Difficulty:  toBigInt(config.Block.Difficulty),
 		BaseFee:     toBigInt(config.Block.BaseFee),
 		GasLimit:    blockGasLimit,
+		Random:      &random,
 	}
 
 	// Setup state db with accounts from argument
@@ -222,7 +227,7 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	executionResults := make([]*ExecutionResult, len(config.Transactions))
 	for i, message := range messages {
 		tracer := logger.NewStructLogger(config.LoggerConfig)
-		evm := vm.NewEVM(blockCtx, core.NewEVMTxContext(&message), stateDB, &chainConfig, vm.Config{Debug: true, Tracer: tracer, NoBaseFee: true})
+		evm := vm.NewEVM(blockCtx, core.NewEVMTxContext(&message), stateDB, &chainConfig, vm.Config{Tracer: tracer, NoBaseFee: true})
 
 		result, err := core.ApplyMessage(evm, &message, new(core.GasPool).AddGas(message.GasLimit))
 		if err != nil {

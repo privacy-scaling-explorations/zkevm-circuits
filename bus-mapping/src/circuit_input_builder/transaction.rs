@@ -90,7 +90,7 @@ impl TransactionContext {
     }
 
     /// Return true if it is the first transaction.
-    pub fn is_anchor(&self) -> bool {
+    pub fn is_first_tx(&self) -> bool {
         self.id == 1
     }
 
@@ -201,6 +201,7 @@ impl Transaction {
         eth_block: &EthBlock,
         eth_tx: &eth_types::Transaction,
         is_success: bool,
+        is_taiko: bool,
     ) -> Result<Self, Error> {
         let (found, _) = sdb.get_account(&eth_tx.from);
         if !found {
@@ -250,7 +251,7 @@ impl Transaction {
         };
         let mut tx: geth_types::Transaction = eth_tx.into();
         // reset gas_price
-        if eth_tx.transaction_index.unwrap_or_default() == 0.into() {
+        if eth_tx.transaction_index.unwrap_or_default() == 0.into() && is_taiko {
             // anchor's gas_price is always 0
             tx.gas_price = 0.into();
         } else {

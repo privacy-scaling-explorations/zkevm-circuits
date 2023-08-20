@@ -4,12 +4,16 @@ use std::iter;
 
 use eth_types::{Address, Bytes, Hash, ToBigEndian, ToWord, Word, H256};
 use keccak256::plain::Keccak;
+use mock::{
+    MOCK_ANCHOR_GAS_LIMIT, MOCK_ANCHOR_L1_HASH, MOCK_ANCHOR_L1_HIGHT, MOCK_ANCHOR_PARENT_GAS_USED,
+    MOCK_ANCHOR_SIGNAL_ROOT, MOCK_TAIKO_L2_ADDRESS, MOCK_TAIKO_TREASURY_ADDRESS,
+};
 
 /// hash(anchor)
 pub const ANCHOR_TX_METHOD_SIGNATURE: u32 = 0xda69d3db;
 
 /// Taiko witness
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct ProtocolInstance {
     /// l1 signal service address
     pub l1_signal_service: Address,
@@ -44,8 +48,35 @@ pub struct ProtocolInstance {
     pub anchor_gas_limit: u64,
 }
 
+impl Default for ProtocolInstance {
+    fn default() -> Self {
+        Self {
+            anchor_gas_limit: MOCK_ANCHOR_GAS_LIMIT.as_u64(),
+            meta_hash: MetaHash {
+                l1_hash: *MOCK_ANCHOR_L1_HASH,
+                l1_height: *MOCK_ANCHOR_L1_HIGHT,
+                treasury: *MOCK_TAIKO_TREASURY_ADDRESS,
+                ..Default::default()
+            },
+            signal_root: *MOCK_ANCHOR_SIGNAL_ROOT,
+            parent_gas_used: *MOCK_ANCHOR_PARENT_GAS_USED,
+            l1_signal_service: Address::default(),
+            l2_signal_service: Address::default(),
+            l2_contract: *MOCK_TAIKO_L2_ADDRESS,
+            block_hash: Hash::default(),
+            parent_hash: Hash::default(),
+            graffiti: H256::default(),
+            prover: Address::default(),
+            gas_used: 0,
+            block_max_gas_limit: 0,
+            max_transactions_per_block: 0,
+            max_bytes_per_tx_list: 0,
+        }
+    }
+}
+
 /// l1 meta hash
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct MetaHash {
     /// meta id
     pub id: u64,
@@ -71,6 +102,25 @@ pub struct MetaHash {
     pub beneficiary: Address,
     /// treasury
     pub treasury: Address,
+}
+
+impl Default for MetaHash {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            timestamp: 0,
+            l1_height: 0,
+            l1_hash: Hash::default(),
+            l1_mix_hash: Hash::default(),
+            deposits_processed: Hash::default(),
+            tx_list_hash: Hash::default(),
+            tx_list_byte_start: 0,
+            tx_list_byte_end: 0,
+            gas_limit: 0,
+            beneficiary: Address::default(),
+            treasury: *MOCK_TAIKO_TREASURY_ADDRESS,
+        }
+    }
 }
 
 /// left shift x by n bits

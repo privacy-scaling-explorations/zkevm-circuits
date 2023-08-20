@@ -43,6 +43,12 @@ pub struct CircuitInputStateRef<'a> {
 }
 
 impl<'a> CircuitInputStateRef<'a> {
+    /// Check if is a anchor transaction.
+    pub fn is_anchor_tx(&self) -> bool {
+        // set protocol_instance and is the first tx
+        self.block.is_taiko() && self.tx_ctx.is_first_tx()
+    }
+
     /// Create a new step from a `GethExecStep`
     pub fn new_step(&self, geth_step: &GethExecStep) -> Result<ExecStep, Error> {
         let call_ctx = self.tx_ctx.call_ctx()?;

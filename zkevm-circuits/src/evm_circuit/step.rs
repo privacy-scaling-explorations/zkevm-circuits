@@ -1,4 +1,7 @@
-use super::util::{CachedRegion, CellManager, CellType};
+use super::{
+    param::EXECUTION_STATE_HEIGHT_MAP_WITH_TAIKO,
+    util::{CachedRegion, CellManager, CellType},
+};
 use crate::{
     evm_circuit::{
         param::{EXECUTION_STATE_HEIGHT_MAP, MAX_STEP_HEIGHT, STEP_STATE_HEIGHT, STEP_WIDTH},
@@ -479,12 +482,16 @@ impl ExecutionState {
         .collect()
     }
 
-    pub fn get_step_height_option(&self) -> Option<usize> {
-        EXECUTION_STATE_HEIGHT_MAP.get(self).copied()
+    pub fn get_step_height_option(&self, is_taiko: bool) -> Option<usize> {
+        if is_taiko {
+            EXECUTION_STATE_HEIGHT_MAP_WITH_TAIKO.get(self).copied()
+        } else {
+            EXECUTION_STATE_HEIGHT_MAP.get(self).copied()
+        }
     }
 
-    pub fn get_step_height(&self) -> usize {
-        self.get_step_height_option()
+    pub fn get_step_height(&self, is_taiko: bool) -> usize {
+        self.get_step_height_option(is_taiko)
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", self))
     }
 }

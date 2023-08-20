@@ -331,6 +331,7 @@ impl<F: Field> ExecutionConfig<F> {
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
+        is_taiko: bool,
     ) -> Self {
         let mut instrument = Instrument::default();
         let q_usable = meta.complex_selector();
@@ -473,6 +474,7 @@ impl<F: Field> ExecutionConfig<F> {
                         &mut height_map,
                         &mut stored_expressions_map,
                         &mut instrument,
+                        is_taiko,
                     ))
                 })()
             };
@@ -618,6 +620,7 @@ impl<F: Field> ExecutionConfig<F> {
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
         instrument: &mut Instrument,
+        is_taiko: bool,
     ) -> G {
         // Configure the gadget with the max height first so we can find out the actual
         // height
@@ -628,6 +631,7 @@ impl<F: Field> ExecutionConfig<F> {
                 dummy_step_next,
                 challenges,
                 G::EXECUTION_STATE,
+                is_taiko,
             );
             G::configure(&mut cb);
             let (_, _, height) = cb.build();
@@ -641,6 +645,7 @@ impl<F: Field> ExecutionConfig<F> {
             step_next.clone(),
             challenges,
             G::EXECUTION_STATE,
+            is_taiko,
         );
 
         let gadget = G::configure(&mut cb);
@@ -932,7 +937,7 @@ impl<F: Field> ExecutionConfig<F> {
                     if next.is_none() {
                         break;
                     }
-                    let height = step.execution_state().get_step_height();
+                    let height = step.execution_state().get_step_height(block.is_taiko());
 
                     // Assign the step witness
                     self.assign_exec_step(
@@ -963,7 +968,7 @@ impl<F: Field> ExecutionConfig<F> {
                         );
                         // return Err(Error::Synthesis);
                     }
-                    let height = ExecutionState::EndBlock.get_step_height();
+                    let height = ExecutionState::EndBlock.get_step_height(block.is_taiko());
                     debug_assert_eq!(height, 1);
                     let last_row = evm_rows - 1;
                     log::trace!(
@@ -990,7 +995,7 @@ impl<F: Field> ExecutionConfig<F> {
                 }
 
                 // part3: assign the last EndBlock at offset `evm_rows - 1`
-                let height = ExecutionState::EndBlock.get_step_height();
+                let height = ExecutionState::EndBlock.get_step_height(block.is_taiko());
                 debug_assert_eq!(height, 1);
                 log::trace!("assign last EndBlock at offset {}", offset);
                 self.assign_exec_step(

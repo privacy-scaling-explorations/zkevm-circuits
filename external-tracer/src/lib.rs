@@ -25,8 +25,6 @@ pub struct TraceConfig {
     pub logger_config: LoggerConfig,
     /// taiko
     pub taiko: bool,
-    /// treasury
-    pub treasury: Address,
 }
 
 /// Configuration structure for `logger.Config`

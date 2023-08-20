@@ -116,34 +116,39 @@ impl PublicData {
     }
 
     fn default<F: Default>() -> Self {
-        Self::new::<F>(&witness::Block::default())
+        let block = witness::Block {
+            protocol_instance: Some(Default::default()),
+            ..Default::default()
+        };
+        Self::new::<F>(&block)
     }
 
     /// create PublicData from block and taiko
     pub fn new<F>(block: &witness::Block<F>) -> Self {
         use bus_mapping::circuit_input_builder::left_shift;
-        let field9 = left_shift(block.protocol_instance.prover, 96)
-            + left_shift(block.protocol_instance.parent_gas_used as u64, 64)
-            + left_shift(block.protocol_instance.gas_used as u64, 32);
+        let protocol_instance = block.protocol_instance.clone().unwrap();
+        let field9 = left_shift(protocol_instance.prover, 96)
+            + left_shift(protocol_instance.parent_gas_used as u64, 64)
+            + left_shift(protocol_instance.gas_used as u64, 32);
 
-        let field10 = left_shift(block.protocol_instance.block_max_gas_limit, 192)
-            + left_shift(block.protocol_instance.max_transactions_per_block, 128)
-            + left_shift(block.protocol_instance.max_bytes_per_tx_list, 64);
+        let field10 = left_shift(protocol_instance.block_max_gas_limit, 192)
+            + left_shift(protocol_instance.max_transactions_per_block, 128)
+            + left_shift(protocol_instance.max_bytes_per_tx_list, 64);
         PublicData {
-            l1_signal_service: block.protocol_instance.l1_signal_service.to_word(),
-            l2_signal_service: block.protocol_instance.l2_signal_service.to_word(),
-            l2_contract: block.protocol_instance.l2_contract.to_word(),
-            meta_hash: block.protocol_instance.meta_hash.hash().to_word(),
-            block_hash: block.protocol_instance.block_hash.to_word(),
-            parent_hash: block.protocol_instance.parent_hash.to_word(),
-            signal_root: block.protocol_instance.signal_root.to_word(),
-            graffiti: block.protocol_instance.graffiti.to_word(),
-            prover: block.protocol_instance.prover,
-            parent_gas_used: block.protocol_instance.parent_gas_used,
-            gas_used: block.protocol_instance.gas_used,
-            block_max_gas_limit: block.protocol_instance.block_max_gas_limit,
-            max_transactions_per_block: block.protocol_instance.max_transactions_per_block,
-            max_bytes_per_tx_list: block.protocol_instance.max_bytes_per_tx_list,
+            l1_signal_service: protocol_instance.l1_signal_service.to_word(),
+            l2_signal_service: protocol_instance.l2_signal_service.to_word(),
+            l2_contract: protocol_instance.l2_contract.to_word(),
+            meta_hash: protocol_instance.meta_hash.hash().to_word(),
+            block_hash: protocol_instance.block_hash.to_word(),
+            parent_hash: protocol_instance.parent_hash.to_word(),
+            signal_root: protocol_instance.signal_root.to_word(),
+            graffiti: protocol_instance.graffiti.to_word(),
+            prover: protocol_instance.prover,
+            parent_gas_used: protocol_instance.parent_gas_used,
+            gas_used: protocol_instance.gas_used,
+            block_max_gas_limit: protocol_instance.block_max_gas_limit,
+            max_transactions_per_block: protocol_instance.max_transactions_per_block,
+            max_bytes_per_tx_list: protocol_instance.max_bytes_per_tx_list,
             field9,
             field10,
             block_context: block.context.clone(),
@@ -757,12 +762,15 @@ mod taiko_pi_circuit_test {
 
     #[test]
     fn test_verify() {
-        let mut block = witness::Block::<Fr>::default();
+        let mut block = witness::Block::<Fr> {
+            protocol_instance: Some(Default::default()),
+            ..Default::default()
+        };
 
         block.eth_block.parent_hash = *OMMERS_HASH;
         block.eth_block.hash = Some(*OMMERS_HASH);
-        block.protocol_instance.block_hash = *OMMERS_HASH;
-        block.protocol_instance.parent_hash = *OMMERS_HASH;
+        block.protocol_instance.as_mut().unwrap().block_hash = *OMMERS_HASH;
+        block.protocol_instance.as_mut().unwrap().parent_hash = *OMMERS_HASH;
         block.context.history_hashes = vec![OMMERS_HASH.to_word()];
         block.context.block_hash = OMMERS_HASH.to_word();
         block.context.number = 300.into();

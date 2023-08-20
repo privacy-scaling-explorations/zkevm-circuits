@@ -95,7 +95,11 @@ mod gasprice_tests {
             (op_gasprice.rw(), op_gasprice.op()),
             (
                 RW::WRITE,
-                &StackOp::new(1, StackAddress(1023usize), two_gwei)
+                &StackOp::new(
+                    1,
+                    StackAddress(1023usize),
+                    builder.block.txs()[0].tx.gas_price
+                )
             )
         );
 

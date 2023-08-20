@@ -385,7 +385,6 @@ dependencies = [
  "serde_json",
  "strum",
  "strum_macros",
- "taiko-mock",
  "tokio",
  "url",
 ]
@@ -2904,10 +2903,16 @@ dependencies = [
  "ethers-core",
  "ethers-signers",
  "external-tracer",
+ "halo2_proofs 0.2.0",
  "itertools",
  "lazy_static",
+ "libsecp256k1",
+ "num",
+ "num-bigint",
+ "once_cell",
  "rand",
  "rand_chacha",
+ "sha3 0.10.7",
 ]
 
 [[package]]
@@ -4565,26 +4570,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "taiko-mock"
-version = "0.1.0"
-dependencies = [
- "eth-types",
- "ethers-core",
- "ethers-signers",
- "external-tracer",
- "halo2_proofs 0.2.0",
- "itertools",
- "lazy_static",
- "libsecp256k1",
- "num",
- "num-bigint",
- "once_cell",
- "rand",
- "rand_chacha",
- "sha3 0.10.7",
-]
-
-[[package]]
 name = "tap"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5450,5 +5435,4 @@ dependencies = [
  "snark-verifier-sdk",
  "strum",
  "strum_macros",
- "taiko-mock",
 ]

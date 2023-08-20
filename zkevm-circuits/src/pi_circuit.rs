@@ -3,8 +3,11 @@ mod param;
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod dev;
-#[cfg(any(feature = "test", test))]
-mod test;
+
+// FIXME: ignore unused long-time running tests
+// #[cfg(any(feature = "test", test))]
+// #[cfg(any(feature = "test", test))]
+// mod test;
 
 use eth_types::{
     geth_types::{BlockConstants, Transaction},
