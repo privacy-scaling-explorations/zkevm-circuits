@@ -81,7 +81,10 @@ mod test {
             vec![0xf6],
             vec![0xfe],
             // Multiple invalid opcodes
-            vec![0x5c, 0x5e],
+            // TLOAD 0x5c eip-1153
+            // MCOPY 0x5e eip-5656
+            // PUSH0 ox5f eip-3855
+            vec![],
         ];
     }
 

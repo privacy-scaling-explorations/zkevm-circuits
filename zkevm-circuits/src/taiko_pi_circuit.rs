@@ -116,7 +116,11 @@ impl PublicData {
     }
 
     fn default<F: Default>() -> Self {
-        Self::new::<F>(&witness::Block::default())
+        let block = witness::Block {
+            protocol_instance: Some(Default::default()),
+            ..Default::default()
+        };
+        Self::new::<F>(&block)
     }
 
     /// create PublicData from block and taiko
@@ -758,7 +762,10 @@ mod taiko_pi_circuit_test {
 
     #[test]
     fn test_verify() {
-        let mut block = witness::Block::<Fr>::default();
+        let mut block = witness::Block::<Fr> {
+            protocol_instance: Some(Default::default()),
+            ..Default::default()
+        };
 
         block.eth_block.parent_hash = *OMMERS_HASH;
         block.eth_block.hash = Some(*OMMERS_HASH);

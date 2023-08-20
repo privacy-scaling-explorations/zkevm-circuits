@@ -6,6 +6,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -155,24 +156,22 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	blockGasLimit := toBigInt(config.Block.GasLimit).Uint64()
 	messages := make([]core.Message, len(config.Transactions))
 	for i, tx := range config.Transactions {
-		// If gas price is specified directly, the tx is treated as legacy type.
-		if tx.GasPrice != nil {
-			tx.GasFeeCap = tx.GasPrice
-			tx.GasTipCap = tx.GasPrice
-		}
+		// only support EIP-1559 txs
+		gasPrice := math.BigMin(new(big.Int).Add(toBigInt(tx.GasTipCap), toBigInt(config.Block.BaseFee)), toBigInt(tx.GasFeeCap))
 
 		txAccessList := make(types.AccessList, len(tx.AccessList))
 		for i, accessList := range tx.AccessList {
 			txAccessList[i].Address = accessList.Address
 			txAccessList[i].StorageKeys = accessList.StorageKeys
 		}
+
 		messages[i] = core.Message{
 			From:              tx.From,
 			To:                tx.To,
 			Nonce:             uint64(tx.Nonce),
 			Value:             toBigInt(tx.Value),
 			GasLimit:          uint64(tx.GasLimit),
-			GasPrice:          toBigInt(tx.GasPrice),
+			GasPrice:          gasPrice,
 			GasFeeCap:         toBigInt(tx.GasFeeCap),
 			GasTipCap:         toBigInt(tx.GasTipCap),
 			Data:              tx.CallData,
@@ -188,10 +187,7 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		return nil, fmt.Errorf("txs total gas: %d Exceeds block gas limit: %d", txsGasLimit, blockGasLimit)
 	}
 
-	random := common.Hash{}
-	if config.Block.Difficulty != nil {
-		random = common.BigToHash(config.Block.Difficulty.ToInt())
-	}
+	random := common.BigToHash(toBigInt(config.Block.Difficulty))
 
 	blockCtx := vm.BlockContext{
 		CanTransfer: core.CanTransfer,
