@@ -173,7 +173,7 @@ pub async fn build_circuit_input_builder_block(block_num: u64) {
         cli.get_block(block_num).await.unwrap();
 
     // 2. Get State Accesses from TxExecTraces
-    let access_set = get_state_accesses(&eth_block, &geth_trace).unwrap();
+    let access_set = get_state_accesses(&eth_block, &geth_trace, &None).unwrap();
     trace!("AccessSet: {:#?}", access_set);
 
     // 3. Query geth for all accounts, storage keys, and codes from Accesses

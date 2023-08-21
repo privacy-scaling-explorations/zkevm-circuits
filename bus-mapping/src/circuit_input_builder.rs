@@ -416,6 +416,7 @@ pub struct BuilderClient<P: JsonRpcClient> {
 pub fn get_state_accesses(
     eth_block: &EthBlock,
     geth_traces: &[eth_types::GethExecTrace],
+    protocol_instance: &Option<ProtocolInstance>,
 ) -> Result<AccessSet, Error> {
     let mut block_access_trace = vec![Access::new(
         None,
@@ -430,6 +431,15 @@ pub fn get_state_accesses(
         let geth_trace = &geth_traces[tx_index];
         let tx_access_trace = gen_state_access_trace(eth_block, tx, geth_trace)?;
         block_access_trace.extend(tx_access_trace);
+    }
+    if let Some(pi) = protocol_instance {
+        block_access_trace.push(Access::new(
+            None,
+            RW::WRITE,
+            AccessValue::Account {
+                address: pi.meta_hash.treasury,
+            },
+        ));
     }
 
     Ok(AccessSet::from(block_access_trace))
@@ -529,8 +539,9 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     pub fn get_state_accesses(
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
+        protocol_instance: &Option<ProtocolInstance>,
     ) -> Result<AccessSet, Error> {
-        get_state_accesses(eth_block, geth_traces)
+        get_state_accesses(eth_block, geth_traces, protocol_instance)
     }
 
     /// Step 3. Query geth for all accounts, storage keys, and codes from
@@ -614,7 +625,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     > {
         let (eth_block, geth_traces, history_hashes, prev_state_root) =
             self.get_block(block_num).await?;
-        let access_set = Self::get_state_accesses(&eth_block, &geth_traces)?;
+        let access_set =
+            Self::get_state_accesses(&eth_block, &geth_traces, &self.protocol_instance)?;
         let (proofs, codes) = self.get_state(block_num, access_set).await?;
         let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
         let builder = self.gen_inputs_from_state(
