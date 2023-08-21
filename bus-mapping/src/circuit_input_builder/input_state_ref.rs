@@ -847,10 +847,10 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Push a new [`Call`] into the [`Transaction`], and add its index and
     /// [`CallContext`] in the `call_stack` of the [`TransactionContext`]
     pub fn push_call(&mut self, call: Call) {
-        let current_call = self.call_ctx().expect("current call not found");
+        let caller_call = self.call_ctx().expect("current call not found");
         let call_data = match call.kind {
             CallKind::Call | CallKind::CallCode | CallKind::DelegateCall | CallKind::StaticCall => {
-                current_call.memory.read_chunk(MemoryRange::new_with_length(
+                caller_call.memory.read_chunk(MemoryRange::new_with_length(
                     call.call_data_offset,
                     call.call_data_length,
                 ))
@@ -1137,6 +1137,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Handle a restore and a return step caused by any opcode that causes a return to the
     /// previous call context.
+    /// `caller_ctx.return_data` should be updated **before** this method.
     pub fn handle_return(
         &mut self,
         exec_step: &mut ExecStep,
@@ -1150,58 +1151,61 @@ impl<'a> CircuitInputStateRef<'a> {
         let step = &geth_steps[0];
         // handle return_data
         let callee_memory = self.call_ctx()?.memory.clone();
-        let (return_data_offset, return_data_length) = {
-            if !self.call()?.is_root {
-                let (offset, length) = match step.op {
-                    OpcodeId::RETURN | OpcodeId::REVERT => {
-                        let (offset, length) = if step.error.is_some()
-                            || (self.call()?.is_create() && step.op == OpcodeId::RETURN)
-                        {
-                            (0, 0)
-                        } else {
-                            (
-                                step.stack.nth_last(0)?.low_u64() as usize,
-                                step.stack.nth_last(1)?.as_usize(),
-                            )
-                        };
-                        // At the moment it conflicts with `call_ctx` and `caller_ctx`.
+        let (return_data_offset, return_data_length): (usize, usize) = {
+            /*
+            if self.call()?.is_root {
+                // For root case, we may don't need to specially set to 0?
+                // Reuse the below `match` clauses is ok?
+                // Since this should be the last step, all data like Call/CallCtx will be useless
+                // soon.
+                (0, 0)
+            } else {
+                */
+            match step.op {
+                OpcodeId::RETURN | OpcodeId::REVERT => {
+                    let (offset, length) = if step.error.is_some()
+                        || (self.call()?.is_create() && step.op == OpcodeId::RETURN)
+                    {
+                        (0, 0)
+                    } else {
+                        (
+                            step.stack.nth_last(0)?.low_u64() as usize,
+                            step.stack.nth_last(1)?.as_usize(),
+                        )
+                    };
+                    // At the moment it conflicts with `call_ctx` and `caller_ctx`.
+                    debug_assert_eq!(
+                        &self.caller_ctx_mut()?.return_data,
+                        &callee_memory.0[offset..offset + length]
+                    );
+                    (offset, length)
+                }
+                OpcodeId::CALL
+                | OpcodeId::CALLCODE
+                | OpcodeId::STATICCALL
+                | OpcodeId::DELEGATECALL => {
+                    if self
+                        .call()?
+                        .code_address()
+                        .map(|ref addr| is_precompiled(addr))
+                        .unwrap_or(false)
+                    {
                         let caller_ctx = self.caller_ctx_mut()?;
-                        caller_ctx.return_data.resize(length, 0);
-                        if length != 0 {
-                            caller_ctx.return_data[0..length]
-                                .copy_from_slice(&callee_memory.0[offset..offset + length]);
-                        }
-                        (offset, length)
-                    }
-                    OpcodeId::CALL
-                    | OpcodeId::CALLCODE
-                    | OpcodeId::STATICCALL
-                    | OpcodeId::DELEGATECALL => {
-                        if self
-                            .call()?
-                            .code_address()
-                            .map(|ref addr| is_precompiled(addr))
-                            .unwrap_or(false)
-                        {
-                            let caller_ctx = self.caller_ctx_mut()?;
-                            (0, caller_ctx.return_data.len())
-                        } else {
-                            let caller_ctx = self.caller_ctx_mut()?;
-                            caller_ctx.return_data.truncate(0);
-                            (0, 0)
-                        }
-                    }
-                    _ => {
+                        (0, caller_ctx.return_data.len())
+                    } else {
                         let caller_ctx = self.caller_ctx_mut()?;
-                        caller_ctx.return_data.truncate(0);
+                        debug_assert!(caller_ctx.return_data.is_empty());
                         (0, 0)
                     }
-                };
-
-                (offset.try_into().unwrap(), length.try_into().unwrap())
-            } else {
-                (0, 0)
+                }
+                _ => {
+                    // common errors (like invalid opcode, out of gas constant) go here
+                    let caller_ctx = self.caller_ctx_mut()?;
+                    debug_assert!(caller_ctx.return_data.is_empty());
+                    (0, 0)
+                }
             }
+            //}
         };
 
         let call = self.call()?.clone();
@@ -1236,28 +1240,63 @@ impl<'a> CircuitInputStateRef<'a> {
         // If current call has caller.
         if let Ok(caller) = self.caller_mut() {
             caller.last_callee_id = call.call_id;
-            // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
-            if call_success_create {
-                caller.last_callee_return_data_length = 0u64;
-                caller.last_callee_return_data_offset = 0u64;
-            } else {
-                caller.last_callee_return_data_length = return_data_length;
-                caller.last_callee_return_data_offset = return_data_offset;
-            }
+            caller.last_callee_return_data_length = return_data_length as u64;
+            caller.last_callee_return_data_offset = return_data_offset as u64;
             caller.last_callee_memory = callee_memory;
-        }
-
-        // If current call has caller_ctx (has caller)
-        if let Ok(caller_ctx) = self.caller_ctx_mut() {
-            // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
-            if call_success_create {
-                caller_ctx.return_data.truncate(0);
-            }
         }
 
         self.tx_ctx.pop_call_ctx();
 
         Ok(())
+    }
+
+    // The returned (return_data_offset, return_data_len) pair, is the values used to calculate
+    // memory expansion cost when successful case. So for "successful deployment" case, it will
+    // be non 0 while the call_ctx.return should be empty for this case. EIP-211: CREATE/CREATE2
+    // call successful case should set RETURNDATASIZE = 0
+    fn get_return_data_offset_and_len(
+        exec_step: &ExecStep,
+        geth_step: &GethExecStep,
+        caller_ctx: &CallContext,
+    ) -> Result<(U256, U256), Error> {
+        let is_err = exec_step.error.is_some();
+        let [last_callee_return_data_offset, last_callee_return_data_length] = if is_err {
+            [Word::zero(), Word::zero()]
+        } else {
+            match geth_step.op {
+                OpcodeId::STOP => [Word::zero(); 2],
+                OpcodeId::CALL
+                | OpcodeId::CALLCODE
+                | OpcodeId::STATICCALL
+                | OpcodeId::DELEGATECALL => {
+                    let return_data_length = match exec_step.exec_state {
+                        ExecState::Precompile(_) => {
+                            // successful precompile call
+                            caller_ctx.return_data.len().into()
+                        }
+                        _ => Word::zero(),
+                    };
+                    [Word::zero(), return_data_length]
+                }
+                OpcodeId::REVERT | OpcodeId::RETURN => {
+                    let offset = geth_step.stack.nth_last(0)?;
+                    let length = geth_step.stack.nth_last(1)?;
+                    // This is the convention we are using for memory addresses so that there is no
+                    // memory expansion cost when the length is 0.
+                    // https://github.com/privacy-scaling-explorations/zkevm-circuits/pull/279/files#r787806678
+                    if length.is_zero() {
+                        [Word::zero(); 2]
+                    } else {
+                        [offset, length]
+                    }
+                }
+                _ => [Word::zero(), Word::zero()],
+            }
+        };
+        Ok((
+            last_callee_return_data_offset,
+            last_callee_return_data_length,
+        ))
     }
 
     /// Bus mapping for the RestoreContextGadget as used in RETURN.
@@ -1312,36 +1351,8 @@ impl<'a> CircuitInputStateRef<'a> {
             caller.call_id.into(),
         );
 
-        let [last_callee_return_data_offset, last_callee_return_data_length] = if is_err {
-            [Word::zero(), Word::zero()]
-        } else {
-            match geth_step.op {
-                OpcodeId::STOP => [Word::zero(); 2],
-                OpcodeId::CALL
-                | OpcodeId::CALLCODE
-                | OpcodeId::STATICCALL
-                | OpcodeId::DELEGATECALL => {
-                    let return_data_length = match exec_step.exec_state {
-                        ExecState::Precompile(_) => self.caller_ctx()?.return_data.len().into(),
-                        _ => Word::zero(),
-                    };
-                    [Word::zero(), return_data_length]
-                }
-                OpcodeId::REVERT | OpcodeId::RETURN => {
-                    let offset = geth_step.stack.nth_last(0)?;
-                    let length = geth_step.stack.nth_last(1)?;
-                    // This is the convention we are using for memory addresses so that there is no
-                    // memory expansion cost when the length is 0.
-                    // https://github.com/privacy-scaling-explorations/zkevm-circuits/pull/279/files#r787806678
-                    if length.is_zero() {
-                        [Word::zero(); 2]
-                    } else {
-                        [offset, length]
-                    }
-                }
-                _ => [Word::zero(), Word::zero()],
-            }
-        };
+        let (last_callee_return_data_offset, last_callee_return_data_length) =
+            Self::get_return_data_offset_and_len(exec_step, geth_step, self.caller_ctx()?)?;
 
         let gas_refund = if is_err {
             0
