@@ -246,7 +246,10 @@ impl<F: Field> Circuit<F> for SuperCircuit<F> {
             .load(&mut layouter, &self.block.context, randomness)?;
         config.keccak_table.dev_load(
             &mut layouter,
-            vec![&self.pi_circuit.public_data.rpi_bytes()],
+            self.block
+                .sha3_inputs
+                .iter()
+                .chain(std::iter::once(&self.pi_circuit.public_data.rpi_bytes())),
             &challenges,
         )?;
         config.byte_table.load(&mut layouter)?;
