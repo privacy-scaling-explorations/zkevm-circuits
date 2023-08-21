@@ -8,20 +8,23 @@ use crate::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{IsEqualGadget, LtGadget},
             memory_gadget::{
-                CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
+                CommonMemoryAddressGadget,  MemoryExpandedAddressGadget,
+                MemoryExpansionGadget,
             },
             select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::{word::WordExpr, Expr},
+    util::{ Expr, word::Word},
 };
 use eth_types::{evm_types::OpcodeId, Field, ToWord};
+use gadgets::util::or;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGStaticMemoryGadget<F> {
     opcode: Cell<F>,
+    is_mstore8: IsEqualGadget<F>,
     // Allow memory size to expand to 5 bytes, because memory address could be
     // at most 2^40 - 1, after constant division by 32, the memory word size
     // then could be at most 2^35 - 1.
@@ -29,9 +32,8 @@ pub(crate) struct ErrorOOGStaticMemoryGadget<F> {
     // be larger by 1 than normal usage (to be 5), to be able to contain
     // number up to 2^35 - 1.
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_ADDRESS>,
-    memory_addr: MemoryAddressGadget<F>,
+    memory_address: MemoryExpandedAddressGadget<F>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
-    is_mstore8: IsEqualGadget<F>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
@@ -53,23 +55,21 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
             ],
         );
 
-        // pop memory_offset from stack
-        let memory_offset = cb.query_word_unchecked();
-        cb.stack_pop(memory_offset.to_word());
-
         // Check if this is an MSTORE8
         let is_mstore8 = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MSTORE8.expr());
 
+        // pop memory_offset from stack
+        let memory_address = MemoryExpandedAddressGadget::construct_self(cb);
+        cb.stack_pop(memory_address.offset_word());
+
         // Get the next memory size, 1 byte if opcode is MSTORE8, otherwise 32 bytes
-        let length = cb.query_memory_address();
-        cb.require_equal(
+        cb.require_equal_word(
             "Memory length must be 32 for MLOAD and MSTORE, and 1 for MSTORE8",
-            length.expr(),
-            select::expr(is_mstore8.expr(), 1.expr(), 32.expr()),
+            memory_address.length_word(),
+            Word::from_lo_unchecked(select::expr(is_mstore8.expr(), 1.expr(), 32.expr())),
         );
 
-        let memory_addr = MemoryAddressGadget::construct(cb, memory_offset, length);
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_addr.address()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
 
         // Check if the amount of gas available is less than the amount of gas required
         // constant gas of MSTORE, MSTORE8 and MLOAD are the same
@@ -80,9 +80,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         );
 
         cb.require_equal(
-            "gas_left must be less than gas_cost",
-            insufficient_gas.expr(),
-            true.expr(),
+            "Memory address is overflow or gas left is less than required",
+            or::expr([memory_address.overflow(), insufficient_gas.expr()]),
+            1.expr(),
         );
 
         // TODO: `+2` bcs CommonErrorGadget looks up IsSuccess and RwCounterEndOfReversion,
@@ -92,7 +92,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
 
         Self {
             opcode,
-            memory_addr,
+            memory_address,
             memory_expansion,
             insufficient_gas,
             is_mstore8,
@@ -130,9 +130,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
             32.to_word()
         };
         let expanded_address = self
-            .memory_addr
+            .memory_address
             .assign(region, offset, memory_offset, length)?;
-        self.memory_expansion.assign(
+        let (_, memory_expansion_gas) = self.memory_expansion.assign(
             region,
             offset,
             step.memory_word_size(),
@@ -140,12 +140,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         )?;
 
         // Gas insufficient check
-        // Get `gas_available` variable here once it's available
+        let const_gas = opcode.constant_gas_cost();
         self.insufficient_gas.assign(
             region,
             offset,
             F::from(step.gas_left),
-            F::from(step.gas_cost),
+            F::from(memory_expansion_gas + const_gas),
         )?;
 
         self.common_error_gadget
@@ -158,48 +158,74 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
 #[cfg(test)]
 mod tests {
     use crate::test_util::CircuitTestBuilder;
-    use eth_types::{bytecode, word, Bytecode, ToWord};
+    use eth_types::{bytecode, word, Bytecode, ToWord, U256};
     use mock::{
         eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
     };
 
     #[test]
-    fn test() {
-        let codes = [
+    fn test_oog_static_memory_simple() {
+        for code in testing_bytecodes(0x40_u64.into()).iter() {
+            test_root(code);
+            test_internal(code);
+        }
+    }
+
+    #[test]
+    fn test_oog_static_memory_max_expanded_address() {
+        // > MAX_EXPANDED_MEMORY_ADDRESS (0x1fffffffe0)
+        for code in testing_bytecodes(0x1fffffffe1_u64.into()).iter() {
+            test_root(code);
+            test_internal(code);
+        }
+    }
+
+    #[test]
+    fn test_oog_static_memory_max_u64_address() {
+        for code in testing_bytecodes(u64::MAX.into()).iter() {
+            test_root(code);
+            test_internal(code);
+        }
+    }
+
+    #[test]
+    fn test_oog_static_memory_max_word_address() {
+        for code in testing_bytecodes(U256::MAX).iter() {
+            test_root(code);
+            test_internal(code);
+        }
+    }
+
+    fn testing_bytecodes(offset: U256) -> Vec<Bytecode> {
+        vec![
             bytecode! {
-                PUSH8(0xFF)
-                PUSH32(word!("0xFFFFF")) // offset
+                PUSH8(0x14)
+                PUSH32(offset)
                 MSTORE
                 STOP
             },
             bytecode! {
-                PUSH8(0xFF)
-                PUSH32(word!("0xFFFFF")) // offset
+                PUSH8(0x14)
+                PUSH32(offset)
                 MSTORE8
                 STOP
             },
             bytecode! {
-                PUSH32(word!("0xFFFFF")) // offset
+                PUSH32(offset)
                 MLOAD
                 STOP
             },
-        ];
-
-        for code in codes.iter() {
-            test_root(code.clone());
-            test_internal(code.clone());
-        }
+        ]
     }
-
-    fn test_root(code: Bytecode) {
+    fn test_root(code: &Bytecode) {
         let ctx = TestContext::<2, 1>::new(
             None,
-            account_0_code_account_1_no_code(code),
+            account_0_code_account_1_no_code(code.clone()),
             |mut txs, accs| {
                 txs[0]
                     .from(accs[1].address)
                     .to(accs[0].address)
-                    .gas(word!("0xFFFF"));
+                    .gas(21010.into());
             },
             |block, _tx| block,
         )
@@ -208,7 +234,7 @@ mod tests {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    fn test_internal(code: Bytecode) {
+    fn test_internal(code: &Bytecode) {
         let code_a = bytecode! {
             PUSH1(0x00) // retLength
             PUSH1(0x00) // retOffset
@@ -216,7 +242,7 @@ mod tests {
             PUSH32(0x00) // argsOffset
             PUSH1(0x00) // value
             PUSH32(MOCK_ACCOUNTS[1].to_word()) // addr
-            PUSH32(0xFF) // gas
+            PUSH32(0xA) // gas
             CALL
             STOP
         };
@@ -225,7 +251,7 @@ mod tests {
             None,
             |accs| {
                 accs[0].address(MOCK_ACCOUNTS[0]).code(code_a);
-                accs[1].address(MOCK_ACCOUNTS[1]).code(code);
+                accs[1].address(MOCK_ACCOUNTS[1]).code(code.clone());
                 accs[2].address(MOCK_ACCOUNTS[2]).balance(eth(1));
             },
             |mut txs, accs| {
