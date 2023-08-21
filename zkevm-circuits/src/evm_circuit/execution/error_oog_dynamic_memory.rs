@@ -8,24 +8,23 @@ use crate::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::LtGadget,
             memory_gadget::{
-                CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
+                CommonMemoryAddressGadget, MemoryExpandedAddressGadget, MemoryExpansionGadget,
             },
             CachedRegion, Cell,
         },
     },
-    util::word::WordExpr,
     witness::{Block, Call, ExecStep, Transaction},
 };
 use eth_types::{evm_types::OpcodeId, Field};
-use gadgets::util::Expr;
+use gadgets::util::{or, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGDynamicMemoryGadget<F> {
     opcode: Cell<F>,
 
-    memory_addr: MemoryAddressGadget<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_ADDRESS>,
+    memory_address: MemoryExpandedAddressGadget<F>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     common_error_gadget: CommonErrorGadget<F>,
 }
@@ -44,13 +43,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
             vec![OpcodeId::RETURN.expr(), OpcodeId::REVERT.expr()],
         );
 
-        let offset = cb.query_word_unchecked();
-        let length = cb.query_memory_address();
-        cb.stack_pop(offset.to_word());
-        cb.stack_pop(length.to_word());
-
-        let memory_addr = MemoryAddressGadget::construct(cb, offset, length);
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_addr.address()]);
+        let memory_address = MemoryExpandedAddressGadget::construct_self(cb);
+        cb.stack_pop(memory_address.offset_word());
+        cb.stack_pop(memory_address.length_word());
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
 
         // constant gas of RETURN and REVERT is zero.
         let insufficient_gas = LtGadget::construct(
@@ -59,9 +55,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
             memory_expansion.gas_cost(),
         );
         cb.require_equal(
-            "gas_left must less than gas_cost",
-            insufficient_gas.expr(),
-            true.expr(),
+            "Memory address is overflow or gas left is less than required",
+            or::expr([memory_address.overflow(), insufficient_gas.expr()]),
+            1.expr(),
         );
 
         let common_error_gadget =
@@ -69,7 +65,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
 
         Self {
             opcode,
-            memory_addr,
+            memory_address,
             memory_expansion,
             insufficient_gas,
             common_error_gadget,
@@ -89,33 +85,29 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        let memory_offset = block.get_rws(step, 0).stack_value();
-        let length = block.get_rws(step, 1).stack_value();
+        let [memory_offset, length] = [0, 1].map(|idx| block.get_rws(step, idx).stack_value());
+
         let expanded_address = self
-            .memory_addr
+            .memory_address
             .assign(region, offset, memory_offset, length)?;
-        self.memory_expansion.assign(
+
+        let (_, memory_expansion_cost) = self.memory_expansion.assign(
             region,
             offset,
             step.memory_word_size(),
             [expanded_address],
         )?;
 
+        // constant gas of RETURN and REVERT is zero
         self.insufficient_gas.assign(
             region,
             offset,
             F::from(step.gas_left),
-            F::from(step.gas_cost),
+            F::from(memory_expansion_cost),
         )?;
 
-        self.common_error_gadget.assign(
-            region,
-            offset,
-            block,
-            call,
-            step,
-            if opcode == OpcodeId::CREATE { 5 } else { 4 },
-        )?;
+        self.common_error_gadget
+            .assign(region, offset, block, call, step, 4)?;
         Ok(())
     }
 }
@@ -123,39 +115,85 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
 #[cfg(test)]
 mod tests {
     use crate::test_util::CircuitTestBuilder;
-    use eth_types::{bytecode, word, Bytecode, ToWord};
+    use eth_types::{bytecode, word, Bytecode, ToWord, U256};
     use mock::{
         eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
     };
 
     #[test]
-    fn test() {
-        let codes = [
-            bytecode! {
-                PUSH8(0xFF)
-                PUSH32(word!("0xFFFFF")) // offset
-                RETURN
-            },
-            bytecode! {
-                PUSH8(0xFF)
-                PUSH32(word!("0xFFFFF")) // offset
-                REVERT
-            },
-        ];
-
-        for code in codes.iter() {
-            test_root(code.clone());
-            test_internal(code.clone());
+    fn test_oog_dynamic_memory_simple() {
+        for code in testing_bytecodes(0x40_u64.into(), 0x14.into()).iter() {
+            test_root(code);
+            test_internal(code);
         }
     }
 
-    fn test_root(code: Bytecode) {
+    #[test]
+    fn test_oog_dynamic_memory_max_expanded_address() {
+        // 0xffffffff1 + 0xffffffff0 = 0x1fffffffe1
+        // > MAX_EXPANDED_MEMORY_ADDRESS (0x1fffffffe0)
+        for code in testing_bytecodes(0xffffffff1_u64.into(), 0xffffffff0_u64.into()).iter() {
+            test_root(code);
+            test_internal(code);
+        }
+    }
+
+    #[test]
+    fn test_oog_dynamic_memory_max_u64_address() {
+        for code in testing_bytecodes(u64::MAX.into(), u64::MAX.into()).iter() {
+            test_root(code);
+            test_internal(code);
+        }
+    }
+
+    #[test]
+    fn test_oog_dynamic_memory_max_word_address() {
+        for code in testing_bytecodes(U256::MAX, U256::MAX).iter() {
+            test_root(code);
+            test_internal(code);
+        }
+    }
+
+    fn test_root(code: &Bytecode) {
         let ctx = TestContext::<2, 1>::new(
             None,
-            account_0_code_account_1_no_code(code),
+            account_0_code_account_1_no_code(code.clone()),
             |mut txs, accs| {
                 txs[0]
                     .from(accs[1].address)
+                    .to(accs[0].address)
+                    .gas(word!("0x5FFF"));
+            },
+            |block, _tx| block,
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
+    fn test_internal(code: &Bytecode) {
+        let code_a = bytecode! {
+            PUSH1(0x00) // retLength
+            PUSH1(0x00) // retOffset
+            PUSH32(0x00) // argsLength
+            PUSH32(0x00) // argsOffset
+            PUSH1(0x00) // value
+            PUSH32(MOCK_ACCOUNTS[1].to_word()) // addr
+            PUSH32(0xFFFF) // gas
+            CALL
+            STOP
+        };
+
+        let ctx = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).code(code_a);
+                accs[1].address(MOCK_ACCOUNTS[1]).code(code.clone());
+                accs[2].address(MOCK_ACCOUNTS[2]).balance(eth(1));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[2].address)
                     .to(accs[0].address)
                     .gas(word!("0xFFFFF"));
             },
@@ -166,36 +204,18 @@ mod tests {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    fn test_internal(code: Bytecode) {
-        let code_a = bytecode! {
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH32(0x00) // argsLength
-            PUSH32(0x00) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(MOCK_ACCOUNTS[1].to_word()) // addr
-            PUSH32(word!("0xFFFFF")) // gas
-            CALL
-            STOP
-        };
-
-        let ctx = TestContext::<3, 1>::new(
-            None,
-            |accs| {
-                accs[0].address(MOCK_ACCOUNTS[0]).code(code_a);
-                accs[1].address(MOCK_ACCOUNTS[1]).code(code);
-                accs[2].address(MOCK_ACCOUNTS[2]).balance(eth(1));
+    fn testing_bytecodes(offset: U256, size: U256) -> Vec<Bytecode> {
+        vec![
+            bytecode! {
+                PUSH32(size)
+                PUSH32(offset)
+                RETURN
             },
-            |mut txs, accs| {
-                txs[0]
-                    .from(accs[2].address)
-                    .to(accs[0].address)
-                    .gas(word!("0xFFFFFF"));
+            bytecode! {
+                PUSH32(size)
+                PUSH32(offset)
+                REVERT
             },
-            |block, _tx| block,
-        )
-        .unwrap();
-
-        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        ]
     }
 }
