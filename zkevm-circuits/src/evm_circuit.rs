@@ -5,6 +5,7 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::*,
 };
+use snark_verifier_sdk::CircuitExt;
 
 mod execution;
 pub mod param;
@@ -389,6 +390,16 @@ pub(crate) mod cached {
 #[derive(Default)]
 pub struct EvmCircuitParams {
     is_taiko: bool,
+}
+
+impl<F: Field> CircuitExt<F> for EvmCircuit<F> {
+    fn num_instance(&self) -> Vec<usize> {
+        self.instance().iter().map(|v| v.len()).collect_vec()
+    }
+
+    fn instances(&self) -> Vec<Vec<F>> {
+        self.instance()
+    }
 }
 
 // Always exported because of `EXECUTION_STATE_HEIGHT_MAP`
