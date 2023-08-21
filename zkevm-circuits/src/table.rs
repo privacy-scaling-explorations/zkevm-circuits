@@ -238,10 +238,14 @@ impl TxTable {
             max_txs
         );
         let sum_txs_calldata: usize = txs.iter().map(|tx| tx.call_data.len()).sum();
-        assert!(
-            sum_txs_calldata <= max_calldata,
-            "sum_txs_calldata <= max_calldata: sum_txs_calldata={sum_txs_calldata}, max_calldata={max_calldata}",
-        );
+
+        // allow dynamic
+        if max_calldata != 0 {
+            assert!(
+                sum_txs_calldata <= max_calldata,
+                "sum_txs_calldata <= max_calldata: sum_txs_calldata={sum_txs_calldata}, max_calldata={max_calldata}",
+            );
+        }
 
         fn assign_row<F: Field>(
             region: &mut Region<'_, F>,
