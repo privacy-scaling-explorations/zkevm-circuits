@@ -12,7 +12,7 @@ use bus_mapping::{
     },
     Error,
 };
-use eth_types::{Address, Field, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word};
+use eth_types::{Address, Field, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word, H256};
 use halo2_proofs::circuit::Value;
 
 use super::{tx::tx_convert, Bytecode, ExecStep, Rw, RwMap, Transaction};
@@ -187,6 +187,8 @@ pub struct BlockContext {
     pub timestamp: Word,
     /// The difficulty of the blcok
     pub difficulty: Word,
+    /// The mix hash of the block
+    pub mix_hash: Option<H256>,
     /// The base fee, the minimum amount of gas fee for a transaction
     pub base_fee: Word,
     /// The hash of previous blocks
@@ -225,8 +227,14 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
                     Value::known(F::ZERO),
-                    randomness
-                        .map(|randomness| rlc::value(&self.difficulty.to_le_bytes(), randomness)),
+                    {
+                        let difficulty = if self.difficulty.is_zero() {
+                            self.mix_hash.unwrap_or_default().to_fixed_bytes()
+                        } else {
+                            self.difficulty.to_le_bytes()
+                        };
+                        randomness.map(|randomness| rlc::value(&difficulty, randomness))
+                    },
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
@@ -284,6 +292,7 @@ impl From<&circuit_input_builder::Block> for BlockContext {
             number: block.number,
             timestamp: block.timestamp,
             difficulty: block.difficulty,
+            mix_hash: block.eth_block.mix_hash,
             base_fee: block.base_fee,
             history_hashes: block.history_hashes.clone(),
             chain_id: block.chain_id,
