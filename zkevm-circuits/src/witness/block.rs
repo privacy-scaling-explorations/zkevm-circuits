@@ -228,12 +228,16 @@ impl BlockContext {
                     Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
                     Value::known(F::ZERO),
                     {
-                        let difficulty = if self.difficulty.is_zero() {
-                            self.mix_hash.unwrap_or_default().to_fixed_bytes()
+                        if self.difficulty.is_zero() {
+                            rlc_be_bytes(
+                                &self.mix_hash.unwrap_or_default().to_fixed_bytes(),
+                                randomness,
+                            )
                         } else {
-                            self.difficulty.to_le_bytes()
-                        };
-                        randomness.map(|randomness| rlc::value(&difficulty, randomness))
+                            randomness.map(|randomness| {
+                                rlc::value(&self.difficulty.to_le_bytes(), randomness)
+                            })
+                        }
                     },
                 ],
                 [
