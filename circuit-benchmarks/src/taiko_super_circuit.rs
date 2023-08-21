@@ -158,10 +158,7 @@ fn gen_application_snark(
         max_evm_rows: 0,
         max_keccak_rows: 0,
     };
-    let protocol_instance = ProtocolInstance {
-        anchor_gas_limit: 150000,
-        ..Default::default()
-    };
+    let protocol_instance = ProtocolInstance::default();
     let (_, super_circuit, _, _) =
         SuperCircuit::<_>::build(block_1tx(), circuits_params, protocol_instance).unwrap();
 
