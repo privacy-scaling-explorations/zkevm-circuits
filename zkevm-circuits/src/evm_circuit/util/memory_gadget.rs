@@ -286,7 +286,7 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
             0.expr(),
             select::expr(
                 self.within_range(),
-                sum::expr(&self.offset_length_sum.sum().limbs[..N_BYTES_U64]),
+                from_bytes::expr(&self.offset_length_sum.sum().limbs[..N_BYTES_U64]),
                 0.expr(),
             ),
         )
