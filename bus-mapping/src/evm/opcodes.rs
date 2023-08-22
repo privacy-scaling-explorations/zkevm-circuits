@@ -53,7 +53,6 @@ mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_memory_copy;
 mod error_oog_sload_sstore;
-mod error_oog_static_memory;
 mod error_return_data_outofbound;
 mod error_simple;
 mod error_write_protection;
@@ -84,7 +83,6 @@ use error_oog_exp::OOGExp;
 use error_oog_log::ErrorOOGLog;
 use error_oog_memory_copy::OOGMemoryCopy;
 use error_oog_sload_sstore::OOGSloadSstore;
-use error_oog_static_memory::OOGStaticMemory;
 use error_return_data_outofbound::ErrorReturnDataOutOfBound;
 use error_simple::ErrorSimple;
 use error_write_protection::ErrorWriteProtection;
@@ -281,7 +279,7 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
         ExecError::OutOfGas(OogError::MemoryCopy) => Some(OOGMemoryCopy::gen_associated_ops),
         ExecError::OutOfGas(OogError::StaticMemoryExpansion) => {
-            Some(OOGStaticMemory::gen_associated_ops)
+            Some(StackOnlyOpcode::<1, 0, true>::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
         ExecError::OutOfGas(OogError::AccountAccess) => {

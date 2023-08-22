@@ -8,14 +8,13 @@ use crate::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{IsEqualGadget, LtGadget},
             memory_gadget::{
-                CommonMemoryAddressGadget,  MemoryExpandedAddressGadget,
-                MemoryExpansionGadget,
+                CommonMemoryAddressGadget, MemoryExpandedAddressGadget, MemoryExpansionGadget,
             },
             select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::{ Expr, word::Word},
+    util::{word::Word, Expr},
 };
 use eth_types::{evm_types::OpcodeId, Field, ToWord};
 use gadgets::util::or;
