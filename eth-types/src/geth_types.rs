@@ -72,7 +72,7 @@ pub struct BlockConstants {
     /// U64 type is required to serialize into proper hex with 0x prefix
     pub number: U64,
     /// difficulty
-    pub difficulty: Word,
+    pub mix_hash: Hash,
     /// gas limit
     pub gas_limit: Word,
     /// base fee
@@ -87,7 +87,7 @@ impl<TX> TryFrom<&Block<TX>> for BlockConstants {
             coinbase: block.author.ok_or(Error::IncompleteBlock)?,
             timestamp: block.timestamp,
             number: block.number.ok_or(Error::IncompleteBlock)?,
-            difficulty: block.difficulty,
+            mix_hash: block.mix_hash.ok_or(Error::IncompleteBlock)?,
             gas_limit: block.gas_limit,
             base_fee: block.base_fee_per_gas.ok_or(Error::IncompleteBlock)?,
         })
@@ -100,7 +100,7 @@ impl BlockConstants {
         coinbase: Address,
         timestamp: Word,
         number: U64,
-        difficulty: Word,
+        mix_hash: Hash,
         gas_limit: Word,
         base_fee: Word,
     ) -> BlockConstants {
@@ -108,7 +108,7 @@ impl BlockConstants {
             coinbase,
             timestamp,
             number,
-            difficulty,
+            mix_hash,
             gas_limit,
             base_fee,
         }

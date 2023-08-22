@@ -83,12 +83,12 @@ func FormatLogs(logs []logger.StructLog) []StructLogRes {
 }
 
 type Block struct {
-	Coinbase   common.Address `json:"coinbase"`
-	Timestamp  *hexutil.Big   `json:"timestamp"`
-	Number     *hexutil.Big   `json:"number"`
-	Difficulty *hexutil.Big   `json:"difficulty"`
-	GasLimit   *hexutil.Big   `json:"gas_limit"`
-	BaseFee    *hexutil.Big   `json:"base_fee"`
+	Coinbase  common.Address `json:"coinbase"`
+	Timestamp *hexutil.Big   `json:"timestamp"`
+	Number    *hexutil.Big   `json:"number"`
+	GasLimit  *hexutil.Big   `json:"gas_limit"`
+	BaseFee   *hexutil.Big   `json:"base_fee"`
+	MixHash   common.Hash    `json:"mix_hash"`
 }
 
 type Account struct {
@@ -186,8 +186,6 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		return nil, fmt.Errorf("txs total gas: %d Exceeds block gas limit: %d", txsGasLimit, blockGasLimit)
 	}
 
-	random := common.BigToHash(toBigInt(config.Block.Difficulty))
-
 	blockCtx := vm.BlockContext{
 		CanTransfer: core.CanTransfer,
 		Transfer:    core.Transfer,
@@ -202,10 +200,9 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		Coinbase:    config.Block.Coinbase,
 		BlockNumber: toBigInt(config.Block.Number),
 		Time:        toBigInt(config.Block.Timestamp).Uint64(),
-		Difficulty:  toBigInt(config.Block.Difficulty),
 		BaseFee:     toBigInt(config.Block.BaseFee),
 		GasLimit:    blockGasLimit,
-		Random:      &random,
+		Random:      &config.Block.MixHash,
 	}
 
 	// Setup state db with accounts from argument

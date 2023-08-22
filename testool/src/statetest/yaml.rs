@@ -204,7 +204,7 @@ impl<'a> YamlStateTestBuilder<'a> {
     fn parse_env(yaml: &Yaml) -> Result<Env> {
         Ok(Env {
             current_coinbase: Self::parse_address(&yaml["currentCoinbase"])?,
-            current_difficulty: Self::parse_u256(&yaml["currentDifficulty"])?,
+            current_mix_hash: Self::parse_hash(&yaml["currentMixHash"])?,
             current_gas_limit: Self::parse_u64(&yaml["currentGasLimit"])?,
             current_number: Self::parse_u64(&yaml["currentNumber"])?,
             current_timestamp: Self::parse_u64(&yaml["currentTimestamp"])?,
@@ -436,7 +436,7 @@ mod test {
 arith:
   env:
     currentCoinbase: 2adc25665018aa1fe0e6bc666dac8fc2697ff9ba
-    currentDifficulty: 0x20000
+    currentMixHash: 0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347
     currentGasLimit: {{ gas_limit }}
     currentNumber: 1
     currentTimestamp: 1000
@@ -600,7 +600,9 @@ arith:
             id: "arith_d0_g0_v0".into(),
             env: Env {
                 current_coinbase: address!("0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba"),
-                current_difficulty: U256::from(0x20000u64),
+                current_mix_hash: H256::from_str(
+                    "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+                )?,
                 current_number: 1,
                 current_timestamp: 1000,
                 current_gas_limit: 100000000,

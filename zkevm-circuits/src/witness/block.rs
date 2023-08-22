@@ -185,10 +185,10 @@ pub struct BlockContext {
     pub number: Word,
     /// The timestamp of the block
     pub timestamp: Word,
-    /// The difficulty of the blcok
-    pub difficulty: Word,
     /// The mix hash of the block
-    pub mix_hash: Option<H256>,
+    // after eip-4399, the difficulty is always zero, we need to use the mix hash instead of
+    // difficulty.
+    pub mix_hash: H256,
     /// The base fee, the minimum amount of gas fee for a transaction
     pub base_fee: Word,
     /// The hash of previous blocks
@@ -227,18 +227,7 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
                     Value::known(F::ZERO),
-                    {
-                        if self.difficulty.is_zero() {
-                            rlc_be_bytes(
-                                &self.mix_hash.unwrap_or_default().to_fixed_bytes(),
-                                randomness,
-                            )
-                        } else {
-                            randomness.map(|randomness| {
-                                rlc::value(&self.difficulty.to_le_bytes(), randomness)
-                            })
-                        }
-                    },
+                    rlc_be_bytes(&self.mix_hash.to_fixed_bytes(), randomness),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
@@ -295,8 +284,7 @@ impl From<&circuit_input_builder::Block> for BlockContext {
             gas_limit: block.gas_limit,
             number: block.number,
             timestamp: block.timestamp,
-            difficulty: block.difficulty,
-            mix_hash: block.eth_block.mix_hash,
+            mix_hash: block.mix_hash,
             base_fee: block.base_fee,
             history_hashes: block.history_hashes.clone(),
             chain_id: block.chain_id,

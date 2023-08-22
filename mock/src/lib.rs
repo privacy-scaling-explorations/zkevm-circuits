@@ -1,4 +1,6 @@
 //! Mock types and functions to generate GethData used for tests
+use std::str::FromStr;
+
 use eth_types::{address, bytecode, bytecode::Bytecode, word, Address, Bytes, Hash, Word};
 use ethers_signers::LocalWallet;
 use lazy_static::lazy_static;
@@ -34,7 +36,7 @@ lazy_static! {
     /// Mock chain ID value
     pub static ref MOCK_CHAIN_ID: Word = Word::from(1338u64);
     /// Mock DIFFICULTY value
-    pub static ref MOCK_DIFFICULTY: Word = Word::from(0x200000u64);
+    pub static ref MOCK_MIX_HASH: Hash = Hash::from_str("0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347").unwrap();
     /// Mock accounts loaded with ETH to use for test cases.
     pub static ref MOCK_ACCOUNTS: Vec<Address> = vec![
         address!("0x000000000000000000000000000000000cafe111"),

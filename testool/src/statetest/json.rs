@@ -13,7 +13,7 @@ use std::collections::HashMap;
 #[serde(rename_all = "camelCase")]
 struct TestEnv {
     current_coinbase: String,
-    current_difficulty: String,
+    current_mix_hash: String,
     current_gas_limit: String,
     current_number: String,
     current_timestamp: String,
@@ -192,7 +192,7 @@ impl<'a> JsonStateTestBuilder<'a> {
     fn parse_env(env: &TestEnv) -> Result<Env> {
         Ok(Env {
             current_coinbase: parse::parse_address(&env.current_coinbase)?,
-            current_difficulty: parse::parse_u256(&env.current_difficulty)?,
+            current_mix_hash: parse::parse_hash(&env.current_mix_hash)?,
             current_gas_limit: parse::parse_u64(&env.current_gas_limit)?,
             current_number: parse::parse_u64(&env.current_number)?,
             current_timestamp: parse::parse_u64(&env.current_timestamp)?,
@@ -305,7 +305,7 @@ mod test {
         },
         "env" : {
             "currentCoinbase" : "2adc25665018aa1fe0e6bc666dac8fc2697ff9ba",
-            "currentDifficulty" : "0x20000",
+            "currentMixHash" : "0x20000",
             "currentGasLimit" : "0xFF112233445566",
             "currentNumber" : "1",
             "currentTimestamp" : "1000",
@@ -371,7 +371,9 @@ mod test {
             id: "add11_d0_g0_v0".to_string(),
             env: Env {
                 current_coinbase: Address::from_str("0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba")?,
-                current_difficulty: U256::from(131072u64),
+                current_mix_hash: H256::from_str(
+                    "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+                )?,
                 current_gas_limit: 0xFF112233445566,
                 current_number: 1,
                 current_timestamp: 1000,

@@ -8,7 +8,7 @@ use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
 };
-use eth_types::{evm_unimplemented, Address, Word};
+use eth_types::{evm_unimplemented, Address, Hash, Word};
 use std::collections::HashMap;
 
 /// Context of a [`Block`] which can mutate in a [`Transaction`].
@@ -69,8 +69,8 @@ pub struct Block {
     pub number: Word,
     /// difficulty
     pub timestamp: Word,
-    /// gas limit
-    pub difficulty: Word,
+    /// mix hash
+    pub mix_hash: Hash,
     /// base fee
     pub base_fee: Word,
     /// State root of the previous block
@@ -126,7 +126,9 @@ impl Block {
                 .low_u64()
                 .into(),
             timestamp: eth_block.timestamp,
-            difficulty: eth_block.difficulty,
+            mix_hash: eth_block
+                .mix_hash
+                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
             base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
             prev_state_root,
             container: OperationContainer::new(),

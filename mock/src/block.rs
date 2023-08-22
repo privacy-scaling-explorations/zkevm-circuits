@@ -1,6 +1,6 @@
 //! Mock Block definition and builder related methods.
 
-use crate::{MockTransaction, MOCK_BASEFEE, MOCK_CHAIN_ID, MOCK_DIFFICULTY, MOCK_GASLIMIT};
+use crate::{MockTransaction, MOCK_BASEFEE, MOCK_CHAIN_ID, MOCK_GASLIMIT, MOCK_MIX_HASH};
 use eth_types::{Address, Block, Bytes, Hash, Transaction, Word, H64, U64};
 use ethers_core::types::{Bloom, OtherFields};
 
@@ -54,13 +54,13 @@ impl Default for MockBlock {
             extra_data: Bytes::default(),
             logs_bloom: None,
             timestamp: Word::from(123456789u64),
-            difficulty: *MOCK_DIFFICULTY,
+            mix_hash: *MOCK_MIX_HASH,
             total_difficulty: Word::zero(),
+            difficulty: Word::zero(),
             seal_fields: Vec::new(),
             uncles: Vec::new(),
             transactions: Vec::new(),
             size: Word::zero(),
-            mix_hash: Hash::zero(),
             nonce: H64::zero(),
             chain_id: *MOCK_CHAIN_ID,
         }
