@@ -13,6 +13,7 @@ use ethers::{
     signers::Signer,
     solc::{CompilerInput, CompilerOutput, EvmVersion, Solc},
 };
+use halo2_proofs::halo2curves::CurveAffine;
 use integration_tests::{
     get_client, get_provider, get_wallet, log_init, CompiledContract, GenDataOutput, CONTRACTS,
     CONTRACTS_PATH, WARN,
@@ -158,12 +159,50 @@ async fn main() {
             }
         }
     }
+    async fn get_block_number() -> Result<u64, &'static str> {
+        let provider = get_provider();
+        provider
+            .get_block_number()
+            .await
+            .map_err(|_| "cannot get block_num")
+    }
+
+    fn insert_block(
+        blocks: &mut HashMap<String, u64>,
+        key: &str,
+        result: Result<u64, &'static str>,
+    ) {
+        match result {
+            Ok(block_num) => {
+                blocks.insert(key.to_string(), block_num);
+            }
+            Err(err_msg) => {
+                eprintln!("Error: {}", err_msg); // This will print the error message. Adjust as
+                                                 // needed.
+            }
+        }
+    }
+
+    fn insert_deployment(
+        deploy: &mut HashMap<String, (u64, H160)>,
+        key: &str,
+        block_num: u64,
+        contract: &ContractInstance,
+    ) {
+        deployments.insert(key.to_string(), (block_num, contract.address()));
+    }
+    async fn deploy_contract(
+        prov_wallet: Arc<SignerMiddleware<Provider<Provider>, Wallet<SigningKey<Secp256k1>>>>,
+        contracts: &HashMap<String, CompiledContract>,
+        key: &str,
+        address: T,
+    ) -> Contract<M> {
+        let contract_data = contracts.get(key).ok_or("contract not found")?;
+        deploy(prov_wallet.clone(), contract_data, address)
+    }
 
     // Make sure the blockchain is in a clean state: block 0 is the last block.
-    let block_number = prov
-        .get_block_number()
-        .await
-        .expect("cannot get block number");
+    let block_number = get_block_number();
     if block_number.as_u64() != 0 {
         panic!(
             "Blockchain is not in a clean state.  Last block number: {}",
@@ -190,8 +229,8 @@ async fn main() {
         .expect("cannot send tx")
         .await
         .expect("cannot confirm tx");
-    let block_num = prov.get_block_number().await.expect("cannot get block_num");
-    blocks.insert("Transfer 0".to_string(), block_num.as_u64());
+    let block_num = get_block_number();
+    insert_block(&mut blocks, "Transfer 0", block_num);
 
     // Deploy smart contracts
     //
@@ -200,83 +239,51 @@ async fn main() {
     let prov_wallet0 = Arc::new(SignerMiddleware::new(get_provider(), wallet0));
 
     // Greeter
-    let contract = deploy(
-        prov_wallet0.clone(),
-        contracts.get("Greeter").expect("contract not found"),
-        U256::from(42),
-    )
-    .await;
-    let block_num = prov.get_block_number().await.expect("cannot get block_num");
-    blocks.insert("Deploy Greeter".to_string(), block_num.as_u64());
-    deployments.insert(
-        "Greeter".to_string(),
-        (block_num.as_u64(), contract.address()),
-    );
-
+    let contract = deploy_contract(&prov_wallet0, &contracts, "Greeter", U256::from(42)).await;
+    let block_num = get_block_number();
+    insert_block(&mut blocks, "Deploy Greeter", block_num);
+    insert_deployment(&mut deployments, "Greeter", block_num, &contract.address());
     // OpenZeppelinERC20TestToken
-    let contract = deploy(
-        prov_wallet0.clone(),
-        contracts
-            .get("OpenZeppelinERC20TestToken")
-            .expect("contract not found"),
+    let contract = deploy_contract(
+        &prov_wallet0,
+        &contracts,
+        "OpenZeppelinERC20TestToken",
         prov_wallet0.address(),
-    )
-    .await;
-    let block_num = prov.get_block_number().await.expect("cannot get block_num");
-    blocks.insert(
-        "Deploy OpenZeppelinERC20TestToken".to_string(),
-        block_num.as_u64(),
     );
-    deployments.insert(
-        "OpenZeppelinERC20TestToken".to_string(),
-        (block_num.as_u64(), contract.address()),
-    );
+    let block_num = get_block_number();
+    insert_block(&mut blocks, "Deploy OpenZeppelinERC20TestToken", block_num);
+    insert_deployment(deploy, key, block_num, &contract);
 
     // Deploy smart contracts for worst case block benches
     //
 
     // CheckMload
-    let contract = deploy(
-        prov_wallet0.clone(),
-        contracts.get("CheckMload").expect("contract not found"),
-        (),
-    )
-    .await;
-    let block_num = prov.get_block_number().await.expect("cannot get block_num");
-    blocks.insert("Deploy CheckMload".to_string(), block_num.as_u64());
-    deployments.insert(
-        "CheckMload".to_string(),
-        (block_num.as_u64(), contract.address()),
+    let contract = deploy_contract(prov_wallet0, &contracts, "CheckMload", ()).await;
+    let block_num = get_block_number();
+    insert_block(&mut blocks, "Deploy CheckMload", block_num);
+    insert_deployment(
+        &mut deployments,
+        "CheckMload",
+        block_num,
+        contract.address(),
     );
 
     // CheckSdiv
-    let contract = deploy(
-        prov_wallet0.clone(),
-        contracts.get("CheckSdiv").expect("contract not found"),
-        (),
-    )
-    .await;
-    let block_num = prov.get_block_number().await.expect("cannot get block_num");
-    blocks.insert("Deploy CheckSdiv".to_string(), block_num.as_u64());
-    deployments.insert(
-        "CheckSdiv".to_string(),
-        (block_num.as_u64(), contract.address()),
-    );
+    let contract = deploy_contract(prov_wallet0, &contracts, "CheckSdiv", ()).await;
+    let block_num = get_block_number();
+    insert_block(&mut blocks, "Deploy CheckSdiv", block_num);
+    insert_deployment(&mut deployments, "CheckSdiv", block_num, contract.address());
 
     // CheckExtCodeSize100
-    let contract = deploy(
-        prov_wallet0.clone(),
-        contracts
-            .get("CheckExtCodeSize100")
-            .expect("contract not found"),
-        (),
-    )
-    .await;
-    let block_num = prov.get_block_number().await.expect("cannot get block_num");
-    blocks.insert("Deploy CheckExtCodeSize100".to_string(), block_num.as_u64());
-    deployments.insert(
-        "CheckExtCodeSize100".to_string(),
-        (block_num.as_u64(), contract.address()),
+    let contract = deploy_contract(prov_wallet0, &contracts, "CheckExtCodeSize100", ()).await;
+
+    let block_num = get_block_number(); // Where u at at
+    insert_block(&mut blocks, "Deploy CheckExtCodeSize100", block_num);
+    insert_deployment(
+        &mut deployments,
+        "CheckExtCodeSize100",
+        block_num,
+        contract.address(),
     );
 
     // ETH transfers: Generate a block with multiple transfers
@@ -308,8 +315,8 @@ async fn main() {
     for tx in pending_txs {
         tx.await.expect("cannot confirm tx");
     }
-    let block_num = prov.get_block_number().await.expect("cannot get block_num");
-    blocks.insert("Fund wallets".to_string(), block_num.as_u64());
+    let block_num = get_block_number();
+    insert_block(&mut blocks, "Fund wallets", block_num);
 
     // Make NUM_TXS transfers in a "chain"
     cli.miner_stop().await.expect("cannot stop miner");
@@ -331,7 +338,7 @@ async fn main() {
         tx.await.expect("cannot confirm tx");
     }
     let block_num = prov.get_block_number().await.expect("cannot get block_num");
-    blocks.insert("Multiple transfers 0".to_string(), block_num.as_u64());
+    insert_block(&mut blocks, "Multiple transfers 0", block_num);
 
     // ERC20 calls (OpenZeppelin)
     //
@@ -360,9 +367,10 @@ async fn main() {
     );
     let receipt = send_confirm_tx(&wallets[2], tx).await;
     assert_eq!(receipt.status, Some(U64::from(0u64)));
-    blocks.insert(
-        "ERC20 OpenZeppelin transfer failed".to_string(),
-        receipt.block_number.unwrap().as_u64(),
+    insert_block(
+        &mut blocks,
+        "ERC20 OpenZeppelin transfer failed",
+        receipt.block_number.as_u64(),
     );
 
     // OpenZeppelin ERC20 single successful transfer (wallet0 sends 123.45 Tokens to
@@ -378,9 +386,10 @@ async fn main() {
     );
     let receipt = send_confirm_tx(&wallets[0], tx).await;
     assert_eq!(receipt.status, Some(U64::from(1u64)));
-    blocks.insert(
-        "ERC20 OpenZeppelin transfer successful".to_string(),
-        receipt.block_number.unwrap().as_u64(),
+    insert_block(
+        &mut blocks,
+        "ERC20 OpenZeppelin transfer successful",
+        receipt.block_number.as_u64(),
     );
 
     // OpenZeppelin ERC20 multiple transfers in a single block (some successful,
@@ -423,10 +432,11 @@ async fn main() {
             receipt
         );
     }
-    let block_num = prov.get_block_number().await.expect("cannot get block_num");
-    blocks.insert(
-        "Multiple ERC20 OpenZeppelin transfers".to_string(),
-        block_num.as_u64(),
+    let block_num = get_block_number();
+    insert_block(
+        &mut blocks,
+        "Multiple ERC20 OpenZeppelin transfers",
+        block_num,
     );
 
     let gen_data = GenDataOutput {
