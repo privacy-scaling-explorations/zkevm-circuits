@@ -386,7 +386,7 @@ pub(crate) mod cached {
     }
 }
 
-/// Super Circuit configuration parameters
+/// Evm Circuit configuration parameters
 #[derive(Default)]
 pub struct EvmCircuitParams {
     is_taiko: bool,

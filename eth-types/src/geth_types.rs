@@ -237,7 +237,7 @@ impl Transaction {
         // accessList])
         let req: Eip1559TransactionRequest = self.into();
         let req = req.chain_id(chain_id);
-        // insert 0x2 at the begin of eip
+        // insert 0x2 at the begin of rlp
         let req: TypedTransaction = req.into();
         let msg = req.rlp();
         let msg_hash: [u8; 32] = Keccak256::digest(&msg)
