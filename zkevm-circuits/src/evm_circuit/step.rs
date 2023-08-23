@@ -99,7 +99,7 @@ pub enum ExecutionState {
     MSIZE,
     GAS,
     JUMPDEST,
-    /// PUSH1, PUSH2, ..., PUSH32
+    /// PUSH0, PUSH1, PUSH2, ..., PUSH32
     PUSH,
     /// DUP1, DUP2, ..., DUP16
     DUP,
@@ -426,6 +426,7 @@ impl ExecutionState {
             Self::GAS => vec![OpcodeId::GAS],
             Self::JUMPDEST => vec![OpcodeId::JUMPDEST],
             Self::PUSH => vec![
+                OpcodeId::PUSH0,
                 OpcodeId::PUSH1,
                 OpcodeId::PUSH2,
                 OpcodeId::PUSH3,
