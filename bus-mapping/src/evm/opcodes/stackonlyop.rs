@@ -417,4 +417,17 @@ mod stackonlyop_tests {
             vec![StackOp::new(1, StackAddress(1023), *MOCK_BASEFEE)],
         );
     }
+
+    #[test]
+    fn push0_opcode_impl() {
+        stack_only_opcode_impl::<0, 1>(
+            OpcodeId::PUSH0,
+            bytecode! {
+                PUSH0
+                STOP
+            },
+            vec![],
+            vec![StackOp::new(1, StackAddress(1023), Word::zero())],
+        );
+    }
 }
