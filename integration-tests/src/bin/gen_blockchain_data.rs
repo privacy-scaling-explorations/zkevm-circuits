@@ -1,3 +1,4 @@
+use eth_types::H160;
 use ethers::{
     abi::{self, Tokenize},
     contract::{builders::ContractCall, Contract, ContractFactory},
@@ -11,15 +12,13 @@ use ethers::{
     middleware::SignerMiddleware,
     providers::{Middleware, PendingTransaction},
     signers::Signer,
-    solc::{CompilerInput, CompilerOutput, EvmVersion, Solc},
+    solc::{CompilerInput, EvmVersion, Solc},
 };
-use halo2_proofs::halo2curves::CurveAffine;
 use integration_tests::{
     get_client, get_provider, get_wallet, log_init, CompiledContract, GenDataOutput, CONTRACTS,
-    CONTRACTS_PATH, WARN,
+    CONTRACTS_PATH,
 };
 use log::{error, info};
-use serde::de::Deserialize;
 use std::{collections::HashMap, fs::File, path::Path, sync::Arc, thread::sleep, time::Duration};
 
 async fn deploy<T, M>(prov: Arc<M>, compiled: &CompiledContract, args: T) -> Contract<M>
@@ -70,7 +69,29 @@ where
         .unwrap()
         .unwrap()
 }
-
+// Helper functions 
+async fn get_block_number() -> Result<U64, &'static str> {
+    let provider = get_provider();
+    provider
+        .get_block_number()
+        .await
+        .map_err(|_| "cannot get block_num")
+}
+fn insert_block(
+    blocks: &mut HashMap<String, u64>,
+    key: &str,
+    block_num: U64,
+) {
+    blocks.insert(key.to_string(), block_num.as_u64());
+}
+fn insert_deployment(
+    deploy: &mut HashMap<String, (u64, H160)>,
+    key: &str,
+    block_num: U64,
+    contractaddy: H160,
+) {
+    deploy.insert(key.to_string(), (block_num.as_u64(), contractaddy));
+}
 #[tokio::main]
 async fn main() {
     log_init();
@@ -92,31 +113,11 @@ async fn main() {
             .clone()
             .evm_version(EvmVersion::London);
 
-        // compilation will either fail with Err variant or return Ok(CompilerOutput)
-        // which may contain Errors or Warnings
-        let output = solc.compile_output(&input).unwrap();
-        let mut deserializer: serde_json::Deserializer<serde_json::de::SliceRead<'_>> =
-            serde_json::Deserializer::from_slice(&output);
-        // The contracts to test the worst-case usage of certain opcodes, such as SDIV, MLOAD, and
-        // EXTCODESIZE, generate big JSON compilation outputs. We disable the recursion limit to
-        // avoid parsing failure.
-        deserializer.disable_recursion_limit();
-        let compiled = match CompilerOutput::deserialize(&mut deserializer) {
-            Err(error) => {
-                panic!("COMPILATION ERROR {:?}\n{:?}", &path_sol, error);
-            }
-            // CompilationOutput is succesfully created (might contain Errors or Warnings)
-            Ok(output) => {
-                info!("COMPILATION OK: {:?}", name);
-                output
-            }
-        };
-
-        if compiled.has_error() || compiled.has_warning(WARN) {
-            panic!(
-                "... but CompilerOutput contains errors/warnings: {:?}:\n{:#?}",
-                &path_sol, compiled.errors
-            );
+        let compiled = solc
+            .compile(&input)
+            .unwrap_or_else(|_| panic!("solc compile error {:?}", path_sol));
+        if !compiled.errors.is_empty() {
+            panic!("Errors compiling {:?}:\n{:#?}", &path_sol, compiled.errors)
         }
 
         let contract = compiled
@@ -159,50 +160,9 @@ async fn main() {
             }
         }
     }
-    async fn get_block_number() -> Result<u64, &'static str> {
-        let provider = get_provider();
-        provider
-            .get_block_number()
-            .await
-            .map_err(|_| "cannot get block_num")
-    }
-
-    fn insert_block(
-        blocks: &mut HashMap<String, u64>,
-        key: &str,
-        result: Result<u64, &'static str>,
-    ) {
-        match result {
-            Ok(block_num) => {
-                blocks.insert(key.to_string(), block_num);
-            }
-            Err(err_msg) => {
-                eprintln!("Error: {}", err_msg); // This will print the error message. Adjust as
-                                                 // needed.
-            }
-        }
-    }
-
-    fn insert_deployment(
-        deploy: &mut HashMap<String, (u64, H160)>,
-        key: &str,
-        block_num: u64,
-        contract: &ContractInstance,
-    ) {
-        deployments.insert(key.to_string(), (block_num, contract.address()));
-    }
-    async fn deploy_contract(
-        prov_wallet: Arc<SignerMiddleware<Provider<Provider>, Wallet<SigningKey<Secp256k1>>>>,
-        contracts: &HashMap<String, CompiledContract>,
-        key: &str,
-        address: T,
-    ) -> Contract<M> {
-        let contract_data = contracts.get(key).ok_or("contract not found")?;
-        deploy(prov_wallet.clone(), contract_data, address)
-    }
 
     // Make sure the blockchain is in a clean state: block 0 is the last block.
-    let block_number = get_block_number();
+    let block_number = get_block_number().await.unwrap();
     if block_number.as_u64() != 0 {
         panic!(
             "Blockchain is not in a clean state.  Last block number: {}",
@@ -229,8 +189,8 @@ async fn main() {
         .expect("cannot send tx")
         .await
         .expect("cannot confirm tx");
-    let block_num = get_block_number();
-    insert_block(&mut blocks, "Transfer 0", block_num);
+    let block_num = get_block_number().await.unwrap();
+    insert_block(&mut blocks, "Transfer", block_num);
 
     // Deploy smart contracts
     //
@@ -239,52 +199,28 @@ async fn main() {
     let prov_wallet0 = Arc::new(SignerMiddleware::new(get_provider(), wallet0));
 
     // Greeter
-    let contract = deploy_contract(&prov_wallet0, &contracts, "Greeter", U256::from(42)).await;
-    let block_num = get_block_number();
+    let contract = deploy(
+        prov_wallet0.clone(),
+        contracts.get("Greeter").expect("contract not found"),
+        U256::from(42),
+    )
+    .await;
+    let block_num = get_block_number().await.unwrap();
     insert_block(&mut blocks, "Deploy Greeter", block_num);
-    insert_deployment(&mut deployments, "Greeter", block_num, &contract.address());
+    insert_deployment(&mut deployments, "Greeter", block_num, contract.address());
+
     // OpenZeppelinERC20TestToken
-    let contract = deploy_contract(
-        &prov_wallet0,
-        &contracts,
-        "OpenZeppelinERC20TestToken",
+    let contract = deploy(
+        prov_wallet0.clone(),
+        contracts
+            .get("OpenZeppelinERC20TestToken")
+            .expect("contract not found"),
         prov_wallet0.address(),
-    );
-    let block_num = get_block_number();
+    )
+    .await;
+    let block_num = get_block_number().await.unwrap();
     insert_block(&mut blocks, "Deploy OpenZeppelinERC20TestToken", block_num);
-    insert_deployment(deploy, key, block_num, &contract);
-
-    // Deploy smart contracts for worst case block benches
-    //
-
-    // CheckMload
-    let contract = deploy_contract(prov_wallet0, &contracts, "CheckMload", ()).await;
-    let block_num = get_block_number();
-    insert_block(&mut blocks, "Deploy CheckMload", block_num);
-    insert_deployment(
-        &mut deployments,
-        "CheckMload",
-        block_num,
-        contract.address(),
-    );
-
-    // CheckSdiv
-    let contract = deploy_contract(prov_wallet0, &contracts, "CheckSdiv", ()).await;
-    let block_num = get_block_number();
-    insert_block(&mut blocks, "Deploy CheckSdiv", block_num);
-    insert_deployment(&mut deployments, "CheckSdiv", block_num, contract.address());
-
-    // CheckExtCodeSize100
-    let contract = deploy_contract(prov_wallet0, &contracts, "CheckExtCodeSize100", ()).await;
-
-    let block_num = get_block_number(); // Where u at at
-    insert_block(&mut blocks, "Deploy CheckExtCodeSize100", block_num);
-    insert_deployment(
-        &mut deployments,
-        "CheckExtCodeSize100",
-        block_num,
-        contract.address(),
-    );
+    insert_deployment(&mut deployments, "OpenZeppelinERC20TestToken", block_num, contract.address());
 
     // ETH transfers: Generate a block with multiple transfers
     //
@@ -315,7 +251,7 @@ async fn main() {
     for tx in pending_txs {
         tx.await.expect("cannot confirm tx");
     }
-    let block_num = get_block_number();
+    let block_num = get_block_number().await.unwrap();
     insert_block(&mut blocks, "Fund wallets", block_num);
 
     // Make NUM_TXS transfers in a "chain"
@@ -337,8 +273,8 @@ async fn main() {
     for tx in pending_txs {
         tx.await.expect("cannot confirm tx");
     }
-    let block_num = prov.get_block_number().await.expect("cannot get block_num");
-    insert_block(&mut blocks, "Multiple transfers 0", block_num);
+    let block_num = get_block_number().await.unwrap();
+    insert_block(&mut blocks, "Multiple transfer 0", block_num);
 
     // ERC20 calls (OpenZeppelin)
     //
@@ -367,11 +303,7 @@ async fn main() {
     );
     let receipt = send_confirm_tx(&wallets[2], tx).await;
     assert_eq!(receipt.status, Some(U64::from(0u64)));
-    insert_block(
-        &mut blocks,
-        "ERC20 OpenZeppelin transfer failed",
-        receipt.block_number.as_u64(),
-    );
+    insert_block(&mut blocks, "ERC20 OpenZeppelin transfer failed", block_num);
 
     // OpenZeppelin ERC20 single successful transfer (wallet0 sends 123.45 Tokens to
     // wallet4)
@@ -386,11 +318,7 @@ async fn main() {
     );
     let receipt = send_confirm_tx(&wallets[0], tx).await;
     assert_eq!(receipt.status, Some(U64::from(1u64)));
-    insert_block(
-        &mut blocks,
-        "ERC20 OpenZeppelin transfer successful",
-        receipt.block_number.as_u64(),
-    );
+    insert_block(&mut blocks,"ERC20 OpenZeppelin transfer successful" , block_num);
 
     // OpenZeppelin ERC20 multiple transfers in a single block (some successful,
     // some unsuccessful)
@@ -432,12 +360,9 @@ async fn main() {
             receipt
         );
     }
-    let block_num = get_block_number();
-    insert_block(
-        &mut blocks,
-        "Multiple ERC20 OpenZeppelin transfers",
-        block_num,
-    );
+    let block_num = get_block_number().await.unwrap();
+    insert_block(&mut blocks, "Multiple ERC20 OpenZeppelin transfers", block_num);
+ 
 
     let gen_data = GenDataOutput {
         coinbase: accounts[0],
