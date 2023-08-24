@@ -293,7 +293,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         );
 
         // Check if the account ETH balance is sufficient
-        let sender_balance_prev = transfer_with_gas_fee.sender_sub_fee.balance_prev();
+        let sender_balance_prev = transfer_with_gas_fee.get_sender_sub_fee().balance_prev();
         let total_eth_cost_sum = cb.query_word32();
         let total_eth_cost = AddWordsGadget::construct(
             cb,
@@ -884,7 +884,7 @@ mod test {
         eth_types::Transaction::from(mock_transaction)
     }
 
-    fn begin_tx_gadget_simple(enable_skipping_invalid_tx: bool) {
+    fn test_begin_tx_gadget_simple(enable_skipping_invalid_tx: bool) {
         // Transfer 1 ether to account with empty code, successfully
         test_ok(
             mock_tx(eth(1), gwei(2), vec![]),
@@ -915,13 +915,9 @@ mod test {
     }
 
     #[test]
-    fn begin_tx_gadget_simple_enable_skipping_invalid_tx() {
-        begin_tx_gadget_simple(true);
-    }
-
-    #[test]
-    fn begin_tx_gadget_simple_disable_skipping_invalid_tx() {
-        begin_tx_gadget_simple(false);
+    fn begin_tx_gadget_simple() {
+        test_begin_tx_gadget_simple(true);
+        test_begin_tx_gadget_simple(false);
     }
 
     #[test]
@@ -954,7 +950,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    fn begin_tx_gadget_rand(enable_skipping_invalid_tx: bool) {
+    fn test_begin_tx_gadget_rand(enable_skipping_invalid_tx: bool) {
         let random_amount = Word::from_little_endian(&rand_bytes(32)) % eth(1);
         let random_gas_price = Word::from_little_endian(&rand_bytes(32)) % gwei(2);
         // If this test fails, we want these values to appear in the CI logs.
@@ -983,13 +979,9 @@ mod test {
     }
 
     #[test]
-    fn begin_tx_gadget_rand_enable_skipping_invalid_tx() {
-        begin_tx_gadget_rand(true);
-    }
-
-    #[test]
-    fn begin_tx_gadget_rand_disable_skipping_invalid_tx() {
-        begin_tx_gadget_rand(false);
+    fn begin_tx_gadget_rand() {
+        test_begin_tx_gadget_rand(true);
+        test_begin_tx_gadget_rand(false);
     }
 
     #[test]

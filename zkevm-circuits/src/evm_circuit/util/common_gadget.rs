@@ -354,9 +354,9 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
 /// unconditionally if must_create is true.  This gadget is used in BeginTx.
 #[derive(Clone, Debug)]
 pub(crate) struct TransferWithGasFeeGadget<F> {
-    pub sender_sub_fee: UpdateBalanceGadget<F, 2, false>,
-    pub sender_sub_value: UpdateBalanceGadget<F, 2, false>,
-    pub receiver: UpdateBalanceGadget<F, 2, true>,
+    sender_sub_fee: UpdateBalanceGadget<F, 2, false>,
+    sender_sub_value: UpdateBalanceGadget<F, 2, false>,
+    receiver: UpdateBalanceGadget<F, 2, true>,
     receiver_exists: Expression<F>,
     must_create: Expression<F>,
     must_read_caller_balance: Expression<F>,
@@ -487,6 +487,10 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         self.value_is_zero
             .assign_value(region, offset, Value::known(Word::from(value)))?;
         Ok(())
+    }
+
+    pub(crate) fn get_sender_sub_fee(&self) -> &UpdateBalanceGadget<F, 2, false> {
+        &self.sender_sub_fee
     }
 }
 
