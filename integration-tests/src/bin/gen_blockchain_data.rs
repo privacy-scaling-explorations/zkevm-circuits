@@ -69,7 +69,7 @@ where
         .unwrap()
         .unwrap()
 }
-// Helper functions 
+// Helper functions
 async fn get_block_number() -> Result<U64, &'static str> {
     let provider = get_provider();
     provider
@@ -77,11 +77,7 @@ async fn get_block_number() -> Result<U64, &'static str> {
         .await
         .map_err(|_| "cannot get block_num")
 }
-fn insert_block(
-    blocks: &mut HashMap<String, u64>,
-    key: &str,
-    block_num: U64,
-) {
+fn insert_block(blocks: &mut HashMap<String, u64>, key: &str, block_num: U64) {
     blocks.insert(key.to_string(), block_num.as_u64());
 }
 fn insert_deployment(
@@ -220,7 +216,12 @@ async fn main() {
     .await;
     let block_num = get_block_number().await.unwrap();
     insert_block(&mut blocks, "Deploy OpenZeppelinERC20TestToken", block_num);
-    insert_deployment(&mut deployments, "OpenZeppelinERC20TestToken", block_num, contract.address());
+    insert_deployment(
+        &mut deployments,
+        "OpenZeppelinERC20TestToken",
+        block_num,
+        contract.address(),
+    );
 
     // ETH transfers: Generate a block with multiple transfers
     //
@@ -318,7 +319,11 @@ async fn main() {
     );
     let receipt = send_confirm_tx(&wallets[0], tx).await;
     assert_eq!(receipt.status, Some(U64::from(1u64)));
-    insert_block(&mut blocks,"ERC20 OpenZeppelin transfer successful" , block_num);
+    insert_block(
+        &mut blocks,
+        "ERC20 OpenZeppelin transfer successful",
+        block_num,
+    );
 
     // OpenZeppelin ERC20 multiple transfers in a single block (some successful,
     // some unsuccessful)
@@ -361,8 +366,11 @@ async fn main() {
         );
     }
     let block_num = get_block_number().await.unwrap();
-    insert_block(&mut blocks, "Multiple ERC20 OpenZeppelin transfers", block_num);
- 
+    insert_block(
+        &mut blocks,
+        "Multiple ERC20 OpenZeppelin transfers",
+        block_num,
+    );
 
     let gen_data = GenDataOutput {
         coinbase: accounts[0],
