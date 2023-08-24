@@ -254,27 +254,27 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let effective_gas_fee = cb.query_word32();
         let effective_tx_value = cb.query_word32();
         cb.condition(tx_is_invalid.expr(), |cb| {
-            cb.require_equal(
+            cb.require_equal_word(
                 "effective_tx_value == 0",
-                effective_tx_value.clone().to_word().lo(),
-                0.expr(),
+                effective_tx_value.clone().to_word(),
+                Word::zero(),
             );
-            cb.require_equal(
+            cb.require_equal_word(
                 "effective_gas_fee == 0",
-                effective_gas_fee.clone().to_word().lo(),
-                0.expr(),
+                effective_gas_fee.clone().to_word(),
+                Word::zero(),
             );
         });
         cb.condition(not::expr(tx_is_invalid.expr()), |cb| {
-            cb.require_equal(
+            cb.require_equal_word(
                 "effective_tx_value == tx_value",
-                effective_tx_value.to_word().lo(),
-                tx_value.to_word().lo(),
+                effective_tx_value.to_word(),
+                tx_value.to_word(),
             );
-            cb.require_equal(
+            cb.require_equal_word(
                 "effective_gas_fee == gas_fee",
-                effective_gas_fee.to_word().lo(),
-                mul_gas_fee_by_gas.product().to_word().lo(),
+                effective_gas_fee.to_word(),
+                mul_gas_fee_by_gas.product().to_word(),
             );
         });
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
@@ -302,8 +302,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         );
         let balance_not_enough = LtWordGadget::construct(
             cb,
-            &Word::from_lo_unchecked(sender_balance_prev.to_word().lo()),
-            &Word::from_lo_unchecked(total_eth_cost.sum().to_word().lo()),
+            &sender_balance_prev.to_word(),
+            &total_eth_cost.sum().to_word(),
         );
 
         // Check if the `is_invalid` value in the tx table is correct.
