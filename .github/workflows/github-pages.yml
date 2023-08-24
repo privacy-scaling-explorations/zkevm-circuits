@@ -29,12 +29,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Generate Docs
-        uses: actions-rs/cargo@v1
-        with:
-          command: doc
-          args: --no-deps
-      - name: Copy Docs to ./docs
         run: |
+          cd ..
+          cargo doc --no-deps
           rm -rf ./docs
           echo "<meta http-equiv=\"refresh\" content=\"0; url=zkevm_circuits\">" > target/doc/index.html
           cp -r target/doc ./docs
