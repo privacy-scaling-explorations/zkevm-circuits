@@ -313,8 +313,8 @@ pub fn run_test(
             max_calldata: 0, // dynamic
             max_bytecode: 5000,
             max_mpt_rows: 5000,
-            max_copy_rows: 55000,
-            max_evm_rows: 0, // dynamic
+            max_copy_rows: 0, // dynamic
+            max_evm_rows: 0,  // dynamic
             max_exp_steps: 5000,
             max_keccak_rows: 0, // dynamic?
             max_poseidon_rows: 0,
