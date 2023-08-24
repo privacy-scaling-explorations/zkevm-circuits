@@ -28,16 +28,11 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Cargo cache
-        uses: actions/cache@v3
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: lint-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          components: rustfmt, clippy
+          override: false
       - name: Generate Docs
         run: |
           cargo doc --no-deps
