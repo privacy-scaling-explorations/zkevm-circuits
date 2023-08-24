@@ -42,7 +42,7 @@ jobs:
       - name: Commit Docs
         uses: EndBug/add-and-commit@v9
         with:
-          add: 'doc'
+          add: 'docs'
       - name: Checkout
         uses: actions/checkout@v3
       - name: Setup Pages
