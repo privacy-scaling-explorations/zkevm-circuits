@@ -171,7 +171,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             .try_into()
             .expect("Mismatched acc len");
 
-        let geth_traces = gen_geth_traces(
+        let mut geth_traces = gen_geth_traces(
             chain_id,
             block.clone(),
             accounts.to_vec(),
@@ -181,12 +181,15 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
 
         // Don't allow invalid transactions unless explicitely allowed to avoid unrelated tests from
         // passing simply because the test transaction was incorrectly set up.
-        for (transaction, geth_trace) in transactions.iter().zip(geth_traces.iter()) {
+        for (transaction, geth_trace) in transactions.iter().zip(geth_traces.iter_mut()) {
             if !transaction.enable_skipping_invalid_tx && geth_trace.invalid {
                 panic!(
                     "{:?}",
                     Error::TracingError(geth_trace.return_value.clone()).to_string()
                 )
+            }
+            if transaction.set_invalid && !geth_trace.invalid {
+                geth_trace.invalid = true;
             }
         }
 

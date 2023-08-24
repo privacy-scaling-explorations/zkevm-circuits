@@ -840,6 +840,7 @@ mod test {
         tx: eth_types::Transaction,
         code: Option<Bytecode>,
         enable_skipping_invalid_tx: bool,
+        set_invalid: bool,
     ) {
         // Get the execution steps from the external tracer
         let ctx = TestContext::<2, 1>::new(
@@ -859,7 +860,8 @@ mod test {
                     .gas(tx.gas)
                     .input(tx.input)
                     .value(tx.value)
-                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
+                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx)
+                    .set_invalid(set_invalid);
             },
             |block, _tx| block.number(0xcafeu64),
         )
@@ -884,12 +886,13 @@ mod test {
         eth_types::Transaction::from(mock_transaction)
     }
 
-    fn test_begin_tx_gadget_simple(enable_skipping_invalid_tx: bool) {
+    fn test_begin_tx_gadget_simple(enable_skipping_invalid_tx: bool, set_invalid: bool) {
         // Transfer 1 ether to account with empty code, successfully
         test_ok(
             mock_tx(eth(1), gwei(2), vec![]),
             None,
             enable_skipping_invalid_tx,
+            set_invalid,
         );
 
         // Transfer 1 ether, successfully
@@ -897,6 +900,7 @@ mod test {
             mock_tx(eth(1), gwei(2), vec![]),
             Some(code_with_return()),
             enable_skipping_invalid_tx,
+            set_invalid,
         );
 
         // Transfer 1 ether, tx reverts
@@ -904,6 +908,7 @@ mod test {
             mock_tx(eth(1), gwei(2), vec![]),
             Some(code_with_revert()),
             enable_skipping_invalid_tx,
+            set_invalid,
         );
 
         // Transfer nothing with some calldata
@@ -911,13 +916,26 @@ mod test {
             mock_tx(eth(0), gwei(2), vec![1, 2, 3, 4, 0, 0, 0, 0]),
             Some(code_with_return()),
             enable_skipping_invalid_tx,
+            set_invalid,
         );
     }
 
     #[test]
     fn begin_tx_gadget_simple() {
-        test_begin_tx_gadget_simple(true);
-        test_begin_tx_gadget_simple(false);
+        test_begin_tx_gadget_simple(true, false);
+        test_begin_tx_gadget_simple(false, false);
+    }
+
+    #[test]
+    #[should_panic]
+    fn begin_tx_gadget_simple_skip_invalid() {
+        test_begin_tx_gadget_simple(true, true);
+    }
+
+    #[test]
+    #[should_panic]
+    fn begin_tx_gadget_simple_no_skip_invalid() {
+        test_begin_tx_gadget_simple(false, true);
     }
 
     #[test]
@@ -950,7 +968,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    fn test_begin_tx_gadget_rand(enable_skipping_invalid_tx: bool) {
+    fn test_begin_tx_gadget_rand(enable_skipping_invalid_tx: bool, set_invalid: bool) {
         let random_amount = Word::from_little_endian(&rand_bytes(32)) % eth(1);
         let random_gas_price = Word::from_little_endian(&rand_bytes(32)) % gwei(2);
         // If this test fails, we want these values to appear in the CI logs.
@@ -974,14 +992,27 @@ mod test {
                 mock_tx(value, gas_price, calldata),
                 code,
                 enable_skipping_invalid_tx,
+                set_invalid,
             );
         }
     }
 
     #[test]
     fn begin_tx_gadget_rand() {
-        test_begin_tx_gadget_rand(true);
-        test_begin_tx_gadget_rand(false);
+        test_begin_tx_gadget_rand(true, false);
+        test_begin_tx_gadget_rand(false, false);
+    }
+
+    #[test]
+    #[should_panic]
+    fn begin_tx_gadget_rand_skip_invalid() {
+        test_begin_tx_gadget_rand(true, true);
+    }
+
+    #[test]
+    #[should_panic]
+    fn begin_tx_gadget_rand_no_skip_invalid() {
+        test_begin_tx_gadget_rand(false, true);
     }
 
     #[test]
@@ -1123,30 +1154,51 @@ mod test {
 
     #[test]
     #[should_panic]
-    fn begin_tx_disable_skipping_invalid_tx_invalid_nonce() {
-        begin_tx_invalid_nonce(false);
+    fn begin_tx_disable_skipping_invalid_tx_invalid_nonce_0() {
+        begin_tx_invalid_nonce(false, false);
     }
 
     #[test]
     #[should_panic]
-    fn begin_tx_disable_skipping_invalid_tx_not_enough_eth() {
-        begin_tx_not_enough_eth(false);
+    fn begin_tx_disable_skipping_invalid_tx_invalid_nonce_1() {
+        begin_tx_invalid_nonce(false, true);
     }
 
     #[test]
     #[should_panic]
-    fn begin_tx_disable_skipping_invalid_tx_insufficient_gas() {
-        begin_tx_insufficient_gas(false);
+    fn begin_tx_disable_skipping_invalid_tx_not_enough_eth_0() {
+        begin_tx_not_enough_eth(false, false);
+    }
+
+    #[test]
+    #[should_panic]
+    fn begin_tx_disable_skipping_invalid_tx_not_enough_eth_1() {
+        begin_tx_not_enough_eth(false, true);
+    }
+
+    #[test]
+    #[should_panic]
+    fn begin_tx_disable_skipping_invalid_tx_insufficient_gas_0() {
+        begin_tx_insufficient_gas(false, false);
+    }
+
+    #[test]
+    #[should_panic]
+    fn begin_tx_disable_skipping_invalid_tx_insufficient_gas_1() {
+        begin_tx_insufficient_gas(false, true);
     }
 
     #[test]
     fn begin_tx_enable_skipping_invalid_tx() {
-        begin_tx_invalid_nonce(true);
-        begin_tx_not_enough_eth(true);
-        begin_tx_insufficient_gas(true);
+        begin_tx_invalid_nonce(true, false);
+        begin_tx_not_enough_eth(true, false);
+        begin_tx_insufficient_gas(true, false);
+        begin_tx_invalid_nonce(true, true);
+        begin_tx_not_enough_eth(true, true);
+        begin_tx_insufficient_gas(true, true);
     }
 
-    fn begin_tx_invalid_nonce(enable_skipping_invalid_tx: bool) {
+    fn begin_tx_invalid_nonce(enable_skipping_invalid_tx: bool, set_invalid: bool) {
         // The nonce of the account doing the transaction is not correct
         // Use the same nonce value for two transactions.
 
@@ -1171,6 +1223,7 @@ mod test {
                     .from(from)
                     .nonce(1)
                     .enable_skipping_invalid_tx(enable_skipping_invalid_tx)
+                    .set_invalid(set_invalid)
                     .overwrite_nonce(true);
             },
             |block, _| block,
@@ -1180,7 +1233,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    fn begin_tx_not_enough_eth(enable_skipping_invalid_tx: bool) {
+    fn begin_tx_not_enough_eth(enable_skipping_invalid_tx: bool, set_invalid: bool) {
         // The account does not have enough ETH to pay for eth_value + tx_gas *
         // tx_gas_price.
         let to = MOCK_ACCOUNTS[0];
@@ -1206,7 +1259,8 @@ mod test {
                     .nonce(2)
                     .gas_price(gwei(1))
                     .gas(Word::from(10u64.pow(5)))
-                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
+                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx)
+                    .set_invalid(set_invalid);
             },
             |block, _| block,
         )
@@ -1215,7 +1269,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    fn begin_tx_insufficient_gas(enable_skipping_invalid_tx: bool) {
+    fn begin_tx_insufficient_gas(enable_skipping_invalid_tx: bool, set_invalid: bool) {
         let to = MOCK_ACCOUNTS[0];
         let from = MOCK_ACCOUNTS[1];
 
@@ -1235,7 +1289,8 @@ mod test {
                     .nonce(2)
                     .gas_price(gwei(1))
                     .gas(Word::from(1))
-                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
+                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx)
+                    .set_invalid(set_invalid);
             },
             |block, _| block,
         )
