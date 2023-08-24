@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["log2_ceil","query_expression"],"mod":["cell_manager","cell_placement_strategy","int_decomposition","word"],"struct":["Challenges","U256"],"trait":["Expr","SubCircuit","SubCircuitConfig"],"type":["Address"]};

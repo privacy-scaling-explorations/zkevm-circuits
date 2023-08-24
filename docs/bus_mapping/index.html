@@ -1,0 +1,212 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="GitHub Workflow Status (branch) Bus-Mapping is a crate designed to parse EVM execution traces and manipulate all of the data they provide in order to obtain structured witness inputs for the EVM Proof and the State Proof."><title>bus_mapping - Rust</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceSerif4-Regular-46f98efaafac5295.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceSerif4-Bold-a2c9cd1067f8b328.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2"><link rel="stylesheet" href="../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../static.files/rustdoc-ba5701c5741a7b69.css" id="mainThemeStyle"><div id="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="bus_mapping" data-themes="" data-resource-suffix="" data-rustdoc-version="1.71.0-nightly (7f94b314c 2023-04-23)" data-search-js="search-618e954b235f6acc.js" data-settings-js="settings-298e1ea74db45b39.js" data-settings-css="settings-7bfb4c59cc6bc502.css" data-theme-light-css="light-0f8c037637f9eb3e.css" data-theme-dark-css="dark-1097f8e92a01e3cf.css" data-theme-ayu-css="ayu-614652228113ac93.css" ></div><script src="../static.files/storage-62ce34ea385b278a.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-f0540c1d82cde29b.js"></script><noscript><link rel="stylesheet" media="(prefers-color-scheme:light)" href="../static.files/light-0f8c037637f9eb3e.css"><link rel="stylesheet" media="(prefers-color-scheme:dark)" href="../static.files/dark-1097f8e92a01e3cf.css"><link rel="stylesheet" href="../static.files/noscript-13285aec31fa243e.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle">&#9776;</button><a class="logo-container" href="../bus_mapping/index.html"><img class="rust-logo" src="../static.files/rust-logo-151179464ae7ed46.svg" alt="logo"></a><h2></h2></nav><nav class="sidebar"><a class="logo-container" href="../bus_mapping/index.html"><img class="rust-logo" src="../static.files/rust-logo-151179464ae7ed46.svg" alt="logo"></a><h2 class="location"><a href="#">Crate bus_mapping</a></h2><div class="sidebar-elems"><ul class="block"><li class="version">Version 0.1.0</li><li><a id="all-types" href="all.html">All Items</a></li></ul><section><ul class="block"><li><a href="#reexports">Re-exports</a></li><li><a href="#modules">Modules</a></li></ul></section></div></nav><main><div class="width-limiter"><nav class="sub"><form class="search-form"><span></span><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../static.files/wheel-7b819b6101059cd0.svg"></a></div></form></nav><section id="main-content" class="content"><div class="main-heading"><h1>Crate <a class="mod" href="#">bus_mapping</a><button id="copy-path" title="Copy item path to clipboard"><img src="../static.files/clipboard-7571035ce49a181d.svg" width="19" height="18" alt="Copy item path"></button></h1><span class="out-of-band"><a class="srclink" href="../src/bus_mapping/lib.rs.html#1-238">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p><img src="https://img.shields.io/github/workflow/status/appliedzkp/zkevm-circuits/CI%20checks/main?style=for-the-badge" alt="GitHub Workflow Status (branch)" />
+Bus-Mapping is a crate designed to parse EVM execution traces and manipulate
+all of the data they provide in order to obtain structured witness inputs
+for the EVM Proof and the State Proof.</p>
+<h3 id="introduction"><a href="#introduction">Introduction</a></h3>
+<p>At the moment every node on ethereum has to validate every transaction in
+the ethereum virtual machine. This means that every transaction adds work
+that everyone needs to do to verify Ethereum’s history. Worse still is that
+each transaction needs to be verified by every new node. Which means the
+amount of work a new node needs to do the sync the network is growing
+constantly. We want to build a proof of validity for the Ethereum blocks to
+avoid this.</p>
+<p>This means making a proof of validity for the EVM + state reads / writes +
+signatures.
+To simplify we separate our proofs into two components.</p>
+<ul>
+<li>
+<p>State proof: State/memory/stack ops have been performed correctly. This
+does not check if the correct location has been read/written. We allow our
+prover to pick any location here and in the EVM proof confirm it is correct.</p>
+</li>
+<li>
+<p>EVM proof: This checks that the correct opcode is called at the correct
+time. It checks the validity of these opcodes. It also confirms that for
+each of these opcodes the state proof performed the correct operation.</p>
+</li>
+</ul>
+<p>Only after verifying both proofs are we confident that that Ethereum block
+is executed correctly.</p>
+<h3 id="bus-mapping"><a href="#bus-mapping">Bus Mapping</a></h3>
+<p>The goal of this crate is to serve as:</p>
+<ul>
+<li>A parsing lib for EVM execution traces.</li>
+<li>A way to infer some witness data that can only be constructed once we’ve analyzed the full
+exec trace.</li>
+<li>An easy interface to collect all of the data to witness into the circuits and witness it with
+few function calls.</li>
+</ul>
+<h3 id="parsing"><a href="#parsing">Parsing</a></h3>
+<p>Provided a JSON file or a JSON as a stream of bytes, which contains an
+execution trace from an EVM, you can parse it and construct an
+<code>ExecutionTrace</code> instance from it. That will automatically fill all of the
+bus-mapping instances of each
+<a href="eth_types::GethExecStep"><code>GethExecStep</code></a>.  Then the
+<a href="circuit_input_builder/struct.CircuitInputBuilder.html" title="struct bus_mapping::circuit_input_builder::CircuitInputBuilder"><code>CircuitInputBuilder</code></a>
+will fill in an
+<a href="operation/struct.OperationContainer.html" title="struct bus_mapping::operation::OperationContainer"><code>OperationContainer</code></a>
+with all of the Memory, Stack and Storage ops performed
+by the provided trace.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>bus_mapping::{Error, mock::BlockData};
+<span class="kw">use </span>bus_mapping::state_db::{<span class="self">self</span>, StateDB, CodeDB};
+<span class="kw">use </span>eth_types::{
+    <span class="self">self</span>, address, Address, Word, Hash, U64, GethExecTrace, GethExecStep, geth_types::GethData, bytecode
+};
+<span class="kw">use </span>mock::test_ctx::{TestContext, helpers::<span class="kw-2">*</span>};
+<span class="kw">use </span>bus_mapping::circuit_input_builder::{Block, CircuitInputBuilder};
+
+<span class="kw">let </span>input_trace = <span class="string">r#&quot;
+[
+    {
+        &quot;pc&quot;: 5,
+        &quot;op&quot;: &quot;PUSH1&quot;,
+        &quot;gas&quot;: 82,
+        &quot;gasCost&quot;: 3,
+        &quot;refund&quot;: 0,
+        &quot;depth&quot;: 1,
+        &quot;stack&quot;: [],
+        &quot;memory&quot;: [
+          &quot;0000000000000000000000000000000000000000000000000000000000000000&quot;,
+          &quot;0000000000000000000000000000000000000000000000000000000000000000&quot;,
+          &quot;0000000000000000000000000000000000000000000000000000000000000080&quot;
+        ]
+      },
+      {
+        &quot;pc&quot;: 7,
+        &quot;op&quot;: &quot;MLOAD&quot;,
+        &quot;gas&quot;: 79,
+        &quot;gasCost&quot;: 3,
+        &quot;refund&quot;: 0,
+        &quot;depth&quot;: 1,
+        &quot;stack&quot;: [
+          &quot;40&quot;
+        ],
+        &quot;memory&quot;: [
+          &quot;0000000000000000000000000000000000000000000000000000000000000000&quot;,
+          &quot;0000000000000000000000000000000000000000000000000000000000000000&quot;,
+          &quot;0000000000000000000000000000000000000000000000000000000000000080&quot;
+        ]
+      },
+      {
+        &quot;pc&quot;: 8,
+        &quot;op&quot;: &quot;STOP&quot;,
+        &quot;gas&quot;: 76,
+        &quot;gasCost&quot;: 0,
+        &quot;refund&quot;: 0,
+        &quot;depth&quot;: 1,
+        &quot;stack&quot;: [
+          &quot;80&quot;
+        ],
+        &quot;memory&quot;: [
+          &quot;0000000000000000000000000000000000000000000000000000000000000000&quot;,
+          &quot;0000000000000000000000000000000000000000000000000000000000000000&quot;,
+          &quot;0000000000000000000000000000000000000000000000000000000000000080&quot;
+        ]
+      }
+]
+&quot;#</span>;
+
+<span class="comment">// We use the [`TestContext`] struct to mock a block.
+</span><span class="kw">let </span>code = <span class="macro">bytecode! </span>{
+    <span class="comment">// Write 0x6f to storage slot 0
+    </span>PUSH1(<span class="number">0x6fu64</span>)
+    PUSH1(<span class="number">0x00u64</span>)
+    SSTORE
+    <span class="comment">// Load storage slot 0
+    </span>PUSH1(<span class="number">0x00u64</span>)
+    SLOAD
+    STOP
+};
+
+<span class="comment">// Get the execution steps from the external tracer
+</span><span class="kw">let </span>block: GethData = TestContext::&lt;<span class="number">2</span>, <span class="number">1</span>&gt;::new(
+    <span class="prelude-val">None</span>,
+    account_0_code_account_1_no_code(code),
+    tx_from_1_to_0,
+    |block, _tx| block.number(<span class="number">0xcafeu64</span>),
+)
+.unwrap()
+.into();
+
+<span class="comment">// Here we update the circuit input with the data from the transaction trace.
+</span><span class="kw">let </span>builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+<span class="kw">let </span>builder = builder
+    .handle_block(<span class="kw-2">&amp;</span>block.eth_block, <span class="kw-2">&amp;</span>block.geth_traces)
+    .unwrap();
+
+<span class="kw">let </span>geth_steps: Vec&lt;GethExecStep&gt; = serde_json::from_str(input_trace).unwrap();
+<span class="kw">let </span>geth_trace = GethExecTrace {
+    return_value: <span class="string">&quot;&quot;</span>.to_string(),
+    gas: block.eth_block.transactions[<span class="number">0</span>].gas.as_u64(),
+    failed: <span class="bool-val">false</span>,
+    struct_logs: geth_steps,
+};
+
+<span class="comment">// Get an ordered vector with all of the Stack operations of this trace.
+</span><span class="kw">let </span>stack_ops = builder.block.container.sorted_stack();
+
+<span class="comment">// You can also iterate over the steps of the trace and witness the EVM Proof.
+</span>builder.block.txs()[<span class="number">0</span>].steps().iter();</code></pre></div>
+<p>Assume we have the following trace:</p>
+<div class="example-wrap"><pre class="language-text,ignore"><code>pc  op              stack (top -&gt; down)                  memory
+--  --------------  ----------------------------------   ---------------------------------------
+...
+53  JUMPDEST        [    ,          ,           ,    ]   {40: 80,  80:          ,  a0:         }
+54  PUSH1 40        [    ,          ,           ,  40]   {40: 80,  80:          ,  a0:         }
+56  MLOAD           [    ,          ,           ,  80]   {40: 80,  80:          ,  a0:         }
+57  PUSH4 deadbeaf  [    ,          ,   deadbeef,  80]   {40: 80,  80:          ,  a0:         }
+62  DUP2            [    ,        80,   deadbeef,  80]   {40: 80,  80:          ,  a0:         }
+63  MSTORE          [    ,          ,           ,  80]   {40: 80,  80:  deadbeef,  a0:         }
+64  PUSH4 faceb00c  [    ,          ,   faceb00c,  80]   {40: 80,  80:  deadbeef,  a0:         }
+69  DUP2            [    ,        80,   faceb00c,  80]   {40: 80,  80:  deadbeef,  a0:         }
+70  MLOAD           [    ,  deadbeef,   faceb00c,  80]   {40: 80,  80:  deadbeef,  a0:         }
+71  ADD             [    ,          ,  1d97c6efb,  80]   {40: 80,  80:  deadbeef,  a0:         }
+72  DUP2            [    ,        80,  1d97c6efb,  80]   {40: 80,  80:  deadbeef,  a0:         }
+73  MSTORE          [    ,          ,           ,  80]   {40: 80,  80: 1d97c6efb,  a0:         }
+74  PUSH4 cafeb0ba  [    ,          ,   cafeb0ba,  80]   {40: 80,  80: 1d97c6efb,  a0:         }
+79  PUSH1 20        [    ,        20,   cafeb0ba,  80]   {40: 80,  80: 1d97c6efb,  a0:         }
+81  DUP3            [  80,        20,   cafeb0ba,  80]   {40: 80,  80: 1d97c6efb,  a0:         }
+82  ADD             [    ,        a0,   cafeb0ba,  80]   {40: 80,  80: 1d97c6efb,  a0:         }
+83  MSTORE          [    ,          ,           ,  80]   {40: 80,  80: 1d97c6efb,  a0: cafeb0ba}
+84  POP             [    ,          ,           ,    ]   {40: 80,  80: 1d97c6efb,  a0: cafeb0ba}
+...
+</code></pre></div>
+<p>Once you have the trace built (following the code found above) you can
+basically:</p>
+<ul>
+<li>Get an iterator/vector over the <code>Stack</code>, <code>Memory</code> or <code>Storage</code> operations ordered on the way
+the State Proof needs.</li>
+</ul>
+<p>On that way, we would get something like this for the Memory ops:</p>
+<div class="example-wrap"><pre class="language-text,ignore"><code>| `key`  | `val`         | `rw`    | `gc` | Note                                     |
+|:------:| ------------- | ------- | ---- | ---------------------------------------- |
+| `0x40` | `0`           | `Write` |      | Init                                     |
+| `0x40` | `0x80`        | `Write` | 0    | Assume written at the begining of `code` |
+| `0x40` | `0x80`        | `Read`  | 4    | `56 MLOAD`                               |
+|   -    |               |         |      |                                          |
+| `0x80` | `0`           | `Write` |      | Init                                     |
+| `0x80` | `0xdeadbeef`  | `Write` | 10   | `63 MSTORE`                              |
+| `0x80` | `0xdeadbeef`  | `Read`  | 16   | `70 MLOAD`                               |
+| `0x80` | `0x1d97c6efb` | `Write` | 24   | `73 MSTORE`                              |
+|   -    |               |         |      |                                          |
+| `0xa0` | `0`           | `Write` |      | Init                                     |
+| `0xa0` | `0xcafeb0ba`  | `Write` | 34   | `83 MSTORE`
+</code></pre></div>
+<p>Where as you see, we group by <code>memory_address</code> and then order by
+<code>global_counter</code>.</p>
+<ul>
+<li>Iterate over the <code>ExecutionTrace</code> itself over
+each <code>ExecutionStep</code>’s is formed by and check which Stack/Memory&amp;Storage
+operations are linked to each step. This is also automatically done via the
+<a href="evm/trait.Opcode.html" title="trait bus_mapping::evm::Opcode"><code>Opcode</code></a> trait defined in this crate.</li>
+</ul>
+<h3 id="documentation"><a href="#documentation">Documentation</a></h3>
+<p>For extra documentation, check the book with the specs written for the
+entire ZK-EVM solution.
+See: <a href="https://hackmd.io/@liangcc/zkvmbook/https%3A%2F%2Fhackmd.io%2FAmhZ2ryITxicmhYFyQ0DEw#Bus-Mapping">https://hackmd.io/@liangcc/zkvmbook/https%3A%2F%2Fhackmd.io%2FAmhZ2ryITxicmhYFyQ0DEw#Bus-Mapping</a></p>
+</div></details><h2 id="reexports" class="small-section-header"><a href="#reexports">Re-exports</a></h2><ul class="item-table"><li><div class="item-name" id="reexport.Error"><code>pub use error::<a class="enum" href="error/enum.Error.html" title="enum bus_mapping::error::Error">Error</a>;</code></div></li></ul><h2 id="modules" class="small-section-header"><a href="#modules">Modules</a></h2><ul class="item-table"><li><div class="item-name"><a class="mod" href="circuit_input_builder/index.html" title="mod bus_mapping::circuit_input_builder">circuit_input_builder</a></div><div class="desc docblock-short">This module contains the CircuitInputBuilder, which is an object that takes
+types from geth / web3 and outputs the circuit inputs.</div></li><li><div class="item-name"><a class="mod" href="error/index.html" title="mod bus_mapping::error">error</a></div><div class="desc docblock-short">Error module for the bus-mapping crate</div></li><li><div class="item-name"><a class="mod" href="evm/index.html" title="mod bus_mapping::evm">evm</a></div><div class="desc docblock-short">Evm types needed for parsing instruction sets as well</div></li><li><div class="item-name"><a class="mod" href="exec_trace/index.html" title="mod bus_mapping::exec_trace">exec_trace</a></div><div class="desc docblock-short">This module contains the logic for parsing and interacting with EVM
+execution traces.</div></li><li><div class="item-name"><a class="mod" href="mock/index.html" title="mod bus_mapping::mock">mock</a></div><div class="desc docblock-short">Mock types and functions to generate mock data useful for tests</div></li><li><div class="item-name"><a class="mod" href="operation/index.html" title="mod bus_mapping::operation">operation</a></div><div class="desc docblock-short">Collection of structs and functions used to:</div></li><li><div class="item-name"><a class="mod" href="precompile/index.html" title="mod bus_mapping::precompile">precompile</a></div><div class="desc docblock-short">precompile helpers</div></li><li><div class="item-name"><a class="mod" href="rpc/index.html" title="mod bus_mapping::rpc">rpc</a></div><div class="desc docblock-short">Module which contains all the RPC calls that are needed at any point to
+query a Geth node in order to get a Block, Tx or Trace info.</div></li><li><div class="item-name"><a class="mod" href="state_db/index.html" title="mod bus_mapping::state_db">state_db</a></div><div class="desc docblock-short">Implementation of an in-memory key-value database to represent the
+Ethereum State Trie.</div></li></ul></section></div></main></body></html>

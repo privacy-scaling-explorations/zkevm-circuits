@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["account_0_code_account_1_no_code","tx_from_1_to_0"]};

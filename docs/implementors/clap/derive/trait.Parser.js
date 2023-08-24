@@ -1,0 +1,3 @@
+(function() {var implementors = {
+"testool":[["impl Parser for <a class=\"struct\" href=\"testool/struct.Args.html\" title=\"struct testool::Args\">Args</a>"],["impl Parser for <a class=\"enum\" href=\"testool/enum.Circuits.html\" title=\"enum testool::Circuits\">Circuits</a>"]]
+};if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

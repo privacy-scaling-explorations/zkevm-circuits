@@ -1,0 +1,3 @@
+(function() {var implementors = {
+"testool":[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/convert/trait.TryInto.html\" title=\"trait core::convert::TryInto\">TryInto</a>&lt;Account&gt; for <a class=\"struct\" href=\"testool/statetest/spec/struct.AccountMatch.html\" title=\"struct testool::statetest::spec::AccountMatch\">AccountMatch</a>"]]
+};if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

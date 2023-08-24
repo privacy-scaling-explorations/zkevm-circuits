@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BITS","LIMBS"],"fn":["aggregate","compile"],"struct":["AggregationConfig","Config","EvmTranscript","NativeLoader","RootCircuit","Snark","SnarkWitness","TestAggregationCircuit"],"type":["EccChip","Gwc","Halo2Loader","KzgDk","KzgSvk","PlonkSuccinctVerifier","PlonkVerifier","PoseidonTranscript","Shplonk"]};

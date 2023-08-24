@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["eip150_gas","memory_copier_gas_cost","memory_expansion_gas_cost"]};
