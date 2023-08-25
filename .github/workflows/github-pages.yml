@@ -28,13 +28,9 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-        with:
-          token: ${{ github.token }}
+      - name: Checkout
+        uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
-        with:
-          components: rustfmt, clippy
-          override: false
       - name: Generate Docs
         run: |
           cargo doc --no-deps
