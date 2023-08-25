@@ -28,7 +28,10 @@ use crate::{
     },
 };
 use bus_mapping::state_db::CodeDB;
-use eth_types::{evm_types::GasCost, keccak256, Field, ToScalar, ToWord, U256};
+use eth_types::{
+    evm_types::{GasCost, INIT_CODE_WORD_GAS},
+    keccak256, Field, ToScalar, ToWord, U256,
+};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -173,8 +176,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Calculate gas cost of init code for EIP-3860.
         let init_code_gas_cost = select::expr(
             tx_is_create.expr(),
-            tx_call_data_word_length.quotient().expr()
-                * eth_types::evm_types::INIT_CODE_WORD_GAS.expr(),
+            tx_call_data_word_length.quotient().expr() * INIT_CODE_WORD_GAS.expr(),
             0.expr(),
         );
 
@@ -693,8 +695,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             nonce_prev.to_scalar().unwrap(),
         )?;
 
-        self.tx_call_data_word_length
-            .assign(region, offset, tx.call_data.len() as u128 + 31)?;
+        let (tx_call_data_word_length_quotient, _) = self.tx_call_data_word_length.assign(
+            region,
+            offset,
+            tx.call_data.len() as u128 + 31,
+        )?;
         self.reversion_info.assign(
             region,
             offset,
@@ -704,7 +709,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         let init_code_gas_cost = if tx.is_create() {
             // Calculate gas cost of init code for EIP-3860.
-            (tx.call_data.len() as u64 + 31) / 32 * eth_types::evm_types::INIT_CODE_WORD_GAS
+            tx_call_data_word_length_quotient * INIT_CODE_WORD_GAS as u128
         } else {
             0
         };
@@ -715,7 +720,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             F::from(GasCost::TX),
         ) + F::from(tx.call_data_gas_cost())
             + F::from(tx.access_list_gas_cost)
-            + F::from(init_code_gas_cost);
+            + F::from(init_code_gas_cost as u64);
 
         // Check gas_left is sufficient
         self.is_gas_not_enough
