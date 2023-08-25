@@ -6,6 +6,8 @@ mod block;
 mod call;
 mod execution;
 mod input_state_ref;
+#[cfg(feature = "scroll")]
+mod l2;
 #[cfg(test)]
 mod tracer_tests;
 mod transaction;
@@ -46,6 +48,8 @@ use ethers_core::utils::keccak256;
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
 use log::warn;
+#[cfg(feature = "scroll")]
+use mpt_zktrie::state::ZktrieState;
 use std::{
     collections::{BTreeMap, HashMap},
     iter,
@@ -175,6 +179,9 @@ pub struct CircuitInputBuilder {
     pub block: Block,
     /// Block Context
     pub block_ctx: BlockContext,
+    #[cfg(feature = "scroll")]
+    /// Initial Zktrie Status for a incremental updating
+    pub mpt_init_state: ZktrieState,
 }
 
 impl<'a> CircuitInputBuilder {
@@ -186,6 +193,8 @@ impl<'a> CircuitInputBuilder {
             code_db,
             block: block.clone(),
             block_ctx: BlockContext::new(),
+            #[cfg(feature = "scroll")]
+            mpt_init_state: Default::default(),
         }
     }
     /// Create a new CircuitInputBuilder from the given `eth_block` and
