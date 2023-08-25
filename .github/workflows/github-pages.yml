@@ -38,15 +38,12 @@ jobs:
       - name: Generate Docs
         run: |
           cargo doc --no-deps
-          rm -rf ./docs
-          echo "<meta http-equiv=\"refresh\" content=\"0; url=zkevm_circuits\">" > target/doc/index.html
-          cp -r target/doc ./docs
       - name: Setup Pages
         uses: actions/configure-pages@v3
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v2
         with:
-          path: 'docs'
+          path: 'target/doc'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v2
