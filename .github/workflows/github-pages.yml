@@ -12,7 +12,6 @@ on:
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
-  deployments: write
   pages: write
   id-token: write
 
@@ -35,6 +34,11 @@ jobs:
         run: |
           cargo doc --no-deps
           echo "<meta http-equiv=\"refresh\" content=\"0; url=zkevm_circuits\">" > target/doc/index.html
+      - name: Fix permissions
+        run: |
+          chmod -c -R +rX "_site/" | while read line; do
+            echo "::warning title=Invalid file permissions automatically fixed::$line"
+          done
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v2
         with:
