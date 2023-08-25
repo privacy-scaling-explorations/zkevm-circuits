@@ -28,12 +28,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
+      - name: Setup Pages
+        uses: actions/configure-pages@v3
       - name: Generate Docs
         run: |
           cargo doc --no-deps
           echo "<meta http-equiv=\"refresh\" content=\"0; url=zkevm_circuits\">" > target/doc/index.html
-      - name: Setup Pages
-        uses: actions/configure-pages@v3
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v2
         with:
@@ -48,5 +48,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v2
-        with:
-          token: ${{github.token}}
