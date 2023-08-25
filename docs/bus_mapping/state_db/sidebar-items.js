@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["Account","CodeDB","EMPTY_CODE_HASH_LE","StateDB"]};

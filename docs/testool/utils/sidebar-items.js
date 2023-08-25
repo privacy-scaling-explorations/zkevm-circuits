@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"constant":["TEST_FORK"],"enum":["MainnetFork"],"fn":["bytecode_of","current_git_commit","current_submodule_git_commit","print_trace"]};

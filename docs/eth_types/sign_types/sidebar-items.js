@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["biguint_to_32bytes_le","ct_option_ok_or","pk_bytes_le","pk_bytes_swap_endianness","recover_pk","sign"],"struct":["SECP256K1_Q","SignData"]};

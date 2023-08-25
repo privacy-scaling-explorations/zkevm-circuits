@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"constant":["MAX_DETAILS_LEN"],"enum":["ResultLevel"],"fn":["trim"],"struct":["DiffEntry","Diffs","Report","ResultInfo","ResultLevelIter","Results"]};

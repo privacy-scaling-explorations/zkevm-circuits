@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Ref"],"struct":["Refs","YamlStateTestBuilder"],"type":["Label"]};

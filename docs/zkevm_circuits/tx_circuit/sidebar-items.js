@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["sign_verify"],"struct":["TxCircuit","TxCircuitConfig","TxCircuitConfigArgs"]};

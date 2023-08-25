@@ -1,3 +1,0 @@
-(function() {var implementors = {
-"testool":[["impl FromArgMatches for <a class=\"enum\" href=\"testool/enum.Circuits.html\" title=\"enum testool::Circuits\">Circuits</a>"],["impl FromArgMatches for <a class=\"struct\" href=\"testool/struct.Args.html\" title=\"struct testool::Args\">Args</a>"]]
-};if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

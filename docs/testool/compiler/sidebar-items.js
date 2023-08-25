@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Language","Severity"],"struct":["BytecodeResult","Cache","CompilationError","CompilationResult","Compiler","CompilerInput","CompilerSettings","Contract","Evm","Optimizer","Source","SourceLocation"]};

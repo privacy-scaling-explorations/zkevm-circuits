@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["FixedTableTag","RlpItemType"],"fn":["load_proof"],"mod":["witness_row"],"struct":["MPTCircuit","MPTCircuitParams","MPTConfig","MPTContext","StateMachineConfig"]};

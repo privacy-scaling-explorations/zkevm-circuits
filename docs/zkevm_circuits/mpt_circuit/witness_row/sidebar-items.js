@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"constant":["NODE_RLP_TYPES_ACCOUNT","NODE_RLP_TYPES_BRANCH","NODE_RLP_TYPES_START","NODE_RLP_TYPES_STORAGE"],"struct":["AccountNode","BranchNode","ExtensionBranchNode","ExtensionNode","Node","StartNode","StorageNode"]};

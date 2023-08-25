@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["from_bits"],"struct":["BinaryNumberChip","BinaryNumberConfig"],"trait":["AsBits"]};

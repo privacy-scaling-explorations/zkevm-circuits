@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["BlockNumber"],"fn":["serialize"],"struct":["GethClient"]};

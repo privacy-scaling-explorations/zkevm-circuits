@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["deploy","erc20_transfer","main","send_confirm_tx"]};

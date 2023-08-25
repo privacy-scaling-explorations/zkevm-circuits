@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["IsZeroChip","IsZeroConfig"],"trait":["IsZeroInstruction"]};

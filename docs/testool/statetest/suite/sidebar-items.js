@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["load_statetests_suite","run_statetests_suite"]};

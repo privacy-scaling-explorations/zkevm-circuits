@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["gen_geth_traces"],"mod":["helpers"],"struct":["LoggerConfig","TestContext"]};

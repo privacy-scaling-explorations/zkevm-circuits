@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["empty_code_hash_word_value"],"struct":["Word","WordLimbs"],"trait":["WordExpr"]};

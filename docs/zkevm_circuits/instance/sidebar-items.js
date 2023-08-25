@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["public_data_convert"],"struct":["BlockValues","ExtraValues","PublicData","TxValues"]};

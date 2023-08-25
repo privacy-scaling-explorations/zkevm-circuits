@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"constant":["CONFIG_FILE"],"struct":["Config","SkipPaths","SkipTests","TestSuite","TestsSet"]};

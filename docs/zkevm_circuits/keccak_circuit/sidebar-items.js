@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["keccak_packed_multi"],"struct":["KeccakCircuit","KeccakCircuitConfig","KeccakCircuitConfigArgs"]};

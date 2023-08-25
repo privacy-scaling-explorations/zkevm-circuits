@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["trace"],"struct":["LoggerConfig","TraceConfig"]};
