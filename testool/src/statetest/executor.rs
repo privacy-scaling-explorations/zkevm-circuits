@@ -1,8 +1,12 @@
 use super::{AccountMatch, StateTest, StateTestResult};
 use crate::config::TestSuite;
-use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams, PrecompileEcParams};
+use bus_mapping::{
+    circuit_input_builder::{CircuitInputBuilder, CircuitsParams, PrecompileEcParams},
+    state_db::CodeDB,
+};
 use eth_types::{
-    geth_types, geth_types::TxType, Address, Bytes, GethExecTrace, ToBigEndian, U256, U64,
+    geth_types, geth_types::TxType, Address, Bytes, GethExecTrace, ToBigEndian, ToWord, H256, U256,
+    U64,
 };
 use ethers_core::{
     types::{transaction::eip2718::TypedTransaction, TransactionRequest},
@@ -43,6 +47,9 @@ pub enum StateTestError {
     SkipTestMaxSteps(usize),
     #[error("SkipTestSelfDestruct")]
     SkipTestSelfDestruct,
+    #[error("SkipTestDifficulty")]
+    // scroll evm always returns 0 for "difficulty" opcode
+    SkipTestDifficulty,
     #[error("SkipTestBalanceOverflow")]
     SkipTestBalanceOverflow,
     #[error("Exception(expected:{expected:?}, found:{found:?})")]
@@ -53,12 +60,15 @@ impl StateTestError {
     pub fn is_skip(&self) -> bool {
         // Avoid lint `variant is never constructed` if no feature skip-self-destruct.
         let _ = StateTestError::SkipTestSelfDestruct;
+        let _ = StateTestError::SkipTestDifficulty;
 
         matches!(
             self,
             StateTestError::SkipTestMaxSteps(_)
                 | StateTestError::SkipTestMaxGasLimit(_)
                 | StateTestError::SkipTestSelfDestruct
+                | StateTestError::SkipTestBalanceOverflow
+                | StateTestError::SkipTestDifficulty
         )
     }
 }
@@ -215,11 +225,21 @@ fn check_geth_traces(
 ) -> Result<(), StateTestError> {
     #[cfg(feature = "skip-self-destruct")]
     if geth_traces.iter().any(|gt| {
-        gt.struct_logs
-            .iter()
-            .any(|sl| sl.op == eth_types::evm_types::OpcodeId::SELFDESTRUCT)
+        gt.struct_logs.iter().any(|sl| {
+            sl.op == eth_types::evm_types::OpcodeId::SELFDESTRUCT
+                || sl.op == eth_types::evm_types::OpcodeId::INVALID(0xff)
+        })
     }) {
         return Err(StateTestError::SkipTestSelfDestruct);
+    }
+
+    #[cfg(feature = "scroll")]
+    if geth_traces.iter().any(|gt| {
+        gt.struct_logs
+            .iter()
+            .any(|sl| sl.op == eth_types::evm_types::OpcodeId::DIFFICULTY)
+    }) {
+        return Err(StateTestError::SkipTestDifficulty);
     }
 
     if geth_traces[0].struct_logs.len() as u64 > suite.max_steps {
@@ -508,7 +528,7 @@ pub fn run_test(
 
     #[cfg(feature = "scroll")]
     let result = trace_config_to_witness_block_l2(
-        trace_config,
+        trace_config.clone(),
         st,
         suite,
         circuits_params,
@@ -516,14 +536,14 @@ pub fn run_test(
     )?;
     #[cfg(not(feature = "scroll"))]
     let result = trace_config_to_witness_block_l1(
-        trace_config,
+        trace_config.clone(),
         st,
         suite,
         circuits_params,
         circuits_config.verbose,
     )?;
 
-    let (witness_block, builder) = match result {
+    let (witness_block, mut builder) = match result {
         Some((witness_block, builder)) => (witness_block, builder),
         None => return Ok(()),
     };
@@ -545,6 +565,35 @@ pub fn run_test(
         prover.assert_satisfied_par();
     };
 
+    //#[cfg(feature = "scroll")]
+    {
+        // fill these "untouched" storage slots
+        // It is better to fill these info after (instead of before) bus-mapping re-exec.
+        // To prevent these data being used unexpectedly.
+        for account in trace_config.accounts.values() {
+            builder.code_db.insert(account.code.to_vec());
+            let (exist, acc_in_local_sdb) = builder.sdb.get_account_mut(&account.address);
+            if !exist {
+                // modified from bus-mapping/src/mock.rs
+                let keccak_code_hash = H256(keccak256(account.code.to_vec()));
+                let code_hash = CodeDB::hash(&account.code.to_vec());
+                *acc_in_local_sdb = bus_mapping::state_db::Account {
+                    nonce: account.nonce,
+                    balance: account.balance,
+                    storage: account.storage.clone(),
+                    code_hash,
+                    keccak_code_hash,
+                    code_size: account.code.len().to_word(),
+                };
+            } else {
+                for (k, v) in &account.storage {
+                    if !acc_in_local_sdb.storage.contains_key(k) {
+                        acc_in_local_sdb.storage.insert(*k, *v);
+                    }
+                }
+            }
+        }
+    }
     check_post(&builder, &post)?;
 
     Ok(())
