@@ -19,7 +19,7 @@ use crate::{
         StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField, TxReceiptOp,
         RW,
     },
-    precompile::is_precompiled,
+    precompile::{is_precompiled, PrecompileCalls},
     state_db::{CodeDB, StateDB},
     Error,
 };
@@ -1295,7 +1295,11 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // successful revert also makes call.is_success == false
         // but this "successful revert" should not be handled here
-        if !is_return_revert_succ && !call.is_success {
+        if !is_return_revert_succ
+            && !call.is_success
+            && !exec_step.is_precompiled()
+            && !exec_step.is_precompile_oog_err()
+        {
             // add call failure ops for exception cases
             self.call_context_read(
                 exec_step,
@@ -1644,20 +1648,46 @@ impl<'a> CircuitInputStateRef<'a> {
                 }
             }
 
+            // Precompile call failures.
             if matches!(
                 step.op,
                 OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL
             ) {
                 let code_address = step.stack.nth_last(1)?.to_address();
+                // NOTE: we do not know the amount of gas that precompile got here
+                //   because the callGasTemp might probably be smaller than the gas
+                //   on top of the stack (step.stack.last())
+                // Therefore we postpone the oog handling to the implementor of callop.
                 if is_precompiled(&code_address) {
-                    // Log the precompile address and gas left. Since this failure is mainly caused
-                    // by out of gas.
-                    log::trace!(
-                        "Precompile failed: code_address = {}, step.gas = {}",
-                        code_address,
-                        step.gas.0,
-                    );
-                    return Ok(Some(ExecError::PrecompileFailed));
+                    let precompile_call: PrecompileCalls = code_address[19].into();
+                    match precompile_call {
+                        PrecompileCalls::Sha256
+                        | PrecompileCalls::Ripemd160
+                        | PrecompileCalls::Blake2F => {
+                            // Log the precompile address and gas left. Since this failure is mainly
+                            // caused by out of gas.
+                            log::trace!(
+                                "Precompile failed: code_address = {}, step.gas = {}",
+                                code_address,
+                                step.gas.0,
+                            );
+                            return Ok(Some(ExecError::PrecompileFailed));
+                        }
+                        PrecompileCalls::Modexp => {
+                            // Log the precompile address and gas left. Since this failure is mainly
+                            // caused by out of gas.
+                            log::trace!(
+                                "Precompile failed: code_address = {}, step.gas = {}",
+                                code_address,
+                                step.gas.0,
+                            );
+                            return Ok(None);
+                        }
+                        pre_call => {
+                            log::trace!("precompile call failed for {:?}", pre_call);
+                            return Ok(None);
+                        }
+                    }
                 }
             }
 
