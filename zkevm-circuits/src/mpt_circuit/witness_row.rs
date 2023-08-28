@@ -15,7 +15,7 @@ pub(crate) enum StorageRowType {
     LongExtNodeKey,
     LongExtNodeNibbles,
     LongExtNodeValue,
-    ShorExtNodeKey,
+    ShortExtNodeKey,
     ShortExtNodeNibbles,
     ShortExtNodeValue,
     Address,
@@ -40,7 +40,7 @@ pub(crate) enum AccountRowType {
     LongExtNodeKey,
     LongExtNodeNibbles,
     LongExtNodeValue,
-    ShorExtNodeKey,
+    ShortExtNodeKey,
     ShortExtNodeNibbles,
     ShortExtNodeValue,
     Address,
@@ -67,9 +67,9 @@ pub(crate) enum ExtensionBranchRowType {
     Child13,
     Child14,
     Child15,
-    KeyS,
+    Key, // Both (S and C) extension nodes have the same key - when it is different, we have a modified extension node case.
     ValueS,
-    KeyC,
+    Nibbles, // The list of second nibbles (key byte = nibble1 * 16 + nibble2) that correspond to the key.
     ValueC,
     Count,
 }
@@ -123,6 +123,7 @@ pub struct AccountNode {
     pub(crate) drifted_rlp_bytes: Vec<u8>,
     pub(crate) wrong_rlp_bytes: Vec<u8>,
     pub(crate) is_mod_extension: [bool; 2],
+    pub(crate) mod_list_rlp_bytes: [Vec<u8>; 2],
 }
 
 /// MPT storage node
@@ -135,6 +136,7 @@ pub struct StorageNode {
     pub(crate) drifted_rlp_bytes: Vec<u8>,
     pub(crate) wrong_rlp_bytes: Vec<u8>,
     pub(crate) is_mod_extension: [bool; 2],
+    pub(crate) mod_list_rlp_bytes: [Vec<u8>; 2],
 }
 
 /// MPT node

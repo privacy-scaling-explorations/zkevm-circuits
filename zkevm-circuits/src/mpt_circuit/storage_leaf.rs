@@ -31,7 +31,7 @@ use crate::{
 use super::{
     helpers::{Indexable, KeyDataWitness, ListKeyGadget, WrongGadget},
     rlp_gadgets::{RLPItemWitness, RLPValueGadget},
-    witness_row::{Node, StorageRowType},
+    witness_row::{Node, StorageRowType}, mod_extension::ModExtensionGadget,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -50,6 +50,9 @@ pub(crate) struct StorageLeafConfig<F> {
     is_storage_mod_proof: IsEqualGadget<F>,
     is_non_existing_storage_proof: IsEqualGadget<F>,
     is_mod_extension: [Cell<F>; 2],
+    // TODO: move into a gadget
+    long_mod_ext_rlp_key: ListKeyGadget<F>,
+    mod_extension: ModExtensionGadget<F>,
 }
 
 impl<F: Field> StorageLeafConfig<F> {
@@ -203,6 +206,51 @@ impl<F: Field> StorageLeafConfig<F> {
                         }}
                     }} 
                 }};
+            
+                if is_s {
+                    ifx! {config.is_mod_extension[is_s.idx()] => {
+                        config.mod_extension = ModExtensionGadget::configure(
+                            meta,
+                            cb,
+                            ctx.clone(),
+                        );
+                    }};
+
+                    // TODO: move into a gadget, use is_s
+                    let long_mod_ext_key_items = 
+                        ctx.rlp_item(
+                            meta,
+                            cb,
+                            StorageRowType::LongExtNodeKey as usize,
+                            RlpItemType::Key,
+                        );
+                    config.long_mod_ext_rlp_key = ListKeyGadget::construct(cb, &long_mod_ext_key_items);
+
+                    let long_mod_ext_rlp_value = 
+                        ctx.rlp_item(
+                            meta,
+                            cb,
+                            StorageRowType::LongExtNodeValue as usize,
+                            RlpItemType::Value,
+                        );
+
+                    // Extension node RLC
+                    let long_mod_ext_rlc = config
+                        .long_mod_ext_rlp_key
+                        .rlc2(&cb.keccak_r)
+                        .rlc_chain_rev(long_mod_ext_rlp_value.rlc_chain_data());
+                
+                    let long_mod_ext_num_bytes = config.long_mod_ext_rlp_key.rlp_list.num_bytes();
+
+                    let parent_data = &mut config.parent_data[is_s.idx()];
+                    *parent_data =
+                        ParentData::load("leaf load", cb, &ctx.memory[parent_memory(is_s)], 0.expr());
+
+                    require!(vec![1.expr(), long_mod_ext_rlc.expr(), long_mod_ext_num_bytes.expr(), parent_data.hash.lo().expr(), parent_data.hash.hi().expr()] => @KECCAK);
+
+                    // End TODO
+                }
+
                 // Key done, set the default values
                 KeyData::store_defaults(cb, &ctx.memory[key_memory(is_s)]);
                 // Store the new parent
@@ -302,6 +350,7 @@ impl<F: Field> StorageLeafConfig<F> {
                     require!(vec![1.expr(), address_item.bytes_le()[1..33].rlc(&cb.keccak_r), 32.expr(), key.lo(), key.hi()] => @KECCAK);
                 }
             }};
+ 
             ctx.mpt_table.constrain(
                 meta,
                 &mut cb.base,
@@ -497,6 +546,24 @@ impl<F: Field> StorageLeafConfig<F> {
         } else {
             MPTProofType::Disabled
         };
+        
+        // TODO: move into ModExtensionGadget, use is_s
+        let mod_ext_key_items = [
+            rlp_values[StorageRowType::LongExtNodeKey as usize].clone(),
+            rlp_values[StorageRowType::ShortExtNodeKey as usize].clone(),
+        ];
+        let mod_ext_value_bytes = [
+            rlp_values[StorageRowType::LongExtNodeValue as usize].clone(),
+            rlp_values[StorageRowType::ShortExtNodeValue as usize].clone(),
+        ];
+
+        let long_mod_ext_rlp_key = self.long_mod_ext_rlp_key.assign(
+            region,
+            offset,
+            &storage.mod_list_rlp_bytes[true.idx()],
+            &mod_ext_key_items[true.idx()],
+        )?;
+
         mpt_config.mpt_table.assign_cached(
             region,
             offset,

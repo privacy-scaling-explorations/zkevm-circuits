@@ -17,6 +17,7 @@ mod branch;
 mod extension;
 mod extension_branch;
 mod helpers;
+mod mod_extension;
 mod param;
 mod rlp_gadgets;
 mod start;
