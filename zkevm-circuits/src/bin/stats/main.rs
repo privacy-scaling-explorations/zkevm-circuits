@@ -18,19 +18,16 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     match &args[1][..] {
-        "evm" => evm_states_stats(false),
-        "taiko_evm" => evm_states_stats(true),
-        "state" => state_states_stats(false),
-        "tako_state" => state_states_stats(true),
-        "copy" => copy_states_stats(false),
-        "taiko_copy" => copy_states_stats(true),
+        "evm" => evm_states_stats(),
+        "state" => state_states_stats(),
+        "copy" => copy_states_stats(),
         "exec" => get_exec_steps_occupancy(),
         &_ => unreachable!("Unsupported arg"),
     }
 }
 
 /// Prints the stats of EVM circuit per execution state.
-fn evm_states_stats(is_taiko: bool) {
+fn evm_states_stats() {
     print_circuit_stats_by_states(
         |state| {
             // TODO: Enable CREATE/CREATE2 once they are supported
@@ -63,13 +60,12 @@ fn evm_states_stats(is_taiko: bool) {
                 PUSH2(0x50)
             },
         },
-        |_, state, _| state.get_step_height_option(is_taiko).unwrap(),
-        is_taiko,
+        |_, state, _| state.get_step_height_option(false).unwrap(),
     );
 }
 
 /// Prints the stats of State circuit per execution state.
-fn state_states_stats(is_taiko: bool) {
+fn state_states_stats() {
     print_circuit_stats_by_states(
         |state| {
             // TODO: Enable CREATE/CREATE2 once they are supported
@@ -87,12 +83,11 @@ fn state_states_stats(is_taiko: bool) {
             let step_next = &block.txs[0].steps()[step_index + 1];
             step_next.rwc.0 - step.rwc.0
         },
-        is_taiko,
     );
 }
 
 /// Prints the stats of Copy circuit per execution state.
-fn copy_states_stats(is_taiko: bool) {
+fn copy_states_stats() {
     print_circuit_stats_by_states(
         |state| {
             // TODO: Enable CREATE/CREATE2 once they are supported
@@ -115,7 +110,6 @@ fn copy_states_stats(is_taiko: bool) {
                 .map(|c| c.bytes.len() * 2)
                 .sum::<usize>()
         },
-        is_taiko,
     );
 }
 

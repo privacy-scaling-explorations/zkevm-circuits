@@ -114,12 +114,10 @@ pub(crate) fn print_circuit_stats_by_states(
     // circuit input builder Block, the current execution state, and the step index in circuit
     // input builder tx.
     fn_height: impl Fn(&circuit_input_builder::Block, ExecutionState, usize) -> usize,
-    // in taiko context
-    is_taiko: bool,
 ) {
     let mut implemented_states = Vec::new();
     for state in ExecutionState::iter() {
-        let height = state.get_step_height_option(is_taiko);
+        let height = state.get_step_height_option(false);
         if height.is_some() {
             implemented_states.push(state);
         }
