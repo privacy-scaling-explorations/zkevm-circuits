@@ -213,10 +213,12 @@ impl<F: Field> StorageLeafConfig<F> {
                             meta,
                             cb,
                             ctx.clone(),
+                            &mut config.parent_data,
                         );
                     }};
 
                     // TODO: move into a gadget, use is_s
+                    /*
                     let long_mod_ext_key_items = 
                         ctx.rlp_item(
                             meta,
@@ -247,6 +249,7 @@ impl<F: Field> StorageLeafConfig<F> {
                         ParentData::load("leaf load", cb, &ctx.memory[parent_memory(is_s)], 0.expr());
 
                     require!(vec![1.expr(), long_mod_ext_rlc.expr(), long_mod_ext_num_bytes.expr(), parent_data.hash.lo().expr(), parent_data.hash.hi().expr()] => @KECCAK);
+                    */
 
                     // End TODO
                 }
@@ -547,22 +550,10 @@ impl<F: Field> StorageLeafConfig<F> {
             MPTProofType::Disabled
         };
         
-        // TODO: move into ModExtensionGadget, use is_s
-        let mod_ext_key_items = [
-            rlp_values[StorageRowType::LongExtNodeKey as usize].clone(),
-            rlp_values[StorageRowType::ShortExtNodeKey as usize].clone(),
-        ];
-        let mod_ext_value_bytes = [
-            rlp_values[StorageRowType::LongExtNodeValue as usize].clone(),
-            rlp_values[StorageRowType::ShortExtNodeValue as usize].clone(),
-        ];
-
-        let long_mod_ext_rlp_key = self.long_mod_ext_rlp_key.assign(
-            region,
-            offset,
-            &storage.mod_list_rlp_bytes[true.idx()],
-            &mod_ext_key_items[true.idx()],
-        )?;
+        // TODO
+        if storage.is_mod_extension[0] || storage.is_mod_extension[1] {
+            self.mod_extension.assign(region, offset, rlp_values, storage.mod_list_rlp_bytes.clone());
+        }
 
         mpt_config.mpt_table.assign_cached(
             region,

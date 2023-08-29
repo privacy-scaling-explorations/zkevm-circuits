@@ -17,7 +17,7 @@ use crate::{
     mpt_circuit::{
         helpers::{
             ext_key_rlc_calc_value, ext_key_rlc_expr, num_nibbles, Indexable, KeyData, MptCellType,
-            ParentData, FIXED, KECCAK, MULT,
+            ParentData, FIXED, KECCAK, MULT, parent_memory,
         },
         param::HASH_WIDTH,
         FixedTableTag, MPTConfig, MPTState, RlpItemType, witness_row::StorageRowType,
@@ -38,7 +38,7 @@ pub(crate) struct ExtState<F> {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ModExtensionGadget<F> {
-    rlp_key: ListKeyGadget<F>,
+    rlp_key: [ListKeyGadget<F>; 2],
     is_not_hashed: LtGadget<F, 2>,
     is_key_part_odd: Cell<F>,
     mult_key: Cell<F>,
@@ -49,19 +49,19 @@ impl<F: Field> ModExtensionGadget<F> {
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
+        parent_data: &mut [ParentData<F>; 2],
     ) -> Self {
         let mut config = ModExtensionGadget::default();
 
         circuit!([meta, cb], {
             // Data
             let key_items = [
-                // Special case, requring string fail tests
                 ctx.rlp_item(
                     meta,
                     cb,
                     StorageRowType::LongExtNodeKey as usize,
                     RlpItemType::Key,
-                )/*,
+                ),/*
                 ctx.rlp_item(
                     meta,
                     cb,
@@ -86,7 +86,7 @@ impl<F: Field> ModExtensionGadget<F> {
                 */
             ];
 
-            // config.rlp_key = ListKeyGadget::construct(cb, &key_items[0]);
+            config.rlp_key[0] = ListKeyGadget::construct(cb, &key_items[0]);
             /*
             config.is_key_part_odd = cb.query_cell();
             let first_byte = matchx! {
@@ -96,6 +96,21 @@ impl<F: Field> ModExtensionGadget<F> {
             };
             require!((FixedTableTag::ExtOddKey.expr(), first_byte, config.is_key_part_odd.expr()) => @FIXED);
             */
+
+            let long_mod_ext_rlc = config
+                .rlp_key[0]
+                .rlc2(&cb.keccak_r)
+                .rlc_chain_rev(rlp_value[0].rlc_chain_data());
+        
+            let long_mod_ext_num_bytes = config.rlp_key[0].rlp_list.num_bytes();
+
+            let is_s = true;
+            let parent_data = &mut parent_data[is_s.idx()];
+            *parent_data =
+                ParentData::load("leaf load", cb, &ctx.memory[parent_memory(is_s)], 0.expr());
+
+            require!(vec![1.expr(), long_mod_ext_rlc.expr(), long_mod_ext_num_bytes.expr(), parent_data.hash.lo().expr(), parent_data.hash.hi().expr()] => @KECCAK);
+
 
             // TODO:
         });
@@ -107,10 +122,26 @@ impl<F: Field> ModExtensionGadget<F> {
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
-        _mpt_config: &MPTConfig<F>,
-        _pv: &mut MPTState<F>,
         offset: usize,
+        rlp_values: &[RLPItemWitness],
+        list_rlp_bytes: [Vec<u8>; 2],
     ) -> Result<(), Error> {
+        let mod_ext_key_items = [
+            rlp_values[StorageRowType::LongExtNodeKey as usize].clone(),
+            rlp_values[StorageRowType::ShortExtNodeKey as usize].clone(),
+        ];
+        let mod_ext_value_bytes = [
+            rlp_values[StorageRowType::LongExtNodeValue as usize].clone(),
+            rlp_values[StorageRowType::ShortExtNodeValue as usize].clone(),
+        ];
+
+        self.rlp_key[0].assign(
+            region,
+            offset,
+            &list_rlp_bytes[true.idx()],
+            &mod_ext_key_items[true.idx()],
+        )?;
+
         // TODO
 
         Ok(())
