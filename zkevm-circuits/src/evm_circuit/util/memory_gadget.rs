@@ -32,40 +32,12 @@ use itertools::Itertools;
 
 /// Decodes the usable part of an address stored in a Word
 pub(crate) mod address_low {
-    use crate::{
-        evm_circuit::{param::N_BYTES_MEMORY_ADDRESS, util::from_bytes},
-        util::word::Word32Cell,
-    };
-    use eth_types::Field;
-    use halo2_proofs::plonk::Expression;
-
-    pub(crate) fn expr<F: Field>(address: &Word32Cell<F>) -> Expression<F> {
-        from_bytes::expr(&address.limbs[..N_BYTES_MEMORY_ADDRESS])
-    }
+    use crate::evm_circuit::param::N_BYTES_MEMORY_ADDRESS;
 
     pub(crate) fn value(address: [u8; 32]) -> u64 {
         let mut bytes = [0; 8];
         bytes[..N_BYTES_MEMORY_ADDRESS].copy_from_slice(&address[..N_BYTES_MEMORY_ADDRESS]);
         u64::from_le_bytes(bytes)
-    }
-}
-
-/// The sum of bytes of the address that are unused for most calculations on the
-/// address
-pub(crate) mod address_high {
-    use crate::{
-        evm_circuit::{param::N_BYTES_MEMORY_ADDRESS, util::sum},
-        util::word::Word32Cell,
-    };
-    use eth_types::Field;
-    use halo2_proofs::plonk::Expression;
-
-    pub(crate) fn expr<F: Field>(address: &Word32Cell<F>) -> Expression<F> {
-        sum::expr(&address.limbs[N_BYTES_MEMORY_ADDRESS..])
-    }
-
-    pub(crate) fn value<F: Field>(address: [u8; 32]) -> F {
-        sum::value::<F>(&address[N_BYTES_MEMORY_ADDRESS..])
     }
 }
 
@@ -314,7 +286,7 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
             0.expr(),
             select::expr(
                 self.within_range(),
-                sum::expr(&self.offset_length_sum.sum().limbs[..N_BYTES_U64]),
+                from_bytes::expr(&self.offset_length_sum.sum().limbs[..N_BYTES_U64]),
                 0.expr(),
             ),
         )
