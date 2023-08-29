@@ -1,11 +1,9 @@
 use eth_types::Field;
-use gadgets::util::{pow, Scalar};
-use halo2_proofs::plonk::{Error, Expression, VirtualCells};
+use halo2_proofs::plonk::{Error, VirtualCells};
 
 use super::{
-    helpers::{KeyDataWitness, ListKeyGadget, MPTConstraintBuilder},
+    helpers::{ListKeyGadget, MPTConstraintBuilder},
     rlp_gadgets::RLPItemWitness,
-    witness_row::{ExtensionBranchRowType, Node},
     MPTContext,
 };
 use crate::{
@@ -16,31 +14,17 @@ use crate::{
     },
     mpt_circuit::{
         helpers::{
-            ext_key_rlc_calc_value, ext_key_rlc_expr, num_nibbles, Indexable, KeyData, MptCellType,
-            ParentData, FIXED, KECCAK, MULT, parent_memory,
+            Indexable, ParentData, KECCAK, parent_memory,
         },
-        param::HASH_WIDTH,
-        FixedTableTag, MPTConfig, MPTState, RlpItemType, witness_row::StorageRowType,
+        RlpItemType, witness_row::StorageRowType,
     },
-    util::word::Word,
 };
-
-#[derive(Clone, Debug)]
-pub(crate) struct ExtState<F> {
-    pub(crate) key_rlc: Expression<F>,
-    pub(crate) key_mult: Expression<F>,
-    pub(crate) num_nibbles: Expression<F>,
-    pub(crate) is_key_odd: Expression<F>,
-
-    pub(crate) branch_rlp_word: [Word<Expression<F>>; 2],
-    pub(crate) branch_rlp_rlc: [Expression<F>; 2],
-}
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ModExtensionGadget<F> {
     rlp_key: [ListKeyGadget<F>; 2],
     is_not_hashed: LtGadget<F, 2>,
-    is_key_part_odd: Cell<F>,
+    is_key_part_odd: [Cell<F>; 2],
     mult_key: Cell<F>,
 }
 
@@ -54,7 +38,6 @@ impl<F: Field> ModExtensionGadget<F> {
         let mut config = ModExtensionGadget::default();
 
         circuit!([meta, cb], {
-            // Data
             let key_items = [
                 ctx.rlp_item(
                     meta,
@@ -126,21 +109,23 @@ impl<F: Field> ModExtensionGadget<F> {
         rlp_values: &[RLPItemWitness],
         list_rlp_bytes: [Vec<u8>; 2],
     ) -> Result<(), Error> {
-        let mod_ext_key_items = [
+        let key_items = [
             rlp_values[StorageRowType::LongExtNodeKey as usize].clone(),
             rlp_values[StorageRowType::ShortExtNodeKey as usize].clone(),
         ];
-        let mod_ext_value_bytes = [
+        let value_bytes = [
             rlp_values[StorageRowType::LongExtNodeValue as usize].clone(),
             rlp_values[StorageRowType::ShortExtNodeValue as usize].clone(),
         ];
 
-        self.rlp_key[0].assign(
+        let rlp_key = self.rlp_key[0].assign(
             region,
             offset,
             &list_rlp_bytes[true.idx()],
-            &mod_ext_key_items[true.idx()],
+            &key_items[true.idx()],
         )?;
+
+        // let first_key_byte = key_items[true.idx()].bytes[rlp_key.key_item.num_rlp_bytes()];
 
         // TODO
 

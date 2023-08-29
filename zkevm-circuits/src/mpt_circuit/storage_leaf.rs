@@ -207,53 +207,6 @@ impl<F: Field> StorageLeafConfig<F> {
                     }} 
                 }};
             
-                if is_s {
-                    ifx! {config.is_mod_extension[is_s.idx()] => {
-                        config.mod_extension = ModExtensionGadget::configure(
-                            meta,
-                            cb,
-                            ctx.clone(),
-                            &mut config.parent_data,
-                        );
-                    }};
-
-                    // TODO: move into a gadget, use is_s
-                    /*
-                    let long_mod_ext_key_items = 
-                        ctx.rlp_item(
-                            meta,
-                            cb,
-                            StorageRowType::LongExtNodeKey as usize,
-                            RlpItemType::Key,
-                        );
-                    config.long_mod_ext_rlp_key = ListKeyGadget::construct(cb, &long_mod_ext_key_items);
-
-                    let long_mod_ext_rlp_value = 
-                        ctx.rlp_item(
-                            meta,
-                            cb,
-                            StorageRowType::LongExtNodeValue as usize,
-                            RlpItemType::Value,
-                        );
-
-                    // Extension node RLC
-                    let long_mod_ext_rlc = config
-                        .long_mod_ext_rlp_key
-                        .rlc2(&cb.keccak_r)
-                        .rlc_chain_rev(long_mod_ext_rlp_value.rlc_chain_data());
-                
-                    let long_mod_ext_num_bytes = config.long_mod_ext_rlp_key.rlp_list.num_bytes();
-
-                    let parent_data = &mut config.parent_data[is_s.idx()];
-                    *parent_data =
-                        ParentData::load("leaf load", cb, &ctx.memory[parent_memory(is_s)], 0.expr());
-
-                    require!(vec![1.expr(), long_mod_ext_rlc.expr(), long_mod_ext_num_bytes.expr(), parent_data.hash.lo().expr(), parent_data.hash.hi().expr()] => @KECCAK);
-                    */
-
-                    // End TODO
-                }
-
                 // Key done, set the default values
                 KeyData::store_defaults(cb, &ctx.memory[key_memory(is_s)]);
                 // Store the new parent
@@ -267,6 +220,14 @@ impl<F: Field> StorageLeafConfig<F> {
                     word::Word::<Expression<F>>::new([0.expr(), 0.expr()]),
                 );
             }
+            ifx! {or::expr(&[config.is_mod_extension[0].clone(), config.is_mod_extension[1].clone()]) => {
+                config.mod_extension = ModExtensionGadget::configure(
+                    meta,
+                    cb,
+                    ctx.clone(),
+                    &mut config.parent_data,
+                );
+            }};
 
             // Proof types
             config.is_storage_mod_proof = IsEqualGadget::construct(
