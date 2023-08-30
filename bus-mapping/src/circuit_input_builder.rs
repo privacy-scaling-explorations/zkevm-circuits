@@ -82,10 +82,21 @@ pub struct FixedCParams {
 pub struct DynamicCParams {}
 
 /// Circuit Setup Parameters. These can be fixed/concrete or unset/dynamic.
-pub trait CircuitsParams: Debug + Copy {}
+pub trait CircuitsParams: Debug + Copy {
+    /// Returns the max number of rws allowed
+    fn max_rws(&self) -> Option<usize>;
+}
 
-impl CircuitsParams for FixedCParams {}
-impl CircuitsParams for DynamicCParams {}
+impl CircuitsParams for FixedCParams {
+    fn max_rws(&self) -> Option<usize> {
+        Some(self.max_rws)
+    }
+}
+impl CircuitsParams for DynamicCParams {
+    fn max_rws(&self) -> Option<usize> {
+        None
+    }
+}
 
 impl Default for FixedCParams {
     /// Default values for most of the unit tests of the Circuit Parameters
@@ -166,6 +177,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             block_ctx: &mut self.block_ctx,
             tx,
             tx_ctx,
+            max_rws: self.circuits_params.max_rws(),
         }
     }
 
@@ -275,11 +287,11 @@ impl CircuitInputBuilder<FixedCParams> {
     ) -> Result<&CircuitInputBuilder<FixedCParams>, Error> {
         // accumulates gas across all txs in the block
         self.begin_handle_block(eth_block, geth_traces)?;
-        self.set_end_block(self.circuits_params.max_rws);
+        self.set_end_block(self.circuits_params.max_rws)?;
         Ok(self)
     }
 
-    fn set_end_block(&mut self, max_rws: usize) {
+    fn set_end_block(&mut self, max_rws: usize) -> Result<(), Error> {
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
         end_block_not_last.rwc = self.block_ctx.rwc;
@@ -295,7 +307,7 @@ impl CircuitInputBuilder<FixedCParams> {
                 call_id,
                 CallContextField::TxId,
                 Word::from(state.block.txs.len() as u64),
-            );
+            )?;
         }
 
         let mut push_op = |step: &mut ExecStep, rwc: RWCounter, rw: RW, op: StartOp| {
@@ -333,6 +345,7 @@ impl CircuitInputBuilder<FixedCParams> {
 
         self.block.block_steps.end_block_not_last = end_block_not_last;
         self.block.block_steps.end_block_last = end_block_last;
+        Ok(())
     }
 }
 
@@ -434,7 +447,7 @@ impl CircuitInputBuilder<DynamicCParams> {
             block_ctx: self.block_ctx,
         };
 
-        cib.set_end_block(c_params.max_rws);
+        cib.set_end_block(c_params.max_rws)?;
         Ok(cib)
     }
 }

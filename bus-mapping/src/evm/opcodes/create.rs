@@ -31,7 +31,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             caller.call_id,
             CallContextField::TxId,
             tx_id.into(),
-        );
+        )?;
 
         let depth = caller.depth;
         state.call_context_read(
@@ -39,9 +39,9 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             caller.call_id,
             CallContextField::Depth,
             depth.into(),
-        );
+        )?;
 
-        state.reversion_info_read(&mut exec_step, &caller);
+        state.reversion_info_read(&mut exec_step, &caller)?;
 
         // stack operation
         // Get low Uint64 of offset to generate copy steps. Since offset could
@@ -93,13 +93,13 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             caller.address,
             AccountField::Balance,
             caller_balance,
-        );
+        )?;
         state.account_read(
             &mut exec_step,
             caller.address,
             AccountField::Nonce,
             caller_nonce.into(),
-        );
+        )?;
 
         // Check if an error of ErrDepth, ErrInsufficientBalance or
         // ErrNonceUintOverflow occurred.
@@ -137,7 +137,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 callee.address,
                 AccountField::CodeHash,
                 code_hash_previous.to_word(),
-            );
+            )?;
         }
 
         // Per EIP-150, all but one 64th of the caller's gas is sent to the
@@ -156,11 +156,11 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 (exec_step.reversible_write_counter + 2).into(),
             ),
         ] {
-            state.call_context_write(&mut exec_step, caller.call_id, field, value);
+            state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
         }
 
         state.push_call(callee.clone());
-        state.reversion_info_write(&mut exec_step, &callee);
+        state.reversion_info_write(&mut exec_step, &callee)?;
 
         // successful contract creation
         if is_precheck_ok && !callee_exists {
@@ -252,7 +252,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                     (CallContextField::IsCreate, true.to_word()),
                     (CallContextField::CodeHash, code_hash.to_word()),
                 ] {
-                    state.call_context_write(&mut exec_step, callee.call_id, field, value);
+                    state.call_context_write(&mut exec_step, callee.call_id, field, value)?;
                 }
             }
             // if it's empty init code
@@ -262,7 +262,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                     (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 ] {
-                    state.call_context_write(&mut exec_step, caller.call_id, field, value);
+                    state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
                 }
                 state.handle_return(&mut exec_step, geth_steps, false)?;
             };
@@ -274,7 +274,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
             ] {
-                state.call_context_write(&mut exec_step, caller.call_id, field, value);
+                state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
             }
             state.handle_return(&mut exec_step, geth_steps, false)?;
         }
@@ -302,7 +302,7 @@ fn handle_copy(
             step,
             RW::READ,
             MemoryOp::new(call_id, (offset + i).into(), *byte),
-        );
+        )?;
     }
 
     state.push_copy(
