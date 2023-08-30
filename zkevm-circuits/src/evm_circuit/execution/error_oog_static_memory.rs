@@ -87,7 +87,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         // TODO: `+2` bcs CommonErrorGadget looks up IsSuccess and RwCounterEndOfReversion,
         // ,but `+2` should be moved inside CommonErrorGadget
         let common_error_gadget =
-            CommonErrorGadget::construct(cb, opcode.expr(), cb.rw_counter_offset() + 2.expr());
+            CommonErrorGadget::construct(cb, opcode.expr(), cb.rw_counter_offset());
 
         Self {
             opcode,
