@@ -1,8 +1,9 @@
 use eth_types::Field;
+use gadgets::util::Scalar;
 use halo2_proofs::plonk::{Error, VirtualCells};
 
 use super::{
-    helpers::{ListKeyGadget, MPTConstraintBuilder},
+    helpers::{ListKeyGadget, MPTConstraintBuilder, ListKeyWitness},
     rlp_gadgets::RLPItemWitness,
     MPTContext,
 };
@@ -14,9 +15,9 @@ use crate::{
     },
     mpt_circuit::{
         helpers::{
-            Indexable, ParentData, KECCAK, parent_memory,
+            Indexable, ParentData, KECCAK, parent_memory, FIXED,
         },
-        RlpItemType, witness_row::StorageRowType,
+        RlpItemType, witness_row::StorageRowType, FixedTableTag,
     },
 };
 
@@ -44,14 +45,13 @@ impl<F: Field> ModExtensionGadget<F> {
                     cb,
                     StorageRowType::LongExtNodeKey as usize,
                     RlpItemType::Key,
-                ),/*
+                ),
                 ctx.rlp_item(
                     meta,
                     cb,
                     StorageRowType::ShortExtNodeKey as usize,
-                    RlpItemType::Nibbles,
+                    RlpItemType::Key,
                 ),
-                */
             ];
             let rlp_value = [
                 ctx.rlp_item(
@@ -69,16 +69,19 @@ impl<F: Field> ModExtensionGadget<F> {
                 */
             ];
 
-            config.rlp_key[0] = ListKeyGadget::construct(cb, &key_items[0]);
-            /*
-            config.is_key_part_odd = cb.query_cell();
-            let first_byte = matchx! {
-                key_items[true.idx()].is_short() => key_items[true.idx()].bytes_be()[0].expr(),
-                key_items[true.idx()].is_long() => key_items[true.idx()].bytes_be()[1].expr(),
-                key_items[true.idx()].is_very_long() => key_items[true.idx()].bytes_be()[2].expr(),
-            };
-            require!((FixedTableTag::ExtOddKey.expr(), first_byte, config.is_key_part_odd.expr()) => @FIXED);
-            */
+            for is_s in [true, false] {
+                config.rlp_key[is_s.idx()] = ListKeyGadget::construct(cb, &key_items[is_s.idx()]);
+                config.is_key_part_odd[is_s.idx()] = cb.query_cell();
+
+                let first_byte = matchx! {
+                    key_items[is_s.idx()].is_short() => key_items[is_s.idx()].bytes_be()[0].expr(),
+                    key_items[is_s.idx()].is_long() => key_items[is_s.idx()].bytes_be()[1].expr(),
+                    key_items[is_s.idx()].is_very_long() => key_items[is_s.idx()].bytes_be()[2].expr(),
+                };
+                require!((FixedTableTag::ExtOddKey.expr(),
+                    first_byte, config.is_key_part_odd[is_s.idx()].expr()) => @FIXED);
+            }
+            
 
             let long_mod_ext_rlc = config
                 .rlp_key[0]
@@ -118,14 +121,36 @@ impl<F: Field> ModExtensionGadget<F> {
             rlp_values[StorageRowType::ShortExtNodeValue as usize].clone(),
         ];
 
-        let rlp_key = self.rlp_key[0].assign(
-            region,
-            offset,
-            &list_rlp_bytes[true.idx()],
-            &key_items[true.idx()],
-        )?;
+        let mut rlp_key = vec![ListKeyWitness::default(); 2];
+        for is_s in [true, false] {
+            rlp_key[is_s.idx()] = self.rlp_key[is_s.idx()].assign(
+                region,
+                offset,
+                &list_rlp_bytes[is_s.idx()],
+                &key_items[is_s.idx()],
+            )?;
+        }
+        
+        let mut first_key_byte = vec![0u8, 0u8];
+        for is_s in [true, false] {
+            first_key_byte[is_s.idx()] =
+                key_items[is_s.idx()].bytes[rlp_key[is_s.idx()].key_item.num_rlp_bytes()];
+        }
+        // Compact encoding
+        let is_key_part_odd = vec![first_key_byte[0] >> 4 == 1, first_key_byte[1] >> 4 == 1];
+        for is_s in [true, false] {
+            if is_key_part_odd[is_s.idx()] {
+                assert!(first_key_byte[is_s.idx()] < 0b10_0000);
+            } else {
+                assert!(first_key_byte[is_s.idx()] == 0);
+            }
+        }
 
-        // let first_key_byte = key_items[true.idx()].bytes[rlp_key.key_item.num_rlp_bytes()];
+        for is_s in [true, false] {
+            self.is_key_part_odd[is_s.idx()]
+            .assign(region, offset, is_key_part_odd[is_s.idx()].scalar())?;
+        }
+
 
         // TODO
 
