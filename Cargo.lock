@@ -2212,7 +2212,7 @@ dependencies = [
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?tag=v0.6.0#a0691430c5dca97013659b8fc3848beb13c9af94"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?tag=v0.6.1#c5cd0dab4a242d7077bf9cad051119dafaa4d6e9"
 dependencies = [
  "ethers-core",
  "halo2_proofs",
