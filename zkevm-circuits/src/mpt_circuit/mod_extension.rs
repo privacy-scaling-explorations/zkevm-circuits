@@ -103,24 +103,23 @@ impl<F: Field> ModExtensionGadget<F> {
                         config.is_not_hashed[is_s.idx()].expr(),
                     );
 
+                 
+                if is_s {
+                    let parent_data = &mut parent_data[is_s.idx()];
+                    *parent_data =
+                    ParentData::load("leaf load", cb, &ctx.memory[parent_memory(is_s)], 0.expr());
+
+                    ifx!{or::expr(&[parent_data.is_root.expr(), not!(is_not_hashed)]) => {
+                        // Hashed branch hash in parent branch
+                        require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data.hash.lo().expr(), parent_data.hash.hi().expr()] => @KECCAK);
+                    } elsex {
+                        // Non-hashed branch hash in parent branch
+                        require!(rlc => parent_data.rlc);
+                    }}
+                }
+
             }
             
-            /*
-            let long_mod_ext_rlc = config
-                .rlp_key[0]
-                .rlc2(&cb.keccak_r)
-                .rlc_chain_rev(rlp_value[0].rlc_chain_data());
-        
-            let long_mod_ext_num_bytes = config.rlp_key[0].rlp_list.num_bytes();
-
-            let is_s = true;
-            let parent_data = &mut parent_data[is_s.idx()];
-            *parent_data =
-                ParentData::load("leaf load", cb, &ctx.memory[parent_memory(is_s)], 0.expr());
-
-            require!(vec![1.expr(), long_mod_ext_rlc.expr(), long_mod_ext_num_bytes.expr(), parent_data.hash.lo().expr(), parent_data.hash.hi().expr()] => @KECCAK);
-            */
-
 
             // TODO:
         });
@@ -135,6 +134,7 @@ impl<F: Field> ModExtensionGadget<F> {
         offset: usize,
         rlp_values: &[RLPItemWitness],
         list_rlp_bytes: [Vec<u8>; 2],
+        // is_key_odd: &mut bool,
     ) -> Result<(), Error> {
         let key_items = [
             rlp_values[StorageRowType::LongExtNodeKey as usize].clone(),
@@ -174,6 +174,45 @@ impl<F: Field> ModExtensionGadget<F> {
                 rlp_key[is_s.idx()].rlp_list.num_bytes().scalar(),
                 HASH_WIDTH.scalar(),
             )?;
+
+            /*
+            let mut key_len_mult = rlp_key[is_s.idx()].key_item.len();
+            if !(*is_key_odd[is_s.idx()] && is_key_part_odd) {
+                key_len_mult -= 1;
+            }
+
+            // Update number of nibbles
+            // *num_nibbles += num_nibbles::value(rlp_key.key_item.len(), is_key_part_odd);
+
+            // Update parity
+            *is_key_odd = if is_key_part_odd {
+                !*is_key_odd
+            } else {
+                *is_key_odd
+            };
+
+            // Key RLC
+            let (key_rlc_ext, _) = ext_key_rlc_calc_value(
+                rlp_key.key_item,
+                key_data.mult,
+                is_key_part_odd,
+                !*is_key_odd,
+                key_items
+                    .iter()
+                    .map(|item| item.bytes.clone())
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap(),
+                region.key_r,
+            );
+            *key_rlc = key_data.rlc + key_rlc_ext;
+
+            // Key mult
+            let mult_key = pow::value(region.key_r, key_len_mult);
+            self.mult_key.assign(region, offset, mult_key)?;
+            // *key_mult = key_data.mult * mult_key;
+            */
+
         }
         
         // TODO
