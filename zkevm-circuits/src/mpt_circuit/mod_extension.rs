@@ -17,14 +17,14 @@ use crate::{
         helpers::{
             Indexable, ParentData, KECCAK, parent_memory, FIXED,
         },
-        RlpItemType, witness_row::StorageRowType, FixedTableTag,
+        RlpItemType, witness_row::StorageRowType, FixedTableTag, param::HASH_WIDTH,
     },
 };
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ModExtensionGadget<F> {
     rlp_key: [ListKeyGadget<F>; 2],
-    is_not_hashed: LtGadget<F, 2>,
+    is_not_hashed: [LtGadget<F, 2>; 2],
     is_key_part_odd: [Cell<F>; 2],
     mult_key: Cell<F>,
 }
@@ -59,14 +59,13 @@ impl<F: Field> ModExtensionGadget<F> {
                     cb,
                     StorageRowType::LongExtNodeValue as usize,
                     RlpItemType::Node,
-                )/*,
+                ),
                 ctx.rlp_item(
                     meta,
                     cb,
-                    StorageRowType::ShortExtNodeKey as usize,
+                    StorageRowType::ShortExtNodeValue as usize,
                     RlpItemType::Node,
                 ),
-                */
             ];
 
             for is_s in [true, false] {
@@ -80,9 +79,33 @@ impl<F: Field> ModExtensionGadget<F> {
                 };
                 require!((FixedTableTag::ExtOddKey.expr(),
                     first_byte, config.is_key_part_odd[is_s.idx()].expr()) => @FIXED);
+                
+                // RLP encoding checks: [key, branch]
+                // Verify that the lengths are consistent.
+                require!(config.rlp_key[is_s.idx()].rlp_list.len() => config.rlp_key[is_s.idx()].key_value.num_bytes() + rlp_value[is_s.idx()].num_bytes());
+
+                // Extension node RLC
+                let node_rlc = config
+                    .rlp_key[0]
+                    .rlc2(&cb.keccak_r)
+                    .rlc_chain_rev(rlp_value[is_s.idx()].rlc_chain_data());
+
+                config.is_not_hashed[is_s.idx()] = LtGadget::construct(
+                    &mut cb.base,
+                    config.rlp_key[is_s.idx()].rlp_list.num_bytes(),
+                    HASH_WIDTH.expr(),
+                );
+
+                let (rlc, num_bytes, is_not_hashed) =  
+                    (
+                        node_rlc.expr(),
+                        config.rlp_key[is_s.idx()].rlp_list.num_bytes(),
+                        config.is_not_hashed[is_s.idx()].expr(),
+                    );
+
             }
             
-
+            /*
             let long_mod_ext_rlc = config
                 .rlp_key[0]
                 .rlc2(&cb.keccak_r)
@@ -96,6 +119,7 @@ impl<F: Field> ModExtensionGadget<F> {
                 ParentData::load("leaf load", cb, &ctx.memory[parent_memory(is_s)], 0.expr());
 
             require!(vec![1.expr(), long_mod_ext_rlc.expr(), long_mod_ext_num_bytes.expr(), parent_data.hash.lo().expr(), parent_data.hash.hi().expr()] => @KECCAK);
+            */
 
 
             // TODO:
@@ -122,6 +146,7 @@ impl<F: Field> ModExtensionGadget<F> {
         ];
 
         let mut rlp_key = vec![ListKeyWitness::default(); 2];
+
         for is_s in [true, false] {
             rlp_key[is_s.idx()] = self.rlp_key[is_s.idx()].assign(
                 region,
@@ -129,29 +154,28 @@ impl<F: Field> ModExtensionGadget<F> {
                 &list_rlp_bytes[is_s.idx()],
                 &key_items[is_s.idx()],
             )?;
+
+            let first_key_byte =
+                key_items[is_s.idx()].bytes[rlp_key[is_s.idx()].key_item.num_rlp_bytes()];
+
+            let is_key_part_odd = first_key_byte >> 4 == 1;
+            if is_key_part_odd {
+                assert!(first_key_byte < 0b10_0000);
+            } else {
+                assert!(first_key_byte == 0);
+            }
+
+            self.is_key_part_odd[is_s.idx()]
+            .assign(region, offset, is_key_part_odd.scalar())?;
+
+            self.is_not_hashed[is_s.idx()].assign(
+                region,
+                offset,
+                rlp_key[is_s.idx()].rlp_list.num_bytes().scalar(),
+                HASH_WIDTH.scalar(),
+            )?;
         }
         
-        let mut first_key_byte = vec![0u8, 0u8];
-        for is_s in [true, false] {
-            first_key_byte[is_s.idx()] =
-                key_items[is_s.idx()].bytes[rlp_key[is_s.idx()].key_item.num_rlp_bytes()];
-        }
-        // Compact encoding
-        let is_key_part_odd = vec![first_key_byte[0] >> 4 == 1, first_key_byte[1] >> 4 == 1];
-        for is_s in [true, false] {
-            if is_key_part_odd[is_s.idx()] {
-                assert!(first_key_byte[is_s.idx()] < 0b10_0000);
-            } else {
-                assert!(first_key_byte[is_s.idx()] == 0);
-            }
-        }
-
-        for is_s in [true, false] {
-            self.is_key_part_odd[is_s.idx()]
-            .assign(region, offset, is_key_part_odd[is_s.idx()].scalar())?;
-        }
-
-
         // TODO
 
         Ok(())
