@@ -147,12 +147,13 @@ type FnGenAssociatedOps = fn(
 ) -> Result<Vec<ExecStep>, Error>;
 
 fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
-    if opcode_id.is_push() {
+    if opcode_id.is_push_with_data() {
         return StackOnlyOpcode::<0, 1>::gen_associated_ops;
     }
 
     match opcode_id {
         OpcodeId::STOP => Stop::gen_associated_ops,
+        OpcodeId::PUSH0 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::ADD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::MUL => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SUB => StackOnlyOpcode::<2, 1>::gen_associated_ops,
@@ -280,6 +281,9 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::OutOfGas(OogError::MemoryCopy) => Some(OOGMemoryCopy::gen_associated_ops),
         ExecError::OutOfGas(OogError::DynamicMemoryExpansion) => {
             Some(StackOnlyOpcode::<2, 0, true>::gen_associated_ops)
+        }
+        ExecError::OutOfGas(OogError::StaticMemoryExpansion) => {
+            Some(StackOnlyOpcode::<1, 0, true>::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
         ExecError::OutOfGas(OogError::AccountAccess) => {

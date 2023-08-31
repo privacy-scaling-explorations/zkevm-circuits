@@ -128,13 +128,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             1.expr(),
         );
 
-        let common_error_gadget = CommonErrorGadget::construct(
-            cb,
-            opcode.expr(),
-            // EXTCODECOPY has extra 1 call context lookup (tx_id), 1 account access list
-            // read (is_warm), and 1 stack pop (external_address).
-            5.expr() + 3.expr() * is_extcodecopy.expr(),
-        );
+        let common_error_gadget =
+            CommonErrorGadget::construct(cb, opcode.expr(), cb.rw_counter_offset());
 
         Self {
             opcode,
