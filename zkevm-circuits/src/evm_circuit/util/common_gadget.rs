@@ -973,6 +973,7 @@ impl<F: Field> CommonErrorGadget<F> {
             CallContextFieldTag::RwCounterEndOfReversion,
             rw_counter_end_of_reversion.to_word(),
         );
+        // Have two rw lookups, `IsSuccess` and `RwCounterEndOfReversion` so we add `2` here.
         let updated_rw_counter_delta = rw_counter_delta + 2.expr();
 
         // Go to EndTx only when is_root
