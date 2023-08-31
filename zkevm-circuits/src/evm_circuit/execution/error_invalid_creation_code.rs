@@ -55,7 +55,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         let common_error_gadget = CommonErrorGadget::construct_with_return_data(
             cb,
             opcode.expr(),
-            5.expr(),
+            cb.rw_counter_offset(),
             memory_address.offset(),
             memory_address.length(),
         );
