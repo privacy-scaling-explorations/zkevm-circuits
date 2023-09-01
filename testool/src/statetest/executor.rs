@@ -3,8 +3,9 @@ use crate::config::TestSuite;
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, FixedCParams},
     mock::BlockData,
+    state_db::CodeDB,
 };
-use eth_types::{geth_types, Address, Bytes, GethExecTrace, U256, U64};
+use eth_types::{geth_types, Address, Bytes, GethExecTrace, ToBigEndian, U256, U64};
 use ethers_core::{
     k256::ecdsa::SigningKey,
     types::{transaction::eip2718::TypedTransaction, TransactionRequest},
@@ -36,21 +37,37 @@ pub enum StateTestError {
     SkipTestMaxGasLimit(u64),
     #[error("SkipTestMaxSteps({0})")]
     SkipTestMaxSteps(usize),
+    #[error("SkipTestSelfDestruct")]
+    SkipTestSelfDestruct,
+    #[error("SkipTestDifficulty")]
+    // scroll evm always returns 0 for "difficulty" opcode
+    SkipTestDifficulty,
+    #[error("SkipTestBalanceOverflow")]
+    SkipTestBalanceOverflow,
     #[error("Exception(expected:{expected:?}, found:{found:?})")]
     Exception { expected: bool, found: String },
 }
 
 impl StateTestError {
     pub fn is_skip(&self) -> bool {
+        // Avoid lint `variant is never constructed` if no feature skip-self-destruct.
+        let _ = StateTestError::SkipTestSelfDestruct;
+        let _ = StateTestError::SkipTestDifficulty;
+
         matches!(
             self,
-            StateTestError::SkipTestMaxSteps(_) | StateTestError::SkipTestMaxGasLimit(_)
+            StateTestError::SkipTestMaxSteps(_)
+                | StateTestError::SkipTestMaxGasLimit(_)
+                | StateTestError::SkipTestSelfDestruct
+                | StateTestError::SkipTestBalanceOverflow
+                | StateTestError::SkipTestDifficulty
         )
     }
 }
 
 #[derive(Default, Debug, Clone)]
 pub struct CircuitsConfig {
+    pub verbose: bool,
     pub super_circuit: bool,
 }
 
@@ -58,11 +75,13 @@ fn check_post(
     builder: &CircuitInputBuilder<FixedCParams>,
     post: &HashMap<Address, AccountMatch>,
 ) -> Result<(), StateTestError> {
+    log::trace!("check post");
     // check if the generated account data is the expected one
     for (address, expected) in post {
         let (_, actual) = builder.sdb.get_account(address);
 
         if expected.balance.map(|v| v == actual.balance) == Some(false) {
+            log::error!("balance mismatch, expected {expected:?} actual {actual:?}");
             return Err(StateTestError::BalanceMismatch {
                 expected: expected.balance.unwrap(),
                 found: actual.balance,
@@ -70,6 +89,7 @@ fn check_post(
         }
 
         if expected.nonce.map(|v| v == actual.nonce) == Some(false) {
+            log::error!("nonce mismatch, expected {expected:?} actual {actual:?}");
             return Err(StateTestError::NonceMismatch {
                 expected: expected.nonce.unwrap(),
                 found: actual.nonce,
@@ -96,6 +116,9 @@ fn check_post(
         for (slot, expected_value) in &expected.storage {
             let actual_value = actual.storage.get(slot).cloned().unwrap_or_else(U256::zero);
             if expected_value != &actual_value {
+                log::error!(
+                    "StorageMismatch address {address:?}, expected {expected:?} actual {actual:?}"
+                );
                 return Err(StateTestError::StorageMismatch {
                     slot: *slot,
                     expected: *expected_value,
@@ -104,6 +127,7 @@ fn check_post(
             }
         }
     }
+    log::trace!("check post done");
     Ok(())
 }
 
@@ -137,7 +161,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 number: U64::from(st.env.current_number),
                 difficulty: st.env.current_difficulty,
                 gas_limit: U256::from(st.env.current_gas_limit),
-                base_fee: U256::one(),
+                base_fee: st.env.current_base_fee,
             },
 
             transactions: vec![geth_types::Transaction {
@@ -155,7 +179,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 r: sig.r,
                 s: sig.s,
             }],
-            accounts: st.pre,
+            accounts: st.pre.into_iter().collect(),
             ..Default::default()
         },
         st.result,
@@ -171,6 +195,45 @@ pub fn geth_trace(st: StateTest) -> Result<GethExecTrace, StateTestError> {
     Ok(geth_traces.remove(0))
 }
 
+fn check_geth_traces(
+    geth_traces: &[GethExecTrace],
+    suite: &TestSuite,
+    verbose: bool,
+) -> Result<(), StateTestError> {
+    if geth_traces.iter().any(|gt| {
+        gt.struct_logs.iter().any(|sl| {
+            sl.op == eth_types::evm_types::OpcodeId::SELFDESTRUCT
+                || sl.op == eth_types::evm_types::OpcodeId::INVALID(0xff)
+        })
+    }) {
+        return Err(StateTestError::SkipTestSelfDestruct);
+    }
+
+    if geth_traces.iter().any(|gt| {
+        gt.struct_logs
+            .iter()
+            .any(|sl| sl.op == eth_types::evm_types::OpcodeId::DIFFICULTY)
+    }) {
+        return Err(StateTestError::SkipTestDifficulty);
+    }
+
+    if geth_traces[0].struct_logs.len() as u64 > suite.max_steps {
+        return Err(StateTestError::SkipTestMaxSteps(
+            geth_traces[0].struct_logs.len(),
+        ));
+    }
+
+    if suite.max_gas > 0 && geth_traces[0].gas > suite.max_gas {
+        return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas));
+    }
+    if verbose {
+        if let Err(e) = crate::utils::print_trace(geth_traces[0].clone()) {
+            log::error!("fail to pretty print trace {e:?}");
+        }
+    }
+    Ok(())
+}
+
 pub fn run_test(
     st: StateTest,
     suite: TestSuite,
@@ -180,6 +243,11 @@ pub fn run_test(
 
     let (_, trace_config, post) = into_traceconfig(st.clone());
 
+    for acc in trace_config.accounts.values() {
+        if acc.balance.to_be_bytes()[0] != 0u8 {
+            return Err(StateTestError::SkipTestBalanceOverflow);
+        }
+    }
     let geth_traces = external_tracer::trace(&trace_config);
 
     let geth_traces = match (geth_traces, st.exception) {
@@ -199,15 +267,7 @@ pub fn run_test(
         }
     };
 
-    if geth_traces[0].struct_logs.len() as u64 > suite.max_steps {
-        return Err(StateTestError::SkipTestMaxSteps(
-            geth_traces[0].struct_logs.len(),
-        ));
-    }
-
-    if suite.max_gas > 0 && geth_traces[0].gas > suite.max_gas {
-        return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas));
-    }
+    check_geth_traces(&geth_traces, &suite, circuits_config.verbose)?;
 
     let transactions = trace_config
         .transactions
@@ -293,7 +353,32 @@ pub fn run_test(
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         prover.assert_satisfied_par();
     };
-
+    {
+        // fill these "untouched" storage slots
+        // It is better to fill these info after (instead of before) bus-mapping re-exec.
+        // To prevent these data being used unexpectedly.
+        // TODO: another method will be to skip empty account inside check_post?
+        for account in trace_config.accounts.values() {
+            builder.code_db.insert(account.code.to_vec());
+            let (exist, acc_in_local_sdb) = builder.sdb.get_account_mut(&account.address);
+            if !exist {
+                // modified from bus-mapping/src/mock.rs
+                let code_hash = CodeDB::hash(&account.code);
+                *acc_in_local_sdb = bus_mapping::state_db::Account {
+                    nonce: account.nonce.as_u64(),
+                    balance: account.balance,
+                    storage: account.storage.clone(),
+                    code_hash,
+                };
+            } else {
+                for (k, v) in &account.storage {
+                    if !acc_in_local_sdb.storage.contains_key(k) {
+                        acc_in_local_sdb.storage.insert(*k, *v);
+                    }
+                }
+            }
+        }
+    }
     check_post(&builder, &post)?;
 
     Ok(())

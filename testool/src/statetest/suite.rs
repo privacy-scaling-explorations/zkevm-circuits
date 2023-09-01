@@ -79,20 +79,6 @@ pub fn run_statetests_suite(
     let test_count = tcs.len();
     tcs.into_par_iter().for_each(|ref tc| {
         let (test_id, path) = (tc.id.clone(), tc.path.clone());
-        if !suite.allowed(&test_id) {
-            results
-                .write()
-                .unwrap()
-                .insert(ResultInfo {
-                    test_id,
-                    level: ResultLevel::Ignored,
-                    details: "Ignored in config file".to_string(),
-                    path,
-                })
-                .unwrap();
-            return;
-        }
-
         std::panic::set_hook(Box::new(|_info| {}));
 
         log::debug!(
