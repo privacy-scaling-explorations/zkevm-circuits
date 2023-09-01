@@ -3,22 +3,22 @@ use gadgets::util::Scalar;
 use halo2_proofs::plonk::{Error, VirtualCells};
 
 use super::{
-    helpers::{ListKeyGadget, MPTConstraintBuilder, ListKeyWitness},
-    rlp_gadgets::RLPItemWitness,
+    helpers::{ListKeyGadget, MPTConstraintBuilder, ListKeyWitness, bytes_from_key_data},
+    rlp_gadgets::{RLPItemWitness, get_ext_odd_nibble_value},
     MPTContext,
 };
 use crate::{
     circuit,
     circuit_tools::{
-        cached_region::CachedRegion, cell_manager::Cell, constraint_builder::RLCChainableRev,
+        cached_region::CachedRegion, cell_manager::Cell, constraint_builder::{RLCChainableRev, RLCChainableValue},
         gadgets::LtGadget,
     },
     mpt_circuit::{
         helpers::{
-            Indexable, ParentData, KECCAK, parent_memory, FIXED,
+            Indexable, ParentData, KECCAK, parent_memory, FIXED, ext_key_rlc_value,
         },
-        RlpItemType, witness_row::StorageRowType, FixedTableTag, param::HASH_WIDTH,
-    },
+        RlpItemType, witness_row::StorageRowType, FixedTableTag, param::{HASH_WIDTH, KEY_PREFIX_EVEN},
+    }, matchw,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -134,11 +134,14 @@ impl<F: Field> ModExtensionGadget<F> {
         offset: usize,
         rlp_values: &[RLPItemWitness],
         list_rlp_bytes: [Vec<u8>; 2],
-        // is_key_odd: &mut bool,
     ) -> Result<(), Error> {
         let key_items = [
             rlp_values[StorageRowType::LongExtNodeKey as usize].clone(),
             rlp_values[StorageRowType::ShortExtNodeKey as usize].clone(),
+        ];
+        let key_nibbles = [
+            rlp_values[StorageRowType::LongExtNodeNibbles as usize].clone(),
+            rlp_values[StorageRowType::ShortExtNodeNibbles as usize].clone(),
         ];
         let value_bytes = [
             rlp_values[StorageRowType::LongExtNodeValue as usize].clone(),
@@ -175,44 +178,40 @@ impl<F: Field> ModExtensionGadget<F> {
                 HASH_WIDTH.scalar(),
             )?;
 
-            /*
-            let mut key_len_mult = rlp_key[is_s.idx()].key_item.len();
-            if !(*is_key_odd[is_s.idx()] && is_key_part_odd) {
-                key_len_mult -= 1;
-            }
+            let (is_short, is_long) = (key_items[is_s.idx()].is_short(), key_items[is_s.idx()].is_long());
+            let key_data = vec![key_items[is_s.idx()].clone(), key_nibbles[is_s.idx()].clone()];
+            let data = key_data
+                .iter()
+                .map(|item| item.bytes.clone())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
 
-            // Update number of nibbles
-            // *num_nibbles += num_nibbles::value(rlp_key.key_item.len(), is_key_part_odd);
-
-            // Update parity
-            *is_key_odd = if is_key_part_odd {
-                !*is_key_odd
-            } else {
-                *is_key_odd
+            let calc_rlc = |bytes: &[F]| {
+                ext_key_rlc_value(
+                    bytes,
+                    1.scalar(),
+                    is_key_part_odd,
+                    1.scalar(),
+                    1.scalar(),
+                    region.key_r,
+                )
             };
 
-            // Key RLC
-            let (key_rlc_ext, _) = ext_key_rlc_calc_value(
-                rlp_key.key_item,
-                key_data.mult,
-                is_key_part_odd,
-                !*is_key_odd,
-                key_items
-                    .iter()
-                    .map(|item| item.bytes.clone())
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .unwrap(),
-                region.key_r,
-            );
-            *key_rlc = key_data.rlc + key_rlc_ext;
+            let (rlc, _) = matchw! {
+                is_long && is_key_part_odd => {
+                    let key_bytes = bytes_from_key_data(data, region.key_r);
+                    calc_rlc(&key_bytes)
+                },
+                is_long && !is_key_part_odd => {
+                    calc_rlc(&data[0][1..].iter().map(|byte| byte.scalar()).collect::<Vec<_>>())
+                },
+                is_short => {
+                    calc_rlc(&data[0][..1].iter().map(|byte| byte.scalar()).collect::<Vec<_>>())
+                },
+            };
 
-            // Key mult
-            let mult_key = pow::value(region.key_r, key_len_mult);
-            self.mult_key.assign(region, offset, mult_key)?;
-            // *key_mult = key_data.mult * mult_key;
-            */
-
+            // RLC of long needs to be RLC of middle + RLC of short
         }
         
         // TODO

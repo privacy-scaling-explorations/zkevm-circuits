@@ -258,6 +258,22 @@ pub(crate) fn ext_key_rlc_expr<F: Field>(
     })
 }
 
+pub(crate) fn bytes_from_key_data<F: Field>(
+    data: [Vec<u8>; 2],
+    r: F,
+) -> Vec<F> {
+    let mut key_bytes = vec![data[0][1].scalar()];
+    key_bytes.append(&mut data[0][1..].iter().skip(1).zip(data[1][2..].iter()).map(|(byte, nibble_hi)| {
+        let nibble_lo = (byte - nibble_hi) >> 4;
+        // Check that `nibble_hi` is correct.
+        assert!(*byte == nibble_lo * 16 + nibble_hi);
+        // Collect bytes
+        (F::from(*nibble_hi as u64) * F::from(16_u64) * r) + F::from(nibble_lo as u64)
+    }).collect::<Vec<_>>());
+
+    key_bytes
+}
+
 pub(crate) fn ext_key_rlc_calc_value<F: Field>(
     key_value: RLPItemWitness,
     key_mult_prev: F,
@@ -283,14 +299,7 @@ pub(crate) fn ext_key_rlc_calc_value<F: Field>(
             // Here we need to multiply nibbles over bytes with different r's so we need to rlc over separate nibbles.
             // Note that there can be at max 31 key bytes because 32 same bytes would mean
             // the two keys being the same - update operation, not splitting into extension node.
-            let mut key_bytes = vec![data[0][1].scalar()];
-            key_bytes.append(&mut data[0][1..].iter().skip(1).zip(data[1][2..].iter()).map(|(byte, nibble_hi)| {
-                let nibble_lo = (byte - nibble_hi) >> 4;
-                // Check that `nibble_hi` is correct.
-                assert!(*byte == nibble_lo * 16 + nibble_hi);
-                // Collect bytes
-                (F::from(*nibble_hi as u64) * F::from(16_u64) * r) + F::from(nibble_lo as u64)
-            }).collect::<Vec<_>>());
+            let key_bytes = bytes_from_key_data(data, r); 
             calc_rlc(&key_bytes, 1.scalar())
         },
         is_long && is_key_odd => {
