@@ -8,6 +8,7 @@ use std::process::{Command, Stdio};
 
 #[derive(Debug, Eq, PartialEq, PartialOrd)]
 pub enum MainnetFork {
+    Shanghai = 15,
     Merge = 14,
     GrayGlacier = 13,
     ArrowGlacier = 12,
@@ -31,6 +32,7 @@ impl FromStr for MainnetFork {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
+            "Shanghai" => Self::Shanghai,
             "Merge" => Self::Merge,
             "Gray Glacier" => Self::GrayGlacier,
             "Arrow Glacier" => Self::ArrowGlacier,
@@ -39,13 +41,15 @@ impl FromStr for MainnetFork {
             "Berlin" => Self::Berlin,
             "Muir Glacier" => Self::MuirGlacier,
             "Istanbul" => Self::Istanbul,
+            "ConstantinopleFix" => Self::Constantinople,
             "Constantinople" => Self::Constantinople,
             "Byzantium" => Self::Byzantium,
             "Spurious Dragon" => Self::SpuriousDragon,
             "TangeringWhistle" => Self::TangerineWhistle,
+            "EIP158" => Self::TangerineWhistle,
             "Homestead" => Self::Homestead,
             "Frontier" => Self::Frontier,
-            _ => bail!(format!("Unknown network '{}'", s)),
+            _ => bail!(format!("Unknown network '{s}'")),
         })
     }
 }
@@ -59,6 +63,10 @@ impl MainnetFork {
             for network in expect {
                 if let Some(network) = network.strip_prefix(">=") {
                     if crate::utils::TEST_FORK >= crate::utils::MainnetFork::from_str(network)? {
+                        in_network = true;
+                    }
+                } else if let Some(network) = network.strip_prefix('<') {
+                    if crate::utils::TEST_FORK < crate::utils::MainnetFork::from_str(network)? {
                         in_network = true;
                     }
                 } else if crate::utils::TEST_FORK == crate::utils::MainnetFork::from_str(network)? {
@@ -75,7 +83,7 @@ impl MainnetFork {
 pub fn print_trace(trace: GethExecTrace) -> Result<()> {
     fn u256_to_str(u: &U256) -> String {
         if *u > U256::from_str("0x1000000000000000").unwrap() {
-            format!("0x{:x}", u)
+            format!("0x{u:x}")
         } else {
             u.to_string()
         }
@@ -104,7 +112,7 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
             let item = if count == 1 {
                 v.to_string()
             } else {
-                format!("{}[{}]", v, count)
+                format!("{v}[{count}]")
             };
 
             if current_len > len {
@@ -203,4 +211,11 @@ mod test {
         assert!(MainnetFork::in_network_range(&[String::from(">=Istanbul")])
             .expect("can parse network"));
     }
+}
+
+#[cfg(test)]
+#[ctor::ctor]
+fn init_env_logger() {
+    // Enable RUST_LOG during tests
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 }
