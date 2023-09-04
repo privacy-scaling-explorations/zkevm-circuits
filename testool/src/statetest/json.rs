@@ -9,6 +9,8 @@ use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 
+use serde_json::value::Value;
+
 fn default_block_base_fee() -> String {
     DEFAULT_BASE_FEE.to_string()
 }
@@ -107,7 +109,8 @@ impl<'a> JsonStateTestBuilder<'a> {
     /// generates `StateTest` vectors from a ethereum josn test specification
     pub fn load_json(&mut self, path: &str, source: &str) -> Result<Vec<StateTest>> {
         let mut state_tests = Vec::new();
-        let tests: HashMap<String, JsonStateTest> = serde_json::from_str(source)?;
+        let tests: HashMap<String, JsonStateTest> =
+            serde_json::from_str(&strip_json_comments(source))?;
 
         for (test_name, test) in tests {
             let env = Self::parse_env(&test.env)?;
@@ -310,6 +313,25 @@ impl<'a> JsonStateTestBuilder<'a> {
     }
 }
 
+fn strip_json_comments(json: &str) -> String {
+    fn strip(value: Value) -> Value {
+        use Value::*;
+        match value {
+            Array(vec) => Array(vec.into_iter().map(strip).collect()),
+            Object(map) => Object(
+                map.into_iter()
+                    .filter(|(k, _)| !k.starts_with("//"))
+                    .map(|(k, v)| (k, strip(v)))
+                    .collect(),
+            ),
+            _ => value,
+        }
+    }
+
+    let value: Value = serde_json::from_str(json).unwrap();
+    strip(value).to_string()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -437,5 +459,14 @@ mod test {
         assert_eq!(expected, test);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_strip() {
+        let original = r#"{"//a":"a1","b":[{"c":"c1","//d":"d1"}]}"#;
+        let expected = r#"{"b":[{"c":"c1"}]}"#;
+
+        let stripped = strip_json_comments(original);
+        assert_eq!(expected, stripped);
     }
 }
