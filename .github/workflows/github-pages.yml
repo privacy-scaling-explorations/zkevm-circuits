@@ -30,10 +30,13 @@ jobs:
       - uses: actions-rs/toolchain@v1
       - name: Setup Pages
         uses: actions/configure-pages@v3
+      # Create a index.html outside of the subdirectories for requirement of GitHub pages
       - name: Generate Docs
         run: |
           cargo doc --no-deps
           echo "<meta http-equiv=\"refresh\" content=\"0; url=zkevm_circuits\">" > target/doc/index.html
+      # Archive the artifact with the correct permissions
+      # https://github.com/actions/deploy-pages/issues/188
       - name: Archive artifact
         shell: sh
         run: |
