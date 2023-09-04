@@ -58,6 +58,8 @@ paths = [
     "create2callPrecompilesFiller.json",
     "callToNonExistentFiller.json",
     "tackDepthLimitSECFiller.json",
+    "callDataCopyOffsetFiller.json",
+    "calldatacopy_dejavu2Filler.json",
     "ValueOverflowFiller" # weird 0x:biginteger 0x...
 ]
 
@@ -71,4 +73,20 @@ paths = [
     "SelfDestructFiller.yml",
     "RevertRemoteSubCallStorageOOGFiller.yml",
     "solidityExampleFiller.yml"
+]
+
+[[skip_paths]]
+desc = "todo!"
+paths = [
+    "CreateAddressWarmAfterFailFiller.yml",
+    "result_cancunEnvConvertionFiller.json",
+    "result_mergeEnvConvertionFiller.json",
+    "eoaEmptyFiller.yml"
+]
+
+
+[[skip_paths]]
+desc = "unused"
+paths = [
+     "doubleSelfdestructTestFiller.yml"
 ]

@@ -46,6 +46,7 @@ impl FromStr for MainnetFork {
             "Byzantium" => Self::Byzantium,
             "Spurious Dragon" => Self::SpuriousDragon,
             "TangeringWhistle" => Self::TangerineWhistle,
+            "EIP150" => Self::TangerineWhistle,
             "EIP158" => Self::TangerineWhistle,
             "Homestead" => Self::Homestead,
             "Frontier" => Self::Frontier,
