@@ -9,6 +9,6 @@ RUN git checkout v0.8.17
 
 WORKDIR /solidity/build
 RUN cmake .. -DCMAKE_BUILD_TYPE=Release
-RUN make -j16
+RUN make -j2
 
 ENTRYPOINT ["/solidity/build/solc/solc"]
