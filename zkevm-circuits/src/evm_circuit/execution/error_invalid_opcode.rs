@@ -39,7 +39,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
             },
         );
 
-        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 2.expr());
+        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 0.expr());
 
         Self {
             opcode,
