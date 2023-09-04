@@ -17,7 +17,7 @@ use std::{
 pub fn load_statetests_suite(
     path: &str,
     config: Config,
-    mut compiler: Compiler,
+    compiler: Compiler,
 ) -> Result<Vec<StateTest>> {
     let skip_paths: Vec<&String> = config.skip_paths.iter().flat_map(|t| &t.paths).collect();
     let skip_tests: Vec<&String> = config.skip_tests.iter().flat_map(|t| &t.tests).collect();
@@ -42,8 +42,8 @@ pub fn load_statetests_suite(
             let src = std::fs::read_to_string(&file)?;
             log::debug!(target: "testool", "Reading file {:?}", file);
             let mut tcs = match ext {
-                "yml" => YamlStateTestBuilder::new(&mut compiler).load_yaml(&path, &src)?,
-                "json" => JsonStateTestBuilder::new(&mut compiler).load_json(&path, &src)?,
+                "yml" => YamlStateTestBuilder::new(&compiler).load_yaml(&path, &src)?,
+                "json" => JsonStateTestBuilder::new(&compiler).load_json(&path, &src)?,
                 _ => unreachable!(),
             };
 

@@ -118,7 +118,7 @@ impl<'a> JsonStateTestBuilder<'a> {
 
             let to = parse::parse_to_address(&test.transaction.to)?;
             let secret_key = parse::parse_bytes(&test.transaction.secret_key)?;
-            let from = secret_key_to_address(&SigningKey::from_slice(&secret_key.to_vec())?);
+            let from = secret_key_to_address(&SigningKey::from_slice(&secret_key)?);
             let nonce = parse::parse_u64(&test.transaction.nonce)?;
             let gas_price = parse::parse_u256(&test.transaction.gas_price)?;
 
@@ -238,7 +238,7 @@ impl<'a> JsonStateTestBuilder<'a> {
                 address,
                 balance: parse::parse_u256(&acc.balance)?,
                 nonce: parse::parse_u64(&acc.nonce)?.into(),
-                code: parse::parse_code(&self.compiler, &acc.code)?,
+                code: parse::parse_code(self.compiler, &acc.code)?,
                 storage,
             };
             accounts.insert(address, account);
@@ -270,7 +270,7 @@ impl<'a> JsonStateTestBuilder<'a> {
                 code: acc
                     .code
                     .as_ref()
-                    .map(|v| parse::parse_code(&self.compiler, v))
+                    .map(|v| parse::parse_code(self.compiler, v))
                     .transpose()?,
                 nonce: acc
                     .nonce
