@@ -42,22 +42,22 @@ impl<F: Field> LtWordGadget<F> {
         offset: usize,
         lhs: Word,
         rhs: Word,
-    ) -> Result<(), Error> {
+    ) -> Result<F, Error> {
         let (lhs_lo, lhs_hi) = split_u256(&lhs);
         let (rhs_lo, rhs_hi) = split_u256(&rhs);
-        self.comparison_hi.assign(
+        let (hi_lt, hi_eq) = self.comparison_hi.assign(
             region,
             offset,
             F::from_u128(lhs_hi.as_u128()),
             F::from_u128(rhs_hi.as_u128()),
         )?;
-        self.lt_lo.assign(
+        let (lt_lo, _) = self.lt_lo.assign(
             region,
             offset,
             F::from_u128(lhs_lo.as_u128()),
             F::from_u128(rhs_lo.as_u128()),
         )?;
-        Ok(())
+        Ok(hi_lt + hi_eq * lt_lo)
     }
 }
 
