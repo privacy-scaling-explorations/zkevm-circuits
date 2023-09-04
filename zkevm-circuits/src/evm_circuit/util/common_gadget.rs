@@ -973,6 +973,8 @@ impl<F: Field> CommonErrorGadget<F> {
             CallContextFieldTag::RwCounterEndOfReversion,
             rw_counter_end_of_reversion.to_word(),
         );
+        // Have two rw lookups, `IsSuccess` and `RwCounterEndOfReversion` so we add `2` here.
+        let updated_rw_counter_delta = rw_counter_delta + 2.expr();
 
         // Go to EndTx only when is_root
         let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
@@ -987,7 +989,9 @@ impl<F: Field> CommonErrorGadget<F> {
             // Do step state transition
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
-                rw_counter: Delta(rw_counter_delta + cb.curr.state.reversible_write_counter.expr()),
+                rw_counter: Delta(
+                    updated_rw_counter_delta + cb.curr.state.reversible_write_counter.expr(),
+                ),
                 ..StepStateTransition::any()
             });
         });
