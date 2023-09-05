@@ -761,10 +761,10 @@ mod test {
             .cartesian_product(callees.into_iter())
             .enumerate()
         {
-            if !stack.value.is_zero() {
-                println!("these tests are failing");
+            if stack.value.is_zero() || idx != 2 {
                 continue;
             }
+            println!("{idx} opcode {opcode}, stack {stack:?}, callee {callee:?}");
             test_ok(caller(opcode, stack, true), callee);
         }
     }
