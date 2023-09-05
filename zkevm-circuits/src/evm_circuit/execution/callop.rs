@@ -484,7 +484,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let depth = rws.next().call_context_value();
         let current_callee_address = rws.next().call_context_value();
 
-        let is_error_depth = depth.low_u64() > 1024;
+        let is_valid_depth = depth.low_u64() < 1025;
         self.is_depth_ok
             .assign(region, offset, F::from(depth.low_u64()), F::from(1025))?;
         // This offset is used to change the index offset of `step.rw_indices`.
@@ -528,18 +528,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .assign_u256(region, offset, caller_balance)?;
         self.is_insufficient_balance
             .assign(region, offset, caller_balance, value)?;
-
-        let is_insufficient = (value > caller_balance) && (is_call || is_callcode);
-        // only call opcode do transfer in sucessful case.
-        let [caller_balance_pair, callee_balance_pair] =
-            if is_call && !is_insufficient && !is_error_depth && !value.is_zero() {
-                [
-                    rws.next().account_balance_pair(),
-                    rws.next().account_balance_pair(),
-                ]
-            } else {
-                [(U256::zero(), U256::zero()), (U256::zero(), U256::zero())]
-            };
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
@@ -612,8 +600,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             callee_rw_counter_end_of_reversion.low_u64() as usize,
             callee_is_persistent.low_u64() != 0,
         )?;
+
+        let is_call_or_callcode = is_call || is_callcode;
+        let is_sufficient = caller_balance >= value;
+        let is_precheck_ok = is_valid_depth && (is_sufficient || !is_call_or_callcode);
+
         // conditionally assign
-        if !is_insufficient && !is_error_depth && !value.is_zero() {
+        if is_call_or_callcode && is_precheck_ok {
+            let caller_balance_pair = rws.next().account_balance_pair();
+            let callee_balance_pair = rws.next().account_balance_pair();
             self.transfer.assign(
                 region,
                 offset,

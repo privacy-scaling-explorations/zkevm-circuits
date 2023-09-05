@@ -100,7 +100,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         )?;
 
         let callee_code_hash = call.code_hash;
-        let callee_exists = !state.sdb.get_account(&callee_address).1.is_empty();
+        let callee = state.sdb.get_account(&callee_address).1.clone();
+        let callee_exists = !callee.is_empty();
 
         let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
             (
@@ -145,11 +146,13 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         debug_assert!(found);
 
         let caller_balance = sender_account.balance;
+
         let is_call_or_callcode = call.kind == CallKind::Call || call.kind == CallKind::CallCode;
+        let is_sufficient = caller_balance >= call.value;
+        let is_valid_depth = geth_step.depth < 1025;
 
         // Precheck is OK when depth is in range and caller balance is sufficient
-        let is_precheck_ok =
-            geth_step.depth < 1025 && (!is_call_or_callcode || caller_balance >= call.value);
+        let is_precheck_ok = is_valid_depth && (is_sufficient || !is_call_or_callcode);
 
         log::debug!(
             "is_precheck_ok: {}, call type: {:?}, sender_account: {:?} ",
@@ -175,7 +178,22 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             .unwrap_or(false);
         // TODO: What about transfer for CALLCODE?
         // Transfer value only for CALL opcode, is_precheck_ok = true.
-        if call.kind == CallKind::Call && is_precheck_ok {
+        if is_call_or_callcode && is_precheck_ok {
+            state.account_read(
+                &mut exec_step,
+                call.caller_address,
+                AccountField::Balance,
+                caller_balance,
+            );
+            if callee_exists {
+                state.account_read(
+                    &mut exec_step,
+                    call.address,
+                    AccountField::Balance,
+                    callee.balance,
+                );
+            }
+
             state.transfer(
                 &mut exec_step,
                 call.caller_address,
