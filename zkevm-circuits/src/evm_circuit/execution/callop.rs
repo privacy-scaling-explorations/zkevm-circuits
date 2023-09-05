@@ -14,7 +14,7 @@ use crate::{
                 ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget,
             },
             memory_gadget::CommonMemoryAddressGadget,
-            not, or, select, CachedRegion, Cell,
+            not, or, select, CachedRegion, Cell, StepRws,
         },
     },
     util::word::{Word, WordCell, WordExpr},
@@ -475,8 +475,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_call = opcode == OpcodeId::CALL;
         let is_callcode = opcode == OpcodeId::CALLCODE;
         let is_delegatecall = opcode == OpcodeId::DELEGATECALL;
-        let [tx_id, is_static, depth, current_callee_address] =
-            [0, 3, 4, 5].map(|index| block.get_rws(step, index).call_context_value());
+        let mut rws = StepRws::new(block, step);
+        let tx_id = rws.next().call_context_value();
+        rws.next(); // RwCounterEndOfReversion
+        rws.next(); // IsPersistent
+
+        let is_static = rws.next().call_context_value();
+        let depth = rws.next().call_context_value();
+        let current_callee_address = rws.next().call_context_value();
+
         let is_error_depth = depth.low_u64() > 1024;
         self.is_depth_ok
             .assign(region, offset, F::from(depth.low_u64()), F::from(1025))?;
@@ -484,37 +491,39 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // Since both CALL and CALLCODE have an extra stack pop `value`, and
         // opcode DELEGATECALL has two extra call context lookups - current
         // caller address and current value.
-        let mut rw_offset = 0;
         let [current_caller_address, current_value] = if is_delegatecall {
-            rw_offset += 2;
-            [6, 7].map(|index| block.get_rws(step, index).call_context_value())
+            [
+                rws.next().call_context_value(),
+                rws.next().call_context_value(),
+            ]
         } else {
             [U256::zero(), U256::zero()]
         };
-        let [gas, callee_address] =
-            [6, 7].map(|i| block.get_rws(step, i + rw_offset).stack_value());
+        let gas = rws.next().stack_value();
+        let callee_address = rws.next().stack_value();
+
         let value = if is_call || is_callcode {
-            let value = block.get_rws(step, 8 + rw_offset).stack_value();
-            rw_offset += 1;
-            value
+            rws.next().stack_value()
         } else {
             U256::zero()
         };
-        let [cd_offset, cd_length, rd_offset, rd_length, is_success] =
-            [8, 9, 10, 11, 12].map(|i| block.get_rws(step, i + rw_offset).stack_value());
-        let callee_code_hash = block.get_rws(step, 13 + rw_offset).account_value_pair().0;
+        let cd_offset = rws.next().stack_value();
+        let cd_length = rws.next().stack_value();
+        let rd_offset = rws.next().stack_value();
+        let rd_length = rws.next().stack_value();
+        let is_success = rws.next().stack_value();
+
+        let callee_code_hash = rws.next().account_value_pair().0;
         let callee_exists = !callee_code_hash.is_zero();
 
-        let (is_warm, is_warm_prev) = block
-            .get_rws(step, 14 + rw_offset)
-            .tx_access_list_value_pair();
+        let (is_warm, is_warm_prev) = rws.next().tx_access_list_value_pair();
 
-        let [callee_rw_counter_end_of_reversion, callee_is_persistent] =
-            [15, 16].map(|index| block.get_rws(step, index + rw_offset).call_context_value());
+        let callee_rw_counter_end_of_reversion = rws.next().call_context_value();
+        let callee_is_persistent = rws.next().call_context_value();
 
         // check if it is insufficient balance case.
         // get caller balance
-        let (caller_balance, _) = block.get_rws(step, 17 + rw_offset).account_value_pair();
+        let caller_balance = rws.next().account_value_pair().0;
         self.caller_balance
             .assign_u256(region, offset, caller_balance)?;
         self.is_insufficient_balance
@@ -524,7 +533,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // only call opcode do transfer in sucessful case.
         let [caller_balance_pair, callee_balance_pair] =
             if is_call && !is_insufficient && !is_error_depth && !value.is_zero() {
-                [18, 19].map(|index| block.get_rws(step, index + rw_offset).account_value_pair())
+                [
+                    rws.next().account_value_pair(),
+                    rws.next().account_value_pair(),
+                ]
             } else {
                 [(U256::zero(), U256::zero()), (U256::zero(), U256::zero())]
             };
