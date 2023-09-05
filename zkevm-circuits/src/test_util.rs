@@ -200,7 +200,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             panic!("No attribute to build a block was passed to the CircuitTestBuilder")
         };
         let params = block.circuits_params;
-
+        block.debug_print_txs_steps_rw_ops();
         // Run evm circuit test
         {
             let k = block.get_test_degree();

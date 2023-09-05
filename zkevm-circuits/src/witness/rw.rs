@@ -358,14 +358,23 @@ impl Rw {
     }
 
     pub(crate) fn account_balance_pair(&self) -> (Word, Word) {
+        println!("I'm {:?}", self,);
         match self {
             Self::Account {
+                account_address,
+                rw_counter,
                 value,
                 value_prev,
                 field_tag,
                 ..
             } => {
-                debug_assert_eq!(field_tag, &AccountFieldTag::Balance);
+                debug_assert_eq!(
+                    field_tag,
+                    &AccountFieldTag::Balance,
+                    "fail at rwc: {} {}",
+                    rw_counter,
+                    account_address
+                );
                 (*value, *value_prev)
             }
             _ => unreachable!(),
@@ -388,14 +397,23 @@ impl Rw {
     }
 
     pub(crate) fn account_codehash_pair(&self) -> (Word, Word) {
+        println!("I'm {:?}", self,);
         match self {
             Self::Account {
+                account_address,
+                rw_counter,
                 value,
                 value_prev,
                 field_tag,
                 ..
             } => {
-                debug_assert_eq!(field_tag, &AccountFieldTag::CodeHash);
+                debug_assert_eq!(
+                    field_tag,
+                    &AccountFieldTag::CodeHash,
+                    "fail at rwc: {} {}",
+                    rw_counter,
+                    account_address
+                );
                 (*value, *value_prev)
             }
             _ => unreachable!(),

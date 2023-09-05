@@ -296,13 +296,24 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
 
         let add_words = AddWordsGadget::construct(
             cb,
-            std::iter::once(balance_addend)
+            std::iter::once(balance_addend.clone())
                 .chain(updates.to_vec())
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap(),
-            balance_sum,
+            balance_sum.clone(),
         );
+        // let (lo, hi) = balance_addend.clone().to_word().to_lo_hi();
+        // cb.debug_expression("balance_addend lo", lo);
+        // cb.debug_expression("balance_addend hi", hi);
+
+        // let (lo, hi) = balance_sum.clone().to_word().to_lo_hi();
+        // cb.debug_expression("balance_sum lo", lo);
+        // cb.debug_expression("balance_sum hi", hi);
+
+        // let (lo, hi) = updates[0].clone().to_word().to_lo_hi();
+        // cb.debug_expression("updates lo", lo);
+        // cb.debug_expression("updates hi", hi);
 
         cb.account_write(
             address,

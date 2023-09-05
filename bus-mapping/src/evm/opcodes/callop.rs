@@ -178,22 +178,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             .unwrap_or(false);
         // TODO: What about transfer for CALLCODE?
         // Transfer value only for CALL opcode, is_precheck_ok = true.
-        if is_call_or_callcode && is_precheck_ok {
-            state.account_read(
-                &mut exec_step,
-                call.caller_address,
-                AccountField::Balance,
-                caller_balance,
-            );
-            if callee_exists {
-                state.account_read(
-                    &mut exec_step,
-                    call.address,
-                    AccountField::Balance,
-                    callee.balance,
-                );
-            }
-
+        if is_call_or_callcode && is_precheck_ok && !call.value.is_zero() {
             state.transfer(
                 &mut exec_step,
                 call.caller_address,
