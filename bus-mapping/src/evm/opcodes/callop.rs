@@ -221,9 +221,9 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
         // There are 4 branches from here.
         // add failure case for insufficient balance or error depth in the future.
-        match (!is_precheck_ok, is_precompile, is_empty_code_hash) {
+        match (is_precheck_ok, is_precompile, is_empty_code_hash) {
             // 1. Call to precompiled.
-            (false, true, _) => {
+            (true, true, _) => {
                 assert!(call.is_success, "call to precompile should not fail");
                 let caller_ctx = state.caller_ctx_mut()?;
                 let code_address = code_address.unwrap();
@@ -275,7 +275,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 Ok(vec![exec_step])
             }
             // 2. Call to account with empty code.
-            (false, _, true) => {
+            (true, _, true) => {
                 for (field, value) in [
                     (CallContextField::LastCalleeId, 0.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
@@ -287,7 +287,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 Ok(vec![exec_step])
             }
             // 3. Call to account with non-empty code.
-            (false, _, false) => {
+            (true, _, false) => {
                 for (field, value) in [
                     (CallContextField::ProgramCounter, (geth_step.pc + 1).into()),
                     (
@@ -349,7 +349,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             }
 
             // 4. insufficient balance or error depth cases.
-            (true, _, _) => {
+            (false, _, _) => {
                 for (field, value) in [
                     (CallContextField::LastCalleeId, 0.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
