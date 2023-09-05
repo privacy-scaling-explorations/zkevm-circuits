@@ -71,7 +71,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSha3Gadget<F> {
             1.expr(),
         );
 
-        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 4.expr());
+        let common_error_gadget =
+            CommonErrorGadget::construct(cb, opcode.expr(), cb.rw_counter_offset());
 
         Self {
             opcode,
