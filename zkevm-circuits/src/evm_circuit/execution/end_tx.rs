@@ -208,7 +208,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let gas_used = tx.gas() - step.gas_left;
         let (refund, _) = block.get_rws(step, 2).tx_refund_value_pair();
         let [(caller_balance, caller_balance_prev), (coinbase_balance, coinbase_balance_prev)] =
-            [3, 4].map(|index| block.get_rws(step, index).account_value_pair());
+            [3, 4].map(|index| block.get_rws(step, index).account_balance_pair());
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id)))?;

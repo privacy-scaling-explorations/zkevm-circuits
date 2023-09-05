@@ -513,7 +513,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let rd_length = rws.next().stack_value();
         let is_success = rws.next().stack_value();
 
-        let callee_code_hash = rws.next().account_value_pair().0;
+        let callee_code_hash = rws.next().account_codehash_pair().0;
         let callee_exists = !callee_code_hash.is_zero();
 
         let (is_warm, is_warm_prev) = rws.next().tx_access_list_value_pair();
@@ -523,7 +523,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         // check if it is insufficient balance case.
         // get caller balance
-        let caller_balance = rws.next().account_value_pair().0;
+        let caller_balance = rws.next().account_balance_pair().0;
         self.caller_balance
             .assign_u256(region, offset, caller_balance)?;
         self.is_insufficient_balance
@@ -534,8 +534,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let [caller_balance_pair, callee_balance_pair] =
             if is_call && !is_insufficient && !is_error_depth && !value.is_zero() {
                 [
-                    rws.next().account_value_pair(),
-                    rws.next().account_value_pair(),
+                    rws.next().account_balance_pair(),
+                    rws.next().account_balance_pair(),
                 ]
             } else {
                 [(U256::zero(), U256::zero()), (U256::zero(), U256::zero())]
