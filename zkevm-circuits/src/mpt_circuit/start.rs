@@ -138,6 +138,7 @@ impl<F: Field> StartConfig<F> {
                 F::ZERO,
                 F::ONE,
                 0,
+                F::ZERO,
             )?;
         }
 

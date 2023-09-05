@@ -73,6 +73,10 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 require!(config.parent_data[is_s.idx()].is_placeholder => false);
             }
 
+            // impl_expr_result accept only up to 12 elements, so nibbles_rlc cannot be added to
+            // the tuple below.
+            let mut nibbles_rlc = 0.expr();
+
             // Extension
             let (
                 num_nibbles,
@@ -97,6 +101,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     &config.is_placeholder,
                 );
                 let ext = config.extension.get_post_state();
+                nibbles_rlc = ext.nibbles_rlc;
                 (
                     ext.num_nibbles,
                     ext.is_key_odd,
@@ -164,6 +169,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         0.expr(),
                         0.expr(),
                         false.expr(),
+                        nibbles_rlc.clone(),
                     );
                     ParentData::store(
                         cb,
@@ -186,6 +192,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         branch.key_mult_post_drifted.expr(),
                         branch.num_nibbles.expr(),
                         branch.is_key_odd.expr(),
+                        nibbles_rlc.clone(),
                     );
                     ParentData::store(
                         cb,
@@ -245,6 +252,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
         let mut key_mult = key_data.mult;
         let mut num_nibbles = key_data.num_nibbles;
         let mut is_key_odd = key_data.is_odd;
+        let mut nibbles_rlc = F::ZERO;
 
         // Extension
         if extension_branch.is_extension {
@@ -258,6 +266,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 &mut key_mult,
                 &mut num_nibbles,
                 &mut is_key_odd,
+                &mut nibbles_rlc,
                 node,
                 rlp_values,
             )?;
@@ -297,6 +306,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     0.scalar(),
                     0.scalar(),
                     0,
+                    nibbles_rlc,
                 )?;
                 ParentData::witness_store(
                     region,
@@ -319,6 +329,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     key_rlc_post_drifted,
                     key_mult_post_branch,
                     num_nibbles,
+                    nibbles_rlc,
                 )?;
                 ParentData::witness_store(
                     region,

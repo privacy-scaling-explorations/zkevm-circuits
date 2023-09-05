@@ -408,6 +408,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 F::ZERO,
                 F::ONE,
                 0,
+                F::ZERO,
             )?;
 
             // Key

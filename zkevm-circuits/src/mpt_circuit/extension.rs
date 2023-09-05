@@ -31,6 +31,7 @@ pub(crate) struct ExtState<F> {
     pub(crate) key_mult: Expression<F>,
     pub(crate) num_nibbles: Expression<F>,
     pub(crate) is_key_odd: Expression<F>,
+    pub(crate) nibbles_rlc: Expression<F>,
 
     pub(crate) branch_rlp_word: [Word<Expression<F>>; 2],
     pub(crate) branch_rlp_rlc: [Expression<F>; 2],
@@ -160,6 +161,21 @@ impl<F: Field> ExtensionGadget<F> {
                 key_data.is_odd.expr()
             }};
 
+            let nibbles_rlc = ext_key_rlc_expr(
+                    cb,
+                    config.rlp_key.key_value.clone(),
+                    1.expr(),
+                    config.is_key_part_odd.expr(),
+                    false.expr(),
+                    key_items
+                        .iter()
+                        .map(|item| item.bytes_be())
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap(),
+                    &cb.key_r.expr(),
+                );
+
             // Calculate the extension node key RLC when in an extension node
             // Currently, the extension node S and extension node C both have the same key
             // RLC - however, sometimes extension node can be replaced by a
@@ -198,6 +214,7 @@ impl<F: Field> ExtensionGadget<F> {
                 is_key_odd,
                 branch_rlp_word: branch_rlp_word.try_into().unwrap(),
                 branch_rlp_rlc: branch_rlp_rlc.try_into().unwrap(),
+                nibbles_rlc,
             });
         });
 
@@ -220,6 +237,7 @@ impl<F: Field> ExtensionGadget<F> {
         key_mult: &mut F,
         num_nibbles: &mut usize,
         is_key_odd: &mut bool,
+        nibbles_rlc: &mut F,
         node: &Node,
         rlp_values: &[RLPItemWitness],
     ) -> Result<(), Error> {
@@ -274,6 +292,20 @@ impl<F: Field> ExtensionGadget<F> {
         } else {
             *is_key_odd
         };
+
+        (*nibbles_rlc, _) = ext_key_rlc_calc_value(
+            rlp_key.key_item.clone(),
+            F::ONE,
+            is_key_part_odd,
+            false,
+            key_items
+                .iter()
+                .map(|item| item.bytes.clone())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            region.key_r,
+        );
 
         // Key RLC
         let (key_rlc_ext, _) = ext_key_rlc_calc_value(

@@ -178,6 +178,7 @@ impl<F: Field> ModExtensionGadget<F> {
                 HASH_WIDTH.scalar(),
             )?;
 
+            /*
             let (is_short, is_long) = (key_items[is_s.idx()].is_short(), key_items[is_s.idx()].is_long());
             let key_data = vec![key_items[is_s.idx()].clone(), key_nibbles[is_s.idx()].clone()];
             let data = key_data
@@ -210,8 +211,8 @@ impl<F: Field> ModExtensionGadget<F> {
                     calc_rlc(&data[0][..1].iter().map(|byte| byte.scalar()).collect::<Vec<_>>())
                 },
             };
-
             // RLC of long needs to be RLC of middle + RLC of short
+            */
         }
         
         // TODO
