@@ -605,7 +605,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_precheck_ok = is_valid_depth && (is_sufficient || !is_call_or_callcode);
 
         // conditionally assign
-        if is_call_or_callcode && is_precheck_ok && !value.is_zero() {
+        if is_call && is_precheck_ok && !value.is_zero() {
             if !callee_exists {
                 rws.next().account_codehash_pair(); // callee hash
             }
