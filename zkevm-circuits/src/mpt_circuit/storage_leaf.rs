@@ -226,6 +226,7 @@ impl<F: Field> StorageLeafConfig<F> {
                     cb,
                     ctx.clone(),
                     &mut config.parent_data,
+                    &mut config.key_data,
                 );
             }};
 

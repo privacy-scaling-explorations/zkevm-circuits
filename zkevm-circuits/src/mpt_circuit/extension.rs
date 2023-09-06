@@ -153,14 +153,6 @@ impl<F: Field> ExtensionGadget<F> {
             // Make sure the nibble counter is updated correctly
             let num_nibbles = key_data.num_nibbles.expr() + num_nibbles.expr();
 
-            // The parity alternates when there's an even number of nibbles, remains the
-            // same otherwise
-            let is_key_odd = ifx! {config.is_key_part_odd => {
-                not!(key_data.is_odd)
-            } elsex {
-                key_data.is_odd.expr()
-            }};
-
             let nibbles_rlc = ext_key_rlc_expr(
                     cb,
                     config.rlp_key.key_value.clone(),
@@ -187,7 +179,7 @@ impl<F: Field> ExtensionGadget<F> {
                     config.rlp_key.key_value.clone(),
                     key_data.mult.expr(),
                     config.is_key_part_odd.expr(),
-                    not!(is_key_odd),
+                    key_data.is_odd.expr(),
                     key_items
                         .iter()
                         .map(|item| item.bytes_be())
@@ -196,6 +188,14 @@ impl<F: Field> ExtensionGadget<F> {
                         .unwrap(),
                     &cb.key_r.expr(),
                 );
+
+            // The parity alternates when there's an even number of nibbles, remains the
+            // same otherwise
+            let is_key_odd = ifx! {config.is_key_part_odd => {
+                not!(key_data.is_odd)
+            } elsex {
+                key_data.is_odd.expr()
+            }};
 
             // Get the length of the key
             // Unless both parts of the key are odd, subtract 1 from the key length.
@@ -286,13 +286,6 @@ impl<F: Field> ExtensionGadget<F> {
         // Update number of nibbles
         *num_nibbles += num_nibbles::value(rlp_key.key_item.len(), is_key_part_odd);
 
-        // Update parity
-        *is_key_odd = if is_key_part_odd {
-            !*is_key_odd
-        } else {
-            *is_key_odd
-        };
-
         (*nibbles_rlc, _) = ext_key_rlc_calc_value(
             rlp_key.key_item.clone(),
             F::ONE,
@@ -312,7 +305,7 @@ impl<F: Field> ExtensionGadget<F> {
             rlp_key.key_item,
             key_data.mult,
             is_key_part_odd,
-            !*is_key_odd,
+            *is_key_odd,
             key_items
                 .iter()
                 .map(|item| item.bytes.clone())
@@ -322,6 +315,13 @@ impl<F: Field> ExtensionGadget<F> {
             region.key_r,
         );
         *key_rlc = key_data.rlc + key_rlc_ext;
+
+        // Update parity
+        *is_key_odd = if is_key_part_odd {
+            !*is_key_odd
+        } else {
+            *is_key_odd
+        };
 
         // Key mult
         let mult_key = pow::value(region.key_r, key_len_mult);

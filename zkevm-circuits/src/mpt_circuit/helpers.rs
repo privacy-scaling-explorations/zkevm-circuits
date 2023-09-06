@@ -216,7 +216,7 @@ pub(crate) fn ext_key_rlc_expr<F: Field>(
 ) -> Expression<F> {
     circuit!([meta, cb.base], {
         let (is_short, is_long) = (key_value.is_short(), key_value.is_long());
-        let mult_first_odd = ifx! {is_key_odd => { 1.expr() } elsex { 16.expr() }};
+        let mult_first_odd = ifx! {is_key_odd.clone() => { 1.expr() } elsex { 16.expr() }};
         let calc_rlc = |cb: &mut MPTConstraintBuilder<F>,
                         bytes: &[Expression<F>],
                         key_mult_first_even: Expression<F>| {
@@ -231,7 +231,7 @@ pub(crate) fn ext_key_rlc_expr<F: Field>(
             )
         };
         matchx! {
-            and::expr(&[is_long.expr(), not!(is_key_odd)]) => {
+            and::expr(&[is_long.expr(), or::expr(&[and::expr(&[is_key_odd.clone(), not!(is_key_part_odd.clone())]), and::expr(&[not!(is_key_odd.clone()), is_key_part_odd.clone()])])]) => {
                 // Here we need to multiply nibbles over bytes with different r's so we need to rlc over separate nibbles.
                 // Note that there can be at max 31 key bytes because 32 same bytes would mean
                 // the two keys being the same - update operation, not splitting into extension node.
@@ -247,7 +247,7 @@ pub(crate) fn ext_key_rlc_expr<F: Field>(
                 }).collect::<Vec<_>>());
                 calc_rlc(cb, &key_bytes, 1.expr())
             },
-            and::expr(&[is_long.expr(), is_key_odd.expr()]) => {
+            and::expr(&[is_long.expr(), or::expr(&[and::expr(&[not!(is_key_odd.clone()), not!(is_key_part_odd.clone())]), and::expr(&[is_key_odd.clone(), is_key_part_odd.clone()])])]) => {
                 let additional_mult = ifx! {is_key_part_odd => { r.expr() } elsex { 1.expr() }};
                 calc_rlc(cb, &data[0][1..], additional_mult)
             },
@@ -256,22 +256,6 @@ pub(crate) fn ext_key_rlc_expr<F: Field>(
             },
         }
     })
-}
-
-pub(crate) fn bytes_from_key_data<F: Field>(
-    data: [Vec<u8>; 2],
-    r: F,
-) -> Vec<F> {
-    let mut key_bytes = vec![data[0][1].scalar()];
-    key_bytes.append(&mut data[0][1..].iter().skip(1).zip(data[1][2..].iter()).map(|(byte, nibble_hi)| {
-        let nibble_lo = (byte - nibble_hi) >> 4;
-        // Check that `nibble_hi` is correct.
-        assert!(*byte == nibble_lo * 16 + nibble_hi);
-        // Collect bytes
-        (F::from(*nibble_hi as u64) * F::from(16_u64) * r) + F::from(nibble_lo as u64)
-    }).collect::<Vec<_>>());
-
-    key_bytes
 }
 
 pub(crate) fn ext_key_rlc_calc_value<F: Field>(
@@ -295,14 +279,21 @@ pub(crate) fn ext_key_rlc_calc_value<F: Field>(
         )
     };
     matchw! {
-        is_long && !is_key_odd => {
+        is_long && ((is_key_odd && !is_key_part_odd) || (!is_key_odd && is_key_part_odd)) => {
             // Here we need to multiply nibbles over bytes with different r's so we need to rlc over separate nibbles.
             // Note that there can be at max 31 key bytes because 32 same bytes would mean
             // the two keys being the same - update operation, not splitting into extension node.
-            let key_bytes = bytes_from_key_data(data, r); 
+            let mut key_bytes = vec![data[0][1].scalar()];
+            key_bytes.append(&mut data[0][1..].iter().skip(1).zip(data[1][2..].iter()).map(|(byte, nibble_hi)| {
+                let nibble_lo = (byte - nibble_hi) >> 4;
+                // Check that `nibble_hi` is correct.
+                assert!(*byte == nibble_lo * 16 + nibble_hi);
+                // Collect bytes
+                (F::from(*nibble_hi as u64) * F::from(16_u64) * r) + F::from(nibble_lo as u64)
+            }).collect::<Vec<_>>());
             calc_rlc(&key_bytes, 1.scalar())
         },
-        is_long && is_key_odd => {
+        is_long && ((!is_key_odd && !is_key_part_odd) || (is_key_odd && is_key_part_odd)) => {
             let additional_mult = if is_key_part_odd { r } else { 1.scalar() };
             calc_rlc(&data[0][1..].iter().map(|byte| byte.scalar()).collect::<Vec<_>>(), additional_mult)
         },

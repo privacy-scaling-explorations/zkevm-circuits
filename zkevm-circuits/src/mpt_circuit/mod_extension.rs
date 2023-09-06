@@ -3,7 +3,7 @@ use gadgets::util::Scalar;
 use halo2_proofs::plonk::{Error, VirtualCells};
 
 use super::{
-    helpers::{ListKeyGadget, MPTConstraintBuilder, ListKeyWitness, bytes_from_key_data},
+    helpers::{ListKeyGadget, MPTConstraintBuilder, ListKeyWitness, KeyData},
     rlp_gadgets::{RLPItemWitness, get_ext_odd_nibble_value},
     MPTContext,
 };
@@ -15,7 +15,7 @@ use crate::{
     },
     mpt_circuit::{
         helpers::{
-            Indexable, ParentData, KECCAK, parent_memory, FIXED, ext_key_rlc_value,
+            Indexable, ParentData, KECCAK, parent_memory, FIXED, ext_key_rlc_value, key_memory,
         },
         RlpItemType, witness_row::StorageRowType, FixedTableTag, param::{HASH_WIDTH, KEY_PREFIX_EVEN},
     }, matchw,
@@ -35,6 +35,7 @@ impl<F: Field> ModExtensionGadget<F> {
         cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
         parent_data: &mut [ParentData<F>; 2],
+        key_data: &mut [KeyData<F>; 2],
     ) -> Self {
         let mut config = ModExtensionGadget::default();
 
@@ -116,6 +117,19 @@ impl<F: Field> ModExtensionGadget<F> {
                         // Non-hashed branch hash in parent branch
                         require!(rlc => parent_data.rlc);
                     }}
+
+                    let key_data = &mut key_data[is_s.idx()];
+                    *key_data = KeyData::load(cb, &ctx.memory[key_memory(is_s)], 0.expr());
+
+                    let r = cb.key_r.clone();
+                    // let test = key_data.nibbles_rlc + 
+                    let foo = (1.expr() * 16.expr() + 2.expr()) + (3.expr() * 16.expr() + 4.expr()) * r.clone();
+                    // println!("{:?}", foo);
+                    // println!("{:?}", key_data.nibbles_rlc);
+                    require!(foo => key_data.nibbles_rlc);
+
+
+
                 }
 
             }
@@ -178,41 +192,6 @@ impl<F: Field> ModExtensionGadget<F> {
                 HASH_WIDTH.scalar(),
             )?;
 
-            /*
-            let (is_short, is_long) = (key_items[is_s.idx()].is_short(), key_items[is_s.idx()].is_long());
-            let key_data = vec![key_items[is_s.idx()].clone(), key_nibbles[is_s.idx()].clone()];
-            let data = key_data
-                .iter()
-                .map(|item| item.bytes.clone())
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap();
-
-            let calc_rlc = |bytes: &[F]| {
-                ext_key_rlc_value(
-                    bytes,
-                    1.scalar(),
-                    is_key_part_odd,
-                    1.scalar(),
-                    1.scalar(),
-                    region.key_r,
-                )
-            };
-
-            let (rlc, _) = matchw! {
-                is_long && is_key_part_odd => {
-                    let key_bytes = bytes_from_key_data(data, region.key_r);
-                    calc_rlc(&key_bytes)
-                },
-                is_long && !is_key_part_odd => {
-                    calc_rlc(&data[0][1..].iter().map(|byte| byte.scalar()).collect::<Vec<_>>())
-                },
-                is_short => {
-                    calc_rlc(&data[0][..1].iter().map(|byte| byte.scalar()).collect::<Vec<_>>())
-                },
-            };
-            // RLC of long needs to be RLC of middle + RLC of short
-            */
         }
         
         // TODO
