@@ -606,7 +606,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_precheck_ok = is_valid_depth && (is_sufficient || !is_call_or_callcode);
 
         // conditionally assign
-        if is_call_or_callcode && is_precheck_ok {
+        if is_call_or_callcode && is_precheck_ok && !value.is_zero() {
+            if !callee_exists {
+                rws.next().account_codehash_pair(); // callee hash
+            }
+
             let caller_balance_pair = rws.next().account_balance_pair();
             let callee_balance_pair = rws.next().account_balance_pair();
             self.transfer.assign(
