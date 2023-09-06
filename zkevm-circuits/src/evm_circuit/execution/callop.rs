@@ -253,8 +253,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 // caller address and value (+2).
                 //
                 // No extra lookups for STATICCALL opcode.
-                let transfer_rwc_delta =
-                    is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
+                let transfer_rwc_delta = is_call.expr() * transfer.reversible_w_delta();
                 let rw_counter_delta = 21.expr()
                     + is_call.expr() * 1.expr()
                     + transfer_rwc_delta.clone()
