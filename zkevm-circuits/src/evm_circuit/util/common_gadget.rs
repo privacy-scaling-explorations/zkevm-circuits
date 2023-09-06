@@ -353,7 +353,7 @@ impl<F: Field> TransferToGadget<F> {
         receiver_exists: Expression<F>,
         must_create: Expression<F>,
         value: Word32Cell<F>,
-        reversion_info: &mut ReversionInfo<F>,
+        mut reversion_info: Option<&mut ReversionInfo<F>>,
         account_write: bool,
     ) -> Self {
         let value_is_zero = IsZeroWordGadget::construct(cb, &value);
@@ -364,7 +364,7 @@ impl<F: Field> TransferToGadget<F> {
                 receiver_exists.clone(),
                 must_create.clone(),
                 value_is_zero.expr(),
-                reversion_info,
+                reversion_info.as_deref_mut(),
             );
         }
         let receiver = cb.condition(not::expr(value_is_zero.expr()), |cb| {
@@ -372,7 +372,7 @@ impl<F: Field> TransferToGadget<F> {
                 cb,
                 receiver_address,
                 vec![value.clone()],
-                Some(reversion_info),
+                reversion_info,
             )
         });
 
@@ -390,12 +390,12 @@ impl<F: Field> TransferToGadget<F> {
         receiver_exists: Expression<F>,
         must_create: Expression<F>,
         value_is_zero: Expression<F>,
-        reversion_info: &mut ReversionInfo<F>,
+        reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
         cb.condition(
             or::expr([
                 not::expr(value_is_zero.expr()) * not::expr(receiver_exists.expr()),
-                must_create.clone(),
+                must_create,
             ]),
             |cb| {
                 cb.account_write(
@@ -403,7 +403,7 @@ impl<F: Field> TransferToGadget<F> {
                     AccountFieldTag::CodeHash,
                     cb.empty_code_hash(),
                     Word::zero(),
-                    Some(reversion_info),
+                    reversion_info,
                 );
             },
         );
@@ -466,7 +466,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             receiver_exists.clone(),
             must_create.clone(),
             value_is_zero.expr(),
-            reversion_info,
+            Some(reversion_info),
         );
         // Skip transfer if value == 0
         let sender_sub_value = cb.condition(not::expr(value_is_zero.expr()), |cb| {
@@ -483,7 +483,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             receiver_exists,
             must_create,
             value,
-            reversion_info,
+            Some(reversion_info),
             false,
         );
 
@@ -586,7 +586,7 @@ impl<F: Field> TransferGadget<F> {
             receiver_exists.clone(),
             must_create.clone(),
             value_is_zero.expr(),
-            reversion_info,
+            Some(reversion_info),
         );
         // Skip transfer if value == 0
         let sender = cb.condition(not::expr(value_is_zero.expr()), |cb| {
@@ -603,7 +603,7 @@ impl<F: Field> TransferGadget<F> {
             receiver_exists,
             must_create,
             value,
-            reversion_info,
+            Some(reversion_info),
             false,
         );
 
