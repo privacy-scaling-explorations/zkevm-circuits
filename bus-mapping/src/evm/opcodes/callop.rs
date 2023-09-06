@@ -176,7 +176,10 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let is_precompile = code_address
             .map(|ref addr| is_precompiled(addr))
             .unwrap_or(false);
-        // Transfer value only for CALL opcode, is_precheck_ok = true.
+        // Transfer value only when all these conditions met:
+        // - The opcode is CALL
+        // - The precheck passed
+        // - The value to send is not zero
         if call.kind == CallKind::Call && is_precheck_ok && !call.value.is_zero() {
             state.transfer(
                 &mut exec_step,
