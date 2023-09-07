@@ -41,11 +41,6 @@ func prepareModExtensionNode(statedb *state.StateDB, addr common.Address, rows *
 	extNodeSelectors = append(extNodeSelectors, 24)
 
 	_, extListRlpBytesS, extValuesS := prepareExtensions(extNibbles, extensionNodeInd, longExtNode, longExtNode)
-	/*
-		b := []byte{249, 1, 49, 128} // We don't really need a branch info (only extension node).
-		longNode := prepareBranchNode(b, b, longExtNode, longExtNode, extListRlpBytes, extValues,
-			key[keyIndex], key[keyIndex], branchC16, branchC1, false, false, true, false, false)
-	*/
 
 	var extRows [][]byte
 	// We need to prove the old extension node is in S proof (when ext. node inserted).
@@ -61,7 +56,6 @@ func prepareModExtensionNode(statedb *state.StateDB, addr common.Address, rows *
 	longNibbles := getExtensionNodeNibbles(longExtNode)
 
 	ind := byte(keyIndex) + byte(numberOfNibbles) // where the old and new extension nodes start to be different
-	// diffNibble := oldNibbles[ind]
 	longExtNodeKey := make([]byte, len(key))
 	copy(longExtNodeKey, key)
 	// We would like to retrieve the shortened extension node from the trie via GetProof or
@@ -91,13 +85,6 @@ func prepareModExtensionNode(statedb *state.StateDB, addr common.Address, rows *
 	}
 
 	var shortExtNode []byte
-	/*
-		extNodeSelectors1 := make([]byte, rowLen)
-		emptyExtRows := prepareEmptyExtensionRows(false, true)
-		extensionRowS1 := emptyExtRows[0]
-		extensionRowC1 := emptyExtRows[1]
-	*/
-
 	var extListRlpBytesC []byte
 	var extValuesC [][]byte
 
@@ -141,38 +128,13 @@ func prepareModExtensionNode(statedb *state.StateDB, addr common.Address, rows *
 		// Enable `prepareExtensionRows` call:
 		extNibbles = append(extNibbles, nibbles)
 
-		/*
-			var numberOfNibbles1 byte
-			numberOfNibbles1, extensionRowS1, extensionRowC1 =
-				prepareExtensionRows(extNibbles, extensionNodeInd + 1, shortExtNode, shortExtNode, false, true)
-		*/
-
 		_, extListRlpBytesC, extValuesC = prepareExtensions(extNibbles, extensionNodeInd+1, shortExtNode, shortExtNode)
-		/*
-			shortNode = prepareBranchNode(b, b, shortExtNode, shortExtNode, extListRlpBytes, extValues,
-				key[keyIndex], key[keyIndex], branchC16, branchC1, false, false, true, false, false)
 
-			setExtNodeSelectors(extNodeSelectors1, shortExtNode, int(numberOfNibbles1), branchC16)
-		*/
-		// extNodeSelectors1 = append(extNodeSelectors1, 25)
-	} /* else {
-		if len1 > len2 {
-			// Needed only for len1 > len2
-			(*rows)[len(*rows)-branchRows-9][driftedPos] = longNibbles[numberOfNibbles]
-		}
-
-		extNodeSelectors1 = append(extNodeSelectors1, 25)
 	}
-	*/
 
 	// The shortened extension node is needed as a witness to be able to check in a circuit
 	// that the shortened extension node and newly added leaf (that causes newly inserted
 	// extension node) are the only nodes in the newly inserted extension node.
-	/*
-	*rows = append(*rows, extNodeSelectors1)
-	*rows = append(*rows, extensionRowS1)
-	*rows = append(*rows, extensionRowC1)
-	 */
 
 	listRlpBytes := [2][]byte{extListRlpBytesS, extListRlpBytesC}
 	modExtensionNode := ModExtensionNode{
