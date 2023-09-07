@@ -1,5 +1,5 @@
 #!/bin/bash
-set -eo pipefail
+#set -eo pipefail
 
 # Function to check if sysstat is installed
 check_sysstat_installed() {
