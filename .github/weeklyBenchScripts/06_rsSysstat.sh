@@ -1,5 +1,5 @@
 #!/bin/bash
-set -eo pipefail
+#set -eo pipefail
 
 echo "Killing sadc"
 sudo pkill sadc
