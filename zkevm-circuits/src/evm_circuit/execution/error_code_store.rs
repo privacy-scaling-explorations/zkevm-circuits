@@ -82,13 +82,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
             vec![1.expr(), 2.expr()],
         );
 
-        let common_error_gadget = CommonErrorGadget::construct_with_return_data(
-            cb,
-            opcode.expr(),
-            cb.rw_counter_offset(),
-            memory_address.offset(),
-            memory_address.length(),
-        );
+        let common_error_gadget =
+            CommonErrorGadget::construct(cb, opcode.expr(), cb.rw_counter_offset());
 
         Self {
             opcode,
