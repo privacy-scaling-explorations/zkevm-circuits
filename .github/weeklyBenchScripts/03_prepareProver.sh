@@ -1,4 +1,5 @@
 #!/bin/bash
+set -eo pipefail
 
 GITHUB_RUN_ID=$1
 

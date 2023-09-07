@@ -1,6 +1,6 @@
 #!/bin/bash
-#set -e
-#set -x
+set -eo pipefail
+
 echo "Killing sadc"
 sudo pkill sadc
 echo "Cleaning /var/log/sysstat"

@@ -1,4 +1,6 @@
 #!/bin/bash
+set -eo pipefail
+
 sudo apt update
 
 # Check if Git is already installed

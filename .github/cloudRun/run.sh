@@ -1,4 +1,6 @@
 #!/bin/bash
+set -eo pipefail
+
 GITHUB_RUN_ID=$1
 export GOROOT="/usr/local/go"
 export GOPATH="$HOME/go"
@@ -9,7 +11,7 @@ current_dir="$HOME"/CI_Prover_Benches/"$GITHUB_RUN_ID"
 
 target_dir="$current_dir/zkevm-circuits"
 
-cd $target_dir || exit 1
+cd "$target_dir" || exit 1
 
 # ENTER YOUR TEST COMMAND BELOW
 make test-all

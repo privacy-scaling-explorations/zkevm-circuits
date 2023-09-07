@@ -1,4 +1,6 @@
 #!/bin/bash
+set -eo pipefail
+
 GITHUB_RUN_ID=$1
 
 ensure_git_installed() {
@@ -18,14 +20,14 @@ clone_zkevm-circuits() {
 }
 
 directory_name="$HOME/CI_Github_Trigger/$GITHUB_RUN_ID"
-cd $directory_name || exit 1
+cd "$directory_name" || exit 1
 
 ensure_git_installed
 clone_zkevm-circuits
 
 cd .github/weeklyBenchScripts || exit 1
 chmod u+x bench-results-local-trigger.sh
-./bench-results-local-trigger.sh $GITHUB_RUN_ID
+./bench-results-local-trigger.sh "$GITHUB_RUN_ID"
 RESULT=$?
 echo "Exiting bench-results-trigger with RESULT $RESULT"
 exit $RESULT

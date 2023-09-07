@@ -1,6 +1,6 @@
 #!/bin/bash
-set -e
-#set -x
+set -eo pipefail
+
 GITHUB_RUN_ID=$3
 export GOROOT="/usr/local/go"
 export GOPATH="$HOME/go"
@@ -11,7 +11,7 @@ current_dir="$HOME"/CI_Prover_Benches/"$GITHUB_RUN_ID"
 
 target_dir="$current_dir/zkevm-circuits"
 k=$1
-circuit=$(echo $2 | awk '{ print $1 }' | tr '[:upper:]' '[:lower:]')
+circuit=$(echo "$2" | awk '{ print $1 }' | tr '[:upper:]' '[:lower:]')
 printf -v _date '%(%Y-%m-%d_%H:%M:%S)T' -1
 
 case $circuit in
@@ -52,17 +52,14 @@ case $circuit in
         ;;
 esac
 
-cd $target_dir;
+cd "$target_dir";
 
 mkdir ../results
-logfile=$_date--${circuit}_bench-$k.proverlog
+logfile="$_date"--"${circuit}"_bench-"$k".proverlog
 
 current_time=$(date +'%H:%M:%S')
 echo "Current time: $current_time"
-echo $current_time > ~/bench_begin
+echo "$current_time" > ~/bench_begin
 export RUST_BACKTRACE=1
 echo "DEGREE=$k ~/.cargo/bin/cargo test --profile bench bench_${run_suffix} -p circuit-benchmarks --features benches  -- --nocapture > \"$target_dir/results/$logfile\" 2>&1"
 DEGREE=$k ~/.cargo/bin/cargo test --profile bench bench_${run_suffix} -p circuit-benchmarks --features benches  -- --nocapture > "$target_dir/../results/$logfile" 2>&1
-
-
-exit 0

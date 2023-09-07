@@ -1,4 +1,5 @@
 #!/bin/bash
+set -eo pipefail
 
 # Check if Go is already installed
 if command -v go &>/dev/null; then
