@@ -11,7 +11,6 @@ use eth_types::{evm_types::INVALID_INIT_CODE_FIRST_BYTE, Bytecode, GethExecStep,
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ReturnRevert;
 
-// TODO: rename to indicate this handles REVERT (and maybe STOP)?
 impl Opcode for ReturnRevert {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
