@@ -20,7 +20,7 @@ use crate::{
     mpt_circuit::{
         helpers::{nibble_rlc, Indexable, MptCellType, KECCAK},
         param::{HASH_WIDTH, RLP_NIL},
-        MPTConfig, MPTState, RlpItemType,
+        MPTConfig, MptMemory, RlpItemType,
     },
     util::word::{self, Word},
 };
@@ -197,7 +197,7 @@ impl<F: Field> BranchGadget<F> {
                     ifx!{or::expr(&[is_root[is_s.idx()].expr(), not!(is_not_hashed)]) => {
                         // Hashed branch hash in parent branch
                         let hash = &parent_hash[is_s.idx()];
-                        require!(vec![1.expr(), rlc.expr(), num_bytes, hash.lo(), hash.hi()] => @KECCAK);
+                        require!((1.expr(), rlc.expr(), num_bytes, hash.lo(), hash.hi()) =>> @KECCAK);
                     } elsex {
                         // Non-hashed branch hash in parent branch
                         require!(rlc => parent_rlc[is_s.idx()].expr());
@@ -290,7 +290,7 @@ impl<F: Field> BranchGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         _mpt_config: &MPTConfig<F>,
-        _pv: &mut MPTState<F>,
+        _memory: &mut MptMemory<F>,
         offset: usize,
         is_placeholder: &[bool; 2],
         key_rlc: &mut F,

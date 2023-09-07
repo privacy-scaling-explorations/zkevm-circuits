@@ -9,15 +9,19 @@ use crate::{
         gadgets::{IsEqualGadget, IsEqualWordGadget, LtGadget},
         memory::MemoryBank,
     },
-    evm_circuit::util::from_bytes,
+    evm_circuit::{
+        param::{N_BYTES_HALF_WORD, N_BYTES_WORD},
+        util::from_bytes,
+    },
     matchw,
     mpt_circuit::{
         param::{
-            EMPTY_TRIE_HASH, HASH_WIDTH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN,
+            ADDRESS_WIDTH, EMPTY_TRIE_HASH, HASH_WIDTH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN,
             KEY_TERMINAL_PREFIX_EVEN, RLP_UNIT_NUM_BYTES, RLP_UNIT_NUM_VALUE_BYTES,
         },
         rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble},
     },
+    table::LookupTable,
     util::{
         word::{self, Word},
         Challenges, Expr,
@@ -27,7 +31,7 @@ use eth_types::{Field, Word as U256};
 use gadgets::util::{not, or, pow, Scalar};
 use halo2_proofs::{
     circuit::Value,
-    plonk::{Error, Expression, VirtualCells},
+    plonk::{ConstraintSystem, Error, Expression, VirtualCells},
 };
 use strum_macros::EnumIter;
 
@@ -47,6 +51,7 @@ impl<F: Field> ChallengeSet<F> for crate::util::Challenges<Value<F>> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
 pub enum MptTableType {
     Fixed,
+    Byte,
     Keccak,
     Mult,
 }
@@ -57,18 +62,14 @@ pub enum MptCellType {
     StoragePhase2,
     StoragePhase3,
     StoragePermutation,
-    LookupByte,
     Lookup(MptTableType),
-    MemParentSInput,
-    MemParentSTable,
-    MemParentCInput,
-    MemParentCTable,
-    MemKeySInput,
-    MemKeySTable,
-    MemKeyCInput,
-    MemKeyCTable,
-    MemMainInput,
-    MemMainTable,
+    Dynamic(usize),
+
+    MemParentS,
+    MemParentC,
+    MemKeyS,
+    MemKeyC,
+    MemMain,
 }
 
 impl Default for MptCellType {
@@ -78,8 +79,10 @@ impl Default for MptCellType {
 }
 
 impl CellType for MptCellType {
+    type TableType = MptTableType;
+
     fn byte_type() -> Option<Self> {
-        Some(MptCellType::LookupByte)
+        Some(MptCellType::Lookup(MptTableType::Byte))
     }
 
     fn storage_for_phase(phase: u8) -> Self {
@@ -88,6 +91,17 @@ impl CellType for MptCellType {
             1 => MptCellType::StoragePhase2,
             2 => MptCellType::StoragePhase3,
             _ => unreachable!(),
+        }
+    }
+
+    fn create_type(id: usize) -> Self {
+        MptCellType::Dynamic(id)
+    }
+
+    fn lookup_table_type(&self) -> Option<Self::TableType> {
+        match self {
+            MptCellType::Lookup(table) => Some(*table),
+            _ => None,
         }
     }
 }
@@ -144,7 +158,7 @@ impl<F: Field> LeafKeyGadget<F> {
                             is_key_odd: Expression<F>| {
                 leaf_key_rlc(cb, bytes, key_mult_prev.expr(), is_key_odd.expr(), r)
             };
-            matchx! {
+            matchx! {(
                 rlp_key.is_short() => {
                     // When no nibbles: only terminal prefix at `bytes[0]`.
                     // Else: Terminal prefix + single nibble  at `bytes[0]`
@@ -155,7 +169,7 @@ impl<F: Field> LeafKeyGadget<F> {
                     // First key byte is at `bytes[1]`.
                     calc_rlc(cb, &rlp_key.bytes_be()[1..34], is_key_odd.expr())
                 },
-            }
+            )}
         })
     }
 
@@ -230,7 +244,7 @@ pub(crate) fn ext_key_rlc_expr<F: Field>(
                 r,
             )
         };
-        matchx! {
+        matchx! {(
             and::expr(&[is_long.expr(), not!(is_key_odd)]) => {
                 // Here we need to multiply nibbles over bytes with different r's so we need to rlc over separate nibbles.
                 // Note that there can be at max 31 key bytes because 32 same bytes would mean
@@ -254,7 +268,7 @@ pub(crate) fn ext_key_rlc_expr<F: Field>(
             is_short => {
                 calc_rlc(cb, &data[0][..1], 1.expr())
             },
-        }
+        )}
     })
 }
 
@@ -399,9 +413,9 @@ pub(crate) struct KeyDataWitness<F> {
 }
 
 impl<F: Field> KeyData<F> {
-    pub(crate) fn load(
+    pub(crate) fn load<MB: MemoryBank<F, MptCellType>>(
         cb: &mut MPTConstraintBuilder<F>,
-        memory: &MemoryBank<F, MptCellType>,
+        memory: &mut MB,
         offset: Expression<F>,
     ) -> Self {
         let key_data = KeyData {
@@ -416,7 +430,6 @@ impl<F: Field> KeyData<F> {
         };
         circuit!([meta, cb.base], {
             memory.load(
-                "key load",
                 &mut cb.base,
                 offset,
                 &[
@@ -435,9 +448,9 @@ impl<F: Field> KeyData<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn store(
+    pub(crate) fn store<MB: MemoryBank<F, MptCellType>>(
         cb: &mut MPTConstraintBuilder<F>,
-        memory: &MemoryBank<F, MptCellType>,
+        memory: &mut MB,
         rlc: Expression<F>,
         mult: Expression<F>,
         num_nibbles: Expression<F>,
@@ -462,9 +475,9 @@ impl<F: Field> KeyData<F> {
         );
     }
 
-    pub(crate) fn store_defaults(
+    pub(crate) fn store_defaults<MB: MemoryBank<F, MptCellType>>(
         cb: &mut MPTConstraintBuilder<F>,
-        memory: &MemoryBank<F, MptCellType>,
+        memory: &mut MB,
     ) {
         memory.store(&mut cb.base, &KeyData::default_values_expr());
     }
@@ -483,10 +496,10 @@ impl<F: Field> KeyData<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn witness_store(
+    pub(crate) fn witness_store<MB: MemoryBank<F, MptCellType>>(
         _region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        memory: &mut MemoryBank<F, MptCellType>,
+        memory: &mut MB,
         rlc: F,
         mult: F,
         num_nibbles: usize,
@@ -509,11 +522,11 @@ impl<F: Field> KeyData<F> {
         Ok(())
     }
 
-    pub(crate) fn witness_load(
+    pub(crate) fn witness_load<MB: MemoryBank<F, MptCellType>>(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        memory: &MemoryBank<F, MptCellType>,
+        memory: &mut MB,
         load_offset: usize,
     ) -> Result<KeyDataWitness<F>, Error> {
         let values = memory.witness_load(load_offset);
@@ -559,10 +572,9 @@ pub(crate) struct ParentDataWitness<F> {
 }
 
 impl<F: Field> ParentData<F> {
-    pub(crate) fn load(
-        description: &'static str,
+    pub(crate) fn load<MB: MemoryBank<F, MptCellType>>(
         cb: &mut MPTConstraintBuilder<F>,
-        memory: &MemoryBank<F, MptCellType>,
+        memory: &mut MB,
         offset: Expression<F>,
     ) -> Self {
         let parent_data = ParentData {
@@ -574,7 +586,6 @@ impl<F: Field> ParentData<F> {
         };
         circuit!([meta, cb.base], {
             memory.load(
-                description,
                 &mut cb.base,
                 offset,
                 &[
@@ -591,9 +602,9 @@ impl<F: Field> ParentData<F> {
         parent_data
     }
 
-    pub(crate) fn store(
+    pub(crate) fn store<MB: MemoryBank<F, MptCellType>>(
         cb: &mut MPTConstraintBuilder<F>,
-        memory: &MemoryBank<F, MptCellType>,
+        memory: &mut MB,
         hash: word::Word<Expression<F>>,
         rlc: Expression<F>,
         is_root: Expression<F>,
@@ -615,10 +626,10 @@ impl<F: Field> ParentData<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn witness_store(
+    pub(crate) fn witness_store<MB: MemoryBank<F, MptCellType>>(
         _region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        memory: &mut MemoryBank<F, MptCellType>,
+        memory: &mut MB,
         hash: word::Word<F>,
         rlc: F,
         force_hashed: bool,
@@ -640,11 +651,11 @@ impl<F: Field> ParentData<F> {
         Ok(())
     }
 
-    pub(crate) fn witness_load(
+    pub(crate) fn witness_load<MB: MemoryBank<F, MptCellType>>(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        memory: &MemoryBank<F, MptCellType>,
+        memory: &mut MB,
         load_offset: usize,
     ) -> Result<ParentDataWitness<F>, Error> {
         let values = memory.witness_load(load_offset);
@@ -690,10 +701,9 @@ pub(crate) struct MainDataWitness<F> {
 }
 
 impl<F: Field> MainData<F> {
-    pub(crate) fn load(
-        description: &'static str,
+    pub(crate) fn load<MB: MemoryBank<F, MptCellType>>(
         cb: &mut MPTConstraintBuilder<F>,
-        memory: &MemoryBank<F, MptCellType>,
+        memory: &mut MB,
         offset: Expression<F>,
     ) -> Self {
         let main_data = MainData {
@@ -705,7 +715,6 @@ impl<F: Field> MainData<F> {
         };
         circuit!([meta, cb.base], {
             memory.load(
-                description,
                 &mut cb.base,
                 offset,
                 &[
@@ -722,19 +731,19 @@ impl<F: Field> MainData<F> {
         main_data
     }
 
-    pub(crate) fn store(
+    pub(crate) fn store<MB: MemoryBank<F, MptCellType>>(
         cb: &mut MPTConstraintBuilder<F>,
-        memory: &MemoryBank<F, MptCellType>,
+        memory: &mut MB,
         values: [Expression<F>; 7],
     ) {
         memory.store(&mut cb.base, &values);
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn witness_store(
+    pub(crate) fn witness_store<MB: MemoryBank<F, MptCellType>>(
         _region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        memory: &mut MemoryBank<F, MptCellType>,
+        memory: &mut MB,
         proof_type: usize,
         is_below_account: bool,
         address: F,
@@ -755,11 +764,11 @@ impl<F: Field> MainData<F> {
         Ok(())
     }
 
-    pub(crate) fn witness_load(
+    pub(crate) fn witness_load<MB: MemoryBank<F, MptCellType>>(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        memory: &MemoryBank<F, MptCellType>,
+        memory: &mut MB,
         load_offset: usize,
     ) -> Result<MainDataWitness<F>, Error> {
         let values = memory.witness_load(load_offset);
@@ -896,22 +905,22 @@ pub(crate) mod num_nibbles {
 
 pub(crate) fn parent_memory(is_s: bool) -> MptCellType {
     if is_s {
-        MptCellType::MemParentSInput
+        MptCellType::MemParentS
     } else {
-        MptCellType::MemParentCInput
+        MptCellType::MemParentC
     }
 }
 
 pub(crate) fn key_memory(is_s: bool) -> MptCellType {
     if is_s {
-        MptCellType::MemKeySInput
+        MptCellType::MemKeyS
     } else {
-        MptCellType::MemKeyCInput
+        MptCellType::MemKeyC
     }
 }
 
 pub(crate) fn main_memory() -> MptCellType {
-    MptCellType::MemMainInput
+    MptCellType::MemMain
 }
 
 /// MPTConstraintBuilder
@@ -954,14 +963,11 @@ impl<F: Field> MPTConstraintBuilder<F> {
     }
 
     pub(crate) fn query_byte(&mut self) -> Cell<F> {
-        self.base.query_one(MptCellType::LookupByte)
+        self.base.query_bytes::<1>()[0].clone()
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
-        self.base
-            .query_cells_dyn(MptCellType::LookupByte, N)
-            .try_into()
-            .unwrap()
+        self.base.query_bytes()
     }
 
     pub(crate) fn query_bytes_dyn(&mut self, count: usize) -> Vec<Cell<F>> {
@@ -1010,42 +1016,48 @@ impl<F: Field> MPTConstraintBuilder<F> {
         self.base.require_boolean(name, value)
     }
 
-    pub(crate) fn add_dynamic_lookup(
-        &mut self,
-        description: &'static str,
-        tag: MptCellType,
-        values: Vec<Expression<F>>,
-        is_fixed: bool,
-        compress: bool,
-        is_split: bool,
-    ) {
-        self.base
-            .add_dynamic_lookup(description, tag, values, is_fixed, compress, is_split)
-    }
-
     pub(crate) fn add_lookup(
         &mut self,
-        description: &'static str,
-        cell_type: MptCellType,
+        description: String,
         values: Vec<Expression<F>>,
+        table: Vec<Expression<F>>,
     ) {
-        self.base.add_lookup(description, cell_type, values)
+        self.base.add_lookup(description, values, table);
     }
 
-    pub(crate) fn store_dynamic_table(
+    pub(crate) fn load_table(
+        &mut self,
+        meta: &mut ConstraintSystem<F>,
+        tag: MptTableType,
+        table: &dyn LookupTable<F>,
+    ) {
+        self.base.load_table(meta, tag, table)
+    }
+
+    pub(crate) fn store_table(
         &mut self,
         description: &'static str,
-        tag: MptCellType,
+        tag: MptTableType,
         values: Vec<Expression<F>>,
-        compress: bool,
-        is_split: bool,
     ) {
-        self.base
-            .store_dynamic_table(description, tag, values, compress, is_split)
+        self.base.store_table(description, tag, values)
+    }
+
+    pub(crate) fn store_tuple(
+        &mut self,
+        description: &'static str,
+        table_type: MptCellType,
+        values: Vec<Expression<F>>,
+    ) -> Expression<F> {
+        self.base.store_tuple(description, table_type, values)
+    }
+
+    pub(crate) fn table(&self, table_type: MptTableType) -> Vec<Expression<F>> {
+        self.base.table(table_type)
     }
 }
 
-/// Checks if a leaf is a placeholder leaf (a leaf in an empty tree)
+/// Checks if we are in an empty tree
 #[derive(Clone, Debug, Default)]
 pub struct IsPlaceholderLeafGadget<F> {
     is_empty_trie: IsEqualWordGadget<F>,
@@ -1167,7 +1179,7 @@ impl<F: Field> DriftedGadget<F> {
                         let leaf_rlc = config.drifted_rlp_key.rlc2(&cb.keccak_r).rlc_chain_rev((leaf_no_key_rlc[is_s.idx()].expr(), leaf_no_key_rlc_mult[is_s.idx()].expr()));
                         // The drifted leaf needs to be stored in the branch at `drifted_index`.
                         let hash = parent_data[is_s.idx()].drifted_parent_hash.expr();
-                        require!(vec![1.expr(), leaf_rlc.expr(), config.drifted_rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()] => @KECCAK);
+                        require!((1.expr(), leaf_rlc.expr(), config.drifted_rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
                     }
                 }}
             }}
@@ -1215,7 +1227,7 @@ impl<F: Field> WrongGadget<F> {
         let mut config = WrongGadget::default();
         circuit!([meta, cb.base], {
             // Get the previous key data
-            ifx! {is_non_existing, not!(is_in_empty_tree) => {
+            ifx! {(is_non_existing, not!(is_in_empty_tree)) => {
                 // Calculate the key
                 config.wrong_rlp_key = ListKeyGadget::construct(cb, expected_item);
                 let key_rlc_wrong = key_data.rlc.expr() + config.wrong_rlp_key.key.expr(
@@ -1301,6 +1313,7 @@ pub struct MainRLPGadget<F> {
     is_rlp: Cell<F>,
     is_big_endian: Cell<F>,
     is_hash: Cell<F>,
+    ensure_minimal_rlp: Cell<F>,
     keccak_r: Option<Expression<F>>,
 }
 
@@ -1324,6 +1337,7 @@ impl<F: Field> MainRLPGadget<F> {
                 is_rlp: cb.query_cell(),
                 is_big_endian: cb.query_cell(),
                 is_hash: cb.query_cell(),
+                ensure_minimal_rlp: cb.query_cell(),
                 keccak_r: Some(cb.keccak_r.expr()),
             };
             let all_bytes = vec![vec![config.rlp_byte.clone()], config.bytes.clone()].concat();
@@ -1346,7 +1360,7 @@ impl<F: Field> MainRLPGadget<F> {
 
             // Cache the rlc of the hash
             ifx! {config.is_hash.expr() => {
-                require!(config.hash_rlc => config.bytes[..32].rlc_rev(&cb.key_r));
+                require!(config.hash_rlc => config.bytes[..HASH_WIDTH].rlc_rev(&cb.key_r));
             }}
 
             // Cache some RLP related values
@@ -1357,11 +1371,11 @@ impl<F: Field> MainRLPGadget<F> {
                 } elsex {
                     // Special case for single byte string values as those values are stored in the RLP byte itself
                     ifx!{and::expr(&[not!(config.rlp.is_list()), config.rlp.is_short()]) => {
-                        require!(config.rlc_rlp => config.rlp_byte);
                         require!(config.word => [config.rlp_byte.expr(), 0.expr()]);
+                        require!(config.rlc_rlp => config.rlp_byte);
                     } elsex {
-                        let lo = from_bytes::expr(&config.bytes[0..16]);
-                        let hi = from_bytes::expr(&config.bytes[16..32]);
+                        let lo = from_bytes::expr(&config.bytes[0..N_BYTES_HALF_WORD]);
+                        let hi = from_bytes::expr(&config.bytes[N_BYTES_HALF_WORD..N_BYTES_WORD]);
                         require!(config.word => [lo, hi]);
                         require!(config.rlc_rlp => config.rlp_byte.expr().rlc_chain_rev((
                             config.bytes.rlc(&cb.keccak_r.expr()),
@@ -1371,8 +1385,9 @@ impl<F: Field> MainRLPGadget<F> {
                 }}
             }}
 
+            // Check the multiplier values
             // `num_bytes - 1` because the RLP byte is handled separately
-            require!((config.rlp.num_bytes() - 1.expr(), config.mult_diff.expr()) => @MULT);
+            require!((config.rlp.num_bytes() - 1.expr(), config.mult_diff.expr()) =>> @MULT);
             require!(config.mult_inv.expr() * pow::expr(cb.keccak_r.expr(), RLP_UNIT_NUM_BYTES - 1) => config.mult_diff.expr());
 
             // Lists always need to be short
@@ -1381,13 +1396,13 @@ impl<F: Field> MainRLPGadget<F> {
             }}
 
             // Range/zero checks
-            // These range checks ensure that the bytes are all valid byte
-            // values. These lookups also enforce the byte value to be zero when
-            // the byte index >= num_bytes.
-            // We enable dynamic lookups because otherwise these lookup would require a lot of extra
-            // cells.
-            // TODO(Brecht): Ensure minimal RLP encoding: add leading zero check here because for LE
-            // values the MSB is at a variable position
+            // These range checks ensure that
+            // - the bytes are all valid byte values < 256
+            // - the byte value is zero when the byte index >= num_bytes
+            // - the RLP encoding is minimal (when ensure_minimal_rlp is true) by checking that the
+            //   MSB is non-zero (the byte at index 1 (the MSB) is non-zero)
+            // We enable dynamic lookups because otherwise these lookups would require a lot of
+            // extra cells.
             if params.is_two_byte_lookup_enabled() {
                 assert!(all_bytes.len() % 2 == 0);
                 for idx in (0..all_bytes.len()).step_by(2) {
@@ -1396,11 +1411,17 @@ impl<F: Field> MainRLPGadget<F> {
                         config.num_bytes.expr() - idx.expr(),
                         all_bytes[idx],
                         all_bytes[idx + 1]
-                    ) => @FIXED, true, true, false);
+                    ) => @cb.table(MptTableType::Fixed));
                 }
             } else {
                 for (idx, byte) in all_bytes.iter().enumerate() {
-                    require!((config.tag.expr(), config.num_bytes.expr() - idx.expr(), byte.expr()) => @FIXED, true, true, false);
+                    // Never do any zero check on the RLP byte (which is always allowed to be 0)
+                    let nonzero_check = if idx == 0 {
+                        0.expr()
+                    } else {
+                        config.ensure_minimal_rlp.expr()
+                    };
+                    require!((config.tag.expr(), config.num_bytes.expr() - idx.expr(), byte.expr(), nonzero_check) => @cb.table(MptTableType::Fixed));
                 }
             }
 
@@ -1493,6 +1514,7 @@ impl<F: Field> MainRLPGadget<F> {
         assign!(region, self.is_rlp, offset => (item_type != RlpItemType::Nibbles).scalar())?;
         assign!(region, self.is_big_endian, offset => self.is_big_endian(item_type).scalar())?;
         assign!(region, self.is_hash, offset => (item_type == RlpItemType::Hash).scalar())?;
+        assign!(region, self.ensure_minimal_rlp, offset => ((item_type == RlpItemType::Value) || rlp.is_list()).scalar())?;
 
         Ok(rlp)
     }
@@ -1506,12 +1528,14 @@ impl<F: Field> MainRLPGadget<F> {
     ) -> RLPItemView<F> {
         circuit!([meta, cb.base], {
             let is_string = self.rlp.is_string_at(meta, rot);
+            let is_list = self.rlp.is_list_at(meta, rot);
             let tag = self.tag.rot(meta, rot);
             let max_len = self.max_len.rot(meta, rot);
             let len = self.len.rot(meta, rot);
             let is_rlp = self.is_rlp.rot(meta, rot);
             let is_big_endian = self.is_big_endian.rot(meta, rot);
             let is_hash = self.is_hash.rot(meta, rot);
+            let ensure_minimal_rlp = self.ensure_minimal_rlp.rot(meta, rot);
 
             // Check the tag value
             require!(tag => self.tag(item_type).expr());
@@ -1519,10 +1543,15 @@ impl<F: Field> MainRLPGadget<F> {
             if item_type == RlpItemType::Value || item_type == RlpItemType::Key {
                 require!(is_string => true);
             }
-            // Hashes always are strings and have length 32
+            // Hashes always are strings and have length HASH_WIDTH
             if item_type == RlpItemType::Hash {
                 require!(is_string => true);
                 require!(len => HASH_WIDTH);
+            }
+            // Addresses always are strings and have length ADDRESS_WIDTH
+            if item_type == RlpItemType::Address {
+                require!(is_string => true);
+                require!(len => ADDRESS_WIDTH);
             }
             if item_type == RlpItemType::Node {
                 // Nodes always have length 0 or 32 when a string, or are < 32 when a list
@@ -1539,6 +1568,7 @@ impl<F: Field> MainRLPGadget<F> {
             require!(is_rlp => self.is_rlp(item_type));
             require!(is_big_endian => self.is_big_endian(item_type));
             require!(is_hash => (item_type == RlpItemType::Hash));
+            require!(ensure_minimal_rlp => or::expr([(item_type == RlpItemType::Value).expr(), is_list]));
         });
         RLPItemView {
             is_big_endian: self.is_big_endian(item_type),
@@ -1575,6 +1605,7 @@ impl<F: Field> MainRLPGadget<F> {
             RlpItemType::Node => 32,
             RlpItemType::Value => 32,
             RlpItemType::Hash => 32,
+            RlpItemType::Address => 20,
             RlpItemType::Key => 33,
             RlpItemType::Nibbles => 32,
         }
