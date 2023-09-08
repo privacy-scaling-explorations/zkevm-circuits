@@ -87,7 +87,8 @@ pub struct ExtensionNode {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StartNode {
     pub(crate) disable_preimage_check: bool,
-    pub(crate) proof_type: MPTProofType,
+    /// TODO
+    pub  proof_type: MPTProofType,
 }
 
 /// MPT extension branch node
@@ -102,8 +103,10 @@ pub struct ExtensionBranchNode {
 /// MPT account node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AccountNode {
-    pub(crate) address: Vec<u8>,
-    pub(crate) key: Vec<u8>,
+    /// TODO
+    pub address: Vec<u8>,
+    /// TODO
+    pub key: Vec<u8>,
     pub(crate) list_rlp_bytes: [Vec<u8>; 2],
     pub(crate) value_rlp_bytes: [Vec<u8>; 2],
     pub(crate) value_list_rlp_bytes: [Vec<u8>; 2],
@@ -114,8 +117,10 @@ pub struct AccountNode {
 /// MPT storage node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StorageNode {
-    pub(crate) address: Vec<u8>,
-    pub(crate) key: Vec<u8>,
+    /// TODO
+    pub address: Vec<u8>,
+    /// TODO
+    pub key: Vec<u8>,
     pub(crate) list_rlp_bytes: [Vec<u8>; 2],
     pub(crate) value_rlp_bytes: [Vec<u8>; 2],
     pub(crate) drifted_rlp_bytes: Vec<u8>,
@@ -125,10 +130,13 @@ pub struct StorageNode {
 /// MPT node
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Node {
-    pub(crate) start: Option<StartNode>,
+    /// TODO
+    pub start: Option<StartNode>,
     pub(crate) extension_branch: Option<ExtensionBranchNode>,
-    pub(crate) account: Option<AccountNode>,
-    pub(crate) storage: Option<StorageNode>,
+    /// TODO
+    pub account: Option<AccountNode>,
+    /// TODO
+    pub storage: Option<StorageNode>,
     /// MPT node values
     pub values: Vec<Vec<u8>>,
     /// MPT keccak data
