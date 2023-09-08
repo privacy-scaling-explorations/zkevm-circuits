@@ -74,13 +74,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreateGadget<F> {
         let minimum_word_size = MemoryWordSizeGadget::construct(cb, memory_address.length());
         let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
 
-        let keccak_gas_cost = minimum_word_size.expr()
+        let code_store_gas_cost = minimum_word_size.expr()
             * select::expr(
                 is_create2.expr().0,
                 CREATE2_GAS_PER_CODE_WORD.expr(),
                 CREATE_GAS_PER_CODE_WORD.expr(),
             );
-        let gas_cost = GasCost::CREATE.expr() + memory_expansion.gas_cost() + keccak_gas_cost;
+        let gas_cost = GasCost::CREATE.expr() + memory_expansion.gas_cost() + code_store_gas_cost;
         let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
 
         cb.require_equal(
@@ -96,7 +96,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreateGadget<F> {
         let common_error_gadget = CommonErrorGadget::construct(
             cb,
             opcode.expr(),
-            select::expr(is_create2.expr().0, 6.expr(), 5.expr()),
+            select::expr(is_create2.expr().0, 4.expr(), 3.expr()),
         );
 
         Self {
@@ -118,7 +118,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreateGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction,
+        _tx: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -172,7 +172,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreateGadget<F> {
             F::from(init_code_size),
         )?;
 
-        let keccak_gas_cost = minimum_word_size
+        let code_store_gas_cost = minimum_word_size
             * if is_create2 {
                 CREATE2_GAS_PER_CODE_WORD
             } else {
@@ -182,7 +182,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreateGadget<F> {
             region,
             offset,
             F::from(step.gas_left),
-            F::from(GasCost::CREATE + memory_expansion_gas + keccak_gas_cost),
+            F::from(GasCost::CREATE + memory_expansion_gas + code_store_gas_cost),
         )?;
 
         self.common_error_gadget.assign(

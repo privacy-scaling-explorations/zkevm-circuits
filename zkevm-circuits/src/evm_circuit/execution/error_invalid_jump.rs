@@ -90,7 +90,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         });
 
         let common_error_gadget =
-            CommonErrorGadget::construct(cb, opcode.expr(), 3.expr() + is_jumpi.expr());
+            CommonErrorGadget::construct(cb, opcode.expr(), cb.rw_counter_offset());
 
         Self {
             opcode,

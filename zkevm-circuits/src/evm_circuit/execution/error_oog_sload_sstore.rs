@@ -129,11 +129,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             1.expr(),
         );
 
-        let common_error_gadget = CommonErrorGadget::construct(
-            cb,
-            opcode.expr(),
-            7.expr() + 2.expr() * is_sstore.expr().0,
-        );
+        let common_error_gadget =
+            CommonErrorGadget::construct(cb, opcode.expr(), cb.rw_counter_offset());
 
         Self {
             opcode,
