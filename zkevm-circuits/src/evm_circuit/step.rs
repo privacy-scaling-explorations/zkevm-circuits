@@ -136,7 +136,7 @@ pub enum ExecutionState {
     ErrorOutOfGasEXTCODECOPY,
     ErrorOutOfGasCall,
     ErrorOutOfGasSloadSstore,
-    ErrorOutOfGasCREATE2,
+    ErrorOutOfGasCREATE,
     ErrorOutOfGasSELFDESTRUCT,
 }
 
@@ -196,7 +196,7 @@ impl From<&ExecError> for ExecutionState {
                 OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
                 OogError::Call => ExecutionState::ErrorOutOfGasCall,
                 OogError::SloadSstore => ExecutionState::ErrorOutOfGasSloadSstore,
-                OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
+                OogError::Create => ExecutionState::ErrorOutOfGasCREATE,
                 OogError::SelfDestruct => ExecutionState::ErrorOutOfGasSELFDESTRUCT,
             },
         }
@@ -345,7 +345,7 @@ impl ExecutionState {
                 | Self::ErrorOutOfGasEXTCODECOPY
                 | Self::ErrorOutOfGasCall
                 | Self::ErrorOutOfGasSloadSstore
-                | Self::ErrorOutOfGasCREATE2
+                | Self::ErrorOutOfGasCREATE
                 | Self::ErrorOutOfGasSELFDESTRUCT
         )
     }
