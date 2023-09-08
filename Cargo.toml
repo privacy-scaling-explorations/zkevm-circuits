@@ -9,7 +9,8 @@ members = [
     "eth-types",
     "external-tracer",
     "mock",
-    "testool"
+    "testool",
+    "mpt-witness-generator/rustlib"
 ]
 
 [patch.crates-io]
