@@ -1,0 +1,7 @@
+rust_call/target
+.DS_Store
+.vscode
+mpt-witness-generator
+mpt
+generated_witnesses
+rust_call/proof.json
