@@ -100,7 +100,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         )?;
 
         let callee_code_hash = call.code_hash;
-        let callee_exists = !state.sdb.get_account(&callee_address).1.is_empty();
+        let callee = state.sdb.get_account(&callee_address).1.clone();
+        let callee_exists = !callee.is_empty();
 
         let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
             (
@@ -145,11 +146,13 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         debug_assert!(found);
 
         let caller_balance = sender_account.balance;
+
         let is_call_or_callcode = call.kind == CallKind::Call || call.kind == CallKind::CallCode;
+        let is_sufficient = caller_balance >= call.value;
+        let is_valid_depth = geth_step.depth < 1025;
 
         // Precheck is OK when depth is in range and caller balance is sufficient
-        let is_precheck_ok =
-            geth_step.depth < 1025 && (!is_call_or_callcode || caller_balance >= call.value);
+        let is_precheck_ok = is_valid_depth && (is_sufficient || !is_call_or_callcode);
 
         log::debug!(
             "is_precheck_ok: {}, call type: {:?}, sender_account: {:?} ",
@@ -174,8 +177,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             .map(|ref addr| is_precompiled(addr))
             .unwrap_or(false);
         // CALLCODE does not need to do real transfer.
-        // Transfer value only for CALL opcode, is_precheck_ok = true.
-        if call.kind == CallKind::Call && is_precheck_ok {
+        // Transfer value only when all these conditions met:
+        // - The opcode is CALL
+        // - The precheck passed
+        // - The value to send is not zero
+        if call.kind == CallKind::Call && is_precheck_ok && !call.value.is_zero() {
             state.transfer(
                 &mut exec_step,
                 call.caller_address,
@@ -221,9 +227,9 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
         // There are 4 branches from here.
         // add failure case for insufficient balance or error depth in the future.
-        match (!is_precheck_ok, is_precompile, is_empty_code_hash) {
+        match (is_precheck_ok, is_precompile, is_empty_code_hash) {
             // 1. Call to precompiled.
-            (false, true, _) => {
+            (true, true, _) => {
                 let caller_ctx = state.caller_ctx_mut()?;
                 let code_address = code_address.unwrap();
                 let (result, contract_gas_cost) = execute_precompiled(
@@ -274,7 +280,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 Ok(vec![exec_step])
             }
             // 2. Call to account with empty code.
-            (false, _, true) => {
+            (true, _, true) => {
                 for (field, value) in [
                     (CallContextField::LastCalleeId, call.call_id.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
@@ -286,7 +292,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 Ok(vec![exec_step])
             }
             // 3. Call to account with non-empty code.
-            (false, _, false) => {
+            (true, _, false) => {
                 for (field, value) in [
                     (CallContextField::ProgramCounter, (geth_step.pc + 1).into()),
                     (
@@ -348,7 +354,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             }
 
             // 4. insufficient balance or error depth cases.
-            (true, _, _) => {
+            (false, _, _) => {
                 for (field, value) in [
                     (CallContextField::LastCalleeId, call.call_id.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),

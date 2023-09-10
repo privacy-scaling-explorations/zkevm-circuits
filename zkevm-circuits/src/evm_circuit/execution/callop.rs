@@ -256,8 +256,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 // caller address and value (+2).
                 //
                 // No extra lookups for STATICCALL opcode.
-                let transfer_rwc_delta =
-                    is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
+                let transfer_rwc_delta = is_call.expr() * transfer.reversible_w_delta();
                 let rw_counter_delta = 21.expr()
                     + is_call.expr() * 1.expr()
                     + transfer_rwc_delta.clone()
@@ -491,7 +490,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let depth = rws.next().call_context_value();
         let current_callee_address = rws.next().call_context_value();
 
-        let is_error_depth = depth.low_u64() > 1024;
+        let is_valid_depth = depth.low_u64() < 1025;
         self.is_depth_ok
             .assign(region, offset, F::from(depth.low_u64()), F::from(1025))?;
         // This offset is used to change the index offset of `step.rw_indices`.
@@ -520,7 +519,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let rd_length = rws.next().stack_value();
         let is_success = rws.next().stack_value();
 
-        let callee_code_hash = rws.next().account_value_pair().0;
+        let callee_code_hash = rws.next().account_codehash_pair().0;
         let callee_exists = !callee_code_hash.is_zero();
 
         let (is_warm, is_warm_prev) = rws.next().tx_access_list_value_pair();
@@ -530,23 +529,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         // check if it is insufficient balance case.
         // get caller balance
-        let caller_balance = rws.next().account_value_pair().0;
+        let caller_balance = rws.next().account_balance_pair().0;
         self.caller_balance
             .assign_u256(region, offset, caller_balance)?;
         self.is_insufficient_balance
             .assign(region, offset, caller_balance, value)?;
-
-        let is_insufficient = (value > caller_balance) && (is_call || is_callcode);
-        // only call opcode do transfer in sucessful case.
-        let [caller_balance_pair, callee_balance_pair] =
-            if is_call && !is_insufficient && !is_error_depth && !value.is_zero() {
-                [
-                    rws.next().account_value_pair(),
-                    rws.next().account_value_pair(),
-                ]
-            } else {
-                [(U256::zero(), U256::zero()), (U256::zero(), U256::zero())]
-            };
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
@@ -619,8 +606,19 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             callee_rw_counter_end_of_reversion.low_u64() as usize,
             callee_is_persistent.low_u64() != 0,
         )?;
+
+        let is_call_or_callcode = is_call || is_callcode;
+        let is_sufficient = caller_balance >= value;
+        let is_precheck_ok = is_valid_depth && (is_sufficient || !is_call_or_callcode);
+
         // conditionally assign
-        if !is_insufficient && !is_error_depth && !value.is_zero() {
+        if is_call && is_precheck_ok && !value.is_zero() {
+            if !callee_exists {
+                rws.next().account_codehash_pair(); // callee hash
+            }
+
+            let caller_balance_pair = rws.next().account_balance_pair();
+            let callee_balance_pair = rws.next().account_balance_pair();
             self.transfer.assign(
                 region,
                 offset,
@@ -702,7 +700,6 @@ mod test {
         }
     }
 
-    #[ignore]
     #[test]
     fn callop_recursive() {
         for opcode in TEST_CALL_OPCODES {
@@ -710,7 +707,6 @@ mod test {
         }
     }
 
-    #[ignore]
     #[test]
     fn callop_simple() {
         let stacks = [
