@@ -145,7 +145,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             );
         });
 
-        cb.condition(call_gadget.has_value.clone(), |cb| {
+        cb.condition(is_call.expr() * call_gadget.has_value.clone(), |cb| {
             cb.require_zero(
                 "CALL with value must not be in static call stack",
                 is_static.expr(),
@@ -180,20 +180,17 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // skip the transfer (this is necessary for non-existing accounts, which
         // will not be crated when value is 0 and so the callee balance lookup
         // would be invalid).
-        let transfer = cb.condition(
-            is_call.expr() * not::expr(is_insufficient_balance.expr()),
-            |cb| {
-                TransferGadget::construct(
-                    cb,
-                    caller_address.to_word(),
-                    callee_address.to_word(),
-                    not::expr(call_gadget.callee_not_exists.expr()),
-                    0.expr(),
-                    call_gadget.value.clone(),
-                    &mut callee_reversion_info,
-                )
-            },
-        );
+        let transfer = cb.condition(is_call.expr() * is_precheck_ok.expr(), |cb| {
+            TransferGadget::construct(
+                cb,
+                caller_address.to_word(),
+                callee_address.to_word(),
+                not::expr(call_gadget.callee_not_exists.expr()),
+                0.expr(),
+                call_gadget.value.clone(),
+                &mut callee_reversion_info,
+            )
+        });
 
         // For CALLCODE opcode, verify caller balance is greater than or equal to stack
         // `value` in successful case. that is `is_insufficient_balance` is false.
@@ -231,12 +228,18 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let stack_pointer_delta =
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
         let memory_expansion = call_gadget.memory_expansion.clone();
+
+        // handle calls to accounts with no code.
         cb.condition(
             and::expr(&[no_callee_code.expr(), is_precheck_ok.expr()]),
             |cb| {
                 // Save caller's call state
-                for field_tag in [
+                cb.call_context_lookup_write(
+                    None,
                     CallContextFieldTag::LastCalleeId,
+                    Word::from_lo_unchecked(callee_call_id.expr()),
+                );
+                for field_tag in [
                     CallContextFieldTag::LastCalleeReturnDataOffset,
                     CallContextFieldTag::LastCalleeReturnDataLength,
                 ] {
@@ -277,11 +280,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             },
         );
 
-        // handle is_insufficient_balance step transition
+        // handle is_insufficient_balance or !is_depth_ok step transition
         cb.condition(not::expr(is_precheck_ok.expr()), |cb| {
             // Save caller's call state
-            for field_tag in [
+            cb.call_context_lookup_write(
+                None,
                 CallContextFieldTag::LastCalleeId,
+                Word::from_lo_unchecked(callee_call_id.expr()),
+            );
+            for field_tag in [
                 CallContextFieldTag::LastCalleeReturnDataOffset,
                 CallContextFieldTag::LastCalleeReturnDataLength,
             ] {
