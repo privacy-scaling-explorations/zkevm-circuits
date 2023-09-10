@@ -514,20 +514,20 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
         let mut callee_code_hash = zero;
         if !is_precompiled(&tx.to_or_contract_addr()) && !tx.is_create() {
-            callee_code_hash = rws.next().account_value_pair().1;
+            callee_code_hash = rws.next().account_codehash_pair().1;
         }
         let callee_exists = is_precompiled(&tx.to_or_contract_addr())
             || (!tx.is_create() && !callee_code_hash.is_zero());
-        let caller_balance_sub_fee_pair = rws.next().account_value_pair();
+        let caller_balance_sub_fee_pair = rws.next().account_balance_pair();
         let must_create = tx.is_create();
         if (!callee_exists && !tx.value.is_zero()) || must_create {
-            callee_code_hash = rws.next().account_value_pair().1;
+            callee_code_hash = rws.next().account_codehash_pair().1;
         }
         let mut caller_balance_sub_value_pair = (zero, zero);
         let mut callee_balance_pair = (zero, zero);
         if !tx.value.is_zero() {
-            caller_balance_sub_value_pair = rws.next().account_value_pair();
-            callee_balance_pair = rws.next().account_value_pair();
+            caller_balance_sub_value_pair = rws.next().account_balance_pair();
+            callee_balance_pair = rws.next().account_balance_pair();
         };
 
         self.tx_id

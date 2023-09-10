@@ -514,7 +514,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         or::expr([
             not::expr(self.value_is_zero.expr()) * not::expr(self.receiver.receiver_exists.expr()),
             self.receiver.must_create.clone()]
-        ) * 1.expr() +
+        ) +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()
