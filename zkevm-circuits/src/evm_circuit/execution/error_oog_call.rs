@@ -129,7 +129,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
         let callee_code_hash = block
             .get_rws(step, 9 + is_call_or_callcode)
-            .account_value_pair()
+            .account_codehash_pair()
             .0;
         let callee_exists = !callee_code_hash.is_zero();
 
