@@ -1,10 +1,9 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    operation::{CallContextField, StorageOp, TxAccessListAccountStorageOp, TxRefundOp},
+    operation::{CallContextField, StorageOp, TxAccessListAccountStorageOp, TxRefundOp, RW},
     Error,
 };
-
 use eth_types::{GethExecStep, ToWord, Word};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
@@ -86,6 +85,17 @@ impl Opcode for Sstore {
             ),
         )?;
 
+        state.push_op(
+            &mut exec_step,
+            RW::READ,
+            TxAccessListAccountStorageOp {
+                tx_id: state.tx_ctx.id(),
+                address: contract_addr,
+                key,
+                is_warm,
+                is_warm_prev: is_warm,
+            },
+        );
         state.push_op_reversible(
             &mut exec_step,
             TxAccessListAccountStorageOp {
