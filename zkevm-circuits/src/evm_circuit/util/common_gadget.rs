@@ -692,10 +692,6 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         let gas_word = cb.query_word32();
         let callee_address = cb.query_account_address();
         let value = cb.query_word32();
-        let cd_offset = cb.query_word_unchecked();
-        let cd_length = cb.query_memory_address();
-        let rd_offset = cb.query_word_unchecked();
-        let rd_length = cb.query_memory_address();
         let is_success = cb.query_bool();
 
         let cd_address = MemAddrGadget::construct_self(cb);
@@ -713,10 +709,10 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
 
         // `CALL` and `CALLCODE` opcodes have an additional stack pop `value`.
         cb.condition(is_call + is_callcode, |cb| cb.stack_pop(value.to_word()));
-        cb.stack_pop(cd_offset.to_word());
-        cb.stack_pop(cd_length.to_word());
-        cb.stack_pop(rd_offset.to_word());
-        cb.stack_pop(rd_length.to_word());
+        cb.stack_pop(cd_address.offset_word());
+        cb.stack_pop(cd_address.length_word());
+        cb.stack_pop(rd_address.offset_word());
+        cb.stack_pop(rd_address.length_word());
         cb.stack_push(if IS_SUCCESS_CALL {
             Word::from_lo_unchecked(is_success.expr()) // is_success is bool
         } else {
