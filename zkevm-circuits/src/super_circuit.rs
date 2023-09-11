@@ -65,7 +65,10 @@ use crate::{
     ecc_circuit::{EccCircuit, EccCircuitConfig, EccCircuitConfigArgs},
     evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs},
     exp_circuit::{ExpCircuit, ExpCircuitArgs, ExpCircuitConfig},
-    keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
+    keccak_circuit::{
+        keccak_packed_multi::get_num_rows_per_round, KeccakCircuit, KeccakCircuitConfig,
+        KeccakCircuitConfigArgs,
+    },
     modexp_circuit::{ModExpCircuit, ModExpCircuitConfig},
     pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
     poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs},
@@ -200,6 +203,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         let u16_table = U16Table::construct(meta);
         log_circuit_info(meta, "u16 table");
 
+        assert!(get_num_rows_per_round() == 12);
         let keccak_circuit = KeccakCircuitConfig::new(
             meta,
             KeccakCircuitConfigArgs {
