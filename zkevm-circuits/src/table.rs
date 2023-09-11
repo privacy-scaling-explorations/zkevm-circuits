@@ -2209,7 +2209,6 @@ pub struct SigTable {
     /// Random-linear combination of the Keccak256 hash of the message that's signed.
     pub msg_hash_rlc: Column<Advice>,
     /// should be in range [0, 1]
-    /// TODO: we need to constrain v <=> pub.y oddness
     pub sig_v: Column<Advice>,
     /// Random-linear combination of the signature's `r` component.
     pub sig_r_rlc: Column<Advice>,
@@ -2323,20 +2322,6 @@ impl<F: Field> LookupTable<F> for SigTable {
             String::from("sig_s_rlc"),
             String::from("recovered_addr"),
             String::from("is_valid"),
-        ]
-    }
-
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
-        vec![
-            // ignore the is_valid field as the EVM circuit's use-case (Ecrecover precompile) does
-            // not care whether the signature is valid or not. It only cares about the recovered
-            // address.
-            meta.query_fixed(self.q_enable, Rotation::cur()),
-            meta.query_advice(self.msg_hash_rlc, Rotation::cur()),
-            meta.query_advice(self.sig_v, Rotation::cur()),
-            meta.query_advice(self.sig_r_rlc, Rotation::cur()),
-            meta.query_advice(self.sig_s_rlc, Rotation::cur()),
-            meta.query_advice(self.recovered_addr, Rotation::cur()),
         ]
     }
 }

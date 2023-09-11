@@ -332,6 +332,8 @@ impl<F: Field> SigCircuit<F> {
         ecdsa_chip: &FpChip<F>,
         sign_data: &SignData,
     ) -> Result<AssignedECDSA<F, FpChip<F>>, Error> {
+        let gate = ecdsa_chip.gate();
+
         log::trace!("start ecdsa assignment");
         let SignData {
             signature,
@@ -340,15 +342,12 @@ impl<F: Field> SigCircuit<F> {
             msg_hash,
         } = sign_data;
         let (sig_r, sig_s, v) = signature;
-        log::trace!("v         : {:?}", v);
-        log::trace!("sig_r     : {:?}", sig_r);
-        log::trace!("sig_s     : {:?}", sig_s);
-        log::trace!("msg_hash  : {:?}", msg_hash);
 
         // build ecc chip from Fp chip
         let ecc_chip = EccChip::<F, FpChip<F>>::construct(ecdsa_chip.clone());
         let pk_assigned = ecc_chip.load_private(ctx, (Value::known(pk.x), Value::known(pk.y)));
-        ecc_chip.assert_is_on_curve::<Secp256k1Affine>(ctx, &pk_assigned);
+        let pk_is_valid = ecc_chip.is_on_curve_or_infinity::<Secp256k1Affine>(ctx, &pk_assigned);
+        gate.assert_is_const(ctx, &pk_is_valid, F::one());
 
         // build Fq chip from Fp chip
         let fq_chip = FqChip::construct(ecdsa_chip.range.clone(), 88, 3, modulus::<Fq>());
@@ -358,8 +357,6 @@ impl<F: Field> SigCircuit<F> {
             fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*sig_s)));
         let msg_hash =
             fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*msg_hash)));
-        //log::trace!("integer_r : {:?}", integer_r);
-        //log::trace!("integer_s : {:?}", integer_s);
 
         // returns the verification result of ecdsa signature
         //
@@ -375,7 +372,6 @@ impl<F: Field> SigCircuit<F> {
             4,
             4,
         );
-        log::trace!("ECDSA res : {:?}", sig_is_valid);
 
         // =======================================
         // constrains v == y.is_oddness()
@@ -387,8 +383,6 @@ impl<F: Field> SigCircuit<F> {
         // - v is a binary
         // - tmp is also < 88 bits (this is crucial otherwise tmp may wrap around and break
         //   soundness)
-
-        let gate = ecdsa_chip.gate();
 
         let assigned_y_is_odd = gate.load_witness(ctx, Value::known(F::from(*v as u64)));
         gate.assert_bit(ctx, assigned_y_is_odd);
@@ -585,13 +579,12 @@ impl<F: Field> SigCircuit<F> {
             .iter()
             .map(|&x| QuantumCell::Witness(Value::known(F::from_u128(x as u128))))
             .collect_vec();
-
         let pk_y_le = sign_data
             .pk
             .y
             .to_bytes()
             .iter()
-            .map(|&x| QuantumCell::Witness(Value::known(F::from_u128(x as u128))))
+            .map(|&y| QuantumCell::Witness(Value::known(F::from_u128(y as u128))))
             .collect_vec();
         let pk_assigned = ecc_chip.load_private(
             ctx,
@@ -606,7 +599,6 @@ impl<F: Field> SigCircuit<F> {
             &powers_of_256_cells,
             &None,
         )?;
-
         self.assert_crt_int_byte_repr(
             ctx,
             &ecdsa_chip.range,
@@ -770,13 +762,10 @@ impl<F: Field> SigCircuit<F> {
                 // ================================================
                 // step 1: assert the signature is valid in circuit
                 // ================================================
-
                 let assigned_ecdsas = signatures
                     .iter()
-                    .chain(
-                        std::iter::repeat(&SignData::default())
-                            .take(self.max_verif - signatures.len()),
-                    )
+                    .chain(std::iter::repeat(&SignData::default()))
+                    .take(self.max_verif)
                     .map(|sign_data| self.assign_ecdsa(&mut ctx, ecdsa_chip, sign_data))
                     .collect::<Result<Vec<AssignedECDSA<F, FpChip<F>>>, Error>>()?;
 
@@ -785,10 +774,8 @@ impl<F: Field> SigCircuit<F> {
                 // ================================================
                 let sign_data_decomposed = signatures
                     .iter()
-                    .chain(
-                        std::iter::repeat(&SignData::default())
-                            .take(self.max_verif - signatures.len()),
-                    )
+                    .chain(std::iter::repeat(&SignData::default()))
+                    .take(self.max_verif)
                     .zip_eq(assigned_ecdsas.iter())
                     .map(|(sign_data, assigned_ecdsa)| {
                         self.sign_data_decomposition(
@@ -814,37 +801,37 @@ impl<F: Field> SigCircuit<F> {
                 // ================================================
                 // step 3: compute RLC of keys and messages
                 // ================================================
-                let assigned_keccak_values_and_sigs =
-                        signatures
-                            .iter()
-                            .chain(
-                                std::iter::repeat(&SignData::default())
-                                    .take(self.max_verif - signatures.len()),
-                            )
-                            .zip_eq(assigned_ecdsas.iter())
-                            .zip_eq(sign_data_decomposed.iter())
-                            .map(|((sign_data, assigned_ecdsa), sign_data_decomp)| {
-                                self.assign_sig_verify(
-                                    &mut ctx,
-                                    &ecdsa_chip.range,
-                                    sign_data,
-                                    sign_data_decomp,
-                                    challenges,
-                                    assigned_ecdsa,
-                                )
-                            })
-                            .collect::<Result<
-                                Vec<([AssignedValue<F>; 3], AssignedSignatureVerify<F>)>,
-                                Error,
-                            >>()?;
+                let (assigned_keccak_values, assigned_sig_values): (
+                    Vec<[AssignedValue<F>; 3]>,
+                    Vec<AssignedSignatureVerify<F>>,
+                ) = signatures
+                    .iter()
+                    .chain(std::iter::repeat(&SignData::default()))
+                    .take(self.max_verif)
+                    .zip_eq(assigned_ecdsas.iter())
+                    .zip_eq(sign_data_decomposed.iter())
+                    .map(|((sign_data, assigned_ecdsa), sign_data_decomp)| {
+                        self.assign_sig_verify(
+                            &mut ctx,
+                            &ecdsa_chip.range,
+                            sign_data,
+                            sign_data_decomp,
+                            challenges,
+                            assigned_ecdsa,
+                        )
+                    })
+                    .collect::<Result<
+                        Vec<([AssignedValue<F>; 3], AssignedSignatureVerify<F>)>,
+                        Error,
+                    >>()?
+                    .into_iter()
+                    .unzip();
 
                 // ================================================
                 // step 4: deferred keccak checks
                 // ================================================
-                for (i, [is_address_zero, pk_rlc, pk_hash_rlc]) in assigned_keccak_values_and_sigs
-                    .iter()
-                    .map(|a| &a.0)
-                    .enumerate()
+                for (i, [is_address_zero, pk_rlc, pk_hash_rlc]) in
+                    assigned_keccak_values.iter().enumerate()
                 {
                     let offset = i * 3;
                     self.enable_keccak_lookup(
@@ -865,10 +852,7 @@ impl<F: Field> SigCircuit<F> {
                 log::info!("total number of lookup cells: {}", lookup_cells);
 
                 ctx.print_stats(&["ECDSA context"]);
-                Ok(assigned_keccak_values_and_sigs
-                    .iter()
-                    .map(|a| a.1.clone())
-                    .collect())
+                Ok(assigned_sig_values)
             },
         )?;
 

@@ -86,24 +86,6 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             cb.keccak_rlc(sig_s.clone().map(|x| x.expr())),
         );
 
-        cb.condition(recovered.expr(), |cb| {
-            // if address was recovered, the sig_v (recovery ID) was correct.
-            cb.require_zero(
-                "sig_v == 27 or 28",
-                (sig_v_keccak_rlc.expr() - 27.expr()) * (sig_v_keccak_rlc.expr() - 28.expr()),
-            );
-
-            // lookup to the sign_verify table
-            // || v | r | s | msg_hash | recovered_addr ||
-            cb.sig_table_lookup(
-                cb.word_rlc(msg_hash.clone().map(|x| x.expr())),
-                sig_v_keccak_rlc.expr() - 27.expr(),
-                cb.word_rlc(sig_r.clone().map(|x| x.expr())),
-                cb.word_rlc(sig_s.clone().map(|x| x.expr())),
-                from_bytes::expr(&recovered_addr_keccak_rlc.cells),
-            );
-        });
-
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
                 CallContextFieldTag::IsSuccess,
@@ -120,6 +102,21 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             is_success.expr(),
             GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
             cb.curr.state.gas_left.expr(),
+        );
+
+        // lookup to the sign_verify table
+        // || v | r | s | msg_hash | recovered_addr ||
+        cb.sig_table_lookup(
+            cb.word_rlc(msg_hash.clone().map(|x| x.expr())),
+            sig_v_keccak_rlc.expr() - 27.expr(),
+            cb.word_rlc(sig_r.clone().map(|x| x.expr())),
+            cb.word_rlc(sig_s.clone().map(|x| x.expr())),
+            select::expr(
+                recovered.expr(),
+                from_bytes::expr(&recovered_addr_keccak_rlc.cells),
+                0.expr(),
+            ),
+            recovered.expr(),
         );
 
         cb.precompile_info_lookup(

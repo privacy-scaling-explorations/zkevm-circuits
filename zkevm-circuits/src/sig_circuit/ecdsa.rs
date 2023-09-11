@@ -44,6 +44,23 @@ where
     );
     let n = scalar_chip.load_constant(ctx, scalar_chip.p.to_biguint().unwrap());
 
+    // check whether the pubkey is (0, 0), i.e. in the case of ecrecover, no pubkey could be
+    // recovered.
+    let is_pubkey_not_zero = {
+        let is_pubkey_x_zero = ecc_chip.field_chip().is_zero(ctx, &pubkey.x);
+        let is_pubkey_y_zero = ecc_chip.field_chip().is_zero(ctx, &pubkey.y);
+        let is_pubkey_zero = ecc_chip.field_chip().range().gate().and(
+            ctx,
+            Existing(is_pubkey_x_zero),
+            Existing(is_pubkey_y_zero),
+        );
+        ecc_chip
+            .field_chip()
+            .range()
+            .gate()
+            .not(ctx, Existing(is_pubkey_zero))
+    };
+
     // check r,s are in [1, n - 1]
     let r_valid = scalar_chip.is_soft_nonzero(ctx, r);
     let s_valid = scalar_chip.is_soft_nonzero(ctx, s);
@@ -138,27 +155,19 @@ where
     );
 
     // check (r in [1, n - 1]) and (s in [1, n - 1]) and (u1_mul != - u2_mul) and (r == x1 mod n)
-    let res1 = base_chip
-        .range
-        .gate()
-        .and(ctx, Existing(r_valid), Existing(s_valid));
-    let res2 = base_chip
-        .range
-        .gate()
-        .and(ctx, Existing(res1), Existing(u1_small));
-    let res3 = base_chip
-        .range
-        .gate()
-        .and(ctx, Existing(res2), Existing(u2_small));
-    let res4 = base_chip
-        .range
-        .gate()
-        .and(ctx, Existing(res3), Existing(u1_u2_not_eq));
-    let res5 = base_chip
-        .range
-        .gate()
-        .and(ctx, Existing(res4), Existing(equal_check));
-    (res5, sum.y)
+    let res = base_chip.range().gate().and_many(
+        ctx,
+        vec![
+            Existing(r_valid),
+            Existing(s_valid),
+            Existing(u1_small),
+            Existing(u2_small),
+            Existing(u1_u2_not_eq),
+            Existing(equal_check),
+            Existing(is_pubkey_not_zero),
+        ],
+    );
+    (res, sum.y)
 }
 
 fn scalar_field_element_is_one<F: PrimeField, SF: PrimeField>(
