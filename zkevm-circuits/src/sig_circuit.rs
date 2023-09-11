@@ -362,16 +362,17 @@ impl<F: Field> SigCircuit<F> {
         //
         // WARNING: this circuit does not enforce the returned value to be true
         // make sure the caller checks this result!
-        let (sig_is_valid, y_coord) = ecdsa_verify_no_pubkey_check::<F, Fp, Fq, Secp256k1Affine>(
-            &ecc_chip.field_chip,
-            ctx,
-            &pk_assigned,
-            &integer_r,
-            &integer_s,
-            &msg_hash,
-            4,
-            4,
-        );
+        let (sig_is_valid, pk_is_zero, y_coord, y_coord_is_zero) =
+            ecdsa_verify_no_pubkey_check::<F, Fp, Fq, Secp256k1Affine>(
+                &ecc_chip.field_chip,
+                ctx,
+                &pk_assigned,
+                &integer_r,
+                &integer_s,
+                &msg_hash,
+                4,
+                4,
+            );
 
         // =======================================
         // constrains v == y.is_oddness()
@@ -408,20 +409,38 @@ impl<F: Field> SigCircuit<F> {
             QuantumCell::Existing(assigned_y_is_odd),
         );
 
-        gate.assert_equal(
+        let y_is_ok = gate.is_equal(
             ctx,
             QuantumCell::Existing(*assigned_y_limb),
             QuantumCell::Existing(y_rec),
         );
 
         // last step we want to constrain assigned_y_tmp is 87 bits
+        let zero = gate.load_zero(ctx);
+        let assigned_y_tmp = gate.select(
+            ctx,
+            QuantumCell::Existing(zero),
+            QuantumCell::Existing(assigned_y_tmp),
+            QuantumCell::Existing(y_coord_is_zero),
+        );
         ecc_chip
             .field_chip
             .range
             .range_check(ctx, &assigned_y_tmp, 87);
 
+        let y_coord_not_zero = gate.not(ctx, QuantumCell::Existing(y_coord_is_zero));
+        let sig_is_valid = gate.and_many(
+            ctx,
+            vec![
+                QuantumCell::Existing(sig_is_valid),
+                QuantumCell::Existing(y_is_ok),
+                QuantumCell::Existing(y_coord_not_zero),
+            ],
+        );
+
         Ok(AssignedECDSA {
             pk: pk_assigned,
+            pk_is_zero,
             msg_hash,
             integer_r,
             integer_s,
@@ -526,14 +545,18 @@ impl<F: Field> SigCircuit<F> {
             powers_of_256_cells[..20].to_vec(),
             pk_hash_cells[..20].to_vec(),
         );
-        log::trace!("address: {:?}", address.value());
-
+        let address = ecdsa_chip.range.gate.select(
+            ctx,
+            QuantumCell::Existing(zero),
+            QuantumCell::Existing(address),
+            QuantumCell::Existing(assigned_data.pk_is_zero),
+        );
         let is_address_zero = ecdsa_chip.range.gate.is_equal(
             ctx,
             QuantumCell::Existing(address),
             QuantumCell::Existing(zero),
         );
-        let is_address_zero_cell = QuantumCell::Existing(is_address_zero);
+        log::trace!("address: {:?}", address.value());
 
         // ================================================
         // message hash cells
@@ -566,7 +589,7 @@ impl<F: Field> SigCircuit<F> {
             ctx,
             sign_data.msg_hash.to_bytes(),
             &assigned_data.msg_hash,
-            &Some(&is_address_zero_cell),
+            &None,
         )?;
 
         // ================================================

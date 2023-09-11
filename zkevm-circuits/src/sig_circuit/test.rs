@@ -19,8 +19,12 @@ use crate::sig_circuit::SigCircuit;
 #[test]
 fn test_edge_cases() {
     use super::utils::LOG_TOTAL_NUM_ROWS;
-    use eth_types::{sign_types::recover_pk, word, ToLittleEndian, Word};
+    use eth_types::{sign_types::recover_pk, word, ToBigEndian, ToLittleEndian, Word};
+    use ethers_core::k256::elliptic_curve::PrimeField;
     use halo2_proofs::halo2curves::secp256k1::Fq;
+    use rand::SeedableRng;
+    use rand_xorshift::XorShiftRng;
+    let mut rng = XorShiftRng::seed_from_u64(1);
     use snark_verifier::util::arithmetic::PrimeCurveAffine;
 
     // helper
@@ -69,28 +73,39 @@ fn test_edge_cases() {
             Word::zero(),
             good_ecrecover_data.3,
         ),
-        // invalid v
+        // 5. r == 0 and s == 0
         (
             good_ecrecover_data.0,
-            good_ecrecover_data.1,
-            good_ecrecover_data.2,
-            123u8,
+            Word::zero(),
+            Word::zero(),
+            good_ecrecover_data.3,
         ),
+        // 6. random r and s for random msg hash
+        {
+            let mut bytes = [0u8; 32];
+            rng.fill(&mut bytes[..]);
+            let msg_hash = Word::from_big_endian(&bytes);
+            rng.fill(&mut bytes[..]);
+            let r = Word::from_big_endian(&bytes);
+            rng.fill(&mut bytes[..]);
+            let s = Word::from_big_endian(&bytes);
+            (msg_hash, r, s, 0u8)
+        },
     ];
     let signatures = ecrecover_data
         .iter()
         .map(|&(msg_hash, r, s, v)| SignData {
             signature: to_sig((r, s, v)),
-            pk: recover_pk(v, &r, &s, &msg_hash.to_le_bytes())
+            pk: recover_pk(v, &r, &s, &msg_hash.to_be_bytes())
                 .unwrap_or(Secp256k1Affine::identity()),
-            msg_hash: Fq::from_bytes(&msg_hash.to_le_bytes()).unwrap(),
+            msg_hash: secp256k1::Fq::from_repr(msg_hash.to_le_bytes()).unwrap(),
             ..Default::default()
         })
         .collect();
-    log::info!("signatures=");
-    log::info!("{:#?}", signatures);
+    log::debug!("signatures=");
+    log::debug!("{:#?}", signatures);
 
-    run::<Fr>(LOG_TOTAL_NUM_ROWS as u32, 1, signatures);
+    run::<Fr>(LOG_TOTAL_NUM_ROWS as u32, 6, signatures);
 }
 
 #[test]
