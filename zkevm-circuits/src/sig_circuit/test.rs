@@ -19,13 +19,18 @@ use crate::sig_circuit::SigCircuit;
 #[test]
 fn test_edge_cases() {
     use super::utils::LOG_TOTAL_NUM_ROWS;
-    use eth_types::{sign_types::recover_pk, word, ToBigEndian, ToLittleEndian, Word};
+    use eth_types::{
+        sign_types::{biguint_to_32bytes_le, recover_pk, SECP256K1_Q},
+        word, ToBigEndian, ToLittleEndian, Word,
+    };
     use ethers_core::k256::elliptic_curve::PrimeField;
     use halo2_proofs::halo2curves::secp256k1::Fq;
+    use num::{BigUint, Integer};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
-    let mut rng = XorShiftRng::seed_from_u64(1);
     use snark_verifier::util::arithmetic::PrimeCurveAffine;
+
+    let mut rng = XorShiftRng::seed_from_u64(1);
 
     // helper
     let to_sig = |(r, s, v): (Word, Word, u8)| -> (Fq, Fq, u8) {
@@ -91,6 +96,27 @@ fn test_edge_cases() {
             let s = Word::from_big_endian(&bytes);
             (msg_hash, r, s, 0u8)
         },
+        // 7. v == 0 when v should be 1
+        (
+            good_ecrecover_data.0,
+            good_ecrecover_data.1,
+            good_ecrecover_data.2,
+            1 - good_ecrecover_data.3,
+        ),
+        // 8. v invalid (not boolean)
+        (
+            good_ecrecover_data.0,
+            good_ecrecover_data.1,
+            good_ecrecover_data.2,
+            123u8,
+        ),
+        // 9. msg_hash outside FQ::MODULUS
+        (
+            Word::MAX,
+            good_ecrecover_data.1,
+            good_ecrecover_data.2,
+            good_ecrecover_data.3,
+        ),
     ];
     let signatures = ecrecover_data
         .iter()
@@ -98,14 +124,19 @@ fn test_edge_cases() {
             signature: to_sig((r, s, v)),
             pk: recover_pk(v, &r, &s, &msg_hash.to_be_bytes())
                 .unwrap_or(Secp256k1Affine::identity()),
-            msg_hash: secp256k1::Fq::from_repr(msg_hash.to_le_bytes()).unwrap(),
+            msg_hash: {
+                let msg_hash = BigUint::from_bytes_be(&msg_hash.to_be_bytes());
+                let msg_hash = msg_hash.mod_floor(&*SECP256K1_Q);
+                let msg_hash_le = biguint_to_32bytes_le(msg_hash);
+                secp256k1::Fq::from_repr(msg_hash_le).unwrap()
+            },
             ..Default::default()
         })
         .collect();
     log::debug!("signatures=");
     log::debug!("{:#?}", signatures);
 
-    run::<Fr>(LOG_TOTAL_NUM_ROWS as u32, 6, signatures);
+    run::<Fr>(LOG_TOTAL_NUM_ROWS as u32, 9, signatures);
 }
 
 #[test]

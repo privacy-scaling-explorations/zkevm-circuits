@@ -333,6 +333,8 @@ impl<F: Field> SigCircuit<F> {
         sign_data: &SignData,
     ) -> Result<AssignedECDSA<F, FpChip<F>>, Error> {
         let gate = ecdsa_chip.gate();
+        let zero = gate.load_zero(ctx);
+        let one = gate.load_constant(ctx, F::one());
 
         log::trace!("start ecdsa assignment");
         let SignData {
@@ -377,16 +379,28 @@ impl<F: Field> SigCircuit<F> {
         // =======================================
         // constrains v == y.is_oddness()
         // =======================================
-        assert!(*v == 0 || *v == 1, "v is not boolean");
+        let assigned_y_is_odd = gate.load_witness(ctx, Value::known(F::from(*v as u64)));
+        let v_is_zero = gate.is_equal(
+            ctx,
+            QuantumCell::Existing(zero),
+            QuantumCell::Existing(assigned_y_is_odd),
+        );
+        let v_is_one = gate.is_equal(
+            ctx,
+            QuantumCell::Existing(one),
+            QuantumCell::Existing(assigned_y_is_odd),
+        );
+        let v_is_bool = gate.or(
+            ctx,
+            QuantumCell::Existing(v_is_zero),
+            QuantumCell::Existing(v_is_one),
+        );
 
         // we constrain:
         // - v + 2*tmp = y where y is already range checked (88 bits)
         // - v is a binary
         // - tmp is also < 88 bits (this is crucial otherwise tmp may wrap around and break
         //   soundness)
-
-        let assigned_y_is_odd = gate.load_witness(ctx, Value::known(F::from(*v as u64)));
-        gate.assert_bit(ctx, assigned_y_is_odd);
 
         // the last 88 bits of y
         let assigned_y_limb = &y_coord.limbs()[0];
@@ -408,7 +422,6 @@ impl<F: Field> SigCircuit<F> {
             QuantumCell::Existing(y_tmp_double),
             QuantumCell::Existing(assigned_y_is_odd),
         );
-
         let y_is_ok = gate.is_equal(
             ctx,
             QuantumCell::Existing(*assigned_y_limb),
@@ -435,6 +448,7 @@ impl<F: Field> SigCircuit<F> {
                 QuantumCell::Existing(sig_is_valid),
                 QuantumCell::Existing(y_is_ok),
                 QuantumCell::Existing(y_coord_not_zero),
+                QuantumCell::Existing(v_is_bool),
             ],
         );
 
@@ -564,33 +578,26 @@ impl<F: Field> SigCircuit<F> {
 
         let assert_crt = |ctx: &mut Context<F>,
                           bytes: [u8; 32],
-                          crt_integer: &CRTInteger<F>,
-                          overriding: &Option<&QuantumCell<F>>|
+                          crt_integer: &CRTInteger<F>|
          -> Result<_, Error> {
             let byte_cells: Vec<QuantumCell<F>> = bytes
                 .iter()
                 .map(|&x| QuantumCell::Witness(Value::known(F::from(x as u64))))
                 .collect_vec();
-
             self.assert_crt_int_byte_repr(
                 ctx,
                 &ecdsa_chip.range,
                 crt_integer,
                 &byte_cells,
                 &powers_of_256_cells,
-                overriding,
             )?;
             Ok(byte_cells)
         };
 
         // assert the assigned_msg_hash_le is the right decomposition of msg_hash
         // msg_hash is an overflowing integer with 3 limbs, of sizes 88, 88, and 80
-        let assigned_msg_hash_le = assert_crt(
-            ctx,
-            sign_data.msg_hash.to_bytes(),
-            &assigned_data.msg_hash,
-            &None,
-        )?;
+        let assigned_msg_hash_le =
+            assert_crt(ctx, sign_data.msg_hash.to_bytes(), &assigned_data.msg_hash)?;
 
         // ================================================
         // pk cells
@@ -620,7 +627,6 @@ impl<F: Field> SigCircuit<F> {
             &pk_assigned.x,
             &pk_x_le,
             &powers_of_256_cells,
-            &None,
         )?;
         self.assert_crt_int_byte_repr(
             ctx,
@@ -628,7 +634,6 @@ impl<F: Field> SigCircuit<F> {
             &pk_assigned.y,
             &pk_y_le,
             &powers_of_256_cells,
-            &None,
         )?;
 
         let assigned_pk_le_selected = [pk_y_le, pk_x_le].concat();
@@ -638,13 +643,11 @@ impl<F: Field> SigCircuit<F> {
             ctx,
             sign_data.signature.0.to_bytes(),
             &assigned_data.integer_r,
-            &None,
         )?;
         let s_cells = assert_crt(
             ctx,
             sign_data.signature.1.to_bytes(),
             &assigned_data.integer_s,
-            &None,
         )?;
 
         Ok(SignDataDecomposed {
@@ -946,7 +949,6 @@ impl<F: Field> SigCircuit<F> {
         crt_int: &CRTInteger<F>,
         byte_repr: &[QuantumCell<F>],
         powers_of_256: &[QuantumCell<F>],
-        overriding: &Option<&QuantumCell<F>>,
     ) -> Result<(), Error> {
         // length of byte representation is 32
         assert_eq!(byte_repr.len(), 32);
@@ -954,37 +956,11 @@ impl<F: Field> SigCircuit<F> {
         assert!(powers_of_256.len() >= 11);
 
         let flex_gate_chip = &range_chip.gate;
-        let zero = flex_gate_chip.load_zero(ctx);
-        let zero_cell = QuantumCell::Existing(zero);
 
         // apply the overriding flag
-        let limb1_value = match overriding {
-            Some(p) => flex_gate_chip.select(
-                ctx,
-                zero_cell.clone(),
-                QuantumCell::Existing(crt_int.truncation.limbs[0]),
-                (*p).clone(),
-            ),
-            None => crt_int.truncation.limbs[0],
-        };
-        let limb2_value = match overriding {
-            Some(p) => flex_gate_chip.select(
-                ctx,
-                zero_cell.clone(),
-                QuantumCell::Existing(crt_int.truncation.limbs[1]),
-                (*p).clone(),
-            ),
-            None => crt_int.truncation.limbs[1],
-        };
-        let limb3_value = match overriding {
-            Some(p) => flex_gate_chip.select(
-                ctx,
-                zero_cell,
-                QuantumCell::Existing(crt_int.truncation.limbs[2]),
-                (*p).clone(),
-            ),
-            None => crt_int.truncation.limbs[2],
-        };
+        let limb1_value = crt_int.truncation.limbs[0];
+        let limb2_value = crt_int.truncation.limbs[1];
+        let limb3_value = crt_int.truncation.limbs[2];
 
         // assert the byte_repr is the right decomposition of overflow_int
         // overflow_int is an overflowing integer with 3 limbs, of sizes 88, 88, and 80
