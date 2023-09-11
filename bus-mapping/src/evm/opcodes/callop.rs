@@ -176,7 +176,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let is_precompile = code_address
             .map(|ref addr| is_precompiled(addr))
             .unwrap_or(false);
-        // CALLCODE does not need to do real transfer.
+        // CALLCODE does not need to do real transfer
         // Transfer value only when all these conditions met:
         // - The opcode is CALL
         // - The precheck passed
