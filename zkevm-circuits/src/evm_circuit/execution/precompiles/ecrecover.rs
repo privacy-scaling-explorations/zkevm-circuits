@@ -1,10 +1,10 @@
-use array_init::array_init;
 use bus_mapping::precompile::PrecompileAuxData;
-
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
-use gadgets::util::{select, Expr};
-use halo2_proofs::{circuit::Value, plonk::Error};
-use itertools::Itertools;
+use eth_types::{evm_types::GasCost, word, Field, ToLittleEndian, ToScalar, U256};
+use gadgets::util::{and, not, select, Expr};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 
 use crate::{
     evm_circuit::{
@@ -14,12 +14,20 @@ use crate::{
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            from_bytes, rlc, CachedRegion, Cell, RandomLinearCombination,
+            from_bytes,
+            math_gadget::{LtWordGadget, ModGadget},
+            rlc, CachedRegion, Cell, RandomLinearCombination, Word,
         },
     },
     table::CallContextFieldTag,
     witness::{Block, Call, ExecStep, Transaction},
 };
+
+lazy_static::lazy_static! {
+    static ref FQ_MODULUS: U256 = {
+        word!("0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141")
+    };
+}
 
 #[derive(Clone, Debug)]
 pub struct EcrecoverGadget<F> {
@@ -30,9 +38,15 @@ pub struct EcrecoverGadget<F> {
     sig_s_keccak_rlc: Cell<F>,
     recovered_addr_keccak_rlc: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
 
-    msg_hash: [Cell<F>; N_BYTES_WORD],
-    sig_r: [Cell<F>; N_BYTES_WORD],
-    sig_s: [Cell<F>; N_BYTES_WORD],
+    msg_hash_raw: Word<F>,
+    msg_hash: Word<F>,
+    fq_modulus: Word<F>,
+    msg_hash_mod: ModGadget<F, true>,
+
+    sig_r: Word<F>,
+    sig_r_canonical: LtWordGadget<F>,
+    sig_s: Word<F>,
+    sig_s_canonical: LtWordGadget<F>,
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -66,24 +80,60 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             cb.query_keccak_rlc(),
         );
 
-        let msg_hash = array_init(|_| cb.query_byte());
-        let sig_r = array_init(|_| cb.query_byte());
-        let sig_s = array_init(|_| cb.query_byte());
+        let msg_hash_raw = cb.query_word_rlc();
+        let msg_hash = cb.query_word_rlc();
+        let fq_modulus = cb.query_word_rlc();
+        let msg_hash_mod = ModGadget::construct(cb, [&msg_hash_raw, &fq_modulus, &msg_hash]);
+
+        let sig_r = cb.query_word_rlc();
+        let sig_r_canonical = LtWordGadget::construct(cb, &sig_r, &fq_modulus);
+        let sig_s = cb.query_word_rlc();
+        let sig_s_canonical = LtWordGadget::construct(cb, &sig_s, &fq_modulus);
+        let r_s_canonical = and::expr([sig_r_canonical.expr(), sig_s_canonical.expr()]);
 
         cb.require_equal(
             "msg hash cells assigned incorrectly",
             msg_hash_keccak_rlc.expr(),
-            cb.keccak_rlc(msg_hash.clone().map(|x| x.expr())),
+            cb.keccak_rlc::<N_BYTES_WORD>(
+                msg_hash_raw
+                    .cells
+                    .iter()
+                    .map(Expr::expr)
+                    .collect::<Vec<Expression<F>>>()
+                    .try_into()
+                    .expect("msg hash is 32 bytes"),
+            ),
         );
         cb.require_equal(
             "sig_r cells assigned incorrectly",
             sig_r_keccak_rlc.expr(),
-            cb.keccak_rlc(sig_r.clone().map(|x| x.expr())),
+            cb.keccak_rlc::<N_BYTES_WORD>(
+                sig_r
+                    .cells
+                    .iter()
+                    .map(Expr::expr)
+                    .collect::<Vec<Expression<F>>>()
+                    .try_into()
+                    .expect("msg hash is 32 bytes"),
+            ),
         );
         cb.require_equal(
             "sig_s cells assigned incorrectly",
             sig_s_keccak_rlc.expr(),
-            cb.keccak_rlc(sig_s.clone().map(|x| x.expr())),
+            cb.keccak_rlc::<N_BYTES_WORD>(
+                sig_s
+                    .cells
+                    .iter()
+                    .map(Expr::expr)
+                    .collect::<Vec<Expression<F>>>()
+                    .try_into()
+                    .expect("msg hash is 32 bytes"),
+            ),
+        );
+        cb.require_equal(
+            "Secp256k1::Fq modulus assigned correctly",
+            fq_modulus.expr(),
+            cb.word_rlc::<N_BYTES_WORD>(FQ_MODULUS.to_le_bytes().map(|b| b.expr())),
         );
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
@@ -104,20 +154,35 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             cb.curr.state.gas_left.expr(),
         );
 
-        // lookup to the sign_verify table
-        // || v | r | s | msg_hash | recovered_addr ||
-        cb.sig_table_lookup(
-            cb.word_rlc(msg_hash.clone().map(|x| x.expr())),
-            sig_v_keccak_rlc.expr() - 27.expr(),
-            cb.word_rlc(sig_r.clone().map(|x| x.expr())),
-            cb.word_rlc(sig_s.clone().map(|x| x.expr())),
-            select::expr(
+        // lookup to the sign_verify table:
+        //
+        // || msg_hash | v | r | s | recovered_addr | recovered ||
+        cb.condition(r_s_canonical.expr(), |cb| {
+            cb.sig_table_lookup(
+                msg_hash.expr(),
+                sig_v_keccak_rlc.expr() - 27.expr(),
+                sig_r.expr(),
+                sig_s.expr(),
+                select::expr(
+                    recovered.expr(),
+                    from_bytes::expr(&recovered_addr_keccak_rlc.cells),
+                    0.expr(),
+                ),
                 recovered.expr(),
-                from_bytes::expr(&recovered_addr_keccak_rlc.cells),
-                0.expr(),
-            ),
-            recovered.expr(),
-        );
+            );
+        });
+        cb.condition(not::expr(r_s_canonical.expr()), |cb| {
+            cb.require_zero(
+                "recovered == false if r or s not canonical",
+                recovered.expr(),
+            );
+        });
+        cb.condition(not::expr(recovered.expr()), |cb| {
+            cb.require_zero(
+                "address == 0 if address could not be recovered",
+                recovered_addr_keccak_rlc.expr(),
+            );
+        });
 
         cb.precompile_info_lookup(
             cb.execution_state().as_u64().expr(),
@@ -144,9 +209,15 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             sig_s_keccak_rlc,
             recovered_addr_keccak_rlc,
 
+            msg_hash_raw,
             msg_hash,
+            fq_modulus,
+            msg_hash_mod,
+
             sig_r,
+            sig_r_canonical,
             sig_s,
+            sig_s_canonical,
 
             is_success,
             callee_address,
@@ -204,15 +275,30 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                     .keccak_input()
                     .map(|r| rlc::value(&aux_data.sig_s.to_le_bytes(), r)),
             )?;
-            for (cells, value) in [
-                (&self.msg_hash, aux_data.msg_hash),
+            for (word_rlc, value) in [
+                (&self.msg_hash_raw, aux_data.msg_hash),
                 (&self.sig_r, aux_data.sig_r),
                 (&self.sig_s, aux_data.sig_s),
             ] {
-                for (cell, &byte_value) in cells.iter().zip_eq(value.to_le_bytes().iter()) {
-                    cell.assign(region, offset, Value::known(F::from(byte_value as u64)))?;
-                }
+                word_rlc.assign(region, offset, Some(value.to_le_bytes()))?;
             }
+            let (quotient, remainder) = aux_data.msg_hash.div_mod(*FQ_MODULUS);
+            self.msg_hash
+                .assign(region, offset, Some(remainder.to_le_bytes()))?;
+            self.fq_modulus
+                .assign(region, offset, Some(FQ_MODULUS.to_le_bytes()))?;
+            self.msg_hash_mod.assign(
+                region,
+                offset,
+                aux_data.msg_hash,
+                *FQ_MODULUS,
+                remainder,
+                quotient,
+            )?;
+            self.sig_r_canonical
+                .assign(region, offset, aux_data.sig_r, *FQ_MODULUS)?;
+            self.sig_s_canonical
+                .assign(region, offset, aux_data.sig_s, *FQ_MODULUS)?;
             self.recovered_addr_keccak_rlc.assign(
                 region,
                 offset,
@@ -281,37 +367,7 @@ mod test {
         static ref TEST_VECTOR: Vec<PrecompileCallArgs> = {
             vec![
                 PrecompileCallArgs {
-                    name: "ecrecover (invalid sig, addr not recovered)",
-                    setup_code: bytecode! {
-                        // msg hash from 0x00
-                        PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
-                        PUSH1(0x00)
-                        MSTORE
-                        // signature v from 0x20
-                        PUSH1(28)
-                        PUSH1(0x20)
-                        MSTORE
-                        // signature r from 0x40
-                        PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"))
-                        PUSH1(0x40)
-                        MSTORE
-                        // signature s from 0x60
-                        PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
-                        PUSH1(0x60)
-                        MSTORE
-                    },
-                    // copy 96 bytes from memory addr 0. This is insufficient to recover an
-                    // address, and so the return data length from the precompile call will be 0.
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x60.into(),
-                    // return 32 bytes and write from memory addr 128
-                    ret_offset: 0x80.into(),
-                    ret_size: 0x20.into(),
-                    address: PrecompileCalls::Ecrecover.address().to_word(),
-                    ..Default::default()
-                },
-                PrecompileCallArgs {
-                    name: "ecrecover (invalid sig, addr recovered)",
+                    name: "ecrecover (padded bytes, addr recovered)",
                     setup_code: bytecode! {
                         // msg hash from 0x00
                         PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
@@ -396,6 +452,87 @@ mod test {
                     call_data_offset: 0x00.into(),
                     call_data_length: 0x85.into(),
                     // return 32 bytes and write from memory addr 128
+                    ret_offset: 0x80.into(),
+                    ret_size: 0x20.into(),
+                    address: PrecompileCalls::Ecrecover.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "ecrecover (overflowing msg_hash)",
+                    setup_code: bytecode! {
+                        // msg hash from 0x00
+                        PUSH32(word!("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffee"))
+                        PUSH1(0x00)
+                        MSTORE
+                        // signature v from 0x20
+                        PUSH1(28)
+                        PUSH1(0x20)
+                        MSTORE
+                        // signature r from 0x40
+                        PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"))
+                        PUSH1(0x40)
+                        MSTORE
+                        // signature s from 0x60
+                        PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
+                        PUSH1(0x60)
+                        MSTORE
+                    },
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x80.into(),
+                    ret_offset: 0x80.into(),
+                    ret_size: 0x20.into(),
+                    address: PrecompileCalls::Ecrecover.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "ecrecover (overflowing sig_r)",
+                    setup_code: bytecode! {
+                        // msg hash from 0x00
+                        PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
+                        PUSH1(0x00)
+                        MSTORE
+                        // signature v from 0x20
+                        PUSH1(28)
+                        PUSH1(0x20)
+                        MSTORE
+                        // signature r from 0x40
+                        PUSH32(word!("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffee"))
+                        PUSH1(0x40)
+                        MSTORE
+                        // signature s from 0x60
+                        PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
+                        PUSH1(0x60)
+                        MSTORE
+                    },
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x80.into(),
+                    ret_offset: 0x80.into(),
+                    ret_size: 0x20.into(),
+                    address: PrecompileCalls::Ecrecover.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "ecrecover (overflowing sig_s)",
+                    setup_code: bytecode! {
+                        // msg hash from 0x00
+                        PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
+                        PUSH1(0x00)
+                        MSTORE
+                        // signature v from 0x20
+                        PUSH1(28)
+                        PUSH1(0x20)
+                        MSTORE
+                        // signature r from 0x40
+                        PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"))
+                        PUSH1(0x40)
+                        MSTORE
+                        // signature s from 0x60
+                        PUSH32(word!("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffee"))
+                        PUSH1(0x60)
+                        MSTORE
+                    },
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x80.into(),
                     ret_offset: 0x80.into(),
                     ret_size: 0x20.into(),
                     address: PrecompileCalls::Ecrecover.address().to_word(),
