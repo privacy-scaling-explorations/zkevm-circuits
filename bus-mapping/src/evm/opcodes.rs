@@ -147,12 +147,13 @@ type FnGenAssociatedOps = fn(
 ) -> Result<Vec<ExecStep>, Error>;
 
 fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
-    if opcode_id.is_push() {
+    if opcode_id.is_push_with_data() {
         return StackOnlyOpcode::<0, 1>::gen_associated_ops;
     }
 
     match opcode_id {
         OpcodeId::STOP => Stop::gen_associated_ops,
+        OpcodeId::PUSH0 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::ADD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::MUL => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SUB => StackOnlyOpcode::<2, 1>::gen_associated_ops,
@@ -269,15 +270,29 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
     }
 }
 
-fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociatedOps> {
+fn fn_gen_error_state_associated_ops(
+    geth_step: &GethExecStep,
+    error: &ExecError,
+) -> Option<FnGenAssociatedOps> {
     match error {
         ExecError::InvalidJump => Some(InvalidJump::gen_associated_ops),
         ExecError::InvalidOpcode => Some(ErrorSimple::gen_associated_ops),
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
         ExecError::OutOfGas(OogError::Constant) => Some(ErrorSimple::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Create) => match geth_step.op {
+            OpcodeId::CREATE => Some(StackOnlyOpcode::<3, 0, true>::gen_associated_ops),
+            OpcodeId::CREATE2 => Some(StackOnlyOpcode::<4, 0, true>::gen_associated_ops),
+            op => unreachable!("OOG Create cannot occur in {op}"),
+        },
         ExecError::OutOfGas(OogError::Exp) => Some(OOGExp::gen_associated_ops),
         ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
         ExecError::OutOfGas(OogError::MemoryCopy) => Some(OOGMemoryCopy::gen_associated_ops),
+        ExecError::OutOfGas(OogError::DynamicMemoryExpansion) => {
+            Some(StackOnlyOpcode::<2, 0, true>::gen_associated_ops)
+        }
+        ExecError::OutOfGas(OogError::StaticMemoryExpansion) => {
+            Some(StackOnlyOpcode::<1, 0, true>::gen_associated_ops)
+        }
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
         ExecError::OutOfGas(OogError::AccountAccess) => {
             Some(ErrorOOGAccountAccess::gen_associated_ops)
@@ -363,7 +378,7 @@ pub fn gen_associated_ops(
         // TODO: after more error state handled, refactor all error handling in
         // fn_gen_error_state_associated_ops method
         // For exceptions that have been implemented
-        if let Some(fn_gen_error_ops) = fn_gen_error_state_associated_ops(&exec_error) {
+        if let Some(fn_gen_error_ops) = fn_gen_error_state_associated_ops(geth_step, &exec_error) {
             return fn_gen_error_ops(state, geth_steps);
         } else {
             // For exceptions that fail to enter next call context, we need

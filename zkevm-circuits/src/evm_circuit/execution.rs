@@ -74,6 +74,8 @@ mod error_invalid_opcode;
 mod error_oog_account_access;
 mod error_oog_call;
 mod error_oog_constant;
+mod error_oog_create;
+mod error_oog_dynamic_memory;
 mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_memory_copy;
@@ -150,11 +152,14 @@ use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_account_access::ErrorOOGAccountAccessGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
+use error_oog_create::ErrorOOGCreateGadget;
+use error_oog_dynamic_memory::ErrorOOGDynamicMemoryGadget;
 use error_oog_exp::ErrorOOGExpGadget;
 use error_oog_log::ErrorOOGLogGadget;
 use error_oog_memory_copy::ErrorOOGMemoryCopyGadget;
 use error_oog_sha3::ErrorOOGSha3Gadget;
 use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
+use error_oog_static_memory::ErrorOOGStaticMemoryGadget;
 use error_return_data_oo_bound::ErrorReturnDataOutOfBoundGadget;
 use error_stack::ErrorStackGadget;
 use error_write_protection::ErrorWriteProtectionGadget;
@@ -300,17 +305,15 @@ pub struct ExecutionConfig<F> {
     error_oog_exp: Box<ErrorOOGExpGadget<F>>,
     error_oog_memory_copy: Box<ErrorOOGMemoryCopyGadget<F>>,
     error_oog_sload_sstore: Box<ErrorOOGSloadSstoreGadget<F>>,
-    error_oog_static_memory_gadget:
-        Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasStaticMemoryExpansion }>>,
+    error_oog_static_memory_gadget: Box<ErrorOOGStaticMemoryGadget<F>>,
     error_stack: Box<ErrorStackGadget<F>>,
     error_write_protection: Box<ErrorWriteProtectionGadget<F>>,
-    error_oog_dynamic_memory_gadget:
-        Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>>,
+    error_oog_dynamic_memory_gadget: Box<ErrorOOGDynamicMemoryGadget<F>>,
     error_oog_log: Box<ErrorOOGLogGadget<F>>,
     error_oog_sha3: Box<ErrorOOGSha3Gadget<F>>,
     error_oog_account_access: Box<ErrorOOGAccountAccessGadget<F>>,
     error_oog_ext_codecopy: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXTCODECOPY }>>,
-    error_oog_create2: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>>,
+    error_oog_create: Box<ErrorOOGCreateGadget<F>>,
     error_oog_self_destruct:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>>,
     error_oog_code_store: Box<ErrorCodeStoreGadget<F>>,
@@ -575,7 +578,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_sha3: configure_gadget!(),
             error_oog_ext_codecopy: configure_gadget!(),
             error_oog_exp: configure_gadget!(),
-            error_oog_create2: configure_gadget!(),
+            error_oog_create: configure_gadget!(),
             error_oog_self_destruct: configure_gadget!(),
             error_oog_code_store: configure_gadget!(),
             error_invalid_jump: configure_gadget!(),
@@ -1315,8 +1318,8 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorOutOfGasEXP => {
                 assign_exec_step!(self.error_oog_exp)
             }
-            ExecutionState::ErrorOutOfGasCREATE2 => {
-                assign_exec_step!(self.error_oog_create2)
+            ExecutionState::ErrorOutOfGasCREATE => {
+                assign_exec_step!(self.error_oog_create)
             }
             ExecutionState::ErrorOutOfGasSELFDESTRUCT => {
                 assign_exec_step!(self.error_oog_self_destruct)

@@ -87,11 +87,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
         // Both CALL and CALLCODE opcodes have an extra stack pop `value` relative to
         // DELEGATECALL and STATICCALL.
-        let common_error_gadget = CommonErrorGadget::construct(
-            cb,
-            opcode.expr(),
-            13.expr() + is_call.expr() + is_callcode.expr(),
-        );
+        let common_error_gadget =
+            CommonErrorGadget::construct(cb, opcode.expr(), cb.rw_counter_offset());
 
         Self {
             opcode,
@@ -133,7 +130,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
         let callee_code_hash = block
             .get_rws(step, 9 + is_call_or_callcode)
-            .account_value_pair()
+            .account_codehash_pair()
             .0;
         let callee_exists = !callee_code_hash.is_zero();
 
