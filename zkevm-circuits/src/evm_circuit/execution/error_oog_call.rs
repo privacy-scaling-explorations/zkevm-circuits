@@ -7,7 +7,7 @@ use crate::{
             common_gadget::{CommonCallGadget, CommonErrorGadget},
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{IsZeroGadget, LtGadget},
-            memory_gadget::{MemoryAddressGadget, MemoryExpandedAddressGadget},
+            memory_gadget::MemoryExpandedAddressGadget,
             or, CachedRegion, Cell,
         },
     },
