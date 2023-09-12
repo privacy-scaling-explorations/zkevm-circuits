@@ -176,6 +176,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let is_precompile = code_address
             .map(|ref addr| is_precompiled(addr))
             .unwrap_or(false);
+        // CALLCODE does not need to do real transfer
         // Transfer value only when all these conditions met:
         // - The opcode is CALL
         // - The precheck passed
@@ -185,7 +186,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 &mut exec_step,
                 call.caller_address,
                 call.address,
-                callee_exists || is_precompile,
+                callee_exists,
                 false,
                 call.value,
             )?;
@@ -229,7 +230,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         match (is_precheck_ok, is_precompile, is_empty_code_hash) {
             // 1. Call to precompiled.
             (true, true, _) => {
-                assert!(call.is_success, "call to precompile should not fail");
                 let caller_ctx = state.caller_ctx_mut()?;
                 let code_address = code_address.unwrap();
                 let (result, contract_gas_cost) = execute_precompiled(
@@ -282,7 +282,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             // 2. Call to account with empty code.
             (true, _, true) => {
                 for (field, value) in [
-                    (CallContextField::LastCalleeId, 0.into()),
+                    (CallContextField::LastCalleeId, call.call_id.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                     (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 ] {
@@ -356,7 +356,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             // 4. insufficient balance or error depth cases.
             (false, _, _) => {
                 for (field, value) in [
-                    (CallContextField::LastCalleeId, 0.into()),
+                    (CallContextField::LastCalleeId, call.call_id.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                     (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 ] {
