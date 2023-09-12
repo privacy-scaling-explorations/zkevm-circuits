@@ -61,6 +61,12 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
         cb.stack_push(value.to_word());
 
         let is_warm = cb.query_bool();
+        cb.account_storage_access_list_read(
+            tx_id.expr(),
+            callee_address.to_word(),
+            key.to_word(),
+            Word::from_lo_unchecked(is_warm.expr()),
+        );
         cb.account_storage_access_list_write(
             tx_id.expr(),
             callee_address.to_word(),
@@ -72,7 +78,7 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
 
         let gas_cost = SloadGasGadget::construct(cb, is_warm.expr()).expr();
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(8.expr()),
+            rw_counter: Delta(9.expr()),
             program_counter: Delta(1.expr()),
             reversible_write_counter: Delta(1.expr()),
             gas_left: Delta(-gas_cost),
@@ -123,7 +129,7 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
         self.committed_value
             .assign_u256(region, offset, committed_value)?;
 
-        let (_, is_warm) = block.get_rws(step, 7).tx_access_list_value_pair();
+        let (_, is_warm) = block.get_rws(step, 8).tx_access_list_value_pair();
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
