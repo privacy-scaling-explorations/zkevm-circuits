@@ -7,8 +7,8 @@ use crate::{
             common_gadget::{CommonCallGadget, CommonErrorGadget},
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{IsZeroGadget, LtGadget},
-            memory_gadget::MemoryAddressGadget,
-            CachedRegion, Cell,
+            memory_gadget::{MemoryAddressGadget, MemoryExpandedAddressGadget},
+            or, CachedRegion, Cell,
         },
     },
     table::CallContextFieldTag,
@@ -31,7 +31,7 @@ pub(crate) struct ErrorOOGCallGadget<F> {
     is_staticcall: IsZeroGadget<F>,
     tx_id: Cell<F>,
     is_static: Cell<F>,
-    call: CommonCallGadget<F, MemoryAddressGadget<F>, false>,
+    call: CommonCallGadget<F, MemoryExpandedAddressGadget<F>, false>,
     is_warm: Cell<F>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     common_error_gadget: CommonErrorGadget<F>,
@@ -55,13 +55,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_static = cb.call_context(None, CallContextFieldTag::IsStatic);
 
-        let call_gadget = CommonCallGadget::construct(
-            cb,
-            is_call.expr(),
-            is_callcode.expr(),
-            is_delegatecall.expr(),
-            is_staticcall.expr(),
-        );
+        let call_gadget: CommonCallGadget<F, MemoryExpandedAddressGadget<F>, false> =
+            CommonCallGadget::construct(
+                cb,
+                is_call.expr(),
+                is_callcode.expr(),
+                is_delegatecall.expr(),
+                is_staticcall.expr(),
+            );
 
         // Add callee to access list
         let is_warm = cb.query_bool();
@@ -79,16 +80,24 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
         // Check if the amount of gas available is less than the amount of gas required
         let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
+
         cb.require_equal(
-            "gas left is less than gas required",
-            insufficient_gas.expr(),
+            "Either Memory address is overflow or gas left is less than cost",
+            or::expr([
+                call_gadget.cd_address.overflow(),
+                call_gadget.rd_address.overflow(),
+                insufficient_gas.expr(),
+            ]),
             1.expr(),
         );
 
         // Both CALL and CALLCODE opcodes have an extra stack pop `value` relative to
         // DELEGATECALL and STATICCALL.
-        let common_error_gadget =
-            CommonErrorGadget::construct(cb, opcode.expr(), cb.rw_counter_offset());
+        let common_error_gadget = CommonErrorGadget::construct(
+            cb,
+            opcode.expr(),
+            11.expr() + is_call.expr() + is_callcode.expr(),
+        );
 
         Self {
             opcode,
@@ -267,11 +276,25 @@ mod test {
 
     fn caller(opcode: OpcodeId, stack: Stack) -> Account {
         let bytecode = call_bytecode(opcode, Address::repeat_byte(0xff), stack);
-        Account::mock_100_ether(bytecode)
+
+        Account {
+            address: Address::repeat_byte(0xfe),
+            balance: Word::from(10).pow(20.into()),
+            code: bytecode.code().into(),
+            ..Default::default()
+        }
     }
 
     fn callee(code: Bytecode) -> Account {
-        Account::mock_code_balance(code)
+        let code = code.code();
+        let is_empty = code.is_empty();
+        Account {
+            address: Address::repeat_byte(0xff),
+            code: code.into(),
+            nonce: if is_empty { 0 } else { 1 }.into(),
+            balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
+            ..Default::default()
+        }
     }
 
     fn test_oog(caller: &Account, callee: &Account, is_root: bool) {
@@ -282,8 +305,16 @@ mod test {
                 accs[0]
                     .address(address!("0x000000000000000000000000000000000000cafe"))
                     .balance(Word::from(10u64.pow(19)));
-                accs[1].account(caller);
-                accs[2].account(callee);
+                accs[1]
+                    .address(caller.address)
+                    .code(caller.code.clone())
+                    .nonce(caller.nonce.as_u64())
+                    .balance(caller.balance);
+                accs[2]
+                    .address(callee.address)
+                    .code(callee.code.clone())
+                    .nonce(callee.nonce.as_u64())
+                    .balance(callee.balance);
             },
             |mut txs, accs| {
                 txs[0]
@@ -364,5 +395,47 @@ mod test {
             STOP
         });
         test_oog(&caller(OpcodeId::CALL, stack), &callee, true);
+    }
+
+    #[test]
+    fn test_oog_call_max_expanded_address() {
+        // 0xffffffff1 + 0xffffffff0 = 0x1fffffffe1
+        // > MAX_EXPANDED_MEMORY_ADDRESS (0x1fffffffe0)
+        let stack = Stack {
+            gas: Word::MAX,
+            cd_offset: 0xffffffff1,
+            cd_length: 0xffffffff0,
+            rd_offset: 0xffffffff1,
+            rd_length: 0xffffffff0,
+            ..Default::default()
+        };
+        let callee = callee(bytecode! {
+            PUSH32(Word::from(0))
+            PUSH32(Word::from(0))
+            STOP
+        });
+        for opcode in TEST_CALL_OPCODES {
+            test_oog(&caller(*opcode, stack), &callee, true);
+        }
+    }
+
+    #[test]
+    fn test_oog_call_max_u64_address() {
+        let stack = Stack {
+            gas: Word::MAX,
+            cd_offset: u64::MAX,
+            cd_length: u64::MAX,
+            rd_offset: u64::MAX,
+            rd_length: u64::MAX,
+            ..Default::default()
+        };
+        let callee = callee(bytecode! {
+            PUSH32(Word::from(0))
+            PUSH32(Word::from(0))
+            STOP
+        });
+        for opcode in TEST_CALL_OPCODES {
+            test_oog(&caller(*opcode, stack), &callee, true);
+        }
     }
 }
