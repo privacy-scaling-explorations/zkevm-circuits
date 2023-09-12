@@ -1,6 +1,6 @@
 use bus_mapping::precompile::PrecompileAuxData;
 use eth_types::{evm_types::GasCost, word, Field, ToLittleEndian, ToScalar, U256};
-use gadgets::util::{and, not, select, Expr};
+use gadgets::util::{and, not, or, select, sum, Expr};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -15,7 +15,7 @@ use crate::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             from_bytes,
-            math_gadget::{LtWordGadget, ModGadget},
+            math_gadget::{IsEqualGadget, IsZeroGadget, LtWordGadget, ModGadget},
             rlc, CachedRegion, Cell, RandomLinearCombination, Word,
         },
     },
@@ -47,6 +47,11 @@ pub struct EcrecoverGadget<F> {
     sig_r_canonical: LtWordGadget<F>,
     sig_s: Word<F>,
     sig_s_canonical: LtWordGadget<F>,
+
+    sig_v: Word<F>,
+    sig_v_one_byte: IsZeroGadget<F>,
+    sig_v_eq27: IsEqualGadget<F>,
+    sig_v_eq28: IsEqualGadget<F>,
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -91,6 +96,17 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         let sig_s_canonical = LtWordGadget::construct(cb, &sig_s, &fq_modulus);
         let r_s_canonical = and::expr([sig_r_canonical.expr(), sig_s_canonical.expr()]);
 
+        // sig_v is valid if sig_v == 27 || sig_v == 28
+        let sig_v = cb.query_word_rlc();
+        let sig_v_rest_bytes = sum::expr(&sig_v.cells[1..]);
+        let sig_v_one_byte = IsZeroGadget::construct(cb, sig_v_rest_bytes);
+        let sig_v_eq27 = IsEqualGadget::construct(cb, sig_v.cells[0].expr(), 27.expr());
+        let sig_v_eq28 = IsEqualGadget::construct(cb, sig_v.cells[0].expr(), 28.expr());
+        let sig_v_valid = and::expr([
+            or::expr([sig_v_eq27.expr(), sig_v_eq28.expr()]),
+            sig_v_one_byte.expr(),
+        ]);
+
         cb.require_equal(
             "msg hash cells assigned incorrectly",
             msg_hash_keccak_rlc.expr(),
@@ -131,6 +147,19 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             ),
         );
         cb.require_equal(
+            "sig_v cells assigned incorrectly",
+            sig_v_keccak_rlc.expr(),
+            cb.keccak_rlc::<N_BYTES_WORD>(
+                sig_v
+                    .cells
+                    .iter()
+                    .map(Expr::expr)
+                    .collect::<Vec<Expression<F>>>()
+                    .try_into()
+                    .expect("sig_v is 32 bytes"),
+            ),
+        );
+        cb.require_equal(
             "Secp256k1::Fq modulus assigned correctly",
             fq_modulus.expr(),
             cb.word_rlc::<N_BYTES_WORD>(FQ_MODULUS.to_le_bytes().map(|b| b.expr())),
@@ -160,7 +189,11 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         cb.condition(r_s_canonical.expr(), |cb| {
             cb.sig_table_lookup(
                 msg_hash.expr(),
-                sig_v_keccak_rlc.expr() - 27.expr(),
+                select::expr(
+                    sig_v_valid,
+                    sig_v.cells[0].expr() - 27.expr(),
+                    sig_v.cells[0].expr(),
+                ),
                 sig_r.expr(),
                 sig_s.expr(),
                 select::expr(
@@ -218,6 +251,11 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             sig_r_canonical,
             sig_s,
             sig_s_canonical,
+
+            sig_v,
+            sig_v_one_byte,
+            sig_v_eq27,
+            sig_v_eq28,
 
             is_success,
             callee_address,
@@ -279,6 +317,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                 (&self.msg_hash_raw, aux_data.msg_hash),
                 (&self.sig_r, aux_data.sig_r),
                 (&self.sig_s, aux_data.sig_s),
+                (&self.sig_v, aux_data.sig_v),
             ] {
                 word_rlc.assign(region, offset, Some(value.to_le_bytes()))?;
             }
@@ -299,6 +338,31 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                 .assign(region, offset, aux_data.sig_r, *FQ_MODULUS)?;
             self.sig_s_canonical
                 .assign(region, offset, aux_data.sig_s, *FQ_MODULUS)?;
+            self.sig_v_one_byte.assign(
+                region,
+                offset,
+                F::from(
+                    aux_data
+                        .sig_v
+                        .to_le_bytes()
+                        .into_iter()
+                        .skip(1)
+                        .map(|b| b as u64)
+                        .sum::<u64>(),
+                ),
+            )?;
+            self.sig_v_eq27.assign(
+                region,
+                offset,
+                F::from(aux_data.sig_v.to_le_bytes()[0] as u64),
+                F::from(27),
+            )?;
+            self.sig_v_eq28.assign(
+                region,
+                offset,
+                F::from(aux_data.sig_v.to_le_bytes()[0] as u64),
+                F::from(28),
+            )?;
             self.recovered_addr_keccak_rlc.assign(
                 region,
                 offset,
@@ -528,6 +592,87 @@ mod test {
                         MSTORE
                         // signature s from 0x60
                         PUSH32(word!("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffee"))
+                        PUSH1(0x60)
+                        MSTORE
+                    },
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x80.into(),
+                    ret_offset: 0x80.into(),
+                    ret_size: 0x20.into(),
+                    address: PrecompileCalls::Ecrecover.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "ecrecover (invalid v > 28, single byte)",
+                    setup_code: bytecode! {
+                        // msg hash from 0x00
+                        PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
+                        PUSH1(0x00)
+                        MSTORE
+                        // signature v from 0x20
+                        PUSH1(29)
+                        PUSH1(0x20)
+                        MSTORE
+                        // signature r from 0x40
+                        PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"))
+                        PUSH1(0x40)
+                        MSTORE
+                        // signature s from 0x60
+                        PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
+                        PUSH1(0x60)
+                        MSTORE
+                    },
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x80.into(),
+                    ret_offset: 0x80.into(),
+                    ret_size: 0x20.into(),
+                    address: PrecompileCalls::Ecrecover.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "ecrecover (invalid v < 27, single byte)",
+                    setup_code: bytecode! {
+                        // msg hash from 0x00
+                        PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
+                        PUSH1(0x00)
+                        MSTORE
+                        // signature v from 0x20
+                        PUSH1(26)
+                        PUSH1(0x20)
+                        MSTORE
+                        // signature r from 0x40
+                        PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"))
+                        PUSH1(0x40)
+                        MSTORE
+                        // signature s from 0x60
+                        PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
+                        PUSH1(0x60)
+                        MSTORE
+                    },
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x80.into(),
+                    ret_offset: 0x80.into(),
+                    ret_size: 0x20.into(),
+                    address: PrecompileCalls::Ecrecover.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "ecrecover (invalid v, multi-byte, last byte == 28)",
+                    setup_code: bytecode! {
+                        // msg hash from 0x00
+                        PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
+                        PUSH1(0x00)
+                        MSTORE
+                        // signature v from 0x20, 1c == 28 (but not single byte)
+                        PUSH32(word!("0x010000000000000000000000000000000000000000000000000000000000001c"))
+                        PUSH1(0x20)
+                        MSTORE
+                        // signature r from 0x40
+                        PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"))
+                        PUSH1(0x40)
+                        MSTORE
+                        // signature s from 0x60
+                        PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
                         PUSH1(0x60)
                         MSTORE
                     },

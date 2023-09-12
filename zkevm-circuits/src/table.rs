@@ -2268,7 +2268,6 @@ impl SigTable {
                     });
                     let sig_v = Value::known(F::from(sign_data.signature.2 as u64));
                     let recovered_addr = Value::known(sign_data.get_addr().to_scalar().unwrap());
-
                     region.assign_fixed(
                         || format!("sig table q_enable {offset}"),
                         self.q_enable,
@@ -2281,7 +2280,11 @@ impl SigTable {
                         ("sig_r_rlc", self.sig_r_rlc, sig_r_rlc),
                         ("sig_s_rlc", self.sig_s_rlc, sig_s_rlc),
                         ("recovered_addr", self.recovered_addr, recovered_addr),
-                        ("is_valid", self.is_valid, Value::known(F::one())),
+                        (
+                            "is_valid",
+                            self.is_valid,
+                            Value::known(F::from(!sign_data.get_addr().is_zero())),
+                        ),
                     ] {
                         region.assign_advice(
                             || format!("sig table {column_name} {offset}"),
