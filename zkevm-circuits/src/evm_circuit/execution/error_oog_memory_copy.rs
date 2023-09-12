@@ -198,7 +198,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         let memory_copier_gas = self.memory_copier_gas.assign(
             region,
             offset,
-            copy_size.as_u64(),
+            MemoryExpandedAddressGadget::<F>::length_value(dst_offset, copy_size),
             memory_expansion_cost,
         )?;
         let constant_gas_cost = if is_extcodecopy {
@@ -243,12 +243,14 @@ mod tests {
         evm_circuit::test::{rand_bytes, rand_word},
         test_util::CircuitTestBuilder,
     };
+    use bus_mapping::circuit_input_builder::FixedCParams;
     use eth_types::{
         bytecode, evm_types::gas_utils::memory_copier_gas_cost, Bytecode, ToWord, U256,
     };
     use itertools::Itertools;
     use mock::{
         eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
+        MOCK_BLOCK_GAS_LIMIT,
     };
 
     const TESTING_COMMON_OPCODES: &[OpcodeId] = &[
@@ -266,7 +268,8 @@ mod tests {
             .iter()
             .cartesian_product(TESTING_DST_OFFSET_COPY_SIZE_PAIRS.iter())
         {
-            let testing_data = TestingData::new_for_common_opcode(*opcode, *dst_offset, *copy_size);
+            let testing_data =
+                TestingData::new_for_common_opcode(*opcode, *dst_offset, *copy_size, None);
 
             test_root(&testing_data);
             test_internal(&testing_data);
@@ -279,11 +282,24 @@ mod tests {
             .iter()
             .cartesian_product(TESTING_DST_OFFSET_COPY_SIZE_PAIRS.iter())
         {
-            let testing_data = TestingData::new_for_extcodecopy(*is_warm, *dst_offset, *copy_size);
+            let testing_data =
+                TestingData::new_for_extcodecopy(*is_warm, *dst_offset, *copy_size, None);
 
             test_root(&testing_data);
             test_internal(&testing_data);
         }
+    }
+
+    #[test]
+    fn test_oog_memory_copy_max_expanded_address() {
+        // 0xffffffff1 + 0xffffffff0 = 0x1fffffffe1
+        // > MAX_EXPANDED_MEMORY_ADDRESS (0x1fffffffe0)
+        test_for_edge_memory_size(0xffffffff1, 0xffffffff0);
+    }
+
+    #[test]
+    fn test_oog_memory_copy_max_u64_address() {
+        test_for_edge_memory_size(u64::MAX, u64::MAX);
     }
 
     struct TestingData {
@@ -292,7 +308,12 @@ mod tests {
     }
 
     impl TestingData {
-        pub fn new_for_common_opcode(opcode: OpcodeId, dst_offset: u64, copy_size: u64) -> Self {
+        pub fn new_for_common_opcode(
+            opcode: OpcodeId,
+            dst_offset: u64,
+            copy_size: u64,
+            gas_cost: Option<u64>,
+        ) -> Self {
             let bytecode = bytecode! {
                 PUSH32(copy_size)
                 PUSH32(rand_word())
@@ -300,16 +321,23 @@ mod tests {
                 .write_op(opcode)
             };
 
-            let memory_word_size = (dst_offset + copy_size + 31) / 32;
+            let gas_cost = gas_cost.unwrap_or_else(|| {
+                let memory_word_size = (dst_offset + copy_size + 31) / 32;
 
-            let gas_cost = OpcodeId::PUSH32.constant_gas_cost() * 3
-                + opcode.constant_gas_cost()
-                + memory_copier_gas_cost(0, memory_word_size, copy_size);
+                OpcodeId::PUSH32.constant_gas_cost() * 3
+                    + opcode.constant_gas_cost()
+                    + memory_copier_gas_cost(0, memory_word_size, copy_size)
+            });
 
             Self { bytecode, gas_cost }
         }
 
-        pub fn new_for_extcodecopy(is_warm: bool, dst_offset: u64, copy_size: u64) -> Self {
+        pub fn new_for_extcodecopy(
+            is_warm: bool,
+            dst_offset: u64,
+            copy_size: u64,
+            gas_cost: Option<u64>,
+        ) -> Self {
             let external_address = MOCK_ACCOUNTS[4];
 
             let mut bytecode = bytecode! {
@@ -320,12 +348,6 @@ mod tests {
                 EXTCODECOPY
             };
 
-            let memory_word_size = (dst_offset + copy_size + 31) / 32;
-
-            let mut gas_cost = OpcodeId::PUSH32.constant_gas_cost() * 4
-                + GasCost::COLD_ACCOUNT_ACCESS
-                + memory_copier_gas_cost(0, memory_word_size, copy_size);
-
             if is_warm {
                 bytecode.append(&bytecode! {
                     PUSH32(copy_size)
@@ -334,32 +356,59 @@ mod tests {
                     PUSH32(external_address.to_word())
                     EXTCODECOPY
                 });
-
-                gas_cost += OpcodeId::PUSH32.constant_gas_cost() * 4
-                    + GasCost::WARM_ACCESS
-                    + memory_copier_gas_cost(memory_word_size, memory_word_size, copy_size);
             }
+
+            let gas_cost = gas_cost.unwrap_or_else(|| {
+                let memory_word_size = (dst_offset + copy_size + 31) / 32;
+
+                let gas_cost = OpcodeId::PUSH32.constant_gas_cost() * 4
+                    + GasCost::COLD_ACCOUNT_ACCESS
+                    + memory_copier_gas_cost(0, memory_word_size, copy_size);
+
+                if is_warm {
+                    gas_cost
+                        + OpcodeId::PUSH32.constant_gas_cost() * 4
+                        + GasCost::WARM_ACCESS
+                        + memory_copier_gas_cost(memory_word_size, memory_word_size, copy_size)
+                } else {
+                    gas_cost
+                }
+            });
 
             Self { bytecode, gas_cost }
         }
     }
 
     fn test_root(testing_data: &TestingData) {
+        let gas_cost = GasCost::TX
+            // Decrease expected gas cost (by 1) to trigger out of gas error.
+            .checked_add(testing_data.gas_cost - 1)
+            .unwrap_or(MOCK_BLOCK_GAS_LIMIT);
+        let gas_cost = if gas_cost > MOCK_BLOCK_GAS_LIMIT {
+            MOCK_BLOCK_GAS_LIMIT
+        } else {
+            gas_cost
+        };
+
         let ctx = TestContext::<2, 1>::new(
             None,
             account_0_code_account_1_no_code(testing_data.bytecode.clone()),
             |mut txs, accs| {
-                // Decrease expected gas cost (by 1) to trigger out of gas error.
                 txs[0]
                     .from(accs[1].address)
                     .to(accs[0].address)
-                    .gas((GasCost::TX + testing_data.gas_cost - 1).into());
+                    .gas(gas_cost.into());
             },
             |block, _tx| block.number(0xcafe_u64),
         )
         .unwrap();
 
-        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(FixedCParams {
+                max_copy_rows: 1750,
+                ..Default::default()
+            })
+            .run();
     }
 
     fn test_internal(testing_data: &TestingData) {
@@ -402,6 +451,37 @@ mod tests {
         )
         .unwrap();
 
-        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(FixedCParams {
+                max_copy_rows: 1750,
+                ..Default::default()
+            })
+            .run();
+    }
+
+    fn test_for_edge_memory_size(dst_offset: u64, copy_size: u64) {
+        TESTING_COMMON_OPCODES.iter().for_each(|opcode| {
+            let testing_data = TestingData::new_for_common_opcode(
+                *opcode,
+                dst_offset,
+                copy_size,
+                Some(MOCK_BLOCK_GAS_LIMIT),
+            );
+
+            test_root(&testing_data);
+            test_internal(&testing_data);
+        });
+
+        [false, true].into_iter().for_each(|is_warm| {
+            let testing_data = TestingData::new_for_extcodecopy(
+                is_warm,
+                dst_offset,
+                copy_size,
+                Some(MOCK_BLOCK_GAS_LIMIT),
+            );
+
+            test_root(&testing_data);
+            test_internal(&testing_data);
+        });
     }
 }
