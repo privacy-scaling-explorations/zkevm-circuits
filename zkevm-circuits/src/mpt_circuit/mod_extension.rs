@@ -3,7 +3,7 @@ use gadgets::util::Scalar;
 use halo2_proofs::plonk::{Error, VirtualCells};
 
 use super::{
-    helpers::{ListKeyGadget, MPTConstraintBuilder, ListKeyWitness, KeyData},
+    helpers::{ListKeyGadget, MPTConstraintBuilder, ListKeyWitness, KeyData, ext_key_rlc_calc_value},
     rlp_gadgets::{RLPItemWitness, get_ext_odd_nibble_value},
     MPTContext,
 };
@@ -15,7 +15,7 @@ use crate::{
     },
     mpt_circuit::{
         helpers::{
-            Indexable, ParentData, KECCAK, parent_memory, FIXED, ext_key_rlc_value, key_memory,
+            Indexable, ParentData, KECCAK, parent_memory, FIXED, ext_key_rlc_value, key_memory, ext_key_rlc_expr,
         },
         RlpItemType, witness_row::StorageRowType, FixedTableTag, param::{HASH_WIDTH, KEY_PREFIX_EVEN},
     }, matchw,
@@ -54,6 +54,20 @@ impl<F: Field> ModExtensionGadget<F> {
                     RlpItemType::Key,
                 ),
             ];
+            let key_nibbles = [
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    StorageRowType::LongExtNodeNibbles as usize,
+                    RlpItemType::Nibbles,
+                ),
+                ctx.rlp_item(
+                    meta,
+                    cb,
+                    StorageRowType::ShortExtNodeNibbles as usize,
+                    RlpItemType::Nibbles,
+                ),
+            ];
             let rlp_value = [
                 ctx.rlp_item(
                     meta,
@@ -87,7 +101,7 @@ impl<F: Field> ModExtensionGadget<F> {
 
                 // Extension node RLC
                 let node_rlc = config
-                    .rlp_key[0]
+                    .rlp_key[is_s.idx()]
                     .rlc2(&cb.keccak_r)
                     .rlc_chain_rev(rlp_value[is_s.idx()].rlc_chain_data());
 
@@ -116,24 +130,62 @@ impl<F: Field> ModExtensionGadget<F> {
                     } elsex {
                         // Non-hashed branch hash in parent branch
                         require!(rlc => parent_data.rlc);
-                    }}
-
-                    let key_data = &mut key_data[is_s.idx()];
-                    *key_data = KeyData::load(cb, &ctx.memory[key_memory(is_s)], 0.expr());
-
-                    let r = cb.key_r.clone();
-                    // let test = key_data.nibbles_rlc + 
-                    let foo = (1.expr() * 16.expr() + 2.expr()) + (3.expr() * 16.expr() + 4.expr()) * r.clone();
-                    // println!("{:?}", foo);
-                    // println!("{:?}", key_data.nibbles_rlc);
-                    require!(foo => key_data.nibbles_rlc);
-
-
-
+                    }} 
                 }
 
             }
-            
+
+            (*key_data)[0] = KeyData::load(cb, &ctx.memory[key_memory(true)], 0.expr());
+
+            let r = cb.key_r.clone();
+            let debug_check = (1.expr() * 16.expr() + 2.expr()) + (3.expr() * 16.expr() + 4.expr()) * r.clone();
+            let debug_check1 = (1.expr() * 16.expr() + 2.expr()) + (3.expr() * 16.expr() + 4.expr()) * r.clone()
+                + (5.expr() * 16.expr() + 6.expr()) * r.clone() * r.clone();
+            require!(debug_check => key_data[0].nibbles_rlc);
+
+            let nibbles_rlc_long = ext_key_rlc_expr(
+                cb,
+                config.rlp_key[0].key_value.clone(),
+                1.expr(),
+                config.is_key_part_odd[0].expr(),
+                false.expr(),
+                key_items
+                    .iter()
+                    .map(|item| item.bytes_be())
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap(),
+                &cb.key_r.expr(),
+            );
+
+            require!(debug_check1 => nibbles_rlc_long);
+
+            let data = [key_items[1].clone(), key_nibbles[1].clone()];
+            let nibbles_rlc_short = ext_key_rlc_expr(
+                cb,
+                config.rlp_key[1].key_value.clone(),
+                1.expr(),
+                config.is_key_part_odd[1].expr(),
+                false.expr(),
+                data
+                    .iter()
+                    .map(|item| item.bytes_be())
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap(),
+                &cb.key_r.expr(),
+            );
+
+            let debug_check2 = 6.expr() * 16.expr();
+            // debugging:
+            require!(debug_check2 => nibbles_rlc_short);
+            require!(config.is_key_part_odd[1] => true.expr());
+            require!(config.rlp_key[1].key_value.num_bytes() => 1.expr());
+
+            require!(5.expr() => key_data[0].drifted_rlc);
+            // config.rlp_key[1].key_value.mult()
+            // nibbles_rlc_short.rlc_chain_rev(other)
+
 
             // TODO:
         });
@@ -192,6 +244,29 @@ impl<F: Field> ModExtensionGadget<F> {
                 HASH_WIDTH.scalar(),
             )?;
 
+            /*
+            // Debugging:
+            if !is_s {
+                let data = [key_items[1].clone(), key_nibbles[1].clone()];
+                let (nibbles_rlc, _) = ext_key_rlc_calc_value(
+                    rlp_key[is_s.idx()].key_item.clone(),
+                    F::ONE,
+                    is_key_part_odd,
+                    false,
+                    data
+                        .iter()
+                        .map(|item| item.bytes.clone())
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap(),
+                    region.key_r,
+                );
+
+                println!("{:?}", nibbles_rlc);
+                println!("{:?}", F::from(16*6));
+                println!("=====");
+            }
+            */
         }
         
         // TODO
