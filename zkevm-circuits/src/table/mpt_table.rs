@@ -8,7 +8,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 
 /// The types of proofs in the MPT table
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum MPTProofType {
     /// Disabled
     Disabled,

@@ -8,10 +8,11 @@ use std::{
 use num_enum::IntoPrimitive;
 use zkevm_circuits::{mpt_circuit::witness_row::Node, util::U256};
 
-mod witness {
+mod golang {
     use super::*;
     extern "C" {
         pub fn GetWitness(str: *const c_char) -> *const c_char;
+        pub fn FreeString(str: *const c_char);
     }
 }
 
@@ -95,11 +96,12 @@ pub fn get_witness(block_no: u64, mods: &[TrieModification], node_url: &str) -> 
 
     let json = serde_json::to_string(&req).expect("Invalid request");
     let c_config = CString::new(json).expect("invalid config");
-    let result = unsafe { witness::GetWitness(c_config.as_ptr() as *const i8) };
+    let result = unsafe { golang::GetWitness(c_config.as_ptr() as *const i8) };
     let c_str = unsafe { CStr::from_ptr(result) };
     let json = c_str.to_str().expect("Error translating from library");
 
     let mut nodes: Vec<Node> = serde_json::from_str(json).unwrap();
+    unsafe { golang::FreeString(c_str.as_ptr()) };
 
     // Add the address and the key to the list of values in the Account and Storage nodes
     for node in nodes.iter_mut() {

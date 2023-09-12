@@ -85,17 +85,17 @@ func GetWitness(nodeUrl string, blockNum int, trieModifications []TrieModificati
 	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
 	database := state.NewDatabase(blockHeaderParent)
 	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
-
-	for i := 0; i < len(trieModifications); i++ {
-		// TODO: remove SetState (using it now just because this particular key might
-		// not be set and we will obtain empty storageProof)
-		v := common.BigToHash(big.NewInt(int64(17)))
-		statedb.SetState(trieModifications[i].Address, trieModifications[i].Key, v)
-		// TODO: enable GetState to get the preimages -
-		// GetState calls GetCommittedState which calls PrefetchStorage to get the preimages
-		// statedb.GetState(addr, keys[i])
-	}
-
+	/*
+		for i := 0; i < len(trieModifications); i++ {
+			// TODO: remove SetState (using it now just because this particular key might
+			// not be set and we will obtain empty storageProof)
+			v := common.BigToHash(big.NewInt(int64(17)))
+			statedb.SetState(trieModifications[i].Address, trieModifications[i].Key, v)
+			// TODO: enable GetState to get the preimages -
+			// GetState calls GetCommittedState which calls PrefetchStorage to get the preimages
+			// statedb.GetState(addr, keys[i])
+		}
+	*/
 	return obtainTwoProofsAndConvertToWitness(trieModifications, statedb, 0)
 }
 
@@ -205,7 +205,7 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 			accountAddr := trie.KeybytesToHex(addrh)
 
 			oracle.PrefetchAccount(statedb.Db.BlockNumber, tMod.Address, nil)
-			// oracle.PrefetchStorage(statedb.Db.BlockNumber, addr, tMod.Key, nil)
+			oracle.PrefetchStorage(statedb.Db.BlockNumber, addr, tMod.Key, nil)
 
 			if specialTest == 1 {
 				statedb.CreateAccount(addr)

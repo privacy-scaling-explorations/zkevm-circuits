@@ -38,7 +38,7 @@ pub(crate) mod exp_table;
 /// keccak table
 pub(crate) mod keccak_table;
 /// mpt table
-pub(crate) mod mpt_table;
+pub mod mpt_table;
 /// rw table
 pub(crate) mod rw_table;
 /// tx table

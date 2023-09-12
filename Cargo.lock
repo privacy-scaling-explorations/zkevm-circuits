@@ -2449,6 +2449,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "mpt-witness-generator"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "ethers",
+ "glob",
+ "gobuild",
+ "log",
+ "num_enum 0.7.0",
+ "serde",
+ "serde_json",
+ "zkevm-circuits",
+]
+
+[[package]]
 name = "new_debug_unreachable"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3417,21 +3432,6 @@ dependencies = [
  "libc",
  "linux-raw-sys",
  "windows-sys",
-]
-
-[[package]]
-name = "rustlib"
-version = "0.1.0"
-dependencies = [
- "env_logger",
- "ethers",
- "glob",
- "gobuild",
- "log",
- "num_enum 0.7.0",
- "serde",
- "serde_json",
- "zkevm-circuits",
 ]
 
 [[package]]

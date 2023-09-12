@@ -86,9 +86,10 @@ pub struct ExtensionNode {
 /// MPT start node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StartNode {
-    pub(crate) disable_preimage_check: bool,
     /// TODO
-    pub  proof_type: MPTProofType,
+    pub disable_preimage_check: bool,
+    /// TODO
+    pub proof_type: MPTProofType,
 }
 
 /// MPT extension branch node
