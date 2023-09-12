@@ -72,15 +72,19 @@ pub(crate) enum StartRowType {
 /// MPT branch node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BranchNode {
-    pub(crate) modified_index: usize,
-    pub(crate) drifted_index: usize,
-    pub(crate) list_rlp_bytes: [Vec<u8>; 2],
+    /// TODO
+    pub modified_index: usize,
+    /// TODO
+    pub drifted_index: usize,
+    /// TODO
+    pub list_rlp_bytes: [Vec<u8>; 2],
 }
 
 /// MPT extension node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExtensionNode {
-    pub(crate) list_rlp_bytes: Vec<u8>,
+    /// TODO
+    pub list_rlp_bytes: Vec<u8>,
 }
 
 /// MPT start node
@@ -95,10 +99,14 @@ pub struct StartNode {
 /// MPT extension branch node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExtensionBranchNode {
-    pub(crate) is_extension: bool,
-    pub(crate) is_placeholder: [bool; 2],
-    pub(crate) extension: ExtensionNode,
-    pub(crate) branch: BranchNode,
+    /// TODO
+    pub is_extension: bool,
+    /// TODO
+    pub is_placeholder: [bool; 2],
+    /// TODO
+    pub extension: ExtensionNode,
+    /// TODO
+    pub  branch: BranchNode,
 }
 
 /// MPT account node
@@ -108,11 +116,16 @@ pub struct AccountNode {
     pub address: Vec<u8>,
     /// TODO
     pub key: Vec<u8>,
-    pub(crate) list_rlp_bytes: [Vec<u8>; 2],
-    pub(crate) value_rlp_bytes: [Vec<u8>; 2],
-    pub(crate) value_list_rlp_bytes: [Vec<u8>; 2],
-    pub(crate) drifted_rlp_bytes: Vec<u8>,
-    pub(crate) wrong_rlp_bytes: Vec<u8>,
+    /// TODO
+    pub list_rlp_bytes: [Vec<u8>; 2],
+    /// TODO
+    pub value_rlp_bytes: [Vec<u8>; 2],
+    /// TODO
+    pub value_list_rlp_bytes: [Vec<u8>; 2],
+    /// TODO
+    pub drifted_rlp_bytes: Vec<u8>,
+    /// TODO
+    pub wrong_rlp_bytes: Vec<u8>,
 }
 
 /// MPT storage node
@@ -122,10 +135,14 @@ pub struct StorageNode {
     pub address: Vec<u8>,
     /// TODO
     pub key: Vec<u8>,
-    pub(crate) list_rlp_bytes: [Vec<u8>; 2],
-    pub(crate) value_rlp_bytes: [Vec<u8>; 2],
-    pub(crate) drifted_rlp_bytes: Vec<u8>,
-    pub(crate) wrong_rlp_bytes: Vec<u8>,
+    /// TODO
+    pub list_rlp_bytes: [Vec<u8>; 2],
+    /// TODO
+    pub value_rlp_bytes: [Vec<u8>; 2],
+    /// TODO
+    pub drifted_rlp_bytes: Vec<u8>,
+    /// TODO
+    pub wrong_rlp_bytes: Vec<u8>,
 }
 
 /// MPT node
@@ -133,7 +150,8 @@ pub struct StorageNode {
 pub struct Node {
     /// TODO
     pub start: Option<StartNode>,
-    pub(crate) extension_branch: Option<ExtensionBranchNode>,
+    /// TODO
+    pub extension_branch: Option<ExtensionBranchNode>,
     /// TODO
     pub account: Option<AccountNode>,
     /// TODO

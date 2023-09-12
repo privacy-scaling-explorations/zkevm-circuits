@@ -273,7 +273,8 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 			nodes = append(nodes, nodesStorage...)
 			nodes = append(nodes, GetEndNode())
 		} else {
-			nodes = obtainAccountProofAndConvertToWitness(i, tMod, len(trieModifications), statedb, specialTest)
+			accountNodes := obtainAccountProofAndConvertToWitness(i, tMod, len(trieModifications), statedb, specialTest)
+			nodes = append(nodes, accountNodes...)
 		}
 	}
 
