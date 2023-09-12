@@ -200,7 +200,7 @@ mod sload_tests {
         );
 
         let access_list_op = &builder.block.container.tx_access_list_account_storage
-            [step.bus_mapping_instance[7].as_usize()];
+            [step.bus_mapping_instance[8].as_usize()];
         assert_eq!(
             (access_list_op.rw(), access_list_op.op()),
             (
