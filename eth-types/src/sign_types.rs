@@ -15,6 +15,7 @@ use halo2_proofs::{
     halo2curves::{
         group::{
             ff::{Field as GroupField, PrimeField},
+            prime::PrimeCurveAffine,
             Curve,
         },
         secp256k1::{self, Secp256k1Affine},
@@ -101,6 +102,9 @@ pub fn get_dummy_tx() -> (TransactionRequest, Signature) {
 impl SignData {
     /// Recover address of the signature
     pub fn get_addr(&self) -> Address {
+        if self.pk == Secp256k1Affine::identity() {
+            return Address::zero();
+        }
         let pk_le = pk_bytes_le(&self.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
         let pk_hash = keccak256(pk_be);
