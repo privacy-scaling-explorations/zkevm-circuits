@@ -276,25 +276,11 @@ mod test {
 
     fn caller(opcode: OpcodeId, stack: Stack) -> Account {
         let bytecode = call_bytecode(opcode, Address::repeat_byte(0xff), stack);
-
-        Account {
-            address: Address::repeat_byte(0xfe),
-            balance: Word::from(10).pow(20.into()),
-            code: bytecode.code().into(),
-            ..Default::default()
-        }
+        Account::mock_100_ether(bytecode)
     }
 
     fn callee(code: Bytecode) -> Account {
-        let code = code.code();
-        let is_empty = code.is_empty();
-        Account {
-            address: Address::repeat_byte(0xff),
-            code: code.into(),
-            nonce: if is_empty { 0 } else { 1 }.into(),
-            balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
-            ..Default::default()
-        }
+        Account::mock_code_balance(code)
     }
 
     fn test_oog(caller: &Account, callee: &Account, is_root: bool) {
@@ -305,16 +291,8 @@ mod test {
                 accs[0]
                     .address(address!("0x000000000000000000000000000000000000cafe"))
                     .balance(Word::from(10u64.pow(19)));
-                accs[1]
-                    .address(caller.address)
-                    .code(caller.code.clone())
-                    .nonce(caller.nonce.as_u64())
-                    .balance(caller.balance);
-                accs[2]
-                    .address(callee.address)
-                    .code(callee.code.clone())
-                    .nonce(callee.nonce.as_u64())
-                    .balance(callee.balance);
+                accs[1].account(caller);
+                accs[2].account(callee);
             },
             |mut txs, accs| {
                 txs[0]
