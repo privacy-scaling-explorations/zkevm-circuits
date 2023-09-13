@@ -1,8 +1,9 @@
 //! Implementation of an in-memory key-value database to represent the
 //! Ethereum State Trie.
 
-use eth_types::{geth_types, Address, Hash, Word, H256, U256};
+use eth_types::{geth_types, Address, BigEndianHash, Bytecode, Hash, Word, H256, U256};
 use ethers_core::utils::keccak256;
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use std::collections::{HashMap, HashSet};
 
@@ -21,20 +22,10 @@ lazy_static! {
 const VALUE_ZERO: Word = Word::zero();
 
 /// Memory storage for contract code by code hash.
-#[derive(Debug, Clone)]
-pub struct CodeDB(pub HashMap<Hash, Vec<u8>>);
-
-impl Default for CodeDB {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+#[derive(Debug, Clone, Default)]
+pub struct CodeDB(HashMap<Hash, Vec<u8>>);
 
 impl CodeDB {
-    /// Create a new empty Self.
-    pub fn new() -> Self {
-        Self(HashMap::new())
-    }
     /// Insert code indexed by code hash, and return the code hash.
     pub fn insert(&mut self, code: Vec<u8>) -> Hash {
         let hash = Self::hash(&code);
@@ -50,6 +41,46 @@ impl CodeDB {
     /// Code hash of empty code.
     pub fn empty_code_hash() -> Hash {
         *EMPTY_CODE_HASH
+    }
+
+    /// Compute number of rows required for bytecode table.
+    pub fn num_rows_required_for_bytecode_table(&self) -> usize {
+        self.0.values().map(|bytecode| bytecode.len() + 1).sum()
+    }
+
+    /// Query Bytecode by H256
+    pub fn get_from_h256(&self, codehash: &H256) -> Option<Bytecode> {
+        self.0.get(codehash).cloned().map(|code| code.into())
+    }
+
+    /// Query Bytecode by U256
+    pub fn get_from_u256(&self, codehash: &Word) -> Option<Bytecode> {
+        self.get_from_h256(&H256::from_uint(codehash))
+    }
+}
+
+impl From<Vec<Vec<u8>>> for CodeDB {
+    fn from(bytecodes: Vec<Vec<u8>>) -> Self {
+        Self(HashMap::from_iter(
+            bytecodes
+                .iter()
+                .cloned()
+                .map(|bytecode| (Self::hash(&bytecode), bytecode)),
+        ))
+    }
+}
+
+impl IntoIterator for CodeDB {
+    type Item = Bytecode;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0
+            .values()
+            .cloned()
+            .map(Bytecode::from)
+            .collect_vec()
+            .into_iter()
     }
 }
 
@@ -73,7 +104,7 @@ impl From<geth_types::Account> for Account {
             nonce: account.nonce.as_u64(),
             balance: account.balance,
             storage: account.storage.clone(),
-            code_hash: CodeDB::hash(&account.code.to_vec()),
+            code_hash: CodeDB::hash(&account.code),
         }
     }
 }

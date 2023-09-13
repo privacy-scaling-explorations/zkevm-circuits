@@ -1,6 +1,11 @@
+//! EVM execution state. We model the EVM execution as a finite state machine. The execution of a
+//! EVM block goes from one state to another, but never at an undefined state. The EVM circuit
+//! enables the selectors and thus activates the constraints for the state that the execution
+//! reaches.
+
 use super::{
     param::MAX_STEP_HEIGHT,
-    util::{evm_cm_distribute_advice, CachedRegion},
+    util::{evm_cm_distribute_advice, CachedRegion, Cell, CellType},
 };
 use crate::{
     evm_circuit::{
@@ -8,7 +13,8 @@ use crate::{
         witness::{Block, Call, ExecStep},
     },
     util::{
-        cell_manager::{CMFixedWidthStrategy, Cell, CellManager, CellType},
+        cell_manager::{CMFixedWidthStrategy, CellManager},
+        word::{Word, WordCell},
         Expr,
     },
 };
@@ -26,8 +32,11 @@ use std::{fmt::Display, iter};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
+#[allow(missing_docs, reason = "some docs here are tedious and not helpful")]
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
+/// All the possible execution states that the computation of EVM can arrive.
+/// Some states are shared by multiple opcodes.
 pub enum ExecutionState {
     // Internal state
     BeginTx,
@@ -35,18 +44,25 @@ pub enum ExecutionState {
     EndBlock,
     // Opcode successful cases
     STOP,
-    ADD_SUB,     // ADD, SUB
-    MUL_DIV_MOD, // MUL, DIV, MOD
-    SDIV_SMOD,   // SDIV, SMOD
-    SHL_SHR,     // SHL, SHR
+    /// ADD and SUB opcodes share this state
+    ADD_SUB,
+    /// MUL, DIV, MOD
+    MUL_DIV_MOD,
+    /// SDIV, SMOD
+    SDIV_SMOD,
+    /// SHL, SHR
+    SHL_SHR,
     ADDMOD,
     MULMOD,
     EXP,
     SIGNEXTEND,
-    CMP,  // LT, GT, EQ
-    SCMP, // SLT, SGT
+    /// LT, GT, EQ
+    CMP,
+    /// SLT, SGT
+    SCMP,
     ISZERO,
-    BITWISE, // AND, OR, XOR
+    /// AND, OR, XOR
+    BITWISE,
     NOT,
     BYTE,
     SAR,
@@ -68,13 +84,13 @@ pub enum ExecutionState {
     RETURNDATACOPY,
     EXTCODEHASH,
     BLOCKHASH,
-    BLOCKCTXU64,  // TIMESTAMP, NUMBER, GASLIMIT
-    BLOCKCTXU160, // COINBASE
-    BLOCKCTXU256, // DIFFICULTY, BASEFEE
+    /// TIMESTAMP, NUMBER, GASLIMIT, COINBASE, DIFFICULTY, BASEFEE
+    BLOCKCTX,
     CHAINID,
     SELFBALANCE,
     POP,
-    MEMORY, // MLOAD, MSTORE, MSTORE8
+    /// MLOAD, MSTORE, MSTORE8
+    MEMORY,
     SLOAD,
     SSTORE,
     JUMP,
@@ -83,13 +99,18 @@ pub enum ExecutionState {
     MSIZE,
     GAS,
     JUMPDEST,
-    PUSH, // PUSH1, PUSH2, ..., PUSH32
-    DUP,  // DUP1, DUP2, ..., DUP16
-    SWAP, // SWAP1, SWAP2, ..., SWAP16
-    LOG,  // LOG0, LOG1, ..., LOG4
+    /// PUSH0, PUSH1, PUSH2, ..., PUSH32
+    PUSH,
+    /// DUP1, DUP2, ..., DUP16
+    DUP,
+    /// SWAP1, SWAP2, ..., SWAP16
+    SWAP,
+    /// LOG0, LOG1, ..., LOG4
+    LOG,
     CREATE,
-    CALL_OP,       // CALL, CALLCODE, DELEGATECALL, STATICCALL
-    RETURN_REVERT, // RETURN, REVERT
+    /// CALL, CALLCODE, DELEGATECALL, STATICCALL
+    CALL_OP,
+    RETURN_REVERT,
     CREATE2,
     SELFDESTRUCT,
     // Error cases
@@ -100,7 +121,7 @@ pub enum ExecutionState {
     ErrorInsufficientBalance,
     ErrorContractAddressCollision,
     ErrorInvalidCreationCode,
-    ErrorMaxCodeSizeExceeded,
+    ErrorCodeStore, // combine ErrorMaxCodeSizeExceeded and ErrorOutOfGasCodeStore
     ErrorInvalidJump,
     ErrorReturnDataOutOfBound,
     ErrorOutOfGasConstant,
@@ -108,14 +129,14 @@ pub enum ExecutionState {
     ErrorOutOfGasDynamicMemoryExpansion,
     ErrorOutOfGasMemoryCopy,
     ErrorOutOfGasAccountAccess,
-    ErrorOutOfGasCodeStore,
+    // ErrorOutOfGasCodeStore,
     ErrorOutOfGasLOG,
     ErrorOutOfGasEXP,
     ErrorOutOfGasSHA3,
     ErrorOutOfGasEXTCODECOPY,
     ErrorOutOfGasCall,
     ErrorOutOfGasSloadSstore,
-    ErrorOutOfGasCREATE2,
+    ErrorOutOfGasCREATE,
     ErrorOutOfGasSELFDESTRUCT,
 }
 
@@ -156,8 +177,9 @@ impl From<&ExecError> for ExecutionState {
             ExecError::InvalidCreationCode => ExecutionState::ErrorInvalidCreationCode,
             ExecError::InvalidJump => ExecutionState::ErrorInvalidJump,
             ExecError::ReturnDataOutOfBounds => ExecutionState::ErrorReturnDataOutOfBound,
-            ExecError::CodeStoreOutOfGas => ExecutionState::ErrorOutOfGasCodeStore,
-            ExecError::MaxCodeSizeExceeded => ExecutionState::ErrorMaxCodeSizeExceeded,
+            ExecError::CodeStoreOutOfGas | ExecError::MaxCodeSizeExceeded => {
+                ExecutionState::ErrorCodeStore
+            }
             ExecError::OutOfGas(oog_error) => match oog_error {
                 OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
                 OogError::StaticMemoryExpansion => {
@@ -168,13 +190,13 @@ impl From<&ExecError> for ExecutionState {
                 }
                 OogError::MemoryCopy => ExecutionState::ErrorOutOfGasMemoryCopy,
                 OogError::AccountAccess => ExecutionState::ErrorOutOfGasAccountAccess,
-                OogError::CodeStore => ExecutionState::ErrorOutOfGasCodeStore,
+                OogError::CodeStore => ExecutionState::ErrorCodeStore,
                 OogError::Log => ExecutionState::ErrorOutOfGasLOG,
                 OogError::Exp => ExecutionState::ErrorOutOfGasEXP,
                 OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
                 OogError::Call => ExecutionState::ErrorOutOfGasCall,
                 OogError::SloadSstore => ExecutionState::ErrorOutOfGasSloadSstore,
-                OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
+                OogError::Create => ExecutionState::ErrorOutOfGasCREATE,
                 OogError::SelfDestruct => ExecutionState::ErrorOutOfGasSELFDESTRUCT,
             },
         }
@@ -225,7 +247,6 @@ impl From<&ExecStep> for ExecutionState {
                     OpcodeId::NOT => ExecutionState::NOT,
                     OpcodeId::EXP => ExecutionState::EXP,
                     OpcodeId::POP => ExecutionState::POP,
-                    OpcodeId::PUSH32 => ExecutionState::PUSH,
                     OpcodeId::BYTE => ExecutionState::BYTE,
                     OpcodeId::MLOAD => ExecutionState::MEMORY,
                     OpcodeId::MSTORE => ExecutionState::MEMORY,
@@ -241,11 +262,12 @@ impl From<&ExecStep> for ExecutionState {
                     OpcodeId::EXTCODEHASH => ExecutionState::EXTCODEHASH,
                     OpcodeId::EXTCODESIZE => ExecutionState::EXTCODESIZE,
                     OpcodeId::BLOCKHASH => ExecutionState::BLOCKHASH,
-                    OpcodeId::TIMESTAMP | OpcodeId::NUMBER | OpcodeId::GASLIMIT => {
-                        ExecutionState::BLOCKCTXU64
-                    }
-                    OpcodeId::COINBASE => ExecutionState::BLOCKCTXU160,
-                    OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
+                    OpcodeId::TIMESTAMP
+                    | OpcodeId::NUMBER
+                    | OpcodeId::GASLIMIT
+                    | OpcodeId::COINBASE
+                    | OpcodeId::DIFFICULTY
+                    | OpcodeId::BASEFEE => ExecutionState::BLOCKCTX,
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SAR => ExecutionState::SAR,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
@@ -283,7 +305,7 @@ impl From<&ExecStep> for ExecutionState {
     }
 }
 
-pub trait HasExecutionState {
+pub(crate) trait HasExecutionState {
     fn execution_state(&self) -> ExecutionState;
 }
 
@@ -309,7 +331,7 @@ impl ExecutionState {
                 | Self::ErrorStack
                 | Self::ErrorWriteProtection
                 | Self::ErrorInvalidCreationCode
-                | Self::ErrorMaxCodeSizeExceeded
+                | Self::ErrorCodeStore
                 | Self::ErrorInvalidJump
                 | Self::ErrorReturnDataOutOfBound
                 | Self::ErrorOutOfGasConstant
@@ -317,14 +339,13 @@ impl ExecutionState {
                 | Self::ErrorOutOfGasDynamicMemoryExpansion
                 | Self::ErrorOutOfGasMemoryCopy
                 | Self::ErrorOutOfGasAccountAccess
-                | Self::ErrorOutOfGasCodeStore
                 | Self::ErrorOutOfGasLOG
                 | Self::ErrorOutOfGasEXP
                 | Self::ErrorOutOfGasSHA3
                 | Self::ErrorOutOfGasEXTCODECOPY
                 | Self::ErrorOutOfGasCall
                 | Self::ErrorOutOfGasSloadSstore
-                | Self::ErrorOutOfGasCREATE2
+                | Self::ErrorOutOfGasCREATE
                 | Self::ErrorOutOfGasSELFDESTRUCT
         )
     }
@@ -334,6 +355,7 @@ impl ExecutionState {
             || self.halts_in_exception()
     }
 
+    /// Get the opocdes that are related to the execution state
     pub fn responsible_opcodes(&self) -> Vec<ResponsibleOp> {
         if matches!(self, Self::ErrorStack) {
             return OpcodeId::valid_opcodes()
@@ -381,9 +403,14 @@ impl ExecutionState {
             Self::RETURNDATACOPY => vec![OpcodeId::RETURNDATACOPY],
             Self::EXTCODEHASH => vec![OpcodeId::EXTCODEHASH],
             Self::BLOCKHASH => vec![OpcodeId::BLOCKHASH],
-            Self::BLOCKCTXU64 => vec![OpcodeId::TIMESTAMP, OpcodeId::NUMBER, OpcodeId::GASLIMIT],
-            Self::BLOCKCTXU160 => vec![OpcodeId::COINBASE],
-            Self::BLOCKCTXU256 => vec![OpcodeId::DIFFICULTY, OpcodeId::BASEFEE],
+            Self::BLOCKCTX => vec![
+                OpcodeId::TIMESTAMP,
+                OpcodeId::NUMBER,
+                OpcodeId::GASLIMIT,
+                OpcodeId::COINBASE,
+                OpcodeId::DIFFICULTY,
+                OpcodeId::BASEFEE,
+            ],
             Self::CHAINID => vec![OpcodeId::CHAINID],
             Self::SELFBALANCE => vec![OpcodeId::SELFBALANCE],
             Self::POP => vec![OpcodeId::POP],
@@ -399,6 +426,7 @@ impl ExecutionState {
             Self::GAS => vec![OpcodeId::GAS],
             Self::JUMPDEST => vec![OpcodeId::JUMPDEST],
             Self::PUSH => vec![
+                OpcodeId::PUSH0,
                 OpcodeId::PUSH1,
                 OpcodeId::PUSH2,
                 OpcodeId::PUSH3,
@@ -493,11 +521,12 @@ impl ExecutionState {
         .collect()
     }
 
+    /// Get the state hight
     pub fn get_step_height_option(&self) -> Option<usize> {
         EXECUTION_STATE_HEIGHT_MAP.get(self).copied()
     }
 
-    pub fn get_step_height(&self) -> usize {
+    pub(crate) fn get_step_height(&self) -> usize {
         self.get_step_height_option()
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", self))
     }
@@ -520,6 +549,7 @@ impl From<OpcodeId> for ResponsibleOp {
 }
 
 impl ResponsibleOp {
+    /// Get the opcode
     pub fn opcode(&self) -> OpcodeId {
         *match self {
             ResponsibleOp::Op(opcode) => opcode,
@@ -646,7 +676,7 @@ pub(crate) struct StepState<F> {
     /// In the case of a contract creation internal call, this denotes the hash
     /// of the chunk of bytes from caller's memory that represent the
     /// contract init code.
-    pub(crate) code_hash: Cell<F>,
+    pub(crate) code_hash: WordCell<F>,
     /// The program counter
     pub(crate) program_counter: Cell<F>,
     /// The stack pointer
@@ -690,7 +720,10 @@ impl<F: Field> Step<F> {
                 call_id: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 is_root: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 is_create: cell_manager.query_cell(meta, CellType::StoragePhase1),
-                code_hash: cell_manager.query_cell(meta, CellType::StoragePhase2),
+                code_hash: Word::new([
+                    cell_manager.query_cell(meta, CellType::StoragePhase1),
+                    cell_manager.query_cell(meta, CellType::StoragePhase1),
+                ]),
                 program_counter: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 stack_pointer: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 gas_left: cell_manager.query_cell(meta, CellType::StoragePhase1),
@@ -741,7 +774,7 @@ impl<F: Field> Step<F> {
         )?;
         self.state
             .code_hash
-            .assign(region, offset, region.word_rlc(call.code_hash.to_word()))?;
+            .assign_u256(region, offset, call.code_hash.to_word())?;
         self.state
             .program_counter
             .assign(region, offset, Value::known(F::from(step.pc)))?;

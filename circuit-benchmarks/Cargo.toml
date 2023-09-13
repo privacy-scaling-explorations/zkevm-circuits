@@ -9,16 +9,18 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_04_20" }
 ark-std = { version = "0.3", features = ["print-trace"] }
-zkevm-circuits = { path = "../zkevm-circuits", features = ["test"]}
+zkevm-circuits = { path = "../zkevm-circuits", features = ["test-circuits"] }
 bus-mapping = { path = "../bus-mapping",  features = ["test"] }
 rand_xorshift = "0.3"
 rand = "0.8"
 itertools = "0.10"
 eth-types = { path = "../eth-types" }
 env_logger = "0.9"
-ethers-signers = "0.17.0"
+ethers-signers = "2.0.7"
 mock = { path="../mock" }
 rand_chacha = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 [features]
 default = []

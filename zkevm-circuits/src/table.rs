@@ -1,17 +1,19 @@
 //! Table definitions used cross-circuits
 
 use crate::{
-    copy_circuit::util::number_or_hash_to_field,
+    copy_circuit::util::number_or_hash_to_word,
     evm_circuit::util::rlc,
     impl_expr,
-    util::{build_tx_log_address, Challenges},
-    witness::{
-        Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
+    util::{
+        build_tx_log_address, keccak,
+        word::{self, Word},
+        Challenges,
     },
+    witness::{Block, BlockContext, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction},
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep};
 use core::iter::once;
-use eth_types::{Field, Keccak, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{Field, ToScalar, U256};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     util::{split_u256, split_u256_limb64},
@@ -41,12 +43,15 @@ pub(crate) mod mpt_table;
 pub(crate) mod rw_table;
 /// tx table
 pub(crate) mod tx_table;
+/// ux table
+pub(crate) mod ux_table;
 
 pub(crate) use block_table::{BlockContextFieldTag, BlockTable};
 pub(crate) use bytecode_table::{BytecodeFieldTag, BytecodeTable};
 pub(crate) use copy_table::CopyTable;
 pub(crate) use exp_table::ExpTable;
 pub(crate) use keccak_table::KeccakTable;
+pub(crate) use ux_table::UXTable;
 
 pub(crate) use mpt_table::{MPTProofType, MptTable};
 pub(crate) use rw_table::RwTable;

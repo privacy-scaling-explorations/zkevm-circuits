@@ -109,6 +109,8 @@ impl From<MockBlock> for Block<Transaction> {
                 .collect::<Vec<Transaction>>(),
             size: Some(mock.size),
             other: OtherFields::default(),
+            withdrawals_root: None,
+            withdrawals: None,
         }
     }
 }
@@ -141,6 +143,8 @@ impl From<MockBlock> for Block<()> {
             transactions: vec![],
             size: Some(mock.size),
             other: OtherFields::default(),
+            withdrawals_root: None,
+            withdrawals: None,
         }
     }
 }

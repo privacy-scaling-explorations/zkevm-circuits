@@ -1,6 +1,9 @@
+//! Fixed lookup tables and dynamic lookup tables for the EVM circuit
+
 use crate::{
     evm_circuit::step::{ExecutionState, ResponsibleOp},
     impl_expr,
+    util::word::Word,
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
@@ -10,28 +13,46 @@ use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
 #[derive(Clone, Copy, Debug, EnumIter)]
+/// Tags for different fixed tables
 pub enum FixedTableTag {
+    /// x == 0
     Zero = 0,
+    /// 0 <= x < 5
     Range5,
+    /// 0 <= x < 16
     Range16,
+    /// 0 <= x < 32
     Range32,
+    /// 0 <= x < 64
     Range64,
+    /// 0 <= x < 128
     Range128,
+    /// 0 <= x < 256
     Range256,
+    /// 0 <= x < 512
     Range512,
+    /// 0 <= x < 1024
     Range1024,
+    /// -128 <= x < 128
     SignByte,
+    /// bitwise AND
     BitwiseAnd,
+    /// bitwise OR
     BitwiseOr,
+    /// bitwise XOR
     BitwiseXor,
+    /// lookup for corresponding opcode
     ResponsibleOpcode,
+    /// power of 2
     Pow2,
+    /// Lookup constant gas cost for opcodes
     ConstantGasCost,
 }
 impl_expr!(FixedTableTag);
 
 impl FixedTableTag {
-    pub fn build<F: Field>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
+    /// build up the fixed table row values
+    pub(crate) fn build<F: Field>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
         let tag = F::from(*self as u64);
         match self {
             Self::Zero => Box::new((0..1).map(move |_| [tag, F::ZERO, F::ZERO, F::ZERO])),
@@ -121,40 +142,64 @@ impl FixedTableTag {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
+/// Each item represents the lookup table to query
 pub enum Table {
+    /// The range check table for u8
+    U8,
+    /// The range check table for u16
+    U16,
+    /// The rest of the fixed table. See [`FixedTableTag`]
     Fixed,
+    /// Lookup for transactions
     Tx,
+    /// Lookup for read write operations
     Rw,
+    /// Lookup for bytecode table
     Bytecode,
+    /// Lookup for block constants
     Block,
+    /// Lookup for copy table
     Copy,
+    /// Lookup for keccak table
     Keccak,
+    /// Lookup for exp table
     Exp,
 }
 
 #[derive(Clone, Debug)]
-pub struct RwValues<F> {
-    pub id: Expression<F>,
-    pub address: Expression<F>,
-    pub field_tag: Expression<F>,
-    pub storage_key: Expression<F>,
-    pub value: Expression<F>,
-    pub value_prev: Expression<F>,
-    pub aux1: Expression<F>,
-    pub aux2: Expression<F>,
+/// Read-Write Table fields
+pub(crate) struct RwValues<F> {
+    /// The unique identifier for the Read or Write. Depending on context, this field could be used
+    /// for Transaction ID or call ID
+    id: Expression<F>,
+    /// The position to Stack, Memory, or account, where the read or write takes place, depending
+    /// on the cell value of the [`bus_mapping::operation::Target`].
+    address: Expression<F>,
+    /// Could be [`crate::table::CallContextFieldTag`], [`crate::table::AccountFieldTag`],
+    /// [`crate::table::TxLogFieldTag`], or [`crate::table::TxReceiptFieldTag`] depending on
+    /// the cell value of the [`bus_mapping::operation::Target`]
+    field_tag: Expression<F>,
+    /// Storage key of two limbs
+    storage_key: Word<Expression<F>>,
+    /// The current storage value
+    value: Word<Expression<F>>,
+    /// The previous storage value
+    value_prev: Word<Expression<F>>,
+    /// The initial storage value before the current transaction
+    init_val: Word<Expression<F>>,
 }
 
 impl<F: Field> RwValues<F> {
+    /// Constructor for RwValues
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(crate) fn new(
         id: Expression<F>,
         address: Expression<F>,
         field_tag: Expression<F>,
-        storage_key: Expression<F>,
-        value: Expression<F>,
-        value_prev: Expression<F>,
-        aux1: Expression<F>,
-        aux2: Expression<F>,
+        storage_key: Word<Expression<F>>,
+        value: Word<Expression<F>>,
+        value_prev: Word<Expression<F>>,
+        init_val: Word<Expression<F>>,
     ) -> Self {
         Self {
             id,
@@ -163,8 +208,16 @@ impl<F: Field> RwValues<F> {
             storage_key,
             value,
             value_prev,
-            aux1,
-            aux2,
+            init_val,
+        }
+    }
+
+    pub(crate) fn revert_value(&self) -> Self {
+        let new_self = self.clone();
+        Self {
+            value_prev: new_self.value,
+            value: new_self.value_prev,
+            ..new_self
         }
     }
 }
@@ -189,7 +242,7 @@ pub(crate) enum Lookup<F> {
         /// field_tag is Calldata, otherwise should be set to 0.
         index: Expression<F>,
         /// Value of the field.
-        value: Expression<F>,
+        value: Word<Expression<F>>,
     },
     /// Lookup to read-write table, which contains read-write access records of
     /// time-aware data.
@@ -209,7 +262,7 @@ pub(crate) enum Lookup<F> {
     /// contract code.
     Bytecode {
         /// Hash to specify which code to read.
-        hash: Expression<F>,
+        hash: Word<Expression<F>>,
         /// Tag to specify whether its the bytecode length or byte value in the
         /// bytecode.
         tag: Expression<F>,
@@ -229,18 +282,18 @@ pub(crate) enum Lookup<F> {
         /// should be set to 0.
         number: Expression<F>,
         /// Value of the field.
-        value: Expression<F>,
+        value: Word<Expression<F>>,
     },
     /// Lookup to copy table.
     CopyTable {
         /// Whether the row is the first row of the copy event.
         is_first: Expression<F>,
         /// The source ID for the copy event.
-        src_id: Expression<F>,
+        src_id: Word<Expression<F>>,
         /// The source tag for the copy event.
         src_tag: Expression<F>,
         /// The destination ID for the copy event.
-        dst_id: Expression<F>,
+        dst_id: Word<Expression<F>>,
         /// The destination tag for the copy event.
         dst_tag: Expression<F>,
         /// The source address where bytes are copied from.
@@ -267,9 +320,9 @@ pub(crate) enum Lookup<F> {
         input_rlc: Expression<F>,
         /// Length of input that is being hashed.
         input_len: Expression<F>,
-        /// Output (hash) until this state. This is the RLC representation of
-        /// the final output keccak256 hash of the input.
-        output_rlc: Expression<F>,
+        /// Output (hash) until this state. hash will be split into multiple expression in little
+        /// endian.
+        output: Word<Expression<F>>,
     },
     /// Lookup to exponentiation table.
     ExpTable {
@@ -310,49 +363,53 @@ impl<F: Field> Lookup<F> {
                 field_tag,
                 index,
                 value,
-            } => vec![id.clone(), field_tag.clone(), index.clone(), value.clone()],
+            } => vec![
+                id.clone(),
+                field_tag.clone(),
+                index.clone(),
+                value.lo(),
+                value.hi(),
+            ],
             Self::Rw {
                 counter,
                 is_write,
                 tag,
                 values,
-            } => {
-                vec![
-                    counter.clone(),
-                    is_write.clone(),
-                    tag.clone(),
-                    values.id.clone(),
-                    values.address.clone(),
-                    values.field_tag.clone(),
-                    values.storage_key.clone(),
-                    values.value.clone(),
-                    values.value_prev.clone(),
-                    values.aux1.clone(),
-                    values.aux2.clone(),
-                ]
-            }
+            } => vec![
+                counter.clone(),
+                is_write.clone(),
+                tag.clone(),
+                values.id.clone(),
+                values.address.clone(),
+                values.field_tag.clone(),
+                values.storage_key.lo(),
+                values.storage_key.hi(),
+                values.value.lo(),
+                values.value.hi(),
+                values.value_prev.lo(),
+                values.value_prev.hi(),
+                values.init_val.lo(),
+                values.init_val.hi(),
+            ],
             Self::Bytecode {
                 hash,
                 tag,
                 index,
                 is_code,
                 value,
-            } => {
-                vec![
-                    hash.clone(),
-                    tag.clone(),
-                    index.clone(),
-                    is_code.clone(),
-                    value.clone(),
-                ]
-            }
+            } => vec![
+                hash.lo(),
+                hash.hi(),
+                tag.clone(),
+                index.clone(),
+                is_code.clone(),
+                value.clone(),
+            ],
             Self::Block {
                 field_tag,
                 number,
                 value,
-            } => {
-                vec![field_tag.clone(), number.clone(), value.clone()]
-            }
+            } => vec![field_tag.clone(), number.clone(), value.lo(), value.hi()],
             Self::CopyTable {
                 is_first,
                 src_id,
@@ -368,9 +425,11 @@ impl<F: Field> Lookup<F> {
                 rwc_inc,
             } => vec![
                 is_first.clone(),
-                src_id.clone(),
+                src_id.lo(),
+                src_id.hi(),
                 src_tag.clone(),
-                dst_id.clone(),
+                dst_id.lo(),
+                dst_id.hi(),
                 dst_tag.clone(),
                 src_addr.clone(),
                 src_addr_end.clone(),
@@ -383,12 +442,13 @@ impl<F: Field> Lookup<F> {
             Self::KeccakTable {
                 input_rlc,
                 input_len,
-                output_rlc,
+                output,
             } => vec![
                 1.expr(), // is_enabled
                 input_rlc.clone(),
                 input_len.clone(),
-                output_rlc.clone(),
+                output.lo(),
+                output.hi(),
             ],
             Self::ExpTable {
                 identifier,
@@ -415,13 +475,5 @@ impl<F: Field> Lookup<F> {
                 .map(|expr| condition.clone() * expr)
                 .collect(),
         }
-    }
-
-    pub(crate) fn degree(&self) -> usize {
-        self.input_exprs()
-            .iter()
-            .map(|expr| expr.degree())
-            .max()
-            .unwrap()
     }
 }

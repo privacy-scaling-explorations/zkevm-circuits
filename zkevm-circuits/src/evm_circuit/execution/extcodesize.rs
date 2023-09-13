@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64},
+        param::N_BYTES_ACCOUNT_ADDRESS,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -9,28 +9,30 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::Delta,
             },
-            from_bytes,
-            math_gadget::IsZeroGadget,
-            not, select, CachedRegion, Cell, RandomLinearCombination, Word,
+            math_gadget::IsZeroWordGadget,
+            not, select, AccountAddress, CachedRegion, Cell, U64Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
-    util::Expr,
+    util::{
+        word::{Word, Word32Cell, WordCell, WordExpr},
+        Expr,
+    },
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian};
+use eth_types::{evm_types::GasCost, Field};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExtcodesizeGadget<F> {
     same_context: SameContextGadget<F>,
-    address_word: Word<F>,
+    address_word: Word32Cell<F>,
     reversion_info: ReversionInfo<F>,
     tx_id: Cell<F>,
     is_warm: Cell<F>,
-    code_hash: Cell<F>,
-    not_exists: IsZeroGadget<F>,
-    code_size: RandomLinearCombination<F, N_BYTES_U64>,
+    code_hash: WordCell<F>,
+    not_exists: IsZeroWordGadget<F, WordCell<F>>,
+    code_size: U64Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
@@ -39,36 +41,46 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::EXTCODESIZE;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let address_word = cb.query_word_rlc();
-        let address = from_bytes::expr(&address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
-        cb.stack_pop(address_word.expr());
+        let address_word = cb.query_word32();
+        let address = AccountAddress::new(
+            address_word.limbs[..N_BYTES_ACCOUNT_ADDRESS]
+                .to_vec()
+                .try_into()
+                .unwrap(),
+        );
+        cb.stack_pop(address_word.to_word());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
         let is_warm = cb.query_bool();
-        cb.account_access_list_write(
+        cb.account_access_list_write_unchecked(
             tx_id.expr(),
-            address.expr(),
+            address.to_word(),
             1.expr(),
             is_warm.expr(),
             Some(&mut reversion_info),
         );
 
-        let code_hash = cb.query_cell_phase2();
+        // range check will be cover by account code_hash lookup
+        let code_hash = cb.query_word_unchecked();
         // For non-existing accounts the code_hash must be 0 in the rw_table.
-        cb.account_read(address.expr(), AccountFieldTag::CodeHash, code_hash.expr());
-        let not_exists = IsZeroGadget::construct(cb, code_hash.expr());
+        cb.account_read(
+            address.to_word(),
+            AccountFieldTag::CodeHash,
+            code_hash.to_word(),
+        );
+        let not_exists = IsZeroWordGadget::construct(cb, &code_hash);
         let exists = not::expr(not_exists.expr());
 
-        let code_size = cb.query_word_rlc();
+        let code_size = cb.query_u64();
         cb.condition(exists.expr(), |cb| {
-            cb.bytecode_length(code_hash.expr(), from_bytes::expr(&code_size.cells));
+            cb.bytecode_length(code_hash.to_word(), code_size.expr());
         });
         cb.condition(not_exists.expr(), |cb| {
             cb.require_zero("code_size is zero when non_exists", code_size.expr());
         });
 
-        cb.stack_push(code_size.expr());
+        cb.stack_push(code_size.to_word());
 
         let gas_cost = select::expr(
             is_warm.expr(),
@@ -112,11 +124,10 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let address = block.get_rws(step, 0).stack_value();
-        self.address_word
-            .assign(region, offset, Some(address.to_le_bytes()))?;
+        self.address_word.assign_u256(region, offset, address)?;
 
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id)))?;
 
         self.reversion_info.assign(
             region,
@@ -129,11 +140,10 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let code_hash = block.get_rws(step, 5).account_value_pair().0;
-        self.code_hash
-            .assign(region, offset, region.word_rlc(code_hash))?;
+        let code_hash = block.get_rws(step, 5).account_codehash_pair().0;
+        self.code_hash.assign_u256(region, offset, code_hash)?;
         self.not_exists
-            .assign_value(region, offset, region.word_rlc(code_hash))?;
+            .assign(region, offset, Word::from(code_hash))?;
 
         let code_size = block.get_rws(step, 6).stack_value().as_u64();
         self.code_size

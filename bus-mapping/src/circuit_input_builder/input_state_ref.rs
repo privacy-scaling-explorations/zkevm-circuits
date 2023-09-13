@@ -611,12 +611,48 @@ impl<'a> CircuitInputStateRef<'a> {
         )
     }
 
+    /// Transfer to an address irreversibly.
+    pub fn transfer_to_irreversible(
+        &mut self,
+        step: &mut ExecStep,
+        receiver: Address,
+        receiver_exists: bool,
+        must_create: bool,
+        value: Word,
+    ) -> Result<(), Error> {
+        // If receiver doesn't exist, create it
+        if (!receiver_exists && !value.is_zero()) || must_create {
+            self.account_write(
+                step,
+                receiver,
+                AccountField::CodeHash,
+                CodeDB::empty_code_hash().to_word(),
+                Word::zero(),
+            )?;
+        }
+        if value.is_zero() {
+            // Skip transfer if value == 0
+            return Ok(());
+        }
+        let (_found, receiver_account) = self.sdb.get_account(&receiver);
+        let receiver_balance_prev = receiver_account.balance;
+        let receiver_balance = receiver_account.balance + value;
+        self.account_write(
+            step,
+            receiver,
+            AccountField::Balance,
+            receiver_balance,
+            receiver_balance_prev,
+        )?;
+
+        Ok(())
+    }
+
     /// Fetch and return code for the given code hash from the code DB.
     pub fn code(&self, code_hash: H256) -> Result<Vec<u8>, Error> {
         self.code_db
-            .0
-            .get(&code_hash)
-            .cloned()
+            .get_from_h256(&code_hash)
+            .map(|bytecode| bytecode.code())
             .ok_or(Error::CodeNotFound(code_hash))
     }
 
@@ -716,7 +752,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let init_code = get_create_init_code(call_ctx, step)?.to_vec();
         Ok(get_create2_address(
             self.call()?.address,
-            salt.to_be_bytes().to_vec(),
+            salt.to_be_bytes(),
             init_code,
         ))
     }
@@ -978,8 +1014,17 @@ impl<'a> CircuitInputStateRef<'a> {
             if !self.call()?.is_root {
                 let (offset, length) = match step.op {
                     OpcodeId::RETURN | OpcodeId::REVERT => {
-                        let offset = step.stack.nth_last(0)?.as_usize();
-                        let length = step.stack.nth_last(1)?.as_usize();
+                        let (offset, length) = if step.error.is_some()
+                            || (self.call()?.is_create() && self.call()?.is_success)
+                        {
+                            (0, 0)
+                        } else {
+                            (
+                                step.stack.nth_last(0)?.as_usize(),
+                                step.stack.nth_last(1)?.as_usize(),
+                            )
+                        };
+
                         // At the moment it conflicts with `call_ctx` and `caller_ctx`.
                         let callee_memory = self.call_ctx()?.memory.clone();
                         let caller_ctx = self.caller_ctx_mut()?;
@@ -1064,9 +1109,11 @@ impl<'a> CircuitInputStateRef<'a> {
         let geth_step = steps
             .get(0)
             .ok_or(Error::InternalError("invalid index 0"))?;
-        let is_return_revert = geth_step.op == OpcodeId::REVERT || geth_step.op == OpcodeId::RETURN;
+        let is_revert_or_return_call_success = (geth_step.op == OpcodeId::REVERT
+            || geth_step.op == OpcodeId::RETURN)
+            && exec_step.error.is_none();
 
-        if !is_return_revert && !call.is_success {
+        if !is_revert_or_return_call_success && !call.is_success {
             // add call failure ops for exception cases
             self.call_context_read(
                 exec_step,
@@ -1118,27 +1165,31 @@ impl<'a> CircuitInputStateRef<'a> {
             _ => [Word::zero(), Word::zero()],
         };
 
-        let curr_memory_word_size = (exec_step.memory_size as u64) / 32;
-        let next_memory_word_size = if !last_callee_return_data_length.is_zero() {
-            std::cmp::max(
-                (last_callee_return_data_offset + last_callee_return_data_length + 31).as_u64()
-                    / 32,
-                curr_memory_word_size,
-            )
-        } else {
-            curr_memory_word_size
-        };
-
-        let memory_expansion_gas_cost =
-            memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
-        let code_deposit_cost = if call.is_create() && call.is_success {
-            GasCost::CODE_DEPOSIT_BYTE_COST * last_callee_return_data_length.as_u64()
-        } else {
+        let gas_refund = if exec_step.error.is_some() {
             0
-        };
-        let gas_refund = geth_step.gas - memory_expansion_gas_cost - code_deposit_cost;
+        } else {
+            let curr_memory_word_size = (exec_step.memory_size as u64) / 32;
+            let next_memory_word_size = if !last_callee_return_data_length.is_zero() {
+                std::cmp::max(
+                    (last_callee_return_data_offset + last_callee_return_data_length + 31).as_u64()
+                        / 32,
+                    curr_memory_word_size,
+                )
+            } else {
+                curr_memory_word_size
+            };
 
-        let caller_gas_left = if is_return_revert || call.is_success {
+            let memory_expansion_gas_cost =
+                memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
+            let code_deposit_cost = if call.is_create() && call.is_success {
+                GasCost::CODE_DEPOSIT_BYTE_COST * last_callee_return_data_length.as_u64()
+            } else {
+                0
+            };
+            geth_step.gas - memory_expansion_gas_cost - code_deposit_cost
+        };
+
+        let caller_gas_left = if is_revert_or_return_call_success || call.is_success {
             geth_step_next.gas - gas_refund
         } else {
             geth_step_next.gas
@@ -1170,11 +1221,13 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         // EIP-211: CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
+        let discard_return_data =
+            call.is_create() && geth_step.op == OpcodeId::RETURN || exec_step.error.is_some();
         for (field, value) in [
             (CallContextField::LastCalleeId, call.call_id.into()),
             (
                 CallContextField::LastCalleeReturnDataOffset,
-                if call.is_create() && call.is_success {
+                if discard_return_data {
                     U256::zero()
                 } else {
                     last_callee_return_data_offset
@@ -1182,7 +1235,7 @@ impl<'a> CircuitInputStateRef<'a> {
             ),
             (
                 CallContextField::LastCalleeReturnDataLength,
-                if call.is_create() && call.is_success {
+                if discard_return_data {
                     U256::zero()
                 } else {
                     last_callee_return_data_length
@@ -1447,12 +1500,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let mut copy_steps = Vec::with_capacity(bytes_left as usize);
         for idx in 0..bytes_left {
             let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
-            let step = if addr < src_addr_end {
-                let code = bytecode.code.get(addr as usize).unwrap();
-                (code.value, code.is_code)
-            } else {
-                (0, false)
-            };
+            let step = bytecode.get(addr as usize).unwrap_or_default();
             copy_steps.push(step);
             self.memory_write(exec_step, (dst_addr + idx).into(), step.0)?;
         }

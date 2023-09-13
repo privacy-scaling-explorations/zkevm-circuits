@@ -8,12 +8,12 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 lazy_static = "1.4"
-ethers = { version = "0.17.0", features = ["ethers-solc"] }
-serde_json = "1.0.66"
+ethers = { version = "2.0.7", features = ["ethers-solc"] }
+serde_json = { version = "1.0.66", features = ["unbounded_depth"]}
 serde = { version = "1.0.130", features = ["derive"] }
 bus-mapping = { path = "../bus-mapping" , features = ["test"] }
 eth-types = { path = "../eth-types" }
-zkevm-circuits = { path = "../zkevm-circuits", features = ["test"] }
+zkevm-circuits = { path = "../zkevm-circuits", features = ["test-circuits"] }
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2.2"
 pretty_assertions = "1.0.0"

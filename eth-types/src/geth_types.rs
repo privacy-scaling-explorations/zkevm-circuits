@@ -3,8 +3,8 @@
 use crate::{
     keccak256,
     sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
-    AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian,
-    ToWord, Word, U64,
+    AccessList, Address, Block, Bytecode, Bytes, Error, GethExecTrace, Hash, ToBigEndian,
+    ToLittleEndian, ToWord, Word, U64,
 };
 use ethers_core::{
     types::{transaction::response, NameOrAddress, TransactionRequest},
@@ -43,6 +43,28 @@ impl Account {
             && self.balance.is_zero()
             && self.code.is_empty()
             && self.storage.is_empty()
+    }
+
+    /// Generate an account that is either empty or has code, balance, and non-zero nonce
+    pub fn mock_code_balance(code: Bytecode) -> Self {
+        let is_empty = code.codesize() == 0;
+        Self {
+            address: Address::repeat_byte(0xff),
+            code: code.into(),
+            nonce: U64::from(!is_empty as u64),
+            balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Generate an account that has 100 ETH
+    pub fn mock_100_ether(code: Bytecode) -> Self {
+        Self {
+            address: Address::repeat_byte(0xfe),
+            balance: Word::from(10).pow(20.into()),
+            code: code.into(),
+            ..Default::default()
+        }
     }
 }
 
@@ -158,8 +180,8 @@ impl From<&Transaction> for crate::Transaction {
             gas: tx.gas_limit.to_word(),
             value: tx.value,
             gas_price: Some(tx.gas_price),
-            max_priority_fee_per_gas: Some(tx.gas_fee_cap),
-            max_fee_per_gas: Some(tx.gas_tip_cap),
+            max_priority_fee_per_gas: Some(tx.gas_tip_cap),
+            max_fee_per_gas: Some(tx.gas_fee_cap),
             input: tx.call_data.clone(),
             access_list: tx.access_list.clone(),
             v: tx.v.into(),
@@ -179,8 +201,8 @@ impl From<&crate::Transaction> for Transaction {
             gas_limit: tx.gas.as_u64().into(),
             value: tx.value,
             gas_price: tx.gas_price.unwrap_or_default(),
-            gas_fee_cap: tx.max_priority_fee_per_gas.unwrap_or_default(),
-            gas_tip_cap: tx.max_fee_per_gas.unwrap_or_default(),
+            gas_tip_cap: tx.max_priority_fee_per_gas.unwrap_or_default(),
+            gas_fee_cap: tx.max_fee_per_gas.unwrap_or_default(),
             call_data: tx.input.clone(),
             access_list: tx.access_list.clone(),
             v: tx.v.as_u64(),
@@ -249,11 +271,11 @@ impl Transaction {
             .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 })
     }
 
-    /// Get the "to" address. If `to` is None then zero adddress
+    /// Get the "to" address. If `to` is None then zero address
     pub fn to_or_zero(&self) -> Address {
         self.to.unwrap_or_default()
     }
-    /// Get the "to" address. If `to` is None then compute contract adddress
+    /// Get the "to" address. If `to` is None then compute contract address
     pub fn to_or_contract_addr(&self) -> Address {
         self.to
             .unwrap_or_else(|| get_contract_address(self.from, self.nonce.to_word()))
@@ -288,6 +310,10 @@ impl Transaction {
             ..response::Transaction::default()
         }
     }
+    /// Convinient method for gas limit
+    pub fn gas(&self) -> u64 {
+        self.gas_limit.as_u64()
+    }
 }
 
 /// GethData is a type that contains all the information of a Ethereum block
@@ -314,7 +340,9 @@ impl GethData {
             assert_eq!(Word::from(wallet.chain_id()), self.chain_id);
             let geth_tx: Transaction = (&*tx).into();
             let req: TransactionRequest = (&geth_tx).into();
-            let sig = wallet.sign_transaction_sync(&req.chain_id(self.chain_id.as_u64()).into());
+            let sig = wallet
+                .sign_transaction_sync(&req.chain_id(self.chain_id.as_u64()).into())
+                .unwrap();
             tx.v = U64::from(sig.v);
             tx.r = sig.r;
             tx.s = sig.s;

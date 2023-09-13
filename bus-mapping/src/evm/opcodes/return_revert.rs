@@ -6,12 +6,11 @@ use crate::{
     state_db::CodeDB,
     Error,
 };
-use eth_types::{Bytecode, GethExecStep, ToWord, H256};
+use eth_types::{evm_types::INVALID_INIT_CODE_FIRST_BYTE, Bytecode, GethExecStep, ToWord, H256};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ReturnRevert;
 
-// TODO: rename to indicate this handles REVERT (and maybe STOP)?
 impl Opcode for ReturnRevert {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
@@ -47,6 +46,11 @@ impl Opcode for ReturnRevert {
 
         // Case A in the spec.
         if call.is_create() && call.is_success && length > 0 {
+            // Read the first byte of init code and check it must not be 0xef (EIP-3541).
+            let init_code_first_byte = state.call_ctx()?.memory.0[offset];
+            state.memory_read(&mut exec_step, offset.into(), init_code_first_byte)?;
+            assert_ne!(init_code_first_byte, INVALID_INIT_CODE_FIRST_BYTE);
+
             // Note: handle_return updates state.code_db. All we need to do here is push the
             // copy event.
             let code_hash = handle_create(
@@ -202,14 +206,10 @@ fn handle_create(
     source: Source,
 ) -> Result<H256, Error> {
     let values = state.call_ctx()?.memory.0[source.offset..source.offset + source.length].to_vec();
-    let code_hash = CodeDB::hash(&values);
+    let bytecode = Bytecode::from(values);
+    let code_hash = bytecode.hash_h256();
+    let bytes = bytecode.code_vec();
     let dst_id = NumberOrHash::Hash(code_hash);
-    let bytes: Vec<_> = Bytecode::from(values)
-        .code
-        .iter()
-        .map(|element| (element.value, element.is_code))
-        .collect();
-
     let rw_counter_start = state.block_ctx.rwc;
     for (i, (byte, _)) in bytes.iter().enumerate() {
         state.push_op(

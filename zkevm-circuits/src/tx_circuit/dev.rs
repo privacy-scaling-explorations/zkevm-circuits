@@ -14,7 +14,7 @@ use halo2_proofs::{
 use log::error;
 
 impl<F: Field> Circuit<F> for TxCircuit<F> {
-    type Config = (TxCircuitConfig<F>, Challenges);
+    type Config = (TxCircuitConfig<F>, Challenges, KeccakTable);
     type FloorPlanner = SimpleFloorPlanner;
     type Params = ();
 
@@ -33,23 +33,23 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
                 meta,
                 TxCircuitConfigArgs {
                     tx_table,
-                    keccak_table,
+                    keccak_table: keccak_table.clone(),
                     challenges,
                 },
             )
         };
 
-        (config, challenges)
+        (config, challenges, keccak_table)
     }
 
     fn synthesize(
         &self,
-        (config, challenges): Self::Config,
+        (config, challenges, keccak_table): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
 
-        config.keccak_table.dev_load(
+        keccak_table.dev_load(
             &mut layouter,
             &keccak_inputs_tx_circuit(&self.txs[..], self.chain_id).map_err(|e| {
                 error!("keccak_inputs_tx_circuit error: {:?}", e);

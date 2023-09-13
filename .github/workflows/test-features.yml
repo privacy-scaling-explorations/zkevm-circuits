@@ -1,4 +1,4 @@
-name: Test feature flags
+name: Feature flags
 
 on:
   merge_group:
@@ -26,18 +26,11 @@ jobs:
     if: |
       github.event.pull_request.draft == false &&
       (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
+    name: Validate features exist
     timeout-minutes: 30
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        crate:
-          - zkevm-circuits
-        feature:
-          - default
-          - test
-          - test-circuits
-          - warn-unimplemented
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -51,7 +44,7 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ github.workflow }}-${{ matrix.crate }}-${{ matrix.feature }}-${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ github.workflow }}-${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
 
       - name: Cargo cache
         uses: actions/cache@v3
@@ -62,21 +55,19 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ github.workflow }}-${{ matrix.crate }}-${{ matrix.feature }}-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ github.workflow }}-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: '${{ matrix.crate }}: ${{ matrix.feature }}'
+      - name: Import with features
         run: |
           GIT_ROOT=$(pwd)
           cd /tmp
-          cargo new foobar
-          cd foobar
-          cp "${GIT_ROOT}/rust-toolchain" . || true
-          cargo add --path "${GIT_ROOT}/${{ matrix.crate }}" --features '${{ matrix.feature }}'
-          cd ../
-          rm -rf foobar
-
-  test_features_complete:
-    needs: [test_features]
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo dummy
+          for crate in zkevm-circuits; do
+            for feature in default test-circuits test-util warn-unimplemented; do
+              cargo new foobar
+              cd foobar
+              cp "${GIT_ROOT}/rust-toolchain" . || true
+              cargo add --path "${GIT_ROOT}/${crate}" --features "${feature}"
+              cd ../
+              rm -rf foobar
+            done
+          done
