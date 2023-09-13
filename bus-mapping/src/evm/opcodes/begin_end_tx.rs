@@ -277,10 +277,8 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
     if !found {
         return Err(Error::AccountNotFound(state.block.coinbase));
     }
-    let coinbase_account = coinbase_account.clone();
-    let coinbase_balance_prev = coinbase_account.balance;
+    let coinbase_exist = !coinbase_account.is_empty();
     let coinbase_transfer_value = effective_tip * (state.tx.gas() - exec_step.gas_left);
-    let coinbase_balance = coinbase_balance_prev + coinbase_transfer_value;
     state.account_read(
         &mut exec_step,
         state.block.coinbase,
@@ -291,21 +289,12 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
             coinbase_account.code_hash.to_word()
         },
     );
-    if coinbase_account.is_empty() {
-        state.account_write(
-            &mut exec_step,
-            state.block.coinbase,
-            AccountField::CodeHash,
-            CodeDB::empty_code_hash().to_word(),
-            Word::zero(),
-        )?;
-    }
-    state.account_write(
+    state.transfer_to_irreversible(
         &mut exec_step,
         state.block.coinbase,
-        AccountField::Balance,
-        coinbase_balance,
-        coinbase_balance_prev,
+        coinbase_exist,
+        false,
+        coinbase_transfer_value,
     )?;
 
     // handle tx receipt tag
