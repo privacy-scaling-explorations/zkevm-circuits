@@ -294,7 +294,14 @@ pub(crate) struct Constraints<F> {
 #[derive(Clone)]
 /// Track the rw_counter_offset
 struct RwCounterOffset<F> {
+    /// Normal counts are read-write expresisions that have no conditions. We can safely count them
+    /// in compilation time.
     normal: u64,
+    /// Special counts depend on proving time information. We count the number of expressions
+    /// instead of the number of reads and writes. The following expressions belongs to special
+    /// type:
+    /// - read-write expresisions that depend on conditions
+    /// - Variable size read-write like Copy table lookup
     special: u64,
     expr: Expression<F>,
 }
