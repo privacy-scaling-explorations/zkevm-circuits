@@ -51,7 +51,7 @@ use crate::{
         storage_leaf::StorageLeafConfig,
     },
     table::{KeccakTable, LookupTable, MPTProofType, MptTable},
-    util::Challenges,
+    util::{Challenges, SubCircuit, SubCircuitConfig},
 };
 use extension_branch::ExtensionBranchConfig;
 use param::HASH_WIDTH;
@@ -780,6 +780,7 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         Ok(())
     }
 }
+
 
 /// Loads an MPT proof from disk
 pub fn load_proof(path: &str) -> Vec<Node> {
