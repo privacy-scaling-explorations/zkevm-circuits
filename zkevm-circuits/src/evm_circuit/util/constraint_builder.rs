@@ -291,13 +291,59 @@ pub(crate) struct Constraints<F> {
     pub(crate) not_step_last: Vec<(&'static str, Expression<F>)>,
 }
 
+#[derive(Clone)]
+/// Track the rw_counter_offset
+struct RwCounterOffset<F> {
+    normal: u64,
+    special: u64,
+    expr: Expression<F>,
+}
+
+impl<F: Field> Default for RwCounterOffset<F> {
+    fn default() -> Self {
+        Self {
+            normal: 0,
+            special: 0,
+            expr: 0.expr(),
+        }
+    }
+}
+
+impl<F: Field> RwCounterOffset<F> {
+    /// Bump rw_counter_offset
+    fn bump(
+        &mut self,
+        name: &'static str,
+        condition: Option<Expression<F>>,
+        variable_inc: Option<Expression<F>>,
+    ) {
+        log::debug!(
+            target: "RWC",
+            "RW count {} + special {}  bump for {}" ,
+            self.normal,
+            self.special,
+            name,
+        );
+        let inc = variable_inc.clone().unwrap_or(1.expr());
+        let rwc_inc = match condition.clone() {
+            Some(cond) => cond * inc.expr(),
+            None => inc.expr(),
+        };
+        match condition.zip(variable_inc) {
+            Some((_, _)) => self.special += 1,
+            None => self.normal += 1,
+        };
+        self.expr = self.expr.clone() + rwc_inc;
+    }
+}
+
 pub(crate) struct EVMConstraintBuilder<'a, F: Field> {
     pub(crate) curr: Step<F>,
     pub(crate) next: Step<F>,
     challenges: &'a Challenges<Expression<F>>,
     execution_state: ExecutionState,
     constraints: Constraints<F>,
-    rw_counter_offset: Expression<F>,
+    rw_counter_offset: RwCounterOffset<F>,
     program_counter_offset: usize,
     stack_pointer_offset: Expression<F>,
     in_next_step: bool,
@@ -340,7 +386,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 step_last: Vec::new(),
                 not_step_last: Vec::new(),
             },
-            rw_counter_offset: 0.expr(),
+            rw_counter_offset: RwCounterOffset::default(),
             program_counter_offset: 0,
             stack_pointer_offset: 0.expr(),
             in_next_step: false,
@@ -400,7 +446,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn rw_counter_offset(&self) -> Expression<F> {
-        self.rw_counter_offset.clone()
+        self.rw_counter_offset.expr.clone()
     }
 
     pub(crate) fn stack_pointer_offset(&self) -> Expression<F> {
@@ -766,17 +812,13 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     ) {
         self.rw_lookup_with_counter(
             name,
-            self.curr.state.rw_counter.expr() + self.rw_counter_offset.clone(),
+            self.curr.state.rw_counter.expr() + self.rw_counter_offset.expr.clone(),
             is_write,
             tag,
             values,
         );
-        // Bump rw_counter_offset only when rw happenes:
-        // If the rw is unconditioned, the rw must happen and we bump.
-        // Otherwise, the rw depends on the condition. Bump only when the condition is true.
-        self.rw_counter_offset =
-            self.rw_counter_offset.clone() + self.condition_expr_opt().unwrap_or(1.expr());
-        log::debug!(target: "RWC","rwc {:?}  cond {:?}" , self.rw_counter_offset, self.condition_expr_opt());
+        self.rw_counter_offset
+            .bump(name, self.condition_expr_opt(), None);
     }
 
     fn reversible_write(
@@ -1332,7 +1374,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 rwc_inc: rwc_inc.clone(),
             },
         );
-        self.rw_counter_offset = self.rw_counter_offset.clone() + self.condition_expr() * rwc_inc;
+        self.rw_counter_offset
+            .bump("copy lookup", self.condition_expr_opt(), Some(rwc_inc));
     }
 
     // Exponentiation Table
