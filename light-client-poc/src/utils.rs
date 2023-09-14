@@ -1,4 +1,16 @@
 use zkevm_circuits::mpt_circuit::witness_row::*;
+use eyre::Result;
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use ethers::prelude::k256::ecdsa::SigningKey;
+use ethers::providers::Middleware;
+use ethers::{
+    middleware::SignerMiddleware,
+    prelude::*,
+    providers::{Http, Provider},
+    signers::{LocalWallet, Signer},
+    utils::format_units,
+};
+use std::{convert::TryFrom, sync::Arc, time::Duration};
 
 // #[rustfmt_skip]
 pub fn print_nodes(node: &[Node]) {
@@ -57,3 +69,59 @@ pub fn print_nodes(node: &[Node]) {
         }
     }
 }
+
+pub fn verify_mpt_witness(nodes: Vec<Node>) -> Result<()> {
+    // get the number of rows in the witness
+    let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
+
+    // populate the keccak data
+    let mut keccak_data = vec![];
+    for node in nodes.iter() {
+        for k in node.keccak_data.iter() {
+            keccak_data.push(k.clone());
+        }
+    }
+
+    // verify the circuit
+    let disable_preimage_check = nodes[0].start.clone().unwrap().disable_preimage_check;
+    let degree = 14;
+    let circuit = zkevm_circuits::mpt_circuit::MPTCircuit::<Fr> {
+        nodes,
+        keccak_data,
+        degree,
+        disable_preimage_check,
+        _marker: std::marker::PhantomData,
+    };
+
+    let prover = MockProver::<Fr>::run(degree as u32, &circuit, vec![]).unwrap();
+    assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
+
+    println!("success!");
+
+    Ok(())
+}
+
+pub type MM = SignerMiddleware<Provider<Http>, Wallet<SigningKey>>;
+
+pub async fn new_eth_client(provider_url : &str, pvk: &str) -> Result<Arc<MM>> {
+    let provider: Provider<Http> =
+        Provider::<Http>::try_from(provider_url)?.interval(Duration::from_millis(10u64));
+    let chain_id = provider.get_chainid().await?.as_u64();
+
+    let wallet = pvk.parse::<LocalWallet>()?;
+    let client = Arc::new(SignerMiddleware::new(
+        provider,
+        wallet.with_chain_id(chain_id),
+    ));
+    let balance = client.get_balance(client.address(), None).await?;
+
+    println!(
+        "address {:?} , balance {}ETH",
+        client.address(),
+        format_units(balance, "ether")?
+    );
+
+    Ok(client)
+}
+
+

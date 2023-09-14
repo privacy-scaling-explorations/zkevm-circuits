@@ -9,10 +9,10 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["arbitrary_precision"] }
 zkevm-circuits = { path = "../zkevm-circuits", features=["test-circuits"]}
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_04_20" }
-ethers = { path= "/Users/adria0/w/ef/ethers-rs/ethers", features = ["abigen", "rustls", "ws", "ethers-solc"]  }
 eyre = { version  = "0.6.8" }
 hex = "0.4.3"
 num_enum = "0.6.1"
 reqwest = "0.11.18"
 tokio = { version= "1.28.2", features = ["macros", "rt-multi-thread"]  }
 mpt-witness-generator = { path = "../mpt-witness-generator/rustlib" }
+ethers ={ version = "2.0.10", features = ["abigen", "rustls", "ws", "ethers-solc"] }

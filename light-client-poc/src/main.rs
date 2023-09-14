@@ -1,48 +1,17 @@
-use ethers::prelude::k256::ecdsa::SigningKey;
 use ethers::providers::Middleware;
 use ethers::types::transaction::eip2930::{AccessList, AccessListItem};
 use ethers::{
-    middleware::SignerMiddleware,
     prelude::*,
-    providers::{Http, Provider},
-    signers::{LocalWallet, Signer},
-    utils::format_units,
 };
 use eyre::Result;
 use std::str::FromStr;
-use std::{convert::TryFrom, sync::Arc, time::Duration};
 
 use crate::transforms::Transforms;
 
-// mod le_circuit;
 mod circuit;
 mod contract;
 mod transforms;
 mod utils;
-
-
-type MM = SignerMiddleware<Provider<Http>, Wallet<SigningKey>>;
-
-async fn new_client(provider_url : &str, pvk: &str) -> Result<Arc<MM>> {
-    let provider: Provider<Http> =
-        Provider::<Http>::try_from(provider_url)?.interval(Duration::from_millis(10u64));
-    let chain_id = provider.get_chainid().await?.as_u64();
-
-    let wallet = pvk.parse::<LocalWallet>()?;
-    let client = Arc::new(SignerMiddleware::new(
-        provider,
-        wallet.with_chain_id(chain_id),
-    ));
-    let balance = client.get_balance(client.address(), None).await?;
-
-    println!(
-        "address {:?} , balance {}ETH",
-        client.address(),
-        format_units(balance, "ether")?
-    );
-
-    Ok(client)
-}
 
 
 
@@ -51,12 +20,11 @@ async fn main() -> Result<()> {
     const PVK: &str = "7ccb34dc5fd31fd0aa7860de89a4adc37ccb34dc5fd31fd0aa7860de89a4adc3";
     const PROVIDER_URL: &str = "https://mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161";
 
-    let client = new_client(PROVIDER_URL, PVK).await?;
+    let client = utils::new_eth_client(PROVIDER_URL, PVK).await?;
 
     let tests: Vec< ( u64 ,  Vec<(&str, Vec<&str>)>) > = vec![
         // 0 txs
         ( 107, vec![("0xd7E30ae310C1D1800F5B641Baa7af95b2e1FD98C", vec![])] ),
-
         // 4 transfer txs
         ( 436875, vec![
             ("0x580992B51e3925e23280EfB93d3047C82f17E038", vec![]),
@@ -64,7 +32,6 @@ async fn main() -> Result<()> {
             ("0x15ac3b6F90549FFBE4091177B1795B3d4C11A59e", vec![]),
             ("0x72382223a91051A54c69759BE3c93048235EfC43", vec![])
             ]),
-
         // TheDAO, 4 storage changes
         ( 2000007, vec![
             ("0x61C808D82A3Ac53231750daDc13c777b59310bD9", vec![]), // coinbase
@@ -94,8 +61,14 @@ async fn main() -> Result<()> {
             ("0xb2e3732C0B0eC387962f76fA4F1BB9325089C5E0", vec![]),
             ("0xeD059bc543141c8C93031d545079b3Da0233B27f", vec![]), // tx 1
             ("0xEc9F6c9634165f91e22E58B90e3EdE393d959E47", vec![]),
-            ("0xcaac46d9bd68bffb533320545a90cd92c6e98e58", vec!["0x0000000000000000000000000000000000000000000000000000000000000000","0x0000000000000000000000000000000000000000000000000000000000000001"]),
-            ("0xec9f6c9634165f91e22e58b90e3ede393d959e47", vec!["0x0000000000000000000000000000000000000000000000000000000000000003","0x19da5b482fc1817af240c411d7423a456cdcf4a213e9f192aca5c80a39a4a733"]),
+            ("0xcaac46d9bd68bffb533320545a90cd92c6e98e58", vec![
+                "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "0x0000000000000000000000000000000000000000000000000000000000000001"
+            ]),
+            ("0xec9f6c9634165f91e22e58b90e3ede393d959e47", vec![
+                "0x0000000000000000000000000000000000000000000000000000000000000003",
+                "0x19da5b482fc1817af240c411d7423a456cdcf4a213e9f192aca5c80a39a4a733"
+            ]),
             ("0xF05C1b271D12b7ECB3b37122730C085ec2C0B552", vec![]), // tx 2
             ("0x4FDf5371f7fFA04866f696882Db659fE38f52559", vec![]),
             ("0xBef52Af092Fa2349279f7A2B10779FE810785688", vec![]), // tx 3
@@ -114,19 +87,18 @@ async fn main() -> Result<()> {
         println!("trns: {:#?}", trns);
 
         let witness = trns.witness(PROVIDER_URL)?;
-        circuit::verify_proof(witness)?;
+        utils::verify_mpt_witness(witness)?;
     }
 
     Ok(())
 }
-
 
 async fn main_local() -> Result<()> {
     const PVK: &str = "7ccb34dc5fd31fd0aa7860de89a4adc37ccb34dc5fd31fd0aa7860de89a4adc3";
     const PROVIDER_URL: &str = "http://localhost:8545";
 
 
-    let client = new_client(PROVIDER_URL, PVK).await?;
+    let client = utils::new_eth_client(PROVIDER_URL, PVK).await?;
     let contract = contract::Contract::deploy(client.clone()).await?;
     let recipt = contract.set(0xcafee.into(), 0xcafe.into()).await?;
     let block_no = recipt.block_number.unwrap();
@@ -136,7 +108,7 @@ async fn main_local() -> Result<()> {
     println!("trns: {:#?}", trns);
 
     let witness = trns.witness(PROVIDER_URL)?;
-    circuit::verify_proof(witness)?;
+    utils::verify_mpt_witness(witness)?;
 
     Ok(())
 }
