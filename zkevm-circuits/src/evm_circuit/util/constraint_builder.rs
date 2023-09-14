@@ -22,7 +22,7 @@ use halo2_proofs::{
     circuit::Value,
     plonk::{
         ConstraintSystem, Error,
-        Expression::{self},
+        Expression::{self, Constant},
         VirtualCells,
     },
 };
@@ -331,16 +331,32 @@ impl<F: Field> RwCounterOffset<F> {
             self.special,
             name,
         );
-        let inc = variable_inc.clone().unwrap_or(1.expr());
-        let rwc_inc = match condition.clone() {
-            Some(cond) => cond * inc.expr(),
-            None => inc.expr(),
+
+        // Manually constant folding is used here, since halo2 cannot do this
+        // automatically. Better error message will be printed during circuit
+        // debugging.
+        self.expr = match (condition, variable_inc) {
+            (None, None) => {
+                self.normal += 1;
+                if let Constant(v) = self.expr {
+                    Constant(v + F::from(1u64))
+                } else {
+                    self.expr.clone() + 1.expr()
+                }
+            }
+            (None, Some(inc)) => {
+                self.special += 1;
+                self.expr.clone() + inc
+            }
+            (Some(cond), None) => {
+                self.special += 1;
+                self.expr.clone() + cond
+            }
+            (Some(cond), Some(inc)) => {
+                self.special += 1;
+                self.expr.clone() + cond * inc
+            }
         };
-        match condition.zip(variable_inc) {
-            Some((_, _)) => self.special += 1,
-            None => self.normal += 1,
-        };
-        self.expr = self.expr.clone() + rwc_inc;
     }
 }
 
