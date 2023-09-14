@@ -72,14 +72,7 @@ impl Transform {
             ..Default::default()
         }
     }
-    fn storage_does_not_exist(address: Address, key: H256) -> Self {
-        Self {
-            typ: ProofType::StorageDoesNotExist,
-            address,
-            key,
-            ..Default::default()
-        }
-    }
+
 }
 
 impl Transforms {
@@ -164,7 +157,7 @@ impl Transforms {
                 && old.storage_hash == new.storage_hash
             {
                 println!("Skipping {:?} as nothing changed", address);
-                //    continue;
+                continue;
             }
 
             // check for this address changes
@@ -182,13 +175,8 @@ impl Transforms {
             }
 
             for key in storage_keys {
-                let old = old.storage_proof.iter().find(|p| p.key == key).unwrap();
                 let new = new.storage_proof.iter().find(|p| p.key == key).unwrap();
-                if !old.value.is_zero() && new.value.is_zero() {
-                    mods.push(Transform::storage_does_not_exist(address, key));
-                } else {
-                    mods.push(Transform::storage_changed(address, key, new.value));
-                }
+                mods.push(Transform::storage_changed(address, key, new.value));
             }
         }
 

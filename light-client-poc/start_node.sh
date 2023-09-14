@@ -1,4 +1,4 @@
-GETH=../go-ethereum
+GETH=../../go-ethereum
 
 # clean up
 rm access-list-* 

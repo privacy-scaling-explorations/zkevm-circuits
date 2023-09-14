@@ -23,6 +23,29 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::{convert::TryFrom, sync::Arc, time::Duration};
 
+const SIMPLE_STORAGE_SOL : &str = r#"
+// SPDX-License-Identifier: Unlicense
+pragma solidity ^0.8.0;
+
+contract SimpleStorage {
+    constructor() payable {
+        set(0xcafe, 0xbabe);
+    }
+    function get(uint k) view public returns (uint) {
+       uint v;
+       assembly {
+           v := sload(k)
+       }
+       return v;
+    }
+    function set(uint k, uint v) payable public {
+       assembly {
+           sstore(k,v)
+       }
+    }
+}
+"#;
+
 abigen!(
     SimpleStorage,
     r"[
@@ -33,13 +56,17 @@ abigen!(
 
 pub(crate) struct Contract {
     pub contract: SimpleStorage<MM>,
-    pub block: U64,
+    pub receipt: TransactionReceipt,
 }
 
 impl Contract {
     pub async fn deploy(client: Arc<MM>) -> Result<Self> {
         let contract = "SimpleStorage";
-        let path = format!("./src/{contract}.sol");
+
+        let mut path = std::env::temp_dir();
+        path.push("SimpleStorage.sol");
+
+        std::fs::write(&path, SIMPLE_STORAGE_SOL)?;
 
         // compile it
 
@@ -61,11 +88,10 @@ impl Contract {
         let (contract, receipt) = deployer.send_with_receipt().await?;
 
         let address = contract.address();
-        let block = receipt.block_number.unwrap();
 
         let contract = SimpleStorage::new(address, client.clone());
 
-        Ok(Self { contract, block })
+        Ok(Self { contract, receipt })
     }
 
     pub async fn get(&self, key: U256) -> Result<U256> {

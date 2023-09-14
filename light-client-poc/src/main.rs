@@ -1,12 +1,14 @@
-use ethers::providers::Middleware;
 use ethers::types::transaction::eip2930::{AccessList, AccessListItem};
 use ethers::{
     prelude::*,
 };
 use eyre::Result;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use crate::transforms::Transforms;
+use contract::Contract;
+use crate::utils::MM;
 
 mod circuit;
 mod contract;
@@ -14,9 +16,7 @@ mod transforms;
 mod utils;
 
 
-
-#[tokio::main]
-async fn main() -> Result<()> {
+async fn mainnet() -> Result<()> {
     const PVK: &str = "7ccb34dc5fd31fd0aa7860de89a4adc37ccb34dc5fd31fd0aa7860de89a4adc3";
     const PROVIDER_URL: &str = "https://mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161";
 
@@ -43,7 +43,6 @@ async fn main() -> Result<()> {
                 "0xf903a85392f66de7c382c130eb51940c4bfed2038df5c108d8c0115c24efcc94",
             ]), // tx1 to
         ]),
-
         // TheDAO. Storage does not exist
         ( 2000070, vec![
             ("0x1a060B0604883A99809eB3F798DF71BEf6c358f1", vec![]), // coinbase
@@ -53,7 +52,6 @@ async fn main() -> Result<()> {
                 "0x83390858478ca0e9bd8e0b6f9c61cb360f78d42e5c5c2908d9a885b766925386",
             ]), // tx1 to
         ]),
-
         // A complex block
         ( 2000004, vec![
             ("0x4Bb96091Ee9D802ED039C4D1a5f6216F90f81B01", vec![]), // coinbase
@@ -93,22 +91,35 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn main_local() -> Result<()> {
+async fn test_proof(client: &Arc<MM>, provider_url: &str, recipt: &TransactionReceipt) -> Result<()> {
+    let trns = Transforms::new(client.clone(), recipt.block_number.unwrap(), None).await?;
+    println!("trns: {:#?}", trns);
+    let witness = trns.witness(provider_url)?;
+    utils::verify_mpt_witness(witness)
+}
+
+async fn local() -> Result<()> {
     const PVK: &str = "7ccb34dc5fd31fd0aa7860de89a4adc37ccb34dc5fd31fd0aa7860de89a4adc3";
     const PROVIDER_URL: &str = "http://localhost:8545";
 
-
     let client = utils::new_eth_client(PROVIDER_URL, PVK).await?;
-    let contract = contract::Contract::deploy(client.clone()).await?;
-    let recipt = contract.set(0xcafee.into(), 0xcafe.into()).await?;
-    let block_no = recipt.block_number.unwrap();
-    let _tx = client.get_transaction(recipt.transaction_hash).await?.unwrap();
 
-    let trns = Transforms::new(client.clone(), block_no, None).await?;
-    println!("trns: {:#?}", trns);
+    // test contract creation
+    let contract = Contract::deploy(client.clone()).await?;
+    test_proof(&client, PROVIDER_URL, &contract.receipt).await?;
 
-    let witness = trns.witness(PROVIDER_URL)?;
-    utils::verify_mpt_witness(witness)?;
+    // test set value
+    let receipt = contract.set(0xad41a.into(), 0xcafe.into()).await?;
+    test_proof(&client, PROVIDER_URL, &receipt).await?;
+
+    // test unset value
+    let receipt = contract.set(0xad41a.into(), 0.into()).await?;
+    test_proof(&client, PROVIDER_URL, &receipt).await?;
 
     Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    local().await
 }

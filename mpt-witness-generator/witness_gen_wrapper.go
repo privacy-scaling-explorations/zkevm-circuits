@@ -33,6 +33,7 @@ func GetWitness(proofConf *C.char) *C.char {
 		panic(err)
 	}
 
+	fmt.Printf("%+v", config)
 	proof := witness.GetWitness(config.NodeUrl, config.BlockNum, config.Mods)
 	b, err := json.Marshal(proof)
 	if err != nil {
