@@ -386,13 +386,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         query_expression(self.meta, f)
     }
 
+    /// Aggregate conditions by multiplying them together
     fn condition_expr_opt(&self) -> Option<Expression<F>> {
-        let mut iter = self.conditions.iter();
-        let first = match iter.next() {
-            Some(e) => e,
-            None => return None,
-        };
-        Some(iter.fold(first.clone(), |acc, e| acc * e.clone()))
+        self.conditions.iter().cloned().reduce(|acc, e| acc * e)
     }
 
     pub(crate) fn challenges(&self) -> &Challenges<Expression<F>> {
