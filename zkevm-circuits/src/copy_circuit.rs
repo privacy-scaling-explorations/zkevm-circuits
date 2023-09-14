@@ -27,17 +27,25 @@ use bus_mapping::{
 };
 use eth_types::Field;
 use gadgets::{
-    binary_number::BinaryNumberChip,
+    binary_number::{BinaryNumberChip, BinaryNumberConfig},
     less_than::{LtChip, LtConfig, LtInstruction},
     util::{and, not, or, Expr},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, Selector},
+    plonk::{
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, Selector,
+        VirtualCells,
+    },
     poly::Rotation,
 };
 use itertools::Itertools;
 use std::marker::PhantomData;
+
+// Rows to enable but not use, that can be queried safely by the last event.
+const UNUSED_ROWS: usize = 2;
+// Rows to disable, so they do not query into Halo2 reserved rows.
+const DISABLED_ROWS: usize = 2;
 
 /// The rw table shared between evm circuit and state circuit
 #[derive(Clone, Debug)]
@@ -160,6 +168,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     meta.query_selector(q_step),
                 ]),
             );
+
+            constrain_must_terminate(&mut cb, meta, q_enable, &tag);
 
             let not_last_two_rows = 1.expr()
                 - meta.query_advice(is_last, Rotation::cur())
@@ -468,6 +478,29 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
     }
 }
 
+/// Verify that is_last goes to 1 at some point.
+pub fn constrain_must_terminate<F: Field>(
+    cb: &mut BaseConstraintBuilder<F>,
+    meta: &mut VirtualCells<'_, F>,
+    q_enable: Column<Fixed>,
+    tag: &BinaryNumberConfig<CopyDataType, 3>,
+) {
+    // If an event has started (tag != Padding on reader and writer rows), require q_enable=1 at the
+    // next step. This prevents querying rows where constraints are disabled.
+    //
+    // The tag is then copied to the next step by "rows[0].tag == rows[2].tag". Eventually,
+    // q_enable=0. By that point the tag must have switched to Padding, which is only possible with
+    // is_last=1. This guarantees that all the final conditions are checked.
+    let is_event = tag.value(Rotation::cur())(meta) - tag.constant_expr::<F>(CopyDataType::Padding);
+    cb.condition(is_event, |cb| {
+        cb.require_equal(
+            "the next step is enabled",
+            meta.query_fixed(q_enable, Rotation(2)),
+            1.expr(),
+        );
+    });
+}
+
 impl<F: Field> CopyCircuitConfig<F> {
     /// Assign an individual copy event to the Copy Circuit.
     pub fn assign_copy_event(
@@ -566,11 +599,11 @@ impl<F: Field> CopyCircuitConfig<F> {
     ) -> Result<(), Error> {
         let copy_rows_needed = copy_events.iter().map(|c| c.bytes.len() * 2).sum::<usize>();
 
-        // The `+ 2` is used to take into account the two extra empty copy rows needed
-        // to satisfy the query at `Rotation(2)` performed inside of the
-        // `rows[2].value == rows[0].value * r + rows[1].value` requirement in the RLC
-        // Accumulation gate.
-        assert!(copy_rows_needed + 2 <= max_copy_rows);
+        assert!(
+            copy_rows_needed + DISABLED_ROWS + UNUSED_ROWS <= max_copy_rows,
+            "copy rows not enough {copy_rows_needed} + 4 vs {max_copy_rows}"
+        );
+        let filler_rows = max_copy_rows - copy_rows_needed - DISABLED_ROWS;
 
         let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
         let lt_chip = LtChip::construct(self.addr_lt_addr_end);
@@ -597,12 +630,14 @@ impl<F: Field> CopyCircuitConfig<F> {
                     )?;
                 }
 
-                for _ in 0..max_copy_rows - copy_rows_needed - 2 {
+                for _ in 0..filler_rows {
+                    self.assign_padding_row(&mut region, &mut offset, true, &tag_chip, &lt_chip)?;
+                }
+                assert_eq!(offset % 2, 0, "enabled rows must come in pairs");
+
+                for _ in 0..DISABLED_ROWS {
                     self.assign_padding_row(&mut region, &mut offset, false, &tag_chip, &lt_chip)?;
                 }
-
-                self.assign_padding_row(&mut region, &mut offset, true, &tag_chip, &lt_chip)?;
-                self.assign_padding_row(&mut region, &mut offset, true, &tag_chip, &lt_chip)?;
 
                 Ok(())
             },
@@ -613,22 +648,20 @@ impl<F: Field> CopyCircuitConfig<F> {
         &self,
         region: &mut Region<F>,
         offset: &mut usize,
-        is_last_two: bool,
+        enabled: bool,
         tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
         lt_chip: &LtChip<F, 8>,
     ) -> Result<(), Error> {
-        if !is_last_two {
-            // q_enable
-            region.assign_fixed(
-                || "q_enable",
-                self.q_enable,
-                *offset,
-                || Value::known(F::ONE),
-            )?;
-            // q_step
-            if *offset % 2 == 0 {
-                self.q_step.enable(region, *offset)?;
-            }
+        // q_enable
+        region.assign_fixed(
+            || "q_enable",
+            self.q_enable,
+            *offset,
+            || Value::known(if enabled { F::ONE } else { F::ZERO }),
+        )?;
+        // q_step
+        if enabled && *offset % 2 == 0 {
+            self.q_step.enable(region, *offset)?;
         }
 
         // is_first

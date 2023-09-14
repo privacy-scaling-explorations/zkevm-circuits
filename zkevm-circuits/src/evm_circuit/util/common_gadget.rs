@@ -2,7 +2,7 @@ use super::{
     constraint_builder::ConstrainBuilderCommon,
     from_bytes,
     math_gadget::{IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget, LtGadget},
-    memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget},
+    memory_gadget::{CommonMemoryAddressGadget, MemoryExpansionGadget},
     AccountAddress, CachedRegion,
 };
 use crate::{
@@ -514,7 +514,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         or::expr([
             not::expr(self.value_is_zero.expr()) * not::expr(self.receiver.receiver_exists.expr()),
             self.receiver.must_create.clone()]
-        ) * 1.expr() +
+        ) +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()
@@ -653,15 +653,15 @@ impl<F: Field> TransferGadget<F> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct CommonCallGadget<F, const IS_SUCCESS_CALL: bool> {
+pub(crate) struct CommonCallGadget<F, MemAddrGadget, const IS_SUCCESS_CALL: bool> {
     pub is_success: Cell<F>,
 
     pub gas: Word32Cell<F>,
     pub gas_is_u64: IsZeroGadget<F>,
     pub callee_address: AccountAddress<F>,
     pub value: Word32Cell<F>,
-    pub cd_address: MemoryAddressGadget<F>,
-    pub rd_address: MemoryAddressGadget<F>,
+    pub cd_address: MemAddrGadget,
+    pub rd_address: MemAddrGadget,
     pub memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
 
     value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
@@ -672,7 +672,9 @@ pub(crate) struct CommonCallGadget<F, const IS_SUCCESS_CALL: bool> {
     pub callee_not_exists: IsZeroWordGadget<F, WordCell<F>>,
 }
 
-impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL> {
+impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CALL: bool>
+    CommonCallGadget<F, MemAddrGadget, IS_SUCCESS_CALL>
+{
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         is_call: Expression<F>,
@@ -690,12 +692,10 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         let gas_word = cb.query_word32();
         let callee_address = cb.query_account_address();
         let value = cb.query_word32();
-        let cd_offset = cb.query_word_unchecked();
-        let cd_length = cb.query_memory_address();
-        let rd_offset = cb.query_word_unchecked();
-        let rd_length = cb.query_memory_address();
         let is_success = cb.query_bool();
 
+        let cd_address = MemAddrGadget::construct_self(cb);
+        let rd_address = MemAddrGadget::construct_self(cb);
         // Lookup values from stack
         // `callee_address` is poped from stack and used to check if it exists in
         // access list and get code hash.
@@ -709,10 +709,10 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
 
         // `CALL` and `CALLCODE` opcodes have an additional stack pop `value`.
         cb.condition(is_call + is_callcode, |cb| cb.stack_pop(value.to_word()));
-        cb.stack_pop(cd_offset.to_word());
-        cb.stack_pop(cd_length.to_word());
-        cb.stack_pop(rd_offset.to_word());
-        cb.stack_pop(rd_length.to_word());
+        cb.stack_pop(cd_address.offset_word());
+        cb.stack_pop(cd_address.length_word());
+        cb.stack_pop(rd_address.offset_word());
+        cb.stack_pop(rd_address.length_word());
         cb.stack_push(if IS_SUCCESS_CALL {
             Word::from_lo_unchecked(is_success.expr()) // is_success is bool
         } else {
@@ -721,8 +721,6 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
 
         // Recomposition of random linear combination to integer
         let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.limbs[N_BYTES_GAS..]));
-        let cd_address = MemoryAddressGadget::construct(cb, cd_offset, cd_length);
-        let rd_address = MemoryAddressGadget::construct(cb, rd_offset, rd_length);
         let memory_expansion =
             MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
 

@@ -388,7 +388,7 @@ impl CircuitInputBuilder<DynamicCParams> {
                 .iter()
                 .fold(0, |acc, c| acc + c.bytes.len())
                 * 2
-                + 2;
+                + 4; // disabled and unused rows.
 
             let total_rws_before_padding: usize =
                 <RWCounter as Into<usize>>::into(self.block_ctx.rwc) - 1; // -1 since rwc start from index `1`

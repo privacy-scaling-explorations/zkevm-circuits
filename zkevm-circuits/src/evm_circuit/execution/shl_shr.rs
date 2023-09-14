@@ -211,7 +211,8 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         self.remainder_is_zero
             .assign(region, offset, Word::from(remainder))?;
         self.remainder_lt_divisor
-            .assign(region, offset, remainder, divisor)
+            .assign(region, offset, remainder, divisor)?;
+        Ok(())
     }
 }
 
