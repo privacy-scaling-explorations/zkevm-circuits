@@ -209,7 +209,7 @@ impl Transforms {
                 key: m.key,
                 value: {
                     let mut bytes = [0u8; 32];
-                    m.value.to_big_endian(&mut bytes);
+                    m.value.to_little_endian(&mut bytes);
                     U256::from_little_endian(&bytes)
                 },
                 address: m.address,
@@ -230,7 +230,7 @@ impl Transforms {
         let witness_current_state_root =
             H256::from_slice(&nodes.iter().rev().find(non_disabled_node).unwrap().values[1][1..33]);
 
-        crate::utils::print_nodes(&nodes);
+        // crate::utils::print_nodes(&nodes);
 
         // check if the roots matches
         assert_eq!(
