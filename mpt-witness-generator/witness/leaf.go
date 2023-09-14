@@ -446,11 +446,6 @@ func prepareStorageLeafInfo(row []byte, valueIsZero, isPlaceholder bool) ([]byte
 			setValue(keyLen, offset)
 		} else {
 			// [196,130,32,0,1]
-			/*
-				keyLen := row[1] - 128
-				copy(key, row[:keyLen+2])
-				copy(value, row[keyLen+2:])
-			*/
 			keyRlpLen = 1
 			keyLen := row[1] - 128
 			keyRlp = row[:keyRlpLen]

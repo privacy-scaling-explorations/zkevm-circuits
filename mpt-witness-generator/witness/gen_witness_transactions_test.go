@@ -15,22 +15,6 @@ import (
 	"github.com/privacy-scaling-explorations/mpt-witness-generator/types"
 )
 
-func createTransaction(ind int) *types.Transaction {
-	key, _ := crypto.GenerateKey()
-	signer := types.LatestSigner(params.TestChainConfig)
-
-	amount := math.BigPow(2, int64(ind))
-	price := big.NewInt(300000)
-	data := make([]byte, 100)
-	tx := types.NewTransaction(uint64(ind), common.Address{}, amount, 123457, price, data)
-	signedTx, err := types.SignTx(tx, signer, key)
-	if err != nil {
-		panic(err)
-	}
-
-	return signedTx
-}
-
 func TestTransactions(t *testing.T) {
 	t.Skip("failing test")
 	txs := make([]*types.Transaction, 70)
@@ -53,11 +37,6 @@ func TestTransactions(t *testing.T) {
 	stackTrie := trie.NewStackTrie(db)
 
 	stackTrie.UpdateAndGetProofs(db, types.Transactions(txs))
-
-	/*
-		rowsTransactions, toBeHashedAcc, _ :=
-			convertProofToWitness(statedb, addr, accountProof, accountProof1, aExtNibbles1, aExtNibbles2, accountAddr, aNode, true, tMod.Type == NonExistingAccount, false, isShorterProofLastLeaf)
-	*/
 
 	fmt.Println("===")
 }
