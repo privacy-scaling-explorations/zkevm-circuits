@@ -776,6 +776,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         // Otherwise, the rw depends on the condition. Bump only when the condition is true.
         self.rw_counter_offset =
             self.rw_counter_offset.clone() + self.condition_expr_opt().unwrap_or(1.expr());
+        log::debug!(target: "RWC","rwc {:?}  cond {:?}" , self.rw_counter_offset, self.condition_expr_opt());
     }
 
     fn reversible_write(
