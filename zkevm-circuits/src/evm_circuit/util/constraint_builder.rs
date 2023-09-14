@@ -22,7 +22,7 @@ use halo2_proofs::{
     circuit::Value,
     plonk::{
         ConstraintSystem, Error,
-        Expression::{self, Constant},
+        Expression::{self},
         VirtualCells,
     },
 };
@@ -771,19 +771,11 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             tag,
             values,
         );
-        // Manually constant folding is used here, since halo2 cannot do this
-        // automatically. Better error message will be printed during circuit
-        // debugging.
-        self.rw_counter_offset = match self.condition_expr_opt() {
-            None => {
-                if let Constant(v) = self.rw_counter_offset {
-                    Constant(v + F::from(1u64))
-                } else {
-                    self.rw_counter_offset.clone() + 1i32.expr()
-                }
-            }
-            Some(c) => self.rw_counter_offset.clone() + c,
-        };
+        // Bump rw_counter_offset only when rw happenes:
+        // If the rw is unconditioned, the rw must happen and we bump.
+        // Otherwise, the rw depends on the condition. Bump only when the condition is true.
+        self.rw_counter_offset =
+            self.rw_counter_offset.clone() + self.condition_expr_opt().unwrap_or(1.expr());
     }
 
     fn reversible_write(
