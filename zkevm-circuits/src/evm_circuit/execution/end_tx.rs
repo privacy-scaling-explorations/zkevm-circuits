@@ -13,7 +13,7 @@ use crate::{
                 AddWordsGadget, ConstantDivisionGadget, IsEqualGadget, IsZeroWordGadget,
                 MinMaxGadget, MulWordByU64Gadget,
             },
-            CachedRegion, Cell,
+            CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -27,7 +27,7 @@ use crate::{
     },
 };
 use bus_mapping::operation::Target;
-use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field};
+use eth_types::{self, evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use strum::EnumCount;
 
@@ -174,7 +174,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(
-                        11.expr() - is_first_tx.expr() + coinbase_code_hash_is_zero.expr(),
+                        10.expr() - is_first_tx.expr() + coinbase_reward.reversible_w_delta(),
                     ),
                     ..StepStateTransition::any()
                 });
@@ -186,7 +186,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             |cb| {
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(
-                        10.expr() - is_first_tx.expr() + coinbase_code_hash_is_zero.expr(),
+                        9.expr() - is_first_tx.expr() + coinbase_reward.reversible_w_delta(),
                     ),
                     // We propagate call_id so that EndBlock can get the last tx_id
                     // in order to count processed txs.
@@ -227,19 +227,23 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_used = tx.gas() - step.gas_left;
-        let (refund, _) = block.get_rws(step, 2).tx_refund_value_pair();
-        let (caller_balance, caller_balance_prev) = block.get_rws(step, 3).account_balance_pair();
-        let (coinbase_code_hash_prev, _) = block.get_rws(step, 4).account_codehash_pair();
-        let (coinbase_balance, coinbase_balance_prev) = block
-            .get_rws(
-                step,
-                if coinbase_code_hash_prev.is_zero() {
-                    6
-                } else {
-                    5
-                },
-            )
-            .account_balance_pair();
+        let effective_tip = tx.gas_price - block.context.base_fee;
+        let coinbase_transfer_value = effective_tip * gas_used;
+
+        let mut rws = StepRws::new(block, step);
+        rws.offset_add(2); // read CallContextField::TxId, CallContextField::IsPersistent
+        let (refund, _) = rws.next().tx_refund_value_pair();
+        let (caller_balance, caller_balance_prev) = rws.next().account_balance_pair();
+        let (coinbase_code_hash_prev, _) = rws.next().account_codehash_pair();
+        let coinbase_exists = !coinbase_code_hash_prev.is_zero();
+        if !coinbase_exists && !coinbase_transfer_value.is_zero() {
+            rws.next(); // write AccountField::CodeHash
+        }
+        let (coinbase_balance, coinbase_balance_prev) = if coinbase_transfer_value.is_zero() {
+            (eth_types::Word::zero(), eth_types::Word::zero())
+        } else {
+            rws.next().account_balance_pair()
+        };
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id)))?;
@@ -272,7 +276,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             vec![gas_fee_refund],
             caller_balance,
         )?;
-        let effective_tip = tx.gas_price - block.context.base_fee;
         self.sub_gas_price_by_base_fee.assign(
             region,
             offset,
@@ -284,7 +287,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             offset,
             effective_tip,
             gas_used,
-            effective_tip * gas_used,
+            coinbase_transfer_value,
         )?;
         self.coinbase
             .assign_h160(region, offset, block.context.coinbase)?;
@@ -296,7 +299,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             region,
             offset,
             (coinbase_balance, coinbase_balance_prev),
-            effective_tip * gas_used,
+            coinbase_transfer_value,
         )?;
 
         let current_cumulative_gas_used: u64 = if tx.id == 1 {

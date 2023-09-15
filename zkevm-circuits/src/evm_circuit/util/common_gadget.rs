@@ -343,6 +343,7 @@ pub(crate) struct TransferToGadget<F> {
     receiver_exists: Expression<F>,
     must_create: Expression<F>,
     pub(crate) value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
+    account_write: bool,
 }
 
 impl<F: Field> TransferToGadget<F> {
@@ -381,6 +382,7 @@ impl<F: Field> TransferToGadget<F> {
             receiver_exists,
             must_create,
             value_is_zero,
+            account_write,
         }
     }
 
@@ -407,6 +409,20 @@ impl<F: Field> TransferToGadget<F> {
                 );
             },
         );
+    }
+
+    pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
+        return if self.account_write {
+            // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+            or::expr([
+                not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
+                self.must_create.clone(),
+            ])
+        } else {
+            0.expr()
+        }
+        // +1 Write Account (receiver) Balance
+        + not::expr(self.value_is_zero.expr());
     }
 
     pub(crate) fn assign(
