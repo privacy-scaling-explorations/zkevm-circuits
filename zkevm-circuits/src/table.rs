@@ -50,7 +50,7 @@ pub(crate) use block_table::{BlockContextFieldTag, BlockTable};
 pub(crate) use bytecode_table::{BytecodeFieldTag, BytecodeTable};
 pub(crate) use copy_table::CopyTable;
 pub(crate) use exp_table::ExpTable;
-pub(crate) use keccak_table::KeccakTable;
+pub use keccak_table::KeccakTable;
 pub(crate) use ux_table::UXTable;
 
 pub use mpt_table::{MPTProofType, MptTable};

@@ -12,6 +12,9 @@ use ethers::{
 };
 use std::{convert::TryFrom, sync::Arc, time::Duration};
 
+use crate::circuit::LightClientCircuit;
+use crate::transforms::{Transforms, LightClientWitness};
+
 // #[rustfmt_skip]
 pub fn print_nodes(node: &[Node]) {
     for n in node {
@@ -70,7 +73,7 @@ pub fn print_nodes(node: &[Node]) {
     }
 }
 
-pub fn verify_mpt_witness(nodes: Vec<Node>) -> Result<()> {
+pub fn verify_mpt_witness(nodes: Vec<Node>, lc_witness: LightClientWitness<Fr>) -> Result<()> {
     // get the number of rows in the witness
     let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
 
@@ -94,6 +97,49 @@ pub fn verify_mpt_witness(nodes: Vec<Node>) -> Result<()> {
     };
 
     let prover = MockProver::<Fr>::run(degree as u32, &circuit, vec![]).unwrap();
+    assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
+
+    println!("success!");
+
+    Ok(())
+}
+
+pub fn verify_lc_circuit(trns : &Transforms, url: &str) -> Result<()> {
+
+    let (nodes, lc_witness) = trns.mpt_witness(url)?;
+    let pi = lc_witness.public_inputs();
+    println!();
+    for (i, input) in pi.iter().enumerate() {
+        println!("input[{i:}]: {input:?}");
+    }
+
+    // get the number of rows in the witness
+    let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
+
+    // populate the keccak data
+    let mut keccak_data = vec![];
+    for node in nodes.iter() {
+        for k in node.keccak_data.iter() {
+            keccak_data.push(k.clone());
+        }
+    }
+
+    // verify the circuit
+    let disable_preimage_check = nodes[0].start.clone().unwrap().disable_preimage_check;
+    let degree = 14;
+    let mpt_circuit = zkevm_circuits::mpt_circuit::MPTCircuit::<Fr> {
+        nodes,
+        keccak_data,
+        degree,
+        disable_preimage_check,
+        _marker: std::marker::PhantomData,
+    };
+    let lc_circuit = LightClientCircuit::<Fr> {
+        mpt_circuit,
+        pi: pi.clone()
+    };
+
+    let prover = MockProver::<Fr>::run(degree as u32, &lc_circuit, vec![pi]).unwrap();
     assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
 
     println!("success!");

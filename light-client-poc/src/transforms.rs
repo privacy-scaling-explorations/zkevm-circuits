@@ -10,11 +10,12 @@ use ethers::{
         BlockId, BlockNumber, EIP1186ProofResponse, H256, U256, U64,
     },
 };
-
 use ethers::prelude::*;
 use eyre::Result;
+use eth_types::{Field, ToScalar};
+
 use mpt_witness_generator::ProofType;
-use zkevm_circuits::{mpt_circuit::witness_row::Node, table::mpt_table::MPTProofType};
+use zkevm_circuits::{mpt_circuit::witness_row::Node, table::mpt_table::MPTProofType, util::word::{Word, self}};
 
 #[derive(Default, Debug, Clone)]
 pub struct Transform {
@@ -73,6 +74,42 @@ impl Transform {
         }
     }
 
+}
+
+pub struct LightClientWitness<F: Field>(Vec<LightClientProof<F>>);
+
+pub struct LightClientProof<F : Field> {
+    typ: F,
+    address: F,
+    value: word::Word<F>,
+    key: word::Word<F>,
+    old_root: word::Word<F>,
+    new_root: word::Word<F>,
+}
+
+impl<F: Field> LightClientWitness<F> {
+    pub fn public_inputs(&self) -> Vec<F> {
+        let mut inputs = Vec::new();
+            inputs.push(self.0[0].old_root.lo());
+            inputs.push(self.0[0].old_root.hi());
+            inputs.push(self.0[self.0.len()-1].new_root.lo());
+            inputs.push(self.0[self.0.len()-1].new_root.hi());
+
+
+        inputs.push(F::from(self.0.len() as u64));
+
+        for proof in &self.0 {
+            inputs.push(proof.typ);
+            inputs.push(proof.address);
+            inputs.push(proof.value.lo());
+            inputs.push(proof.value.hi());
+            inputs.push(proof.key.lo());
+            inputs.push(proof.key.hi());
+        }
+
+        inputs
+
+    }
 }
 
 impl Transforms {
@@ -188,7 +225,7 @@ impl Transforms {
         })
     }
 
-    pub fn witness(&self, provider: &str) -> Result<Vec<Node>> {
+    pub fn mpt_witness<F: Field>(&self, provider: &str) -> Result<(Vec<Node>, LightClientWitness<F>)> {
         let mods: Vec<_> = self
             .mods
             .iter()
@@ -230,6 +267,60 @@ impl Transforms {
             "current state root does not match"
         );
 
-        Ok(nodes)
+        // extract roots
+        let mut lc_proofs = Vec::new();
+        for node in nodes.iter() {
+            let Some(start) = &node.start else {
+                continue;
+            };
+            if start.proof_type == MPTProofType::Disabled {
+                continue;
+            }
+
+            let from_root = H256::from_slice(&node.values[0][1..33]);
+            let to_root = H256::from_slice(&node.values[1][1..33]);
+
+            // check if the roots matches
+            if lc_proofs.len() == 0 {
+                assert_eq!(from_root, self.prev_state_root);
+            }
+            if lc_proofs.len() == self.mods.len() {
+                assert_eq!(to_root, self.curr_state_root);
+            }
+
+            // check proof type
+            assert_eq!(
+                start.proof_type as u64,
+                self.mods[lc_proofs.len()].typ as u64
+            );
+
+            let m = &self.mods[lc_proofs.len()];
+
+            let changes = match m.typ {
+                ProofType::BalanceChanged => vec![(ProofType::BalanceChanged, m.address, m.balance, H256::zero())],
+                ProofType::NonceChanged => vec![(ProofType::NonceChanged, m.address, U256::from(m.nonce.0[0]), H256::zero())],
+                ProofType::StorageChanged => vec![(ProofType::StorageChanged, m.address, m.value, m.key)],
+                 _ => unimplemented!()
+            };
+
+            for (proof_type, address,value, key) in changes {
+            let lc_proof = LightClientProof::<F> {
+                typ: F::from(start.proof_type as u64),
+                address: address.to_scalar().unwrap(),
+                value: Word::<F>::from(value),
+                key: Word::<F>::from(key),
+                old_root: Word::<F>::from(from_root),
+                new_root: Word::<F>::from(to_root),
+            };
+            lc_proofs.push(lc_proof);
+        }
+
+
+        }
+
+
+
+        Ok((nodes, LightClientWitness(lc_proofs)))
     }
+
 }

@@ -1,14 +1,15 @@
 //! The MPT circuit implementation.
-use eth_types::Field;
+use eth_types::{Field, Address, ToScalar, H256, U256};
 use gadgets::{impl_expr, util::Scalar};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{
         Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
-        VirtualCells,
+        VirtualCells, Instance,
     },
     poly::Rotation,
 };
+use crate::util::word::Word;
 
 use std::{convert::TryInto, env::var, marker::PhantomData};
 
@@ -172,8 +173,10 @@ pub struct MPTConfig<F> {
     pub(crate) q_first: Column<Fixed>,
     pub(crate) q_last: Column<Fixed>,
     pub(crate) memory: Memory<F, MptCellType>,
-    pub(crate) mpt_table: MptTable,
-    keccak_table: KeccakTable,
+    ///
+    pub mpt_table: MptTable,
+    ///
+    pub keccak_table: KeccakTable,
     fixed_table: [Column<Fixed>; 6],
     mult_table: [Column<Advice>; 2],
     rlp_item: MainRLPGadget<F>,
@@ -581,7 +584,8 @@ impl<F: Field> MPTConfig<F> {
         Ok(height)
     }
 
-    fn load_fixed_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    ///
+    pub fn load_fixed_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_region(
             || "fixed table",
             |mut region| {
@@ -676,7 +680,8 @@ impl<F: Field> MPTConfig<F> {
         )
     }
 
-    fn load_mult_table(
+    ///
+    pub fn load_mult_table(
         &self,
         layouter: &mut impl Layouter<F>,
         challenges: &Challenges<Value<F>>,
@@ -720,8 +725,10 @@ pub struct MPTCircuit<F: Field> {
 /// MPT Circuit configuration parameters
 #[derive(Copy, Clone, Debug, Default)]
 pub struct MPTCircuitParams {
-    degree: usize,
-    disable_preimage_check: bool,
+    ///
+    pub degree: usize,
+    ///
+    pub disable_preimage_check: bool,
 }
 
 impl MPTCircuitParams {
@@ -781,6 +788,118 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
     }
 }
 
+/*
+// =========================================================================================
+
+///
+#[derive(Clone)]
+pub struct LightClientCircuitConfig<F: Field> {
+    pi: Column<Instance>,
+    mpt: MPTConfig<F>
+}
+
+
+/// MPT Circuit for proving the storage modification is valid.
+#[derive(Default)]
+pub struct LightClientCircuit<F: Field> {
+    ///
+    pub mpt: MPTCircuit<F>,
+}
+
+/// MPT Circuit configuration parameters
+#[derive(Copy, Clone, Debug, Default)]
+pub struct LightClientCircuitParams {
+    ///
+    mpt: MPTCircuitParams,
+}
+
+///
+#[derive(Default)]
+pub struct LightClientCircuitPublicInputs<F: Field>(Vec<F>);
+
+impl<F: Field> LightClientCircuitPublicInputs<F> {
+    fn new(old_root: H256, new_root: H256, proofs: &[(MPTProofType, Address, U256, H256)]) -> Self {
+        let mut inputs = Vec::<F>::new();
+        let (old_root_lo, old_root_hi) = Word::<F>::from(old_root).into_lo_hi();
+        let (new_root_lo, new_root_hi) = Word::<F>::from(new_root).into_lo_hi();
+        inputs.push(old_root_lo);
+        inputs.push(old_root_hi);
+        inputs.push(new_root_lo);
+        inputs.push(new_root_hi);
+        for (proof_type, address, value, key) in proofs {
+            let (value_lo, value_hi) = Word::<F>::from(*value).into_lo_hi();
+            let (key_lo, key_hi) = Word::<F>::from(*key).into_lo_hi();
+            inputs.push(proof_type.scalar());
+            inputs.push(address.to_scalar().unwrap());
+            inputs.push(value_lo);
+            inputs.push(value_hi);
+            inputs.push(key_lo);
+            inputs.push(key_hi);
+        }
+        inputs.push(F::ZERO);
+        Self(inputs)
+    }
+}
+
+impl<F: Field> Circuit<F> for LightClientCircuit<F> {
+    type Config = (LightClientCircuitConfig<F>, Challenges);
+    type FloorPlanner = SimpleFloorPlanner;
+    type Params = LightClientCircuitParams;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn params(&self) -> Self::Params {
+        LightClientCircuitParams {
+        mpt: MPTCircuitParams {
+            degree: self.mpt.degree,
+            disable_preimage_check: self.mpt.disable_preimage_check,
+        }
+        }
+    }
+
+    fn configure_with_params(meta: &mut ConstraintSystem<F>, params: Self::Params) -> Self::Config {
+        let challenges = Challenges::construct(meta);
+        let challenges_expr = challenges.exprs(meta);
+        let keccak_table = KeccakTable::construct(meta);
+
+        let mpt = MPTConfig::new(meta, challenges_expr, keccak_table, params.mpt);
+
+        let config = LightClientCircuitConfig {
+            pi: meta.instance_column(),
+            mpt
+        };
+
+        (
+            config,
+            challenges,
+        )
+    }
+
+    fn configure(_meta: &mut ConstraintSystem<F>) -> Self::Config {
+        unreachable!();
+    }
+
+    fn synthesize(
+        &self,
+        (config, _challenges): Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
+        let challenges = _challenges.values(&mut layouter);
+        let height = config.mpt.assign(&mut layouter, &self.mpt.nodes, &challenges)?;
+        config.mpt.load_fixed_table(&mut layouter)?;
+        config.mpt.load_mult_table(&mut layouter, &challenges, height)?;
+        config
+            .mpt.keccak_table
+            .dev_load(&mut layouter, &self.mpt.keccak_data, &challenges)?;
+
+        Ok(())
+    }
+}
+
+
+*/
 
 /// Loads an MPT proof from disk
 pub fn load_proof(path: &str) -> Vec<Node> {

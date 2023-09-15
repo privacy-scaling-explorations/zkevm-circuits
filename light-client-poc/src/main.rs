@@ -15,13 +15,24 @@ mod contract;
 mod transforms;
 mod utils;
 
-
-async fn mainnet() -> Result<()> {
+async fn mainnet_test(block_no: u64 ,  access_list : &[(&str, Vec<&str>)]) -> Result<()> {
     const PVK: &str = "7ccb34dc5fd31fd0aa7860de89a4adc37ccb34dc5fd31fd0aa7860de89a4adc3";
     const PROVIDER_URL: &str = "https://mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161";
-
     let client = utils::new_eth_client(PROVIDER_URL, PVK).await?;
 
+    let access_list = AccessList(access_list.iter().map(|(addr, storage_keys)| {
+        AccessListItem {
+            address: Address::from_str(addr).unwrap(),
+            storage_keys: storage_keys.iter().map(|k| H256::from_str(k).unwrap()).collect(),
+        }
+    }).collect());
+    let trns = Transforms::new(client.clone(), U64::from(block_no), Some(access_list)).await?;
+    println!("trns: {:#?}", trns);
+
+    utils::verify_lc_circuit(&trns, PROVIDER_URL)
+}
+
+async fn mainnet_tests() -> Result<()> {
     let tests: Vec< ( u64 ,  Vec<(&str, Vec<&str>)>) > = vec![
         // 0 txs
         ( 107, vec![("0xd7E30ae310C1D1800F5B641Baa7af95b2e1FD98C", vec![])] ),
@@ -75,17 +86,7 @@ async fn mainnet() -> Result<()> {
     ];
 
     for (block_no, access_list) in tests {
-        let access_list = AccessList(access_list.into_iter().map(|(addr, storage_keys)| {
-            AccessListItem {
-                address: Address::from_str(addr).unwrap(),
-                storage_keys: storage_keys.into_iter().map(|k| H256::from_str(k).unwrap()).collect(),
-            }
-        }).collect());
-        let trns = Transforms::new(client.clone(), U64::from(block_no), Some(access_list)).await?;
-        println!("trns: {:#?}", trns);
-
-        let witness = trns.witness(PROVIDER_URL)?;
-        utils::verify_mpt_witness(witness)?;
+        mainnet_test(block_no, &access_list).await?;
     }
 
     Ok(())
@@ -94,8 +95,8 @@ async fn mainnet() -> Result<()> {
 async fn test_proof(client: &Arc<MM>, provider_url: &str, recipt: &TransactionReceipt) -> Result<()> {
     let trns = Transforms::new(client.clone(), recipt.block_number.unwrap(), None).await?;
     println!("trns: {:#?}", trns);
-    let witness = trns.witness(provider_url)?;
-    utils::verify_mpt_witness(witness)
+    let (mpt_witness, pi_witness) = trns.mpt_witness(provider_url)?;
+    utils::verify_mpt_witness(mpt_witness, pi_witness)
 }
 
 async fn local() -> Result<()> {
@@ -122,4 +123,9 @@ async fn local() -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     local().await
+}
+
+#[tokio::test]
+async fn basic_mainnet_test() -> Result<()> {
+    mainnet_test(107, &[("0xd7E30ae310C1D1800F5B641Baa7af95b2e1FD98C", vec![])]).await
 }
