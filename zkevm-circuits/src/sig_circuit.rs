@@ -419,7 +419,7 @@ impl<F: Field> SigCircuit<F> {
             ctx,
             QuantumCell::Existing(zero),
             QuantumCell::Existing(assigned_y_tmp),
-            QuantumCell::Existing(y_coord_is_zero),
+            QuantumCell::Existing(pk_is_zero),
         );
         ecc_chip
             .field_chip
