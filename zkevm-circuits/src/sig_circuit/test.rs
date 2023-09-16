@@ -109,7 +109,7 @@ fn test_edge_cases() {
             good_ecrecover_data.2,
             good_ecrecover_data.3,
         ),
-        // 9. cannot recover even if all inputs are valid
+        // 9. valid msg_hash, r, s, v but pubkey not recovered
         (
             word!("0x571b659b539a9da729fca1f2efdd8b07d6a7042e0640ac5ce3a8c5e3445523d7"),
             word!("0x5d14c6d7824ddecc43d307891c4fae49307e370f827fae93e014796665705800"),
