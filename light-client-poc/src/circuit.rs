@@ -1,3 +1,4 @@
+
 // PI CIRCUIT
 //
 // pub struct Transform {
@@ -171,8 +172,8 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
             |meta| meta.query_advice(count, Rotation::cur()),
             count_inv,
         );
-        let count_decrement_less_one_inv = meta.advice_column();
 
+        let count_decrement_less_one_inv = meta.advice_column();
         let count_decrement_less_one_is_zero = IsZeroChip::configure(
             meta,
             |meta| meta.query_selector(q_enable),
@@ -186,10 +187,7 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
 
         meta.create_gate("if not zero, count descreases monotonically", |meta| {
             let q_enable = meta.query_selector(q_enable);
-
-            let if_not_zero_count_decreased_monotocally = xif(not::expr(count_is_zero.expr()), count_decrement_less_one_is_zero.expr());
-
-            vec![ q_enable * if_not_zero_count_decreased_monotocally ]
+            vec![ q_enable * xif(not::expr(count_is_zero.expr()), count_decrement_less_one_is_zero.expr()) ]
         });
 
         // first count entry is
@@ -239,12 +237,12 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
 
         let MAX_PROOF_COUNT = 10;
 
-
-
-        // -------
         let starting_count_cell = layouter.assign_region(
             || "pi",
             |mut region| {
+
+                let count_is_zero = IsZeroChip::construct(config.count_is_zero.clone());
+                let count_decrement_less_one_is_zero =IsZeroChip::construct(config.count_decrement_less_one_is_zero.clone());
 
                 region.name_column(|| "LC_first", config.first);
                 region.name_column(|| "LC_count", config.count);
@@ -256,14 +254,18 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
 
                 let mut starting_count_cell = None;
 
-                for offset in 0..self.lc_witness.0.len() {
-                    //println!("****** offset {}", offset);
-                    config.q_enable.enable(&mut region, offset)?;
+                for offset in 0..MAX_PROOF_COUNT {
 
-                    let count = Value::known(F::from((self.lc_witness.0.len() - offset) as u64));
+                    if offset < MAX_PROOF_COUNT - 1 {
+                        config.q_enable.enable(&mut region, offset)?;
+                    }
 
-                    IsZeroChip::construct(config.count_is_zero.clone()).assign(&mut region, offset, count)?;
-                    IsZeroChip::construct(config.count_decrement_less_one_is_zero.clone()).assign(&mut region, offset, Value::known(1.into()))?;
+                    let count = self.lc_witness.0.len().saturating_sub(offset);
+                    let last_row = count == 0;
+                    let count = Value::known(F::from(count as u64));
+
+                    count_is_zero.assign(&mut region, offset, count)?;
+                    count_decrement_less_one_is_zero.assign(&mut region, offset, Value::known(if last_row { F::ZERO-F::ONE } else {F::ZERO} ))?;
 
                     let cell = region.assign_advice(
                         || "",
@@ -275,17 +277,6 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
                         starting_count_cell = Some(cell);
                     }
                 }
-
-                // fill in the rest of the count cells with 0
-                for offset in self.lc_witness.0.len()..MAX_PROOF_COUNT {
-                    region.assign_advice(
-                        || "",
-                        config.count,
-                        offset,
-                        || Value::known(F::ZERO),
-                    )?;
-                }
-
                 Ok(starting_count_cell.unwrap())
             },
         )?;

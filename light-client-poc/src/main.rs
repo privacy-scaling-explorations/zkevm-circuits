@@ -127,5 +127,11 @@ async fn main() -> Result<()> {
 
 #[tokio::test]
 async fn basic_mainnet_test() -> Result<()> {
-    mainnet_test(107, &[("0xd7E30ae310C1D1800F5B641Baa7af95b2e1FD98C", vec![])]).await
+    let (block_no, access_list) = ( 436875, vec![
+        ("0x580992B51e3925e23280EfB93d3047C82f17E038", vec![]),
+        ("0x52bc44d5378309EE2abF1539BF71dE1b7d7bE3b5", vec![]),
+        ("0x15ac3b6F90549FFBE4091177B1795B3d4C11A59e", vec![]),
+        ("0x72382223a91051A54c69759BE3c93048235EfC43", vec![])
+        ]);
+    mainnet_test(block_no, &access_list).await
 }
