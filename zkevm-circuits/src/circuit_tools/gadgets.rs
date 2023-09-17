@@ -25,7 +25,7 @@ pub struct IsZeroGadget<F> {
 }
 
 impl<F: Field> IsZeroGadget<F> {
-    pub(crate) fn construct<C: CellType>(
+    pub fn construct<C: CellType>(
         cb: &mut ConstraintBuilder<F, C>,
         value: Expression<F>,
     ) -> Self {

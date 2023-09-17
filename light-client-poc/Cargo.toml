@@ -17,3 +17,4 @@ tokio = { version= "1.28.2", features = ["macros", "rt-multi-thread"]  }
 mpt-witness-generator = { path = "../mpt-witness-generator/rustlib" }
 ethers ={ version = "2.0.10", features = ["abigen", "rustls", "ws", "ethers-solc"] }
 eth-types = { path = "../eth-types" }
+gadgets = { path = "../gadgets" }

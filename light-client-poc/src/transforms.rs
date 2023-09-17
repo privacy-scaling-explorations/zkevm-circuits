@@ -76,7 +76,8 @@ impl Transform {
 
 }
 
-pub struct LightClientWitness<F: Field>(Vec<LightClientProof<F>>);
+#[derive(Default)]
+pub struct LightClientWitness<F: Field>(pub Vec<LightClientProof<F>>);
 
 pub struct LightClientProof<F : Field> {
     typ: F,

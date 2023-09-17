@@ -136,13 +136,11 @@ pub fn verify_lc_circuit(trns : &Transforms, url: &str) -> Result<()> {
     };
     let lc_circuit = LightClientCircuit::<Fr> {
         mpt_circuit,
-        pi: pi.clone()
+        lc_witness
     };
 
     let prover = MockProver::<Fr>::run(degree as u32, &lc_circuit, vec![pi]).unwrap();
-    assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
-
-    println!("success!");
+    prover.assert_satisfied_at_rows_par(0..num_rows, 0..num_rows);
 
     Ok(())
 }
