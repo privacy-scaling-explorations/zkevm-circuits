@@ -79,13 +79,14 @@ impl Transform {
 #[derive(Default)]
 pub struct LightClientWitness<F: Field>(pub Vec<LightClientProof<F>>);
 
+#[derive(Default, Clone)]
 pub struct LightClientProof<F : Field> {
-    typ: F,
-    address: F,
-    value: word::Word<F>,
-    key: word::Word<F>,
-    old_root: word::Word<F>,
-    new_root: word::Word<F>,
+    pub typ: F,
+    pub address: F,
+    pub value: word::Word<F>,
+    pub key: word::Word<F>,
+    pub old_root: word::Word<F>,
+    pub new_root: word::Word<F>,
 }
 
 impl<F: Field> LightClientWitness<F> {

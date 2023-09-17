@@ -1,4 +1,3 @@
-
 // PI CIRCUIT
 //
 // pub struct Transform {
@@ -34,7 +33,7 @@
 // ------------------
 // last_state_root
 // next_state_root
-use crate::transforms::LightClientWitness;
+use crate::transforms::{LightClientProof, LightClientWitness};
 /// len
 // | proof_type
 // | address
@@ -70,15 +69,25 @@ use crate::transforms::LightClientWitness;
 
 // =========================================================================================
 use eth_types::{Address, Field, Word, H256, U256};
-use gadgets::{is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction}, util::{Expr, not::{expr, self}, and}};
+use gadgets::{
+    is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
+    util::{
+        and,
+        not::{self, expr},
+        or, Expr,
+    },
+};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance, Selector, Expression},
+    plonk::{
+        Advice, Any, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance,
+        Selector, TableColumn,
+    },
     poly::Rotation,
 };
 use zkevm_circuits::{
     mpt_circuit::{MPTCircuit, MPTCircuitParams, MPTConfig},
-    table::{KeccakTable, MPTProofType, MptTable},
+    table::{KeccakTable, LookupTable, MPTProofType, MptTable},
     util::{word, Challenges},
 };
 
@@ -96,8 +105,9 @@ pub struct LightClientCircuitConfig<F: Field> {
     pub pi_instance: Column<Instance>,
     pub first: Column<Fixed>,
     pub count: Column<Advice>,
-    pub count_decrement_less_one_is_zero : IsZeroConfig<F>,
+    pub count_decrement_less_one_is_zero: IsZeroConfig<F>,
     pub count_is_zero: IsZeroConfig<F>,
+    pub count_minus_one_is_zero: IsZeroConfig<F>,
     pub q_enable: Selector,
 }
 
@@ -162,6 +172,25 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
             old_value: word::Word::new([meta.advice_column(), meta.advice_column()]),
         };
 
+        for col in [
+            pi_mpt.address,
+            pi_mpt.storage_key.lo(),
+            pi_mpt.storage_key.hi(),
+            pi_mpt.proof_type,
+            pi_mpt.new_root.lo(),
+            pi_mpt.new_root.hi(),
+            pi_mpt.old_root.lo(),
+            pi_mpt.old_root.hi(),
+            pi_mpt.new_value.lo(),
+            pi_mpt.new_value.hi(),
+            pi_mpt.old_value.lo(),
+            pi_mpt.old_value.hi(),
+        ]
+        .iter()
+        {
+            meta.enable_equality(*col);
+        }
+
         meta.enable_equality(pi_instance);
         meta.enable_equality(count);
 
@@ -171,6 +200,14 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
             |meta| meta.query_selector(q_enable),
             |meta| meta.query_advice(count, Rotation::cur()),
             count_inv,
+        );
+
+        let count_minus_one_inv = meta.advice_column();
+        let count_minus_one_is_zero = IsZeroChip::configure(
+            meta,
+            |meta| meta.query_selector(q_enable),
+            |meta| meta.query_advice(count, Rotation::cur()) - 1.expr(),
+            count_minus_one_inv,
         );
 
         let count_decrement_less_one_inv = meta.advice_column();
@@ -185,9 +222,74 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
             count_decrement_less_one_inv,
         );
 
-        meta.create_gate("if not zero, count descreases monotonically", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-            vec![ q_enable * xif(not::expr(count_is_zero.expr()), count_decrement_less_one_is_zero.expr()) ]
+        meta.create_gate(
+            "if count not zero, count descreases monotonically",
+            |meta| {
+                let q_enable = meta.query_selector(q_enable);
+                vec![
+                    q_enable
+                        * xif(
+                            not::expr(count_is_zero.expr()),
+                            count_decrement_less_one_is_zero.expr(),
+                        ),
+                ]
+            },
+        );
+
+        meta.create_gate(
+            "if count is not one or zero, roots should be chanined",
+            |meta| {
+                let q_enable = meta.query_selector(q_enable);
+
+                let one_if_count_is_one_or_zero =
+                    or::expr([count_is_zero.expr(), count_minus_one_is_zero.expr()]);
+
+                // TODO: quite ugly, need to compare with zero
+                let zero_if_roots_are_chanined = (
+                    meta.query_advice(pi_mpt.new_root.lo(), Rotation::cur())
+                    - meta.query_advice(pi_mpt.old_root.lo(), Rotation::next()))
+                    + (meta.query_advice(pi_mpt.new_root.hi(), Rotation::cur())
+                        - meta.query_advice(pi_mpt.old_root.hi(), Rotation::next()));
+
+                vec![q_enable * xif(not::expr(one_if_count_is_one_or_zero), not::expr(zero_if_roots_are_chanined))]
+            },
+        );
+
+        meta.lookup_any("lc_mpt_updates lookups into mpt_table", |meta| {
+            vec![
+                (
+                    meta.query_advice(pi_mpt.proof_type, Rotation::cur()),
+                    meta.query_advice(mpt_config.mpt_table.proof_type, Rotation::cur()),
+                ),
+                (
+                    meta.query_advice(pi_mpt.address, Rotation::cur()),
+                    meta.query_advice(mpt_config.mpt_table.address, Rotation::cur()),
+                ),
+                (
+                    meta.query_advice(pi_mpt.new_value.lo(), Rotation::cur()),
+                    meta.query_advice(mpt_config.mpt_table.new_value.lo(), Rotation::cur()),
+                ),
+                (
+                    meta.query_advice(pi_mpt.new_value.hi(), Rotation::cur()),
+                    meta.query_advice(mpt_config.mpt_table.new_value.hi(), Rotation::cur()),
+                ),
+                (
+                    meta.query_advice(pi_mpt.storage_key.lo(), Rotation::cur()),
+                    meta.query_advice(mpt_config.mpt_table.storage_key.lo(), Rotation::cur()),
+                ),
+                (
+                    meta.query_advice(pi_mpt.storage_key.hi(), Rotation::cur()),
+                    meta.query_advice(mpt_config.mpt_table.storage_key.hi(), Rotation::cur()),
+                ),
+                // (meta.query_advice(pi_mpt.old_root.lo(), Rotation::cur()),
+                // meta.query_advice(mpt_config.mpt_table.old_root.lo(), Rotation::cur())),
+                // (meta.query_advice(pi_mpt.old_root.hi(), Rotation::cur()),
+                // meta.query_advice(mpt_config.mpt_table.old_root.hi(), Rotation::cur())),
+                // (meta.query_advice(pi_mpt.new_root.lo(), Rotation::cur()),
+                // meta.query_advice(mpt_config.mpt_table.new_root.lo(), Rotation::cur())),
+                // (meta.query_advice(pi_mpt.new_root.hi(), Rotation::cur()),
+                // meta.query_advice(mpt_config.mpt_table.new_root.hi(), Rotation::cur())),
+            ]
         });
 
         // first count entry is
@@ -202,6 +304,7 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
             first,
             count,
             count_is_zero,
+            count_minus_one_is_zero,
             count_decrement_less_one_is_zero,
             q_enable,
             pi_instance,
@@ -237,55 +340,135 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
 
         let MAX_PROOF_COUNT = 10;
 
-        let starting_count_cell = layouter.assign_region(
+        let pi = layouter.assign_region(
             || "pi",
             |mut region| {
-
                 let count_is_zero = IsZeroChip::construct(config.count_is_zero.clone());
-                let count_decrement_less_one_is_zero =IsZeroChip::construct(config.count_decrement_less_one_is_zero.clone());
+                let count_minus_one_is_zero =
+                    IsZeroChip::construct(config.count_minus_one_is_zero.clone());
+                let count_decrement_less_one_is_zero =
+                    IsZeroChip::construct(config.count_decrement_less_one_is_zero.clone());
 
                 region.name_column(|| "LC_first", config.first);
                 region.name_column(|| "LC_count", config.count);
                 region.name_column(|| "LC_count_inv", config.count_is_zero.value_inv);
-                region.name_column(|| "LC_count_monodec_inv", config.count_decrement_less_one_is_zero.value_inv);
+                region.name_column(
+                    || "LC_count_monodec_inv",
+                    config.count_decrement_less_one_is_zero.value_inv,
+                );
                 region.name_column(|| "LC_pi_instance", config.pi_instance);
 
                 region.assign_fixed(|| "", config.first, 0, || Value::known(F::ONE))?;
 
-                let mut starting_count_cell = None;
+                let mut pi = Vec::new();
 
                 for offset in 0..MAX_PROOF_COUNT {
-
                     if offset < MAX_PROOF_COUNT - 1 {
                         config.q_enable.enable(&mut region, offset)?;
                     }
 
-                    let count = self.lc_witness.0.len().saturating_sub(offset);
-                    let last_row = count == 0;
-                    let count = Value::known(F::from(count as u64));
+                    let count_usize = self.lc_witness.0.len().saturating_sub(offset);
+                    let end = count_usize == 0;
+                    let count = Value::known(F::from(count_usize as u64));
 
                     count_is_zero.assign(&mut region, offset, count)?;
-                    count_decrement_less_one_is_zero.assign(&mut region, offset, Value::known(if last_row { F::ZERO-F::ONE } else {F::ZERO} ))?;
-
-                    let cell = region.assign_advice(
-                        || "",
-                        config.count,
+                    count_minus_one_is_zero.assign(
+                        &mut region,
                         offset,
-                        || count,
+                        Value::known(F::from(count_usize as u64) - F::ONE),
                     )?;
+                    count_decrement_less_one_is_zero.assign(
+                        &mut region,
+                        offset,
+                        Value::known(if end { F::ZERO - F::ONE } else { F::ZERO }),
+                    )?;
+
+                    let count_cell = region.assign_advice(|| "", config.count, offset, || count)?;
+
                     if offset == 0 {
-                        starting_count_cell = Some(cell);
+                        pi.push(count_cell);
                     }
+
+                    let mpt = self.lc_witness.0.get(offset).cloned().unwrap_or_default();
+
+                    let typ = region.assign_advice(
+                        || "",
+                        config.pi_mpt.proof_type,
+                        offset,
+                        || Value::known(mpt.typ),
+                    )?;
+                    let addr = region.assign_advice(
+                        || "",
+                        config.pi_mpt.address,
+                        offset,
+                        || Value::known(mpt.address),
+                    )?;
+                    let value_lo = region.assign_advice(
+                        || "",
+                        config.pi_mpt.new_value.lo(),
+                        offset,
+                        || Value::known(mpt.value.lo()),
+                    )?;
+                    let value_hi = region.assign_advice(
+                        || "",
+                        config.pi_mpt.new_value.hi(),
+                        offset,
+                        || Value::known(mpt.value.hi()),
+                    )?;
+                    let key_lo = region.assign_advice(
+                        || "",
+                        config.pi_mpt.storage_key.lo(),
+                        offset,
+                        || Value::known(mpt.key.lo()),
+                    )?;
+                    let key_hi = region.assign_advice(
+                        || "",
+                        config.pi_mpt.storage_key.hi(),
+                        offset,
+                        || Value::known(mpt.key.hi()),
+                    )?;
+                    region.assign_advice(
+                        || "",
+                        config.pi_mpt.old_root.lo(),
+                        offset,
+                        || Value::known(mpt.old_root.lo()),
+                    )?;
+                    region.assign_advice(
+                        || "",
+                        config.pi_mpt.old_root.hi(),
+                        offset,
+                        || Value::known(mpt.old_root.hi()),
+                    )?;
+                    region.assign_advice(
+                        || "",
+                        config.pi_mpt.new_root.lo(),
+                        offset,
+                        || Value::known(mpt.new_root.lo()),
+                    )?;
+                    region.assign_advice(
+                        || "",
+                        config.pi_mpt.new_root.hi(),
+                        offset,
+                        || Value::known(mpt.new_root.hi()),
+                    )?;
+
+                    pi.append(vec![typ, addr, value_lo, value_hi, key_lo, key_hi].as_mut());
                 }
-                Ok(starting_count_cell.unwrap())
+                Ok(pi)
             },
         )?;
 
-        layouter.constrain_instance(
-            starting_count_cell.cell(),
-            config.pi_instance,
-            PI_ROW_PROOF_COUNT,
-        )?;
+        // proof_count countdown starts with the number of proofs
+        layouter.constrain_instance(pi[0].cell(), config.pi_instance, PI_ROW_PROOF_COUNT)?;
+
+        // check that state updates to lookup are the same that the specified in the public inputs
+        for n in 0..MAX_PROOF_COUNT * 6 {
+            layouter.constrain_instance(
+                pi[n].cell(),
+                config.pi_instance,
+                PI_ROW_PROOF_COUNT + n,
+            )?;
+        }
 
         Ok(())
     }
