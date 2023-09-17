@@ -103,11 +103,14 @@ pub struct LightClientCircuitConfig<F: Field> {
 
     pub pi_mpt: MptTable,
     pub pi_instance: Column<Instance>,
-    pub first: Column<Fixed>,
+
+    pub is_first: Column<Fixed>,
+    pub is_last: IsZeroConfig<F>,
+    pub is_padding: IsZeroConfig<F>,
+
     pub count: Column<Advice>,
     pub count_decrement_less_one_is_zero: IsZeroConfig<F>,
-    pub count_is_zero: IsZeroConfig<F>,
-    pub count_minus_one_is_zero: IsZeroConfig<F>,
+
     pub q_enable: Selector,
 }
 
@@ -158,7 +161,7 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
 
         let mpt_config = MPTConfig::new(meta, challenges_expr, keccak_table, params.mpt);
 
-        let first = meta.fixed_column();
+        let is_first = meta.fixed_column();
         let count = meta.advice_column();
         let q_enable = meta.selector();
         let pi_instance = meta.instance_column();
@@ -194,20 +197,20 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
         meta.enable_equality(pi_instance);
         meta.enable_equality(count);
 
-        let count_inv = meta.advice_column();
-        let count_is_zero = IsZeroChip::configure(
+        let is_padding_inv = meta.advice_column();
+        let is_padding = IsZeroChip::configure(
             meta,
             |meta| meta.query_selector(q_enable),
             |meta| meta.query_advice(count, Rotation::cur()),
-            count_inv,
+            is_padding_inv,
         );
 
-        let count_minus_one_inv = meta.advice_column();
-        let count_minus_one_is_zero = IsZeroChip::configure(
+        let is_last_inv = meta.advice_column();
+        let is_last = IsZeroChip::configure(
             meta,
             |meta| meta.query_selector(q_enable),
             |meta| meta.query_advice(count, Rotation::cur()) - 1.expr(),
-            count_minus_one_inv,
+            is_last_inv,
         );
 
         let count_decrement_less_one_inv = meta.advice_column();
@@ -223,13 +226,13 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
         );
 
         meta.create_gate(
-            "if count not zero, count descreases monotonically",
+            "if not padding, count descreases monotonically",
             |meta| {
                 let q_enable = meta.query_selector(q_enable);
                 vec![
                     q_enable
                         * xif(
-                            not::expr(count_is_zero.expr()),
+                            not::expr(is_padding.expr()),
                             count_decrement_less_one_is_zero.expr(),
                         ),
                 ]
@@ -237,12 +240,12 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
         );
 
         meta.create_gate(
-            "if count is not one or zero, roots should be chanined",
+            "if not padding and not last row, roots should be chanined",
             |meta| {
                 let q_enable = meta.query_selector(q_enable);
 
-                let one_if_count_is_one_or_zero =
-                    or::expr([count_is_zero.expr(), count_minus_one_is_zero.expr()]);
+                let one_if_not_padding_and_not_last_rot =
+                    or::expr([is_padding.expr(), is_last.expr()]);
 
                 // TODO: quite ugly, need to compare with zero
                 let zero_if_roots_are_chanined = (
@@ -251,7 +254,7 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
                     + (meta.query_advice(pi_mpt.new_root.hi(), Rotation::cur())
                         - meta.query_advice(pi_mpt.old_root.hi(), Rotation::next()));
 
-                vec![q_enable * xif(not::expr(one_if_count_is_one_or_zero), not::expr(zero_if_roots_are_chanined))]
+                vec![q_enable * xif(not::expr(one_if_not_padding_and_not_last_rot), not::expr(zero_if_roots_are_chanined))]
             },
         );
 
@@ -301,10 +304,10 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
         // });
         let config = LightClientCircuitConfig {
             mpt_config,
-            first,
+            is_first,
             count,
-            count_is_zero,
-            count_minus_one_is_zero,
+            is_padding,
+            is_last,
             count_decrement_less_one_is_zero,
             q_enable,
             pi_instance,
@@ -343,22 +346,23 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
         let pi = layouter.assign_region(
             || "pi",
             |mut region| {
-                let count_is_zero = IsZeroChip::construct(config.count_is_zero.clone());
-                let count_minus_one_is_zero =
-                    IsZeroChip::construct(config.count_minus_one_is_zero.clone());
+                let is_padding = IsZeroChip::construct(config.is_padding.clone());
+                let is_last =
+                    IsZeroChip::construct(config.is_last.clone());
                 let count_decrement_less_one_is_zero =
                     IsZeroChip::construct(config.count_decrement_less_one_is_zero.clone());
 
-                region.name_column(|| "LC_first", config.first);
+                region.name_column(|| "LC_first", config.is_first);
                 region.name_column(|| "LC_count", config.count);
-                region.name_column(|| "LC_count_inv", config.count_is_zero.value_inv);
+                region.name_column(|| "LC_padding_inv", config.is_padding.value_inv);
+                region.name_column(|| "LC_last_inv", config.is_last.value_inv);
                 region.name_column(
                     || "LC_count_monodec_inv",
                     config.count_decrement_less_one_is_zero.value_inv,
                 );
                 region.name_column(|| "LC_pi_instance", config.pi_instance);
 
-                region.assign_fixed(|| "", config.first, 0, || Value::known(F::ONE))?;
+                region.assign_fixed(|| "", config.is_first, 0, || Value::known(F::ONE))?;
 
                 let mut pi = Vec::new();
 
@@ -371,8 +375,8 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
                     let end = count_usize == 0;
                     let count = Value::known(F::from(count_usize as u64));
 
-                    count_is_zero.assign(&mut region, offset, count)?;
-                    count_minus_one_is_zero.assign(
+                    is_padding.assign(&mut region, offset, count)?;
+                    is_last.assign(
                         &mut region,
                         offset,
                         Value::known(F::from(count_usize as u64) - F::ONE),
