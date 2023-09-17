@@ -1,19 +1,19 @@
-use zkevm_circuits::mpt_circuit::witness_row::*;
-use eyre::Result;
-use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-use ethers::prelude::k256::ecdsa::SigningKey;
-use ethers::providers::Middleware;
 use ethers::{
     middleware::SignerMiddleware,
-    prelude::*,
-    providers::{Http, Provider},
+    prelude::{k256::ecdsa::SigningKey, *},
+    providers::{Http, Middleware, Provider},
     signers::{LocalWallet, Signer},
     utils::format_units,
 };
+use eyre::Result;
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{convert::TryFrom, sync::Arc, time::Duration};
+use zkevm_circuits::mpt_circuit::witness_row::*;
 
-use crate::circuit::LightClientCircuit;
-use crate::transforms::{Transforms, LightClientWitness};
+use crate::{
+    circuit::LightClientCircuit,
+    transforms::{LightClientWitness, Transforms},
+};
 
 // #[rustfmt_skip]
 pub fn print_nodes(node: &[Node]) {
@@ -22,44 +22,107 @@ pub fn print_nodes(node: &[Node]) {
         if let Some(start) = &n.start {
             println!("   start:");
             println!("      proof_type: {:?}", start.proof_type);
-            println!("      disable_preimage_check: {:?}",start.disable_preimage_check);
+            println!(
+                "      disable_preimage_check: {:?}",
+                start.disable_preimage_check
+            );
         }
         if let Some(extension_branch) = &n.extension_branch {
             println!("   extension_branch:");
             println!("      is_extension: {:?}", extension_branch.is_extension);
-            println!("      is_placeholder: {:?}", extension_branch.is_placeholder);
+            println!(
+                "      is_placeholder: {:?}",
+                extension_branch.is_placeholder
+            );
             println!("      extension:");
-            println!("         list_rlp_bytes: {}",hex::encode(&extension_branch.extension.list_rlp_bytes));
+            println!(
+                "         list_rlp_bytes: {}",
+                hex::encode(&extension_branch.extension.list_rlp_bytes)
+            );
             println!("      branch:");
-            println!("         modified_index: {}",extension_branch.branch.modified_index);
-            println!("         drifted_index: {}",extension_branch.branch.drifted_index);
-            println!("         list_rlp_bytes[0]: {}",hex::encode(&extension_branch.branch.list_rlp_bytes[0]));
-            println!("         list_rlp_bytes[1]: {}",hex::encode(&extension_branch.branch.list_rlp_bytes[1]));
+            println!(
+                "         modified_index: {}",
+                extension_branch.branch.modified_index
+            );
+            println!(
+                "         drifted_index: {}",
+                extension_branch.branch.drifted_index
+            );
+            println!(
+                "         list_rlp_bytes[0]: {}",
+                hex::encode(&extension_branch.branch.list_rlp_bytes[0])
+            );
+            println!(
+                "         list_rlp_bytes[1]: {}",
+                hex::encode(&extension_branch.branch.list_rlp_bytes[1])
+            );
         }
         if let Some(account) = &n.account {
             println!("   account:");
             println!("       address: {}", hex::encode(&account.address));
             println!("       key: {}", hex::encode(&account.key));
-            println!("       list_rlp_bytes[0]: {}",hex::encode(&account.list_rlp_bytes[0]));
-            println!("       list_rlp_bytes[1]: {}",hex::encode(&account.list_rlp_bytes[1]));
-            println!("       value_rlp_bytes[0]: {}",hex::encode(&account.value_rlp_bytes[0]));
-            println!("       value_rlp_bytes[1]: {}",hex::encode(&account.value_rlp_bytes[1]));
-            println!("       value_list_rlp_bytes[0]: {}",hex::encode(&account.value_list_rlp_bytes[0]));
-            println!("       value_list_rlp_bytes[1]: {}",hex::encode(&account.value_list_rlp_bytes[1]));
-            println!("       drifted_rlp_bytes: {}",hex::encode(&account.drifted_rlp_bytes));
-            println!("       wrong_rlp_bytes: {}",hex::encode(&account.wrong_rlp_bytes));
+            println!(
+                "       list_rlp_bytes[0]: {}",
+                hex::encode(&account.list_rlp_bytes[0])
+            );
+            println!(
+                "       list_rlp_bytes[1]: {}",
+                hex::encode(&account.list_rlp_bytes[1])
+            );
+            println!(
+                "       value_rlp_bytes[0]: {}",
+                hex::encode(&account.value_rlp_bytes[0])
+            );
+            println!(
+                "       value_rlp_bytes[1]: {}",
+                hex::encode(&account.value_rlp_bytes[1])
+            );
+            println!(
+                "       value_list_rlp_bytes[0]: {}",
+                hex::encode(&account.value_list_rlp_bytes[0])
+            );
+            println!(
+                "       value_list_rlp_bytes[1]: {}",
+                hex::encode(&account.value_list_rlp_bytes[1])
+            );
+            println!(
+                "       drifted_rlp_bytes: {}",
+                hex::encode(&account.drifted_rlp_bytes)
+            );
+            println!(
+                "       wrong_rlp_bytes: {}",
+                hex::encode(&account.wrong_rlp_bytes)
+            );
         }
 
         if let Some(storage) = &n.storage {
             println!("   storage:");
             println!("       address: {}", hex::encode(&storage.address));
             println!("       key: {}", hex::encode(&storage.key));
-            println!("       list_rlp_bytes[0]: {}",hex::encode(&storage.list_rlp_bytes[0]));
-            println!("       list_rlp_bytes[1]: {}",hex::encode(&storage.list_rlp_bytes[1]));
-            println!("       value_rlp_bytes[0]: {}",hex::encode(&storage.value_rlp_bytes[0]));
-            println!("       value_rlp_bytes[1]: {}",hex::encode(&storage.value_rlp_bytes[1]));
-            println!("       drifted_rlp_bytes: {}",hex::encode(&storage.drifted_rlp_bytes));
-            println!("       wrong_rlp_bytes: {}",hex::encode(&storage.wrong_rlp_bytes));
+            println!(
+                "       list_rlp_bytes[0]: {}",
+                hex::encode(&storage.list_rlp_bytes[0])
+            );
+            println!(
+                "       list_rlp_bytes[1]: {}",
+                hex::encode(&storage.list_rlp_bytes[1])
+            );
+            println!(
+                "       value_rlp_bytes[0]: {}",
+                hex::encode(&storage.value_rlp_bytes[0])
+            );
+            println!(
+                "       value_rlp_bytes[1]: {}",
+                hex::encode(&storage.value_rlp_bytes[1])
+            );
+            println!(
+                "       drifted_rlp_bytes: {}",
+                hex::encode(&storage.drifted_rlp_bytes)
+            );
+            println!(
+                "       wrong_rlp_bytes: {}",
+                hex::encode(&storage.wrong_rlp_bytes)
+            );
         }
         println!("   values:");
         for (idx, value) in n.values.iter().enumerate() {
@@ -104,8 +167,7 @@ pub fn verify_mpt_witness(nodes: Vec<Node>, lc_witness: LightClientWitness<Fr>) 
     Ok(())
 }
 
-pub fn verify_lc_circuit(trns : &Transforms, url: &str) -> Result<()> {
-
+pub fn verify_lc_circuit(trns: &Transforms, url: &str) -> Result<()> {
     let (nodes, lc_witness) = trns.mpt_witness(url)?;
     let pi = lc_witness.public_inputs();
     println!();
@@ -136,7 +198,7 @@ pub fn verify_lc_circuit(trns : &Transforms, url: &str) -> Result<()> {
     };
     let lc_circuit = LightClientCircuit::<Fr> {
         mpt_circuit,
-        lc_witness
+        lc_witness,
     };
 
     let prover = MockProver::<Fr>::run(degree as u32, &lc_circuit, vec![pi]).unwrap();
@@ -147,7 +209,7 @@ pub fn verify_lc_circuit(trns : &Transforms, url: &str) -> Result<()> {
 
 pub type MM = SignerMiddleware<Provider<Http>, Wallet<SigningKey>>;
 
-pub async fn new_eth_client(provider_url : &str, pvk: &str) -> Result<Arc<MM>> {
+pub async fn new_eth_client(provider_url: &str, pvk: &str) -> Result<Arc<MM>> {
     let provider: Provider<Http> =
         Provider::<Http>::try_from(provider_url)?.interval(Duration::from_millis(10u64));
     let chain_id = provider.get_chainid().await?.as_u64();
@@ -167,5 +229,3 @@ pub async fn new_eth_client(provider_url : &str, pvk: &str) -> Result<Arc<MM>> {
 
     Ok(client)
 }
-
-

@@ -2,28 +2,30 @@
 #![allow(unused_imports)]
 
 use super::utils::MM;
-use ethers::core::types::transaction::eip2930::AccessList;
-use ethers::prelude::k256::ecdsa::SigningKey;
-use ethers::prelude::k256::schnorr::signature::Verifier;
-use ethers::prelude::k256::Secp256k1;
-use ethers::providers::Middleware;
-use ethers::solc;
-use ethers::types::transaction::eip2930::AccessListItem;
 use ethers::{
+    core::types::transaction::eip2930::AccessList,
     middleware::SignerMiddleware,
-    prelude::*,
-    providers::{Http, Provider},
+    prelude::{
+        k256::{ecdsa::SigningKey, schnorr::signature::Verifier, Secp256k1},
+        *,
+    },
+    providers::{Http, Middleware, Provider},
     signers::{LocalWallet, Signer},
-    types::TransactionRequest,
+    solc,
+    types::{transaction::eip2930::AccessListItem, TransactionRequest},
     utils::format_units,
 };
 use eyre::Result;
 use num_enum::IntoPrimitive;
-use std::collections::{HashMap, HashSet};
-use std::str::FromStr;
-use std::{convert::TryFrom, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    convert::TryFrom,
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
+};
 
-const SIMPLE_STORAGE_SOL : &str = r#"
+const SIMPLE_STORAGE_SOL: &str = r#"
 // SPDX-License-Identifier: Unlicense
 pragma solidity ^0.8.0;
 

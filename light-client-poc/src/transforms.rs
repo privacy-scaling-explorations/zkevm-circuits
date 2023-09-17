@@ -1,8 +1,9 @@
 use std::{collections::HashSet, sync::Arc};
 
+use eth_types::{Field, ToScalar};
 use ethers::{
     abi::Address,
-    prelude::{k256::ecdsa::SigningKey, SignerMiddleware},
+    prelude::{k256::ecdsa::SigningKey, SignerMiddleware, *},
     providers::{Http, Provider},
     signers::Wallet,
     types::{
@@ -10,12 +11,14 @@ use ethers::{
         BlockId, BlockNumber, EIP1186ProofResponse, H256, U256, U64,
     },
 };
-use ethers::prelude::*;
 use eyre::Result;
-use eth_types::{Field, ToScalar};
 
 use mpt_witness_generator::ProofType;
-use zkevm_circuits::{mpt_circuit::witness_row::Node, table::mpt_table::MPTProofType, util::word::{Word, self}};
+use zkevm_circuits::{
+    mpt_circuit::witness_row::Node,
+    table::mpt_table::MPTProofType,
+    util::word::{self, Word},
+};
 
 #[derive(Default, Debug, Clone)]
 pub struct Transform {
@@ -73,14 +76,13 @@ impl Transform {
             ..Default::default()
         }
     }
-
 }
 
 #[derive(Default)]
 pub struct LightClientWitness<F: Field>(pub Vec<LightClientProof<F>>);
 
 #[derive(Default, Clone)]
-pub struct LightClientProof<F : Field> {
+pub struct LightClientProof<F: Field> {
     pub typ: F,
     pub address: F,
     pub value: word::Word<F>,
@@ -92,11 +94,10 @@ pub struct LightClientProof<F : Field> {
 impl<F: Field> LightClientWitness<F> {
     pub fn public_inputs(&self) -> Vec<F> {
         let mut inputs = Vec::new();
-            inputs.push(self.0[0].old_root.lo());
-            inputs.push(self.0[0].old_root.hi());
-            inputs.push(self.0[self.0.len()-1].new_root.lo());
-            inputs.push(self.0[self.0.len()-1].new_root.hi());
-
+        inputs.push(self.0[0].old_root.lo());
+        inputs.push(self.0[0].old_root.hi());
+        inputs.push(self.0[self.0.len() - 1].new_root.lo());
+        inputs.push(self.0[self.0.len() - 1].new_root.hi());
 
         inputs.push(F::from(self.0.len() as u64));
 
@@ -110,7 +111,6 @@ impl<F: Field> LightClientWitness<F> {
         }
 
         inputs
-
     }
 }
 
@@ -118,7 +118,7 @@ impl Transforms {
     pub(crate) async fn new(
         client: Arc<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
         block_no: U64,
-        access_list : Option<AccessList>,
+        access_list: Option<AccessList>,
     ) -> Result<Transforms> {
         let mut mods = Vec::new();
 
@@ -143,10 +143,13 @@ impl Transforms {
         let mut access_list = if let Some(access_list) = access_list {
             access_list
         } else {
-           client
-            .provider()
-            .request("eth_getAccessListByNumber", vec![format!("0x{:x}", block_no)])
-            .await?
+            client
+                .provider()
+                .request(
+                    "eth_getAccessListByNumber",
+                    vec![format!("0x{:x}", block_no)],
+                )
+                .await?
         };
 
         // add coinbase to the access list
@@ -227,7 +230,10 @@ impl Transforms {
         })
     }
 
-    pub fn mpt_witness<F: Field>(&self, provider: &str) -> Result<(Vec<Node>, LightClientWitness<F>)> {
+    pub fn mpt_witness<F: Field>(
+        &self,
+        provider: &str,
+    ) -> Result<(Vec<Node>, LightClientWitness<F>)> {
         let mods: Vec<_> = self
             .mods
             .iter()
@@ -299,30 +305,37 @@ impl Transforms {
             let m = &self.mods[lc_proofs.len()];
 
             let changes = match m.typ {
-                ProofType::BalanceChanged => vec![(ProofType::BalanceChanged, m.address, m.balance, H256::zero())],
-                ProofType::NonceChanged => vec![(ProofType::NonceChanged, m.address, U256::from(m.nonce.0[0]), H256::zero())],
-                ProofType::StorageChanged => vec![(ProofType::StorageChanged, m.address, m.value, m.key)],
-                 _ => unimplemented!()
+                ProofType::BalanceChanged => vec![(
+                    ProofType::BalanceChanged,
+                    m.address,
+                    m.balance,
+                    H256::zero(),
+                )],
+                ProofType::NonceChanged => vec![(
+                    ProofType::NonceChanged,
+                    m.address,
+                    U256::from(m.nonce.0[0]),
+                    H256::zero(),
+                )],
+                ProofType::StorageChanged => {
+                    vec![(ProofType::StorageChanged, m.address, m.value, m.key)]
+                }
+                _ => unimplemented!(),
             };
 
-            for (proof_type, address,value, key) in changes {
-            let lc_proof = LightClientProof::<F> {
-                typ: F::from(start.proof_type as u64),
-                address: address.to_scalar().unwrap(),
-                value: Word::<F>::from(value),
-                key: Word::<F>::from(key),
-                old_root: Word::<F>::from(from_root),
-                new_root: Word::<F>::from(to_root),
-            };
-            lc_proofs.push(lc_proof);
+            for (proof_type, address, value, key) in changes {
+                let lc_proof = LightClientProof::<F> {
+                    typ: F::from(start.proof_type as u64),
+                    address: address.to_scalar().unwrap(),
+                    value: Word::<F>::from(value),
+                    key: Word::<F>::from(key),
+                    old_root: Word::<F>::from(from_root),
+                    new_root: Word::<F>::from(to_root),
+                };
+                lc_proofs.push(lc_proof);
+            }
         }
-
-
-        }
-
-
 
         Ok((nodes, LightClientWitness(lc_proofs)))
     }
-
 }
