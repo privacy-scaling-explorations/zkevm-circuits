@@ -142,8 +142,6 @@ impl MptTable {
         offset: usize,
         row: &MptUpdateRow<Value<F>>,
     ) -> Result<(), Error> {
-        unimplemented!();
-
         for (column, value) in <MptTable as LookupTable<F>>::advice_columns(self)
             .iter()
             .zip_eq(row.values())
