@@ -3365,6 +3365,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustlib"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "glob",
+ "gobuild",
+ "log",
+]
+
+[[package]]
 name = "rustls"
 version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
