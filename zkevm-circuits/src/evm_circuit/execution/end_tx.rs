@@ -174,7 +174,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(
-                        11.expr() - is_first_tx.expr() + coinbase_code_hash_is_zero.expr(),
+                        10.expr() - is_first_tx.expr() + coinbase_reward.rw_delta(),
                     ),
                     ..StepStateTransition::any()
                 });
@@ -186,7 +186,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             |cb| {
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(
-                        10.expr() - is_first_tx.expr() + coinbase_code_hash_is_zero.expr(),
+                        9.expr() - is_first_tx.expr() + coinbase_reward.rw_delta(),
                     ),
                     // We propagate call_id so that EndBlock can get the last tx_id
                     // in order to count processed txs.
@@ -230,16 +230,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let (refund, _) = block.get_rws(step, 2).tx_refund_value_pair();
         let (caller_balance, caller_balance_prev) = block.get_rws(step, 3).account_balance_pair();
         let (coinbase_code_hash_prev, _) = block.get_rws(step, 4).account_codehash_pair();
-        let (coinbase_balance, coinbase_balance_prev) = block
-            .get_rws(
-                step,
-                if coinbase_code_hash_prev.is_zero() {
-                    6
-                } else {
-                    5
-                },
-            )
-            .account_balance_pair();
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id)))?;
@@ -273,6 +263,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             caller_balance,
         )?;
         let effective_tip = tx.gas_price - block.context.base_fee;
+        let coinbase_reward = effective_tip * gas_used;
         self.sub_gas_price_by_base_fee.assign(
             region,
             offset,
@@ -284,7 +275,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             offset,
             effective_tip,
             gas_used,
-            effective_tip * gas_used,
+            coinbase_reward,
         )?;
         self.coinbase
             .assign_h160(region, offset, block.context.coinbase)?;
@@ -292,12 +283,24 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             .assign_u256(region, offset, coinbase_code_hash_prev)?;
         self.coinbase_code_hash_is_zero
             .assign_u256(region, offset, coinbase_code_hash_prev)?;
-        self.coinbase_reward.assign(
-            region,
-            offset,
-            (coinbase_balance, coinbase_balance_prev),
-            effective_tip * gas_used,
-        )?;
+        if !coinbase_reward.is_zero() {
+            let coinbase_balance_pair = block
+                .get_rws(
+                    step,
+                    if coinbase_code_hash_prev.is_zero() {
+                        6
+                    } else {
+                        5
+                    },
+                )
+                .account_balance_pair();
+            self.coinbase_reward.assign(
+                region,
+                offset,
+                coinbase_balance_pair,
+                effective_tip * gas_used,
+            )?;
+        }
 
         let current_cumulative_gas_used: u64 = if tx.id == 1 {
             0
