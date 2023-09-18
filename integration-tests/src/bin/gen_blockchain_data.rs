@@ -361,11 +361,6 @@ async fn main() {
         "MLOAD".to_string(),
         tx_receipt.block_number.unwrap().as_u64(),
     );
-    println!(
-        "TX RECEIPT: {:#?}\nBLOCK_NUMBER: {:#?}",
-        tx_receipt.gas_used.unwrap(),
-        tx_receipt.block_number.unwrap()
-    );
     // dump_tx_trace(get_provider(), tx_receipt, "mload").await;
 
     // SDIV (STATE)
@@ -383,11 +378,6 @@ async fn main() {
     blocks.insert(
         "SDIV".to_string(),
         tx_receipt.block_number.unwrap().as_u64(),
-    );
-    println!(
-        "TX RECEIPT: {:#?}\nBLOCK_NUMBER: {:#?}",
-        tx_receipt.gas_used.unwrap(),
-        tx_receipt.block_number.unwrap()
     );
     // dump_tx_trace(get_provider(), tx_receipt, "sdiv").await;
 
