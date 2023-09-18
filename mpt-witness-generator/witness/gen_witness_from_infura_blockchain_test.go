@@ -1399,7 +1399,7 @@ func TestOnlyLeafInStorageProof(t *testing.T) {
 	// statedb.IntermediateRoot(false)
 	statedb.CreateAccount(addr)
 
-	accountProof, _, _, _, err := statedb.GetProof(addr)
+	accountProof, _, _, _, _, err := statedb.GetProof(addr)
 	fmt.Println(len(accountProof))
 	check(err)
 
@@ -1438,7 +1438,7 @@ func TestStorageLeafInFirstLevelAfterPlaceholder(t *testing.T) {
 	// statedb.IntermediateRoot(false)
 	statedb.CreateAccount(addr)
 
-	accountProof, _, _, _, err := statedb.GetProof(addr)
+	accountProof, _, _, _, _, err := statedb.GetProof(addr)
 	fmt.Println(len(accountProof))
 	check(err)
 
@@ -1480,7 +1480,7 @@ func TestLeafAddedToEmptyTrie(t *testing.T) {
 	// statedb.IntermediateRoot(false)
 	statedb.CreateAccount(addr)
 
-	accountProof, _, _, _, err := statedb.GetProof(addr)
+	accountProof, _, _, _, _, err := statedb.GetProof(addr)
 	fmt.Println(len(accountProof))
 	check(err)
 
@@ -1522,7 +1522,7 @@ func TestDeleteToEmptyTrie(t *testing.T) {
 	// statedb.IntermediateRoot(false)
 	statedb.CreateAccount(addr)
 
-	accountProof, _, _, _, err := statedb.GetProof(addr)
+	accountProof, _, _, _, _, err := statedb.GetProof(addr)
 	fmt.Println(len(accountProof))
 	check(err)
 
@@ -1964,7 +1964,7 @@ func TestLeafInLastLevel(t *testing.T) {
 		key2 = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3]
 	*/
 
-	storageProof, _, _, _, err := statedb.GetStorageProof(addr, key1)
+	storageProof, _, _, _, _, err := statedb.GetStorageProof(addr, key1)
 	check(err)
 
 	fmt.Println(storageProof[0])
@@ -2006,7 +2006,7 @@ func TestLeafWithOneNibble(t *testing.T) {
 	statedb.SetState(addr, key2, val1)
 	statedb.IntermediateRoot(false)
 
-	storageProof, _, _, _, err := statedb.GetStorageProof(addr, key1)
+	storageProof, _, _, _, _, err := statedb.GetStorageProof(addr, key1)
 	check(err)
 
 	fmt.Println(storageProof[0])
@@ -2060,7 +2060,7 @@ func TestLeafWithMoreNibbles(t *testing.T) {
 	statedb.SetState(addr, key2, val1)
 	statedb.IntermediateRoot(false)
 
-	storageProof, _, _, _, err := statedb.GetStorageProof(addr, key1)
+	storageProof, _, _, _, _, err := statedb.GetStorageProof(addr, key1)
 	check(err)
 
 	fmt.Println(storageProof[0])
@@ -2214,4 +2214,28 @@ func TestNonExistingStorageNil(t *testing.T) {
 	trieModifications := []TrieModification{trieMod}
 
 	updateStateAndPrepareWitness("NonExistingStorageNil", ks[:], values, addresses, trieModifications)
+}
+
+func TestNeighbourNodeInHashedBranch(t *testing.T) {
+	blockNum := 2000069
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0xBB9bc244D798123fDe783fCc1C72d3Bb8C189413")
+
+	statedb.DisableLoadingRemoteAccounts()
+
+	key := common.HexToHash("0x83390858478ca0e9bd8e0b6f9c61cb360f78d42e5c5c2908d9a885b766925386")
+	val := common.Hash{} // empty value deletes the key
+
+	trieMod := TrieModification{
+		Type:    StorageChanged,
+		Key:     key,
+		Value:   val,
+		Address: addr,
+	}
+	trieModifications := []TrieModification{trieMod}
+
+	prepareWitness("NeighbourNodeInHashedBranch", trieModifications, statedb)
 }

@@ -34,7 +34,7 @@ import (
 // If the trie does not contain a value for key, the returned proof contains all
 // nodes of the longest existing prefix of the key (at least the root node), ending
 // with the node that proves the absence of the key.
-func (t *Trie) Prove(key []byte, fromLevel uint, proofDb ethdb.KeyValueWriter) ([]byte, [][]byte, bool, error) {
+func (t *Trie) Prove(key []byte, fromLevel uint, proofDb ethdb.KeyValueWriter) ([]byte, [][]byte, bool, bool, error) {
 	// Collect all nodes on the path to key.
 	key = KeybytesToHex(key)
 	var nodes []Node
@@ -76,7 +76,7 @@ func (t *Trie) Prove(key []byte, fromLevel uint, proofDb ethdb.KeyValueWriter) (
 			tn, err = t.resolveHash(n, nil)
 			if err != nil {
 				log.Error(fmt.Sprintf("Unhandled trie error: %v", err))
-				return nil, nil, false, err
+				return nil, nil, false, false, err
 			}
 		default:
 			panic(fmt.Sprintf("%T: invalid node: %v", tn, tn))
@@ -131,13 +131,18 @@ func (t *Trie) Prove(key []byte, fromLevel uint, proofDb ethdb.KeyValueWriter) (
 		// }
 	}
 
+	isNeighbourNodeHashed := false
+	if _, ok := neighbourNode.(HashNode); ok {
+		isNeighbourNodeHashed = true
+	}
+
 	neighbourNodeRLP := []byte{}
 	if neighbourNode != nil {
 		neighbourHash, _ := hasher.ProofHash(neighbourNode)
 		neighbourNodeRLP, _ = rlp.EncodeToBytes(neighbourHash)
-	}
+	}	
 
-	return neighbourNodeRLP, extNibbles, isLastLeaf, nil
+	return neighbourNodeRLP, extNibbles, isLastLeaf, isNeighbourNodeHashed, nil
 }
 
 func (t *Trie) GetNodeByNibbles(key []byte) ([]byte, error) {
@@ -185,7 +190,7 @@ func (t *Trie) GetNodeByNibbles(key []byte) ([]byte, error) {
 // If the trie does not contain a value for key, the returned proof contains all
 // nodes of the longest existing prefix of the key (at least the root node), ending
 // with the node that proves the absence of the key.
-func (t *SecureTrie) Prove(key []byte, fromLevel uint, proofDb ethdb.KeyValueWriter) ([]byte, [][]byte, bool, error) {
+func (t *SecureTrie) Prove(key []byte, fromLevel uint, proofDb ethdb.KeyValueWriter) ([]byte, [][]byte, bool, bool, error) {
 	return t.trie.Prove(key, fromLevel, proofDb)
 }
 
