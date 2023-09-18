@@ -173,9 +173,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                 );
 
                 cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(
-                        10.expr() - is_first_tx.expr() + coinbase_reward.rw_delta(),
-                    ),
+                    rw_counter: Delta(10.expr() - is_first_tx.expr() + coinbase_reward.rw_delta()),
                     ..StepStateTransition::any()
                 });
             },
@@ -185,9 +183,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             cb.next.execution_state_selector([ExecutionState::EndBlock]),
             |cb| {
                 cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(
-                        9.expr() - is_first_tx.expr() + coinbase_reward.rw_delta(),
-                    ),
+                    rw_counter: Delta(9.expr() - is_first_tx.expr() + coinbase_reward.rw_delta()),
                     // We propagate call_id so that EndBlock can get the last tx_id
                     // in order to count processed txs.
                     call_id: Same,

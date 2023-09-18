@@ -428,7 +428,6 @@ impl<F: Field> TransferToGadget<F> {
         Ok(())
     }
 
-
     pub(crate) fn rw_delta(&self) -> Expression<F> {
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
         or::expr([
