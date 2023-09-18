@@ -93,13 +93,13 @@ pub struct LightClientProof<F: Field> {
 
 impl<F: Field> LightClientWitness<F> {
     pub fn public_inputs(&self) -> Vec<F> {
-        let mut inputs = Vec::new();
-        inputs.push(self.0[0].old_root.lo());
-        inputs.push(self.0[0].old_root.hi());
-        inputs.push(self.0[self.0.len() - 1].new_root.lo());
-        inputs.push(self.0[self.0.len() - 1].new_root.hi());
-
-        inputs.push(F::from(self.0.len() as u64));
+        let mut inputs = vec![
+            self.0[0].old_root.lo(),
+            self.0[0].old_root.hi(),
+            self.0[self.0.len() - 1].new_root.lo(),
+            self.0[self.0.len() - 1].new_root.hi(),
+            F::from(self.0.len() as u64)
+        ];
 
         for proof in &self.0 {
             inputs.push(proof.typ);
@@ -288,14 +288,6 @@ impl Transforms {
             let from_root = H256::from_slice(&node.values[0][1..33]);
             let to_root = H256::from_slice(&node.values[1][1..33]);
 
-            // check if the roots matches
-            if lc_proofs.len() == 0 {
-                assert_eq!(from_root, self.prev_state_root);
-            }
-            if lc_proofs.len() == self.mods.len() {
-                assert_eq!(to_root, self.curr_state_root);
-            }
-
             // check proof type
             assert_eq!(
                 start.proof_type as u64,
@@ -325,7 +317,7 @@ impl Transforms {
 
             for (proof_type, address, value, key) in changes {
                 let lc_proof = LightClientProof::<F> {
-                    typ: F::from(start.proof_type as u64),
+                    typ: F::from(proof_type as u64),
                     address: address.to_scalar().unwrap(),
                     value: Word::<F>::from(value),
                     key: Word::<F>::from(key),

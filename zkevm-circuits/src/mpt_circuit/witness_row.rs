@@ -106,7 +106,7 @@ pub struct ExtensionBranchNode {
     /// TODO
     pub extension: ExtensionNode,
     /// TODO
-    pub  branch: BranchNode,
+    pub branch: BranchNode,
 }
 
 /// MPT account node

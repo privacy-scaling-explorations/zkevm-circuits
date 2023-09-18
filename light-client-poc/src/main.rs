@@ -3,6 +3,7 @@ use ethers::{
     types::transaction::eip2930::{AccessList, AccessListItem},
 };
 use eyre::Result;
+use halo2_proofs::halo2curves::bn256::Fr;
 use std::{str::FromStr, sync::Arc};
 
 use crate::{transforms::Transforms, utils::MM};
@@ -33,9 +34,10 @@ async fn mainnet_test(block_no: u64, access_list: &[(&str, Vec<&str>)]) -> Resul
     let trns = Transforms::new(client.clone(), U64::from(block_no), Some(access_list)).await?;
     println!("trns: {:#?}", trns);
 
-    utils::verify_lc_circuit(&trns, PROVIDER_URL)
+    circuit::verify_lc_circuit(&trns, PROVIDER_URL)
 }
 
+#[allow(clippy::complexity)]
 async fn mainnet_tests() -> Result<()> {
     let tests: Vec<(u64, Vec<(&str, Vec<&str>)>)> = vec![
         // 0 txs
@@ -130,11 +132,11 @@ async fn test_proof(
 ) -> Result<()> {
     let trns = Transforms::new(client.clone(), recipt.block_number.unwrap(), None).await?;
     println!("trns: {:#?}", trns);
-    let (mpt_witness, pi_witness) = trns.mpt_witness(provider_url)?;
-    utils::verify_mpt_witness(mpt_witness, pi_witness)
+    let (mpt_witness, _pi_witness) = trns.mpt_witness::<Fr>(provider_url)?;
+    utils::verify_mpt_witness(mpt_witness)
 }
 
-async fn local() -> Result<()> {
+async fn local_tests() -> Result<()> {
     const PVK: &str = "7ccb34dc5fd31fd0aa7860de89a4adc37ccb34dc5fd31fd0aa7860de89a4adc3";
     const PROVIDER_URL: &str = "http://localhost:8545";
 
@@ -157,7 +159,8 @@ async fn local() -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    local().await
+    local_tests().await?;
+    mainnet_tests().await
 }
 
 #[tokio::test]

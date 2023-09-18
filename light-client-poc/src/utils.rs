@@ -7,15 +7,13 @@ use ethers::{
 };
 use eyre::Result;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+
 use std::{convert::TryFrom, sync::Arc, time::Duration};
 use zkevm_circuits::mpt_circuit::witness_row::*;
 
-use crate::{
-    circuit::LightClientCircuit,
-    transforms::{LightClientWitness, Transforms},
-};
 
 // #[rustfmt_skip]
+#[allow(dead_code)]
 pub fn print_nodes(node: &[Node]) {
     for n in node {
         println!("node:");
@@ -136,7 +134,7 @@ pub fn print_nodes(node: &[Node]) {
     }
 }
 
-pub fn verify_mpt_witness(nodes: Vec<Node>, lc_witness: LightClientWitness<Fr>) -> Result<()> {
+pub fn verify_mpt_witness(nodes: Vec<Node>) -> Result<()> {
     // get the number of rows in the witness
     let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
 
@@ -167,45 +165,7 @@ pub fn verify_mpt_witness(nodes: Vec<Node>, lc_witness: LightClientWitness<Fr>) 
     Ok(())
 }
 
-pub fn verify_lc_circuit(trns: &Transforms, url: &str) -> Result<()> {
-    let (nodes, lc_witness) = trns.mpt_witness(url)?;
-    let pi = lc_witness.public_inputs();
-    println!();
-    for (i, input) in pi.iter().enumerate() {
-        println!("input[{i:}]: {input:?}");
-    }
 
-    // get the number of rows in the witness
-    let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
-
-    // populate the keccak data
-    let mut keccak_data = vec![];
-    for node in nodes.iter() {
-        for k in node.keccak_data.iter() {
-            keccak_data.push(k.clone());
-        }
-    }
-
-    // verify the circuit
-    let disable_preimage_check = nodes[0].start.clone().unwrap().disable_preimage_check;
-    let degree = 14;
-    let mpt_circuit = zkevm_circuits::mpt_circuit::MPTCircuit::<Fr> {
-        nodes,
-        keccak_data,
-        degree,
-        disable_preimage_check,
-        _marker: std::marker::PhantomData,
-    };
-    let lc_circuit = LightClientCircuit::<Fr> {
-        mpt_circuit,
-        lc_witness,
-    };
-
-    let prover = MockProver::<Fr>::run(degree as u32, &lc_circuit, vec![pi]).unwrap();
-    prover.assert_satisfied_at_rows_par(0..num_rows, 0..num_rows);
-
-    Ok(())
-}
 
 pub type MM = SignerMiddleware<Provider<Http>, Wallet<SigningKey>>;
 

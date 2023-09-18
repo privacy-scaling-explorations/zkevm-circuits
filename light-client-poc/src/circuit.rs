@@ -1,96 +1,31 @@
-// PI CIRCUIT
-//
-// pub struct Transform {
-// pub typ: ProofType,
-// pub key: H256,
-// pub value: U256,
-// pub address: Address,
-// pub nonce: U64,
-// pub balance: U256,
-// pub code_hash: H256,
-// }
-//
-// pub struct MptTable {
-// Account address
-// pub address: Column<Advice>,
-// Storage address
-// pub storage_key: word::Word<Column<Advice>>,
-// Proof type
-// pub proof_type: Column<Advice>,
-// New MPT root
-// pub new_root: word::Word<Column<Advice>>,
-// Previous MPT root
-// pub old_root: word::Word<Column<Advice>>,
-// New value
-// pub new_value: word::Word<Column<Advice>>,
-// Old value
-// pub old_value: word::Word<Column<Advice>>,
-// }
-//
-// PICIRCUIT
-//
-// PI
-// ------------------
-// last_state_root
-// next_state_root
-use crate::transforms::{LightClientProof, LightClientWitness};
-/// len
-// | proof_type
-// | address
-// | value_hi
-// | value_lo
-// | storage_hi
-// | storage_lo
-//
-// start  proof_type  address value_hi value_lo storage_hi storage_lo  old_root new_root
-// -----  ---------- -------- -------- -------- ---------- ---------- --------- ----------
-// 1      -                                                                      r1
-// 0      BalChange   a1       0        0        0          0          r1        r2
-// 0      BalChange   a2       0        0        0          0          r2        r3
-// 0      0
-// 0      0
-// 0      0
-//
-// check first state root
-// if start.current == 1 => new_root.current == PI.last_state_root
-//
-// check last state root
-// if proof_type.curr != 0 and proof_type.next == 0 => new_root.current == PI.next_state_root
-//
-// check state_root_propagation
-// if start ==  1 || proof_type != 0 => old_root.next == new_root.current
-//
-// proof type = 0 propagation a
-// if proof_type.current == 0 => proof_type.next == 0
-//
-// lookup (proof_type  address value_hi value_lo storage_hi storage_lo  old_root new_root) into
-// MPTTable
-//
+use crate::transforms::{LightClientProof, LightClientWitness, Transforms};
 
 const MAX_PROOF_COUNT: usize = 10;
 
-use eth_types::{Address, Field, Word, H256, U256};
+use eth_types::Field;
 use gadgets::{
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
     util::{
         and,
-        not::{self, expr},
+        not::{self},
         or, Expr,
     },
 };
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{
-        Advice, Any, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance,
-        Selector, TableColumn,
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance,
+        Selector,
     },
     poly::Rotation,
 };
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use zkevm_circuits::{
     mpt_circuit::{MPTCircuit, MPTCircuitParams, MPTConfig},
-    table::{KeccakTable, LookupTable, MPTProofType, MptTable},
+    table::{KeccakTable, MptTable},
     util::{word, Challenges},
 };
+use eyre::Result;
 
 // A=>B  eq ~(A & ~B) (it is not the case that A is true and B is false)
 pub fn xif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
@@ -160,7 +95,7 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
 
         let is_first = meta.fixed_column();
         let count = meta.advice_column();
-        let q_enable = meta.selector();
+        let q_enable = meta.complex_selector();
         let pi_instance = meta.instance_column();
         let pi_mpt = MptTable {
             address: meta.advice_column(),
@@ -277,7 +212,10 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
         );
 
         meta.lookup_any("lc_mpt_updates lookups into mpt_table", |meta| {
-            vec![
+            let is_not_padding =1.expr() - is_padding.expr();
+
+            let lookups = vec![
+
                 (
                     meta.query_advice(pi_mpt.proof_type, Rotation::cur()),
                     meta.query_advice(mpt_config.mpt_table.proof_type, Rotation::cur()),
@@ -302,15 +240,27 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
                     meta.query_advice(pi_mpt.storage_key.hi(), Rotation::cur()),
                     meta.query_advice(mpt_config.mpt_table.storage_key.hi(), Rotation::cur()),
                 ),
-                // (meta.query_advice(pi_mpt.old_root.lo(), Rotation::cur()),
-                // meta.query_advice(mpt_config.mpt_table.old_root.lo(), Rotation::cur())),
-                // (meta.query_advice(pi_mpt.old_root.hi(), Rotation::cur()),
-                // meta.query_advice(mpt_config.mpt_table.old_root.hi(), Rotation::cur())),
-                // (meta.query_advice(pi_mpt.new_root.lo(), Rotation::cur()),
-                // meta.query_advice(mpt_config.mpt_table.new_root.lo(), Rotation::cur())),
-                // (meta.query_advice(pi_mpt.new_root.hi(), Rotation::cur()),
-                // meta.query_advice(mpt_config.mpt_table.new_root.hi(), Rotation::cur())),
-            ]
+
+                (
+                    meta.query_advice(pi_mpt.old_root.lo(), Rotation::cur()),
+                    meta.query_advice(mpt_config.mpt_table.new_root.lo(), Rotation::cur())
+                ),
+                (
+                    meta.query_advice(pi_mpt.old_root.hi(), Rotation::cur()),
+                    meta.query_advice(mpt_config.mpt_table.new_root.hi(), Rotation::cur())
+                ),
+                (
+                    meta.query_advice(pi_mpt.new_root.lo(), Rotation::cur()),
+                    meta.query_advice(mpt_config.mpt_table.old_root.lo(), Rotation::cur())
+                ),
+                (
+                    meta.query_advice(pi_mpt.new_root.hi(), Rotation::cur()),
+                    meta.query_advice(mpt_config.mpt_table.old_root.hi(), Rotation::cur())
+                ),
+            ];
+
+            lookups.into_iter().map(|(a, b)| (a * is_not_padding.clone(), b )).collect()
+
         });
 
         let config = LightClientCircuitConfig {
@@ -414,11 +364,6 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
 
                     let count_cell = region.assign_advice(|| "", config.count, offset, || count)?;
 
-                    let mpt = self.lc_witness.0.get(offset).cloned().unwrap_or(LightClientProof {
-                        new_root: self.lc_witness.0.last().unwrap().new_root,
-                        ..Default::default()
-                    });
-
                     let [typ, addr, value_lo, value_hi,
                          key_lo, key_hi, old_root_lo, old_root_hi,
                          new_root_lo, new_root_hi] =
@@ -463,4 +408,44 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
 
         Ok(())
     }
+}
+
+pub fn verify_lc_circuit(trns: &Transforms, url: &str) -> Result<()> {
+    let (nodes, lc_witness) = trns.mpt_witness(url)?;
+    let pi = lc_witness.public_inputs();
+    println!();
+    for (i, input) in pi.iter().enumerate() {
+        println!("input[{i:}]: {input:?}");
+    }
+
+    // get the number of rows in the witness
+    let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
+
+    // populate the keccak data
+    let mut keccak_data = vec![];
+    for node in nodes.iter() {
+        for k in node.keccak_data.iter() {
+            keccak_data.push(k.clone());
+        }
+    }
+
+    // verify the circuit
+    let disable_preimage_check = nodes[0].start.clone().unwrap().disable_preimage_check;
+    let degree = 14;
+    let mpt_circuit = zkevm_circuits::mpt_circuit::MPTCircuit::<Fr> {
+        nodes,
+        keccak_data,
+        degree,
+        disable_preimage_check,
+        _marker: std::marker::PhantomData,
+    };
+    let lc_circuit = LightClientCircuit::<Fr> {
+        mpt_circuit,
+        lc_witness,
+    };
+
+    let prover = MockProver::<Fr>::run(degree as u32, &lc_circuit, vec![pi]).unwrap();
+    prover.assert_satisfied_at_rows_par(0..num_rows, 0..num_rows);
+
+    Ok(())
 }

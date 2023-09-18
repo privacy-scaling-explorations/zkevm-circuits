@@ -142,10 +142,13 @@ impl MptTable {
         offset: usize,
         row: &MptUpdateRow<Value<F>>,
     ) -> Result<(), Error> {
+        unimplemented!();
+
         for (column, value) in <MptTable as LookupTable<F>>::advice_columns(self)
             .iter()
             .zip_eq(row.values())
         {
+
             region.assign_advice(|| "assign mpt table row value", *column, offset, || value)?;
         }
         Ok(())
