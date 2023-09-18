@@ -1,5 +1,3 @@
-const MAX_PROOF_COUNT: usize = 10;
-
 use eth_types::Field;
 use eyre::Result;
 use gadgets::{
@@ -27,6 +25,8 @@ use zkevm_circuits::{
 use rand_chacha::ChaCha20Rng;
 use rand::SeedableRng;
 use std::time::Instant;
+
+const MAX_PROOF_COUNT: usize = 10;
 
 use crate::witness::{LightClientWitness, SingleTrieModification};
 

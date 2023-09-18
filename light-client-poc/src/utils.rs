@@ -8,7 +8,7 @@ use ethers::{
 use eyre::Result;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 
-use std::{convert::TryFrom, sync::Arc, time::Duration};
+use std::{convert::TryFrom, sync::Arc, time::Duration, collections::HashMap};
 use zkevm_circuits::mpt_circuit::witness_row::*;
 
 // #[rustfmt_skip]
@@ -186,3 +186,4 @@ pub async fn new_eth_client(provider_url: &str, pvk: &str) -> Result<Arc<MM>> {
 
     Ok(client)
 }
+

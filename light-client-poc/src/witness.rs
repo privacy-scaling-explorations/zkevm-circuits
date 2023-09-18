@@ -313,8 +313,8 @@ impl<F: Field> LightClientWitness<F> {
         let mut inputs = vec![
             self.lc_witness[0].old_root.lo(),
             self.lc_witness[0].old_root.hi(),
-            self.lc_witness[self.lc_witness.len() - 1].new_root.lo(),
-            self.lc_witness[self.lc_witness.len() - 1].new_root.hi(),
+            self.lc_witness.last().unwrap().new_root.lo(),
+            self.lc_witness.last().unwrap().new_root.hi(),
             F::from(self.lc_witness.len() as u64),
         ];
 

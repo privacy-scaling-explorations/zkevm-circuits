@@ -82,6 +82,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ark-std"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94893f1e0c6eeab764ade8dc4c0db24caf4fe7cbbaafc0eba0a9030f447b5185"
+dependencies = [
+ "num-traits",
+ "rand",
+]
+
+[[package]]
 name = "array-init"
 version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -475,7 +485,7 @@ dependencies = [
 name = "circuit-benchmarks"
 version = "0.1.0"
 dependencies = [
- "ark-std",
+ "ark-std 0.3.0",
  "bus-mapping",
  "env_logger",
  "eth-types",
@@ -2385,6 +2395,7 @@ dependencies = [
 name = "light-client-poc"
 version = "0.1.0"
 dependencies = [
+ "ark-std 0.4.0",
  "eth-types",
  "ethers",
  "eyre",
@@ -2393,6 +2404,8 @@ dependencies = [
  "hex",
  "mpt-witness-generator",
  "num_enum 0.6.1",
+ "rand",
+ "rand_chacha",
  "reqwest",
  "serde",
  "serde_json",
