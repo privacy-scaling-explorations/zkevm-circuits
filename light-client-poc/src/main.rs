@@ -6,13 +6,13 @@ use eyre::Result;
 use halo2_proofs::halo2curves::bn256::Fr;
 use std::{str::FromStr, sync::Arc};
 
-use crate::{transforms::Transforms, utils::MM};
+use crate::{utils::MM, witness::LightClientWitness, circuit::LightClientCircuit};
 use contract::Contract;
 
 mod circuit;
 mod contract;
-mod transforms;
 mod utils;
+mod witness;
 
 async fn mainnet_test(block_no: u64, access_list: &[(&str, Vec<&str>)]) -> Result<()> {
     const PVK: &str = "7ccb34dc5fd31fd0aa7860de89a4adc37ccb34dc5fd31fd0aa7860de89a4adc3";
@@ -31,10 +31,20 @@ async fn mainnet_test(block_no: u64, access_list: &[(&str, Vec<&str>)]) -> Resul
             })
             .collect(),
     );
-    let trns = Transforms::new(client.clone(), U64::from(block_no), Some(access_list)).await?;
-    println!("trns: {:#?}", trns);
+    let witness = LightClientWitness::<Fr>::build(
+        client.clone(),
+        PROVIDER_URL,
+        U64::from(block_no),
+        Some(access_list),
+    )
+    .await?;
+    println!("trns: {:#?}", witness.transforms);
 
-    circuit::verify_lc_circuit(&trns, PROVIDER_URL)
+    let circuit = LightClientCircuit::new(&witness)?;
+    circuit.assert_satisfied(&witness);
+
+    Ok(())
+
 }
 
 #[allow(clippy::complexity)]
@@ -130,10 +140,15 @@ async fn test_proof(
     provider_url: &str,
     recipt: &TransactionReceipt,
 ) -> Result<()> {
-    let trns = Transforms::new(client.clone(), recipt.block_number.unwrap(), None).await?;
-    println!("trns: {:#?}", trns);
-    let (mpt_witness, _pi_witness) = trns.mpt_witness::<Fr>(provider_url)?;
-    utils::verify_mpt_witness(mpt_witness)
+    let witness = LightClientWitness::<Fr>::build(
+        client.clone(),
+        provider_url,
+        recipt.block_number.unwrap(),
+        None,
+    )
+    .await?;
+    println!("trns: {:#?}", witness.transforms);
+    utils::verify_mpt_witness(witness.mpt_witness)
 }
 
 async fn local_tests() -> Result<()> {

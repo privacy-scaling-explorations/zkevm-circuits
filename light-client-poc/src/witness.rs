@@ -13,7 +13,7 @@ use ethers::{
 };
 use eyre::Result;
 
-use mpt_witness_generator::ProofType;
+use mpt_witness_generator::{ProofType, TrieModification};
 use zkevm_circuits::{
     mpt_circuit::witness_row::Node,
     table::mpt_table::MPTProofType,
@@ -21,25 +21,21 @@ use zkevm_circuits::{
 };
 
 #[derive(Default, Debug, Clone)]
-pub struct Transform {
-    pub typ: ProofType,
-    pub key: H256,
-    pub value: U256,
-    pub address: Address,
-    pub nonce: U64,
-    pub balance: U256,
-    pub code_hash: H256,
-}
-
-#[derive(Default, Debug, Clone)]
 pub struct Transforms {
     pub block_no: U64,
     pub prev_state_root: H256,
     pub curr_state_root: H256,
-    pub mods: Vec<Transform>,
+    pub trie_modifications: Vec<TrieModification>,
 }
 
-impl Transform {
+trait TrieModificationBuilder {
+    fn create(proof: &EIP1186ProofResponse) -> Self;
+    fn balance(address: Address, balance: U256) -> Self;
+    fn nonce(address: Address, nonce: U64) -> Self;
+    fn storage_changed(address: Address, key: H256, value: U256) -> Self;
+}
+
+impl TrieModificationBuilder for TrieModification {
     fn create(proof: &EIP1186ProofResponse) -> Self {
         Self {
             typ: ProofType::AccountCreate,
@@ -79,10 +75,14 @@ impl Transform {
 }
 
 #[derive(Default)]
-pub struct LightClientWitness<F: Field>(pub Vec<LightClientProof<F>>);
+pub struct LightClientWitness<F: Field> {
+    pub transforms: Transforms,
+    pub lc_witness: Vec<SingleTrieModification<F>>,
+    pub mpt_witness: Vec<Node>,
+}
 
 #[derive(Default, Clone)]
-pub struct LightClientProof<F: Field> {
+pub struct SingleTrieModification<F: Field> {
     pub typ: F,
     pub address: F,
     pub value: word::Word<F>,
@@ -92,35 +92,27 @@ pub struct LightClientProof<F: Field> {
 }
 
 impl<F: Field> LightClientWitness<F> {
-    pub fn public_inputs(&self) -> Vec<F> {
-        let mut inputs = vec![
-            self.0[0].old_root.lo(),
-            self.0[0].old_root.hi(),
-            self.0[self.0.len() - 1].new_root.lo(),
-            self.0[self.0.len() - 1].new_root.hi(),
-            F::from(self.0.len() as u64)
-        ];
-
-        for proof in &self.0 {
-            inputs.push(proof.typ);
-            inputs.push(proof.address);
-            inputs.push(proof.value.lo());
-            inputs.push(proof.value.hi());
-            inputs.push(proof.key.lo());
-            inputs.push(proof.key.hi());
-        }
-
-        inputs
+    pub async fn build(
+        client: Arc<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
+        provider: &str,
+        block_no: U64,
+        access_list: Option<AccessList>,
+    ) -> Result<Self> {
+        let transforms = Self::get_transforms(client, block_no, access_list).await?;
+        let (mpt_witness, lc_witness) = Self::mpt_witness(&transforms, provider)?;
+        Ok(Self {
+            transforms,
+            mpt_witness,
+            lc_witness,
+        })
     }
-}
 
-impl Transforms {
-    pub(crate) async fn new(
+    async fn get_transforms(
         client: Arc<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
         block_no: U64,
         access_list: Option<AccessList>,
     ) -> Result<Transforms> {
-        let mut mods = Vec::new();
+        let mut trie_modifications = Vec::new();
 
         // get previous block and this block
         let prev_block = client
@@ -206,19 +198,19 @@ impl Transforms {
             if (old.balance.is_zero() && !new.balance.is_zero())
                 || (old.nonce.is_zero() && !new.nonce.is_zero())
             {
-                mods.push(Transform::create(&new));
+                trie_modifications.push(TrieModification::create(&new));
             } else {
                 if old.balance != new.balance {
-                    mods.push(Transform::balance(address, new.balance));
+                    trie_modifications.push(TrieModification::balance(address, new.balance));
                 }
                 if old.nonce != new.nonce {
-                    mods.push(Transform::nonce(address, new.nonce));
+                    trie_modifications.push(TrieModification::nonce(address, new.nonce));
                 }
             }
 
             for key in storage_keys {
                 let new = new.storage_proof.iter().find(|p| p.key == key).unwrap();
-                mods.push(Transform::storage_changed(address, key, new.value));
+                trie_modifications.push(TrieModification::storage_changed(address, key, new.value));
             }
         }
 
@@ -226,33 +218,19 @@ impl Transforms {
             block_no,
             curr_state_root: curr_block.state_root,
             prev_state_root: prev_block.state_root,
-            mods,
+            trie_modifications,
         })
     }
 
-    pub fn mpt_witness<F: Field>(
-        &self,
+    fn mpt_witness(
+        trns: &Transforms,
         provider: &str,
-    ) -> Result<(Vec<Node>, LightClientWitness<F>)> {
-        let mods: Vec<_> = self
-            .mods
-            .iter()
-            .map(|m| mpt_witness_generator::TrieModification {
-                typ: m.typ,
-                key: m.key,
-                value: {
-                    let mut bytes = [0u8; 32];
-                    m.value.to_little_endian(&mut bytes);
-                    U256::from_little_endian(&bytes)
-                },
-                address: m.address,
-                nonce: m.nonce,
-                balance: m.balance,
-                code_hash: m.code_hash,
-            })
-            .collect();
-
-        let nodes = mpt_witness_generator::get_witness(self.block_no.as_u64() - 1, &mods, provider);
+    ) -> Result<(Vec<Node>, Vec<SingleTrieModification<F>>)> {
+        let nodes = mpt_witness_generator::get_witness(
+            trns.block_no.as_u64() - 1,
+            &trns.trie_modifications,
+            provider,
+        );
 
         let witness_previous_state_root = H256::from_slice(&nodes[0].values[0][1..33]);
         let non_disabled_node = |n: &&Node| {
@@ -267,11 +245,11 @@ impl Transforms {
 
         // check if the roots matches
         assert_eq!(
-            witness_previous_state_root, self.prev_state_root,
+            witness_previous_state_root, trns.prev_state_root,
             "previous state root does not match"
         );
         assert_eq!(
-            witness_current_state_root, self.curr_state_root,
+            witness_current_state_root, trns.curr_state_root,
             "current state root does not match"
         );
 
@@ -291,10 +269,10 @@ impl Transforms {
             // check proof type
             assert_eq!(
                 start.proof_type as u64,
-                self.mods[lc_proofs.len()].typ as u64
+                trns.trie_modifications[lc_proofs.len()].typ as u64
             );
 
-            let m = &self.mods[lc_proofs.len()];
+            let m = &trns.trie_modifications[lc_proofs.len()];
 
             let changes = match m.typ {
                 ProofType::BalanceChanged => vec![(
@@ -316,7 +294,7 @@ impl Transforms {
             };
 
             for (proof_type, address, value, key) in changes {
-                let lc_proof = LightClientProof::<F> {
+                let lc_proof = SingleTrieModification::<F> {
                     typ: F::from(proof_type as u64),
                     address: address.to_scalar().unwrap(),
                     value: Word::<F>::from(value),
@@ -328,6 +306,27 @@ impl Transforms {
             }
         }
 
-        Ok((nodes, LightClientWitness(lc_proofs)))
+        Ok((nodes, lc_proofs))
+    }
+
+    pub fn public_inputs(&self) -> Vec<F> {
+        let mut inputs = vec![
+            self.lc_witness[0].old_root.lo(),
+            self.lc_witness[0].old_root.hi(),
+            self.lc_witness[self.lc_witness.len() - 1].new_root.lo(),
+            self.lc_witness[self.lc_witness.len() - 1].new_root.hi(),
+            F::from(self.lc_witness.len() as u64),
+        ];
+
+        for proof in &self.lc_witness {
+            inputs.push(proof.typ);
+            inputs.push(proof.address);
+            inputs.push(proof.value.lo());
+            inputs.push(proof.value.hi());
+            inputs.push(proof.key.lo());
+            inputs.push(proof.key.hi());
+        }
+
+        inputs
     }
 }

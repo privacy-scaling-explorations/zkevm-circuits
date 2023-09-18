@@ -11,7 +11,6 @@ use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{convert::TryFrom, sync::Arc, time::Duration};
 use zkevm_circuits::mpt_circuit::witness_row::*;
 
-
 // #[rustfmt_skip]
 #[allow(dead_code)]
 pub fn print_nodes(node: &[Node]) {
@@ -164,8 +163,6 @@ pub fn verify_mpt_witness(nodes: Vec<Node>) -> Result<()> {
 
     Ok(())
 }
-
-
 
 pub type MM = SignerMiddleware<Provider<Http>, Wallet<SigningKey>>;
 

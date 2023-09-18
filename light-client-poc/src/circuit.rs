@@ -1,8 +1,7 @@
-use crate::transforms::{LightClientProof, LightClientWitness, Transforms};
-
 const MAX_PROOF_COUNT: usize = 10;
 
 use eth_types::Field;
+use eyre::Result;
 use gadgets::{
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
     util::{
@@ -13,19 +12,20 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
+    dev::MockProver,
+    halo2curves::bn256::Fr,
     plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance,
-        Selector,
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, Selector,
     },
     poly::Rotation,
 };
-use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use zkevm_circuits::{
     mpt_circuit::{MPTCircuit, MPTCircuitParams, MPTConfig},
     table::{KeccakTable, MptTable},
     util::{word, Challenges},
 };
-use eyre::Result;
+
+use crate::witness::{LightClientWitness, SingleTrieModification};
 
 // A=>B  eq ~(A & ~B) (it is not the case that A is true and B is false)
 pub fn xif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
@@ -47,7 +47,7 @@ pub struct LightClientCircuitConfig<F: Field> {
     pub new_root_propagation: IsZeroConfig<F>,
 
     pub count: Column<Advice>,
-    pub count_decrement_less_one_is_zero: IsZeroConfig<F>,
+    pub count_decrement: IsZeroConfig<F>,
 
     pub q_enable: Selector,
 }
@@ -55,34 +55,23 @@ pub struct LightClientCircuitConfig<F: Field> {
 /// MPT Circuit for proving the storage modification is valid.
 #[derive(Default)]
 pub struct LightClientCircuit<F: Field> {
-    ///
     pub mpt_circuit: MPTCircuit<F>,
-    ///
-    pub lc_witness: LightClientWitness<F>,
-}
-
-/// MPT Circuit configuration parameters
-#[derive(Copy, Clone, Debug, Default)]
-pub struct LightClientCircuitParams {
-    ///
-    mpt: MPTCircuitParams,
+    pub lc_witness: Vec<SingleTrieModification<F>>,
 }
 
 impl<F: Field> Circuit<F> for LightClientCircuit<F> {
     type Config = (LightClientCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
-    type Params = LightClientCircuitParams;
+    type Params = MPTCircuitParams;
 
     fn without_witnesses(&self) -> Self {
         Self::default()
     }
 
     fn params(&self) -> Self::Params {
-        LightClientCircuitParams {
-            mpt: MPTCircuitParams {
-                degree: self.mpt_circuit.degree,
-                disable_preimage_check: self.mpt_circuit.disable_preimage_check,
-            },
+        MPTCircuitParams {
+            degree: self.mpt_circuit.degree,
+            disable_preimage_check: self.mpt_circuit.disable_preimage_check,
         }
     }
 
@@ -91,7 +80,7 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
         let challenges_expr = challenges.exprs(meta);
         let keccak_table = KeccakTable::construct(meta);
 
-        let mpt_config = MPTConfig::new(meta, challenges_expr, keccak_table, params.mpt);
+        let mpt_config = MPTConfig::new(meta, challenges_expr, keccak_table, params);
 
         let is_first = meta.fixed_column();
         let count = meta.advice_column();
@@ -159,7 +148,7 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
         );
 
         let count_decrement_less_one_inv = meta.advice_column();
-        let count_decrement_less_one_is_zero = IsZeroChip::configure(
+        let count_decrement = IsZeroChip::configure(
             meta,
             |meta| meta.query_selector(q_enable),
             |meta| {
@@ -172,13 +161,7 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
 
         meta.create_gate("if not padding, count descreases monotonically", |meta| {
             let q_enable = meta.query_selector(q_enable);
-            vec![
-                q_enable
-                    * xif(
-                        not::expr(is_padding.expr()),
-                        count_decrement_less_one_is_zero.expr(),
-                    ),
-            ]
+            vec![q_enable * xif(not::expr(is_padding.expr()), count_decrement.expr())]
         });
 
         meta.create_gate("if last or padding, new_root is propagated ", |meta| {
@@ -212,10 +195,9 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
         );
 
         meta.lookup_any("lc_mpt_updates lookups into mpt_table", |meta| {
-            let is_not_padding =1.expr() - is_padding.expr();
+            let is_not_padding = 1.expr() - is_padding.expr();
 
             let lookups = vec![
-
                 (
                     meta.query_advice(pi_mpt.proof_type, Rotation::cur()),
                     meta.query_advice(mpt_config.mpt_table.proof_type, Rotation::cur()),
@@ -240,27 +222,29 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
                     meta.query_advice(pi_mpt.storage_key.hi(), Rotation::cur()),
                     meta.query_advice(mpt_config.mpt_table.storage_key.hi(), Rotation::cur()),
                 ),
-
+                // TODO: MPT_table new/old roots are reversed
                 (
                     meta.query_advice(pi_mpt.old_root.lo(), Rotation::cur()),
-                    meta.query_advice(mpt_config.mpt_table.new_root.lo(), Rotation::cur())
+                    meta.query_advice(mpt_config.mpt_table.new_root.lo(), Rotation::cur()),
                 ),
                 (
                     meta.query_advice(pi_mpt.old_root.hi(), Rotation::cur()),
-                    meta.query_advice(mpt_config.mpt_table.new_root.hi(), Rotation::cur())
+                    meta.query_advice(mpt_config.mpt_table.new_root.hi(), Rotation::cur()),
                 ),
                 (
                     meta.query_advice(pi_mpt.new_root.lo(), Rotation::cur()),
-                    meta.query_advice(mpt_config.mpt_table.old_root.lo(), Rotation::cur())
+                    meta.query_advice(mpt_config.mpt_table.old_root.lo(), Rotation::cur()),
                 ),
                 (
                     meta.query_advice(pi_mpt.new_root.hi(), Rotation::cur()),
-                    meta.query_advice(mpt_config.mpt_table.old_root.hi(), Rotation::cur())
+                    meta.query_advice(mpt_config.mpt_table.old_root.hi(), Rotation::cur()),
                 ),
             ];
 
-            lookups.into_iter().map(|(a, b)| (a * is_not_padding.clone(), b )).collect()
-
+            lookups
+                .into_iter()
+                .map(|(from, to)| (from * is_not_padding.clone(), to))
+                .collect()
         });
 
         let config = LightClientCircuitConfig {
@@ -269,7 +253,7 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
             count,
             is_padding,
             is_last,
-            count_decrement_less_one_is_zero,
+            count_decrement,
             new_root_propagation,
             q_enable,
             pi_instance,
@@ -289,6 +273,9 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = _challenges.values(&mut layouter);
+
+        // assign MPT witness
+
         let height =
             config
                 .mpt_config
@@ -303,14 +290,19 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
             &challenges,
         )?;
 
+        // assign LC witness
+
         let pi = layouter.assign_region(
-            || "pi",
+            || "lc witness",
             |mut region| {
+
+                assert!(self.lc_witness.len() < MAX_PROOF_COUNT);
+
                 let is_padding = IsZeroChip::construct(config.is_padding.clone());
                 let is_last =
                     IsZeroChip::construct(config.is_last.clone());
-                let count_decrement_less_one_is_zero =
-                    IsZeroChip::construct(config.count_decrement_less_one_is_zero.clone());
+                let count_decrement =
+                    IsZeroChip::construct(config.count_decrement.clone());
                     let new_root_propagation =
                     IsZeroChip::construct(config.new_root_propagation.clone());
 
@@ -320,7 +312,7 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
                 region.name_column(|| "LC_last_inv", config.is_last.value_inv);
                 region.name_column(
                     || "LC_count_monodec_inv",
-                    config.count_decrement_less_one_is_zero.value_inv,
+                    config.count_decrement.value_inv,
                 );
                 region.name_column(|| "LC_pi_instance", config.pi_instance);
 
@@ -329,13 +321,17 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
                 let mut pi = Vec::new();
 
                 for offset in 0..MAX_PROOF_COUNT {
+
+                    let count_usize = self.lc_witness.len().saturating_sub(offset);
+                    let padding = count_usize == 0;
+                    let count = Value::known(F::from(count_usize as u64));
+
+                    // do not enable the last row, to avoid errors in constrains that involves next rotation
                     if offset < MAX_PROOF_COUNT - 1 {
                         config.q_enable.enable(&mut region, offset)?;
                     }
 
-                    let count_usize = self.lc_witness.0.len().saturating_sub(offset);
-                    let padding = count_usize == 0;
-                    let count = Value::known(F::from(count_usize as u64));
+                    // assign is_padding, is_last, count_decrement
 
                     is_padding.assign(&mut region, offset, count)?;
                     is_last.assign(
@@ -343,35 +339,53 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
                         offset,
                         Value::known(F::from(count_usize as u64) - F::ONE),
                     )?;
-                    count_decrement_less_one_is_zero.assign(
+                    count_decrement.assign(
                         &mut region,
                         offset,
                         Value::known(if padding { F::ZERO - F::ONE } else { F::ZERO }),
                     )?;
 
-                    let mpt = self.lc_witness.0.get(offset).cloned().unwrap_or(LightClientProof {
-                        new_root: self.lc_witness.0.last().unwrap().new_root,
+                    // assign set the value for entries to do the lookup propagating ending root in padding
+                    // and collect cells for checking public inputs.
+
+                    let stm = self.lc_witness.get(offset).cloned().unwrap_or(SingleTrieModification {
+                        new_root: self.lc_witness.last().unwrap().new_root,
                         ..Default::default()
                     });
-                    let mpt_next = self.lc_witness.0.get(offset+1).cloned().unwrap_or(LightClientProof {
-                        new_root: self.lc_witness.0.last().unwrap().new_root,
+                    let stm_next = self.lc_witness.get(offset+1).cloned().unwrap_or(SingleTrieModification {
+                        new_root: self.lc_witness.last().unwrap().new_root,
                         ..Default::default()
                     });
 
                     new_root_propagation.assign(&mut region, offset,
-                        Value::known(mpt.new_root.lo() - mpt_next.new_root.lo() + mpt.new_root.hi() - mpt_next.new_root.hi())
+                        Value::known(stm.new_root.lo() - stm_next.new_root.lo() + stm.new_root.hi() - stm_next.new_root.hi())
                     )?;
 
                     let count_cell = region.assign_advice(|| "", config.count, offset, || count)?;
 
-                    let [typ, addr, value_lo, value_hi,
-                         key_lo, key_hi, old_root_lo, old_root_hi,
-                         new_root_lo, new_root_hi] =
+                    let [typ,
+                         addr,
+                         value_lo,
+                         value_hi,
+                         key_lo,
+                         key_hi,
+                         old_root_lo,
+                         old_root_hi,
+                         new_root_lo,
+                         new_root_hi] =
 
-                        [(config.pi_mpt.proof_type,mpt.typ), (config.pi_mpt.address,mpt.address),(config.pi_mpt.new_value.lo(),mpt.value.lo()),
-                        (config.pi_mpt.new_value.hi(),mpt.value.hi()),(config.pi_mpt.storage_key.lo(),mpt.key.lo()), (config.pi_mpt.storage_key.hi(),
-                        mpt.key.hi()), (config.pi_mpt.old_root.lo(),mpt.old_root.lo()),(config.pi_mpt.old_root.hi(), mpt.old_root.hi()),
-                        (config.pi_mpt.new_root.lo(), mpt.new_root.lo()),(config.pi_mpt.new_root.hi(), mpt.new_root.hi())]
+                        [
+                            (config.pi_mpt.proof_type,stm.typ),
+                            (config.pi_mpt.address,stm.address),
+                            (config.pi_mpt.new_value.lo(),stm.value.lo()),
+                            (config.pi_mpt.new_value.hi(),stm.value.hi()),
+                            (config.pi_mpt.storage_key.lo(),stm.key.lo()),
+                            (config.pi_mpt.storage_key.hi(), stm.key.hi()),
+                            (config.pi_mpt.old_root.lo(),stm.old_root.lo()),
+                            (config.pi_mpt.old_root.hi(), stm.old_root.hi()),
+                            (config.pi_mpt.new_root.lo(), stm.new_root.lo()),
+                            (config.pi_mpt.new_root.hi(), stm.new_root.hi())
+                        ]
                         .map(|(col, value)|
                                 region.assign_advice(
                                     || "",
@@ -380,6 +394,8 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
                                     || Value::known(value),
                                 ).unwrap()
                             );
+
+                    // at beggining, set the old root and number of proofs
 
                     if offset == 0 {
                         pi.push(Some(old_root_lo));
@@ -390,6 +406,8 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
                     }
 
                     pi.append(vec![Some(typ), Some(addr), Some(value_lo), Some(value_hi), Some(key_lo), Some(key_hi)].as_mut());
+
+                    // at ending, set the last root in the last row (valid since we are propagating it)
 
                     if offset == MAX_PROOF_COUNT -1 {
                         pi[2] = Some(new_root_lo);
@@ -408,44 +426,63 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
 
         Ok(())
     }
+
 }
 
-pub fn verify_lc_circuit(trns: &Transforms, url: &str) -> Result<()> {
-    let (nodes, lc_witness) = trns.mpt_witness(url)?;
-    let pi = lc_witness.public_inputs();
-    println!();
-    for (i, input) in pi.iter().enumerate() {
-        println!("input[{i:}]: {input:?}");
-    }
 
-    // get the number of rows in the witness
-    let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
+const LIGHT_CLIENT_CIRCUIT_DEGREE : usize = 14;
 
-    // populate the keccak data
-    let mut keccak_data = vec![];
-    for node in nodes.iter() {
-        for k in node.keccak_data.iter() {
-            keccak_data.push(k.clone());
+impl LightClientCircuit<Fr> {
+
+    pub fn new(witness: &LightClientWitness<Fr>) -> Result<LightClientCircuit<Fr>> {
+
+        // populate the keccak data
+        let mut keccak_data = vec![];
+        for node in witness.mpt_witness.iter() {
+            for k in node.keccak_data.iter() {
+                keccak_data.push(k.clone());
+            }
         }
+
+        // verify the circuit
+        let disable_preimage_check = witness.mpt_witness[0]
+            .start
+            .clone()
+            .unwrap()
+            .disable_preimage_check;
+
+        let mpt_circuit = zkevm_circuits::mpt_circuit::MPTCircuit::<Fr> {
+            nodes: witness.mpt_witness.clone(),
+            keccak_data,
+            degree: LIGHT_CLIENT_CIRCUIT_DEGREE,
+            disable_preimage_check,
+            _marker: std::marker::PhantomData,
+        };
+        let lc_circuit = LightClientCircuit::<Fr> {
+            mpt_circuit,
+            lc_witness: witness.lc_witness.clone(),
+        };
+
+        Ok(lc_circuit)
     }
 
-    // verify the circuit
-    let disable_preimage_check = nodes[0].start.clone().unwrap().disable_preimage_check;
-    let degree = 14;
-    let mpt_circuit = zkevm_circuits::mpt_circuit::MPTCircuit::<Fr> {
-        nodes,
-        keccak_data,
-        degree,
-        disable_preimage_check,
-        _marker: std::marker::PhantomData,
-    };
-    let lc_circuit = LightClientCircuit::<Fr> {
-        mpt_circuit,
-        lc_witness,
-    };
+    pub fn assert_satisfied(&self,witness: &LightClientWitness<Fr>) {
 
-    let prover = MockProver::<Fr>::run(degree as u32, &lc_circuit, vec![pi]).unwrap();
-    prover.assert_satisfied_at_rows_par(0..num_rows, 0..num_rows);
+        let num_rows: usize = witness
+            .mpt_witness
+            .iter()
+            .map(|node| node.values.len())
+            .sum();
 
-    Ok(())
+        let public_inputs = witness.public_inputs();
+
+        for (i, input) in public_inputs.iter().enumerate() {
+            println!("input[{i:}]: {input:?}");
+        }
+
+        let prover = MockProver::<Fr>::run(LIGHT_CLIENT_CIRCUIT_DEGREE as u32, self, vec![public_inputs]).unwrap();
+        prover.assert_satisfied_at_rows_par(0..num_rows, 0..num_rows);
+
+    }
+
 }
