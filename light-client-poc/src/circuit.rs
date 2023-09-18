@@ -24,8 +24,28 @@ use zkevm_circuits::{
     table::{KeccakTable, MptTable},
     util::{word, Challenges},
 };
+use rand_chacha::ChaCha20Rng;
+use rand::SeedableRng;
+use std::time::Instant;
 
 use crate::witness::{LightClientWitness, SingleTrieModification};
+
+use halo2_proofs::{
+    halo2curves::bn256::{Bn256, G1Affine},
+    plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
+    poly::{
+        commitment::ParamsProver,
+        kzg::{
+            commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG},
+            multiopen::{ProverSHPLONK, VerifierSHPLONK},
+            strategy::SingleStrategy,
+        },
+    },
+    transcript::{
+        Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
+    },
+};
+
 
 // A=>B  eq ~(A & ~B) (it is not the case that A is true and B is false)
 pub fn xif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
@@ -484,5 +504,68 @@ impl LightClientCircuit<Fr> {
         prover.assert_satisfied_at_rows_par(0..num_rows, 0..num_rows);
 
     }
+
+    pub fn prove_and_verify(self, witness: &LightClientWitness<Fr>) {
+        let mut rng = ChaCha20Rng::seed_from_u64(42);
+
+        // Bench setup generation
+        let start = Instant::now();
+
+        let general_params = ParamsKZG::<Bn256>::setup(LIGHT_CLIENT_CIRCUIT_DEGREE as u32, &mut rng);
+        let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
+
+        println!("key generation time: {:?}", start.elapsed());
+
+        // Initialize the proving key
+        let vk = keygen_vk(&general_params, &self).expect("keygen_vk should not fail");
+        let pk = keygen_pk(&general_params, vk, &self).expect("keygen_pk should not fail");
+        // Create a proof
+        let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
+
+        // Bench proof generation time
+        let start = Instant::now();
+        create_proof::<
+            KZGCommitmentScheme<Bn256>,
+            ProverSHPLONK<'_, Bn256>,
+            Challenge255<G1Affine>,
+            ChaCha20Rng,
+            Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
+            LightClientCircuit<Fr>,
+        >(
+            &general_params,
+            &pk,
+            &[self],
+            &[&[&witness.public_inputs()]],
+            rng,
+            &mut transcript,
+        )
+        .expect("proof generation should not fail");
+        let proof = transcript.finalize();
+
+        println!("proof generation time: {:?}", start.elapsed());
+
+        // Bench verification time
+        let start = Instant::now();
+        let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
+        let strategy = SingleStrategy::new(&general_params);
+
+        verify_proof::<
+            KZGCommitmentScheme<Bn256>,
+            VerifierSHPLONK<'_, Bn256>,
+            Challenge255<G1Affine>,
+            Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
+            SingleStrategy<'_, Bn256>,
+        >(
+            &verifier_params,
+            pk.get_vk(),
+            strategy,
+            &[&[&witness.public_inputs()]],
+            &mut verifier_transcript,
+        )
+        .expect("failed to verify bench circuit");
+
+        println!("verification time: {:?}", start.elapsed());
+    }
+
 
 }

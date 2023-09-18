@@ -18,3 +18,6 @@ mpt-witness-generator = { path = "../mpt-witness-generator/rustlib" }
 ethers ={ version = "2.0.10", features = ["abigen", "rustls", "ws", "ethers-solc"] }
 eth-types = { path = "../eth-types" }
 gadgets = { path = "../gadgets" }
+rand_chacha = "0.3.1"
+rand = "0.8.5"
+ark-std = "0.4.0"

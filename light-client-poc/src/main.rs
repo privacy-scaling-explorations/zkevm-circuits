@@ -14,42 +14,8 @@ mod contract;
 mod utils;
 mod witness;
 
-async fn mainnet_test(block_no: u64, access_list: &[(&str, Vec<&str>)]) -> Result<()> {
-    const PVK: &str = "7ccb34dc5fd31fd0aa7860de89a4adc37ccb34dc5fd31fd0aa7860de89a4adc3";
-    const PROVIDER_URL: &str = "https://mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161";
-    let client = utils::new_eth_client(PROVIDER_URL, PVK).await?;
-
-    let access_list = AccessList(
-        access_list
-            .iter()
-            .map(|(addr, storage_keys)| AccessListItem {
-                address: Address::from_str(addr).unwrap(),
-                storage_keys: storage_keys
-                    .iter()
-                    .map(|k| H256::from_str(k).unwrap())
-                    .collect(),
-            })
-            .collect(),
-    );
-    let witness = LightClientWitness::<Fr>::build(
-        client.clone(),
-        PROVIDER_URL,
-        U64::from(block_no),
-        Some(access_list),
-    )
-    .await?;
-    println!("trns: {:#?}", witness.transforms);
-
-    let circuit = LightClientCircuit::new(&witness)?;
-    circuit.assert_satisfied(&witness);
-
-    Ok(())
-
-}
-
-#[allow(clippy::complexity)]
-async fn mainnet_tests() -> Result<()> {
-    let tests: Vec<(u64, Vec<(&str, Vec<&str>)>)> = vec![
+fn mainnet_blocks() -> Vec<(u64, Vec<(&'static str, Vec<&'static str>)>)> {
+    vec![
         // 0 txs
         (
             107,
@@ -126,9 +92,48 @@ async fn mainnet_tests() -> Result<()> {
                 ("0x24F21c22F0e641e2371F04a7bB8d713f89f53550", vec![]),
             ],
         ),
-    ];
+    ]
+}
 
-    for (block_no, access_list) in tests {
+
+async fn mainnet_test(block_no: u64, access_list: &[(&str, Vec<&str>)]) -> Result<(LightClientCircuit<Fr>, LightClientWitness<Fr>)> {
+    const PVK: &str = "7ccb34dc5fd31fd0aa7860de89a4adc37ccb34dc5fd31fd0aa7860de89a4adc3";
+    const PROVIDER_URL: &str = "https://mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161";
+    let client = utils::new_eth_client(PROVIDER_URL, PVK).await?;
+
+    let access_list = AccessList(
+        access_list
+            .iter()
+            .map(|(addr, storage_keys)| AccessListItem {
+                address: Address::from_str(addr).unwrap(),
+                storage_keys: storage_keys
+                    .iter()
+                    .map(|k| H256::from_str(k).unwrap())
+                    .collect(),
+            })
+            .collect(),
+    );
+    let witness = LightClientWitness::<Fr>::build(
+        client.clone(),
+        PROVIDER_URL,
+        U64::from(block_no),
+        Some(access_list),
+    )
+    .await?;
+
+    println!("trns: {:#?}", witness.transforms);
+
+    let circuit = LightClientCircuit::new(&witness)?;
+    circuit.assert_satisfied(&witness);
+
+    Ok((circuit, witness))
+
+}
+
+async fn mainnet_tests() -> Result<()> {
+    let blocks = mainnet_blocks();
+
+    for (block_no, access_list) in blocks {
         mainnet_test(block_no, &access_list).await?;
     }
 
@@ -174,20 +179,19 @@ async fn local_tests() -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    local_tests().await?;
-    mainnet_tests().await
+    let blocks = mainnet_blocks();
+    let (circuit, witness) = mainnet_test(blocks[1].0, &blocks[1].1).await?;
+    circuit.prove_and_verify(&witness);
+
+    // local_tests().await?;
+    // mainnet_tests().await
+
+    Ok(())
 }
 
 #[tokio::test]
 async fn basic_mainnet_test() -> Result<()> {
-    let (block_no, access_list) = (
-        436875,
-        vec![
-            ("0x580992B51e3925e23280EfB93d3047C82f17E038", vec![]),
-            ("0x52bc44d5378309EE2abF1539BF71dE1b7d7bE3b5", vec![]),
-            ("0x15ac3b6F90549FFBE4091177B1795B3d4C11A59e", vec![]),
-            ("0x72382223a91051A54c69759BE3c93048235EfC43", vec![]),
-        ],
-    );
-    mainnet_test(block_no, &access_list).await
+    let blocks = mainnet_blocks();
+    mainnet_test(blocks[1].0, &blocks[1].1).await?;
+    Ok(())
 }
