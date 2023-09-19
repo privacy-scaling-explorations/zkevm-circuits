@@ -1,40 +1,66 @@
+use core::{borrow::Borrow, clone::Clone};
 use ethers::{
-    abi::{self, Tokenize},
-    contract::{builders::ContractCall, Contract, ContractFactory},
+    abi::{self, Abi},
+    contract::{builders::ContractCall, Contract},
     core::{
         types::{
-            transaction::eip2718::TypedTransaction, Address, TransactionReceipt,
-            TransactionRequest, U256, U64,
+            transaction::eip2718::TypedTransaction, Address, GethDebugTracingOptions,
+            TransactionReceipt, TransactionRequest, H160, U256, U64,
         },
         utils::WEI_IN_ETHER,
     },
-    middleware::SignerMiddleware,
-    providers::{Middleware, PendingTransaction},
+    middleware::{
+        contract::{ContractDeploymentTx, ContractInstance},
+        SignerMiddleware,
+    },
+    providers::{Http, Middleware, PendingTransaction, Provider},
     signers::Signer,
-    solc::{CompilerInput, CompilerOutput, EvmVersion, Solc},
 };
 use integration_tests::{
-    get_client, get_provider, get_wallet, log_init, CompiledContract, GenDataOutput, CONTRACTS,
-    CONTRACTS_PATH, WARN,
+    benchmarks::*, get_client, get_provider, get_wallet, greeter::*, log_init,
+    openzeppelinerc20testtoken::openzeppelinerc20testtoken as ozerc20tt, GenDataOutput,
 };
 use log::{error, info};
-use serde::de::Deserialize;
-use std::{collections::HashMap, fs::File, path::Path, sync::Arc, thread::sleep, time::Duration};
+use std::{collections::HashMap, fs::File, sync::Arc, thread::sleep, time::Duration};
 
-async fn deploy<T, M>(prov: Arc<M>, compiled: &CompiledContract, args: T) -> Contract<M>
+async fn deploy<'a, M, C, B>(
+    deployer_tx: ContractDeploymentTx<B, M, C>,
+    name: &'a str,
+) -> (Abi, H160, U64, C)
 where
-    T: Tokenize,
-    M: Middleware,
+    M: Middleware + 'a,
+    B: Borrow<M> + Clone + 'a,
+    C: From<ContractInstance<B, M>> + 'a,
 {
-    info!("Deploying {}...", compiled.name);
-    let factory = ContractFactory::new(compiled.abi.clone(), compiled.bin.clone(), prov);
-    factory
-        .deploy(args)
-        .expect("cannot deploy")
-        .confirmations(0usize)
-        .send()
+    info!("Deploying {}...", name);
+    let binding = deployer_tx.clone();
+    let contract_abi = binding.abi();
+    let c_abi = contract_abi.clone();
+    let contract_deployed = deployer_tx
+        .send_with_receipt()
         .await
-        .expect("cannot confirm deploy")
+        .expect("Could not confirm contract deployment");
+    let contract_instance = contract_deployed.0;
+    let deploy_tx_receipt = contract_deployed.1;
+    let block_number = deploy_tx_receipt
+        .block_number
+        .expect("failed to get block number");
+    let contract_address = deploy_tx_receipt
+        .contract_address
+        .expect("failed to get contract address");
+    (c_abi, contract_address, block_number, contract_instance)
+}
+
+async fn dump_tx_trace(prov: Provider<Http>, receipt: TransactionReceipt, name: &str) -> ()
+{
+    let options = GethDebugTracingOptions::default();
+    let trace = prov
+        .debug_trace_transaction(receipt.transaction_hash, options)
+        .await
+        .expect("SOME REASON");
+    let filename = format!("{}_trace.json", name);
+    serde_json::to_writer(&File::create(filename).expect("cannot create file"), &trace)
+        .expect("reason");
 }
 
 fn erc20_transfer<M>(
@@ -74,76 +100,8 @@ where
 async fn main() {
     log_init();
 
-    // Compile contracts
-    info!("Compiling contracts...");
-    let solc = Solc::default();
-    info!("Solc version {}", solc.version().expect("version works"));
-    let mut contracts = HashMap::new();
-    for (name, contract_path) in CONTRACTS {
-        let path_sol = Path::new(CONTRACTS_PATH).join(contract_path);
-        let inputs = CompilerInput::new(&path_sol).expect("Compile success");
-        // ethers-solc: explicitly indicate the EvmVersion that corresponds to the zkevm circuit's
-        // supported Upgrade, e.g. `London/Shanghai/...` specifications.
-        let input = inputs
-            .clone()
-            .first_mut()
-            .expect("first exists")
-            .clone()
-            .evm_version(EvmVersion::London);
-
-        // compilation will either fail with Err variant or return Ok(CompilerOutput)
-        // which may contain Errors or Warnings
-        let output = solc.compile_output(&input).unwrap();
-        let mut deserializer: serde_json::Deserializer<serde_json::de::SliceRead<'_>> =
-            serde_json::Deserializer::from_slice(&output);
-        // The contracts to test the worst-case usage of certain opcodes, such as SDIV, MLOAD, and
-        // EXTCODESIZE, generate big JSON compilation outputs. We disable the recursion limit to
-        // avoid parsing failure.
-        deserializer.disable_recursion_limit();
-        let compiled = match CompilerOutput::deserialize(&mut deserializer) {
-            Err(error) => {
-                panic!("COMPILATION ERROR {:?}\n{:?}", &path_sol, error);
-            }
-            // CompilationOutput is succesfully created (might contain Errors or Warnings)
-            Ok(output) => {
-                info!("COMPILATION OK: {:?}", name);
-                output
-            }
-        };
-
-        if compiled.has_error() || compiled.has_warning(WARN) {
-            panic!(
-                "... but CompilerOutput contains errors/warnings: {:?}:\n{:#?}",
-                &path_sol, compiled.errors
-            );
-        }
-
-        let contract = compiled
-            .get(path_sol.to_str().expect("path is not str"), name)
-            .expect("contract not found");
-        let abi = contract.abi.expect("no abi found").clone();
-        let bin = contract.bin.expect("no bin found").clone();
-        let bin_runtime = contract.bin_runtime.expect("no bin_runtime found").clone();
-        let compiled_contract = CompiledContract {
-            path: path_sol.to_str().expect("path is not str").to_string(),
-            name: name.to_string(),
-            abi,
-            bin: bin.into_bytes().expect("bin"),
-            bin_runtime: bin_runtime.into_bytes().expect("bin_runtime"),
-        };
-
-        let mut path_json = path_sol.clone();
-        path_json.set_extension("json");
-        serde_json::to_writer(
-            &File::create(&path_json).expect("cannot create file"),
-            &compiled_contract,
-        )
-        .expect("cannot serialize json into file");
-
-        contracts.insert(name.to_string(), compiled_contract);
-    }
-
     let prov = get_provider();
+    let mut contracts = HashMap::new();
 
     // Wait for geth to be online.
     loop {
@@ -200,83 +158,42 @@ async fn main() {
     let prov_wallet0 = Arc::new(SignerMiddleware::new(get_provider(), wallet0));
 
     // Greeter
-    let contract = deploy(
-        prov_wallet0.clone(),
-        contracts.get("Greeter").expect("contract not found"),
-        U256::from(42),
-    )
-    .await;
-    let block_num = prov.get_block_number().await.expect("cannot get block_num");
-    blocks.insert("Deploy Greeter".to_string(), block_num.as_u64());
+    let greeter_deployer = greeter::greeter::deploy(prov_wallet0.clone(), U256::from(42))
+        .expect("Error building deployment Transaction");
+    let (contract_abi, contract_address, block_number, _greeter_instance) =
+        deploy(greeter_deployer, "Greeter").await;
+
+    contracts.insert("greeter".to_string(), contract_abi.clone());
     deployments.insert(
-        "Greeter".to_string(),
-        (block_num.as_u64(), contract.address()),
+        "greeter".to_string(),
+        (block_number.as_u64(), contract_address),
     );
 
     // OpenZeppelinERC20TestToken
-    let contract = deploy(
-        prov_wallet0.clone(),
-        contracts
-            .get("OpenZeppelinERC20TestToken")
-            .expect("contract not found"),
-        prov_wallet0.address(),
-    )
-    .await;
-    let block_num = prov.get_block_number().await.expect("cannot get block_num");
-    blocks.insert(
-        "Deploy OpenZeppelinERC20TestToken".to_string(),
-        block_num.as_u64(),
-    );
+    let ozerc20tt_deployer = ozerc20tt::deploy(prov_wallet0.clone(), prov_wallet0.address())
+        .expect("Error building deployment Transaction");
+    let (contract_abi, contract_address, block_number, _ozerc20tt_instance) =
+        deploy(ozerc20tt_deployer, "OpenZeppelinERC20TestToken").await;
+
+    contracts.insert("ozerc20tt".to_string(), contract_abi);
     deployments.insert(
-        "OpenZeppelinERC20TestToken".to_string(),
-        (block_num.as_u64(), contract.address()),
+        "ozerc20tt".to_string(),
+        (block_number.as_u64(), contract_address),
     );
 
     // Deploy smart contracts for worst case block benches
     //
 
-    // CheckMload
-    let contract = deploy(
-        prov_wallet0.clone(),
-        contracts.get("CheckMload").expect("contract not found"),
-        (),
-    )
-    .await;
-    let block_num = prov.get_block_number().await.expect("cannot get block_num");
-    blocks.insert("Deploy CheckMload".to_string(), block_num.as_u64());
-    deployments.insert(
-        "CheckMload".to_string(),
-        (block_num.as_u64(), contract.address()),
-    );
+    // Benchmarks
+    let benchmarks_deployer = benchmarks::benchmarks::deploy(prov_wallet0.clone(), ())
+        .expect("Error building deployment Transaction");
+    let (contract_abi, contract_address, block_number, benchmarks_instance) =
+        deploy(benchmarks_deployer, "Benchmarks").await;
 
-    // CheckSdiv
-    let contract = deploy(
-        prov_wallet0.clone(),
-        contracts.get("CheckSdiv").expect("contract not found"),
-        (),
-    )
-    .await;
-    let block_num = prov.get_block_number().await.expect("cannot get block_num");
-    blocks.insert("Deploy CheckSdiv".to_string(), block_num.as_u64());
+    contracts.insert("benchmarks".to_string(), contract_abi);
     deployments.insert(
-        "CheckSdiv".to_string(),
-        (block_num.as_u64(), contract.address()),
-    );
-
-    // CheckExtCodeSize100
-    let contract = deploy(
-        prov_wallet0.clone(),
-        contracts
-            .get("CheckExtCodeSize100")
-            .expect("contract not found"),
-        (),
-    )
-    .await;
-    let block_num = prov.get_block_number().await.expect("cannot get block_num");
-    blocks.insert("Deploy CheckExtCodeSize100".to_string(), block_num.as_u64());
-    deployments.insert(
-        "CheckExtCodeSize100".to_string(),
-        (block_num.as_u64(), contract.address()),
+        "benchmarks".to_string(),
+        (block_number.as_u64(), contract_address),
     );
 
     // ETH transfers: Generate a block with multiple transfers
@@ -338,14 +255,9 @@ async fn main() {
 
     info!("Generating ERC20 calls...");
 
-    let contract_address = deployments
-        .get("OpenZeppelinERC20TestToken")
-        .expect("contract not found")
-        .1;
-    let contract_abi = &contracts
-        .get("OpenZeppelinERC20TestToken")
-        .expect("contract not found")
-        .abi;
+    let contract_address = deployments.get("ozerc20tt").expect("contract not found").1;
+    let contract_abi = &contracts.get("ozerc20tt").expect("contract not found");
+    // .abi;
 
     // OpenZeppelin ERC20 single failed transfer (wallet2 sends 345.67 Tokens to
     // wallet3, but wallet2 has 0 Tokens)
@@ -428,6 +340,44 @@ async fn main() {
         "Multiple ERC20 OpenZeppelin transfers".to_string(),
         block_num.as_u64(),
     );
+
+    // Create Transactions optimized for circuit benchmarks
+    //
+    // MLOAD (EVM)
+    info!("Sending Tx optimized for maximum MLOAD opcode calls up to 300k gas");
+    cli.miner_start().await.expect("cannot start miner");
+    let bench_tx = benchmarks_instance.check_mload(benchmarks::Len(77500));
+    let tx_call = bench_tx
+        .send()
+        .await
+        .expect("Could not confirm transaction");
+    let tx_receipt = tx_call
+        .await
+        .expect("failed to fetch the transaction receipt")
+        .unwrap();
+    blocks.insert(
+        "MLOAD".to_string(),
+        tx_receipt.block_number.unwrap().as_u64(),
+    );
+    // dump_tx_trace(get_provider(), tx_receipt, "mload").await;
+
+    // SDIV (STATE)
+    info!("Sending Tx optimized for maximum SDIV opcode calls up to 300k gas");
+    cli.miner_start().await.expect("cannot start miner");
+    let bench_tx = benchmarks_instance.check_sdiv(benchmarks::Len(32400));
+    let tx_call = bench_tx
+        .send()
+        .await
+        .expect("Could not confirm transaction");
+    let tx_receipt = tx_call
+        .await
+        .expect("failed to fetch the transaction receipt")
+        .unwrap();
+    blocks.insert(
+        "SDIV".to_string(),
+        tx_receipt.block_number.unwrap().as_u64(),
+    );
+    // dump_tx_trace(get_provider(), tx_receipt, "sdiv").await;
 
     let gen_data = GenDataOutput {
         coinbase: accounts[0],
