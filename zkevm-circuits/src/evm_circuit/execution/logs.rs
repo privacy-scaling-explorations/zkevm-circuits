@@ -12,7 +12,7 @@ use crate::{
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
             },
-            not, sum, CachedRegion, Cell,
+            not, sum, CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -200,8 +200,11 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
+        let mut rws = StepRws::new(block, step);
 
-        let [memory_start, msize] = [0, 1].map(|index| block.get_rws(step, index).stack_value());
+        let memory_start = rws.next().stack_value();
+        let msize = rws.next().stack_value();
+
         let memory_address = self
             .memory_address
             .assign(region, offset, memory_start, msize)?;

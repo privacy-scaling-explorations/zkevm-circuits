@@ -7,7 +7,7 @@ use crate::{
             constraint_builder::{
                 EVMConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
-            CachedRegion, Cell,
+            CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -108,6 +108,7 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
+        let mut rws = StepRws::new(block, step);
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id)))?;
@@ -119,17 +120,18 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
         )?;
         self.callee_address
             .assign_h160(region, offset, call.address)?;
-
-        let key = block.get_rws(step, 4).stack_value();
-        let value = block.get_rws(step, 6).stack_value();
+        rws.offset_add(4);
+        let key = rws.next().stack_value();
+        let (_, committed_value) = rws.next().aux_pair();
+        let value = rws.next().stack_value();
         self.key.assign_u256(region, offset, key)?;
         self.value.assign_u256(region, offset, value)?;
 
-        let (_, committed_value) = block.get_rws(step, 5).aux_pair();
         self.committed_value
             .assign_u256(region, offset, committed_value)?;
 
-        let (_, is_warm) = block.get_rws(step, 8).tx_access_list_value_pair();
+        rws.next();
+        let (_, is_warm) = rws.next().tx_access_list_value_pair();
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 

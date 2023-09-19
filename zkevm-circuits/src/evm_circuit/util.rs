@@ -481,6 +481,10 @@ impl<'a> StepRws<'a> {
     pub(crate) fn offset_sub(&mut self, offset: usize) {
         self.offset -= offset
     }
+    /// Set the step rw operation offset by `offset`.
+    pub(crate) fn offset_set(&mut self, offset: usize) {
+        self.offset = offset
+    }
     /// Return the next rw operation from the step.
     pub(crate) fn next(&mut self) -> Rw {
         let rw = self.rws[self.step.rw_index(self.offset)];
