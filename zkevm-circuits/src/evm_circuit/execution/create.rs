@@ -497,7 +497,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             U256::zero()
         };
 
-        rws.next(); // rw_off
+        rws.next(); // rw_off = 7 + 1 or 8 + 1 depends on is_create2
 
         // Pre-check: call depth, user's nonce and user's balance
         let (caller_balance, _) = rws.next().account_balance_pair(); // rw_off + 1 - CallerBalance
