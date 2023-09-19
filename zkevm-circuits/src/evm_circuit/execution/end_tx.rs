@@ -510,4 +510,32 @@ mod test {
             .unwrap(),
         );
     }
+
+    #[test]
+    fn end_tx_gadget_nonexisting_coinbase() {
+        // Check that the code hash of the coinbase address is correctly set to be the empty code
+        // hash when it is created because of receiving the gas fees from the first tx.
+        test_ok(
+            TestContext::<2, 2>::new(
+                None,
+                account_0_code_account_1_no_code(bytecode! {
+                    COINBASE
+                    EXTCODEHASH
+                }), /* EXTCODEHASH will return 0 for the first tx and the empty code hash for
+                     * the second tx. */
+                |mut txs, accs| {
+                    txs[0]
+                        .to(accs[0].address)
+                        .from(accs[1].address)
+                        .value(eth(1));
+                    txs[1]
+                        .to(accs[0].address)
+                        .from(accs[1].address)
+                        .value(eth(1));
+                },
+                |block, _| block,
+            )
+            .unwrap(),
+        );
+    }
 }
