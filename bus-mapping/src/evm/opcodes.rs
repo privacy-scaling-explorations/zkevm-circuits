@@ -3,11 +3,11 @@ use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep},
     error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
     evm::OpcodeId,
-    operation::TxAccessListAccountOp,
+    operation::{AccountField, AccountOp, TxAccessListAccountOp},
     Error,
 };
 use core::fmt::Debug;
-use eth_types::{evm_unimplemented, GethExecStep, ToAddress};
+use eth_types::{evm_unimplemented, GethExecStep, ToAddress, ToWord, Word};
 
 mod address;
 mod balance;
@@ -447,23 +447,60 @@ fn dummy_gen_selfdestruct_ops(
         },
     )?;
 
-    let (found, _) = state.sdb.get_account(&receiver);
+    let (found, receiver_account) = state.sdb.get_account(&receiver);
     if !found {
         return Err(Error::AccountNotFound(receiver));
     }
+    let receiver_account = &receiver_account.clone();
     let (found, sender_account) = state.sdb.get_account(&sender);
     if !found {
         return Err(Error::AccountNotFound(sender));
     }
+    let sender_account = &sender_account.clone();
     let value = sender_account.balance;
-    // NOTE: In this dummy implementation we assume that the receiver already
-    // exists.
-    state.transfer(&mut exec_step, sender, receiver, true, false, value)?;
+
+    state.push_op_reversible(
+        &mut exec_step,
+        AccountOp {
+            address: sender,
+            field: AccountField::Balance,
+            value: Word::zero(),
+            value_prev: value,
+        },
+    )?;
+    state.push_op_reversible(
+        &mut exec_step,
+        AccountOp {
+            address: sender,
+            field: AccountField::Nonce,
+            value: Word::zero(),
+            value_prev: sender_account.nonce.into(),
+        },
+    )?;
+    state.push_op_reversible(
+        &mut exec_step,
+        AccountOp {
+            address: sender,
+            field: AccountField::CodeHash,
+            value: Word::zero(),
+            value_prev: sender_account.code_hash.to_word(),
+        },
+    )?;
+    if receiver != sender {
+        state.transfer_to(
+            &mut exec_step,
+            receiver,
+            !receiver_account.is_empty(),
+            false,
+            value,
+            true,
+        )?;
+    }
 
     if state.call()?.is_persistent {
         state.sdb.destruct_account(sender);
     }
 
-    state.handle_return(&mut exec_step, geth_steps, false)?;
+    state.handle_return(&mut exec_step, geth_steps, !state.call()?.is_root)?;
     Ok(vec![exec_step])
 }
