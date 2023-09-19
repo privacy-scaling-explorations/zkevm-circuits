@@ -6,7 +6,7 @@ use crate::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{IsZeroGadget, IsZeroWordGadget},
-            AccountAddress, CachedRegion, Cell,
+            AccountAddress, CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -109,9 +109,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         let [mut gas, mut code_address, mut value] = [U256::zero(), U256::zero(), U256::zero()];
 
+        let mut rws = StepRws::new(block, step);
         if is_call {
             [gas, code_address, value] =
-                [0, 1, 2].map(|index| block.get_rws(step, index).stack_value());
+                [0, 1, 2].map(|_| rws.next().stack_value());
         }
 
         self.gas.assign_u256(region, offset, gas)?;

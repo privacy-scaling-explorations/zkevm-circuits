@@ -8,7 +8,7 @@ use crate::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             from_bytes,
             math_gadget::{AddWordsGadget, IsZeroGadget, LtGadget},
-            not, or, sum, CachedRegion, Cell, U64Cell,
+            not, or, sum, CachedRegion, Cell, U64Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -131,8 +131,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        let [dest_offset, data_offset, size] =
-            [0, 1, 2].map(|index| block.get_rws(step, index).stack_value());
+        let mut rws = StepRws::new(block, step);
+
+        let dest_offset = rws.next().stack_value();
+        let data_offset = rws.next().stack_value();
+        let size = rws.next().stack_value();
 
         self.memory_offset
             .assign(region, offset, Some(dest_offset.as_u64().to_le_bytes()))?;
@@ -141,7 +144,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         self.sum
             .assign(region, offset, [data_offset, size], remainder_end)?;
 
-        let return_data_length = block.get_rws(step, 3).call_context_value();
+        let return_data_length = rws.next().call_context_value();
         self.return_data_length.assign(
             region,
             offset,

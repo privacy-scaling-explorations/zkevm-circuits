@@ -11,7 +11,7 @@ use crate::{
             },
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{LtGadget, PairSelectGadget},
-            or, select, CachedRegion, Cell,
+            or, select, CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -161,12 +161,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
     ) -> Result<(), Error> {
         let opcode = step.opcode().unwrap();
         let is_sstore = opcode == OpcodeId::SSTORE;
-        let key = block.get_rws(step, 3).stack_value();
-        let (is_warm, _) = block.get_rws(step, 4).tx_access_list_value_pair();
+        let mut rws = StepRws::new(block, step);
+        rws.offset_add(3);
+        let key = rws.next().stack_value();
+        let (is_warm, _) = rws.next().tx_access_list_value_pair();
 
         let (value, value_prev, original_value, gas_cost) = if is_sstore {
-            let value = block.get_rws(step, 5).stack_value();
-            let (_, value_prev, _, original_value) = block.get_rws(step, 6).storage_value_aux();
+            let value = rws.next().stack_value();
+            let (_, value_prev, _, original_value) = rws.next().storage_value_aux();
             let gas_cost =
                 cal_sstore_gas_cost_for_assignment(value, value_prev, original_value, is_warm);
             (value, value_prev, original_value, gas_cost)
