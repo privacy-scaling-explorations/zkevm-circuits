@@ -57,6 +57,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         AccountField::Nonce,
         (nonce_prev + 1).into(),
         nonce_prev.into(),
+        false,
     )?;
 
     // Add caller, callee and coinbase (for EIP-3651) to access list.
@@ -270,6 +271,7 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
         AccountField::Balance,
         caller_balance,
         caller_balance_prev,
+        false,
     )?;
 
     let effective_tip = state.tx.gas_price - state.block.base_fee;
@@ -289,12 +291,13 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
             coinbase_account.code_hash.to_word()
         },
     );
-    state.transfer_to_irreversible(
+    state.transfer_to(
         &mut exec_step,
         state.block.coinbase,
         coinbase_exist,
         false,
         coinbase_transfer_value,
+        false,
     )?;
 
     // handle tx receipt tag
