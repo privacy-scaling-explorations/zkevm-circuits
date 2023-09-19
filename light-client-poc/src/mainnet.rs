@@ -1,24 +1,20 @@
-use std::collections::HashMap;
 use ethers::{
     prelude::*,
     types::transaction::eip2930::{AccessList, AccessListItem},
 };
 use eyre::Result;
 use halo2_proofs::halo2curves::bn256::Fr;
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
-use crate::{
-    circuit::LightClientCircuit,
-    witness::LightClientWitness,
-};
+use crate::{circuit::LightClientCircuit, witness::LightClientWitness};
 
 async fn mock_prove(
     block_no: u64,
     access_list: &[(&str, Vec<&str>)],
-) -> Result<(LightClientCircuit<Fr>, LightClientWitness<Fr>)> {
+) -> Result<LightClientCircuit<Fr>> {
     const PVK: &str = "7ccb34dc5fd31fd0aa7860de89a4adc37ccb34dc5fd31fd0aa7860de89a4adc3";
     const PROVIDER_URL: &str = "https://mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161";
-    let client = crate::utils::new_eth_client(PROVIDER_URL, PVK).await?;
+    let client = crate::utils::new_eth_signer_client(PROVIDER_URL, PVK).await?;
 
     let access_list = AccessList(
         access_list
@@ -38,14 +34,15 @@ async fn mock_prove(
         U64::from(block_no),
         Some(access_list),
     )
-    .await?;
+    .await?.unwrap();
 
     println!("trns: {:#?}", witness.transforms);
 
-    let circuit = LightClientCircuit::new(&witness)?;
-    circuit.assert_satisfied(&witness);
+    let circuit = LightClientCircuit::new(witness)?;
 
-    Ok((circuit, witness))
+    circuit.assert_satisfied();
+
+    Ok(circuit)
 }
 
 #[allow(clippy::complexity)]
@@ -127,16 +124,19 @@ pub fn blocks() -> HashMap<u64, Vec<(&'static str, Vec<&'static str>)>> {
                 ("0x24F21c22F0e641e2371F04a7bB8d713f89f53550", vec![]),
             ],
         ),
-    ].into_iter().collect()
+    ]
+    .into_iter()
+    .collect()
 }
-
 
 #[cfg(test)]
 mod test {
+    use crate::{circuit::LightClientCircuitKeys, witness::PublicInputs};
+
     use super::*;
     #[tokio::test]
     async fn test_block_436875() -> Result<()> {
-        let block_no = 107;
+        let block_no = 436875;
         let access_list = blocks().get(&block_no).unwrap().clone();
         let _ = mock_prove(block_no, &access_list).await?;
         Ok(())
@@ -147,6 +147,44 @@ mod test {
         let block_no = 107;
         let access_list = blocks().get(&block_no).unwrap().clone();
         let _ = mock_prove(block_no, &access_list).await?;
+        Ok(())
+    }
+    #[ignore = "takes a while, run with `cargo test --release -- test_reuse_proving_keys  --ignored`"]
+    #[tokio::test]
+    async fn test_reuse_proving_keys() -> Result<()> {
+        let block_no = 107;
+        let access_list = blocks().get(&block_no).unwrap().clone();
+
+        let circuit = mock_prove(block_no, &access_list).await?;
+        let public_inputs : PublicInputs<Fr> = (&circuit.lc_witness).into();
+
+        let keys = LightClientCircuitKeys::new(&circuit);
+        let proof = circuit.prove(&keys)?;
+        let keys = LightClientCircuitKeys::unserialize(&keys.serialize()?)?;
+
+        LightClientCircuit::verify(&proof, &public_inputs, &keys)?;
+
+        let block_no = 436875;
+        let access_list = blocks().get(&block_no).unwrap().clone();
+
+        let circuit = mock_prove(block_no, &access_list).await?;
+        let mut public_inputs : PublicInputs<Fr> = (&circuit.lc_witness).into();
+
+        let proof = circuit.prove(&keys)?;
+
+        LightClientCircuit::verify(&proof, &public_inputs, &keys)?;
+
+        // ok, check also modifying public inputs to check if fails
+
+        for i in 0..public_inputs.len() {
+            public_inputs.0[i] += Fr::one();
+            let _ = LightClientCircuit::verify(&proof, &public_inputs, &keys)
+                .err()
+                .unwrap();
+            println!("public input: {}", i);
+            public_inputs.0[i] -= Fr::one();
+        }
+
         Ok(())
     }
 

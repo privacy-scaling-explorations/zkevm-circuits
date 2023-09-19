@@ -13,22 +13,26 @@ use halo2_proofs::{
     dev::MockProver,
     halo2curves::bn256::Fr,
     plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, Selector,
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, ProvingKey,
+        Selector, VerifyingKey,
     },
     poly::Rotation,
+    SerdeFormat,
 };
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
+use serde::{Deserialize, Serialize};
+use std::time::Instant;
 use zkevm_circuits::{
     mpt_circuit::{MPTCircuit, MPTCircuitParams, MPTConfig},
     table::{KeccakTable, MptTable},
     util::{word, Challenges},
 };
-use rand_chacha::ChaCha20Rng;
-use rand::SeedableRng;
-use std::time::Instant;
 
 const MAX_PROOF_COUNT: usize = 10;
+const LIGHT_CLIENT_CIRCUIT_DEGREE: usize = 14;
 
-use crate::witness::{LightClientWitness, SingleTrieModification};
+use crate::witness::{LightClientWitness, SingleTrieModification, Transforms, SingleTrieModifications, PublicInputs};
 
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, G1Affine},
@@ -45,7 +49,6 @@ use halo2_proofs::{
         Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
     },
 };
-
 
 // A=>B  eq ~(A & ~B) (it is not the case that A is true and B is false)
 pub fn xif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
@@ -75,8 +78,9 @@ pub struct LightClientCircuitConfig<F: Field> {
 /// MPT Circuit for proving the storage modification is valid.
 #[derive(Default)]
 pub struct LightClientCircuit<F: Field> {
+    pub transforms: Transforms,
     pub mpt_circuit: MPTCircuit<F>,
-    pub lc_witness: Vec<SingleTrieModification<F>>,
+    pub lc_witness: SingleTrieModifications<F>,
 }
 
 impl<F: Field> Circuit<F> for LightClientCircuit<F> {
@@ -369,11 +373,11 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
                     // and collect cells for checking public inputs.
 
                     let stm = self.lc_witness.get(offset).cloned().unwrap_or(SingleTrieModification {
-                        new_root: self.lc_witness.last().unwrap().new_root,
+                        new_root: self.lc_witness.last().cloned().unwrap_or_default().new_root,
                         ..Default::default()
                     });
                     let stm_next = self.lc_witness.get(offset+1).cloned().unwrap_or(SingleTrieModification {
-                        new_root: self.lc_witness.last().unwrap().new_root,
+                        new_root: self.lc_witness.last().cloned().unwrap_or_default().new_root,
                         ..Default::default()
                     });
 
@@ -446,81 +450,138 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
 
         Ok(())
     }
-
 }
 
+#[derive(Clone)]
+pub struct LightClientCircuitKeys {
+    general_params: ParamsKZG<Bn256>,
+    verifier_params: ParamsVerifierKZG<Bn256>,
+    pk: ProvingKey<G1Affine>,
+}
 
-const LIGHT_CLIENT_CIRCUIT_DEGREE : usize = 14;
+impl LightClientCircuitKeys {
+
+    pub fn new(circuit : &LightClientCircuit<Fr>) -> LightClientCircuitKeys {
+        let mut rng = ChaCha20Rng::seed_from_u64(42);
+
+        let start = Instant::now();
+
+        // let circuit = LightClientCircuit::default();
+
+        let general_params =
+            ParamsKZG::<Bn256>::setup(LIGHT_CLIENT_CIRCUIT_DEGREE as u32, &mut rng);
+        let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
+
+        // Initialize the proving key
+        let vk = keygen_vk(&general_params, circuit).expect("keygen_vk should not fail");
+        let pk = keygen_pk(&general_params, vk, circuit).expect("keygen_pk should not fail");
+
+        println!("key generation time: {:?}", start.elapsed());
+
+        LightClientCircuitKeys {
+            general_params,
+            verifier_params,
+            pk,
+        }
+    }
+
+    pub fn serialize(&self) -> Result<Vec<u8>> {
+        let mut buffer = Vec::new();
+        self.general_params
+            .write_custom(&mut buffer, SerdeFormat::RawBytes)?;
+        self.verifier_params
+            .write_custom(&mut buffer, SerdeFormat::RawBytes)?;
+        self.pk.write(&mut buffer, SerdeFormat::RawBytes).unwrap();
+        Ok(buffer)
+    }
+
+    pub fn unserialize(mut bytes: &[u8]) -> Result<Self> {
+        let general_params = ParamsKZG::<Bn256>::read_custom(&mut bytes, SerdeFormat::RawBytes)?;
+        let verifier_params =
+            ParamsVerifierKZG::<Bn256>::read_custom(&mut bytes, SerdeFormat::RawBytes)?;
+        let circuit_params = LightClientCircuit::<Fr>::default().params();
+        let pk = ProvingKey::<G1Affine>::read::<_, LightClientCircuit<Fr>>(
+            &mut bytes,
+            SerdeFormat::RawBytes,
+            circuit_params,
+        )?;
+        Ok(Self {
+            general_params,
+            verifier_params,
+            pk,
+        })
+    }
+}
 
 impl LightClientCircuit<Fr> {
+    pub fn new(witness : LightClientWitness<Fr>) -> Result<LightClientCircuit<Fr>> {
 
-    pub fn new(witness: &LightClientWitness<Fr>) -> Result<LightClientCircuit<Fr>> {
+        let LightClientWitness{mpt_witness, transforms, lc_witness} = witness;
 
         // populate the keccak data
         let mut keccak_data = vec![];
-        for node in witness.mpt_witness.iter() {
+        for node in mpt_witness.iter() {
             for k in node.keccak_data.iter() {
                 keccak_data.push(k.clone());
             }
         }
 
         // verify the circuit
-        let disable_preimage_check = witness.mpt_witness[0]
+        let disable_preimage_check = mpt_witness[0]
             .start
             .clone()
             .unwrap()
             .disable_preimage_check;
 
         let mpt_circuit = zkevm_circuits::mpt_circuit::MPTCircuit::<Fr> {
-            nodes: witness.mpt_witness.clone(),
+            nodes: mpt_witness,
             keccak_data,
             degree: LIGHT_CLIENT_CIRCUIT_DEGREE,
             disable_preimage_check,
             _marker: std::marker::PhantomData,
         };
+
         let lc_circuit = LightClientCircuit::<Fr> {
+            transforms,
             mpt_circuit,
-            lc_witness: witness.lc_witness.clone(),
+            lc_witness
         };
 
         Ok(lc_circuit)
     }
 
-    pub fn assert_satisfied(&self,witness: &LightClientWitness<Fr>) {
-
-        let num_rows: usize = witness
-            .mpt_witness
+    pub fn assert_satisfied(&self) {
+        let num_rows: usize = self.mpt_circuit.nodes
             .iter()
             .map(|node| node.values.len())
             .sum();
 
-        let public_inputs = witness.public_inputs();
+        let public_inputs : PublicInputs<Fr> = (&self.lc_witness).into();
 
         for (i, input) in public_inputs.iter().enumerate() {
             println!("input[{i:}]: {input:?}");
         }
 
-        let prover = MockProver::<Fr>::run(LIGHT_CLIENT_CIRCUIT_DEGREE as u32, self, vec![public_inputs]).unwrap();
+        let prover = MockProver::<Fr>::run(
+            LIGHT_CLIENT_CIRCUIT_DEGREE as u32,
+            self,
+            vec![public_inputs.0],
+        )
+        .unwrap();
         prover.assert_satisfied_at_rows_par(0..num_rows, 0..num_rows);
-
     }
 
-    pub fn prove_and_verify(self, witness: &LightClientWitness<Fr>) {
-        let mut rng = ChaCha20Rng::seed_from_u64(42);
 
-        // Bench setup generation
-        let start = Instant::now();
+    pub fn prove(
+        self,
+        keys: &LightClientCircuitKeys,
+    ) -> Result<Vec<u8>> {
+        let rng = ChaCha20Rng::seed_from_u64(42);
 
-        let general_params = ParamsKZG::<Bn256>::setup(LIGHT_CLIENT_CIRCUIT_DEGREE as u32, &mut rng);
-        let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
-
-        println!("key generation time: {:?}", start.elapsed());
-
-        // Initialize the proving key
-        let vk = keygen_vk(&general_params, &self).expect("keygen_vk should not fail");
-        let pk = keygen_pk(&general_params, vk, &self).expect("keygen_pk should not fail");
         // Create a proof
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
+
+        let public_inputs : PublicInputs<Fr> = (&self.lc_witness).into();
 
         // Bench proof generation time
         let start = Instant::now();
@@ -532,22 +593,26 @@ impl LightClientCircuit<Fr> {
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
             LightClientCircuit<Fr>,
         >(
-            &general_params,
-            &pk,
+            &keys.general_params,
+            &keys.pk,
             &[self],
-            &[&[&witness.public_inputs()]],
+            &[&[&public_inputs]],
             rng,
             &mut transcript,
-        )
-        .expect("proof generation should not fail");
+        )?;
+
         let proof = transcript.finalize();
 
         println!("proof generation time: {:?}", start.elapsed());
 
+        Ok(proof)
+    }
+
+    pub fn verify(proof: &[u8], public_inputs: &[Fr], keys: &LightClientCircuitKeys) -> Result<()> {
         // Bench verification time
         let start = Instant::now();
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
-        let strategy = SingleStrategy::new(&general_params);
+        let strategy = SingleStrategy::new(&keys.general_params);
 
         verify_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -556,16 +621,15 @@ impl LightClientCircuit<Fr> {
             Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
             SingleStrategy<'_, Bn256>,
         >(
-            &verifier_params,
-            pk.get_vk(),
+            &keys.verifier_params,
+            keys.pk.get_vk(),
             strategy,
-            &[&[&witness.public_inputs()]],
+            &[&[public_inputs]],
             &mut verifier_transcript,
-        )
-        .expect("failed to verify bench circuit");
+        )?;
 
         println!("verification time: {:?}", start.elapsed());
+
+        Ok(())
     }
-
-
 }

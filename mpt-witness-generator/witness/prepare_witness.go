@@ -170,7 +170,7 @@ func obtainAccountProofAndConvertToWitness(i int, tMod TrieModification, tModsLe
 	} else if tMod.Type == AccountDoesNotExist {
 		proofType = "AccountDoesNotExist"
 	} else if tMod.Type == CodeHashChanged {
-		proofType = "CodeHashExists" // TODO: change when it changes in the circuit
+		proofType = "CodeHashChanged" // TODO: change when it changes in the circuit
 	}
 
 	nodes = append(nodes, GetStartNode(proofType, sRoot, cRoot, specialTest))

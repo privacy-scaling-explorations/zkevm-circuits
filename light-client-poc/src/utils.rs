@@ -8,7 +8,7 @@ use ethers::{
 use eyre::Result;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 
-use std::{convert::TryFrom, sync::Arc, time::Duration, collections::HashMap};
+use std::{collections::HashMap, convert::TryFrom, sync::Arc, time::Duration};
 use zkevm_circuits::mpt_circuit::witness_row::*;
 
 // #[rustfmt_skip]
@@ -166,7 +166,7 @@ pub fn verify_mpt_witness(nodes: Vec<Node>) -> Result<()> {
 
 pub type MM = SignerMiddleware<Provider<Http>, Wallet<SigningKey>>;
 
-pub async fn new_eth_client(provider_url: &str, pvk: &str) -> Result<Arc<MM>> {
+pub async fn new_eth_signer_client(provider_url: &str, pvk: &str) -> Result<Arc<MM>> {
     let provider: Provider<Http> =
         Provider::<Http>::try_from(provider_url)?.interval(Duration::from_millis(10u64));
     let chain_id = provider.get_chainid().await?.as_u64();
@@ -186,4 +186,3 @@ pub async fn new_eth_client(provider_url: &str, pvk: &str) -> Result<Arc<MM>> {
 
     Ok(client)
 }
-

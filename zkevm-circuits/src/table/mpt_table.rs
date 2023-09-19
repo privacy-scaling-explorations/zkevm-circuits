@@ -146,7 +146,6 @@ impl MptTable {
             .iter()
             .zip_eq(row.values())
         {
-
             region.assign_advice(|| "assign mpt table row value", *column, offset, || value)?;
         }
         Ok(())

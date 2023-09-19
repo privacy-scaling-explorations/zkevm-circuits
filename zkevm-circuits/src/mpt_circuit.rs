@@ -51,7 +51,7 @@ use crate::{
         storage_leaf::StorageLeafConfig,
     },
     table::{KeccakTable, LookupTable, MPTProofType, MptTable},
-    util::Challenges
+    util::Challenges,
 };
 
 use extension_branch::ExtensionBranchConfig;
