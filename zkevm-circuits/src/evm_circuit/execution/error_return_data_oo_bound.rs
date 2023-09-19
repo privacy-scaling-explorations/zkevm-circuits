@@ -8,7 +8,7 @@ use crate::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             from_bytes,
             math_gadget::{AddWordsGadget, IsZeroGadget, LtGadget},
-            not, or, sum, CachedRegion, Cell, U64Cell, StepRws,
+            not, or, sum, CachedRegion, Cell, StepRws, U64Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },

@@ -111,8 +111,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
 
         let mut rws = StepRws::new(block, step);
         if is_call {
-            [gas, code_address, value] =
-                [0, 1, 2].map(|_| rws.next().stack_value());
+            [gas, code_address, value] = [0, 1, 2].map(|_| rws.next().stack_value());
         }
 
         self.gas.assign_u256(region, offset, gas)?;
