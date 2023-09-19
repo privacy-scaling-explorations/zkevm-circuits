@@ -2239,3 +2239,30 @@ func TestNeighbourNodeInHashedBranch(t *testing.T) {
 
 	prepareWitness("NeighbourNodeInHashedBranch", trieModifications, statedb)
 }
+
+func TestLongKey(t *testing.T) {
+	// Currently, it results into leaf RLP constrain failure.
+	blockNum := 2000069
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0xBB9bc244D798123fDe783fCc1C72d3Bb8C189413")
+
+	statedb.DisableLoadingRemoteAccounts()
+
+	key1 := common.HexToHash("0x4312ad16021fb135960665020d410e3ca0e42488b684d61315e73d368c7182ad")
+	v := common.FromHex("500000000000000000")
+	val1 := common.BytesToHash(v)
+
+	trieMod1 := TrieModification{
+		Type:    StorageChanged,
+		Key:     key1,
+		Value:   val1,
+		Address: addr,
+	}
+
+	trieModifications := []TrieModification{trieMod1}
+
+	prepareWitness("LongKey", trieModifications, statedb)
+}
