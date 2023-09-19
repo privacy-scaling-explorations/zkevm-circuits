@@ -51,8 +51,7 @@ where
     (c_abi, contract_address, block_number, contract_instance)
 }
 
-async fn dump_tx_trace(prov: Provider<Http>, receipt: TransactionReceipt, name: &str) -> ()
-{
+async fn dump_tx_trace(prov: Provider<Http>, receipt: TransactionReceipt, name: &str) -> () {
     let options = GethDebugTracingOptions::default();
     let trace = prov
         .debug_trace_transaction(receipt.transaction_hash, options)
