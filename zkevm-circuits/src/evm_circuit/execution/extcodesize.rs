@@ -10,7 +10,7 @@ use crate::{
                 Transition::Delta,
             },
             math_gadget::IsZeroWordGadget,
-            not, select, AccountAddress, CachedRegion, Cell, U64Cell,
+            not, select, AccountAddress, CachedRegion, Cell, StepRws, U64Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -123,7 +123,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let address = block.get_rws(step, 0).stack_value();
+        let mut rws = StepRws::new(block, step);
+
+        let address = rws.next().stack_value();
         self.address_word.assign_u256(region, offset, address)?;
 
         self.tx_id
@@ -136,16 +138,17 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
             call.is_persistent,
         )?;
 
-        let (_, is_warm) = block.get_rws(step, 4).tx_access_list_value_pair();
+        rws.offset_add(3);
+        let (_, is_warm) = rws.next().tx_access_list_value_pair();
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let code_hash = block.get_rws(step, 5).account_codehash_pair().0;
+        let code_hash = rws.next().account_codehash_pair().0;
         self.code_hash.assign_u256(region, offset, code_hash)?;
         self.not_exists
             .assign(region, offset, Word::from(code_hash))?;
 
-        let code_size = block.get_rws(step, 6).stack_value().as_u64();
+        let code_size = rws.next().stack_value().as_u64();
         self.code_size
             .assign(region, offset, Some(code_size.to_le_bytes()))?;
 

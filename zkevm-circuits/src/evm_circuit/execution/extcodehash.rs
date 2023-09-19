@@ -8,7 +8,7 @@ use crate::{
             constraint_builder::{
                 EVMConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
-            select, AccountAddress, CachedRegion, Cell,
+            select, AccountAddress, CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -106,7 +106,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let address = block.get_rws(step, 0).stack_value();
+        let mut rws = StepRws::new(block, step);
+
+        let address = rws.next().stack_value();
         self.address_word.assign_u256(region, offset, address)?;
 
         self.tx_id
@@ -117,12 +119,12 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
-
-        let (_, is_warm) = block.get_rws(step, 4).tx_access_list_value_pair();
+        rws.offset_add(3);
+        let (_, is_warm) = rws.next().tx_access_list_value_pair();
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let code_hash = block.get_rws(step, 5).account_codehash_pair().0;
+        let code_hash = rws.next().account_codehash_pair().0;
         self.code_hash.assign_u256(region, offset, code_hash)?;
 
         Ok(())
