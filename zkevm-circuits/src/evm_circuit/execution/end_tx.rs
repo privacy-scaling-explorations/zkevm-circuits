@@ -13,7 +13,7 @@ use crate::{
                 AddWordsGadget, ConstantDivisionGadget, IsEqualGadget, IsZeroWordGadget,
                 MinMaxGadget, MulWordByU64Gadget,
             },
-            CachedRegion, Cell,
+            CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -227,19 +227,15 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_used = tx.gas() - step.gas_left;
-        let (refund, _) = block.get_rws(step, 2).tx_refund_value_pair();
-        let (caller_balance, caller_balance_prev) = block.get_rws(step, 3).account_balance_pair();
-        let (coinbase_code_hash_prev, _) = block.get_rws(step, 4).account_codehash_pair();
-        let (coinbase_balance, coinbase_balance_prev) = block
-            .get_rws(
-                step,
-                if coinbase_code_hash_prev.is_zero() {
-                    6
-                } else {
-                    5
-                },
-            )
-            .account_balance_pair();
+        let mut rws = StepRws::new(block, step);
+        rws.offset_add(2);
+        let (refund, _) = rws.next().tx_refund_value_pair();
+        let (caller_balance, caller_balance_prev) = rws.next().account_balance_pair();
+        let (coinbase_code_hash_prev, _) = rws.next().account_codehash_pair();
+        if coinbase_code_hash_prev.is_zero() {
+            rws.offset_add(1);
+        }
+        let (coinbase_balance, coinbase_balance_prev) = rws.next().account_balance_pair();
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id)))?;
