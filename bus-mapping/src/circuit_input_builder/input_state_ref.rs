@@ -374,7 +374,7 @@ impl<'a> CircuitInputStateRef<'a> {
     ) -> Result<(), Error> {
         let op = AccountOp::new(address, field, value, value_prev);
         if reversible {
-            self.push_op_reversible(step, op);
+            self.push_op_reversible(step, op)?;
         } else {
             self.push_op(step, RW::WRITE, op);
         }
