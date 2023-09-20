@@ -478,30 +478,30 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             Value::known(call.depth.to_scalar().unwrap()),
         )?;
         let mut rws = StepRws::new(block, step);
-        rws.next(); // 0 - TxId
-        rws.next(); // 1 - Depth
-        let rw_end_of_reversion = rws.next().call_context_value().as_usize(); // 2 - RwCounterEndOfReversion
-        let is_persistent = rws.next().call_context_value().as_usize() != 0; // 3 - IsPersistent
+        rws.next();
+        rws.next();
+        let rw_end_of_reversion = rws.next().call_context_value().as_usize();
+        let is_persistent = rws.next().call_context_value().as_usize() != 0;
         self.reversion_info
             .assign(region, offset, rw_end_of_reversion, is_persistent)?;
 
         // stack value starts from 4
-        let value = rws.next().stack_value(); // 4 - Value
-        let init_code_start = rws.next().stack_value(); // 5 - Offset
-        let init_code_length = rws.next().stack_value(); // 6 - Length
+        let value = rws.next().stack_value();
+        let init_code_start = rws.next().stack_value();
+        let init_code_length = rws.next().stack_value();
 
         self.value.assign_u256(region, offset, value)?;
         let salt = if is_create2 {
-            rws.next().stack_value() // 7 - Salt
+            rws.next().stack_value()
         } else {
             U256::zero()
         };
 
-        rws.next(); // rw_off = 7 + 1 or 8 + 1 depends on is_create2
+        rws.next();
 
         // Pre-check: call depth, user's nonce and user's balance
-        let (caller_balance, _) = rws.next().account_balance_pair(); // rw_off + 1 - CallerBalance
-        let (caller_nonce, _) = rws.next().account_nonce_pair(); // rw_off + 2 - CallerNonce
+        let (caller_balance, _) = rws.next().account_balance_pair();
+        let (caller_nonce, _) = rws.next().account_nonce_pair();
         let is_precheck_ok =
             if call.depth < 1025 && caller_balance >= value && caller_nonce.as_u64() < u64::MAX {
                 1
@@ -511,28 +511,17 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         self.caller_balance
             .assign_u256(region, offset, caller_balance)?;
-        rws.next(); // rw_off + 3
+        rws.next();
         let (callee_prev_code_hash, was_warm) = if is_precheck_ok == 1 {
-            let (_, was_warm) = rws.next().tx_access_list_value_pair(); // rw_off + 4 - TxAccessList
-            let (callee_prev_code_hash, _) = rws.next().account_codehash_pair(); // rw_off + 5 - CalleePrevCodeHash
+            let (_, was_warm) = rws.next().tx_access_list_value_pair();
+            let (callee_prev_code_hash, _) = rws.next().account_codehash_pair();
             (callee_prev_code_hash, was_warm)
         } else {
             (U256::from(0), false)
         };
 
-        let (callee_rw_counter_end_of_reversion, callee_is_persistent) = if is_precheck_ok == 1 {
-            rws.offset_add(5); // rw_off + 6,7,8,9,10
-            (
-                rws.next().call_context_value(), // rw_off + 11 - CalleeRwCounterEndOfReversion
-                rws.next().call_context_value(), // rw_off + 12 - CalleeIsPersistent
-            )
-        } else {
-            rws.offset_add(2); // rw_off + 6,7
-            (
-                rws.next().call_context_value(), // // rw_off + 8 - CalleeRwCounterEndOfReversion
-                rws.next().call_context_value(), // // rw_off + 9 - CalleeIsPersistent
-            )
-        };
+        let callee_rw_counter_end_of_reversion = rws.next().call_context_value();
+        let callee_is_persistent = rws.next().call_context_value();
 
         // retrieve code_hash for creating address
         let is_address_collision = !callee_prev_code_hash.is_zero();
@@ -589,11 +578,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let code_hash = if is_precheck_ok == 1 {
             // transfer
             let (caller_balance_pair, callee_balance_pair) = if !value.is_zero() {
-                rws.offset_add(copy_rw_increase + 1); // rw_off + 13 + copy_rw_increase
+                rws.offset_add(copy_rw_increase + 1);
                 (
                     rws.next().account_balance_pair(),
                     rws.next().account_balance_pair(),
-                ) // rw_off + 14 + copy_rw_increase, rw_off + 15 + copy_rw_increase
+                )
             } else {
                 ((0.into(), 0.into()), (0.into(), 0.into()))
             };
@@ -606,8 +595,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             )?;
 
             // copy_table_lookup
-            rws.offset_sub(copy_rw_increase + 2); // rw_off + 13
-            let values: Vec<_> = (0..copy_rw_increase) // (rw_off + 13..rw_off + 13 + copy_rw_increase)
+            rws.offset_sub(copy_rw_increase + 2);
+            let values: Vec<_> = (0..copy_rw_increase)
                 .map(|_i| rws.next().memory_value())
                 .collect();
             let code_hash = CodeDB::hash(&values);
@@ -656,8 +645,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             Some(salt),
         )?;
 
-        // If transfer value is zero, there is no balance update
-        let transfer_offset = if value.is_zero() { 2 } else { 0 };
         self.is_success.assign(
             region,
             offset,
@@ -666,7 +653,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             } else if init_code_length.as_usize() == 0 {
                 F::ONE
             } else {
-                rws.offset_add(5 - transfer_offset); // rw_off + 13 + 5 + copy_rw_increase - transfer_offset
                 rws.next().call_context_value().to_scalar().unwrap()
             }),
         )?;

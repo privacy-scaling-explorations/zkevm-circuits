@@ -281,16 +281,10 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         self.coinbase_code_hash_is_zero
             .assign_u256(region, offset, coinbase_code_hash_prev)?;
         if !coinbase_reward.is_zero() {
-            let coinbase_balance_pair = block
-                .get_rws(
-                    step,
-                    if coinbase_code_hash_prev.is_zero() {
-                        6
-                    } else {
-                        5
-                    },
-                )
-                .account_balance_pair();
+            if coinbase_code_hash_prev.is_zero() {
+                rws.next();
+            }
+            let coinbase_balance_pair = rws.next().account_balance_pair();
             self.coinbase_reward.assign(
                 region,
                 offset,

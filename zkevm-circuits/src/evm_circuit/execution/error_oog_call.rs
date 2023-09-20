@@ -141,15 +141,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         let rd_offset = rws.next().stack_value();
         let rd_length = rws.next().stack_value();
 
-        let callee_code_hash = block
-            .get_rws(step, 9 + is_call_or_callcode)
-            .account_codehash_pair()
-            .0;
+        let callee_code_hash = rws.next().account_codehash_pair().0;
         let callee_exists = !callee_code_hash.is_zero();
 
-        let (is_warm, is_warm_prev) = block
-            .get_rws(step, 10 + is_call_or_callcode)
-            .tx_access_list_value_pair();
+        let (is_warm, is_warm_prev) = rws.next().tx_access_list_value_pair();
 
         let memory_expansion_gas_cost = self.call.assign(
             region,

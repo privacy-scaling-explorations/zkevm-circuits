@@ -156,7 +156,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         let opcode = step.opcode().unwrap();
         let is_extcodecopy = opcode == OpcodeId::EXTCODECOPY;
         let mut rws = StepRws::new(block, step);
-        rws.next();
 
         log::debug!(
             "ErrorOutOfGasMemoryCopy: opcode = {}, gas_left = {}, gas_cost = {}",
@@ -166,6 +165,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         );
 
         let (is_warm, external_address) = if is_extcodecopy {
+            rws.next();
             (
                 rws.next().tx_access_list_value_pair().0,
                 rws.next().stack_value(),
