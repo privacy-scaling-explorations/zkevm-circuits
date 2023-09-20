@@ -258,23 +258,23 @@ impl<F: Field> MPTConfig<F> {
         state_cm.add_columns(meta, &mut cb.base, lu(MptTableType::Mult), 2, false, 2);
 
         let mut memory = Memory::new();
-        memory.add_rw(meta, &mut cb.base, &mut state_cm, MptCellType::MemKeyC, 2);
-        memory.add_rw(meta, &mut cb.base, &mut state_cm, MptCellType::MemKeyS, 2);
-        memory.add_rw(
+        memory.add_memory_bank(meta, &mut cb.base, &mut state_cm, MptCellType::MemKeyC, 2);
+        memory.add_memory_bank(meta, &mut cb.base, &mut state_cm, MptCellType::MemKeyS, 2);
+        memory.add_memory_bank(
             meta,
             &mut cb.base,
             &mut state_cm,
             MptCellType::MemParentC,
             2,
         );
-        memory.add_rw(
+        memory.add_memory_bank(
             meta,
             &mut cb.base,
             &mut state_cm,
             MptCellType::MemParentS,
             2,
         );
-        memory.add_rw(meta, &mut cb.base, &mut state_cm, MptCellType::MemMain, 2);
+        memory.add_memory_bank(meta, &mut cb.base, &mut state_cm, MptCellType::MemMain, 2);
 
         let mut ctx = MPTContext {
             mpt_table,

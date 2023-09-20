@@ -29,21 +29,13 @@ impl<F: Field, C: CellType, MB: MemoryBank<F, C>> Index<C> for Memory<F, C, MB> 
     type Output = MB;
 
     fn index(&self, tag: C) -> &Self::Output {
-        if let Some(bank) = self.banks.get(&tag) {
-            bank
-        } else {
-            unreachable!()
-        }
+        self.banks.get(&tag).expect("bank exists")
     }
 }
 
 impl<F: Field, C: CellType, MB: MemoryBank<F, C>> IndexMut<C> for Memory<F, C, MB> {
     fn index_mut(&mut self, tag: C) -> &mut Self::Output {
-        if let Some(bank) = self.banks.get_mut(&tag) {
-            bank
-        } else {
-            unreachable!()
-        }
+        self.banks.get_mut(&tag).expect("bank exists")
     }
 }
 
@@ -56,7 +48,7 @@ impl<F: Field, C: CellType, MB: MemoryBank<F, C>> Memory<F, C, MB> {
         }
     }
 
-    pub(crate) fn add_rw(
+    pub(crate) fn add_memory_bank(
         &mut self,
         meta: &mut ConstraintSystem<F>,
         cb: &mut ConstraintBuilder<F, C>,
