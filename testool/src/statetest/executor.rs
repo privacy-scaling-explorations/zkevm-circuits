@@ -3,7 +3,6 @@ use crate::config::TestSuite;
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, FixedCParams},
     mock::BlockData,
-    state_db::CodeDB,
 };
 use eth_types::{geth_types, Address, Bytes, GethExecTrace, ToBigEndian, U256, U64};
 use ethers_core::{
@@ -353,32 +352,6 @@ pub fn run_test(
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         prover.assert_satisfied_par();
     };
-    {
-        // fill these "untouched" storage slots
-        // It is better to fill these info after (instead of before) bus-mapping re-exec.
-        // To prevent these data being used unexpectedly.
-        // TODO: another method will be to skip empty account inside check_post?
-        for account in trace_config.accounts.values() {
-            builder.code_db.insert(account.code.to_vec());
-            let (exist, acc_in_local_sdb) = builder.sdb.get_account_mut(&account.address);
-            if !exist {
-                // modified from bus-mapping/src/mock.rs
-                let code_hash = CodeDB::hash(&account.code);
-                *acc_in_local_sdb = bus_mapping::state_db::Account {
-                    nonce: account.nonce.as_u64(),
-                    balance: account.balance,
-                    storage: account.storage.clone(),
-                    code_hash,
-                };
-            } else {
-                for (k, v) in &account.storage {
-                    if !acc_in_local_sdb.storage.contains_key(k) {
-                        acc_in_local_sdb.storage.insert(*k, *v);
-                    }
-                }
-            }
-        }
-    }
     check_post(&builder, &post)?;
 
     Ok(())
