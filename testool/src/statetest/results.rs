@@ -171,26 +171,15 @@ impl Report {
         let mut tests_for_render: HashMap<_, _> = self
             .tests
             .iter()
-            .filter_map(|(id, result)| {
-                if OUTPUT_ALL_RESULT_LEVELS.contains(&result.level) {
-                    Some((id.clone(), result.clone()))
-                } else {
-                    // ignore or success
-                    if result.level == ResultLevel::Success {
-                        None
-                    } else {
-                        // ignore
-                        let big_test = result.details.starts_with("SkipTestMaxGasLimit")
-                            || result.details.starts_with("SkipTestMaxSteps");
-                        if result.details.starts_with("SkipTestSelfDestruct") || big_test {
-                            None
-                        } else {
-                            // eg: SkipTestBalanceOverflow
-                            Some((id.clone(), result.clone()))
-                        }
-                    }
-                }
+            .filter(|(_, result)| OUTPUT_ALL_RESULT_LEVELS.contains(&result.level))
+            .filter(|(_, result)| result.level != ResultLevel::Success)
+            .filter(|(_, result)| !result.details.starts_with("SkipTestSelfDestruct"))
+            // no big test
+            .filter(|(_, result)| {
+                !result.details.starts_with("SkipTestMaxGasLimit")
+                    && !result.details.starts_with("SkipTestMaxSteps")
             })
+            .map(|(id, result)| (id.clone(), result.clone()))
             .collect();
         for (_, result) in tests_for_render.iter_mut() {
             assert!(result.path.starts_with(leading_tests_path));
