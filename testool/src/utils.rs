@@ -213,10 +213,3 @@ mod test {
             .expect("can parse network"));
     }
 }
-
-#[cfg(test)]
-#[ctor::ctor]
-fn init_env_logger() {
-    // Enable RUST_LOG during tests
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
-}
