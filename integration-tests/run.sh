@@ -91,7 +91,6 @@ fi
 
 if [ -n "$STEP_GENDATA" ]; then
     echo "+ Gen blockchain data..."
-    git submodule update --init --recursive --checkout contracts/vendor
     rm gendata_output.json > /dev/null 2>&1 || true
     cargo run --bin gen_blockchain_data
 fi
