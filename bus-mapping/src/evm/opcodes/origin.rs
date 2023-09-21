@@ -1,7 +1,9 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::CallContextField;
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    operation::CallContextField,
+    Error,
+};
 use eth_types::GethExecStep;
 
 #[derive(Debug, Copy, Clone)]
@@ -71,8 +73,8 @@ mod origin_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 

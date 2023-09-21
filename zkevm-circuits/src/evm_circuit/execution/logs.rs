@@ -6,21 +6,29 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
-            memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, sum, CachedRegion, Cell, CellType,
+            memory_gadget::{
+                CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
+            },
+            not, sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
-    util::{build_tx_log_expression, Expr},
+    table::{CallContextFieldTag, TxLogFieldTag},
+    util::{
+        build_tx_log_expression,
+        word::{Word, Word32Cell, WordCell, WordExpr},
+        Expr,
+    },
 };
 use array_init::array_init;
 use bus_mapping::circuit_input_builder::CopyDataType;
-use eth_types::{evm_types::GasCost, evm_types::OpcodeId, ToScalar};
-use eth_types::{Field, U256};
+use eth_types::{
+    evm_types::{GasCost, OpcodeId},
+    Field, ToScalar, U256,
+};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -28,10 +36,10 @@ pub(crate) struct LogGadget<F> {
     same_context: SameContextGadget<F>,
     // memory address
     memory_address: MemoryAddressGadget<F>,
-    phase2_topics: [Cell<F>; 4],
+    topics: [Word32Cell<F>; 4],
     topic_selectors: [Cell<F>; 4],
 
-    contract_address: Cell<F>,
+    contract_address: WordCell<F>,
     is_static_call: Cell<F>,
     is_persistent: Cell<F>,
     tx_id: Cell<F>,
@@ -44,13 +52,13 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::LOG;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let mstart = cb.query_cell();
-        let msize = cb.query_word_rlc();
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let mstart = cb.query_word_unchecked();
+        let msize = cb.query_memory_address();
 
         // Pop mstart_address, msize from stack
-        cb.stack_pop(mstart.expr());
-        cb.stack_pop(msize.expr());
+        cb.stack_pop(mstart.to_word());
+        cb.stack_pop(msize.to_word());
         // read tx id
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         // constrain not in static call
@@ -59,7 +67,8 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
         // check contract_address in CallContext & TxLog
         // use call context's  callee address as contract address
-        let contract_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
+        let contract_address =
+            cb.call_context_read_as_word(None, CallContextFieldTag::CalleeAddress);
         let is_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
         cb.require_boolean("is_persistent is bool", is_persistent.expr());
 
@@ -69,16 +78,16 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 cb.curr.state.log_id.expr() + 1.expr(),
                 TxLogFieldTag::Address,
                 0.expr(),
-                contract_address.expr(),
+                contract_address.to_word(),
             );
         });
 
         // constrain topics in logs
-        let phase2_topics = array_init(|_| cb.query_cell_with_type(CellType::StoragePhase2));
+        let topics = array_init(|_| cb.query_word32());
         let topic_selectors: [Cell<F>; 4] = array_init(|_| cb.query_cell());
-        for (idx, topic) in phase2_topics.iter().enumerate() {
+        for (idx, topic) in topics.iter().enumerate() {
             cb.condition(topic_selectors[idx].expr(), |cb| {
-                cb.stack_pop(topic.expr());
+                cb.stack_pop(topic.to_word());
             });
             cb.condition(topic_selectors[idx].expr() * is_persistent.expr(), |cb| {
                 cb.tx_log_lookup(
@@ -86,7 +95,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                     cb.curr.state.log_id.expr() + 1.expr(),
                     TxLogFieldTag::Topic,
                     idx.expr(),
-                    topic.expr(),
+                    topic.to_word(),
                 );
             });
         }
@@ -130,9 +139,9 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let cond = memory_address.has_length() * is_persistent.expr();
         cb.condition(cond.clone(), |cb| {
             cb.copy_table_lookup(
-                cb.curr.state.call_id.expr(),
+                Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
                 CopyDataType::Memory.expr(),
-                tx_id.expr(),
+                Word::from_lo_unchecked(tx_id.expr()),
                 CopyDataType::TxLog.expr(),
                 memory_address.offset(),
                 memory_address.address(),
@@ -149,8 +158,8 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             );
         });
 
-        let gas_cost = GasCost::LOG.as_u64().expr()
-            + GasCost::LOG.as_u64().expr() * topic_count.clone()
+        let gas_cost = GasCost::LOG.expr()
+            + GasCost::LOG.expr() * topic_count.clone()
             + 8.expr() * memory_address.length()
             + memory_expansion.gas_cost();
         // State transition
@@ -170,7 +179,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         Self {
             same_context,
             memory_address,
-            phase2_topics,
+            topics,
             topic_selectors,
             contract_address,
             is_static_call,
@@ -192,9 +201,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [memory_start, msize] =
-            [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
-
+        let [memory_start, msize] = [0, 1].map(|index| block.get_rws(step, index).stack_value());
         let memory_address = self
             .memory_address
             .assign(region, offset, memory_start, msize)?;
@@ -203,46 +210,40 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         self.memory_expansion
             .assign(region, offset, step.memory_word_size(), [memory_address])?;
 
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         let topic_count = opcode.postfix().expect("opcode with postfix") as usize;
         assert!(topic_count <= 4);
 
-        let is_persistent = call.is_persistent as u64;
-        let mut topic_stack_entry = if topic_count > 0 {
-            step.rw_indices[6 + call.is_persistent as usize]
-        } else {
-            // if topic_count == 0, this value will be no used anymore
-            (RwTableTag::Stack, 0usize)
-        };
-
+        let is_persistent = call.is_persistent as usize;
+        let mut topics = (0..topic_count).map(|topic| {
+            // We compute the index of the correct read-write record from
+            // bus-mapping/src/evm/opcodes/logs.rs::gen_log_step
+            // It takes 6 + is_persistent reads or writes to reach the topic stack write section.
+            // Each topic takes at least 1 stack read. They take an additional tx log write if the
+            // call is persistent.
+            block
+                .get_rws(step, 6 + is_persistent + topic * (1 + is_persistent))
+                .stack_value()
+        });
         for i in 0..4 {
-            let mut topic = region.word_rlc(U256::zero());
-            if i < topic_count {
-                topic = region.word_rlc(block.rws[topic_stack_entry].stack_value());
-                self.topic_selectors[i].assign(region, offset, Value::known(F::one()))?;
-                topic_stack_entry.1 += 1;
-            } else {
-                self.topic_selectors[i].assign(region, offset, Value::known(F::zero()))?;
-            }
-            self.phase2_topics[i].assign(region, offset, topic)?;
+            let topic = topics.next();
+            self.topic_selectors[i].assign(
+                region,
+                offset,
+                Value::known(F::from(topic.is_some().into())),
+            )?;
+            self.topics[i].assign_u256(region, offset, topic.unwrap_or_default())?;
         }
 
-        self.contract_address.assign(
-            region,
-            offset,
-            Value::known(
-                call.callee_address
-                    .to_scalar()
-                    .expect("unexpected Address -> Scalar conversion failure"),
-            ),
-        )?;
-
+        self.contract_address
+            .assign_h160(region, offset, call.address)?;
+        let is_persistent = call.is_persistent as u64;
         self.is_static_call
             .assign(region, offset, Value::known(F::from(call.is_static as u64)))?;
         self.is_persistent
             .assign(region, offset, Value::known(F::from(is_persistent)))?;
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id)))?;
         // rw_counter increase from copy table lookup is `msize` memory reads + `msize`
         // log writes when `is_persistent` is true.
         self.copy_rwc_inc.assign(
@@ -261,11 +262,10 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
 #[cfg(test)]
 mod test {
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{evm_types::OpcodeId, Bytecode, Word};
     use mock::TestContext;
     use rand::Rng;
-
-    use crate::test_util::run_test_circuits;
 
     #[test]
     fn log_gadget_simple() {
@@ -357,7 +357,7 @@ mod test {
         code.push(32, Word::from(mstart));
         code.write_op(cur_op_code);
         if is_persistent {
-            code.write_op(OpcodeId::STOP);
+            code.op_stop();
         } else {
             // make current call failed with false persistent
             code.write_op(OpcodeId::INVALID(0xfe));
@@ -365,13 +365,10 @@ mod test {
 
         code_prepare.append(&code);
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(code_prepare).unwrap(),
-                None
-            ),
-            Ok(()),
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+        )
+        .run();
     }
 
     // test multi log op codes and multi copy log steps
@@ -417,16 +414,13 @@ mod test {
         code.push(32, Word::from(mstart));
         code.write_op(cur_op_code);
 
-        code.write_op(OpcodeId::STOP);
+        code.op_stop();
         code_prepare.append(&code);
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(code_prepare).unwrap(),
-                None,
-            ),
-            Ok(()),
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+        )
+        .run();
     }
 
     /// prepare memory reading data
@@ -435,9 +429,7 @@ mod test {
         // prepare memory data
         let mut code = Bytecode::default();
         for (i, d) in data.chunks(32).enumerate() {
-            code.push(32, Word::from_big_endian(d));
-            code.push(32, Word::from(offset + i * 32));
-            code.write_op(OpcodeId::MSTORE);
+            code.op_mstore(offset + i * 32, Word::from_big_endian(d));
         }
         code
     }

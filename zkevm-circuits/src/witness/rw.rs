@@ -1,41 +1,110 @@
-#![allow(missing_docs)]
+//! The Read-Write table related structs
 use std::collections::HashMap;
 
-use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField};
-use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
+use bus_mapping::{
+    exec_trace::OperationRef,
+    operation::{self, AccountField, CallContextField, Target, TxLogField, TxReceiptField},
+};
+use eth_types::{Address, Field, ToAddress, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 
-use crate::util::build_tx_log_address;
 use crate::{
-    evm_circuit::util::RandomLinearCombination,
-    table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
+    table::{AccountFieldTag, CallContextFieldTag, TxLogFieldTag, TxReceiptFieldTag},
+    util::{build_tx_log_address, word},
 };
+
+use super::MptUpdates;
 
 /// Rw constainer for a witness block
 #[derive(Debug, Default, Clone)]
-pub struct RwMap(pub HashMap<RwTableTag, Vec<Rw>>);
+pub struct RwMap(pub HashMap<Target, Vec<Rw>>);
 
-impl std::ops::Index<(RwTableTag, usize)> for RwMap {
+impl std::ops::Index<(Target, usize)> for RwMap {
     type Output = Rw;
 
-    fn index(&self, (tag, idx): (RwTableTag, usize)) -> &Self::Output {
+    fn index(&self, (tag, idx): (Target, usize)) -> &Self::Output {
         &self.0.get(&tag).unwrap()[idx]
     }
 }
+
+impl std::ops::Index<OperationRef> for RwMap {
+    type Output = Rw;
+
+    fn index(&self, OperationRef(tag, idx): OperationRef) -> &Self::Output {
+        &self.0.get(&tag).unwrap()[idx]
+    }
+}
+
 impl RwMap {
     /// Check rw_counter is continuous and starting from 1
     pub fn check_rw_counter_sanity(&self) {
         for (idx, rw_counter) in self
             .0
             .iter()
-            .filter(|(tag, _rs)| !matches!(tag, RwTableTag::Start))
+            .filter(|(tag, _rs)| !matches!(tag, Target::Start))
             .flat_map(|(_tag, rs)| rs)
             .map(|r| r.rw_counter())
             .sorted()
             .enumerate()
         {
             debug_assert_eq!(idx, rw_counter - 1);
+        }
+    }
+    /// Check value in the same way like StateCircuit
+    pub fn check_value(&self) {
+        let err_msg_first = "first access reads don't change value";
+        let err_msg_non_first = "non-first access reads don't change value";
+        let rows = self.table_assignments();
+        let updates = MptUpdates::mock_from(&rows);
+        let mut errs = Vec::new();
+        for idx in 1..rows.len() {
+            let row = &rows[idx];
+            let prev_row = &rows[idx - 1];
+            let is_first = {
+                let key = |row: &Rw| {
+                    (
+                        row.tag() as u64,
+                        row.id().unwrap_or_default(),
+                        row.address().unwrap_or_default(),
+                        row.field_tag().unwrap_or_default(),
+                        row.storage_key().unwrap_or_default(),
+                    )
+                };
+                key(prev_row) != key(row)
+            };
+            if !row.is_write() {
+                let value = row.value_assignment();
+                if is_first {
+                    // value == init_value
+                    let init_value = updates
+                        .get(row)
+                        .map(|u| u.value_assignments().1)
+                        .unwrap_or_default();
+                    if value != init_value {
+                        errs.push((idx, err_msg_first, *row, *prev_row));
+                    }
+                } else {
+                    // value == prev_value
+                    let prev_value = prev_row.value_assignment();
+
+                    if value != prev_value {
+                        errs.push((idx, err_msg_non_first, *row, *prev_row));
+                    }
+                }
+            }
+        }
+        if !errs.is_empty() {
+            log::error!("after rw value check, err num: {}", errs.len());
+            for (idx, err_msg, row, prev_row) in errs {
+                log::error!(
+                    "err: rw idx: {}, reason: \"{}\", row: {:?}, prev_row: {:?}",
+                    idx,
+                    err_msg,
+                    row,
+                    prev_row
+                );
+            }
         }
     }
     /// Calculates the number of Rw::Start rows needed.
@@ -46,10 +115,9 @@ impl RwMap {
             target_len - rows_len
         } else {
             if target_len != 0 {
-                log::error!(
+                panic!(
                     "RwMap::padding_len overflow, target_len: {}, rows_len: {}",
-                    target_len,
-                    rows_len
+                    target_len, rows_len
                 );
             }
             1
@@ -84,6 +152,10 @@ impl RwMap {
     }
 }
 
+#[allow(
+    missing_docs,
+    reason = "Some of the docs are tedious and can be found at https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/tables.md"
+)]
 /// Read-write records in execution. Rws are used for connecting evm circuit and
 /// state circuits.
 #[derive(Clone, Copy, Debug)]
@@ -137,15 +209,6 @@ pub enum Rw {
         tx_id: usize,
         committed_value: Word,
     },
-    /// AccountDestructed
-    AccountDestructed {
-        rw_counter: usize,
-        is_write: bool,
-        tx_id: usize,
-        account_address: Address,
-        is_destructed: bool,
-        is_destructed_prev: bool,
-    },
     /// CallContext
     CallContext {
         rw_counter: usize,
@@ -177,11 +240,12 @@ pub enum Rw {
         tx_id: usize,
         log_id: u64, // pack this can index together into address?
         field_tag: TxLogFieldTag,
-        // topic index (0..4) if field_tag is TxLogFieldTag:Topic
-        // byte index if field_tag is TxLogFieldTag:Data
-        // 0 for other field tags
+        /// index has 3 usages depends on [`crate::table::TxLogFieldTag`]
+        /// - topic index (0..4) if field_tag is TxLogFieldTag::Topic
+        /// - byte index if field_tag is TxLogFieldTag:Data
+        /// - 0 for other field tags
         index: usize,
-        // when it is topic field, value can be word type
+        /// when it is topic field, value can be word type
         value: Word,
     },
     /// TxReceipt
@@ -203,15 +267,14 @@ pub struct RwRow<F> {
     pub(crate) id: F,
     pub(crate) address: F,
     pub(crate) field_tag: F,
-    pub(crate) storage_key: F,
-    pub(crate) value: F,
-    pub(crate) value_prev: F,
-    pub(crate) aux1: F,
-    pub(crate) aux2: F,
+    pub(crate) storage_key: word::Word<F>,
+    pub(crate) value: word::Word<F>,
+    pub(crate) value_prev: word::Word<F>,
+    pub(crate) init_val: word::Word<F>,
 }
 
 impl<F: Field> RwRow<F> {
-    pub(crate) fn values(&self) -> [F; 11] {
+    pub(crate) fn values(&self) -> [F; 14] {
         [
             self.rw_counter,
             self.is_write,
@@ -219,23 +282,52 @@ impl<F: Field> RwRow<F> {
             self.id,
             self.address,
             self.field_tag,
-            self.storage_key,
-            self.value,
-            self.value_prev,
-            self.aux1,
-            self.aux2,
+            self.storage_key.lo(),
+            self.storage_key.hi(),
+            self.value.lo(),
+            self.value.hi(),
+            self.value_prev.lo(),
+            self.value_prev.hi(),
+            self.init_val.lo(),
+            self.init_val.hi(),
         ]
     }
+
     pub(crate) fn rlc(&self, randomness: F) -> F {
         let values = self.values();
         values
             .iter()
             .rev()
-            .fold(F::zero(), |acc, value| acc * randomness + value)
+            .fold(F::ZERO, |acc, value| acc * randomness + value)
     }
+}
 
-    pub(crate) fn rlc_value(&self, randomness: Value<F>) -> Value<F> {
-        randomness.map(|randomness| self.rlc(randomness))
+impl<F: Field> RwRow<Value<F>> {
+    pub(crate) fn unwrap(self) -> RwRow<F> {
+        let unwrap_f = |f: Value<F>| {
+            let mut inner = None;
+            _ = f.map(|v| {
+                inner = Some(v);
+            });
+            inner.unwrap()
+        };
+        let unwrap_w = |f: word::Word<Value<F>>| {
+            let (lo, hi) = f.into_lo_hi();
+            word::Word::new([unwrap_f(lo), unwrap_f(hi)])
+        };
+
+        RwRow {
+            rw_counter: unwrap_f(self.rw_counter),
+            is_write: unwrap_f(self.is_write),
+            tag: unwrap_f(self.tag),
+            id: unwrap_f(self.id),
+            address: unwrap_f(self.address),
+            field_tag: unwrap_f(self.field_tag),
+            storage_key: unwrap_w(self.storage_key),
+            value: unwrap_w(self.value),
+            value_prev: unwrap_w(self.value_prev),
+            init_val: unwrap_w(self.init_val),
+        }
     }
 }
 
@@ -265,11 +357,47 @@ impl Rw {
         }
     }
 
-    pub(crate) fn account_value_pair(&self) -> (Word, Word) {
+    pub(crate) fn account_balance_pair(&self) -> (Word, Word) {
         match self {
             Self::Account {
-                value, value_prev, ..
-            } => (*value, *value_prev),
+                value,
+                value_prev,
+                field_tag,
+                ..
+            } => {
+                debug_assert_eq!(field_tag, &AccountFieldTag::Balance);
+                (*value, *value_prev)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    pub(crate) fn account_nonce_pair(&self) -> (Word, Word) {
+        match self {
+            Self::Account {
+                value,
+                value_prev,
+                field_tag,
+                ..
+            } => {
+                debug_assert_eq!(field_tag, &AccountFieldTag::Nonce);
+                (*value, *value_prev)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    pub(crate) fn account_codehash_pair(&self) -> (Word, Word) {
+        match self {
+            Self::Account {
+                value,
+                value_prev,
+                field_tag,
+                ..
+            } => {
+                debug_assert_eq!(field_tag, &AccountFieldTag::CodeHash);
+                (*value, *value_prev)
+            }
             _ => unreachable!(),
         }
     }
@@ -312,13 +440,6 @@ impl Rw {
         }
     }
 
-    pub(crate) fn log_value(&self) -> Word {
-        match self {
-            Self::TxLog { value, .. } => *value,
-            _ => unreachable!(),
-        }
-    }
-
     pub(crate) fn receipt_value(&self) -> u64 {
         match self {
             Self::TxReceipt { value, .. } => *value,
@@ -333,52 +454,20 @@ impl Rw {
         }
     }
 
-    // At this moment is a helper for the EVM circuit until EVM challange API is
-    // applied
-    pub(crate) fn table_assignment_aux<F: Field>(&self, randomness: F) -> RwRow<F> {
-        RwRow {
-            rw_counter: F::from(self.rw_counter() as u64),
-            is_write: F::from(self.is_write() as u64),
-            tag: F::from(self.tag() as u64),
-            id: F::from(self.id().unwrap_or_default() as u64),
-            address: self.address().unwrap_or_default().to_scalar().unwrap(),
-            field_tag: F::from(self.field_tag().unwrap_or_default() as u64),
-            storage_key: RandomLinearCombination::random_linear_combine(
-                self.storage_key().unwrap_or_default().to_le_bytes(),
-                randomness,
-            ),
-            value: self.value_assignment(randomness),
-            value_prev: self.value_prev_assignment(randomness).unwrap_or_default(),
-            aux1: F::zero(), // only used for AccountStorage::tx_id, which moved to key1.
-            aux2: self
-                .committed_value_assignment(randomness)
-                .unwrap_or_default(),
-        }
-    }
-
-    pub(crate) fn table_assignment<F: Field>(&self, randomness: Value<F>) -> RwRow<Value<F>> {
+    pub(crate) fn table_assignment<F: Field>(&self) -> RwRow<Value<F>> {
         RwRow {
             rw_counter: Value::known(F::from(self.rw_counter() as u64)),
             is_write: Value::known(F::from(self.is_write() as u64)),
             tag: Value::known(F::from(self.tag() as u64)),
             id: Value::known(F::from(self.id().unwrap_or_default() as u64)),
             address: Value::known(self.address().unwrap_or_default().to_scalar().unwrap()),
-            field_tag: Value::known(F::from(self.field_tag().unwrap_or_default() as u64)),
-            storage_key: randomness.map(|randomness| {
-                RandomLinearCombination::random_linear_combine(
-                    self.storage_key().unwrap_or_default().to_le_bytes(),
-                    randomness,
-                )
-            }),
-            value: randomness.map(|randomness| self.value_assignment(randomness)),
-            value_prev: randomness
-                .map(|randomness| self.value_prev_assignment(randomness).unwrap_or_default()),
-            aux1: Value::known(F::zero()), /* only used for AccountStorage::tx_id, which moved to
-                                            * key1. */
-            aux2: randomness.map(|randomness| {
-                self.committed_value_assignment(randomness)
-                    .unwrap_or_default()
-            }),
+            field_tag: Value::known(F::from(self.field_tag().unwrap_or_default())),
+            storage_key: word::Word::from(self.storage_key().unwrap_or_default()).into_value(),
+            value: word::Word::from(self.value_assignment()).into_value(),
+            value_prev: word::Word::from(self.value_prev_assignment().unwrap_or_default())
+                .into_value(),
+            init_val: word::Word::from(self.committed_value_assignment().unwrap_or_default())
+                .into_value(),
         }
     }
 
@@ -392,7 +481,6 @@ impl Rw {
             | Self::TxAccessListAccountStorage { rw_counter, .. }
             | Self::TxRefund { rw_counter, .. }
             | Self::Account { rw_counter, .. }
-            | Self::AccountDestructed { rw_counter, .. }
             | Self::CallContext { rw_counter, .. }
             | Self::TxLog { rw_counter, .. }
             | Self::TxReceipt { rw_counter, .. } => *rw_counter,
@@ -409,27 +497,25 @@ impl Rw {
             | Self::TxAccessListAccountStorage { is_write, .. }
             | Self::TxRefund { is_write, .. }
             | Self::Account { is_write, .. }
-            | Self::AccountDestructed { is_write, .. }
             | Self::CallContext { is_write, .. }
             | Self::TxLog { is_write, .. }
             | Self::TxReceipt { is_write, .. } => *is_write,
         }
     }
 
-    pub(crate) fn tag(&self) -> RwTableTag {
+    pub(crate) fn tag(&self) -> Target {
         match self {
-            Self::Start { .. } => RwTableTag::Start,
-            Self::Memory { .. } => RwTableTag::Memory,
-            Self::Stack { .. } => RwTableTag::Stack,
-            Self::AccountStorage { .. } => RwTableTag::AccountStorage,
-            Self::TxAccessListAccount { .. } => RwTableTag::TxAccessListAccount,
-            Self::TxAccessListAccountStorage { .. } => RwTableTag::TxAccessListAccountStorage,
-            Self::TxRefund { .. } => RwTableTag::TxRefund,
-            Self::Account { .. } => RwTableTag::Account,
-            Self::AccountDestructed { .. } => RwTableTag::AccountDestructed,
-            Self::CallContext { .. } => RwTableTag::CallContext,
-            Self::TxLog { .. } => RwTableTag::TxLog,
-            Self::TxReceipt { .. } => RwTableTag::TxReceipt,
+            Self::Start { .. } => Target::Start,
+            Self::Memory { .. } => Target::Memory,
+            Self::Stack { .. } => Target::Stack,
+            Self::AccountStorage { .. } => Target::Storage,
+            Self::TxAccessListAccount { .. } => Target::TxAccessListAccount,
+            Self::TxAccessListAccountStorage { .. } => Target::TxAccessListAccountStorage,
+            Self::TxRefund { .. } => Target::TxRefund,
+            Self::Account { .. } => Target::Account,
+            Self::CallContext { .. } => Target::CallContext,
+            Self::TxLog { .. } => Target::TxLog,
+            Self::TxReceipt { .. } => Target::TxReceipt,
         }
     }
 
@@ -444,7 +530,7 @@ impl Rw {
             Self::CallContext { call_id, .. }
             | Self::Stack { call_id, .. }
             | Self::Memory { call_id, .. } => Some(*call_id),
-            Self::Start { .. } | Self::Account { .. } | Self::AccountDestructed { .. } => None,
+            Self::Start { .. } | Self::Account { .. } => None,
         }
     }
 
@@ -460,9 +546,6 @@ impl Rw {
                 account_address, ..
             }
             | Self::AccountStorage {
-                account_address, ..
-            }
-            | Self::AccountDestructed {
                 account_address, ..
             } => Some(*account_address),
             Self::Memory { memory_address, .. } => Some(U256::from(*memory_address).to_address()),
@@ -497,8 +580,7 @@ impl Rw {
             | Self::TxAccessListAccount { .. }
             | Self::TxAccessListAccountStorage { .. }
             | Self::TxRefund { .. }
-            | Self::TxLog { .. }
-            | Self::AccountDestructed { .. } => None,
+            | Self::TxLog { .. } => None,
         }
     }
 
@@ -513,90 +595,36 @@ impl Rw {
             | Self::TxRefund { .. }
             | Self::Account { .. }
             | Self::TxAccessListAccount { .. }
-            | Self::AccountDestructed { .. }
             | Self::TxLog { .. }
             | Self::TxReceipt { .. } => None,
         }
     }
 
-    pub(crate) fn value_assignment<F: Field>(&self, randomness: F) -> F {
+    pub(crate) fn value_assignment(&self) -> Word {
         match self {
-            Self::Start { .. } => F::zero(),
-            Self::CallContext {
-                field_tag, value, ..
-            } => {
-                match field_tag {
-                    // Only these two tags have values that may not fit into a scalar, so we need to
-                    // RLC.
-                    CallContextFieldTag::CodeHash | CallContextFieldTag::Value => {
-                        RandomLinearCombination::random_linear_combine(
-                            value.to_le_bytes(),
-                            randomness,
-                        )
-                    }
-                    _ => value.to_scalar().unwrap(),
-                }
-            }
-            Self::Account {
-                value, field_tag, ..
-            } => match field_tag {
-                AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
-                    RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
-                }
-                AccountFieldTag::Nonce | AccountFieldTag::NonExisting => value.to_scalar().unwrap(),
-            },
-            Self::AccountStorage { value, .. } | Self::Stack { value, .. } => {
-                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
-            }
-
-            Self::TxLog {
-                field_tag, value, ..
-            } => match field_tag {
-                TxLogFieldTag::Topic => {
-                    RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
-                }
-                _ => value.to_scalar().unwrap(),
-            },
-
+            Self::Start { .. } => U256::zero(),
+            Self::CallContext { value, .. }
+            | Self::Account { value, .. }
+            | Self::AccountStorage { value, .. }
+            | Self::Stack { value, .. }
+            | Self::TxLog { value, .. } => *value,
             Self::TxAccessListAccount { is_warm, .. }
-            | Self::TxAccessListAccountStorage { is_warm, .. } => F::from(*is_warm as u64),
-            Self::AccountDestructed { is_destructed, .. } => F::from(*is_destructed as u64),
-            Self::Memory { byte, .. } => F::from(u64::from(*byte)),
-            Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => F::from(*value),
+            | Self::TxAccessListAccountStorage { is_warm, .. } => U256::from(*is_warm as u64),
+            Self::Memory { byte, .. } => U256::from(u64::from(*byte)),
+            Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => U256::from(*value),
         }
     }
 
-    pub(crate) fn value_prev_assignment<F: Field>(&self, randomness: F) -> Option<F> {
+    pub(crate) fn value_prev_assignment(&self) -> Option<Word> {
         match self {
-            Self::Account {
-                value_prev,
-                field_tag,
-                ..
-            } => Some(match field_tag {
-                AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
-                    RandomLinearCombination::random_linear_combine(
-                        value_prev.to_le_bytes(),
-                        randomness,
-                    )
-                }
-                AccountFieldTag::Nonce | AccountFieldTag::NonExisting => {
-                    value_prev.to_scalar().unwrap()
-                }
-            }),
-            Self::AccountStorage { value_prev, .. } => {
-                Some(RandomLinearCombination::random_linear_combine(
-                    value_prev.to_le_bytes(),
-                    randomness,
-                ))
+            Self::Account { value_prev, .. } | Self::AccountStorage { value_prev, .. } => {
+                Some(*value_prev)
             }
             Self::TxAccessListAccount { is_warm_prev, .. }
             | Self::TxAccessListAccountStorage { is_warm_prev, .. } => {
-                Some(F::from(*is_warm_prev as u64))
+                Some(U256::from(*is_warm_prev as u64))
             }
-            Self::AccountDestructed {
-                is_destructed_prev, ..
-            } => Some(F::from(*is_destructed_prev as u64)),
-            Self::TxRefund { value_prev, .. } => Some(F::from(*value_prev)),
+            Self::TxRefund { value_prev, .. } => Some(U256::from(*value_prev)),
             Self::Start { .. }
             | Self::Stack { .. }
             | Self::Memory { .. }
@@ -606,14 +634,11 @@ impl Rw {
         }
     }
 
-    fn committed_value_assignment<F: Field>(&self, randomness: F) -> Option<F> {
+    fn committed_value_assignment(&self) -> Option<Word> {
         match self {
             Self::AccountStorage {
                 committed_value, ..
-            } => Some(RandomLinearCombination::random_linear_combine(
-                committed_value.to_le_bytes(),
-                randomness,
-            )),
+            } => Some(*committed_value),
             _ => None,
         }
     }
@@ -624,7 +649,7 @@ impl From<&operation::OperationContainer> for RwMap {
         let mut rws = HashMap::default();
 
         rws.insert(
-            RwTableTag::Start,
+            Target::Start,
             container
                 .start
                 .iter()
@@ -634,7 +659,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::TxAccessListAccount,
+            Target::TxAccessListAccount,
             container
                 .tx_access_list_account
                 .iter()
@@ -649,13 +674,13 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::TxAccessListAccountStorage,
+            Target::TxAccessListAccountStorage,
             container
                 .tx_access_list_account_storage
                 .iter()
                 .map(|op| Rw::TxAccessListAccountStorage {
                     rw_counter: op.rwc().into(),
-                    is_write: true,
+                    is_write: op.rw().is_write(),
                     tx_id: op.op().tx_id,
                     account_address: op.op().address,
                     storage_key: op.op().key,
@@ -665,7 +690,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::TxRefund,
+            Target::TxRefund,
             container
                 .tx_refund
                 .iter()
@@ -679,7 +704,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::Account,
+            Target::Account,
             container
                 .account
                 .iter()
@@ -691,7 +716,6 @@ impl From<&operation::OperationContainer> for RwMap {
                         AccountField::Nonce => AccountFieldTag::Nonce,
                         AccountField::Balance => AccountFieldTag::Balance,
                         AccountField::CodeHash => AccountFieldTag::CodeHash,
-                        AccountField::NonExisting => AccountFieldTag::NonExisting,
                     },
                     value: op.op().value,
                     value_prev: op.op().value_prev,
@@ -699,7 +723,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::AccountStorage,
+            Target::Storage,
             container
                 .storage
                 .iter()
@@ -716,22 +740,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::AccountDestructed,
-            container
-                .account_destructed
-                .iter()
-                .map(|op| Rw::AccountDestructed {
-                    rw_counter: op.rwc().into(),
-                    is_write: true,
-                    tx_id: op.op().tx_id,
-                    account_address: op.op().address,
-                    is_destructed: op.op().is_destructed,
-                    is_destructed_prev: op.op().is_destructed_prev,
-                })
-                .collect(),
-        );
-        rws.insert(
-            RwTableTag::CallContext,
+            Target::CallContext,
             container
                 .call_context
                 .iter()
@@ -779,7 +788,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::Stack,
+            Target::Stack,
             container
                 .stack
                 .iter()
@@ -793,7 +802,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::Memory,
+            Target::Memory,
             container
                 .memory
                 .iter()
@@ -809,7 +818,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::TxLog,
+            Target::TxLog,
             container
                 .tx_log
                 .iter()
@@ -829,7 +838,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .collect(),
         );
         rws.insert(
-            RwTableTag::TxReceipt,
+            Target::TxReceipt,
             container
                 .tx_receipt
                 .iter()

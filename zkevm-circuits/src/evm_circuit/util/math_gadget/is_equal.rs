@@ -1,12 +1,8 @@
-use crate::evm_circuit::{
-    util::constraint_builder::ConstraintBuilder,
-    util::{math_gadget::*, transpose_val_ret, CachedRegion},
+use crate::evm_circuit::util::{
+    constraint_builder::EVMConstraintBuilder, math_gadget::*, CachedRegion,
 };
 use eth_types::Field;
-use halo2_proofs::{
-    circuit::Value,
-    plonk::{Error, Expression},
-};
+use halo2_proofs::plonk::{Error, Expression};
 
 /// Returns `1` when `lhs == rhs`, and returns `0` otherwise.
 #[derive(Clone, Debug)]
@@ -16,7 +12,7 @@ pub struct IsEqualGadget<F> {
 
 impl<F: Field> IsEqualGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
@@ -38,29 +34,16 @@ impl<F: Field> IsEqualGadget<F> {
     ) -> Result<F, Error> {
         self.is_zero.assign(region, offset, lhs - rhs)
     }
-
-    pub(crate) fn assign_value(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        lhs: Value<F>,
-        rhs: Value<F>,
-    ) -> Result<Value<F>, Error> {
-        transpose_val_ret(
-            lhs.zip(rhs)
-                .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs)),
-        )
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::test_util::*;
-    use super::*;
-    use crate::evm_circuit::util::{CachedRegion, Cell};
+    use super::{test_util::*, *};
+    use crate::evm_circuit::util::{
+        constraint_builder::ConstrainBuilderCommon, CachedRegion, Cell,
+    };
     use eth_types::*;
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// IsEqualGadgetTestContainer: require(a == b)
@@ -71,7 +54,7 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for IsEqualGadgetTestContainer<F> {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_cell();
             let b = cb.query_cell();
             let eq_gadget = IsEqualGadget::<F>::construct(cb, a.expr(), b.expr());

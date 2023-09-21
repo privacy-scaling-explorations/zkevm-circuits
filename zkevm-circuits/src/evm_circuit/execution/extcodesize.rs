@@ -1,33 +1,38 @@
-use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64};
-use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::util::common_gadget::SameContextGadget;
-use crate::evm_circuit::util::constraint_builder::Transition::Delta;
-use crate::evm_circuit::util::constraint_builder::{
-    ConstraintBuilder, ReversionInfo, StepStateTransition,
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        param::N_BYTES_ACCOUNT_ADDRESS,
+        step::ExecutionState,
+        util::{
+            common_gadget::SameContextGadget,
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
+                Transition::Delta,
+            },
+            math_gadget::IsZeroWordGadget,
+            not, select, AccountAddress, CachedRegion, Cell, U64Cell,
+        },
+        witness::{Block, Call, ExecStep, Transaction},
+    },
+    table::{AccountFieldTag, CallContextFieldTag},
+    util::{
+        word::{Word, Word32Cell, WordCell, WordExpr},
+        Expr,
+    },
 };
-use crate::evm_circuit::util::math_gadget::IsZeroGadget;
-use crate::evm_circuit::util::{
-    from_bytes, not, select, CachedRegion, Cell, RandomLinearCombination, Word,
-};
-use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
-use crate::table::{AccountFieldTag, CallContextFieldTag};
-use crate::util::Expr;
-use eth_types::evm_types::GasCost;
-use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use eth_types::{evm_types::GasCost, Field};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExtcodesizeGadget<F> {
     same_context: SameContextGadget<F>,
-    address_word: Word<F>,
+    address_word: Word32Cell<F>,
     reversion_info: ReversionInfo<F>,
     tx_id: Cell<F>,
     is_warm: Cell<F>,
-    code_hash: Cell<F>,
-    not_exists: IsZeroGadget<F>,
-    code_size: RandomLinearCombination<F, N_BYTES_U64>,
+    code_hash: WordCell<F>,
+    not_exists: IsZeroWordGadget<F, WordCell<F>>,
+    code_size: U64Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
@@ -35,37 +40,47 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EXTCODESIZE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let address_word = cb.query_word_rlc();
-        let address = from_bytes::expr(&address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
-        cb.stack_pop(address_word.expr());
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let address_word = cb.query_word32();
+        let address = AccountAddress::new(
+            address_word.limbs[..N_BYTES_ACCOUNT_ADDRESS]
+                .to_vec()
+                .try_into()
+                .unwrap(),
+        );
+        cb.stack_pop(address_word.to_word());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
         let is_warm = cb.query_bool();
-        cb.account_access_list_write(
+        cb.account_access_list_write_unchecked(
             tx_id.expr(),
-            address.expr(),
+            address.to_word(),
             1.expr(),
             is_warm.expr(),
             Some(&mut reversion_info),
         );
 
-        let code_hash = cb.query_cell();
+        // range check will be cover by account code_hash lookup
+        let code_hash = cb.query_word_unchecked();
         // For non-existing accounts the code_hash must be 0 in the rw_table.
-        cb.account_read(address.expr(), AccountFieldTag::CodeHash, code_hash.expr());
-        let not_exists = IsZeroGadget::construct(cb, code_hash.expr());
+        cb.account_read(
+            address.to_word(),
+            AccountFieldTag::CodeHash,
+            code_hash.to_word(),
+        );
+        let not_exists = IsZeroWordGadget::construct(cb, &code_hash);
         let exists = not::expr(not_exists.expr());
 
-        let code_size = cb.query_word_rlc();
+        let code_size = cb.query_u64();
         cb.condition(exists.expr(), |cb| {
-            cb.bytecode_length(code_hash.expr(), from_bytes::expr(&code_size.cells));
+            cb.bytecode_length(code_hash.to_word(), code_size.expr());
         });
         cb.condition(not_exists.expr(), |cb| {
             cb.require_zero("code_size is zero when non_exists", code_size.expr());
         });
 
-        cb.stack_push(code_size.expr());
+        cb.stack_push(code_size.to_word());
 
         let gas_cost = select::expr(
             is_warm.expr(),
@@ -108,12 +123,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let address = block.rws[step.rw_indices[0]].stack_value();
-        self.address_word
-            .assign(region, offset, Some(address.to_le_bytes()))?;
+        let address = block.get_rws(step, 0).stack_value();
+        self.address_word.assign_u256(region, offset, address)?;
 
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id)))?;
 
         self.reversion_info.assign(
             region,
@@ -122,17 +136,16 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
             call.is_persistent,
         )?;
 
-        let (_, is_warm) = block.rws[step.rw_indices[4]].tx_access_list_value_pair();
+        let (_, is_warm) = block.get_rws(step, 4).tx_access_list_value_pair();
         self.is_warm
-            .assign(region, offset, Value::known(F::from(is_warm)))?;
+            .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let code_hash = block.rws[step.rw_indices[5]].account_value_pair().0;
-        self.code_hash
-            .assign(region, offset, region.word_rlc(code_hash))?;
+        let code_hash = block.get_rws(step, 5).account_codehash_pair().0;
+        self.code_hash.assign_u256(region, offset, code_hash)?;
         self.not_exists
-            .assign_value(region, offset, region.word_rlc(code_hash))?;
+            .assign(region, offset, Word::from(code_hash))?;
 
-        let code_size = block.rws[step.rw_indices[6]].stack_value().as_u64();
+        let code_size = block.get_rws(step, 6).stack_value().as_u64();
         self.code_size
             .assign(region, offset, Some(code_size.to_le_bytes()))?;
 
@@ -142,11 +155,12 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::test_util::run_test_circuits;
-    use eth_types::geth_types::Account;
-    use eth_types::{bytecode, Bytecode, ToWord, Word};
-    use mock::{TestContext, MOCK_1_ETH, MOCK_ACCOUNTS, MOCK_CODES};
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
+    use eth_types::{bytecode, geth_types::Account, Bytecode, ToWord};
+    use mock::{
+        generate_mock_call_bytecode, MockCallBytecodeParams, TestContext, MOCK_1_ETH,
+        MOCK_ACCOUNTS, MOCK_CODES,
+    };
 
     #[test]
     fn test_extcodesize_gadget_simple() {
@@ -199,29 +213,19 @@ mod test {
         });
 
         // code A calls code B.
-        let pushdata = rand_bytes(8);
-        let bytecode_a = bytecode! {
-            // populate memory in A's context.
-            PUSH8(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call ADDR_B.
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH32(0xff) // argsLength
-            PUSH32(0x1010) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
-            STOP
-        };
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
+            address: addr_b,
+            pushdata: rand_bytes(32),
+            call_data_length: 0xffusize,
+            call_data_offset: 0x1010usize,
+            ..MockCallBytecodeParams::default()
+        });
 
         let ctx = TestContext::<4, 1>::new(
             None,
             |accs| {
                 accs[0].address(addr_b).code(bytecode_b);
-                accs[1].address(addr_a).code(bytecode_a);
+                accs[1].address(addr_a).code(code_a);
                 // Set code if account exists.
                 if account_exists {
                     accs[2].address(account.address).code(account.code.clone());
@@ -237,6 +241,6 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }

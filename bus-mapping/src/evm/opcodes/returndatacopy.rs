@@ -1,9 +1,11 @@
-use crate::circuit_input_builder::{
-    CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+use crate::{
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+    },
+    evm::Opcode,
+    operation::{CallContextField, MemoryOp, RW},
+    Error,
 };
-use crate::evm::Opcode;
-use crate::operation::{CallContextField, MemoryOp, RW};
-use crate::Error;
 use eth_types::GethExecStep;
 
 #[derive(Clone, Copy, Debug)]
@@ -15,38 +17,23 @@ impl Opcode for Returndatacopy {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let exec_steps = vec![gen_returndatacopy_step(state, geth_step)?];
+        let mut exec_steps = vec![gen_returndatacopy_step(state, geth_step)?];
 
         // reconstruction
         let geth_step = &geth_steps[0];
-        let dest_offset = geth_step.stack.nth_last(0)?;
-        let offset = geth_step.stack.nth_last(1)?;
-        let size = geth_step.stack.nth_last(2)?;
+        let dst_offset = geth_step.stack.nth_last(0)?;
+        let src_offset = geth_step.stack.nth_last(1)?;
+        let length = geth_step.stack.nth_last(2)?;
 
         // can we reduce this clone?
         let return_data = state.call_ctx()?.return_data.clone();
 
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
-        let length = size.as_usize();
-        if length != 0 {
-            let mem_starts = dest_offset.as_usize();
-            let mem_ends = mem_starts + length;
-            let data_starts = offset.as_usize();
-            let data_ends = data_starts + length;
-            let minimal_length = dest_offset.as_usize() + length;
-            if data_ends <= return_data.len() {
-                memory.extend_at_least(minimal_length);
-                memory[mem_starts..mem_ends].copy_from_slice(&return_data[data_starts..data_ends]);
-            } else {
-                assert_eq!(geth_steps.len(), 1);
-                // if overflows this opcode would fails current context, so
-                // there is no more steps.
-            }
-        }
+        memory.copy_from(dst_offset, src_offset, length, &return_data);
 
-        let copy_event = gen_copy_event(state, geth_step)?;
-        state.push_copy(copy_event);
+        let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
+        state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
 }
@@ -135,8 +122,11 @@ fn gen_copy_steps(
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
+    exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
-    let dst_addr = geth_step.stack.nth_last(0)?.as_u64();
+    // Get low Uint64 of destination offset to generate copy steps. Since it
+    // could be Uint64 overflow if length is zero.
+    let dst_addr = geth_step.stack.nth_last(0)?.low_u64();
     let data_offset = geth_step.stack.nth_last(1)?.as_u64();
     let length = geth_step.stack.nth_last(2)?.as_u64();
 
@@ -148,15 +138,7 @@ fn gen_copy_event(
     );
 
     let rw_counter_start = state.block_ctx.rwc;
-    let mut exec_step = state.new_step(geth_step)?;
-    let copy_steps = gen_copy_steps(
-        state,
-        &mut exec_step,
-        src_addr,
-        dst_addr,
-        src_addr_end,
-        length,
-    )?;
+    let copy_steps = gen_copy_steps(state, exec_step, src_addr, dst_addr, src_addr_end, length)?;
 
     let (src_type, dst_type, src_id, dst_id) = (
         CopyDataType::Memory,
@@ -182,35 +164,16 @@ fn gen_copy_event(
 #[cfg(test)]
 mod return_tests {
     use crate::mock::BlockData;
-    use eth_types::geth_types::GethData;
-    use eth_types::{bytecode, word};
-    use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
-    use mock::TestContext;
+    use eth_types::{bytecode, geth_types::GethData};
+    use mock::{
+        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        TestContext, MOCK_DEPLOYED_CONTRACT_BYTECODE,
+    };
 
     #[test]
     fn test_ok() {
-        // // deployed contract
-        // PUSH1 0x20
-        // PUSH1 0
-        // PUSH1 0
-        // CALLDATACOPY
-        // PUSH1 0x20
-        // PUSH1 0
-        // RETURN
-        //
-        // bytecode: 0x6020600060003760206000F3
-        //
-        // // constructor
-        // PUSH12 0x6020600060003760206000F3
-        // PUSH1 0
-        // MSTORE
-        // PUSH1 0xC
-        // PUSH1 0x14
-        // RETURN
-        //
-        // bytecode: 0x6B6020600060003760206000F3600052600C6014F3
         let code = bytecode! {
-            PUSH21(word!("6B6020600060003760206000F3600052600C6014F3"))
+            PUSH21(*MOCK_DEPLOYED_CONTRACT_BYTECODE)
             PUSH1(0)
             MSTORE
 
@@ -245,71 +208,7 @@ mod return_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-    }
-
-    #[test]
-    fn test_revert() {
-        // // deployed contract
-        // PUSH1 0x20
-        // PUSH1 0
-        // PUSH1 0
-        // CALLDATACOPY
-        // PUSH1 0x20
-        // PUSH1 0
-        // RETURN
-        //
-        // bytecode: 0x6020600060003760206000F3
-        //
-        // // constructor
-        // PUSH12 0x6020600060003760206000F3
-        // PUSH1 0
-        // MSTORE
-        // PUSH1 0xC
-        // PUSH1 0x14
-        // RETURN
-        //
-        // bytecode: 0x6B6020600060003760206000F3600052600C6014F3
-        let code = bytecode! {
-            PUSH21(word!("6B6020600060003760206000F3600052600C6014F3"))
-            PUSH1(0)
-            MSTORE
-
-            PUSH1 (0x15)
-            PUSH1 (0xB)
-            PUSH1 (0)
-            CREATE
-
-            PUSH1 (0x20)
-            PUSH1 (0x20)
-            PUSH1 (0x20)
-            PUSH1 (0)
-            PUSH1 (0)
-            DUP6
-            PUSH2 (0xFFFF)
-            CALL
-
-            PUSH1 (0x40)
-            PUSH1 (0)
-            PUSH1 (0x40)
-            RETURNDATACOPY
-
-            STOP
-        };
-        // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
-            None,
-            account_0_code_account_1_no_code(code),
-            tx_from_1_to_0,
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap()
-        .into();
-
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();

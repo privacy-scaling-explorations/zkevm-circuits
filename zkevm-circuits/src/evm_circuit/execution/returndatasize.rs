@@ -1,26 +1,28 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_U64,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes, CachedRegion, RandomLinearCombination,
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
+use eth_types::Field;
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ReturnDataSizeGadget<F> {
     same_context: SameContextGadget<F>,
-    return_data_size: RandomLinearCombination<F, N_BYTES_U64>,
+    return_data_size: WordCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
@@ -28,20 +30,19 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::RETURNDATASIZE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         // Add lookup constraint in the call context for the returndatasize field.
-        let return_data_size = cb.query_word_rlc();
-        cb.call_context_lookup(
-            false.expr(),
+        let return_data_size = cb.query_word_unchecked();
+        cb.call_context_lookup_read(
             None,
             CallContextFieldTag::LastCalleeReturnDataLength,
-            from_bytes::expr(&return_data_size.cells),
+            return_data_size.to_word(),
         );
 
         // The returndatasize should be pushed to the top of the stack.
-        cb.stack_push(return_data_size.expr());
+        cb.stack_push(return_data_size.to_word());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(2.expr()),
@@ -69,16 +70,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        let return_data_size = block.rws[step.rw_indices[1]].stack_value();
-        self.return_data_size.assign(
-            region,
-            offset,
-            Some(
-                return_data_size.to_le_bytes()[..N_BYTES_U64]
-                    .try_into()
-                    .expect("could not encode return_data_size as byte array in little endian"),
-            ),
-        )?;
+        let return_data_size = block.get_rws(step, 1).stack_value();
+        self.return_data_size
+            .assign_u64(region, offset, return_data_size.as_u64())?;
 
         Ok(())
     }
@@ -86,40 +80,29 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::test_util::run_test_circuits;
-    use eth_types::{bytecode, ToWord, Word};
-    use mock::test_ctx::TestContext;
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
+    use eth_types::{bytecode, Word};
+    use mock::{generate_mock_call_bytecode, test_ctx::TestContext, MockCallBytecodeParams};
 
     fn test_ok_internal(return_data_offset: usize, return_data_size: usize) {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
-        let pushdata = rand_bytes(32);
         let code_b = bytecode! {
-            PUSH32(Word::from_big_endian(&pushdata))
-            PUSH1(0)
-            MSTORE
-
-            PUSH32(return_data_size)
-            PUSH1(return_data_offset)
-            RETURN
+            .op_mstore(0, Word::from_big_endian(&rand_bytes(32)))
+            .op_return(return_data_offset, return_data_size)
             STOP
         };
 
-        // code A calls code B.
-        let code_a = bytecode! {
-            // call ADDR_B.
-            PUSH32(return_data_size) // retLength
-            PUSH1(return_data_offset) // retOffset
-            PUSH1(0x00) // argsLength
-            PUSH1(0x00) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
+        let instruction = bytecode! {
             RETURNDATASIZE
-            STOP
         };
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
+            address: addr_b,
+            return_data_offset,
+            return_data_size,
+            instructions_after_call: instruction,
+            ..MockCallBytecodeParams::default()
+        });
 
         let ctx = TestContext::<3, 1>::new(
             None,
@@ -137,7 +120,7 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]
@@ -161,12 +144,9 @@ mod test {
             RETURNDATASIZE
             STOP
         };
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
-                None
-            ),
-            Ok(())
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
         )
+        .run();
     }
 }

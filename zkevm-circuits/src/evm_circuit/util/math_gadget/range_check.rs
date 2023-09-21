@@ -1,5 +1,6 @@
 use crate::evm_circuit::util::{
-    constraint_builder::ConstraintBuilder, from_bytes, CachedRegion, Cell,
+    constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+    from_bytes, CachedRegion, Cell,
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -15,7 +16,7 @@ pub struct RangeCheckGadget<F, const N_BYTES: usize> {
 }
 
 impl<F: Field, const N_BYTES: usize> RangeCheckGadget<F, N_BYTES> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value: Expression<F>) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, value: Expression<F>) -> Self {
         let parts = cb.query_bytes();
 
         // Require that the reconstructed value from the parts equals the
@@ -45,13 +46,10 @@ impl<F: Field, const N_BYTES: usize> RangeCheckGadget<F, N_BYTES> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_util::*;
-    use super::*;
+    use super::{super::test_util::*, *};
     use eth_types::*;
     use gadgets::util::Expr;
-    use halo2_proofs::circuit::Value;
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// RangeCheckTestContainer: require(a in [0..1<<(8*N_BYTES)])
@@ -63,7 +61,7 @@ mod tests {
     impl<F: Field, const N_BYTES: usize> MathGadgetContainer<F>
         for RangeCheckTestContainer<F, N_BYTES>
     {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_cell();
             let range_check_gadget = RangeCheckGadget::<F, N_BYTES>::construct(cb, a.expr());
             RangeCheckTestContainer {

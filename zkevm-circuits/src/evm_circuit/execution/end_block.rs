@@ -3,16 +3,19 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Same},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition::Same,
+            },
             math_gadget::{IsEqualGadget, IsZeroGadget},
             not, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
-    util::Expr,
+    util::{word::Word, Expr},
 };
 use eth_types::Field;
+use gadgets::util::select;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -24,14 +27,12 @@ pub(crate) struct EndBlockGadget<F> {
     max_txs: Cell<F>,
 }
 
-const EMPTY_BLOCK_N_RWS: u64 = 0;
-
 impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
     const NAME: &'static str = "EndBlock";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EndBlock;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let max_txs = cb.query_copy_cell();
         let max_rws = cb.query_copy_cell();
         let total_txs = cb.query_cell();
@@ -39,10 +40,13 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         // Note that rw_counter starts at 1
         let is_empty_block =
             IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
-        // If the block is empty, we do 0 rw_table lookups
-        // If the block is not empty, we will do 1 call_context lookup
-        let total_rws = not::expr(is_empty_block.expr())
-            * (cb.curr.state.rw_counter.clone().expr() - 1.expr() + 1.expr());
+
+        let total_rws_before_padding = cb.curr.state.rw_counter.clone().expr() - 1.expr()
+            + select::expr(
+                is_empty_block.expr(),
+                0.expr(),
+                1.expr(), // If the block is not empty, we will do 1 call_context lookup below
+            );
 
         // 1. Constraint total_rws and total_txs witness values depending on the empty
         // block case.
@@ -52,7 +56,11 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         });
         cb.condition(not::expr(is_empty_block.expr()), |cb| {
             // 1b. total_txs matches the tx_id that corresponds to the final step.
-            cb.call_context_lookup(0.expr(), None, CallContextFieldTag::TxId, total_txs.expr());
+            cb.call_context_lookup_read(
+                None,
+                CallContextFieldTag::TxId,
+                Word::from_lo_unchecked(total_txs.expr()),
+            );
         });
 
         // 2. If total_txs == max_txs, we know we have covered all txs from the
@@ -66,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
                 total_txs.expr() + 1.expr(),
                 TxContextFieldTag::CallerAddress,
                 None,
-                0.expr(),
+                Word::zero(),
             );
             // Since every tx lookup done in the EVM circuit must succeed
             // and uses a unique tx_id, we know that at
@@ -79,7 +87,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         // rw_table to ensure there is no malicious insertion.
         // Verify that there are at most total_rws meaningful entries in the rw_table
         cb.rw_table_start_lookup(1.expr());
-        cb.rw_table_start_lookup(max_rws.expr() - total_rws.expr());
+        cb.rw_table_start_lookup(max_rws.expr() - total_rws_before_padding.expr());
         // Since every lookup done in the EVM circuit must succeed and uses
         // a unique rw_counter, we know that at least there are
         // total_rws meaningful entries in the rw_table.
@@ -118,7 +126,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.is_empty_block
-            .assign(region, offset, F::from(step.rw_counter as u64 - 1))?;
+            .assign(region, offset, F::from(u64::from(step.rwc) - 1))?;
         let max_rws = F::from(block.circuits_params.max_rws as u64);
         let max_rws_assigned = self.max_rws.assign(region, offset, Value::known(max_rws))?;
 
@@ -131,7 +139,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let max_txs_assigned = self.max_txs.assign(region, offset, Value::known(max_txs))?;
         // When rw_indices is not empty, we're at the last row (at a fixed offset),
         // where we need to access the max_rws and max_txs constant.
-        if !step.rw_indices.is_empty() {
+        if step.rw_indices_len() != 0 {
             region.constrain_constant(max_rws_assigned, max_rws)?;
             region.constrain_constant(max_txs_assigned, max_txs)?;
         }
@@ -141,10 +149,10 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::{test_circuits_witness_block, BytecodeTestConfig};
-    use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+    use crate::test_util::CircuitTestBuilder;
+
     use eth_types::bytecode;
-    use eth_types::geth_types::GethData;
+
     use mock::TestContext;
 
     fn test_circuit(evm_circuit_pad_to: usize) {
@@ -153,24 +161,14 @@ mod test {
             STOP
         };
 
-        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
-        let block: GethData = test_ctx.into();
-        let mut builder =
-            BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
-                .new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-
-        // build a witness block from trace result
-        let mut block = crate::witness::block_convert(&builder.block, &builder.code_db).unwrap();
-        block.evm_circuit_pad_to = evm_circuit_pad_to;
+        let ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
 
         // finish required tests using this witness block
-        assert_eq!(
-            test_circuits_witness_block(block, BytecodeTestConfig::default()),
-            Ok(())
-        );
+        CircuitTestBuilder::<2, 1>::new_from_test_ctx(ctx)
+            .block_modifier(Box::new(move |block| {
+                block.circuits_params.max_evm_rows = evm_circuit_pad_to
+            }))
+            .run();
     }
 
     // Test where the EVM circuit contains an exact number of rows corresponding to

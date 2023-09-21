@@ -1,8 +1,7 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::CallContextField;
 use crate::{
-    operation::{StorageOp, TxAccessListAccountStorageOp, RW},
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    operation::{CallContextField, StorageOp, TxAccessListAccountStorageOp, RW},
     Error,
 };
 use eth_types::{GethExecStep, ToWord, Word};
@@ -83,9 +82,19 @@ impl Opcode for Sload {
 
         // First stack write
         state.stack_write(&mut exec_step, stack_position, value)?;
+        state.push_op(
+            &mut exec_step,
+            RW::READ,
+            TxAccessListAccountStorageOp {
+                tx_id: state.tx_ctx.id(),
+                address: contract_addr,
+                key,
+                is_warm,
+                is_warm_prev: is_warm,
+            },
+        );
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             TxAccessListAccountStorageOp {
                 tx_id: state.tx_ctx.id(),
                 address: contract_addr,
@@ -147,8 +156,8 @@ mod sload_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 
@@ -191,7 +200,7 @@ mod sload_tests {
         );
 
         let access_list_op = &builder.block.container.tx_access_list_account_storage
-            [step.bus_mapping_instance[7].as_usize()];
+            [step.bus_mapping_instance[8].as_usize()];
         assert_eq!(
             (access_list_op.rw(), access_list_op.op()),
             (

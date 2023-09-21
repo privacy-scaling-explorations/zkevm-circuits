@@ -1,26 +1,31 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
+        param::N_BYTES_MEMORY_WORD_SIZE,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
-            from_bytes,
             math_gadget::RangeCheckGadget,
-            memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
+            memory_gadget::{
+                CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
+                MemoryExpansionGadget,
+            },
             CachedRegion, Cell, MemoryAddress,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{Word, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToScalar};
 use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -57,47 +62,43 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::RETURNDATACOPY;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let dest_offset = cb.query_cell();
-        let data_offset = cb.query_word_rlc();
-        let size = cb.query_word_rlc();
+        let dest_offset = cb.query_word_unchecked();
+        let data_offset = cb.query_memory_address();
+        let size = cb.query_memory_address();
 
         // 1. Pop dest_offset, offset, length from stack
-        cb.stack_pop(dest_offset.expr());
-        cb.stack_pop(data_offset.expr());
-        cb.stack_pop(size.expr());
+        cb.stack_pop(dest_offset.to_word());
+        cb.stack_pop(Word::from_lo_unchecked(data_offset.expr()));
+        cb.stack_pop(Word::from_lo_unchecked(size.expr()));
 
         // 2. Add lookup constraint in the call context for the returndatacopy field.
         let last_callee_id = cb.query_cell();
         let return_data_offset = cb.query_cell();
         let return_data_size = cb.query_cell();
-        cb.call_context_lookup(
-            false.expr(),
+        cb.call_context_lookup_read(
             None,
             CallContextFieldTag::LastCalleeId,
-            last_callee_id.expr(),
+            Word::from_lo_unchecked(last_callee_id.expr()),
         );
-        cb.call_context_lookup(
-            false.expr(),
+        cb.call_context_lookup_read(
             None,
             CallContextFieldTag::LastCalleeReturnDataOffset,
-            return_data_offset.expr(),
+            Word::from_lo_unchecked(return_data_offset.expr()),
         );
-        cb.call_context_lookup(
-            false.expr(),
+        cb.call_context_lookup_read(
             None,
             CallContextFieldTag::LastCalleeReturnDataLength,
-            return_data_size.expr(),
+            Word::from_lo_unchecked(return_data_size.expr()),
         );
 
         // 3. contraints for copy: copy overflow check
         // i.e., offset + size <= return_data_size
         let in_bound_check = RangeCheckGadget::construct(
             cb,
-            return_data_size.expr()
-                - (from_bytes::expr(&data_offset.cells) + from_bytes::expr(&size.cells)),
+            return_data_size.expr() - (data_offset.expr() + size.expr()),
         );
 
         // 4. memory copy
@@ -117,11 +118,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         let copy_rwc_inc = cb.query_cell();
         cb.condition(dst_memory_addr.has_length(), |cb| {
             cb.copy_table_lookup(
-                last_callee_id.expr(),
+                Word::from_lo_unchecked(last_callee_id.expr()),
                 CopyDataType::Memory.expr(),
-                cb.curr.state.call_id.expr(),
+                Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
                 CopyDataType::Memory.expr(),
-                return_data_offset.expr() + from_bytes::expr(&data_offset.cells),
+                return_data_offset.expr() + data_offset.expr(),
                 return_data_offset.expr() + return_data_size.expr(),
                 dst_memory_addr.offset(),
                 dst_memory_addr.length(),
@@ -176,17 +177,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let [dest_offset, data_offset, size] =
-            [0, 1, 2].map(|i| block.rws[step.rw_indices[i as usize]].stack_value());
+            [0, 1, 2].map(|index| block.get_rws(step, index).stack_value());
 
-        self.data_offset.assign(
-            region,
-            offset,
-            Some(
-                data_offset.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+        self.data_offset.assign_u256(region, offset, data_offset)?;
 
         let [last_callee_id, return_data_offset, return_data_size] = [
             (3, CallContextFieldTag::LastCalleeId),
@@ -194,7 +187,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             (5, CallContextFieldTag::LastCalleeReturnDataLength),
         ]
         .map(|(i, tag)| {
-            let rw = block.rws[step.rw_indices[i as usize]];
+            let rw = block.get_rws(step, i);
             assert_eq!(rw.field_tag(), Some(tag as u64));
             rw.call_context_value()
         });
@@ -267,52 +260,42 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::test_util::run_test_circuits_with_params;
-    use bus_mapping::circuit_input_builder::CircuitsParams;
-    use eth_types::{bytecode, ToWord, Word};
-    use mock::test_ctx::TestContext;
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
+    use bus_mapping::circuit_input_builder::FixedCParams;
+    use eth_types::{bytecode, Word};
+    use mock::{generate_mock_call_bytecode, test_ctx::TestContext, MockCallBytecodeParams};
 
     fn test_ok_internal(
         return_data_offset: usize,
         return_data_size: usize,
-        dest_offset: usize,
-        offset: usize,
         size: usize,
+        offset: usize,
+        dest_offset: Word,
     ) {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
-        let pushdata = rand_bytes(32);
         let return_offset =
             std::cmp::max((return_data_offset + return_data_size) as i64 - 32, 0) as usize;
         let code_b = bytecode! {
-            PUSH32(Word::from_big_endian(&pushdata))
-            PUSH32(return_offset)
-            MSTORE
-
-            PUSH32(return_data_size)
-            PUSH32(return_data_offset)
-            RETURN
+            .op_mstore(return_offset, Word::from_big_endian(&rand_bytes(32)))
+            .op_return(return_data_offset, return_data_size)
             STOP
         };
 
         // code A calls code B.
-        let code_a = bytecode! {
-            // call ADDR_B.
-            PUSH32(return_data_size) // retLength
-            PUSH32(return_data_offset) // retOffset
-            PUSH1(0x00) // argsLength
-            PUSH1(0x00) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
+        let instruction = bytecode! {
             PUSH32(size) // size
             PUSH32(offset) // offset
             PUSH32(dest_offset) // dest_offset
             RETURNDATACOPY
-            STOP
         };
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
+            address: addr_b,
+            return_data_offset,
+            return_data_size,
+            instructions_after_call: instruction,
+            ..MockCallBytecodeParams::default()
+        });
 
         let ctx = TestContext::<3, 1>::new(
             None,
@@ -330,66 +313,53 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(
-            run_test_circuits_with_params(
-                ctx,
-                None,
-                CircuitsParams {
-                    max_rws: 2048,
-                    ..Default::default()
-                }
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(FixedCParams {
+                max_rws: 2048,
+                ..Default::default()
+            })
+            .run();
     }
 
     #[test]
     fn returndatacopy_gadget_do_nothing() {
-        test_ok_internal(0x00, 0x02, 0x10, 0x00, 0x00);
+        test_ok_internal(0, 2, 0, 0, 0x10.into());
     }
 
     #[test]
     fn returndatacopy_gadget_simple() {
-        test_ok_internal(0x00, 0x02, 0x10, 0x00, 0x02);
+        test_ok_internal(0, 2, 2, 0, 0x10.into());
     }
 
     #[test]
     fn returndatacopy_gadget_large() {
-        test_ok_internal(0x00, 0x20, 0x20, 0x00, 0x20);
+        test_ok_internal(0, 0x20, 0x20, 0, 0x20.into());
     }
 
     #[test]
     fn returndatacopy_gadget_large_partial() {
-        test_ok_internal(0x00, 0x20, 0x20, 0x10, 0x10);
+        test_ok_internal(0, 0x20, 0x10, 0x10, 0x20.into());
     }
 
     #[test]
     fn returndatacopy_gadget_zero_length() {
-        test_ok_internal(0x00, 0x00, 0x20, 0x00, 0x00);
+        test_ok_internal(0, 0, 0, 0, 0x20.into());
     }
 
     #[test]
     fn returndatacopy_gadget_long_length() {
         // rlc value matters only if length > 255, i.e., size.cells.len() > 1
-        test_ok_internal(0x00, 0x200, 0x20, 0x00, 0x150);
+        test_ok_internal(0, 0x200, 0x150, 0, 0x20.into());
     }
 
     #[test]
     fn returndatacopy_gadget_big_offset() {
         // rlc value matters only if length > 255, i.e., size.cells.len() > 1
-        test_ok_internal(0x200, 0x200, 0x200, 0x00, 0x150);
+        test_ok_internal(0x200, 0x200, 0x150, 0, 0x200.into());
     }
 
-    // TODO: Add negative cases for out-of-bound and out-of-gas
-    // #[test]
-    // #[should_panic]
-    // fn returndatacopy_gadget_out_of_bound() {
-    //     test_ok_internal(0x00, 0x10, 0x20, 0x10, 0x10);
-    // }
-
-    // #[test]
-    // #[should_panic]
-    // fn returndatacopy_gadget_out_of_gas() {
-    //     test_ok_internal(0x00, 0x10, 0x2000000, 0x00, 0x10);
-    // }
+    #[test]
+    fn returndatacopy_gadget_overflow_offset_and_zero_length() {
+        test_ok_internal(0, 0x20, 0, 0x20, Word::MAX);
+    }
 }

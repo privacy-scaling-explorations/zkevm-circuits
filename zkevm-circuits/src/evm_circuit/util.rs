@@ -1,83 +1,41 @@
+pub use crate::util::{
+    query_expression,
+    word::{Word, WordExpr},
+    Challenges, Expr,
+};
 use crate::{
     evm_circuit::{
         param::{
-            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_COPY_COLUMNS, N_PHASE2_COLUMNS,
-            N_PHASE3_COLUMNS,
+            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_COPY_COLUMNS, N_PHASE2_COLUMNS, N_U8_LOOKUPS,
         },
         table::Table,
     },
-    util::{query_expression, Challenges, Expr},
+    util::{cell_manager::CMFixedWidthStrategyDistribution, int_decomposition::IntDecomposition},
+    witness::{Block, ExecStep, Rw, RwMap},
 };
-use eth_types::ToLittleEndian;
-use eth_types::U256;
+use eth_types::{Address, Field, U256};
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{AssignedCell, Region, Value},
-    plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, VirtualCells},
+    plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression},
     poly::Rotation,
 };
 use itertools::Itertools;
-use keccak256::EMPTY_HASH_LE;
-use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
 pub(crate) mod common_gadget;
 pub(crate) mod constraint_builder;
+pub(crate) mod instrumentation;
 pub(crate) mod math_gadget;
 pub(crate) mod memory_gadget;
 
 pub use gadgets::util::{and, not, or, select, sum};
 
-#[derive(Clone, Debug)]
-pub(crate) struct Cell<F> {
-    // expression for constraint
-    expression: Expression<F>,
-    column: Column<Advice>,
-    // relative position to selector for synthesis
-    rotation: usize,
-}
+use super::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_U16_LOOKUPS};
 
-impl<F: FieldExt> Cell<F> {
-    pub(crate) fn new(meta: &mut VirtualCells<F>, column: Column<Advice>, rotation: usize) -> Self {
-        Self {
-            expression: meta.query_advice(column, Rotation(rotation as i32)),
-            column,
-            rotation,
-        }
-    }
+#[deprecated(note = "Removing this would require to edit almost all gadget")]
+pub(crate) use crate::util::cell_manager::{Cell, CellType};
 
-    pub(crate) fn assign(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        value: Value<F>,
-    ) -> Result<AssignedCell<F, F>, Error> {
-        region.assign_advice(
-            || {
-                format!(
-                    "Cell column: {:?} and rotation: {}",
-                    self.column, self.rotation
-                )
-            },
-            self.column,
-            offset + self.rotation,
-            || value,
-        )
-    }
-}
-
-impl<F: FieldExt> Expr<F> for Cell<F> {
-    fn expr(&self) -> Expression<F> {
-        self.expression.clone()
-    }
-}
-
-impl<F: FieldExt> Expr<F> for &Cell<F> {
-    fn expr(&self) -> Expression<F> {
-        self.expression.clone()
-    }
-}
-pub struct CachedRegion<'r, 'b, F: FieldExt> {
+pub struct CachedRegion<'r, 'b, F: Field> {
     region: &'r mut Region<'b, F>,
     advice: Vec<Vec<F>>,
     challenges: &'r Challenges<Value<F>>,
@@ -86,7 +44,7 @@ pub struct CachedRegion<'r, 'b, F: FieldExt> {
     height_start: usize,
 }
 
-impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
+impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
     /// New cached region
     pub(crate) fn new(
         region: &'r mut Region<'b, F>,
@@ -97,7 +55,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     ) -> Self {
         Self {
             region,
-            advice: vec![vec![F::zero(); height]; advice_columns.len()],
+            advice: vec![vec![F::ZERO; height]; advice_columns.len()],
             challenges,
             width_start: advice_columns[0].index(),
             height_start,
@@ -147,18 +105,21 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         to: V,
     ) -> Result<AssignedCell<VR, F>, Error>
     where
-        V: FnMut() -> Value<VR> + 'v,
+        V: Fn() -> Value<VR> + 'v,
         for<'vr> Assigned<F>: From<&'vr VR>,
         A: Fn() -> AR,
         AR: Into<String>,
     {
         // Actually set the value
-        let res = self.region.assign_advice(annotation, column, offset, to);
+        let res = self.region.assign_advice(annotation, column, offset, &to);
         // Cache the value
-        if let Result::Ok(cell) = &res {
-            cell.value_field().map(|f| {
+        // Note that the `value_field` in `AssignedCell` might be `Value::unkonwn` if
+        // the column has different phase than current one, so we call to `to`
+        // again here to cache the value.
+        if res.is_ok() {
+            to().map(|f| {
                 self.advice[column.index() - self.width_start][offset - self.height_start] =
-                    f.evaluate();
+                    Assigned::from(&f).evaluate();
             });
         }
         res
@@ -177,13 +138,14 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         self.challenges
     }
 
-    pub fn word_rlc(&self, n: U256) -> Value<F> {
+    pub fn keccak_rlc(&self, le_bytes: &[u8]) -> Value<F> {
         self.challenges
-            .evm_word()
-            .map(|r| Word::random_linear_combine(n.to_le_bytes(), r))
+            .keccak_input()
+            .map(|r| rlc::value(le_bytes, r))
     }
-    pub fn empty_hash_rlc(&self) -> Value<F> {
-        self.word_rlc(U256::from_little_endian(&*EMPTY_HASH_LE))
+
+    pub fn code_hash(&self, n: U256) -> Word<Value<F>> {
+        Word::from(n).into_value()
     }
 
     /// Constrains a cell to have a constant value.
@@ -218,255 +180,118 @@ impl<F> Hash for StoredExpression<F> {
     }
 }
 
-impl<F: FieldExt> StoredExpression<F> {
+/// Evaluate an expression using a `CachedRegion` at `offset`.
+pub(crate) fn evaluate_expression<F: Field>(
+    expr: &Expression<F>,
+    region: &CachedRegion<'_, '_, F>,
+    offset: usize,
+) -> Value<F> {
+    expr.evaluate(
+        &|scalar| Value::known(scalar),
+        &|_| unimplemented!("selector column"),
+        &|fixed_query| {
+            Value::known(region.get_fixed(
+                offset,
+                fixed_query.column_index(),
+                fixed_query.rotation(),
+            ))
+        },
+        &|advice_query| {
+            Value::known(region.get_advice(
+                offset,
+                advice_query.column_index(),
+                advice_query.rotation(),
+            ))
+        },
+        &|_| unimplemented!("instance column"),
+        &|challenge| *region.challenges().indexed()[challenge.index()],
+        &|a| -a,
+        &|a, b| a + b,
+        &|a, b| a * b,
+        &|a, scalar| a * Value::known(scalar),
+    )
+}
+
+impl<F: Field> StoredExpression<F> {
     pub fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-    ) -> Result<AssignedCell<F, F>, Error> {
-        let value = self.expr.evaluate(
-            &|scalar| Value::known(scalar),
-            &|_| unimplemented!("selector column"),
-            &|fixed_query| {
-                Value::known(region.get_fixed(
-                    offset,
-                    fixed_query.column_index(),
-                    fixed_query.rotation(),
-                ))
-            },
-            &|advide_query| {
-                Value::known(region.get_advice(
-                    offset,
-                    advide_query.column_index(),
-                    advide_query.rotation(),
-                ))
-            },
-            &|_| unimplemented!("instance column"),
-            &|challenge| *region.challenges().indexed()[challenge.index()],
-            &|a| -a,
-            &|a, b| a + b,
-            &|a, b| a * b,
-            &|a, scalar| a * Value::known(scalar),
-        );
-        self.cell.assign(region, offset, value)
+    ) -> Result<Value<F>, Error> {
+        let value = evaluate_expression(&self.expr, region, offset);
+        self.cell.assign(region, offset, value)?;
+        Ok(value)
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum CellType {
-    StoragePhase1,
-    StoragePhase2,
-    StoragePhase3,
-    StoragePermutation,
-    Lookup(Table),
-}
+//
+#[allow(clippy::mut_range_bound)]
+pub(crate) fn evm_cm_distribute_advice<F: Field>(
+    meta: &mut ConstraintSystem<F>,
+    advices: &[Column<Advice>],
+) -> CMFixedWidthStrategyDistribution {
+    let mut dist = CMFixedWidthStrategyDistribution::default();
 
-impl CellType {
-    // The phase that given `Expression` becomes evaluateable.
-    fn expr_phase<F: FieldExt>(expr: &Expression<F>) -> u8 {
-        use Expression::*;
-        match expr {
-            Challenge(challenge) => challenge.phase() + 1,
-            Constant(_) | Selector(_) | Fixed(_) | Advice(_) | Instance(_) => 0,
-            Negated(a) | Expression::Scaled(a, _) => Self::expr_phase(a),
-            Sum(a, b) | Product(a, b) => std::cmp::max(Self::expr_phase(a), Self::expr_phase(b)),
+    let mut column_idx = 0;
+    // Mark columns used for lookups in Phase3
+    for &(table, count) in LOOKUP_CONFIG {
+        for _ in 0usize..count {
+            dist.add(CellType::Lookup(table), advices[column_idx]);
+            column_idx += 1;
         }
     }
 
-    /// Return the storage phase of phase
-    pub(crate) fn storage_for_phase<F: FieldExt>(phase: u8) -> CellType {
-        match phase {
-            0 => CellType::StoragePhase1,
-            1 => CellType::StoragePhase2,
-            2 => CellType::StoragePhase3,
-            _ => unreachable!(),
-        }
+    // Mark columns used for Phase2 constraints
+    for _ in 0..N_PHASE2_COLUMNS {
+        dist.add(CellType::StoragePhase2, advices[column_idx]);
+        column_idx += 1;
     }
 
-    /// Return the storage cell of the expression
-    pub(crate) fn storage_for_expr<F: FieldExt>(expr: &Expression<F>) -> CellType {
-        Self::storage_for_phase::<F>(Self::expr_phase::<F>(expr))
+    // Mark columns used for copy constraints
+    for _ in 0..N_COPY_COLUMNS {
+        meta.enable_equality(advices[column_idx]);
+        dist.add(CellType::StoragePermutation, advices[column_idx]);
+        column_idx += 1;
     }
+
+    // Mark columns used for byte lookup
+    #[allow(clippy::reversed_empty_ranges)]
+    for _ in 0..N_U8_LOOKUPS {
+        dist.add(CellType::Lookup(Table::U8), advices[column_idx]);
+        assert_eq!(advices[column_idx].column_type().phase(), 0);
+        column_idx += 1;
+    }
+
+    // Mark columns used for byte lookup
+    #[allow(clippy::reversed_empty_ranges)]
+    for _ in 0..N_U16_LOOKUPS {
+        dist.add(CellType::Lookup(Table::U16), advices[column_idx]);
+        assert_eq!(advices[column_idx].column_type().phase(), 0);
+        column_idx += 1;
+    }
+
+    // Mark columns used for for Phase1 constraints
+    for _ in column_idx..advices.len() {
+        dist.add(CellType::StoragePhase1, advices[column_idx]);
+        column_idx += 1;
+    }
+
+    dist
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct CellColumn<F> {
-    pub(crate) index: usize,
-    pub(crate) cell_type: CellType,
-    pub(crate) height: usize,
-    pub(crate) expr: Expression<F>,
-}
-
-impl<F: FieldExt> Expr<F> for CellColumn<F> {
-    fn expr(&self) -> Expression<F> {
-        self.expr.clone()
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct CellManager<F> {
-    width: usize,
-    height: usize,
-    cells: Vec<Cell<F>>,
-    columns: Vec<CellColumn<F>>,
-}
-
-impl<F: FieldExt> CellManager<F> {
-    pub(crate) fn new(
-        meta: &mut ConstraintSystem<F>,
-        height: usize,
-        advices: &[Column<Advice>],
-        height_offset: usize,
-    ) -> Self {
-        // Setup the columns and query the cells
-        let width = advices.len();
-        let mut cells = Vec::with_capacity(height * width);
-        let mut columns = Vec::with_capacity(width);
-        query_expression(meta, |meta| {
-            for c in 0..width {
-                for r in 0..height {
-                    cells.push(Cell::new(meta, advices[c], height_offset + r));
-                }
-                columns.push(CellColumn {
-                    index: c,
-                    cell_type: CellType::StoragePhase1,
-                    height: 0,
-                    expr: cells[c * height].expr(),
-                });
-            }
-        });
-
-        // Mark columns used for Phase3 constraints
-        let mut column_idx = 0;
-        for _ in 0..N_PHASE3_COLUMNS {
-            columns[column_idx].cell_type = CellType::StoragePhase3;
-            column_idx += 1;
-        }
-
-        // Mark columns used for lookups in Phase3
-        for &(table, count) in LOOKUP_CONFIG {
-            for _ in 0usize..count {
-                columns[column_idx].cell_type = CellType::Lookup(table);
-                column_idx += 1;
-            }
-        }
-
-        // Mark columns used for Phase2 constraints
-        for _ in 0..N_PHASE2_COLUMNS {
-            columns[column_idx].cell_type = CellType::StoragePhase2;
-            column_idx += 1;
-        }
-
-        // Mark columns used for copy constraints
-        for _ in 0..N_COPY_COLUMNS {
-            meta.enable_equality(advices[column_idx]);
-            columns[column_idx].cell_type = CellType::StoragePermutation;
-            column_idx += 1;
-        }
-
-        Self {
-            width,
-            height,
-            cells,
-            columns,
-        }
-    }
-
-    pub(crate) fn query_cells(&mut self, cell_type: CellType, count: usize) -> Vec<Cell<F>> {
-        let mut cells = Vec::with_capacity(count);
-        while cells.len() < count {
-            let column_idx = self.next_column(cell_type);
-            let column = &mut self.columns[column_idx];
-            cells.push(self.cells[column_idx * self.height + column.height].clone());
-            column.height += 1;
-        }
-        cells
-    }
-
-    pub(crate) fn query_cell(&mut self, cell_type: CellType) -> Cell<F> {
-        self.query_cells(cell_type, 1)[0].clone()
-    }
-
-    fn next_column(&self, cell_type: CellType) -> usize {
-        let mut best_index: Option<usize> = None;
-        let mut best_height = self.height;
-        for column in self.columns.iter() {
-            if column.cell_type == cell_type && column.height < best_height {
-                best_index = Some(column.index);
-                best_height = column.height;
-            }
-        }
-        // Replace a CellType::Storage by CellType::StoragePermutation if the later has
-        // better height
-        if cell_type == CellType::StoragePhase1 {
-            for column in self.columns.iter() {
-                if column.cell_type == CellType::StoragePermutation && column.height < best_height {
-                    best_index = Some(column.index);
-                    best_height = column.height;
-                }
-            }
-        }
-        match best_index {
-            Some(index) => index,
-            None => unreachable!("not enough cells for query: {:?}", cell_type),
-        }
-    }
-
-    pub(crate) fn get_height(&self) -> usize {
-        self.columns
-            .iter()
-            .map(|column| column.height)
-            .max()
-            .unwrap()
-    }
-
-    /// Returns a map of CellType -> (width, height, num_cells)
-    pub(crate) fn get_stats(&self) -> BTreeMap<CellType, (usize, usize, usize)> {
-        let mut data = BTreeMap::new();
-        for column in self.columns.iter() {
-            let (mut count, mut height, mut num_cells) =
-                data.get(&column.cell_type).unwrap_or(&(0, 0, 0));
-            count += 1;
-            height = height.max(column.height);
-            num_cells += column.height;
-            data.insert(column.cell_type, (count, height, num_cells));
-        }
-        data
-    }
-
-    pub(crate) fn columns(&self) -> &[CellColumn<F>] {
-        &self.columns
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct RandomLinearCombination<F, const N: usize> {
+pub struct RandomLinearCombination<F, const N: usize> {
     // random linear combination expression of cells
     expression: Expression<F>,
     // inner cells in little-endian for synthesis
     pub(crate) cells: [Cell<F>; N],
 }
 
-impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
-    const N_BYTES: usize = N;
-
-    pub(crate) fn random_linear_combine(bytes: [u8; N], randomness: F) -> F {
-        rlc::value(&bytes, randomness)
-    }
-
-    pub(crate) fn random_linear_combine_expr(
-        bytes: [Expression<F>; N],
-        power_of_randomness: &[Expression<F>],
-    ) -> Expression<F> {
-        rlc::expr(&bytes, power_of_randomness)
-    }
-
-    pub(crate) fn new(cells: [Cell<F>; N], power_of_randomness: &[Expression<F>]) -> Self {
+impl<F: Field, const N: usize> RandomLinearCombination<F, N> {
+    /// XXX for randomness 256.expr(), consider using IntDecomposition instead
+    pub(crate) fn new(cells: [Cell<F>; N], randomness: Expression<F>) -> Self {
         Self {
-            expression: Self::random_linear_combine_expr(
-                cells.clone().map(|cell| cell.expr()),
-                power_of_randomness,
-            ),
+            expression: rlc::expr(&cells.clone().map(|cell| cell.expr()), randomness),
             cells,
         }
     }
@@ -489,27 +314,31 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
     }
 }
 
-impl<F: FieldExt, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
+impl<F: Field, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
     fn expr(&self) -> Expression<F> {
         self.expression.clone()
     }
 }
 
-pub(crate) type Word<F> = RandomLinearCombination<F, 32>;
-pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>;
+pub(crate) type MemoryAddress<F> = IntDecomposition<F, N_BYTES_MEMORY_ADDRESS>;
 
-/// Decodes a field element from its byte representation
+pub(crate) type AccountAddress<F> = IntDecomposition<F, N_BYTES_ACCOUNT_ADDRESS>;
+
+pub(crate) type U64Cell<F> = IntDecomposition<F, N_BYTES_U64>;
+
+/// Decodes a field element from its byte representation in little endian order
 pub(crate) mod from_bytes {
     use crate::{evm_circuit::param::MAX_N_BYTES_INTEGER, util::Expr};
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
+    pub(crate) fn expr<F: Field, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
         debug_assert!(
             bytes.len() <= MAX_N_BYTES_INTEGER,
             "Too many bytes to compose an integer in field"
         );
         let mut value = 0.expr();
-        let mut multiplier = F::one();
+        let mut multiplier = F::ONE;
         for byte in bytes.iter() {
             value = value + byte.expr() * multiplier;
             multiplier *= F::from(256);
@@ -517,13 +346,13 @@ pub(crate) mod from_bytes {
         value
     }
 
-    pub(crate) fn value<F: FieldExt>(bytes: &[u8]) -> F {
+    pub(crate) fn value<F: Field>(bytes: &[u8]) -> F {
         debug_assert!(
             bytes.len() <= MAX_N_BYTES_INTEGER,
             "Too many bytes to compose an integer in field"
         );
-        let mut value = F::zero();
-        let mut multiplier = F::one();
+        let mut value = F::ZERO;
+        let mut multiplier = F::ONE;
         for byte in bytes.iter() {
             value += F::from(*byte as u64) * multiplier;
             multiplier *= F::from(256);
@@ -535,40 +364,56 @@ pub(crate) mod from_bytes {
 /// Returns the random linear combination of the inputs.
 /// Encoding is done as follows: v_0 * R^0 + v_1 * R^1 + ...
 pub(crate) mod rlc {
+    use std::ops::{Add, Mul};
+
     use crate::util::Expr;
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(
-        expressions: &[E],
-        power_of_randomness: &[E],
-    ) -> Expression<F> {
-        debug_assert!(expressions.len() <= power_of_randomness.len() + 1);
-
-        let mut rlc = expressions[0].expr();
-        for (expression, randomness) in expressions[1..].iter().zip(power_of_randomness.iter()) {
-            rlc = rlc + expression.expr() * randomness.expr();
+    pub(crate) fn expr<F: Field, E: Expr<F>>(expressions: &[E], randomness: E) -> Expression<F> {
+        if !expressions.is_empty() {
+            generic(expressions.iter().map(|e| e.expr()), randomness.expr())
+        } else {
+            0.expr()
         }
-        rlc
     }
 
-    pub(crate) fn value<'a, F: FieldExt, I>(values: I, randomness: F) -> F
+    pub(crate) fn value<'a, F: Field, I>(values: I, randomness: F) -> F
     where
         I: IntoIterator<Item = &'a u8>,
         <I as IntoIterator>::IntoIter: DoubleEndedIterator,
     {
-        values.into_iter().rev().fold(F::zero(), |acc, value| {
-            acc * randomness + F::from(*value as u64)
-        })
+        let values = values
+            .into_iter()
+            .map(|v| F::from(*v as u64))
+            .collect::<Vec<F>>();
+        if !values.is_empty() {
+            generic(values, randomness)
+        } else {
+            F::ZERO
+        }
+    }
+
+    fn generic<V, I>(values: I, randomness: V) -> V
+    where
+        I: IntoIterator<Item = V>,
+        <I as IntoIterator>::IntoIter: DoubleEndedIterator,
+        V: Clone + Add<Output = V> + Mul<Output = V>,
+    {
+        let mut values = values.into_iter().rev();
+        let init = values.next().expect("values should not be empty");
+
+        values.fold(init, |acc, value| acc * randomness.clone() + value)
     }
 }
 
-/// Returns 2**by as FieldExt
-pub(crate) fn pow_of_two<F: FieldExt>(by: usize) -> F {
-    F::from(2).pow(&[by as u64, 0, 0, 0])
+/// Returns 2**by as Field
+pub(crate) fn pow_of_two<F: Field>(by: usize) -> F {
+    F::from(2).pow([by as u64, 0, 0, 0])
 }
 
 /// Returns 2**by as Expression
-pub(crate) fn pow_of_two_expr<F: FieldExt>(by: usize) -> Expression<F> {
+pub(crate) fn pow_of_two_expr<F: Field>(by: usize) -> Expression<F> {
     Expression::Constant(pow_of_two(by))
 }
 
@@ -597,4 +442,102 @@ pub(crate) fn transpose_val_ret<F, E>(value: Value<Result<F, E>>) -> Result<Valu
         ret = value.map(Value::known);
     });
     ret
+}
+
+pub(crate) fn is_precompiled(address: &Address) -> bool {
+    address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
+}
+
+const BASE_128_BYTES: [u8; 32] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+/// convert address (h160) to single expression.
+pub fn address_word_to_expr<F: Field>(address: Word<Expression<F>>) -> Expression<F> {
+    address.lo() + address.hi() * Expression::Constant(F::from_repr(BASE_128_BYTES).unwrap())
+}
+
+/// Helper struct to read rw operations from a step sequentially.
+pub(crate) struct StepRws<'a> {
+    rws: &'a RwMap,
+    step: &'a ExecStep,
+    offset: usize,
+}
+
+impl<'a> StepRws<'a> {
+    /// Create a new StateRws by taking the reference to a block and the step.
+    pub(crate) fn new<F>(block: &'a Block<F>, step: &'a ExecStep) -> Self {
+        Self {
+            rws: &block.rws,
+            step,
+            offset: 0,
+        }
+    }
+    /// Increment the step rw operation offset by `offset`.
+    pub(crate) fn offset_add(&mut self, offset: usize) {
+        self.offset = offset
+    }
+    /// Return the next rw operation from the step.
+    pub(crate) fn next(&mut self) -> Rw {
+        let rw = self.rws[self.step.rw_index(self.offset)];
+        self.offset += 1;
+        rw
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use halo2_proofs::halo2curves::bn256::Fr;
+
+    use crate::evm_circuit::param::STEP_WIDTH;
+
+    use super::*;
+
+    #[test]
+    fn test_evm_cm_distribute_advice_1() {
+        let mut cs = ConstraintSystem::<Fr>::default();
+        let advices = vec![cs.advice_column(); STEP_WIDTH];
+
+        let cm = evm_cm_distribute_advice(&mut cs, &advices);
+
+        let lookup_config_size = LOOKUP_CONFIG
+            .iter()
+            .map(|(_, size)| size.to_owned())
+            .sum::<usize>();
+
+        assert_eq!(
+            cm.get(CellType::StoragePhase1).unwrap().len(),
+            STEP_WIDTH
+                - N_PHASE2_COLUMNS
+                - N_COPY_COLUMNS
+                - lookup_config_size
+                - N_U8_LOOKUPS
+                - N_U16_LOOKUPS
+        );
+        assert_eq!(
+            cm.get(CellType::StoragePhase2).unwrap().len(),
+            N_PHASE2_COLUMNS
+        );
+        assert_eq!(
+            cm.get(CellType::StoragePermutation).unwrap().len(),
+            N_COPY_COLUMNS
+        );
+
+        // CellType::Lookup
+        for &(table, count) in LOOKUP_CONFIG {
+            assert_eq!(cm.get(CellType::Lookup(table)).unwrap().len(), count);
+        }
+        assert_eq!(
+            cm.get(CellType::Lookup(Table::U8)).unwrap().len(),
+            N_U8_LOOKUPS
+        );
+        if N_U16_LOOKUPS == 0 {
+            assert!(cm.get(CellType::Lookup(Table::U16)).is_none());
+        } else {
+            assert_eq!(
+                cm.get(CellType::Lookup(Table::U16)).unwrap().len(),
+                N_U16_LOOKUPS
+            );
+        }
+    }
 }

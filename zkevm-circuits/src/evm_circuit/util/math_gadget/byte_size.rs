@@ -1,7 +1,10 @@
 use crate::{
     evm_circuit::{
         param::N_BYTES_WORD,
-        util::{self, constraint_builder::ConstraintBuilder, sum, CachedRegion, Cell},
+        util::{
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            sum, CachedRegion, Cell,
+        },
     },
     util::Expr,
 };
@@ -24,7 +27,10 @@ pub(crate) struct ByteSizeGadget<F> {
 }
 
 impl<F: Field> ByteSizeGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value_rlc: &util::Word<F>) -> Self {
+    pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        values: [Expression<F>; N_BYTES_WORD],
+    ) -> Self {
         let most_significant_nonzero_byte_index = [(); N_BYTES_WORD + 1].map(|()| cb.query_bool());
         cb.require_equal(
             "exactly one cell in indices is 1",
@@ -37,13 +43,12 @@ impl<F: Field> ByteSizeGadget<F> {
             cb.condition(index.expr(), |cb| {
                 cb.require_zero(
                     "more significant bytes are 0",
-                    sum::expr(&value_rlc.cells[i..32]),
+                    sum::expr(&values[i..N_BYTES_WORD]),
                 );
                 if i > 0 {
                     cb.require_equal(
                         "most significant nonzero byte's inverse exists",
-                        value_rlc.cells[i - 1].expr()
-                            * most_significant_nonzero_byte_inverse.expr(),
+                        values[i - 1].expr() * most_significant_nonzero_byte_inverse.expr(),
                         1.expr(),
                     )
                 } else {
@@ -72,7 +77,7 @@ impl<F: Field> ByteSizeGadget<F> {
             byte_index.assign(
                 region,
                 offset,
-                Value::known(if i == byte_size { F::one() } else { F::zero() }),
+                Value::known(if i == byte_size { F::ONE } else { F::ZERO }),
             )?;
         }
         if byte_size > 0 {
@@ -90,7 +95,7 @@ impl<F: Field> ByteSizeGadget<F> {
             self.most_significant_nonzero_byte_inverse.assign(
                 region,
                 offset,
-                Value::known(F::zero()),
+                Value::known(F::ZERO),
             )?;
         }
         Ok(())
@@ -108,23 +113,23 @@ impl<F: Field> ByteSizeGadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_util::*;
-    use super::*;
+    use super::{super::test_util::*, *};
+    use crate::util::word::Word32Cell;
     use eth_types::Word;
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// ByteSizeGadgetContainer: require(N = byte_size(a))
     struct ByteSizeGadgetContainer<F, const N: u8> {
         bytesize_gadget: ByteSizeGadget<F>,
-        a: util::Word<F>,
+        a: Word32Cell<F>,
     }
 
     impl<F: Field, const N: u8> MathGadgetContainer<F> for ByteSizeGadgetContainer<F, N> {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-            let value_rlc = cb.query_word_rlc();
-            let bytesize_gadget = ByteSizeGadget::<F>::construct(cb, &value_rlc);
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
+            let value_word32 = cb.query_word32();
+            let bytesize_gadget =
+                ByteSizeGadget::<F>::construct(cb, value_word32.to_word_n().limbs);
             cb.require_equal(
                 "byte size gadget must equal N",
                 bytesize_gadget.byte_size(),
@@ -132,7 +137,7 @@ mod tests {
             );
             ByteSizeGadgetContainer {
                 bytesize_gadget,
-                a: value_rlc,
+                a: value_word32,
             }
         }
 
@@ -143,7 +148,7 @@ mod tests {
         ) -> Result<(), Error> {
             let offset = 0;
             let x = witnesses[0];
-            self.a.assign(region, offset, Some(x.to_le_bytes()))?;
+            self.a.assign_u256(region, offset, x)?;
             self.bytesize_gadget.assign(region, offset, x)?;
 
             Ok(())

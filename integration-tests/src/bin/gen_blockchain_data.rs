@@ -1,27 +1,25 @@
 use ethers::{
     abi::{self, Tokenize},
     contract::{builders::ContractCall, Contract, ContractFactory},
-    core::types::{
-        transaction::eip2718::TypedTransaction, Address, TransactionReceipt, TransactionRequest,
-        U256, U64,
+    core::{
+        types::{
+            transaction::eip2718::TypedTransaction, Address, TransactionReceipt,
+            TransactionRequest, U256, U64,
+        },
+        utils::WEI_IN_ETHER,
     },
-    core::utils::WEI_IN_ETHER,
     middleware::SignerMiddleware,
     providers::{Middleware, PendingTransaction},
     signers::Signer,
-    solc::Solc,
+    solc::{CompilerInput, CompilerOutput, EvmVersion, Solc},
 };
 use integration_tests::{
     get_client, get_provider, get_wallet, log_init, CompiledContract, GenDataOutput, CONTRACTS,
-    CONTRACTS_PATH,
+    CONTRACTS_PATH, WARN,
 };
 use log::{error, info};
-use std::collections::HashMap;
-use std::fs::File;
-use std::path::Path;
-use std::sync::Arc;
-use std::thread::sleep;
-use std::time::Duration;
+use serde::de::Deserialize;
+use std::{collections::HashMap, fs::File, path::Path, sync::Arc, thread::sleep, time::Duration};
 
 async fn deploy<T, M>(prov: Arc<M>, compiled: &CompiledContract, args: T) -> Contract<M>
 where
@@ -78,14 +76,46 @@ async fn main() {
 
     // Compile contracts
     info!("Compiling contracts...");
+    let solc = Solc::default();
+    info!("Solc version {}", solc.version().expect("version works"));
     let mut contracts = HashMap::new();
     for (name, contract_path) in CONTRACTS {
         let path_sol = Path::new(CONTRACTS_PATH).join(contract_path);
-        let compiled = Solc::default()
-            .compile_source(&path_sol)
-            .unwrap_or_else(|_| panic!("solc compile error {:?}", path_sol));
-        if !compiled.errors.is_empty() {
-            panic!("Errors compiling {:?}:\n{:#?}", &path_sol, compiled.errors)
+        let inputs = CompilerInput::new(&path_sol).expect("Compile success");
+        // ethers-solc: explicitly indicate the EvmVersion that corresponds to the zkevm circuit's
+        // supported Upgrade, e.g. `London/Shanghai/...` specifications.
+        let input = inputs
+            .clone()
+            .first_mut()
+            .expect("first exists")
+            .clone()
+            .evm_version(EvmVersion::London);
+
+        // compilation will either fail with Err variant or return Ok(CompilerOutput)
+        // which may contain Errors or Warnings
+        let output = solc.compile_output(&input).unwrap();
+        let mut deserializer: serde_json::Deserializer<serde_json::de::SliceRead<'_>> =
+            serde_json::Deserializer::from_slice(&output);
+        // The contracts to test the worst-case usage of certain opcodes, such as SDIV, MLOAD, and
+        // EXTCODESIZE, generate big JSON compilation outputs. We disable the recursion limit to
+        // avoid parsing failure.
+        deserializer.disable_recursion_limit();
+        let compiled = match CompilerOutput::deserialize(&mut deserializer) {
+            Err(error) => {
+                panic!("COMPILATION ERROR {:?}\n{:?}", &path_sol, error);
+            }
+            // CompilationOutput is succesfully created (might contain Errors or Warnings)
+            Ok(output) => {
+                info!("COMPILATION OK: {:?}", name);
+                output
+            }
+        };
+
+        if compiled.has_error() || compiled.has_warning(WARN) {
+            panic!(
+                "... but CompilerOutput contains errors/warnings: {:?}:\n{:#?}",
+                &path_sol, compiled.errors
+            );
         }
 
         let contract = compiled
@@ -147,7 +177,6 @@ async fn main() {
 
     let mut blocks = HashMap::new();
 
-    //
     // ETH Transfer: Transfer funds to our account.
     //
 
@@ -164,7 +193,6 @@ async fn main() {
     let block_num = prov.get_block_number().await.expect("cannot get block_num");
     blocks.insert("Transfer 0".to_string(), block_num.as_u64());
 
-    //
     // Deploy smart contracts
     //
 
@@ -204,7 +232,53 @@ async fn main() {
         (block_num.as_u64(), contract.address()),
     );
 
+    // Deploy smart contracts for worst case block benches
     //
+
+    // CheckMload
+    let contract = deploy(
+        prov_wallet0.clone(),
+        contracts.get("CheckMload").expect("contract not found"),
+        (),
+    )
+    .await;
+    let block_num = prov.get_block_number().await.expect("cannot get block_num");
+    blocks.insert("Deploy CheckMload".to_string(), block_num.as_u64());
+    deployments.insert(
+        "CheckMload".to_string(),
+        (block_num.as_u64(), contract.address()),
+    );
+
+    // CheckSdiv
+    let contract = deploy(
+        prov_wallet0.clone(),
+        contracts.get("CheckSdiv").expect("contract not found"),
+        (),
+    )
+    .await;
+    let block_num = prov.get_block_number().await.expect("cannot get block_num");
+    blocks.insert("Deploy CheckSdiv".to_string(), block_num.as_u64());
+    deployments.insert(
+        "CheckSdiv".to_string(),
+        (block_num.as_u64(), contract.address()),
+    );
+
+    // CheckExtCodeSize100
+    let contract = deploy(
+        prov_wallet0.clone(),
+        contracts
+            .get("CheckExtCodeSize100")
+            .expect("contract not found"),
+        (),
+    )
+    .await;
+    let block_num = prov.get_block_number().await.expect("cannot get block_num");
+    blocks.insert("Deploy CheckExtCodeSize100".to_string(), block_num.as_u64());
+    deployments.insert(
+        "CheckExtCodeSize100".to_string(),
+        (block_num.as_u64(), contract.address()),
+    );
+
     // ETH transfers: Generate a block with multiple transfers
     //
 
@@ -259,7 +333,6 @@ async fn main() {
     let block_num = prov.get_block_number().await.expect("cannot get block_num");
     blocks.insert("Multiple transfers 0".to_string(), block_num.as_u64());
 
-    //
     // ERC20 calls (OpenZeppelin)
     //
 

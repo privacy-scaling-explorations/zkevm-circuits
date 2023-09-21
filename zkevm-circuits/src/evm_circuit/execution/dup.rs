@@ -4,12 +4,15 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Cell, CellType,
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{
+        word::{WordCell, WordExpr},
+        Expr,
+    },
 };
 use eth_types::{evm_types::OpcodeId, Field};
 use halo2_proofs::plonk::Error;
@@ -17,7 +20,7 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct DupGadget<F> {
     same_context: SameContextGadget<F>,
-    value: Cell<F>,
+    value: WordCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for DupGadget<F> {
@@ -25,18 +28,18 @@ impl<F: Field> ExecutionGadget<F> for DupGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::DUP;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let value = cb.query_cell_with_type(CellType::StoragePhase2);
+        let value = cb.query_word_unchecked();
 
         // The stack index we have to peek, deduced from the 'x' value of 'dupx'
         // The offset starts at 0 for DUP1
         let dup_offset = opcode.expr() - OpcodeId::DUP1.expr();
 
         // Peek the value at `dup_offset` and push the value on the stack
-        cb.stack_lookup(false.expr(), dup_offset, value.expr());
-        cb.stack_push(value.expr());
+        cb.stack_lookup(false.expr(), dup_offset, value.to_word());
+        cb.stack_push(value.to_word());
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -65,8 +68,8 @@ impl<F: Field> ExecutionGadget<F> for DupGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let value = block.rws[step.rw_indices[0]].stack_value();
-        self.value.assign(region, offset, region.word_rlc(value))?;
+        let value = block.get_rws(step, 0).stack_value();
+        self.value.assign_u256(region, offset, value)?;
 
         Ok(())
     }
@@ -75,9 +78,8 @@ impl<F: Field> ExecutionGadget<F> for DupGadget<F> {
 #[cfg(test)]
 
 mod test {
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::{bytecode, Word};
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
+    use eth_types::{bytecode, evm_types::OpcodeId, Word};
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, value: Word) {
@@ -86,20 +88,17 @@ mod test {
             PUSH32(value)
         };
         for _ in 0..n - 1 {
-            bytecode.write_op(OpcodeId::DUP1);
+            bytecode.op_dup1();
         }
         bytecode.append(&bytecode! {
             .write_op(opcode)
             STOP
         });
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

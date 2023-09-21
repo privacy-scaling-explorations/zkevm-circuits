@@ -17,39 +17,23 @@ impl Opcode for Codecopy {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let exec_steps = vec![gen_codecopy_step(state, geth_step)?];
+        let mut exec_steps = vec![gen_codecopy_step(state, geth_step)?];
 
         // reconstruction
-
-        let dest_offset = geth_step.stack.nth_last(0)?.as_u64();
-        let code_offset = geth_step.stack.nth_last(1)?.as_u64();
-        let length = geth_step.stack.nth_last(2)?.as_u64();
+        let dst_offset = geth_step.stack.nth_last(0)?;
+        let code_offset = geth_step.stack.nth_last(1)?;
+        let length = geth_step.stack.nth_last(2)?;
 
         let code_hash = state.call()?.code_hash;
         let code = state.code(code_hash)?;
 
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
-        if length != 0 {
-            let minimal_length = (dest_offset + length) as usize;
-            memory.extend_at_least(minimal_length);
 
-            let mem_starts = dest_offset as usize;
-            let mem_ends = mem_starts + length as usize;
-            let code_starts = code_offset as usize;
-            let code_ends = code_starts + length as usize;
-            if code_ends <= code.len() {
-                memory[mem_starts..mem_ends].copy_from_slice(&code[code_starts..code_ends]);
-            } else if let Some(actual_length) = code.len().checked_sub(code_starts) {
-                let mem_code_ends = mem_starts + actual_length;
-                memory[mem_starts..mem_code_ends].copy_from_slice(&code[code_starts..]);
-                // since we already resize the memory, no need to copy 0s for
-                // out of bound bytes
-            }
-        }
+        memory.copy_from(dst_offset, code_offset, length, &code);
 
-        let copy_event = gen_copy_event(state, geth_step)?;
-        state.push_copy(copy_event);
+        let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
+        state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
 }
@@ -80,56 +64,48 @@ fn gen_codecopy_step(
     Ok(exec_step)
 }
 
-fn gen_copy_steps(
-    state: &mut CircuitInputStateRef,
-    exec_step: &mut ExecStep,
-    src_addr: u64,
-    dst_addr: u64,
-    bytes_left: u64,
-    bytecode: &Bytecode,
-) -> Result<Vec<(u8, bool)>, Error> {
-    let mut steps = Vec::with_capacity(bytes_left as usize);
-    for idx in 0..bytes_left {
-        let addr = src_addr + idx;
-        let bytecode_element = bytecode.get(addr as usize).unwrap_or_default();
-        steps.push((bytecode_element.value, bytecode_element.is_code));
-        state.memory_write(exec_step, (dst_addr + idx).into(), bytecode_element.value)?;
-    }
-    Ok(steps)
-}
-
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
+    exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
-    let dst_offset = geth_step.stack.nth_last(0)?.as_u64();
-    let code_offset = geth_step.stack.nth_last(1)?.as_u64();
+    let dst_offset = geth_step.stack.nth_last(0)?;
+    let code_offset = geth_step.stack.nth_last(1)?;
     let length = geth_step.stack.nth_last(2)?.as_u64();
 
     let code_hash = state.call()?.code_hash;
     let bytecode: Bytecode = state.code(code_hash)?.into();
-    let src_addr_end = bytecode.to_vec().len() as u64;
+    let code_size = bytecode.codesize() as u64;
 
-    let mut exec_step = state.new_step(geth_step)?;
-    let copy_steps = gen_copy_steps(
-        state,
-        &mut exec_step,
-        code_offset,
-        dst_offset,
-        length,
+    // Get low Uint64 of offset to generate copy steps. Since offset could be
+    // Uint64 overflow if length is zero.
+    let dst_addr = dst_offset.low_u64();
+    let src_addr_end = code_size;
+
+    // Reset start offset to end offset if overflow.
+    let src_addr = u64::try_from(code_offset)
+        .unwrap_or(src_addr_end)
+        .min(src_addr_end);
+
+    let copy_steps = state.gen_copy_steps_for_bytecode(
+        exec_step,
         &bytecode,
+        src_addr,
+        dst_addr,
+        src_addr_end,
+        length,
     )?;
 
     Ok(CopyEvent {
         src_type: CopyDataType::Bytecode,
         src_id: NumberOrHash::Hash(code_hash),
-        src_addr: code_offset,
+        src_addr,
         src_addr_end,
         dst_type: CopyDataType::Memory,
         dst_id: NumberOrHash::Number(state.call()?.call_id),
-        dst_addr: dst_offset,
+        dst_addr,
         log_id: None,
         rw_counter_start,
         bytes: copy_steps,
@@ -142,9 +118,8 @@ mod codecopy_tests {
         bytecode,
         evm_types::{MemoryAddress, OpcodeId, StackAddress},
         geth_types::GethData,
-        Word, H256,
+        Word,
     };
-    use ethers_core::utils::keccak256;
     use mock::{
         test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
         TestContext,
@@ -180,8 +155,8 @@ mod codecopy_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 
@@ -226,11 +201,7 @@ mod codecopy_tests {
                         MemoryOp::new(
                             1,
                             MemoryAddress::from(dst_offset + idx),
-                            if code_offset + idx < code.to_vec().len() {
-                                code.to_vec()[code_offset + idx]
-                            } else {
-                                0
-                            },
+                            code.get_byte(code_offset + idx).unwrap_or(0),
                         ),
                     )
                 })
@@ -240,12 +211,9 @@ mod codecopy_tests {
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
         assert_eq!(copy_events[0].bytes.len(), size);
-        assert_eq!(
-            copy_events[0].src_id,
-            NumberOrHash::Hash(H256(keccak256(&code.to_vec())))
-        );
+        assert_eq!(copy_events[0].src_id, NumberOrHash::Hash(code.hash_h256()));
         assert_eq!(copy_events[0].src_addr as usize, code_offset);
-        assert_eq!(copy_events[0].src_addr_end as usize, code.to_vec().len());
+        assert_eq!(copy_events[0].src_addr_end as usize, code.codesize());
         assert_eq!(copy_events[0].src_type, CopyDataType::Bytecode);
         assert_eq!(
             copy_events[0].dst_id,
@@ -255,10 +223,10 @@ mod codecopy_tests {
         assert_eq!(copy_events[0].dst_type, CopyDataType::Memory);
         assert!(copy_events[0].log_id.is_none());
 
-        for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
-            let bytecode_element = code.get(code_offset + idx).unwrap_or_default();
-            assert_eq!(*value, bytecode_element.value);
-            assert_eq!(*is_code, bytecode_element.is_code);
+        for (idx, &(value, is_code)) in copy_events[0].bytes.iter().enumerate() {
+            let (true_value, true_is_code) = code.get(code_offset + idx).unwrap_or_default();
+            assert_eq!(value, true_value);
+            assert_eq!(is_code, true_is_code);
         }
     }
 }

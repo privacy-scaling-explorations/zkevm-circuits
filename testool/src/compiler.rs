@@ -1,15 +1,16 @@
 #![allow(clippy::map_entry)]
 
 use anyhow::{bail, Context, Result};
-use eth_types::{bytecode, Bytecode};
-use eth_types::{Bytes, H256};
-use keccak256::plain::Keccak;
-use std::collections::HashMap;
-use std::io::Read;
-use std::io::Write;
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::str::FromStr;
+use eth_types::{bytecode, keccak256, Bytecode, Bytes, H256};
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::HashMap,
+    io::{Read, Write},
+    path::PathBuf,
+    process::{Command, Stdio},
+    str::FromStr,
+    sync::Mutex,
+};
 
 struct Cache {
     entries: HashMap<H256, Bytes>,
@@ -59,24 +60,144 @@ impl Cache {
     }
 
     fn hash(src: &str) -> H256 {
-        let mut hash = Keccak::default();
-        hash.update(src.as_bytes());
-        H256::from_slice(&hash.digest())
+        H256::from_slice(&keccak256(src.as_bytes()))
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CompilerInput {
+    language: Language,
+    settings: CompilerSettings,
+    sources: HashMap<String, Source>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+enum Language {
+    Solidity,
+    Yul,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompilerSettings {
+    optimizer: Optimizer,
+    evm_version: String,
+    output_selection: HashMap<String, HashMap<String, Vec<String>>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct Optimizer {
+    enabled: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Source {
+    content: String,
+}
+
+impl CompilerInput {
+    pub fn new_default(language: Language, src: &str, evm_version: Option<&str>) -> Self {
+        let mut sources = HashMap::new();
+        sources.insert(
+            "stdin".to_string(),
+            Source {
+                content: src.to_string(),
+            },
+        );
+        CompilerInput {
+            language,
+            settings: CompilerSettings::new_default(evm_version),
+            sources,
+        }
+    }
+}
+
+impl CompilerSettings {
+    fn new_default(evm_version: Option<&str>) -> Self {
+        let mut output_selection = HashMap::new();
+        let mut selection = HashMap::new();
+        selection.insert("*".to_string(), vec!["evm.bytecode".to_string()]);
+        output_selection.insert("*".to_string(), selection);
+        CompilerSettings {
+            evm_version: evm_version.unwrap_or("berlin").to_string(),
+            optimizer: Default::default(),
+            output_selection,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompilationResult {
+    contracts: HashMap<String, HashMap<String, Contract>>,
+    errors: Vec<CompilationError>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Contract {
+    evm: Evm,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Evm {
+    bytecode: BytecodeResult,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BytecodeResult {
+    object: String,
+    opcodes: String,
+    source_map: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompilationError {
+    component: String,
+    error_code: String,
+    formatted_message: String,
+    message: String,
+    severity: Severity,
+    #[serde(rename = "type")]
+    error_type: String,
+    source_location: Option<SourceLocation>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum Severity {
+    Error,
+    Warning,
+    Info,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SourceLocation {
+    end: i32,
+    file: String,
+    start: i32,
 }
 
 #[derive(Default)]
 pub struct Compiler {
-    cache: Option<Cache>,
+    cache: Option<Mutex<Cache>>,
     compile: bool,
 }
 
 impl Compiler {
     pub fn new(compile: bool, cache_path: Option<PathBuf>) -> Result<Self> {
-        let cache = cache_path.map(Cache::new).transpose()?;
+        let cache = cache_path.map(Cache::new).transpose()?.map(Mutex::new);
         Ok(Compiler { compile, cache })
     }
 
+    /// the concurrency level of the exec is controlled by rayon parallelism
     fn exec(args: &[&str], stdin: &str) -> Result<String> {
         let mut child = Command::new("docker")
             .args(args)
@@ -108,7 +229,7 @@ impl Compiler {
     }
 
     /// compiles ASM code
-    pub fn asm(&mut self, src: &str) -> Result<Bytes> {
+    pub fn asm(&self, src: &str) -> Result<Bytes> {
         let mut bytecode = Bytecode::default();
         for op in src.split(';') {
             let op = match bytecode::OpcodeWithData::from_str(op.trim()) {
@@ -122,9 +243,13 @@ impl Compiler {
     }
 
     /// compiles LLL code
-    pub fn lll(&mut self, src: &str) -> Result<Bytes> {
-        if let Some(bytecode) = self.cache.as_mut().and_then(|c| c.get(src)) {
-            return Ok(bytecode.clone());
+    pub fn lll(&self, src: &str) -> Result<Bytes> {
+        if let Some(bytecode) = self
+            .cache
+            .as_ref()
+            .and_then(|c| c.lock().unwrap().get(src).cloned())
+        {
+            return Ok(bytecode);
         }
         if !self.compile {
             bail!("No way to compile LLLC for '{}'", src)
@@ -133,75 +258,61 @@ impl Compiler {
         let stdout = Self::exec(&["run", "-i", "--rm", "lllc"], src)?;
         let bytecode = Bytes::from(hex::decode(stdout.trim())?);
 
-        if let Some(cache) = &mut self.cache {
-            cache.insert(src, bytecode.clone())?;
+        if let Some(ref cache) = self.cache {
+            cache.lock().unwrap().insert(src, bytecode.clone())?;
         }
 
         Ok(bytecode)
     }
 
     /// compiles YUL code
-    pub fn yul(&mut self, src: &str) -> Result<Bytes> {
-        if let Some(bytecode) = self.cache.as_mut().and_then(|c| c.get(src)) {
-            return Ok(bytecode.clone());
-        }
-        if !self.compile {
-            bail!("No way to compile Yul for '{}'", src)
-        }
-
-        let stdout = Self::exec(
-            &["run", "-i", "--rm", "solc", "--strict-assembly", "-"],
-            src,
-        )?;
-        let placeholder = "Binary representation:\n";
-        let from_pos = stdout.find(placeholder);
-        let len = from_pos.and_then(|pos| stdout[pos + placeholder.len()..].find('\n'));
-        let bytecode = if let (Some(from_pos), Some(len)) = (from_pos, len) {
-            let hex = &stdout[from_pos + placeholder.len()..from_pos + placeholder.len() + len];
-            Bytes::from(hex::decode(&hex)?)
-        } else {
-            bail!("Unable to compile: {}", src);
-        };
-        if let Some(cache) = &mut self.cache {
-            cache.insert(src, bytecode.clone())?;
-        }
-
-        Ok(bytecode)
+    pub fn yul(&self, src: &str, evm_version: Option<&str>) -> Result<Bytes> {
+        self.solc(Language::Yul, src, evm_version)
     }
+
     /// compiles Solidity code
-    pub fn solidity(&mut self, src: &str) -> Result<Bytes> {
-        if let Some(bytecode) = self.cache.as_mut().and_then(|c| c.get(src)) {
-            return Ok(bytecode.clone());
+    pub fn solidity(&self, src: &str, evm_version: Option<&str>) -> Result<Bytes> {
+        self.solc(Language::Solidity, src, evm_version)
+    }
+
+    fn solc(&self, language: Language, src: &str, evm_version: Option<&str>) -> Result<Bytes> {
+        if let Some(bytecode) = self
+            .cache
+            .as_ref()
+            .and_then(|c| c.lock().unwrap().get(src).cloned())
+        {
+            return Ok(bytecode);
         }
         if !self.compile {
-            bail!("No way to compile Solidity for '{}'", src)
+            bail!("No way to compile {:?} for '{}'", language, src)
         }
+        let compiler_input = CompilerInput::new_default(language, src, evm_version);
 
         let stdout = Self::exec(
-            &[
-                "run",
-                "-i",
-                "--rm",
-                "solc",
-                "--bin",
-                "--optimize",
-                "--metadata-hash",
-                "none",
-                "-",
-            ],
-            src,
+            &["run", "-i", "--rm", "solc", "--standard-json", "-"],
+            serde_json::to_string(&compiler_input).unwrap().as_str(),
         )?;
-        let placeholder = "Binary:\n";
-        let from_pos = stdout.find(placeholder);
-        let len = from_pos.and_then(|pos| stdout[pos + placeholder.len()..].find('\n'));
-        let bytecode = if let (Some(from_pos), Some(len)) = (from_pos, len) {
-            let hex = &stdout[from_pos + placeholder.len()..from_pos + placeholder.len() + len];
-            Bytes::from(hex::decode(&hex)?)
-        } else {
-            bail!("Unable to compile: {}", src);
-        };
-        if let Some(cache) = &mut self.cache {
-            cache.insert(src, bytecode.clone())?;
+        let mut compilation_result: CompilationResult = serde_json::from_str(&stdout)
+            .map_err(|e| {
+                println!("---\n{language:?}\n{src}\n{evm_version:?}\n{e:?}\n{stdout}\n-----")
+            })
+            .unwrap();
+        let bytecode = compilation_result
+            .contracts
+            .remove("stdin")
+            .expect("should have stdin")
+            .into_iter()
+            .next()
+            .expect("should have one contract")
+            .1
+            .evm
+            .bytecode
+            .object;
+
+        let bytecode = Bytes::from(hex::decode(bytecode)?);
+
+        if let Some(ref cache) = self.cache {
+            cache.lock().unwrap().insert(src, bytecode.clone())?;
         }
 
         Ok(bytecode)
@@ -211,7 +322,7 @@ impl Compiler {
 #[cfg(test)]
 mod test {
     #[test]
-    #[cfg(not(feature = "ignore-test-docker"))]
+    #[ignore]
     fn test_docker_lll() -> anyhow::Result<()> {
         let out = super::Compiler::new(true, None)?.lll(
             "[[0]] (+ 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff 4)",
@@ -223,7 +334,7 @@ mod test {
         Ok(())
     }
     #[test]
-    #[cfg(not(feature = "ignore-test-docker"))]
+    #[ignore]
     fn test_docker_yul() -> anyhow::Result<()> {
         let out = super::Compiler::new(true, None)?.yul(
             r#"
@@ -238,6 +349,7 @@ mod test {
     }
 }
             "#,
+            None,
         )?;
         assert_eq!(
             hex::encode(out),
@@ -246,9 +358,9 @@ mod test {
         Ok(())
     }
     #[test]
-    #[cfg(not(feature = "ignore-test-docker"))]
+    #[ignore]
     fn test_docker_solidity() -> anyhow::Result<()> {
-        let out = super::Compiler::new(true, None)?.solidity("contract A{}")?;
+        let out = super::Compiler::new(true, None)?.solidity("contract A{}", None)?;
         assert_eq!(
             hex::encode(out),
             "6080604052348015600f57600080fd5b50603c80601d6000396000f3fe6080604052600080fdfea164736f6c637828302e382e31332d646576656c6f702e323032322e352e31312b636f6d6d69742e61626161356330650030"

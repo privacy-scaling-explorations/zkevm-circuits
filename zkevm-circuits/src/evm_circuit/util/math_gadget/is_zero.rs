@@ -1,6 +1,7 @@
 use crate::{
     evm_circuit::util::{
-        constraint_builder::ConstraintBuilder, transpose_val_ret, CachedRegion, Cell, CellType,
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        CachedRegion, Cell, CellType,
     },
     util::Expr,
 };
@@ -18,7 +19,7 @@ pub struct IsZeroGadget<F> {
 }
 
 impl<F: Field> IsZeroGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value: Expression<F>) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, value: Expression<F>) -> Self {
         let inverse = cb.query_cell_with_type(CellType::storage_for_expr(&value));
 
         let is_zero = 1.expr() - (value.clone() * inverse.expr());
@@ -45,34 +46,27 @@ impl<F: Field> IsZeroGadget<F> {
         offset: usize,
         value: F,
     ) -> Result<F, Error> {
-        let inverse = value.invert().unwrap_or(F::zero());
+        let inverse = value.invert().unwrap_or(F::ZERO);
         self.inverse.assign(region, offset, Value::known(inverse))?;
         Ok(if value.is_zero().into() {
-            F::one()
+            F::ONE
         } else {
-            F::zero()
+            F::ZERO
         })
-    }
-
-    pub(crate) fn assign_value(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        value: Value<F>,
-    ) -> Result<Value<F>, Error> {
-        transpose_val_ret(value.map(|value| self.assign(region, offset, value)))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_util::*;
-    use super::*;
-    use crate::evm_circuit::util::Cell;
-    use crate::util::Expr;
+    use crate::{
+        evm_circuit::util::{constraint_builder::ConstrainBuilderCommon, Cell},
+        util::Expr,
+    };
+
+    use super::{super::test_util::*, *};
+
     use eth_types::{ToScalar, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// IsZeroGadgetTestContainer: require(n != 0)
@@ -82,7 +76,7 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for IsZeroGadgetTestContainer<F> {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let n = cb.query_cell();
             let z_gadget = IsZeroGadget::<F>::construct(cb, n.expr());
             cb.require_equal("Input is zero", z_gadget.expr(), 1.expr());

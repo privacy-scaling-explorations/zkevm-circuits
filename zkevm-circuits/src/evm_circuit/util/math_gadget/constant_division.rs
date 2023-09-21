@@ -1,7 +1,8 @@
 use crate::{
     evm_circuit::util::{
-        constraint_builder::ConstraintBuilder, math_gadget::*, transpose_val_ret, CachedRegion,
-        Cell, CellType,
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        math_gadget::*,
+        CachedRegion, Cell, CellType,
     },
     util::Expr,
 };
@@ -26,7 +27,7 @@ pub struct ConstantDivisionGadget<F, const N_BYTES: usize> {
 
 impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         numerator: Expression<F>,
         denominator: u64,
     ) -> Self {
@@ -58,7 +59,7 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
     pub(crate) fn quotient(&self) -> Expression<F> {
         self.quotient.expr()
     }
-
+    #[allow(dead_code, reason = "remainder is a valid API but only used in tests")]
     pub(crate) fn remainder(&self) -> Expression<F> {
         self.remainder.expr()
     }
@@ -83,26 +84,13 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
 
         Ok((quotient, remainder))
     }
-
-    pub(crate) fn assign_value(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        numerator: Value<F>,
-    ) -> Result<Value<(u128, u128)>, Error> {
-        transpose_val_ret(
-            numerator.map(|numerator| self.assign(region, offset, numerator.get_lower_128())),
-        )
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::test_util::*;
-    use super::*;
+    use super::{test_util::*, *};
     use eth_types::*;
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// ConstantDivisionTestContainer:
@@ -127,13 +115,13 @@ mod tests {
         > MathGadgetContainer<F>
         for ConstantDivisionTestContainer<F, N_BYTES, DENOMINATOR, QUOTIENT, REMAINDER>
     {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_cell();
             let constdiv_gadget =
                 ConstantDivisionGadget::<F, N_BYTES>::construct(cb, a.expr(), DENOMINATOR);
 
             cb.require_equal(
-                "correct reminder",
+                "correct remainder",
                 constdiv_gadget.remainder(),
                 REMAINDER.expr(),
             );

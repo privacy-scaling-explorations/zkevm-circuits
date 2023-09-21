@@ -4,13 +4,16 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
-    util::Expr,
+    util::{
+        word::{WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
@@ -19,7 +22,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct GasPriceGadget<F> {
     tx_id: Cell<F>,
-    gas_price: Cell<F>,
+    gas_price: WordCell<F>,
     same_context: SameContextGadget<F>,
 }
 
@@ -28,9 +31,9 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::GASPRICE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         // Query gasprice value
-        let gas_price = cb.query_cell();
+        let gas_price = cb.query_word_unchecked();
 
         // Lookup in call_ctx the TxId
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -39,11 +42,11 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
             tx_id.expr(),
             TxContextFieldTag::GasPrice,
             None,
-            gas_price.expr(),
+            gas_price.to_word(),
         );
 
         // Push the value to the stack
-        cb.stack_push(gas_price.expr());
+        cb.stack_push(gas_price.to_word());
 
         // State transition
         let opcode = cb.query_cell();
@@ -72,13 +75,12 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let gas_price = block.rws[step.rw_indices[1]].stack_value();
+        let gas_price = block.get_rws(step, 1).stack_value();
 
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id)))?;
 
-        self.gas_price
-            .assign(region, offset, region.word_rlc(gas_price))?;
+        self.gas_price.assign_u256(region, offset, gas_price)?;
 
         self.same_context.assign_exec_step(region, offset, step)?;
 
@@ -88,7 +90,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{bytecode, Word};
     use mock::test_ctx::{helpers::*, TestContext};
 
@@ -116,6 +118,6 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }

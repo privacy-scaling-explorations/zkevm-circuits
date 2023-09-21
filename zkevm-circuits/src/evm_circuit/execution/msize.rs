@@ -5,21 +5,24 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes, CachedRegion, RandomLinearCombination,
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{word::Word, Expr},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct MsizeGadget<F> {
     same_context: SameContextGadget<F>,
-    value: RandomLinearCombination<F, 8>,
+    value: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
@@ -27,18 +30,19 @@ impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::MSIZE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let value = cb.query_word_rlc();
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let value = cb.query_cell();
 
-        // memory_size is limited to 64 bits so we only consider 8 bytes
+        // memory_size is limited to 64 bits
+        // constrain equality with step state therefore only use single cell
         cb.require_equal(
             "Constrain memory_size equal to stack value",
-            from_bytes::expr(&value.cells),
+            value.expr(),
             cb.curr.state.memory_word_size.expr() * N_BYTES_WORD.expr(),
         );
 
         // Push the value on the stack
-        cb.stack_push(value.expr());
+        cb.stack_push(Word::from_lo_unchecked(value.expr()));
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -70,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
         self.value.assign(
             region,
             offset,
-            Some((step.memory_size as u64).to_le_bytes()),
+            Value::known(F::from(step.memory_size as u64)),
         )?;
 
         Ok(())
@@ -79,7 +83,7 @@ impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
@@ -95,12 +99,9 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 }

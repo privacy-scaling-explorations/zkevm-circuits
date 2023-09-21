@@ -1,26 +1,28 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_CALLDATASIZE,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes, CachedRegion, RandomLinearCombination,
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
+use eth_types::Field;
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CallDataSizeGadget<F> {
     same_context: SameContextGadget<F>,
-    call_data_size: RandomLinearCombination<F, N_BYTES_CALLDATASIZE>,
+    call_data_size: WordCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
@@ -28,20 +30,19 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLDATASIZE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         // Add lookup constraint in the call context for the calldatasize field.
-        let call_data_size = cb.query_word_rlc();
-        cb.call_context_lookup(
-            false.expr(),
+        let call_data_size = cb.query_word_unchecked();
+        cb.call_context_lookup_read(
             None,
             CallContextFieldTag::CallDataLength,
-            from_bytes::expr(&call_data_size.cells),
+            call_data_size.to_word(),
         );
 
         // The calldatasize should be pushed to the top of the stack.
-        cb.stack_push(call_data_size.expr());
+        cb.stack_push(call_data_size.to_word());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(2.expr()),
@@ -70,17 +71,10 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let call_data_size = block.rws[step.rw_indices[1]].stack_value();
+        let call_data_size = block.get_rws(step, 1).stack_value();
 
-        self.call_data_size.assign(
-            region,
-            offset,
-            Some(
-                call_data_size.to_le_bytes()[..N_BYTES_CALLDATASIZE]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+        self.call_data_size
+            .assign_u64(region, offset, call_data_size.as_u64())?;
 
         Ok(())
     }
@@ -88,9 +82,10 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::{rand_bytes, run_test_circuit_geth_data_default};
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
+    use bus_mapping::circuit_input_builder::FixedCParams;
     use eth_types::{address, bytecode, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
+
     use itertools::Itertools;
     use mock::TestContext;
 
@@ -100,8 +95,8 @@ mod test {
             STOP
         };
 
-        let block = if is_root {
-            TestContext::<2, 1>::new(
+        if is_root {
+            let ctx = TestContext::<2, 1>::new(
                 None,
                 |accs| {
                     accs[0]
@@ -121,10 +116,16 @@ mod test {
                 },
                 |block, _tx| block.number(0xcafeu64),
             )
-            .unwrap()
-            .into()
+            .unwrap();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx)
+                .params(FixedCParams {
+                    max_calldata: 1200,
+                    ..FixedCParams::default()
+                })
+                .run();
         } else {
-            TestContext::<3, 1>::new(
+            let ctx = TestContext::<3, 1>::new(
                 None,
                 |accs| {
                     accs[0]
@@ -157,10 +158,15 @@ mod test {
                 },
                 |block, _tx| block.number(0xcafeu64),
             )
-            .unwrap()
-            .into()
+            .unwrap();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx)
+                .params(FixedCParams {
+                    max_calldata: 600,
+                    ..FixedCParams::default()
+                })
+                .run();
         };
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
     }
 
     #[test]

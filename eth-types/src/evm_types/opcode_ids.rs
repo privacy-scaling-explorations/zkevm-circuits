@@ -4,8 +4,7 @@ use core::fmt::Debug;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{de, Deserialize, Serialize};
-use std::fmt;
-use std::str::FromStr;
+use std::{fmt, matches, str::FromStr};
 use strum_macros::EnumIter;
 
 /// Opcode enum. One-to-one corresponding to an `u8` value.
@@ -96,6 +95,8 @@ pub enum OpcodeId {
     JUMPDEST,
 
     // PUSHn
+    /// `PUSH0`
+    PUSH0,
     /// `PUSH1`
     PUSH1,
     /// `PUSH2`
@@ -316,8 +317,13 @@ pub enum OpcodeId {
 }
 
 impl OpcodeId {
-    /// Returns `true` if the `OpcodeId` is a `PUSHn`.
+    /// Returns `true` if the `OpcodeId` is a `PUSHn` (including `PUSH0`).
     pub fn is_push(&self) -> bool {
+        self.as_u8() >= Self::PUSH0.as_u8() && self.as_u8() <= Self::PUSH32.as_u8()
+    }
+
+    /// Returns `true` if the `OpcodeId` is a `PUSH1` .. `PUSH32` (excluding `PUSH0`).
+    pub fn is_push_with_data(&self) -> bool {
         self.as_u8() >= Self::PUSH1.as_u8() && self.as_u8() <= Self::PUSH32.as_u8()
     }
 
@@ -403,6 +409,7 @@ impl OpcodeId {
             OpcodeId::PC => 0x58u8,
             OpcodeId::MSIZE => 0x59u8,
             OpcodeId::JUMPDEST => 0x5bu8,
+            OpcodeId::PUSH0 => 0x5fu8,
             OpcodeId::PUSH1 => 0x60u8,
             OpcodeId::PUSH2 => 0x61u8,
             OpcodeId::PUSH3 => 0x62u8,
@@ -515,7 +522,7 @@ impl OpcodeId {
     }
 
     /// Returns the constant gas cost of `OpcodeId`
-    pub const fn constant_gas_cost(&self) -> GasCost {
+    pub const fn constant_gas_cost(&self) -> u64 {
         match self {
             OpcodeId::STOP => GasCost::ZERO,
             OpcodeId::ADD => GasCost::FASTEST,
@@ -581,6 +588,7 @@ impl OpcodeId {
             OpcodeId::MSIZE => GasCost::QUICK,
             OpcodeId::GAS => GasCost::QUICK,
             OpcodeId::JUMPDEST => GasCost::ONE,
+            OpcodeId::PUSH0 => GasCost::QUICK,
             OpcodeId::PUSH1 => GasCost::FASTEST,
             OpcodeId::PUSH2 => GasCost::FASTEST,
             OpcodeId::PUSH3 => GasCost::FASTEST,
@@ -663,9 +671,9 @@ impl OpcodeId {
         }
     }
 
-    /// Returns the constant min & stack pointer of `OpcodeId`
-    pub const fn valid_stack_ptr_range(&self) -> (u32, u32) {
-        match self {
+    /// Returns invalid stack pointers of `OpcodeId`
+    pub fn invalid_stack_ptrs(&self) -> Vec<u32> {
+        let (min_stack_ptr, max_stack_ptr): (u32, u32) = match self {
             // `min_stack_pointer` 0 means stack overflow never happen, for example, `OpcodeId::ADD`
             // can only encounter underflow error, but never encounter overflow error.
             // `max_stack_pointer` means max stack poniter for op code normally run. for example,
@@ -688,7 +696,7 @@ impl OpcodeId {
             OpcodeId::SLT => (0, 1022),
             OpcodeId::SGT => (0, 1022),
             OpcodeId::EQ => (0, 1022),
-            OpcodeId::ISZERO => (0, 1022),
+            OpcodeId::ISZERO => (0, 1023),
             OpcodeId::AND => (0, 1022),
             OpcodeId::OR => (0, 1022),
             OpcodeId::XOR => (0, 1022),
@@ -713,10 +721,9 @@ impl OpcodeId {
             OpcodeId::EXTCODECOPY => (0, 1020),
             OpcodeId::RETURNDATASIZE => (1, 1024),
             OpcodeId::RETURNDATACOPY => (0, 1021),
-            OpcodeId::EXTCODEHASH => (1, 1024),
+            OpcodeId::EXTCODEHASH => (0, 1023),
             OpcodeId::BLOCKHASH => (0, 1023),
             OpcodeId::COINBASE => (1, 1024),
-
             OpcodeId::TIMESTAMP => (1, 1024),
             OpcodeId::NUMBER => (1, 1024),
             OpcodeId::DIFFICULTY => (1, 1024),
@@ -736,6 +743,7 @@ impl OpcodeId {
             OpcodeId::MSIZE => (1, 1024),
             OpcodeId::GAS => (1, 1024),
             OpcodeId::JUMPDEST => (0, 1024),
+            OpcodeId::PUSH0 => (1, 1024),
             OpcodeId::PUSH1 => (1, 1024),
             OpcodeId::PUSH2 => (1, 1024),
             OpcodeId::PUSH3 => (1, 1024),
@@ -816,7 +824,14 @@ impl OpcodeId {
             OpcodeId::REVERT => (0, 1022),
             OpcodeId::SELFDESTRUCT => (0, 1023),
             _ => (0, 0),
-        }
+        };
+
+        debug_assert!(max_stack_ptr <= 1024);
+
+        (0..min_stack_ptr)
+            // Range (1025..=1024) is valid and it should be converted to an empty vector.
+            .chain(max_stack_ptr.checked_add(1).unwrap()..=1024)
+            .collect()
     }
 
     /// Returns `true` if the `OpcodeId` has memory access
@@ -835,8 +850,10 @@ impl OpcodeId {
 
     /// Returns PUSHn opcode from parameter n.
     pub fn push_n(n: u8) -> Result<Self, Error> {
-        if (1..=32).contains(&n) {
-            Ok(OpcodeId::from(OpcodeId::PUSH1.as_u8() + n - 1))
+        let op = OpcodeId::from(OpcodeId::PUSH0.as_u8().checked_add(n).unwrap_or_default());
+
+        if op.is_push() {
+            Ok(op)
         } else {
             Err(Error::InvalidOpConversion)
         }
@@ -845,7 +862,7 @@ impl OpcodeId {
     /// If operation has postfix returns it, otherwise None.
     pub fn postfix(&self) -> Option<u8> {
         if self.is_push() {
-            Some(self.as_u8() - OpcodeId::PUSH1.as_u8() + 1)
+            Some(self.as_u8() - OpcodeId::PUSH0.as_u8())
         } else if self.is_dup() {
             Some(self.as_u8() - OpcodeId::DUP1.as_u8() + 1)
         } else if self.is_swap() {
@@ -858,13 +875,33 @@ impl OpcodeId {
     }
 
     /// Returns number of bytes used by immediate data. This is > 0 only for
-    /// push opcodes.
+    /// `PUSH1` .. `PUSH32` opcodes.
     pub fn data_len(&self) -> usize {
-        if self.is_push() {
-            (self.as_u8() - OpcodeId::PUSH1.as_u8() + 1) as usize
+        if self.is_push_with_data() {
+            (self.as_u8() - OpcodeId::PUSH0.as_u8()) as usize
         } else {
             0
         }
+    }
+
+    /// Returns the all valid opcodes.
+    pub fn valid_opcodes() -> Vec<Self> {
+        (u8::MIN..=u8::MAX).fold(vec![], |mut acc, val| {
+            if !matches!(val.into(), Self::INVALID(_)) {
+                acc.push(val.into());
+            }
+            acc
+        })
+    }
+
+    /// Returns the all invalid opcodes.
+    pub fn invalid_opcodes() -> Vec<Self> {
+        (u8::MIN..=u8::MAX).fold(vec![], |mut acc, val| {
+            if matches!(val.into(), Self::INVALID(_)) {
+                acc.push(Self::INVALID(val));
+            }
+            acc
+        })
     }
 }
 
@@ -911,6 +948,7 @@ impl From<u8> for OpcodeId {
             0x58u8 => OpcodeId::PC,
             0x59u8 => OpcodeId::MSIZE,
             0x5bu8 => OpcodeId::JUMPDEST,
+            0x5fu8 => OpcodeId::PUSH0,
             0x60u8 => OpcodeId::PUSH1,
             0x61u8 => OpcodeId::PUSH2,
             0x62u8 => OpcodeId::PUSH3,
@@ -1064,6 +1102,7 @@ impl FromStr for OpcodeId {
             "PC" => OpcodeId::PC,
             "MSIZE" => OpcodeId::MSIZE,
             "JUMPDEST" => OpcodeId::JUMPDEST,
+            "PUSH0" => OpcodeId::PUSH0,
             "PUSH1" => OpcodeId::PUSH1,
             "PUSH2" => OpcodeId::PUSH2,
             "PUSH3" => OpcodeId::PUSH3,
@@ -1131,7 +1170,6 @@ impl FromStr for OpcodeId {
             "RETURN" => OpcodeId::RETURN,
             "REVERT" => OpcodeId::REVERT,
             "INVALID" => OpcodeId::INVALID(0xfe),
-            "PUSH0" => OpcodeId::INVALID(0x5f),
             "SHA3" | "KECCAK256" => OpcodeId::SHA3,
             "ADDRESS" => OpcodeId::ADDRESS,
             "BALANCE" => OpcodeId::BALANCE,
@@ -1209,20 +1247,18 @@ mod opcode_ids_tests {
 
     #[test]
     fn push_n() {
+        assert!(matches!(OpcodeId::push_n(0), Ok(OpcodeId::PUSH0)));
         assert!(matches!(OpcodeId::push_n(1), Ok(OpcodeId::PUSH1)));
         assert!(matches!(OpcodeId::push_n(10), Ok(OpcodeId::PUSH10)));
         assert!(matches!(
             OpcodeId::push_n(100),
             Err(Error::InvalidOpConversion)
         ));
-        assert!(matches!(
-            OpcodeId::push_n(0),
-            Err(Error::InvalidOpConversion)
-        ));
     }
 
     #[test]
     fn postfix() {
+        assert_eq!(OpcodeId::PUSH0.postfix(), Some(0));
         assert_eq!(OpcodeId::PUSH1.postfix(), Some(1));
         assert_eq!(OpcodeId::PUSH10.postfix(), Some(10));
         assert_eq!(OpcodeId::LOG2.postfix(), Some(2));
@@ -1231,6 +1267,7 @@ mod opcode_ids_tests {
 
     #[test]
     fn data_len() {
+        assert_eq!(OpcodeId::PUSH0.data_len(), 0);
         assert_eq!(OpcodeId::PUSH1.data_len(), 1);
         assert_eq!(OpcodeId::PUSH10.data_len(), 10);
         assert_eq!(OpcodeId::LOG2.data_len(), 0);

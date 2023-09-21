@@ -8,24 +8,33 @@ use env_logger::Env;
 use eth_types::Address;
 use ethers::{
     abi,
-    core::k256::ecdsa::SigningKey,
-    core::types::Bytes,
+    core::{k256::ecdsa::SigningKey, types::Bytes},
     providers::{Http, Provider},
     signers::{coins_bip39::English, MnemonicBuilder, Signer, Wallet},
 };
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::env::{self, VarError};
-use std::fs::File;
-use std::sync::Once;
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    env::{self, VarError},
+    fs::File,
+    sync::Once,
+    time::Duration,
+};
 use url::Url;
 
 /// Geth dev chain ID
 pub const CHAIN_ID: u64 = 1337;
 /// Path to the test contracts
 pub const CONTRACTS_PATH: &str = "contracts";
+/// Solidity compilation warnings to ignore (by error code)
+/// 2018: Warning - "Function state mutability can be restricted to pure"
+/// 5667: Warning - "Unused function parameter. Remove or comment out the
+/// variable name to silence this warning."
+/// For smart contracts that are optimized for worst case block generation, we want to allow
+/// contracts that do not interfere with state, without setting state mutability to view. otherwise
+/// compiler optimizations will not allow recursive execution of targeted opcodes
+pub const WARN: &[u64] = &[2018, 5667];
 /// List of contracts as (ContractName, ContractSolidityFile)
 pub const CONTRACTS: &[(&str, &str)] = &[
     ("Greeter", "greeter/Greeter.sol"),
@@ -33,6 +42,10 @@ pub const CONTRACTS: &[(&str, &str)] = &[
         "OpenZeppelinERC20TestToken",
         "ERC20/OpenZeppelinERC20TestToken.sol",
     ),
+    // Contracts to test worst-case usage of opcodes.
+    ("CheckMload", "MLOAD/MLOAD.sol"),
+    ("CheckExtCodeSize100", "EXTCODESIZE/EXTCODESIZE100.sol"),
+    ("CheckSdiv", "SDIV/SDIV.sol"),
 ];
 /// Path to gen_blockchain_data output file
 pub const GENDATA_OUTPUT_PATH: &str = "gendata_output.json";

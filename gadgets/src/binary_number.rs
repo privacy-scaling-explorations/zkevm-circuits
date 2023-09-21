@@ -9,8 +9,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use std::collections::BTreeSet;
-use std::marker::PhantomData;
+use std::{collections::BTreeSet, marker::PhantomData};
 use strum::IntoEnumIterator;
 
 /// Helper trait that implements functionality to represent a generic type as
@@ -60,6 +59,15 @@ where
         }
     }
 
+    /// Return the constant that represents a given value. To be compared with the value expression.
+    pub fn constant_expr<F: Field>(&self, value: T) -> Expression<F> {
+        let f = value.as_bits().iter().fold(
+            F::ZERO,
+            |result, bit| if *bit { F::ONE } else { F::ZERO } + result * F::from(2),
+        );
+        Expression::Constant(f)
+    }
+
     /// Returns a function that can evaluate to a binary expression, that
     /// evaluates to 1 if value is equal to value as bits. The returned
     /// expression is of degree N.
@@ -92,14 +100,25 @@ where
                 }),
         )
     }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
+        let mut annotations = Vec::new();
+        for (i, _) in self.bits.iter().enumerate() {
+            annotations.push(format!("GADGETS_binary_number_{}", i));
+        }
+        self.bits
+            .iter()
+            .zip(annotations.iter())
+            .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+    }
 }
 
 /// This chip helps working with binary encoding of integers of length N bits
 /// by:
-///  - enforcing that the binary representation is in the valid range defined by
-///    T.
-///  - creating expressions (via the Config) that evaluate to 1 when the bits
-///    match a specific value and 0 otherwise.
+///  - enforcing that the binary representation is in the valid range defined by T.
+///  - creating expressions (via the Config) that evaluate to 1 when the bits match a specific value
+///    and 0 otherwise.
 #[derive(Clone, Debug)]
 pub struct BinaryNumberChip<F, T, const N: usize> {
     config: BinaryNumberConfig<T, N>,
@@ -180,7 +199,7 @@ where
                 || format!("binary number {:?}", column),
                 column,
                 offset,
-                || Value::known(F::from(bit)),
+                || Value::known(F::from(bit as u64)),
             )?;
         }
         Ok(())

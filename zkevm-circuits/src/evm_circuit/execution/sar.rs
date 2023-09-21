@@ -1,19 +1,31 @@
-use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::param::N_BYTES_U64;
-use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::table::{FixedTableTag, Lookup};
-use crate::evm_circuit::util::common_gadget::SameContextGadget;
-use crate::evm_circuit::util::constraint_builder::Transition::Delta;
-use crate::evm_circuit::util::constraint_builder::{ConstraintBuilder, StepStateTransition};
-use crate::evm_circuit::util::math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget};
-use crate::evm_circuit::util::{from_bytes, select, sum, CachedRegion, Cell, Word};
-use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
-use crate::util::Expr;
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        step::ExecutionState,
+        table::{FixedTableTag, Lookup},
+        util::{
+            common_gadget::SameContextGadget,
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
+            math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
+            select, sum, CachedRegion, Cell,
+        },
+        witness::{Block, Call, ExecStep, Transaction},
+    },
+    util::{
+        word::{Word32Cell, Word4, WordExpr},
+        Expr,
+    },
+};
 use array_init::array_init;
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 
 /// SarGadget verifies SAR opcode.
 /// Verify signed word shift right as `signed(a) >> shift == signed(b)`;
@@ -21,9 +33,9 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct SarGadget<F> {
     same_context: SameContextGadget<F>,
-    shift: Word<F>,
-    a: Word<F>,
-    b: Word<F>,
+    shift: Word32Cell<F>,
+    a: Word32Cell<F>,
+    b: Word32Cell<F>,
     // Each of the four `a64s` limbs is split into two parts (`a64s_lo` and `a64s_hi`) at position
     // `shf_mod64`, `a64s_lo` is the lower `shf_mod64` bits.
     a64s_lo: [Cell<F>; 4],
@@ -41,6 +53,8 @@ pub(crate) struct SarGadget<F> {
     p_top: Cell<F>,
     // Identify if `a` is a negative word.
     is_neg: LtGadget<F, 1>,
+    // Verify `shf_div64 < 4`.
+    shf_div64_lt_4: LtGadget<F, 1>,
     // Verify `shf_mod64 < 64`.
     shf_mod64_lt_64: LtGadget<F, 1>,
     // Identify if `shift` is less than 256 or not.
@@ -64,16 +78,19 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SAR;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let shift = cb.query_word_rlc();
-        let a = cb.query_word_rlc();
-        let b = cb.query_word_rlc();
+        let shift = cb.query_word32();
+        let a = cb.query_word32();
+        let b = cb.query_word32();
 
-        cb.stack_pop(shift.expr());
-        cb.stack_pop(a.expr());
-        cb.stack_push(b.expr());
+        cb.stack_pop(shift.to_word());
+        cb.stack_pop(a.to_word());
+        cb.stack_push(b.to_word());
+
+        let a64s: Word4<Expression<F>> = a.to_word_n();
+        let b64s: Word4<Expression<F>> = b.to_word_n();
 
         let a64s_lo = array_init(|_| cb.query_cell());
         let a64s_hi = array_init(|_| cb.query_cell());
@@ -82,13 +99,13 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         let p_lo = cb.query_cell();
         let p_hi = cb.query_cell();
         let p_top = cb.query_cell();
-        let is_neg = LtGadget::construct(cb, 127.expr(), a.cells[31].expr());
-        let shf_lt256 = IsZeroGadget::construct(cb, sum::expr(&shift.cells[1..32]));
+        let is_neg = LtGadget::construct(cb, 127.expr(), a.limbs[31].expr());
+        let shf_lt256 = IsZeroGadget::construct(cb, sum::expr(&shift.limbs[1..32]));
 
         for idx in 0..4 {
             cb.require_equal(
                 "a64s[idx] == a64s_lo[idx] + a64s_hi[idx] * p_lo",
-                from_bytes::expr(&a.cells[N_BYTES_U64 * idx..N_BYTES_U64 * (idx + 1)]),
+                a64s.limbs[idx].clone(),
                 a64s_lo[idx].expr() + a64s_hi[idx].expr() * p_lo.expr(),
             );
         }
@@ -119,7 +136,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
 
         cb.require_equal(
             "Constrain merged b64s[0] value",
-            from_bytes::expr(&b.cells[0..N_BYTES_U64]),
+            b64s.limbs[0].expr(),
             (a64s_hi[0].expr() + a64s_lo[1].expr() * p_hi.expr()) * shf_div64_eq0.expr()
                 + (a64s_hi[1].expr() + a64s_lo[2].expr() * p_hi.expr()) * shf_div64_eq1.expr()
                 + (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq2.expr()
@@ -134,7 +151,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         );
         cb.require_equal(
             "Constrain merged b64s[1] value",
-            from_bytes::expr(&b.cells[N_BYTES_U64..N_BYTES_U64 * 2]),
+            b64s.limbs[1].expr(),
             (a64s_hi[1].expr() + a64s_lo[2].expr() * p_hi.expr()) * shf_div64_eq0.expr()
                 + (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq1.expr()
                 + (a64s_hi[3].expr() + p_top.expr()) * shf_div64_eq2.expr()
@@ -147,7 +164,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         );
         cb.require_equal(
             "Constrain merged b64s[2] value",
-            from_bytes::expr(&b.cells[N_BYTES_U64 * 2..N_BYTES_U64 * 3]),
+            b64s.limbs[2].expr(),
             (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq0.expr()
                 + (a64s_hi[3].expr() + p_top.expr()) * shf_div64_eq1.expr()
                 + is_neg.expr()
@@ -156,17 +173,19 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         );
         cb.require_equal(
             "Constrain merged b64s[3] value",
-            from_bytes::expr(&b.cells[N_BYTES_U64 * 3..]),
+            b64s.limbs[3].expr(),
             (a64s_hi[3].expr() + p_top.expr()) * shf_div64_eq0.expr()
                 + is_neg.expr() * u64::MAX.expr() * (1.expr() - shf_div64_eq0.expr()),
         );
 
         // Shift constraint
+        let shf_div64_lt_4 = LtGadget::construct(cb, shf_div64.expr(), 4.expr());
+        cb.require_equal("shf_div64 < 4", shf_div64_lt_4.expr(), 1.expr());
         let shf_mod64_lt_64 = LtGadget::construct(cb, shf_mod64.expr(), 64.expr());
         cb.require_equal("shf_mod64 < 64", shf_mod64_lt_64.expr(), 1.expr());
         cb.require_equal(
             "shift[0] == shf_mod64 + shf_div64 * 64",
-            shift.cells[0].expr(),
+            shift.limbs[0].expr(),
             shf_mod64.expr() + shf_div64.expr() * 64.expr(),
         );
 
@@ -177,7 +196,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
             Lookup::Fixed {
                 tag: FixedTableTag::SignByte.expr(),
                 values: [
-                    a.cells[31].expr(),
+                    a.limbs[31].expr(),
                     select::expr(is_neg.expr(), 255.expr(), 0.expr()),
                     0.expr(),
                 ],
@@ -232,6 +251,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
             p_hi,
             p_top,
             is_neg,
+            shf_div64_lt_4,
             shf_mod64_lt_64,
             shf_lt256,
             shf_lo_div64_eq0,
@@ -253,13 +273,11 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
-        let [shift, a, b] = indices.map(|idx| block.rws[idx].stack_value());
+        let [shift, a, b] = [0, 1, 2].map(|idx| block.get_rws(step, idx).stack_value());
 
-        self.shift
-            .assign(region, offset, Some(shift.to_le_bytes()))?;
-        self.a.assign(region, offset, Some(a.to_le_bytes()))?;
-        self.b.assign(region, offset, Some(b.to_le_bytes()))?;
+        self.shift.assign_u256(region, offset, shift)?;
+        self.a.assign_u256(region, offset, a)?;
+        self.b.assign_u256(region, offset, b)?;
 
         let is_neg = 127 < a.to_le_bytes()[31];
         let shf0 = u128::from(shift.to_le_bytes()[0]);
@@ -322,6 +340,8 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
             127.into(),
             u64::from(a.to_le_bytes()[31]).into(),
         )?;
+        self.shf_div64_lt_4
+            .assign(region, offset, F::from_u128(shf_div64), 4.into())?;
         self.shf_mod64_lt_64
             .assign(region, offset, F::from_u128(shf_mod64), 64.into())?;
         self.shf_lt256
@@ -351,8 +371,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::rand_word;
-    use crate::test_util::run_test_circuits;
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, U256};
     use ethers_core::types::I256;
     use lazy_static::lazy_static;
@@ -450,12 +469,9 @@ mod test {
             SAR
             STOP
         };
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 }

@@ -4,37 +4,34 @@ use crate::{
         param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
-                Transition::{Delta, Same},
-            },
-            from_bytes,
-            math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
-            CachedRegion, Cell, CellType, RandomLinearCombination,
+            common_gadget::{CommonErrorGadget, WordByteCapGadget},
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            math_gadget::{IsEqualGadget, IsZeroWordGadget},
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{Word, WordCell, WordExpr},
+        Expr,
+    },
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, Word};
+use eth_types::{evm_types::OpcodeId, Field, U256};
 
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorInvalidJumpGadget<F> {
     opcode: Cell<F>,
-    destination: RandomLinearCombination<F, N_BYTES_PROGRAM_COUNTER>,
-    code_length: Cell<F>,
+    dest: WordByteCapGadget<F, N_BYTES_PROGRAM_COUNTER>,
+    code_len: Cell<F>,
     value: Cell<F>,
     is_code: Cell<F>,
-    within_range: LtGadget<F, N_BYTES_PROGRAM_COUNTER>,
     is_jump_dest: IsEqualGadget<F>,
     is_jumpi: IsEqualGadget<F>,
-    phase2_condition: Cell<F>,
-    is_condition_zero: IsZeroGadget<F>,
-    restore_context: RestoreContextGadget<F>,
+    condition: WordCell<F>,
+    is_condition_zero: IsZeroWordGadget<F, WordCell<F>>,
+    common_error_gadget: CommonErrorGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
@@ -42,12 +39,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorInvalidJump;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let destination = cb.query_word_rlc();
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let code_len = cb.query_cell();
+        let dest = WordByteCapGadget::construct(cb, code_len.expr());
+
         let opcode = cb.query_cell();
         let value = cb.query_cell();
         let is_code = cb.query_cell();
-        let phase2_condition = cb.query_cell_with_type(CellType::StoragePhase2);
+        let condition = cb.query_word_unchecked();
 
         cb.require_in_set(
             "ErrorInvalidJump only happend in JUMP or JUMPI",
@@ -62,29 +61,25 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
         // first default this condition, if use will re-construct with real condition
         // value
-        let is_condition_zero = IsZeroGadget::construct(cb, phase2_condition.expr());
+        let is_condition_zero = IsZeroWordGadget::construct(cb, &condition);
 
         // Pop the value from the stack
-        cb.stack_pop(destination.expr());
+        cb.stack_pop(dest.original_word().to_word());
 
         cb.condition(is_jumpi.expr(), |cb| {
-            cb.stack_pop(phase2_condition.expr());
+            cb.stack_pop(condition.to_word());
             // if condition is zero, jump will not happen, so constrain condition not zero
             cb.require_zero("condition is not zero", is_condition_zero.expr());
         });
 
-        // look up bytecode length
-        let code_length = cb.query_cell();
-        cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
-        let dest_value = from_bytes::expr(&destination.cells);
+        // Look up bytecode length
+        cb.bytecode_length(cb.curr.state.code_hash.to_word(), code_len.expr());
 
-        let within_range = LtGadget::construct(cb, dest_value.expr(), code_length.expr());
-        //if not out of range, check `dest` is invalid
-        cb.condition(within_range.expr(), |cb| {
-            // if not out of range, Lookup real value
+        // If destination is in valid range, lookup for the value.
+        cb.condition(dest.lt_cap(), |cb| {
             cb.bytecode_lookup(
-                cb.curr.state.code_hash.expr(),
-                dest_value.clone(),
+                cb.curr.state.code_hash.to_word(),
+                dest.valid_value(),
                 is_code.expr(),
                 value.expr(),
             );
@@ -94,55 +89,20 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             );
         });
 
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
-
-        // Go to EndTx only when is_root
-        let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
-        cb.require_equal(
-            "Go to EndTx only when is_root",
-            cb.curr.state.is_root.expr(),
-            is_to_end_tx,
-        );
-
-        // When it's a root call
-        cb.condition(cb.curr.state.is_root.expr(), |cb| {
-            // Do step state transition
-            cb.require_step_state_transition(StepStateTransition {
-                call_id: Same,
-                rw_counter: Delta(
-                    2.expr() + is_jumpi.expr() + cb.curr.state.reversible_write_counter.expr(),
-                ),
-
-                ..StepStateTransition::any()
-            });
-        });
-
-        // When it's an internal call, need to restore caller's state as finishing this
-        // call. Restore caller state to next StepState
-        let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            RestoreContextGadget::construct(
-                cb,
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-            )
-        });
+        let common_error_gadget =
+            CommonErrorGadget::construct(cb, opcode.expr(), cb.rw_counter_offset());
 
         Self {
             opcode,
-            destination,
-            code_length,
+            dest,
+            code_len,
             value,
             is_code,
-            within_range,
             is_jump_dest,
             is_jumpi,
-            phase2_condition,
+            condition,
             is_condition_zero,
-            restore_context,
+            common_error_gadget,
         }
     }
 
@@ -155,59 +115,41 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         let is_jumpi = opcode == OpcodeId::JUMPI;
-
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
-        let destination = block.rws[step.rw_indices[0]].stack_value();
+
         let condition = if is_jumpi {
-            block.rws[step.rw_indices[1]].stack_value()
+            block.get_rws(step, 1).stack_value()
         } else {
-            Word::zero()
+            U256::zero()
         };
-        let condition_rlc = region.word_rlc(condition);
-        self.destination.assign(
-            region,
-            offset,
-            Some(
-                destination.to_le_bytes()[..N_BYTES_PROGRAM_COUNTER]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
 
         let code = block
             .bytecodes
-            .get(&call.code_hash)
+            .get_from_h256(&call.code_hash)
             .expect("could not find current environment's bytecode");
-        let code_length = code.bytes.len() as u64;
-        self.code_length
-            .assign(region, offset, Value::known(F::from(code_length)))?;
+        let code_len = code.codesize() as u64;
+        self.code_len
+            .assign(region, offset, Value::known(F::from(code_len)))?;
+
+        let dest = block.get_rws(step, 0).stack_value();
+        self.dest.assign(region, offset, dest, F::from(code_len))?;
 
         // set default value in case can not find value, is_code from bytecode table
-        let mut code_pair = [0u8, 0u8];
-        if destination.as_u64() < code_length {
-            // get real value from bytecode table
-            code_pair = code.get(destination.as_usize());
-        }
+        let dest = usize::try_from(dest).unwrap_or(code.codesize());
+        let (value, is_code) = code.get(dest).unwrap_or((0, false));
 
         self.value
-            .assign(region, offset, Value::known(F::from(code_pair[0] as u64)))?;
+            .assign(region, offset, Value::known(F::from(value.into())))?;
         self.is_code
-            .assign(region, offset, Value::known(F::from(code_pair[1] as u64)))?;
+            .assign(region, offset, Value::known(F::from(is_code.into())))?;
         self.is_jump_dest.assign(
             region,
             offset,
-            F::from(code_pair[0] as u64),
+            F::from(value.into()),
             F::from(OpcodeId::JUMPDEST.as_u64()),
-        )?;
-
-        self.within_range.assign(
-            region,
-            offset,
-            F::from(destination.as_u64()),
-            F::from(code_length),
         )?;
 
         self.is_jumpi.assign(
@@ -217,27 +159,32 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             F::from(OpcodeId::JUMPI.as_u64()),
         )?;
 
-        self.phase2_condition
-            .assign(region, offset, condition_rlc)?;
+        self.condition.assign_u256(region, offset, condition)?;
         self.is_condition_zero
-            .assign_value(region, offset, condition_rlc)?;
+            .assign_value(region, offset, Value::known(Word::from(condition)))?;
 
-        self.restore_context
-            .assign(region, offset, block, call, step, 2 + is_jumpi as usize)?;
+        self.common_error_gadget.assign(
+            region,
+            offset,
+            block,
+            call,
+            step,
+            3 + is_jumpi as usize,
+        )?;
+
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::run_test_circuit;
-    use crate::evm_circuit::witness::block_convert;
-    use crate::test_util::run_test_circuits;
-    use eth_types::bytecode::Bytecode;
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::geth_types::Account;
-    use eth_types::{address, bytecode, Address, ToWord, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
+
+    use crate::test_util::CircuitTestBuilder;
+    use eth_types::{
+        address, bytecode, bytecode::Bytecode, evm_types::OpcodeId, geth_types::Account, Address,
+        ToWord, Word,
+    };
+
     use mock::TestContext;
 
     fn test_invalid_jump(destination: usize, out_of_range: bool) {
@@ -255,13 +202,10 @@ mod test {
             STOP
         });
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]
@@ -282,73 +226,21 @@ mod test {
         test_internal_jump_error(true);
     }
 
-    // internal call test
-    struct Stack {
-        gas: u64,
-        value: Word,
-        cd_offset: u64,
-        cd_length: u64,
-        rd_offset: u64,
-        rd_length: u64,
+    #[test]
+    fn invalid_jump_dest_overflow() {
+        let bytecode = bytecode! {
+            PUSH32(Word::MAX)
+            JUMP
+        };
+
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     fn callee(code: Bytecode) -> Account {
-        let code = code.to_vec();
-        let is_empty = code.is_empty();
-        Account {
-            address: Address::repeat_byte(0xff),
-            code: code.into(),
-            nonce: if is_empty { 0 } else { 1 }.into(),
-            balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
-            ..Default::default()
-        }
-    }
-
-    fn caller(opcode: OpcodeId, stack: Stack, caller_is_success: bool) -> Account {
-        let is_call = opcode == OpcodeId::CALL;
-        let terminator = if caller_is_success {
-            OpcodeId::RETURN
-        } else {
-            OpcodeId::REVERT
-        };
-
-        // Call twice for testing both cold and warm access
-        let mut bytecode = bytecode! {
-            PUSH32(Word::from(stack.rd_length))
-            PUSH32(Word::from(stack.rd_offset))
-            PUSH32(Word::from(stack.cd_length))
-            PUSH32(Word::from(stack.cd_offset))
-        };
-        if is_call {
-            bytecode.push(32, stack.value);
-        }
-        bytecode.append(&bytecode! {
-            PUSH32(Address::repeat_byte(0xff).to_word())
-            PUSH32(Word::from(stack.gas))
-            .write_op(opcode)
-            PUSH32(Word::from(stack.rd_length))
-            PUSH32(Word::from(stack.rd_offset))
-            PUSH32(Word::from(stack.cd_length))
-            PUSH32(Word::from(stack.cd_offset))
-        });
-        if is_call {
-            bytecode.push(32, stack.value);
-        }
-        bytecode.append(&bytecode! {
-            PUSH32(Address::repeat_byte(0xff).to_word())
-            PUSH32(Word::from(stack.gas))
-            .write_op(opcode)
-            PUSH1(0)
-            PUSH1(0)
-            .write_op(terminator)
-        });
-
-        Account {
-            address: Address::repeat_byte(0xfe),
-            balance: Word::from(10).pow(20.into()),
-            code: bytecode.to_vec().into(),
-            ..Default::default()
-        }
+        Account::mock_code_balance(code)
     }
 
     // jump or jumpi error happen in internal call
@@ -405,33 +297,20 @@ mod test {
             STOP
         });
         test_ok(
-            Account {
-                address: Address::repeat_byte(0xfe),
-                balance: Word::from(10).pow(20.into()),
-                code: caller_bytecode.into(),
-                ..Default::default()
-            },
+            Account::mock_100_ether(caller_bytecode),
             callee(callee_bytecode),
         );
     }
 
     fn test_ok(caller: Account, callee: Account) {
-        let block = TestContext::<3, 1>::new(
+        let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
                     .address(address!("0x000000000000000000000000000000000000cafe"))
                     .balance(Word::from(10u64.pow(19)));
-                accs[1]
-                    .address(caller.address)
-                    .code(caller.code)
-                    .nonce(caller.nonce)
-                    .balance(caller.balance);
-                accs[2]
-                    .address(callee.address)
-                    .code(callee.code)
-                    .nonce(callee.nonce)
-                    .balance(callee.balance);
+                accs[1].account(&caller);
+                accs[2].account(&callee);
             },
             |mut txs, accs| {
                 txs[0]
@@ -441,15 +320,9 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
-            .unwrap();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(run_test_circuit(block), Ok(()));
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     fn test_invalid_jumpi(destination: usize) {
@@ -468,13 +341,10 @@ mod test {
             STOP
         });
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

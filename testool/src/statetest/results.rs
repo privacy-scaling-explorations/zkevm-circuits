@@ -1,32 +1,39 @@
 use anyhow::Result;
 use handlebars::Handlebars;
-use log::error;
-use prettytable::Row;
-use prettytable::Table;
-use serde::Deserialize;
-use serde::Serialize;
+use prettytable::{Row, Table};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::io::Read;
-use std::io::Write;
-use std::path::PathBuf;
-use std::str::FromStr;
+use std::{
+    collections::{HashMap, HashSet},
+    io::{Read, Write},
+    path::PathBuf,
+    str::FromStr,
+};
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, EnumString}; // 0.17.1
 
+const MAX_DETAILS_LEN: usize = 128;
+
+const OUTPUT_ALL_RESULT_LEVELS: [ResultLevel; 2] = [ResultLevel::Fail, ResultLevel::Panic];
+
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, EnumIter, EnumString, Serialize, Deserialize)]
 pub enum ResultLevel {
+    #[strum(ascii_case_insensitive)]
     Success,
+    #[strum(ascii_case_insensitive)]
     Ignored,
+    #[strum(ascii_case_insensitive)]
     Fail,
+    #[strum(ascii_case_insensitive)]
     Panic,
 }
 
 #[derive(Eq, PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct ResultInfo {
+    pub test_id: String,
     pub level: ResultLevel,
     pub details: String,
+    pub path: String,
 }
 
 impl ResultLevel {
@@ -41,6 +48,7 @@ impl ResultLevel {
         .to_string()
     }
 }
+
 pub struct DiffEntry {
     id: String,
     prev: Option<ResultInfo>,
@@ -50,6 +58,14 @@ pub struct DiffEntry {
 pub struct Diffs {
     previous: String,
     tests: Vec<DiffEntry>,
+}
+
+fn trim(s: &str, max_len: usize) -> &str {
+    if s.len() > max_len {
+        &s[0..max_len]
+    } else {
+        s
+    }
 }
 
 impl Diffs {
@@ -68,10 +84,10 @@ impl Diffs {
 
         let mut summary = String::default();
         if stat_news > 0 {
-            summary.push_str(&format!("new: {:+} ", stat_news));
+            summary.push_str(&format!("new: {stat_news:+} "));
         }
         for (lvl, n) in stat {
-            summary.push_str(&format!("/ {:?}: {:+} ", lvl, n));
+            summary.push_str(&format!("/ {lvl:?}: {n:+} "));
         }
         if summary.is_empty() {
             summary.push_str("No changes");
@@ -87,7 +103,10 @@ impl Diffs {
                     t.id,
                     format!(
                         "{:?}({}) => {:?}({})",
-                        prev.level, prev.details, curr.level, curr.details
+                        prev.level,
+                        trim(&prev.details, MAX_DETAILS_LEN),
+                        curr.level,
+                        trim(&curr.details, MAX_DETAILS_LEN)
                     ),
                 ]);
             }
@@ -107,17 +126,36 @@ pub struct Report {
 impl Report {
     pub fn print_tty(&self) -> Result<()> {
         self.by_folder.print_tty(false)?;
-        self.by_result.print_tty(false)?;
-        let (_, files_diff) = self.diffs.gen_info();
-        files_diff.print_tty(false)?;
-        for (test_id, info) in &self.tests {
-            if info.level == ResultLevel::Fail || info.level == ResultLevel::Panic {
-                error!("- {:?} {}", info.level, test_id);
+        let mut by_result_short = self.by_result.clone();
+        for row_no in 0..by_result_short.len() {
+            let row = by_result_short.get_mut_row(row_no).unwrap();
+            let cell_content = row.get_cell(1).unwrap().get_content().replace('\n', "");
+            if cell_content.len() > 100 {
+                let cell = prettytable::Cell::new(&cell_content[..100]);
+                *row.get_mut_cell(1).unwrap() = cell;
             }
         }
+        by_result_short.print_tty(false)?;
+        let (_, files_diff) = self.diffs.gen_info();
+        files_diff.print_tty(false)?;
+        let mut num_succ = 0f32;
+        let mut num_fail = 0f32;
+        for (test_id, info) in &self.tests {
+            if info.level == ResultLevel::Success {
+                num_succ += 1.0;
+            }
+            if info.level == ResultLevel::Fail || info.level == ResultLevel::Panic {
+                num_fail += 1.0;
+                println!("- {:?} {}", info.level, test_id);
+            }
+        }
+        log::info!(
+            "success rate: {:.1}%",
+            100f32 * num_succ / (num_succ + num_fail)
+        );
         Ok(())
     }
-    pub fn gen_html(&self) -> Result<String> {
+    pub fn gen_html(&self, githash: String) -> Result<String> {
         let template = include_str!("report.handlebars");
         let reg = Handlebars::new();
         let mut by_folder = Vec::new();
@@ -128,11 +166,36 @@ impl Report {
         self.by_result.print_html(&mut by_result)?;
         self.diffs.gen_info().1.print_html(&mut diffs)?;
 
+        // strip_prefix `tests/` for rendering purpose. It helps to generate hyperlink
+        let leading_tests_path = "tests/";
+        let mut tests_for_render: HashMap<_, _> = self
+            .tests
+            .iter()
+            .filter(|(_, result)| OUTPUT_ALL_RESULT_LEVELS.contains(&result.level))
+            .filter(|(_, result)| result.level != ResultLevel::Success)
+            .filter(|(_, result)| !result.details.starts_with("SkipTestSelfDestruct"))
+            // no big test
+            .filter(|(_, result)| {
+                !result.details.starts_with("SkipTestMaxGasLimit")
+                    && !result.details.starts_with("SkipTestMaxSteps")
+            })
+            .map(|(id, result)| (id.clone(), result.clone()))
+            .collect();
+        for (_, result) in tests_for_render.iter_mut() {
+            assert!(result.path.starts_with(leading_tests_path));
+            result.path = result
+                .path
+                .strip_prefix(leading_tests_path)
+                .unwrap()
+                .to_string();
+        }
+
         let data = &json!({
                 "by_folder": String::from_utf8(by_folder)?,
                 "by_result" : String::from_utf8(by_result)? ,
                 "diffs" : String::from_utf8(diffs)?,
-                "all_results" : self.tests
+                "all_results" : tests_for_render,
+                "githash": githash,
         });
 
         let html = reg.render_template(template, data)?;
@@ -140,24 +203,43 @@ impl Report {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Results {
-    tests: HashMap<String, ResultInfo>,
-    cache: Option<PathBuf>,
+    pub tests: HashMap<String, ResultInfo>,
+    pub cache: Option<PathBuf>,
 }
 
 impl Results {
     pub fn from_file(path: PathBuf) -> Result<Self> {
+        log::info!("loading results from {}", path.display());
         let mut file = std::fs::File::open(&path)?;
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
         let mut tests = HashMap::new();
         for line in buf.lines().filter(|l| l.len() > 1) {
-            let mut split = line.splitn(3, ';');
-            let level = ResultLevel::from_str(split.next().unwrap()).unwrap();
-            let id = split.next().unwrap().to_string();
-            let details = split.next().unwrap().to_string();
-            tests.insert(id, ResultInfo { level, details });
+            let split: Vec<&str> = line.splitn(4, ';').collect();
+            if split.len() != 4 {
+                log::warn!("un-supported line {:?}", line);
+                return Ok(Self { cache: None, tests });
+            }
+            let mut split = split.iter();
+            let level = split.next().unwrap();
+            let level = ResultLevel::from_str(level).unwrap();
+            let test_id = split.next().unwrap().to_string();
+            let details = urlencoding::decode(split.next().unwrap())
+                .expect("should be urldecodeable")
+                .to_string();
+            let path = split.next().unwrap().to_string();
+            let id = format!("{test_id}#{path}");
+            tests.insert(
+                id,
+                ResultInfo {
+                    test_id,
+                    level,
+                    details,
+                    path,
+                },
+            );
         }
         Ok(Self { cache: None, tests })
     }
@@ -172,6 +254,10 @@ impl Results {
             tests,
             cache: Some(path),
         })
+    }
+
+    pub fn set_cache(&mut self, path: PathBuf) {
+        self.cache = Some(path);
     }
 
     pub fn report(self, previous: Option<(String, Results)>) -> Report {
@@ -236,7 +322,7 @@ impl Results {
 
         let levels: Vec<_> = ResultLevel::iter().collect();
 
-        header.append(&mut levels.iter().map(|v| format!("{:?}", v)).collect());
+        header.append(&mut levels.iter().map(|v| format!("{v:?}")).collect());
         by_folder.add_row(Row::from_iter(header));
 
         let mut totals = vec![0usize; levels.len()];
@@ -302,30 +388,56 @@ impl Results {
         self.tests.contains_key(test)
     }
 
+    pub fn write_cache(&self) -> Result<()> {
+        if let Some(path) = &self.cache {
+            let mut file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .append(true)
+                .open(path)?;
+            for result in self.tests.values() {
+                let entry = format!(
+                    "{:?};{};{};{}\n",
+                    result.level,
+                    result.test_id,
+                    urlencoding::encode(&result.details),
+                    result.path,
+                );
+                file.write_all(entry.as_bytes())?;
+            }
+        }
+        Ok(())
+    }
+
     #[allow(clippy::map_entry)]
-    pub fn insert(&mut self, test_id: String, result: ResultInfo) -> Result<()> {
-        if !self.tests.contains_key(&test_id) {
+    pub fn insert(&mut self, result: ResultInfo) -> Result<()> {
+        if !self.tests.contains_key(&result.test_id) {
             if result.level == ResultLevel::Ignored {
                 log::debug!(
-                    "{} {} {}",
+                    target : "testool",
+                    "{} {} {} {}",
                     result.level.display_string(),
-                    test_id,
-                    result.details
+                    result.test_id,
+                    result.details,
+                    result.path,
                 );
             } else {
                 log::info!(
-                    "{} {} {}",
+                    "{} {} {} {}",
                     result.level.display_string(),
-                    test_id,
-                    result.details
+                    result.test_id,
+                    result.details,
+                    result.path,
                 );
             }
-            let details = result
-                .details
-                .replace('\n', "")
-                .replace(' ', "")
-                .replace('\t', "");
-            let entry = format!("{:?};{};{}\n", result.level, test_id, details);
+            let entry = format!(
+                "{:?};{};{};{}\n",
+                result.level,
+                result.test_id,
+                urlencoding::encode(&result.details),
+                result.path,
+            );
             if let Some(path) = &self.cache {
                 std::fs::OpenOptions::new()
                     .read(true)
@@ -335,7 +447,8 @@ impl Results {
                     .open(path)?
                     .write_all(entry.as_bytes())?;
             }
-            self.tests.insert(test_id, result);
+            let id = format!("{}#{}", result.test_id, result.path);
+            self.tests.insert(id, result);
         }
 
         Ok(())

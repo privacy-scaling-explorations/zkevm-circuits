@@ -1,7 +1,9 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::{AccountField, CallContextField};
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    operation::{AccountField, CallContextField},
+    Error,
+};
 use eth_types::{GethExecStep, ToWord};
 
 #[derive(Debug, Copy, Clone)]
@@ -31,8 +33,7 @@ impl Opcode for Selfbalance {
             callee_address,
             AccountField::Balance,
             self_balance,
-            self_balance,
-        )?;
+        );
 
         // Stack write of self_balance
         state.stack_write(
@@ -78,8 +79,8 @@ mod selfbalance_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 
@@ -90,7 +91,7 @@ mod selfbalance_tests {
             .unwrap();
 
         let call_id = builder.block.txs()[0].calls()[0].call_id;
-        let callee_address = builder.block.txs()[0].to;
+        let callee_address = builder.block.txs()[0].to_or_contract_addr();
         let self_balance = builder.sdb.get_account(&callee_address).1.balance;
 
         assert_eq!(

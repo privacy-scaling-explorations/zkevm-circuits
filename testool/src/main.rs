@@ -5,18 +5,17 @@ mod config;
 mod statetest;
 mod utils;
 
-use crate::config::TestSuite;
+use crate::{config::TestSuite, statetest::ResultLevel};
 use anyhow::{bail, Result};
 use clap::Parser;
 use compiler::Compiler;
 use config::Config;
-use log::{error, info};
+use log::info;
 use statetest::{
     geth_trace, load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results,
     StateTest,
 };
-use std::path::PathBuf;
-use std::time::SystemTime;
+use std::{collections::HashSet, path::PathBuf, time::SystemTime};
 use strum::EnumString;
 
 const REPORT_FOLDER: &str = "report";
@@ -48,9 +47,17 @@ struct Args {
     #[clap(long)]
     ls: bool,
 
-    /// Cache execution results
+    /// Cache execution results, default to be latest result file
     #[clap(long)]
-    cache: bool,
+    cache: Option<PathBuf>,
+
+    /// do not use cache
+    #[clap(long)]
+    use_cache: bool,
+
+    /// whitelist level from cache result
+    #[clap(short, long, value_parser, value_delimiter = ',')]
+    levels: Vec<ResultLevel>,
 
     /// Generates log and and html file with info.
     #[clap(long)]
@@ -69,13 +76,11 @@ struct Args {
     v: bool,
 }
 
-const RESULT_CACHE: &str = "result.cache";
-
 fn run_single_test(test: StateTest, circuits_config: CircuitsConfig) -> Result<()> {
-    println!("{}", &test);
+    log::info!("{}", &test);
     let trace = geth_trace(test.clone())?;
     crate::utils::print_trace(trace)?;
-    println!(
+    log::info!(
         "result={:?}",
         run_test(test, TestSuite::default(), circuits_config)
     );
@@ -118,12 +123,10 @@ fn go() -> Result<()> {
         }
         return Ok(());
     }
-
     if let Some(test_id) = args.inspect {
         // Test only one and return
         let mut state_tests_filtered: Vec<_> =
             state_tests.iter().filter(|t| t.id == test_id).collect();
-
         if state_tests_filtered.is_empty() {
             info!(
                 "Test '{}' not found but found some that partially matches:",
@@ -139,11 +142,8 @@ fn go() -> Result<()> {
     };
 
     if args.report {
-        if args.cache {
-            bail!("--cache is not compartible with --report");
-        }
-
         let git_hash = utils::current_git_commit()?;
+        let git_submodule_tests_hash = utils::current_submodule_git_commit()?;
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
@@ -159,9 +159,55 @@ fn go() -> Result<()> {
             REPORT_FOLDER, args.suite, timestamp, git_hash
         );
 
-        let mut results = Results::with_cache(PathBuf::from(csv_filename))?;
+        let cache_file_name = if !args.use_cache {
+            None
+        } else {
+            let mut history_reports =
+                glob::glob(format!("{REPORT_FOLDER}/{}.*.*.csv", args.suite).as_str())?
+                    .collect::<Result<Vec<PathBuf>, glob::GlobError>>()?
+                    .into_iter()
+                    .map(|path| {
+                        path.metadata()
+                            .and_then(|meta| meta.created())
+                            .map(|created| (path, created))
+                    })
+                    .collect::<Result<Vec<(PathBuf, SystemTime)>, std::io::Error>>()?;
+            // sort by timestamp
+            history_reports.sort_by_key(|(_, created)| *created);
+            // use latest cache if exists
+            args.cache
+                .or_else(|| history_reports.pop().map(|(path, _)| path))
+        };
 
-        run_statetests_suite(state_tests, &circuits_config, &suite, &mut results)?;
+        // when running a report, the tests result of the containing cache file
+        // are used, but by default removing all Ignored tests
+        // Another way is to skip the test which level not in whitelist_levels
+        let mut previous_results = if let Some(cache_filename) = cache_file_name {
+            let whitelist_levels = HashSet::<ResultLevel>::from_iter(args.levels);
+
+            let mut previous_results = Results::from_file(cache_filename).unwrap();
+
+            info!("loaded {} test results", previous_results.tests.len());
+            if !whitelist_levels.is_empty() {
+                // if whitelist is provided, test not in whitelist will be skip
+                previous_results
+                    .tests
+                    .retain(|_, test| !whitelist_levels.contains(&test.level));
+            } else {
+                // by default skip ignore and success tests
+                previous_results.tests.retain(|_, test| {
+                    test.level == ResultLevel::Ignored || test.level == ResultLevel::Success
+                });
+            }
+
+            previous_results
+        } else {
+            Results::default()
+        };
+
+        previous_results.set_cache(PathBuf::from(csv_filename));
+        previous_results.write_cache()?;
+        run_statetests_suite(state_tests, &circuits_config, &suite, &mut previous_results)?;
 
         // filter non-csv files and files from the same commit
         let mut files: Vec<_> = std::fs::read_dir(REPORT_FOLDER)
@@ -170,7 +216,7 @@ fn go() -> Result<()> {
                 let filename = f.unwrap().file_name().to_str().unwrap().to_string();
                 (filename.starts_with(&format!("{}.", args.suite))
                     && filename.ends_with(".csv")
-                    && !filename.contains(&format!(".{}.", git_hash)))
+                    && !filename.contains(&format!(".{git_hash}.")))
                 .then_some(filename)
             })
             .collect();
@@ -178,20 +224,20 @@ fn go() -> Result<()> {
         files.sort_by(|f, s| s.cmp(f));
         let previous = if !files.is_empty() {
             let file = files.remove(0);
-            let path = format!("{}/{}", REPORT_FOLDER, file);
-            info!("Comparing with previous results in {}", path);
+            let path = format!("{REPORT_FOLDER}/{file}");
+            info!("Comparing with previous results in {path}");
             Some((file, Results::from_file(PathBuf::from(path))?))
         } else {
             None
         };
-        let report = results.report(previous);
-        std::fs::write(&html_filename, report.gen_html()?)?;
+        let report = previous_results.report(previous);
+        std::fs::write(&html_filename, report.gen_html(git_submodule_tests_hash)?)?;
 
         report.print_tty()?;
         info!("{}", html_filename);
     } else {
-        let mut results = if args.cache {
-            Results::with_cache(PathBuf::from(RESULT_CACHE))?
+        let mut results = if let Some(cache_filename) = args.cache {
+            Results::with_cache(cache_filename)?
         } else {
             Results::default()
         };
@@ -213,6 +259,6 @@ fn go() -> Result<()> {
 
 fn main() {
     if let Err(err) = go() {
-        error!("{}", err);
+        eprintln!("Error found {err}");
     }
 }

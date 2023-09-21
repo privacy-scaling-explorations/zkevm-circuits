@@ -6,27 +6,30 @@ use crate::{
         util::{
             and,
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             math_gadget::{IsEqualGadget, IsZeroGadget},
-            select, sum, CachedRegion, Cell, Word,
+            select, sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{
+        word::{Word32, Word32Cell, WordExpr},
+        Expr,
+    },
 };
 use array_init::array_init;
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::{
-    circuit::Value,
-    plonk::{Error, Expression},
-};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SignextendGadget<F> {
     same_context: SameContextGadget<F>,
-    index: Word<F>,
-    value: Word<F>,
+    index: Word32Cell<F>,
+    value: Word32Cell<F>,
     sign_byte: Cell<F>,
     is_msb_sum_zero: IsZeroGadget<F>,
     is_byte_selected: [IsEqualGadget<F>; 31],
@@ -38,9 +41,9 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SIGNEXTEND;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let index = cb.query_word_rlc();
-        let value = cb.query_word_rlc();
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let index = cb.query_word32();
+        let value = cb.query_word32();
         let sign_byte = cb.query_cell();
         let selectors = array_init(|_| cb.query_bool());
 
@@ -49,12 +52,12 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
         // need to do any changes. So just sum all the non-LSB byte
         // values here and then check if it's non-zero so we can use
         // that as an additional condition to enable the selector.
-        let is_msb_sum_zero = IsZeroGadget::construct(cb, sum::expr(&index.cells[1..32]));
+        let is_msb_sum_zero = IsZeroGadget::construct(cb, sum::expr(&index.limbs[1..32]));
 
         // Check if this byte is selected looking only at the LSB of the index
         // word
         let is_byte_selected =
-            array_init(|idx| IsEqualGadget::construct(cb, index.cells[0].expr(), idx.expr()));
+            array_init(|idx| IsEqualGadget::construct(cb, index.limbs[0].expr(), idx.expr()));
 
         // We need to find the byte we have to get the sign from so we can
         // extend correctly. We go byte by byte and check if `idx ==
@@ -72,7 +75,7 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
             let is_selected = and::expr(&[is_byte_selected[idx].expr(), is_msb_sum_zero.expr()]);
 
             // Add the byte to the sum when this byte is selected
-            selected_byte = selected_byte + (is_selected.clone() * value.cells[idx].expr());
+            selected_byte = selected_byte + (is_selected.clone() * value.limbs[idx].expr());
 
             // Verify the selector.
             // Cells are used here to store intermediate results, otherwise
@@ -111,28 +114,23 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
         // enabled need to be changed to the sign byte.
         // When a byte was selected all the **following** bytes need to be
         // replaced (hence the `selectors[idx - 1]`).
-        let powers_of_randomness: [Expression<F>; 31] =
-            cb.challenges().evm_word_powers_of_randomness();
-        let result = Word::random_linear_combine_expr(
-            array_init(|idx| {
-                if idx == 0 {
-                    value.cells[idx].expr()
-                } else {
-                    select::expr(
-                        selectors[idx - 1].expr(),
-                        sign_byte.expr(),
-                        value.cells[idx].expr(),
-                    )
-                }
-            }),
-            &powers_of_randomness,
-        );
+        let result = Word32::new(array_init::<_, _, 32>(|idx| {
+            if idx == 0 {
+                value.limbs[idx].expr()
+            } else {
+                select::expr(
+                    selectors[idx - 1].expr(),
+                    sign_byte.expr(),
+                    value.limbs[idx].expr(),
+                )
+            }
+        }));
 
         // Pop the byte index and the value from the stack, push the result on
         // the stack
-        cb.stack_pop(index.expr());
-        cb.stack_pop(value.expr());
-        cb.stack_push(result);
+        cb.stack_pop(index.to_word());
+        cb.stack_pop(value.to_word());
+        cb.stack_push(result.to_word());
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -168,22 +166,24 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         // Inputs/Outputs
-        let index = block.rws[step.rw_indices[0]].stack_value().to_le_bytes();
-        let value = block.rws[step.rw_indices[1]].stack_value().to_le_bytes();
-        self.index.assign(region, offset, Some(index))?;
-        self.value.assign(region, offset, Some(value))?;
+        let index = block.get_rws(step, 0).stack_value();
+        let index_bytes = index.to_le_bytes();
+        let value = block.get_rws(step, 1).stack_value();
+        let value_bytes = value.to_le_bytes();
+        self.index.assign_u256(region, offset, index)?;
+        self.value.assign_u256(region, offset, value)?;
 
         // Generate the selectors
         let msb_sum_zero =
             self.is_msb_sum_zero
-                .assign(region, offset, sum::value(&index[1..32]))?;
+                .assign(region, offset, sum::value(&index_bytes[1..32]))?;
         let mut previous_selector_value: F = 0.into();
         for i in 0..31 {
             let selected = and::value(vec![
                 self.is_byte_selected[i].assign(
                     region,
                     offset,
-                    F::from(index[0] as u64),
+                    F::from(index_bytes[0] as u64),
                     F::from(i as u64),
                 )?,
                 msb_sum_zero,
@@ -197,8 +197,8 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
 
         // Set the sign byte
         let mut sign = 0u64;
-        if index[0] < 31 && msb_sum_zero == F::one() {
-            sign = (value[index[0] as usize] >> 7) as u64;
+        if index_bytes[0] < 31 && msb_sum_zero == F::ONE {
+            sign = (value_bytes[index_bytes[0] as usize] >> 7) as u64;
         }
         self.sign_byte
             .assign(region, offset, Value::known(F::from(sign * 0xFF)))
@@ -210,7 +210,7 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, ToLittleEndian, Word};
     use mock::TestContext;
 
@@ -222,13 +222,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

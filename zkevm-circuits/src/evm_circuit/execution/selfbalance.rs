@@ -4,23 +4,26 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Cell, CellType,
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
-    util::Expr,
+    util::{
+        word::{WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToScalar};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use eth_types::Field;
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct SelfbalanceGadget<F> {
     same_context: SameContextGadget<F>,
-    callee_address: Cell<F>,
-    phase2_self_balance: Cell<F>,
+    callee_address: WordCell<F>,
+    self_balance: WordCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
@@ -28,17 +31,17 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SELFBALANCE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let callee_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let callee_address = cb.call_context_read_as_word(None, CallContextFieldTag::CalleeAddress);
 
-        let phase2_self_balance = cb.query_cell_with_type(CellType::StoragePhase2);
+        let self_balance = cb.query_word_unchecked();
         cb.account_read(
-            callee_address.expr(),
+            callee_address.to_word(),
             AccountFieldTag::Balance,
-            phase2_self_balance.expr(),
+            self_balance.to_word(),
         );
 
-        cb.stack_push(phase2_self_balance.expr());
+        cb.stack_push(self_balance.to_word());
 
         let opcode = cb.query_cell();
         let step_state_transition = StepStateTransition {
@@ -52,8 +55,8 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
 
         Self {
             same_context,
-            phase2_self_balance,
             callee_address,
+            self_balance,
         }
     }
 
@@ -68,19 +71,12 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        self.callee_address.assign(
-            region,
-            offset,
-            Value::known(
-                call.callee_address
-                    .to_scalar()
-                    .expect("unexpected Address -> Scalar conversion failure"),
-            ),
-        )?;
+        self.callee_address
+            .assign_h160(region, offset, call.address)?;
 
-        let self_balance = block.rws[step.rw_indices[2]].stack_value();
-        self.phase2_self_balance
-            .assign(region, offset, region.word_rlc(self_balance))?;
+        let self_balance = block.get_rws(step, 2).stack_value();
+        self.self_balance
+            .assign_u256(region, offset, self_balance)?;
 
         Ok(())
     }
@@ -88,7 +84,7 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::bytecode;
     use mock::TestContext;
 
@@ -99,12 +95,9 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 }

@@ -1,37 +1,86 @@
 //! Implementation of an in-memory key-value database to represent the
 //! Ethereum State Trie.
 
-use eth_types::{Address, Hash, Word, H256, U256};
+use eth_types::{geth_types, Address, BigEndianHash, Bytecode, Hash, Word, H256, U256};
 use ethers_core::utils::keccak256;
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use std::collections::{HashMap, HashSet};
 
 lazy_static! {
     static ref ACCOUNT_ZERO: Account = Account::zero();
-    static ref VALUE_ZERO: Word = Word::zero();
-    static ref CODE_HASH_ZERO: Hash = H256(keccak256(&[]));
+    /// Hash value for empty code hash.
+    static ref EMPTY_CODE_HASH: Hash = CodeDB::hash(&[]);
+    /// bytes of empty code hash, in little endian order.
+    pub static ref EMPTY_CODE_HASH_LE: [u8; 32] = {
+        let mut bytes = EMPTY_CODE_HASH.to_fixed_bytes();
+        bytes.reverse();
+        bytes
+    };
 }
+
+const VALUE_ZERO: Word = Word::zero();
 
 /// Memory storage for contract code by code hash.
-#[derive(Debug, Clone)]
-pub struct CodeDB(pub HashMap<Hash, Vec<u8>>);
+#[derive(Debug, Clone, Default)]
+pub struct CodeDB(HashMap<Hash, Vec<u8>>);
 
-impl Default for CodeDB {
-    fn default() -> Self {
-        Self::new()
+impl CodeDB {
+    /// Insert code indexed by code hash, and return the code hash.
+    pub fn insert(&mut self, code: Vec<u8>) -> Hash {
+        let hash = Self::hash(&code);
+        self.0.insert(hash, code);
+        hash
+    }
+
+    /// Compute hash of given code.
+    pub fn hash(code: &[u8]) -> Hash {
+        H256(keccak256(code))
+    }
+
+    /// Code hash of empty code.
+    pub fn empty_code_hash() -> Hash {
+        *EMPTY_CODE_HASH
+    }
+
+    /// Compute number of rows required for bytecode table.
+    pub fn num_rows_required_for_bytecode_table(&self) -> usize {
+        self.0.values().map(|bytecode| bytecode.len() + 1).sum()
+    }
+
+    /// Query Bytecode by H256
+    pub fn get_from_h256(&self, codehash: &H256) -> Option<Bytecode> {
+        self.0.get(codehash).cloned().map(|code| code.into())
+    }
+
+    /// Query Bytecode by U256
+    pub fn get_from_u256(&self, codehash: &Word) -> Option<Bytecode> {
+        self.get_from_h256(&H256::from_uint(codehash))
     }
 }
 
-impl CodeDB {
-    /// Create a new empty Self.
-    pub fn new() -> Self {
-        Self(HashMap::new())
+impl From<Vec<Vec<u8>>> for CodeDB {
+    fn from(bytecodes: Vec<Vec<u8>>) -> Self {
+        Self(HashMap::from_iter(
+            bytecodes
+                .iter()
+                .cloned()
+                .map(|bytecode| (Self::hash(&bytecode), bytecode)),
+        ))
     }
-    /// Insert code indexed by code hash, and return the code hash.
-    pub fn insert(&mut self, code: Vec<u8>) -> Hash {
-        let hash = H256(keccak256(&code));
-        self.0.insert(hash, code);
-        hash
+}
+
+impl IntoIterator for CodeDB {
+    type Item = Bytecode;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0
+            .values()
+            .cloned()
+            .map(Bytecode::from)
+            .collect_vec()
+            .into_iter()
     }
 }
 
@@ -40,7 +89,7 @@ impl CodeDB {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Account {
     /// Nonce
-    pub nonce: Word,
+    pub nonce: u64,
     /// Balance
     pub balance: Word,
     /// Storage key-value map
@@ -49,23 +98,31 @@ pub struct Account {
     pub code_hash: Hash,
 }
 
+impl From<geth_types::Account> for Account {
+    fn from(account: geth_types::Account) -> Self {
+        Self {
+            nonce: account.nonce.as_u64(),
+            balance: account.balance,
+            storage: account.storage.clone(),
+            code_hash: CodeDB::hash(&account.code),
+        }
+    }
+}
+
 impl Account {
     /// Return an empty account, with all values set at zero.
     pub fn zero() -> Self {
         Self {
-            nonce: Word::zero(),
+            nonce: 0,
             balance: Word::zero(),
             storage: HashMap::new(),
-            code_hash: *CODE_HASH_ZERO,
+            code_hash: *EMPTY_CODE_HASH,
         }
     }
 
     /// Return if account is empty or not.
     pub fn is_empty(&self) -> bool {
-        self.nonce.is_zero()
-            && self.balance.is_zero()
-            && self.storage.is_empty()
-            && self.code_hash.eq(&CODE_HASH_ZERO)
+        self.nonce == 0 && self.balance.is_zero() && self.code_hash.eq(&EMPTY_CODE_HASH)
     }
 }
 
@@ -92,14 +149,7 @@ pub struct StateDB {
 impl StateDB {
     /// Create an empty Self
     pub fn new() -> Self {
-        Self {
-            state: HashMap::new(),
-            access_list_account: HashSet::new(),
-            access_list_account_storage: HashSet::new(),
-            dirty_storage: HashMap::new(),
-            destructed_account: HashSet::new(),
-            refund: 0,
-        }
+        Self::default()
     }
 
     /// Set an [`Account`] at `addr` in the StateDB.
@@ -148,7 +198,7 @@ impl StateDB {
         let (_, acc) = self.get_account(addr);
         match acc.storage.get(key) {
             Some(value) => (true, value),
-            None => (false, &(*VALUE_ZERO)),
+            None => (false, &VALUE_ZERO),
         }
     }
 
@@ -178,16 +228,22 @@ impl StateDB {
     }
 
     /// Get nonce of account with `addr`.
-    pub fn get_nonce(&mut self, addr: &Address) -> u64 {
+    pub fn get_nonce(&self, addr: &Address) -> u64 {
         let (_, account) = self.get_account(addr);
-        account.nonce.as_u64()
+        account.nonce
+    }
+
+    /// Get balance of account with the given address.
+    pub fn get_balance(&self, addr: &Address) -> Word {
+        let (_, account) = self.get_account(addr);
+        account.balance
     }
 
     /// Increase nonce of account with `addr` and return the previous value.
     pub fn increase_nonce(&mut self, addr: &Address) -> u64 {
         let (_, account) = self.get_account_mut(addr);
-        let nonce = account.nonce.as_u64();
-        account.nonce = account.nonce + 1;
+        let nonce = account.nonce;
+        account.nonce += 1;
         nonce
     }
 
@@ -284,12 +340,12 @@ mod statedb_tests {
         let (found, acc) = statedb.get_account_mut(&addr_a);
         assert!(!found);
         assert_eq!(acc, &Account::zero());
-        acc.nonce = Word::from(100);
+        acc.nonce = 100;
 
         // Get existing account and check nonce
         let (found, acc) = statedb.get_account(&addr_a);
         assert!(found);
-        assert_eq!(acc.nonce, Word::from(100));
+        assert_eq!(acc.nonce, 100);
 
         // Get non-existing storage key for existing account and set value
         let (found, value) = statedb.get_storage_mut(&addr_a, &Word::from(2));
@@ -311,7 +367,7 @@ mod statedb_tests {
         // Get existing account and check nonce
         let (found, acc) = statedb.get_account(&addr_b);
         assert!(found);
-        assert_eq!(acc.nonce, Word::zero());
+        assert_eq!(acc.nonce, 0);
 
         // Get existing storage key and check value
         let (found, value) = statedb.get_storage(&addr_b, &Word::from(3));

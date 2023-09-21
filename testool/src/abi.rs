@@ -21,7 +21,7 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
         "uint" => ParamType::Uint(256),
         "uint256" => ParamType::Uint(256),
         "bool" => ParamType::Bool,
-        _ => panic!("unimplemented abi type {:?}", t),
+        _ => panic!("unimplemented abi type {t:?}"),
     };
 
     let encode_type = |t, v: &str| match t {
@@ -35,7 +35,7 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
         ParamType::Bool => match v.to_lowercase().as_str() {
             "true" | "0x01" => Ok(Token::Bool(true)),
             "false" | "0x00" => Ok(Token::Bool(false)),
-            _ => panic!("unexpected boolean '{}'", v),
+            _ => panic!("unexpected boolean '{v}'"),
         },
         _ => unimplemented!(),
     };
@@ -44,7 +44,7 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
         .iter()
         .enumerate()
         .map(|(n, t)| Param {
-            name: format!("p{}", n),
+            name: format!("p{n}"),
             kind: map_type(t),
             internal_type: None,
         })
@@ -76,8 +76,7 @@ mod test {
 
     #[test]
     fn test_abi_encoding() -> Result<()> {
-        // [TODO] does not match with
-        // https://github.com/ethereum/tests/blob/0e8d25bb613cab7f9e99430f970e1e6cbffdbf1a/GeneralStateTests/VMTests/vmArithmeticTest/add.json#L244
+        // matches with https://raw.githubusercontent.com/ethereum-lists/4bytes/master/with_parameter_names/b3de648b
         assert_eq!(
             hex::encode(encode_funccall("f(uint) 4")?),
             "b3de648b0000000000000000000000000000000000000000000000000000000000000004"

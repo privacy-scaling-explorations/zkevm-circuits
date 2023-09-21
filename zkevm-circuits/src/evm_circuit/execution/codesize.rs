@@ -1,4 +1,3 @@
-use array_init::array_init;
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -8,12 +7,14 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
-            from_bytes, CachedRegion, Cell,
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
+            },
+            CachedRegion, Cell, U64Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{word::WordExpr, Expr},
 };
 
 use super::ExecutionGadget;
@@ -21,7 +22,7 @@ use super::ExecutionGadget;
 #[derive(Clone, Debug)]
 pub(crate) struct CodesizeGadget<F> {
     same_context: SameContextGadget<F>,
-    codesize_bytes: [Cell<F>; 8],
+    codesize_bytes: U64Cell<F>,
     codesize: Cell<F>,
 }
 
@@ -30,22 +31,22 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CODESIZE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let codesize_bytes = array_init(|_| cb.query_byte());
+        let codesize_bytes = cb.query_u64();
 
         let code_hash = cb.curr.state.code_hash.clone();
         let codesize = cb.query_cell();
-        cb.bytecode_length(code_hash.expr(), codesize.expr());
+        cb.bytecode_length(code_hash.to_word(), codesize.expr());
 
         cb.require_equal(
             "Constraint: bytecode length lookup == codesize",
-            from_bytes::expr(&codesize_bytes),
+            codesize_bytes.expr(),
             codesize.expr(),
         );
 
-        cb.stack_push(cb.word_rlc(codesize_bytes.clone().map(|c| c.expr())));
+        cb.stack_push(codesize_bytes.to_word());
 
         let step_state_transition = StepStateTransition {
             gas_left: Transition::Delta(-OpcodeId::CODESIZE.constant_gas_cost().expr()),
@@ -74,15 +75,10 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let codesize = block.rws[step.rw_indices[0]].stack_value().as_u64();
+        let codesize = block.get_rws(step, 0).stack_value().as_u64();
 
-        for (c, b) in self
-            .codesize_bytes
-            .iter()
-            .zip(codesize.to_le_bytes().iter())
-        {
-            c.assign(region, offset, Value::known(F::from(*b as u64)))?;
-        }
+        self.codesize_bytes
+            .assign(region, offset, Some(codesize.to_le_bytes()))?;
 
         self.codesize
             .assign(region, offset, Value::known(F::from(codesize)))?;
@@ -93,10 +89,9 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{bytecode, Word};
     use mock::TestContext;
-
-    use crate::test_util::run_test_circuits;
 
     fn test_ok(large: bool) {
         let mut code = bytecode! {};
@@ -111,13 +106,10 @@ mod tests {
         };
         code.append(&tail);
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+        )
+        .run();
     }
 
     #[test]

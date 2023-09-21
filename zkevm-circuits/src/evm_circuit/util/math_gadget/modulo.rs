@@ -1,11 +1,16 @@
 use crate::{
     evm_circuit::util::{
-        self, constraint_builder::ConstraintBuilder, math_gadget::*, sum, CachedRegion,
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        math_gadget::{LtWordGadget, *},
+        CachedRegion,
     },
-    util::Expr,
+    util::{
+        word::{self, Word32Cell, WordExpr},
+        Expr,
+    },
 };
-use eth_types::{Field, ToLittleEndian, Word};
-use halo2_proofs::plonk::Error;
+use eth_types::{Field, Word};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Constraints for the words a, n, r:
 /// a mod n = r, if n!=0
@@ -18,24 +23,24 @@ use halo2_proofs::plonk::Error;
 /// this equation assures that r<n or r=n=0.
 #[derive(Clone, Debug)]
 pub(crate) struct ModGadget<F> {
-    k: util::Word<F>,
-    a_or_zero: util::Word<F>,
+    k: Word32Cell<F>,
+    a_or_zero: Word32Cell<F>,
     mul_add_words: MulAddWordsGadget<F>,
-    n_is_zero: IsZeroGadget<F>,
-    a_or_is_zero: IsZeroGadget<F>,
-    eq: IsEqualGadget<F>,
+    n_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
+    a_or_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
+    eq: IsEqualWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
     lt: LtWordGadget<F>,
 }
 impl<F: Field> ModGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, words: [&util::Word<F>; 3]) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&Word32Cell<F>; 3]) -> Self {
         let (a, n, r) = (words[0], words[1], words[2]);
-        let k = cb.query_word_rlc();
-        let a_or_zero = cb.query_word_rlc();
-        let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
-        let a_or_is_zero = IsZeroGadget::construct(cb, sum::expr(&a_or_zero.cells));
+        let k = cb.query_word32();
+        let a_or_zero = cb.query_word32();
+        let n_is_zero = IsZeroWordGadget::construct(cb, n);
+        let a_or_is_zero = IsZeroWordGadget::construct(cb, &a_or_zero);
         let mul_add_words = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);
-        let eq = IsEqualGadget::construct(cb, a.expr(), a_or_zero.expr());
-        let lt = LtWordGadget::construct(cb, r, n);
+        let eq = IsEqualWordGadget::construct(cb, a, &a_or_zero);
+        let lt = LtWordGadget::construct(cb, &r.to_word(), &n.to_word());
         // Constrain the aux variable a_or_zero to be =a or =0 if n==0:
         // (a == a_or_zero) ^ (n == 0 & a_or_zero == 0)
         cb.add_constraint(
@@ -75,22 +80,19 @@ impl<F: Field> ModGadget<F> {
     ) -> Result<(), Error> {
         let a_or_zero = if n.is_zero() { Word::zero() } else { a };
 
-        self.k.assign(region, offset, Some(k.to_le_bytes()))?;
-        self.a_or_zero
-            .assign(region, offset, Some(a_or_zero.to_le_bytes()))?;
-        let n_sum = (0..32).fold(0, |acc, idx| acc + n.byte(idx) as u64);
-        let a_or_zero_sum = (0..32).fold(0, |acc, idx| acc + a_or_zero.byte(idx) as u64);
-        self.n_is_zero.assign(region, offset, F::from(n_sum))?;
+        self.k.assign_u256(region, offset, k)?;
+        self.a_or_zero.assign_u256(region, offset, a_or_zero)?;
+        self.n_is_zero.assign(region, offset, word::Word::from(n))?;
         self.a_or_is_zero
-            .assign(region, offset, F::from(a_or_zero_sum))?;
+            .assign(region, offset, word::Word::from(a_or_zero))?;
         self.mul_add_words
             .assign(region, offset, [k, n, r, a_or_zero])?;
         self.lt.assign(region, offset, r, n)?;
         self.eq.assign_value(
             region,
             offset,
-            region.word_rlc(a),
-            region.word_rlc(a_or_zero),
+            Value::known(word::Word::from(a)),
+            Value::known(word::Word::from(a_or_zero)),
         )?;
 
         Ok(())
@@ -99,26 +101,24 @@ impl<F: Field> ModGadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::test_util::*;
-    use super::*;
+    use super::{test_util::*, *};
     use eth_types::{Word, U256, U512};
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// ModGadgetTestContainer: require(a % n == r)
     struct ModGadgetTestContainer<F> {
         mod_gadget: ModGadget<F>,
-        a: util::Word<F>,
-        n: util::Word<F>,
-        r: util::Word<F>,
+        a: Word32Cell<F>,
+        n: Word32Cell<F>,
+        r: Word32Cell<F>,
     }
 
     impl<F: Field> MathGadgetContainer<F> for ModGadgetTestContainer<F> {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-            let a = cb.query_word_rlc();
-            let n = cb.query_word_rlc();
-            let r = cb.query_word_rlc();
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
+            let a = cb.query_word32();
+            let n = cb.query_word32();
+            let r = cb.query_word32();
             let mod_gadget = ModGadget::<F>::construct(cb, [&a, &n, &r]);
             ModGadgetTestContainer {
                 mod_gadget,
@@ -144,9 +144,9 @@ mod tests {
 
             let offset = 0;
 
-            self.a.assign(region, offset, Some(a.to_le_bytes()))?;
-            self.n.assign(region, offset, Some(n.to_le_bytes()))?;
-            self.r.assign(region, offset, Some(r.to_le_bytes()))?;
+            self.a.assign_u256(region, offset, a)?;
+            self.n.assign_u256(region, offset, n)?;
+            self.r.assign_u256(region, offset, r)?;
 
             self.mod_gadget.assign(region, 0, a, n, r, k)
         }
@@ -207,7 +207,7 @@ mod tests {
                 Word::from(2),
                 Word::from(3),
                 Word::from(0),
-                /* magic number (2^256 + 2) / 3, and 2^256 + 2 is divisible by 3 */
+                // magic number (2^256 + 2) / 3, and 2^256 + 2 is divisible by 3
                 U256::try_from(U512([2, 0, 0, 0, 1, 0, 0, 0]) / U512::from(3)).unwrap(),
             ],
             false,

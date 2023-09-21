@@ -1,27 +1,26 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
-            from_bytes, CachedRegion, RandomLinearCombination,
+            CachedRegion, U64Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{word::WordExpr, Expr},
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use eth_types::{evm_types::OpcodeId, Field};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct JumpGadget<F> {
     same_context: SameContextGadget<F>,
-    destination: RandomLinearCombination<F, N_BYTES_PROGRAM_COUNTER>,
+    destination: U64Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
@@ -29,24 +28,20 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::JUMP;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let destination = cb.query_word_rlc();
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let destination = cb.query_u64();
 
         // Pop the value from the stack
-        cb.stack_pop(destination.expr());
+        cb.stack_pop(destination.to_word());
 
         // Lookup opcode at destination
-        cb.opcode_lookup_at(
-            from_bytes::expr(&destination.cells),
-            OpcodeId::JUMPDEST.expr(),
-            1.expr(),
-        );
+        cb.opcode_lookup_at(destination.expr(), OpcodeId::JUMPDEST.expr(), 1.expr());
 
         // State transition
         let opcode = cb.query_cell();
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(1.expr()),
-            program_counter: To(from_bytes::expr(&destination.cells)),
+            program_counter: To(destination.expr()),
             stack_pointer: Delta(1.expr()),
             gas_left: Delta(-OpcodeId::JUMP.constant_gas_cost().expr()),
             ..Default::default()
@@ -70,16 +65,8 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let destination = block.rws[step.rw_indices[0]].stack_value();
-        self.destination.assign(
-            region,
-            offset,
-            Some(
-                destination.to_le_bytes()[..N_BYTES_PROGRAM_COUNTER]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+        let destination = block.get_rws(step, 0).stack_value();
+        self.destination.assign_u256(region, offset, destination)?;
 
         Ok(())
     }
@@ -87,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_range, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_range, test_util::CircuitTestBuilder};
     use eth_types::bytecode;
     use mock::TestContext;
 
@@ -106,13 +93,10 @@ mod test {
             STOP
         });
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     fn test_invalid_jump(destination: usize) {
@@ -130,13 +114,10 @@ mod test {
             STOP
         });
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]
@@ -154,6 +135,11 @@ mod test {
     #[test]
     fn jump_gadget_rand() {
         test_ok(rand_range(34..1 << 11));
+    }
+
+    #[test]
+    fn invalid_jump_err() {
+        test_invalid_jump(34);
     }
 
     #[test]

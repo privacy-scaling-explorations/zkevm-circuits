@@ -1,15 +1,17 @@
 use std::collections::HashMap;
 
-use crate::abi;
-use crate::Compiler;
-use anyhow::bail;
-use anyhow::Context;
-use anyhow::Result;
-use eth_types::evm_types::OpcodeId;
+use crate::{abi, Compiler};
+
+use anyhow::{bail, Context, Result};
 use eth_types::{Address, Bytes, H256, U256};
 use log::debug;
+use once_cell::sync::Lazy;
+use regex::Regex;
 
 type Label = String;
+
+static YUL_FRAGMENT_PARSER: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"\s*(?P<version>\w+)?\s*(?P<code>\{[\S\s]*)"#).unwrap());
 
 /// returns the element as an address
 pub fn parse_address(as_str: &str) -> Result<Address> {
@@ -44,7 +46,7 @@ fn decompose_tags(expr: &str) -> HashMap<String, String> {
     } else {
         while !it.is_empty() {
             if it.starts_with(':') {
-                let tag = &it[..it.find(&[' ', '\n']).expect("unable to find end tag")];
+                let tag = &it[..it.find([' ', '\n']).expect("unable to find end tag")];
                 it = &it[tag.len() + 1..];
                 let value_len = if tag == ":yul" || tag == ":solidity" || tag == ":asm" {
                     it.len()
@@ -64,7 +66,7 @@ fn decompose_tags(expr: &str) -> HashMap<String, String> {
 
 /// returns the element as calldata bytes, supports 0x, :raw, :abi, :yul and
 /// { LLL }
-pub fn parse_calldata(compiler: &mut Compiler, as_str: &str) -> Result<(Bytes, Option<Label>)> {
+pub fn parse_calldata(compiler: &Compiler, as_str: &str) -> Result<(Bytes, Option<Label>)> {
     let tags = decompose_tags(as_str);
     let label = tags.get(":label").cloned();
 
@@ -88,7 +90,16 @@ pub fn parse_calldata(compiler: &mut Compiler, as_str: &str) -> Result<(Bytes, O
     } else if let Some(abi) = tags.get(":abi") {
         Ok((abi::encode_funccall(abi)?, label))
     } else if let Some(yul) = tags.get(":yul") {
-        Ok((compiler.yul(yul)?, label))
+        let caps = YUL_FRAGMENT_PARSER
+            .captures(yul)
+            .ok_or_else(|| anyhow::anyhow!("do not know what to do with code(4) '{:?}'", as_str))?;
+        Ok((
+            compiler.yul(
+                caps.name("code").unwrap().as_str(),
+                caps.name("version").map(|m| m.as_str()),
+            )?,
+            label,
+        ))
     } else {
         bail!(
             "do not know what to do with calldata: (2) {:?} '{:?}'",
@@ -99,10 +110,10 @@ pub fn parse_calldata(compiler: &mut Compiler, as_str: &str) -> Result<(Bytes, O
 }
 
 /// parse entry as code, can be 0x, :raw or { LLL }
-pub fn parse_code(compiler: &mut Compiler, as_str: &str) -> Result<Bytes> {
+pub fn parse_code(compiler: &Compiler, as_str: &str) -> Result<Bytes> {
     let tags = decompose_tags(as_str);
 
-    let mut code = if let Some(notag) = tags.get("") {
+    let code = if let Some(notag) = tags.get("") {
         if let Some(hex) = notag.strip_prefix("0x") {
             Bytes::from(hex::decode(hex)?)
         } else if notag.starts_with('{') {
@@ -123,23 +134,21 @@ pub fn parse_code(compiler: &mut Compiler, as_str: &str) -> Result<Bytes> {
             bail!("do not know what to do with code(3) '{:?}'", as_str);
         }
     } else if let Some(yul) = tags.get(":yul") {
-        compiler.yul(yul)?
+        let caps = YUL_FRAGMENT_PARSER
+            .captures(yul)
+            .ok_or_else(|| anyhow::anyhow!("do not know what to do with code(4) '{:?}'", as_str))?;
+        compiler.yul(
+            caps.name("code").unwrap().as_str(),
+            caps.name("version").map(|m| m.as_str()),
+        )?
     } else if let Some(solidity) = tags.get(":solidity") {
-        debug!("SOLIDITY: >>>{}<<< => {:?}", solidity, as_str);
-        compiler.solidity(solidity)?
+        debug!(target: "testool", "SOLIDITY: >>>{}<<< => {:?}", solidity, as_str);
+        compiler.solidity(solidity, None)?
     } else if let Some(asm) = tags.get(":asm") {
         compiler.asm(asm)?
     } else {
         bail!("do not know what to do with code(2) '{:?}'", as_str);
     };
-
-    // TODO: remote the finish with STOP if does not finish with it when fixed
-    if !code.0.is_empty() && code.0[code.0.len() - 1] != OpcodeId::STOP.as_u8() {
-        let mut code_stop = Vec::new();
-        code_stop.extend_from_slice(&code.0);
-        code_stop.push(OpcodeId::STOP.as_u8());
-        code = Bytes::from(code_stop);
-    }
 
     Ok(code)
 }

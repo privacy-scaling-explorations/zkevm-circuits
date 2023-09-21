@@ -1,6 +1,9 @@
 use crate::{
-    evm_circuit::util::{constraint_builder::ConstraintBuilder, CachedRegion, Cell},
-    util::Expr,
+    evm_circuit::util::{
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        CachedRegion,
+    },
+    util::{cell_manager::Cell, Expr},
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -22,7 +25,7 @@ pub struct PairSelectGadget<F> {
 
 impl<F: Field> PairSelectGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         value: Expression<F>,
         a: Expression<F>,
         b: Expression<F>,
@@ -50,20 +53,20 @@ impl<F: Field> PairSelectGadget<F> {
         a: F,
         _b: F,
     ) -> Result<(F, F), Error> {
-        let is_a = if value == a { F::one() } else { F::zero() };
+        let is_a = if value == a { F::ONE } else { F::ZERO };
         self.is_a.assign(region, offset, Value::known(is_a))?;
 
-        Ok((is_a, F::one() - is_a))
+        Ok((is_a, F::ONE - is_a))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_util::*;
-    use super::*;
+    use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
+
+    use super::{super::test_util::*, *};
     use eth_types::*;
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// PairSelectionTestContainer: require(v == a if SELECT_A else b)
@@ -77,7 +80,7 @@ mod tests {
     impl<F: Field, const SELECT_A: bool> MathGadgetContainer<F>
         for PairSelectionTestContainer<F, SELECT_A>
     {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let v = cb.query_cell();
             let a = cb.query_cell();
             let b = cb.query_cell();

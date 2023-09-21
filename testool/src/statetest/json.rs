@@ -1,25 +1,25 @@
-#![allow(dead_code, unused_imports)]
-
-use super::parse;
-use super::spec::{AccountMatch, Env, StateTest};
-use crate::abi;
-use crate::compiler::Compiler;
-use crate::utils::MainnetFork;
-use anyhow::{bail, Context, Result};
-use eth_types::evm_types::OpcodeId;
-use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
-use ethers_core::k256::ecdsa::SigningKey;
-use ethers_core::utils::secret_key_to_address;
+use super::{
+    parse,
+    spec::{AccountMatch, Env, StateTest, DEFAULT_BASE_FEE},
+};
+use crate::{compiler::Compiler, utils::MainnetFork};
+use anyhow::{bail, Result};
+use eth_types::{geth_types::Account, Address, U256};
+use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::convert::TryInto;
-use std::ops::RangeBounds;
-use std::str::FromStr;
-use yaml_rust::Yaml;
+use std::collections::{BTreeMap, HashMap};
+
+use serde_json::value::Value;
+
+fn default_block_base_fee() -> String {
+    DEFAULT_BASE_FEE.to_string()
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TestEnv {
+    #[serde(default = "default_block_base_fee")]
+    current_base_fee: String,
     current_coinbase: String,
     current_difficulty: String,
     current_gas_limit: String,
@@ -41,6 +41,7 @@ struct AccountPost {
     code: Option<String>,
     nonce: Option<String>,
     storage: Option<HashMap<String, String>>,
+    #[allow(dead_code)]
     shouldnotexist: Option<String>,
 }
 
@@ -54,7 +55,7 @@ struct AccountPre {
 
 #[derive(Debug, Clone, Deserialize)]
 struct Expect {
-    indexes: Indexes,
+    indexes: Option<Indexes>,
     network: Vec<String>,
     result: HashMap<String, AccountPost>,
 }
@@ -97,18 +98,19 @@ impl Refs {
 }
 
 pub struct JsonStateTestBuilder<'a> {
-    compiler: &'a mut Compiler,
+    compiler: &'a Compiler,
 }
 
 impl<'a> JsonStateTestBuilder<'a> {
-    pub fn new(compiler: &'a mut Compiler) -> Self {
+    pub fn new(compiler: &'a Compiler) -> Self {
         Self { compiler }
     }
 
     /// generates `StateTest` vectors from a ethereum josn test specification
     pub fn load_json(&mut self, path: &str, source: &str) -> Result<Vec<StateTest>> {
         let mut state_tests = Vec::new();
-        let tests: HashMap<String, JsonStateTest> = serde_json::from_str(source)?;
+        let tests: HashMap<String, JsonStateTest> =
+            serde_json::from_str(&strip_json_comments(source))?;
 
         for (test_name, test) in tests {
             let env = Self::parse_env(&test.env)?;
@@ -116,8 +118,8 @@ impl<'a> JsonStateTestBuilder<'a> {
 
             let to = parse::parse_to_address(&test.transaction.to)?;
             let secret_key = parse::parse_bytes(&test.transaction.secret_key)?;
-            let from = secret_key_to_address(&SigningKey::from_bytes(&secret_key.to_vec())?);
-            let nonce = parse::parse_u256(&test.transaction.nonce)?;
+            let from = secret_key_to_address(&SigningKey::from_slice(&secret_key)?);
+            let nonce = parse::parse_u64(&test.transaction.nonce)?;
             let gas_price = parse::parse_u256(&test.transaction.gas_price)?;
 
             let data_s: Vec<_> = test
@@ -143,9 +145,21 @@ impl<'a> JsonStateTestBuilder<'a> {
 
             let mut expects = Vec::new();
             for expect in test.expect {
-                let data_refs = Self::parse_refs(&expect.indexes.data)?;
-                let gas_refs = Self::parse_refs(&expect.indexes.gas)?;
-                let value_refs = Self::parse_refs(&expect.indexes.value)?;
+                // Considered as Anys if missing `indexes`.
+                let (data_refs, gas_refs, value_refs) = if let Some(indexes) = expect.indexes {
+                    (
+                        Self::parse_refs(&indexes.data)?,
+                        Self::parse_refs(&indexes.gas)?,
+                        Self::parse_refs(&indexes.value)?,
+                    )
+                } else {
+                    (
+                        Refs(vec![Ref::Any]),
+                        Refs(vec![Ref::Any]),
+                        Refs(vec![Ref::Any]),
+                    )
+                };
+
                 let result = self.parse_accounts_post(&expect.result)?;
 
                 if MainnetFork::in_network_range(&expect.network)? {
@@ -171,10 +185,7 @@ impl<'a> JsonStateTestBuilder<'a> {
 
                             state_tests.push(StateTest {
                                 path: path.to_string(),
-                                id: format!(
-                                    "{}_d{}_g{}_v{}",
-                                    test_name, idx_data, idx_gas, idx_value
-                                ),
+                                id: format!("{test_name}_d{idx_data}_g{idx_gas}_v{idx_value}"),
                                 env: env.clone(),
                                 pre: pre.clone(),
                                 result: result.clone(),
@@ -186,7 +197,7 @@ impl<'a> JsonStateTestBuilder<'a> {
                                 gas_limit: *gas_limit,
                                 value: *value,
                                 data: data.0.clone(),
-                                exception: false, // TODO: check
+                                exception: false,
                             });
                         }
                     }
@@ -200,6 +211,8 @@ impl<'a> JsonStateTestBuilder<'a> {
     /// parse env section
     fn parse_env(env: &TestEnv) -> Result<Env> {
         Ok(Env {
+            current_base_fee: parse::parse_u256(&env.current_base_fee)
+                .unwrap_or_else(|_| U256::from(DEFAULT_BASE_FEE)),
             current_coinbase: parse::parse_address(&env.current_coinbase)?,
             current_difficulty: parse::parse_u256(&env.current_difficulty)?,
             current_gas_limit: parse::parse_u64(&env.current_gas_limit)?,
@@ -213,8 +226,8 @@ impl<'a> JsonStateTestBuilder<'a> {
     fn parse_accounts_pre(
         &mut self,
         accounts_pre: &HashMap<String, AccountPre>,
-    ) -> Result<HashMap<Address, Account>> {
-        let mut accounts = HashMap::new();
+    ) -> Result<BTreeMap<Address, Account>> {
+        let mut accounts = BTreeMap::new();
         for (address, acc) in accounts_pre {
             let address = parse::parse_address(address)?;
             let mut storage = HashMap::new();
@@ -224,7 +237,7 @@ impl<'a> JsonStateTestBuilder<'a> {
             let account = Account {
                 address,
                 balance: parse::parse_u256(&acc.balance)?,
-                nonce: parse::parse_u256(&acc.nonce)?,
+                nonce: parse::parse_u64(&acc.nonce)?.into(),
                 code: parse::parse_code(self.compiler, &acc.code)?,
                 storage,
             };
@@ -262,7 +275,7 @@ impl<'a> JsonStateTestBuilder<'a> {
                 nonce: acc
                     .nonce
                     .as_ref()
-                    .map(|v| parse::parse_u256(v))
+                    .map(|v| parse::parse_u64(v))
                     .transpose()?,
                 storage,
             };
@@ -300,9 +313,30 @@ impl<'a> JsonStateTestBuilder<'a> {
     }
 }
 
+fn strip_json_comments(json: &str) -> String {
+    fn strip(value: Value) -> Value {
+        use Value::*;
+        match value {
+            Array(vec) => Array(vec.into_iter().map(strip).collect()),
+            Object(map) => Object(
+                map.into_iter()
+                    .filter(|(k, _)| !k.starts_with("//"))
+                    .map(|(k, v)| (k, strip(v)))
+                    .collect(),
+            ),
+            _ => value,
+        }
+    }
+
+    let value: Value = serde_json::from_str(json).unwrap();
+    strip(value).to_string()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
+    use eth_types::{Bytes, H256};
+    use std::{collections::HashMap, str::FromStr};
 
     const JSON: &str = r#"
 {
@@ -367,8 +401,8 @@ mod test {
 "#;
     #[test]
     fn test_json_parse() -> Result<()> {
-        let mut compiler = Compiler::new(true, None)?;
-        let mut builder = JsonStateTestBuilder::new(&mut compiler);
+        let compiler = Compiler::new(true, None)?;
+        let mut builder = JsonStateTestBuilder::new(&compiler);
         let test = builder.load_json("test_path", JSON)?.remove(0);
 
         let acc095e = Address::from_str("0x095e7baea6a6c7c4c2dfeb977efac326af552d87")?;
@@ -377,6 +411,7 @@ mod test {
             path: "test_path".to_string(),
             id: "add11_d0_g0_v0".to_string(),
             env: Env {
+                current_base_fee: U256::from(DEFAULT_BASE_FEE),
                 current_coinbase: Address::from_str("0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba")?,
                 current_difficulty: U256::from(131072u64),
                 current_gas_limit: 0xFF112233445566,
@@ -395,14 +430,14 @@ mod test {
             )?),
             gas_limit: 400000,
             gas_price: U256::from(10u64),
-            nonce: U256::from(0u64),
+            nonce: 0,
             value: U256::from(100000u64),
             data: Bytes::from(hex::decode("6001")?),
-            pre: HashMap::from([(
+            pre: BTreeMap::from([(
                 acc095e,
                 Account {
                     address: acc095e,
-                    nonce: U256::from(0u64),
+                    nonce: 0.into(),
                     balance: U256::from(1000000000000000000u64),
                     code: Bytes::from(hex::decode("600160010160005500")?),
                     storage: HashMap::new(),
@@ -412,7 +447,7 @@ mod test {
                 acc095e,
                 AccountMatch {
                     address: acc095e,
-                    nonce: Some(U256::from(1u64)),
+                    nonce: Some(1u64),
                     balance: None,
                     code: Some(Bytes::from(hex::decode("600160010160005500")?)),
                     storage: HashMap::from([(U256::zero(), U256::from(2u64))]),
@@ -424,5 +459,14 @@ mod test {
         assert_eq!(expected, test);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_strip() {
+        let original = r#"{"//a":"a1","b":[{"c":"c1","//d":"d1"}]}"#;
+        let expected = r#"{"b":[{"c":"c1"}]}"#;
+
+        let stripped = strip_json_comments(original);
+        assert_eq!(expected, stripped);
     }
 }

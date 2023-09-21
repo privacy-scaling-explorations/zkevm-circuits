@@ -6,26 +6,29 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
+                EVMConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
-            from_bytes, select, CachedRegion, Cell, Word,
+            select, AccountAddress, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
-    util::Expr,
+    util::{
+        word::{Word32Cell, WordCell, WordExpr},
+        Expr,
+    },
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian};
+use eth_types::{evm_types::GasCost, Field};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExtcodehashGadget<F> {
     same_context: SameContextGadget<F>,
-    address_word: Word<F>,
+    address_word: Word32Cell<F>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
     is_warm: Cell<F>,
-    code_hash: Cell<F>,
+    code_hash: WordCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
@@ -33,27 +36,37 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EXTCODEHASH;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let address_word = cb.query_word_rlc();
-        let address = from_bytes::expr(&address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
-        cb.stack_pop(address_word.expr());
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let address_word = cb.query_word32();
+        let address = AccountAddress::new(
+            address_word.limbs[..N_BYTES_ACCOUNT_ADDRESS]
+                .to_vec()
+                .try_into()
+                .unwrap(),
+        );
+        cb.stack_pop(address_word.to_word());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
 
         let is_warm = cb.query_bool();
-        cb.account_access_list_write(
+        cb.account_access_list_write_unchecked(
             tx_id.expr(),
-            address.expr(),
+            address.to_word(),
             1.expr(),
             is_warm.expr(),
             Some(&mut reversion_info),
         );
 
-        let code_hash = cb.query_cell();
+        // range check will be cover by account code_hash lookup
+        let code_hash = cb.query_word_unchecked();
         // For non-existing accounts the code_hash must be 0 in the rw_table.
-        cb.account_read(address, AccountFieldTag::CodeHash, code_hash.expr());
-        cb.stack_push(code_hash.expr());
+        cb.account_read(
+            address.to_word(),
+            AccountFieldTag::CodeHash,
+            code_hash.to_word(),
+        );
+        cb.stack_push(code_hash.to_word());
 
         let gas_cost = select::expr(
             is_warm.expr(),
@@ -93,12 +106,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let address = block.rws[step.rw_indices[0]].stack_value();
-        self.address_word
-            .assign(region, offset, Some(address.to_le_bytes()))?;
+        let address = block.get_rws(step, 0).stack_value();
+        self.address_word.assign_u256(region, offset, address)?;
 
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id)))?;
         self.reversion_info.assign(
             region,
             offset,
@@ -106,13 +118,12 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             call.is_persistent,
         )?;
 
-        let (_, is_warm) = block.rws[step.rw_indices[4]].tx_access_list_value_pair();
+        let (_, is_warm) = block.get_rws(step, 4).tx_access_list_value_pair();
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let code_hash = block.rws[step.rw_indices[5]].account_value_pair().0;
-        self.code_hash
-            .assign(region, offset, region.word_rlc(code_hash))?;
+        let code_hash = block.get_rws(step, 5).account_codehash_pair().0;
+        self.code_hash.assign_u256(region, offset, code_hash)?;
 
         Ok(())
     }
@@ -120,11 +131,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::test_circuits_block_geth_data_default;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{
-        address, bytecode,
-        geth_types::{Account, GethData},
-        Address, Bytecode, Bytes, ToWord, Word, U256,
+        address, bytecode, geth_types::Account, Address, Bytecode, Bytes, ToWord, Word, U256, U64,
     };
     use lazy_static::lazy_static;
     use mock::{eth, TestContext};
@@ -136,7 +145,7 @@ mod test {
 
     fn test_ok(external_account: Option<Account>, is_warm: bool) {
         let external_address = external_account
-            .as_ref()
+            .clone()
             .map(|a| a.address)
             .unwrap_or(*EXTERNAL_ADDRESS);
 
@@ -158,7 +167,7 @@ mod test {
         });
 
         // Execute the bytecode and get trace
-        let block: GethData = TestContext::<3, 1>::new(
+        let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -168,10 +177,7 @@ mod test {
 
                 accs[1].address(external_address);
                 if let Some(external_account) = external_account {
-                    accs[1]
-                        .balance(external_account.balance)
-                        .nonce(external_account.nonce)
-                        .code(external_account.code);
+                    accs[1].account(&external_account);
                 }
                 accs[2]
                     .address(address!("0x0000000000000000000000000000000000000010"))
@@ -182,10 +188,9 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        test_circuits_block_geth_data_default(block).unwrap();
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]
@@ -203,7 +208,7 @@ mod test {
         test_ok(
             Some(Account {
                 address: *EXTERNAL_ADDRESS,
-                nonce: U256::from(259),
+                nonce: U64::from(259),
                 code: Bytes::from([3]),
                 ..Default::default()
             }),
@@ -230,7 +235,7 @@ mod test {
         // code = [].
         let nonce_only_account = Account {
             address: *EXTERNAL_ADDRESS,
-            nonce: U256::from(200),
+            nonce: U64::from(200),
             ..Default::default()
         };
         // This account state is possible if another account sends ETH to a previously

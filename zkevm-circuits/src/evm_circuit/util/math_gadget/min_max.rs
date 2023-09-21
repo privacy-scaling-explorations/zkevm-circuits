@@ -1,11 +1,8 @@
 use crate::evm_circuit::util::{
-    constraint_builder::ConstraintBuilder, math_gadget::*, select, transpose_val_ret, CachedRegion,
+    constraint_builder::EVMConstraintBuilder, math_gadget::*, select, CachedRegion,
 };
 use eth_types::Field;
-use halo2_proofs::{
-    circuit::Value,
-    plonk::{Error, Expression},
-};
+use halo2_proofs::plonk::{Error, Expression};
 /// Returns `rhs` when `lhs < rhs`, and returns `lhs` otherwise.
 /// lhs and rhs `< 256**N_BYTES`
 /// `N_BYTES` is required to be `<= MAX_N_BYTES_INTEGER`.
@@ -18,7 +15,7 @@ pub struct MinMaxGadget<F, const N_BYTES: usize> {
 
 impl<F: Field, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
@@ -51,29 +48,14 @@ impl<F: Field, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
             (lhs, rhs)
         })
     }
-
-    pub(crate) fn assign_value(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        lhs: Value<F>,
-        rhs: Value<F>,
-    ) -> Result<Value<(F, F)>, Error> {
-        transpose_val_ret(
-            lhs.zip(rhs)
-                .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs)),
-        )
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::test_util::*;
-    use super::*;
-    use crate::evm_circuit::util::Cell;
+    use super::{test_util::*, *};
+    use crate::evm_circuit::util::{constraint_builder::ConstrainBuilderCommon, Cell};
     use eth_types::{ToScalar, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// MinMaxTestContainer: require(min(a, b) == (a if MIN_IS_A else b))
@@ -86,7 +68,7 @@ mod tests {
     impl<F: Field, const N_BYTES: usize, const MIN_IS_A: bool> MathGadgetContainer<F>
         for MinMaxTestContainer<F, N_BYTES, MIN_IS_A>
     {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_cell();
             let b = cb.query_cell();
             let minmax_gadget = MinMaxGadget::<F, N_BYTES>::construct(cb, a.expr(), b.expr());

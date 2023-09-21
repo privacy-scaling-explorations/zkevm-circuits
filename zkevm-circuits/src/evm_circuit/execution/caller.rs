@@ -1,27 +1,28 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_ACCOUNT_ADDRESS,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes, CachedRegion, RandomLinearCombination,
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
+use eth_types::Field;
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CallerGadget<F> {
     same_context: SameContextGadget<F>,
-    // Using RLC to match against rw_table->stack_op value
-    caller_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
+    caller_address: WordCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
@@ -29,19 +30,18 @@ impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLER;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let caller_address = cb.query_word_rlc();
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let caller_address = cb.query_word_unchecked();
 
         // Lookup rw_table -> call_context with caller address
-        cb.call_context_lookup(
-            false.expr(),
+        cb.call_context_lookup_read(
             None, // cb.curr.state.call_id
             CallContextFieldTag::CallerAddress,
-            from_bytes::expr(&caller_address.cells),
+            caller_address.to_word(),
         );
 
         // Push the value to the stack
-        cb.stack_push(caller_address.expr());
+        cb.stack_push(caller_address.to_word());
 
         // State transition
         let opcode = cb.query_cell();
@@ -71,17 +71,9 @@ impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let caller = block.rws[step.rw_indices[1]].stack_value();
+        let caller = block.get_rws(step, 1).stack_value();
 
-        self.caller_address.assign(
-            region,
-            offset,
-            Some(
-                caller.to_le_bytes()[..N_BYTES_ACCOUNT_ADDRESS]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+        self.caller_address.assign_u256(region, offset, caller)?;
 
         Ok(())
     }
@@ -89,7 +81,7 @@ impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::bytecode;
     use mock::TestContext;
 
@@ -100,12 +92,9 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 }

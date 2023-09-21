@@ -8,11 +8,11 @@ pub fn memory_expansion_gas_cost(curr_memory_word_size: u64, next_memory_word_si
     if next_memory_word_size == curr_memory_word_size {
         0
     } else {
-        GasCost::MEMORY_EXPANSION_LINEAR_COEFF.0 * (next_memory_word_size - curr_memory_word_size)
+        GasCost::MEMORY_EXPANSION_LINEAR_COEFF * (next_memory_word_size - curr_memory_word_size)
             + next_memory_word_size * next_memory_word_size
-                / GasCost::MEMORY_EXPANSION_QUAD_DENOMINATOR.0
+                / GasCost::MEMORY_EXPANSION_QUAD_DENOMINATOR
             - curr_memory_word_size * curr_memory_word_size
-                / GasCost::MEMORY_EXPANSION_QUAD_DENOMINATOR.0
+                / GasCost::MEMORY_EXPANSION_QUAD_DENOMINATOR
     }
 }
 
@@ -24,8 +24,14 @@ pub fn memory_copier_gas_cost(
     num_copy_bytes: u64,
 ) -> u64 {
     let num_words = (num_copy_bytes + 31) / 32;
-    num_words * GasCost::COPY.as_u64()
-        + memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size)
+    num_words * GasCost::COPY +
+        // Note that opcodes with a byte size parameter of 0 will not trigger
+        // memory expansion, regardless of their offset parameters.
+        if num_words > 0 {
+            memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size)
+        } else {
+            0
+        }
 }
 
 /// Calculate EIP 150 gas passed to callee.

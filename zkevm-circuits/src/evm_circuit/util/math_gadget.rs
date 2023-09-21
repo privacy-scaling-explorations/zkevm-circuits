@@ -4,13 +4,14 @@ use halo2_proofs::plonk::Expression;
 
 mod abs_word;
 mod add_words;
-mod batched_is_zero;
 mod byte_size;
 mod cmp_words;
 mod comparison;
 mod constant_division;
 mod is_equal;
+mod is_equal_word;
 mod is_zero;
+mod is_zero_word;
 mod lt;
 mod lt_word;
 mod min_max;
@@ -20,18 +21,20 @@ mod mul_add_words512;
 mod mul_word_u64;
 mod pair_select;
 mod range_check;
+mod rlp;
 #[cfg(test)]
 mod test_util;
 
 pub(crate) use abs_word::AbsWordGadget;
 pub(crate) use add_words::AddWordsGadget;
-pub use batched_is_zero::BatchedIsZeroGadget;
 pub(crate) use byte_size::ByteSizeGadget;
 pub(crate) use cmp_words::CmpWordsGadget;
 pub(crate) use comparison::ComparisonGadget;
 pub(crate) use constant_division::ConstantDivisionGadget;
 pub(crate) use is_equal::IsEqualGadget;
+pub(crate) use is_equal_word::IsEqualWordGadget;
 pub(crate) use is_zero::IsZeroGadget;
+pub(crate) use is_zero_word::IsZeroWordGadget;
 pub(crate) use lt::LtGadget;
 pub(crate) use lt_word::LtWordGadget;
 pub(crate) use min_max::MinMaxGadget;
@@ -41,6 +44,7 @@ pub(crate) use mul_add_words512::MulAddWords512Gadget;
 pub(crate) use mul_word_u64::MulWordByU64Gadget;
 pub(crate) use pair_select::PairSelectGadget;
 pub(crate) use range_check::RangeCheckGadget;
+pub(crate) use rlp::ContractCreateGadget;
 
 // This function generates a Lagrange polynomial in the range [start, end) which
 // will be evaluated to 1 when `exp == value`, otherwise 0

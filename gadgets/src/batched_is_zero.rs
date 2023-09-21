@@ -1,12 +1,12 @@
 //! BatchedIsZero chip works as follows:
 //!
 //! Given a list of `values` to be checked if they are all zero:
-//! - nonempty_witness = `inv(value)` for some non-zero `value` from `values` if
-//!   it exists, `0` otherwise
+//! - nonempty_witness = `inv(value)` for some non-zero `value` from `values` if it exists, `0`
+//!   otherwise
 //! - is_zero: 1 if all `values` are `0`, `0` otherwise
 
+use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Phase, VirtualCells},
     poly::Rotation,
@@ -26,13 +26,28 @@ pub struct BatchedIsZeroConfig {
     pub nonempty_witness: Column<Advice>,
 }
 
+impl BatchedIsZeroConfig {
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
+        [
+            (self.is_zero, "GADGETS_BATCHED_IS_ZERO_is_zero"),
+            (
+                self.nonempty_witness,
+                "GADGETS_BATCHED_IS_ZERO_nonempty_witness",
+            ),
+        ]
+        .iter()
+        .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+    }
+}
+
 /// Verify that a list of values are all 0.
 pub struct BatchedIsZeroChip<F, const N: usize> {
     config: BatchedIsZeroConfig,
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt, const N: usize> BatchedIsZeroChip<F, N> {
+impl<F: Field, const N: usize> BatchedIsZeroChip<F, N> {
     /// Configure the BatchedIsZeroChip
     pub fn configure<P: Phase>(
         meta: &mut ConstraintSystem<F>,
@@ -84,11 +99,12 @@ impl<F: FieldExt, const N: usize> BatchedIsZeroChip<F, N> {
                 .iter()
                 .find_map(|value| Option::<F>::from(value.invert()))
             {
-                (F::zero(), inverse)
+                (F::ZERO, inverse)
             } else {
-                (F::one(), F::zero())
+                (F::ONE, F::ZERO)
             }
         });
+
         region.assign_advice(
             || "is_zero",
             config.is_zero,
@@ -117,7 +133,6 @@ impl<F: FieldExt, const N: usize> BatchedIsZeroChip<F, N> {
 mod test {
     use super::*;
     use halo2_proofs::{
-        arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
         halo2curves::bn256::Fr,
@@ -134,15 +149,16 @@ mod test {
     }
 
     #[derive(Default)]
-    struct TestCircuit<F: FieldExt, const N: usize> {
+    struct TestCircuit<F: Field, const N: usize> {
         values: Option<[u64; N]>,
         expect_is_zero: Option<bool>,
         _marker: PhantomData<F>,
     }
 
-    impl<F: FieldExt, const N: usize> Circuit<F> for TestCircuit<F, N> {
+    impl<F: Field, const N: usize> Circuit<F> for TestCircuit<F, N> {
         type Config = TestCircuitConfig<N>;
         type FloorPlanner = SimpleFloorPlanner;
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()
@@ -201,7 +217,7 @@ mod test {
                         || "expect_is_zero",
                         config.expect_is_zero,
                         0,
-                        || Value::known(F::from(*expect_is_zero)),
+                        || Value::known(F::from(*expect_is_zero as u64)),
                     )?;
                     for (value_column, value) in config.values.iter().zip(values.iter()) {
                         region.assign_advice(
@@ -226,7 +242,7 @@ mod test {
         };
         let k = 4;
         let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
-        assert_eq!(prover.verify(), Ok(()));
+        prover.assert_satisfied_par()
     }
 
     #[test]

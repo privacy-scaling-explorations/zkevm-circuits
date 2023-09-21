@@ -3,15 +3,19 @@
 #[cfg(test)]
 mod evm_circ_benches {
     use ark_std::{end_timer, start_timer};
-    use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+    use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
     use eth_types::geth_types::GethData;
-    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
-    use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
-    use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
-    use halo2_proofs::poly::kzg::strategy::SingleStrategy;
     use halo2_proofs::{
         halo2curves::bn256::{Bn256, Fr, G1Affine},
-        poly::commitment::ParamsProver,
+        plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
+        poly::{
+            commitment::ParamsProver,
+            kzg::{
+                commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG},
+                multiopen::{ProverSHPLONK, VerifierSHPLONK},
+                strategy::SingleStrategy,
+            },
+        },
         transcript::{
             Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
         },
@@ -20,11 +24,17 @@ mod evm_circ_benches {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::evm_circuit::{witness::block_convert, EvmCircuit};
+    use zkevm_circuits::evm_circuit::{witness::block_convert, TestEvmCircuit};
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_evm_circuit_prover() {
+        let setup_prfx = crate::constants::SETUP_PREFIX;
+        let proof_gen_prfx = crate::constants::PROOFGEN_PREFIX;
+        let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;
+        // Unique string used by bench results module for parsing the result
+        const BENCHMARK_ID: &str = "EVM Circuit";
+
         let degree: u32 = var("DEGREE")
             .expect("No DEGREE env var was provided")
             .parse()
@@ -34,26 +44,24 @@ mod evm_circ_benches {
             .unwrap()
             .into();
 
-        let mut builder = BlockData::new_from_geth_data_with_params(
-            empty_data.clone(),
-            CircuitsParams::default(),
-        )
-        .new_circuit_input_builder();
+        let mut builder =
+            BlockData::new_from_geth_data_with_params(empty_data.clone(), FixedCParams::default())
+                .new_circuit_input_builder();
 
         builder
             .handle_block(&empty_data.eth_block, &empty_data.geth_traces)
             .unwrap();
 
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert(&builder).unwrap();
 
-        let circuit = EvmCircuit::<Fr>::new(block);
+        let circuit = TestEvmCircuit::<Fr>::new(block);
         let mut rng = XorShiftRng::from_seed([
             0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
             0xbc, 0xe5,
         ]);
 
         // Bench setup generation
-        let setup_message = format!("Setup generation with degree = {}", degree);
+        let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
         let start1 = start_timer!(|| setup_message);
         let general_params = ParamsKZG::<Bn256>::setup(degree, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
@@ -66,7 +74,10 @@ mod evm_circ_benches {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("EVM circuit Proof generation with degree = {}", degree);
+        let proof_message = format!(
+            "{} {} with degree = {}",
+            BENCHMARK_ID, proof_gen_prfx, degree
+        );
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -74,7 +85,7 @@ mod evm_circ_benches {
             Challenge255<G1Affine>,
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            EvmCircuit<Fr>,
+            TestEvmCircuit<Fr>,
         >(
             &general_params,
             &pk,
@@ -88,7 +99,7 @@ mod evm_circ_benches {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "EVM circuit Proof verification");
+        let start3 = start_timer!(|| format!("{} {}", BENCHMARK_ID, proof_ver_prfx));
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 

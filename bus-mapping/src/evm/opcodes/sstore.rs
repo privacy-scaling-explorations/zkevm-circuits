@@ -1,11 +1,9 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::{CallContextField, TxRefundOp};
 use crate::{
-    operation::{StorageOp, TxAccessListAccountStorageOp, RW},
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    operation::{CallContextField, StorageOp, TxAccessListAccountStorageOp, TxRefundOp, RW},
     Error,
 };
-
 use eth_types::{GethExecStep, ToWord, Word};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
@@ -77,7 +75,6 @@ impl Opcode for Sstore {
 
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             StorageOp::new(
                 state.call()?.address,
                 key,
@@ -88,9 +85,19 @@ impl Opcode for Sstore {
             ),
         )?;
 
+        state.push_op(
+            &mut exec_step,
+            RW::READ,
+            TxAccessListAccountStorageOp {
+                tx_id: state.tx_ctx.id(),
+                address: contract_addr,
+                key,
+                is_warm,
+                is_warm_prev: is_warm,
+            },
+        );
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             TxAccessListAccountStorageOp {
                 tx_id: state.tx_ctx.id(),
                 address: state.call()?.address,
@@ -102,11 +109,10 @@ impl Opcode for Sstore {
 
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             TxRefundOp {
                 tx_id: state.tx_ctx.id(),
                 value_prev: state.sdb.refund(),
-                value: geth_step.refund.0,
+                value: geth_step.refund,
             },
         )?;
 
@@ -117,15 +123,18 @@ impl Opcode for Sstore {
 #[cfg(test)]
 mod sstore_tests {
     use super::*;
-    use crate::circuit_input_builder::ExecState;
-    use crate::mock::BlockData;
-    use crate::operation::{CallContextOp, StackOp};
-    use eth_types::bytecode;
-    use eth_types::evm_types::{OpcodeId, StackAddress};
-    use eth_types::geth_types::GethData;
-    use eth_types::Word;
-    use mock::test_ctx::helpers::tx_from_1_to_0;
-    use mock::{TestContext, MOCK_ACCOUNTS};
+    use crate::{
+        circuit_input_builder::ExecState,
+        mock::BlockData,
+        operation::{CallContextOp, StackOp, RW},
+    };
+    use eth_types::{
+        bytecode,
+        evm_types::{OpcodeId, StackAddress},
+        geth_types::GethData,
+        Word,
+    };
+    use mock::{test_ctx::helpers::tx_from_1_to_0, TestContext, MOCK_ACCOUNTS};
     use pretty_assertions::assert_eq;
 
     fn test_ok(is_warm: bool) {
@@ -171,8 +180,8 @@ mod sstore_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 
@@ -251,7 +260,8 @@ mod sstore_tests {
                 )
             )
         );
-        let refund_op = &builder.block.container.tx_refund[step.bus_mapping_instance[9].as_usize()];
+        let refund_op =
+            &builder.block.container.tx_refund[step.bus_mapping_instance[10].as_usize()];
         assert_eq!(
             (refund_op.rw(), refund_op.op()),
             (

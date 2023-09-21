@@ -1,0 +1,11 @@
+[package]
+name = "rustlib"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[build-dependencies]
+gobuild = "0.1.0-alpha.1"
+log = "0.4.14"
+env_logger = "0.9"
+glob = "0.3.1"

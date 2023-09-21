@@ -1,27 +1,28 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_ACCOUNT_ADDRESS,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes, CachedRegion, RandomLinearCombination,
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToAddress, ToLittleEndian};
+use eth_types::{Field, ToAddress};
 use halo2_proofs::plonk::Error;
-use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AddressGadget<F> {
     same_context: SameContextGadget<F>,
-    address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
+    address: WordCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
@@ -29,18 +30,13 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ADDRESS;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let address = cb.query_word_rlc();
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let address = cb.query_word_unchecked();
 
         // Lookup callee address in call context.
-        cb.call_context_lookup(
-            false.expr(),
-            None,
-            CallContextFieldTag::CalleeAddress,
-            from_bytes::expr(&address.cells),
-        );
+        cb.call_context_lookup_read(None, CallContextFieldTag::CalleeAddress, address.to_word());
 
-        cb.stack_push(address.expr());
+        cb.stack_push(address.to_word());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(2.expr()),
@@ -70,18 +66,11 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let address = block.rws[step.rw_indices[1]].stack_value();
-        debug_assert_eq!(call.callee_address, address.to_address());
+        let address = block.get_rws(step, 1).stack_value();
+        debug_assert_eq!(call.address, address.to_address());
 
-        self.address.assign(
-            region,
-            offset,
-            Some(
-                address.to_le_bytes()[..N_BYTES_ACCOUNT_ADDRESS]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+        self.address
+            .assign_h160(region, offset, address.to_address())?;
 
         Ok(())
     }
@@ -89,22 +78,20 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
-    use eth_types::{bytecode, ToWord, Word};
-    use mock::test_ctx::TestContext;
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
+    use eth_types::{bytecode, Word};
+    use mock::{generate_mock_call_bytecode, test_ctx::TestContext, MockCallBytecodeParams};
 
     fn test_root_ok() {
         let bytecode = bytecode! {
             ADDRESS
             STOP
         };
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     fn test_internal_ok(call_data_offset: usize, call_data_length: usize) {
@@ -118,22 +105,13 @@ mod test {
 
         // code A calls code B.
         let pushdata = rand_bytes(8);
-        let code_a = bytecode! {
-            // populate memory in A's context.
-            PUSH8(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call ADDR_B.
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH32(call_data_length) // argsLength
-            PUSH32(call_data_offset) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
-            STOP
-        };
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
+            address: addr_b,
+            pushdata,
+            call_data_length,
+            call_data_offset,
+            ..MockCallBytecodeParams::default()
+        });
 
         let ctx = TestContext::<3, 1>::new(
             None,
@@ -151,7 +129,7 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]

@@ -4,10 +4,11 @@ use anyhow::{bail, Result};
 use eth_types::{bytecode::OpcodeWithData, Bytecode, GethExecTrace, U256};
 use log::{error, info};
 use prettytable::Table;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[derive(Debug, Eq, PartialEq, PartialOrd)]
 pub enum MainnetFork {
+    Shanghai = 15,
     Merge = 14,
     GrayGlacier = 13,
     ArrowGlacier = 12,
@@ -31,6 +32,7 @@ impl FromStr for MainnetFork {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
+            "Shanghai" => Self::Shanghai,
             "Merge" => Self::Merge,
             "Gray Glacier" => Self::GrayGlacier,
             "Arrow Glacier" => Self::ArrowGlacier,
@@ -39,13 +41,16 @@ impl FromStr for MainnetFork {
             "Berlin" => Self::Berlin,
             "Muir Glacier" => Self::MuirGlacier,
             "Istanbul" => Self::Istanbul,
+            "ConstantinopleFix" => Self::Constantinople,
             "Constantinople" => Self::Constantinople,
             "Byzantium" => Self::Byzantium,
             "Spurious Dragon" => Self::SpuriousDragon,
             "TangeringWhistle" => Self::TangerineWhistle,
+            "EIP150" => Self::TangerineWhistle,
+            "EIP158" => Self::TangerineWhistle,
             "Homestead" => Self::Homestead,
             "Frontier" => Self::Frontier,
-            _ => bail!(format!("Unknown network '{}'", s)),
+            _ => bail!(format!("Unknown network '{s}'")),
         })
     }
 }
@@ -59,6 +64,10 @@ impl MainnetFork {
             for network in expect {
                 if let Some(network) = network.strip_prefix(">=") {
                     if crate::utils::TEST_FORK >= crate::utils::MainnetFork::from_str(network)? {
+                        in_network = true;
+                    }
+                } else if let Some(network) = network.strip_prefix('<') {
+                    if crate::utils::TEST_FORK < crate::utils::MainnetFork::from_str(network)? {
                         in_network = true;
                     }
                 } else if crate::utils::TEST_FORK == crate::utils::MainnetFork::from_str(network)? {
@@ -75,7 +84,7 @@ impl MainnetFork {
 pub fn print_trace(trace: GethExecTrace) -> Result<()> {
     fn u256_to_str(u: &U256) -> String {
         if *u > U256::from_str("0x1000000000000000").unwrap() {
-            format!("0x{:x}", u)
+            format!("0x{u:x}")
         } else {
             u.to_string()
         }
@@ -104,7 +113,7 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
             let item = if count == 1 {
                 v.to_string()
             } else {
-                format!("{}[{}]", v, count)
+                format!("{v}[{count}]")
             };
 
             if current_len > len {
@@ -125,12 +134,12 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
     ]);
     for step in trace.struct_logs {
         table.add_row(row![
-            format!("{}", step.pc.0),
+            format!("{}", step.pc),
             format!("{:?}", step.op),
-            format!("{}", step.gas.0),
-            format!("{}", step.gas_cost.0),
+            format!("{}", step.gas),
+            format!("{}", step.gas_cost),
             format!("{}", step.depth),
-            step.error.unwrap_or_else(|| "".to_string()),
+            step.error.unwrap_or_default(),
             split(step.stack.0.iter().map(u256_to_str).collect(), 30),
             split(step.memory.0.iter().map(ToString::to_string).collect(), 30),
             split(kv(step.storage.0), 30)
@@ -146,12 +155,28 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
 
 pub fn current_git_commit() -> Result<String> {
     let output = Command::new("git")
-        .args(&["rev-parse", "HEAD"])
+        .args(["rev-parse", "HEAD"])
         .output()
         .unwrap();
     let git_hash = String::from_utf8(output.stdout).unwrap();
     let git_hash = git_hash[..7].to_string();
     Ok(git_hash)
+}
+
+pub fn current_submodule_git_commit() -> Result<String> {
+    let git_cmd = Command::new("git")
+        .args(["ls-tree", "HEAD"])
+        .stdout(Stdio::piped())
+        .output()?;
+
+    match String::from_utf8(git_cmd.stdout)?
+        .lines()
+        .filter_map(|l| l.strip_suffix("\ttests").and_then(|l| l.split(' ').nth(2)))
+        .next()
+    {
+        Some(git_hash) => Ok(git_hash.to_string()),
+        None => bail!("unknown submodule hash"),
+    }
 }
 
 pub fn bytecode_of(code: &str) -> anyhow::Result<Bytecode> {

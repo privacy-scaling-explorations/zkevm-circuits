@@ -1,20 +1,24 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same},
             },
-            math_gadget::IsZeroGadget,
+            math_gadget::ComparisonGadget,
             CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{Word, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
@@ -23,7 +27,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct StopGadget<F> {
     code_length: Cell<F>,
-    is_out_of_range: IsZeroGadget<F>,
+    out_of_range: ComparisonGadget<F, N_BYTES_PROGRAM_COUNTER>,
     opcode: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 }
@@ -33,15 +37,20 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::STOP;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let code_length = cb.query_cell();
-        cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
-        let is_out_of_range = IsZeroGadget::construct(
+        cb.bytecode_length(cb.curr.state.code_hash.to_word(), code_length.expr());
+
+        let out_of_range = ComparisonGadget::construct(
             cb,
-            code_length.expr() - cb.curr.state.program_counter.expr(),
+            code_length.expr(),
+            cb.curr.state.program_counter.expr(),
         );
+        let (lt, eq) = out_of_range.expr();
+        let is_out_of_range = lt + eq;
+
         let opcode = cb.query_cell();
-        cb.condition(1.expr() - is_out_of_range.expr(), |cb| {
+        cb.condition(1.expr() - is_out_of_range, |cb| {
             cb.opcode_lookup(opcode.expr(), 1.expr());
         });
 
@@ -54,7 +63,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         );
 
         // Call ends with STOP must be successful
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 1.expr());
+        cb.call_context_lookup_read(None, CallContextFieldTag::IsSuccess, Word::one());
 
         let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
         cb.require_equal(
@@ -88,7 +97,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
         Self {
             code_length,
-            is_out_of_range,
+            out_of_range,
             opcode,
             restore_context,
         }
@@ -105,21 +114,17 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
     ) -> Result<(), Error> {
         let code = block
             .bytecodes
-            .get(&call.code_hash)
+            .get_from_h256(&call.code_hash)
             .expect("could not find current environment's bytecode");
-        self.code_length.assign(
-            region,
-            offset,
-            Value::known(F::from(code.bytes.len() as u64)),
-        )?;
 
-        self.is_out_of_range.assign(
-            region,
-            offset,
-            F::from(code.bytes.len() as u64) - F::from(step.program_counter),
-        )?;
+        let code_length = code.codesize() as u64;
+        self.code_length
+            .assign(region, offset, Value::known(F::from(code_length)))?;
 
-        let opcode = step.opcode.unwrap();
+        self.out_of_range
+            .assign(region, offset, F::from(code_length), F::from(step.pc))?;
+
+        let opcode = step.opcode().unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
@@ -134,15 +139,15 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::run_test_circuit_geth_data_default;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{address, bytecode, Bytecode, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
+
     use itertools::Itertools;
     use mock::TestContext;
 
     fn test_ok(bytecode: Bytecode, is_root: bool) {
-        let block = if is_root {
-            TestContext::<2, 1>::new(
+        if is_root {
+            let ctx = TestContext::<2, 1>::new(
                 None,
                 |accs| {
                     accs[0]
@@ -161,10 +166,11 @@ mod test {
                 },
                 |block, _tx| block.number(0xcafeu64),
             )
-            .unwrap()
-            .into()
+            .unwrap();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
         } else {
-            TestContext::<3, 1>::new(
+            let ctx = TestContext::<3, 1>::new(
                 None,
                 |accs| {
                     accs[0]
@@ -197,10 +203,10 @@ mod test {
                 },
                 |block, _tx| block.number(0xcafeu64),
             )
-            .unwrap()
-            .into()
+            .unwrap();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
         };
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
     }
 
     #[test]

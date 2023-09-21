@@ -1,8 +1,6 @@
 //! Ethereum and Evm types used to deserialize responses from web3 / geth.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
-// Temporary until we have more of the crate implemented.
-#![allow(dead_code)]
 // We want to have UPPERCASE idents sometimes.
 #![allow(non_snake_case)]
 // Catch documentation errors caused by code changes.
@@ -20,35 +18,52 @@ pub mod error;
 pub mod bytecode;
 pub mod evm_types;
 pub mod geth_types;
+pub mod keccak;
 pub mod sign_types;
+pub use keccak::{keccak256, Keccak};
 
 pub use bytecode::Bytecode;
 pub use error::Error;
-use halo2_proofs::{
-    arithmetic::{Field as Halo2Field, FieldExt},
-    halo2curves::{
-        bn256::{Fq, Fr},
-        group::ff::PrimeField,
+use halo2_proofs::halo2curves::{
+    bn256::{Fq, Fr},
+    ff::{Field as Halo2Field, FromUniformBytes, PrimeField},
+};
+
+use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage, OpcodeId};
+use ethers_core::types;
+pub use ethers_core::{
+    abi::ethereum_types::{BigEndianHash, U512},
+    types::{
+        transaction::{eip2930::AccessList, response::Transaction},
+        Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
     },
 };
 
-use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage};
-use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
-pub use ethers_core::abi::ethereum_types::{BigEndianHash, U512};
-use ethers_core::types;
-pub use ethers_core::types::{
-    transaction::{eip2930::AccessList, response::Transaction},
-    Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
-};
-
 use serde::{de, Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fmt;
-use std::str::FromStr;
+use std::{collections::HashMap, fmt, str::FromStr};
 
-/// Trait used to reduce verbosity with the declaration of the [`FieldExt`]
+/// Trait used to reduce verbosity with the declaration of the [`PrimeField`]
 /// trait and its repr.
-pub trait Field: FieldExt + Halo2Field + PrimeField<Repr = [u8; 32]> {}
+pub trait Field: Halo2Field + PrimeField<Repr = [u8; 32]> + FromUniformBytes<64> + Ord {
+    /// Gets the lower 128 bits of this field element when expressed
+    /// canonically.
+    fn get_lower_128(&self) -> u128 {
+        let bytes = self.to_repr();
+        bytes[..16]
+            .iter()
+            .rev()
+            .fold(0u128, |acc, value| acc * 256u128 + *value as u128)
+    }
+    /// Gets the lower 32 bits of this field element when expressed
+    /// canonically.
+    fn get_lower_32(&self) -> u32 {
+        let bytes = self.to_repr();
+        bytes[..4]
+            .iter()
+            .rev()
+            .fold(0u32, |acc, value| acc * 256u32 + *value as u32)
+    }
+}
 
 // Impl custom `Field` trait for BN256 Fr to be used and consistent with the
 // rest of the workspace.
@@ -201,11 +216,40 @@ impl ToWord for u64 {
     }
 }
 
+impl ToWord for u128 {
+    fn to_word(&self) -> Word {
+        Word::from(*self)
+    }
+}
+
 impl ToWord for usize {
     fn to_word(&self) -> Word {
         u64::try_from(*self)
             .expect("usize bigger than u64")
             .to_word()
+    }
+}
+
+impl ToWord for i32 {
+    fn to_word(&self) -> Word {
+        let value = Word::from(self.unsigned_abs() as u64);
+        if self.is_negative() {
+            value.overflowing_neg().0
+        } else {
+            value
+        }
+    }
+}
+
+impl ToWord for U64 {
+    fn to_word(&self) -> Word {
+        self.as_u64().into()
+    }
+}
+
+impl ToWord for Word {
+    fn to_word(&self) -> Word {
+        *self
     }
 }
 
@@ -258,7 +302,7 @@ pub struct EIP1186ProofResponse {
     /// The hash of the code of the account
     pub code_hash: H256,
     /// The nonce of the account
-    pub nonce: U256,
+    pub nonce: U64,
     /// SHA3 of the StorageRoot
     pub storage_hash: H256,
     /// Array of rlp-serialized MerkleTree-Nodes
@@ -270,13 +314,13 @@ pub struct EIP1186ProofResponse {
 #[derive(Deserialize)]
 #[doc(hidden)]
 struct GethExecStepInternal {
-    pc: ProgramCounter,
+    pc: u64,
     op: OpcodeId,
-    gas: Gas,
+    gas: u64,
     #[serde(default)]
-    refund: Gas,
+    refund: u64,
     #[serde(rename = "gasCost")]
-    gas_cost: GasCost,
+    gas_cost: u64,
     depth: u16,
     error: Option<String>,
     // stack is in hex 0x prefixed
@@ -294,11 +338,11 @@ struct GethExecStepInternal {
 #[derive(Clone, Eq, PartialEq, Serialize)]
 #[doc(hidden)]
 pub struct GethExecStep {
-    pub pc: ProgramCounter,
+    pub pc: u64,
     pub op: OpcodeId,
-    pub gas: Gas,
-    pub gas_cost: GasCost,
-    pub refund: Gas,
+    pub gas: u64,
+    pub gas_cost: u64,
+    pub refund: u64,
     pub depth: u16,
     pub error: Option<String>,
     // stack is in hex 0x prefixed
@@ -331,10 +375,10 @@ impl<'a> fmt::Debug for DebugWord<'a> {
 impl fmt::Debug for GethExecStep {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Step")
-            .field("pc", &format_args!("0x{:04x}", self.pc.0))
+            .field("pc", &format_args!("0x{:04x}", self.pc))
             .field("op", &self.op)
-            .field("gas", &format_args!("{}", self.gas.0))
-            .field("gas_cost", &format_args!("{}", self.gas_cost.0))
+            .field("gas", &format_args!("{}", self.gas))
+            .field("gas_cost", &format_args!("{}", self.gas_cost))
             .field("depth", &self.depth)
             .field("error", &self.error)
             .field("stack", &self.stack)
@@ -399,7 +443,7 @@ pub struct ResultGethExecTrace {
 #[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq)]
 pub struct GethExecTrace {
     /// Used gas
-    pub gas: Gas,
+    pub gas: u64,
     /// True when the transaction has failed.
     pub failed: bool,
     /// Return value of execution which is a hex encoded byte array
@@ -446,8 +490,7 @@ macro_rules! word_map {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm_types::opcode_ids::OpcodeId;
-    use crate::evm_types::{memory::Memory, stack::Stack};
+    use crate::evm_types::{memory::Memory, opcode_ids::OpcodeId, stack::Stack};
 
     #[test]
     fn deserialize_geth_exec_trace2() {
@@ -516,16 +559,16 @@ mod tests {
         assert_eq!(
             trace,
             GethExecTrace {
-                gas: Gas(26809),
+                gas: 26809,
                 failed: false,
                 return_value: "".to_owned(),
                 struct_logs: vec![
                     GethExecStep {
-                        pc: ProgramCounter(0),
+                        pc: 0,
                         op: OpcodeId::PUSH1,
-                        gas: Gas(22705),
-                        refund: Gas(0),
-                        gas_cost: GasCost(3),
+                        gas: 22705,
+                        refund: 0,
+                        gas_cost: 3,
                         depth: 1,
                         error: None,
                         stack: Stack::new(),
@@ -533,11 +576,11 @@ mod tests {
                         memory: Memory::new(),
                     },
                     GethExecStep {
-                        pc: ProgramCounter(163),
+                        pc: 163,
                         op: OpcodeId::SLOAD,
-                        gas: Gas(5217),
-                        refund: Gas(0),
-                        gas_cost: GasCost(2100),
+                        gas: 5217,
+                        refund: 0,
+                        gas_cost: 2100,
                         depth: 1,
                         error: None,
                         stack: Stack(vec![word!("0x1003e2d2"), word!("0x2a"), word!("0x0")]),
@@ -545,11 +588,11 @@ mod tests {
                         memory: Memory::from(vec![word!("0x0"), word!("0x0"), word!("0x080")]),
                     },
                     GethExecStep {
-                        pc: ProgramCounter(189),
+                        pc: 189,
                         op: OpcodeId::SHA3,
-                        gas: Gas(178805),
-                        refund: Gas(0),
-                        gas_cost: GasCost(42),
+                        gas: 178805,
+                        refund: 0,
+                        gas_cost: 42,
                         depth: 1,
                         error: None,
                         stack: Stack(vec![
@@ -588,8 +631,7 @@ mod tests {
 #[cfg(test)]
 mod eth_types_test {
     use super::*;
-    use crate::Error;
-    use crate::Word;
+    use crate::{Error, Word};
     use std::str::FromStr;
 
     #[test]
@@ -671,6 +713,18 @@ mod eth_types_test {
         let word_from_str = Word::from_str(word_str).unwrap();
 
         assert_eq!(word_from_u128, word_from_str);
+        Ok(())
+    }
+
+    #[test]
+    fn creation_tx_into_tx_req() -> Result<(), Error> {
+        let tx = &geth_types::Transaction {
+            to: None,
+            ..Default::default()
+        };
+
+        let req: ethers_core::types::TransactionRequest = tx.into();
+        assert_eq!(req.to, None);
         Ok(())
     }
 }

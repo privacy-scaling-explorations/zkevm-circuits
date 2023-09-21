@@ -1,10 +1,19 @@
 use crate::{
-    evm_circuit::util::{
-        self, constraint_builder::ConstraintBuilder, from_bytes, math_gadget::*, CachedRegion,
+    evm_circuit::{
+        param::N_BYTES_WORD,
+        util::{
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            math_gadget::*,
+            CachedRegion,
+        },
     },
-    util::Expr,
+    util::{
+        word::{Word32Cell, WordExpr},
+        Expr,
+    },
 };
 use eth_types::{Field, ToLittleEndian, Word};
+use gadgets::util::sum;
 use halo2_proofs::plonk::Error;
 
 /// Construction of 256-bit word original and absolute values, which is useful
@@ -15,23 +24,21 @@ use halo2_proofs::plonk::Error;
 /// (expressed as an U256 of `2^255`).
 #[derive(Clone, Debug)]
 pub(crate) struct AbsWordGadget<F> {
-    x: util::Word<F>,
-    x_abs: util::Word<F>,
-    sum: util::Word<F>,
+    x: Word32Cell<F>,
+    x_abs: Word32Cell<F>,
+    sum: Word32Cell<F>,
     is_neg: LtGadget<F, 1>,
     add_words: AddWordsGadget<F, 2, false>,
 }
 
 impl<F: Field> AbsWordGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
-        let x = cb.query_word_rlc();
-        let x_abs = cb.query_word_rlc();
-        let sum = cb.query_word_rlc();
-        let x_lo = from_bytes::expr(&x.cells[0..16]);
-        let x_hi = from_bytes::expr(&x.cells[16..32]);
-        let x_abs_lo = from_bytes::expr(&x_abs.cells[0..16]);
-        let x_abs_hi = from_bytes::expr(&x_abs.cells[16..32]);
-        let is_neg = LtGadget::construct(cb, 127.expr(), x.cells[31].expr());
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let x = cb.query_word32();
+        let x_abs = cb.query_word32();
+        let sum = cb.query_word32();
+        let (x_lo, x_hi) = x.to_word().to_lo_hi();
+        let (x_abs_lo, x_abs_hi) = x_abs.to_word().to_lo_hi();
+        let is_neg = LtGadget::construct(cb, 127.expr(), x.limbs[31].expr());
 
         cb.add_constraint(
             "x_abs_lo == x_lo when x >= 0",
@@ -47,7 +54,7 @@ impl<F: Field> AbsWordGadget<F> {
         let add_words = AddWordsGadget::construct(cb, [x.clone(), x_abs.clone()], sum.clone());
         cb.add_constraint(
             "sum == 0 when x < 0",
-            is_neg.expr() * add_words.sum().expr(),
+            is_neg.expr() * sum::expr(add_words.sum().to_word_n::<N_BYTES_WORD>().limbs),
         );
         cb.add_constraint(
             "carry_hi == 1 when x < 0",
@@ -70,9 +77,8 @@ impl<F: Field> AbsWordGadget<F> {
         x: Word,
         x_abs: Word,
     ) -> Result<(), Error> {
-        self.x.assign(region, offset, Some(x.to_le_bytes()))?;
-        self.x_abs
-            .assign(region, offset, Some(x_abs.to_le_bytes()))?;
+        self.x.assign_u256(region, offset, x)?;
+        self.x_abs.assign_u256(region, offset, x_abs)?;
         self.is_neg.assign(
             region,
             offset,
@@ -80,30 +86,28 @@ impl<F: Field> AbsWordGadget<F> {
             u64::from(x.to_le_bytes()[31]).into(),
         )?;
         let sum = x.overflowing_add(x_abs).0;
-        self.sum.assign(region, offset, Some(sum.to_le_bytes()))?;
+        self.sum.assign_u256(region, offset, sum)?;
         self.add_words.assign(region, offset, [x, x_abs], sum)
-    }
-
-    pub(crate) fn x(&self) -> &util::Word<F> {
-        &self.x
-    }
-
-    pub(crate) fn x_abs(&self) -> &util::Word<F> {
-        &self.x_abs
     }
 
     pub(crate) fn is_neg(&self) -> &LtGadget<F, 1> {
         &self.is_neg
     }
+
+    pub(crate) fn x(&self) -> &Word32Cell<F> {
+        &self.x
+    }
+    pub(crate) fn x_abs(&self) -> &Word32Cell<F> {
+        &self.x_abs
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_util::*;
-    use super::*;
+    use super::{super::test_util::*, *};
+    use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
     use eth_types::{Word, U256};
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// AbsWordGadgetContainer: require(abs(a) == -a if IS_NEG else a)
@@ -112,7 +116,7 @@ mod tests {
     }
 
     impl<F: Field, const IS_NEG: bool> MathGadgetContainer<F> for AbsWordGadgetContainer<F, IS_NEG> {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let absword_gadget = AbsWordGadget::<F>::construct(cb);
             cb.require_equal(
                 "is_neg is correct",

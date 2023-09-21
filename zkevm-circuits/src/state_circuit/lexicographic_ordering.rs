@@ -1,4 +1,4 @@
-use super::{lookups, SortKeysConfig, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER};
+use super::{lookups, param::*, SortKeysConfig};
 use crate::{evm_circuit::param::N_BYTES_WORD, impl_expr, util::Expr, witness::Rw};
 use eth_types::{Field, ToBigEndian};
 use gadgets::binary_number::{AsBits, BinaryNumberChip, BinaryNumberConfig};
@@ -31,8 +31,8 @@ use strum_macros::EnumIter;
 // lookup for An-Bn.
 
 // We show this with following advice columns and constraints:
-// - first_different_limb: first index where the limbs differ. We use a
-//   BinaryNumberChip here to reduce the degree of the constraints.
+// - first_different_limb: first index where the limbs differ. We use a BinaryNumberChip here to
+//   reduce the degree of the constraints.
 // - limb_difference: the difference between the limbs at first_different_limb.
 // - limb_difference_inverse: the inverse of limb_difference
 
@@ -196,7 +196,7 @@ impl Config {
             || "upper_limb_difference",
             self.selector,
             offset,
-            || Value::known(F::one()),
+            || Value::known(F::ONE),
         )?;
 
         let cur_be_limbs = rw_to_be_limbs(cur);
@@ -230,6 +230,21 @@ impl Config {
 
         Ok(index)
     }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
+        [
+            (self.limb_difference, "LO_limb_difference"),
+            (self.limb_difference_inverse, "LO_limb_difference_inverse"),
+        ]
+        .iter()
+        .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+        // fixed column
+        region.name_column(
+            || format!("{}_LO_upper_limb_difference", prefix),
+            self.selector,
+        );
+    }
 }
 
 struct Queries<F: Field> {
@@ -237,7 +252,7 @@ struct Queries<F: Field> {
     field_tag: Expression<F>, // 8 bits, so we can pack tag + field_tag into one limb.
     id_limbs: [Expression<F>; N_LIMBS_ID],
     address_limbs: [Expression<F>; N_LIMBS_ACCOUNT_ADDRESS],
-    storage_key_bytes: [Expression<F>; N_BYTES_WORD],
+    storage_key_limbs: [Expression<F>; N_LIMBS_WORD],
     rw_counter_limbs: [Expression<F>; N_LIMBS_RW_COUNTER],
 }
 
@@ -250,18 +265,13 @@ impl<F: Field> Queries<F> {
             id_limbs: keys.id.limbs.map(&mut query_advice),
             address_limbs: keys.address.limbs.map(&mut query_advice),
             field_tag: query_advice(keys.field_tag),
-            storage_key_bytes: keys.storage_key.bytes.map(&mut query_advice),
+            storage_key_limbs: keys.storage_key.limbs.map(&mut query_advice),
             rw_counter_limbs: keys.rw_counter.limbs.map(query_advice),
         }
     }
 
     fn storage_key_be_limbs(&self) -> Vec<Expression<F>> {
-        self.storage_key_bytes
-            .iter()
-            .rev()
-            .tuples()
-            .map(|(hi, lo)| (1u64 << 8).expr() * hi.clone() + lo.clone())
-            .collect()
+        self.storage_key_limbs.iter().rev().cloned().collect()
     }
 
     fn be_limbs(&self) -> Vec<Expression<F>> {

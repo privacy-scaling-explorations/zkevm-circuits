@@ -1,8 +1,9 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::Error;
-use eth_types::evm_types::MemoryAddress;
-use eth_types::{GethExecStep, ToBigEndian, ToLittleEndian};
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    Error,
+};
+use eth_types::{evm_types::MemoryAddress, GethExecStep, ToBigEndian, ToLittleEndian};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MSTORE`](crate::evm::OpcodeId::MSTORE)
@@ -113,8 +114,8 @@ mod mstore_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 
@@ -179,8 +180,8 @@ mod mstore_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 
