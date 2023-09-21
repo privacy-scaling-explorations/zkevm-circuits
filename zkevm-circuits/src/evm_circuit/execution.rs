@@ -94,6 +94,7 @@ mod opcode_not;
 mod origin;
 mod pc;
 mod pop;
+mod precompiles;
 mod push;
 mod push0;
 mod return_revert;

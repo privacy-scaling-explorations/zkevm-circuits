@@ -2,7 +2,7 @@ use crate::{
     evm_circuit::step::{ExecutionState, ResponsibleOp},
     impl_expr,
 };
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{evm::OpcodeId, precompile::PrecompileCalls};
 use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
@@ -27,6 +27,7 @@ pub enum FixedTableTag {
     ResponsibleOpcode,
     Pow2,
     ConstantGasCost,
+    PrecompileInfo,
 }
 impl_expr!(FixedTableTag);
 
@@ -116,6 +117,17 @@ impl FixedTableTag {
                         ]
                     }),
             ),
+            Self::PrecompileInfo => Box::new(PrecompileCalls::iter().map(move |precompile| {
+                [
+                    tag,
+                    F::from({
+                        let state: ExecutionState = precompile.into();
+                        state.as_u64()
+                    }),
+                    F::from(u64::from(precompile)),
+                    F::from(precompile.base_gas_cost().0),
+                ]
+            })),
         }
     }
 }

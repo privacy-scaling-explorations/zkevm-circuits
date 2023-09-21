@@ -28,6 +28,7 @@ mod test_util;
 
 pub(crate) use abs_word::AbsWordGadget;
 pub(crate) use add_words::AddWordsGadget;
+pub(crate) use binary_number::BinaryNumberGadget;
 pub(crate) use byte_size::ByteSizeGadget;
 pub(crate) use cmp_words::CmpWordsGadget;
 pub(crate) use comparison::ComparisonGadget;
