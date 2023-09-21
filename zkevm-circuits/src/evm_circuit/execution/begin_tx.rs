@@ -634,13 +634,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use std::vec;
-
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{self, bytecode, evm_types::GasCost, word, Bytecode, Word};
-
+    use eth_types::{self, bytecode, evm_types::GasCost, word, Address, Bytecode, Word};
+    use ethers_core::utils::get_contract_address;
     use mock::{eth, gwei, MockTransaction, TestContext, MOCK_ACCOUNTS};
+    use std::vec;
 
     fn gas(call_data: &[u8]) -> Word {
         Word::from(
@@ -919,5 +918,29 @@ mod test {
         begin_tx_deploy(0x0100000000000000u64);
         begin_tx_deploy(0x1020304050607080u64);
         begin_tx_deploy(0xfffffffffffffffeu64);
+    }
+
+    #[test]
+    fn create_tx_for_existing_account() {
+        let address = Address::repeat_byte(23);
+        let nonce = 10;
+        let new_address = get_contract_address(address, nonce + 1);
+
+        let ctx = TestContext::<1, 2>::new(
+            None,
+            |accs| {
+                accs[0].address(address).nonce(nonce).balance(eth(10));
+            },
+            |mut txs, _| {
+                txs[0].from(address).to(new_address).value(eth(2));
+                txs[1].from(address);
+            },
+            |block, _| block,
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+
+        panic!();
     }
 }
