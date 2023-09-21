@@ -131,6 +131,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
             step_next,
             &challenges_exprs,
             ExecutionState::STOP,
+            false,
         );
         let math_gadget_container = G::configure_gadget_container(&mut cb);
         let (constraints, stored_expressions, _) = cb.build();

@@ -2,12 +2,13 @@
 
 use super::{
     execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep, ExpEvent,
+    ProtocolInstance,
 };
 use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
 };
-use eth_types::{evm_unimplemented, Address, Word};
+use eth_types::{evm_unimplemented, Address, Hash, Word};
 use std::collections::HashMap;
 
 /// Context of a [`Block`] which can mutate in a [`Transaction`].
@@ -68,8 +69,8 @@ pub struct Block {
     pub number: Word,
     /// difficulty
     pub timestamp: Word,
-    /// gas limit
-    pub difficulty: Word,
+    /// mix hash
+    pub mix_hash: Hash,
     /// base fee
     pub base_fee: Word,
     /// State root of the previous block
@@ -90,6 +91,9 @@ pub struct Block {
     pub circuits_params: CircuitsParams,
     /// Original block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
+    /// Protocol instance from protocol
+    /// If this is set, means we are in the taiko context
+    pub protocol_instance: Option<ProtocolInstance>,
 }
 
 impl Block {
@@ -100,6 +104,7 @@ impl Block {
         prev_state_root: Word,
         eth_block: &eth_types::Block<eth_types::Transaction>,
         circuits_params: CircuitsParams,
+        protocol_instance: Option<ProtocolInstance>,
     ) -> Result<Self, Error> {
         if eth_block.base_fee_per_gas.is_none() {
             // FIXME: resolve this once we have proper EIP-1559 support
@@ -121,7 +126,9 @@ impl Block {
                 .low_u64()
                 .into(),
             timestamp: eth_block.timestamp,
-            difficulty: eth_block.difficulty,
+            mix_hash: eth_block
+                .mix_hash
+                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
             base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
             prev_state_root,
             container: OperationContainer::new(),
@@ -141,12 +148,18 @@ impl Block {
             sha3_inputs: Vec::new(),
             circuits_params,
             eth_block: eth_block.clone(),
+            protocol_instance,
         })
     }
 
     /// Return the list of transactions of this block.
     pub fn txs(&self) -> &[Transaction] {
         &self.txs
+    }
+
+    /// Check if in the taiko context.
+    pub fn is_taiko(&self) -> bool {
+        self.protocol_instance.is_some()
     }
 
     #[cfg(test)]

@@ -9,10 +9,9 @@ use zkevm_circuits::{
         taiko_aggregation::AccumulationSchemeType, KzgDk, KzgSvk, TaikoAggregationCircuit,
     },
     taiko_super_circuit::{test::block_1tx, SuperCircuit},
-    witness::ProtocolInstance,
 };
 
-use bus_mapping::circuit_input_builder::CircuitsParams;
+use bus_mapping::circuit_input_builder::{CircuitsParams, ProtocolInstance};
 
 use rand::SeedableRng;
 
@@ -42,6 +41,9 @@ use snark_verifier::{
     system::halo2::{compile, transcript::evm::EvmTranscript, Config},
     verifier::SnarkVerifier,
 };
+
+const MIN_APP_DEGREE: u32 = 18;
+const MIN_AGG_DEGREE: u32 = 24;
 
 /// Number of limbs to decompose a elliptic curve base field element into.
 pub const LIMBS: usize = 4;
@@ -159,16 +161,9 @@ fn gen_application_snark(
         max_evm_rows: 0,
         max_keccak_rows: 0,
     };
-    let protocol_instance = ProtocolInstance {
-        anchor_gas_limit: 150000,
-        ..Default::default()
-    };
-    let (_, super_circuit, _, _) = SuperCircuit::<_>::build(
-        block_1tx(&protocol_instance),
-        circuits_params,
-        protocol_instance,
-    )
-    .unwrap();
+    let protocol_instance = ProtocolInstance::default();
+    let (_, super_circuit, _, _) =
+        SuperCircuit::<_>::build(block_1tx(), circuits_params, protocol_instance).unwrap();
 
     // let pk = gen_pk(params, &super_circuit, Some(Path::new("./examples/app.pk")),
     // super_circuit.params());
@@ -183,11 +178,11 @@ fn gen_application_snark(
 }
 
 fn create_root_super_circuit_prover_sdk<const T: u64, AS: AccumulationSchemeSDK>() {
-    let params_app = gen_srs(18);
+    let params_app = gen_srs(MIN_APP_DEGREE);
     let aggregation_type = T.into();
     let snarks = [(); 1].map(|_| gen_application_snark(&params_app, aggregation_type));
 
-    let params = gen_srs(22);
+    let params = gen_srs(MIN_AGG_DEGREE);
     let mut snark_roots = Vec::new();
     for snark in snarks {
         let pcd_circuit = TaikoAggregationCircuit::<AS>::new(&params, [snark]).unwrap();
@@ -228,7 +223,7 @@ fn create_root_super_circuit_prover_sdk<const T: u64, AS: AccumulationSchemeSDK>
     }
 
     println!("gen blocks agg snark");
-    let params = gen_srs(22);
+    let params = gen_srs(MIN_AGG_DEGREE);
     let agg_circuit = TaikoAggregationCircuit::<AS>::new(&params, snark_roots).unwrap();
     println!("new root agg circuit {}", agg_circuit);
 
@@ -289,14 +284,12 @@ fn create_root_super_circuit_prover_sdk<const T: u64, AS: AccumulationSchemeSDK>
 // for N super circuit -> 1 root circuit integration
 fn create_1_level_root_super_circuit_prover_sdk<const T: u64, AS: AccumulationSchemeSDK>() {
     let agg_type = T.into();
-    let app_degree = 18;
-    let min_k_aggretation = 22;
-    let mut params_app = gen_srs(min_k_aggretation);
-    params_app.downsize(app_degree);
+    let mut params_app = gen_srs(MIN_AGG_DEGREE);
+    params_app.downsize(MIN_APP_DEGREE);
     let snarks = [(); 1].map(|_| gen_application_snark(&params_app, agg_type));
 
     println!("gen blocks agg snark");
-    let params = gen_srs(min_k_aggretation);
+    let params = gen_srs(MIN_AGG_DEGREE);
     let agg_circuit = TaikoAggregationCircuit::<AS>::new(&params, snarks).unwrap();
     let start0 = start_timer!(|| "gen vk & pk");
     // let pk = gen_pk(

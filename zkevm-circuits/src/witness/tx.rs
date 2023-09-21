@@ -23,6 +23,10 @@ pub struct Transaction {
     pub gas: u64,
     /// The gas price
     pub gas_price: Word,
+    /// The gas tip cap
+    pub gas_tip_cap: Word,
+    /// The gas fee cap
+    pub gas_fee_cap: Word,
     /// The caller address
     pub caller_address: Address,
     /// The callee address
@@ -52,6 +56,11 @@ pub struct Transaction {
 }
 
 impl Transaction {
+    /// Return true if it is the first transaction.
+    pub fn is_first_tx(&self) -> bool {
+        self.id == 1
+    }
+
     /// Assignments for tx table, split into tx_data (all fields except
     /// calldata) and tx_calldata
     pub fn table_assignments<F: Field>(
@@ -78,6 +87,22 @@ impl Transaction {
                 challenges
                     .evm_word()
                     .map(|challenge| rlc::value(&self.gas_price.to_le_bytes(), challenge)),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::GasTipCap as u64)),
+                Value::known(F::ZERO),
+                challenges
+                    .evm_word()
+                    .map(|challenge| rlc::value(&self.gas_tip_cap.to_le_bytes(), challenge)),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::GasFeeCap as u64)),
+                Value::known(F::ZERO),
+                challenges
+                    .evm_word()
+                    .map(|challenge| rlc::value(&self.gas_fee_cap.to_le_bytes(), challenge)),
             ],
             [
                 Value::known(F::from(self.id as u64)),
@@ -176,6 +201,8 @@ pub(super) fn tx_convert(
         nonce: tx.tx.nonce.as_u64(),
         gas: tx.gas(),
         gas_price: tx.tx.gas_price,
+        gas_tip_cap: tx.tx.gas_tip_cap,
+        gas_fee_cap: tx.tx.gas_fee_cap,
         caller_address: tx.tx.from,
         callee_address: tx.tx.to_or_contract_addr(),
         is_create: tx.is_create(),

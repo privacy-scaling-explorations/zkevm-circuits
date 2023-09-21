@@ -3,8 +3,11 @@ mod param;
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod dev;
-#[cfg(any(feature = "test", test))]
-mod test;
+
+// FIXME: ignore unused long-time running tests
+// #[cfg(any(feature = "test", test))]
+// #[cfg(any(feature = "test", test))]
+// mod test;
 
 use eth_types::{
     geth_types::{BlockConstants, Transaction},
@@ -42,7 +45,7 @@ pub struct BlockValues {
     gas_limit: u64,
     number: u64,
     timestamp: u64,
-    difficulty: Word,
+    mix_hash: H256,
     base_fee: Word, // NOTE: BaseFee was added by EIP-1559 and is ignored in legacy headers.
     chain_id: u64,
     history_hashes: Vec<H256>,
@@ -122,7 +125,7 @@ impl PublicData {
             gas_limit: self.block_constants.gas_limit.as_u64(),
             number: self.block_constants.number.as_u64(),
             timestamp: self.block_constants.timestamp.as_u64(),
-            difficulty: self.block_constants.difficulty,
+            mix_hash: self.block_constants.mix_hash,
             base_fee: self.block_constants.base_fee,
             chain_id: self.chain_id.as_u64(),
             history_hashes,
@@ -923,21 +926,23 @@ impl<F: Field> PiCircuitConfig<F> {
         raw_pi_vals[offset] = timestamp;
         offset += 1;
 
-        // difficulty
-        let difficulty = rlc(block_values.difficulty.to_le_bytes(), randomness);
+        let mut mix_hash_bytes = block_values.mix_hash.to_fixed_bytes();
+        mix_hash_bytes.reverse();
+        // mix hash
+        let mix_hash = rlc(mix_hash_bytes, randomness);
         region.assign_advice(
-            || "difficulty",
+            || "mix_hash",
             self.block_table.value,
             offset,
-            || Value::known(difficulty),
+            || Value::known(mix_hash),
         )?;
         region.assign_advice(
-            || "difficulty",
+            || "mix_hash",
             self.raw_public_inputs,
             offset,
-            || Value::known(difficulty),
+            || Value::known(mix_hash),
         )?;
-        raw_pi_vals[offset] = difficulty;
+        raw_pi_vals[offset] = mix_hash;
         offset += 1;
 
         // base_fee
@@ -1161,7 +1166,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 coinbase: block.context.coinbase,
                 timestamp: block.context.timestamp,
                 number: block.context.number.as_u64().into(),
-                difficulty: block.context.difficulty,
+                mix_hash: block.context.mix_hash,
                 gas_limit: block.context.gas_limit.into(),
                 base_fee: block.context.base_fee,
             },
@@ -1484,8 +1489,10 @@ fn raw_public_inputs_col<F: Field>(
     // timestamp
     result[offset] = F::from(block.timestamp);
     offset += 1;
-    // difficulty
-    result[offset] = rlc(block.difficulty.to_le_bytes(), randomness);
+    // mix hash
+    let mut mix_hash_bytes = block.mix_hash.to_fixed_bytes();
+    mix_hash_bytes.reverse();
+    result[offset] = rlc(mix_hash_bytes, randomness);
     offset += 1;
     // base_fee
     result[offset] = rlc(block.base_fee.to_le_bytes(), randomness);

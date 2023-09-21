@@ -59,8 +59,8 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         nonce_prev.into(),
     )?;
 
-    // Add caller and callee into access list
-    for address in [call.caller_address, call.address] {
+    // Add caller, callee and coinbase (for EIP-3651) to access list.
+    for address in [call.caller_address, call.address, state.block.coinbase] {
         let is_warm_prev = !state.sdb.add_account_to_access_list(address);
         state.tx_accesslist_account_write(
             &mut exec_step,
@@ -71,11 +71,19 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         )?;
     }
 
+    let init_code_gas_cost = if state.tx.is_create() {
+        // Calculate gas cost of init code for EIP-3860.
+        (state.tx.tx.call_data.len() as u64 + 31) / 32 * eth_types::evm_types::INIT_CODE_WORD_GAS
+    } else {
+        0
+    };
+
     let intrinsic_gas_cost = if state.tx.is_create() {
         GasCost::CREATION_TX.as_u64()
     } else {
         GasCost::TX.as_u64()
-    } + state.tx.tx.call_data_gas_cost();
+    } + state.tx.tx.call_data_gas_cost()
+        + init_code_gas_cost;
     exec_step.gas_cost = GasCost(intrinsic_gas_cost);
 
     // Get code_hash of callee
@@ -107,7 +115,6 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         call.is_create(),
         call.value,
         Some(state.tx.tx.gas_price * state.tx.gas()),
-        state.tx_ctx.is_anchor_tx(),
     )?;
 
     // In case of contract creation we wish to verify the correctness of the
@@ -265,7 +272,13 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
         caller_balance_prev,
     )?;
 
-    let effective_tip = state.tx.tx.gas_price - state.block.base_fee;
+    let base_fee = if state.is_anchor_tx() {
+        0.into()
+    } else {
+        state.block.base_fee
+    };
+
+    let effective_tip = state.tx.tx.gas_price - base_fee;
     let (found, coinbase_account) = state.sdb.get_account(&state.block.coinbase);
     if !found {
         return Err(Error::AccountNotFound(state.block.coinbase));
@@ -280,6 +293,32 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
         coinbase_balance,
         coinbase_balance_prev,
     )?;
+
+    // transfer base fee to treasury account in taiko context
+    if state.block.is_taiko() {
+        let treasury = state
+            .block
+            .protocol_instance
+            .clone()
+            .unwrap()
+            .meta_hash
+            .treasury;
+        // add treasury account
+        let (found, treasury_account) = state.sdb.get_account(&treasury);
+        if !found {
+            return Err(Error::AccountNotFound(treasury));
+        }
+        let treasury_balance_prev = treasury_account.balance;
+        let treasury_balance =
+            treasury_balance_prev + base_fee * (state.tx.gas() - exec_step.gas_left.0);
+        state.account_write(
+            &mut exec_step,
+            treasury,
+            AccountField::Balance,
+            treasury_balance,
+            treasury_balance_prev,
+        )?;
+    }
 
     // handle tx receipt tag
     state.tx_receipt_write(

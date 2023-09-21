@@ -12,6 +12,10 @@ pub enum TxFieldTag {
     Gas,
     /// GasPrice
     GasPrice,
+    /// GasTipCap
+    GasTipCap,
+    /// GasFeeCap
+    GasFeeCap,
     /// CallerAddress
     CallerAddress,
     /// CalleeAddress

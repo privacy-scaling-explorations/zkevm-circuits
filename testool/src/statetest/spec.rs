@@ -6,7 +6,7 @@ use std::{collections::HashMap, str::FromStr};
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Env {
     pub current_coinbase: Address,
-    pub current_difficulty: U256,
+    pub current_mix_hash: H256,
     pub current_gas_limit: u64,
     pub current_number: u64,
     pub current_timestamp: u64,
@@ -90,10 +90,7 @@ impl std::fmt::Display for StateTest {
         }
         table.add_row(row!["coinbase", format!("{:?}", self.env.current_coinbase)]);
 
-        table.add_row(row![
-            "difficulty",
-            format!("{}", self.env.current_difficulty)
-        ]);
+        table.add_row(row!["mix_hash", format!("{}", self.env.current_mix_hash)]);
         table.add_row(row!["number", format!("{}", self.env.current_number)]);
         table.add_row(row!["timestamp", format!("{}", self.env.current_timestamp)]);
         table.add_row(row!["prev_hash", format!("{:?}", self.env.previous_hash)]);
@@ -262,7 +259,7 @@ impl StateTest {
             id: String::default(),
             env: Env {
                 current_coinbase: *mock::MOCK_COINBASE,
-                current_difficulty: U256::default(),
+                current_mix_hash: H256::default(),
                 current_gas_limit: 16000000,
                 current_number: 1,
                 current_timestamp: 1,

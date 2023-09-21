@@ -54,12 +54,12 @@ mod stackonlyop_tests {
         bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
-        word, Bytecode, Word,
+        word, Bytecode, ToWord, Word,
     };
     use itertools::Itertools;
     use mock::{
         test_ctx::{helpers::*, TestContext},
-        MOCK_BASEFEE, MOCK_DIFFICULTY, MOCK_GASLIMIT,
+        MOCK_BASEFEE, MOCK_GASLIMIT, MOCK_MIX_HASH,
     };
     use pretty_assertions::assert_eq;
     use std::ops::{BitOr, BitXor};
@@ -375,7 +375,7 @@ mod stackonlyop_tests {
                 STOP
             },
             vec![],
-            vec![StackOp::new(1, StackAddress(1023), *MOCK_DIFFICULTY)],
+            vec![StackOp::new(1, StackAddress(1023), MOCK_MIX_HASH.to_word())],
         );
     }
 

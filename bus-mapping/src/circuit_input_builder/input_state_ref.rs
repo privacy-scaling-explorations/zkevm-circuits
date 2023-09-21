@@ -43,6 +43,12 @@ pub struct CircuitInputStateRef<'a> {
 }
 
 impl<'a> CircuitInputStateRef<'a> {
+    /// Check if is a anchor transaction.
+    pub fn is_anchor_tx(&self) -> bool {
+        // set protocol_instance and is the first tx
+        self.block.is_taiko() && self.tx_ctx.is_first_tx()
+    }
+
     /// Create a new step from a `GethExecStep`
     pub fn new_step(&self, geth_step: &GethExecStep) -> Result<ExecStep, Error> {
         let call_ctx = self.tx_ctx.call_ctx()?;
@@ -309,10 +315,13 @@ impl<'a> CircuitInputStateRef<'a> {
             && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero())))
             && account.is_empty()
         {
-            panic!(
-                "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
-                rw, self.block_ctx.rwc.0, op
-            );
+            // FIXME: This is a temporary workaround for the above issue, which allows empty
+            // accounts to read for taiko's 1559
+
+            // panic!(
+            //     "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
+            //     rw, self.block_ctx.rwc.0, op
+            // );
         }
         // -- sanity check end --
         // Perform the write to the account in the StateDB
@@ -474,29 +483,21 @@ impl<'a> CircuitInputStateRef<'a> {
         must_create: bool,
         value: Word,
         fee: Option<Word>,
-        is_anchor_tx: bool,
     ) -> Result<(), Error> {
         let (found, sender_account) = self.sdb.get_account(&sender);
         if !found {
             return Err(Error::AccountNotFound(sender));
         }
         let mut sender_balance_prev = sender_account.balance;
-        if !is_anchor_tx {
-            debug_assert!(
-                sender_account.balance >= value + fee.unwrap_or_default(),
-                "invalid amount balance {:?} value {:?} fee {:?}",
-                sender_balance_prev,
-                value,
-                fee
-            );
-        }
+        debug_assert!(
+            sender_account.balance >= value + fee.unwrap_or_default(),
+            "invalid amount balance {:?} value {:?} fee {:?}",
+            sender_balance_prev,
+            value,
+            fee
+        );
         if let Some(fee) = fee {
-            let sender_balance = if is_anchor_tx {
-                // anchor tx doesn't need fee
-                sender_balance_prev
-            } else {
-                sender_balance_prev - fee
-            };
+            let sender_balance = sender_balance_prev - fee;
             log::trace!(
                 "sender balance update with fee (not reversible): {:?} {:?}->{:?}",
                 sender,
@@ -583,7 +584,6 @@ impl<'a> CircuitInputStateRef<'a> {
             must_create,
             value,
             None,
-            false,
         )
     }
 

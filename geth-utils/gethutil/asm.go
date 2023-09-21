@@ -37,7 +37,7 @@ func (a *Asm) PrintMnemonics(out io.Writer) {
 	for idx := 0; idx < len(a.bytecode); {
 		code := vm.OpCode(a.bytecode[idx])
 		if code.IsPush() {
-			n := int(code) - int(vm.PUSH1) + 1
+			n := int(code) - int(vm.PUSH0)
 			fmt.Fprintf(out, "%02d\t%s\t0x%x\n", idx, code.String(), a.bytecode[idx+1:idx+1+n])
 			idx += n + 1
 		} else {
@@ -121,6 +121,8 @@ func (a *Asm) MSize() *Asm                   { return a.appendByte(vm.MSIZE) }
 func (a *Asm) Gas() *Asm                     { return a.appendByte(vm.GAS) }
 func (a *Asm) JumpDest(label ...string) *Asm { return a.jumpDest(label...) }
 
+func (a *Asm) Push0() *Asm { return a.appendByte(vm.PUSH0) }
+
 // 0x60 range
 func (a *Asm) PushX(val interface{}) *Asm { return a.push(val) }
 func (a *Asm) DupX(x int) *Asm {
@@ -200,7 +202,7 @@ func (a *Asm) push(v ...interface{}) *Asm {
 		bytes := toBytes(v)
 
 		rangeCheck(len(bytes), 1, 32, "len(bytes)")
-		a.appendByte(int(vm.PUSH1) + len(bytes) - 1)
+		a.appendByte(int(vm.PUSH0) + len(bytes))
 
 		for _, b := range bytes {
 			a.appendByte(b)

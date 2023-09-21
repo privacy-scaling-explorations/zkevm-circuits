@@ -4,3 +4,8 @@
 .vscode
 .idea
 /generated
+*.srs
+*.log
+*.json
+*.yul
+*.sol

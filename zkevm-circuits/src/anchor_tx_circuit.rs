@@ -7,16 +7,15 @@ pub use dev::TestAnchorTxCircuit;
 pub(crate) mod sign_verify;
 #[cfg(any(feature = "test", test))]
 mod test;
-#[cfg(any(feature = "test", test))]
-pub(crate) use test::{add_anchor_accounts, add_anchor_tx, sign_tx};
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{byte_table::ByteTable, LookupTable, PiFieldTag, PiTable, TxFieldTag, TxTable},
     tx_circuit::TX_LEN,
     util::{Challenges, SubCircuit, SubCircuitConfig},
-    witness::{self, ProtocolInstance, Transaction},
+    witness::{self, Transaction},
 };
+use bus_mapping::circuit_input_builder::ProtocolInstance;
 use eth_types::{Field, ToScalar};
 use gadgets::util::{select, Expr};
 use halo2_proofs::{
@@ -33,7 +32,8 @@ use self::sign_verify::GOLDEN_TOUCH_ADDRESS;
 const ANCHOR_TX_ID: usize = 1;
 const ANCHOR_TX_VALUE: u64 = 0;
 const ANCHOR_TX_IS_CREATE: bool = false;
-const ANCHOR_TX_GAS_PRICE: u64 = 1;
+const ANCHOR_TX_GAS_PRICE: u64 = 0;
+const ANCHOR_TX_GAS_TIP_CAP: u64 = 0;
 const MAX_DEGREE: usize = 9;
 const BYTE_POW_BASE: u64 = 1 << 8;
 
@@ -221,6 +221,10 @@ impl<F: Field> AnchorTxCircuitConfig<F> {
             (
                 TxFieldTag::GasPrice,
                 Value::known(F::from(ANCHOR_TX_GAS_PRICE)),
+            ),
+            (
+                TxFieldTag::GasTipCap,
+                Value::known(F::from(ANCHOR_TX_GAS_TIP_CAP)),
             ),
             (
                 TxFieldTag::CallerAddress,
@@ -429,7 +433,7 @@ impl<F: Field> SubCircuit<F> for AnchorTxCircuit<F> {
             block.circuits_params.max_calldata,
             block.txs.first().unwrap().clone(),
             block.txs.clone(),
-            block.protocol_instance.clone(),
+            block.protocol_instance.clone().unwrap(),
         )
     }
 

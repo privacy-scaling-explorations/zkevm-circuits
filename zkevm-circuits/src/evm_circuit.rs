@@ -5,6 +5,7 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::*,
 };
+use snark_verifier_sdk::CircuitExt;
 
 mod execution;
 pub mod param;
@@ -68,6 +69,8 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub keccak_table: KeccakTable,
     /// ExpTable
     pub exp_table: ExpTable,
+    /// Taiko
+    pub is_taiko: bool,
 }
 
 impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
@@ -85,6 +88,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             copy_table,
             keccak_table,
             exp_table,
+            is_taiko,
         }: Self::ConfigArgs,
     ) -> Self {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
@@ -101,6 +105,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &copy_table,
             &keccak_table,
             &exp_table,
+            is_taiko,
         ));
 
         meta.annotate_lookup_any_column(byte_table[0], || "byte_range");
@@ -222,7 +227,7 @@ impl<F: Field> EvmCircuit<F> {
         let mut num_rows = 0;
         for transaction in &block.txs {
             for step in &transaction.steps {
-                num_rows += step.execution_state().get_step_height();
+                num_rows += step.execution_state().get_step_height(block.is_taiko());
             }
         }
 
@@ -317,6 +322,15 @@ pub(crate) mod cached {
             let config = EvmCircuit::<Fr>::configure(&mut meta);
             Cache { cs: meta, config }
         };
+
+        static ref CACHE_WITH_TAIKO: Cache = {
+            let mut meta = ConstraintSystem::<Fr>::default();
+            let config = EvmCircuit::<Fr>::configure_with_params(
+                &mut meta,
+                EvmCircuitParams { is_taiko: true },
+            );
+            Cache { cs: meta, config }
+        };
     }
 
     /// Wrapper over the EvmCircuit that behaves the same way and also
@@ -329,15 +343,31 @@ pub(crate) mod cached {
     impl Circuit<Fr> for EvmCircuitCached {
         type Config = (EvmCircuitConfig<Fr>, Challenges);
         type FloorPlanner = SimpleFloorPlanner;
-        type Params = ();
+        type Params = EvmCircuitParams;
 
         fn without_witnesses(&self) -> Self {
             Self(self.0.without_witnesses())
         }
 
         fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-            *meta = CACHE.cs.clone();
-            CACHE.config.clone()
+            Self::configure_with_params(meta, Default::default())
+        }
+
+        fn params(&self) -> Self::Params {
+            self.0.params()
+        }
+
+        fn configure_with_params(
+            meta: &mut ConstraintSystem<Fr>,
+            EvmCircuitParams { is_taiko }: Self::Params,
+        ) -> Self::Config {
+            if is_taiko {
+                *meta = CACHE_WITH_TAIKO.cs.clone();
+                CACHE_WITH_TAIKO.config.clone()
+            } else {
+                *meta = CACHE.cs.clone();
+                CACHE.config.clone()
+            }
         }
 
         fn synthesize(
@@ -356,17 +386,46 @@ pub(crate) mod cached {
     }
 }
 
+/// Evm Circuit configuration parameters
+#[derive(Default)]
+pub struct EvmCircuitParams {
+    is_taiko: bool,
+}
+
+impl<F: Field> CircuitExt<F> for EvmCircuit<F> {
+    fn num_instance(&self) -> Vec<usize> {
+        self.instance().iter().map(|v| v.len()).collect_vec()
+    }
+
+    fn instances(&self) -> Vec<Vec<F>> {
+        self.instance()
+    }
+}
+
 // Always exported because of `EXECUTION_STATE_HEIGHT_MAP`
 impl<F: Field> Circuit<F> for EvmCircuit<F> {
     type Config = (EvmCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
-    type Params = ();
+    type Params = EvmCircuitParams;
 
     fn without_witnesses(&self) -> Self {
         Self::default()
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        Self::configure_with_params(meta, Self::Params::default())
+    }
+
+    fn params(&self) -> Self::Params {
+        EvmCircuitParams {
+            is_taiko: self.block.as_ref().unwrap().is_taiko(),
+        }
+    }
+
+    fn configure_with_params(
+        meta: &mut ConstraintSystem<F>,
+        EvmCircuitParams { is_taiko }: Self::Params,
+    ) -> Self::Config {
         let tx_table = TxTable::construct(meta);
         let rw_table = RwTable::construct(meta);
         let bytecode_table = BytecodeTable::construct(meta);
@@ -390,6 +449,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
                     copy_table,
                     keccak_table,
                     exp_table,
+                    is_taiko,
                 },
             ),
             challenges,
@@ -458,7 +518,7 @@ mod evm_circuit_stats {
     fn evm_circuit_unusable_rows() {
         assert_eq!(
             EvmCircuit::<Fr>::unusable_rows(),
-            unusable_rows::<Fr, EvmCircuit::<Fr>>(()),
+            unusable_rows::<Fr, EvmCircuit::<Fr>>(Default::default()),
         )
     }
 

@@ -2903,10 +2903,16 @@ dependencies = [
  "ethers-core",
  "ethers-signers",
  "external-tracer",
+ "halo2_proofs 0.2.0",
  "itertools",
  "lazy_static",
+ "libsecp256k1",
+ "num",
+ "num-bigint",
+ "once_cell",
  "rand",
  "rand_chacha",
+ "sha3 0.10.7",
 ]
 
 [[package]]

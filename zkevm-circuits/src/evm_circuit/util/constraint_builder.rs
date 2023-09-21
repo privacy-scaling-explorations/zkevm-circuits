@@ -279,6 +279,8 @@ pub(crate) struct EVMConstraintBuilder<'a, F> {
     conditions: Vec<Expression<F>>,
     constraints_location: ConstraintLocation,
     stored_expressions: Vec<StoredExpression<F>>,
+    // in taiko context
+    pub(crate) is_taiko: bool,
 }
 
 impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
@@ -300,6 +302,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         next: Step<F>,
         challenges: &'a Challenges<Expression<F>>,
         execution_state: ExecutionState,
+        is_taiko: bool,
     ) -> Self {
         Self {
             max_degree: MAX_DEGREE,
@@ -321,6 +324,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             conditions: Vec::new(),
             constraints_location: ConstraintLocation::Step,
             stored_expressions: Vec::new(),
+            is_taiko,
         }
     }
 

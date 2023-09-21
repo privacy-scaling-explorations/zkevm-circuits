@@ -6,7 +6,10 @@ use crate::{
     ToWord, Word, U64,
 };
 use ethers_core::{
-    types::{transaction::response, NameOrAddress, TransactionRequest},
+    types::{
+        transaction::{eip2718::TypedTransaction, response},
+        Eip1559TransactionRequest, NameOrAddress,
+    },
     utils::get_contract_address,
 };
 use ethers_signers::{LocalWallet, Signer};
@@ -69,7 +72,7 @@ pub struct BlockConstants {
     /// U64 type is required to serialize into proper hex with 0x prefix
     pub number: U64,
     /// difficulty
-    pub difficulty: Word,
+    pub mix_hash: Hash,
     /// gas limit
     pub gas_limit: Word,
     /// base fee
@@ -84,7 +87,7 @@ impl<TX> TryFrom<&Block<TX>> for BlockConstants {
             coinbase: block.author.ok_or(Error::IncompleteBlock)?,
             timestamp: block.timestamp,
             number: block.number.ok_or(Error::IncompleteBlock)?,
-            difficulty: block.difficulty,
+            mix_hash: block.mix_hash.ok_or(Error::IncompleteBlock)?,
             gas_limit: block.gas_limit,
             base_fee: block.base_fee_per_gas.ok_or(Error::IncompleteBlock)?,
         })
@@ -97,7 +100,7 @@ impl BlockConstants {
         coinbase: Address,
         timestamp: Word,
         number: U64,
-        difficulty: Word,
+        mix_hash: Hash,
         gas_limit: Word,
         base_fee: Word,
     ) -> BlockConstants {
@@ -105,7 +108,7 @@ impl BlockConstants {
             coinbase,
             timestamp,
             number,
-            difficulty,
+            mix_hash,
             gas_limit,
             base_fee,
         }
@@ -158,8 +161,8 @@ impl From<&Transaction> for crate::Transaction {
             gas: tx.gas_limit.to_word(),
             value: tx.value,
             gas_price: Some(tx.gas_price),
-            max_priority_fee_per_gas: Some(tx.gas_fee_cap),
-            max_fee_per_gas: Some(tx.gas_tip_cap),
+            max_priority_fee_per_gas: Some(tx.gas_tip_cap),
+            max_fee_per_gas: Some(tx.gas_fee_cap),
             input: tx.call_data.clone(),
             access_list: tx.access_list.clone(),
             v: tx.v.into(),
@@ -179,8 +182,8 @@ impl From<&crate::Transaction> for Transaction {
             gas_limit: tx.gas.as_u64().into(),
             value: tx.value,
             gas_price: tx.gas_price.unwrap_or_default(),
-            gas_fee_cap: tx.max_priority_fee_per_gas.unwrap_or_default(),
-            gas_tip_cap: tx.max_fee_per_gas.unwrap_or_default(),
+            gas_tip_cap: tx.max_priority_fee_per_gas.unwrap_or_default(),
+            gas_fee_cap: tx.max_fee_per_gas.unwrap_or_default(),
             call_data: tx.input.clone(),
             access_list: tx.access_list.clone(),
             v: tx.v.as_u64(),
@@ -190,13 +193,14 @@ impl From<&crate::Transaction> for Transaction {
     }
 }
 
-impl From<&Transaction> for TransactionRequest {
-    fn from(tx: &Transaction) -> TransactionRequest {
-        TransactionRequest {
+impl From<&Transaction> for Eip1559TransactionRequest {
+    fn from(tx: &Transaction) -> Eip1559TransactionRequest {
+        Eip1559TransactionRequest {
             from: Some(tx.from),
             to: tx.to.map(NameOrAddress::Address),
             gas: Some(tx.gas_limit.to_word()),
-            gas_price: Some(tx.gas_price),
+            max_priority_fee_per_gas: Some(tx.gas_tip_cap),
+            max_fee_per_gas: Some(tx.gas_fee_cap),
             value: Some(tx.value),
             data: Some(tx.call_data.clone()),
             nonce: Some(tx.nonce.to_word()),
@@ -229,9 +233,13 @@ impl Transaction {
             secp256k1::Fq::from_repr(sig_s_le),
             Error::Signature(libsecp256k1::Error::InvalidSignature),
         )?;
-        // msg = rlp([nonce, gasPrice, gas, to, value, data, sig_v, r, s])
-        let req: TransactionRequest = self.into();
-        let msg = req.chain_id(chain_id).rlp();
+        // msg = rlp([chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gas, to, value, data,
+        // accessList])
+        let req: Eip1559TransactionRequest = self.into();
+        let req = req.chain_id(chain_id);
+        // insert 0x2 at the begin of rlp
+        let req: TypedTransaction = req.into();
+        let msg = req.rlp();
         let msg_hash: [u8; 32] = Keccak256::digest(&msg)
             .as_slice()
             .to_vec()
@@ -325,7 +333,7 @@ impl GethData {
             let wallet = wallets.get(&tx.from).unwrap();
             assert_eq!(Word::from(wallet.chain_id()), self.chain_id);
             let geth_tx: Transaction = (&*tx).into();
-            let req: TransactionRequest = (&geth_tx).into();
+            let req: Eip1559TransactionRequest = (&geth_tx).into();
             let sig = wallet.sign_transaction_sync(&req.chain_id(self.chain_id.as_u64()).into());
             tx.v = U64::from(sig.v);
             tx.r = sig.r;

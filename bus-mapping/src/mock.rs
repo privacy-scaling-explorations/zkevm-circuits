@@ -40,6 +40,7 @@ impl BlockData {
                 Word::default(),
                 &self.eth_block,
                 self.circuits_params,
+                None,
             )
             .unwrap(),
         )
@@ -52,7 +53,7 @@ impl BlockData {
         let mut sdb = StateDB::new();
         let mut code_db = CodeDB::new();
 
-        let access_set = get_state_accesses(&geth_data.eth_block, &geth_data.geth_traces)
+        let access_set = get_state_accesses(&geth_data.eth_block, &geth_data.geth_traces, &None)
             .expect("state accesses");
         // Initialize all accesses accounts to zero
         for addr in access_set.state.keys() {

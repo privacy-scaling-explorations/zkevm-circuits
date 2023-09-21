@@ -723,7 +723,7 @@ mod eth_types_test {
             ..Default::default()
         };
 
-        let req: ethers_core::types::TransactionRequest = tx.into();
+        let req: ethers_core::types::Eip1559TransactionRequest = tx.into();
         assert_eq!(req.to, None);
         Ok(())
     }

@@ -3,7 +3,7 @@
 //! used to generate witnesses for circuits.
 
 mod block;
-pub use block::{block_convert, Block, BlockContext};
+pub use block::{block_convert, protocol_instance_table_assignments, Block, BlockContext};
 mod bytecode;
 pub use bytecode::Bytecode;
 mod mpt;
@@ -14,5 +14,3 @@ pub use rw::{Rw, RwMap, RwRow};
 mod tx;
 pub use bus_mapping::circuit_input_builder::Call;
 pub use tx::Transaction;
-mod protocol_instance;
-pub use protocol_instance::{left_shift, MetaHash, ProtocolInstance};

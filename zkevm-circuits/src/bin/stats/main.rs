@@ -60,7 +60,7 @@ fn evm_states_stats() {
                 PUSH2(0x50)
             },
         },
-        |_, state, _| state.get_step_height_option().unwrap(),
+        |_, state, _| state.get_step_height_option(false).unwrap(),
     );
 }
 
