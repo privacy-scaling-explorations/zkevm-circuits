@@ -27,7 +27,7 @@ use zkevm_circuits::{
     keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
     mpt_circuit::{MPTCircuit, MPTCircuitParams, MPTConfig},
     table::{KeccakTable, MptTable},
-    util::{word, Challenges, SubCircuitConfig},
+    util::{word, Challenges, SubCircuit, SubCircuitConfig},
 };
 
 const MAX_PROOF_COUNT: usize = 10;
@@ -321,11 +321,8 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
         config
             .mpt_config
             .load_mult_table(&mut layouter, &challenges, height)?;
-        config.mpt_config.keccak_table.dev_load(
-            &mut layouter,
-            &self.mpt_circuit.keccak_data,
-            &challenges,
-        )?;
+        self.keccak_circuit
+            .synthesize_sub(&config.keccak_config, &challenges, &mut layouter)?;
 
         // assign LC witness
 
