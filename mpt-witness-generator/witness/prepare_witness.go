@@ -209,6 +209,11 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 
 			accountProof, aNeighbourNode1, aExtNibbles1, aIsLastLeaf1, aIsNeighbourNodeHashed1, err := statedb.GetProof(addr)
 			check(err)
+
+			if !statedb.Exist(addr) {
+				statedb.CreateObject(addr)
+			}
+
 			storageProof, neighbourNode1, extNibbles1, isLastLeaf1, isNeighbourNodeHashed1, err := statedb.GetStorageProof(addr, tMod.Key)
 			check(err)
 

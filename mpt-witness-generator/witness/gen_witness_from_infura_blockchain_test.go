@@ -2241,7 +2241,6 @@ func TestNeighbourNodeInHashedBranch(t *testing.T) {
 }
 
 func TestLongKey(t *testing.T) {
-	// Currently, it results into leaf RLP constrain failure.
 	blockNum := 2000069
 	blockNumberParent := big.NewInt(int64(blockNum))
 	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
@@ -2265,4 +2264,29 @@ func TestLongKey(t *testing.T) {
 	trieModifications := []TrieModification{trieMod1}
 
 	prepareWitness("LongKey", trieModifications, statedb)
+}
+
+func TestTrieDoesNotExist(t *testing.T) {
+	blockNum := 2000003
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0xcaac46d9bd68bffb533320545a90cd92c6e98e58")
+
+	statedb.DisableLoadingRemoteAccounts()
+
+	key1 := common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000")
+	val1 := common.BigToHash(big.NewInt(int64(17)))
+
+	trieMod1 := TrieModification{
+		Type:    StorageChanged,
+		Key:     key1,
+		Value:   val1,
+		Address: addr,
+	}
+
+	trieModifications := []TrieModification{trieMod1}
+
+	prepareWitness("StorageTrieDoesNotExist", trieModifications, statedb)
 }
