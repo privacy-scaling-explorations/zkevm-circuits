@@ -94,7 +94,7 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Update git submodule
-        run: git submodule update --init --recursive --checkout contracts/vendor
+        run: git submodule update --init --recursive --checkout integration-tests/contracts/vendor/openzeppelin-contracts
       # Run an initial build in a separate step to split the build time from execution time
       - name: Build bins
         run: cargo build --bin gen_blockchain_data
