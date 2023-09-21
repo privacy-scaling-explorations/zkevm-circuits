@@ -691,7 +691,7 @@ mod test_util;
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::util::{constraint_builder::ConstrainBuilderCommon, Cell};
+    use crate::evm_circuit::util::{constraint_builder::ConstrainBuilderCommon, Cell, U64Cell};
     use eth_types::{ToScalar, Word};
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
@@ -700,8 +700,8 @@ mod test {
     #[derive(Clone)]
     struct BufferReaderGadgetTestContainer<F, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize> {
         buffer_reader_gadget: BufferReaderGadget<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>, // need to parametrized
-        addr_start: Cell<F>,
-        addr_end: Cell<F>,
+        addr_start: U64Cell<F>,
+        addr_end: U64Cell<F>,
     }
 
     impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize> MemoryGadgetContainer<F>
@@ -728,13 +728,13 @@ mod test {
             witnesses: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
-            let addr_start = witnesses[0].to_scalar().unwrap();
-            let addr_end = witnesses[1].to_scalar().unwrap();
+            let addr_end= u64::from_le_bytes(witnesses[0].to_le_bytes()[..8].try_into().unwrap());
+            let addr_start= u64::from_le_bytes(witnesses[1].to_le_bytes()[..8].try_into().unwrap());
             let offset = 0;
             let bytes = &[0u8; MAX_BYTES];
 
-            self.addr_start.assign(region, offset, Value::known(addr_start))?;
-            self.addr_end.assign(region, offset, Value::known(addr_end))?;
+            self.addr_start.assign(region, offset, Some(addr_start.to_le_bytes()))?; // TODO or Value::known(addr_end)??
+            self.addr_end.assign(region, offset, Some(addr_end.to_le_bytes()))?; // TODO or Value::known(addr_end)??
             
             /* 
             TODO
