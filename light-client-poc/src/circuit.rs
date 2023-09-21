@@ -24,15 +24,18 @@ use rand_chacha::ChaCha20Rng;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use zkevm_circuits::{
+    keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
     mpt_circuit::{MPTCircuit, MPTCircuitParams, MPTConfig},
     table::{KeccakTable, MptTable},
-    util::{word, Challenges},
+    util::{word, Challenges, SubCircuitConfig},
 };
 
 const MAX_PROOF_COUNT: usize = 10;
 const LIGHT_CLIENT_CIRCUIT_DEGREE: usize = 14;
 
-use crate::witness::{LightClientWitness, SingleTrieModification, Transforms, SingleTrieModifications, PublicInputs};
+use crate::witness::{
+    LightClientWitness, PublicInputs, SingleTrieModification, SingleTrieModifications, Transforms,
+};
 
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, G1Affine},
@@ -58,6 +61,7 @@ pub fn xif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
 ///
 #[derive(Clone)]
 pub struct LightClientCircuitConfig<F: Field> {
+    pub keccak_config: KeccakCircuitConfig<F>,
     pub mpt_config: MPTConfig<F>,
 
     pub pi_mpt: MptTable,
@@ -79,6 +83,7 @@ pub struct LightClientCircuitConfig<F: Field> {
 #[derive(Default)]
 pub struct LightClientCircuit<F: Field> {
     pub transforms: Transforms,
+    pub keccak_circuit: KeccakCircuit<F>,
     pub mpt_circuit: MPTCircuit<F>,
     pub lc_witness: SingleTrieModifications<F>,
 }
@@ -104,6 +109,13 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
         let challenges_expr = challenges.exprs(meta);
         let keccak_table = KeccakTable::construct(meta);
 
+        let keccak_config = KeccakCircuitConfig::new(
+            meta,
+            KeccakCircuitConfigArgs {
+                keccak_table: keccak_table.clone(),
+                challenges: challenges_expr.clone(),
+            },
+        );
         let mpt_config = MPTConfig::new(meta, challenges_expr, keccak_table, params);
 
         let is_first = meta.fixed_column();
@@ -272,6 +284,7 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
         });
 
         let config = LightClientCircuitConfig {
+            keccak_config,
             mpt_config,
             is_first,
             count,
@@ -460,8 +473,7 @@ pub struct LightClientCircuitKeys {
 }
 
 impl LightClientCircuitKeys {
-
-    pub fn new(circuit : &LightClientCircuit<Fr>) -> LightClientCircuitKeys {
+    pub fn new(circuit: &LightClientCircuit<Fr>) -> LightClientCircuitKeys {
         let mut rng = ChaCha20Rng::seed_from_u64(42);
 
         let start = Instant::now();
@@ -514,9 +526,12 @@ impl LightClientCircuitKeys {
 }
 
 impl LightClientCircuit<Fr> {
-    pub fn new(witness : LightClientWitness<Fr>) -> Result<LightClientCircuit<Fr>> {
-
-        let LightClientWitness{mpt_witness, transforms, lc_witness} = witness;
+    pub fn new(witness: LightClientWitness<Fr>) -> Result<LightClientCircuit<Fr>> {
+        let LightClientWitness {
+            mpt_witness,
+            transforms,
+            lc_witness,
+        } = witness;
 
         // populate the keccak data
         let mut keccak_data = vec![];
@@ -527,11 +542,12 @@ impl LightClientCircuit<Fr> {
         }
 
         // verify the circuit
-        let disable_preimage_check = mpt_witness[0]
-            .start
-            .clone()
-            .unwrap()
-            .disable_preimage_check;
+        let disable_preimage_check = mpt_witness[0].start.clone().unwrap().disable_preimage_check;
+
+        let keccak_circuit = KeccakCircuit::<Fr>::new(
+            2usize.pow(LIGHT_CLIENT_CIRCUIT_DEGREE as u32),
+            keccak_data.clone(),
+        );
 
         let mpt_circuit = zkevm_circuits::mpt_circuit::MPTCircuit::<Fr> {
             nodes: mpt_witness,
@@ -543,20 +559,23 @@ impl LightClientCircuit<Fr> {
 
         let lc_circuit = LightClientCircuit::<Fr> {
             transforms,
+            keccak_circuit,
             mpt_circuit,
-            lc_witness
+            lc_witness,
         };
 
         Ok(lc_circuit)
     }
 
     pub fn assert_satisfied(&self) {
-        let num_rows: usize = self.mpt_circuit.nodes
+        let num_rows: usize = self
+            .mpt_circuit
+            .nodes
             .iter()
             .map(|node| node.values.len())
             .sum();
 
-        let public_inputs : PublicInputs<Fr> = (&self.lc_witness).into();
+        let public_inputs: PublicInputs<Fr> = (&self.lc_witness).into();
 
         for (i, input) in public_inputs.iter().enumerate() {
             println!("input[{i:}]: {input:?}");
@@ -571,17 +590,13 @@ impl LightClientCircuit<Fr> {
         prover.assert_satisfied_at_rows_par(0..num_rows, 0..num_rows);
     }
 
-
-    pub fn prove(
-        self,
-        keys: &LightClientCircuitKeys,
-    ) -> Result<Vec<u8>> {
+    pub fn prove(self, keys: &LightClientCircuitKeys) -> Result<Vec<u8>> {
         let rng = ChaCha20Rng::seed_from_u64(42);
 
         // Create a proof
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
-        let public_inputs : PublicInputs<Fr> = (&self.lc_witness).into();
+        let public_inputs: PublicInputs<Fr> = (&self.lc_witness).into();
 
         // Bench proof generation time
         let start = Instant::now();
