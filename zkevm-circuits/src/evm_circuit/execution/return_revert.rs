@@ -323,8 +323,16 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             )?;
         }
 
+        let is_contract_deployment = call.is_create() && call.is_success && !length.is_zero();
+
+        let init_code_first_byte = if is_contract_deployment {
+            rws.next().memory_value()
+        } else {
+            0
+        }
+        .into();
+
         if call.is_create() && call.is_success {
-            rws.offset_add(2);
             let values: Vec<_> = (0..length.as_usize())
                 .map(|_| rws.next().memory_value())
                 .collect();
@@ -351,15 +359,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         self.copy_rw_increase_is_zero
             .assign(region, offset, F::from(copy_rw_increase))?;
 
-        let is_contract_deployment = call.is_create() && call.is_success && !length.is_zero();
-
-        let init_code_first_byte = if is_contract_deployment {
-            rws.offset_set(3);
-            rws.next().memory_value()
-        } else {
-            0
-        }
-        .into();
         self.init_code_first_byte.assign(
             region,
             offset,

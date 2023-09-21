@@ -6,7 +6,7 @@ on:
     types: [synchronize, opened, reopened, ready_for_review]
   push:
     branches:
-      - feat/steprws
+      - main
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
