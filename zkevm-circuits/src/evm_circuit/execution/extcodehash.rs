@@ -265,6 +265,8 @@ mod test {
     }
 
     #[test]
+    // Regression test to ensure that the code hash for an account that is is being initialized is
+    // the empty code hash.
     fn create_tx_extcodehash() {
         let code = bytecode! {
             ADDRESS
