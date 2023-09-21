@@ -216,13 +216,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let no_callee_code = is_empty_code_hash.expr() + callee_not_exists.expr();
 
         // TODO: And not precompile
-        cb.condition(not::expr(tx_is_create.expr()), |cb| {
-            cb.account_read(
-                tx_callee_address.to_word(),
-                AccountFieldTag::CodeHash,
-                code_hash.to_word(),
-            ); // rwc_delta += 1
-        });
+        // i think this needs to be removed....
+
+        cb.account_read(
+            tx_callee_address.to_word(),
+            AccountFieldTag::CodeHash,
+            code_hash.to_word(),
+        ); // rwc_delta += 1
+           // });
 
         // Transfer value from caller to callee, creating account if necessary.
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
@@ -338,7 +339,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsRoot
                 //   - Write CallContext IsCreate
                 //   - Write CallContext CodeHash
-                rw_counter: Delta(22.expr() + transfer_with_gas_fee.rw_delta()),
+                rw_counter: Delta(23.expr() + transfer_with_gas_fee.rw_delta()),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
                 is_create: To(tx_is_create.expr()),
@@ -513,14 +514,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
         let mut callee_code_hash = zero;
-        if !is_precompiled(&tx.to_or_contract_addr()) && !tx.is_create() {
+        if !is_precompiled(&tx.to_or_contract_addr()) {
             callee_code_hash = rws.next().account_codehash_pair().1;
         }
-        let callee_exists = is_precompiled(&tx.to_or_contract_addr())
-            || (!tx.is_create() && !callee_code_hash.is_zero());
+        let callee_exists =
+            is_precompiled(&tx.to_or_contract_addr()) || !callee_code_hash.is_zero();
         let caller_balance_sub_fee_pair = rws.next().account_balance_pair();
         let must_create = tx.is_create();
-        if (!callee_exists && !tx.value.is_zero()) || must_create {
+        if !callee_exists && (!tx.value.is_zero() || must_create) {
             callee_code_hash = rws.next().account_codehash_pair().1;
         }
         let mut caller_balance_sub_value_pair = (zero, zero);
@@ -940,7 +941,5 @@ mod test {
         .unwrap();
 
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
-
-        panic!();
     }
 }

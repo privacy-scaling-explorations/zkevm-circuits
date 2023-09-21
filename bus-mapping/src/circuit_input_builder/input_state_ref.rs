@@ -553,7 +553,7 @@ impl<'a> CircuitInputStateRef<'a> {
             sender_balance
         );
         // If receiver doesn't exist, create it
-        if (!receiver_exists && !value.is_zero()) || must_create {
+        if !receiver_exists && (!value.is_zero() || must_create) {
             self.push_op_reversible(
                 step,
                 AccountOp {
