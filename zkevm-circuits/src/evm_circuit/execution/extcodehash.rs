@@ -271,7 +271,7 @@ mod test {
             EXTCODEHASH
         };
 
-        let block: GethData = TestContext::<1, 1>::new(
+        let ctx = TestContext::<1, 1>::new(
             None,
             |accs| {
                 accs[0].address(Address::repeat_byte(23)).balance(eth(10));
@@ -281,9 +281,8 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        test_circuits_block_geth_data_default(block).unwrap();
+        CircuitTestBuilder::new_from_test_ctx(ctx).run()
     }
 }
