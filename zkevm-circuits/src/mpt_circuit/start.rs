@@ -11,7 +11,7 @@ use crate::{
             key_memory, main_memory, parent_memory, KeyData, MPTConstraintBuilder, MainData,
             ParentData,
         },
-        MPTConfig, MPTContext, MPTState, RlpItemType,
+        MPTConfig, MPTContext, MptMemory, RlpItemType,
     },
     util::word::Word,
 };
@@ -28,13 +28,8 @@ impl<F: Field> StartConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
-        ctx: MPTContext<F>,
+        ctx: &mut MPTContext<F>,
     ) -> Self {
-        cb.base
-            .cell_manager
-            .as_mut()
-            .unwrap()
-            .reset(StartRowType::Count as usize);
         let mut config = StartConfig::default();
 
         circuit!([meta, cb], {
@@ -52,7 +47,7 @@ impl<F: Field> StartConfig<F> {
 
             MainData::store(
                 cb,
-                &ctx.memory[main_memory()],
+                &mut ctx.memory[main_memory()],
                 [
                     config.proof_type.expr(),
                     false.expr(),
@@ -67,14 +62,14 @@ impl<F: Field> StartConfig<F> {
             for is_s in [true, false] {
                 ParentData::store(
                     cb,
-                    &ctx.memory[parent_memory(is_s)],
+                    &mut ctx.memory[parent_memory(is_s)],
                     root[is_s.idx()].clone(),
                     0.expr(),
                     true.expr(),
                     false.expr(),
                     root[is_s.idx()].clone(),
                 );
-                KeyData::store_defaults(cb, &ctx.memory[key_memory(is_s)]);
+                KeyData::store_defaults(cb, &mut ctx.memory[key_memory(is_s)]);
             }
         });
 
@@ -86,7 +81,7 @@ impl<F: Field> StartConfig<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         _mpt_config: &MPTConfig<F>,
-        pv: &mut MPTState<F>,
+        memory: &mut MptMemory<F>,
         offset: usize,
         node: &Node,
         rlp_values: &[RLPItemWitness],
@@ -109,7 +104,7 @@ impl<F: Field> StartConfig<F> {
         MainData::witness_store(
             region,
             offset,
-            &mut pv.memory[main_memory()],
+            &mut memory[main_memory()],
             start.proof_type as usize,
             false,
             0.scalar(),
@@ -121,7 +116,7 @@ impl<F: Field> StartConfig<F> {
             ParentData::witness_store(
                 region,
                 offset,
-                &mut pv.memory[parent_memory(is_s)],
+                &mut memory[parent_memory(is_s)],
                 root[is_s.idx()],
                 0.scalar(),
                 true,
@@ -131,7 +126,7 @@ impl<F: Field> StartConfig<F> {
             KeyData::witness_store(
                 region,
                 offset,
-                &mut pv.memory[key_memory(is_s)],
+                &mut memory[key_memory(is_s)],
                 F::ZERO,
                 F::ONE,
                 0,

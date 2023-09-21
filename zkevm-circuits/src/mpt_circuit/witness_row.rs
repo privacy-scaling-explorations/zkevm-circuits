@@ -178,7 +178,7 @@ pub const NODE_RLP_TYPES_ACCOUNT: [RlpItemType; AccountRowType::Count as usize] 
     RlpItemType::Hash,
     RlpItemType::Key,
     RlpItemType::Key,
-    RlpItemType::Value,
+    RlpItemType::Address,
     RlpItemType::Hash,
 ];
 
@@ -190,6 +190,6 @@ pub const NODE_RLP_TYPES_STORAGE: [RlpItemType; StorageRowType::Count as usize] 
     RlpItemType::Value,
     RlpItemType::Key,
     RlpItemType::Key,
-    RlpItemType::Value,
+    RlpItemType::Hash,
     RlpItemType::Hash,
 ];
