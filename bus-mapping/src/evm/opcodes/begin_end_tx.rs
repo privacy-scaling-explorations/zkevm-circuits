@@ -48,19 +48,14 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         state.call_context_write(&mut exec_step, call.call_id, field, value);
     }
 
-    // Increase caller's nonce when the tx is not invalid
+    // Increase caller's nonce
     let caller_address = call.caller_address;
     let nonce_prev = state.sdb.get_account(&caller_address).1.nonce;
-    let nonce = if !state.tx.invalid_tx {
-        nonce_prev + 1
-    } else {
-        nonce_prev
-    };
     state.account_write(
         &mut exec_step,
         caller_address,
         AccountField::Nonce,
-        nonce.into(),
+        (nonce_prev + 1).into(),
         nonce_prev.into(),
     )?;
 
@@ -81,20 +76,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     } else {
         GasCost::TX.as_u64()
     } + state.tx.tx.call_data_gas_cost();
-
-    // Don't pay any fee or transfer any ETH for invalid transactions
-    let (gas_cost, value, fee) = if state.tx.invalid_tx {
-        (0, Word::zero(), Some(Word::zero()))
-    } else {
-        (
-            intrinsic_gas_cost,
-            call.value,
-            Some(state.tx.tx.gas_price * state.tx.gas()),
-        )
-    };
-
-    // Set the gas cost
-    exec_step.gas_cost = GasCost(gas_cost);
+    exec_step.gas_cost = GasCost(intrinsic_gas_cost);
 
     // Get code_hash of callee
     let (_, callee_account) = state.sdb.get_account(&call.address);
@@ -122,10 +104,9 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         call.caller_address,
         call.address,
         callee_exists,
-        !state.tx.invalid_tx && call.is_create(),
-        true,
-        value,
-        fee,
+        call.is_create(),
+        call.value,
+        Some(state.tx.tx.gas_price * state.tx.gas()),
         state.tx_ctx.is_anchor_tx(),
     )?;
 
@@ -151,7 +132,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     match (
         call.is_create(),
         state.is_precompiled(&call.address),
-        is_empty_code_hash || state.tx.invalid_tx,
+        is_empty_code_hash,
     ) {
         // 1. Creation transaction.
         (true, _, _) => {
@@ -200,13 +181,13 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             evm_unimplemented!("Call to precompiled is left unimplemented");
             Ok(exec_step)
         }
-        (_, _, do_not_run_code) => {
+        (_, _, is_empty_code_hash) => {
             // 3. Call to account with empty code.
-            if do_not_run_code {
+            if is_empty_code_hash {
                 return Ok(exec_step);
             }
 
-            // 4. Call to account with non-empty code/invalid tx.
+            // 4. Call to account with non-empty code.
             for (field, value) in [
                 (CallContextField::Depth, call.depth.into()),
                 (

@@ -141,7 +141,6 @@
 //!     return_value: "".to_string(),
 //!     gas: Gas(block.eth_block.transactions[0].gas.as_u64()),
 //!     failed: false,
-//!     invalid: false,
 //!     struct_logs: geth_steps,
 //! };
 //!

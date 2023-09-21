@@ -8,8 +8,3 @@ license = "MIT OR Apache-2.0"
 gobuild = "0.1.0-alpha.1"
 log = "0.4.14"
 env_logger = "0.9"
-
-[dev-dependencies]
-eth-types = { path = "../eth-types" }
-serde = {version = "1.0.130", features = ["derive"] }
-serde_json = "1.0.66"

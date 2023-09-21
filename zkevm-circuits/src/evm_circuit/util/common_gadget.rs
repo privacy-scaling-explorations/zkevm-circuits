@@ -352,12 +352,11 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
 /// unconditionally if must_create is true.  This gadget is used in BeginTx.
 #[derive(Clone, Debug)]
 pub(crate) struct TransferWithGasFeeGadget<F> {
-    pub sender_sub_fee: UpdateBalanceGadget<F, 2, false>,
-    pub sender_sub_value: UpdateBalanceGadget<F, 2, false>,
-    pub receiver: UpdateBalanceGadget<F, 2, true>,
+    sender_sub_fee: UpdateBalanceGadget<F, 2, false>,
+    sender_sub_value: UpdateBalanceGadget<F, 2, false>,
+    receiver: UpdateBalanceGadget<F, 2, true>,
     receiver_exists: Expression<F>,
     must_create: Expression<F>,
-    must_read_caller_balance: Expression<F>,
     pub(crate) value_is_zero: IsZeroGadget<F>,
 }
 
@@ -369,7 +368,6 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         receiver_address: Expression<F>,
         receiver_exists: Expression<F>,
         must_create: Expression<F>,
-        must_read_caller_balance: Expression<F>,
         value: Word<F>,
         gas_fee: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
@@ -394,23 +392,20 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             },
         );
         // Skip transfer if value == 0
-        // but still read the caller balance when required
-        let sender_sub_value = cb.condition(
-            or::expr([
-                must_read_caller_balance.expr(),
-                not::expr(value_is_zero.expr()),
-            ]),
-            |cb| {
-                UpdateBalanceGadget::construct(
-                    cb,
-                    sender_address,
-                    vec![value.clone()],
-                    Some(reversion_info),
-                )
-            },
-        );
-        let receiver = cb.condition(not::expr(value_is_zero.expr()), |cb| {
-            UpdateBalanceGadget::construct(cb, receiver_address, vec![value], Some(reversion_info))
+        let (sender_sub_value, receiver) = cb.condition(not::expr(value_is_zero.expr()), |cb| {
+            let sender_sub_value = UpdateBalanceGadget::construct(
+                cb,
+                sender_address,
+                vec![value.clone()],
+                Some(reversion_info),
+            );
+            let receiver = UpdateBalanceGadget::construct(
+                cb,
+                receiver_address,
+                vec![value],
+                Some(reversion_info),
+            );
+            (sender_sub_value, receiver)
         });
 
         Self {
@@ -419,7 +414,6 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             receiver,
             receiver_exists,
             must_create,
-            must_read_caller_balance,
             value_is_zero,
         }
     }
@@ -434,8 +428,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         ) * 1.expr() +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
-        or::expr([self.must_read_caller_balance.expr(), not::expr(self.value_is_zero.expr())]) +
-        not::expr(self.value_is_zero.expr())
+        not::expr(self.value_is_zero.expr()) * 2.expr()
     }
 
     pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
@@ -447,8 +440,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         ) * 1.expr() +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
-        or::expr([self.must_read_caller_balance.expr(), not::expr(self.value_is_zero.expr())]) +
-        not::expr(self.value_is_zero.expr())
+        not::expr(self.value_is_zero.expr()) * 2.expr()
     }
 
     #[allow(clippy::too_many_arguments)]

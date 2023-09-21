@@ -53,7 +53,6 @@ impl Display for Error {
 #[cfg(test)]
 mod test {
     use crate::trace;
-    use eth_types::{Error, GethExecTrace};
 
     #[test]
     fn valid_tx() {
@@ -103,15 +102,7 @@ mod test {
                 ]
             }"#,
         ] {
-            let trace_result = trace(config);
-            assert!(trace_result.is_ok());
-            let trace_string = trace_result.unwrap();
-            let trace: Vec<GethExecTrace> = serde_json::from_str(&trace_string)
-                .map_err(Error::SerdeError)
-                .unwrap();
-            for trace in trace.iter() {
-                assert!(!trace.invalid);
-            }
+            assert!(trace(config).is_ok());
         }
     }
 
@@ -159,15 +150,7 @@ mod test {
                 ]
             }"#,
         ] {
-            let trace_result = trace(config);
-            assert!(trace_result.is_ok());
-            let trace_string = trace_result.unwrap();
-            let trace: Vec<GethExecTrace> = serde_json::from_str(&trace_string)
-                .map_err(Error::SerdeError)
-                .unwrap();
-            for trace in trace.iter() {
-                assert!(trace.invalid);
-            }
+            assert!(trace(config).is_err())
         }
     }
 }
