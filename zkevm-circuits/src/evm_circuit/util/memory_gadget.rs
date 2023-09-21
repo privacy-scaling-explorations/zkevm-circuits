@@ -686,3 +686,82 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         self.selectors[idx].expr()
     }
 }
+
+mod test_util;
+
+#[cfg(test)]
+mod test {
+    use crate::evm_circuit::util::{constraint_builder::ConstrainBuilderCommon, Cell};
+    use eth_types::{ToScalar, Word};
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
+
+    use super::{test_util::*, *};
+
+    #[derive(Clone)]
+    struct BufferReaderGadgetTestContainer<F, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize> {
+        buffer_reader_gadget: BufferReaderGadget<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>, // need to parametrized
+        addr_start: Cell<F>,
+        addr_end: Cell<F>,
+    }
+
+    impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize> MemoryGadgetContainer<F>
+        for BufferReaderGadgetTestContainer<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>
+    {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
+            let addr_start = cb.query_u64();
+            let addr_end = cb.query_u64();
+            let buffer_reader_gadget 
+                = BufferReaderGadget::<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>::construct(cb, addr_start.expr(), addr_end.expr());
+            
+            // TODO require equal for bufferreadergadget
+            // cb.require_equal("Input is zero", z_gadget.expr(), 1.expr());
+
+            BufferReaderGadgetTestContainer { 
+                buffer_reader_gadget, 
+                addr_start,
+                addr_end, 
+            }
+        }
+
+        fn assign_gadget_container(
+            &self,
+            witnesses: &[Word],
+            region: &mut CachedRegion<'_, '_, F>,
+        ) -> Result<(), Error> {
+            let addr_start = witnesses[0].to_scalar().unwrap();
+            let addr_end = witnesses[1].to_scalar().unwrap();
+            let offset = 0;
+            let bytes = &[0u8; MAX_BYTES];
+
+            self.addr_start.assign(region, offset, Value::known(addr_start))?;
+            self.addr_end.assign(region, offset, Value::known(addr_end))?;
+            
+            /* 
+            TODO
+                    &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        addr_start: u64,
+        addr_end: u64,
+        bytes: &[u8],
+             */
+            self.buffer_reader_gadget.assign(region, offset, addr_start, addr_end, bytes)?;
+
+            Ok(())
+        }
+    }
+    
+    #[test]
+    fn test_buffer_reader_gadget(){
+        // test different start and end address
+        
+        /* 
+        
+        let mut calldata_word: Vec<_> = (0..N_BYTES_WORD)
+            .map(|idx| {
+         */
+        /* try_test!(
+            
+        ) */
+    }
+}
