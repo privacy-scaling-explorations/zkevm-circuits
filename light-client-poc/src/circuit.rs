@@ -30,8 +30,8 @@ use zkevm_circuits::{
     util::{word, Challenges, SubCircuit, SubCircuitConfig},
 };
 
-const MAX_PROOF_COUNT: usize = 10;
-const LIGHT_CLIENT_CIRCUIT_DEGREE: usize = 14;
+pub const DEFAULT_MAX_PROOF_COUNT: usize = 10;
+pub const DEFAULT_CIRCUIT_DEGREE: usize = 14;
 
 use crate::witness::{
     LightClientWitness, PublicInputs, SingleTrieModification, SingleTrieModifications, Transforms,
@@ -86,6 +86,8 @@ pub struct LightClientCircuit<F: Field> {
     pub keccak_circuit: KeccakCircuit<F>,
     pub mpt_circuit: MPTCircuit<F>,
     pub lc_witness: SingleTrieModifications<F>,
+    pub degree: usize,
+    pub max_proof_count: usize,
 }
 
 impl<F: Field> Circuit<F> for LightClientCircuit<F> {
@@ -330,7 +332,7 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
             || "lc witness",
             |mut region| {
 
-                assert!(self.lc_witness.len() < MAX_PROOF_COUNT);
+                assert!(self.lc_witness.len() < self.max_proof_count);
 
                 let is_padding = IsZeroChip::construct(config.is_padding.clone());
                 let is_last =
@@ -354,14 +356,14 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
 
                 let mut pi = Vec::new();
 
-                for offset in 0..MAX_PROOF_COUNT {
+                for offset in 0..self.max_proof_count {
 
                     let count_usize = self.lc_witness.len().saturating_sub(offset);
                     let padding = count_usize == 0;
                     let count = Value::known(F::from(count_usize as u64));
 
                     // do not enable the last row, to avoid errors in constrains that involves next rotation
-                    if offset < MAX_PROOF_COUNT - 1 {
+                    if offset < self.max_proof_count - 1 {
                         config.q_enable.enable(&mut region, offset)?;
                     }
 
@@ -443,7 +445,7 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
 
                     // at ending, set the last root in the last row (valid since we are propagating it)
 
-                    if offset == MAX_PROOF_COUNT -1 {
+                    if offset == self.max_proof_count -1 {
                         pi[2] = Some(new_root_lo);
                         pi[3] = Some(new_root_hi);
                     }
@@ -477,8 +479,7 @@ impl LightClientCircuitKeys {
 
         // let circuit = LightClientCircuit::default();
 
-        let general_params =
-            ParamsKZG::<Bn256>::setup(LIGHT_CLIENT_CIRCUIT_DEGREE as u32, &mut rng);
+        let general_params = ParamsKZG::<Bn256>::setup(circuit.degree as u32, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
 
         // Initialize the proving key
@@ -523,7 +524,11 @@ impl LightClientCircuitKeys {
 }
 
 impl LightClientCircuit<Fr> {
-    pub fn new(witness: LightClientWitness<Fr>) -> Result<LightClientCircuit<Fr>> {
+    pub fn new(
+        witness: LightClientWitness<Fr>,
+        degree: usize,
+        max_proof_count: usize,
+    ) -> Result<LightClientCircuit<Fr>> {
         let LightClientWitness {
             mpt_witness,
             transforms,
@@ -541,15 +546,13 @@ impl LightClientCircuit<Fr> {
         // verify the circuit
         let disable_preimage_check = mpt_witness[0].start.clone().unwrap().disable_preimage_check;
 
-        let keccak_circuit = KeccakCircuit::<Fr>::new(
-            2usize.pow(LIGHT_CLIENT_CIRCUIT_DEGREE as u32),
-            keccak_data.clone(),
-        );
+        let keccak_circuit =
+            KeccakCircuit::<Fr>::new(2usize.pow(degree as u32), keccak_data.clone());
 
         let mpt_circuit = zkevm_circuits::mpt_circuit::MPTCircuit::<Fr> {
             nodes: mpt_witness,
             keccak_data,
-            degree: LIGHT_CLIENT_CIRCUIT_DEGREE,
+            degree,
             disable_preimage_check,
             _marker: std::marker::PhantomData,
         };
@@ -559,6 +562,8 @@ impl LightClientCircuit<Fr> {
             keccak_circuit,
             mpt_circuit,
             lc_witness,
+            degree,
+            max_proof_count,
         };
 
         Ok(lc_circuit)
@@ -578,12 +583,8 @@ impl LightClientCircuit<Fr> {
             println!("input[{i:}]: {input:?}");
         }
 
-        let prover = MockProver::<Fr>::run(
-            LIGHT_CLIENT_CIRCUIT_DEGREE as u32,
-            self,
-            vec![public_inputs.0],
-        )
-        .unwrap();
+        let prover =
+            MockProver::<Fr>::run(self.degree as u32, self, vec![public_inputs.0]).unwrap();
         prover.assert_satisfied_at_rows_par(0..num_rows, 0..num_rows);
     }
 
