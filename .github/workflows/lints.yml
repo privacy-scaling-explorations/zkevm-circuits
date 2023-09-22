@@ -59,6 +59,12 @@ jobs:
             target/
           key: lint-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
+      - name: Update ERC20 git submodule
+	run: git submodule update --init --recursive --checkout integration-tests/contracts/vendor/openzeppelin-contracts
+      - name: Cargo Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
       - name: Check code format
         uses: actions-rs/cargo@v1
         with:
