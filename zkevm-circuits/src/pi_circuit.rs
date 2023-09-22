@@ -66,6 +66,8 @@ pub struct PiCircuitConfig<F: Field> {
     q_tx_calldata: Selector,
     // q_calldata_start: 1 on the starting row of calldata in tx_table, others are 0
     q_calldata_start: Selector,
+    // q_wd_table: 1 on the rows where wd_table is activated, others are 0
+    q_wd_table: Selector,
     // q_rpi_keccak_lookup: enable keccak lookup
     q_rpi_keccak_lookup: Selector,
     // q_rpi_value_start: assure rpi_bytes sync with rpi_value_lc when cross boundary.
@@ -168,6 +170,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let calldata_gas_cost = meta.advice_column_in(SecondPhase);
         let is_final = meta.advice_column();
 
+        let q_wd_table = meta.complex_selector();
         let q_digest_last = meta.complex_selector();
         let q_bytes_last = meta.complex_selector();
         let q_rpi_byte_enable = meta.complex_selector();
@@ -496,6 +499,26 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             ]
         });
 
+        meta.create_gate("withdrawal id is incremental", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            // FIXME: last row
+            // let tx_id_is_zero_config = IsZeroChip::configure(
+            //     meta,
+            //     |meta| meta.query_selector(q_tx_calldata),
+            //     |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
+            //     tx_id_inv,
+            // );
+
+            let q_wd_table = meta.query_selector(q_wd_table);
+            cb.require_equal(
+                "next withdrawal_id = current withdrawal_id + 1",
+                meta.query_advice(wd_table.id, Rotation::cur()) + 1.expr(),
+                meta.query_advice(wd_table.id, Rotation::next()),
+            );
+            cb.gate(q_wd_table)
+        });
+
         Self {
             max_txs,
             max_withdrawals,
@@ -509,6 +532,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             q_rpi_value_start,
             q_tx_table,
             q_digest_value_start,
+            q_wd_table,
             tx_table,
             wd_table,
             keccak_table,
@@ -1391,6 +1415,23 @@ impl<F: Field> PiCircuitConfig<F> {
             rpi_bytes_keccak_rlc,
             rpi_bytes,
             current_rpi_offset,
+            challenges,
+            zero_cell.clone(),
+        )?;
+
+        // block withdrawals root
+        self.assign_raw_bytes(
+            region,
+            &extra
+                .withdrawals_root
+                .to_fixed_bytes()
+                .iter()
+                .copied()
+                .rev()
+                .collect_vec(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
             challenges,
             zero_cell,
         )?;

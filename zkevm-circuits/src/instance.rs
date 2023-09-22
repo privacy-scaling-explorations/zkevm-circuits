@@ -35,6 +35,7 @@ pub struct BlockValues {
     pub history_hashes: Vec<H256>,
 }
 
+// FIXME: do we need a WdValues??
 /// Values of the tx table (as in the spec)
 #[derive(Default, Debug, Clone)]
 pub struct TxValues {
@@ -69,6 +70,8 @@ pub struct ExtraValues {
     pub state_root: H256,
     /// prev_state_root
     pub prev_state_root: H256,
+    /// withdrawals_root
+    pub withdrawals_root: H256,
 }
 
 /// PublicData contains all the values that the PiCircuit receives as input
@@ -174,6 +177,7 @@ impl PublicData {
             block_hash: self.block_hash.unwrap_or_else(H256::zero),
             state_root: self.state_root,
             prev_state_root: self.prev_state_root,
+            withdrawals_root: self.withdrawals_root,
         }
     }
 
@@ -208,7 +212,8 @@ impl PublicData {
         let result = result
             .chain(extra_vals.block_hash.to_fixed_bytes()) // block hash
             .chain(extra_vals.state_root.to_fixed_bytes()) // block state root
-            .chain(extra_vals.prev_state_root.to_fixed_bytes()); // previous block state root
+            .chain(extra_vals.prev_state_root.to_fixed_bytes()) // previous block state root
+            .chain(extra_vals.withdrawals_root.to_fixed_bytes()); // withdrawals root
 
         // Assign Tx table
         let tx_field_byte_fn = |tx_id: u64, index: u64, value_bytes: &[u8]| {
