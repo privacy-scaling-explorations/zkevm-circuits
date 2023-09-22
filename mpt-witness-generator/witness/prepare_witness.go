@@ -1,6 +1,7 @@
 package witness
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math/big"
 
@@ -200,7 +201,7 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 			addrh := crypto.Keccak256(addr.Bytes())
 			accountAddr := trie.KeybytesToHex(addrh)
 
-			oracle.PrefetchAccount(statedb.Db.BlockNumber, tMod.Address, nil)
+			ap := oracle.PrefetchAccount(statedb.Db.BlockNumber, tMod.Address, nil)
 			oracle.PrefetchStorage(statedb.Db.BlockNumber, addr, tMod.Key, nil)
 
 			if specialTest == 1 {
@@ -211,7 +212,10 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 			check(err)
 
 			if !statedb.Exist(addr) {
-				statedb.CreateObject(addr)
+				if len(ap) > 0 {
+					ret, _ := hex.DecodeString(ap[len(ap)-1][2:])
+					statedb.SetStateObjectFromEncoding(addr, ret)
+				}
 			}
 
 			storageProof, neighbourNode1, extNibbles1, isLastLeaf1, isNeighbourNodeHashed1, err := statedb.GetStorageProof(addr, tMod.Key)

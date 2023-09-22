@@ -437,7 +437,7 @@ func (s *StateDB) SetStateObjectIfExists(addr common.Address) {
 		ap := oracle.PrefetchAccount(s.Db.BlockNumber, addr, nil)
 		if len(ap) > 0 {
 			ret, _ := hex.DecodeString(ap[len(ap)-1][2:])
-			s.setStateObjectFromEncoding(addr, ret)
+			s.SetStateObjectFromEncoding(addr, ret)
 		}
 	}
 }
@@ -594,7 +594,7 @@ func (s *StateDB) getDeletedStateObject(addr common.Address) *stateObject {
 
 // Added for MPT generator. This loads account into stateObjects - if an account is not
 // in stateObjects, a new account is created in GetOrNewStateObject.
-func (s *StateDB) setStateObjectFromEncoding(addr common.Address, enc []byte) error {
+func (s *StateDB) SetStateObjectFromEncoding(addr common.Address, enc []byte) error {
 	if len(enc) == 0 {
 		return errors.New("encoding of account is of length 0")
 	}
@@ -605,7 +605,7 @@ func (s *StateDB) setStateObjectFromEncoding(addr common.Address, enc []byte) er
 	if err := rlp.DecodeBytes(accData, data); err != nil {
 		// If it's not account RLP, nothing is set (in stateObjects) - this is to prevent
 		// the need of checking whether enc is account RLP or something else (like branch RLP).
-		fmt.Println("failed to decode account")
+		// fmt.Println("failed to decode account")
 		return nil
 	}
 

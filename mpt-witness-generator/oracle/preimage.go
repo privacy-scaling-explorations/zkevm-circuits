@@ -13,7 +13,6 @@ var preimages = make(map[common.Hash][]byte)
 func Preimage(hash common.Hash) ([]byte, error) {
 	val, ok := preimages[hash]
 	if !ok {
-		fmt.Println("can't find preimage", hash)
 		return nil, errors.New("can't find preimage")
 	}
 	comphash := crypto.Keccak256Hash(val)
