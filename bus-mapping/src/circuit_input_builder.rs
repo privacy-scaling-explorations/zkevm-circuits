@@ -9,6 +9,7 @@ mod input_state_ref;
 #[cfg(test)]
 mod tracer_tests;
 mod transaction;
+mod withdrawal;
 
 use self::access::gen_state_access_trace;
 use crate::{
@@ -36,6 +37,7 @@ use itertools::Itertools;
 use log::warn;
 use std::{collections::HashMap, ops::Deref};
 pub use transaction::{Transaction, TransactionContext};
+pub use withdrawal::{Withdrawal, WithdrawalContext};
 
 /// Circuit Setup Parameters
 #[derive(Debug, Clone, Copy)]
