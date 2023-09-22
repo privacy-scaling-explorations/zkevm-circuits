@@ -146,7 +146,7 @@ impl FixedTableTag {
                         state.as_u64()
                     }),
                     F::from(u64::from(precompile)),
-                    F::from(precompile.base_gas_cost().0),
+                    F::from(precompile.base_gas_cost()),
                 ]
             })),
         }

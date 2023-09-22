@@ -85,9 +85,9 @@ impl From<u8> for PrecompileCalls {
 
 impl PrecompileCalls {
     /// Get the base gas cost for the precompile call.
-    pub fn base_gas_cost(&self) -> GasCost {
+    pub fn base_gas_cost(&self) -> u64 {
         match self {
-            Self::ECRecover => GasCost::PRECOMPILE_EC_RECOVER_BASE,
+            Self::ECRecover => GasCost::PRECOMPILE_ECRECOVER_BASE,
             Self::Sha256 => GasCost::PRECOMPILE_SHA256_BASE,
             Self::Ripemd160 => GasCost::PRECOMPILE_RIPEMD160_BASE,
             Self::Identity => GasCost::PRECOMPILE_IDENTITY_BASE,
