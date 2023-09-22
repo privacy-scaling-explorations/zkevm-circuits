@@ -168,7 +168,6 @@ async fn main() {
         (block_number.as_u64(), contract_address),
     );
     blocks.insert("Deploy Greeter".to_string(), block_num.as_u64());
-    
 
     // OpenZeppelinERC20TestToken
     let ozerc20tt_deployer = ozerc20tt::deploy(prov_wallet0.clone(), prov_wallet0.address())
