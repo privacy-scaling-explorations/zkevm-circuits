@@ -715,6 +715,9 @@ mod test {
             
             // TODO require equal for bufferreadergadget
             // cb.require_equal("Input is zero", z_gadget.expr(), 1.expr());
+            // a blakbox for bufferreadergadget
+            
+
 
             BufferReaderGadgetTestContainer { 
                 buffer_reader_gadget, 
@@ -728,10 +731,10 @@ mod test {
             witnesses: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
+            let offset = 0;
             let addr_end= u64::from_le_bytes(witnesses[0].to_le_bytes()[..8].try_into().unwrap());
             let addr_start= u64::from_le_bytes(witnesses[1].to_le_bytes()[..8].try_into().unwrap());
-            let offset = 0;
-            let bytes = &[0u8; MAX_BYTES];
+            let bytes = &[0u8; MAX_BYTES]; // TODO how to modify input witness format
 
             self.addr_start.assign(region, offset, Some(addr_start.to_le_bytes()))?; // TODO or Value::known(addr_end)??
             self.addr_end.assign(region, offset, Some(addr_end.to_le_bytes()))?; // TODO or Value::known(addr_end)??
@@ -755,6 +758,12 @@ mod test {
     fn test_buffer_reader_gadget(){
         // test different start and end address
         
+        try_test!(
+            BufferReaderGadgetTestContainer<Fr, 4, 10>, // TODO how to configure last parameter
+            vec![0u8; 4],
+            true,
+        )
+
         /* 
         
         let mut calldata_word: Vec<_> = (0..N_BYTES_WORD)
