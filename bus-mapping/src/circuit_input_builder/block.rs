@@ -171,7 +171,7 @@ impl Block {
     }
 
     /// Return root of withdrawals of this block
-    pub fn withdrawal_root(&self) -> H256 {
+    pub fn withdrawals_root(&self) -> H256 {
         self.eth_block.withdrawals_root.clone().unwrap()
     }
 

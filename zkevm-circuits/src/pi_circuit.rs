@@ -10,7 +10,7 @@ use std::{cmp::min, iter, marker::PhantomData};
 #[cfg(feature = "test-circuits")]
 pub use PiCircuit as TestPiCircuit;
 
-use eth_types::{self, Field, ToLittleEndian};
+use eth_types::{self, Address, Field, ToLittleEndian};
 use halo2_proofs::plonk::{Expression, Instance, SecondPhase};
 use itertools::Itertools;
 use param::*;
@@ -30,7 +30,7 @@ use crate::{
         public_data_convert, BlockValues, ExtraValues, PublicData, TxValues, NONZERO_BYTE_GAS_COST,
         ZERO_BYTE_GAS_COST,
     },
-    table::{BlockTable, KeccakTable, LookupTable, TxFieldTag, TxTable},
+    table::{BlockTable, KeccakTable, LookupTable, TxFieldTag, TxTable, WdTable},
     tx_circuit::TX_LEN,
     util::{word::Word, Challenges, SubCircuit, SubCircuitConfig},
     witness,
@@ -63,10 +63,12 @@ pub struct PiCircuitConfig<F: Field> {
     q_tx_calldata: Selector,
     // q_calldata_start: 1 on the starting row of calldata in tx_table, others are 0
     q_calldata_start: Selector,
+    // q_wd_table: 1 on the rows where wd_table is activated, others are 0
+    q_wd_table: Selector,
     // q_rpi_keccak_lookup: enable keccak lookup
     q_rpi_keccak_lookup: Selector,
     // q_rpi_value_start: assure rpi_bytes sync with rpi_value_lc when cross boundary.
-    // because we layout rpi bytes vertically, which is concated from multiple original values.
+    // because we layout rpi bytes vertically, which is concatenate from multiple original values.
     // The value can be one byte or multiple bytes. The order of values is pre-defined and
     // hardcode. can't use selector here because we need rotation
     q_rpi_value_start: Column<Fixed>,
@@ -83,7 +85,7 @@ pub struct PiCircuitConfig<F: Field> {
     calldata_gas_cost: Column<Advice>,
     is_final: Column<Advice>,
 
-    // rpi_bytes: raw public input bytes laid verticlly
+    // rpi_bytes: raw public input bytes laid vertically
     rpi_bytes: Column<Advice>,
     // rpi_bytes_keccakrlc: rpi_bytes rlc by keccak challenge. This is for Keccak lookup input
     // rlc
@@ -91,7 +93,7 @@ pub struct PiCircuitConfig<F: Field> {
     // rpi_value_lc: This is similar with rpi_bytes_keccakrlc, while the key differences is
     // it's linear combination with base 256.
     rpi_value_lc: Column<Advice>,
-    // rpi_digest_bytes: Keccak digest raw bytes laid verticlly in this column
+    // rpi_digest_bytes: Keccak digest raw bytes laid vertically in this column
     rpi_digest_bytes: Column<Advice>,
     // rpi_digest_bytes_limbs: hi, lo limbs of digest
     rpi_digest_bytes_limbs: Column<Advice>,
@@ -104,6 +106,7 @@ pub struct PiCircuitConfig<F: Field> {
     // External tables
     block_table: BlockTable,
     tx_table: TxTable,
+    wd_table: WdTable,
     keccak_table: KeccakTable,
 }
 
@@ -115,6 +118,8 @@ pub struct PiCircuitConfigArgs<F: Field> {
     pub max_calldata: usize,
     /// TxTable
     pub tx_table: TxTable,
+    /// WdTable
+    pub wd_table: WdTable,
     /// BlockTable
     pub block_table: BlockTable,
     /// Keccak Table
@@ -134,6 +139,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             max_calldata,
             block_table,
             tx_table,
+            wd_table,
             keccak_table,
             challenges,
         }: Self::ConfigArgs,
@@ -158,6 +164,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let calldata_gas_cost = meta.advice_column_in(SecondPhase);
         let is_final = meta.advice_column();
 
+        let q_wd_table = meta.complex_selector();
         let q_digest_last = meta.complex_selector();
         let q_bytes_last = meta.complex_selector();
         let q_rpi_byte_enable = meta.complex_selector();
@@ -174,6 +181,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
 
         // Annotate table columns
         tx_table.annotate_columns(meta);
+        wd_table.annotate_columns(meta);
         block_table.annotate_columns(meta);
 
         meta.enable_equality(block_table.value.lo());
@@ -182,6 +190,12 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         meta.enable_equality(tx_table.index);
         meta.enable_equality(tx_table.value.lo());
         meta.enable_equality(tx_table.value.hi());
+
+        meta.enable_equality(wd_table.id);
+        meta.enable_equality(wd_table.validator_id);
+        meta.enable_equality(wd_table.address.lo());
+        meta.enable_equality(wd_table.address.hi());
+        meta.enable_equality(wd_table.amount);
 
         meta.enable_equality(rpi_value_lc);
         meta.enable_equality(rpi_bytes_keccakrlc);
@@ -478,6 +492,26 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             ]
         });
 
+        meta.create_gate("withdrawal id is incremental", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            // FIXME: last row
+            // let tx_id_is_zero_config = IsZeroChip::configure(
+            //     meta,
+            //     |meta| meta.query_selector(q_tx_calldata),
+            //     |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
+            //     tx_id_inv,
+            // );
+
+            let q_wd_table = meta.query_selector(q_wd_table);
+            cb.require_equal(
+                "next withdrawal_id = current withdrawal_id + 1",
+                meta.query_advice(wd_table.id, Rotation::cur()) + 1.expr(),
+                meta.query_advice(wd_table.id, Rotation::next()),
+            );
+            cb.gate(q_wd_table)
+        });
+
         Self {
             max_txs,
             max_calldata,
@@ -490,7 +524,9 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             q_rpi_value_start,
             q_tx_table,
             q_digest_value_start,
+            q_wd_table,
             tx_table,
+            wd_table,
             keccak_table,
             tx_id_inv,
             tx_value_lo_inv,
@@ -856,6 +892,107 @@ impl<F: Field> PiCircuitConfig<F> {
         region.constrain_equal(rpi_value_lc_cell.hi().cell(), tx_value_cell.hi().cell())?;
 
         Ok(rpi_bytes_keccakrlc_cell)
+    }
+
+    /// Assigns a wd_table row and stores the values in a vec for the
+    /// raw_public_inputs column
+    #[allow(clippy::too_many_arguments)]
+    fn assign_wd_table_row(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        id: u64,
+        validator_id: u64,
+        address: Address,
+        amount: u64,
+        rpi_bytes_keccakrlc: &mut Value<F>,
+        challenges: &Challenges<Value<F>>,
+        current_offset: &mut usize,
+        rpi_bytes: &mut [u8],
+        zero_cell: AssignedCell<F, F>,
+    ) -> Result<(), Error> {
+        let id_assigned_cell = region.assign_advice(
+            || "withdrawal_id",
+            self.wd_table.id,
+            offset,
+            || Value::known(F::from(id)),
+        )?;
+        let vid_assigned_cell = region.assign_advice(
+            || "validator_id",
+            self.wd_table.validator_id,
+            offset,
+            || Value::known(F::from(validator_id)),
+        )?;
+        let address_word = Word::<F>::from(address);
+        let addr_lo_assigned_cell = region.assign_advice(
+            || "address_lo",
+            self.wd_table.address.lo(),
+            offset,
+            || Value::known(address_word.lo()),
+        )?;
+        let addr_hi_assigned_cell = region.assign_advice(
+            || "address_hi",
+            self.wd_table.address.hi(),
+            offset,
+            || Value::known(address_word.hi()),
+        )?;
+        let amount_assigned_cell = region.assign_advice(
+            || "amount",
+            self.wd_table.amount,
+            offset,
+            || Value::known(F::from(amount)),
+        )?;
+
+        // id
+        let (_, raw_id) = self.assign_raw_bytes(
+            region,
+            &id.to_le_bytes(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell.clone(),
+        )?;
+        region.constrain_equal(id_assigned_cell.cell(), raw_id.lo().cell())?;
+
+        // validator_id
+        let (_, raw_vid) = self.assign_raw_bytes(
+            region,
+            &validator_id.to_le_bytes(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell.clone(),
+        )?;
+        region.constrain_equal(vid_assigned_cell.cell(), raw_vid.lo().cell())?;
+
+        // address
+        let (_, raw_address) = self.assign_raw_bytes(
+            region,
+            &address.to_fixed_bytes(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell.clone(),
+        )?;
+        region.constrain_equal(addr_lo_assigned_cell.cell(), raw_address.lo().cell())?;
+        region.constrain_equal(addr_hi_assigned_cell.cell(), raw_address.hi().cell())?;
+
+        // amount
+        let (_, raw_amount) = self.assign_raw_bytes(
+            region,
+            &amount.to_le_bytes(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell,
+        )?;
+        region.constrain_equal(amount_assigned_cell.cell(), raw_amount.lo().cell())?;
+
+        Ok(())
     }
 
     /// assign raw bytes
@@ -1249,6 +1386,23 @@ impl<F: Field> PiCircuitConfig<F> {
             rpi_bytes,
             current_offset,
             challenges,
+            zero_cell.clone(),
+        )?;
+
+        // block withdrawals root
+        self.assign_raw_bytes(
+            region,
+            &extra
+                .withdrawals_root
+                .to_fixed_bytes()
+                .iter()
+                .copied()
+                .rev()
+                .collect_vec(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
             zero_cell,
         )?;
 
@@ -1364,8 +1518,8 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
             || "region 0",
             |mut region| {
                 // Annotate columns
-
                 config.tx_table.annotate_columns_in_region(&mut region);
+                config.wd_table.annotate_columns_in_region(&mut region);
                 config.block_table.annotate_columns_in_region(&mut region);
                 config.keccak_table.annotate_columns_in_region(&mut region);
 
@@ -1398,7 +1552,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 config.q_digest_last.enable(&mut region, N_BYTES_WORD - 1)?; // digest is 32 bytes
                 config.q_bytes_last.enable(&mut region, start_offset)?;
 
-                // assign last + 1 to 0 to as wordaround to skip CellNotAssigned Error from
+                // assign last + 1 to 0 to as workaround to skip CellNotAssigned Error from
                 // Mock_prover
                 config.reset_rpi_bytes_row(&mut region, start_offset + 1)?;
                 config.reset_rpi_digest_row(&mut region, N_BYTES_WORD)?;
@@ -1635,6 +1789,10 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 // lookup assignment
                 // also assign empty to last of TxTable
                 config.assign_empty_txtable_row(&mut region, call_data_offset)?;
+
+                // FIXME
+                // config.assign_wd_table_row()?;
+                // config.assign_empty_wd_table_row()?;
 
                 // keccak lookup occur on offset 0
                 config.q_rpi_keccak_lookup.enable(&mut region, 0)?;

@@ -7,12 +7,13 @@ use crate::{
     util::{log2_ceil, word, SubCircuit},
 };
 use bus_mapping::{
-    circuit_input_builder::{self, CopyEvent, ExpEvent, FixedCParams},
+    circuit_input_builder::{self, CopyEvent, ExpEvent, FixedCParams, Withdrawal},
     state_db::CodeDB,
     Error,
 };
-use eth_types::{Address, Field, ToScalar, Word};
+use eth_types::{Address, Field, ToScalar, Word, H256};
 use halo2_proofs::circuit::Value;
+use itertools::Itertools;
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -73,6 +74,30 @@ impl<F: Field> Block<F> {
     /// Get a read-write record
     pub(crate) fn get_rws(&self, step: &ExecStep, index: usize) -> Rw {
         self.rws[step.rw_index(index)]
+    }
+
+    /// Return the list of withdrawals of this block.
+    pub fn withdrawals(&self) -> Vec<Withdrawal> {
+        let eth_withdrawals = self.eth_block.withdrawals.clone().unwrap();
+        eth_withdrawals
+            .iter()
+            .map({
+                |w| {
+                    Withdrawal::new(
+                        w.index.as_u64(),
+                        w.validator_index.as_u64(),
+                        w.address,
+                        w.amount.as_u64(),
+                    )
+                    .unwrap()
+                }
+            })
+            .collect_vec()
+    }
+
+    /// Return root of withdrawals of this block
+    pub fn withdrawals_root(&self) -> H256 {
+        self.eth_block.withdrawals_root.clone().unwrap()
     }
 
     /// Obtains the expected Circuit degree needed in order to be able to test

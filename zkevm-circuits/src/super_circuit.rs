@@ -63,7 +63,7 @@ use crate::{
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
         BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RwTable, TxTable,
-        UXTable,
+        UXTable, WdTable,
     },
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
@@ -122,6 +122,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         }: Self::ConfigArgs,
     ) -> Self {
         let tx_table = TxTable::construct(meta);
+        let wd_table = WdTable::construct(meta);
         let rw_table = RwTable::construct(meta);
         let mpt_table = MptTable::construct(meta);
         let bytecode_table = BytecodeTable::construct(meta);
@@ -159,6 +160,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 max_calldata,
                 block_table: block_table.clone(),
                 tx_table: tx_table.clone(),
+                wd_table: wd_table.clone(),
                 keccak_table: keccak_table.clone(),
                 challenges: challenges.clone(),
             },
