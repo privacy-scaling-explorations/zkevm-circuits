@@ -126,4 +126,32 @@ impl GasCost {
     /// Times ceil exponent byte size for the EXP instruction, EIP-158 changed
     /// it from 10 to 50.
     pub const EXP_BYTE_TIMES: u64 = 50;
+    /// Base gas cost for precompile call: Elliptic curve recover
+    pub const PRECOMPILE_ECRECOVER_BASE: u64 = 3000;
+    /// Base gas cost for precompile call: SHA256
+    pub const PRECOMPILE_SHA256_BASE: u64 = 60;
+    /// Per-word gas cost for SHA256
+    pub const PRECOMPILE_SHA256_PER_WORD: u64 = 12;
+    /// Base gas cost for precompile call: RIPEMD160
+    pub const PRECOMPILE_RIPEMD160_BASE: u64 = 600;
+    /// Per-word gas cost for RIPEMD160
+    pub const PRECOMPILE_RIPEMD160_PER_WORD: u64 = 120;
+    /// Base gas cost for precompile call: Identity
+    pub const PRECOMPILE_IDENTITY_BASE: u64 = 15;
+    /// Per-word gas cost for Identity
+    pub const PRECOMPILE_IDENTITY_PER_WORD: u64 = 3;
+    /// Base gas cost for precompile call: BN256 point addition
+    pub const PRECOMPILE_BN256ADD: u64 = 150;
+    /// Base gas cost for precompile call: BN256 scalar multiplication
+    pub const PRECOMPILE_BN256MUL: u64 = 6000;
+    /// Base gas cost for precompile call: BN256 pairing op base cost
+    pub const PRECOMPILE_BN256PAIRING: u64 = 45000;
+    /// Per-pair gas cost for BN256 pairing
+    pub const PRECOMPILE_BN256PAIRING_PER_PAIR: u64 = 34000;
+    /// Base gas cost for precompile call: MODEXP
+    pub const PRECOMPILE_MODEXP: u64 = 200; // eip255
+    /// Minimum gas cost for precompile calls: MODEXP
+    pub const PRECOMPILE_MODEXP_MIN: u64 = 200;
+    /// Base gas cost for precompile call: BLAKE2F
+    pub const PRECOMPILE_BLAKE2F: u64 = 0;
 }
