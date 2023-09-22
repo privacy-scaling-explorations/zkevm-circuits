@@ -20,7 +20,7 @@ use crate::{
             ParentData, FIXED, KECCAK, MULT,
         },
         param::HASH_WIDTH,
-        FixedTableTag, MPTConfig, MPTState, RlpItemType,
+        FixedTableTag, MPTConfig, MptMemory, RlpItemType,
     },
     util::word::Word,
 };
@@ -92,12 +92,12 @@ impl<F: Field> ExtensionGadget<F> {
 
             config.rlp_key = ListKeyGadget::construct(cb, &key_items[0]);
             config.is_key_part_odd = cb.query_cell();
-            let first_byte = matchx! {
+            let first_byte = matchx! {(
                 key_items[true.idx()].is_short() => key_items[true.idx()].bytes_be()[0].expr(),
                 key_items[true.idx()].is_long() => key_items[true.idx()].bytes_be()[1].expr(),
                 key_items[true.idx()].is_very_long() => key_items[true.idx()].bytes_be()[2].expr(),
-            };
-            require!((FixedTableTag::ExtOddKey.expr(), first_byte, config.is_key_part_odd.expr()) => @FIXED);
+            )};
+            require!((FixedTableTag::ExtOddKey.expr(), first_byte, config.is_key_part_odd.expr()) =>> @FIXED);
 
             let mut branch_rlp_rlc = vec![0.expr(); 2];
             let mut branch_rlp_word = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
@@ -137,7 +137,7 @@ impl<F: Field> ExtensionGadget<F> {
                 ifx! {not!(is_placeholder[is_s.idx()]) => {
                     ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
                         // Hashed branch hash in parent branch
-                        require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data[is_s.idx()].hash.lo().expr(), parent_data[is_s.idx()].hash.hi().expr()] => @KECCAK);
+                        require!((1.expr(), rlc.expr(), num_bytes.expr(), parent_data[is_s.idx()].hash.lo().expr(), parent_data[is_s.idx()].hash.hi().expr()) =>> @KECCAK);
                     } elsex {
                         // Non-hashed branch hash in parent branch
                         require!(rlc => parent_data[is_s.idx()].rlc);
@@ -188,7 +188,7 @@ impl<F: Field> ExtensionGadget<F> {
                 - ifx! {not!(key_data.is_odd.expr() * config.is_key_part_odd.expr()) => { 1.expr() }};
             // Get the multiplier for this key length
             config.mult_key = cb.query_cell_with_type(MptCellType::StoragePhase2);
-            require!((key_num_bytes_for_mult, config.mult_key.expr()) => @MULT);
+            require!((key_num_bytes_for_mult, config.mult_key.expr()) =>> @MULT);
 
             // Store the post ext state
             config.post_state = Some(ExtState {
@@ -213,7 +213,7 @@ impl<F: Field> ExtensionGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         _mpt_config: &MPTConfig<F>,
-        _pv: &mut MPTState<F>,
+        _memory: &mut MptMemory<F>,
         offset: usize,
         key_data: &KeyDataWitness<F>,
         key_rlc: &mut F,
