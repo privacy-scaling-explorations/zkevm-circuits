@@ -240,11 +240,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             // 1. Call to precompiled.
             (true, true, _) => {
                 let code_address = code_address.unwrap();
-                let precompile_call: PrecompileCalls = code_address.0[19].into();
 
                 // get the result of the precompile call.
                 // For failed call, it will cost all gas provided
-                let (result, precompile_call_gas_cost, has_oog_err) = execute_precompiled(
+                // let (result, precompile_call_gas_cost, has_oog_err) = execute_precompiled(
+                let (result, _, _) = execute_precompiled(
                     &code_address,
                     if args_length != 0 {
                         let caller_memory = &state.caller_ctx()?.memory;
@@ -611,7 +611,8 @@ pub mod tests {
     // move this to circuit after circuit part is complete
     #[test]
     fn test_precompiled_call() {
-        use crate::{circuit_input_builder::CircuitsParams, mock::BlockData};
+        use crate::mock::BlockData;
+        // use crate::circuit_input_builder::CircuitsParams;
         use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, word, Word};
         use mock::{
             test_ctx::{
