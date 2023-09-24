@@ -17,7 +17,7 @@ pub fn gen_associated_ops(
     let mut exec_step = state.new_step(&geth_step)?;
     exec_step.exec_state = ExecState::Precompile(precompile);
 
-    common_call_ctx_reads(state, &mut exec_step, &call);
+    common_call_ctx_reads(state, &mut exec_step, &call)?;
 
     Ok(exec_step)
 }
