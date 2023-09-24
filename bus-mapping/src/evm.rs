@@ -4,5 +4,5 @@ pub(crate) mod opcodes;
 
 pub use eth_types::evm_types::opcode_ids::OpcodeId;
 pub use opcodes::Opcode;
-#[cfg(feature = "test")]
+#[cfg(any(feature = "test", test))]
 pub use opcodes::PrecompileCallArgs;
