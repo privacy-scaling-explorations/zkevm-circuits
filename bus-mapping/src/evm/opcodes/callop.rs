@@ -534,16 +534,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 }
 #[cfg(any(test, feature = "test"))]
 pub mod tests {
-    use crate::mock::BlockData;
-    // use crate::{circuit_input_builder::CircuitsParams};
-    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, word, Bytecode, Word};
-    use mock::{
-        test_ctx::{
-            helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
-            LoggerConfig,
-        },
-        TestContext,
-    };
+    use eth_types::{evm_types::OpcodeId, Bytecode, Word};
 
     /// Precompile call args
     pub struct PrecompileCallArgs {
@@ -620,6 +611,16 @@ pub mod tests {
     // move this to circuit after circuit part is complete
     #[test]
     fn test_precompiled_call() {
+        use crate::{circuit_input_builder::CircuitsParams, mock::BlockData};
+        use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, word, Word};
+        use mock::{
+            test_ctx::{
+                helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+                LoggerConfig,
+            },
+            TestContext,
+        };
+
         let test_vector = [
             PrecompileCallArgs {
                 name: "ecRecover",
