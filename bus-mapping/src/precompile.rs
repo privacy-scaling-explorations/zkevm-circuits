@@ -17,7 +17,7 @@ pub(crate) fn execute_precompiled(address: &Address, input: &[u8], gas: u64) -> 
         panic!("calling non-exist precompiled contract address")
     };
 
-    let (return_data, gas_cost, is_oog, is_ok) = match precompile_fn(input, gas) {
+    let (return_data, gas_cost, is_oog, _is_ok) = match precompile_fn(input, gas) {
         Ok((gas_cost, return_value)) => {
             // Some Revm behavior for invalid inputs might be overridden.
             (return_value, gas_cost, false, true)
