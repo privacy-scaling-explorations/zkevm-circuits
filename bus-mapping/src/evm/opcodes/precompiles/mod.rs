@@ -22,7 +22,7 @@ pub fn gen_associated_ops(
     Ok(exec_step)
 }
 
-fn common_call_ctx_reads(state: &mut CircuitInputStateRef, exec_step: &mut ExecStep, call: &Call) {
+fn common_call_ctx_reads(state: &mut CircuitInputStateRef, exec_step: &mut ExecStep, call: &Call)  -> Result<(), Error> {
     for (field, value) in [
         (
             CallContextField::IsSuccess,
@@ -52,4 +52,6 @@ fn common_call_ctx_reads(state: &mut CircuitInputStateRef, exec_step: &mut ExecS
     ] {
         state.call_context_read(exec_step, call.call_id, field, value);
     }
+
+    Ok(())
 }
