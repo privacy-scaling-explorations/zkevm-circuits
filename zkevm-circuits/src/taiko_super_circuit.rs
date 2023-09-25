@@ -6,7 +6,14 @@ pub mod test;
 
 use crate::{
     anchor_tx_circuit::{AnchorTxCircuit, AnchorTxCircuitConfig, AnchorTxCircuitConfigArgs},
+    bytecode_circuit::circuit::{
+        BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs,
+    },
+    copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs},
     evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs},
+    exp_circuit::{ExpCircuit, ExpCircuitConfig},
+    keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
+    // state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
         BlockTable, ByteTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, PiTable, RwTable,
         TxTable,
@@ -43,6 +50,11 @@ pub struct SuperCircuitConfig<F: Field> {
     pi_circuit: TaikoPiCircuitConfig<F>,
     anchor_tx_circuit: AnchorTxCircuitConfig<F>,
     evm_circuit: EvmCircuitConfig<F>,
+    keccak_circuit: KeccakCircuitConfig<F>,
+    bytecode_circuit: BytecodeCircuitConfig<F>,
+    // state_circuit: StateCircuitConfig<F>,
+    exp_circuit: ExpCircuitConfig<F>,
+    copy_circuit: CopyCircuitConfig<F>,
 }
 
 /// Circuit configuration arguments
@@ -93,7 +105,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         let evm_circuit = EvmCircuitConfig::new(
             meta,
             EvmCircuitConfigArgs {
-                challenges,
+                challenges: challenges.clone(),
                 tx_table: tx_table.clone(),
                 rw_table,
                 bytecode_table: bytecode_table.clone(),
@@ -103,6 +115,54 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 exp_table,
                 is_taiko: true,
             },
+        );
+
+        let keccak_circuit = KeccakCircuitConfig::new(
+            meta,
+            KeccakCircuitConfigArgs {
+                keccak_table: keccak_table.clone(),
+                challenges: challenges.clone(),
+            },
+        );
+
+        let bytecode_circuit = BytecodeCircuitConfig::new(
+            meta,
+            BytecodeCircuitConfigArgs {
+                bytecode_table: bytecode_table.clone(),
+                challenges: challenges.clone(),
+                keccak_table: keccak_table.clone(),
+            },
+        );
+
+        // let state_circuit = StateCircuitConfig::new(
+        //     meta,
+        //     StateCircuitConfigArgs {
+        //         rw_table: rw_table.clone(),
+        //         challenges: challenges.clone(),
+        //         mpt_table: todo!(),
+        //     },
+        // );
+
+        let exp_circuit = ExpCircuitConfig::new(meta, exp_table.clone());
+
+        let copy_circuit = CopyCircuitConfig::new(
+            meta,
+            CopyCircuitConfigArgs {
+                tx_table: tx_table.clone(),
+                rw_table: rw_table.clone(),
+                bytecode_table: bytecode_table.clone(),
+                copy_table: copy_table.clone(),
+                challenges: challenges.clone(),
+                q_enable: q_copy_table,
+            },
+        );
+
+        println!(
+            "#col {:?}, #constraints {:?}, #lookup {:?}, #permu {:?}.",
+            meta.num_advice_columns() + meta.num_fixed_columns(),
+            meta.gates().len(),
+            meta.lookups().len(),
+            meta.permutation().get_columns().len()
         );
 
         Self {
@@ -118,6 +178,11 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             byte_table,
             anchor_tx_circuit,
             evm_circuit,
+            keccak_circuit,
+            bytecode_circuit,
+            // state_circuit,
+            exp_circuit,
+            copy_circuit,
         }
     }
 }
@@ -131,6 +196,14 @@ pub struct SuperCircuit<F: Field> {
     pub anchor_tx_circuit: AnchorTxCircuit<F>,
     /// EVM Circuit
     pub evm_circuit: EvmCircuit<F>,
+
+    // planed circuits for a6
+    pub(crate) keccak_circuit: KeccakCircuit<F>,
+    pub(crate) bytecode_circuit: BytecodeCircuit<F>,
+    // pub(crate) state: StateCircuit<F>,
+    pub(crate) copy_circuit: CopyCircuit<F>,
+    pub(crate) exp_circuit: ExpCircuit<F>,
+
     /// Block witness
     pub block: Block<F>,
 }
@@ -159,11 +232,19 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
         let pi_circuit = TaikoPiCircuit::new_from_block(block);
         let anchor_tx_circuit = AnchorTxCircuit::new_from_block(block);
         let evm_circuit = EvmCircuit::new_from_block(block);
+        let keccak_circuit = KeccakCircuit::new_from_block(block);
+        let bytecode_circuit = BytecodeCircuit::new_from_block(block);
+        let copy_circuit = CopyCircuit::new_from_block(block);
+        let exp_circuit = ExpCircuit::new_from_block(block);
 
         SuperCircuit::<_> {
             pi_circuit,
             anchor_tx_circuit,
             evm_circuit,
+            keccak_circuit,
+            bytecode_circuit,
+            copy_circuit,
+            exp_circuit,
             block: block.clone(),
         }
     }
@@ -200,6 +281,15 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
             .synthesize_sub(&config.anchor_tx_circuit, challenges, layouter)?;
         self.evm_circuit
             .synthesize_sub(&config.evm_circuit, challenges, layouter)?;
+        self.keccak_circuit
+            .synthesize_sub(&config.keccak_circuit, challenges, layouter)?;
+        self.bytecode_circuit
+            .synthesize_sub(&config.bytecode_circuit, challenges, layouter)?;
+        self.copy_circuit
+            .synthesize_sub(&config.copy_circuit, challenges, layouter)?;
+        self.exp_circuit
+            .synthesize_sub(&config.exp_circuit, challenges, layouter)?;
+
         Ok(())
     }
 }
