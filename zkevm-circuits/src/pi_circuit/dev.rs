@@ -16,6 +16,8 @@ use halo2_proofs::{
 pub struct PiCircuitParams {
     /// Max Txs
     pub max_txs: usize,
+    /// Max withdrawals
+    pub max_withdrawals: usize,
     /// Max Calldata
     pub max_calldata: usize,
 }
@@ -32,6 +34,7 @@ impl<F: Field> Circuit<F> for PiCircuit<F> {
     fn params(&self) -> Self::Params {
         PiCircuitParams {
             max_txs: self.max_txs,
+            max_withdrawals: self.max_withdrawals,
             max_calldata: self.max_calldata,
         }
     }
@@ -48,6 +51,7 @@ impl<F: Field> Circuit<F> for PiCircuit<F> {
                 meta,
                 PiCircuitConfigArgs {
                     max_txs: params.max_txs,
+                    max_withdrawals: params.max_withdrawals,
                     max_calldata: params.max_calldata,
                     block_table,
                     tx_table,

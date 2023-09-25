@@ -311,6 +311,7 @@ pub fn run_test(
     if !circuits_config.super_circuit {
         let circuits_params = FixedCParams {
             max_txs: 1,
+            max_withdrawals: 1,
             max_rws: 55000,
             max_calldata: 5000,
             max_bytecode: 5000,
@@ -335,6 +336,7 @@ pub fn run_test(
 
         let circuits_params = FixedCParams {
             max_txs: 1,
+            max_withdrawals: 1,
             max_calldata: 32,
             max_rws: 256,
             max_copy_rows: 256,

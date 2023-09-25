@@ -49,6 +49,8 @@ pub struct FixedCParams {
     // TODO: evm_rows: Maximum number of rows in the EVM Circuit
     /// Maximum number of txs in the Tx Circuit
     pub max_txs: usize,
+    /// Maximum number of withdrawals in the Withdrawal Circuit
+    pub max_withdrawals: usize,
     /// Maximum number of bytes from all txs calldata in the Tx Circuit
     pub max_calldata: usize,
     /// Max ammount of rows that the CopyCircuit can have.
@@ -91,6 +93,7 @@ impl Default for FixedCParams {
         FixedCParams {
             max_rws: 1000,
             max_txs: 1,
+            max_withdrawals: 1,
             max_calldata: 256,
             // TODO: Check whether this value is correct or we should increase/decrease based on
             // this lib tests
@@ -372,6 +375,7 @@ impl CircuitInputBuilder<DynamicCParams> {
         // Compute subcircuits parameters
         let c_params = {
             let max_txs = eth_block.transactions.len();
+            let max_withdrawals = eth_block.withdrawals.as_ref().unwrap().len();
             let max_bytecode = self.code_db.num_rows_required_for_bytecode_table();
 
             let max_calldata = eth_block
@@ -413,6 +417,7 @@ impl CircuitInputBuilder<DynamicCParams> {
             FixedCParams {
                 max_rws: max_rws_after_padding,
                 max_txs,
+                max_withdrawals,
                 max_calldata,
                 max_copy_rows,
                 max_exp_steps,

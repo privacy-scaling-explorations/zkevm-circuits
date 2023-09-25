@@ -50,6 +50,8 @@ use halo2_proofs::{
 pub struct PiCircuitConfig<F: Field> {
     /// Max number of supported transactions
     max_txs: usize,
+    /// Max number of supported withdrawals
+    max_withdrawals: usize,
     /// Max number of supported calldata bytes
     max_calldata: usize,
 
@@ -114,6 +116,8 @@ pub struct PiCircuitConfig<F: Field> {
 pub struct PiCircuitConfigArgs<F: Field> {
     /// Max number of supported transactions
     pub max_txs: usize,
+    /// Max number of supported withdrawals
+    pub max_withdrawals: usize,
     /// Max number of supported calldata bytes
     pub max_calldata: usize,
     /// TxTable
@@ -136,6 +140,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         meta: &mut ConstraintSystem<F>,
         Self::ConfigArgs {
             max_txs,
+            max_withdrawals,
             max_calldata,
             block_table,
             tx_table,
@@ -495,25 +500,21 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         meta.create_gate("withdrawal id is incremental", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // FIXME: last row
-            // let tx_id_is_zero_config = IsZeroChip::configure(
-            //     meta,
-            //     |meta| meta.query_selector(q_tx_calldata),
-            //     |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
-            //     tx_id_inv,
-            // );
-
             let q_wd_table = meta.query_selector(q_wd_table);
-            cb.require_equal(
-                "next withdrawal_id = current withdrawal_id + 1",
-                meta.query_advice(wd_table.id, Rotation::cur()) + 1.expr(),
-                meta.query_advice(wd_table.id, Rotation::next()),
-            );
+            let next_id = meta.query_advice(wd_table.id, Rotation::next());
+            cb.condition(next_id.expr(), |cb| {
+                cb.require_equal(
+                    "next withdrawal_id = current withdrawal_id + 1",
+                    meta.query_advice(wd_table.id, Rotation::cur()) + 1.expr(),
+                    next_id,
+                )
+            });
             cb.gate(q_wd_table)
         });
 
         Self {
             max_txs,
+            max_withdrawals,
             max_calldata,
             block_table,
             q_digest_last,
@@ -995,6 +996,44 @@ impl<F: Field> PiCircuitConfig<F> {
         Ok(())
     }
 
+    fn assign_empty_wd_table_row(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+    ) -> Result<(), Error> {
+        region.assign_advice(
+            || "withdrawal_id",
+            self.wd_table.id,
+            offset,
+            || Value::known(F::ZERO),
+        )?;
+        region.assign_advice(
+            || "validator_id",
+            self.wd_table.validator_id,
+            offset,
+            || Value::known(F::ZERO),
+        )?;
+
+        region.assign_advice(
+            || "address_lo",
+            self.wd_table.address.lo(),
+            offset,
+            || Value::known(F::ZERO),
+        )?;
+        region.assign_advice(
+            || "address_hi",
+            self.wd_table.address.hi(),
+            offset,
+            || Value::known(F::ZERO),
+        )?;
+        region.assign_advice(
+            || "amount",
+            self.wd_table.amount,
+            offset,
+            || Value::known(F::ZERO),
+        )?;
+        Ok(())
+    }
     /// assign raw bytes
     #[allow(clippy::too_many_arguments)]
     fn assign_raw_bytes(
@@ -1435,6 +1474,7 @@ impl<F: Field> PiCircuitConfig<F> {
 #[derive(Clone, Default, Debug)]
 pub struct PiCircuit<F: Field> {
     max_txs: usize,
+    max_withdrawals: usize,
     max_calldata: usize,
     /// PublicInputs data known by the verifier
     pub public_data: PublicData,
@@ -1443,9 +1483,15 @@ pub struct PiCircuit<F: Field> {
 
 impl<F: Field> PiCircuit<F> {
     /// Creates a new PiCircuit
-    pub fn new(max_txs: usize, max_calldata: usize, public_data: PublicData) -> Self {
+    pub fn new(
+        max_txs: usize,
+        max_withdrawals: usize,
+        max_calldata: usize,
+        public_data: PublicData,
+    ) -> Self {
         Self {
             max_txs,
+            max_withdrawals,
             max_calldata,
             public_data,
             _marker: PhantomData,
@@ -1466,6 +1512,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         let public_data = public_data_convert(block);
         PiCircuit::new(
             block.circuits_params.max_txs,
+            block.circuits_params.max_withdrawals,
             block.circuits_params.max_calldata,
             public_data,
         )
@@ -1790,9 +1837,28 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 // also assign empty to last of TxTable
                 config.assign_empty_txtable_row(&mut region, call_data_offset)?;
 
-                // FIXME
-                // config.assign_wd_table_row()?;
-                // config.assign_empty_wd_table_row()?;
+                // assign withdrawal table and padding rows
+                let mut withdrawal_offset = call_data_offset;
+                for wd in self.public_data.withdrawals.iter() {
+                    config.assign_wd_table_row(
+                        &mut region,
+                        withdrawal_offset,
+                        wd.id,
+                        wd.validator_id,
+                        wd.address,
+                        wd.amount,
+                        &mut rpi_bytes_keccakrlc,
+                        challenges,
+                        &mut current_offset,
+                        &mut rpi_bytes,
+                        zero_cell.clone(),
+                    );
+                    withdrawal_offset += 1;
+                }
+                for _ in self.public_data.withdrawals.len()..config.max_withdrawals {
+                    config.assign_empty_wd_table_row(&mut region, withdrawal_offset);
+                    withdrawal_offset += 1;
+                }
 
                 // keccak lookup occur on offset 0
                 config.q_rpi_keccak_lookup.enable(&mut region, 0)?;
@@ -1802,7 +1868,6 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         )?;
 
         // Constrain raw_public_input cells to public inputs
-
         layouter.constrain_instance(digest_word_assigned.lo().cell(), config.pi_instance, 0)?;
         layouter.constrain_instance(digest_word_assigned.hi().cell(), config.pi_instance, 1)?;
 

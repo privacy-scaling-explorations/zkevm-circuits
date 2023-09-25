@@ -103,6 +103,8 @@ pub struct SuperCircuitConfig<F: Field> {
 pub struct SuperCircuitConfigArgs<F: Field> {
     /// Max txs
     pub max_txs: usize,
+    /// Max withdrawals
+    pub max_withdrawals: usize,
     /// Max calldata
     pub max_calldata: usize,
     /// Mock randomness
@@ -117,6 +119,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         meta: &mut ConstraintSystem<F>,
         Self::ConfigArgs {
             max_txs,
+            max_withdrawals,
             max_calldata,
             mock_randomness,
         }: Self::ConfigArgs,
@@ -157,6 +160,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             meta,
             PiCircuitConfigArgs {
                 max_txs,
+                max_withdrawals,
                 max_calldata,
                 block_table: block_table.clone(),
                 tx_table: tx_table.clone(),
@@ -383,6 +387,7 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
 #[derive(Default)]
 pub struct SuperCircuitParams<F: Field> {
     max_txs: usize,
+    max_withdrawals: usize,
     max_calldata: usize,
     mock_randomness: F,
 }
@@ -399,6 +404,7 @@ impl<F: Field> Circuit<F> for SuperCircuit<F> {
     fn params(&self) -> Self::Params {
         SuperCircuitParams {
             max_txs: self.circuits_params.max_txs,
+            max_withdrawals: self.circuits_params.max_withdrawals,
             max_calldata: self.circuits_params.max_calldata,
             mock_randomness: self.mock_randomness,
         }
@@ -409,6 +415,7 @@ impl<F: Field> Circuit<F> for SuperCircuit<F> {
             meta,
             SuperCircuitConfigArgs {
                 max_txs: params.max_txs,
+                max_withdrawals: params.max_withdrawals,
                 max_calldata: params.max_calldata,
                 mock_randomness: params.mock_randomness,
             },
