@@ -60,18 +60,18 @@ pub(crate) struct CallOpGadget<F> {
     is_staticcall: IsZeroGadget<F>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
-    current_callee_address: WordCell<F>,
-    current_caller_address: WordCell<F>,
+    current_callee_address: Cell<F>,
+    current_caller_address: Cell<F>,
     is_static: Cell<F>,
     depth: Cell<F>,
     call: CommonCallGadget<F, MemoryAddressGadget<F>, true>,
-    current_value: WordCell<F>,
+    current_value: Word<Cell<F>>,
     is_warm: Cell<F>,
     is_warm_prev: Cell<F>,
     callee_reversion_info: ReversionInfo<F>,
     transfer: TransferGadget<F>,
     // current handling Call* opcode's caller balance
-    caller_balance: WordCell<F>,
+    caller_balance: Word<Cell<F>>,
     // check if insufficient balance case
     is_insufficient_balance: LtWordGadget<F>,
     is_depth_ok: LtGadget<F, N_BYTES_U64>,
@@ -83,7 +83,14 @@ pub(crate) struct CallOpGadget<F> {
     precompile_gadget: PrecompileGadget<F>,
     precompile_return_length: Cell<F>,
     precompile_return_length_zero: IsZeroGadget<F>,
-    return_data_copy_size: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
+    precompile_return_data_copy_size: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
+    precompile_input_len: Cell<F>, // the number of input bytes taken for the precompile call.
+    precompile_input_bytes_rlc: Cell<F>, // input bytes to precompile call.
+    precompile_output_bytes_rlc: Cell<F>, // output bytes from precompile call.
+    precompile_return_bytes_rlc: Cell<F>, // bytes returned to caller from precompile call.
+    precompile_input_rws: Cell<F>,
+    precompile_output_rws: Cell<F>,
+    precompile_return_rws: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
