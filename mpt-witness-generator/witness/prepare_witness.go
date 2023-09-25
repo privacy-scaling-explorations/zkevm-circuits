@@ -147,12 +147,12 @@ func obtainAccountProofAndConvertToWitness(i int, tMod TrieModification, tModsLe
 	addrh, accountAddr, accountProof, accountProof1, sRoot, cRoot = modifyAccountProofSpecialTests(addrh, accountAddr, sRoot, cRoot, accountProof, accountProof1, aNeighbourNode2, specialTest)
 	aNode := aNeighbourNode2
 	isShorterProofLastLeaf := isLastLeaf1
-	aIsNeighbourNodeHashed := aIsNeighbourNodeHashed1
+	aIsNeighbourNodeHashed := aIsNeighbourNodeHashed2
 	if len(accountProof) > len(accountProof1) {
 		// delete operation
 		aNode = aNeighbourNode1
 		isShorterProofLastLeaf = isLastLeaf2
-		aIsNeighbourNodeHashed = aIsNeighbourNodeHashed2
+		aIsNeighbourNodeHashed = aIsNeighbourNodeHashed1
 	}
 
 	if aIsNeighbourNodeHashed {
@@ -211,11 +211,9 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 			accountProof, aNeighbourNode1, aExtNibbles1, aIsLastLeaf1, aIsNeighbourNodeHashed1, err := statedb.GetProof(addr)
 			check(err)
 
-			if !statedb.Exist(addr) {
-				if len(ap) > 0 {
-					ret, _ := hex.DecodeString(ap[len(ap)-1][2:])
-					statedb.SetStateObjectFromEncoding(addr, ret)
-				}
+			if !statedb.Exist(addr) && len(ap) > 0 {
+				ret, _ := hex.DecodeString(ap[len(ap)-1][2:])
+				statedb.SetStateObjectFromEncoding(addr, ret)
 			}
 
 			storageProof, neighbourNode1, extNibbles1, isLastLeaf1, isNeighbourNodeHashed1, err := statedb.GetStorageProof(addr, tMod.Key)
@@ -243,12 +241,12 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 
 			aNode := aNeighbourNode2
 			aIsLastLeaf := aIsLastLeaf1
-			aIsNeighbourNodeHashed := aIsNeighbourNodeHashed1
+			aIsNeighbourNodeHashed := aIsNeighbourNodeHashed2
 			if len(accountProof) > len(accountProof1) {
 				// delete operation
 				aNode = aNeighbourNode1
 				aIsLastLeaf = aIsLastLeaf2
-				aIsNeighbourNodeHashed = aIsNeighbourNodeHashed2
+				aIsNeighbourNodeHashed = aIsNeighbourNodeHashed1
 			}
 
 			// Note: oracle.Preimage is called here and not in Proof function because the preimage
@@ -261,12 +259,12 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 
 			node := neighbourNode2
 			isLastLeaf := isLastLeaf1
-			isNeighbourNodeHashed := isNeighbourNodeHashed1
+			isNeighbourNodeHashed := isNeighbourNodeHashed2
 			if len(storageProof) > len(storageProof1) {
 				// delete operation
 				node = neighbourNode1
 				isLastLeaf = isLastLeaf2
-				isNeighbourNodeHashed = isNeighbourNodeHashed2
+				isNeighbourNodeHashed = isNeighbourNodeHashed1
 			}
 
 			if isNeighbourNodeHashed {
