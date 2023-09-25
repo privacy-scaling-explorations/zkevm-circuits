@@ -2,7 +2,7 @@
 //     evm_circuit::{
 //         util::{
 //             common_gadget::{TransferGadgetInfo},
-//             rlc, StepRws, 
+//             rlc, , 
 //         },
 //     },
 //     util::word::{Word, WordCell},
@@ -26,14 +26,14 @@ use crate::{
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
             not, or,
             precompile_gadget::PrecompileGadget,
-            select, CachedRegion, Cell, Word,
+            select, CachedRegion, Cell, StepRws, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
         Expr,
-        word::{WordExpr, WordLimbs}
+        word::{WordExpr}
     },
 };
 use bus_mapping::{
@@ -808,7 +808,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             region,
             offset,
             callee_rw_counter_end_of_reversion.low_u64() as usize,
-            callee_is_persistent.low_u64() != 0,
+            callee_is_persistent.low_u64() != 0.into(),
         )?;
 
         let is_call_or_callcode = is_call || is_callcode;
@@ -883,7 +883,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             offset,
             precompile_return_length.to_scalar().unwrap(),
         )?;
-        self.return_data_copy_size.assign(
+        self.precompile_return_data_copy_size.assign(
             region,
             offset,
             precompile_return_length.to_scalar().unwrap(),
