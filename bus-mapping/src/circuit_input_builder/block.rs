@@ -7,7 +7,7 @@ use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
 };
-use eth_types::{evm_unimplemented, Address, Word, H256, U256};
+use eth_types::{evm_unimplemented, Address, Word, H256};
 use itertools::Itertools;
 use std::collections::HashMap;
 

@@ -179,7 +179,12 @@ impl PublicData {
     }
 
     /// get the serialized public data bytes
-    pub fn get_pi_bytes(&self, max_txs: usize, max_calldata: usize) -> Vec<u8> {
+    pub fn get_pi_bytes(
+        &self,
+        max_txs: usize,
+        max_withdrawals: usize,
+        max_calldata: usize,
+    ) -> Vec<u8> {
         // Assign block table
         let block_values = self.get_block_table_values();
         let result = iter::empty()
@@ -260,19 +265,34 @@ impl PublicData {
         let calldata_chain = iter::empty()
             .chain(all_calldata)
             .chain((0..max_calldata - calldata_count).map(|_| 0u8));
-        result.chain(calldata_chain).collect_vec()
+        let result = result.chain(calldata_chain);
 
-        //  FIXME: add withdrawals
+        // serialize withdrawals
+        let wd_bytes_fn = |wd: Withdrawal| {
+            iter::empty()
+                .chain(wd.id.to_be_bytes()) // id
+                .chain(wd.validator_id.to_be_bytes()) // validator_id
+                .chain(wd.address.as_fixed_bytes().to_vec()) // address
+                .chain(wd.amount.to_be_bytes()) // amount
+        };
+        let wd_defaults = Withdrawal::default();
+        let all_wd_bytes = iter::empty()
+            .chain(self.withdrawals.clone())
+            .chain((0..(max_withdrawals - self.withdrawals.len())).map(|_| wd_defaults))
+            .flat_map(|wd| wd_bytes_fn(wd));
+
+        result.chain(all_wd_bytes).collect_vec()
     }
 
     /// generate public data from validator perspective
     pub fn get_rpi_digest_word<F: Field>(
         &self,
         max_txs: usize,
+        max_withdrawals: usize,
         max_calldata: usize,
     ) -> word::Word<F> {
         let mut keccak = Keccak::default();
-        keccak.update(&self.get_pi_bytes(max_txs, max_calldata));
+        keccak.update(&self.get_pi_bytes(max_txs, max_withdrawals, max_calldata));
         let digest = keccak.digest();
         word::Word::from(Word::from_big_endian(&digest))
     }

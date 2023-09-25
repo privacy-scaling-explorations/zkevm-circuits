@@ -287,6 +287,7 @@ pub fn block_convert<F: Field>(
     let public_data = public_data_convert(&block);
     let rpi_bytes = public_data.get_pi_bytes(
         block.circuits_params.max_txs,
+        block.circuits_params.max_withdrawals,
         block.circuits_params.max_calldata,
     );
     // PI Circuit

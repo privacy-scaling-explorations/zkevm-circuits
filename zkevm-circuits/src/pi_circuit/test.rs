@@ -20,7 +20,7 @@ fn pi_circuit_unusable_rows() {
         PiCircuit::<Fr>::unusable_rows(),
         unusable_rows::<Fr, PiCircuit::<Fr>>(PiCircuitParams {
             max_txs: 2,
-            max_withdrawals:5,
+            max_withdrawals: 5,
             max_calldata: 8,
         }),
     )
@@ -30,13 +30,13 @@ fn run<F: Field>(
     k: u32,
     max_txs: usize,
     max_calldata: usize,
-    max_withdrawals:usize,
+    max_withdrawals: usize,
     public_data: PublicData,
 ) -> Result<(), Vec<VerifyFailure>> {
     let mut public_data = public_data;
     public_data.chain_id = *MOCK_CHAIN_ID;
 
-    let circuit = PiCircuit::<F>::new(max_txs,max_withdrawals, max_calldata, public_data);
+    let circuit = PiCircuit::<F>::new(max_txs, max_withdrawals, max_calldata, public_data);
 
     let public_inputs = circuit.instance();
 
@@ -55,7 +55,10 @@ fn test_default_pi() {
     let public_data = PublicData::default();
 
     let k = 17;
-    assert_eq!(run::<Fr>(k, max_txs, max_withdrawals, max_calldata, public_data), Ok(()));
+    assert_eq!(
+        run::<Fr>(k, max_txs, max_withdrawals, max_calldata, public_data),
+        Ok(())
+    );
 }
 
 #[test]
@@ -75,7 +78,10 @@ fn test_simple_pi() {
     }
 
     let k = 17;
-    assert_eq!(run::<Fr>(k, max_txs, max_withdrawals, max_calldata, public_data), Ok(()));
+    assert_eq!(
+        run::<Fr>(k, max_txs, max_withdrawals, max_calldata, public_data),
+        Ok(())
+    );
 }
 
 #[test]
@@ -120,7 +126,7 @@ fn test_1tx_1maxtx() {
         block.clone(),
         FixedCParams {
             max_txs: MAX_TXS,
-            max_withdrawals:MAX_WITHDRAWALS,
+            max_withdrawals: MAX_WITHDRAWALS,
             max_calldata: MAX_CALLDATA,
             max_rws: 1 << (degree - 1),
             ..Default::default()
@@ -146,12 +152,27 @@ fn test_1tx_1maxtx() {
     assert_eq!(prover.verify(), Ok(()));
 }
 
-fn run_size_check<F: Field>(max_txs: usize, max_withdrawals:usize, max_calldata: usize, public_data: [PublicData; 2]) {
-    let circuit = PiCircuit::<F>::new(max_txs, max_withdrawals,max_calldata, public_data[0].clone());
+fn run_size_check<F: Field>(
+    max_txs: usize,
+    max_withdrawals: usize,
+    max_calldata: usize,
+    public_data: [PublicData; 2],
+) {
+    let circuit = PiCircuit::<F>::new(
+        max_txs,
+        max_withdrawals,
+        max_calldata,
+        public_data[0].clone(),
+    );
     let public_inputs = circuit.instance();
     let prover1 = MockProver::run(20, &circuit, public_inputs).unwrap();
 
-    let circuit2 = PiCircuit::<F>::new(max_txs, max_withdrawals,max_calldata, public_data[1].clone());
+    let circuit2 = PiCircuit::<F>::new(
+        max_txs,
+        max_withdrawals,
+        max_calldata,
+        public_data[1].clone(),
+    );
     let public_inputs = circuit2.instance();
     let prover2 = MockProver::run(20, &circuit, public_inputs).unwrap();
 
@@ -189,5 +210,10 @@ fn variadic_size_check() {
             .push(CORRECT_MOCK_TXS[i].clone().into());
     }
 
-    run_size_check::<Fr>(max_txs, max_withdrawals,max_calldata, [pub_dat_1, pub_dat_2]);
+    run_size_check::<Fr>(
+        max_txs,
+        max_withdrawals,
+        max_calldata,
+        [pub_dat_1, pub_dat_2],
+    );
 }

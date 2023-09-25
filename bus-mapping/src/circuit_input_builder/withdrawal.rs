@@ -1,16 +1,8 @@
 //! Withdrawal & WithdrawalContext utility module.
 
-use std::collections::BTreeMap;
+use eth_types::Address;
 
-use eth_types::{evm_types::Memory, geth_types, Address, GethExecTrace};
-use ethers_core::utils::get_contract_address;
-
-use crate::{
-    state_db::{CodeDB, StateDB},
-    Error,
-};
-
-use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecStep};
+use crate::Error;
 
 #[derive(Debug, Default)]
 /// Context of a [`Withdrawal`] which can mutate in an [`ExecStep`].
@@ -32,7 +24,7 @@ impl WithdrawalContext {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 /// Result of the parsing of an Ethereum Withdrawal.
 pub struct Withdrawal {
     /// Unique identifier of a withdrawal. This value starts from 0 and then increases

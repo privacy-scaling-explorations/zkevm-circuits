@@ -1533,9 +1533,11 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
     /// Compute the public inputs for this circuit.
     fn instance(&self) -> Vec<Vec<F>> {
-        let rpi_digest_byte_field = self
-            .public_data
-            .get_rpi_digest_word(self.max_txs, self.max_calldata);
+        let rpi_digest_byte_field = self.public_data.get_rpi_digest_word(
+            self.max_txs,
+            self.max_withdrawals,
+            self.max_calldata,
+        );
 
         vec![vec![rpi_digest_byte_field.lo(), rpi_digest_byte_field.hi()]]
     }
@@ -1827,9 +1829,11 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 assert_eq!(current_offset, 0);
 
                 // assign keccak digest
-                let digest_word = self
-                    .public_data
-                    .get_rpi_digest_word::<F>(config.max_txs, config.max_calldata);
+                let digest_word = self.public_data.get_rpi_digest_word::<F>(
+                    config.max_txs,
+                    config.max_withdrawals,
+                    config.max_calldata,
+                );
 
                 let digest_word_assigned =
                     config.assign_rpi_digest_word(&mut region, digest_word)?;

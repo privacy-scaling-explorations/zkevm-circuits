@@ -75,9 +75,11 @@ impl<F: Field> Circuit<F> for PiCircuit<F> {
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
         // assign keccak table
-        let rpi_bytes = self
-            .public_data
-            .get_pi_bytes(config.max_txs, config.max_calldata);
+        let rpi_bytes = self.public_data.get_pi_bytes(
+            config.max_txs,
+            config.max_withdrawals,
+            config.max_calldata,
+        );
         config
             .keccak_table
             .dev_load(&mut layouter, vec![&rpi_bytes], &challenges)?;
