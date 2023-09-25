@@ -215,7 +215,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // whether the call is to a precompiled contract.
         // precompile contracts are stored from address 0x01 to 0x09.
         let is_code_address_zero = IsZeroGadget::construct(cb, call_gadget.callee_address.expr());
-
         let is_precompile_lt =
             LtGadget::construct(cb, call_gadget.callee_address.expr(), 0x0A.expr());
         let is_precompile = and::expr([
@@ -225,11 +224,16 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let precompile_return_length = cb.query_cell();
         let precompile_return_length_zero =
             IsZeroGadget::construct(cb, precompile_return_length.expr());
-        let return_data_copy_size = MinMaxGadget::construct(
+        let precompile_return_data_copy_size = MinMaxGadget::construct(
             cb,
             precompile_return_length.expr(),
             call_gadget.rd_address.length(),
         );
+
+        let precompile_input_rws = cb.query_cell();
+        let precompile_output_rws = cb.query_cell();
+        let precompile_return_rws = cb.query_cell();
+        let precompile_input_len = cb.query_cell();
 
         // Verify transfer only for CALL opcode in the successful case.  If value == 0,
         // skip the transfer (this is necessary for non-existing accounts, which
@@ -238,19 +242,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let transfer = cb.condition(is_call.expr() * is_precheck_ok.expr(), |cb| {
             TransferGadget::construct(
                 cb,
-// <<<<<<< HEAD
                 caller_address.to_word(),
                 callee_address.to_word(),
                 not::expr(call_gadget.callee_not_exists.expr()),
                 0.expr(),
-// =======
-//                 caller_address.expr(),
-//                 callee_address.expr(),
-//                 or::expr([
-//                     not::expr(call_gadget.callee_not_exists.expr()),
-//                     is_precompile.expr(),
-//                 ]),
-// >>>>>>> rohit/feat/precompile-identity
                 call_gadget.value.clone(),
                 &mut callee_reversion_info,
             )
@@ -290,6 +285,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let stack_pointer_delta =
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
         let memory_expansion = call_gadget.memory_expansion.clone();
+
+        let transfer_rwc_delta = is_call.expr() * is_precheck_ok.expr() * transfer.rw_delta();
+        let rw_counter_delta = 8.expr()
+            + is_delegatecall.expr() * 2.expr()
+            + call_gadget.rw_delta()
+            + callee_reversion_info.rw_delta()
+            + transfer_rwc_delta.expr();
+        let caller_reversible_rwc_delta = 1.expr(); // AccessList
+        let callee_reversible_rwc_delta = is_call.expr() * transfer.reversible_w_delta();
 
         // handle precompile calls.
         let precompile_gadget = cb.condition(
