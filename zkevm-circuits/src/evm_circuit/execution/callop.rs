@@ -1,27 +1,12 @@
-// <<<<<<< HEAD
 // use crate::{
 //     evm_circuit::{
-//         execution::ExecutionGadget,
-//         param::{N_BYTES_GAS, N_BYTES_U64},
-//         step::ExecutionState,
 //         util::{
-//             and,
-//             common_gadget::{CommonCallGadget, TransferGadget},
-//             constraint_builder::{
-//                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
-//                 Transition::{Delta, To},
-//             },
-//             math_gadget::{
-//                 ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget,
-//             },
-//             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
-//             not, or, select, CachedRegion, Cell, StepRws,
+//             common_gadget::{TransferGadgetInfo},
+//             rlc, StepRws, 
 //         },
 //     },
 //     util::word::{Word, WordCell, WordExpr},
 // };
-
-// =======
 // >>>>>>> rohit/feat/precompile-identity
 use crate::{
     evm_circuit::{
@@ -38,6 +23,7 @@ use crate::{
             math_gadget::{
                 ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget,
             },
+            memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
             not, or,
             precompile_gadget::PrecompileGadget,
             select, CachedRegion, Cell, Word,
@@ -47,16 +33,19 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-// <<<<<<< HEAD
-use bus_mapping::evm::OpcodeId;
-use eth_types::{evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, U256};
-// =======
-// use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, precompile::is_precompiled};
-// use eth_types::{
-//     evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, ToLittleEndian, ToScalar, U256,
-// };
-// >>>>>>> rohit/feat/precompile-identity
+use bus_mapping::{
+    circuit_input_builder::CopyDataType, 
+    evm::OpcodeId, 
+    precompile::{is_precompiled, PrecompileCalls}
+};
+use eth_types::{
+    // evm_types::{memory::MemoryWordRange, GAS_STIPEND_CALL_WITH_VALUE}, 
+    evm_types::GAS_STIPEND_CALL_WITH_VALUE,
+    Field, ToAddress, ToBigEndian, ToLittleEndian, ToScalar, U256,
+};
 use halo2_proofs::{circuit::Value, plonk::Error};
+use log::trace;
+use std::cmp::min;
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
 /// `OpcodeId::CALLCODE`, `OpcodeId::DELEGATECALL` and `OpcodeId::STATICCALL`.
