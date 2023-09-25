@@ -32,8 +32,8 @@ use bus_mapping::{
     precompile::{is_precompiled, PrecompileCalls}
 };
 use eth_types::{
-    // evm_types::{memory::MemoryWordRange, GAS_STIPEND_CALL_WITH_VALUE}, 
-    evm_types::GAS_STIPEND_CALL_WITH_VALUE,
+    evm_types::{memory::MemoryWordRange, GAS_STIPEND_CALL_WITH_VALUE}, 
+    // evm_types::GAS_STIPEND_CALL_WITH_VALUE,
     Field, ToAddress, ToBigEndian, ToLittleEndian, ToScalar, U256,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -956,7 +956,76 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             precompile_return_length.to_scalar().unwrap(),
             rd_length.to_scalar().unwrap(),
         )?;
-        
+
+        let (
+            precompile_input_len,
+            input_rws,
+            output_rws,
+            return_rws,
+        ) = if is_precheck_ok && is_precompiled(&callee_address.to_address()) {
+            let precompile_call: PrecompileCalls = precompile_addr.0[19].into();
+            let input_len =cd_length.as_usize();
+            let input_bytes_word_count =
+                if input_len == 0 {
+                    0
+                } else {
+                    let begin = cd_offset.as_usize();
+                    let range = MemoryWordRange::align_range(begin, input_len);
+                    range.word_count()
+                };
+
+            let [output_bytes_end, output_bytes_word_count] =
+                if precompile_return_length.is_zero() {
+                    [0; 2]
+                } else {
+                    let end = precompile_return_length.as_usize();
+                    [end, MemoryWordRange::align_range(0, end).word_count()]
+                };
+
+            let return_bytes_word_count =
+                if min(precompile_return_length, rd_length).is_zero()
+                {
+                    0
+                } else {
+                    let length = min(rd_length.as_usize(), output_bytes_end);
+                    let begin = rd_offset.as_usize();
+                    let mut dst_range = MemoryWordRange::align_range(begin, length);
+                    dst_range.word_count()
+                };
+
+            let input_rws = Value::known(F::from(input_bytes_word_count as u64));
+            let output_rws = Value::known(F::from(output_bytes_word_count as u64));
+            let return_rws = Value::known(F::from((return_bytes_word_count * 2) as u64));
+            trace!("input_rws: {input_rws:?}");
+            trace!("output_rws: {output_rws:?}");
+            trace!("return_rws: {return_rws:?}");
+            (
+                input_len as u64,
+                input_rws,
+                output_rws,
+                return_rws,
+            )
+        } else {
+            (
+                0,
+                Value::known(F::ZERO),
+                Value::known(F::ZERO),
+                Value::known(F::ZERO),
+            )
+        };
+
+        self.precompile_input_len.assign(
+            region,
+            offset,
+            Value::known(F::from(precompile_input_len)),
+        )?;
+        self.precompile_input_rws
+            .assign(region, offset, input_rws)?;
+        self.precompile_output_rws
+            .assign(region, offset, output_rws)?;
+        self.precompile_return_rws
+            .assign(region, offset, return_rws)?;
+
         if is_precompiled(&callee_address.to_address()) {
             self.precompile_gadget.assign(
                 region,
