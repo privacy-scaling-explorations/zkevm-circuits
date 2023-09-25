@@ -1,13 +1,17 @@
 use bus_mapping::circuit_input_builder::Call;
 use eth_types::{evm_types::GasCost, Field, ToScalar};
-use gadgets::util::Expr;
+use gadgets::util::{select, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::{N_BYTES_MEMORY_WORD_SIZE, N_BYTES_WORD},
         step::ExecutionState,
-        util::{constraint_builder::EVMConstraintBuilder, CachedRegion, Cell},
+        util::{
+            common_gadget::RestoreContextGadget, constraint_builder::EVMConstraintBuilder, 
+            math_gadget::ConstantDivisionGadget, CachedRegion, Cell
+        },
     },
     table::CallContextFieldTag,
     witness::{Block, ExecStep, Transaction},
@@ -15,6 +19,7 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub struct IdentityGadget<F> {
+    input_word_size: ConstantDivisionGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
     is_success: Cell<F>,
     callee_address: Cell<F>,
     caller_id: Cell<F>,
@@ -22,6 +27,7 @@ pub struct IdentityGadget<F> {
     call_data_length: Cell<F>,
     return_data_offset: Cell<F>,
     return_data_length: Cell<F>,
+    restore_context: RestoreContextGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
@@ -42,13 +48,38 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             ]
             .map(|tag| cb.call_context(None, tag));
 
+        let input_word_size = ConstantDivisionGadget::construct(
+            cb,
+            call_data_length.expr() + (N_BYTES_WORD - 1).expr(),
+            N_BYTES_WORD as u64,
+        );
+
+        let _gas_cost = select::expr(
+            is_success.expr(),
+            GasCost::PRECOMPILE_IDENTITY_BASE.expr()
+                + input_word_size.quotient() * GasCost::PRECOMPILE_IDENTITY_PER_WORD.expr(),
+            cb.curr.state.gas_left.expr(),
+        );
+
         cb.precompile_info_lookup(
             cb.execution_state().as_u64().expr(),
             callee_address.expr(),
-            GasCost::PRECOMPILE_IDENTITY_BASE.expr(),
+            cb.execution_state().precompile_base_gas_cost().expr(),
+        );
+
+        let restore_context = RestoreContextGadget::construct(
+            cb,
+            is_success.expr(),
+            // gas_cost.expr(),
+            0.expr(),
+            0x00.expr(),             // ReturnDataOffset
+            call_data_length.expr(), // ReturnDataLength
+            0.expr(),
+            0.expr(),
         );
 
         Self {
+            input_word_size,
             is_success,
             callee_address,
             caller_id,
@@ -56,6 +87,7 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             call_data_length,
             return_data_offset,
             return_data_length,
+            restore_context
         }
     }
 
@@ -63,11 +95,16 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        _block: &Block<F>,
+        block: &Block<F>,
         _tx: &Transaction,
         call: &Call,
-        _step: &ExecStep,
+        step: &ExecStep,
     ) -> Result<(), Error> {
+        self.input_word_size.assign(
+            region,
+            offset,
+            (call.call_data_length + (N_BYTES_WORD as u64) - 1).into(),
+        )?;
         self.is_success.assign(
             region,
             offset,
@@ -103,8 +140,8 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             offset,
             Value::known(F::from(call.return_data_length)),
         )?;
-
-        Ok(())
+        self.restore_context
+            .assign(region, offset, block, call, step, 7)
     }
 }
 
@@ -173,7 +210,6 @@ mod test {
                     address: PrecompileCalls::Identity.address().to_word(),
                     ..Default::default()
                 },
-                /* TODO(rohit): debug error cases
                 PrecompileCallArgs {
                     name: "insufficient gas (precompile call should fail)",
                     setup_code: bytecode! {
@@ -191,7 +227,6 @@ mod test {
                     gas: 1.into(),
                     ..Default::default()
                 },
-                */
             ]
         };
     }
