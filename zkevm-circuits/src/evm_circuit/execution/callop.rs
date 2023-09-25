@@ -311,7 +311,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     "Precompile addresses are always warm",
                     and::expr([is_warm.expr(), is_warm_prev.expr()]),
                 );
-                
+
                 // Write to callee's context.
                 for (field_tag, value) in [
                     (
@@ -349,6 +349,27 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
                 // Save caller's call state
                 for (field_tag, value) in [
+                    (
+                        CallContextFieldTag::ProgramCounter,
+                        cb.curr.state.program_counter.expr() + 1.expr(),
+                    ),
+                    (
+                        CallContextFieldTag::StackPointer,
+                        cb.curr.state.stack_pointer.expr()
+                            + select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr()),
+                    ),
+                    (
+                        CallContextFieldTag::GasLeft,
+                        cb.curr.state.gas_left.expr() - gas_cost.expr() - callee_gas_left.clone(),
+                    ),
+                    (
+                        CallContextFieldTag::MemorySize,
+                        memory_expansion.next_memory_word_size(),
+                    ),
+                    (
+                        CallContextFieldTag::ReversibleWriteCounter,
+                        cb.curr.state.reversible_write_counter.expr() + 1.expr(),
+                    ),
                     (CallContextFieldTag::LastCalleeId, callee_call_id.expr()),
                     (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
                     (
@@ -405,6 +426,58 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         );
                     },
                 );
+
+                // copy table lookup to verify the copying of bytes if the precompile call was
+                // successful.
+                // - from precompile (min(rd_length, precompile_return_length) bytes)
+                // - to caller's memory (min(rd_length, precompile_return_length) bytes starting at
+                //   `return_data_offset`).
+                cb.condition(
+                    and::expr([
+                        call_gadget.is_success.expr(),
+                        call_gadget.rd_address.has_length(),
+                        not::expr(precompile_return_length_zero.expr()),
+                    ]),
+                    |cb| {
+                        cb.copy_table_lookup(
+                            callee_call_id.expr().to_word(),
+                            CopyDataType::Memory.expr(), // refer u64::from(CopyDataType)
+                            cb.curr.state.call_id.expr().to_word(),
+                            CopyDataType::Memory.expr(),
+                            0.expr(),
+                            precompile_return_data_copy_size.min(),
+                            call_gadget.rd_address.offset(),
+                            precompile_return_data_copy_size.min(),
+                            0.expr(),
+                            precompile_return_rws.expr(), // writes
+                        ); // rwc_delta += `return_data_copy_size.min()` for precompile
+                    },
+                );
+
+                // +15 call context lookups for precompile.
+                let rw_counter_delta = 15.expr()
+                    + rw_counter_delta.expr()
+                    + precompile_input_rws.expr()
+                    + precompile_output_rws.expr()
+                    + precompile_return_rws.expr();
+
+                // Give gas stipend if value is not zero
+                let callee_gas_left = callee_gas_left.expr()
+                    + call_gadget.has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr();
+
+                cb.require_step_state_transition(StepStateTransition {
+                    rw_counter: Delta(rw_counter_delta),
+                    call_id: To(callee_call_id.expr()),
+                    is_root: To(false.expr()),
+                    is_create: To(false.expr()),
+                    code_hash: To(cb.empty_code_hash_rlc()),
+                    program_counter: Delta(1.expr()),
+                    stack_pointer: Delta(stack_pointer_delta.expr()),
+                    gas_left: To(callee_gas_left.expr()),
+                    memory_word_size: To(precompile_output_rws.expr()),
+                    reversible_write_counter: To(callee_reversible_rwc_delta.expr()),
+                    ..StepStateTransition::default()
+                });
 
                 PrecompileGadget::construct(
                     cb,
