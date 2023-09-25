@@ -78,9 +78,6 @@ pub(crate) struct CallOpGadget<F> {
     precompile_return_length_zero: IsZeroGadget<F>,
     precompile_return_data_copy_size: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
     precompile_input_len: Cell<F>, // the number of input bytes taken for the precompile call.
-    precompile_input_bytes_rlc: Cell<F>, // input bytes to precompile call.
-    precompile_output_bytes_rlc: Cell<F>, // output bytes from precompile call.
-    precompile_return_bytes_rlc: Cell<F>, // bytes returned to caller from precompile call.
     precompile_input_rws: Cell<F>,
     precompile_output_rws: Cell<F>,
     precompile_return_rws: Cell<F>,
@@ -110,10 +107,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .map(|field_tag| cb.call_context(None, field_tag));
 
         let current_callee_address =
-            cb.call_context_read_as_word(None, CallContextFieldTag::CalleeAddress);
+            cb.call_context(None, CallContextFieldTag::CalleeAddress);
         let (current_caller_address, current_value) = cb.condition(is_delegatecall.expr(), |cb| {
             (
-                cb.call_context_read_as_word(None, CallContextFieldTag::CallerAddress),
+                cb.call_context(None, CallContextFieldTag::CallerAddress),
                 cb.call_context_read_as_word(None, CallContextFieldTag::Value),
             )
         });
@@ -133,16 +130,16 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             );
         });
 
-        let caller_address = Word::select(
+        let caller_address = select::expr(
             is_delegatecall.expr(),
-            current_caller_address.to_word(),
-            current_callee_address.to_word(),
-        );
-        let callee_address = Word::select(
+            current_caller_address.expr(),
+            current_callee_address.expr(),
+        ).to_word();
+        let callee_address = select::expr(
             is_callcode.expr() + is_delegatecall.expr(),
-            current_callee_address.to_word(),
-            call_gadget.callee_address(),
-        );
+            current_callee_address.expr(),
+            call_gadget.callee_address.expr(),
+        ).to_word();
 
         // Add callee to access list
         let is_warm = cb.query_bool();
@@ -283,22 +280,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             + call_gadget.rw_delta()
             + callee_reversion_info.rw_delta()
             + transfer_rwc_delta.expr();
-        let caller_reversible_rwc_delta = 1.expr(); // AccessList
+        // let caller_reversible_rwc_delta = 1.expr(); // AccessList
         let callee_reversible_rwc_delta = is_call.expr() * transfer.reversible_w_delta();
 
         // 1. handle precompile calls.
-
-
-
-
-
-
-
-
-
-
-
-        // handle precompile calls.
         let precompile_gadget = cb.condition(
             and::expr([is_precompile.expr(), is_precheck_ok.expr()]),
             |cb| {
@@ -744,6 +729,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             precompile_return_length,
             precompile_return_length_zero,
             precompile_return_data_copy_size,
+            precompile_input_len,
+            precompile_input_rws,
+            precompile_output_rws,
+            precompile_return_rws
         }
     }
 
@@ -881,7 +870,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure")
             )
         )?;
-
         self.current_value
             .assign_u256(region, offset, current_value)?;
         self.is_static
@@ -942,41 +930,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .assign(region, offset, code_address)?;
         self.is_precompile_lt
             .assign(region, offset, code_address, 0x0Au64.into())?;
-
-
-
-
-
-
-
-
-
-
-
-// <<<<<<< HEAD
-// =======
-//         let is_insufficient = (value > caller_balance) && (is_call || is_callcode);
-//         // only call opcode do transfer in sucessful case.
-//         let [caller_balance_pair, callee_balance_pair] =
-//             if is_call && !is_insufficient && !is_error_depth && !value.is_zero() {
-//                 let values = [18, 19]
-//                     .map(|index| block.get_rws(step, index + rw_offset).account_value_pair());
-//                 rw_offset += 2;
-//                 values
-//             } else {
-//                 [(U256::zero(), U256::zero()), (U256::zero(), U256::zero())]
-//             };
-
-// >>>>>>> rohit/feat/precompile-identity
-
-
-        if is_precompiled(&callee_address.to_address()) {
-            self.precompile_gadget.assign(
-                region,
-                offset,
-                callee_address.to_address().0[19].into(),
-            )?;
-        }
         let precompile_return_length = if is_precompiled(&callee_address.to_address()) {
             let value_rw = block.get_rws(step, 27 + rw_offset);
             assert_eq!(
@@ -1003,6 +956,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             precompile_return_length.to_scalar().unwrap(),
             rd_length.to_scalar().unwrap(),
         )?;
+        
+        if is_precompiled(&callee_address.to_address()) {
+            self.precompile_gadget.assign(
+                region,
+                offset,
+                callee_address.to_address().0[19].into(),
+            )?;
+        }
 
         Ok(())
     }
