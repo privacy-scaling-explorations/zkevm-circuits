@@ -470,7 +470,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     call_id: To(callee_call_id.expr()),
                     is_root: To(false.expr()),
                     is_create: To(false.expr()),
-                    code_hash: To(cb.empty_code_hash_rlc()),
+                    code_hash: To(cb.empty_code_hash()),
                     program_counter: Delta(1.expr()),
                     stack_pointer: Delta(stack_pointer_delta.expr()),
                     gas_left: To(callee_gas_left.expr()),
@@ -492,7 +492,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             },
         );
 
-        // handle calls to empty code.
+        // 2. handle calls to accounts with no code
         cb.condition(
             and::expr([
                 not::expr(is_precompile.expr()),
