@@ -429,7 +429,7 @@ func prepareStorageLeafInfo(row []byte, valueIsZero, isPlaceholder bool) ([]byte
 			valueRlp = []byte{0}
 			// keyRlp holds the RLP of the whole leaf:
 			// - always 192 because when there is a placeholder, the value occupies only 1 byte (can't be 248)
-			// - (keyLen + 1) is the number of key bytes 
+			// - (keyLen + 1) is the number of key bytes
 			// - 1 is the number of value bytes
 			keyRlp[0] = 192 + keyLen + 2
 		}

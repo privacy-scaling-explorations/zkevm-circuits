@@ -253,7 +253,7 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 			// is not available yet there (GetProof / GetStorageProof fetch the preimages).
 			if aIsNeighbourNodeHashed {
 				// The error is not handled here, because it is ok to continue when the preimage is not found
-				// for the cases when neighbour node is not needed. 
+				// for the cases when neighbour node is not needed.
 				aNode, _ = oracle.Preimage(common.BytesToHash(aNode[1:]))
 			}
 
@@ -269,7 +269,7 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 
 			if isNeighbourNodeHashed {
 				// The error is not handled here, because it is ok to continue when the preimage is not found
-				// for the cases when neighbour node is not needed. 
+				// for the cases when neighbour node is not needed.
 				node, _ = oracle.Preimage(common.BytesToHash(node[1:]))
 			}
 

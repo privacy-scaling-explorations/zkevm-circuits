@@ -140,7 +140,7 @@ func (t *Trie) Prove(key []byte, fromLevel uint, proofDb ethdb.KeyValueWriter) (
 	if neighbourNode != nil {
 		neighbourHash, _ := hasher.ProofHash(neighbourNode)
 		neighbourNodeRLP, _ = rlp.EncodeToBytes(neighbourHash)
-	}	
+	}
 
 	return neighbourNodeRLP, extNibbles, isLastLeaf, isNeighbourNodeHashed, nil
 }
