@@ -702,6 +702,7 @@ mod test {
         buffer_reader_gadget: BufferReaderGadget<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>, // need to parametrized
         addr_start: U64Cell<F>,
         addr_end: U64Cell<F>,
+        bytes: [Cell<F>; MAX_BYTES],
     }
 
     impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize> MemoryGadgetContainer<F>
@@ -712,17 +713,16 @@ mod test {
             let addr_end = cb.query_u64();
             let buffer_reader_gadget 
                 = BufferReaderGadget::<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>::construct(cb, addr_start.expr(), addr_end.expr());
-            
-            // TODO require equal for bufferreadergadget
-            // cb.require_equal("Input is zero", z_gadget.expr(), 1.expr());
-            // a blakbox for bufferreadergadget
-            
+            let bytes = cb.query_bytes();
+            let byte_expr = from_bytes::expr(&bytes);
 
+            cb.require_equal("bytes equal", byte_expr.clone(), from_bytes::expr(&buffer_reader_gadget.bytes));            
 
             BufferReaderGadgetTestContainer { 
                 buffer_reader_gadget, 
                 addr_start,
                 addr_end, 
+                bytes,
             }
         }
 
@@ -732,23 +732,28 @@ mod test {
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
             let offset = 0;
-            let addr_end= u64::from_le_bytes(witnesses[0].to_le_bytes()[..8].try_into().unwrap());
+            let addr_end= u64::from_le_bytes(witnesses[0].to_le_bytes()[..8].try_into().unwrap()); // why not u64 from?
             let addr_start= u64::from_le_bytes(witnesses[1].to_le_bytes()[..8].try_into().unwrap());
-            let bytes = &[0u8; MAX_BYTES]; // TODO how to modify input witness format
-
-            self.addr_start.assign(region, offset, Some(addr_start.to_le_bytes()))?; // TODO or Value::known(addr_end)??
+            // TODO change input_bytes from u64 to u8
+            let mut input_bytes: Vec<u8> = Vec::new(); // After addr_start and addr_end
+            witnesses[2..]
+                .iter()
+                .for_each(
+                    |byte|{
+                        input_bytes.extend_from_slice(&byte.to_le_bytes());
+                    }
+                );
+            // TODO how to modify input witness format
+            self.addr_start.assign(region, offset, Some(addr_start.to_le_bytes()))?; // TODO or Value::known(addr_end)?? 
             self.addr_end.assign(region, offset, Some(addr_end.to_le_bytes()))?; // TODO or Value::known(addr_end)??
-            
-            /* 
-            TODO
-                    &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        addr_start: u64,
-        addr_end: u64,
-        bytes: &[u8],
-             */
-            self.buffer_reader_gadget.assign(region, offset, addr_start, addr_end, bytes)?;
+            self.bytes
+                .iter()
+                .zip(input_bytes.iter())
+                .map(|(byte, input_byte)| 
+                    byte.assign(region, offset, Value::known(F::from(*input_byte as u64)))
+                )
+                .collect::<Result<Vec<_>, _>>()?;
+            self.buffer_reader_gadget.assign(region, offset, addr_start, addr_end, &input_bytes[..])?;
 
             Ok(())
         }
@@ -760,7 +765,12 @@ mod test {
         
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 4, 10>, // TODO how to configure last parameter
-            vec![0u8; 4],
+            vec![
+                Word::from(1), 
+                Word::from(1), 
+                Word::from(1), 
+                Word::from(1)
+            ],
             true,
         )
 

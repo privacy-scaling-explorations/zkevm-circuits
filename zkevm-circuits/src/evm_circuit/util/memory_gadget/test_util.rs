@@ -201,6 +201,7 @@ impl<F: Field, G: MemoryGadgetContainer<F>> Circuit<F> for UnitTestMemoryGadgetB
             },
         )?;
 
+        // TODO check neef for fixed table 
         // assign fixed range tables only as they are the only tables referred by a
         // specfic math gadget -- ConstantDivisionGadget.
         layouter.assign_region(
