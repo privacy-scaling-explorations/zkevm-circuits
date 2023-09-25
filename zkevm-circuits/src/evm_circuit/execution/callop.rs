@@ -899,7 +899,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             region,
             offset,
             callee_rw_counter_end_of_reversion.low_u64() as usize,
-            callee_is_persistent.low_u64() != 0.into(),
+            callee_is_persistent.low_u64() != 0,
         )?;
 
         let has_value = !value.is_zero() && !is_delegatecall;
