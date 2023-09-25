@@ -931,10 +931,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         self.is_precompile_lt
             .assign(region, offset, code_address, 0x0Au64.into())?;
         let precompile_return_length = if is_precompiled(&callee_address.to_address()) {
-            let value_rw = block.get_rws(step, 27 + rw_offset);
+            rws.offset_add(14); // skip
+            let value_rw = rws.next();
             assert_eq!(
                 value_rw.field_tag(),
                 Some(CallContextFieldTag::LastCalleeReturnDataLength as u64),
+                "expect LastCalleeReturnDataLength"
             );
             value_rw.call_context_value()
         } else {
