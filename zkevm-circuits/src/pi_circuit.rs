@@ -502,20 +502,15 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         meta.create_gate("withdrawal id is incremental", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // FIXME: last row
-            // let tx_id_is_zero_config = IsZeroChip::configure(
-            //     meta,
-            //     |meta| meta.query_selector(q_tx_calldata),
-            //     |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
-            //     tx_id_inv,
-            // );
-
             let q_wd_table = meta.query_selector(q_wd_table);
-            cb.require_equal(
-                "next withdrawal_id = current withdrawal_id + 1",
-                meta.query_advice(wd_table.id, Rotation::cur()) + 1.expr(),
-                meta.query_advice(wd_table.id, Rotation::next()),
-            );
+            let next_id = meta.query_advice(wd_table.id, Rotation::next());
+            cb.condition(next_id.expr(), |cb| {
+                cb.require_equal(
+                    "next withdrawal_id = current withdrawal_id + 1",
+                    meta.query_advice(wd_table.id, Rotation::cur()) + 1.expr(),
+                    next_id,
+                )
+            });
             cb.gate(q_wd_table)
         });
 
@@ -1004,6 +999,44 @@ impl<F: Field> PiCircuitConfig<F> {
         Ok(())
     }
 
+    fn assign_empty_wd_table_row(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+    ) -> Result<(), Error> {
+        region.assign_advice(
+            || "withdrawal_id",
+            self.wd_table.id,
+            offset,
+            || Value::known(F::ZERO),
+        )?;
+        region.assign_advice(
+            || "validator_id",
+            self.wd_table.validator_id,
+            offset,
+            || Value::known(F::ZERO),
+        )?;
+
+        region.assign_advice(
+            || "address_lo",
+            self.wd_table.address.lo(),
+            offset,
+            || Value::known(F::ZERO),
+        )?;
+        region.assign_advice(
+            || "address_hi",
+            self.wd_table.address.hi(),
+            offset,
+            || Value::known(F::ZERO),
+        )?;
+        region.assign_advice(
+            || "amount",
+            self.wd_table.amount,
+            offset,
+            || Value::known(F::ZERO),
+        )?;
+        Ok(())
+    }
     /// assign raw bytes
     #[allow(clippy::too_many_arguments)]
     fn assign_raw_bytes(
