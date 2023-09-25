@@ -18,7 +18,6 @@ impl WithdrawalContext {
         self.id
     }
 }
-
 /// Result of the parsing of an Ethereum Withdrawal.
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Withdrawal {

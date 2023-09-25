@@ -138,7 +138,8 @@ pub(crate) const N_BYTES_BLOCK: usize = N_BYTES_COINBASE
 
 pub(crate) const N_BYTES_EXTRA_VALUE: usize = N_BYTES_WORD // block hash
     + N_BYTES_WORD // state root
-    + N_BYTES_WORD; // prev state root
+    + N_BYTES_WORD // prev state root
+    + N_BYTES_WORD; // withdrawals root
 
 // Number of bytes that will be used for tx values
 pub(crate) const N_BYTES_TX_NONCE: usize = N_BYTES_U64;

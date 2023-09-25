@@ -33,7 +33,7 @@ fn run<F: Field>(
     max_txs: usize,
     max_withdrawals: usize,
     max_calldata: usize,
-    max_withdrawals:usize,
+    max_withdrawals: usize,
     public_data: PublicData,
 ) -> Result<(), Vec<VerifyFailure>> {
     let mut public_data = public_data;
