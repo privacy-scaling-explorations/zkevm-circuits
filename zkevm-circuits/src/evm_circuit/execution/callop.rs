@@ -295,6 +295,22 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let caller_reversible_rwc_delta = 1.expr(); // AccessList
         let callee_reversible_rwc_delta = is_call.expr() * transfer.reversible_w_delta();
 
+
+
+
+
+        // 1. handle precompile calls.
+
+
+
+
+
+
+
+
+
+
+
         // handle precompile calls.
         let precompile_gadget = cb.condition(
             and::expr([is_precompile.expr(), is_precheck_ok.expr()]),
@@ -657,7 +673,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             precompile_gadget,
             precompile_return_length,
             precompile_return_length_zero,
-            return_data_copy_size,
+            precompile_return_data_copy_size,
         }
     }
 
@@ -728,6 +744,13 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         self.is_insufficient_balance
             .assign(region, offset, caller_balance, value)?;
 
+
+
+
+
+
+
+
 // <<<<<<< HEAD
 // =======
 //         let is_insufficient = (value > caller_balance) && (is_call || is_callcode);
@@ -773,15 +796,23 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
-        self.current_callee_address.assign_h160(
+        self.current_callee_address.assign(
             region,
             offset,
-            current_callee_address.to_address(),
+            Value::known(
+                current_callee_address
+                    .to_scalar()
+                    .expect("unexpected Address -> Scalar conversion failure")
+            )
         )?;
-        self.current_caller_address.assign_h160(
+        self.current_caller_address.assign(
             region,
             offset,
-            current_caller_address.to_address(),
+            Value::known(
+                current_caller_address
+                    .to_scalar()
+                    .expect("unexpected Address -> Scalar conversion failure")
+            )
         )?;
         self.current_value
             .assign_u256(region, offset, current_value)?;
@@ -817,6 +848,18 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         let is_call_or_callcode = is_call || is_callcode;
         let is_sufficient = caller_balance >= value;
+
+
+
+
+
+
+
+
+
+
+
+
         let is_precheck_ok = is_valid_depth && (is_sufficient || !is_call_or_callcode);
 
         // conditionally assign
