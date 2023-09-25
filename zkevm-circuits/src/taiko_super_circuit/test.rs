@@ -1,6 +1,6 @@
 #![allow(unused_imports)]
 pub use super::*;
-use bus_mapping::circuit_input_builder::MetaHash;
+use bus_mapping::circuit_input_builder::MetaData;
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use log::error;
@@ -23,7 +23,8 @@ fn super_circuit_degree() {
     assert!(cs.degree() <= 9);
 }
 
-fn test_super_circuit(
+/// test entry of super circuit
+pub fn test_super_circuit(
     block: GethData,
     protocol_instance: ProtocolInstance,
     circuits_params: CircuitsParams,

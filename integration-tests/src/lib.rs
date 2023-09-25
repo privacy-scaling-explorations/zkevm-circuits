@@ -207,3 +207,6 @@ pub const TAIKO_BLOCK_TRANSFER_SUCCEED: u64 = 1270;
 
 /// Common code for integration tests of circuits.
 pub mod integration_test_circuits;
+
+/// Common code for integration public data tests of circuits.
+pub mod integration_public_data_circuits;

@@ -40,3 +40,6 @@ urlencoding = "2.1.2"
 [features]
 default = []
 ignore-test-docker = []
+
+[lib]
+crate-type = ["lib"]

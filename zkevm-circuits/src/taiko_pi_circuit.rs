@@ -138,7 +138,7 @@ impl PublicData {
             l1_signal_service: protocol_instance.l1_signal_service.to_word(),
             l2_signal_service: protocol_instance.l2_signal_service.to_word(),
             l2_contract: protocol_instance.l2_contract.to_word(),
-            meta_hash: protocol_instance.meta_hash.hash().to_word(),
+            meta_hash: protocol_instance.meta_data.hash().to_word(),
             block_hash: protocol_instance.block_hash.to_word(),
             parent_hash: protocol_instance.parent_hash.to_word(),
             signal_root: protocol_instance.signal_root.to_word(),

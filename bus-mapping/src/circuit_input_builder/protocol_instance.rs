@@ -21,8 +21,8 @@ pub struct ProtocolInstance {
     pub l2_signal_service: Address,
     /// l2 contract address
     pub l2_contract: Address,
-    /// meta hash
-    pub meta_hash: MetaHash,
+    /// meta hash from l1
+    pub meta_data: MetaData,
     /// block hash value
     pub block_hash: Hash,
     /// the parent block hash
@@ -52,7 +52,7 @@ impl Default for ProtocolInstance {
     fn default() -> Self {
         Self {
             anchor_gas_limit: MOCK_ANCHOR_GAS_LIMIT.as_u64(),
-            meta_hash: MetaHash {
+            meta_data: MetaData {
                 l1_hash: *MOCK_ANCHOR_L1_HASH,
                 l1_height: *MOCK_ANCHOR_L1_HIGHT,
                 treasury: *MOCK_TAIKO_TREASURY_ADDRESS,
@@ -77,7 +77,7 @@ impl Default for ProtocolInstance {
 
 /// l1 meta hash
 #[derive(Debug, Clone)]
-pub struct MetaHash {
+pub struct MetaData {
     /// meta id
     pub id: u64,
     /// meta timestamp
@@ -104,7 +104,7 @@ pub struct MetaHash {
     pub treasury: Address,
 }
 
-impl Default for MetaHash {
+impl Default for MetaData {
     fn default() -> Self {
         Self {
             id: 0,
@@ -135,7 +135,7 @@ pub fn left_shift<T: ToWord>(x: T, n: u32) -> Word {
     x.to_word() * Word::from(&bits[..])
 }
 
-impl MetaHash {
+impl MetaData {
     /// get the hash of meta hash
     pub fn hash(&self) -> Hash {
         let field0 = left_shift(self.id, 192)
@@ -171,9 +171,9 @@ impl ProtocolInstance {
     pub fn anchor_call(&self) -> Bytes {
         let mut result = Vec::new();
         result.extend_from_slice(&ANCHOR_TX_METHOD_SIGNATURE.to_be_bytes());
-        result.extend_from_slice(&self.meta_hash.l1_hash.to_fixed_bytes());
+        result.extend_from_slice(&self.meta_data.l1_hash.to_fixed_bytes());
         result.extend_from_slice(&self.signal_root.to_fixed_bytes());
-        result.extend_from_slice(&self.meta_hash.l1_height.to_word().to_be_bytes());
+        result.extend_from_slice(&self.meta_data.l1_height.to_word().to_be_bytes());
         result.extend_from_slice(&(self.parent_gas_used as u64).to_word().to_be_bytes());
         result.into()
     }

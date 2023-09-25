@@ -1,6 +1,6 @@
 use anyhow::Result;
 use handlebars::Handlebars;
-use prettytable::{Row, Table};
+use prettytable::{row, Row, Table};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{

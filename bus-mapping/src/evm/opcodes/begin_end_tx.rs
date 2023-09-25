@@ -301,7 +301,7 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
             .protocol_instance
             .clone()
             .unwrap()
-            .meta_hash
+            .meta_data
             .treasury;
         // add treasury account
         let (found, treasury_account) = state.sdb.get_account(&treasury);

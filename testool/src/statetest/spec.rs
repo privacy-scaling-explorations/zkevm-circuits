@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Context};
 use eth_types::{geth_types::Account, Address, Bytes, Word, H256, U256, U64};
 use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
+use prettytable::{cell, row, Table};
 use std::{collections::HashMap, str::FromStr};
 
 #[derive(PartialEq, Eq, Debug, Clone)]

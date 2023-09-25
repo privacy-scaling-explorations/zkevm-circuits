@@ -382,7 +382,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                         .protocol_instance
                         .as_ref()
                         .unwrap()
-                        .meta_hash
+                        .meta_data
                         .treasury
                         .to_scalar()
                         .expect("unexpected Address -> Scalar conversion failure"),
