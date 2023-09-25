@@ -660,6 +660,14 @@ impl<F: Field> TransferGadget<F> {
             .assign_value(region, offset, Value::known(Word::from(value)))?;
         Ok(())
     }
+
+    pub(crate) fn rw_delta(&self) -> Expression<F> {
+        // +1 Write Account (sender) Balance (Not Reversible tx fee)
+        1.expr() +
+        // +1 Write Account (sender) Balance
+        not::expr(self.value_is_zero.expr()) +
+        self.receiver.rw_delta()
+    }
 }
 
 #[derive(Clone, Debug)]
