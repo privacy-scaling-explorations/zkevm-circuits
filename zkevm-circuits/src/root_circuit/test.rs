@@ -24,6 +24,7 @@ fn test_root_circuit() {
         const TEST_MOCK_RANDOMNESS: u64 = 0x100;
         let circuits_params = FixedCParams {
             max_txs: 1,
+            max_withdrawals:5,
             max_calldata: 32,
             max_rws: 256,
             max_copy_rows: 256,

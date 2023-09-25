@@ -723,6 +723,7 @@ impl<F: Field> PiCircuitConfig<F> {
         let tx_value_inv = tx_value.map(|t| t.map(|x| x.invert().unwrap_or(F::ZERO)));
 
         self.q_tx_table.enable(region, offset)?;
+        self.q_wd_table.enable(region, offset)?;
 
         // Assign vals to Tx_table
         let tx_id_assignedcell = region.assign_advice(
@@ -1852,11 +1853,11 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                         &mut current_offset,
                         &mut rpi_bytes,
                         zero_cell.clone(),
-                    );
+                    )?;
                     withdrawal_offset += 1;
                 }
                 for _ in self.public_data.withdrawals.len()..config.max_withdrawals {
-                    config.assign_empty_wd_table_row(&mut region, withdrawal_offset);
+                    config.assign_empty_wd_table_row(&mut region, withdrawal_offset)?;
                     withdrawal_offset += 1;
                 }
 
