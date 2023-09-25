@@ -187,6 +187,12 @@ impl<F: Field, const N: usize> WordExpr<F> for WordLimbs<Cell<F>, N> {
     }
 }
 
+impl<F: Field> WordExpr<F> for Expression<F> {
+    fn to_word(&self) -> Word<Expression<F>> {
+        WordLimbs::<Expression<F>, 1>::new([*self]).to_word()
+    }
+}
+
 impl<F: Field, const N: usize> WordLimbs<F, N> {
     /// Check if zero
     pub fn is_zero_vartime(&self) -> bool {

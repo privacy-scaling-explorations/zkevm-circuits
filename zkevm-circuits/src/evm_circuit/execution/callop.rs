@@ -5,7 +5,7 @@
 //             rlc, StepRws, 
 //         },
 //     },
-//     util::word::{Word, WordCell, WordExpr},
+//     util::word::{Word, WordCell},
 // };
 // >>>>>>> rohit/feat/precompile-identity
 use crate::{
@@ -31,7 +31,10 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
-    util::Expr,
+    util::{
+        Expr,
+        word::{WordExpr, WordLimbs}
+    },
 };
 use bus_mapping::{
     circuit_input_builder::CopyDataType, 
@@ -211,9 +214,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         // whether the call is to a precompiled contract.
         // precompile contracts are stored from address 0x01 to 0x09.
-        let is_code_address_zero = IsZeroGadget::construct(cb, call_gadget.callee_address_expr());
+        let is_code_address_zero = IsZeroGadget::construct(cb, call_gadget.callee_address.expr());
+
         let is_precompile_lt =
-            LtGadget::construct(cb, call_gadget.callee_address_expr(), 0x0A.expr());
+            LtGadget::construct(cb, call_gadget.callee_address.expr(), 0x0A.expr());
         let is_precompile = and::expr([
             not::expr(is_code_address_zero.expr()),
             is_precompile_lt.expr(),
@@ -299,7 +303,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ),
                     (
                         CallContextFieldTag::CalleeAddress,
-                        call_gadget.callee_address_expr(),
+                        call_gadget.callee_address.expr(),
                     ),
                     (CallContextFieldTag::CallerId, cb.curr.state.call_id.expr()),
                     (
@@ -319,11 +323,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         call_gadget.rd_address.length(),
                     ),
                 ] {
-                    cb.call_context_lookup(
-                        true.expr(),
+                    cb.call_context_lookup_write(
                         Some(callee_call_id.expr()),
                         field_tag,
-                        value,
+                        value.to_word(), 
                     );
                 }
 
@@ -336,7 +339,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         precompile_return_length.expr(),
                     ),
                 ] {
-                    cb.call_context_lookup(true.expr(), None, field_tag, value);
+                    cb.call_context_lookup_write(None, field_tag, value.to_word());
                 }
 
                 // copy table lookup to verify the copying of bytes:
@@ -344,9 +347,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 // - to the current call's memory (`call_data_length` bytes starting at `0`).
                 cb.condition(call_gadget.cd_address.has_length(), |cb| {
                     cb.copy_table_lookup(
-                        cb.curr.state.call_id.expr(),
+                        cb.curr.state.call_id.expr().to_word(),
                         CopyDataType::Memory.expr(),
-                        callee_call_id.expr(),
+                        callee_call_id.expr().to_word(),
                         CopyDataType::Memory.expr(),
                         call_gadget.cd_address.offset(),
                         call_gadget.cd_address.address(),
@@ -372,9 +375,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ]),
                     |cb| {
                         cb.copy_table_lookup(
-                            callee_call_id.expr(),
+                            callee_call_id.expr().to_word(),
                             CopyDataType::Memory.expr(),
-                            cb.curr.state.call_id.expr(),
+                            cb.curr.state.call_id.expr().to_word(),
                             CopyDataType::Memory.expr(),
                             0.expr(),
                             return_data_copy_size.min(),
@@ -389,7 +392,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 PrecompileGadget::construct(
                     cb,
                     call_gadget.is_success.expr(),
-                    call_gadget.callee_address_expr(),
+                    call_gadget.callee_address.expr(),
                     cb.curr.state.call_id.expr(),
                     call_gadget.cd_address.offset(),
                     call_gadget.cd_address.length(),
