@@ -33,6 +33,7 @@ fn run<F: Field>(
     max_txs: usize,
     max_withdrawals: usize,
     max_calldata: usize,
+    max_withdrawals:usize,
     public_data: PublicData,
 ) -> Result<(), Vec<VerifyFailure>> {
     let mut public_data = public_data;
@@ -60,11 +61,7 @@ fn test_default_pi() {
     assert_eq!(
         run::<Fr>(k, max_txs, max_withdrawals, max_calldata, public_data),
         Ok(())
-    );
 }
-
-#[test]
-fn test_simple_pi() {
     let max_txs = 8;
     let max_withdrawals = 5;
     let max_calldata = 200;
