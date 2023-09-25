@@ -1,13 +1,3 @@
-// use crate::{
-//     evm_circuit::{
-//         util::{
-//             common_gadget::{TransferGadgetInfo},
-//             rlc, , 
-//         },
-//     },
-//     util::word::{Word, WordCell},
-// };
-// >>>>>>> rohit/feat/precompile-identity
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -33,7 +23,7 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
         Expr,
-        word::{WordExpr}
+        word::WordExpr
     },
 };
 use bus_mapping::{
@@ -157,6 +147,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // Add callee to access list
         let is_warm = cb.query_bool();
         let is_warm_prev = cb.query_bool();
+        cb.require_true("callee add shuold be updated to warm", is_warm.expr());
         cb.account_access_list_write_unchecked(
             tx_id.expr(),
             call_gadget.callee_address(),
@@ -295,10 +286,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let caller_reversible_rwc_delta = 1.expr(); // AccessList
         let callee_reversible_rwc_delta = is_call.expr() * transfer.reversible_w_delta();
 
-
-
-
-
         // 1. handle precompile calls.
 
 
@@ -315,6 +302,16 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let precompile_gadget = cb.condition(
             and::expr([is_precompile.expr(), is_precheck_ok.expr()]),
             |cb| {
+                cb.require_equal(
+                    "Callee has no code for precompile",
+                    no_callee_code.expr(),
+                    true.expr(),
+                );
+                cb.require_true(
+                    "Precompile addresses are always warm",
+                    and::expr([is_warm.expr(), is_warm_prev.expr()]),
+                );
+                
                 // Write to callee's context.
                 for (field_tag, value) in [
                     (
