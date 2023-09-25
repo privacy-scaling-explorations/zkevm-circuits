@@ -400,11 +400,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             cb.curr.state.call_id.expr().to_word(),
                             CopyDataType::Memory.expr(),
                             0.expr(),
-                            return_data_copy_size.min(),
+                            precompile_return_data_copy_size.min(),
                             call_gadget.rd_address.offset(),
-                            return_data_copy_size.min(),
+                            precompile_return_data_copy_size.min(),
                             0.expr(),
-                            2.expr() * return_data_copy_size.min(), // reads + writes
+                            2.expr() * precompile_return_data_copy_size.min(), // reads + writes
                         );
                     },
                 );
