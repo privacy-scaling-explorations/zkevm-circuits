@@ -39,7 +39,7 @@ use crate::{
                 ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget,
             },
             not, or,
-            precompile::PrecompileGadget,
+            precompile_gadget::PrecompileGadget,
             select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},

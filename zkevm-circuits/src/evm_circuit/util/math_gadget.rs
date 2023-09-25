@@ -4,6 +4,7 @@ use halo2_proofs::plonk::Expression;
 
 mod abs_word;
 mod add_words;
+mod binary_number;
 mod byte_size;
 mod cmp_words;
 mod comparison;
