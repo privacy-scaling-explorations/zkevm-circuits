@@ -743,29 +743,26 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .assign_u256(region, offset, caller_balance)?;
         self.is_insufficient_balance
             .assign(region, offset, caller_balance, value)?;
+        let is_precheck_ok = 
+            depth.low_u64() < 1025 && (!(is_call || is_callcode) || caller_balance >= value);
 
+        // conditionally assign
+        if is_call && is_precheck_ok && !value.is_zero() {
+            if !callee_exists {
+                rws.next().account_codehash_pair(); // callee hash
+            }
 
+            let caller_balance_pair = rws.next().account_balance_pair();
+            let callee_balance_pair = rws.next().account_balance_pair();
+            self.transfer.assign(
+                region,
+                offset,
+                caller_balance_pair,
+                callee_balance_pair,
+                value,
+            )?;
+        }
 
-
-
-
-
-
-// <<<<<<< HEAD
-// =======
-//         let is_insufficient = (value > caller_balance) && (is_call || is_callcode);
-//         // only call opcode do transfer in sucessful case.
-//         let [caller_balance_pair, callee_balance_pair] =
-//             if is_call && !is_insufficient && !is_error_depth && !value.is_zero() {
-//                 let values = [18, 19]
-//                     .map(|index| block.get_rws(step, index + rw_offset).account_value_pair());
-//                 rw_offset += 2;
-//                 values
-//             } else {
-//                 [(U256::zero(), U256::zero()), (U256::zero(), U256::zero())]
-//             };
-
-// >>>>>>> rohit/feat/precompile-identity
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.is_call.assign(
@@ -814,6 +811,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure")
             )
         )?;
+
         self.current_value
             .assign_u256(region, offset, current_value)?;
         self.is_static
@@ -846,39 +844,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             callee_is_persistent.low_u64() != 0.into(),
         )?;
 
-        let is_call_or_callcode = is_call || is_callcode;
-        let is_sufficient = caller_balance >= value;
-
-
-
-
-
-
-
-
-
-
-
-
-        let is_precheck_ok = is_valid_depth && (is_sufficient || !is_call_or_callcode);
-
-        // conditionally assign
-        if is_call && is_precheck_ok && !value.is_zero() {
-            if !callee_exists {
-                rws.next().account_codehash_pair(); // callee hash
-            }
-
-            let caller_balance_pair = rws.next().account_balance_pair();
-            let callee_balance_pair = rws.next().account_balance_pair();
-            self.transfer.assign(
-                region,
-                offset,
-                caller_balance_pair,
-                callee_balance_pair,
-                value,
-            )?;
-        }
-
         let has_value = !value.is_zero() && !is_delegatecall;
         let gas_cost = self.call.cal_gas_cost_for_assignment(
             memory_expansion_gas_cost,
@@ -888,7 +853,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             !callee_exists,
         )?;
         let gas_available: u64 = step.gas_left - gas_cost;
-
         self.one_64th_gas
             .assign(region, offset, gas_available.into())?;
         self.capped_callee_gas_left.assign(
@@ -898,11 +862,44 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             F::from(gas_available - gas_available / 64),
         )?;
 
+        let (is_precompile_call, precompile_addr) = {
+            let precompile_addr = callee_address.to_address();
+            let is_precompiled_call = is_precompiled(&precompile_addr);
+            (is_precompiled_call, precompile_addr)
+        };
         let code_address: F = callee_address.to_address().to_scalar().unwrap();
         self.is_code_address_zero
             .assign(region, offset, code_address)?;
         self.is_precompile_lt
             .assign(region, offset, code_address, 0x0Au64.into())?;
+
+
+
+
+
+
+
+
+
+
+
+// <<<<<<< HEAD
+// =======
+//         let is_insufficient = (value > caller_balance) && (is_call || is_callcode);
+//         // only call opcode do transfer in sucessful case.
+//         let [caller_balance_pair, callee_balance_pair] =
+//             if is_call && !is_insufficient && !is_error_depth && !value.is_zero() {
+//                 let values = [18, 19]
+//                     .map(|index| block.get_rws(step, index + rw_offset).account_value_pair());
+//                 rw_offset += 2;
+//                 values
+//             } else {
+//                 [(U256::zero(), U256::zero()), (U256::zero(), U256::zero())]
+//             };
+
+// >>>>>>> rohit/feat/precompile-identity
+
+
         if is_precompiled(&callee_address.to_address()) {
             self.precompile_gadget.assign(
                 region,
