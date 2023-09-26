@@ -1415,7 +1415,10 @@ impl<'a> CircuitInputStateRef<'a> {
         {
             if step.depth == 1025 {
                 return Ok(Some(ExecError::Depth(match step.op {
-                    OpcodeId::CALL | OpcodeId::CALLCODE => DepthError::Call,
+                    OpcodeId::CALL
+                    | OpcodeId::CALLCODE
+                    | OpcodeId::DELEGATECALL
+                    | OpcodeId::STATICCALL => DepthError::Call,
                     OpcodeId::CREATE => DepthError::Create,
                     OpcodeId::CREATE2 => DepthError::Create2,
                     op => {
