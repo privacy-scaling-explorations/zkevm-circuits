@@ -222,8 +222,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_callee_address.to_word(),
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
-        ); // rwc_delta += 1
-           // });
+        );
 
         // Transfer value from caller to callee, creating account if necessary.
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
