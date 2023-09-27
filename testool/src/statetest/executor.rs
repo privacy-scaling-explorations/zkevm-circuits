@@ -4,7 +4,7 @@ use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, FixedCParams},
     mock::BlockData,
 };
-use eth_types::{geth_types, Address, Bytes, GethExecTrace, ToBigEndian, U256, U64};
+use eth_types::{geth_types, Address, Bytes, GethExecTrace, U256, U64};
 use ethers_core::{
     k256::ecdsa::SigningKey,
     types::{transaction::eip2718::TypedTransaction, TransactionRequest},
@@ -38,28 +38,17 @@ pub enum StateTestError {
     SkipTestMaxSteps(usize),
     #[error("SkipTestSelfDestruct")]
     SkipTestSelfDestruct,
-    #[error("SkipTestDifficulty")]
-    // scroll evm always returns 0 for "difficulty" opcode
-    SkipTestDifficulty,
-    #[error("SkipTestBalanceOverflow")]
-    SkipTestBalanceOverflow,
     #[error("Exception(expected:{expected:?}, found:{found:?})")]
     Exception { expected: bool, found: String },
 }
 
 impl StateTestError {
     pub fn is_skip(&self) -> bool {
-        // Avoid lint `variant is never constructed` if no feature skip-self-destruct.
-        let _ = StateTestError::SkipTestSelfDestruct;
-        let _ = StateTestError::SkipTestDifficulty;
-
         matches!(
             self,
             StateTestError::SkipTestMaxSteps(_)
                 | StateTestError::SkipTestMaxGasLimit(_)
                 | StateTestError::SkipTestSelfDestruct
-                | StateTestError::SkipTestBalanceOverflow
-                | StateTestError::SkipTestDifficulty
         )
     }
 }
@@ -208,14 +197,6 @@ fn check_geth_traces(
         return Err(StateTestError::SkipTestSelfDestruct);
     }
 
-    if geth_traces.iter().any(|gt| {
-        gt.struct_logs
-            .iter()
-            .any(|sl| sl.op == eth_types::evm_types::OpcodeId::DIFFICULTY)
-    }) {
-        return Err(StateTestError::SkipTestDifficulty);
-    }
-
     if geth_traces[0].struct_logs.len() as u64 > suite.max_steps {
         return Err(StateTestError::SkipTestMaxSteps(
             geth_traces[0].struct_logs.len(),
@@ -242,11 +223,6 @@ pub fn run_test(
 
     let (_, trace_config, post) = into_traceconfig(st.clone());
 
-    for acc in trace_config.accounts.values() {
-        if acc.balance.to_be_bytes()[0] != 0u8 {
-            return Err(StateTestError::SkipTestBalanceOverflow);
-        }
-    }
     let geth_traces = external_tracer::trace(&trace_config);
 
     let geth_traces = match (geth_traces, st.exception) {
