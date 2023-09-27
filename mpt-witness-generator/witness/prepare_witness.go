@@ -1,7 +1,6 @@
 package witness
 
 import (
-	"encoding/hex"
 	"fmt"
 	"math/big"
 
@@ -116,7 +115,10 @@ func obtainAccountProofAndConvertToWitness(i int, tMod TrieModification, tModsLe
 	} else if tMod.Type == BalanceChanged {
 		statedb.SetBalance(addr, tMod.Balance)
 	} else if tMod.Type == CodeHashChanged {
-		statedb.SetCode(addr, tMod.CodeHash)
+		statedb.SetCodeHash(addr, tMod.CodeHash)
+		// For cases when the wrong account is obtained by PrefetchAccount:
+		statedb.SetBalance(addr, big.NewInt(0))
+		statedb.SetNonce(addr, 0)
 	} else if tMod.Type == AccountCreate {
 		statedb.CreateAccount(tMod.Address)
 	} else if tMod.Type == AccountDestructed {
@@ -201,7 +203,7 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 			addrh := crypto.Keccak256(addr.Bytes())
 			accountAddr := trie.KeybytesToHex(addrh)
 
-			ap := oracle.PrefetchAccount(statedb.Db.BlockNumber, tMod.Address, nil)
+			oracle.PrefetchAccount(statedb.Db.BlockNumber, tMod.Address, nil)
 			oracle.PrefetchStorage(statedb.Db.BlockNumber, addr, tMod.Key, nil)
 
 			if specialTest == 1 {
@@ -211,9 +213,13 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 			accountProof, aNeighbourNode1, aExtNibbles1, aIsLastLeaf1, aIsNeighbourNodeHashed1, err := statedb.GetProof(addr)
 			check(err)
 
-			if !statedb.Exist(addr) && len(ap) > 0 {
-				ret, _ := hex.DecodeString(ap[len(ap)-1][2:])
-				statedb.SetStateObjectFromEncoding(addr, ret)
+			// When the account has not been created yet and PrefetchAccount gets the wrong
+			// account - because the first part of the address is the same and
+			// the queried address doesn't have the account yet.
+			if !statedb.Exist(addr) {
+				// Note: the storage modification should not be the first modification for the account that does
+				// not exist yet.
+				panic("The account should exist at this point - created by SetNonce, SetBalance, or SetCodehash")
 			}
 
 			storageProof, neighbourNode1, extNibbles1, isLastLeaf1, isNeighbourNodeHashed1, err := statedb.GetStorageProof(addr, tMod.Key)

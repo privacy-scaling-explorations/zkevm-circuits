@@ -410,6 +410,15 @@ func (s *StateDB) SetCode(addr common.Address, code []byte) {
 	}
 }
 
+func (s *StateDB) SetCodeHash(addr common.Address, codeHash []byte) {
+	s.SetStateObjectIfExists(addr)
+	stateObject := s.GetOrNewStateObject(addr)
+	if stateObject != nil {
+		// Only codeHash is the correct one, but we don't need the actual code for the MPT witness generator.
+		stateObject.SetCode(common.BytesToHash(codeHash), codeHash)
+	}
+}
+
 func (s *StateDB) SetState(addr common.Address, key, value common.Hash) {
 	s.SetStateObjectIfExists(addr)
 	stateObject := s.GetOrNewStateObject(addr)
