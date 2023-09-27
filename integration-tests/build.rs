@@ -6,10 +6,7 @@ use ethers::{
 use ethers_contract_abigen::Abigen;
 use log::info;
 use serde::{Deserialize, Serialize};
-use std::{
-    fs::File,
-    path::{Path, PathBuf},
-};
+use std::{fs::File, path::Path};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CompiledContract {
@@ -120,24 +117,27 @@ fn main() {
     for entry in glob::glob("./contracts/*.json").unwrap() {
         match entry {
             Ok(path) => {
-                let _g = generate_rust_contract_bindings(BINDINGS_DR, &path);
+                generate_rust_contract_bindings(BINDINGS_DR, &path);
             }
             Err(e) => eprintln!("{:#?}", e),
         }
     }
 }
 
-fn generate_rust_contract_bindings(bindings_dir: &str, file: &PathBuf) -> () {
-    let abi_source = file.clone();
+fn generate_rust_contract_bindings(bindings_dir: &str, file: &Path) {
+    const SLASH: char = '/';
+    const DOT: char = '.';
+
+    let abi_source = file.to_path_buf();
     let tempbinding = file
-        .clone()
+        .to_path_buf()
         .into_os_string()
         .into_string()
         .expect("FAILED CONVERSION TO STRING");
-    let filenamevec: Vec<&str> = tempbinding.split("/").collect();
+    let filenamevec: Vec<&str> = tempbinding.split(SLASH).collect();
     let filename = filenamevec[1];
 
-    let contractnamevector: Vec<&str> = filename.split(".").collect();
+    let contractnamevector: Vec<&str> = filename.split(DOT).collect();
     let contractname = contractnamevector[0].to_lowercase();
     let destpath =
         Path::new(&bindings_dir).join([contractname.clone(), "rs".to_string()].join("."));
