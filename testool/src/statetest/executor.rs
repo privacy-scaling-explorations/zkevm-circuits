@@ -4,7 +4,7 @@ use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, FixedCParams},
     mock::BlockData,
 };
-use eth_types::{geth_types, Address, Bytes, GethExecTrace, U256, U64};
+use eth_types::{geth_types, Address, Bytes, Error, GethExecTrace, U256, U64};
 use ethers_core::{
     k256::ecdsa::SigningKey,
     types::{transaction::eip2718::TypedTransaction, TransactionRequest},
@@ -235,10 +235,18 @@ pub fn run_test(
         }
         (Err(_), true) => return Ok(()),
         (Err(err), false) => {
+            if let Error::TracingError(ref err) = err {
+                if err.contains("max initcode size exceeded") {
+                    return Err(StateTestError::Exception {
+                        expected: true,
+                        found: err.to_string(),
+                    });
+                }
+            }
             return Err(StateTestError::Exception {
                 expected: false,
                 found: err.to_string(),
-            })
+            });
         }
     };
 
