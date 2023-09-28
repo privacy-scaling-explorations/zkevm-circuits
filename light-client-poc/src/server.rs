@@ -8,7 +8,9 @@ use halo2_proofs::halo2curves::bn256::Fr;
 use std::{collections::HashMap, str::FromStr, time::SystemTime};
 
 use crate::{
-    circuit::{LightClientCircuit, LightClientCircuitKeys},
+    circuit::{
+        LightClientCircuit, LightClientCircuitKeys, DEFAULT_CIRCUIT_DEGREE, DEFAULT_MAX_PROOF_COUNT,
+    },
     witness::{LightClientWitness, PublicInputs},
 };
 
@@ -62,7 +64,8 @@ pub async fn serve() -> Result<()> {
             };
 
         let public_inputs: PublicInputs<Fr> = (&witness.lc_witness).into();
-        let circuit = LightClientCircuit::new(witness)?;
+        let circuit =
+            LightClientCircuit::new(witness, DEFAULT_CIRCUIT_DEGREE, DEFAULT_MAX_PROOF_COUNT)?;
 
         println!("trns: {:#?}", circuit.transforms);
 

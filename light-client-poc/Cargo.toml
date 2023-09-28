@@ -21,3 +21,7 @@ gadgets = { path = "../gadgets" }
 rand_chacha = "0.3.1"
 rand = "0.8.5"
 ark-std = "0.4.0"
+env_logger = "0.9"
+
+[dev-dependencies]
+ctor = "0.1.22"

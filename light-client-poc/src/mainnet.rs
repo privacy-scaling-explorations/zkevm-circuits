@@ -6,11 +6,23 @@ use eyre::Result;
 use halo2_proofs::halo2curves::bn256::Fr;
 use std::{collections::HashMap, str::FromStr};
 
-use crate::{circuit::LightClientCircuit, witness::LightClientWitness};
+use crate::{
+    circuit::{LightClientCircuit, DEFAULT_CIRCUIT_DEGREE, DEFAULT_MAX_PROOF_COUNT},
+    witness::LightClientWitness,
+};
+
+#[cfg(test)]
+#[ctor::ctor]
+fn init_env_logger() {
+    // Enable RUST_LOG during tests
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
+}
 
 async fn mock_prove(
     block_no: u64,
     access_list: &[(&str, Vec<&str>)],
+    degree: usize,
+    max_proof_count: usize,
 ) -> Result<LightClientCircuit<Fr>> {
     const PVK: &str = "7ccb34dc5fd31fd0aa7860de89a4adc37ccb34dc5fd31fd0aa7860de89a4adc3";
     const PROVIDER_URL: &str = "https://mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161";
@@ -34,11 +46,12 @@ async fn mock_prove(
         U64::from(block_no),
         Some(access_list),
     )
-    .await?.unwrap();
+    .await?
+    .unwrap();
 
     println!("trns: {:#?}", witness.transforms);
 
-    let circuit = LightClientCircuit::new(witness)?;
+    let circuit = LightClientCircuit::new(witness, degree, max_proof_count)?;
 
     circuit.assert_satisfied();
 
@@ -138,7 +151,7 @@ mod test {
     async fn test_block_436875() -> Result<()> {
         let block_no = 436875;
         let access_list = blocks().get(&block_no).unwrap().clone();
-        let _ = mock_prove(block_no, &access_list).await?;
+        let _ = mock_prove(block_no, &access_list, 16, DEFAULT_MAX_PROOF_COUNT).await?;
         Ok(())
     }
 
@@ -146,7 +159,13 @@ mod test {
     async fn test_block_107() -> Result<()> {
         let block_no = 107;
         let access_list = blocks().get(&block_no).unwrap().clone();
-        let _ = mock_prove(block_no, &access_list).await?;
+        let _ = mock_prove(
+            block_no,
+            &access_list,
+            DEFAULT_CIRCUIT_DEGREE,
+            DEFAULT_MAX_PROOF_COUNT,
+        )
+        .await?;
         Ok(())
     }
     #[ignore = "takes a while, run with `cargo test --release -- test_reuse_proving_keys  --ignored`"]
@@ -155,8 +174,14 @@ mod test {
         let block_no = 107;
         let access_list = blocks().get(&block_no).unwrap().clone();
 
-        let circuit = mock_prove(block_no, &access_list).await?;
-        let public_inputs : PublicInputs<Fr> = (&circuit.lc_witness).into();
+        let circuit = mock_prove(
+            block_no,
+            &access_list,
+            DEFAULT_CIRCUIT_DEGREE,
+            DEFAULT_MAX_PROOF_COUNT,
+        )
+        .await?;
+        let public_inputs: PublicInputs<Fr> = (&circuit.lc_witness).into();
 
         let keys = LightClientCircuitKeys::new(&circuit);
         let proof = circuit.prove(&keys)?;
@@ -167,8 +192,14 @@ mod test {
         let block_no = 436875;
         let access_list = blocks().get(&block_no).unwrap().clone();
 
-        let circuit = mock_prove(block_no, &access_list).await?;
-        let mut public_inputs : PublicInputs<Fr> = (&circuit.lc_witness).into();
+        let circuit = mock_prove(
+            block_no,
+            &access_list,
+            DEFAULT_CIRCUIT_DEGREE,
+            DEFAULT_MAX_PROOF_COUNT,
+        )
+        .await?;
+        let mut public_inputs: PublicInputs<Fr> = (&circuit.lc_witness).into();
 
         let proof = circuit.prove(&keys)?;
 
@@ -192,7 +223,7 @@ mod test {
     async fn test_block_2000007() -> Result<()> {
         let block_no = 2000007;
         let access_list = blocks().get(&block_no).unwrap().clone();
-        let _ = mock_prove(block_no, &access_list).await?;
+        let _ = mock_prove(block_no, &access_list, 18, DEFAULT_MAX_PROOF_COUNT).await?;
         Ok(())
     }
 
@@ -201,7 +232,13 @@ mod test {
     async fn test_block_2000004() -> Result<()> {
         let block_no = 2000004;
         let access_list = blocks().get(&block_no).unwrap().clone();
-        let _ = mock_prove(block_no, &access_list).await?;
+        let _ = mock_prove(
+            block_no,
+            &access_list,
+            DEFAULT_CIRCUIT_DEGREE,
+            DEFAULT_MAX_PROOF_COUNT,
+        )
+        .await?;
         Ok(())
     }
 
@@ -210,7 +247,13 @@ mod test {
     async fn test_block_2000070() -> Result<()> {
         let block_no = 2000070;
         let access_list = blocks().get(&block_no).unwrap().clone();
-        let _ = mock_prove(block_no, &access_list).await?;
+        let _ = mock_prove(
+            block_no,
+            &access_list,
+            DEFAULT_CIRCUIT_DEGREE,
+            DEFAULT_MAX_PROOF_COUNT,
+        )
+        .await?;
         Ok(())
     }
 }

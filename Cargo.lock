@@ -2396,6 +2396,8 @@ name = "light-client-poc"
 version = "0.1.0"
 dependencies = [
  "ark-std 0.4.0",
+ "ctor",
+ "env_logger",
  "eth-types",
  "ethers",
  "eyre",
