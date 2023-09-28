@@ -503,7 +503,6 @@ func (st *StackTrie) hash(doUpdate bool) {
 	if st.db != nil {
 		// TODO! Is it safe to Put the slice here?
 		// Do all db implementations copy the value provided?
-		fmt.Println("into db:", st.val)
 		st.db.Put(st.val, h.tmp)
 	}
 }

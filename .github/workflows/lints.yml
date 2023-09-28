@@ -20,7 +20,7 @@ jobs:
         with:
           cancel_others: 'true'
           concurrent_skipping: 'same_content_newer'
-          paths_ignore: '["**/README.md"]'
+          paths_ignore: '["**/README.md", "mpt-witness-generator/**"]'
 
   lints:
     needs: [skip_check]

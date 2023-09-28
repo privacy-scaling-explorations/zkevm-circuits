@@ -297,23 +297,23 @@ func (s *StateDB) GetState(addr common.Address, hash common.Hash) common.Hash {
 }
 
 // GetProof returns the Merkle proof for a given account.
-func (s *StateDB) GetProof(addr common.Address) ([][]byte, []byte, [][]byte, bool, error) {
+func (s *StateDB) GetProof(addr common.Address) ([][]byte, []byte, [][]byte, bool, bool, error) {
 	return s.GetProofByHash(crypto.Keccak256Hash(addr.Bytes()))
 }
 
 // GetProofByHash returns the Merkle proof for a given account.
-func (s *StateDB) GetProofByHash(addrHash common.Hash) ([][]byte, []byte, [][]byte, bool, error) {
+func (s *StateDB) GetProofByHash(addrHash common.Hash) ([][]byte, []byte, [][]byte, bool, bool, error) {
 	var proof proofList
-	neighbourNode, extNibbles, isLastLeaf, err := s.trie.Prove(addrHash[:], 0, &proof)
-	return proof, neighbourNode, extNibbles, isLastLeaf, err
+	neighbourNode, extNibbles, isLastLeaf, isNeighbourNodeHashed, err := s.trie.Prove(addrHash[:], 0, &proof)
+	return proof, neighbourNode, extNibbles, isLastLeaf, isNeighbourNodeHashed, err
 }
 
 // GetStorageProof returns the Merkle proof for given storage slot.
-func (s *StateDB) GetStorageProof(a common.Address, key common.Hash) ([][]byte, []byte, [][]byte, bool, error) {
+func (s *StateDB) GetStorageProof(a common.Address, key common.Hash) ([][]byte, []byte, [][]byte, bool, bool, error) {
 	var proof proofList
 	trie := s.StorageTrie(a)
 	if trie == nil {
-		return proof, nil, nil, false, errors.New("storage trie for requested address does not exist")
+		return proof, nil, nil, false, false, errors.New("storage trie for requested address does not exist")
 	}
 	var newKey []byte
 	if !oracle.PreventHashingInSecureTrie {
@@ -321,8 +321,8 @@ func (s *StateDB) GetStorageProof(a common.Address, key common.Hash) ([][]byte, 
 	} else {
 		newKey = key.Bytes()
 	}
-	neighbourNode, extNibbles, isLastLeaf, err := trie.Prove(newKey, 0, &proof)
-	return proof, neighbourNode, extNibbles, isLastLeaf, err
+	neighbourNode, extNibbles, isLastLeaf, isNeighbourNodeHashed, err := trie.Prove(newKey, 0, &proof)
+	return proof, neighbourNode, extNibbles, isLastLeaf, isNeighbourNodeHashed, err
 }
 
 func (s *StateDB) GetNodeByNibbles(a common.Address, key []byte) ([]byte, error) {
@@ -410,6 +410,15 @@ func (s *StateDB) SetCode(addr common.Address, code []byte) {
 	}
 }
 
+func (s *StateDB) SetCodeHash(addr common.Address, codeHash []byte) {
+	s.SetStateObjectIfExists(addr)
+	stateObject := s.GetOrNewStateObject(addr)
+	if stateObject != nil {
+		// Only codeHash is the correct one, but we don't need the actual code for the MPT witness generator.
+		stateObject.SetCode(common.BytesToHash(codeHash), codeHash)
+	}
+}
+
 func (s *StateDB) SetState(addr common.Address, key, value common.Hash) {
 	s.SetStateObjectIfExists(addr)
 	stateObject := s.GetOrNewStateObject(addr)
@@ -437,7 +446,7 @@ func (s *StateDB) SetStateObjectIfExists(addr common.Address) {
 		ap := oracle.PrefetchAccount(s.Db.BlockNumber, addr, nil)
 		if len(ap) > 0 {
 			ret, _ := hex.DecodeString(ap[len(ap)-1][2:])
-			s.setStateObjectFromEncoding(addr, ret)
+			s.SetStateObjectFromEncoding(addr, ret)
 		}
 	}
 }
@@ -594,7 +603,7 @@ func (s *StateDB) getDeletedStateObject(addr common.Address) *stateObject {
 
 // Added for MPT generator. This loads account into stateObjects - if an account is not
 // in stateObjects, a new account is created in GetOrNewStateObject.
-func (s *StateDB) setStateObjectFromEncoding(addr common.Address, enc []byte) error {
+func (s *StateDB) SetStateObjectFromEncoding(addr common.Address, enc []byte) error {
 	if len(enc) == 0 {
 		return errors.New("encoding of account is of length 0")
 	}
@@ -605,7 +614,7 @@ func (s *StateDB) setStateObjectFromEncoding(addr common.Address, enc []byte) er
 	if err := rlp.DecodeBytes(accData, data); err != nil {
 		// If it's not account RLP, nothing is set (in stateObjects) - this is to prevent
 		// the need of checking whether enc is account RLP or something else (like branch RLP).
-		fmt.Println("failed to decode account")
+		// fmt.Println("failed to decode account")
 		return nil
 	}
 
@@ -623,14 +632,14 @@ func (s *StateDB) setStateObject(object *stateObject) {
 func (s *StateDB) GetOrNewStateObject(addr common.Address) *stateObject {
 	stateObject := s.getStateObject(addr)
 	if stateObject == nil {
-		stateObject, _ = s.createObject(addr)
+		stateObject, _ = s.CreateObject(addr)
 	}
 	return stateObject
 }
 
 // createObject creates a new state object. If there is an existing account with
 // the given address, it is overwritten and returned as the second return value.
-func (s *StateDB) createObject(addr common.Address) (newobj, prev *stateObject) {
+func (s *StateDB) CreateObject(addr common.Address) (newobj, prev *stateObject) {
 	prev = s.getDeletedStateObject(addr) // Note, prev might have been deleted, we need that!
 
 	var prevdestruct bool
@@ -664,7 +673,7 @@ func (s *StateDB) createObject(addr common.Address) (newobj, prev *stateObject) 
 //
 // Carrying over the balance ensures that Ether doesn't disappear.
 func (s *StateDB) CreateAccount(addr common.Address) {
-	newObj, prev := s.createObject(addr)
+	newObj, prev := s.CreateObject(addr)
 	if prev != nil {
 		newObj.setBalance(prev.data.Balance)
 	}

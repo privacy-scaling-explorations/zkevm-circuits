@@ -228,8 +228,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
     ) -> Result<(), Error> {
         let gas_used = tx.gas() - step.gas_left;
         let (refund, _) = block.get_rws(step, 2).tx_refund_value_pair();
-        let (caller_balance, caller_balance_prev) = block.get_rws(step, 3).account_value_pair();
-        let (coinbase_code_hash_prev, _) = block.get_rws(step, 4).account_value_pair();
+        let (caller_balance, caller_balance_prev) = block.get_rws(step, 3).account_balance_pair();
+        let (coinbase_code_hash_prev, _) = block.get_rws(step, 4).account_codehash_pair();
         let (coinbase_balance, coinbase_balance_prev) = block
             .get_rws(
                 step,
@@ -239,7 +239,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                     5
                 },
             )
-            .account_value_pair();
+            .account_balance_pair();
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id)))?;

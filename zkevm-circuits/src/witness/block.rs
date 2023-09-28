@@ -60,9 +60,11 @@ impl<F: Field> Block<F> {
         for (tx_idx, tx) in self.txs.iter().enumerate() {
             println!("tx {}", tx_idx);
             for step in tx.steps() {
-                println!(" step {:?} rwc: {}", step.exec_state, step.rwc.0);
+                println!("> Step {:?}", step.exec_state);
                 for rw_idx in 0..step.bus_mapping_instance.len() {
-                    println!("  - {:?}", self.get_rws(step, rw_idx));
+                    let rw = self.get_rws(step, rw_idx);
+                    let rw_str = if rw.is_write() { "READ" } else { "WRIT" };
+                    println!("  {} {} {:?}", rw.rw_counter(), rw_str, rw);
                 }
             }
         }

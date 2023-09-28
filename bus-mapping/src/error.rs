@@ -92,8 +92,8 @@ pub enum OogError {
     SloadSstore,
     /// Out of Gas for CALL, CALLCODE, DELEGATECALL and STATICCALL
     Call,
-    /// Out of Gas for CREATE2
-    Create2,
+    /// Out of Gas for CREATE and CREATE2
+    Create,
     /// Out of Gas for SELFDESTRUCT
     SelfDestruct,
 }
@@ -105,9 +105,7 @@ impl From<&OpcodeId> for OogError {
             OpcodeId::MLOAD | OpcodeId::MSTORE | OpcodeId::MSTORE8 => {
                 OogError::StaticMemoryExpansion
             }
-            OpcodeId::CREATE | OpcodeId::RETURN | OpcodeId::REVERT => {
-                OogError::DynamicMemoryExpansion
-            }
+            OpcodeId::RETURN | OpcodeId::REVERT => OogError::DynamicMemoryExpansion,
             OpcodeId::CALLDATACOPY
             | OpcodeId::CODECOPY
             | OpcodeId::EXTCODECOPY
@@ -124,7 +122,7 @@ impl From<&OpcodeId> for OogError {
                 OogError::Call
             }
             OpcodeId::SLOAD | OpcodeId::SSTORE => OogError::SloadSstore,
-            OpcodeId::CREATE2 => OogError::Create2,
+            OpcodeId::CREATE | OpcodeId::CREATE2 => OogError::Create,
             OpcodeId::SELFDESTRUCT => OogError::SelfDestruct,
             _ => OogError::Constant,
         }

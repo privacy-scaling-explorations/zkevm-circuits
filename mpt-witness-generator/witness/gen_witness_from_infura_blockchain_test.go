@@ -1399,7 +1399,7 @@ func TestOnlyLeafInStorageProof(t *testing.T) {
 	// statedb.IntermediateRoot(false)
 	statedb.CreateAccount(addr)
 
-	accountProof, _, _, _, err := statedb.GetProof(addr)
+	accountProof, _, _, _, _, err := statedb.GetProof(addr)
 	fmt.Println(len(accountProof))
 	check(err)
 
@@ -1438,7 +1438,7 @@ func TestStorageLeafInFirstLevelAfterPlaceholder(t *testing.T) {
 	// statedb.IntermediateRoot(false)
 	statedb.CreateAccount(addr)
 
-	accountProof, _, _, _, err := statedb.GetProof(addr)
+	accountProof, _, _, _, _, err := statedb.GetProof(addr)
 	fmt.Println(len(accountProof))
 	check(err)
 
@@ -1480,7 +1480,7 @@ func TestLeafAddedToEmptyTrie(t *testing.T) {
 	// statedb.IntermediateRoot(false)
 	statedb.CreateAccount(addr)
 
-	accountProof, _, _, _, err := statedb.GetProof(addr)
+	accountProof, _, _, _, _, err := statedb.GetProof(addr)
 	fmt.Println(len(accountProof))
 	check(err)
 
@@ -1522,7 +1522,7 @@ func TestDeleteToEmptyTrie(t *testing.T) {
 	// statedb.IntermediateRoot(false)
 	statedb.CreateAccount(addr)
 
-	accountProof, _, _, _, err := statedb.GetProof(addr)
+	accountProof, _, _, _, _, err := statedb.GetProof(addr)
 	fmt.Println(len(accountProof))
 	check(err)
 
@@ -1964,7 +1964,7 @@ func TestLeafInLastLevel(t *testing.T) {
 		key2 = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3]
 	*/
 
-	storageProof, _, _, _, err := statedb.GetStorageProof(addr, key1)
+	storageProof, _, _, _, _, err := statedb.GetStorageProof(addr, key1)
 	check(err)
 
 	fmt.Println(storageProof[0])
@@ -2006,7 +2006,7 @@ func TestLeafWithOneNibble(t *testing.T) {
 	statedb.SetState(addr, key2, val1)
 	statedb.IntermediateRoot(false)
 
-	storageProof, _, _, _, err := statedb.GetStorageProof(addr, key1)
+	storageProof, _, _, _, _, err := statedb.GetStorageProof(addr, key1)
 	check(err)
 
 	fmt.Println(storageProof[0])
@@ -2060,7 +2060,7 @@ func TestLeafWithMoreNibbles(t *testing.T) {
 	statedb.SetState(addr, key2, val1)
 	statedb.IntermediateRoot(false)
 
-	storageProof, _, _, _, err := statedb.GetStorageProof(addr, key1)
+	storageProof, _, _, _, _, err := statedb.GetStorageProof(addr, key1)
 	check(err)
 
 	fmt.Println(storageProof[0])
@@ -2078,196 +2078,6 @@ func TestLeafWithMoreNibbles(t *testing.T) {
 
 	oracle.PreventHashingInSecureTrie = false
 }
-
-// Note: this requires MockProver with config param 11
-/*
-func TestNonHashedBranchInBranch(t *testing.T) {
-	blockNum := 0
-	blockNumberParent := big.NewInt(int64(blockNum))
-	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
-	database := state.NewDatabase(blockHeaderParent)
-	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
-	addr := common.HexToAddress("0x50efbf12580138bc623c95757286df4e24eb81c9")
-
-	statedb.DisableLoadingRemoteAccounts()
-
-	statedb.CreateAccount(addr)
-
-	oracle.PreventHashingInSecureTrie = true // to store the unchanged key
-
-	val1 := common.BigToHash(big.NewInt(int64(1)))
-
-	key1Hex := "0x1000000000000000000000000000000000000000000000000000000000000000"
-	key2Hex := "0x2000000000000000000000000000000000000000000000000000000000000000"
-	key1 := common.HexToHash(key1Hex)
-	key2 := common.HexToHash(key2Hex)
-	fmt.Println(key2)
-
-	statedb.SetState(addr, key2, val1)
-
-	iters := 57 // making the last branch shorter than 32 bytes
-	for i := 0; i < iters; i++ {
-		fmt.Println("====")
-		fmt.Println(key1)
-
-		statedb.SetState(addr, key1, val1)
-
-		if i == iters - 1 {
-			break
-		}
-
-		key1Hex = replaceAtIndex(key1Hex, 49, i + 3) // 49 is 1, 50 is 2, ...
-		key1 = common.HexToHash(key1Hex)
-	}
-
-	statedb.IntermediateRoot(false)
-
-	val := common.BigToHash(big.NewInt(int64(17)))
-	trieMod := TrieModification{
-    	Type: StorageChanged,
-		Key: key1,
-		Value: val,
-		Address: addr,
-	}
-	trieModifications := []TrieModification{trieMod}
-
-	GenerateProof("NonHashedBranchInBranch", trieModifications, statedb)
-
-	oracle.PreventHashingInSecureTrie = false
-}
-
-func replaceAtIndex(in string, r rune, i int) string {
-    out := []rune(in)
-    out[i] = r
-    return string(out)
-}
-
-// Note: this requires MockProver with config param 11
-func TestNonHashedExtensionNodeInBranch(t *testing.T) {
-	blockNum := 0
-	blockNumberParent := big.NewInt(int64(blockNum))
-	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
-	database := state.NewDatabase(blockHeaderParent)
-	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
-	addr := common.HexToAddress("0x50efbf12580138bc623c95757286df4e24eb81c9")
-
-	statedb.DisableLoadingRemoteAccounts()
-
-	statedb.CreateAccount(addr)
-
-	oracle.PreventHashingInSecureTrie = true // to store the unchanged key
-
-	val1 := common.BigToHash(big.NewInt(int64(1)))
-
-	key1Hex := "0x1000000000000000000000000000000000000000000000000000000000000000"
-	key2Hex := "0x2000000000000000000000000000000000000000000000000000000000000000"
-	key1 := common.HexToHash(key1Hex)
-	key2 := common.HexToHash(key2Hex)
-	fmt.Println(key2)
-
-	statedb.SetState(addr, key2, val1)
-
-	iters := 58 // make the extension node shorter than 32
-	for i := 0; i < iters; i++ {
-		statedb.SetState(addr, key1, val1)
-
-		if i == iters - 1 {
-			break
-		}
-
-		makeExtension := false
-		if i == iters - 2 {
-			makeExtension = true
-		}
-
-		if !makeExtension {
-			key1Hex = replaceAtIndex(key1Hex, 49, i + 3)
-		} else {
-			key1Hex = replaceAtIndex(key1Hex, 49, i + 1 + 3)
-		}
-
-		key1 = common.HexToHash(key1Hex)
-	}
-
-	statedb.IntermediateRoot(false)
-
-	val := common.BigToHash(big.NewInt(int64(17)))
-	trieMod := TrieModification{
-    	Type: StorageChanged,
-		Key: key1,
-		Value: val,
-		Address: addr,
-	}
-	trieModifications := []TrieModification{trieMod}
-
-	GenerateProof("NonHashedExtensionNodeInBranch", trieModifications, statedb)
-
-	oracle.PreventHashingInSecureTrie = false
-}
-
-// Note: this requires MockProver with config param 11
-func TestNonHashedExtensionNodeInBranchTwoNibbles(t *testing.T) {
-	blockNum := 0
-	blockNumberParent := big.NewInt(int64(blockNum))
-	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
-	database := state.NewDatabase(blockHeaderParent)
-	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
-	addr := common.HexToAddress("0x50efbf12580138bc623c95757286df4e24eb81c9")
-
-	statedb.DisableLoadingRemoteAccounts()
-
-	statedb.CreateAccount(addr)
-
-	oracle.PreventHashingInSecureTrie = true // to store the unchanged key
-
-	val1 := common.BigToHash(big.NewInt(int64(1)))
-
-	key1Hex := "0x1000000000000000000000000000000000000000000000000000000000000000"
-	key2Hex := "0x2000000000000000000000000000000000000000000000000000000000000000"
-	key1 := common.HexToHash(key1Hex)
-	key2 := common.HexToHash(key2Hex)
-	fmt.Println(key2)
-
-	statedb.SetState(addr, key2, val1)
-
-	iters := 58 // make the extension node shorter than 32
-	for i := 0; i < iters; i++ {
-		statedb.SetState(addr, key1, val1)
-
-		if i == iters - 1 {
-			break
-		}
-
-		makeExtension := false
-		if i == iters - 2 {
-			makeExtension = true
-		}
-
-		if !makeExtension {
-			key1Hex = replaceAtIndex(key1Hex, 49, i + 3)
-		} else {
-			key1Hex = replaceAtIndex(key1Hex, 49, i + 2 + 3) // +2 to have two nibbles
-		}
-
-		key1 = common.HexToHash(key1Hex)
-	}
-
-	statedb.IntermediateRoot(false)
-
-	val := common.BigToHash(big.NewInt(int64(17)))
-	trieMod := TrieModification{
-    	Type: StorageChanged,
-		Key: key1,
-		Value: val,
-		Address: addr,
-	}
-	trieModifications := []TrieModification{trieMod}
-
-	GenerateProof("NonHashedExtensionNodeInBranchTwoNibbles", trieModifications, statedb)
-
-	oracle.PreventHashingInSecureTrie = false
-}
-*/
 
 func TestBranchAfterExtNode(t *testing.T) {
 	blockNum := 0
@@ -2404,4 +2214,54 @@ func TestNonExistingStorageNil(t *testing.T) {
 	trieModifications := []TrieModification{trieMod}
 
 	updateStateAndPrepareWitness("NonExistingStorageNil", ks[:], values, addresses, trieModifications)
+}
+
+func TestNeighbourNodeInHashedBranch(t *testing.T) {
+	blockNum := 2000069
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0xBB9bc244D798123fDe783fCc1C72d3Bb8C189413")
+
+	statedb.DisableLoadingRemoteAccounts()
+
+	key := common.HexToHash("0x83390858478ca0e9bd8e0b6f9c61cb360f78d42e5c5c2908d9a885b766925386")
+	val := common.Hash{} // empty value deletes the key
+
+	trieMod := TrieModification{
+		Type:    StorageChanged,
+		Key:     key,
+		Value:   val,
+		Address: addr,
+	}
+	trieModifications := []TrieModification{trieMod}
+
+	prepareWitness("NeighbourNodeInHashedBranch", trieModifications, statedb)
+}
+
+func TestLongKey(t *testing.T) {
+	blockNum := 2000069
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0xBB9bc244D798123fDe783fCc1C72d3Bb8C189413")
+
+	statedb.DisableLoadingRemoteAccounts()
+
+	key1 := common.HexToHash("0x4312ad16021fb135960665020d410e3ca0e42488b684d61315e73d368c7182ad")
+	v := common.FromHex("500000000000000000")
+	val1 := common.BytesToHash(v)
+
+	trieMod1 := TrieModification{
+		Type:    StorageChanged,
+		Key:     key1,
+		Value:   val1,
+		Address: addr,
+	}
+
+	trieModifications := []TrieModification{trieMod1}
+
+	prepareWitness("LongKey", trieModifications, statedb)
 }

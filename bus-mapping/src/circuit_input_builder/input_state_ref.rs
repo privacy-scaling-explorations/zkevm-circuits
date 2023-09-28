@@ -611,6 +611,43 @@ impl<'a> CircuitInputStateRef<'a> {
         )
     }
 
+    /// Transfer to an address irreversibly.
+    pub fn transfer_to_irreversible(
+        &mut self,
+        step: &mut ExecStep,
+        receiver: Address,
+        receiver_exists: bool,
+        must_create: bool,
+        value: Word,
+    ) -> Result<(), Error> {
+        // If receiver doesn't exist, create it
+        if (!receiver_exists && !value.is_zero()) || must_create {
+            self.account_write(
+                step,
+                receiver,
+                AccountField::CodeHash,
+                CodeDB::empty_code_hash().to_word(),
+                Word::zero(),
+            )?;
+        }
+        if value.is_zero() {
+            // Skip transfer if value == 0
+            return Ok(());
+        }
+        let (_found, receiver_account) = self.sdb.get_account(&receiver);
+        let receiver_balance_prev = receiver_account.balance;
+        let receiver_balance = receiver_account.balance + value;
+        self.account_write(
+            step,
+            receiver,
+            AccountField::Balance,
+            receiver_balance,
+            receiver_balance_prev,
+        )?;
+
+        Ok(())
+    }
+
     /// Fetch and return code for the given code hash from the code DB.
     pub fn code(&self, code_hash: H256) -> Result<Vec<u8>, Error> {
         self.code_db

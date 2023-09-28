@@ -74,6 +74,7 @@ mod error_invalid_opcode;
 mod error_oog_account_access;
 mod error_oog_call;
 mod error_oog_constant;
+mod error_oog_create;
 mod error_oog_dynamic_memory;
 mod error_oog_exp;
 mod error_oog_log;
@@ -151,6 +152,7 @@ use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_account_access::ErrorOOGAccountAccessGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
+use error_oog_create::ErrorOOGCreateGadget;
 use error_oog_dynamic_memory::ErrorOOGDynamicMemoryGadget;
 use error_oog_exp::ErrorOOGExpGadget;
 use error_oog_log::ErrorOOGLogGadget;
@@ -311,7 +313,7 @@ pub struct ExecutionConfig<F> {
     error_oog_sha3: Box<ErrorOOGSha3Gadget<F>>,
     error_oog_account_access: Box<ErrorOOGAccountAccessGadget<F>>,
     error_oog_ext_codecopy: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXTCODECOPY }>>,
-    error_oog_create2: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>>,
+    error_oog_create: Box<ErrorOOGCreateGadget<F>>,
     error_oog_self_destruct:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>>,
     error_oog_code_store: Box<ErrorCodeStoreGadget<F>>,
@@ -576,7 +578,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_sha3: configure_gadget!(),
             error_oog_ext_codecopy: configure_gadget!(),
             error_oog_exp: configure_gadget!(),
-            error_oog_create2: configure_gadget!(),
+            error_oog_create: configure_gadget!(),
             error_oog_self_destruct: configure_gadget!(),
             error_oog_code_store: configure_gadget!(),
             error_invalid_jump: configure_gadget!(),
@@ -1316,8 +1318,8 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorOutOfGasEXP => {
                 assign_exec_step!(self.error_oog_exp)
             }
-            ExecutionState::ErrorOutOfGasCREATE2 => {
-                assign_exec_step!(self.error_oog_create2)
+            ExecutionState::ErrorOutOfGasCREATE => {
+                assign_exec_step!(self.error_oog_create)
             }
             ExecutionState::ErrorOutOfGasSELFDESTRUCT => {
                 assign_exec_step!(self.error_oog_self_destruct)
