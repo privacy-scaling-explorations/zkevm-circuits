@@ -362,7 +362,7 @@ impl ExecutionState {
         Self::iter().count()
     }
 
-    pub(crate) fn is_precompiled(&self) -> bool {
+    pub(crate) fn _is_precompiled(&self) -> bool {
         matches!(
             self,
             Self::PrecompileEcRecover

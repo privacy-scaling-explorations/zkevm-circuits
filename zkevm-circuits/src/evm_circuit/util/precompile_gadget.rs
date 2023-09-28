@@ -1,11 +1,9 @@
 use bus_mapping::precompile::PrecompileCalls;
 use eth_types::Field;
-use gadgets::util::{not, or, select, Expr};
-use halo2_proofs::{circuit::Value, plonk::Expression};
+use gadgets::util::{not, Expr};
+use halo2_proofs::plonk::Expression;
 
-use crate::evm_circuit::{
-    step::{ExecutionState, ExecutionState::ErrorOutOfGasPrecompile},
-};
+use crate::evm_circuit::step::{ExecutionState, ExecutionState::ErrorOutOfGasPrecompile};
 
 use super::{
     constraint_builder::{BoxedClosure, ConstrainBuilderCommon, EVMConstraintBuilder},
