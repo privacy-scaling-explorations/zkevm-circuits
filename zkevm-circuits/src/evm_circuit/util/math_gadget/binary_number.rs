@@ -45,7 +45,7 @@ impl<F: Field, const N: usize> BinaryNumberGadget<F, N> {
         Ok(())
     }
 
-    pub(crate) fn value(&self) -> Expression<F> {
+    pub(crate) fn _value(&self) -> Expression<F> {
         self.bits
             .iter()
             .fold(0.expr(), |res, bit| bit.expr() + res * 2.expr())
