@@ -472,6 +472,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     call_gadget.cd_address.length(),
                     call_gadget.rd_address.offset(),
                     call_gadget.rd_address.length(),
+                    precompile_return_length.expr()
                 )
             },
         );
