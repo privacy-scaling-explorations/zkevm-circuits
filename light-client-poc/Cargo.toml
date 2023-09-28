@@ -25,3 +25,6 @@ env_logger = "0.9"
 
 [dev-dependencies]
 ctor = "0.1.22"
+
+[features]
+disable-keccak = []

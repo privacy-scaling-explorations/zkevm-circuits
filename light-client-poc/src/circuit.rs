@@ -61,6 +61,7 @@ pub fn xif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
 ///
 #[derive(Clone)]
 pub struct LightClientCircuitConfig<F: Field> {
+    #[cfg(not(feature = "disable-keccak"))]
     pub keccak_config: KeccakCircuitConfig<F>,
     pub mpt_config: MPTConfig<F>,
 
@@ -83,6 +84,7 @@ pub struct LightClientCircuitConfig<F: Field> {
 #[derive(Default)]
 pub struct LightClientCircuit<F: Field> {
     pub transforms: Transforms,
+    #[cfg(not(feature = "disable-keccak"))]
     pub keccak_circuit: KeccakCircuit<F>,
     pub mpt_circuit: MPTCircuit<F>,
     pub lc_witness: SingleTrieModifications<F>,
@@ -109,8 +111,10 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
     fn configure_with_params(meta: &mut ConstraintSystem<F>, params: Self::Params) -> Self::Config {
         let challenges = Challenges::construct(meta);
         let challenges_expr = challenges.exprs(meta);
+
         let keccak_table = KeccakTable::construct(meta);
 
+        #[cfg(not(feature = "disable-keccak"))]
         let keccak_config = KeccakCircuitConfig::new(
             meta,
             KeccakCircuitConfigArgs {
@@ -286,6 +290,7 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
         });
 
         let config = LightClientCircuitConfig {
+            #[cfg(not(feature = "disable-keccak"))]
             keccak_config,
             mpt_config,
             is_first,
@@ -323,6 +328,15 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
         config
             .mpt_config
             .load_mult_table(&mut layouter, &challenges, height)?;
+
+        #[cfg(feature = "disable-keccak")]
+        config.mpt_config.keccak_table.dev_load(
+            &mut layouter,
+            &self.mpt_circuit.keccak_data,
+            &challenges,
+        )?;
+
+        #[cfg(not(feature = "disable-keccak"))]
         self.keccak_circuit
             .synthesize_sub(&config.keccak_config, &challenges, &mut layouter)?;
 
@@ -559,6 +573,7 @@ impl LightClientCircuit<Fr> {
 
         let lc_circuit = LightClientCircuit::<Fr> {
             transforms,
+            #[cfg(not(feature = "disable-keccak"))]
             keccak_circuit,
             mpt_circuit,
             lc_witness,

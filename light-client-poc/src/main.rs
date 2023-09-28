@@ -27,7 +27,8 @@ async fn local_test_proof(
         recipt.block_number.unwrap(),
         None,
     )
-    .await?.unwrap();
+    .await?
+    .unwrap();
     println!("trns: {:#?}", witness.transforms);
     utils::verify_mpt_witness(witness.mpt_witness)
 }
@@ -62,5 +63,5 @@ async fn local_tests() -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     local_tests().await
-    //server::serve().await
+    // server::serve().await
 }
