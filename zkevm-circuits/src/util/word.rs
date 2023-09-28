@@ -189,7 +189,7 @@ impl<F: Field, const N: usize> WordExpr<F> for WordLimbs<Cell<F>, N> {
 
 impl<F: Field> WordExpr<F> for Expression<F> {
     fn to_word(&self) -> Word<Expression<F>> {
-        WordLimbs::<Expression<F>, 1>::new([*self]).to_word()
+        WordLimbs::<Expression<F>, 1>::new([self.clone()]).to_word()
     }
 }
 

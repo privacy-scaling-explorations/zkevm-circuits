@@ -47,6 +47,7 @@ pub enum FixedTableTag {
     Pow2,
     /// Lookup constant gas cost for opcodes
     ConstantGasCost,
+    /// Preocmpile information
     PrecompileInfo,
 }
 impl_expr!(FixedTableTag);

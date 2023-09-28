@@ -49,7 +49,7 @@ impl From<PrecompileCalls> for ExecutionState {
     }
 }
 
-#[allow(non_camel_case_types)]
+#[allow(non_camel_case_types, missing_docs)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
 /// All the possible execution states that the computation of EVM can arrive.
 /// Some states are shared by multiple opcodes.
