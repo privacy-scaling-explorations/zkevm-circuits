@@ -9,8 +9,8 @@ use crate::evm_circuit::{
 
 use super::{
     constraint_builder::{BoxedClosure, ConstrainBuilderCommon, EVMConstraintBuilder},
-    math_gadget::{BinaryNumberGadget, IsZeroGadget, LtGadget},
-    CachedRegion, Cell,
+    math_gadget::BinaryNumberGadget,
+    CachedRegion,
 };
 
 #[derive(Clone, Debug)]
