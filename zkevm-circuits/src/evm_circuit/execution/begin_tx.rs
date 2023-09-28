@@ -932,8 +932,8 @@ mod test {
                 accs[0].address(address).nonce(nonce).balance(eth(10));
             },
             |mut txs, _| {
-                txs[0].from(address).to(new_address).value(eth(2));
-                txs[1].from(address);
+                txs[0].from(address).to(new_address).value(eth(2)); // Initialize new_address with some balance and an empty code hash
+                txs[1].from(address); // Run a CREATE tx on new_address
             },
             |block, _| block,
         )
