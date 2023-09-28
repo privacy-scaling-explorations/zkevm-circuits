@@ -692,8 +692,8 @@ pub(crate) struct CommonCallGadget<F, MemAddrGadget, const IS_SUCCESS_CALL: bool
     // save information
     is_call: Expression<F>,
     is_callcode: Expression<F>,
-    is_delegatecall: Expression<F>,
-    is_staticcall: Expression<F>,
+    _is_delegatecall: Expression<F>,
+    _is_staticcall: Expression<F>,
 }
 
 impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CALL: bool>
@@ -782,8 +782,8 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
             callee_not_exists,
             is_call,
             is_callcode,
-            is_delegatecall,
-            is_staticcall,
+            _is_delegatecall: is_delegatecall,
+            _is_staticcall: is_staticcall,
         }
     }
 

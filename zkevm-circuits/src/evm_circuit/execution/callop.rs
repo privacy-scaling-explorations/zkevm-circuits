@@ -758,7 +758,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let depth = rws.next().call_context_value();
         let current_callee_address = rws.next().call_context_value();
 
-        let is_valid_depth = depth.low_u64() < 1025;
+        let _is_valid_depth = depth.low_u64() < 1025;
         self.is_depth_ok
             .assign(region, offset, F::from(depth.low_u64()), F::from(1025))?;
         // This offset is used to change the index offset of `step.rw_indices`.
@@ -920,7 +920,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             F::from(gas_available - gas_available / 64),
         )?;
 
-        let (is_precompile_call, precompile_addr) = {
+        let (_is_precompile_call, precompile_addr) = {
             let precompile_addr = callee_address.to_address();
             let is_precompiled_call = is_precompiled(&precompile_addr);
             (is_precompiled_call, precompile_addr)
@@ -965,7 +965,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             output_rws,
             return_rws,
         ) = if is_precheck_ok && is_precompiled(&callee_address.to_address()) {
-            let precompile_call: PrecompileCalls = precompile_addr.0[19].into();
+            let _precompile_call: PrecompileCalls = precompile_addr.0[19].into();
             let input_len =cd_length.as_usize();
             let input_bytes_word_count =
                 if input_len == 0 {
@@ -991,7 +991,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 } else {
                     let length = min(rd_length.as_usize(), output_bytes_end);
                     let begin = rd_offset.as_usize();
-                    let mut dst_range = MemoryWordRange::align_range(begin, length);
+                    let dst_range = MemoryWordRange::align_range(begin, length);
                     dst_range.word_count()
                 };
 
