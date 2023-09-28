@@ -47,10 +47,8 @@ mod tests {
         let bytecodes_num: usize = max_bytecode_row_num / bytecode_len;
 
         // Create the circuit
-        let bytecode_circuit = TestBytecodeCircuit::<Fr>::new(
-            fillup_codebytes(bytecodes_num, bytecode_len),
-            2usize.pow(degree),
-        );
+        let bytecode_circuit =
+            TestBytecodeCircuit::<Fr>::new(fillup_codebytes(bytecodes_num, bytecode_len), degree);
 
         // Initialize the polynomial commitment parameters
         let mut rng = XorShiftRng::from_seed([

@@ -16,7 +16,7 @@ use crate::{
     },
     table::{BytecodeFieldTag, BytecodeTable, KeccakTable, LookupTable},
     util::{
-        self, get_push_size,
+        self, get_push_size, log2_ceil,
         word::{empty_code_hash_word_value, Word, Word32, WordExpr},
         Challenges, Expr, SubCircuit, SubCircuitConfig,
     },
@@ -162,7 +162,6 @@ impl<F: Field> Deref for BytecodeCircuitAssignment<F> {
 #[derive(Clone, Debug)]
 /// Bytecode circuit configuration
 pub struct BytecodeCircuitConfig<F> {
-    minimum_rows: usize,
     q_enable: Column<Fixed>,
     q_first: Column<Fixed>,
     q_last: Column<Fixed>,
@@ -555,7 +554,6 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
         let index_length_diff_is_zero = IsZeroChip::construct(index_length_diff_is_zero);
 
         BytecodeCircuitConfig {
-            minimum_rows: meta.minimum_rows(),
             q_enable,
             q_first,
             q_last,
@@ -576,19 +574,17 @@ impl<F: Field> BytecodeCircuitConfig<F> {
     pub(crate) fn assign_internal(
         &self,
         layouter: &mut impl Layouter<F>,
-        size: usize,
+        degree: u32,
+        unusable_rows: usize,
         witness: &BytecodeCircuitAssignment<F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        // Subtract the unusable rows from the size
-        assert!(size > self.minimum_rows);
-
-        let last_row_offset = size - self.minimum_rows + 1;
+        let last_row_offset = 2usize.pow(degree) - unusable_rows - 1;
 
         trace!(
-            "size: {}, minimum_rows: {}, last_row_offset:{}",
-            size,
-            self.minimum_rows,
+            "degree: {}, unusable_rows: {}, last_row_offset:{}",
+            degree,
+            unusable_rows,
             last_row_offset
         );
         if witness.len() > last_row_offset {
@@ -779,17 +775,17 @@ pub struct BytecodeCircuit<F: Field> {
     /// Unrolled bytecodes
     pub(crate) rows: BytecodeCircuitAssignment<F>,
     /// Circuit size
-    pub size: usize,
+    pub degree: u32,
 }
 
 impl<F: Field> BytecodeCircuit<F> {
     /// new BytecodeCircuitTester
-    pub fn new(bytecodes: CodeDB, size: usize) -> Self {
+    pub fn new(bytecodes: CodeDB, degree: u32) -> Self {
         let rows: BytecodeCircuitAssignment<F> = bytecodes.clone().into();
         Self {
             bytecodes,
             rows,
-            size,
+            degree,
         }
     }
 }
@@ -804,7 +800,8 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
     }
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
-        Self::new(block.bytecodes.clone(), block.circuits_params.max_bytecode)
+        let degree = log2_ceil(block.circuits_params.max_bytecode);
+        Self::new(block.bytecodes.clone(), degree)
     }
 
     /// Return the minimum number of rows required to prove the block
@@ -823,6 +820,12 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         config.load_aux_tables(layouter)?;
-        config.assign_internal(layouter, self.size, &self.rows, challenges)
+        config.assign_internal(
+            layouter,
+            self.degree,
+            Self::unusable_rows(),
+            &self.rows,
+            challenges,
+        )
     }
 }
