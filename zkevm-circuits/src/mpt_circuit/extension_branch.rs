@@ -15,8 +15,7 @@ use crate::{
     circuit_tools::{cached_region::CachedRegion, cell_manager::Cell},
     mpt_circuit::{
         helpers::{key_memory, parent_memory, Indexable, KeyData, ParentData},
-        witness_row::ExtensionBranchRowType,
-        MPTConfig, MPTState,
+        MPTConfig, MptMemory,
     },
     util::word::Word,
 };
@@ -35,13 +34,8 @@ impl<F: Field> ExtensionBranchConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
-        ctx: MPTContext<F>,
+        ctx: &mut MPTContext<F>,
     ) -> Self {
-        cb.base
-            .cell_manager
-            .as_mut()
-            .unwrap()
-            .reset(ExtensionBranchRowType::Count as usize);
         let mut config = ExtensionBranchConfig::default();
 
         circuit!([meta, cb], {
@@ -56,15 +50,11 @@ impl<F: Field> ExtensionBranchConfig<F> {
             require!(config.is_placeholder[true.idx()].expr() + config.is_placeholder[false.idx()].expr() => bool);
 
             // Load the last key values
-            config.key_data = KeyData::load(cb, &ctx.memory[key_memory(true)], 0.expr());
+            config.key_data = KeyData::load(cb, &mut ctx.memory[key_memory(true)], 0.expr());
             // Load the parent values
             for is_s in [true, false] {
-                config.parent_data[is_s.idx()] = ParentData::load(
-                    "branch load",
-                    cb,
-                    &ctx.memory[parent_memory(is_s)],
-                    0.expr(),
-                );
+                config.parent_data[is_s.idx()] =
+                    ParentData::load(cb, &mut ctx.memory[parent_memory(is_s)], 0.expr());
                 // A branch cannot follow a placeholder branch
                 require!(config.parent_data[is_s.idx()].is_placeholder => false);
             }
@@ -151,7 +141,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 ifx! {not!(config.is_placeholder[is_s.idx()].expr()) => {
                     KeyData::store(
                         cb,
-                        &ctx.memory[key_memory(is_s)],
+                        &mut ctx.memory[key_memory(is_s)],
                         branch.key_rlc_post_branch.expr(),
                         branch.key_mult_post_branch.expr(),
                         branch.num_nibbles.expr(),
@@ -163,7 +153,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     );
                     ParentData::store(
                         cb,
-                        &ctx.memory[parent_memory(is_s)],
+                        &mut ctx.memory[parent_memory(is_s)],
                         branch.mod_word[is_s.idx()].clone(),
                         branch.mod_rlc[is_s.idx()].expr(),
                         false.expr(),
@@ -173,7 +163,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                  } elsex {
                     KeyData::store(
                         cb,
-                        &ctx.memory[key_memory(is_s)],
+                        &mut ctx.memory[key_memory(is_s)],
                         config.key_data.rlc.expr(),
                         config.key_data.mult.expr(),
                         config.key_data.num_nibbles.expr(),
@@ -185,7 +175,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     );
                     ParentData::store(
                         cb,
-                        &ctx.memory[parent_memory(is_s)],
+                        &mut ctx.memory[parent_memory(is_s)],
                         config.parent_data[is_s.idx()].hash.expr(),
                         config.parent_data[is_s.idx()].rlc.expr(),
                         config.parent_data[is_s.idx()].is_root.expr(),
@@ -204,7 +194,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         mpt_config: &MPTConfig<F>,
-        pv: &mut MPTState<F>,
+        memory: &mut MptMemory<F>,
         offset: usize,
         node: &Node,
         rlp_values: &[RLPItemWitness],
@@ -216,13 +206,13 @@ impl<F: Field> ExtensionBranchConfig<F> {
 
         let key_data =
             self.key_data
-                .witness_load(region, offset, &pv.memory[key_memory(true)], 0)?;
+                .witness_load(region, offset, &mut memory[key_memory(true)], 0)?;
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         for is_s in [true, false] {
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
                 region,
                 offset,
-                &pv.memory[parent_memory(is_s)],
+                &mut memory[parent_memory(is_s)],
                 0,
             )?;
             self.is_placeholder[is_s.idx()].assign(
@@ -242,7 +232,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
             self.extension.assign(
                 region,
                 mpt_config,
-                pv,
+                memory,
                 offset,
                 &key_data,
                 &mut key_rlc,
@@ -264,7 +254,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
         ) = self.branch.assign(
             region,
             mpt_config,
-            pv,
+            memory,
             offset,
             &extension_branch.is_placeholder,
             &mut key_rlc,
@@ -281,7 +271,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 KeyData::witness_store(
                     region,
                     offset,
-                    &mut pv.memory[key_memory(is_s)],
+                    &mut memory[key_memory(is_s)],
                     key_rlc_post_branch,
                     key_mult_post_branch,
                     num_nibbles,
@@ -292,7 +282,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 ParentData::witness_store(
                     region,
                     offset,
-                    &mut pv.memory[parent_memory(is_s)],
+                    &mut memory[parent_memory(is_s)],
                     mod_node_hash_word[is_s.idx()],
                     mod_node_hash_rlc[is_s.idx()],
                     false,
@@ -303,7 +293,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 KeyData::witness_store(
                     region,
                     offset,
-                    &mut pv.memory[key_memory(is_s)],
+                    &mut memory[key_memory(is_s)],
                     key_data.rlc,
                     key_data.mult,
                     key_data.num_nibbles,
@@ -314,7 +304,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 ParentData::witness_store(
                     region,
                     offset,
-                    &mut pv.memory[parent_memory(is_s)],
+                    &mut memory[parent_memory(is_s)],
                     parent_data[is_s.idx()].hash,
                     parent_data[is_s.idx()].rlc,
                     parent_data[is_s.idx()].is_root,

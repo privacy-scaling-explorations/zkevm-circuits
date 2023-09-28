@@ -162,7 +162,7 @@ mod test {
         let _ = mock_prove(
             block_no,
             &access_list,
-            DEFAULT_CIRCUIT_DEGREE,
+            15,
             DEFAULT_MAX_PROOF_COUNT,
         )
         .await?;

@@ -26,7 +26,7 @@ use crate::{
             KECCAK,
         },
         param::{KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
-        MPTConfig, MPTContext, MPTState, RlpItemType,
+        MPTConfig, MPTContext, MptMemory, RlpItemType,
     },
     table::MPTProofType,
     util::word::{self, Word},
@@ -56,13 +56,8 @@ impl<F: Field> AccountLeafConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
-        ctx: MPTContext<F>,
+        ctx: &mut MPTContext<F>,
     ) -> Self {
-        cb.base
-            .cell_manager
-            .as_mut()
-            .unwrap()
-            .reset(AccountRowType::Count as usize);
         let mut config = AccountLeafConfig::default();
 
         circuit!([meta, cb], {
@@ -136,12 +131,11 @@ impl<F: Field> AccountLeafConfig<F> {
                 meta,
                 cb,
                 AccountRowType::Address as usize,
-                RlpItemType::Value,
+                RlpItemType::Address,
             );
             let key_item = ctx.rlp_item(meta, cb, AccountRowType::Key as usize, RlpItemType::Hash);
 
-            config.main_data =
-                MainData::load("main storage", cb, &ctx.memory[main_memory()], 0.expr());
+            config.main_data = MainData::load(cb, &mut ctx.memory[main_memory()], 0.expr());
 
             // Don't allow an account node to follow an account node
             require!(config.main_data.is_below_account => false);
@@ -157,16 +151,11 @@ impl<F: Field> AccountLeafConfig<F> {
             for is_s in [true, false] {
                 // Key data
                 let key_data = &mut config.key_data[is_s.idx()];
-                *key_data = KeyData::load(cb, &ctx.memory[key_memory(is_s)], 0.expr());
+                *key_data = KeyData::load(cb, &mut ctx.memory[key_memory(is_s)], 0.expr());
 
                 // Parent data
                 let parent_data = &mut config.parent_data[is_s.idx()];
-                *parent_data = ParentData::load(
-                    "account load",
-                    cb,
-                    &ctx.memory[parent_memory(is_s)],
-                    0.expr(),
-                );
+                *parent_data = ParentData::load(cb, &mut ctx.memory[parent_memory(is_s)], 0.expr());
 
                 // Placeholder leaf checks
                 config.is_placeholder_leaf[is_s.idx()] =
@@ -239,7 +228,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 // Check is skipped for placeholder leaves which are dummy leaves
                 ifx! {not!(and::expr(&[not!(parent_data.is_placeholder), config.is_placeholder_leaf[is_s.idx()].expr()])) => {
                     let hash = parent_data.hash.expr();
-                    require!(vec![1.expr(), leaf_rlc, rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()] => @KECCAK);
+                    require!((1.expr(), leaf_rlc, rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
                 }}
 
                 // Check the RLP encoding consistency.
@@ -260,11 +249,11 @@ impl<F: Field> AccountLeafConfig<F> {
                 require!(config.rlp_key[is_s.idx()].rlp_list.len() => config.rlp_key[is_s.idx()].key_value.num_bytes() + value_list_num_bytes[is_s.idx()].expr());
 
                 // Key done, set the starting values
-                KeyData::store_defaults(cb, &ctx.memory[key_memory(is_s)]);
+                KeyData::store_defaults(cb, &mut ctx.memory[key_memory(is_s)]);
                 // Store the new parent
                 ParentData::store(
                     cb,
-                    &ctx.memory[parent_memory(is_s)],
+                    &mut ctx.memory[parent_memory(is_s)],
                     storage_items[is_s.idx()].word(),
                     0.expr(),
                     true.expr(),
@@ -335,7 +324,7 @@ impl<F: Field> AccountLeafConfig<F> {
             // storage leaves unless it's also a non-existing proof?
             MainData::store(
                 cb,
-                &ctx.memory[main_memory()],
+                &mut ctx.memory[main_memory()],
                 [
                     config.main_data.proof_type.expr(),
                     true.expr(),
@@ -387,7 +376,7 @@ impl<F: Field> AccountLeafConfig<F> {
             }}
 
             // Put the data in the lookup table
-            let (proof_type, old_value_lo, old_value_hi, new_value_lo, new_value_hi) = _matchx! {cb,
+            let (proof_type, old_value_lo, old_value_hi, new_value_lo, new_value_hi) = _matchx! {cb, (
                 config.is_nonce_mod => (MPTProofType::NonceChanged.expr(), nonce[true.idx()].lo(), nonce[true.idx()].hi(), nonce[false.idx()].lo(), nonce[false.idx()].hi()),
                 config.is_balance_mod => (MPTProofType::BalanceChanged.expr(), balance[true.idx()].lo(), balance[true.idx()].hi(), balance[false.idx()].lo(), balance[false.idx()].hi()),
                 config.is_storage_mod => (MPTProofType::StorageChanged.expr(), storage[true.idx()].lo(), storage[true.idx()].hi(), storage[false.idx()].lo(), storage[false.idx()].hi()),
@@ -395,7 +384,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 config.is_account_delete_mod => (MPTProofType::AccountDestructed.expr(), 0.expr(), 0.expr(), 0.expr(), 0.expr()),
                 config.is_non_existing_account_proof => (MPTProofType::AccountDoesNotExist.expr(), 0.expr(), 0.expr(), 0.expr(), 0.expr()),
                 _ => (MPTProofType::Disabled.expr(), 0.expr(), 0.expr(), 0.expr(), 0.expr()),
-            };
+            )};
             ifx! {not!(config.is_non_existing_account_proof) => {
                 let key_rlc = ifx!{not!(config.parent_data[true.idx()].is_placeholder) => {
                     key_rlc[true.idx()].expr()
@@ -407,7 +396,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 // Check if the key is correct for the given address
                 if ctx.params.is_preimage_check_enabled() {
                     let key = key_item.word();
-                    require!(vec![1.expr(), address_item.bytes_le()[1..21].rlc(&cb.keccak_r), 20.expr(), key.lo(), key.hi()] => @KECCAK);
+                    require!((1.expr(), address_item.bytes_le()[1..21].rlc(&cb.keccak_r), 20.expr(), key.lo(), key.hi()) =>> @KECCAK);
                 }
             }};
             let to_hi = Expression::<F>::Constant(pow::value::<F>(256.scalar(), 16));
@@ -435,7 +424,7 @@ impl<F: Field> AccountLeafConfig<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         mpt_config: &MPTConfig<F>,
-        pv: &mut MPTState<F>,
+        memory: &mut MptMemory<F>,
         offset: usize,
         node: &Node,
         rlp_values: &[RLPItemWitness],
@@ -469,7 +458,7 @@ impl<F: Field> AccountLeafConfig<F> {
 
         let main_data =
             self.main_data
-                .witness_load(region, offset, &pv.memory[main_memory()], 0)?;
+                .witness_load(region, offset, &mut memory[main_memory()], 0)?;
 
         // Key
         let mut key_rlc = vec![0.scalar(); 2];
@@ -497,14 +486,14 @@ impl<F: Field> AccountLeafConfig<F> {
             key_data[is_s.idx()] = self.key_data[is_s.idx()].witness_load(
                 region,
                 offset,
-                &pv.memory[key_memory(is_s)],
+                &mut memory[key_memory(is_s)],
                 0,
             )?;
 
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
                 region,
                 offset,
-                &pv.memory[parent_memory(is_s)],
+                &mut memory[parent_memory(is_s)],
                 0,
             )?;
 
@@ -538,7 +527,7 @@ impl<F: Field> AccountLeafConfig<F> {
             KeyData::witness_store(
                 region,
                 offset,
-                &mut pv.memory[key_memory(is_s)],
+                &mut memory[key_memory(is_s)],
                 F::ZERO,
                 F::ONE,
                 0,
@@ -549,7 +538,7 @@ impl<F: Field> AccountLeafConfig<F> {
             ParentData::witness_store(
                 region,
                 offset,
-                &mut pv.memory[parent_memory(is_s)],
+                &mut memory[parent_memory(is_s)],
                 storage_items[is_s.idx()].word(),
                 0.scalar(),
                 true,
@@ -625,7 +614,7 @@ impl<F: Field> AccountLeafConfig<F> {
         MainData::witness_store(
             region,
             offset,
-            &mut pv.memory[main_memory()],
+            &mut memory[main_memory()],
             main_data.proof_type,
             true,
             address,
