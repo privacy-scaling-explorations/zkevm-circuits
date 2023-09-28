@@ -403,17 +403,32 @@ impl<F: Field> AccountLeafConfig<F> {
             let lo = address_item.word().lo();
             let hi = address_item.word().hi() * to_hi;
             let address = lo + hi;
-            ctx.mpt_table.constrain(
-                meta,
-                &mut cb.base,
-                address,
-                proof_type,
-                Word::<Expression<F>>::new([0.expr(), 0.expr()]),
-                config.main_data.new_root.expr(),
-                config.main_data.old_root.expr(),
-                Word::<Expression<F>>::new([new_value_lo, new_value_hi]),
-                Word::<Expression<F>>::new([old_value_lo, old_value_hi]),
-            );
+
+            ifx! {not!(config.parent_data[false.idx()].is_placeholder) => {
+                ctx.mpt_table.constrain(
+                    meta,
+                    &mut cb.base,
+                    address.clone(),
+                    proof_type.clone(),
+                    Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    config.main_data.new_root.expr(),
+                    config.main_data.old_root.expr(),
+                    Word::<Expression<F>>::new([new_value_lo, new_value_hi]),
+                    Word::<Expression<F>>::new([old_value_lo.clone(), old_value_hi.clone()]),
+                );
+            } elsex {
+                ctx.mpt_table.constrain(
+                    meta,
+                    &mut cb.base,
+                    address,
+                    proof_type,
+                    Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    config.main_data.new_root.expr(),
+                    config.main_data.old_root.expr(),
+                    Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    Word::<Expression<F>>::new([old_value_lo, old_value_hi]),
+                );
+            }};
         });
 
         config
@@ -648,6 +663,10 @@ impl<F: Field> AccountLeafConfig<F> {
             )
         };
 
+        let mut new_value = value[false.idx()];
+        if parent_data[false.idx()].is_placeholder {
+            new_value = word::Word::<F>::new([0.scalar(), 0.scalar()]);
+        }
         mpt_config.mpt_table.assign_cached(
             region,
             offset,
@@ -659,7 +678,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 proof_type: Value::known(proof_type.scalar()),
                 new_root: main_data.new_root.into_value(),
                 old_root: main_data.old_root.into_value(),
-                new_value: value[false.idx()].into_value(),
+                new_value: new_value.into_value(),
                 old_value: value[true.idx()].into_value(),
             },
         )?;
