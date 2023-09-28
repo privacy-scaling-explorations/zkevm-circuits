@@ -32,6 +32,11 @@ pub enum StateTestError {
         expected: U256,
         found: U256,
     },
+    #[error("CircuitUnsatisfied(num_failure: {num_failure:?}  first: {first_failure:?}")]
+    CircuitUnsatisfied {
+        num_failure: usize,
+        first_failure: String,
+    },
     #[error("SkipTestMaxGasLimit({0})")]
     SkipTestMaxGasLimit(u64),
     #[error("SkipTestMaxSteps({0})")]
@@ -334,7 +339,12 @@ pub fn run_test(
         builder = _builder;
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();
-        prover.assert_satisfied_par();
+        prover
+            .verify()
+            .map_err(|err| StateTestError::CircuitUnsatisfied {
+                num_failure: err.len(),
+                first_failure: err[0].to_string(),
+            })?;
     };
     check_post(&builder, &post)?;
 
