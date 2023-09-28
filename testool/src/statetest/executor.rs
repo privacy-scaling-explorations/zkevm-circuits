@@ -43,12 +43,21 @@ pub enum StateTestError {
     SkipTestMaxSteps(usize),
     #[error("SkipTestSelfDestruct")]
     SkipTestSelfDestruct,
+    #[error("SkipTestDifficulty")]
+    SkipTestDifficulty,
+    #[error("SkipTestBalanceOverflow")]
+    SkipTestBalanceOverflow,
     #[error("Exception(expected:{expected:?}, found:{found:?})")]
     Exception { expected: bool, found: String },
 }
 
 impl StateTestError {
     pub fn is_skip(&self) -> bool {
+        // Avoid lint `variant is never constructed`
+        // We plan to add runtime-feature set in the future to include these skipping options
+        let _ = StateTestError::SkipTestDifficulty;
+        let _ = StateTestError::SkipTestBalanceOverflow;
+
         matches!(
             self,
             StateTestError::SkipTestMaxSteps(_)
