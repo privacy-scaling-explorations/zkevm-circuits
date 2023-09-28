@@ -289,7 +289,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 }
             }};
 
-            ifx!{not!(config.parent_data[false.idx()].is_placeholder) => {
+            ifx! {not!(config.parent_data[false.idx()].is_placeholder) => {
                 ctx.mpt_table.constrain(
                     meta,
                     &mut cb.base,

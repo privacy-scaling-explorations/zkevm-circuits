@@ -404,7 +404,7 @@ impl<F: Field> AccountLeafConfig<F> {
             let hi = address_item.word().hi() * to_hi;
             let address = lo + hi;
 
-            ifx!{not!(config.parent_data[false.idx()].is_placeholder) => {
+            ifx! {not!(config.parent_data[false.idx()].is_placeholder) => {
                 ctx.mpt_table.constrain(
                     meta,
                     &mut cb.base,
