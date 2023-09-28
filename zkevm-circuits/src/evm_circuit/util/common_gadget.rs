@@ -427,6 +427,16 @@ impl<F: Field> TransferToGadget<F> {
             .assign_value(region, offset, Value::known(Word::from(value)))?;
         Ok(())
     }
+
+    pub(crate) fn rw_delta(&self) -> Expression<F> {
+        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        or::expr([
+            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.expr()),
+            self.must_create.clone()]
+        ) +
+        // +1 Write Account (receiver) Balance
+        not::expr(self.value_is_zero.expr())
+    }
 }
 
 // TODO: Merge with TransferGadget

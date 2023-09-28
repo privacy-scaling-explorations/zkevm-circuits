@@ -21,7 +21,7 @@ use crate::{
             ParentDataWitness, KECCAK,
         },
         param::KEY_LEN_IN_NIBBLES,
-        MPTConfig, MPTContext, MPTState, RlpItemType,
+        MPTConfig, MPTContext, MptMemory, RlpItemType,
     },
     table::MPTProofType,
     util::word::{self, Word},
@@ -55,13 +55,8 @@ impl<F: Field> StorageLeafConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
-        ctx: MPTContext<F>,
+        ctx: &mut MPTContext<F>,
     ) -> Self {
-        cb.base
-            .cell_manager
-            .as_mut()
-            .unwrap()
-            .reset(StorageRowType::Count as usize);
         let mut config = StorageLeafConfig::default();
 
         circuit!([meta, cb], {
@@ -92,12 +87,11 @@ impl<F: Field> StorageLeafConfig<F> {
                 meta,
                 cb,
                 StorageRowType::Address as usize,
-                RlpItemType::Value,
+                RlpItemType::Hash,
             );
             let key_item = ctx.rlp_item(meta, cb, StorageRowType::Key as usize, RlpItemType::Hash);
 
-            config.main_data =
-                MainData::load("main storage", cb, &ctx.memory[main_memory()], 0.expr());
+            config.main_data = MainData::load(cb, &mut ctx.memory[main_memory()], 0.expr());
 
             // Storage leaves always need to be below accounts
             require!(config.main_data.is_below_account => true);
@@ -109,11 +103,10 @@ impl<F: Field> StorageLeafConfig<F> {
             for is_s in [true, false] {
                 // Parent data
                 let parent_data = &mut config.parent_data[is_s.idx()];
-                *parent_data =
-                    ParentData::load("leaf load", cb, &ctx.memory[parent_memory(is_s)], 0.expr());
+                *parent_data = ParentData::load(cb, &mut ctx.memory[parent_memory(is_s)], 0.expr());
                 // Key data
                 let key_data = &mut config.key_data[is_s.idx()];
-                *key_data = KeyData::load(cb, &ctx.memory[key_memory(is_s)], 0.expr());
+                *key_data = KeyData::load(cb, &mut ctx.memory[key_memory(is_s)], 0.expr());
 
                 // Placeholder leaf checks
                 config.is_placeholder_leaf[is_s.idx()] =
@@ -190,7 +183,7 @@ impl<F: Field> StorageLeafConfig<F> {
                     ifx!{or::expr(&[parent_data.is_root.expr(), not!(config.is_not_hashed[is_s.idx()])]) => {
                         // Hashed branch hash in parent branch
                         let hash = parent_data.hash.expr();
-                        require!(vec![1.expr(), leaf_rlc.expr(), rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()] => @KECCAK);
+                        require!((1.expr(), leaf_rlc.expr(), rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
                     } elsex {
                         // Non-hashed branch hash in parent branch
                         require!(leaf_rlc => parent_data.rlc.expr());
@@ -198,11 +191,11 @@ impl<F: Field> StorageLeafConfig<F> {
                 }}
 
                 // Key done, set the default values
-                KeyData::store_defaults(cb, &ctx.memory[key_memory(is_s)]);
+                KeyData::store_defaults(cb, &mut ctx.memory[key_memory(is_s)]);
                 // Store the new parent
                 ParentData::store(
                     cb,
-                    &ctx.memory[parent_memory(is_s)],
+                    &mut ctx.memory[parent_memory(is_s)],
                     word::Word::<Expression<F>>::new([0.expr(), 0.expr()]),
                     0.expr(),
                     true.expr(),
@@ -257,7 +250,7 @@ impl<F: Field> StorageLeafConfig<F> {
             // This need to be the last node for this proof
             MainData::store(
                 cb,
-                &ctx.memory[main_memory()],
+                &mut ctx.memory[main_memory()],
                 [
                     MPTProofType::Disabled.expr(),
                     false.expr(),
@@ -276,11 +269,11 @@ impl<F: Field> StorageLeafConfig<F> {
             }}
 
             // Put the data in the lookup table
-            let proof_type = matchx! {
+            let proof_type = matchx! {(
                 config.is_storage_mod_proof => MPTProofType::StorageChanged.expr(),
                 config.is_non_existing_storage_proof => MPTProofType::StorageDoesNotExist.expr(),
                 _ => MPTProofType::Disabled.expr(),
-            };
+            )};
             ifx! {not!(config.is_non_existing_storage_proof) => {
                 let key_rlc = ifx!{not!(config.parent_data[true.idx()].is_placeholder) => {
                     key_rlc[true.idx()].expr()
@@ -292,7 +285,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 // Check if the key is correct for the given address
                 if ctx.params.is_preimage_check_enabled() {
                     let key = key_item.word();
-                    require!(vec![1.expr(), address_item.bytes_le()[1..33].rlc(&cb.keccak_r), 32.expr(), key.lo(), key.hi()] => @KECCAK);
+                    require!((1.expr(), address_item.bytes_le()[1..33].rlc(&cb.keccak_r), 32.expr(), key.lo(), key.hi()) =>> @KECCAK);
                 }
             }};
             ctx.mpt_table.constrain(
@@ -316,7 +309,7 @@ impl<F: Field> StorageLeafConfig<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         mpt_config: &MPTConfig<F>,
-        pv: &mut MPTState<F>,
+        memory: &mut MptMemory<F>,
         offset: usize,
         node: &Node,
         rlp_values: &[RLPItemWitness],
@@ -338,7 +331,7 @@ impl<F: Field> StorageLeafConfig<F> {
 
         let main_data =
             self.main_data
-                .witness_load(region, offset, &pv.memory[main_memory()], 0)?;
+                .witness_load(region, offset, &mut memory[main_memory()], 0)?;
 
         let mut key_data = vec![KeyDataWitness::default(); 2];
         let mut parent_data = vec![ParentDataWitness::default(); 2];
@@ -348,7 +341,7 @@ impl<F: Field> StorageLeafConfig<F> {
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
                 region,
                 offset,
-                &pv.memory[parent_memory(is_s)],
+                &mut memory[parent_memory(is_s)],
                 0,
             )?;
 
@@ -369,13 +362,13 @@ impl<F: Field> StorageLeafConfig<F> {
             key_data[is_s.idx()] = self.key_data[is_s.idx()].witness_load(
                 region,
                 offset,
-                &pv.memory[key_memory(is_s)],
+                &mut memory[key_memory(is_s)],
                 0,
             )?;
             KeyData::witness_store(
                 region,
                 offset,
-                &mut pv.memory[key_memory(is_s)],
+                &mut memory[key_memory(is_s)],
                 F::ZERO,
                 F::ONE,
                 0,
@@ -413,7 +406,7 @@ impl<F: Field> StorageLeafConfig<F> {
             ParentData::witness_store(
                 region,
                 offset,
-                &mut pv.memory[parent_memory(is_s)],
+                &mut memory[parent_memory(is_s)],
                 word::Word::<F>::new([F::ZERO, F::ZERO]),
                 F::ZERO,
                 true,
@@ -468,7 +461,7 @@ impl<F: Field> StorageLeafConfig<F> {
         MainData::witness_store(
             region,
             offset,
-            &mut pv.memory[main_memory()],
+            &mut memory[main_memory()],
             MPTProofType::Disabled as usize,
             false,
             F::ZERO,

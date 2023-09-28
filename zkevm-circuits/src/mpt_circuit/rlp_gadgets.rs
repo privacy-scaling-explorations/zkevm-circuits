@@ -83,14 +83,15 @@ impl<F: Field> RLPListGadget<F> {
             let is_very_long = cb.query_cell();
             let is_string = cb.query_cell();
 
-            require!(vec![
-                FixedTableTag::RLP.expr(),
-                bytes[0].expr(),
-                not!(is_string),
-                is_short.expr(),
-                is_long.expr(),
-                is_very_long.expr(),
-                ] => @FIXED
+            require!(
+                (
+                    FixedTableTag::RLP.expr(),
+                    bytes[0].expr(),
+                    not!(is_string),
+                    is_short.expr(),
+                    is_long.expr(),
+                    is_very_long.expr()
+                ) =>> @FIXED
             );
 
             RLPListGadget {
@@ -157,11 +158,11 @@ impl<F: Field> RLPListGadget<F> {
     /// Number of RLP bytes
     pub(crate) fn num_rlp_bytes(&self) -> Expression<F> {
         circuit!([meta, _cb!()], {
-            matchx! {
+            matchx! {(
                 self.is_short() => 1.expr(),
                 self.is_long() => 2.expr(),
                 self.is_very_long() => 3.expr(),
-            }
+            )}
         })
     }
 
@@ -173,11 +174,11 @@ impl<F: Field> RLPListGadget<F> {
     /// Returns the length of the list (excluding RLP bytes)
     pub(crate) fn len(&self) -> Expression<F> {
         circuit!([meta, _cb!()], {
-            matchx! {
+            matchx! {(
                 self.is_short() => get_len_list_short::expr(self.bytes[0].expr()),
                 self.is_long() => self.bytes[1].expr(),
                 self.is_very_long() => self.bytes[1].expr() * 256.expr() + self.bytes[2].expr(),
-            }
+            )}
         })
     }
 
@@ -194,21 +195,21 @@ impl<F: Field> RLPListGadget<F> {
     /// Returns the rlc of only the RLP bytes
     pub(crate) fn rlc_rlp_only(&self, r: &Expression<F>) -> (Expression<F>, Expression<F>) {
         circuit!([meta, _cb!()], {
-            matchx! {
+            matchx! {(
                 self.is_short() => (self.bytes[..1].rlc(r), pow::expr(r.expr(), 1)),
                 self.is_long() => (self.bytes[..2].rlc(r), pow::expr(r.expr(), 2)),
                 self.is_very_long() => (self.bytes[..3].rlc(r), pow::expr(r.expr(), 3)),
-            }
+            )}
         })
     }
 
     pub(crate) fn rlc_rlp_only_rev(&self, r: &Expression<F>) -> (Expression<F>, Expression<F>) {
         circuit!([meta, _cb!()], {
-            matchx! {
+            matchx! {(
                 self.is_short() => (self.bytes[..1].rlc_rev(r), pow::expr(r.expr(), 1)),
                 self.is_long() => (self.bytes[..2].rlc_rev(r), pow::expr(r.expr(), 2)),
                 self.is_very_long() => (self.bytes[..3].rlc_rev(r), pow::expr(r.expr(), 3)),
-            }
+            )}
         })
     }
 }
@@ -340,14 +341,15 @@ impl<F: Field> RLPValueGadget<F> {
             let is_very_long = cb.query_cell();
             let is_list = cb.query_cell();
 
-            require!(vec![
-                FixedTableTag::RLP.expr(),
-                bytes[0].expr(),
-                is_list.expr(),
-                is_short.expr(),
-                is_long.expr(),
-                is_very_long.expr(),
-                ] => @FIXED
+            require!(
+                (
+                    FixedTableTag::RLP.expr(),
+                    bytes[0].expr(),
+                    is_list.expr(),
+                    is_short.expr(),
+                    is_long.expr(),
+                    is_very_long.expr()
+                ) =>> @FIXED
             );
 
             RLPValueGadget {
@@ -415,39 +417,39 @@ impl<F: Field> RLPValueGadget<F> {
     /// Number of RLP bytes
     pub(crate) fn num_rlp_bytes(&self) -> Expression<F> {
         circuit!([meta, _cb!()], {
-            matchx! {
+            matchx! {(
                 self.is_short() => 0.expr(),
                 self.is_long() => 1.expr(),
                 self.is_very_long() => 2.expr(),
-            }
+            )}
         })
     }
 
     /// Number of bytes in total (including RLP bytes)
     pub(crate) fn num_bytes(&self) -> Expression<F> {
         circuit!([meta, _cb!()], {
-            matchx! {
+            matchx! {(
                 self.is_short() => 1.expr(),
                 self.is_long() => get_num_bytes_short::expr(self.bytes[0].expr()),
                 self.is_very_long() => {
                     unreachablex!();
                     0.expr()
                 },
-            }
+            )}
         })
     }
 
     /// Length of the value (excluding RLP bytes)
     pub(crate) fn len(&self) -> Expression<F> {
         circuit!([meta, _cb!()], {
-            matchx! {
+            matchx! {(
                 self.is_short() => 1.expr(),
                 self.is_long() => get_len_short::expr(self.bytes[0].expr()),
                 self.is_very_long() => {
                     unreachablex!();
                     0.expr()
                 },
-            }
+            )}
         })
     }
 
@@ -461,20 +463,20 @@ impl<F: Field> RLPValueGadget<F> {
 
     pub(crate) fn rlc_rlp_only_rev(&self, r: &Expression<F>) -> (Expression<F>, Expression<F>) {
         circuit!([meta, _cb!()], {
-            matchx! {
+            matchx! {(
                 self.is_short() => (self.bytes[..1].rlc_rev(r), pow::expr(r.expr(), 1)),
                 self.is_long() => (self.bytes[..1].rlc_rev(r), pow::expr(r.expr(), 1)),
                 self.is_very_long() => {
                     unreachablex!();
                     (0.expr(), 0.expr())
                 },
-            }
+            )}
         })
     }
 
     pub(crate) fn rlc_value(&self, r: &Expression<F>) -> Expression<F> {
         circuit!([meta, _cb!()], {
-            matchx! {
+            matchx! {(
                 self.is_short() => {
                     self.bytes[0].expr()
                 },
@@ -485,7 +487,7 @@ impl<F: Field> RLPValueGadget<F> {
                     unreachablex!();
                     0.expr()
                 },
-            }
+            )}
         })
     }
 }
@@ -687,30 +689,30 @@ impl<F: Field> RLPItemGadget<F> {
     // Single RLP byte containing the byte value
     pub(crate) fn is_short(&self) -> Expression<F> {
         circuit!([meta, _cb!()], {
-            matchx! {
+            matchx! {(
                 self.value.is_string() => self.value.is_short(),
                 self.list.is_list() => self.list.is_short(),
-            }
+            )}
         })
     }
 
     // Single RLP byte containing the length of the value
     pub(crate) fn is_long(&self) -> Expression<F> {
         circuit!([meta, _cb!()], {
-            matchx! {
+            matchx! {(
                 self.value.is_string() => self.value.is_long(),
                 self.list.is_list() => self.list.is_long(),
-            }
+            )}
         })
     }
 
     // Single RLP byte containing the length of the value
     pub(crate) fn is_long_at(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
         circuit!([meta, _cb!()], {
-            matchx! {
+            matchx! {(
                 self.value.is_string() => self.value.is_long_at(meta, rot),
                 self.list.is_list() => self.list.is_long_at(meta, rot),
-            }
+            )}
         })
     }
 
@@ -718,51 +720,50 @@ impl<F: Field> RLPItemGadget<F> {
     // followed by the length, followed by the actual data
     pub(crate) fn is_very_long(&self) -> Expression<F> {
         circuit!([meta, _cb!()], {
-            matchx! {
+            matchx! {(
                 self.value.is_string() => self.value.is_very_long(),
                 self.list.is_list() => self.list.is_very_long(),
-            }
+            )}
         })
     }
 
     /// Number of RLP bytes
     pub(crate) fn num_rlp_bytes(&self) -> Expression<F> {
         circuit!([meta, _cb!()], {
-            matchx! {
+            matchx! {(
                 self.value.is_string() => self.value.num_rlp_bytes(),
                 self.list.is_list() => self.list.num_rlp_bytes(),
-            }
+            )}
         })
     }
 
     /// Number of bytes in total (including RLP bytes)
     pub(crate) fn num_bytes(&self) -> Expression<F> {
         circuit!([meta, _cb!()], {
-            matchx! {
+            matchx! {(
                 self.value.is_string() => self.value.num_bytes(),
                 self.list.is_list() => self.list.num_bytes(),
-            }
+            )}
         })
     }
 
     /// Length of the value (excluding RLP bytes)
     pub(crate) fn len(&self) -> Expression<F> {
         circuit!([meta, _cb!()], {
-            matchx! {
+            matchx! {(
                 self.value.is_string() => self.value.len(),
                 self.list.is_list() => self.list.len(),
-            }
+            )}
         })
     }
 
-    // Returns the RLC of the value if the RLP is a string,
     // returns the RLC of the full string if the RLP is a list.
     pub(crate) fn rlc_content(&self, r: &Expression<F>) -> Expression<F> {
         circuit!([meta, _cb!()], {
-            matchx! {
+            matchx! {(
                 self.value.is_string() => self.value.rlc_value(r),
                 self.list.is_list() => self.list.rlc_rlp(r),
-            }
+            )}
         })
     }
 }

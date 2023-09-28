@@ -370,9 +370,14 @@ impl<'a> CircuitInputStateRef<'a> {
         field: AccountField,
         value: Word,
         value_prev: Word,
+        reversible: bool,
     ) -> Result<(), Error> {
         let op = AccountOp::new(address, field, value, value_prev);
-        self.push_op(step, RW::WRITE, op);
+        if reversible {
+            self.push_op_reversible(step, op)?;
+        } else {
+            self.push_op(step, RW::WRITE, op);
+        }
         Ok(())
     }
 
@@ -611,14 +616,15 @@ impl<'a> CircuitInputStateRef<'a> {
         )
     }
 
-    /// Transfer to an address irreversibly.
-    pub fn transfer_to_irreversible(
+    /// Transfer to an address. Create an account if it is not existed before.
+    pub fn transfer_to(
         &mut self,
         step: &mut ExecStep,
         receiver: Address,
         receiver_exists: bool,
         must_create: bool,
         value: Word,
+        reversible: bool,
     ) -> Result<(), Error> {
         // If receiver doesn't exist, create it
         if (!receiver_exists && !value.is_zero()) || must_create {
@@ -628,6 +634,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 AccountField::CodeHash,
                 CodeDB::empty_code_hash().to_word(),
                 Word::zero(),
+                reversible,
             )?;
         }
         if value.is_zero() {
@@ -643,6 +650,7 @@ impl<'a> CircuitInputStateRef<'a> {
             AccountField::Balance,
             receiver_balance,
             receiver_balance_prev,
+            reversible,
         )?;
 
         Ok(())
@@ -1186,7 +1194,11 @@ impl<'a> CircuitInputStateRef<'a> {
             } else {
                 0
             };
-            geth_step.gas - memory_expansion_gas_cost - code_deposit_cost
+            let constant_step_gas = match geth_step.op {
+                OpcodeId::SELFDESTRUCT => geth_step.gas_cost,
+                _ => 0, // RETURN/STOP/REVERT have no "constant_step_gas"
+            };
+            geth_step.gas - memory_expansion_gas_cost - code_deposit_cost - constant_step_gas
         };
 
         let caller_gas_left = if is_revert_or_return_call_success || call.is_success {
@@ -1403,7 +1415,10 @@ impl<'a> CircuitInputStateRef<'a> {
         {
             if step.depth == 1025 {
                 return Ok(Some(ExecError::Depth(match step.op {
-                    OpcodeId::CALL | OpcodeId::CALLCODE => DepthError::Call,
+                    OpcodeId::CALL
+                    | OpcodeId::CALLCODE
+                    | OpcodeId::DELEGATECALL
+                    | OpcodeId::STATICCALL => DepthError::Call,
                     OpcodeId::CREATE => DepthError::Create,
                     OpcodeId::CREATE2 => DepthError::Create2,
                     op => {
