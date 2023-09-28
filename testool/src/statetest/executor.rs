@@ -340,7 +340,7 @@ pub fn run_test(
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         prover
-            .verify()
+            .verify_par()
             .map_err(|err| StateTestError::CircuitUnsatisfied {
                 num_failure: err.len(),
                 first_failure: err[0].to_string(),
