@@ -196,7 +196,7 @@ mod test {
         Ok(())
     }
 
-    #[ignore = "fails with storage trie for requested address does not exist"]
+    #[ignore = "fails panicked at 'attempt to subtract with overflow', /Users/adria0/w/ef/light_client/zkevm-circuits/zkevm-circuits/src/mpt_circuit/helpers.rs:1466:52"]
     #[tokio::test]
     async fn test_block_2000004() -> Result<()> {
         let block_no = 2000004;
@@ -205,7 +205,7 @@ mod test {
         Ok(())
     }
 
-    #[ignore = "SIGABORT panic: corruption in hash 0xefaecccf45cdbc55c49c449d21352dc87421cdd7c787dac0a95f24af85ecfe7a"]
+    #[ignore = "Lookup failed"]
     #[tokio::test]
     async fn test_block_2000070() -> Result<()> {
         let block_no = 2000070;

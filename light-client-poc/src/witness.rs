@@ -356,8 +356,11 @@ impl<F: Field> LightClientWitness<F> {
                 )],
                 ProofType::StorageChanged => {
                     vec![(ProofType::StorageChanged, m.address, m.value, m.key)]
+                },
+                ProofType::CodeHashChanged => {
+                    vec![(ProofType::CodeHashChanged, m.address, U256::from_little_endian(&m.code_hash.0), H256::zero())]
                 }
-                _ => unimplemented!(),
+                _ => { println!("type unimplemented: {:?}",m.typ); unimplemented!() }
             };
 
             for (proof_type, address, value, key) in changes {
