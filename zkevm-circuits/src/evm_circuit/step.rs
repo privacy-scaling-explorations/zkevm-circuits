@@ -151,6 +151,7 @@ pub enum ExecutionState {
     ErrorOutOfGasSHA3,
     ErrorOutOfGasEXTCODECOPY,
     ErrorOutOfGasCall,
+    ErrorOutOfGasPrecompile,
     ErrorOutOfGasSloadSstore,
     ErrorOutOfGasCREATE,
     ErrorOutOfGasSELFDESTRUCT,

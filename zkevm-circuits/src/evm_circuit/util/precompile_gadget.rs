@@ -1,14 +1,16 @@
 use bus_mapping::precompile::PrecompileCalls;
 use eth_types::Field;
-use gadgets::util::Expr;
-use halo2_proofs::plonk::Expression;
+use gadgets::util::{not, or, select, Expr};
+use halo2_proofs::{circuit::Value, plonk::Expression};
 
-use crate::evm_circuit::step::ExecutionState;
+use crate::evm_circuit::{
+    step::{ExecutionState, ExecutionState::ErrorOutOfGasPrecompile},
+};
 
 use super::{
-    constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-    math_gadget::BinaryNumberGadget,
-    CachedRegion,
+    constraint_builder::{BoxedClosure, ConstrainBuilderCommon, EVMConstraintBuilder},
+    math_gadget::{BinaryNumberGadget, IsZeroGadget, LtGadget},
+    CachedRegion, Cell,
 };
 
 #[derive(Clone, Debug)]
@@ -20,62 +22,45 @@ impl<F: Field> PrecompileGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        is_success: Expression<F>,
+        _is_success: Expression<F>,
         callee_address: Expression<F>,
-        caller_id: Expression<F>,
-        cd_offset: Expression<F>,
+        _caller_id: Expression<F>,
+        _cd_offset: Expression<F>,
         cd_length: Expression<F>,
-        rd_offset: Expression<F>,
-        rd_length: Expression<F>,
+        _rd_offset: Expression<F>,
+        _rd_length: Expression<F>,
+        precompile_return_length: Expression<F>,
     ) -> Self {
         let address = BinaryNumberGadget::construct(cb, callee_address.expr());
 
-        cb.condition(address.value_equals(PrecompileCalls::Identity), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileIdentity, None, |cb| {
-                let precomp_is_success = cb.query_cell();
-                let precomp_callee_address = cb.query_cell();
-                let precomp_caller_id = cb.query_cell();
-                let precomp_cd_offset = cb.query_cell();
-                let precomp_cd_length = cb.query_cell();
-                let precomp_rd_offset = cb.query_cell();
-                let precomp_rd_length = cb.query_cell();
+        let conditions = vec![
+            address.value_equals(PrecompileCalls::Identity),
+            // match more precompiles
+        ]
+        .into_iter()
+        .map(|cond| {
+            cond.expr() * not::expr(cb.next.execution_state_selector([ErrorOutOfGasPrecompile]))
+        })
+        .collect::<Vec<_>>();
+
+        let next_states = vec![
+            ExecutionState::PrecompileIdentity
+            // add more precompile execution states
+        ];
+
+        let constraints: Vec<BoxedClosure<F>> = vec![
+            Box::new(|cb| {
+                /* Identity */
                 cb.require_equal(
-                    "precompile call is_success check",
-                    is_success,
-                    precomp_is_success.expr(),
-                );
-                cb.require_equal(
-                    "precompile call callee_address check",
-                    callee_address,
-                    precomp_callee_address.expr(),
-                );
-                cb.require_equal(
-                    "precompile call caller_id check",
-                    caller_id,
-                    precomp_caller_id.expr(),
-                );
-                cb.require_equal(
-                    "precompile call call_data_offset check",
-                    cd_offset,
-                    precomp_cd_offset.expr(),
-                );
-                cb.require_equal(
-                    "precompile call call_data_length check",
+                    "input length and precompile return length are the same",
                     cd_length,
-                    precomp_cd_length.expr(),
+                    precompile_return_length
                 );
-                cb.require_equal(
-                    "precompile call return_data_offset check",
-                    rd_offset,
-                    precomp_rd_offset.expr(),
-                );
-                cb.require_equal(
-                    "precompile call return_data_length check",
-                    rd_length,
-                    precomp_rd_length.expr(),
-                );
-            });
-        });
+            })
+            // add more precompile constraint closures
+        ];
+
+        cb.constrain_mutually_exclusive_next_step(conditions, next_states, constraints);
 
         Self { address }
     }
