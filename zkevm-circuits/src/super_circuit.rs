@@ -54,9 +54,7 @@
 pub(crate) mod test;
 
 use crate::{
-    bytecode_circuit::circuit::{
-        BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs,
-    },
+    bytecode_circuit::{BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs},
     copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs},
     evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs},
     exp_circuit::{ExpCircuit, ExpCircuitConfig},
