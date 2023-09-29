@@ -43,7 +43,7 @@ use snark_verifier::{
 };
 
 const MIN_APP_DEGREE: u32 = 18;
-const MIN_AGG_DEGREE: u32 = 24;
+const MIN_AGG_DEGREE: u32 = 25;
 
 /// Number of limbs to decompose a elliptic curve base field element into.
 pub const LIMBS: usize = 4;
