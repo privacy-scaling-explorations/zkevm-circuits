@@ -1,5 +1,5 @@
 use super::{BytecodeCircuit, BytecodeCircuitRow};
-use crate::util::{unusable_rows, SubCircuit};
+use crate::util::{log2_ceil, unusable_rows, SubCircuit};
 use bus_mapping::{evm::OpcodeId, state_db::CodeDB};
 use eth_types::Field;
 use halo2_proofs::{arithmetic::Field as Halo2Field, dev::MockProver, halo2curves::bn256::Fr};
@@ -20,11 +20,11 @@ impl<F: Field> BytecodeCircuit<F> {
     }
 
     fn from_bytes(bytecodes: impl Into<CodeDB>, k: u32) -> Self {
-        Self::new(bytecodes.into(), k)
+        Self::new(bytecodes.into(), 2usize.pow(k))
     }
 
     fn verify(&self, success: bool) {
-        let prover = MockProver::<F>::run(self.degree, self, Vec::new()).unwrap();
+        let prover = MockProver::<F>::run(log2_ceil(self.max_rows), self, Vec::new()).unwrap();
         let result = prover.verify_par();
         if success {
             if let Err(failures) = &result {
