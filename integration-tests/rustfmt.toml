@@ -1,0 +1,5 @@
+ignore = [
+    "src/benchmarks.rs",
+    "src/greeter.rs",
+    "src/openzeppelinerc20testtoken.rs"
+]
