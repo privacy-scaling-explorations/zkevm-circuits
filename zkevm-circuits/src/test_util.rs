@@ -290,7 +290,7 @@ impl CircuitTestError {
                     VerifyFailure::ConstraintNotSatisfied { .. } | VerifyFailure::Lookup { .. }
                 )));
             }
-            _ => panic!("Not a EVM circuit failure {}", self.to_string()),
+            _ => panic!("Not a EVM circuit failure {self:?}"),
         }
     }
 }
