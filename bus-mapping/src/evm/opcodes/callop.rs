@@ -361,7 +361,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 // insert a copy event (input) for this step
                 let rw_counter_start = state.block_ctx.rwc;
-                let input_bytes = if call.is_success && call.call_data_length > 0 {
+                let _input_bytes = if call.is_success && call.call_data_length > 0 {
 
 
                     // INCOMPLETE: Change the copy step generation step!
@@ -472,16 +472,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 } else {
                     let precompile_call: PrecompileCalls = code_address.0[19].into();
 
-                    // INCOMPLETE
-                    let input_bytes = None;
-                    let output_bytes = None;
-                    let returned_bytes = None;
                     let mut precompile_step = precompile_associated_ops(
                         state,
                         geth_steps[1].clone(),
                         call.clone(),
                         precompile_call,
-                        (input_bytes, output_bytes, returned_bytes),
                     )?;
 
                     // Set gas left and gas cost for precompile step.
