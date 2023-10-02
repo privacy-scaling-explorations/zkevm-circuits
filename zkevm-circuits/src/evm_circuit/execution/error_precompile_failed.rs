@@ -127,20 +127,20 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         let is_call_or_callcode =
             usize::from([OpcodeId::CALL, OpcodeId::CALLCODE].contains(&opcode));
 
-        let [gas, callee_address] =
-            [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
+        let gas = block.get_rws(step, 0).stack_value();
+        let callee_address = block.get_rws(step, 1).stack_value();
         let value = if is_call_or_callcode == 1 {
-            block.rws[step.rw_indices[2]].stack_value()
+            block.get_rws(step, 2).stack_value()
         } else {
             U256::zero()
         };
+
         let [cd_offset, cd_length, rd_offset, rd_length] = [
-            step.rw_indices[is_call_or_callcode + 2],
-            step.rw_indices[is_call_or_callcode + 3],
-            step.rw_indices[is_call_or_callcode + 4],
-            step.rw_indices[is_call_or_callcode + 5],
-        ]
-        .map(|idx| block.rws[idx].stack_value());
+            block.get_rws(step, is_call_or_callcode + 2).stack_value(),
+            block.get_rws(step, is_call_or_callcode + 3).stack_value(),
+            block.get_rws(step, is_call_or_callcode + 4).stack_value(),
+            block.get_rws(step, is_call_or_callcode + 5).stack_value(),
+        ];
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
@@ -164,11 +164,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
             offset,
             F::from(opcode.as_u64()) - F::from(OpcodeId::STATICCALL.as_u64()),
         )?;
-        self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
+        self.gas.assign_u256(region, offset, gas)?;
         self.callee_address
-            .assign(region, offset, Some(callee_address.to_le_bytes()))?;
+            .assign_u256(region, offset, callee_address)?;
         self.value
-            .assign(region, offset, Some(value.to_le_bytes()))?;
+            .assign_u256(region, offset, value)?;
         self.cd_address
             .assign(region, offset, cd_offset, cd_length)?;
         self.rd_address
