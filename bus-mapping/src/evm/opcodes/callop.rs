@@ -3,7 +3,10 @@ use crate::{
     circuit_input_builder::{
         CallKind, CircuitInputStateRef, CodeSource, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
-    evm::opcodes::precompiles::gen_associated_ops as precompile_associated_ops,
+    evm::opcodes::{
+        error_oog_precompile::ErrorOOGPrecompile,
+        precompiles::gen_associated_ops as precompile_associated_ops,
+    },
     operation::{AccountField, CallContextField, MemoryOp, TxAccessListAccountOp, RW},
     precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
     state_db::CodeDB,
@@ -268,7 +271,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 // get the result of the precompile call.
                 // For failed call, it will cost all gas provided
-                let (result, _precompile_call_gas_cost, _has_oog_err) = execute_precompiled(
+                let (result, precompile_call_gas_cost, has_oog_err) = execute_precompiled(
                     &code_address,
                     if args_length != 0 {
                         let caller_memory = &state.caller_ctx()?.memory;
@@ -358,7 +361,12 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 // insert a copy event (input) for this step
                 let rw_counter_start = state.block_ctx.rwc;
-                if call.is_success && call.call_data_length > 0 {
+                let input_bytes = if call.is_success && call.call_data_length > 0 {
+
+
+                    // INCOMPLETE: Change the copy step generation step!
+
+
                     let bytes: Vec<(u8, bool)> = state.caller_ctx()?.memory.0
                         .iter()
                         .skip(call.call_data_offset as usize)
@@ -398,7 +406,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             bytes,
                         },
                     );
-                }
+                    // Some(input_bytes)
+
+                } else {
+                    // None
+                };
 
                 // insert another copy event (output) for this step.
                 let rw_counter_start = state.block_ctx.rwc;
@@ -444,29 +456,54 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     );
                 }
 
-                // TODO: when more precompiles are supported and each have their own different
-                // behaviour, we can separate out the logic specified here.
-                let precompile_call: PrecompileCalls = code_address.0[19].into();
-                let precompile_step = precompile_associated_ops(
-                    state,
-                    geth_steps[1].clone(),
-                    call.clone(),
-                    precompile_call,
-                )?;
+                if has_oog_err {
+                    let mut oog_step = ErrorOOGPrecompile::gen_associated_ops(
+                        state,
+                        &geth_steps[1],
+                        call.clone()
+                    )?;
+                    oog_step.gas_left = callee_gas_left_with_stipend;
+                    oog_step.gas_cost = precompile_call_gas_cost;
+                    // Make the Precompile execution step to handle return logic and restore to
+                    // caller context (similar as STOP and RETURN).
+                    state.handle_return(&mut [&mut exec_step, &mut oog_step], geth_steps, true)?;
 
-                state.handle_return(&mut exec_step, geth_steps, false)?;
+                    Ok(vec![exec_step, oog_step])
+                } else {
+                    let precompile_call: PrecompileCalls = code_address.0[19].into();
 
-                let real_cost = geth_steps[0].gas - geth_steps[1].gas;
-                if real_cost != exec_step.gas_cost {
-                    log::warn!(
-                        "precompile gas fixed from {} to {}, step {:?}",
-                        exec_step.gas_cost,
-                        real_cost,
-                        geth_steps[0]
+                    // INCOMPLETE
+                    let input_bytes = None;
+                    let output_bytes = None;
+                    let returned_bytes = None;
+                    let mut precompile_step = precompile_associated_ops(
+                        state,
+                        geth_steps[1].clone(),
+                        call.clone(),
+                        precompile_call,
+                        (input_bytes, output_bytes, returned_bytes),
+                    )?;
+
+                    // Set gas left and gas cost for precompile step.
+                    precompile_step.gas_left = callee_gas_left_with_stipend;
+                    precompile_step.gas_cost = precompile_call_gas_cost;
+                    // Make the Precompile execution step to handle return logic and restore to
+                    // caller context (similar as STOP and RETURN).
+                    state.handle_return(
+                        &mut [&mut exec_step, &mut precompile_step], 
+                        geth_steps, 
+                        true,
+                    )?;
+
+                    debug_assert_eq!(
+                        geth_steps[0].gas - gas_cost - precompile_call_gas_cost + stipend,
+                        geth_steps[1].gas,
+                        "precompile_call_gas_cost wrong {:?}",
+                        precompile_step.exec_state
                     );
+
+                    Ok(vec![exec_step, precompile_step])
                 }
-                exec_step.gas_cost = real_cost;
-                Ok(vec![exec_step, precompile_step])
             }
             // 2. Call to account with empty code.
             (true, _, true) => {
@@ -477,7 +514,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
-                state.handle_return(&mut exec_step, geth_steps, false)?;
+                state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
                 Ok(vec![exec_step])
             }
             // 3. Call to account with non-empty code.
@@ -550,7 +587,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
-                state.handle_return(&mut exec_step, geth_steps, false)?;
+                state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
                 Ok(vec![exec_step])
             }
         }

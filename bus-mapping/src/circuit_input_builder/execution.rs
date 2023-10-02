@@ -1,8 +1,9 @@
 //! Execution step related module.
 
 use crate::{
-    circuit_input_builder::CallContext, error::ExecError, exec_trace::OperationRef,
+    circuit_input_builder::CallContext, exec_trace::OperationRef,
     operation::RWCounter, precompile::PrecompileCalls,
+    error::{ExecError, OogError},
 };
 use eth_types::{evm_types::OpcodeId, GethExecStep, Word, H256};
 use gadgets::impl_expr;
@@ -116,6 +117,16 @@ impl ExecStep {
         // Thus, the memory size must be a multiple of 32 bytes.
         assert_eq!(memory_size % n_bytes_word, 0);
         memory_size / n_bytes_word
+    }
+
+    /// Returns `true` if this is an execution step of Precompile.
+    pub fn is_precompiled(&self) -> bool {
+        matches!(self.exec_state, ExecState::Precompile(_))
+    }
+
+    /// Returns `true` if `error` is oog in precompile calls
+    pub fn is_precompile_oog_err(&self) -> bool {
+        matches!(self.error, Some(ExecError::OutOfGas(OogError::Precompile)))
     }
 }
 

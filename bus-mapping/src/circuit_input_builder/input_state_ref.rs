@@ -973,7 +973,11 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Handle a reversion group
-    fn handle_reversion(&mut self) {
+    fn handle_reversion(&mut self, current_exec_steps: &mut [&mut ExecStep]) {
+        // We already know that the call has reverted. Only the precompile failure case must be
+        // handled differently as the ExecSteps associated with those calls haven't yet been pushed
+        // to the tx's steps.
+
         let reversion_group = self
             .tx_ctx
             .reversion_groups
@@ -990,9 +994,15 @@ impl<'a> CircuitInputStateRef<'a> {
                     false,
                     op,
                 );
-                self.tx.steps_mut()[step_index]
-                    .bus_mapping_instance
-                    .push(rev_op_ref);
+
+                let step: &mut ExecStep = if step_index >= self.tx.steps_mut().len() {
+                    // the `current_exec_steps` will be appended after self.tx.steps
+                    // So here we do an index-mapping
+                    current_exec_steps[step_index - self.tx.steps_mut().len()]
+                } else {
+                    &mut self.tx.steps_mut()[step_index]
+                };
+                step.bus_mapping_instance.push(rev_op_ref);
             }
         }
 
@@ -1008,15 +1018,45 @@ impl<'a> CircuitInputStateRef<'a> {
     /// previous call context.
     pub fn handle_return(
         &mut self,
-        exec_step: &mut ExecStep,
+        current_exec_steps: &mut [&mut ExecStep],
+        // exec_step: &mut ExecStep,
         geth_steps: &[GethExecStep],
         need_restore: bool,
     ) -> Result<(), Error> {
+        let step = &geth_steps[0];
+
+        // TODO: clear return_data for specific opcodes
+        // // For these 6 opcodes, the return data should be handled in opcodes respectively.
+        // // For other opcodes/states, return data must be empty.
+        // if !matches!(
+        //     step.op,
+        //     OpcodeId::RETURN
+        //         | OpcodeId::REVERT
+        //         | OpcodeId::CALL
+        //         | OpcodeId::CALLCODE
+        //         | OpcodeId::DELEGATECALL
+        //         | OpcodeId::STATICCALL
+        // ) || current_exec_steps[0].error.is_some()
+        // {
+        //     if let Ok(caller) = self.caller_ctx_mut() {
+        //         caller.return_data.clear();
+        //     }
+        // }
         if need_restore {
-            self.handle_restore_context(exec_step, geth_steps)?;
+            // only precompile needs more than 1 current_exec_steps
+            if current_exec_steps.len() > 1 {
+                debug_assert!(
+                    current_exec_steps[1].is_precompiled()
+                        || current_exec_steps[1].is_precompile_oog_err()
+                );
+            }
+
+            self.handle_restore_context(
+                current_exec_steps[current_exec_steps.len() - 1],
+                geth_steps,
+            )?;
         }
 
-        let step = &geth_steps[0];
         // handle return_data
         let (return_data_offset, return_data_length) = {
             if !self.call()?.is_root {
@@ -1078,7 +1118,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Handle reversion if this call doesn't end successfully
         if !call.is_success {
-            self.handle_reversion();
+            self.handle_reversion(current_exec_steps);
         }
 
         // If current call has caller.

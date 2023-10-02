@@ -56,6 +56,8 @@ mod error_oog_sload_sstore;
 mod error_return_data_outofbound;
 mod error_simple;
 mod error_write_protection;
+mod error_oog_precompile;
+mod error_precompile_failed;
 
 mod precompiles;
 
@@ -398,7 +400,7 @@ pub fn gen_associated_ops(
                 need_restore = false;
             }
 
-            state.handle_return(&mut exec_step, geth_steps, need_restore)?;
+            state.handle_return(&mut [&mut exec_step], geth_steps, need_restore)?;
             return Ok(vec![exec_step]);
         }
     }
@@ -506,6 +508,6 @@ fn dummy_gen_selfdestruct_ops(
         state.sdb.destruct_account(sender);
     }
 
-    state.handle_return(&mut exec_step, geth_steps, !state.call()?.is_root)?;
+    state.handle_return(&mut [&mut exec_step], geth_steps, !state.call()?.is_root)?;
     Ok(vec![exec_step])
 }

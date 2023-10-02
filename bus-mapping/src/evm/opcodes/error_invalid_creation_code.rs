@@ -31,7 +31,7 @@ impl Opcode for ErrorCreationCode {
         state.memory_read(&mut exec_step, offset.try_into()?, init_code_first_byte)?;
         assert_eq!(init_code_first_byte, INVALID_INIT_CODE_FIRST_BYTE);
 
-        state.handle_return(&mut exec_step, geth_steps, true)?;
+        state.handle_return(&mut [&mut exec_step], geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }
