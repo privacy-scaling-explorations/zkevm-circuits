@@ -228,7 +228,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::CircuitTestBuilder;
+    use crate::test_util::{CircuitTestBuilder, CircuitTestError};
     use eth_types::{bytecode, evm_types::Stack, Word};
     use mock::TestContext;
 
@@ -253,14 +253,12 @@ mod test {
             last.stack = Stack::from_vec(vec![r]);
         }
         let mut ctb = CircuitTestBuilder::new_from_test_ctx(ctx);
-        if !ok {
-            ctb = ctb.evm_checks(Box::new(|prover, gate_rows, lookup_rows| {
-                assert!(prover
-                    .verify_at_rows_par(gate_rows.iter().cloned(), lookup_rows.iter().cloned())
-                    .is_err())
-            }));
+        let result = ctb.run();
+        if ok {
+            assert!(result.is_ok());
+        } else {
+            result.unwrap_err().assert_evm_failure()
         };
-        ctb.run()
     }
 
     fn test_ok_u32(a: u32, b: u32, c: u32, r: Option<u32>) {

@@ -8,10 +8,15 @@ use crate::{
 };
 use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
 use eth_types::geth_types::GethData;
+use itertools::all;
 use std::cmp;
+use thiserror::Error;
 
 use crate::util::log2_ceil;
-use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use halo2_proofs::{
+    dev::{MockProver, VerifyFailure},
+    halo2curves::bn256::Fr,
+};
 use mock::TestContext;
 
 #[cfg(test)]
@@ -71,15 +76,12 @@ const NUM_BLINDING_ROWS: usize = 64;
 ///
 /// CircuitTestBuilder::new_from_test_ctx(ctx)
 ///     .block_modifier(Box::new(|block| block.circuits_params.max_evm_rows = (1 << 18) - 100))
-///     .state_checks(Box::new(|prover, evm_rows, lookup_rows| assert!(prover.verify_at_rows_par(evm_rows.iter().cloned(), lookup_rows.iter().cloned()).is_err())))
 ///     .run();
 /// ```
 pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     test_ctx: Option<TestContext<NACC, NTX>>,
     circuits_params: Option<FixedCParams>,
     block: Option<Block<Fr>>,
-    evm_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
-    state_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
     block_modifiers: Vec<Box<dyn Fn(&mut Block<Fr>)>>,
 }
 
@@ -90,18 +92,6 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             test_ctx: None,
             circuits_params: None,
             block: None,
-            evm_checks: Box::new(|prover, gate_rows, lookup_rows| {
-                prover.assert_satisfied_at_rows_par(
-                    gate_rows.iter().cloned(),
-                    lookup_rows.iter().cloned(),
-                )
-            }),
-            state_checks: Box::new(|prover, gate_rows, lookup_rows| {
-                prover.assert_satisfied_at_rows_par(
-                    gate_rows.iter().cloned(),
-                    lookup_rows.iter().cloned(),
-                )
-            }),
             block_modifiers: vec![],
         }
     }
@@ -143,28 +133,6 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     }
 
     #[allow(clippy::type_complexity)]
-    /// Allows to provide checks different than the default ones for the State
-    /// Circuit verification.
-    pub fn state_checks(
-        mut self,
-        state_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
-    ) -> Self {
-        self.state_checks = state_checks;
-        self
-    }
-
-    #[allow(clippy::type_complexity)]
-    /// Allows to provide checks different than the default ones for the EVM
-    /// Circuit verification.
-    pub fn evm_checks(
-        mut self,
-        evm_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
-    ) -> Self {
-        self.evm_checks = evm_checks;
-        self
-    }
-
-    #[allow(clippy::type_complexity)]
     /// Allows to provide modifier functions for the [`Block`] that will be
     /// generated within this builder.
     ///
@@ -190,10 +158,10 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
-            .map_err(|err| CircuitTestError::CanNotHandleBlock)?;
+            .map_err(|err| CircuitTestError::CanNotHandleBlock(err.to_string()))?;
         // Build a witness block from trace result.
         let mut block = crate::witness::block_convert(&builder)
-            .map_err(|err| CircuitTestError::CanNotConvertBlock)?;
+            .map_err(|err| CircuitTestError::CanNotConvertBlock(err.to_string()))?;
 
         for modifier_fn in &self.block_modifiers {
             modifier_fn.as_ref()(&mut block);
@@ -206,7 +174,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
         let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
-        let circuit = EvmCircuitCached::get_test_circuit_from_block(block.clone());
+        let circuit = EvmCircuitCached::get_test_circuit_from_block(block);
         let prover = MockProver::<Fr>::run(k, &circuit, vec![]).map_err(|err| {
             CircuitTestError::SynthesisFailure {
                 circuit: Circuit::EVM,
@@ -214,8 +182,15 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             }
         })?;
 
-        self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows);
-        Ok(())
+        prover
+            .verify_at_rows_par(
+                active_gate_rows.iter().cloned(),
+                active_lookup_rows.iter().cloned(),
+            )
+            .map_err(|err| CircuitTestError::VerificationFailed {
+                circuit: Circuit::EVM,
+                reasons: err,
+            })
     }
     // TODO: use randomness as one of the circuit public input, since randomness in
     // state circuit and evm circuit must be same
@@ -237,10 +212,13 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             .iter()
             .filter(|rw| !matches!(rw, Rw::Start { .. }))
             .count();
-        let rows = (max_rws - non_start_rows_len..max_rws).collect();
-
-        self.state_checks.as_ref()(prover, &rows, &rows);
-        Ok(())
+        let rows = max_rws - non_start_rows_len..max_rws;
+        prover
+            .verify_at_rows_par(rows.clone(), rows)
+            .map_err(|err| CircuitTestError::VerificationFailed {
+                circuit: Circuit::EVM,
+                reasons: err,
+            })
     }
     /// Triggers the `CircuitTestBuilder` to convert the [`TestContext`] if any,
     /// into a [`Block`] and apply the default or provided block_modifiers or
@@ -253,6 +231,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     }
 }
 
+#[derive(Debug)]
 /// Circuits to test in [`CircuitTestBuilder`]
 pub enum Circuit {
     /// EVM circuit
@@ -261,19 +240,52 @@ pub enum Circuit {
     State,
 }
 
+#[derive(Debug, Error)]
 /// Errors for Circuit test
 pub enum CircuitTestError {
     /// We didn't specify enough attibutes to define a block for the circuit test
+    #[error("NoBlockSpecified")]
     NoBlockSpecified,
     /// Something wrong in the handle_block
-    CanNotHandleBlock,
+    #[error("CanNotHandleBlock({0})")]
+    CanNotHandleBlock(String),
     /// Something worng in the block_convert
-    CanNotConvertBlock,
+    #[error("CanNotConvertBlock({0})")]
+    CanNotConvertBlock(String),
     /// Problem constructing MockProver
+    #[error("SynthesisFailure({circuit:?}, reason: {reason:?})")]
     SynthesisFailure {
         /// The circuit that causes the failure
         circuit: Circuit,
         /// The MockProver error that causes the failure
         reason: halo2_proofs::plonk::Error,
     },
+    /// Failed to verify a circuit in the MockProver
+    #[error("VerificationFailed({circuit:?}, reasons: {reasons:?})")]
+    VerificationFailed {
+        /// The circuit that causes the failure
+        circuit: Circuit,
+        /// The list of verification failure
+        reasons: Vec<VerifyFailure>,
+    },
+}
+
+impl CircuitTestError {
+    /// Filter out EVM circuit failures
+    ///
+    /// Errors must come from EVM circuit and must be unsatisifed constraints or lookup failure
+    pub fn assert_evm_failure(&self) {
+        match self {
+            Self::VerificationFailed { circuit, reasons } => {
+                assert!(matches!(circuit, Circuit::EVM));
+                assert!(!reasons.is_empty());
+
+                assert!(all(reasons, |reason| matches!(
+                    reason,
+                    VerifyFailure::ConstraintNotSatisfied { .. } | VerifyFailure::Lookup { .. }
+                )));
+            }
+            _ => panic!("Not a EVM circuit failure {}", self.to_string()),
+        }
+    }
 }
