@@ -201,25 +201,36 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         Ok(block)
     }
 
-    fn run_evm_circuit_test(&self, block: Block<Fr>) {
+    fn run_evm_circuit_test(&self, block: Block<Fr>) -> Result<(), CircuitTestError> {
         let k = block.get_test_degree();
 
         let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
         let circuit = EvmCircuitCached::get_test_circuit_from_block(block.clone());
-        let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
+        let prover = MockProver::<Fr>::run(k, &circuit, vec![]).map_err(|err| {
+            CircuitTestError::SynthesisFailure {
+                circuit: Circuit::EVM,
+                reason: err,
+            }
+        })?;
 
-        self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows)
+        self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows);
+        Ok(())
     }
     // TODO: use randomness as one of the circuit public input, since randomness in
     // state circuit and evm circuit must be same
-    fn run_state_circuit_test(&self, block: Block<Fr>) {
+    fn run_state_circuit_test(&self, block: Block<Fr>) -> Result<(), CircuitTestError> {
         let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block).1;
         let k = cmp::max(log2_ceil(rows_needed + NUM_BLINDING_ROWS), 18);
         let max_rws = block.circuits_params.max_rws;
         let state_circuit = StateCircuit::<Fr>::new(block.rws, max_rws);
         let instance = state_circuit.instance();
-        let prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();
+        let prover = MockProver::<Fr>::run(k, &state_circuit, instance).map_err(|err| {
+            CircuitTestError::SynthesisFailure {
+                circuit: Circuit::State,
+                reason: err,
+            }
+        })?;
         // Skip verification of Start rows to accelerate testing
         let non_start_rows_len = state_circuit
             .rows
@@ -229,6 +240,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         let rows = (max_rws - non_start_rows_len..max_rws).collect();
 
         self.state_checks.as_ref()(prover, &rows, &rows);
+        Ok(())
     }
     /// Triggers the `CircuitTestBuilder` to convert the [`TestContext`] if any,
     /// into a [`Block`] and apply the default or provided block_modifiers or
@@ -236,10 +248,17 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     pub fn run(self) -> Result<(), CircuitTestError> {
         let block = self.build_block()?;
 
-        self.run_evm_circuit_test(block.clone());
-        self.run_state_circuit_test(block);
-        Ok(())
+        self.run_evm_circuit_test(block.clone())?;
+        self.run_state_circuit_test(block)
     }
+}
+
+/// Circuits to test in [`CircuitTestBuilder`]
+pub enum Circuit {
+    /// EVM circuit
+    EVM,
+    /// State circuit
+    State,
 }
 
 /// Errors for Circuit test
@@ -250,4 +269,11 @@ pub enum CircuitTestError {
     CanNotHandleBlock,
     /// Something worng in the block_convert
     CanNotConvertBlock,
+    /// Problem constructing MockProver
+    SynthesisFailure {
+        /// The circuit that causes the failure
+        circuit: Circuit,
+        /// The MockProver error that causes the failure
+        reason: halo2_proofs::plonk::Error,
+    },
 }
