@@ -3,14 +3,17 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            constraint_builder::EVMConstraintBuilder,
+            constraint_builder::{EVMConstraintBuilder, ConstrainBuilderCommon},
             math_gadget::IsZeroGadget,
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
             sum, CachedRegion, Cell, Word,
         },
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{Word32Cell, WordExpr},
+        Expr,
+    },
     witness::{Block, Call, ExecStep, Transaction},
 };
 use bus_mapping::evm::OpcodeId;
@@ -24,9 +27,9 @@ pub(crate) struct ErrorPrecompileFailedGadget<F> {
     is_callcode: IsZeroGadget<F>,
     is_delegatecall: IsZeroGadget<F>,
     is_staticcall: IsZeroGadget<F>,
-    gas: Word<F>,
-    callee_address: Word<F>,
-    value: Word<F>,
+    gas: Word32Cell<F>,
+    callee_address: Word32Cell<F>,
+    value: Word32Cell<F>,
     cd_address: MemoryAddressGadget<F>,
     rd_address: MemoryAddressGadget<F>,
 }
@@ -51,7 +54,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         // NOTE: this precompile gadget is for dummy use at the moment, the real error handling for
         // precompile will be done in each precompile gadget in the future. won't add step
         // state transition constraint here as well.
-        cb.require_true(
+        cb.require_equal(
             "opcode is one of [call, callcode, staticcall, delegatecall]",
             sum::expr(vec![
                 is_call.expr(),
@@ -59,38 +62,39 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
                 is_delegatecall.expr(),
                 is_staticcall.expr(),
             ]),
+            1.expr()
         );
 
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
 
-        let gas = cb.query_word_rlc();
-        let callee_address = cb.query_word_rlc();
-        let value = cb.query_word_rlc();
-        let cd_offset = cb.query_cell_phase2();
-        let cd_length = cb.query_word_rlc();
-        let rd_offset = cb.query_cell_phase2();
-        let rd_length = cb.query_word_rlc();
+        let gas = cb.query_word32();
+        let callee_address = cb.query_word32();
+        let value = cb.query_word32();
+        let cd_offset = cb.query_word_unchecked();
+        let cd_length = cb.query_memory_address();
+        let rd_offset = cb.query_word_unchecked();
+        let rd_length = cb.query_memory_address();
 
-        cb.stack_pop(gas.expr());
-        cb.stack_pop(callee_address.expr());
+        cb.stack_pop(gas.to_word());
+        cb.stack_pop(callee_address.to_word());
 
         // `CALL` and `CALLCODE` opcodes have an additional stack pop `value`.
         cb.condition(is_call.expr() + is_callcode.expr(), |cb| {
-            cb.stack_pop(value.expr())
+            cb.stack_pop(value.to_word())
         });
-        cb.stack_pop(cd_offset.expr());
-        cb.stack_pop(cd_length.expr());
-        cb.stack_pop(rd_offset.expr());
-        cb.stack_pop(rd_length.expr());
-        cb.stack_push(0.expr());
+        cb.stack_pop(cd_offset.to_word());
+        cb.stack_pop(cd_length.to_word());
+        cb.stack_pop(rd_offset.to_word());
+        cb.stack_pop(rd_length.to_word());
+        cb.stack_push(Word::zero());
 
         for (field_tag, value) in [
             (CallContextFieldTag::LastCalleeId, callee_call_id.expr()),
             (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
             (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
         ] {
-            cb.call_context_lookup(true.expr(), None, field_tag, value);
+            cb.call_context_lookup_write(None, field_tag, value.to_word());
         }
 
         let cd_address = MemoryAddressGadget::construct(cb, cd_offset, cd_length);
@@ -119,7 +123,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         _call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         let is_call_or_callcode =
             usize::from([OpcodeId::CALL, OpcodeId::CALLCODE].contains(&opcode));
 
