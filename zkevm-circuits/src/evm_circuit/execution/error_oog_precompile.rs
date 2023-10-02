@@ -65,7 +65,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         // calculate required gas for precompile
         let precompiles_required_gas = vec![
             (
-                addr_bits.value_equals(PrecompileCalls::Ecrecover),
+                addr_bits.value_equals(PrecompileCalls::ECRecover),
                 GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
             ),
             // These are handled in PrecompileFailedGadget
@@ -80,11 +80,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
             // modexp is handled in ModExpGadget
             (
                 addr_bits.value_equals(PrecompileCalls::Bn128Add),
-                GasCost::PRECOMPILE_BN256ADD.as_u64().expr(),
+                GasCost::PRECOMPILE_BN256ADD.expr(),
             ),
             (
                 addr_bits.value_equals(PrecompileCalls::Bn128Mul),
-                GasCost::PRECOMPILE_BN256MUL.as_u64().expr(),
+                GasCost::PRECOMPILE_BN256MUL.expr(),
             ),
             (
                 addr_bits.value_equals(PrecompileCalls::Bn128Pairing),
@@ -152,7 +152,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         // addr_bits
-        let precompile_addr = call.code_address.unwrap();
+        let precompile_addr = call.code_address().unwrap();
         self.precompile_addr.assign(
             region,
             offset,
@@ -184,16 +184,16 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         let precompile_call: PrecompileCalls = precompile_addr.to_fixed_bytes()[19].into();
         let required_gas = match precompile_call {
             PrecompileCalls::Bn128Pairing => {
-                precompile_call.base_gas_cost().as_u64()
-                    + n_pairs * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.as_u64()
+                precompile_call.base_gas_cost()
+                    + n_pairs * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR
             }
             PrecompileCalls::Identity => {
                 let n_words = (call.call_data_length + 31) / 32;
-                precompile_call.base_gas_cost().as_u64()
-                    + n_words * GasCost::PRECOMPILE_IDENTITY_PER_WORD.as_u64()
+                precompile_call.base_gas_cost()
+                    + n_words * GasCost::PRECOMPILE_IDENTITY_PER_WORD
             }
-            PrecompileCalls::Bn128Add | PrecompileCalls::Bn128Mul | PrecompileCalls::Ecrecover => {
-                precompile_call.base_gas_cost().as_u64()
+            PrecompileCalls::Bn128Add | PrecompileCalls::Bn128Mul | PrecompileCalls::ECRecover => {
+                precompile_call.base_gas_cost()
             }
             _ => unreachable!(),
         };
@@ -248,8 +248,8 @@ mod test {
                     ret_offset: 0x48.into(),
                     ret_size: 0x23.into(),
                     address: PrecompileCalls::Identity.address().to_word(),
-                    gas: (PrecompileCalls::Identity.base_gas_cost().as_u64()
-                        + 2 * GasCost::PRECOMPILE_IDENTITY_PER_WORD.as_u64()
+                    gas: (PrecompileCalls::Identity.base_gas_cost()
+                        + 2 * GasCost::PRECOMPILE_IDENTITY_PER_WORD
                         - 1).to_word(),
                     ..Default::default()
                 },
