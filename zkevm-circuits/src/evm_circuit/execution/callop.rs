@@ -77,6 +77,9 @@ pub(crate) struct CallOpGadget<F> {
     precompile_return_length_zero: IsZeroGadget<F>,
     precompile_return_data_copy_size: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
     precompile_input_len: Cell<F>, // the number of input bytes taken for the precompile call.
+    precompile_input_bytes_rlc: Cell<F>,
+    precompile_output_bytes_rlc: Cell<F>,
+    precompile_return_bytes_rlc: Cell<F>,
     precompile_input_rws: Cell<F>,
     precompile_output_rws: Cell<F>,
     precompile_return_rws: Cell<F>,
