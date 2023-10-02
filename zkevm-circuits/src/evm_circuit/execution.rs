@@ -599,8 +599,8 @@ impl<F: Field> ExecutionConfig<F> {
             error_depth: configure_gadget!(),
             error_contract_address_collision: configure_gadget!(),
             error_invalid_creation_code: configure_gadget!(),
-            error_return_data_out_of_bound: configure_gadget!(),
             error_precompile_failed: configure_gadget!(),
+            error_return_data_out_of_bound: configure_gadget!(),
             // precompile calls
             precompile_identity_gadget: configure_gadget!(),
             // step and presets
@@ -1309,6 +1309,9 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorOutOfGasCall => {
                 assign_exec_step!(self.error_oog_call)
             }
+            ExecutionState::ErrorOutOfGasPrecompile => {
+                assign_exec_step!(self.error_oog_precompile)
+            }
             ExecutionState::ErrorOutOfGasDynamicMemoryExpansion => {
                 assign_exec_step!(self.error_oog_dynamic_memory_gadget)
             }
@@ -1361,6 +1364,9 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorReturnDataOutOfBound => {
                 assign_exec_step!(self.error_return_data_out_of_bound)
+            }
+            ExecutionState::ErrorPrecompileFailed => {
+                assign_exec_step!(self.error_precompile_failed)
             }
             // precompile calls
             ExecutionState::PrecompileIdentity => {
