@@ -147,7 +147,7 @@ mod test {
                 assert_eq!(block.txs[0].steps().len(), 4);
                 block.txs[0].steps_mut()[2].gas_left -= 1;
             }))
-            .run()
+            .run_with_result()
             .unwrap_err()
             .assert_evm_failure()
     }

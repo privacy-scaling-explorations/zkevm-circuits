@@ -189,8 +189,7 @@ mod test {
             last.stack = Stack::from_vec(vec![r]);
         }
 
-        let mut ctb = CircuitTestBuilder::new_from_test_ctx(ctx);
-        let result = ctb.run();
+        let result = CircuitTestBuilder::new_from_test_ctx(ctx).run_with_result();
         if ok {
             assert!(result.is_ok())
         } else {

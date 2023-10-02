@@ -223,11 +223,16 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// Triggers the `CircuitTestBuilder` to convert the [`TestContext`] if any,
     /// into a [`Block`] and apply the default or provided block_modifiers or
     /// circuit checks to the provers generated for the State and EVM circuits.
-    pub fn run(self) -> Result<(), CircuitTestError> {
+    pub fn run_with_result(self) -> Result<(), CircuitTestError> {
         let block = self.build_block()?;
 
         self.run_evm_circuit_test(block.clone())?;
         self.run_state_circuit_test(block)
+    }
+
+    /// Convenient method to run in test cases that error handling is not required.
+    pub fn run(self) {
+        self.run_with_result().unwrap()
     }
 }
 

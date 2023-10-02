@@ -334,7 +334,7 @@ pub fn run_test(
             zkevm_circuits::evm_circuit::witness::block_convert(&builder).unwrap();
 
         CircuitTestBuilder::<1, 1>::new_from_block(block)
-            .run()
+            .run_with_result()
             .map_err(|err| match err {
                 CircuitTestError::VerificationFailed { reasons, .. } => {
                     StateTestError::CircuitUnsatisfied {
