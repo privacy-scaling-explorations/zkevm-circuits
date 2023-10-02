@@ -177,60 +177,77 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 }
 
 impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
+    fn build_block(&self) -> Result<Block<Fr>, CircuitTestError> {
+        if let Some(block) = &self.block {
+            // If a block is specified, no need to modify the block
+            return Ok(block.clone());
+        }
+        let block = self
+            .test_ctx
+            .as_ref()
+            .ok_or(CircuitTestError::NoBlockSpecified)?;
+        let block: GethData = block.clone().into();
+        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .map_err(|err| CircuitTestError::CanNotHandleBlock)?;
+        // Build a witness block from trace result.
+        let mut block = crate::witness::block_convert(&builder)
+            .map_err(|err| CircuitTestError::CanNotConvertBlock)?;
+
+        for modifier_fn in &self.block_modifiers {
+            modifier_fn.as_ref()(&mut block);
+        }
+        Ok(block)
+    }
+
+    fn run_evm_circuit_test(&self, block: Block<Fr>) {
+        let k = block.get_test_degree();
+
+        let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
+
+        let circuit = EvmCircuitCached::get_test_circuit_from_block(block.clone());
+        let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
+
+        self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows)
+    }
+    // TODO: use randomness as one of the circuit public input, since randomness in
+    // state circuit and evm circuit must be same
+    fn run_state_circuit_test(&self, block: Block<Fr>) {
+        let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block).1;
+        let k = cmp::max(log2_ceil(rows_needed + NUM_BLINDING_ROWS), 18);
+        let params = block.circuits_params;
+        let state_circuit = StateCircuit::<Fr>::new(block.rws, params.max_rws);
+        let instance = state_circuit.instance();
+        let prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();
+        // Skip verification of Start rows to accelerate testing
+        let non_start_rows_len = state_circuit
+            .rows
+            .iter()
+            .filter(|rw| !matches!(rw, Rw::Start { .. }))
+            .count();
+        let rows = (params.max_rws - non_start_rows_len..params.max_rws).collect();
+
+        self.state_checks.as_ref()(prover, &rows, &rows);
+    }
     /// Triggers the `CircuitTestBuilder` to convert the [`TestContext`] if any,
     /// into a [`Block`] and apply the default or provided block_modifiers or
     /// circuit checks to the provers generated for the State and EVM circuits.
-    pub fn run(self) {
-        let block = if let Some(block) = self.block {
-            block
-        } else if let Some(block) = self.test_ctx {
-            let block: GethData = block.into();
-            let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-            let builder = builder
-                .handle_block(&block.eth_block, &block.geth_traces)
-                .unwrap();
-            // Build a witness block from trace result.
-            let mut block = crate::witness::block_convert(&builder).unwrap();
+    pub fn run(self) -> Result<(), CircuitTestError> {
+        let block = self.build_block()?;
 
-            for modifier_fn in self.block_modifiers {
-                modifier_fn.as_ref()(&mut block);
-            }
-            block
-        } else {
-            panic!("No attribute to build a block was passed to the CircuitTestBuilder")
-        };
-        let params = block.circuits_params;
-
-        // Run evm circuit test
-        {
-            let k = block.get_test_degree();
-
-            let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
-
-            let circuit = EvmCircuitCached::get_test_circuit_from_block(block.clone());
-            let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
-
-            self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows)
-        }
-
-        // Run state circuit test
-        // TODO: use randomness as one of the circuit public input, since randomness in
-        // state circuit and evm circuit must be same
-        {
-            let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block).1;
-            let k = cmp::max(log2_ceil(rows_needed + NUM_BLINDING_ROWS), 18);
-            let state_circuit = StateCircuit::<Fr>::new(block.rws, params.max_rws);
-            let instance = state_circuit.instance();
-            let prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();
-            // Skip verification of Start rows to accelerate testing
-            let non_start_rows_len = state_circuit
-                .rows
-                .iter()
-                .filter(|rw| !matches!(rw, Rw::Start { .. }))
-                .count();
-            let rows = (params.max_rws - non_start_rows_len..params.max_rws).collect();
-
-            self.state_checks.as_ref()(prover, &rows, &rows);
-        }
+        self.run_evm_circuit_test(block.clone());
+        self.run_state_circuit_test(block);
+        Ok(())
     }
+}
+
+/// Errors for Circuit test
+pub enum CircuitTestError {
+    /// We didn't specify enough attibutes to define a block for the circuit test
+    NoBlockSpecified,
+    /// Something wrong in the handle_block
+    CanNotHandleBlock,
+    /// Something worng in the block_convert
+    CanNotConvertBlock,
 }
