@@ -140,6 +140,7 @@ pub enum ExecutionState {
     ErrorCodeStore, // combine ErrorMaxCodeSizeExceeded and ErrorOutOfGasCodeStore
     ErrorInvalidJump,
     ErrorReturnDataOutOfBound,
+    ErrorPrecompileFailed,
     ErrorOutOfGasConstant,
     ErrorOutOfGasStaticMemoryExpansion,
     ErrorOutOfGasDynamicMemoryExpansion,
@@ -207,6 +208,7 @@ impl From<&ExecError> for ExecutionState {
             ExecError::CodeStoreOutOfGas | ExecError::MaxCodeSizeExceeded => {
                 ExecutionState::ErrorCodeStore
             }
+            ExecError::PrecompileFailed => ExecutionState::ErrorPrecompileFailed,
             ExecError::OutOfGas(oog_error) => match oog_error {
                 OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
                 OogError::StaticMemoryExpansion => {
@@ -222,6 +224,7 @@ impl From<&ExecError> for ExecutionState {
                 OogError::Exp => ExecutionState::ErrorOutOfGasEXP,
                 OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
                 OogError::Call => ExecutionState::ErrorOutOfGasCall,
+                OogError::Precompile => ExecutionState::ErrorOutOfGasPrecompile,
                 OogError::SloadSstore => ExecutionState::ErrorOutOfGasSloadSstore,
                 OogError::Create => ExecutionState::ErrorOutOfGasCREATE,
                 OogError::SelfDestruct => ExecutionState::ErrorOutOfGasSELFDESTRUCT,
