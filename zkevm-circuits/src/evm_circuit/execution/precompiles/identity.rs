@@ -54,7 +54,7 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             N_BYTES_WORD as u64,
         );
 
-        let _gas_cost = select::expr(
+        let gas_cost = select::expr(
             is_success.expr(),
             GasCost::PRECOMPILE_IDENTITY_BASE.expr()
                 + input_word_size.quotient() * GasCost::PRECOMPILE_IDENTITY_PER_WORD.expr(),
@@ -67,10 +67,10 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             cb.execution_state().precompile_base_gas_cost().expr(),
         );
 
-        let restore_context = RestoreContextGadget::construct(
+        let restore_context = RestoreContextGadget::construct2(
             cb,
             is_success.expr(),
-            // gas_cost.expr(),
+            gas_cost.expr(),
             0.expr(),
             0x00.expr(),             // ReturnDataOffset
             call_data_length.expr(), // ReturnDataLength
