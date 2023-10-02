@@ -181,10 +181,10 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// into a [`Block`] and apply the default or provided block_modifiers or
     /// circuit checks to the provers generated for the State and EVM circuits.
     pub fn run(self) {
-        let block: Block<Fr> = if self.block.is_some() {
-            self.block.unwrap()
-        } else if self.test_ctx.is_some() {
-            let block: GethData = self.test_ctx.unwrap().into();
+        let block = if let Some(block) = self.block {
+            block
+        } else if let Some(block) = self.test_ctx {
+            let block: GethData = block.into();
             let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
             let builder = builder
                 .handle_block(&block.eth_block, &block.geth_traces)
