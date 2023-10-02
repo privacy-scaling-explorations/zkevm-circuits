@@ -12,7 +12,7 @@ use crate::{
 use eth_types::{
     evm_types::{
         gas_utils::{eip150_gas, memory_expansion_gas_cost},
-        GasCost, GAS_STIPEND_CALL_WITH_VALUE,
+        GasCost, OpcodeId, GAS_STIPEND_CALL_WITH_VALUE,
     },
     GethExecStep, ToWord, Word,
 };
@@ -236,6 +236,31 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
         // There are 4 branches from here.
         // add failure case for insufficient balance or error depth in the future.
+        if geth_steps[0].op == OpcodeId::CALL
+            && geth_steps[1].depth == geth_steps[0].depth + 1
+            && geth_steps[1].gas != callee_gas_left_with_stipend
+        {
+            // panic with full info
+            let info1 = format!("callee_gas_left {callee_gas_left} gas_specified {gas_specified} gas_cost {gas_cost} is_warm {is_warm} has_value {has_value} current_memory_word_size {curr_memory_word_size} next_memory_word_size {next_memory_word_size}, memory_expansion_gas_cost {memory_expansion_gas_cost}");
+            let info2 = format!("args gas:{:?} addr:{:?} value:{:?} cd_pos:{:?} cd_len:{:?} rd_pos:{:?} rd_len:{:?}",
+                        geth_step.stack.nth_last(0),
+                        geth_step.stack.nth_last(1),
+                        geth_step.stack.nth_last(2),
+                        geth_step.stack.nth_last(3),
+                        geth_step.stack.nth_last(4),
+                        geth_step.stack.nth_last(5),
+                        geth_step.stack.nth_last(6)
+                    );
+            let full_ctx = format!(
+                "step0 {:?} step1 {:?} call {:?}, {} {}",
+                geth_steps[0], geth_steps[1], call, info1, info2
+            );
+            debug_assert_eq!(
+                geth_steps[1].gas, callee_gas_left_with_stipend,
+                "{full_ctx}"
+            );
+        }
+        
         match (is_precheck_ok, is_precompile, is_empty_code_hash) {
             // 1. Call to precompiled.
             (true, true, _) => {
@@ -243,8 +268,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 // get the result of the precompile call.
                 // For failed call, it will cost all gas provided
-                // let (result, precompile_call_gas_cost, has_oog_err) = execute_precompiled(
-                let (result, _, _) = execute_precompiled(
+                let (result, _precompile_call_gas_cost, _has_oog_err) = execute_precompiled(
                     &code_address,
                     if args_length != 0 {
                         let caller_memory = &state.caller_ctx()?.memory;
