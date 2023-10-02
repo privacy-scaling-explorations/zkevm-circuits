@@ -20,7 +20,7 @@ impl<F: Field> BytecodeCircuit<F> {
     }
 
     fn from_bytes(bytecodes: impl Into<CodeDB>, k: u32) -> Self {
-        Self::new(bytecodes.into(), 2usize.pow(k))
+        Self::new(bytecodes.into(), 2usize.pow(k) - Self::unusable_rows())
     }
 
     fn verify(&self, success: bool) {
