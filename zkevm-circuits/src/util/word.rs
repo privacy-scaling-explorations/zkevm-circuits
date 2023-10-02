@@ -451,7 +451,7 @@ impl<F: Field, const N1: usize> WordExpr<F> for WordLimbs<Expression<F>, N1> {
     }
 }
 
-/// Return the hash of the empty code as a Word<Value<F>> in little-endian.
+/// Return the hash of the empty code as a `Word<Value<F>>` in little-endian.
 pub fn empty_code_hash_word_value<F: Field>() -> Word<Value<F>> {
     Word::from(CodeDB::empty_code_hash()).into_value()
 }

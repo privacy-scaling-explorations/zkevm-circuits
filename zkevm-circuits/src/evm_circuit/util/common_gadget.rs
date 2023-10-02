@@ -11,6 +11,7 @@ use crate::{
         step::ExecutionState,
         table::{FixedTableTag, Lookup},
         util::{
+            and,
             constraint_builder::{
                 EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, Same, To},
@@ -358,7 +359,7 @@ impl<F: Field> TransferToGadget<F> {
     ) -> Self {
         let value_is_zero = IsZeroWordGadget::construct(cb, &value);
         if account_write {
-            Self::creat_account(
+            Self::create_account(
                 cb,
                 receiver_address.clone(),
                 receiver_exists.clone(),
@@ -384,7 +385,7 @@ impl<F: Field> TransferToGadget<F> {
         }
     }
 
-    pub(crate) fn creat_account(
+    pub(crate) fn create_account(
         cb: &mut EVMConstraintBuilder<F>,
         receiver_address: Word<Expression<F>>,
         receiver_exists: Expression<F>,
@@ -393,9 +394,9 @@ impl<F: Field> TransferToGadget<F> {
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
         cb.condition(
-            or::expr([
-                not::expr(value_is_zero.expr()) * not::expr(receiver_exists.expr()),
-                must_create,
+            and::expr([
+                not::expr(receiver_exists.expr()),
+                or::expr([not::expr(value_is_zero.expr()), must_create]),
             ]),
             |cb| {
                 cb.account_write(
@@ -430,10 +431,10 @@ impl<F: Field> TransferToGadget<F> {
 
     pub(crate) fn rw_delta(&self) -> Expression<F> {
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
-        or::expr([
-            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.expr()),
-            self.must_create.clone()]
-        ) +
+        and::expr([
+                not::expr(self.receiver_exists.expr()),
+                or::expr([not::expr(self.value_is_zero.expr()), self.must_create.clone()]),
+            ]) +
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr())
     }
@@ -470,7 +471,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             UpdateBalanceGadget::construct(cb, sender_address.to_word(), vec![gas_fee], None);
         let value_is_zero = IsZeroWordGadget::construct(cb, &value);
         // If receiver doesn't exist, create it
-        TransferToGadget::creat_account(
+        TransferToGadget::create_account(
             cb,
             receiver_address.clone(),
             receiver_exists.clone(),
@@ -509,10 +510,10 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         // +1 Write Account (sender) Balance (Not Reversible tx fee)
         1.expr() +
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
-        or::expr([
-            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver.receiver_exists.expr()),
+        and::expr([not::expr(self.receiver.receiver_exists.expr()), or::expr([
+            not::expr(self.value_is_zero.expr()),
             self.receiver.must_create.clone()]
-        ) * 1.expr() +
+        )]) * 1.expr() +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()
@@ -521,10 +522,10 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
     pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
         // NOTE: Write Account (sender) Balance (Not Reversible tx fee)
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
-        or::expr([
-            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver.receiver_exists.expr()),
+        and::expr([not::expr(self.receiver.receiver_exists.expr()), or::expr([
+            not::expr(self.value_is_zero.expr()),
             self.receiver.must_create.clone()]
-        ) +
+        )]) +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()
@@ -590,7 +591,7 @@ impl<F: Field> TransferGadget<F> {
     ) -> Self {
         let value_is_zero = IsZeroWordGadget::construct(cb, &value);
         // If receiver doesn't exist, create it
-        TransferToGadget::creat_account(
+        TransferToGadget::create_account(
             cb,
             receiver_address.clone(),
             receiver_exists.clone(),
