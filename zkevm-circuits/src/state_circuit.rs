@@ -433,7 +433,7 @@ pub struct StateCircuit<F> {
 impl<F: Field> StateCircuit<F> {
     /// make a new state circuit from an RwMap
     pub fn new(rw_map: RwMap, n_rows: usize) -> Self {
-        let rows = rw_map.table_assignments();
+        let rows = rw_map.table_assignments(false); // address sorted
         let updates = MptUpdates::mock_from(&rows);
         Self {
             rows,

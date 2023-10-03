@@ -415,7 +415,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         block.rws.check_rw_counter_sanity();
         config.rw_table.load(
             &mut layouter,
-            &block.rws.table_assignments(),
+            &block.rws.table_assignments(true),
             block.circuits_params.max_rws,
         )?;
         config

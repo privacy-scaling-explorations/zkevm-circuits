@@ -59,11 +59,12 @@ use crate::{
     evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs},
     exp_circuit::{ExpCircuit, ExpCircuitConfig},
     keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
+    permutation_circuit::{PermutationCircuitConfig, PermutationCircuitConfigArgs},
     pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
-        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RwTable, TxTable,
-        UXTable,
+        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, MptTable,
+        RwTable, TxTable, UXTable,
     },
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
@@ -97,6 +98,7 @@ pub struct SuperCircuitConfig<F: Field> {
     keccak_circuit: KeccakCircuitConfig<F>,
     pi_circuit: PiCircuitConfig<F>,
     exp_circuit: ExpCircuitConfig<F>,
+    permutation_circuit: PermutationCircuitConfig<F>,
 }
 
 /// Circuit configuration arguments
@@ -122,7 +124,11 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         }: Self::ConfigArgs,
     ) -> Self {
         let tx_table = TxTable::construct(meta);
+
+        // TODO reserve offset 0 to adapt column from previous supercircuit chunk
+        let chronological_rw_table = RwTable::construct(meta);
         let rw_table = RwTable::construct(meta);
+
         let mpt_table = MptTable::construct(meta);
         let bytecode_table = BytecodeTable::construct(meta);
         let block_table = BlockTable::construct(meta);
@@ -142,6 +148,14 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         let challenges = Challenges::mock(
             power_of_randomness[0].clone(),
             power_of_randomness[0].clone(),
+        );
+
+        // TODO support passing arbitrary columns set for permutation fingerprints
+        let permutation_circuit = PermutationCircuitConfig::new(
+            meta,
+            PermutationCircuitConfigArgs {
+                cols: <RwTable as LookupTable<F>>::advice_columns(&chronological_rw_table),
+            },
         );
 
         let keccak_circuit = KeccakCircuitConfig::new(
@@ -183,7 +197,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             meta,
             CopyCircuitConfigArgs {
                 tx_table: tx_table.clone(),
-                rw_table,
+                rw_table: chronological_rw_table.clone(),
                 bytecode_table: bytecode_table.clone(),
                 copy_table,
                 q_enable: q_copy_table,
@@ -207,7 +221,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             EvmCircuitConfigArgs {
                 challenges,
                 tx_table,
-                rw_table,
+                rw_table: chronological_rw_table,
                 bytecode_table,
                 block_table: block_table.clone(),
                 copy_table,
@@ -232,6 +246,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             keccak_circuit,
             pi_circuit,
             exp_circuit,
+            permutation_circuit,
         }
     }
 }

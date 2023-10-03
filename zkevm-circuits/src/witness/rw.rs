@@ -55,7 +55,7 @@ impl RwMap {
     pub fn check_value(&self) {
         let err_msg_first = "first access reads don't change value";
         let err_msg_non_first = "non-first access reads don't change value";
-        let rows = self.table_assignments();
+        let rows = self.table_assignments(false);
         let updates = MptUpdates::mock_from(&rows);
         let mut errs = Vec::new();
         for idx in 1..rows.len() {
@@ -123,7 +123,7 @@ impl RwMap {
             1
         }
     }
-    /// Prepad Rw::Start rows to target length
+    /// padding Rw::Start ahead rows to target length
     pub fn table_assignments_prepad(rows: &[Rw], target_len: usize) -> (Vec<Rw>, usize) {
         // Remove Start rows as we will add them from scratch.
         let rows: Vec<Rw> = rows
@@ -136,18 +136,20 @@ impl RwMap {
         (padding.chain(rows.into_iter()).collect(), padding_length)
     }
     /// Build Rws for assignment
-    pub fn table_assignments(&self) -> Vec<Rw> {
+    pub fn table_assignments(&self, keep_chronological_order: bool) -> Vec<Rw> {
         let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();
-        rows.sort_by_key(|row| {
-            (
-                row.tag() as u64,
-                row.id().unwrap_or_default(),
-                row.address().unwrap_or_default(),
-                row.field_tag().unwrap_or_default(),
-                row.storage_key().unwrap_or_default(),
-                row.rw_counter(),
-            )
-        });
+        if !keep_chronological_order {
+            rows.sort_by_key(|row| {
+                (
+                    row.tag() as u64,
+                    row.id().unwrap_or_default(),
+                    row.address().unwrap_or_default(),
+                    row.field_tag().unwrap_or_default(),
+                    row.storage_key().unwrap_or_default(),
+                    row.rw_counter(),
+                )
+            });
+        }
         rows
     }
 }
