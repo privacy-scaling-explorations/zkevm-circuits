@@ -28,6 +28,12 @@ impl<F: Field> PrecompileGadget<F> {
         _rd_offset: Expression<F>,
         _rd_length: Expression<F>,
         precompile_return_length: Expression<F>,
+        // input bytes to precompile call.
+        input_bytes_rlc: Expression<F>,
+        // output result from precompile call.
+        output_bytes_rlc: Expression<F>,
+        // returned bytes back to caller.
+        _return_bytes_rlc: Expression<F>,
     ) -> Self {
         let address = BinaryNumberGadget::construct(cb, callee_address.expr());
 
