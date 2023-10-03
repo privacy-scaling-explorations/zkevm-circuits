@@ -153,15 +153,15 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         let block = self
             .test_ctx
             .as_ref()
-            .ok_or(CircuitTestError::NoBlockSpecified)?;
+            .ok_or(CircuitTestError::NotEnoughAttributes)?;
         let block: GethData = block.clone().into();
         let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
-            .map_err(|err| CircuitTestError::CanNotHandleBlock(err.to_string()))?;
+            .map_err(|err| CircuitTestError::CannotHandleBlock(err.to_string()))?;
         // Build a witness block from trace result.
         let mut block = crate::witness::block_convert(&builder)
-            .map_err(|err| CircuitTestError::CanNotConvertBlock(err.to_string()))?;
+            .map_err(|err| CircuitTestError::CannotConvertBlock(err.to_string()))?;
 
         for modifier_fn in &self.block_modifiers {
             modifier_fn.as_ref()(&mut block);
@@ -249,14 +249,14 @@ pub enum Circuit {
 /// Errors for Circuit test
 pub enum CircuitTestError {
     /// We didn't specify enough attibutes to define a block for the circuit test
-    #[error("NoBlockSpecified")]
-    NoBlockSpecified,
+    #[error("NotEnoughAttributes")]
+    NotEnoughAttributes,
     /// Something wrong in the handle_block
-    #[error("CanNotHandleBlock({0})")]
-    CanNotHandleBlock(String),
+    #[error("CannotHandleBlock({0})")]
+    CannotHandleBlock(String),
     /// Something worng in the block_convert
-    #[error("CanNotConvertBlock({0})")]
-    CanNotConvertBlock(String),
+    #[error("CannotConvertBlock({0})")]
+    CannotConvertBlock(String),
     /// Problem constructing MockProver
     #[error("SynthesisFailure({circuit:?}, reason: {reason:?})")]
     SynthesisFailure {
