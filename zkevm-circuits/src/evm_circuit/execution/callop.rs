@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_U64},
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
         step::ExecutionState,
         util::{
             and,
@@ -16,7 +16,7 @@ use crate::{
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
             not, or,
             precompile_gadget::PrecompileGadget,
-            select, CachedRegion, Cell, StepRws, Word,
+            rlc, select, CachedRegion, Cell, StepRws, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -231,7 +231,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // skip the transfer (this is necessary for non-existing accounts, which
         // will not be crated when value is 0 and so the callee balance lookup
         // would be invalid).
-        let code_hash_previous = cb.query_word32();
+        let _code_hash_previous = cb.query_word32();
         let transfer = cb.condition(is_call.expr() * is_precheck_ok.expr(), |cb| {
             TransferGadget::construct(
                 cb,
@@ -988,39 +988,105 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         let (
             precompile_input_len,
+            precompile_input_bytes_rlc,
+            precompile_output_bytes_rlc,
+            precompile_return_bytes_rlc,
             input_rws,
             output_rws,
             return_rws,
         ) = if is_precheck_ok && is_precompiled(&callee_address.to_address()) {
-            let _precompile_call: PrecompileCalls = precompile_addr.0[19].into();
-            let input_len =cd_length.as_usize();
-            let input_bytes_word_count =
+            let precompile_call: PrecompileCalls = precompile_addr.0[19].into();
+            let input_len = if let Some(input_len) = precompile_call.input_len() {
+                min(input_len, cd_length.as_usize())
+            } else {
+                cd_length.as_usize()
+            };
+            let [input_bytes_start_offset, input_bytes_end_offset, input_bytes_word_count] =
+                // Correspond to this check in bus-mapping.
+                // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/evm/opcodes/callop.rs#L349>
                 if input_len == 0 {
-                    0
+                    [0; 3]
                 } else {
                     let begin = cd_offset.as_usize();
+                    let end = cd_offset.as_usize() + input_len;
                     let range = MemoryWordRange::align_range(begin, input_len);
-                    range.word_count()
+
+                    // input may not be aligned to 32 bytes. actual input is
+                    // [start_offset..end_offset]
+                    // TODO: turn it into MemoryWordRange method
+                    let start_offset = begin - range.start_slot().0;
+                    let end_offset = end - range.start_slot().0;
+
+                    [start_offset, end_offset, range.word_count()]
                 };
 
             let [output_bytes_end, output_bytes_word_count] =
+                // Correspond to this check in bus-mapping.
+                // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/evm/opcodes/callop.rs#L387>
                 if precompile_return_length.is_zero() {
                     [0; 2]
                 } else {
                     let end = precompile_return_length.as_usize();
+
                     [end, MemoryWordRange::align_range(0, end).word_count()]
                 };
 
-            let return_bytes_word_count =
+            let [return_bytes_start_offset, return_bytes_end_offset, return_bytes_word_count] =
+                // Correspond to this check in bus-mapping.
+                // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/evm/opcodes/callop.rs#L416>
                 if min(precompile_return_length, rd_length).is_zero()
                 {
-                    0
+                    [0; 3]
                 } else {
                     let length = min(rd_length.as_usize(), output_bytes_end);
                     let begin = rd_offset.as_usize();
-                    let dst_range = MemoryWordRange::align_range(begin, length);
-                    dst_range.word_count()
+                    let end = begin + length;
+
+                    let mut src_range = MemoryWordRange::align_range(0, length);
+                    let mut dst_range = MemoryWordRange::align_range(begin, length);
+                    src_range.ensure_equal_length(&mut dst_range);
+
+                    // return data may not be aligned to 32 bytes. actual return data is
+                    // [start_offset..end_offset]
+                    // TODO: turn it into MemoryWordRange method
+                    let start_offset = begin - dst_range.start_slot().0;
+                    let end_offset = end - dst_range.start_slot().0;
+
+                    [start_offset, end_offset, dst_range.word_count()]
                 };
+
+            let input_bytes = (0..(input_bytes_word_count * N_BYTES_WORD))
+                .map(|_| rws.next().memory_value() )
+                .collect::<Vec<_>>();
+            let output_bytes = (0..(output_bytes_word_count * N_BYTES_WORD))
+                .map(|_| rws.next().memory_value() )
+                .flat_map(|word| word.to_be_bytes())
+                .collect::<Vec<_>>();
+            let return_bytes = (0..(return_bytes_word_count * 2 * N_BYTES_WORD))
+                .step_by(2)
+                .map(|_| rws.next().memory_value() )
+                .flat_map(|word| word.to_be_bytes())
+                .collect::<Vec<_>>();
+
+            let input_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
+                rlc::value(
+                    input_bytes[input_bytes_start_offset..input_bytes_end_offset]
+                        .iter()
+                        .rev(),
+                    randomness,
+                )
+            });
+            let output_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
+                rlc::value(output_bytes[..output_bytes_end].iter().rev(), randomness)
+            });
+            let return_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
+                rlc::value(
+                    return_bytes[return_bytes_start_offset..return_bytes_end_offset]
+                        .iter()
+                        .rev(),
+                    randomness,
+                )
+            });
 
             let input_rws = Value::known(F::from(input_bytes_word_count as u64));
             let output_rws = Value::known(F::from(output_bytes_word_count as u64));
@@ -1030,6 +1096,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             trace!("return_rws: {return_rws:?}");
             (
                 input_len as u64,
+                input_bytes_rlc,
+                output_bytes_rlc,
+                return_bytes_rlc,
                 input_rws,
                 output_rws,
                 return_rws,
@@ -1037,6 +1106,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         } else {
             (
                 0,
+                Value::known(F::ZERO),
+                Value::known(F::ZERO),
+                Value::known(F::ZERO),
                 Value::known(F::ZERO),
                 Value::known(F::ZERO),
                 Value::known(F::ZERO),
