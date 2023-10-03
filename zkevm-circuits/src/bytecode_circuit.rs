@@ -33,7 +33,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use log::trace;
 use std::{iter, ops::Deref, vec};
 
 const PUSH_TABLE_WIDTH: usize = 2;
@@ -162,7 +161,6 @@ impl<F: Field> Deref for BytecodeCircuitAssignment<F> {
 #[derive(Clone, Debug)]
 /// Bytecode circuit configuration
 pub struct BytecodeCircuitConfig<F> {
-    minimum_rows: usize,
     q_enable: Column<Fixed>,
     q_first: Column<Fixed>,
     q_last: Column<Fixed>,
@@ -555,7 +553,6 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
         let index_length_diff_is_zero = IsZeroChip::construct(index_length_diff_is_zero);
 
         BytecodeCircuitConfig {
-            minimum_rows: meta.minimum_rows(),
             q_enable,
             q_first,
             q_last,
@@ -576,21 +573,12 @@ impl<F: Field> BytecodeCircuitConfig<F> {
     pub(crate) fn assign_internal(
         &self,
         layouter: &mut impl Layouter<F>,
-        size: usize,
+        max_rows: usize,
         witness: &BytecodeCircuitAssignment<F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        // Subtract the unusable rows from the size
-        assert!(size > self.minimum_rows);
+        let last_row_offset = max_rows - 1;
 
-        let last_row_offset = size - self.minimum_rows + 1;
-
-        trace!(
-            "size: {}, minimum_rows: {}, last_row_offset:{}",
-            size,
-            self.minimum_rows,
-            last_row_offset
-        );
         if witness.len() > last_row_offset {
             // The last_row_offset-th row must be reserved for padding.
             // so we have "last_row_offset rows" usable
@@ -778,18 +766,21 @@ pub struct BytecodeCircuit<F: Field> {
     pub(crate) bytecodes: CodeDB,
     /// Unrolled bytecodes
     pub(crate) rows: BytecodeCircuitAssignment<F>,
-    /// Circuit size
-    pub size: usize,
+    /// The number of Halo2 rows that can be utilized
+    ///
+    /// In tests, we set the number as small as possible to reduce MockProver's overhead.
+    /// In production, this number must be the power of degree minus unusable rows.
+    pub max_rows: usize,
 }
 
 impl<F: Field> BytecodeCircuit<F> {
     /// new BytecodeCircuitTester
-    pub fn new(bytecodes: CodeDB, size: usize) -> Self {
+    pub fn new(bytecodes: CodeDB, max_rows: usize) -> Self {
         let rows: BytecodeCircuitAssignment<F> = bytecodes.clone().into();
         Self {
             bytecodes,
             rows,
-            size,
+            max_rows,
         }
     }
 }
@@ -823,6 +814,6 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         config.load_aux_tables(layouter)?;
-        config.assign_internal(layouter, self.size, &self.rows, challenges)
+        config.assign_internal(layouter, self.max_rows, &self.rows, challenges)
     }
 }

@@ -70,7 +70,10 @@ pub struct FixedCParams {
     pub max_keccak_rows: usize,
 }
 
-/// Unset Circuits Parameters, computed dynamically together with circuit witness generation.
+/// Unset Circuits Parameters
+///
+/// To reduce the testing overhead, we determine the parameters by the testing inputs.
+/// A new [`FixedCParams`] will be computed from the generated circuit witness.
 #[derive(Debug, Clone, Copy)]
 pub struct DynamicCParams {}
 
