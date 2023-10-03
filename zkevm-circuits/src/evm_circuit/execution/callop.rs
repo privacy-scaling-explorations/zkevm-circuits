@@ -1120,6 +1120,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             offset,
             Value::known(F::from(precompile_input_len)),
         )?;
+        self.precompile_input_bytes_rlc
+            .assign(region, offset, precompile_input_bytes_rlc)?;
+        self.precompile_output_bytes_rlc
+            .assign(region, offset, precompile_output_bytes_rlc)?;
+        self.precompile_return_bytes_rlc
+            .assign(region, offset, precompile_return_bytes_rlc)?;
         self.precompile_input_rws
             .assign(region, offset, input_rws)?;
         self.precompile_output_rws
