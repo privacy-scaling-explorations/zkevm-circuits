@@ -2265,3 +2265,61 @@ func TestLongKey(t *testing.T) {
 
 	prepareWitness("LongKey", trieModifications, statedb)
 }
+
+func TestTrieDoesNotExistShortVal(t *testing.T) {
+	// No keys yet in the trie, when the first is added, a placeholder leaf is used in `S` proof.
+	blockNum := 2000003
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0xcaac46d9bd68bffb533320545a90cd92c6e98e58")
+
+	statedb.CreateAccount(addr)
+
+	statedb.DisableLoadingRemoteAccounts()
+
+	key1 := common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000")
+	// Let the value occupy more than 1 byte - the placeholder leaf needs to be properly adapted to have
+	// a correct RLP (as it has a value 0, but it's derived from the non-placeholder leaf):
+	val1 := common.HexToHash("0x111")
+
+	trieMod1 := TrieModification{
+		Type:    StorageChanged,
+		Key:     key1,
+		Value:   val1,
+		Address: addr,
+	}
+	
+	trieModifications := []TrieModification{trieMod1}
+
+	prepareWitness("TrieDoesNotExistShortVal", trieModifications, statedb)
+}
+
+func TestTrieDoesNotExistLongVal(t *testing.T) {
+	// No keys yet in the trie, when the first is added, a placeholder leaf is used in `S` proof.
+	blockNum := 2000003
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0xcaac46d9bd68bffb533320545a90cd92c6e98e58")
+
+	statedb.CreateAccount(addr)
+
+	statedb.DisableLoadingRemoteAccounts()
+
+	key1 := common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000")
+	val1 := common.HexToHash("0xEC9F6C9634165F91E22E58B90E3EDE393D959E47")
+
+	trieMod1 := TrieModification{
+		Type:    StorageChanged,
+		Key:     key1,
+		Value:   val1,
+		Address: addr,
+	}
+	
+	trieModifications := []TrieModification{trieMod1}
+
+	prepareWitness("TrieDoesNotExistLongVal", trieModifications, statedb)
+}
