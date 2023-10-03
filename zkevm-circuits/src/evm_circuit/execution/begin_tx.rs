@@ -34,6 +34,8 @@ use halo2_proofs::{
     plonk::{Error, Expression},
 };
 
+const PRECOMPILE_COUNT: usize = 9;
+
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
     // tx_id is query in current scope. The range should be determined here
@@ -169,6 +171,17 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Check gas_left is sufficient
         let gas_left = tx_gas.expr() - intrinsic_gas_cost;
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
+
+        // Add precompile contract address to access list
+        for addr in 1..=PRECOMPILE_COUNT {
+            cb.account_access_list_write_unchecked(
+                tx_id.expr(),
+                Word::new([addr.expr(), 0.expr()]),
+                1.expr(),
+                0.expr(),
+                None,
+            );
+        } // rwc_delta += PRECOMPILE_COUNT
 
         // Prepare access list of caller and callee
         cb.account_access_list_write_unchecked(
@@ -320,6 +333,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsPersistent
                 //   - Write CallContext IsSuccess
                 //   - Write Account (Caller) Nonce
+                //   - Write TxAccessListAccount (Precompile) x PRECOMPILE_COUNT
                 //   - Write TxAccessListAccount (Caller)
                 //   - Write TxAccessListAccount (Callee)
                 //   - Write TxAccessListAccount (Coinbase) for EIP-3651
@@ -338,7 +352,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsRoot
                 //   - Write CallContext IsCreate
                 //   - Write CallContext CodeHash
-                rw_counter: Delta(23.expr() + transfer_with_gas_fee.rw_delta()),
+                rw_counter: Delta(
+                    23.expr() + transfer_with_gas_fee.rw_delta() + PRECOMPILE_COUNT.expr(),
+                ),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
                 is_create: To(tx_is_create.expr()),
@@ -377,12 +393,15 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsPersistent
                     //   - Write CallContext IsSuccess
                     //   - Write Account Nonce
+                    //   - Write TxAccessListAccount (Precompile) x PRECOMPILE_COUNT
                     //   - Write TxAccessListAccount (Caller)
                     //   - Write TxAccessListAccount (Callee)
                     //   - Write TxAccessListAccount (Coinbase) for EIP-3651
                     //   - Read Account CodeHash
                     //   - a TransferWithGasFeeGadget
-                    rw_counter: Delta(9.expr() + transfer_with_gas_fee.rw_delta()),
+                    rw_counter: Delta(
+                        9.expr() + transfer_with_gas_fee.rw_delta() + PRECOMPILE_COUNT.expr(),
+                    ),
                     call_id: To(call_id.expr()),
                     ..StepStateTransition::any()
                 });
@@ -437,6 +456,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsPersistent
                     //   - Write CallContext IsSuccess
                     //   - Write Account Nonce
+                    //   - Write TxAccessListAccount (Precompile) x PRECOMPILE_COUNT
                     //   - Write TxAccessListAccount (Caller)
                     //   - Write TxAccessListAccount (Callee)
                     //   - Write TxAccessListAccount (Coinbase) for EIP-3651
@@ -455,7 +475,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsRoot
                     //   - Write CallContext IsCreate
                     //   - Write CallContext CodeHash
-                    rw_counter: Delta(22.expr() + transfer_with_gas_fee.rw_delta()),
+                    rw_counter: Delta(
+                        22.expr() + transfer_with_gas_fee.rw_delta() + PRECOMPILE_COUNT.expr(),
+                    ),
                     call_id: To(call_id.expr()),
                     is_root: To(true.expr()),
                     is_create: To(tx_is_create.expr()),
@@ -510,6 +532,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         let mut rws = StepRws::new(block, step);
         rws.offset_add(7);
+
+        rws.offset_add(PRECOMPILE_COUNT);
 
         let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
         let mut callee_code_hash = zero;
