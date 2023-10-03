@@ -610,7 +610,7 @@ impl<F: Field> TransferGadget<F> {
         receiver_address: Word<Expression<F>>,
         receiver_exists: Expression<F>,
         must_create: Expression<F>,
-        _prev_code_hash: Word<Expression<F>>,
+        // _prev_code_hash: Word<Expression<F>>,
         value: Word32Cell<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
