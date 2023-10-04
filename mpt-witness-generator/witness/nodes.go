@@ -41,6 +41,14 @@ func base64ToString(bs []byte) string {
 	return fmt.Sprintf(`"%s"`, hex.EncodeToString(bs))
 }
 
+func encodeArray(arrayBytes [][]byte) []string {
+	hexStrings := make([]string, len(arrayBytes))
+	for i, item := range arrayBytes {
+		hexStrings[i] = base64ToString(item)
+	}
+	return hexStrings
+}
+
 type StartNode struct {
 	DisablePreimageCheck bool   `json:"disable_preimage_check"`
 	ProofType            string `json:"proof_type"`
@@ -63,10 +71,12 @@ type ModExtensionNode struct {
 }
 
 func (n *ModExtensionNode) MarshalJSON() ([]byte, error) {
-	listRlpBytes1 := base64ToString(n.ListRlpBytes[0])
-	listRlpBytes2 := base64ToString(n.ListRlpBytes[1])
-	jsonResult := fmt.Sprintf(`{"list_rlp_bytes":[%s,%s]}`, listRlpBytes1, listRlpBytes2)
-	return []byte(jsonResult), nil
+	jsonData := struct {
+		ListRlpBytes []string `json:"list_rlp_bytes"`
+	}{
+		ListRlpBytes: encodeArray(n.ListRlpBytes[:]),
+	}
+	return json.Marshal(jsonData)
 }
 
 type AccountNode struct {
