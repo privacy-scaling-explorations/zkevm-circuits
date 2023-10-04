@@ -27,12 +27,13 @@ use eth_types::{Address, Field, Word};
 use gadgets::{
     batched_is_zero::{BatchedIsZeroChip, BatchedIsZeroConfig},
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    permutation::{PermutationChip, PermutationChipConfig},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, SecondPhase,
-        VirtualCells,
+        Advice, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, Instance,
+        SecondPhase, VirtualCells,
     },
     poly::Rotation,
 };
@@ -69,6 +70,17 @@ pub struct StateCircuitConfig<F> {
     lookups: LookupsConfig,
     // External tables
     mpt_table: MptTable,
+
+    // rw permutation config
+    rw_permutation_config: PermutationChipConfig<F>,
+
+    // rw_table pi for permutation
+    pi_rw_table: Column<Instance>,
+    // challenge pi for permutation
+    pi_permutation_challenges: Column<Instance>,
+    // fingerprints pi for permutation
+    prev_permutation_fingerprint: Column<Instance>,
+    next_permutation_fingerprint: Column<Instance>,
     _marker: PhantomData<F>,
 }
 
@@ -149,12 +161,25 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         let lexicographic_ordering =
             LexicographicOrderingConfig::configure(meta, sort_keys, lookups, power_of_randomness);
 
+        let rw_permutation_config = PermutationChip::configure(
+            meta,
+            <RwTable as LookupTable<F>>::advice_columns(&rw_table),
+        );
+
         // annotate columns
         rw_table.annotate_columns(meta);
         mpt_table.annotate_columns(meta);
         u8_table.annotate_columns(meta);
         u10_table.annotate_columns(meta);
         u16_table.annotate_columns(meta);
+
+        // rw_table pi for permutation
+        let pi_rw_table = meta.instance_column();
+        // challenge pi for permutation
+        let pi_permutation_challenges = meta.instance_column();
+        // fingerprints pi for permutation
+        let prev_permutation_fingerprint = meta.instance_column();
+        let next_permutation_fingerprint = meta.instance_column();
 
         let config = Self {
             selector,
@@ -168,6 +193,11 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             lookups,
             rw_table,
             mpt_table,
+            rw_permutation_config,
+            pi_rw_table,
+            pi_permutation_challenges,
+            prev_permutation_fingerprint,
+            next_permutation_fingerprint,
             _marker: PhantomData::default(),
         };
 
@@ -427,12 +457,24 @@ pub struct StateCircuit<F> {
     pub(crate) n_rows: usize,
     #[cfg(test)]
     overrides: HashMap<(dev::AdviceColumn, isize), F>,
+
+    /// permutation challenge
+    permu_alpha: F,
+    permu_gamma: F,
+    permu_prev_continuous_fingerprint: F,
+
     _marker: PhantomData<F>,
 }
 
 impl<F: Field> StateCircuit<F> {
     /// make a new state circuit from an RwMap
-    pub fn new(rw_map: RwMap, n_rows: usize) -> Self {
+    pub fn new(
+        rw_map: RwMap,
+        n_rows: usize,
+        permu_alpha: F,
+        permu_gamma: F,
+        permu_prev_continuous_fingerprint: F,
+    ) -> Self {
         let rows = rw_map.table_assignments(false); // address sorted
         let updates = MptUpdates::mock_from(&rows);
         Self {
@@ -441,6 +483,9 @@ impl<F: Field> StateCircuit<F> {
             n_rows,
             #[cfg(test)]
             overrides: HashMap::new(),
+            permu_alpha,
+            permu_gamma,
+            permu_prev_continuous_fingerprint,
             _marker: PhantomData::default(),
         }
     }
@@ -450,7 +495,13 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     type Config = StateCircuitConfig<F>;
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
-        Self::new(block.rws.clone(), block.circuits_params.max_rws)
+        Self::new(
+            block.rws.clone(),
+            block.circuits_params.max_rws,
+            block.permu_alpha,
+            block.permu_gamma,
+            block.permu_prev_continuous_fingerprint,
+        )
     }
 
     fn unusable_rows() -> usize {
@@ -479,12 +530,13 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         // Assigning to same columns in different regions should be avoided.
         // Here we use one single region to assign `overrides` to both rw table and
         // other parts.
-        layouter.assign_region(
+        let rw_table_first_n_last_cells = layouter.assign_region(
             || "state circuit",
             |mut region| {
-                config
-                    .rw_table
-                    .load_with_region(&mut region, &self.rows, self.n_rows)?;
+                let rw_table_first_n_last_cells =
+                    config
+                        .rw_table
+                        .load_with_region(&mut region, &self.rows, self.n_rows)?;
 
                 config.assign_with_region(&mut region, &self.rows, &self.updates, self.n_rows)?;
                 #[cfg(test)]
@@ -510,9 +562,69 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     }
                 }
 
-                Ok(())
+                Ok(rw_table_first_n_last_cells)
             },
-        )
+        )?;
+
+        // permutation cells
+        let (
+            alpha_cell,
+            gamma_cell,
+            prev_continuous_fingerprint_cell,
+            next_continuous_fingerprint_cell,
+        ) = layouter.assign_region(
+            || "rw permutation fingerprint",
+            |mut region| {
+                config.rw_permutation_config.assign(
+                    &mut region,
+                    Value::known(self.permu_alpha),
+                    Value::known(self.permu_gamma),
+                    Value::known(self.permu_prev_continuous_fingerprint),
+                    &self
+                        .rows
+                        .iter()
+                        .map(|row| {
+                            row.table_assignment::<F>()
+                                .unwrap()
+                                .values()
+                                .to_vec()
+                                .iter()
+                                .map(|f| Value::known(*f))
+                                .collect::<Vec<Value<F>>>()
+                        })
+                        .collect::<Vec<Vec<Value<F>>>>(),
+                )
+            },
+        )?;
+        // constrain permutation challenges
+        [alpha_cell, gamma_cell]
+            .iter()
+            .enumerate()
+            .try_for_each(|(i, cell)| {
+                layouter.constrain_instance(cell.cell(), config.pi_permutation_challenges, i)
+            })?;
+        // constraints prev,next fingerprints
+        [
+            (
+                prev_continuous_fingerprint_cell,
+                config.prev_permutation_fingerprint,
+            ),
+            (
+                next_continuous_fingerprint_cell,
+                config.next_permutation_fingerprint,
+            ),
+        ]
+        .iter()
+        .try_for_each(|(cell, column)| layouter.constrain_instance(cell.cell(), *column, 0))?;
+
+        let pi_initial_offset = 0;
+        rw_table_first_n_last_cells
+            .iter()
+            .enumerate()
+            .try_for_each(|(i, cell)| {
+                layouter.constrain_instance(cell.cell(), config.pi_rw_table, pi_initial_offset + i)
+            })?;
+        Ok(())
     }
 
     /// powers of randomness for instance columns

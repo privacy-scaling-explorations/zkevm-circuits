@@ -1,5 +1,6 @@
 //! The EVM circuit implementation.
 
+use gadgets::permutation::{PermutationChip, PermutationChipConfig};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::*,
@@ -50,6 +51,17 @@ pub struct EvmCircuitConfig<F> {
     copy_table: CopyTable,
     keccak_table: KeccakTable,
     exp_table: ExpTable,
+
+    // rw permutation config
+    rw_permutation_config: PermutationChipConfig<F>,
+
+    // rw_table pi for permutation
+    pi_rw_table: Column<Instance>,
+    // challenge pi for permutation
+    pi_permutation_challenges: Column<Instance>,
+    // fingerprints pi for permutation
+    prev_permutation_fingerprint: Column<Instance>,
+    next_permutation_fingerprint: Column<Instance>,
 }
 
 /// Circuit configuration arguments
@@ -126,6 +138,16 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         u8_table.annotate_columns(meta);
         u16_table.annotate_columns(meta);
 
+        let rw_permutation_config = PermutationChip::configure(
+            meta,
+            <RwTable as LookupTable<F>>::advice_columns(&rw_table),
+        );
+
+        let pi_rw_table = meta.instance_column();
+        let pi_permutation_challenges = meta.instance_column();
+        let prev_permutation_fingerprint = meta.instance_column();
+        let next_permutation_fingerprint = meta.instance_column();
+
         Self {
             fixed_table,
             u8_table,
@@ -138,6 +160,11 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             copy_table,
             keccak_table,
             exp_table,
+            rw_permutation_config,
+            pi_rw_table,
+            pi_permutation_challenges,
+            prev_permutation_fingerprint,
+            next_permutation_fingerprint,
         }
     }
 }
@@ -267,7 +294,96 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         let block = self.block.as_ref().unwrap();
 
         config.load_fixed_table(layouter, self.fixed_table_tags.clone())?;
-        config.execution.assign_block(layouter, block, challenges)
+
+        config.execution.assign_block(layouter, block, challenges)?;
+
+        // permutation cells
+        let (
+            alpha_cell,
+            gamma_cell,
+            prev_continuous_fingerprint_cell,
+            next_continuous_fingerprint_cell,
+        ) = layouter.assign_region(
+            || "rw table permutation fingerprint",
+            |mut region| {
+                config.rw_permutation_config.assign(
+                    &mut region,
+                    Value::known(block.permu_alpha),
+                    Value::known(block.permu_gamma),
+                    Value::known(block.permu_prev_continuous_fingerprint),
+                    &block
+                        .rws
+                        .table_assignments(true)
+                        .iter()
+                        .map(|row| {
+                            row.table_assignment::<F>()
+                                .unwrap()
+                                .values()
+                                .to_vec()
+                                .iter()
+                                .map(|f| Value::known(*f))
+                                .collect::<Vec<Value<F>>>()
+                        })
+                        .collect::<Vec<Vec<Value<F>>>>(),
+                )
+            },
+        )?;
+        // constrain permutation challenges
+        [alpha_cell, gamma_cell]
+            .iter()
+            .enumerate()
+            .try_for_each(|(i, cell)| {
+                layouter.constrain_instance(cell.cell(), config.pi_permutation_challenges, i)
+            })?;
+        // constraints prev,next fingerprints
+        [
+            (
+                prev_continuous_fingerprint_cell,
+                config.prev_permutation_fingerprint,
+            ),
+            (
+                next_continuous_fingerprint_cell,
+                config.next_permutation_fingerprint,
+            ),
+        ]
+        .iter()
+        .try_for_each(|(cell, column)| layouter.constrain_instance(cell.cell(), *column, 0))?;
+
+        let rw_table_first_n_last_cells = config.rw_table.load(
+            layouter,
+            &block.rws.table_assignments(true),
+            block.circuits_params.max_rws,
+        )?;
+
+        // constrain rw table first/last row to public input
+        rw_table_first_n_last_cells
+            .iter()
+            .enumerate()
+            .try_for_each(|(i, cell)| {
+                layouter.constrain_instance(cell.cell(), config.pi_rw_table, i)
+            })?;
+        Ok(())
+    }
+
+    /// Compute the public inputs for this circuit.
+    fn instance(&self) -> Vec<Vec<F>> {
+        let block = self.block.as_ref().unwrap();
+        let rws_assignments = block.rws.table_assignments(true);
+
+        assert!(rws_assignments.len() > 0);
+
+        let rws_values = [0, rws_assignments.len() - 1] // get first/last row and concat
+            .iter()
+            .map(|i| {
+                rws_assignments
+                    .get(*i)
+                    .map(|row| row.table_assignment().unwrap().values())
+                    .unwrap_or_default()
+            })
+            .flatten()
+            .collect::<Vec<F>>();
+
+        vec![rws_values]
     }
 }
 
@@ -413,11 +529,6 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             block.circuits_params.max_calldata,
         )?;
         block.rws.check_rw_counter_sanity();
-        config.rw_table.load(
-            &mut layouter,
-            &block.rws.table_assignments(true),
-            block.circuits_params.max_rws,
-        )?;
         config
             .bytecode_table
             .load(&mut layouter, block.bytecodes.clone())?;

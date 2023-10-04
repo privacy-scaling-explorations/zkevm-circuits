@@ -50,6 +50,13 @@ pub struct Block<F> {
     pub keccak_inputs: Vec<Vec<u8>>,
     /// Original Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
+
+    /// permutation challenge alpha
+    pub permu_alpha: F,
+    /// permutation challenge gamma
+    pub permu_gamma: F,
+    /// pre permutation fingerprint
+    pub permu_prev_continuous_fingerprint: F,
 }
 
 impl<F: Field> Block<F> {
@@ -244,6 +251,10 @@ pub fn block_convert<F: Field>(
     let mut block = Block {
         // randomness: F::from(0x100), // Special value to reveal elements after RLC
         randomness: F::from(0xcafeu64),
+        // TODO get permutation fingerprint & challenges
+        permu_alpha: F::from(1),
+        permu_gamma: F::from(1),
+        permu_prev_continuous_fingerprint: F::from(1),
         context: block.into(),
         rws,
         txs: block.txs().to_vec(),

@@ -26,7 +26,6 @@ pub mod exp_circuit;
 pub mod keccak_circuit;
 #[allow(dead_code, reason = "under active development")]
 pub mod mpt_circuit;
-pub mod permutation_circuit;
 pub mod pi_circuit;
 pub mod root_circuit;
 pub mod state_circuit;

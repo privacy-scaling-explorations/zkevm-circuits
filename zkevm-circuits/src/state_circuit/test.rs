@@ -46,7 +46,7 @@ fn test_state_circuit_ok(
         ..Default::default()
     });
 
-    let circuit = StateCircuit::<Fr>::new(rw_map, N_ROWS);
+    let circuit = StateCircuit::<Fr>::new(rw_map, N_ROWS, Fr::from(1), Fr::from(1), Fr::from(1));
     let instance = circuit.instance();
 
     let prover = MockProver::<Fr>::run(19, &circuit, instance).unwrap();
@@ -65,7 +65,13 @@ fn degree() {
 fn verifying_key_independent_of_rw_length() {
     let params = ParamsKZG::<Bn256>::setup(17, rand_chacha::ChaCha20Rng::seed_from_u64(2));
 
-    let no_rows = StateCircuit::<Fr>::new(RwMap::default(), N_ROWS);
+    let no_rows = StateCircuit::<Fr>::new(
+        RwMap::default(),
+        N_ROWS,
+        Fr::from(1),
+        Fr::from(1),
+        Fr::from(1),
+    );
     let one_row = StateCircuit::<Fr>::new(
         RwMap::from(&OperationContainer {
             memory: vec![Operation::new(
@@ -76,6 +82,9 @@ fn verifying_key_independent_of_rw_length() {
             ..Default::default()
         }),
         N_ROWS,
+        Fr::from(1),
+        Fr::from(1),
+        Fr::from(1),
     );
 
     let vk_no_rows = keygen_vk(&params, &no_rows).unwrap();
@@ -929,6 +938,9 @@ fn variadic_size_check() {
         updates,
         overrides: HashMap::default(),
         n_rows: N_ROWS,
+        permu_alpha: Fr::from(1),
+        permu_gamma: Fr::from(1),
+        permu_prev_continuous_fingerprint: Fr::from(1),
         _marker: std::marker::PhantomData::default(),
     };
     let power_of_randomness = circuit.instance();
@@ -957,6 +969,9 @@ fn variadic_size_check() {
         updates,
         overrides: HashMap::default(),
         n_rows: N_ROWS,
+        permu_alpha: Fr::from(1),
+        permu_gamma: Fr::from(1),
+        permu_prev_continuous_fingerprint: Fr::from(1),
         _marker: std::marker::PhantomData::default(),
     };
     let power_of_randomness = circuit.instance();
@@ -997,6 +1012,9 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
         updates,
         overrides,
         n_rows: N_ROWS,
+        permu_alpha: Fr::from(1),
+        permu_gamma: Fr::from(1),
+        permu_prev_continuous_fingerprint: Fr::from(1),
         _marker: std::marker::PhantomData::default(),
     };
     let instance = circuit.instance();

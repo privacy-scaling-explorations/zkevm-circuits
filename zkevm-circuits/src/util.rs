@@ -19,8 +19,6 @@ pub use gadgets::util::Expr;
 pub mod cell_manager;
 /// Cell Placement strategies
 pub mod cell_placement_strategy;
-/// Permutation fingerprints gadget
-pub mod permutation_fingerprints;
 
 /// Steal the expression from gate
 pub fn query_expression<F: Field, T>(
