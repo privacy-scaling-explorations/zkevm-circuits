@@ -29,9 +29,9 @@ impl<F: Field> PrecompileGadget<F> {
         _rd_length: Expression<F>,
         precompile_return_length: Expression<F>,
         // input bytes to precompile call.
-        input_bytes_rlc: Expression<F>,
+        _input_bytes_rlc: Expression<F>,
         // output result from precompile call.
-        output_bytes_rlc: Expression<F>,
+        _output_bytes_rlc: Expression<F>,
         // returned bytes back to caller.
         _return_bytes_rlc: Expression<F>,
     ) -> Self {
