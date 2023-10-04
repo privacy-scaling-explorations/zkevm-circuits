@@ -117,8 +117,7 @@ pub(crate) fn print_circuit_stats_by_states(
 ) {
     let mut implemented_states = Vec::new();
     for state in ExecutionState::iter() {
-        let height = state.get_step_height_option();
-        if height.is_some() {
+        if let Some(height) = state.get_step_height_option() {
             implemented_states.push(state);
         }
     }
