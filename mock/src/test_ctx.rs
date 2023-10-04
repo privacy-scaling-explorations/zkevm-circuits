@@ -88,6 +88,7 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
     pub geth_traces: Vec<eth_types::GethExecTrace>,
 }
 
+// FIXME: refactor with TestContext2 to reduce duplicated code
 impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethData {
     fn from(ctx: TestContext<NACC, NTX>) -> GethData {
         GethData {

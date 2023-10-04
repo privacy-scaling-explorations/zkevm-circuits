@@ -34,6 +34,7 @@ fn run<F: Field>(
     max_withdrawals: usize,
     max_calldata: usize,
     max_withdrawals: usize,
+    max_calldata: usize,
     public_data: PublicData,
 ) -> Result<(), Vec<VerifyFailure>> {
     let mut public_data = public_data;
@@ -199,10 +200,6 @@ fn test_1wd_1wdmax() {
                 .number(0xcafeu64)
                 .chain_id(*MOCK_CHAIN_ID)
                 .withdrawal_hash(Some(H256::from_low_u64_le(0xabcd)))
-        },
-    )
-    .unwrap();
-    let mut wallets = HashMap::new();
     wallets.insert(wallet_a.address(), wallet_a);
 
     let mut block: GethData = test_ctx.into();

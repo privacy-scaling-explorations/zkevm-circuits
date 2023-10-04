@@ -731,7 +731,6 @@ impl<F: Field> PiCircuitConfig<F> {
         let tx_value_inv = tx_value.map(|t| t.map(|x| x.invert().unwrap_or(F::ZERO)));
 
         self.q_tx_table.enable(region, offset)?;
-        self.q_wd_table.enable(region, offset)?;
 
         // Assign vals to Tx_table
         let tx_id_assignedcell = region.assign_advice(
@@ -918,6 +917,10 @@ impl<F: Field> PiCircuitConfig<F> {
         rpi_bytes: &mut [u8],
         zero_cell: AssignedCell<F, F>,
     ) -> Result<(), Error> {
+        if id != 0 && amount != 0 {
+            self.q_wd_table.enable(region, offset)?;
+        }
+
         let id_assigned_cell = region.assign_advice(
             || "withdrawal_id",
             self.wd_table.id,
@@ -1038,6 +1041,7 @@ impl<F: Field> PiCircuitConfig<F> {
         )?;
         Ok(())
     }
+
     /// assign raw bytes
     #[allow(clippy::too_many_arguments)]
     fn assign_raw_bytes(
@@ -1352,6 +1356,27 @@ impl<F: Field> PiCircuitConfig<F> {
         block_copy_cells.push((block_value, word));
         *block_table_offset += 1;
 
+        // withdrawals_root
+        let block_value = Word::from(block_values.withdrawals_root)
+            .into_value()
+            .assign_advice(
+                region,
+                || "withdrawals_root",
+                self.block_table.value,
+                *block_table_offset,
+            )?;
+        let (_, word) = self.assign_raw_bytes(
+            region,
+            &block_values.withdrawals_root.to_le_bytes(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell.clone(),
+        )?;
+        block_copy_cells.push((block_value, word));
+        *block_table_offset += 1;
+
         for prev_hash in block_values.history_hashes {
             let block_value = Word::from(prev_hash).into_value().assign_advice(
                 region,
@@ -1451,23 +1476,6 @@ impl<F: Field> PiCircuitConfig<F> {
             current_rpi_offset,
             challenges,
             zero_cell.clone(),
-        )?;
-
-        // block withdrawals root
-        self.assign_raw_bytes(
-            region,
-            &extra
-                .withdrawals_root
-                .to_fixed_bytes()
-                .iter()
-                .copied()
-                .rev()
-                .collect_vec(),
-            rpi_bytes_keccakrlc,
-            rpi_bytes,
-            current_offset,
-            challenges,
-            zero_cell,
         )?;
 
         Ok(())
@@ -1894,6 +1902,8 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                         Ok(())
                     })?;
                 assert_eq!(current_rpi_offset, 0);
+
+                config.assign_empty_wd_table_row(&mut region, withdrawal_offset)?;
 
                 // assign keccak digest
                 let digest_word = self.public_data.get_rpi_digest_word::<F>(

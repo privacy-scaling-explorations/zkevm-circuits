@@ -19,6 +19,7 @@ pub use sha3::Sha3CodeGen;
 pub use test_ctx::TestContext;
 pub use test_ctx2::TestContext2;
 pub use transaction::{AddrOrWallet, MockTransaction, CORRECT_MOCK_TXS};
+pub(crate) use withdrawal::MockWithdrawal;
 
 /// Mock block gas limit
 pub const MOCK_BLOCK_GAS_LIMIT: u64 = 10_000_000_000_000_000;

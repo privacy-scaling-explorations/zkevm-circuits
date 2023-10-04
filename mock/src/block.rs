@@ -69,7 +69,7 @@ impl Default for MockBlock {
             mix_hash: Hash::zero(),
             nonce: H64::zero(),
             base_fee_per_gas: Some(*MOCK_BASEFEE),
-            withdrawal_hash: None,
+            withdrawal_hash: Some(Hash::zero()),
             // Other information
             total_difficulty: Word::zero(),
             seal_fields: Vec::new(),
