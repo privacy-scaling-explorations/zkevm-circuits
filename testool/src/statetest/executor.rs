@@ -14,7 +14,11 @@ use external_tracer::TraceConfig;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
-use zkevm_circuits::{super_circuit::SuperCircuit, test_util::CircuitTestBuilder, witness::Block};
+use zkevm_circuits::{
+    super_circuit::SuperCircuit,
+    test_util::{CircuitTestBuilder, CircuitTestError},
+    witness::Block,
+};
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
@@ -329,7 +333,20 @@ pub fn run_test(
         let block: Block<Fr> =
             zkevm_circuits::evm_circuit::witness::block_convert(&builder).unwrap();
 
-        CircuitTestBuilder::<1, 1>::new_from_block(block).run();
+        CircuitTestBuilder::<1, 1>::new_from_block(block)
+            .run_with_result()
+            .map_err(|err| match err {
+                CircuitTestError::VerificationFailed { reasons, .. } => {
+                    StateTestError::CircuitUnsatisfied {
+                        num_failure: reasons.len(),
+                        first_failure: reasons[0].to_string(),
+                    }
+                }
+                err => StateTestError::Exception {
+                    expected: false,
+                    found: err.to_string(),
+                },
+            })?;
     } else {
         geth_data.sign(&wallets);
 
