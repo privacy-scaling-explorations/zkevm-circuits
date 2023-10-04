@@ -295,9 +295,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         .caller_ctx_mut()?
                         .memory
                         .extend_at_least(ret_offset + length);
-
-                    // caller_ctx_mut.memory.0[ret_offset..ret_offset + length]
-                    // .copy_from_slice(&result[..length]);
                 }
 
                 for (field, value) in [
@@ -509,6 +506,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
+                state.caller_ctx_mut()?.return_data.clear();
                 state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
                 Ok(vec![exec_step])
             }
@@ -582,6 +580,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
+                state.caller_ctx_mut()?.return_data.clear();
                 state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
                 Ok(vec![exec_step])
             }
