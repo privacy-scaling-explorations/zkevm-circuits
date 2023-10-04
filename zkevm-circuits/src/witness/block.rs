@@ -97,7 +97,7 @@ impl<F: Field> Block<F> {
 
     /// Return the root of withdrawals in this block
     pub fn withdrawals_root(&self) -> H256 {
-        self.eth_block.withdrawals_root.unwrap()
+        self.eth_block.withdrawals_root.unwrap_or_default()
     }
 
     /// Obtains the expected Circuit degree needed in order to be able to test

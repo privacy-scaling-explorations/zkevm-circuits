@@ -172,7 +172,7 @@ impl Block {
 
     /// Return root of withdrawals of this block
     pub fn withdrawals_root(&self) -> H256 {
-        self.eth_block.withdrawals_root.unwrap()
+        self.eth_block.withdrawals_root.unwrap_or_default()
     }
 
     /// Push a copy event to the block.
