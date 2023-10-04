@@ -11,6 +11,8 @@ use eth_types::{
 };
 use ethers_core::utils::get_contract_address;
 
+const PRECOMPILE_COUNT: u64 = 9;
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct BeginEndTx;
 
@@ -61,7 +63,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     )?;
 
     // Add precompile contract address to access list
-    for address in 1..=9 {
+    for address in 1..=PRECOMPILE_COUNT {
         let address = eth_types::Address::from_low_u64_be(address);
         let is_warm_prev = !state.sdb.add_account_to_access_list(address);
         state.tx_accesslist_account_write(
