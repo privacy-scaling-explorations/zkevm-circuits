@@ -278,7 +278,7 @@ impl PublicData {
         let all_wd_bytes = iter::empty()
             .chain(self.withdrawals.clone())
             .chain((0..(max_withdrawals - self.withdrawals.len())).map(|_| wd_defaults))
-            .flat_map(|wd| wd_bytes_fn(wd));
+            .flat_map(wd_bytes_fn);
 
         result.chain(all_wd_bytes).collect_vec()
     }

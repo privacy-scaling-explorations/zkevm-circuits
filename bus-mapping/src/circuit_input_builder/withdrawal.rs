@@ -5,7 +5,7 @@ use eth_types::Address;
 use crate::Error;
 
 #[derive(Debug, Default)]
-/// Context of a [`Withdrawal`] which can mutate in an [`ExecStep`].
+/// Context of a [`Withdrawal`].
 pub struct WithdrawalContext {
     /// Unique identifier of a withdrawal. This value starts from 0 and then increases
     /// monotonically.
@@ -50,7 +50,7 @@ impl Withdrawal {
     }
     /// Return the amount in this withdrawal
     pub fn amount_in_wei(&self) -> u64 {
-        self.amount * 10 ^ 9
+        self.amount * (10 ^ 9)
     }
 
     /// Constructor for padding withdrawal in withdrawal circuit

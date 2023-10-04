@@ -19,7 +19,7 @@ pub struct TestContext2<const NACC: usize, const NTX: usize, const NWD: usize> {
     /// Account list
     pub accounts: [Account; NACC],
     /// history hashes contains most recent 256 block hashes in history, where
-    /// the lastest one is at history_hashes[history_hashes.len() - 1].
+    /// the latest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
@@ -196,7 +196,7 @@ pub fn gen_geth_traces(
             .iter()
             .map(eth_types::geth_types::Transaction::from)
             .collect(),
-        withdrawals: withdrawals,
+        withdrawals,
         logger_config,
     };
     let traces = trace(&trace_config)?;

@@ -38,10 +38,10 @@ impl From<MockWithdrawal> for ethers_core::types::Withdrawal {
 impl From<MockWithdrawal> for Withdrawal {
     fn from(mock: MockWithdrawal) -> Self {
         Withdrawal {
-            id: mock.id.into(),
+            id: mock.id,
             validator_id: mock.validator_id,
             address: mock.address,
-            amount: mock.amount.into(),
+            amount: mock.amount,
         }
     }
 }

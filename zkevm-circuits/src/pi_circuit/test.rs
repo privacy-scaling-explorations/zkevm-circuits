@@ -6,7 +6,7 @@ use super::*;
 use bus_mapping::{
     circuit_input_builder::FixedCParams, mock::BlockData, state_db::EMPTY_CODE_HASH_LE,
 };
-use eth_types::{address, bytecode, geth_types::GethData, Word, H160, H256};
+use eth_types::{bytecode, geth_types::GethData, Word, H160, H256};
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},

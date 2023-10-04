@@ -61,7 +61,6 @@ impl WdTable {
         layouter.assign_region(
             || "wd table",
             |mut region| {
-                let mut offset = 0;
                 let advice_columns = [
                     self.id,
                     self.validator_id,
@@ -74,7 +73,11 @@ impl WdTable {
                 let padding_withdrawals: Vec<_> = (withdrawals.len()..max_withdrawals)
                     .map(|i| Withdrawal::padding_withdrawal(i + 1))
                     .collect();
-                for wd in withdrawals.iter().chain(padding_withdrawals.iter()) {
+                for (offset, wd) in withdrawals
+                    .iter()
+                    .chain(padding_withdrawals.iter())
+                    .enumerate()
+                {
                     let address_word = Word::from(wd.address);
                     let row = [
                         Value::known(F::from(wd.id)),
@@ -90,7 +93,6 @@ impl WdTable {
                         &row,
                         "assign wd table",
                     )?;
-                    offset += 1;
                 }
 
                 Ok(())

@@ -1459,7 +1459,7 @@ impl<F: Field> PiCircuitConfig<F> {
             rpi_bytes,
             current_offset,
             challenges,
-            zero_cell.clone(),
+            zero_cell,
         )?;
 
         Ok(())

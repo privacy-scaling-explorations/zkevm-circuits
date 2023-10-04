@@ -164,7 +164,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 max_calldata,
                 block_table: block_table.clone(),
                 tx_table: tx_table.clone(),
-                wd_table: wd_table.clone(),
+                wd_table,
                 keccak_table: keccak_table.clone(),
                 challenges: challenges.clone(),
             },
