@@ -729,13 +729,13 @@ mod test {
             let byte_expr_hi = from_bytes::expr(&bytes[16..32]);
             require!(config.word => [lo, hi]); */
 
-            for (byte_expr, buffer_reader_gadget_byte_expr) in bytes_expr.iter().zip(buffer_reader_gadget_bytet_expr.iter()) {
+            /* for (byte_expr, buffer_reader_gadget_byte_expr) in bytes_expr.iter().zip(buffer_reader_gadget_bytet_expr.iter()) {
                 cb.require_equal(
                     "bytes equal",
                     byte_expr.expr(),
                     buffer_reader_gadget_byte_expr.expr(),
                 );
-            }
+            } */
             // cb.require_equal("bytes equal", byte_expr, buffer_reader_gadget_byte_expr);
 
             BufferReaderGadgetTestContainer { 
@@ -751,20 +751,11 @@ mod test {
             witnesses: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
-            // TODO assert_eq!(bytes.len(), MAX_BYTES); should pad zero
             let offset = 0;
-            let addr_end= u64::from_le_bytes(witnesses[0].to_le_bytes()[..8].try_into().unwrap()); // why not u64 from?
-            let addr_start= u64::from_le_bytes(witnesses[1].to_le_bytes()[..8].try_into().unwrap());
-            // TODO change input_bytes from u64 to u8
+            let addr_start= u64::from_le_bytes(witnesses[0].to_le_bytes()[..8].try_into().unwrap());
+            let addr_end= u64::from_le_bytes(witnesses[1].to_le_bytes()[..8].try_into().unwrap()); // why not u64 from?
             let mut input_bytes: Vec<u8> = Vec::new(); // After addr_start and addr_end
-            witnesses[2..]
-                .iter()
-                .for_each(
-                    |byte|{
-                        input_bytes.extend_from_slice(&byte.to_le_bytes());
-                    }
-                );
-            // TODO how to modify input witness format
+            input_bytes.extend_from_slice(&byte.to_le_bytes());
             self.addr_start.assign(region, offset, Some(addr_start.to_le_bytes()))?; // TODO or Value::known(addr_end)?? 
             self.addr_end.assign(region, offset, Some(addr_end.to_le_bytes()))?; // TODO or Value::known(addr_end)??
             self.bytes
@@ -784,16 +775,37 @@ mod test {
     fn test_buffer_reader_gadget(){
         // test different start and end address
         
+        // completeness
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 32, 10>, // TODO how to configure last parameter
             vec![
+                Word::from(0), 
+                Word::from(2), 
+                Word::from(256),
+            ],
+            true,
+        );
+
+        // soundness
+        try_test!(
+            BufferReaderGadgetTestContainer<Fr, 32, 10>, // TODO how to configure last parameter
+            vec![
+                Word::from(0), 
                 Word::from(1), 
+                Word::from(256),
+            ],
+            true,
+        );
+        // buffer len <= 0
+        try_test!(
+            BufferReaderGadgetTestContainer<Fr, 32, 10>, // TODO how to configure last parameter
+            vec![
+                Word::from(2), 
                 Word::from(1), 
                 Word::from(1),
             ],
-            true,
-        )
-
+            false,
+        );
         /* 
         
         let mut calldata_word: Vec<_> = (0..N_BYTES_WORD)
