@@ -10,7 +10,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use std::{convert::TryInto, env::var, iter, marker::PhantomData};
+use std::{convert::TryInto, env::var, marker::PhantomData};
 
 mod account_leaf;
 mod branch;
