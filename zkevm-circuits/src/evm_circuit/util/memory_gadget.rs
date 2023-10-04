@@ -729,13 +729,18 @@ mod test {
             let byte_expr_hi = from_bytes::expr(&bytes[16..32]);
             require!(config.word => [lo, hi]); */
 
-            /* for (byte_expr, buffer_reader_gadget_byte_expr) in bytes_expr.iter().zip(buffer_reader_gadget_bytet_expr.iter()) {
+            // test byte API
+            for (byte_expr, buffer_reader_gadget_byte_expr) in bytes_expr.iter().zip(buffer_reader_gadget_bytet_expr.iter()) {
                 cb.require_equal(
                     "bytes equal",
                     byte_expr.expr(),
                     buffer_reader_gadget_byte_expr.expr(),
                 );
-            } */
+            }
+
+            // test read_flag API
+            // TODO
+
             // cb.require_equal("bytes equal", byte_expr, buffer_reader_gadget_byte_expr);
 
             BufferReaderGadgetTestContainer { 
