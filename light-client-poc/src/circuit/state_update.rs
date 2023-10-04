@@ -14,14 +14,13 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{
         Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, ProvingKey,
-        Selector, VerifyingKey,
+        Selector,
     },
     poly::Rotation,
     SerdeFormat,
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use zkevm_circuits::{
     keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
@@ -33,8 +32,8 @@ use zkevm_circuits::{
 pub const DEFAULT_MAX_PROOF_COUNT: usize = 10;
 pub const DEFAULT_CIRCUIT_DEGREE: usize = 14;
 
-use crate::witness::{
-    LightClientWitness, PublicInputs, SingleTrieModification, SingleTrieModifications, Transforms,
+use super::witness::{
+    PublicInputs, SingleTrieModification, SingleTrieModifications, StateUpdateWitness, Transforms,
 };
 
 use halo2_proofs::{
@@ -54,13 +53,13 @@ use halo2_proofs::{
 };
 
 // A=>B  eq ~(A & ~B) (it is not the case that A is true and B is false)
-pub fn xif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
+fn xif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
     and::expr([a, not::expr(b)])
 }
 
 ///
 #[derive(Clone)]
-pub struct LightClientCircuitConfig<F: Field> {
+pub struct StateUpdateCircuitConfig<F: Field> {
     #[cfg(not(feature = "disable-keccak"))]
     pub keccak_config: KeccakCircuitConfig<F>,
     pub mpt_config: MPTConfig<F>,
@@ -82,7 +81,7 @@ pub struct LightClientCircuitConfig<F: Field> {
 
 /// MPT Circuit for proving the storage modification is valid.
 #[derive(Default)]
-pub struct LightClientCircuit<F: Field> {
+pub struct StateUpdateCircuit<F: Field> {
     pub transforms: Transforms,
     #[cfg(not(feature = "disable-keccak"))]
     pub keccak_circuit: KeccakCircuit<F>,
@@ -92,8 +91,8 @@ pub struct LightClientCircuit<F: Field> {
     pub max_proof_count: usize,
 }
 
-impl<F: Field> Circuit<F> for LightClientCircuit<F> {
-    type Config = (LightClientCircuitConfig<F>, Challenges);
+impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
+    type Config = (StateUpdateCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
     type Params = MPTCircuitParams;
 
@@ -181,6 +180,7 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
             meta,
             |meta| meta.query_selector(q_enable),
             |meta| {
+                // TODO: quite ugly, need to compare with zero
                 (meta.query_advice(pi_mpt.new_root.lo(), Rotation::cur())
                     - meta.query_advice(pi_mpt.new_root.lo(), Rotation::next()))
                     + (meta.query_advice(pi_mpt.new_root.hi(), Rotation::cur())
@@ -289,7 +289,7 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
                 .collect()
         });
 
-        let config = LightClientCircuitConfig {
+        let config = StateUpdateCircuitConfig {
             #[cfg(not(feature = "disable-keccak"))]
             keccak_config,
             mpt_config,
@@ -479,19 +479,19 @@ impl<F: Field> Circuit<F> for LightClientCircuit<F> {
 }
 
 #[derive(Clone)]
-pub struct LightClientCircuitKeys {
+pub struct StateUpdateCircuitKeys {
     general_params: ParamsKZG<Bn256>,
     verifier_params: ParamsVerifierKZG<Bn256>,
     pk: ProvingKey<G1Affine>,
 }
 
-impl LightClientCircuitKeys {
-    pub fn new(circuit: &LightClientCircuit<Fr>) -> LightClientCircuitKeys {
+impl StateUpdateCircuitKeys {
+    pub fn new(circuit: &StateUpdateCircuit<Fr>) -> StateUpdateCircuitKeys {
         let mut rng = ChaCha20Rng::seed_from_u64(42);
 
         let start = Instant::now();
 
-        // let circuit = LightClientCircuit::default();
+        // let circuit = StateUpdateCircuit::default();
 
         let general_params = ParamsKZG::<Bn256>::setup(circuit.degree as u32, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
@@ -502,7 +502,7 @@ impl LightClientCircuitKeys {
 
         println!("key generation time: {:?}", start.elapsed());
 
-        LightClientCircuitKeys {
+        StateUpdateCircuitKeys {
             general_params,
             verifier_params,
             pk,
@@ -523,8 +523,8 @@ impl LightClientCircuitKeys {
         let general_params = ParamsKZG::<Bn256>::read_custom(&mut bytes, SerdeFormat::RawBytes)?;
         let verifier_params =
             ParamsVerifierKZG::<Bn256>::read_custom(&mut bytes, SerdeFormat::RawBytes)?;
-        let circuit_params = LightClientCircuit::<Fr>::default().params();
-        let pk = ProvingKey::<G1Affine>::read::<_, LightClientCircuit<Fr>>(
+        let circuit_params = StateUpdateCircuit::<Fr>::default().params();
+        let pk = ProvingKey::<G1Affine>::read::<_, StateUpdateCircuit<Fr>>(
             &mut bytes,
             SerdeFormat::RawBytes,
             circuit_params,
@@ -537,13 +537,13 @@ impl LightClientCircuitKeys {
     }
 }
 
-impl LightClientCircuit<Fr> {
+impl StateUpdateCircuit<Fr> {
     pub fn new(
-        witness: LightClientWitness<Fr>,
+        witness: StateUpdateWitness<Fr>,
         degree: usize,
         max_proof_count: usize,
-    ) -> Result<LightClientCircuit<Fr>> {
-        let LightClientWitness {
+    ) -> Result<StateUpdateCircuit<Fr>> {
+        let StateUpdateWitness {
             mpt_witness,
             transforms,
             lc_witness,
@@ -571,7 +571,7 @@ impl LightClientCircuit<Fr> {
             _marker: std::marker::PhantomData,
         };
 
-        let lc_circuit = LightClientCircuit::<Fr> {
+        let lc_circuit = StateUpdateCircuit::<Fr> {
             transforms,
             #[cfg(not(feature = "disable-keccak"))]
             keccak_circuit,
@@ -603,7 +603,7 @@ impl LightClientCircuit<Fr> {
         prover.assert_satisfied_at_rows_par(0..num_rows, 0..num_rows);
     }
 
-    pub fn prove(self, keys: &LightClientCircuitKeys) -> Result<Vec<u8>> {
+    pub fn prove(self, keys: &StateUpdateCircuitKeys) -> Result<Vec<u8>> {
         let rng = ChaCha20Rng::seed_from_u64(42);
 
         // Create a proof
@@ -619,7 +619,7 @@ impl LightClientCircuit<Fr> {
             Challenge255<G1Affine>,
             ChaCha20Rng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            LightClientCircuit<Fr>,
+            StateUpdateCircuit<Fr>,
         >(
             &keys.general_params,
             &keys.pk,
@@ -636,10 +636,10 @@ impl LightClientCircuit<Fr> {
         Ok(proof)
     }
 
-    pub fn verify(proof: &[u8], public_inputs: &[Fr], keys: &LightClientCircuitKeys) -> Result<()> {
+    pub fn verify(proof: &[u8], public_inputs: &[Fr], keys: &StateUpdateCircuitKeys) -> Result<()> {
         // Bench verification time
         let start = Instant::now();
-        let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
+        let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(proof);
         let strategy = SingleStrategy::new(&keys.general_params);
 
         verify_proof::<

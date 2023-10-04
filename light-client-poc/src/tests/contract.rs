@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use super::utils::MM;
+use crate::utils::MM;
 use ethers::{
     core::types::transaction::eip2930::AccessList,
     middleware::SignerMiddleware,

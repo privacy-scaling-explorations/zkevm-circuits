@@ -8,11 +8,9 @@ use ethers::{
 use eyre::Result;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 
-use std::{collections::HashMap, convert::TryFrom, sync::Arc, time::Duration};
+use std::{convert::TryFrom, sync::Arc, time::Duration};
 use zkevm_circuits::mpt_circuit::witness_row::*;
 
-// #[rustfmt_skip]
-#[allow(dead_code)]
 pub fn print_nodes(node: &[Node]) {
     for n in node {
         println!("node:");

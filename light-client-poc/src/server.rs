@@ -7,11 +7,9 @@ use eyre::Result;
 use halo2_proofs::halo2curves::bn256::Fr;
 use std::{collections::HashMap, str::FromStr, time::SystemTime};
 
-use crate::{
-    circuit::{
-        LightClientCircuit, LightClientCircuitKeys, DEFAULT_CIRCUIT_DEGREE, DEFAULT_MAX_PROOF_COUNT,
-    },
-    witness::{LightClientWitness, PublicInputs},
+use crate::circuit::{
+    PublicInputs, StateUpdateCircuit, StateUpdateCircuitKeys, StateUpdateWitness,
+    DEFAULT_CIRCUIT_DEGREE, DEFAULT_MAX_PROOF_COUNT,
 };
 
 pub async fn serve() -> Result<()> {
@@ -51,7 +49,7 @@ pub async fn serve() -> Result<()> {
 
         last_processed_block = last_processed_block + 1;
 
-        let witness = LightClientWitness::<Fr>::build(
+        let witness = StateUpdateWitness::<Fr>::build(
             client.clone(),
             PROVIDER_URL,
             last_processed_block,
@@ -61,22 +59,22 @@ pub async fn serve() -> Result<()> {
 
         let Some(witness) = witness else {
                 continue;
-            };
+        };
 
         let public_inputs: PublicInputs<Fr> = (&witness.lc_witness).into();
         let circuit =
-            LightClientCircuit::new(witness, DEFAULT_CIRCUIT_DEGREE, DEFAULT_MAX_PROOF_COUNT)?;
+            StateUpdateCircuit::new(witness, DEFAULT_CIRCUIT_DEGREE, DEFAULT_MAX_PROOF_COUNT)?;
 
         println!("trns: {:#?}", circuit.transforms);
 
         circuit.assert_satisfied();
 
         if keys.is_none() {
-            keys = Some(LightClientCircuitKeys::new(&circuit));
+            keys = Some(StateUpdateCircuitKeys::new(&circuit));
         }
 
         let proof = circuit.prove(keys.as_ref().unwrap())?;
-        LightClientCircuit::verify(&proof, &public_inputs, keys.as_ref().unwrap())?;
+        StateUpdateCircuit::verify(&proof, &public_inputs, keys.as_ref().unwrap())?;
 
         storage.insert(last_processed_block, proof);
     }

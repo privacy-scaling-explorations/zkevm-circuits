@@ -72,7 +72,7 @@ impl TrieModificationBuilder for TrieModification {
 }
 
 #[derive(Default)]
-pub struct LightClientWitness<F: Field> {
+pub struct StateUpdateWitness<F: Field> {
     pub transforms: Transforms,
     pub lc_witness: SingleTrieModifications<F>,
     pub mpt_witness: Vec<Node>,
@@ -131,32 +131,7 @@ impl<F: Field> From<&SingleTrieModifications<F>> for PublicInputs<F> {
     }
 }
 
-impl<F: Field> PublicInputs<F> {
-    pub fn serialize(&self) -> Vec<u8> {
-        self.0[5..].iter().map(|f| f.to_repr()).flatten().collect()
-    }
-    pub fn unserialize(old_root: H256, prev_root: H256, bytes: Vec<u8>) -> PublicInputs<F> {
-        let mut pi = Vec::new();
-
-        pi.push(F::from((bytes.len() as u64) / 6));
-
-        let mut chunks = bytes.chunks_exact(32);
-        while let Some(chunk) = chunks.next() {
-            let typ = F::from_repr(chunk.try_into().unwrap()).unwrap();
-            let address = F::from_repr(chunks.next().unwrap().try_into().unwrap()).unwrap();
-            let value_lo = F::from_repr(chunks.next().unwrap().try_into().unwrap()).unwrap();
-            let value_hi = F::from_repr(chunks.next().unwrap().try_into().unwrap()).unwrap();
-            let key_lo = F::from_repr(chunks.next().unwrap().try_into().unwrap()).unwrap();
-            let key_hi = F::from_repr(chunks.next().unwrap().try_into().unwrap()).unwrap();
-
-            pi.append(&mut vec![typ, address, value_lo, value_hi, key_lo, key_hi]);
-        }
-
-        PublicInputs(pi)
-    }
-}
-
-impl<F: Field> LightClientWitness<F> {
+impl<F: Field> StateUpdateWitness<F> {
     pub async fn build(
         client: Arc<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
         provider: &str,
