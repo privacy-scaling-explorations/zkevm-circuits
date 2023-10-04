@@ -1,11 +1,10 @@
-//! Mock types and functions to generate Test enviroments for ZKEVM tests
+//! Mock types and functions to generate Test environments for ZKEVM tests
 
 use crate::{eth, MockAccount, MockBlock, MockTransaction, TestContext2};
 use eth_types::{
-    geth_types::{Account, BlockConstants, GethData},
-    Block, Bytecode, Error, GethExecTrace, Transaction, Word,
+    geth_types::{Account, GethData},
+    Bytecode, Error, Word,
 };
-use external_tracer::{trace, TraceConfig};
 use helpers::*;
 
 pub use external_tracer::LoggerConfig;
@@ -89,7 +88,6 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
     pub geth_traces: Vec<eth_types::GethExecTrace>,
 }
 
-// FIXME: refactor with TestContext2 to reduce duplicated code
 impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethData {
     fn from(ctx: TestContext<NACC, NTX>) -> GethData {
         GethData {
@@ -172,35 +170,6 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             |block, _txs| block,
         )
     }
-}
-
-/// Generates execution traces for the transactions included in the provided
-/// Block
-pub fn gen_geth_traces(
-    chain_id: Word,
-    block: Block<Transaction>,
-    accounts: Vec<Account>,
-    history_hashes: Option<Vec<Word>>,
-    logger_config: LoggerConfig,
-) -> Result<Vec<GethExecTrace>, Error> {
-    let trace_config = TraceConfig {
-        chain_id,
-        history_hashes: history_hashes.unwrap_or_default(),
-        block_constants: BlockConstants::try_from(&block)?,
-        accounts: accounts
-            .iter()
-            .map(|account| (account.address, account.clone()))
-            .collect(),
-        transactions: block
-            .transactions
-            .iter()
-            .map(eth_types::geth_types::Transaction::from)
-            .collect(),
-        withdrawals: vec![],
-        logger_config,
-    };
-    let traces = trace(&trace_config)?;
-    Ok(traces)
 }
 
 /// Collection of helper functions which contribute to specific rutines on the

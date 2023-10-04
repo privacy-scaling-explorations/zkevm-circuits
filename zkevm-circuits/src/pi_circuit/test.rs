@@ -190,7 +190,6 @@ fn test_1wd_1wdmax() {
                 .input(calldata.into())
                 .gas((1e16 as u64).into());
         },
-        // |_|{},
         |mut wds| {
             wds[0]
                 .id(101)
