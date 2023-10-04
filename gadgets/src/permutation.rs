@@ -31,6 +31,13 @@ pub struct PermutationChipConfig<F> {
     _phantom: PhantomData<F>,
 }
 
+type PermutationAssignedCells<F> = (
+    AssignedCell<F, F>,
+    AssignedCell<F, F>,
+    AssignedCell<F, F>,
+    AssignedCell<F, F>,
+);
+
 impl<F: Field> PermutationChipConfig<F> {
     /// assign
     pub fn assign(
@@ -41,15 +48,8 @@ impl<F: Field> PermutationChipConfig<F> {
         prev_continuous_fingerprint: Value<F>,
         _next_continuous_fingerprint: Value<F>,
         col_values: &Vec<Vec<Value<F>>>,
-    ) -> Result<
-        (
-            AssignedCell<F, F>,
-            AssignedCell<F, F>,
-            AssignedCell<F, F>,
-            AssignedCell<F, F>,
-        ),
-        Error,
-    > {
+    ) -> Result<PermutationAssignedCells<F>, Error> {
+        self.annotate_columns_in_region(region, "state_circuit");
         let mut offset = 0;
         let alpha_first_cell = region.assign_advice(
             || format!("alpha at index {}", offset),
@@ -72,11 +72,9 @@ impl<F: Field> PermutationChipConfig<F> {
 
         let power_of_gamma = {
             let num_of_col = col_values.get(0).map(|x| x.len()).unwrap_or_default();
-            std::iter::successors(Some(Value::known(F::ONE)), |prev| {
-                (prev.clone() * gamma.clone()).into()
-            })
-            .take(num_of_col)
-            .collect::<Vec<Value<F>>>()
+            std::iter::successors(Some(Value::known(F::ONE)), |prev| (*prev * gamma).into())
+                .take(num_of_col)
+                .collect::<Vec<Value<F>>>()
         };
 
         offset += 1;
@@ -94,8 +92,9 @@ impl<F: Field> PermutationChipConfig<F> {
                     .fold(Value::known(F::ZERO), |prev, cur| {
                         prev.zip(cur).map(|(a, b)| a + b)
                     });
-                alpha.zip(tmp).map(|(alpha, perf_term)| alpha - perf_term)
+                alpha.zip(tmp).map(|(alpha, tmp)| alpha - tmp)
             };
+
             fingerprints = fingerprints.zip(perf_term).map(|(prev, cur)| prev * cur);
             let fingerprint_cell = region.assign_advice(
                 || format!("fingerprint at index {}", offset),
@@ -133,6 +132,20 @@ impl<F: Field> PermutationChipConfig<F> {
             prev_continuous_fingerprint_cell,
             last_fingerprint_cell.unwrap(),
         ))
+    }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region(&self, region: &mut Region<F>, prefix: &str) {
+        [
+            (
+                self.fingerprints,
+                "GADGETS_PermutationChipConfig_fingerprints",
+            ),
+            (self.gamma, "GADGETS_PermutationChipConfig_gamma"),
+            (self.alpha, "GADGETS_PermutationChipConfig_alpha"),
+        ]
+        .iter()
+        .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
     }
 }
 

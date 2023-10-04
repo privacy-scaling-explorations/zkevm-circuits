@@ -137,6 +137,10 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         u8_table.annotate_columns(meta);
         u16_table.annotate_columns(meta);
 
+        <RwTable as LookupTable<F>>::columns(&rw_table)
+            .iter()
+            .for_each(|c| meta.enable_equality(*c));
+
         let rw_permutation_config = PermutationChip::configure(
             meta,
             <RwTable as LookupTable<F>>::advice_columns(&rw_table),
@@ -299,25 +303,22 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         config.execution.assign_block(layouter, block, challenges)?;
 
         let rw_rows = block.rws.table_assignments(true);
-        let (rw_table_row_first, rw_table_row_last) = layouter.assign_region(
+        let (
+            (rw_table_row_first, rw_table_row_last),
+            (
+                alpha_cell,
+                gamma_cell,
+                prev_continuous_fingerprint_cell,
+                next_continuous_fingerprint_cell,
+            ),
+        ) = layouter.assign_region(
             || "evm circuit",
             |mut region| {
-                config
-                    .rw_table
-                    .load_with_region(&mut region, &rw_rows, rw_rows.len())
-            },
-        )?;
-
-        // permutation cells
-        let (
-            alpha_cell,
-            gamma_cell,
-            prev_continuous_fingerprint_cell,
-            next_continuous_fingerprint_cell,
-        ) = layouter.assign_region(
-            || "rw permutation fingerprint",
-            |mut region| {
-                config.rw_permutation_config.assign(
+                let rw_table_first_n_last_cells =
+                    config
+                        .rw_table
+                        .load_with_region(&mut region, &rw_rows, rw_rows.len())?;
+                let permutation_cells = config.rw_permutation_config.assign(
                     &mut region,
                     Value::known(block.permu_alpha),
                     Value::known(block.permu_gamma),
@@ -327,6 +328,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                         .rws
                         .table_assignments(true)
                         .iter()
+                        .skip(1) // skip first row since it's used for permutation
                         .map(|row| {
                             row.table_assignment::<F>()
                                 .unwrap()
@@ -337,9 +339,11 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                                 .collect::<Vec<Value<F>>>()
                         })
                         .collect::<Vec<Vec<Value<F>>>>(),
-                )
+                )?;
+                Ok((rw_table_first_n_last_cells, permutation_cells))
             },
         )?;
+
         // constrain permutation challenges
         [alpha_cell, gamma_cell]
             .iter()
@@ -370,7 +374,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         let block = self.block.as_ref().unwrap();
         let rws_assignments = block.rws.table_assignments(true);
 
-        assert!(rws_assignments.len() > 0);
+        assert!(!rws_assignments.is_empty());
 
         let rws_values = [0, rws_assignments.len() - 1] // get first/last row and concat
             .iter()

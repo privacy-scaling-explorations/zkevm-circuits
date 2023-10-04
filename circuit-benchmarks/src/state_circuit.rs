@@ -39,7 +39,14 @@ mod tests {
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
-        let empty_circuit = StateCircuit::<Fr>::new(RwMap::default(), 1 << 16);
+        let empty_circuit = StateCircuit::<Fr>::new(
+            RwMap::default(),
+            1 << 16,
+            Fr::from(1),
+            Fr::from(1),
+            Fr::from(1),
+            Fr::from(1),
+        );
 
         // Initialize the polynomial commitment parameters
         let mut rng = XorShiftRng::from_seed([

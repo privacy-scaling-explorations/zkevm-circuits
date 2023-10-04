@@ -172,6 +172,10 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         u10_table.annotate_columns(meta);
         u16_table.annotate_columns(meta);
 
+        <RwTable as LookupTable<F>>::columns(&rw_table)
+            .iter()
+            .for_each(|c| meta.enable_equality(*c));
+
         let pi_pre_continuity = meta.instance_column();
         let pi_next_continuity = meta.instance_column();
         let pi_permutation_challenges = meta.instance_column();
@@ -205,9 +209,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             constraint_builder.build(&queries);
             constraint_builder.gate(queries.selector)
         });
-        for (name, lookup) in constraint_builder.lookups() {
-            meta.lookup_any(name, |_| lookup);
-        }
+        constraint_builder.lookups(meta, config.selector);
 
         config
     }
@@ -255,11 +257,12 @@ impl<F: Field> StateCircuitConfig<F> {
                 log::trace!("state circuit assign offset:{} row:{:#?}", offset, row);
             }
 
+            // disable selector on offset 0 since it will be copy constraints by public input
             region.assign_fixed(
                 || "selector",
                 self.selector,
                 offset,
-                || Value::known(F::ONE),
+                || Value::known(if offset == 0 { F::ZERO } else { F::ONE }),
             )?;
 
             tag_chip.assign(region, offset, &row.tag())?;
@@ -532,15 +535,47 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         // Assigning to same columns in different regions should be avoided.
         // Here we use one single region to assign `overrides` to both rw table and
         // other parts.
-        let (rw_table_row_first, rw_table_row_last) = layouter.assign_region(
+        let (
+            (rw_table_row_first, rw_table_row_last),
+            (
+                alpha_cell,
+                gamma_cell,
+                prev_continuous_fingerprint_cell,
+                next_continuous_fingerprint_cell,
+            ),
+        ) = layouter.assign_region(
             || "state circuit",
             |mut region| {
+                // TODO Below RwMap::table_assignments_prepad call 3 times, refactor to be more
+                // efficient
                 let rw_table_first_n_last_cells =
                     config
                         .rw_table
                         .load_with_region(&mut region, &self.rows, self.n_rows)?;
 
                 config.assign_with_region(&mut region, &self.rows, &self.updates, self.n_rows)?;
+
+                let (rows, _) = RwMap::table_assignments_prepad(&self.rows, self.n_rows);
+
+                let permutation_cells = config.rw_permutation_config.assign(
+                    &mut region,
+                    Value::known(self.permu_alpha),
+                    Value::known(self.permu_gamma),
+                    Value::known(self.permu_prev_continuous_fingerprint),
+                    Value::known(self.permu_next_continuous_fingerprint),
+                    &rows
+                        .iter()
+                        .skip(1) // skip first row since it's used for permutation
+                        .map(|row| {
+                            row.table_assignment::<F>()
+                                .unwrap()
+                                .values()
+                                .iter()
+                                .map(|f| Value::known(*f))
+                                .collect::<Vec<Value<F>>>()
+                        })
+                        .collect::<Vec<Vec<Value<F>>>>(),
+                )?;
                 #[cfg(test)]
                 {
                     let first_non_padding_index = if self.rows.len() < self.n_rows {
@@ -564,39 +599,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     }
                 }
 
-                Ok(rw_table_first_n_last_cells)
-            },
-        )?;
-
-        // permutation cells
-        let (
-            alpha_cell,
-            gamma_cell,
-            prev_continuous_fingerprint_cell,
-            next_continuous_fingerprint_cell,
-        ) = layouter.assign_region(
-            || "rw permutation fingerprint",
-            |mut region| {
-                config.rw_permutation_config.assign(
-                    &mut region,
-                    Value::known(self.permu_alpha),
-                    Value::known(self.permu_gamma),
-                    Value::known(self.permu_prev_continuous_fingerprint),
-                    Value::known(self.permu_next_continuous_fingerprint),
-                    &self
-                        .rows
-                        .iter()
-                        .map(|row| {
-                            row.table_assignment::<F>()
-                                .unwrap()
-                                .values()
-                                .to_vec()
-                                .iter()
-                                .map(|f| Value::known(*f))
-                                .collect::<Vec<Value<F>>>()
-                        })
-                        .collect::<Vec<Vec<Value<F>>>>(),
-                )
+                Ok((rw_table_first_n_last_cells, permutation_cells))
             },
         )?;
         // constrain permutation challenges
@@ -625,7 +628,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     }
 
     fn instance(&self) -> Vec<Vec<F>> {
-        assert!(self.rows.len() > 0);
+        assert!(!self.rows.is_empty());
 
         let rws_values = [0, self.rows.len() - 1] // get first/last row and concat
             .iter()

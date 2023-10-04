@@ -67,6 +67,9 @@ impl<F: Field> LookupTable<F> for RwTable {
         ]
     }
 }
+
+type RwTableFirstNLastAssignedCell<F> = (Vec<AssignedCell<F, F>>, Vec<AssignedCell<F, F>>);
+
 impl RwTable {
     /// Construct a new RwTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
@@ -129,7 +132,7 @@ impl RwTable {
         layouter: &mut impl Layouter<F>,
         rws: &[Rw],
         n_rows: usize,
-    ) -> Result<(Vec<AssignedCell<F, F>>, Vec<AssignedCell<F, F>>), Error> {
+    ) -> Result<RwTableFirstNLastAssignedCell<F>, Error> {
         layouter.assign_region(
             || "rw table",
             |mut region| self.load_with_region(&mut region, rws, n_rows),
@@ -141,7 +144,7 @@ impl RwTable {
         region: &mut Region<'_, F>,
         rws: &[Rw],
         n_rows: usize,
-    ) -> Result<(Vec<AssignedCell<F, F>>, Vec<AssignedCell<F, F>>), Error> {
+    ) -> Result<RwTableFirstNLastAssignedCell<F>, Error> {
         let mut assigned_cells = vec![];
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
         for (offset, row) in rows.iter().enumerate() {

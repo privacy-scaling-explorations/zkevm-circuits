@@ -187,7 +187,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             meta,
             CopyCircuitConfigArgs {
                 tx_table: tx_table.clone(),
-                rw_table: chronological_rw_table.clone(),
+                rw_table: chronological_rw_table,
                 bytecode_table: bytecode_table.clone(),
                 copy_table,
                 q_enable: q_copy_table,

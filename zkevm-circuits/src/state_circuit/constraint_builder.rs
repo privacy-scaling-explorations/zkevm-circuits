@@ -9,7 +9,10 @@ use crate::{
 use bus_mapping::operation::Target;
 use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;
-use halo2_proofs::plonk::Expression;
+use halo2_proofs::{
+    plonk::{Column, ConstraintSystem, Expression, Fixed},
+    poly::Rotation,
+};
 use strum::IntoEnumIterator;
 
 #[derive(Clone)]
@@ -109,8 +112,16 @@ impl<F: Field> ConstraintBuilder<F> {
             .collect()
     }
 
-    pub fn lookups(&self) -> Vec<Lookup<F>> {
-        self.lookups.clone()
+    pub fn lookups(&self, meta: &mut ConstraintSystem<F>, selector: Column<Fixed>) {
+        self.lookups.iter().cloned().for_each(|(name, mut lookup)| {
+            meta.lookup_any(name, |meta| {
+                let selector = meta.query_fixed(selector, Rotation::cur());
+                for (expression, _) in lookup.iter_mut() {
+                    *expression = expression.clone() * selector.clone();
+                }
+                lookup
+            });
+        });
     }
 
     pub fn build(&mut self, q: &Queries<F>) {
