@@ -29,11 +29,12 @@ pub struct BlockValues {
     pub base_fee: Word, // NOTE: BaseFee was added by EIP-1559 and is ignored in legacy headers.
     /// chain_id
     pub chain_id: u64,
+    /// withdrawals_root
+    pub withdrawals_root: Word,
     /// history_hashes
     pub history_hashes: Vec<H256>,
 }
 
-// FIXME: do we need a WdValues??
 /// Values of the tx table (as in the spec)
 #[derive(Default, Debug, Clone)]
 pub struct TxValues {
@@ -68,8 +69,6 @@ pub struct ExtraValues {
     pub state_root: H256,
     /// prev_state_root
     pub prev_state_root: H256,
-    /// withdrawals_root
-    pub withdrawals_root: H256,
 }
 
 /// PublicData contains all the values that the PiCircuit receives as input
@@ -131,6 +130,7 @@ impl PublicData {
             difficulty: self.block_constants.difficulty,
             base_fee: self.block_constants.base_fee,
             chain_id: self.chain_id.as_u64(),
+            withdrawals_root: self.withdrawals_root.as_fixed_bytes().into(),
             history_hashes,
         }
     }
@@ -174,7 +174,6 @@ impl PublicData {
             block_hash: self.block_hash.unwrap_or_else(H256::zero),
             state_root: self.state_root,
             prev_state_root: self.prev_state_root,
-            withdrawals_root: self.withdrawals_root,
         }
     }
 
@@ -196,6 +195,7 @@ impl PublicData {
             .chain(block_values.difficulty.to_be_bytes()) // difficulty
             .chain(block_values.base_fee.to_be_bytes()) // base_fee
             .chain(block_values.chain_id.to_be_bytes()) // chain_id
+            .chain(block_values.withdrawals_root.to_be_bytes()) // withdrawals root
             .chain(
                 block_values
                     .history_hashes
@@ -208,8 +208,7 @@ impl PublicData {
         let result = result
             .chain(extra_vals.block_hash.to_fixed_bytes()) // block hash
             .chain(extra_vals.state_root.to_fixed_bytes()) // block state root
-            .chain(extra_vals.prev_state_root.to_fixed_bytes()) // previous block state root
-            .chain(extra_vals.withdrawals_root.to_fixed_bytes()); // withdrawals root
+            .chain(extra_vals.prev_state_root.to_fixed_bytes()); // previous block state root
 
         // Assign Tx table
         let tx_field_byte_fn = |tx_id: u64, index: u64, value_bytes: &[u8]| {

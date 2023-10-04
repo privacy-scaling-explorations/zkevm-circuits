@@ -10,6 +10,7 @@ use std::{cmp::min, iter, marker::PhantomData};
 #[cfg(feature = "test-circuits")]
 pub use PiCircuit as TestPiCircuit;
 
+use bus_mapping::circuit_input_builder::Withdrawal;
 use eth_types::{self, Address, Field, ToLittleEndian};
 use halo2_proofs::plonk::{Expression, Instance, SecondPhase};
 use itertools::Itertools;
@@ -19,7 +20,7 @@ use crate::{
     evm_circuit::{
         param::{
             N_BYTES_BLOCK, N_BYTES_EXTRA_VALUE, N_BYTES_HALF_WORD, N_BYTES_TX, N_BYTES_U64,
-            N_BYTES_WORD,
+            N_BYTES_WITHDRAWAL, N_BYTES_WORD,
         },
         util::{
             constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
@@ -290,7 +291,8 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             "lookup rpi_bytes_keccakrlc against rpi_digest_bytes_limbs",
             |meta| {
                 let circuit_len =
-                    PiCircuitConfig::<F>::circuit_len_by_txs_calldata(max_txs, max_calldata).expr();
+                    PiCircuitConfig::<F>::circuit_len_all(max_txs, max_withdrawals, max_calldata)
+                        .expr();
                 let is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
                 let input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
                 let input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
@@ -551,12 +553,12 @@ impl<F: Field> PiCircuitConfig<F> {
     /// Return the number of rows in the circuit
     #[inline]
     fn circuit_len(&self) -> usize {
-        Self::circuit_len_by_txs_calldata(self.max_txs, self.max_calldata)
+        Self::circuit_len_all(self.max_txs, self.max_withdrawals, self.max_calldata)
     }
 
     /// Return the number of rows for txs and calldata
     #[inline]
-    fn circuit_len_by_txs_calldata(txs: usize, calldata: usize) -> usize {
+    fn circuit_len_all(txs: usize, wds: usize, calldata: usize) -> usize {
         N_BYTES_ONE
             + N_BYTES_BLOCK
             + N_BYTES_EXTRA_VALUE
@@ -564,6 +566,7 @@ impl<F: Field> PiCircuitConfig<F> {
             + Self::circuit_len_tx_index(txs)
             + Self::circuit_len_tx_values(txs)
             + calldata
+            + Self::circuit_len_withdrawal(wds)
     }
 
     #[inline]
@@ -579,6 +582,11 @@ impl<F: Field> PiCircuitConfig<F> {
     #[inline]
     fn circuit_len_tx_index(txs: usize) -> usize {
         N_BYTES_U64 * TX_LEN * txs + N_BYTES_U64 // empty row
+    }
+
+    #[inline]
+    fn circuit_len_withdrawal(withdrawals: usize) -> usize {
+        N_BYTES_WITHDRAWAL * withdrawals
     }
 
     fn assign_empty_txtable_row(
@@ -723,7 +731,6 @@ impl<F: Field> PiCircuitConfig<F> {
         let tx_value_inv = tx_value.map(|t| t.map(|x| x.invert().unwrap_or(F::ZERO)));
 
         self.q_tx_table.enable(region, offset)?;
-        self.q_wd_table.enable(region, offset)?;
 
         // Assign vals to Tx_table
         let tx_id_assignedcell = region.assign_advice(
@@ -913,6 +920,10 @@ impl<F: Field> PiCircuitConfig<F> {
         rpi_bytes: &mut [u8],
         zero_cell: AssignedCell<F, F>,
     ) -> Result<(), Error> {
+        if id != 0 && amount != 0 {
+            self.q_wd_table.enable(region, offset)?;
+        }
+
         let id_assigned_cell = region.assign_advice(
             || "withdrawal_id",
             self.wd_table.id,
@@ -972,7 +983,7 @@ impl<F: Field> PiCircuitConfig<F> {
         // address
         let (_, raw_address) = self.assign_raw_bytes(
             region,
-            &address.to_fixed_bytes(),
+            &address.to_fixed_bytes().iter().copied().rev().collect_vec(),
             rpi_bytes_keccakrlc,
             rpi_bytes,
             current_offset,
@@ -1035,6 +1046,7 @@ impl<F: Field> PiCircuitConfig<F> {
         )?;
         Ok(())
     }
+
     /// assign raw bytes
     #[allow(clippy::too_many_arguments)]
     fn assign_raw_bytes(
@@ -1328,6 +1340,27 @@ impl<F: Field> PiCircuitConfig<F> {
         block_copy_cells.push((block_value, word));
         *block_table_offset += 1;
 
+        // withdrawals_root
+        let block_value = Word::from(block_values.withdrawals_root)
+            .into_value()
+            .assign_advice(
+                region,
+                || "withdrawals_root",
+                self.block_table.value,
+                *block_table_offset,
+            )?;
+        let (_, word) = self.assign_raw_bytes(
+            region,
+            &block_values.withdrawals_root.to_le_bytes(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell.clone(),
+        )?;
+        block_copy_cells.push((block_value, word));
+        *block_table_offset += 1;
+
         for prev_hash in block_values.history_hashes {
             let block_value = Word::from(prev_hash).into_value().assign_advice(
                 region,
@@ -1429,23 +1462,6 @@ impl<F: Field> PiCircuitConfig<F> {
             zero_cell.clone(),
         )?;
 
-        // block withdrawals root
-        self.assign_raw_bytes(
-            region,
-            &extra
-                .withdrawals_root
-                .to_fixed_bytes()
-                .iter()
-                .copied()
-                .rev()
-                .collect_vec(),
-            rpi_bytes_keccakrlc,
-            rpi_bytes,
-            current_offset,
-            challenges,
-            zero_cell,
-        )?;
-
         Ok(())
     }
 
@@ -1523,9 +1539,10 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         let calldata_len = block.txs.iter().map(|tx| tx.call_data.len()).sum();
         (
-            Self::Config::circuit_len_by_txs_calldata(block.txs.len(), calldata_len),
-            Self::Config::circuit_len_by_txs_calldata(
+            Self::Config::circuit_len_all(block.txs.len(), block.withdrawals().len(), calldata_len),
+            Self::Config::circuit_len_all(
                 block.circuits_params.max_txs,
+                block.circuits_params.max_withdrawals,
                 block.circuits_params.max_calldata,
             ),
         )
@@ -1826,7 +1843,51 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                     )?;
                     call_data_offset += 1;
                 }
+                assert_eq!(
+                    start_offset - current_offset,
+                    N_BYTES_ONE
+                        + N_BYTES_BLOCK
+                        + N_BYTES_EXTRA_VALUE
+                        + Self::Config::circuit_len_tx_id(config.max_txs)
+                        + Self::Config::circuit_len_tx_index(config.max_txs)
+                        + Self::Config::circuit_len_tx_values(config.max_txs)
+                        + config.max_calldata
+                );
+
+                // lookup assignment
+                // also assign empty to last of TxTable
+                config.assign_empty_txtable_row(&mut region, call_data_offset)?;
+
+                // assign withdrawal table and padding rows
+                let mut withdrawal_offset = call_data_offset;
+                let wd_default = Withdrawal::default();
+                iter::empty()
+                    .chain(&self.public_data.withdrawals)
+                    .chain(
+                        (0..(config.max_withdrawals - self.public_data.withdrawals.len()))
+                            .map(|_| &wd_default),
+                    )
+                    .enumerate()
+                    .try_for_each(|(_, wd)| -> Result<(), Error> {
+                        config.assign_wd_table_row(
+                            &mut region,
+                            withdrawal_offset,
+                            wd.id,
+                            wd.validator_id,
+                            wd.address,
+                            wd.amount,
+                            &mut rpi_bytes_keccakrlc,
+                            challenges,
+                            &mut current_offset,
+                            &mut rpi_bytes,
+                            zero_cell.clone(),
+                        )?;
+                        withdrawal_offset += 1;
+                        Ok(())
+                    })?;
                 assert_eq!(current_offset, 0);
+
+                config.assign_empty_wd_table_row(&mut region, withdrawal_offset)?;
 
                 // assign keccak digest
                 let digest_word = self.public_data.get_rpi_digest_word::<F>(
@@ -1837,33 +1898,6 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
                 let digest_word_assigned =
                     config.assign_rpi_digest_word(&mut region, digest_word)?;
-
-                // lookup assignment
-                // also assign empty to last of TxTable
-                config.assign_empty_txtable_row(&mut region, call_data_offset)?;
-
-                // assign withdrawal table and padding rows
-                let mut withdrawal_offset = call_data_offset;
-                for wd in self.public_data.withdrawals.iter() {
-                    config.assign_wd_table_row(
-                        &mut region,
-                        withdrawal_offset,
-                        wd.id,
-                        wd.validator_id,
-                        wd.address,
-                        wd.amount,
-                        &mut rpi_bytes_keccakrlc,
-                        challenges,
-                        &mut current_offset,
-                        &mut rpi_bytes,
-                        zero_cell.clone(),
-                    )?;
-                    withdrawal_offset += 1;
-                }
-                for _ in self.public_data.withdrawals.len()..config.max_withdrawals {
-                    config.assign_empty_wd_table_row(&mut region, withdrawal_offset)?;
-                    withdrawal_offset += 1;
-                }
 
                 // keccak lookup occur on offset 0
                 config.q_rpi_keccak_lookup.enable(&mut region, 0)?;

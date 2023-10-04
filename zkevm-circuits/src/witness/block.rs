@@ -95,7 +95,7 @@ impl<F: Field> Block<F> {
             .collect_vec()
     }
 
-    /// Return root of withdrawals of this block
+    /// Return the root of withdrawals in this block
     pub fn withdrawals_root(&self) -> H256 {
         self.eth_block.withdrawals_root.clone().unwrap()
     }
@@ -173,6 +173,8 @@ pub struct BlockContext {
     pub history_hashes: Vec<Word>,
     /// The chain id
     pub chain_id: Word,
+    /// The withdrawal root
+    pub withdrawals_root: Word,
 }
 
 impl BlockContext {
@@ -222,6 +224,12 @@ impl BlockContext {
                     Value::known(word::Word::from(self.chain_id).lo()),
                     Value::known(word::Word::from(self.chain_id).hi()),
                 ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::WithdrawalRoot as u64)),
+                    Value::known(F::ZERO),
+                    Value::known(word::Word::from(self.withdrawals_root).lo()),
+                    Value::known(word::Word::from(self.withdrawals_root).hi()),
+                ],
             ],
             {
                 let len_history = self.history_hashes.len();
@@ -254,6 +262,7 @@ impl From<&circuit_input_builder::Block> for BlockContext {
             base_fee: block.base_fee,
             history_hashes: block.history_hashes.clone(),
             chain_id: block.chain_id,
+            withdrawals_root: block.withdrawals_root().as_fixed_bytes().into(),
         }
     }
 }

@@ -1,16 +1,17 @@
 //! Mock types and functions to generate Test enviroments for ZKEVM tests
 
-use crate::{eth, MockAccount, MockBlock, MockTransaction, TestContext2};
+use crate::{eth, withdrawal::MockWithdrawal, MockAccount, MockBlock, MockTransaction};
 use eth_types::{
-    geth_types::{Account, BlockConstants, GethData},
-    Block, Bytecode, Error, GethExecTrace, Transaction, Word,
+    geth_types::{Account, BlockConstants, GethData, Withdrawal},
+    Address, Block, Bytecode, Error, GethExecTrace, Transaction, Word, H160,
 };
 use external_tracer::{trace, TraceConfig};
 use helpers::*;
+use itertools::Itertools;
 
 pub use external_tracer::LoggerConfig;
 
-/// TestContext is a type that contains all the information from a block
+/// TestContext2 is a type that contains all the information from a block
 /// required to build the circuit inputs.
 ///
 /// It is specifically used to generate Test cases with very precise information
@@ -27,7 +28,7 @@ pub use external_tracer::LoggerConfig;
 /// use eth_types::evm_types::{stack::Stack, OpcodeId};
 /// use eth_types::{address, bytecode, geth_types::GethData, word, Bytecode, ToWord, Word};
 /// use lazy_static::lazy_static;
-/// use mock::test_ctx::{helpers::*, TestContext};
+/// use mock::test_ctx::{helpers::*, TestContext2};
 /// // code_a calls code
 /// // jump to 0x10 which is outside the code (and also not marked with
 ///         // JUMPDEST)
@@ -49,7 +50,7 @@ pub use external_tracer::LoggerConfig;
 /// let index = 8; // JUMP
 ///
 /// // Get the execution steps from the external tracer
-/// let block: GethData = TestContext::<3, 2>::new(
+/// let block: GethData = TestContext2::<3, 2>::new(
 ///     None,
 ///     |accs| {
 ///         accs[0]
@@ -75,7 +76,7 @@ pub use external_tracer::LoggerConfig;
 /// // the behaviour of the generated env.
 /// ```
 #[derive(Debug, Clone)]
-pub struct TestContext<const NACC: usize, const NTX: usize> {
+pub struct TestContext2<const NACC: usize, const NTX: usize, const NWD: usize> {
     /// chain id
     pub chain_id: Word,
     /// Account list
@@ -89,9 +90,10 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
     pub geth_traces: Vec<eth_types::GethExecTrace>,
 }
 
-// FIXME: refactor with TestContext2 to reduce duplicated code
-impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethData {
-    fn from(ctx: TestContext<NACC, NTX>) -> GethData {
+impl<const NACC: usize, const NTX: usize, const NWD: usize> From<TestContext2<NACC, NTX, NWD>>
+    for GethData
+{
+    fn from(ctx: TestContext2<NACC, NTX, NWD>) -> GethData {
         GethData {
             chain_id: ctx.chain_id,
             history_hashes: ctx.history_hashes,
@@ -102,51 +104,124 @@ impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethD
     }
 }
 
-impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
-    pub fn new_with_logger_config<FAcc, FTx, Fb>(
+impl<const NACC: usize, const NTX: usize, const NWD: usize> TestContext2<NACC, NTX, NWD> {
+    pub fn new_with_logger_config<FAcc, FTx, FWd, Fb>(
         history_hashes: Option<Vec<Word>>,
         acc_fns: FAcc,
         func_tx: FTx,
+        func_wd: FWd,
         func_block: Fb,
         logger_config: LoggerConfig,
     ) -> Result<Self, Error>
     where
         FTx: FnOnce(Vec<&mut MockTransaction>, [MockAccount; NACC]),
+        FWd: FnOnce(Vec<&mut MockWithdrawal>),
         Fb: FnOnce(&mut MockBlock, Vec<MockTransaction>) -> &mut MockBlock,
         FAcc: FnOnce([&mut MockAccount; NACC]),
     {
-        let test_ctx2 = TestContext2::<NACC, NTX, 0>::new_with_logger_config(
-            history_hashes,
-            acc_fns,
-            func_tx,
-            |_| {},
-            func_block,
+        let mut accounts: Vec<MockAccount> = vec![MockAccount::default(); NACC];
+        // Build Accounts modifiers
+        let account_refs = accounts
+            .iter_mut()
+            .collect_vec()
+            .try_into()
+            .expect("Mismatched len err");
+        acc_fns(account_refs);
+        let accounts: [MockAccount; NACC] = accounts
+            .iter_mut()
+            .map(|acc| acc.build())
+            .collect_vec()
+            .try_into()
+            .expect("Mismatched acc len");
+
+        let mut transactions = vec![MockTransaction::default(); NTX];
+        let tx_refs = transactions.iter_mut().collect();
+
+        // Build Tx modifiers.
+        func_tx(tx_refs, accounts.clone());
+
+        let mut withdrawals = vec![MockWithdrawal::default(); NWD];
+        let wd_refs = withdrawals.iter_mut().collect();
+
+        // Build Withdrawal modifiers.
+        func_wd(wd_refs);
+
+        // Sets the transaction_idx and nonce after building the tx modifiers. Hence, if user has
+        // overridden these values above using the tx modifiers, that will be ignored.
+        let mut acc_tx_count = vec![0u64; NACC];
+        transactions.iter_mut().enumerate().for_each(|(idx, tx)| {
+            let idx = u64::try_from(idx).expect("Unexpected idx conversion error");
+            tx.transaction_idx(idx);
+            if let Some((pos, from_acc)) = accounts
+                .iter()
+                .find_position(|acc| acc.address == tx.from.address())
+            {
+                tx.nonce(from_acc.nonce + acc_tx_count[pos]);
+                acc_tx_count[pos] += 1;
+            }
+        });
+
+        let transactions: Vec<MockTransaction> =
+            transactions.iter_mut().map(|tx| tx.build()).collect();
+
+        // Build Block modifiers
+        let mut block = MockBlock::default();
+        block.transactions.extend_from_slice(&transactions);
+        block.withdrawals.extend_from_slice(&withdrawals);
+        func_block(&mut block, transactions).build();
+
+        let chain_id = block.chain_id;
+        let block = Block::<Transaction>::from(block);
+        let accounts: [Account; NACC] = accounts
+            .iter()
+            .cloned()
+            .map(Account::from)
+            .collect_vec()
+            .try_into()
+            .expect("Mismatched acc len");
+
+        let withdrawals: [Withdrawal; NWD] = withdrawals
+            .iter()
+            .cloned()
+            .map(Withdrawal::from)
+            .collect_vec()
+            .try_into()
+            .expect("Mismatched withdrawal len");
+
+        let geth_traces = gen_geth_traces(
+            chain_id,
+            block.clone(),
+            accounts.to_vec(),
+            withdrawals.to_vec(),
+            history_hashes.clone(),
             logger_config,
         )?;
 
         Ok(Self {
-            chain_id: test_ctx2.chain_id,
-            accounts: test_ctx2.accounts,
-            history_hashes: test_ctx2.history_hashes.clone(),
-            eth_block: test_ctx2.eth_block,
-            geth_traces: test_ctx2.geth_traces,
+            chain_id,
+            accounts,
+            history_hashes: history_hashes.unwrap_or_default(),
+            eth_block: block,
+            geth_traces,
         })
     }
 
-    /// Create a new TestContext which starts with `NACC` default accounts and
+    /// Create a new TestContext2 which starts with `NACC` default accounts and
     /// `NTX` default transactions.  Afterwards, we apply the `acc_fns`
     /// function to the accounts, the `func_tx` to the transactions and
     /// the `func_block` to the block, where each of these functions can
     /// mutate their target using the builder pattern. Finally an
     /// execution trace is generated of the resulting input block and state.
-    pub fn new<FAcc, FTx, Fb>(
+    pub fn new<FAcc, FTx, FWd, Fb>(
         history_hashes: Option<Vec<Word>>,
         acc_fns: FAcc,
         func_tx: FTx,
+        func_wd: FWd,
         func_block: Fb,
     ) -> Result<Self, Error>
     where
         FTx: FnOnce(Vec<&mut MockTransaction>, [MockAccount; NACC]),
+        FWd: FnOnce(Vec<&mut MockWithdrawal>),
         Fb: FnOnce(&mut MockBlock, Vec<MockTransaction>) -> &mut MockBlock,
         FAcc: FnOnce([&mut MockAccount; NACC]),
     {
@@ -154,21 +229,23 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             history_hashes,
             acc_fns,
             func_tx,
+            func_wd,
             func_block,
             LoggerConfig::default(),
         )
     }
 
-    /// Returns a simple TestContext setup with a single tx executing the
+    /// Returns a simple TestContext2 setup with a single tx executing the
     /// bytecode passed as parameters. The balances of the 2 accounts and
-    /// addresses are the ones used in [`TestContext::
+    /// addresses are the ones used in [`TestContext2::
     /// account_0_code_account_1_no_code`]. Extra accounts, txs and/or block
     /// configs are set as [`Default`].
-    pub fn simple_ctx_with_bytecode(bytecode: Bytecode) -> Result<TestContext<2, 1>, Error> {
-        TestContext::new(
+    pub fn simple_ctx_with_bytecode(bytecode: Bytecode) -> Result<TestContext2<2, 1, 1>, Error> {
+        TestContext2::new(
             None,
             account_0_code_account_1_no_code(bytecode),
             tx_from_1_to_0,
+            default_withdrawal,
             |block, _txs| block,
         )
     }
@@ -180,6 +257,7 @@ pub fn gen_geth_traces(
     chain_id: Word,
     block: Block<Transaction>,
     accounts: Vec<Account>,
+    withdrawals: Vec<Withdrawal>,
     history_hashes: Option<Vec<Word>>,
     logger_config: LoggerConfig,
 ) -> Result<Vec<GethExecTrace>, Error> {
@@ -196,7 +274,7 @@ pub fn gen_geth_traces(
             .iter()
             .map(eth_types::geth_types::Transaction::from)
             .collect(),
-        withdrawals: vec![],
+        withdrawals: withdrawals,
         logger_config,
     };
     let traces = trace(&trace_config)?;
@@ -204,7 +282,7 @@ pub fn gen_geth_traces(
 }
 
 /// Collection of helper functions which contribute to specific rutines on the
-/// builder pattern used to construct [`TestContext`]s.
+/// builder pattern used to construct [`TestContext2`]s.
 pub mod helpers {
     use super::*;
     use crate::MOCK_ACCOUNTS;
@@ -229,17 +307,25 @@ pub mod helpers {
     pub fn tx_from_1_to_0(mut txs: Vec<&mut MockTransaction>, accs: [MockAccount; 2]) {
         txs[0].from(accs[1].address).to(accs[0].address);
     }
+
+    pub fn default_withdrawal(mut wds: Vec<&mut MockWithdrawal>) {
+        wds[0]
+            .id(0)
+            .validator_id(0)
+            .address(Address::random())
+            .amount(1e9 as u64);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use eth_types::{address, U256, U64};
 
-    use super::{eth, TestContext};
+    use super::{eth, TestContext2};
 
     #[test]
     fn test_nonce() {
-        let block = TestContext::<2, 5>::new(
+        let block = TestContext2::<2, 5, 0>::new(
             None,
             |accs| {
                 accs[0]
