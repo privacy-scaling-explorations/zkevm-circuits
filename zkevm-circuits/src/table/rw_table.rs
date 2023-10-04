@@ -129,7 +129,7 @@ impl RwTable {
         layouter: &mut impl Layouter<F>,
         rws: &[Rw],
         n_rows: usize,
-    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+    ) -> Result<(Vec<AssignedCell<F, F>>, Vec<AssignedCell<F, F>>), Error> {
         layouter.assign_region(
             || "rw table",
             |mut region| self.load_with_region(&mut region, rws, n_rows),
@@ -141,15 +141,15 @@ impl RwTable {
         region: &mut Region<'_, F>,
         rws: &[Rw],
         n_rows: usize,
-    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+    ) -> Result<(Vec<AssignedCell<F, F>>, Vec<AssignedCell<F, F>>), Error> {
         let mut assigned_cells = vec![];
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
         for (offset, row) in rows.iter().enumerate() {
             let row_assigned_cells = self.assign(region, offset, &row.table_assignment())?;
             if offset == 0 || offset == rows.len() - 1 {
-                assigned_cells.extend(row_assigned_cells);
+                assigned_cells.push(row_assigned_cells);
             }
         }
-        Ok(assigned_cells)
+        Ok(assigned_cells.iter().cloned().collect_tuple().unwrap())
     }
 }

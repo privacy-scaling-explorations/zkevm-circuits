@@ -74,13 +74,12 @@ pub struct StateCircuitConfig<F> {
     // rw permutation config
     rw_permutation_config: PermutationChipConfig<F>,
 
-    // rw_table pi for permutation
-    pi_rw_table: Column<Instance>,
-    // challenge pi for permutation
+    // pi for carry over previous chunk context
+    pi_pre_continuity: Column<Instance>,
+    // pi for carry over previous chunk context
+    pi_next_continuity: Column<Instance>,
+    // pi for permutation challenge
     pi_permutation_challenges: Column<Instance>,
-    // fingerprints pi for permutation
-    prev_permutation_fingerprint: Column<Instance>,
-    next_permutation_fingerprint: Column<Instance>,
     _marker: PhantomData<F>,
 }
 
@@ -173,13 +172,13 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         u10_table.annotate_columns(meta);
         u16_table.annotate_columns(meta);
 
-        // rw_table pi for permutation
-        let pi_rw_table = meta.instance_column();
-        // challenge pi for permutation
+        let pi_pre_continuity = meta.instance_column();
+        let pi_next_continuity = meta.instance_column();
         let pi_permutation_challenges = meta.instance_column();
-        // fingerprints pi for permutation
-        let prev_permutation_fingerprint = meta.instance_column();
-        let next_permutation_fingerprint = meta.instance_column();
+
+        meta.enable_equality(pi_pre_continuity);
+        meta.enable_equality(pi_next_continuity);
+        meta.enable_equality(pi_permutation_challenges);
 
         let config = Self {
             selector,
@@ -194,10 +193,9 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             rw_table,
             mpt_table,
             rw_permutation_config,
-            pi_rw_table,
+            pi_pre_continuity,
+            pi_next_continuity,
             pi_permutation_challenges,
-            prev_permutation_fingerprint,
-            next_permutation_fingerprint,
             _marker: PhantomData::default(),
         };
 
@@ -462,6 +460,7 @@ pub struct StateCircuit<F> {
     permu_alpha: F,
     permu_gamma: F,
     permu_prev_continuous_fingerprint: F,
+    permu_next_continuous_fingerprint: F,
 
     _marker: PhantomData<F>,
 }
@@ -474,6 +473,7 @@ impl<F: Field> StateCircuit<F> {
         permu_alpha: F,
         permu_gamma: F,
         permu_prev_continuous_fingerprint: F,
+        permu_next_continuous_fingerprint: F,
     ) -> Self {
         let rows = rw_map.table_assignments(false); // address sorted
         let updates = MptUpdates::mock_from(&rows);
@@ -486,6 +486,7 @@ impl<F: Field> StateCircuit<F> {
             permu_alpha,
             permu_gamma,
             permu_prev_continuous_fingerprint,
+            permu_next_continuous_fingerprint,
             _marker: PhantomData::default(),
         }
     }
@@ -501,6 +502,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
             block.permu_alpha,
             block.permu_gamma,
             block.permu_prev_continuous_fingerprint,
+            block.permu_next_continuous_fingerprint,
         )
     }
 
@@ -530,7 +532,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         // Assigning to same columns in different regions should be avoided.
         // Here we use one single region to assign `overrides` to both rw table and
         // other parts.
-        let rw_table_first_n_last_cells = layouter.assign_region(
+        let (rw_table_row_first, rw_table_row_last) = layouter.assign_region(
             || "state circuit",
             |mut region| {
                 let rw_table_first_n_last_cells =
@@ -580,6 +582,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     Value::known(self.permu_alpha),
                     Value::known(self.permu_gamma),
                     Value::known(self.permu_prev_continuous_fingerprint),
+                    Value::known(self.permu_next_continuous_fingerprint),
                     &self
                         .rows
                         .iter()
@@ -604,32 +607,49 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                 layouter.constrain_instance(cell.cell(), config.pi_permutation_challenges, i)
             })?;
         // constraints prev,next fingerprints
-        [
-            (
-                prev_continuous_fingerprint_cell,
-                config.prev_permutation_fingerprint,
-            ),
-            (
-                next_continuous_fingerprint_cell,
-                config.next_permutation_fingerprint,
-            ),
-        ]
-        .iter()
-        .try_for_each(|(cell, column)| layouter.constrain_instance(cell.cell(), *column, 0))?;
-
-        let pi_initial_offset = 0;
-        rw_table_first_n_last_cells
+        [rw_table_row_first, vec![prev_continuous_fingerprint_cell]]
             .iter()
+            .flatten()
             .enumerate()
             .try_for_each(|(i, cell)| {
-                layouter.constrain_instance(cell.cell(), config.pi_rw_table, pi_initial_offset + i)
+                layouter.constrain_instance(cell.cell(), config.pi_pre_continuity, i)
+            })?;
+        [rw_table_row_last, vec![next_continuous_fingerprint_cell]]
+            .iter()
+            .flatten()
+            .enumerate()
+            .try_for_each(|(i, cell)| {
+                layouter.constrain_instance(cell.cell(), config.pi_next_continuity, i)
             })?;
         Ok(())
     }
 
-    /// powers of randomness for instance columns
     fn instance(&self) -> Vec<Vec<F>> {
-        vec![]
+        assert!(self.rows.len() > 0);
+
+        let rws_values = [0, self.rows.len() - 1] // get first/last row and concat
+            .iter()
+            .map(|i| {
+                self.rows
+                    .get(*i)
+                    .map(|row| row.table_assignment().unwrap().values())
+                    .unwrap_or_default()
+                    .to_vec()
+            })
+            .collect::<Vec<Vec<F>>>();
+        vec![
+            vec![
+                rws_values[0].clone(),
+                vec![self.permu_prev_continuous_fingerprint],
+            ]
+            .concat(),
+            vec![
+                rws_values[1].clone(),
+                vec![self.permu_next_continuous_fingerprint],
+            ]
+            .concat(),
+            vec![self.permu_alpha, self.permu_gamma],
+        ]
     }
 }
 

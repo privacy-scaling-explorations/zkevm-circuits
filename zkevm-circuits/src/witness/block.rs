@@ -57,6 +57,8 @@ pub struct Block<F> {
     pub permu_gamma: F,
     /// pre permutation fingerprint
     pub permu_prev_continuous_fingerprint: F,
+    /// pre permutation fingerprint
+    pub permu_next_continuous_fingerprint: F,
 }
 
 impl<F: Field> Block<F> {
@@ -255,6 +257,7 @@ pub fn block_convert<F: Field>(
         permu_alpha: F::from(1),
         permu_gamma: F::from(1),
         permu_prev_continuous_fingerprint: F::from(1),
+        permu_next_continuous_fingerprint: F::from(1),
         context: block.into(),
         rws,
         txs: block.txs().to_vec(),

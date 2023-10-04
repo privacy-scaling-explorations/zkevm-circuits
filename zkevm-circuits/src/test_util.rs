@@ -225,6 +225,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 block.permu_alpha,
                 block.permu_gamma,
                 block.permu_prev_continuous_fingerprint,
+                block.permu_next_continuous_fingerprint,
             );
             let instance = state_circuit.instance();
             let prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();

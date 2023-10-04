@@ -46,11 +46,21 @@ fn test_state_circuit_ok(
         ..Default::default()
     });
 
-    let circuit = StateCircuit::<Fr>::new(rw_map, N_ROWS, Fr::from(1), Fr::from(1), Fr::from(1));
+    let circuit = StateCircuit::<Fr>::new(
+        rw_map,
+        N_ROWS,
+        Fr::from(1),
+        Fr::from(1),
+        Fr::from(1),
+        Fr::from(1),
+    );
     let instance = circuit.instance();
 
-    let prover = MockProver::<Fr>::run(19, &circuit, instance).unwrap();
-    let verify_result = prover.verify();
+    let prover = MockProver::<Fr>::run(19, &circuit, instance);
+    let verify_result = prover
+        .map_err(|err| println!("{:?}", err))
+        .unwrap()
+        .verify();
     assert_eq!(verify_result, Ok(()));
 }
 
@@ -71,6 +81,7 @@ fn verifying_key_independent_of_rw_length() {
         Fr::from(1),
         Fr::from(1),
         Fr::from(1),
+        Fr::from(1),
     );
     let one_row = StateCircuit::<Fr>::new(
         RwMap::from(&OperationContainer {
@@ -82,6 +93,7 @@ fn verifying_key_independent_of_rw_length() {
             ..Default::default()
         }),
         N_ROWS,
+        Fr::from(1),
         Fr::from(1),
         Fr::from(1),
         Fr::from(1),
@@ -941,6 +953,7 @@ fn variadic_size_check() {
         permu_alpha: Fr::from(1),
         permu_gamma: Fr::from(1),
         permu_prev_continuous_fingerprint: Fr::from(1),
+        permu_next_continuous_fingerprint: Fr::from(1),
         _marker: std::marker::PhantomData::default(),
     };
     let power_of_randomness = circuit.instance();
@@ -972,6 +985,7 @@ fn variadic_size_check() {
         permu_alpha: Fr::from(1),
         permu_gamma: Fr::from(1),
         permu_prev_continuous_fingerprint: Fr::from(1),
+        permu_next_continuous_fingerprint: Fr::from(1),
         _marker: std::marker::PhantomData::default(),
     };
     let power_of_randomness = circuit.instance();
@@ -1015,6 +1029,7 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
         permu_alpha: Fr::from(1),
         permu_gamma: Fr::from(1),
         permu_prev_continuous_fingerprint: Fr::from(1),
+        permu_next_continuous_fingerprint: Fr::from(1),
         _marker: std::marker::PhantomData::default(),
     };
     let instance = circuit.instance();

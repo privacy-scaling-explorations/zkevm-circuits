@@ -39,6 +39,7 @@ impl<F: Field> PermutationChipConfig<F> {
         alpha: Value<F>,
         gamma: Value<F>,
         prev_continuous_fingerprint: Value<F>,
+        _next_continuous_fingerprint: Value<F>,
         col_values: &Vec<Vec<Value<F>>>,
     ) -> Result<
         (
@@ -80,6 +81,7 @@ impl<F: Field> PermutationChipConfig<F> {
 
         offset += 1;
 
+        let mut fingerprints = prev_continuous_fingerprint;
         let mut last_fingerprint_cell = None;
         for (_, row) in col_values.iter().enumerate() {
             self.q_row_non_first.enable(region, offset)?;
@@ -94,13 +96,19 @@ impl<F: Field> PermutationChipConfig<F> {
                     });
                 alpha.zip(tmp).map(|(alpha, perf_term)| alpha - perf_term)
             };
+            fingerprints = fingerprints.zip(perf_term).map(|(prev, cur)| prev * cur);
             let fingerprint_cell = region.assign_advice(
                 || format!("fingerprint at index {}", offset),
                 self.fingerprints,
                 offset,
-                || perf_term,
+                || fingerprints,
             )?;
+            // last offset (with one padding)
             if offset == col_values.len() {
+                // TODO debug: internal computed fingerprint should match with external fingerprint
+                // next_continuous_fingerprint
+                //     .zip(fingerprints)
+                //     .map(|(a, b)| debug_assert!(a == b, "{:?} != {:?}", a, b));
                 last_fingerprint_cell = Some(fingerprint_cell);
             }
             region.assign_advice(
@@ -145,6 +153,10 @@ impl<F: Field> PermutationChip<F> {
         let alpha = meta.advice_column();
         let gamma = meta.advice_column();
         let q_row_non_first = meta.selector();
+
+        meta.enable_equality(fingerprints);
+        meta.enable_equality(alpha);
+        meta.enable_equality(gamma);
 
         meta.create_gate("permutation fingerprint update logic", |meta| {
             let alpha = meta.query_advice(alpha, Rotation::cur());

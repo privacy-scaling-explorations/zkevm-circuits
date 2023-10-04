@@ -1623,6 +1623,7 @@ dependencies = [
  "digest 0.7.6",
  "eth-types",
  "halo2_proofs",
+ "itertools",
  "rand",
  "rand_xorshift",
  "sha3 0.7.3",
