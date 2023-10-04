@@ -753,8 +753,8 @@ mod test {
         ) -> Result<(), Error> {
             let offset = 0;
             let addr_start= u64::from_le_bytes(witnesses[0].to_le_bytes()[..8].try_into().unwrap());
-            let addr_end= u64::from_le_bytes(witnesses[1].to_le_bytes()[..8].try_into().unwrap()); // why not u64 from?
-            let mut input_bytes: Vec<u8> = Vec::new(); // After addr_start and addr_end
+            let addr_end= u64::from_le_bytes(witnesses[1].to_le_bytes()[..8].try_into().unwrap()); // TODO why not u64 from?
+            let mut input_bytes: Vec<u8> = Vec::new();
             input_bytes.extend_from_slice(&byte.to_le_bytes());
             self.addr_start.assign(region, offset, Some(addr_start.to_le_bytes()))?; // TODO or Value::known(addr_end)?? 
             self.addr_end.assign(region, offset, Some(addr_end.to_le_bytes()))?; // TODO or Value::known(addr_end)??
@@ -773,7 +773,7 @@ mod test {
     
     #[test]
     fn test_buffer_reader_gadget(){
-        // test different start and end address
+        // TODO test different start and end address
         
         // completeness
         try_test!(
@@ -785,6 +785,9 @@ mod test {
             ],
             true,
         );
+        // TODO check this comment above: Completeness: MinMaxGadget requires `signed_len ∈ (cap-RANGE; cap+RANGE]`, covering all
+        // cases. If is_empty, signed_len ∈ (-RANGE; 0], otherwise signed_len ∈ [1; RANGE).
+
 
         // soundness
         try_test!(
@@ -806,13 +809,5 @@ mod test {
             ],
             false,
         );
-        /* 
-        
-        let mut calldata_word: Vec<_> = (0..N_BYTES_WORD)
-            .map(|idx| {
-         */
-        /* try_test!(
-            
-        ) */
     }
 }
