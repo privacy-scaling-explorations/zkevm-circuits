@@ -1,8 +1,9 @@
 package witness
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/privacy-scaling-explorations/mpt-witness-generator/oracle"
@@ -34,22 +35,10 @@ func (n *ExtensionNode) MarshalJSON() ([]byte, error) {
 
 // When marshalling, []byte encodes as a base64-encoded string.
 func base64ToString(bs []byte) string {
-	var s string
 	if bs == nil {
-		f := make([]string, valueLen)
-		s = "["
-		for i := 0; i < len(f); i++ {
-			if i != len(f)-1 {
-				s += "0, "
-			} else {
-				s += "0]"
-			}
-		}
-	} else {
-		s = strings.Join(strings.Fields(fmt.Sprintf("%d", bs)), ",")
+		bs = make([]byte, valueLen)
 	}
-
-	return s
+	return fmt.Sprintf(`"%s"`, hex.EncodeToString(bs))
 }
 
 type StartNode struct {
@@ -135,13 +124,11 @@ func (n *StorageNode) MarshalJSON() ([]byte, error) {
 type JSONableValues [][]byte
 
 func (u JSONableValues) MarshalJSON() ([]byte, error) {
-	var result string
-	if u == nil {
-		result = "[]"
-	} else {
-		result = strings.Join(strings.Fields(fmt.Sprintf("%d", u)), ",")
+	hexStrings := make([]string, len(u))
+	for i, item := range u {
+		hexStrings[i] = hex.EncodeToString(item)
 	}
-	return []byte(result), nil
+	return json.Marshal(hexStrings)
 }
 
 /*
