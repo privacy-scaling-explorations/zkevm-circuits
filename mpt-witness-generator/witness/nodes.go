@@ -3,7 +3,6 @@ package witness
 import (
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/privacy-scaling-explorations/mpt-witness-generator/oracle"
@@ -46,7 +45,7 @@ func base64ToString(bs []byte) string {
 	if bs == nil {
 		bs = make([]byte, valueLen)
 	}
-	return fmt.Sprintf(`"%s"`, hex.EncodeToString(bs))
+	return hex.EncodeToString(bs)
 }
 
 func encodeArray(arrayBytes [][]byte) []string {
@@ -155,11 +154,7 @@ func (n *StorageNode) MarshalJSON() ([]byte, error) {
 type JSONableValues [][]byte
 
 func (u JSONableValues) MarshalJSON() ([]byte, error) {
-	hexStrings := make([]string, len(u))
-	for i, item := range u {
-		hexStrings[i] = hex.EncodeToString(item)
-	}
-	return json.Marshal(hexStrings)
+	return json.Marshal(encodeArray(u))
 }
 
 /*
