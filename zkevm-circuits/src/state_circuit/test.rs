@@ -1,7 +1,7 @@
 pub use super::{dev::*, *};
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, TxLogFieldTag, TxReceiptFieldTag},
-    util::{unusable_rows, SubCircuit},
+    util::{unusable_rows, unwrap_value, SubCircuit},
     witness::{MptUpdates, Rw, RwMap},
 };
 use bus_mapping::operation::{
@@ -12,7 +12,7 @@ use eth_types::{
     evm_types::{MemoryAddress, StackAddress},
     Address, ToAddress, Word, U256,
 };
-use gadgets::binary_number::AsBits;
+use gadgets::{binary_number::AsBits, permutation::get_permutation_fingerprints};
 use halo2_proofs::{
     arithmetic::Field as Halo2Field,
     dev::{MockProver, VerifyFailure},
@@ -46,13 +46,20 @@ fn test_state_circuit_ok(
         ..Default::default()
     });
 
+    let next_permutation_fingerprints = get_permutation_fingerprint_of_rwmap(
+        &rw_map,
+        N_ROWS,
+        Fr::from(1),
+        Fr::from(1),
+        Fr::from(1),
+    );
     let circuit = StateCircuit::<Fr>::new(
         rw_map,
         N_ROWS,
         Fr::from(1),
         Fr::from(1),
         Fr::from(1),
-        Fr::from(1),
+        next_permutation_fingerprints,
     );
     let instance = circuit.instance();
 
@@ -1075,4 +1082,26 @@ fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
         VerifyFailure::ConstraintPoisoned { .. } => panic!(),
         VerifyFailure::Permutation { .. } => panic!(),
     }
+}
+
+fn get_permutation_fingerprint_of_rwmap<F: Field>(
+    rwmap: &RwMap,
+    max_row: usize,
+    alpha: F,
+    gamma: F,
+    prev_continuous_fingerprint: F,
+) -> F {
+    let (rows, _) = RwMap::table_assignments_prepad(&rwmap.table_assignments(false), max_row);
+    let x = rows.to2dvec();
+    unwrap_value(
+        get_permutation_fingerprints(
+            &x,
+            Value::known(alpha),
+            Value::known(gamma),
+            Value::known(prev_continuous_fingerprint),
+            1,
+        )
+        .last()
+        .unwrap(),
+    )
 }

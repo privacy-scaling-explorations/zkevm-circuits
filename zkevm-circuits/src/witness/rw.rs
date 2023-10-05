@@ -260,6 +260,27 @@ pub enum Rw {
     },
 }
 
+/// general to vector
+pub trait ToVec<T> {
+    /// to 2d vec
+    fn to2dvec(&self) -> Vec<Vec<T>>;
+}
+
+impl<F: Field> ToVec<Value<F>> for Vec<Rw> {
+    fn to2dvec(&self) -> Vec<Vec<Value<F>>> {
+        self.iter()
+            .map(|row| {
+                row.table_assignment::<F>()
+                    .unwrap()
+                    .values()
+                    .iter()
+                    .map(|f| Value::known(*f))
+                    .collect::<Vec<Value<F>>>()
+            })
+            .collect::<Vec<Vec<Value<F>>>>()
+    }
+}
+
 /// Rw table row assignment
 #[derive(Default, Clone, Copy, Debug)]
 pub struct RwRow<F> {

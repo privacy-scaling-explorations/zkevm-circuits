@@ -14,9 +14,9 @@ pub(crate) mod util;
 
 #[cfg(test)]
 pub(crate) mod test;
-use self::step::HasExecutionState;
 #[cfg(feature = "test-circuits")]
 pub use self::EvmCircuit as TestEvmCircuit;
+use self::{step::HasExecutionState, witness::rw::ToVec};
 
 pub use crate::witness;
 use crate::{
@@ -26,6 +26,7 @@ use crate::{
         UXTable,
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
+    witness::RwMap,
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
@@ -302,7 +303,10 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
 
         config.execution.assign_block(layouter, block, challenges)?;
 
-        let rw_rows = block.rws.table_assignments(true);
+        let (rw_rows_padding, _) = RwMap::table_assignments_prepad(
+            &block.rws.table_assignments(true),
+            block.circuits_params.max_rws,
+        );
         let (
             (rw_table_row_first, rw_table_row_last),
             (
@@ -314,31 +318,26 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         ) = layouter.assign_region(
             || "evm circuit",
             |mut region| {
-                let rw_table_first_n_last_cells =
-                    config
-                        .rw_table
-                        .load_with_region(&mut region, &rw_rows, rw_rows.len())?;
+                region.name_column(|| "EVM_pi_pre_continuity", config.pi_pre_continuity);
+                region.name_column(|| "EVM_pi_next_continuity", config.pi_next_continuity);
+                region.name_column(
+                    || "EVM_pi_permutation_challenges",
+                    config.pi_permutation_challenges,
+                );
+                let rw_table_first_n_last_cells = config.rw_table.load_with_region(
+                    &mut region,
+                    // pass non-padding rws to `load_with_region` since it will be padding inside
+                    &block.rws.table_assignments(true),
+                    // align with state circuit to padding to same max_rws
+                    block.circuits_params.max_rws,
+                )?;
                 let permutation_cells = config.rw_permutation_config.assign(
                     &mut region,
                     Value::known(block.permu_alpha),
                     Value::known(block.permu_gamma),
-                    Value::known(block.permu_prev_continuous_fingerprint),
-                    Value::known(block.permu_next_continuous_fingerprint),
-                    &block
-                        .rws
-                        .table_assignments(true)
-                        .iter()
-                        .skip(1) // skip first row since it's used for permutation
-                        .map(|row| {
-                            row.table_assignment::<F>()
-                                .unwrap()
-                                .values()
-                                .to_vec()
-                                .iter()
-                                .map(|f| Value::known(*f))
-                                .collect::<Vec<Value<F>>>()
-                        })
-                        .collect::<Vec<Vec<Value<F>>>>(),
+                    Value::known(block.permu_chronological_rwtable_prev_continuous_fingerprint),
+                    Value::known(block.permu_chronological_rwtable_next_continuous_fingerprint),
+                    &rw_rows_padding.to2dvec(),
                 )?;
                 Ok((rw_table_first_n_last_cells, permutation_cells))
             },
@@ -372,29 +371,34 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     /// Compute the public inputs for this circuit.
     fn instance(&self) -> Vec<Vec<F>> {
         let block = self.block.as_ref().unwrap();
-        let rws_assignments = block.rws.table_assignments(true);
 
-        assert!(!rws_assignments.is_empty());
+        let (rws_assignments_padding, _) = RwMap::table_assignments_prepad(
+            &block.rws.table_assignments(true),
+            block.circuits_params.max_rws,
+        );
 
-        let rws_values = [0, rws_assignments.len() - 1] // get first/last row and concat
-            .iter()
-            .map(|i| {
-                rws_assignments
-                    .get(*i)
-                    .map(|row| row.table_assignment().unwrap().values())
-                    .unwrap_or_default()
-                    .to_vec()
-            })
-            .collect::<Vec<Vec<F>>>();
+        assert!(!rws_assignments_padding.is_empty());
+
+        let rws_values = [
+            rws_assignments_padding.first(),
+            rws_assignments_padding.last(),
+        ] // get first/last row and concat
+        .iter()
+        .map(|row| {
+            row.map(|row| row.table_assignment().unwrap().values())
+                .unwrap_or_default()
+                .to_vec()
+        })
+        .collect::<Vec<Vec<F>>>();
         vec![
             vec![
                 rws_values[0].clone(),
-                vec![block.permu_prev_continuous_fingerprint],
+                vec![block.permu_chronological_rwtable_prev_continuous_fingerprint],
             ]
             .concat(),
             vec![
                 rws_values[1].clone(),
-                vec![block.permu_next_continuous_fingerprint],
+                vec![block.permu_chronological_rwtable_next_continuous_fingerprint],
             ]
             .concat(),
             vec![block.permu_alpha, block.permu_gamma],
@@ -479,6 +483,10 @@ pub(crate) mod cached {
     impl EvmCircuitCached {
         pub(crate) fn get_test_circuit_from_block(block: Block<Fr>) -> Self {
             Self(EvmCircuit::<Fr>::get_test_circuit_from_block(block))
+        }
+
+        pub(crate) fn instance(&self) -> Vec<Vec<Fr>> {
+            self.0.instance()
         }
     }
 }

@@ -202,6 +202,14 @@ pub(crate) fn get_push_size(byte: u8) -> u64 {
     }
 }
 
+pub(crate) fn unwrap_value<F: Field>(value: &Value<F>) -> F {
+    let mut inner = None;
+    _ = value.map(|v| {
+        inner = Some(v);
+    });
+    inner.unwrap()
+}
+
 #[cfg(test)]
 use halo2_proofs::plonk::Circuit;
 

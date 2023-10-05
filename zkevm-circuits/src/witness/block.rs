@@ -1,10 +1,10 @@
-use super::{ExecStep, Rw, RwMap, Transaction};
+use super::{rw::ToVec, ExecStep, Rw, RwMap, Transaction};
 use crate::{
     evm_circuit::{detect_fixed_table_tags, EvmCircuit},
     exp_circuit::param::OFFSET_INCREMENT,
     instance::public_data_convert,
     table::BlockContextFieldTag,
-    util::{log2_ceil, word, SubCircuit},
+    util::{log2_ceil, unwrap_value, word, SubCircuit},
 };
 use bus_mapping::{
     circuit_input_builder::{self, CopyEvent, ExpEvent, FixedCParams},
@@ -12,6 +12,7 @@ use bus_mapping::{
     Error,
 };
 use eth_types::{Address, Field, ToScalar, Word};
+use gadgets::permutation::get_permutation_fingerprints;
 use halo2_proofs::circuit::Value;
 
 // TODO: Remove fields that are duplicated in`eth_block`
@@ -55,10 +56,19 @@ pub struct Block<F> {
     pub permu_alpha: F,
     /// permutation challenge gamma
     pub permu_gamma: F,
-    /// pre permutation fingerprint
-    pub permu_prev_continuous_fingerprint: F,
-    /// pre permutation fingerprint
-    pub permu_next_continuous_fingerprint: F,
+    /// pre rw_table permutation fingerprint
+    pub permu_rwtable_prev_continuous_fingerprint: F,
+    /// next rw_table permutation fingerprint
+    pub permu_rwtable_next_continuous_fingerprint: F,
+    /// pre chronological rw_table permutation fingerprint
+    pub permu_chronological_rwtable_prev_continuous_fingerprint: F,
+    /// next chronological rw_table permutation fingerprint
+    pub permu_chronological_rwtable_next_continuous_fingerprint: F,
+
+    /// index start from 0
+    pub rw_table_chunked_index: usize,
+    /// bool flag to indicate last rw_table chunk or not
+    pub is_rw_table_last_chunk: bool,
 }
 
 impl<F: Field> Block<F> {
@@ -256,8 +266,12 @@ pub fn block_convert<F: Field>(
         // TODO get permutation fingerprint & challenges
         permu_alpha: F::from(1),
         permu_gamma: F::from(1),
-        permu_prev_continuous_fingerprint: F::from(1),
-        permu_next_continuous_fingerprint: F::from(1),
+        permu_rwtable_prev_continuous_fingerprint: F::from(1),
+        permu_rwtable_next_continuous_fingerprint: F::from(1),
+        permu_chronological_rwtable_prev_continuous_fingerprint: F::from(1),
+        permu_chronological_rwtable_next_continuous_fingerprint: F::from(1),
+        rw_table_chunked_index: 0, // chunk index start from 0
+        is_rw_table_last_chunk: true,
         context: block.into(),
         rws,
         txs: block.txs().to_vec(),
@@ -280,5 +294,37 @@ pub fn block_convert<F: Field>(
     );
     // PI Circuit
     block.keccak_inputs.extend_from_slice(&[rpi_bytes]);
+
+    // Permutation fingerprints
+    let (rws_rows, _) = RwMap::table_assignments_prepad(
+        &block.rws.table_assignments(false),
+        block.circuits_params.max_rws,
+    );
+    let (chronological_rws_rows, _) = RwMap::table_assignments_prepad(
+        &block.rws.table_assignments(true),
+        block.circuits_params.max_rws,
+    );
+    block.permu_rwtable_next_continuous_fingerprint = unwrap_value(
+        get_permutation_fingerprints(
+            &<dyn ToVec<Value<F>>>::to2dvec(&rws_rows),
+            Value::known(block.permu_alpha),
+            Value::known(block.permu_gamma),
+            Value::known(block.permu_rwtable_prev_continuous_fingerprint),
+            1,
+        )
+        .last()
+        .unwrap(),
+    );
+    block.permu_chronological_rwtable_next_continuous_fingerprint = unwrap_value(
+        get_permutation_fingerprints(
+            &<dyn ToVec<Value<F>>>::to2dvec(&chronological_rws_rows),
+            Value::known(block.permu_alpha),
+            Value::known(block.permu_gamma),
+            Value::known(block.permu_chronological_rwtable_prev_continuous_fingerprint),
+            1,
+        )
+        .last()
+        .unwrap(),
+    );
     Ok(block)
 }

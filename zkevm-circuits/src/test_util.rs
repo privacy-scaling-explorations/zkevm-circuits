@@ -208,7 +208,8 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
             let circuit = EvmCircuitCached::get_test_circuit_from_block(block.clone());
-            let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
+            let instance = circuit.instance();
+            let prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
 
             self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows)
         }
@@ -224,8 +225,8 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 params.max_rws,
                 block.permu_alpha,
                 block.permu_gamma,
-                block.permu_prev_continuous_fingerprint,
-                block.permu_next_continuous_fingerprint,
+                block.permu_rwtable_prev_continuous_fingerprint,
+                block.permu_rwtable_next_continuous_fingerprint,
             );
             let instance = state_circuit.instance();
             let prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();

@@ -20,7 +20,7 @@ use self::{
 use crate::{
     table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable, UXTable},
     util::{word, Challenges, Expr, SubCircuit, SubCircuitConfig},
-    witness::{self, MptUpdates, Rw, RwMap},
+    witness::{self, rw::ToVec, MptUpdates, Rw, RwMap},
 };
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field, Word};
@@ -423,6 +423,12 @@ impl<F: Field> StateCircuitConfig<F> {
         region.name_column(|| "STATE_mpt_proof_type", self.mpt_proof_type);
         region.name_column(|| "STATE_state_root lo", self.state_root.lo());
         region.name_column(|| "STATE_state_root hi", self.state_root.hi());
+        region.name_column(|| "STATE_pi_pre_continuity", self.pi_pre_continuity);
+        region.name_column(|| "STATE_pi_next_continuity", self.pi_next_continuity);
+        region.name_column(
+            || "STATE_pi_permutation_challenges",
+            self.pi_permutation_challenges,
+        );
     }
 }
 
@@ -504,8 +510,8 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
             block.circuits_params.max_rws,
             block.permu_alpha,
             block.permu_gamma,
-            block.permu_prev_continuous_fingerprint,
-            block.permu_next_continuous_fingerprint,
+            block.permu_rwtable_prev_continuous_fingerprint,
+            block.permu_rwtable_next_continuous_fingerprint,
         )
     }
 
@@ -546,8 +552,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         ) = layouter.assign_region(
             || "state circuit",
             |mut region| {
-                // TODO Below RwMap::table_assignments_prepad call 3 times, refactor to be more
-                // efficient
+                // TODO optimimise RwMap::table_assignments_prepad calls from 3 times -> 1
                 let rw_table_first_n_last_cells =
                     config
                         .rw_table
@@ -563,18 +568,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     Value::known(self.permu_gamma),
                     Value::known(self.permu_prev_continuous_fingerprint),
                     Value::known(self.permu_next_continuous_fingerprint),
-                    &rows
-                        .iter()
-                        .skip(1) // skip first row since it's used for permutation
-                        .map(|row| {
-                            row.table_assignment::<F>()
-                                .unwrap()
-                                .values()
-                                .iter()
-                                .map(|f| Value::known(*f))
-                                .collect::<Vec<Value<F>>>()
-                        })
-                        .collect::<Vec<Vec<Value<F>>>>(),
+                    &rows.to2dvec(),
                 )?;
                 #[cfg(test)]
                 {
@@ -630,12 +624,12 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     fn instance(&self) -> Vec<Vec<F>> {
         assert!(!self.rows.is_empty());
 
-        let rws_values = [0, self.rows.len() - 1] // get first/last row and concat
+        let (rows, _) = RwMap::table_assignments_prepad(&self.rows, self.n_rows);
+
+        let rws_values = [rows.first(), rows.last()] // get first/last row and concat
             .iter()
-            .map(|i| {
-                self.rows
-                    .get(*i)
-                    .map(|row| row.table_assignment().unwrap().values())
+            .map(|row| {
+                row.map(|row| row.table_assignment().unwrap().values())
                     .unwrap_or_default()
                     .to_vec()
             })

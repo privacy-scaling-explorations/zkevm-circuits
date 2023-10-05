@@ -46,90 +46,64 @@ impl<F: Field> PermutationChipConfig<F> {
         alpha: Value<F>,
         gamma: Value<F>,
         prev_continuous_fingerprint: Value<F>,
-        _next_continuous_fingerprint: Value<F>,
-        col_values: &Vec<Vec<Value<F>>>,
+        next_continuous_fingerprint: Value<F>,
+        col_values: &[Vec<Value<F>>],
     ) -> Result<PermutationAssignedCells<F>, Error> {
         self.annotate_columns_in_region(region, "state_circuit");
-        let mut offset = 0;
-        let alpha_first_cell = region.assign_advice(
-            || format!("alpha at index {}", offset),
-            self.alpha,
-            offset,
-            || alpha,
-        )?;
-        let gamma_first_cell = region.assign_advice(
-            || format!("gamma at index {}", offset),
-            self.gamma,
-            offset,
-            || gamma,
-        )?;
-        let prev_continuous_fingerprint_cell = region.assign_advice(
-            || format!("fingerprint at index {}", offset),
-            self.fingerprints,
-            offset,
-            || prev_continuous_fingerprint,
-        )?;
 
-        let power_of_gamma = {
-            let num_of_col = col_values.get(0).map(|x| x.len()).unwrap_or_default();
-            std::iter::successors(Some(Value::known(F::ONE)), |prev| (*prev * gamma).into())
-                .take(num_of_col)
-                .collect::<Vec<Value<F>>>()
-        };
+        // get accumulated fingerprints of each row
+        let fingerprints =
+            get_permutation_fingerprints(col_values, alpha, gamma, prev_continuous_fingerprint, 1);
 
-        offset += 1;
+        // debug: internal computed fingerprint should match with external fingerprint
+        next_continuous_fingerprint
+            .zip(*fingerprints.last().unwrap())
+            .map(|(a, b)| debug_assert!(a == b, "{:?} != {:?}", a, b));
 
-        let mut fingerprints = prev_continuous_fingerprint;
         let mut last_fingerprint_cell = None;
-        for (_, row) in col_values.iter().enumerate() {
-            self.q_row_non_first.enable(region, offset)?;
+        let mut alpha_first_cell = None;
+        let mut gamma_first_cell = None;
+        let mut prev_continuous_fingerprint_cell = None;
+        for (offset, row_fingerprint) in fingerprints.iter().enumerate() {
+            // skip first fingerprint for its prev_fingerprint
+            if offset != 0 {
+                self.q_row_non_first.enable(region, offset)?;
+            }
 
-            let perf_term = {
-                let tmp = row
-                    .iter()
-                    .zip_eq(power_of_gamma.iter())
-                    .map(|(a, b)| a.zip(*b).map(|(a, b)| a * b))
-                    .fold(Value::known(F::ZERO), |prev, cur| {
-                        prev.zip(cur).map(|(a, b)| a + b)
-                    });
-                alpha.zip(tmp).map(|(alpha, tmp)| alpha - tmp)
-            };
-
-            fingerprints = fingerprints.zip(perf_term).map(|(prev, cur)| prev * cur);
             let fingerprint_cell = region.assign_advice(
                 || format!("fingerprint at index {}", offset),
                 self.fingerprints,
                 offset,
-                || fingerprints,
+                || *row_fingerprint,
             )?;
-            // last offset (with one padding)
-            if offset == col_values.len() {
-                // TODO debug: internal computed fingerprint should match with external fingerprint
-                // next_continuous_fingerprint
-                //     .zip(fingerprints)
-                //     .map(|(a, b)| debug_assert!(a == b, "{:?} != {:?}", a, b));
-                last_fingerprint_cell = Some(fingerprint_cell);
-            }
-            region.assign_advice(
+            let alpha_cell = region.assign_advice(
                 || format!("alpha at index {}", offset),
                 self.alpha,
                 offset,
                 || alpha,
             )?;
-            region.assign_advice(
+            let gamma_cell = region.assign_advice(
                 || format!("gamma at index {}", offset),
                 self.gamma,
                 offset,
                 || gamma,
             )?;
 
-            offset += 1;
+            if offset == 0 {
+                alpha_first_cell = Some(alpha_cell);
+                gamma_first_cell = Some(gamma_cell);
+                prev_continuous_fingerprint_cell = Some(fingerprint_cell.clone());
+            }
+            // last offset
+            if offset == fingerprints.len() - 1 {
+                last_fingerprint_cell = Some(fingerprint_cell);
+            }
         }
 
         Ok((
-            alpha_first_cell,
-            gamma_first_cell,
-            prev_continuous_fingerprint_cell,
+            alpha_first_cell.unwrap(),
+            gamma_first_cell.unwrap(),
+            prev_continuous_fingerprint_cell.unwrap(),
             last_fingerprint_cell.unwrap(),
         ))
     }
@@ -219,3 +193,37 @@ impl<F: Field> PermutationChip<F> {
 }
 
 impl<F: Field> PermutationChip<F> {}
+
+/// get permutation fingerprint of rows
+pub fn get_permutation_fingerprints<F: Field>(
+    col_values: &[Vec<Value<F>>],
+    alpha: Value<F>,
+    gamma: Value<F>,
+    prev_continuous_fingerprint: Value<F>,
+    row_skip: usize,
+) -> Vec<Value<F>> {
+    let power_of_gamma = {
+        let num_of_col = col_values.get(0).map(|row| row.len()).unwrap_or_default();
+        std::iter::successors(Some(Value::known(F::ONE)), |prev| (*prev * gamma).into())
+            .take(num_of_col)
+            .collect::<Vec<Value<F>>>()
+    };
+    let mut fingerprints = vec![prev_continuous_fingerprint];
+    col_values
+        .iter()
+        .skip(row_skip)
+        .map(|row| {
+            let tmp = row
+                .iter()
+                .zip_eq(power_of_gamma.iter())
+                .map(|(a, b)| a.zip(*b).map(|(a, b)| a * b))
+                .fold(Value::known(F::ZERO), |prev, cur| {
+                    prev.zip(cur).map(|(a, b)| a + b)
+                });
+            alpha.zip(tmp).map(|(alpha, tmp)| alpha - tmp)
+        })
+        .for_each(|value| {
+            fingerprints.push(fingerprints[fingerprints.len() - 1] * value);
+        });
+    fingerprints
+}
