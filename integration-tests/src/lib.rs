@@ -150,10 +150,13 @@ pub struct CompiledContract {
 }
 
 #[allow(missing_docs)]
+#[allow(clippy::all)]
 pub mod bindings_benchmarks;
 #[allow(missing_docs)]
+#[allow(clippy::all)]
 pub mod bindings_greeter;
 #[allow(missing_docs)]
+#[allow(clippy::all)]
 pub mod bindings_openzeppelinerc20testtoken;
 /// Common code for integration tests of circuits.
 pub mod integration_test_circuits;
