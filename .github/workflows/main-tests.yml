@@ -121,6 +121,12 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install solc
+        run: |
+          sudo wget -O /usr/bin/solc https://github.com/ethereum/solidity/releases/download/v0.8.21/solc-static-linux
+          sudo chmod +x /usr/bin/solc
+      - name: Update ERC20 git submodule
+        run: git submodule update --init --recursive --checkout integration-tests/contracts/vendor/openzeppelin-contracts
       - name: Run heavy tests # heavy tests are run serially to avoid OOM
         uses: actions-rs/cargo@v1
         with:
@@ -163,6 +169,12 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: build-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        - name: Install solc
+        run: |
+          sudo wget -O /usr/bin/solc https://github.com/ethereum/solidity/releases/download/v0.8.21/solc-static-linux
+          sudo chmod +x /usr/bin/solc
+      - name: Update ERC20 git submodule
+        run: git submodule update --init --recursive --checkout integration-tests/contracts/vendor/openzeppelin-contracts
       - name: cargo build
         uses: actions-rs/cargo@v1
         with:
