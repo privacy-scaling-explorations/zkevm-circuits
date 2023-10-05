@@ -98,7 +98,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     } else {
         (Word::zero(), true)
     };
-    if !state.is_precompiled(&call.address) && !call.is_create() {
+    if !state.is_precompiled(&call.address) {
         state.account_read(
             &mut exec_step,
             call.address,

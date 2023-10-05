@@ -240,7 +240,7 @@ pub enum Rw {
         tx_id: usize,
         log_id: u64, // pack this can index together into address?
         field_tag: TxLogFieldTag,
-        /// index has 3 usages depends on [`crate::table::TxLogFieldTag`]
+        /// index has 3 usages depends on `crate::table::TxLogFieldTag`
         /// - topic index (0..4) if field_tag is TxLogFieldTag::Topic
         /// - byte index if field_tag is TxLogFieldTag:Data
         /// - 0 for other field tags
