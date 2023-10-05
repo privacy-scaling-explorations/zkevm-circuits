@@ -127,3 +127,6 @@ impl GasCost {
     /// it from 10 to 50.
     pub const EXP_BYTE_TIMES: u64 = 50;
 }
+
+/// This constant is used to iterate through precompile contract addresses 0x01 to 0x09
+pub const PRECOMPILE_COUNT: u64 = 9;
