@@ -139,8 +139,10 @@ fn generate_rust_contract_bindings(bindings_dir: &str, file: &Path) {
 
     let contractnamevector: Vec<&str> = filename.split(DOT).collect();
     let contractname = contractnamevector[0].to_lowercase();
+    let destpath = format!("{}{}{}", "bindings_", contractname, ".rs");
     let destpath =
-        Path::new(&bindings_dir).join([contractname.clone(), "rs".to_string()].join("."));
+        // Path::new(&bindings_dir).join([contractname.clone(), "rs".to_string()].join("."));
+        Path::new(&bindings_dir).join(destpath);
     let _ = Abigen::new(
         contractname,
         abi_source.into_os_string().into_string().expect("error"),

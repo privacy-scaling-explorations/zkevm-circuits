@@ -150,10 +150,10 @@ pub struct CompiledContract {
 }
 
 #[allow(missing_docs)]
-pub mod benchmarks;
+pub mod bindings_benchmarks;
 #[allow(missing_docs)]
-pub mod greeter;
+pub mod bindings_greeter;
+#[allow(missing_docs)]
+pub mod bindings_openzeppelinerc20testtoken;
 /// Common code for integration tests of circuits.
 pub mod integration_test_circuits;
-#[allow(missing_docs)]
-pub mod openzeppelinerc20testtoken;

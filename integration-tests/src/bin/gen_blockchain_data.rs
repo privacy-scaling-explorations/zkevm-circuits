@@ -17,9 +17,12 @@ use ethers::{
     signers::Signer,
 };
 use integration_tests::{
-    benchmarks::*, get_client, get_provider, get_wallet, greeter::*, log_init,
-    openzeppelinerc20testtoken::openzeppelinerc20testtoken as ozerc20tt, GenDataOutput,
+    bindings_benchmarks::{benchmarks::benchmarks, Len},
+    bindings_greeter::greeter::greeter,
+    bindings_openzeppelinerc20testtoken::openzeppelinerc_2_0testtoken::openzeppelinerc20testtoken as ozerc20tt,
+    get_client, get_provider, get_wallet, log_init, GenDataOutput,
 };
+
 use log::{error, info};
 use std::{collections::HashMap, fs::File, sync::Arc, thread::sleep, time::Duration};
 
@@ -51,7 +54,7 @@ where
     (c_abi, contract_address, block_number, contract_instance)
 }
 
-async fn dump_tx_trace(prov: Provider<Http>, receipt: TransactionReceipt, name: &str) -> () {
+async fn dump_tx_trace(prov: Provider<Http>, receipt: TransactionReceipt, name: &str) {
     let options = GethDebugTracingOptions::default();
     let trace = prov
         .debug_trace_transaction(receipt.transaction_hash, options)
@@ -157,7 +160,7 @@ async fn main() {
     let prov_wallet0 = Arc::new(SignerMiddleware::new(get_provider(), wallet0));
 
     // Greeter
-    let greeter_deployer = greeter::greeter::deploy(prov_wallet0.clone(), U256::from(42))
+    let greeter_deployer = greeter::deploy(prov_wallet0.clone(), U256::from(42))
         .expect("Error building deployment Transaction");
     let (contract_abi, contract_address, block_number, _greeter_instance) =
         deploy(greeter_deployer, "Greeter").await;
@@ -185,7 +188,7 @@ async fn main() {
     //
 
     // Benchmarks
-    let benchmarks_deployer = benchmarks::benchmarks::deploy(prov_wallet0.clone(), ())
+    let benchmarks_deployer = benchmarks::deploy(prov_wallet0.clone(), ())
         .expect("Error building deployment Transaction");
     let (contract_abi, contract_address, block_number, benchmarks_instance) =
         deploy(benchmarks_deployer, "Benchmarks").await;
@@ -346,7 +349,7 @@ async fn main() {
     // MLOAD (EVM)
     info!("Sending Tx optimized for maximum MLOAD opcode calls up to 300k gas");
     cli.miner_start().await.expect("cannot start miner");
-    let bench_tx = benchmarks_instance.check_mload(benchmarks::Len(77500));
+    let bench_tx = benchmarks_instance.check_mload(Len(77500));
     let tx_call = bench_tx
         .send()
         .await
@@ -364,7 +367,7 @@ async fn main() {
     // SDIV (STATE)
     info!("Sending Tx optimized for maximum SDIV opcode calls up to 300k gas");
     cli.miner_start().await.expect("cannot start miner");
-    let bench_tx = benchmarks_instance.check_sdiv(benchmarks::Len(32400));
+    let bench_tx = benchmarks_instance.check_sdiv(Len(32400));
     let tx_call = bench_tx
         .send()
         .await
