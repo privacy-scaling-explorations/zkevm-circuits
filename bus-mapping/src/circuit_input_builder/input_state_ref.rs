@@ -19,7 +19,8 @@ use crate::{
 };
 use eth_types::{
     evm_types::{
-        gas_utils::memory_expansion_gas_cost, GasCost, MemoryAddress, OpcodeId, StackAddress, memory::MemoryWordRange,
+        memory::{MemoryWordRange, MemoryRef},
+        gas_utils::memory_expansion_gas_cost, GasCost, Memory, MemoryAddress, OpcodeId, StackAddress,
     },
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
@@ -218,10 +219,12 @@ impl<'a> CircuitInputStateRef<'a> {
         step: &mut ExecStep,
         address: MemoryAddress,
         value: u8,
-    ) -> Result<(), Error> {
+    ) -> Result<u8, Error> {
+        let byte = &self.call_ctx()?.memory.read_chunk(address, 1.into())[0];
+
         let call_id = self.call()?.call_id;
-        self.push_op(step, RW::READ, MemoryOp::new(call_id, address, value));
-        Ok(())
+        self.push_op(step, RW::READ, MemoryOp::new(call_id, address, *byte));
+        Ok(*byte)
     }
 
     /// Push a write type [`MemoryOp`] into the
@@ -243,6 +246,32 @@ impl<'a> CircuitInputStateRef<'a> {
         mem.write_chunk(address, &[value]);
 
         self.push_op(step, RW::WRITE, MemoryOp::new(call_id, address, value));
+        Ok(value_prev)
+    }
+
+    /// Push a write type [`MemoryOp`] into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter) and `caller_id`, and then
+    /// adds a reference to the stored operation ([`OperationRef`]) inside
+    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
+    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    pub fn memory_write_caller(
+        &mut self,
+        step: &mut ExecStep,
+        address: MemoryAddress, //Caution: make sure this address = slot passing
+        value: u8,
+    ) -> Result<u8, Error> {
+        let call_id = self.call()?.caller_id;
+
+        let mem = &mut self.caller_ctx_mut()?.memory;
+        let value_prev = mem.read_chunk(address, 1.into())[0];
+        mem.write_chunk(address, &[value_prev]);
+        
+        self.push_op(
+            step,
+            RW::WRITE,
+            MemoryOp::new(call_id, address, value),
+        );
         Ok(value_prev)
     }
 
@@ -1625,6 +1654,61 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok((copy_steps, prev_bytes))
     }
 
+    pub(crate) fn gen_copy_steps_for_precompile_returndata(
+        &mut self,
+        exec_step: &mut ExecStep,
+        dst_addr: impl Into<MemoryAddress>,
+        copy_length: impl Into<MemoryAddress>,
+        result: &[u8],
+    ) -> Result<(CopyEventSteps, CopyEventSteps, CopyEventPrevBytes), Error> {
+        let copy_length = copy_length.into().0;
+        if copy_length == 0 {
+            return Ok((vec![], vec![], vec![]));
+        }
+        assert!(copy_length <= result.len());
+
+        let (src_range, dst_range, write_slot_bytes) = combine_copy_slot_bytes(
+            0,
+            dst_addr.into().0,
+            copy_length,
+            result,
+            &mut self.caller_ctx_mut()?.memory,
+        );
+
+        let read_slot_bytes = MemoryRef(result).read_chunk(src_range);
+        debug_assert_eq!(read_slot_bytes.len(), write_slot_bytes.len());
+
+        let read_steps = CopyEventStepsBuilder::memory_range(src_range)
+            .source(read_slot_bytes.as_slice())
+            .build();
+
+        let write_steps = CopyEventStepsBuilder::memory_range(dst_range)
+            .source(write_slot_bytes.as_slice())
+            .build();
+
+        let mut src_byte_index = src_range.start_slot().0;
+        let mut dst_byte_index = dst_range.start_slot().0;
+
+        let mut prev_bytes = vec![];
+
+        for (read_byte, write_byte) in read_slot_bytes.into_iter().zip(write_slot_bytes.into_iter())
+        {
+            let v = self.memory_read(exec_step, src_byte_index.into(), read_byte)?;
+            debug_assert_eq!(read_byte, v);
+            src_byte_index += 1;
+
+            let prev_byte = self.memory_write_caller(
+                exec_step, 
+                dst_byte_index.into(), 
+                write_byte
+            )?;
+            prev_bytes.push(prev_byte);
+            dst_byte_index += 1;
+        }
+
+        Ok((read_steps, write_steps, prev_bytes))
+    }
+
     /// Generate copy steps for call data.
     pub(crate) fn gen_copy_steps_for_call_data(
         &mut self,
@@ -1657,4 +1741,48 @@ impl<'a> CircuitInputStateRef<'a> {
 
         Ok(copy_steps)
     }
+}
+
+// Return source range, destination range and destination slot bytes.
+fn combine_copy_slot_bytes(
+    src_addr: usize,
+    dst_addr: usize,
+    copy_length: usize,
+    src_data: &[impl Into<u8> + Clone],
+    dst_memory: &mut Memory,
+) -> (MemoryWordRange, MemoryWordRange, Vec<u8>) {
+    let mut src_range = MemoryWordRange::align_range(src_addr, copy_length);
+    let mut dst_range = MemoryWordRange::align_range(dst_addr, copy_length);
+    src_range.ensure_equal_length(&mut dst_range);
+
+    // Extend call memory.
+    dst_memory.extend_for_range(dst_addr.into(), copy_length.into());
+    let dst_begin_slot = dst_range.start_slot().0;
+    let dst_end_slot = dst_range.end_slot().0;
+
+    let src_data_length = src_data.len();
+    let src_addr = src_addr.min(src_data_length);
+    let src_copy_end = src_addr + copy_length;
+    let src_addr_end = src_copy_end.min(src_data_length);
+    let dst_copy_end = dst_addr + copy_length;
+    let dst_addr_end = dst_end_slot.min(dst_memory.len());
+
+    // Combine the destination slot bytes.
+    let bytes_to_copy: Vec<_> = src_data[src_addr..src_addr_end]
+        .iter()
+        .cloned()
+        .map(Into::into)
+        .collect();
+    let copy_padding_bytes = repeat(0).take(src_copy_end - src_addr_end);
+    let end_padding_bytes = repeat(0).take(dst_end_slot - dst_addr_end);
+    let slot_bytes: Vec<u8> = dst_memory[dst_begin_slot..dst_addr]
+        .iter()
+        .cloned()
+        .chain(bytes_to_copy)
+        .chain(copy_padding_bytes)
+        .chain(dst_memory[dst_copy_end..dst_addr_end].iter().cloned())
+        .chain(end_padding_bytes)
+        .collect();
+
+    (src_range, dst_range, slot_bytes)
 }
