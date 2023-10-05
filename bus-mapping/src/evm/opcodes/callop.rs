@@ -7,7 +7,7 @@ use crate::{
         error_oog_precompile::ErrorOOGPrecompile,
         precompiles::gen_associated_ops as precompile_associated_ops,
     },
-    operation::{AccountField, CallContextField, MemoryOp, TxAccessListAccountOp, RW},
+    operation::{AccountField, CallContextField, TxAccessListAccountOp},
     precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
     state_db::CodeDB,
     Error,
@@ -19,7 +19,7 @@ use eth_types::{
     },
     GethExecStep, ToWord, Word,
 };
-use revm_precompile::Precompile;
+// use revm_precompile::Precompile;
 use std::cmp::min;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
