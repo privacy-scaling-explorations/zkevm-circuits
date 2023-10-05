@@ -6,6 +6,7 @@ use super::{
     TransactionContext,
 };
 use crate::{
+    circuit_input_builder::execution::{CopyEventPrevBytes, CopyEventSteps, CopyEventStepsBuilder},
     error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError},
     exec_trace::OperationRef,
     operation::{
@@ -18,12 +19,12 @@ use crate::{
 };
 use eth_types::{
     evm_types::{
-        gas_utils::memory_expansion_gas_cost, GasCost, MemoryAddress, OpcodeId, StackAddress,
+        gas_utils::memory_expansion_gas_cost, GasCost, MemoryAddress, OpcodeId, StackAddress, memory::MemoryWordRange,
     },
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
-use std::cmp::max;
+use std::{cmp::max, iter::repeat};
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
 /// [`ExecStep`].
@@ -234,10 +235,15 @@ impl<'a> CircuitInputStateRef<'a> {
         step: &mut ExecStep,
         address: MemoryAddress,
         value: u8,
-    ) -> Result<(), Error> {
+    ) -> Result<u8, Error> {
         let call_id = self.call()?.call_id;
+
+        let mem = &mut self.call_ctx_mut()?.memory;
+        let value_prev = mem.read_chunk(address, 1.into())[0];
+        mem.write_chunk(address, &[value]);
+
         self.push_op(step, RW::WRITE, MemoryOp::new(call_id, address, value));
-        Ok(())
+        Ok(value_prev)
     }
 
     /// Push a write type [`StackOp`] into the
@@ -1561,6 +1567,62 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         Ok(copy_steps)
+    }
+
+    pub(crate) fn gen_copy_steps_for_precompile_calldata(
+        &mut self,
+        exec_step: &mut ExecStep,
+        src_addr: u64,
+        copy_length: u64,
+    ) -> Result<CopyEventSteps, Error> {
+        if copy_length == 0 {
+            return Ok(vec![]);
+        }
+
+        let range = MemoryWordRange::align_range(src_addr, copy_length);
+        let slot_bytes = &self.caller_ctx()?.memory.read_chunk(range.start_slot(), range.end_slot() - range.start_slot());
+
+        let copy_steps = CopyEventStepsBuilder::memory_range(range)
+            .source(slot_bytes.as_slice())
+            .build();
+    
+        let mut byte_index = range.start_slot().0;
+        for byte in slot_bytes {
+            self.memory_read(exec_step, byte_index.into(), *byte)?;
+            byte_index += 1;
+        }
+
+        Ok(copy_steps)
+    }
+
+    pub(crate) fn gen_copy_steps_for_precompile_callee_memory(
+        &mut self,
+        exec_step: &mut ExecStep,
+        result: &[u8]
+    ) -> Result<(CopyEventSteps, CopyEventPrevBytes), Error> {
+        if result.is_empty() {
+            return Ok((vec![], vec![]));
+        }
+
+        let range = MemoryWordRange::align_range(0, result.len());
+        let copy_steps = CopyEventStepsBuilder::memory_range(range)
+            .source(result)
+            .build();
+        
+        let mut prev_bytes = vec![];
+
+        let full_length = range.full_length().0;
+        assert!(full_length >= result.len() && full_length % 32 == 0);
+        let padding: Vec<_> = repeat(0).take(full_length - result.len()).collect();
+
+        let mut byte_index = 0;
+        for byte in [result, &padding].concat() {
+            let prev_byte = self.memory_write(exec_step, byte_index.into(), byte)?;
+            prev_bytes.push(prev_byte);
+            byte_index += 1;
+        }
+
+        Ok((copy_steps, prev_bytes))
     }
 
     /// Generate copy steps for call data.
