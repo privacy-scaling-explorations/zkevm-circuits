@@ -6,7 +6,7 @@ use super::*;
 use bus_mapping::{
     circuit_input_builder::FixedCParams, mock::BlockData, state_db::EMPTY_CODE_HASH_LE,
 };
-use eth_types::{bytecode, geth_types::GethData, Word, H160, H256};
+use eth_types::{bytecode, geth_types::GethData, Address, Word, H160, H256};
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
@@ -201,8 +201,7 @@ fn test_1wd_1wdmax() {
             block
                 .number(0xcafeu64)
                 .chain_id(*MOCK_CHAIN_ID)
-                .withdrawal_hash(Some(H256::from(*EMPTY_CODE_HASH_LE)))
-            // .withdrawal_hash(Some(H256::from_low_u64_le(0xabcd)))
+                .withdrawal_hash(Some(H256::from_low_u64_le(0xabcd)))
         },
     )
     .unwrap();

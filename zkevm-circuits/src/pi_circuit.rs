@@ -11,7 +11,7 @@ use std::{cmp::min, iter, marker::PhantomData};
 pub use PiCircuit as TestPiCircuit;
 
 use bus_mapping::circuit_input_builder::Withdrawal;
-use eth_types::{self, Address, Field, ToLittleEndian};
+use eth_types::{self, Field, ToLittleEndian};
 use halo2_proofs::plonk::{Expression, Instance, SecondPhase};
 use itertools::Itertools;
 use param::*;
