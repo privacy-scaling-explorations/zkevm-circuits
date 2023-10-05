@@ -1,5 +1,2 @@
 [target.'cfg(target_os="macos")']
 rustflags = ["-C", "link-args=-framework CoreFoundation -framework Security"]
-
-[target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
