@@ -12,13 +12,12 @@ pub struct WithdrawalContext {
     id: u64,
 
     /// Reversible Write Counter tracks the number of write operations in the
-    /// call. It is incremented when a sub-call in this call succeeds by the
-    /// number of successful writes in the sub-call.
+    /// call. It is incremented when there are successful writes in the sub-call of this call.
     pub reversible_write_counter: usize,
 }
 
 impl WithdrawalContext {
-    /// Return id of the this withdrawal.
+    /// Return id of this withdrawal.
     pub fn id(&self) -> u64 {
         self.id
     }

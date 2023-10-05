@@ -81,7 +81,7 @@ pub struct PublicData {
     pub history_hashes: Vec<Word>,
     /// Block Transactions
     pub transactions: Vec<Transaction>,
-    /// Block Transactions
+    /// Block Withdrawals
     pub withdrawals: Vec<Withdrawal>,
     /// Block State Root
     pub state_root: H256,
