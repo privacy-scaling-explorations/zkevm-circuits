@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 use eth_types::Field;
 use eyre::Result;
 use gadgets::{
@@ -560,16 +562,16 @@ impl StateUpdateCircuit<Fr> {
         // verify the circuit
         let disable_preimage_check = mpt_witness[0].start.clone().unwrap().disable_preimage_check;
 
-        let keccak_circuit =
-            KeccakCircuit::<Fr>::new(2usize.pow(degree as u32), keccak_data.clone());
-
         let mpt_circuit = zkevm_circuits::mpt_circuit::MPTCircuit::<Fr> {
             nodes: mpt_witness,
-            keccak_data,
+            keccak_data: keccak_data.clone(),
             degree,
             disable_preimage_check,
             _marker: std::marker::PhantomData,
         };
+
+        #[cfg(not(feature = "disable-keccak"))]
+        let keccak_circuit = KeccakCircuit::<Fr>::new(2usize.pow(degree as u32), keccak_data);
 
         let lc_circuit = StateUpdateCircuit::<Fr> {
             transforms,
