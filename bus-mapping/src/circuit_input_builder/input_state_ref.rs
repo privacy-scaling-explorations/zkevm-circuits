@@ -218,7 +218,7 @@ impl<'a> CircuitInputStateRef<'a> {
         &mut self,
         step: &mut ExecStep,
         address: MemoryAddress,
-        value: u8,
+        _value: u8,
     ) -> Result<u8, Error> {
         let byte = &self.call_ctx()?.memory.read_chunk(address, 1.into())[0];
 
