@@ -155,3 +155,6 @@ impl GasCost {
     /// Base gas cost for precompile call: BLAKE2F
     pub const PRECOMPILE_BLAKE2F: u64 = 0;
 }
+
+/// This constant is used to iterate through precompile contract addresses 0x01 to 0x09
+pub const PRECOMPILE_COUNT: u64 = 9;
