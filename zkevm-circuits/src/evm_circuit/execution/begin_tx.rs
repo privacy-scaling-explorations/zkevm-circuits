@@ -28,13 +28,14 @@ use crate::{
     },
 };
 use bus_mapping::state_db::CodeDB;
-use eth_types::{evm_types::GasCost, keccak256, Field, ToWord, U256};
+use eth_types::{
+    evm_types::{GasCost, PRECOMPILE_COUNT},
+    keccak256, Field, ToWord, U256,
+};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
-
-const PRECOMPILE_COUNT: usize = 9;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
@@ -533,7 +534,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let mut rws = StepRws::new(block, step);
         rws.offset_add(7);
 
-        rws.offset_add(PRECOMPILE_COUNT);
+        rws.offset_add(PRECOMPILE_COUNT as usize);
 
         let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
         let mut callee_code_hash = zero;

@@ -6,12 +6,10 @@ use crate::{
     Error,
 };
 use eth_types::{
-    evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
+    evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED, PRECOMPILE_COUNT},
     evm_unimplemented, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
-
-const PRECOMPILE_COUNT: u64 = 9;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct BeginEndTx;
