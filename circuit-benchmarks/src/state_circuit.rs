@@ -46,6 +46,7 @@ mod tests {
             Fr::from(1),
             Fr::from(1),
             Fr::from(1),
+            0,
         );
 
         // Initialize the polynomial commitment parameters

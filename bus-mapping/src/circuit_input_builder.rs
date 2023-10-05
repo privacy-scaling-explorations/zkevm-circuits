@@ -14,7 +14,7 @@ use self::access::gen_state_access_trace;
 use crate::{
     error::Error,
     evm::opcodes::{gen_associated_ops, gen_associated_steps},
-    operation::{CallContextField, Operation, RWCounter, StartOp, RW},
+    operation::{CallContextField, Op, Operation, OperationContainer, RWCounter, RW},
     rpc::GethClient,
     state_db::{self, CodeDB, StateDB},
 };
@@ -293,11 +293,6 @@ impl CircuitInputBuilder<FixedCParams> {
             );
         }
 
-        let mut push_op = |step: &mut ExecStep, rwc: RWCounter, rw: RW, op: StartOp| {
-            let op_ref = state.block.container.insert(Operation::new(rwc, rw, op));
-            step.bus_mapping_instance.push(op_ref);
-        };
-
         // rwc index start from 1
         let total_rws = state.block_ctx.rwc.0 - 1;
         // We need at least 1 extra Start row
@@ -310,25 +305,49 @@ impl CircuitInputBuilder<FixedCParams> {
                 max_rws
             );
         }
-        let (padding_start, padding_end) = (1, max_rws - total_rws); // rw counter start from 1
-        push_op(
-            &mut end_block_last,
-            RWCounter(padding_start),
-            RW::READ,
-            StartOp {},
-        );
-        if padding_end != padding_start {
-            push_op(
-                &mut end_block_last,
-                RWCounter(padding_end),
-                RW::READ,
-                StartOp {},
-            );
-        }
+        // TODO only push StartOp in first chunk
+        // push_op(
+        //     &mut state.block.container,
+        //     &mut end_block_last,
+        //     RWCounter(1),
+        //     RW::READ,
+        //     StartOp {},
+        // );
+        // if max_rws - total_rws > 1 {
+        // let (padding_start, padding_end) = (max_rws - total_rws, max_rws); // rw counter
+        // start from 1 push_op(
+        //     &mut state.block.container,
+        //     &mut end_block_last,
+        //     RWCounter(padding_start),
+        //     RW::READ,
+        //     PaddingOp {},
+        // );
+        // if padding_end != padding_start {
+        //     push_op(
+        //         &mut state.block.container,
+        //         &mut end_block_last,
+        //         RWCounter(padding_end),
+        //         RW::READ,
+        //         PaddingOp {},
+        //     );
+        // }
+        // }
 
         self.block.block_steps.end_block_not_last = end_block_not_last;
         self.block.block_steps.end_block_last = end_block_last;
     }
+}
+
+#[allow(dead_code)]
+fn push_op<T: Op>(
+    container: &mut OperationContainer,
+    step: &mut ExecStep,
+    rwc: RWCounter,
+    rw: RW,
+    op: T,
+) {
+    let op_ref = container.insert(Operation::new(rwc, rw, op));
+    step.bus_mapping_instance.push(op_ref);
 }
 
 impl<C: CircuitsParams> CircuitInputBuilder<C> {
@@ -393,11 +412,12 @@ impl CircuitInputBuilder<DynamicCParams> {
                 * 2
                 + 4; // disabled and unused rows.
 
-            let total_rws_before_padding: usize =
+            // TODO fix below logic for multiple rw_table chunks
+            let total_rws_before_end_block: usize =
                 <RWCounter as Into<usize>>::into(self.block_ctx.rwc) - 1; // -1 since rwc start from index `1`
-            let max_rws_after_padding = total_rws_before_padding
-                + 1 // fill 1 to have exactly one StartOp padding in below `set_end_block`
-                + if total_rws_before_padding > 0 { 1 /*end_block -> CallContextFieldTag::TxId lookup*/ } else { 0 };
+            let max_rws_after_padding = total_rws_before_end_block
+                + 1 // +1 for RW::Start padding in offset 0
+                + if total_rws_before_end_block > 0 { 1 /*end_block -> CallContextFieldTag::TxId lookup*/ } else { 0 };
             // Computing the number of rows for the EVM circuit requires the size of ExecStep,
             // which is determined in the code of zkevm-circuits and cannot be imported here.
             // When the evm circuit receives a 0 value it dynamically computes the minimum

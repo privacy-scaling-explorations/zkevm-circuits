@@ -1,5 +1,5 @@
 //! The Read-Write table related structs
-use std::collections::HashMap;
+use std::{collections::HashMap, iter};
 
 use bus_mapping::{
     exec_trace::OperationRef,
@@ -37,18 +37,18 @@ impl std::ops::Index<OperationRef> for RwMap {
 }
 
 impl RwMap {
-    /// Check rw_counter is continuous and starting from 1
+    /// Check rw_counter is continuous
     pub fn check_rw_counter_sanity(&self) {
-        for (idx, rw_counter) in self
+        for (rw_counter_prev, rw_counter_cur) in self
             .0
             .iter()
-            .filter(|(tag, _rs)| !matches!(tag, Target::Start))
+            .filter(|(tag, _rs)| !matches!(tag, Target::Padding) && !matches!(tag, Target::Start))
             .flat_map(|(_tag, rs)| rs)
             .map(|r| r.rw_counter())
             .sorted()
-            .enumerate()
+            .tuples()
         {
-            debug_assert_eq!(idx, rw_counter - 1);
+            debug_assert_eq!(rw_counter_cur - rw_counter_prev, 1);
         }
     }
     /// Check value in the same way like StateCircuit
@@ -107,9 +107,8 @@ impl RwMap {
             }
         }
     }
-    /// Calculates the number of Rw::Start rows needed.
+    /// Calculates the number of Rw::Padding rows needed.
     /// `target_len` is allowed to be 0 as an "auto" mode,
-    /// then only 1 Rw::Start row will be prepadded.
     pub(crate) fn padding_len(rows_len: usize, target_len: usize) -> usize {
         if target_len > rows_len {
             target_len - rows_len
@@ -120,20 +119,40 @@ impl RwMap {
                     target_len, rows_len
                 );
             }
-            1
+            0
         }
     }
-    /// padding Rw::Start ahead rows to target length
-    pub fn table_assignments_prepad(rows: &[Rw], target_len: usize) -> (Vec<Rw>, usize) {
+    /// padding Rw::Start/Rw::Padding accordingly
+    pub fn table_assignments_padding(
+        rows: &[Rw],
+        target_len: usize,
+        is_first_row_padding: bool,
+    ) -> (Vec<Rw>, usize) {
         // Remove Start rows as we will add them from scratch.
         let rows: Vec<Rw> = rows
             .iter()
-            .skip_while(|rw| matches!(rw, Rw::Start { .. }))
+            .skip_while(|rw| matches!(rw, Rw::Start { .. }) || matches!(rw, Rw::Padding { .. }))
             .cloned()
             .collect();
-        let padding_length = Self::padding_len(rows.len(), target_len);
-        let padding = (1..=padding_length).map(|rw_counter| Rw::Start { rw_counter });
-        (padding.chain(rows.into_iter()).collect(), padding_length)
+        let padding_length = {
+            let length = Self::padding_len(rows.len(), target_len);
+            if is_first_row_padding {
+                length.saturating_sub(1)
+            } else {
+                length
+            }
+        };
+        let start_padding_rw_counter = rows.last().unwrap().rw_counter() + 1;
+        let padding = (start_padding_rw_counter..start_padding_rw_counter + padding_length)
+            .map(|rw_counter| Rw::Padding { rw_counter });
+        (
+            iter::once(Rw::Start { rw_counter: 1 })
+                .take(if is_first_row_padding { 1 } else { 0 })
+                .chain(rows.into_iter())
+                .chain(padding.into_iter())
+                .collect(),
+            padding_length,
+        )
     }
     /// Build Rws for assignment
     pub fn table_assignments(&self, keep_chronological_order: bool) -> Vec<Rw> {
@@ -258,6 +277,11 @@ pub enum Rw {
         field_tag: TxReceiptFieldTag,
         value: u64,
     },
+
+    /// ...
+
+    /// Padding, must be the largest enum
+    Padding { rw_counter: usize },
 }
 
 /// general to vector
@@ -497,6 +521,7 @@ impl Rw {
     pub(crate) fn rw_counter(&self) -> usize {
         match self {
             Self::Start { rw_counter }
+            | Self::Padding { rw_counter }
             | Self::Memory { rw_counter, .. }
             | Self::Stack { rw_counter, .. }
             | Self::AccountStorage { rw_counter, .. }
@@ -512,7 +537,7 @@ impl Rw {
 
     pub(crate) fn is_write(&self) -> bool {
         match self {
-            Self::Start { .. } => false,
+            Self::Padding { .. } | Self::Start { .. } => false,
             Self::Memory { is_write, .. }
             | Self::Stack { is_write, .. }
             | Self::AccountStorage { is_write, .. }
@@ -528,6 +553,7 @@ impl Rw {
 
     pub(crate) fn tag(&self) -> Target {
         match self {
+            Self::Padding { .. } => Target::Padding,
             Self::Start { .. } => Target::Start,
             Self::Memory { .. } => Target::Memory,
             Self::Stack { .. } => Target::Stack,
@@ -553,7 +579,7 @@ impl Rw {
             Self::CallContext { call_id, .. }
             | Self::Stack { call_id, .. }
             | Self::Memory { call_id, .. } => Some(*call_id),
-            Self::Start { .. } | Self::Account { .. } => None,
+            Self::Padding { .. } | Self::Start { .. } | Self::Account { .. } => None,
         }
     }
 
@@ -584,7 +610,8 @@ impl Rw {
                 // make field_tag fit into one limb (16 bits)
                 Some(build_tx_log_address(*index as u64, *field_tag, *log_id))
             }
-            Self::Start { .. }
+            Self::Padding { .. }
+            | Self::Start { .. }
             | Self::CallContext { .. }
             | Self::TxRefund { .. }
             | Self::TxReceipt { .. } => None,
@@ -596,7 +623,8 @@ impl Rw {
             Self::Account { field_tag, .. } => Some(*field_tag as u64),
             Self::CallContext { field_tag, .. } => Some(*field_tag as u64),
             Self::TxReceipt { field_tag, .. } => Some(*field_tag as u64),
-            Self::Start { .. }
+            Self::Padding { .. }
+            | Self::Start { .. }
             | Self::Memory { .. }
             | Self::Stack { .. }
             | Self::AccountStorage { .. }
@@ -611,7 +639,8 @@ impl Rw {
         match self {
             Self::AccountStorage { storage_key, .. }
             | Self::TxAccessListAccountStorage { storage_key, .. } => Some(*storage_key),
-            Self::Start { .. }
+            Self::Padding { .. }
+            | Self::Start { .. }
             | Self::CallContext { .. }
             | Self::Stack { .. }
             | Self::Memory { .. }
@@ -625,7 +654,7 @@ impl Rw {
 
     pub(crate) fn value_assignment(&self) -> Word {
         match self {
-            Self::Start { .. } => U256::zero(),
+            Self::Padding { .. } | Self::Start { .. } => U256::zero(),
             Self::CallContext { value, .. }
             | Self::Account { value, .. }
             | Self::AccountStorage { value, .. }
@@ -648,7 +677,8 @@ impl Rw {
                 Some(U256::from(*is_warm_prev as u64))
             }
             Self::TxRefund { value_prev, .. } => Some(U256::from(*value_prev)),
-            Self::Start { .. }
+            Self::Padding { .. }
+            | Self::Start { .. }
             | Self::Stack { .. }
             | Self::Memory { .. }
             | Self::CallContext { .. }
@@ -672,12 +702,28 @@ impl From<&operation::OperationContainer> for RwMap {
         let mut rws = HashMap::default();
 
         rws.insert(
+            Target::Padding,
+            container
+                .padding
+                .iter()
+                .map(|op| {
+                    println!("in padding");
+                    Rw::Padding {
+                        rw_counter: op.rwc().into(),
+                    }
+                })
+                .collect(),
+        );
+        rws.insert(
             Target::Start,
             container
                 .start
                 .iter()
-                .map(|op| Rw::Start {
-                    rw_counter: op.rwc().into(),
+                .map(|op| {
+                    println!("in start");
+                    Rw::Start {
+                        rw_counter: op.rwc().into(),
+                    }
                 })
                 .collect(),
         );

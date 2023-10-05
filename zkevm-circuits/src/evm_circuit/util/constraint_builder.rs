@@ -1290,14 +1290,34 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
-    // RwTable Padding (Start tag)
-
+    // RwTable Start (Start tag)
+    #[allow(dead_code)]
     pub(crate) fn rw_table_start_lookup(&mut self, counter: Expression<F>) {
         self.rw_lookup_with_counter(
             "Start lookup",
             counter,
             0.expr(),
             Target::Start,
+            RwValues::new(
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                Word::zero(),
+                Word::zero(),
+                Word::zero(),
+                Word::zero(),
+            ),
+        );
+    }
+
+    // RwTable Padding (Padding tag)
+    #[allow(dead_code)]
+    pub(crate) fn rw_table_padding_lookup(&mut self, counter: Expression<F>) {
+        self.rw_lookup_with_counter(
+            "Padding lookup",
+            counter,
+            0.expr(),
+            Target::Padding,
             RwValues::new(
                 0.expr(),
                 0.expr(),

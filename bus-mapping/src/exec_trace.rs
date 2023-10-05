@@ -14,6 +14,7 @@ impl fmt::Debug for OperationRef {
             "OperationRef{{ {}, {} }}",
             match self.0 {
                 Target::Start => "Start",
+                Target::Padding => "Padding",
                 Target::Memory => "Memory",
                 Target::Stack => "Stack",
                 Target::Storage => "Storage",

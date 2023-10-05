@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let is_empty_block =
             IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
 
-        let total_rws_before_padding = cb.curr.state.rw_counter.clone().expr() - 1.expr()
+        let _total_rws_before_padding = cb.curr.state.rw_counter.clone().expr() - 1.expr()
             + select::expr(
                 is_empty_block.expr(),
                 0.expr(),
@@ -83,11 +83,31 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             // meaningful txs in the tx_table is total_tx.
         });
 
+        // TODO fix below logic checking logic
+        // - startop only exist in first chunk
+        // - total_rws_before_padding are across chunk. We need new way, maybe new
+        //   `rw_counter_intra_chunk` to lookup padding logic
+
         // 3. Verify rw_counter counts to the same number of meaningful rows in
         // rw_table to ensure there is no malicious insertion.
         // Verify that there are at most total_rws meaningful entries in the rw_table
-        cb.rw_table_start_lookup(1.expr());
-        cb.rw_table_start_lookup(max_rws.expr() - total_rws_before_padding.expr());
+        // TODO only lookup start on first rwtable chunk
+        // cb.rw_table_start_lookup(1.expr());
+        // current SRS size < 2^30 so use 4 bytes (2^32) in LtGadet should be enough
+        // TODO find better way other than hardcode
+        // let is_end_padding_exist = LtGadget::<_, 32>::construct(
+        //     cb,
+        //     1.expr(),
+        //     max_rws.expr() - total_rws_before_padding.expr(),
+        // );
+        // cb.debug_expression(
+        //     "is_end_padding_exist",
+        //     max_rws.expr() - total_rws_before_padding.expr(),
+        // );
+        // cb.condition(is_end_padding_exist.expr(), |cb| {
+        //     cb.rw_table_padding_lookup(total_rws_before_padding.expr() + 1.expr());
+        //     cb.rw_table_padding_lookup(max_rws.expr());
+        // });
         // Since every lookup done in the EVM circuit must succeed and uses
         // a unique rw_counter, we know that at least there are
         // total_rws meaningful entries in the rw_table.

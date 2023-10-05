@@ -60,6 +60,7 @@ fn test_state_circuit_ok(
         Fr::from(1),
         Fr::from(1),
         next_permutation_fingerprints,
+        0,
     );
     let instance = circuit.instance();
 
@@ -86,6 +87,7 @@ fn verifying_key_independent_of_rw_length() {
         Fr::from(1),
         Fr::from(1),
         Fr::from(1),
+        0,
     );
     let one_row = StateCircuit::<Fr>::new(
         RwMap::from(&OperationContainer {
@@ -101,6 +103,7 @@ fn verifying_key_independent_of_rw_length() {
         Fr::from(1),
         Fr::from(1),
         Fr::from(1),
+        0,
     );
 
     let vk_no_rows = keygen_vk(&params, &no_rows).unwrap();
@@ -958,6 +961,7 @@ fn variadic_size_check() {
         permu_gamma: Fr::from(1),
         permu_prev_continuous_fingerprint: Fr::from(1),
         permu_next_continuous_fingerprint: Fr::from(1),
+        rw_table_chunked_index: 0,
         _marker: std::marker::PhantomData::default(),
     };
     let power_of_randomness = circuit.instance();
@@ -990,6 +994,7 @@ fn variadic_size_check() {
         permu_gamma: Fr::from(1),
         permu_prev_continuous_fingerprint: Fr::from(1),
         permu_next_continuous_fingerprint: Fr::from(1),
+        rw_table_chunked_index: 0,
         _marker: std::marker::PhantomData::default(),
     };
     let power_of_randomness = circuit.instance();
@@ -1034,6 +1039,7 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
         permu_gamma: Fr::from(1),
         permu_prev_continuous_fingerprint: Fr::from(1),
         permu_next_continuous_fingerprint: Fr::from(1),
+        rw_table_chunked_index: 0,
         _marker: std::marker::PhantomData::default(),
     };
     let instance = circuit.instance();
@@ -1091,7 +1097,8 @@ fn get_permutation_fingerprint_of_rwmap<F: Field>(
     gamma: F,
     prev_continuous_fingerprint: F,
 ) -> F {
-    let (rows, _) = RwMap::table_assignments_prepad(&rwmap.table_assignments(false), max_row);
+    let (rows, _) =
+        RwMap::table_assignments_padding(&rwmap.table_assignments(false), max_row, true);
     let x = rows.to2dvec();
     unwrap_value(
         get_permutation_fingerprints(

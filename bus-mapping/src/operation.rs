@@ -93,7 +93,7 @@ impl RWCounter {
 /// Enum used to differenciate between EVM Stack, Memory and Storage operations.
 #[derive(Debug, Clone, PartialEq, Eq, Copy, EnumIter, Hash)]
 pub enum Target {
-    /// Start is a padding operation.
+    /// Start operation in the first row
     Start = 1,
     /// Means the target of the operation is the Memory.
     Memory,
@@ -115,6 +115,8 @@ pub enum Target {
     TxReceipt,
     /// Means the target of the operation is the TxLog.
     TxLog,
+    /// padding operation.
+    Padding,
 }
 
 impl_expr!(Target);
@@ -885,6 +887,32 @@ impl Op for StartOp {
     }
 }
 
+/// Represent a Padding padding operation
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct PaddingOp {}
+
+impl PartialOrd for PaddingOp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for PaddingOp {
+    fn cmp(&self, _other: &Self) -> Ordering {
+        Ordering::Equal
+    }
+}
+
+impl Op for PaddingOp {
+    fn into_enum(self) -> OpEnum {
+        OpEnum::Padding(self)
+    }
+
+    fn reverse(&self) -> Self {
+        unreachable!("Padding can't be reverted")
+    }
+}
+
 /// Represents TxReceipt read/write operation.
 #[derive(Clone, PartialEq, Eq)]
 pub struct TxReceiptOp {
@@ -955,6 +983,8 @@ pub enum OpEnum {
     TxLog(TxLogOp),
     /// Start
     Start(StartOp),
+    /// Start
+    Padding(PaddingOp),
 }
 
 /// Operation is a Wrapper over a type that implements Op with a RWCounter.

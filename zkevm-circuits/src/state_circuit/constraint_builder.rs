@@ -126,6 +126,9 @@ impl<F: Field> ConstraintBuilder<F> {
 
     pub fn build(&mut self, q: &Queries<F>) {
         self.build_general_constraints(q);
+        self.condition(q.tag_matches(Target::Padding), |cb| {
+            cb.build_padding_constraints(q)
+        });
         self.condition(q.tag_matches(Target::Start), |cb| {
             cb.build_start_constraints(q)
         });
@@ -210,6 +213,11 @@ impl<F: Field> ConstraintBuilder<F> {
                 q.initial_value.lo() - q.initial_value_prev().lo(),
             );
         });
+    }
+
+    fn build_padding_constraints(&mut self, q: &Queries<F>) {
+        // padding shared same constraints as start
+        self.build_start_constraints(q)
     }
 
     fn build_start_constraints(&mut self, q: &Queries<F>) {

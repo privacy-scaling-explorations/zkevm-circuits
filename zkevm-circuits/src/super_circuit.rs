@@ -123,7 +123,6 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
     ) -> Self {
         let tx_table = TxTable::construct(meta);
 
-        // TODO reserve offset 0 to adapt column from previous supercircuit chunk (via public input)
         let chronological_rw_table = RwTable::construct(meta);
         let rw_table = RwTable::construct(meta);
 

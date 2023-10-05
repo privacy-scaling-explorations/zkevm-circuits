@@ -296,13 +296,15 @@ pub fn block_convert<F: Field>(
     block.keccak_inputs.extend_from_slice(&[rpi_bytes]);
 
     // Permutation fingerprints
-    let (rws_rows, _) = RwMap::table_assignments_prepad(
+    let (rws_rows, _) = RwMap::table_assignments_padding(
         &block.rws.table_assignments(false),
         block.circuits_params.max_rws,
+        block.rw_table_chunked_index == 0,
     );
-    let (chronological_rws_rows, _) = RwMap::table_assignments_prepad(
+    let (chronological_rws_rows, _) = RwMap::table_assignments_padding(
         &block.rws.table_assignments(true),
         block.circuits_params.max_rws,
+        block.rw_table_chunked_index == 0,
     );
     block.permu_rwtable_next_continuous_fingerprint = unwrap_value(
         get_permutation_fingerprints(

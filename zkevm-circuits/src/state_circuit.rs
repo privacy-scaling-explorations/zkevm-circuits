@@ -227,11 +227,14 @@ impl<F: Field> StateCircuitConfig<F> {
         layouter: &mut impl Layouter<F>,
         rows: &[Rw],
         n_rows: usize, // 0 means dynamically calculated from `rows`.
+        rw_table_chunked_index: usize,
     ) -> Result<(), Error> {
         let updates = MptUpdates::mock_from(rows);
         layouter.assign_region(
             || "state circuit",
-            |mut region| self.assign_with_region(&mut region, rows, &updates, n_rows),
+            |mut region| {
+                self.assign_with_region(&mut region, rows, &updates, n_rows, rw_table_chunked_index)
+            },
         )
     }
 
@@ -241,10 +244,12 @@ impl<F: Field> StateCircuitConfig<F> {
         rows: &[Rw],
         updates: &MptUpdates,
         n_rows: usize, // 0 means dynamically calculated from `rows`.
+        rw_table_chunked_index: usize,
     ) -> Result<(), Error> {
         let tag_chip = BinaryNumberChip::construct(self.sort_keys.tag);
 
-        let (rows, padding_length) = RwMap::table_assignments_prepad(rows, n_rows);
+        let (rows, padding_length) =
+            RwMap::table_assignments_padding(rows, n_rows, rw_table_chunked_index == 0);
         let rows_len = rows.len();
 
         let mut state_root = updates.old_root();
@@ -471,6 +476,9 @@ pub struct StateCircuit<F> {
     permu_prev_continuous_fingerprint: F,
     permu_next_continuous_fingerprint: F,
 
+    // current chunk index
+    rw_table_chunked_index: usize,
+
     _marker: PhantomData<F>,
 }
 
@@ -483,6 +491,7 @@ impl<F: Field> StateCircuit<F> {
         permu_gamma: F,
         permu_prev_continuous_fingerprint: F,
         permu_next_continuous_fingerprint: F,
+        rw_table_chunked_index: usize,
     ) -> Self {
         let rows = rw_map.table_assignments(false); // address sorted
         let updates = MptUpdates::mock_from(&rows);
@@ -496,6 +505,7 @@ impl<F: Field> StateCircuit<F> {
             permu_gamma,
             permu_prev_continuous_fingerprint,
             permu_next_continuous_fingerprint,
+            rw_table_chunked_index,
             _marker: PhantomData::default(),
         }
     }
@@ -512,6 +522,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
             block.permu_gamma,
             block.permu_rwtable_prev_continuous_fingerprint,
             block.permu_rwtable_next_continuous_fingerprint,
+            block.rw_table_chunked_index,
         )
     }
 
@@ -553,14 +564,26 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
             || "state circuit",
             |mut region| {
                 // TODO optimimise RwMap::table_assignments_prepad calls from 3 times -> 1
-                let rw_table_first_n_last_cells =
-                    config
-                        .rw_table
-                        .load_with_region(&mut region, &self.rows, self.n_rows)?;
+                let rw_table_first_n_last_cells = config.rw_table.load_with_region(
+                    &mut region,
+                    &self.rows,
+                    self.n_rows,
+                    self.rw_table_chunked_index == 0,
+                )?;
 
-                config.assign_with_region(&mut region, &self.rows, &self.updates, self.n_rows)?;
+                config.assign_with_region(
+                    &mut region,
+                    &self.rows,
+                    &self.updates,
+                    self.n_rows,
+                    self.rw_table_chunked_index,
+                )?;
 
-                let (rows, _) = RwMap::table_assignments_prepad(&self.rows, self.n_rows);
+                let (rows, _) = RwMap::table_assignments_padding(
+                    &self.rows,
+                    self.n_rows,
+                    self.rw_table_chunked_index == 0,
+                );
 
                 let permutation_cells = config.rw_permutation_config.assign(
                     &mut region,
@@ -624,7 +647,11 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     fn instance(&self) -> Vec<Vec<F>> {
         assert!(!self.rows.is_empty());
 
-        let (rows, _) = RwMap::table_assignments_prepad(&self.rows, self.n_rows);
+        let (rows, _) = RwMap::table_assignments_padding(
+            &self.rows,
+            self.n_rows,
+            self.rw_table_chunked_index == 0,
+        );
 
         let rws_values = [rows.first(), rows.last()] // get first/last row and concat
             .iter()

@@ -303,9 +303,10 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
 
         config.execution.assign_block(layouter, block, challenges)?;
 
-        let (rw_rows_padding, _) = RwMap::table_assignments_prepad(
+        let (rw_rows_padding, _) = RwMap::table_assignments_padding(
             &block.rws.table_assignments(true),
             block.circuits_params.max_rws,
+            block.rw_table_chunked_index == 0,
         );
         let (
             (rw_table_row_first, rw_table_row_last),
@@ -330,6 +331,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                     &block.rws.table_assignments(true),
                     // align with state circuit to padding to same max_rws
                     block.circuits_params.max_rws,
+                    block.rw_table_chunked_index == 0,
                 )?;
                 let permutation_cells = config.rw_permutation_config.assign(
                     &mut region,
@@ -372,9 +374,11 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     fn instance(&self) -> Vec<Vec<F>> {
         let block = self.block.as_ref().unwrap();
 
-        let (rws_assignments_padding, _) = RwMap::table_assignments_prepad(
+        let (rws_assignments_padding, _) = RwMap::table_assignments_padding(
             &block.rws.table_assignments(true),
             block.circuits_params.max_rws,
+            // only padding first row
+            block.rw_table_chunked_index == 0,
         );
 
         assert!(!rws_assignments_padding.is_empty());
