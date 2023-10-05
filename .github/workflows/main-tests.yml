@@ -72,7 +72,6 @@ jobs:
           sudo chmod +x /usr/bin/solc
       - name: Update ERC20 git submodule
         run: git submodule update --init --recursive --checkout integration-tests/contracts/vendor/openzeppelin-contracts
-      - name: Cargo build
       - name: Run light tests # light tests are run in parallel
         uses: actions-rs/cargo@v1
         with:
