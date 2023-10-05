@@ -69,7 +69,6 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --bin gen_blockchain_data
       - name: Check code format
         uses: actions-rs/cargo@v1
         with:
