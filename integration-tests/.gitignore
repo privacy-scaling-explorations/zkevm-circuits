@@ -1,4 +1,4 @@
 gendata_output.json
-src/benchmarks.rs
-src/greeter.rs
-src/openzeppelinerc20testtoken.rs
+src/bindings_benchmarks.rs
+src/bindings_greeter.rs
+src/bindings_openzeppelinerc20testtoken.rs
