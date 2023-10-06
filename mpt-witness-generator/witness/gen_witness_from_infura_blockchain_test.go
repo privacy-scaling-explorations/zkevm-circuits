@@ -2323,3 +2323,40 @@ func TestTrieDoesNotExistLongVal(t *testing.T) {
 
 	prepareWitness("TrieDoesNotExistLongVal", trieModifications, statedb)
 }
+
+func TestWrongAccount(t *testing.T) {
+	// "Wrong" account is returned by PrefetchAccount - it needs to be ignored in
+	// statedb.go/SetStateObjectIfExists function.
+	blockNum := 2000003
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0xcaac46d9bd68bffb533320545a90cd92c6e98e58")
+
+	// Implicitly create account:
+	trieMod1 := TrieModification{
+		Type:    BalanceChanged,
+		Balance: big.NewInt(98),
+		Address: addr,
+	}
+
+	trieMod2 := TrieModification{
+		Type:    CodeHashChanged,
+		Address: addr,
+	}
+
+	key1 := common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000")
+	val1 := common.HexToHash("0x111")
+
+	trieMod3 := TrieModification{
+		Type:    StorageChanged,
+		Key:     key1,
+		Value:   val1,
+		Address: addr,
+	}
+	
+	trieModifications := []TrieModification{trieMod1, trieMod2, trieMod3}
+
+	prepareWitness("WrongAccount", trieModifications, statedb)
+}

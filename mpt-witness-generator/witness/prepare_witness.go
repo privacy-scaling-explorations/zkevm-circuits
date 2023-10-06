@@ -116,9 +116,6 @@ func obtainAccountProofAndConvertToWitness(i int, tMod TrieModification, tModsLe
 		statedb.SetBalance(addr, tMod.Balance)
 	} else if tMod.Type == CodeHashChanged {
 		statedb.SetCodeHash(addr, tMod.CodeHash)
-		// For cases when the wrong account is obtained by PrefetchAccount:
-		statedb.SetBalance(addr, big.NewInt(0))
-		statedb.SetNonce(addr, 0)
 	} else if tMod.Type == AccountCreate {
 		statedb.CreateAccount(tMod.Address)
 	} else if tMod.Type == AccountDestructed {

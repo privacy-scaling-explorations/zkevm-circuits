@@ -230,19 +230,19 @@ func (s *StateDB) SubRefund(gas uint64) {
 // Exist reports whether the given account address exists in the state.
 // Notably this also returns true for suicided accounts.
 func (s *StateDB) Exist(addr common.Address) bool {
-	return s.getStateObject(addr) != nil
+	return s.GetStateObject(addr) != nil
 }
 
 // Empty returns whether the state object is either non-existent
 // or empty according to the EIP161 specification (balance = nonce = code = 0)
 func (s *StateDB) Empty(addr common.Address) bool {
-	so := s.getStateObject(addr)
+	so := s.GetStateObject(addr)
 	return so == nil || so.empty()
 }
 
 // GetBalance retrieves the balance from the given address or 0 if object not found
 func (s *StateDB) GetBalance(addr common.Address) *big.Int {
-	stateObject := s.getStateObject(addr)
+	stateObject := s.GetStateObject(addr)
 	if stateObject != nil {
 		return stateObject.Balance()
 	}
@@ -250,7 +250,7 @@ func (s *StateDB) GetBalance(addr common.Address) *big.Int {
 }
 
 func (s *StateDB) GetNonce(addr common.Address) uint64 {
-	stateObject := s.getStateObject(addr)
+	stateObject := s.GetStateObject(addr)
 	if stateObject != nil {
 		return stateObject.Nonce()
 	}
@@ -264,7 +264,7 @@ func (s *StateDB) TxIndex() int {
 }
 
 func (s *StateDB) GetCode(addr common.Address) []byte {
-	stateObject := s.getStateObject(addr)
+	stateObject := s.GetStateObject(addr)
 	if stateObject != nil {
 		return stateObject.Code(s.Db)
 	}
@@ -272,7 +272,7 @@ func (s *StateDB) GetCode(addr common.Address) []byte {
 }
 
 func (s *StateDB) GetCodeSize(addr common.Address) int {
-	stateObject := s.getStateObject(addr)
+	stateObject := s.GetStateObject(addr)
 	if stateObject != nil {
 		return stateObject.CodeSize(s.Db)
 	}
@@ -280,7 +280,7 @@ func (s *StateDB) GetCodeSize(addr common.Address) int {
 }
 
 func (s *StateDB) GetCodeHash(addr common.Address) common.Hash {
-	stateObject := s.getStateObject(addr)
+	stateObject := s.GetStateObject(addr)
 	if stateObject == nil {
 		return common.Hash{}
 	}
@@ -289,7 +289,7 @@ func (s *StateDB) GetCodeHash(addr common.Address) common.Hash {
 
 // GetState retrieves a value from the given account's storage trie.
 func (s *StateDB) GetState(addr common.Address, hash common.Hash) common.Hash {
-	stateObject := s.getStateObject(addr)
+	stateObject := s.GetStateObject(addr)
 	if stateObject != nil {
 		return stateObject.GetState(s.Db, hash)
 	}
@@ -332,7 +332,7 @@ func (s *StateDB) GetNodeByNibbles(a common.Address, key []byte) ([]byte, error)
 
 // GetCommittedState retrieves a value from the given account's committed storage trie.
 func (s *StateDB) GetCommittedState(addr common.Address, hash common.Hash) common.Hash {
-	stateObject := s.getStateObject(addr)
+	stateObject := s.GetStateObject(addr)
 	if stateObject != nil {
 		return stateObject.GetCommittedState(s.Db, hash)
 	}
@@ -347,7 +347,7 @@ func (s *StateDB) Database() Database {
 // StorageTrie returns the storage trie of an account.
 // The return value is a copy and is nil for non-existent accounts.
 func (s *StateDB) StorageTrie(addr common.Address) Trie {
-	stateObject := s.getStateObject(addr)
+	stateObject := s.GetStateObject(addr)
 	if stateObject == nil {
 		return nil
 	}
@@ -357,7 +357,7 @@ func (s *StateDB) StorageTrie(addr common.Address) Trie {
 }
 
 func (s *StateDB) HasSuicided(addr common.Address) bool {
-	stateObject := s.getStateObject(addr)
+	stateObject := s.GetStateObject(addr)
 	if stateObject != nil {
 		return stateObject.suicided
 	}
@@ -446,7 +446,40 @@ func (s *StateDB) SetStateObjectIfExists(addr common.Address) {
 		ap := oracle.PrefetchAccount(s.Db.BlockNumber, addr, nil)
 		if len(ap) > 0 {
 			ret, _ := hex.DecodeString(ap[len(ap)-1][2:])
-			s.SetStateObjectFromEncoding(addr, ret)
+
+			data := new(Account)
+			keyLen := ret[2] - 128
+			accData := ret[3+keyLen+2:]
+
+			if err := rlp.DecodeBytes(accData, data); err != nil {
+				// if it's not account RLP
+				return
+			}
+
+			address_hash := crypto.Keccak256Hash(addr.Bytes())
+			/*
+			When an account that does not exist is tried to be fetched by PrefetchAccount and when the some other account
+			exist at the overlapping address (the beginning of it), this (wrong) account is obtained by PrefetchAccount
+			and needs to be ignored.
+			*/
+			isExpectedAddress := func() bool {
+				len_address_remaining := ret[2] - 128
+				if ret[3] != 32 {
+					nibble := address_hash[32 - len_address_remaining] % 16
+					if ret[3] - 48 != nibble {
+						return false
+					}
+				}
+				for i := 0; i < int(len_address_remaining - 1); i++ {
+					if address_hash[32 - int(len_address_remaining) + 1 + i] != ret[4 + i] {
+						return false
+					}
+				}
+				return true
+			} 
+			if isExpectedAddress() {
+				s.SetStateObjectFromEncoding(addr, ret)
+			}
 		}
 	}
 }
@@ -455,9 +488,9 @@ func (s *StateDB) SetStateObjectIfExists(addr common.Address) {
 // This clears the account balance.
 //
 // The account's state object is still available until the state is committed,
-// getStateObject will return a non-nil account after Suicide.
+// GetStateObject will return a non-nil account after Suicide.
 func (s *StateDB) Suicide(addr common.Address) bool {
-	stateObject := s.getStateObject(addr)
+	stateObject := s.GetStateObject(addr)
 	if stateObject == nil {
 		return false
 	}
@@ -474,7 +507,7 @@ func (s *StateDB) Suicide(addr common.Address) bool {
 
 // Added for MPT generator:
 func (s *StateDB) DeleteAccount(addr common.Address) bool {
-	stateObject := s.getStateObject(addr)
+	stateObject := s.GetStateObject(addr)
 	if stateObject == nil {
 		return false
 	}
@@ -528,17 +561,17 @@ func (s *StateDB) deleteStateObject(obj *stateObject) {
 	}
 }
 
-// getStateObject retrieves a state object given by the address, returning nil if
+// GetStateObject retrieves a state object given by the address, returning nil if
 // the object is not found or was deleted in this execution context. If you need
 // to differentiate between non-existent/just-deleted, use getDeletedStateObject.
-func (s *StateDB) getStateObject(addr common.Address) *stateObject {
+func (s *StateDB) GetStateObject(addr common.Address) *stateObject {
 	if obj := s.getDeletedStateObject(addr); obj != nil && !obj.deleted {
 		return obj
 	}
 	return nil
 }
 
-// getDeletedStateObject is similar to getStateObject, but instead of returning
+// getDeletedStateObject is similar to GetStateObject, but instead of returning
 // nil for a deleted state object, it returns the actual object with the deleted
 // flag set. This is needed by the state journal to revert to the correct s-
 // destructed object instead of wiping all knowledge about the state object.
@@ -630,7 +663,7 @@ func (s *StateDB) setStateObject(object *stateObject) {
 
 // GetOrNewStateObject retrieves a state object or create a new state object if nil.
 func (s *StateDB) GetOrNewStateObject(addr common.Address) *stateObject {
-	stateObject := s.getStateObject(addr)
+	stateObject := s.GetStateObject(addr)
 	if stateObject == nil {
 		stateObject, _ = s.CreateObject(addr)
 	}
