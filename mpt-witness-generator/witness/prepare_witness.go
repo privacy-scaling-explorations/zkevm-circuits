@@ -96,7 +96,7 @@ func obtainAccountProofAndConvertToWitness(i int, tMod TrieModification, tModsLe
 	addrh := crypto.Keccak256(addr.Bytes())
 	accountAddr := trie.KeybytesToHex(addrh)
 
-	// This needs to called before oracle.PrefetchAccount, otherwise oracle.PrefetchAccount
+	// This needs to be called before oracle.PrefetchAccount, otherwise oracle.PrefetchAccount
 	// will cache the proof and won't return it.
 	// Calling oracle.PrefetchAccount after statedb.SetStateObjectIfExists is needed only
 	// for cases when statedb.loadRemoteAccountsIntoStateObjects = false.
