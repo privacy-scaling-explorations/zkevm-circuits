@@ -743,7 +743,7 @@ pub fn load_proof(path: &str) -> Vec<Node> {
 mod tests {
     use super::*;
     use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-    use std::fs;
+    use std::{fs, ops::Deref};
 
     #[test]
     fn test_mpt() {
@@ -770,7 +770,7 @@ mod tests {
                 let mut keccak_data = vec![];
                 for node in nodes.iter() {
                     for k in node.keccak_data.iter() {
-                        keccak_data.push(k.clone());
+                        keccak_data.push(k.deref().clone());
                     }
                 }
 

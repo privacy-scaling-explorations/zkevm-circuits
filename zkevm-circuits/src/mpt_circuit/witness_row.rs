@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use crate::table::MPTProofType;
 
 use serde::{Deserialize, Serialize};
@@ -69,18 +71,40 @@ pub(crate) enum StartRowType {
     Count,
 }
 
+/// Serde for hex
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(transparent)]
+pub struct Hex {
+    #[serde(with = "hex::serde")]
+    bytes: Vec<u8>,
+}
+
+impl From<Vec<u8>> for Hex {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self { bytes }
+    }
+}
+
+impl Deref for Hex {
+    type Target = Vec<u8>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.bytes
+    }
+}
+
 /// MPT branch node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BranchNode {
     pub(crate) modified_index: usize,
     pub(crate) drifted_index: usize,
-    pub(crate) list_rlp_bytes: [Vec<u8>; 2],
+    pub(crate) list_rlp_bytes: [Hex; 2],
 }
 
 /// MPT extension node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExtensionNode {
-    pub(crate) list_rlp_bytes: Vec<u8>,
+    pub(crate) list_rlp_bytes: Hex,
 }
 
 /// MPT start node
@@ -102,24 +126,24 @@ pub struct ExtensionBranchNode {
 /// MPT account node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AccountNode {
-    pub(crate) address: Vec<u8>,
-    pub(crate) key: Vec<u8>,
-    pub(crate) list_rlp_bytes: [Vec<u8>; 2],
-    pub(crate) value_rlp_bytes: [Vec<u8>; 2],
-    pub(crate) value_list_rlp_bytes: [Vec<u8>; 2],
-    pub(crate) drifted_rlp_bytes: Vec<u8>,
-    pub(crate) wrong_rlp_bytes: Vec<u8>,
+    pub(crate) address: Hex,
+    pub(crate) key: Hex,
+    pub(crate) list_rlp_bytes: [Hex; 2],
+    pub(crate) value_rlp_bytes: [Hex; 2],
+    pub(crate) value_list_rlp_bytes: [Hex; 2],
+    pub(crate) drifted_rlp_bytes: Hex,
+    pub(crate) wrong_rlp_bytes: Hex,
 }
 
 /// MPT storage node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StorageNode {
-    pub(crate) address: Vec<u8>,
-    pub(crate) key: Vec<u8>,
-    pub(crate) list_rlp_bytes: [Vec<u8>; 2],
-    pub(crate) value_rlp_bytes: [Vec<u8>; 2],
-    pub(crate) drifted_rlp_bytes: Vec<u8>,
-    pub(crate) wrong_rlp_bytes: Vec<u8>,
+    pub(crate) address: Hex,
+    pub(crate) key: Hex,
+    pub(crate) list_rlp_bytes: [Hex; 2],
+    pub(crate) value_rlp_bytes: [Hex; 2],
+    pub(crate) drifted_rlp_bytes: Hex,
+    pub(crate) wrong_rlp_bytes: Hex,
 }
 
 /// MPT node
@@ -130,9 +154,9 @@ pub struct Node {
     pub(crate) account: Option<AccountNode>,
     pub(crate) storage: Option<StorageNode>,
     /// MPT node values
-    pub values: Vec<Vec<u8>>,
+    pub values: Vec<Hex>,
     /// MPT keccak data
-    pub keccak_data: Vec<Vec<u8>>,
+    pub keccak_data: Vec<Hex>,
 }
 
 /// RLP types start
