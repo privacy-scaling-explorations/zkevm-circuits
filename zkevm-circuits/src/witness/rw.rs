@@ -142,7 +142,7 @@ impl RwMap {
                 length
             }
         };
-        let start_padding_rw_counter = rows.last().unwrap().rw_counter() + 1;
+        let start_padding_rw_counter = rows.last().map(|row| row.rw_counter()).unwrap_or(1) + 1;
         let padding = (start_padding_rw_counter..start_padding_rw_counter + padding_length)
             .map(|rw_counter| Rw::Padding { rw_counter });
         (
@@ -706,11 +706,8 @@ impl From<&operation::OperationContainer> for RwMap {
             container
                 .padding
                 .iter()
-                .map(|op| {
-                    println!("in padding");
-                    Rw::Padding {
-                        rw_counter: op.rwc().into(),
-                    }
+                .map(|op| Rw::Padding {
+                    rw_counter: op.rwc().into(),
                 })
                 .collect(),
         );
@@ -719,11 +716,8 @@ impl From<&operation::OperationContainer> for RwMap {
             container
                 .start
                 .iter()
-                .map(|op| {
-                    println!("in start");
-                    Rw::Start {
-                        rw_counter: op.rwc().into(),
-                    }
+                .map(|op| Rw::Start {
+                    rw_counter: op.rwc().into(),
                 })
                 .collect(),
         );

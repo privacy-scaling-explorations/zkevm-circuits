@@ -86,7 +86,13 @@ fn verifying_key_independent_of_rw_length() {
         Fr::from(1),
         Fr::from(1),
         Fr::from(1),
-        Fr::from(1),
+        get_permutation_fingerprint_of_rwmap(
+            &RwMap::default(),
+            N_ROWS,
+            Fr::from(1),
+            Fr::from(1),
+            Fr::from(1),
+        ),
         0,
     );
     let one_row = StateCircuit::<Fr>::new(
@@ -102,7 +108,20 @@ fn verifying_key_independent_of_rw_length() {
         Fr::from(1),
         Fr::from(1),
         Fr::from(1),
-        Fr::from(1),
+        get_permutation_fingerprint_of_rwmap(
+            &RwMap::from(&OperationContainer {
+                memory: vec![Operation::new(
+                    RWCounter::from(1),
+                    RW::WRITE,
+                    MemoryOp::new(1, MemoryAddress::from(0), 32),
+                )],
+                ..Default::default()
+            }),
+            N_ROWS,
+            Fr::from(1),
+            Fr::from(1),
+            Fr::from(1),
+        ),
         0,
     );
 
@@ -960,7 +979,13 @@ fn variadic_size_check() {
         permu_alpha: Fr::from(1),
         permu_gamma: Fr::from(1),
         permu_prev_continuous_fingerprint: Fr::from(1),
-        permu_next_continuous_fingerprint: Fr::from(1),
+        permu_next_continuous_fingerprint: get_permutation_fingerprint_of_rwvec(
+            &rows,
+            N_ROWS,
+            Fr::from(1),
+            Fr::from(1),
+            Fr::from(1),
+        ),
         rw_table_chunked_index: 0,
         _marker: std::marker::PhantomData::default(),
     };
@@ -985,6 +1010,9 @@ fn variadic_size_check() {
     ]);
 
     let updates = MptUpdates::mock_from(&rows);
+    let permu_next_continuous_fingerprint =
+        get_permutation_fingerprint_of_rwvec(&rows, N_ROWS, Fr::from(1), Fr::from(1), Fr::from(1));
+
     let circuit = StateCircuit::<Fr> {
         rows,
         updates,
@@ -993,7 +1021,7 @@ fn variadic_size_check() {
         permu_alpha: Fr::from(1),
         permu_gamma: Fr::from(1),
         permu_prev_continuous_fingerprint: Fr::from(1),
-        permu_next_continuous_fingerprint: Fr::from(1),
+        permu_next_continuous_fingerprint,
         rw_table_chunked_index: 0,
         _marker: std::marker::PhantomData::default(),
     };
@@ -1029,6 +1057,8 @@ fn bad_initial_tx_receipt_value() {
 }
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
+    let permu_next_continuous_fingerprint =
+        get_permutation_fingerprint_of_rwvec(&rows, N_ROWS, Fr::from(1), Fr::from(1), Fr::from(1));
     let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
         rows,
@@ -1038,7 +1068,7 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
         permu_alpha: Fr::from(1),
         permu_gamma: Fr::from(1),
         permu_prev_continuous_fingerprint: Fr::from(1),
-        permu_next_continuous_fingerprint: Fr::from(1),
+        permu_next_continuous_fingerprint,
         rw_table_chunked_index: 0,
         _marker: std::marker::PhantomData::default(),
     };
@@ -1090,15 +1120,14 @@ fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
     }
 }
 
-fn get_permutation_fingerprint_of_rwmap<F: Field>(
-    rwmap: &RwMap,
+fn get_permutation_fingerprint_of_rwvec<F: Field>(
+    rwmap: &[Rw],
     max_row: usize,
     alpha: F,
     gamma: F,
     prev_continuous_fingerprint: F,
 ) -> F {
-    let (rows, _) =
-        RwMap::table_assignments_padding(&rwmap.table_assignments(false), max_row, true);
+    let (rows, _) = RwMap::table_assignments_padding(rwmap, max_row, true);
     let x = rows.to2dvec();
     unwrap_value(
         get_permutation_fingerprints(
@@ -1110,5 +1139,21 @@ fn get_permutation_fingerprint_of_rwmap<F: Field>(
         )
         .last()
         .unwrap(),
+    )
+}
+
+fn get_permutation_fingerprint_of_rwmap<F: Field>(
+    rwmap: &RwMap,
+    max_row: usize,
+    alpha: F,
+    gamma: F,
+    prev_continuous_fingerprint: F,
+) -> F {
+    get_permutation_fingerprint_of_rwvec(
+        &rwmap.table_assignments(false),
+        max_row,
+        alpha,
+        gamma,
+        prev_continuous_fingerprint,
     )
 }

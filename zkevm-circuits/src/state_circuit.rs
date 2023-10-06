@@ -645,8 +645,6 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     }
 
     fn instance(&self) -> Vec<Vec<F>> {
-        assert!(!self.rows.is_empty());
-
         let (rows, _) = RwMap::table_assignments_padding(
             &self.rows,
             self.n_rows,

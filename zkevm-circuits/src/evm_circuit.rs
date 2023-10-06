@@ -507,12 +507,34 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let tx_table = TxTable::construct(meta);
+        println!("fixed column after txtable {:?}", meta.num_fixed_columns());
         let rw_table = RwTable::construct(meta);
+        println!("fixed column after rw_table {:?}", meta.num_fixed_columns());
         let bytecode_table = BytecodeTable::construct(meta);
+        println!(
+            "fixed column after bytecode_table {:?}",
+            meta.num_fixed_columns()
+        );
         let block_table = BlockTable::construct(meta);
+        println!(
+            "fixed column after block_table {:?}",
+            meta.num_fixed_columns()
+        );
         let q_copy_table = meta.fixed_column();
+        println!(
+            "fixed column after q_copy_table {:?}",
+            meta.num_fixed_columns()
+        );
         let copy_table = CopyTable::construct(meta, q_copy_table);
+        println!(
+            "fixed column after copy_table {:?}",
+            meta.num_fixed_columns()
+        );
         let keccak_table = KeccakTable::construct(meta);
+        println!(
+            "fixed column after keccak_table {:?}",
+            meta.num_fixed_columns()
+        );
         let exp_table = ExpTable::construct(meta);
         let u8_table = UXTable::construct(meta);
         let u16_table = UXTable::construct(meta);
@@ -637,7 +659,8 @@ mod evm_circuit_stats {
         let k = block.get_test_degree();
 
         let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block);
-        let prover1 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
+        let instance = circuit.instance();
+        let prover1 = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
 
         let code = bytecode! {
             STOP
@@ -658,8 +681,22 @@ mod evm_circuit_stats {
         let block = block_convert::<Fr>(&builder).unwrap();
         let k = block.get_test_degree();
         let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block);
-        let prover2 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
+        let instance = circuit.instance();
+        let prover2 = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
 
+        // let mut cs: ConstraintSystem<Fr> = ConstraintSystem::default();
+        // let _ = EvmCircuit::configure(&mut cs);
+        // let cs = cs;
+
+        // prover1
+        //     .fixed()
+        //     .iter()
+        //     .zip(prover2.fixed().iter())
+        //     .enumerate()
+        //     .for_each(|(i, (f1, f2))| {
+        //         println!("in index {} ", i);
+        //         assert_eq!(f1, f2)
+        //     });
         assert_eq!(prover1.fixed(), prover2.fixed());
         assert_eq!(prover1.permutation(), prover2.permutation());
     }
