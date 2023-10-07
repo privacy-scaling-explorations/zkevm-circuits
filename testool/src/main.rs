@@ -1,9 +1,5 @@
 /// Execute the bytecode from an empty state and run the EVM and State circuits
-mod abi;
-mod compiler;
-mod config;
-mod statetest;
-mod utils;
+use testool::{compiler, config, statetest, utils};
 
 use crate::{config::TestSuite, statetest::ResultLevel};
 use anyhow::{bail, Result};
@@ -21,7 +17,7 @@ use strum::EnumString;
 const REPORT_FOLDER: &str = "report";
 const CODEHASH_FILE: &str = "./codehash.txt";
 
-#[macro_use]
+// #[macro_use]
 extern crate prettytable;
 
 #[allow(non_camel_case_types)]
