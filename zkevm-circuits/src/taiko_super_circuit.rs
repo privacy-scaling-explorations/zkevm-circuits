@@ -140,22 +140,22 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         let state_circuit = StateCircuitConfig::new(
             meta,
             StateCircuitConfigArgs {
-                rw_table: rw_table.clone(),
-                mpt_table: mpt_table.clone(),
+                rw_table,
+                mpt_table,
                 challenges: challenges.clone(),
             },
         );
 
-        let exp_circuit = ExpCircuitConfig::new(meta, exp_table.clone());
+        let exp_circuit = ExpCircuitConfig::new(meta, exp_table);
 
         let copy_circuit = CopyCircuitConfig::new(
             meta,
             CopyCircuitConfigArgs {
                 tx_table: tx_table.clone(),
-                rw_table: rw_table.clone(),
+                rw_table,
                 bytecode_table: bytecode_table.clone(),
-                copy_table: copy_table.clone(),
-                challenges: challenges.clone(),
+                copy_table,
+                challenges,
                 q_enable: q_copy_table,
             },
         );
@@ -358,7 +358,6 @@ impl<F: Field> Circuit<F> for SuperCircuit<F> {
             &challenges,
         )?;
 
-        let block = self.evm_circuit.block.as_ref().unwrap();
         let rws = &self.state_circuit.rows;
         config
             .mpt_table
