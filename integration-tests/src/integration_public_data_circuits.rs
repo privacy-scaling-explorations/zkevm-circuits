@@ -5,29 +5,23 @@
 #[cfg(test)]
 mod public_data_test {
 
-    use crate::{get_client, integration_test_circuits::IntegrationTest};
+    use crate::get_client;
     use bus_mapping::{
         circuit_input_builder::{BuilderClient, CircuitsParams, MetaData, ProtocolInstance},
         rpc::BlockNumber,
     };
-    use eth_types::{
-        geth_types::GethData, Address, Block as EthBlock, Hash, ToBigEndian, Transaction,
-    };
+    use eth_types::{Address, Block as EthBlock, Hash, Transaction};
     use ethers::{
         abi::{Function, Param, ParamType, StateMutability},
         utils::hex,
     };
     use halo2_proofs::{arithmetic::Field, dev::MockProver, halo2curves::bn256::Fr};
     use log::error;
-    use std::{
-        env,
-        io::{self, Write},
-        str::FromStr,
-    };
+    use std::str::FromStr;
     use testool::{parse_address, parse_hash};
     use zkevm_circuits::{
         taiko_super_circuit::SuperCircuit,
-        util::{log2_ceil, SubCircuit},
+        util::SubCircuit,
         witness::{block_convert, Block},
     };
 
@@ -41,12 +35,10 @@ mod public_data_test {
             .iter()
             .filter(|tx| {
                 tx.to
-                    .and_then(|to| {
-                        Some(
-                            to == protocal_address
-                                && tx.input.len() > 4
-                                && tx.input[0..4] == [0xef, 0x16, 0xe8, 0x45],
-                        )
+                    .map(|to| {
+                        to == protocal_address
+                            && tx.input.len() > 4
+                            && tx.input[0..4] == [0xef, 0x16, 0xe8, 0x45]
                     })
                     .unwrap_or(false)
             })
@@ -59,13 +51,14 @@ mod public_data_test {
 
     fn filter_anchor_tx(block: &EthBlock<Transaction>) -> Transaction {
         let protocal_address = Address::from_str(GOLDEN_TOUCH_ADDRESS).unwrap();
-        assert!(block.transactions.len() > 0);
+        assert!(!block.transactions.is_empty());
         assert!(block.transactions[0].from == protocal_address);
         block.transactions[0].clone()
     }
 
     // abi: anchor(bytes32 l1Hash, bytes32 l1SignalRoot, uint64 l1Height, uint32 parentGasUsed)
     fn get_anchor_tx_info(tx: &Transaction) -> (Hash, Hash, u64, u32) {
+        #[allow(deprecated)]
         let function = Function {
             name: "anchor".to_owned(),
             inputs: vec![
@@ -120,6 +113,7 @@ mod public_data_test {
     }
 
     fn get_txlist_bytes(tx: &Transaction) -> Vec<u8> {
+        #[allow(deprecated)]
         let function = Function {
             name: "proposeBlock".to_owned(), // Replace with the function name
             inputs: vec![
@@ -297,7 +291,7 @@ ee24687038d7ea4c68000b8e47ff36ab500000000000000000000000000000000000000000000000
     }
 
     fn test_super_circuit(block: &Block<Fr>) {
-        let circuit = SuperCircuit::new_from_block(&block);
+        let circuit = SuperCircuit::new_from_block(block);
         let instance = circuit.instance();
         // TODO: fix k from build
         let k = 22;
