@@ -160,14 +160,6 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             },
         );
 
-        println!(
-            "#col {:?}, #constraints {:?}, #lookup {:?}, #permu {:?}.",
-            meta.num_advice_columns() + meta.num_fixed_columns(),
-            meta.gates().len(),
-            meta.lookups().len(),
-            meta.permutation().get_columns().len()
-        );
-
         Self {
             tx_table,
             rw_table,
