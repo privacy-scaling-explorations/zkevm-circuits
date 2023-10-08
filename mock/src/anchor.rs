@@ -88,7 +88,7 @@ pub fn sign(tx: &mut MockTransaction) {
 /// gen anchor call
 // anchor(l1_hash,signal_root,l1_height,parent_gas_used)
 pub fn anchor_call() -> Bytes {
-    const METHOD_SIGNATURE: u32 = 0x3d384a4b;
+    const METHOD_SIGNATURE: u32 = 0xda69d3db;
     let mut result = Vec::new();
     result.extend_from_slice(&METHOD_SIGNATURE.to_be_bytes());
     result.extend_from_slice(&MOCK_ANCHOR_L1_HASH.to_fixed_bytes());
