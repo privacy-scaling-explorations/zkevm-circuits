@@ -294,7 +294,7 @@ ee24687038d7ea4c68000b8e47ff36ab500000000000000000000000000000000000000000000000
         let circuit = SuperCircuit::new_from_block(block);
         let instance = circuit.instance();
         // TODO: fix k from build
-        let k = 22;
+        let k = 23;
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         let res = prover.verify_par();
         if let Err(err) = res {
@@ -333,21 +333,11 @@ ee24687038d7ea4c68000b8e47ff36ab500000000000000000000000000000000000000000000000
             max_keccak_rows: 0,
         };
 
-        let cli = BuilderClient::new(cli, circuits_params, Default::default())
-            .await
-            .unwrap();
-
-        let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
-
-        log::info!("test super circuit, block: #{}", block_num);
-        let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
-        block.randomness = Fr::ONE;
-
         let protocol_instance = ProtocolInstance {
             meta_data: MetaData {
                 id: 10,
                 timestamp: 1694510352,
-                l1_height: 4272886,
+                l1_height: 4272887,
                 l1_hash: parse_hash(
                     "6e3b781b2d9a04e21ecba49e67dc3fb0a8242408cc07fa6fed5d8bd0eca2c985",
                 )
@@ -379,7 +369,7 @@ ee24687038d7ea4c68000b8e47ff36ab500000000000000000000000000000000000000000000000
             )
             .unwrap(),
             signal_root: parse_hash(
-                "4f88a53547efa01393915fc4a5ef2b20c6f546c696693405b184c234c6a7f5b4",
+                "95a87577b110954a0daf867bd574aa726ec9a061b4bf0903d5adef23872f7f1b",
             )
             .unwrap(),
             graffiti: parse_hash(
@@ -388,15 +378,25 @@ ee24687038d7ea4c68000b8e47ff36ab500000000000000000000000000000000000000000000000
             .unwrap(),
             prover: parse_address("70997970C51812dc3A010C7d01b50e0d17dc79C8").unwrap(),
             gas_used: 141003,
-            parent_gas_used: 122527,
+            parent_gas_used: 123960,
             block_max_gas_limit: 6000000,
             max_transactions_per_block: 79,
             max_bytes_per_tx_list: 120000,
-            l1_signal_service: parse_address("0000777700000000000000000000000000000001").unwrap(),
-            l2_signal_service: parse_address("0000777700000000000000000000000000000001").unwrap(),
-            l2_contract: parse_address("0000777700000000000000000000000000000001").unwrap(),
-            anchor_gas_limit: 210000,
+            l1_signal_service: parse_address("1000777700000000000000000000000000000001").unwrap(),
+            l2_signal_service: parse_address("1000777700000000000000000000000000000001").unwrap(),
+            l2_contract: parse_address("1000777700000000000000000000000000000001").unwrap(),
+            anchor_gas_limit: 180000,
         };
+
+        let cli = BuilderClient::new(cli, circuits_params, Some(protocol_instance.clone()))
+            .await
+            .unwrap();
+
+        let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
+
+        log::info!("test super circuit, block: #{}", block_num);
+        let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
+        block.randomness = Fr::ONE;
         block.protocol_instance = Some(protocol_instance);
 
         test_super_circuit(&block);

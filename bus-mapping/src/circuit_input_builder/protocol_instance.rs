@@ -10,7 +10,7 @@ use mock::{
 };
 
 /// hash(anchor)
-pub const ANCHOR_TX_METHOD_SIGNATURE: u32 = 0x3d384a4b;
+pub const ANCHOR_TX_METHOD_SIGNATURE: u32 = 0xda69d3db;
 
 /// Taiko witness
 #[derive(Debug, Clone)]
