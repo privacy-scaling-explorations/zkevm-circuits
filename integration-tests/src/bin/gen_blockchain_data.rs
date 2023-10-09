@@ -54,6 +54,7 @@ where
     (c_abi, contract_address, block_number, contract_instance)
 }
 
+#[allow(dead_code)]
 async fn dump_tx_trace(prov: Provider<Http>, receipt: TransactionReceipt, name: &str) {
     let options = GethDebugTracingOptions::default();
     let trace = prov
