@@ -456,13 +456,13 @@ func (s *StateDB) SetStateObjectIfExists(addr common.Address) {
 				return
 			}
 
-			address_hash := crypto.Keccak256Hash(addr.Bytes())
 			/*
 			When an account that does not exist is tried to be fetched by PrefetchAccount and when the some other account
 			exist at the overlapping address (the beginning of it), this (wrong) account is obtained by PrefetchAccount
 			and needs to be ignored.
 			*/
 			isExpectedAddress := func() bool {
+				address_hash := crypto.Keccak256Hash(addr.Bytes())
 				len_address_remaining := ret[2] - 128
 				if ret[3] != 32 {
 					nibble := address_hash[32 - len_address_remaining] % 16
