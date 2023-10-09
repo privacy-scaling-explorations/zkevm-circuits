@@ -128,27 +128,28 @@ impl RwMap {
         target_len: usize,
         is_first_row_padding: bool,
     ) -> (Vec<Rw>, usize) {
-        // Remove Start rows as we will add them from scratch.
-        let rows: Vec<Rw> = rows
+        // Remove Start/Padding rows as we will add them from scratch.
+        let rows_trimmed: Vec<Rw> = rows
             .iter()
-            .skip_while(|rw| matches!(rw, Rw::Start { .. }) || matches!(rw, Rw::Padding { .. }))
+            .filter(|rw| !(matches!(rw, Rw::Start { .. }) || matches!(rw, Rw::Padding { .. })))
             .cloned()
             .collect();
         let padding_length = {
-            let length = Self::padding_len(rows.len(), target_len);
+            let length = Self::padding_len(rows_trimmed.len(), target_len);
             if is_first_row_padding {
                 length.saturating_sub(1)
             } else {
                 length
             }
         };
-        let start_padding_rw_counter = rows.last().map(|row| row.rw_counter()).unwrap_or(1) + 1;
+        let start_padding_rw_counter =
+            rows_trimmed.last().map(|row| row.rw_counter()).unwrap_or(1) + 1;
         let padding = (start_padding_rw_counter..start_padding_rw_counter + padding_length)
             .map(|rw_counter| Rw::Padding { rw_counter });
         (
             iter::once(Rw::Start { rw_counter: 1 })
                 .take(if is_first_row_padding { 1 } else { 0 })
-                .chain(rows.into_iter())
+                .chain(rows_trimmed.into_iter())
                 .chain(padding.into_iter())
                 .collect(),
             padding_length,
@@ -157,7 +158,9 @@ impl RwMap {
     /// Build Rws for assignment
     pub fn table_assignments(&self, keep_chronological_order: bool) -> Vec<Rw> {
         let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();
-        if !keep_chronological_order {
+        if keep_chronological_order {
+            rows.sort_by_key(|row| row.rw_counter());
+        } else {
             rows.sort_by_key(|row| {
                 (
                     row.tag() as u64,
@@ -169,6 +172,7 @@ impl RwMap {
                 )
             });
         }
+
         rows
     }
 }
