@@ -1277,8 +1277,7 @@ impl<'a> CircuitInputStateRef<'a> {
         };
 
         let caller_gas_left = if is_revert_or_return_call_success || call.is_success {
-            // geth_step_next.gas + gas_refund
-            geth_step_next.gas
+            geth_step_next.gas + gas_refund
 
         } else {
             geth_step_next.gas

@@ -94,7 +94,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
             (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
             (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
         ] {
-            cb.call_context_lookup_write(None, field_tag, value.to_word());
+            cb.call_context_lookup_write(None, field_tag, Word::from_lo_unchecked(value));
         }
 
         let cd_address = MemoryAddressGadget::construct(cb, cd_offset, cd_length);
