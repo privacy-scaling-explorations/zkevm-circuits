@@ -14,7 +14,7 @@ use self::access::gen_state_access_trace;
 use crate::{
     error::Error,
     evm::opcodes::{gen_associated_ops, gen_associated_steps},
-    operation::{CallContextField, Op, Operation, OperationContainer, RWCounter, RW},
+    operation::{CallContextField, Op, Operation, OperationContainer, RWCounter, StartOp, RW},
     rpc::GethClient,
     state_db::{self, CodeDB, StateDB},
 };
@@ -305,14 +305,14 @@ impl CircuitInputBuilder<FixedCParams> {
                 max_rws
             );
         }
-        // TODO only push StartOp in first chunk
-        // push_op(
-        //     &mut state.block.container,
-        //     &mut end_block_last,
-        //     RWCounter(1),
-        //     RW::READ,
-        //     StartOp {},
-        // );
+        // TODO fix below to adapt multiple chunk logic
+        push_op(
+            &mut state.block.container,
+            &mut end_block_last,
+            RWCounter(1),
+            RW::READ,
+            StartOp {},
+        );
         // if max_rws - total_rws > 1 {
         // let (padding_start, padding_end) = (max_rws - total_rws, max_rws); // rw counter
         // start from 1 push_op(

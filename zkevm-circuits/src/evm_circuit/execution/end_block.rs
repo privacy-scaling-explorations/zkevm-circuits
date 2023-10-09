@@ -92,7 +92,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         // rw_table to ensure there is no malicious insertion.
         // Verify that there are at most total_rws meaningful entries in the rw_table
         // TODO only lookup start on first rwtable chunk
-        // cb.rw_table_start_lookup(1.expr());
+        cb.rw_table_start_lookup(1.expr());
         // current SRS size < 2^30 so use 4 bytes (2^32) in LtGadet should be enough
         // TODO find better way other than hardcode
         // let is_end_padding_exist = LtGadget::<_, 32>::construct(
@@ -157,8 +157,9 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         self.total_txs_is_max_txs
             .assign(region, offset, total_txs, max_txs)?;
         let max_txs_assigned = self.max_txs.assign(region, offset, Value::known(max_txs))?;
-        // When rw_indices is not empty, we're at the last row (at a fixed offset),
-        // where we need to access the max_rws and max_txs constant.
+        // When rw_indices is not empty, means current endblock is non-padding step, we're at the
+        // last row (at a fixed offset), where we need to access the max_rws and max_txs
+        // constant.
         if step.rw_indices_len() != 0 {
             region.constrain_constant(max_rws_assigned, max_rws)?;
             region.constrain_constant(max_txs_assigned, max_txs)?;

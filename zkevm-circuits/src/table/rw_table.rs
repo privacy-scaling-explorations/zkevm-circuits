@@ -151,7 +151,10 @@ impl RwTable {
         let (rows, _) = RwMap::table_assignments_padding(rws, n_rows, is_first_row_padding);
         for (offset, row) in rows.iter().enumerate() {
             let row_assigned_cells = self.assign(region, offset, &row.table_assignment())?;
-            if offset == 0 || offset == rows.len() - 1 {
+            if offset == 0 {
+                assigned_cells.push(row_assigned_cells.clone());
+            }
+            if offset == rows.len() - 1 {
                 assigned_cells.push(row_assigned_cells);
             }
         }

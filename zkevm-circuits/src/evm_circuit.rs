@@ -684,19 +684,18 @@ mod evm_circuit_stats {
         let instance = circuit.instance();
         let prover2 = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
 
-        // let mut cs: ConstraintSystem<Fr> = ConstraintSystem::default();
-        // let _ = EvmCircuit::configure(&mut cs);
-        // let cs = cs;
-
-        // prover1
-        //     .fixed()
-        //     .iter()
-        //     .zip(prover2.fixed().iter())
-        //     .enumerate()
-        //     .for_each(|(i, (f1, f2))| {
-        //         println!("in index {} ", i);
-        //         assert_eq!(f1, f2)
-        //     });
+        assert_eq!(prover1.fixed().len(), prover2.fixed().len());
+        prover1
+            .fixed()
+            .iter()
+            .zip(prover2.fixed().iter())
+            .enumerate()
+            .for_each(|(i, (f1, f2))| {
+                assert_eq!(
+                    f1, f2,
+                    "at index {}. Usually it happened when mismatch constant constraint, e.g. region.constrain_constant() are calling in-consisntent", i
+                )
+            });
         assert_eq!(prover1.fixed(), prover2.fixed());
         assert_eq!(prover1.permutation(), prover2.permutation());
     }
