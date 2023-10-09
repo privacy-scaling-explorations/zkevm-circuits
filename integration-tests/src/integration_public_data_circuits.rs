@@ -50,7 +50,7 @@ mod public_data_test {
     const GOLDEN_TOUCH_ADDRESS: &str = "0000777735367b36bC9B61C50022d9D0700dB4Ec";
 
     fn filter_anchor_tx(block: &EthBlock<Transaction>) -> Transaction {
-        let protocal_address = Address::from_str(GOLDEN_TOUCH_ADDRESS).unwrap();
+        let protocol_address = Address::from_str(GOLDEN_TOUCH_ADDRESS).unwrap();
         assert!(!block.transactions.is_empty());
         assert!(block.transactions[0].from == protocal_address);
         block.transactions[0].clone()
