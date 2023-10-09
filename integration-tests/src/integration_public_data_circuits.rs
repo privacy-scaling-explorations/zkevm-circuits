@@ -29,7 +29,7 @@ mod public_data_test {
     const PROTOCOL_ADDRESS: &str = "6375394335f34848b850114b66a49d6f47f2cda8";
 
     fn filter_proposal_txs(block: &EthBlock<Transaction>) -> Vec<Transaction> {
-        let protocal_address = Address::from_str(PROTOCOL_ADDRESS).unwrap();
+        let protocol_address = Address::from_str(PROTOCOL_ADDRESS).unwrap();
         block
             .transactions
             .iter()
