@@ -363,7 +363,6 @@ async fn main() {
         "MLOAD".to_string(),
         tx_receipt.block_number.unwrap().as_u64(),
     );
-    // dump_tx_trace(get_provider(), tx_receipt, "mload").await;
 
     // SDIV (STATE)
     info!("Sending Tx optimized for maximum SDIV opcode calls up to 300k gas");
