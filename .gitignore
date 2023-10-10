@@ -3,4 +3,4 @@
 .DS_Store
 .vscode
 .idea
-.log
+*.log
