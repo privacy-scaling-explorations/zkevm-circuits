@@ -74,7 +74,7 @@ pub fn protocol_instance_table_assignments<F: Field>(
         [
             Value::known(F::from(PiFieldTag::L1Hash as u64)),
             rlc_be_bytes(
-                &protocol_instance.meta_hash.l1_hash.to_fixed_bytes(),
+                &protocol_instance.meta_data.l1_hash.to_fixed_bytes(),
                 randomness,
             ),
         ],
@@ -86,7 +86,7 @@ pub fn protocol_instance_table_assignments<F: Field>(
             Value::known(F::from(PiFieldTag::L1Height as u64)),
             rlc_be_bytes(
                 &protocol_instance
-                    .meta_hash
+                    .meta_data
                     .l1_height
                     .to_word()
                     .to_be_bytes(),
@@ -280,7 +280,7 @@ impl From<&circuit_input_builder::Block> for BlockContext {
             treasury: block
                 .protocol_instance
                 .as_ref()
-                .map(|pi| pi.meta_hash.treasury),
+                .map(|pi| pi.meta_data.treasury),
             gas_limit: block.gas_limit,
             number: block.number,
             timestamp: block.timestamp,

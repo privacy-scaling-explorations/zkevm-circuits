@@ -2560,6 +2560,7 @@ dependencies = [
  "rand_xorshift",
  "serde",
  "serde_json",
+ "testool",
  "tokio",
  "url",
  "zkevm-circuits",

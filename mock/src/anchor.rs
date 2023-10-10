@@ -26,6 +26,9 @@ static GX1: Lazy<Word> =
 static GX2: Lazy<Word> =
     Lazy::new(|| word!("0xc6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"));
 
+/// hash(anchor)
+pub const ANCHOR_TX_METHOD_SIGNATURE: u32 = 0xda69d3db;
+
 fn fixd_k_sign(anchor_tx: &Transaction, chain_id: u64) -> Result<SignData, eth_types::Error> {
     // msg = rlp([nonce, gasPrice, gas, to, value, data, sig_v, r, s])
     let req: Eip1559TransactionRequest = anchor_tx.into();
@@ -88,9 +91,8 @@ pub fn sign(tx: &mut MockTransaction) {
 /// gen anchor call
 // anchor(l1_hash,signal_root,l1_height,parent_gas_used)
 pub fn anchor_call() -> Bytes {
-    const METHOD_SIGNATURE: u32 = 0x3d384a4b;
     let mut result = Vec::new();
-    result.extend_from_slice(&METHOD_SIGNATURE.to_be_bytes());
+    result.extend_from_slice(&ANCHOR_TX_METHOD_SIGNATURE.to_be_bytes());
     result.extend_from_slice(&MOCK_ANCHOR_L1_HASH.to_fixed_bytes());
     result.extend_from_slice(&MOCK_ANCHOR_SIGNAL_ROOT.to_fixed_bytes());
     result.extend_from_slice(&MOCK_ANCHOR_L1_HIGHT.to_word().to_be_bytes());

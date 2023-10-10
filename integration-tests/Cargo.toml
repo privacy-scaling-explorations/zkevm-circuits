@@ -11,9 +11,10 @@ lazy_static = "1.4"
 ethers = { version = "=2.0.0", features = ["ethers-solc"] }
 serde_json = "1.0.66"
 serde = { version = "1.0.130", features = ["derive"] }
-bus-mapping = { path = "../bus-mapping" , features = ["test"] }
+bus-mapping = { path = "../bus-mapping", features = ["test"] }
 eth-types = { path = "../eth-types" }
 zkevm-circuits = { path = "../zkevm-circuits", features = ["test"] }
+testool = { path = "../testool" }
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2.2"
 pretty_assertions = "1.0.0"

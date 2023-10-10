@@ -35,7 +35,7 @@ pub use execution::{
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
 use log::warn;
-pub use protocol_instance::{left_shift, MetaHash, ProtocolInstance, ANCHOR_TX_METHOD_SIGNATURE};
+pub use protocol_instance::{left_shift, MetaData, ProtocolInstance, ANCHOR_TX_METHOD_SIGNATURE};
 use std::collections::HashMap;
 pub use transaction::{Transaction, TransactionContext};
 
@@ -437,7 +437,7 @@ pub fn get_state_accesses(
             None,
             RW::WRITE,
             AccessValue::Account {
-                address: pi.meta_hash.treasury,
+                address: pi.meta_data.treasury,
             },
         ));
     }
