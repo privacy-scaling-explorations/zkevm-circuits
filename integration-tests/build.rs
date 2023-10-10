@@ -7,6 +7,7 @@ use ethers_contract_abigen::Abigen;
 use log::info;
 use serde::{Deserialize, Serialize};
 use std::{fs::File, path::Path};
+use thiserror::Error;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CompiledContract {
@@ -45,43 +46,51 @@ const CONTRACTS: &[(&str, &str)] = &[
 /// Target directory for rust contract bingings
 const BINDINGS_DR: &str = "src";
 
-fn main() {
+#[derive(Debug, Error)]
+enum Error {
+    #[error("FailedToGetSolidity({0:})")]
+    FailedToGetSolidity(String),
+    #[error("FailedToCompile(path: {path:}, {reason:}))")]
+    FailedToCompile { path: String, reason: String },
+}
+
+fn main() -> Result<(), Error> {
     println!("cargo:rerun-if-changed=build.rs");
 
     let solc: Solc = Solc::default();
-    let _solc_version = solc.version().expect("Version Works");
+    let _solc_version = solc
+        .version()
+        .map_err(|err| Error::FailedToGetSolidity(err.to_string()));
 
     for (name, contract_path) in CONTRACTS {
         let path_sol = Path::new(CONTRACTS_PATH).join(contract_path);
-        let inputs = CompilerInput::new(&path_sol).expect("CompilerInput Created");
+        let inputs = CompilerInput::new(&path_sol).map_err(|err| Error::FailedToCompile {
+            path: path_sol.to_string_lossy().to_string(),
+            reason: err.to_string(),
+        })?;
         // ethers-solc: explicitly indicate the EvmVersion that corresponds to the zkevm circuit's
         // supported Upgrade, e.g. `London/Shanghai/...` specifications.
         let input: CompilerInput = inputs
             .clone()
             .first_mut()
-            .expect("first exists")
+            .unwrap()
             .clone()
             .evm_version(EvmVersion::London);
-
+        None.unwrap_or(Error::FailedToGetSolidity("foo".to_string()));
         // compilation will either fail with Err variant or return Ok(CompilerOutput)
         // which may contain Errors or Warnings
-        let output: Vec<u8> = solc.compile_output(&input).unwrap();
+        let output: Vec<u8> = solc
+            .compile_output(&input)
+            .map_err(|err| Error::FailedToGetSolidity(err.to_string()))?;
         let mut deserializer: serde_json::Deserializer<serde_json::de::SliceRead<'_>> =
             serde_json::Deserializer::from_slice(&output);
         // The contracts to test the worst-case usage of certain opcodes, such as SDIV, MLOAD, and
         // EXTCODESIZE, generate big JSON compilation outputs. We disable the recursion limit to
         // avoid parsing failure.
         deserializer.disable_recursion_limit();
-        let compiled = match CompilerOutput::deserialize(&mut deserializer) {
-            Err(error) => {
-                panic!("COMPILATION ERROR {:?}\n{:?}", &path_sol, error);
-            }
-            // CompilationOutput is succesfully created (might contain Errors or Warnings)
-            Ok(output) => {
-                info!("COMPILATION OK: {:?}", name);
-                output
-            }
-        };
+        let compiled = CompilerOutput::deserialize(&mut deserializer)
+            .map_err(|err| Error::FailedToGetSolidity(err.to_string()))?;
+        info!("COMPILATION OK: {:?}", name);
 
         if compiled.has_error() || compiled.has_warning(WARN) {
             panic!(
@@ -122,6 +131,7 @@ fn main() {
             Err(e) => eprintln!("{:#?}", e),
         }
     }
+    Ok(())
 }
 
 fn generate_rust_contract_bindings(bindings_dir: &str, file: &Path) {
