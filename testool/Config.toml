@@ -16,7 +16,12 @@ paths = [
     "EIP1559",
     "EIP2930",
     "stPreCompiledContracts",
-    "stZeroKnowledge"
+    "stZeroKnowledge",
+    "DelegatecallToPrecompile",
+    "RevertPrecompiledTouchExactOOG",
+    "StaticcallToPrecompileFrom",
+    "create_callprecompile_returndatasize_d0_g0_v0",
+    "extCodeHashPrecompiles",
 ]
 
 [[skip_paths]]

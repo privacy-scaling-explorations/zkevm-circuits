@@ -6,7 +6,7 @@ use crate::{
     Error,
 };
 use eth_types::{
-    evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
+    evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED, PRECOMPILE_COUNT},
     evm_unimplemented, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
@@ -60,6 +60,19 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         false,
     )?;
 
+    // Add precompile contract address to access list
+    for address in 1..=PRECOMPILE_COUNT {
+        let address = eth_types::Address::from_low_u64_be(address);
+        let is_warm_prev = !state.sdb.add_account_to_access_list(address);
+        state.tx_accesslist_account_write(
+            &mut exec_step,
+            state.tx_ctx.id(),
+            address,
+            true,
+            is_warm_prev,
+        )?;
+    }
+
     // Add caller, callee and coinbase (for EIP-3651) to access list.
     for address in [call.caller_address, call.address, state.block.coinbase] {
         let is_warm_prev = !state.sdb.add_account_to_access_list(address);
@@ -98,7 +111,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     } else {
         (Word::zero(), true)
     };
-    if !state.is_precompiled(&call.address) && !call.is_create() {
+    if !state.is_precompiled(&call.address) {
         state.account_read(
             &mut exec_step,
             call.address,

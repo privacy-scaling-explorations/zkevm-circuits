@@ -63,7 +63,7 @@ impl<F: Field> Block<F> {
                 println!("> Step {:?}", step.exec_state);
                 for rw_idx in 0..step.bus_mapping_instance.len() {
                     let rw = self.get_rws(step, rw_idx);
-                    let rw_str = if rw.is_write() { "READ" } else { "WRIT" };
+                    let rw_str = if rw.is_write() { "WRIT" } else { "READ" };
                     println!("  {} {} {:?}", rw.rw_counter(), rw_str, rw);
                 }
             }

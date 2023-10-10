@@ -25,7 +25,7 @@ pub enum MainnetFork {
     Frontier = 1,
 }
 
-pub const TEST_FORK: MainnetFork = MainnetFork::Merge;
+pub const TEST_FORK: MainnetFork = MainnetFork::Shanghai;
 
 impl FromStr for MainnetFork {
     type Err = anyhow::Error;
