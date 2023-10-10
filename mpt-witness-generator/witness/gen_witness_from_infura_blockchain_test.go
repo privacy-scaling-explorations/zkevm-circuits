@@ -2290,7 +2290,7 @@ func TestTrieDoesNotExistShortVal(t *testing.T) {
 		Value:   val1,
 		Address: addr,
 	}
-	
+
 	trieModifications := []TrieModification{trieMod1}
 
 	prepareWitness("TrieDoesNotExistShortVal", trieModifications, statedb)
@@ -2318,7 +2318,7 @@ func TestTrieDoesNotExistLongVal(t *testing.T) {
 		Value:   val1,
 		Address: addr,
 	}
-	
+
 	trieModifications := []TrieModification{trieMod1}
 
 	prepareWitness("TrieDoesNotExistLongVal", trieModifications, statedb)
@@ -2355,7 +2355,7 @@ func TestWrongAccount(t *testing.T) {
 		Value:   val1,
 		Address: addr,
 	}
-	
+
 	trieModifications := []TrieModification{trieMod1, trieMod2, trieMod3}
 
 	prepareWitness("WrongAccount", trieModifications, statedb)

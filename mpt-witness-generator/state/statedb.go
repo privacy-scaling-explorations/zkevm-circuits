@@ -457,26 +457,26 @@ func (s *StateDB) SetStateObjectIfExists(addr common.Address) {
 			}
 
 			/*
-			When an account that does not exist is tried to be fetched by PrefetchAccount and when the some other account
-			exist at the overlapping address (the beginning of it), this (wrong) account is obtained by PrefetchAccount
-			and needs to be ignored.
+				When an account that does not exist is tried to be fetched by PrefetchAccount and when the some other account
+				exist at the overlapping address (the beginning of it), this (wrong) account is obtained by PrefetchAccount
+				and needs to be ignored.
 			*/
 			isExpectedAddress := func() bool {
 				address_hash := crypto.Keccak256Hash(addr.Bytes())
 				len_address_remaining := ret[2] - 128
 				if ret[3] != 32 {
-					nibble := address_hash[32 - len_address_remaining] % 16
-					if ret[3] - 48 != nibble {
+					nibble := address_hash[32-len_address_remaining] % 16
+					if ret[3]-48 != nibble {
 						return false
 					}
 				}
-				for i := 0; i < int(len_address_remaining - 1); i++ {
-					if address_hash[32 - int(len_address_remaining) + 1 + i] != ret[4 + i] {
+				for i := 0; i < int(len_address_remaining-1); i++ {
+					if address_hash[32-int(len_address_remaining)+1+i] != ret[4+i] {
 						return false
 					}
 				}
 				return true
-			} 
+			}
 			if isExpectedAddress() {
 				s.SetStateObjectFromEncoding(addr, ret)
 			}
