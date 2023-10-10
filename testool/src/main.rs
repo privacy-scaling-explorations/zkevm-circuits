@@ -17,9 +17,6 @@ use strum::EnumString;
 const REPORT_FOLDER: &str = "report";
 const CODEHASH_FILE: &str = "./codehash.txt";
 
-// #[macro_use]
-extern crate prettytable;
-
 #[allow(non_camel_case_types)]
 #[derive(PartialEq, Parser, EnumString, Debug)]
 enum Circuits {

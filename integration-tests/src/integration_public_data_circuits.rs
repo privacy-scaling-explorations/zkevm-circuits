@@ -27,6 +27,7 @@ mod public_data_test {
 
     /// sepolia protocal address
     const PROTOCOL_ADDRESS: &str = "6375394335f34848b850114b66a49d6f47f2cda8";
+    const PROPOSAL_TX_METHOD_SIGNATURE: &str = "ef16e845";
 
     fn filter_proposal_txs(block: &EthBlock<Transaction>) -> Vec<Transaction> {
         let protocol_address = Address::from_str(PROTOCOL_ADDRESS).unwrap();
@@ -36,9 +37,9 @@ mod public_data_test {
             .filter(|tx| {
                 tx.to
                     .map(|to| {
-                        to == protocal_address
+                        to == protocol_address
                             && tx.input.len() > 4
-                            && tx.input[0..4] == [0xef, 0x16, 0xe8, 0x45]
+                            && tx.input[0..4] == hex::decode(PROPOSAL_TX_METHOD_SIGNATURE).unwrap()
                     })
                     .unwrap_or(false)
             })
@@ -52,7 +53,7 @@ mod public_data_test {
     fn filter_anchor_tx(block: &EthBlock<Transaction>) -> Transaction {
         let protocol_address = Address::from_str(GOLDEN_TOUCH_ADDRESS).unwrap();
         assert!(!block.transactions.is_empty());
-        assert!(block.transactions[0].from == protocal_address);
+        assert!(block.transactions[0].from == protocol_address);
         block.transactions[0].clone()
     }
 
@@ -141,7 +142,8 @@ mod public_data_test {
     }
 
     #[tokio::test]
-    async fn test_get_txlist_call() {
+    async fn test_sepolia_get_txlist_call() {
+        // TODO: get_client should choose L1 or L2.
         let block_num = 3974689;
         let expected_tx_cnt = 4;
         let cli = get_client();
@@ -326,8 +328,8 @@ ee24687038d7ea4c68000b8e47ff36ab500000000000000000000000000000000000000000000000
             max_txs: 80,
             max_calldata: 69750,
             max_bytecode: 139500,
-            max_rws: 3161966,
-            max_copy_rows: 5952002,
+            max_rws: 524288,
+            max_copy_rows: 524288,
             max_exp_steps: 27900,
             max_evm_rows: 0,
             max_keccak_rows: 0,
