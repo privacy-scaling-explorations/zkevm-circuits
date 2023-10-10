@@ -381,7 +381,6 @@ async fn main() {
         "SDIV".to_string(),
         tx_receipt.block_number.unwrap().as_u64(),
     );
-    // dump_tx_trace(get_provider(), tx_receipt, "sdiv").await;
 
     let gen_data = GenDataOutput {
         coinbase: accounts[0],
