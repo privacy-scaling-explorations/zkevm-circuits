@@ -13,10 +13,10 @@ pub mod test_ctx;
 mod transaction;
 
 pub use account::MockAccount;
+pub use anchor::ANCHOR_TX_METHOD_SIGNATURE;
 pub(crate) use block::MockBlock;
 pub use test_ctx::TestContext;
 pub use transaction::{AddrOrWallet, MockTransaction, CORRECT_MOCK_TXS};
-pub use anchor::ANCHOR_TX_METHOD_SIGNATURE;
 
 lazy_static! {
     /// Mock 1 ETH
