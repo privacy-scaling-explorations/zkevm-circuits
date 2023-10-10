@@ -23,7 +23,7 @@ pub(crate) struct ErrorOOGPrecompileGadget<F> {
     precompile_addr: Cell<F>,
     addr_bits: BinaryNumberGadget<F, 4>,
     call_data_length: Cell<F>,
-    n_pairs: ConstantDivisionGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
+    // n_pairs: ConstantDivisionGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
     n_words: ConstantDivisionGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
     required_gas: Cell<F>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
@@ -44,16 +44,16 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
 
         // read call data length
         let call_data_length = cb.call_context(None, CallContextFieldTag::CallDataLength);
-        let n_pairs = cb.condition(
-            addr_bits.value_equals(PrecompileCalls::Bn128Pairing),
-            |cb| {
-                ConstantDivisionGadget::construct(
-                    cb,
-                    call_data_length.expr(),
-                    N_BYTES_EC_PAIR as u64,
-                )
-            },
-        );
+        // let n_pairs = cb.condition(
+        //     addr_bits.value_equals(PrecompileCalls::Bn128Pairing),
+        //     |cb| {
+        //         ConstantDivisionGadget::construct(
+        //             cb,
+        //             call_data_length.expr(),
+        //             N_BYTES_EC_PAIR as u64,
+        //         )
+        //     },
+        // );
         let n_words = cb.condition(addr_bits.value_equals(PrecompileCalls::Identity), |cb| {
             ConstantDivisionGadget::construct(
                 cb,
@@ -64,10 +64,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
 
         // calculate required gas for precompile
         let precompiles_required_gas = vec![
-            (
-                addr_bits.value_equals(PrecompileCalls::ECRecover),
-                GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
-            ),
+            // (
+            //     addr_bits.value_equals(PrecompileCalls::ECRecover),
+            //     GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
+            // ),
             // These are handled in PrecompileFailedGadget
             // addr_bits.value_equals(PrecompileCalls::Sha256),
             // addr_bits.value_equals(PrecompileCalls::Ripemd160),
@@ -78,19 +78,19 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
                     + n_words.quotient() * GasCost::PRECOMPILE_IDENTITY_PER_WORD.expr(),
             ),
             // modexp is handled in ModExpGadget
-            (
-                addr_bits.value_equals(PrecompileCalls::Bn128Add),
-                GasCost::PRECOMPILE_BN256ADD.expr(),
-            ),
-            (
-                addr_bits.value_equals(PrecompileCalls::Bn128Mul),
-                GasCost::PRECOMPILE_BN256MUL.expr(),
-            ),
-            (
-                addr_bits.value_equals(PrecompileCalls::Bn128Pairing),
-                GasCost::PRECOMPILE_BN256PAIRING.expr()
-                    + n_pairs.quotient() * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.expr(),
-            ),
+            // (
+            //     addr_bits.value_equals(PrecompileCalls::Bn128Add),
+            //     GasCost::PRECOMPILE_BN256ADD.expr(),
+            // ),
+            // (
+            //     addr_bits.value_equals(PrecompileCalls::Bn128Mul),
+            //     GasCost::PRECOMPILE_BN256MUL.expr(),
+            // ),
+            // (
+            //     addr_bits.value_equals(PrecompileCalls::Bn128Pairing),
+            //     GasCost::PRECOMPILE_BN256PAIRING.expr()
+            //         + n_pairs.quotient() * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR.expr(),
+            // ),
         ];
 
         cb.require_equal(
@@ -134,7 +134,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
             precompile_addr,
             required_gas,
             insufficient_gas,
-            n_pairs,
+            // n_pairs,
             n_words,
             addr_bits,
             call_data_length,
@@ -169,9 +169,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         )?;
 
         // n_pairs
-        let n_pairs = call.call_data_length / 192;
-        self.n_pairs
-            .assign(region, offset, call.call_data_length as u128)?;
+        // let n_pairs = call.call_data_length / 192;
+        // self.n_pairs
+        //     .assign(region, offset, call.call_data_length as u128)?;
 
         // n_words
         self.n_words.assign(
@@ -183,18 +183,18 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         // required_gas
         let precompile_call: PrecompileCalls = precompile_addr.to_fixed_bytes()[19].into();
         let required_gas = match precompile_call {
-            PrecompileCalls::Bn128Pairing => {
-                precompile_call.base_gas_cost()
-                    + n_pairs * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR
-            }
+            // PrecompileCalls::Bn128Pairing => {
+            //     precompile_call.base_gas_cost()
+            //         + n_pairs * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR
+            // }
             PrecompileCalls::Identity => {
                 let n_words = (call.call_data_length + 31) / 32;
                 precompile_call.base_gas_cost()
                     + n_words * GasCost::PRECOMPILE_IDENTITY_PER_WORD
             }
-            PrecompileCalls::Bn128Add | PrecompileCalls::Bn128Mul | PrecompileCalls::ECRecover => {
-                precompile_call.base_gas_cost()
-            }
+            // PrecompileCalls::Bn128Add | PrecompileCalls::Bn128Mul | PrecompileCalls::ECRecover => {
+            //     precompile_call.base_gas_cost()
+            // }
             _ => unreachable!(),
         };
 

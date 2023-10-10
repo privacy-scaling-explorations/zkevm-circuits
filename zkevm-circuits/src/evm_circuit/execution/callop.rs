@@ -106,15 +106,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
         let [is_static, depth] = [
-            CallContextFieldTag::IsStatic, 
+            CallContextFieldTag::IsStatic,
             CallContextFieldTag::Depth,
         ]
         .map(|field_tag| cb.call_context(None, field_tag));
 
-        let (current_caller_address, current_callee_address, current_value) = cb.condition(is_delegatecall.expr(), |cb| {
+        let (current_callee_address, current_caller_address, current_value) = cb.condition(is_delegatecall.expr(), |cb| {
             (
-                cb.call_context_read_as_word(None, CallContextFieldTag::CallerAddress),
                 cb.call_context_read_as_word(None, CallContextFieldTag::CalleeAddress),
+                cb.call_context_read_as_word(None, CallContextFieldTag::CallerAddress),
                 cb.call_context_read_as_word(None, CallContextFieldTag::Value),
             )
         });
@@ -148,7 +148,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // Add callee to access list
         let is_warm = cb.query_bool();
         let is_warm_prev = cb.query_bool();
-        cb.require_true("callee add shuold be updated to warm", is_warm.expr());
+        cb.require_true("callee add should be updated to warm", is_warm.expr());
         cb.account_access_list_write_unchecked(
             tx_id.expr(),
             call_gadget.callee_address(),
@@ -231,7 +231,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // skip the transfer (this is necessary for non-existing accounts, which
         // will not be crated when value is 0 and so the callee balance lookup
         // would be invalid).
-        let _code_hash_previous = cb.query_word32();
+        // let _code_hash_previous = cb.query_word32();
+        let _code_hash_previous = cb.query_cell();
         let transfer = cb.condition(is_call.expr() * is_precheck_ok.expr(), |cb| {
             TransferGadget::construct(
                 cb,
@@ -309,11 +310,17 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 );
 
                 // Write to callee's context.
+                cb.call_context_lookup_write(
+                    Some(callee_call_id.expr()),
+                    CallContextFieldTag::IsSuccess,
+                    Word::from_lo_unchecked(call_gadget.is_success.expr())
+                );
+                cb.call_context_lookup_write(
+                    Some(callee_call_id.expr()), 
+                    CallContextFieldTag::CalleeAddress, 
+                    call_gadget.callee_address.to_word(),
+                );
                 for (field_tag, value) in [
-                    (
-                        CallContextFieldTag::IsSuccess,
-                        call_gadget.is_success.expr(),
-                    ),
                     (CallContextFieldTag::CallerId, cb.curr.state.call_id.expr()),
                     (
                         CallContextFieldTag::CallDataOffset,
@@ -338,11 +345,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         Word::from_lo_unchecked(value)
                     );
                 }
-                cb.call_context_lookup_write(
-                    Some(callee_call_id.expr()), 
-                    CallContextFieldTag::CalleeAddress, 
-                    call_gadget.callee_address.to_word(),
-                );
 
                 // Save caller's call state
                 for (field_tag, value) in [
