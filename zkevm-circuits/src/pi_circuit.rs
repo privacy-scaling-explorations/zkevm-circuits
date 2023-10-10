@@ -987,45 +987,6 @@ impl<F: Field> PiCircuitConfig<F> {
         Ok(())
     }
 
-    fn assign_empty_wd_table_row(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-    ) -> Result<(), Error> {
-        region.assign_advice(
-            || "withdrawal_id",
-            self.wd_table.id,
-            offset,
-            || Value::known(F::ZERO),
-        )?;
-        region.assign_advice(
-            || "validator_id",
-            self.wd_table.validator_id,
-            offset,
-            || Value::known(F::ZERO),
-        )?;
-
-        region.assign_advice(
-            || "address_lo",
-            self.wd_table.address.lo(),
-            offset,
-            || Value::known(F::ZERO),
-        )?;
-        region.assign_advice(
-            || "address_hi",
-            self.wd_table.address.hi(),
-            offset,
-            || Value::known(F::ZERO),
-        )?;
-        region.assign_advice(
-            || "amount",
-            self.wd_table.amount,
-            offset,
-            || Value::known(F::ZERO),
-        )?;
-        Ok(())
-    }
-
     /// assign raw bytes
     #[allow(clippy::too_many_arguments)]
     fn assign_raw_bytes(
@@ -1865,8 +1826,6 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                         Ok(())
                     })?;
                 assert_eq!(current_rpi_offset, 0);
-
-                config.assign_empty_wd_table_row(&mut region, withdrawal_offset)?;
 
                 // assign keccak digest
                 let digest_word = self.public_data.get_rpi_digest_word::<F>(
