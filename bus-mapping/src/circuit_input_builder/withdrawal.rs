@@ -4,16 +4,12 @@ use eth_types::Address;
 
 use crate::Error;
 
-#[derive(Debug, Default)]
 /// Context of a [`Withdrawal`].
+#[derive(Debug, Default)]
 pub struct WithdrawalContext {
     /// Unique identifier of a withdrawal. This value starts from 0 and then increases
     /// monotonically.
     id: u64,
-
-    /// Reversible Write Counter tracks the number of write operations in the
-    /// call. It is incremented when there are successful writes in the sub-call of this call.
-    pub reversible_write_counter: usize,
 }
 
 impl WithdrawalContext {
@@ -23,11 +19,10 @@ impl WithdrawalContext {
     }
 }
 
-#[derive(Debug, Copy, Clone, Default)]
 /// Result of the parsing of an Ethereum Withdrawal.
+#[derive(Debug, Copy, Clone, Default)]
 pub struct Withdrawal {
-    /// Unique identifier of a withdrawal. This value starts from 0 and then increases
-    /// monotonically.
+    /// Unique identifier of a withdrawal in the whole history of withdrawals.
     pub id: u64,
     /// Unique identifier of a validator.
     pub validator_id: u64,
