@@ -261,7 +261,6 @@ async fn main() {
 
     let contract_address = deployments.get("ozerc20tt").expect("contract not found").1;
     let contract_abi = &contracts.get("ozerc20tt").expect("contract not found");
-    // .abi;
 
     // OpenZeppelin ERC20 single failed transfer (wallet2 sends 345.67 Tokens to
     // wallet3, but wallet2 has 0 Tokens)
