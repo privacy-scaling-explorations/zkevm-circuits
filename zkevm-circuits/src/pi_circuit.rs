@@ -1864,7 +1864,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 config.assign_empty_txtable_row(&mut region, call_data_offset)?;
 
                 // assign withdrawal table and padding rows
-                let mut withdrawal_offset = call_data_offset;
+                let mut withdrawal_offset = 0;
                 let wd_default = Withdrawal::default();
                 iter::empty()
                     .chain(&self.public_data.withdrawals)
