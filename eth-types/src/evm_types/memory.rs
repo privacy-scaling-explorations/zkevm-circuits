@@ -327,7 +327,7 @@ impl Memory {
             0
         };
         // Check that the out-of-bound data is all zeros.
-        for b in &data[len..] {
+        for _b in &data[len..] {
             // assert_eq!(*b, 0);
         }
     }
