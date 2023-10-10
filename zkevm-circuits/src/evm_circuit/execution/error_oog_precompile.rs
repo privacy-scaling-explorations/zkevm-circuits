@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_EC_PAIR, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_WORD},
+        param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_WORD},
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
