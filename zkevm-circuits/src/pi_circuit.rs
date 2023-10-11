@@ -910,18 +910,11 @@ impl<F: Field> PiCircuitConfig<F> {
             offset,
             || Value::known(F::from(wd.validator_id)),
         )?;
-        let address_word = Word::<F>::from(wd.address);
-        let addr_lo_assigned_cell = region.assign_advice(
-            || "address_lo",
-            self.wd_table.address.lo(),
+        let address_assigned_cell = Word::<F>::from(wd.address).into_value().assign_advice(
+            region,
+            || "address",
+            self.wd_table.address,
             offset,
-            || Value::known(address_word.lo()),
-        )?;
-        let addr_hi_assigned_cell = region.assign_advice(
-            || "address_hi",
-            self.wd_table.address.hi(),
-            offset,
-            || Value::known(address_word.hi()),
         )?;
         let amount_assigned_cell = region.assign_advice(
             || "amount",
@@ -969,8 +962,8 @@ impl<F: Field> PiCircuitConfig<F> {
             challenges,
             zero_cell.clone(),
         )?;
-        region.constrain_equal(addr_lo_assigned_cell.cell(), raw_address.lo().cell())?;
-        region.constrain_equal(addr_hi_assigned_cell.cell(), raw_address.hi().cell())?;
+        region.constrain_equal(address_assigned_cell.lo().cell(), raw_address.lo().cell())?;
+        region.constrain_equal(address_assigned_cell.hi().cell(), raw_address.hi().cell())?;
 
         // amount
         let (_, raw_amount) = self.assign_raw_bytes(

@@ -10,6 +10,9 @@ use itertools::Itertools;
 
 pub use external_tracer::LoggerConfig;
 
+// TODO: merge it with TestContext.
+// Here is the issue, https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/1651
+
 /// TestContext2 is an extended struct of TestContext. For more details and usage, see TestContext
 /// file.
 #[derive(Debug, Clone)]
