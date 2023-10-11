@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use ethers::prelude::*;
+    use ethers::{prelude::*, utils::rlp::Encodable};
     use eyre::Result;
     use halo2_proofs::halo2curves::bn256::Fr;
     use std::sync::Arc;

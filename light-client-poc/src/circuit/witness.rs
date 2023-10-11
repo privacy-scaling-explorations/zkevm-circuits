@@ -336,7 +336,7 @@ impl<F: Field> StateUpdateWitness<F> {
                     vec![(
                         ProofType::CodeHashChanged,
                         m.address,
-                        U256::from_little_endian(&m.code_hash.0),
+                        U256::from_big_endian(&m.code_hash.0),
                         H256::zero(),
                     )]
                 }
