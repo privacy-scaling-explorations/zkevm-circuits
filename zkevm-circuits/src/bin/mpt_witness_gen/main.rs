@@ -90,6 +90,21 @@ fn obtain_account_proof_and_convert_to_witness() -> Vec<Node2> {
 }
 
 fn convert_proof_to_witness() -> Vec<Node2> {
+    // 1. Determine upto
+    // loop through upto
+    //   if leaf
+    //      prepare leaf
+    //   else
+    //      prepare branch
+    // if lens not equal
+    //  if additionalBranch
+    //      addBranchAndPlaceholder
+    //      prepare leaf and place holder
+    //      prepareModExtensionNode
+    //  else
+    //      prepareLeafAndPlaceholderNode
+    // else
+    //  addBranchAndPlaceholder
     vec![]
 }
 
