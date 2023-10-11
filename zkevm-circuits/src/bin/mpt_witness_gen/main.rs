@@ -46,12 +46,10 @@ fn generate_delete() {
 
     // prepare state db
     // The go code fetched all accounts and proofs, why?
-    let state_db;
+    let state_db = StateDB::new();
 
-    // func prepareWitness(testName string, trieModifications []TrieModification, statedb
-    // *state.StateDB) {     nodes := obtainTwoProofsAndConvertToWitness(trieModifications,
-    // statedb, 0)     StoreNodes(testName, nodes)
-    // }
+    let nodes =   prepare_witness( vec![trie_mod], state_db);
+    // dump nodes to file
 }
 
 struct AccountProof(Vec<String>);
@@ -61,7 +59,6 @@ fn prefetch_account(block_number: u64, address: Address) -> AccountProof {
 }
 
 fn prepare_witness(
-    test_name: String,
     trie_modifications: Vec<TrieModification>,
     statedb: StateDB,
 ) -> Vec<Node2> {
