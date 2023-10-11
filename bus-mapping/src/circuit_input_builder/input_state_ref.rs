@@ -1008,7 +1008,7 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Handle a reversion group
-    fn handle_reversion(&mut self, current_exec_steps: &mut [&mut ExecStep]) {
+    pub fn handle_reversion(&mut self, current_exec_steps: &mut [&mut ExecStep]) {
         // We already know that the call has reverted. Only the precompile failure case must be
         // handled differently as the ExecSteps associated with those calls haven't yet been pushed
         // to the tx's steps.

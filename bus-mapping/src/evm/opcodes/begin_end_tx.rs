@@ -195,13 +195,10 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             ] {
                 state.call_context_write(&mut exec_step, call.call_id, field, value);
             }
-            Ok(exec_step)
+            ()
         }
         // 2. Call to precompiled.
-        (_, true, _) => {
-            evm_unimplemented!("Call to precompiled is left unimplemented");
-            Ok(exec_step)
-        }
+        (_, true, _) => (),
         (_, _, is_empty_code_hash) => {
             // 3. Call to account with empty code.
             if is_empty_code_hash {
@@ -236,9 +233,16 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
                 state.call_context_write(&mut exec_step, call.call_id, field, value);
             }
 
-            Ok(exec_step)
+            ()
         }
     }
+
+    log::trace!("begin_tx_step: {:?}", exec_step);
+    if state.is_precompiled(&call.address) && !state.call().unwrap().is_success {
+        state.handle_reversion(&mut [&mut exec_step]);
+    }
+
+    Ok(exec_step)
 }
 
 fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
