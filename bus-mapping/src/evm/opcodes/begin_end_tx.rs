@@ -7,7 +7,7 @@ use crate::{
 };
 use eth_types::{
     evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED, PRECOMPILE_COUNT},
-    evm_unimplemented, ToWord, Word,
+    ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
 
