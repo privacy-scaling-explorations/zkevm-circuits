@@ -351,22 +351,25 @@ impl<F: Field> AccountLeafConfig<F> {
                     config.parent_data[false.idx()].is_placeholder.expr()
                 ]) => true);
             } elsex {
-                // Check that there is only one modification (except when the account is being deleted).
-                // Nonce needs to remain the same when not modifying the nonce
-                ifx!{not!(config.is_nonce_mod) => {
-                    require!(nonce[false.idx()] => nonce[true.idx()]);
-                }}
-                // Balance needs to remain the same when not modifying the balance
-                ifx!{not!(config.is_balance_mod) => {
-                    require!(balance[false.idx()] => balance[true.idx()]);
-                }}
-                // Storage root needs to remain the same when not modifying the storage root
-                ifx!{not!(config.is_storage_mod) => {
-                    require!(storage[false.idx()] => storage[true.idx()]);
-                }}
-                // Codehash root needs to remain the same when not modifying the codehash
-                ifx!{not!(config.is_codehash_mod) => {
-                    require!(codehash[false.idx()] => codehash[true.idx()]);
+                ifx! {and::expr(&[not!(config.parent_data[true.idx()].is_placeholder), not!(config.parent_data[false.idx()].is_placeholder)]) => {
+                    // Check that there is only one modification, except when the account is being deleted or
+                    // the parent branch is a placeholder (meaning the account leafs in S are C are different).
+                    // Nonce needs to remain the same when not modifying the nonce
+                    ifx!{not!(config.is_nonce_mod) => {
+                        require!(nonce[false.idx()] => nonce[true.idx()]);
+                    }}
+                    // Balance needs to remain the same when not modifying the balance
+                    ifx!{not!(config.is_balance_mod) => {
+                        require!(balance[false.idx()] => balance[true.idx()]);
+                    }}
+                    // Storage root needs to remain the same when not modifying the storage root
+                    ifx!{not!(config.is_storage_mod) => {
+                        require!(storage[false.idx()] => storage[true.idx()]);
+                    }}
+                    // Codehash root needs to remain the same when not modifying the codehash
+                    ifx!{not!(config.is_codehash_mod) => {
+                        require!(codehash[false.idx()] => codehash[true.idx()]);
+                    }}
                 }}
             }}
             ifx! {config.is_non_existing_account_proof => {
