@@ -3,7 +3,7 @@ use super::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs};
 use eth_types::{self, Field};
 
 use crate::{
-    table::{BlockTable, KeccakTable, TxTable},
+    table::{BlockTable, KeccakTable, TxTable, WdTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
 use halo2_proofs::{
@@ -16,6 +16,8 @@ use halo2_proofs::{
 pub struct PiCircuitParams {
     /// Max Txs
     pub max_txs: usize,
+    /// Max withdrawals
+    pub max_withdrawals: usize,
     /// Max Calldata
     pub max_calldata: usize,
 }
@@ -32,6 +34,7 @@ impl<F: Field> Circuit<F> for PiCircuit<F> {
     fn params(&self) -> Self::Params {
         PiCircuitParams {
             max_txs: self.max_txs,
+            max_withdrawals: self.max_withdrawals,
             max_calldata: self.max_calldata,
         }
     }
@@ -39,6 +42,7 @@ impl<F: Field> Circuit<F> for PiCircuit<F> {
     fn configure_with_params(meta: &mut ConstraintSystem<F>, params: Self::Params) -> Self::Config {
         let block_table = BlockTable::construct(meta);
         let tx_table = TxTable::construct(meta);
+        let wd_table = WdTable::construct(meta);
         let keccak_table = KeccakTable::construct(meta);
         let challenges = Challenges::construct(meta);
         let challenge_exprs = challenges.exprs(meta);
@@ -47,9 +51,11 @@ impl<F: Field> Circuit<F> for PiCircuit<F> {
                 meta,
                 PiCircuitConfigArgs {
                     max_txs: params.max_txs,
+                    max_withdrawals: params.max_withdrawals,
                     max_calldata: params.max_calldata,
                     block_table,
                     tx_table,
+                    wd_table,
                     keccak_table,
                     challenges: challenge_exprs,
                 },
@@ -69,9 +75,11 @@ impl<F: Field> Circuit<F> for PiCircuit<F> {
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
         // assign keccak table
-        let rpi_bytes = self
-            .public_data
-            .get_pi_bytes(config.max_txs, config.max_calldata);
+        let rpi_bytes = self.public_data.get_pi_bytes(
+            config.max_txs,
+            config.max_withdrawals,
+            config.max_calldata,
+        );
         config
             .keccak_table
             .dev_load(&mut layouter, vec![&rpi_bytes], &challenges)?;

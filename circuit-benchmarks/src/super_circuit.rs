@@ -81,6 +81,7 @@ mod tests {
 
         let circuits_params = FixedCParams {
             max_txs: 1,
+            max_withdrawals: 1,
             max_calldata: 32,
             max_rws: 256,
             max_copy_rows: 256,

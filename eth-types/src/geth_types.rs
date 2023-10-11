@@ -134,6 +134,20 @@ impl BlockConstants {
     }
 }
 
+/// Definition of all of the constants related to an Ethereum withdrawal.
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct Withdrawal {
+    /// Unique identifier of a withdrawal. This value starts from 0 and then increases
+    /// monotonically.
+    pub id: u64,
+    /// Unique identifier of a validator.
+    pub validator_id: u64,
+    /// Address to be withdrawn to.
+    pub address: Address,
+    /// Withdrawal amount in Gwei.
+    pub amount: u64,
+}
+
 /// Definition of all of the constants related to an Ethereum transaction.
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct Transaction {
@@ -322,7 +336,7 @@ pub struct GethData {
     /// chain id
     pub chain_id: Word,
     /// history hashes contains most recent 256 block hashes in history, where
-    /// the lastest one is at history_hashes[history_hashes.len() - 1].
+    /// the latest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// Block from geth
     pub eth_block: Block<crate::Transaction>,
