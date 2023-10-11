@@ -31,7 +31,7 @@ use zkevm_circuits::{
     util::{word, Challenges, SubCircuit, SubCircuitConfig},
 };
 
-pub const DEFAULT_MAX_PROOF_COUNT: usize = 10;
+pub const DEFAULT_MAX_PROOF_COUNT: usize = 20;
 pub const DEFAULT_CIRCUIT_DEGREE: usize = 14;
 
 use super::witness::{
