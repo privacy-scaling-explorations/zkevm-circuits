@@ -420,6 +420,8 @@ impl<F: Field> ExecutionConfig<F> {
             let mut cb = BaseConstraintBuilder::default();
             // q_step needs to be enabled on the first row
             // rw_counter starts at 1
+            // TODO FIXME: in multiple proof chunk, rw_counter is global counter, means not
+            // nessesary start from 1
             cb.condition(q_step_first, |cb| {
                 cb.require_equal("q_step == 1", q_step.clone(), 1.expr());
                 cb.require_equal(

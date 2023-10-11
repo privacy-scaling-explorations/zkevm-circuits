@@ -124,7 +124,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         let tx_table = TxTable::construct(meta);
 
         let chronological_rw_table = RwTable::construct(meta);
-        let rw_table = RwTable::construct(meta);
+        let by_address_rw_table = RwTable::construct(meta);
 
         let mpt_table = MptTable::construct(meta);
         let bytecode_table = BytecodeTable::construct(meta);
@@ -196,7 +196,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         let state_circuit = StateCircuitConfig::new(
             meta,
             StateCircuitConfigArgs {
-                rw_table,
+                rw_table: by_address_rw_table,
                 mpt_table,
                 u8_table,
                 u10_table,
