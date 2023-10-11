@@ -1,27 +1,15 @@
 use bus_mapping::state_db::StateDB;
 use eth_types::{address, Address, Word, H256, U256};
-use ethers_core::types::Res;
 use itertools::Itertools;
-use std::{default, iter};
-use zkevm_circuits::mpt_circuit::witness_row::Node;
-
-#[derive(Clone, Default, Debug)]
-enum ProofType {
-    #[default]
-    Disabled,
-    NonceChanged,
-    BalanceChanged,
-    CodeHashChanged,
-    AccountDestructed,
-    AccountDoesNotExist,
-    StorageChanged,
-    StorageDoesNotExist,
-    AccountCreate,
-}
+use std::iter;
+use zkevm_circuits::{
+    mpt_circuit::witness_row::{Node2, StartNode},
+    table::MPTProofType,
+};
 
 #[derive(Debug, Default, Clone)]
 struct TrieModification {
-    proof_type: ProofType,
+    proof_type: MPTProofType,
     key: Word,
     value: Word,
     address: Address,
@@ -49,7 +37,7 @@ fn generate_delete() {
     let val = U256::zero(); // empty value deletes the key
 
     let trie_mod = TrieModification {
-        proof_type: ProofType::StorageChanged,
+        proof_type: MPTProofType::StorageChanged,
         key: to_be_modified,
         value: val,
         address: addresses[0],
@@ -68,17 +56,20 @@ fn generate_delete() {
 
 struct AccountProof(Vec<String>);
 
-fn prefetch_account(block_number: u64, address: Address) -> AccountProof {}
+fn prefetch_account(block_number: u64, address: Address) -> AccountProof {
+    AccountProof(vec![])
+}
 
 fn prepare_witness(
     test_name: String,
     trie_modifications: Vec<TrieModification>,
     statedb: StateDB,
-) -> Vec<Node> {
+) -> Vec<Node2> {
     // mpt-witness-generator/witness/prepare_witness.go
+    let mut nodes = vec![];
     for trie_mod in trie_modifications.iter() {
         match trie_mod.proof_type {
-            ProofType::StorageChanged | ProofType::StorageDoesNotExist => {
+            MPTProofType::StorageChanged | MPTProofType::StorageDoesNotExist => {
                 //     kh := crypto.Keccak256(tMod.Key.Bytes())
                 //     if oracle.PreventHashingInSecureTrie {
                 //         kh = tMod.Key.Bytes()
@@ -145,13 +136,12 @@ fn prepare_witness(
                 // modifyAccountSpecialEmptyTrie(addrh, accountProof1[len(accountProof1)-1])
                 //     }
 
-              
                 // },
-                let mut nodes = vec![];
-                // nodes.push(start_node)
-                 // nodes.push(nodes_account)
-                  // nodes.push(nodes_storage)
-                  // nodes.push(end_node)
+
+                nodes.push(start_node(trie_mod.proof_type, s_root, c_root));
+                // nodes.push(nodes_account)
+                // nodes.push(nodes_storage)
+                nodes.push(end_node());
             }
             _ => {
                 //   nodes = obtainAccountProofAndConvertToWitness(i, tMod, len(trieModifications),
@@ -159,50 +149,50 @@ fn prepare_witness(
             }
         }
     }
+    nodes
 }
-fn start_end_node(){
 
+fn start_node(proof_type: MPTProofType, s_root: H256, c_root: H256) -> Node2 {
+    Node2::Start {
+        // disable_preimage_check: oracle.PreventHashingInSecureTrie || specialTest == 5
+        node: StartNode {
+            disable_preimage_check: false,
+            proof_type,
+        },
+        values: vec![
+            iter::once(160)
+                .chain(s_root.to_fixed_bytes())
+                .chain(iter::once(0))
+                .collect_vec()
+                .into(),
+            iter::once(160)
+                .chain(c_root.to_fixed_bytes())
+                .chain(iter::once(0))
+                .collect_vec()
+                .into(),
+        ],
+    }
+}
 
-// func GetStartNode(proofType string, sRoot, cRoot common.Hash, specialTest byte) Node {
-// 	s := StartNode{
-// 		DisablePreimageCheck: oracle.PreventHashingInSecureTrie || specialTest == 5,
-// 		ProofType:            proofType,
-// 	}
-// 	var values [][]byte
-// 	var values1 []byte
-// 	var values2 []byte
-// 	values1 = append(values1, 160)
-// 	values1 = append(values1, sRoot.Bytes()...)
-// 	values1 = append(values1, 0)
-// 	values2 = append(values2, 160)
-// 	values2 = append(values2, cRoot.Bytes()...)
-// 	values2 = append(values2, 0)
-
-// 	values = append(values, values1)
-// 	values = append(values, values2)
-
-// 	return Node{
-// 		Start:  &s,
-// 		Values: values,
-// 	}
-// }
-
-// func GetEndNode() Node {
-// 	e := StartNode{
-// 		DisablePreimageCheck: false,
-// 		ProofType:            "Disabled",
-// 	}
-
-// 	endValues1, endValues2 := make([]byte, valueLen), make([]byte, valueLen)
-// 	endValues1[0], endValues2[0] = 160, 160
-// 	endValues := [][]byte{endValues1, endValues2}
-
-// 	return Node{
-// 		Start:  &e,
-// 		Values: endValues,
-// 	}
-// }
-
+fn end_node() -> Node2 {
+    Node2::Start {
+        node: StartNode {
+            disable_preimage_check: false,
+            proof_type: MPTProofType::Disabled,
+        },
+        values: vec![
+            iter::once(160)
+                .chain(iter::repeat(0))
+                .take(32)
+                .collect_vec()
+                .into(),
+            iter::once(160)
+                .chain(iter::repeat(0))
+                .take(32)
+                .collect_vec()
+                .into(),
+        ],
+    }
 }
 fn main() {
     println!("mpt witness gen")
