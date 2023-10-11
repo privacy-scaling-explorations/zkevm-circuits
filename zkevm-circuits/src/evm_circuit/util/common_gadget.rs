@@ -142,11 +142,15 @@ impl<F: Field> RestoreContextGadget<F> {
     ) -> Self {
         // Read caller's context for restore
         let caller_id = cb.call_context(None, CallContextFieldTag::CallerId);
+        let [caller_is_root, caller_is_create] =
+            [CallContextFieldTag::IsRoot, CallContextFieldTag::IsCreate]
+                .map(|field_tag| cb.call_context(Some(caller_id.expr()), field_tag));
 
-        let [caller_is_root, caller_is_create, caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] = 
+        let caller_code_hash =
+            cb.call_context_read_as_word(Some(caller_id.expr()), CallContextFieldTag::CodeHash);
+
+        let [caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
             [
-                CallContextFieldTag::IsRoot, 
-                CallContextFieldTag::IsCreate,
                 CallContextFieldTag::ProgramCounter,
                 CallContextFieldTag::StackPointer,
                 CallContextFieldTag::GasLeft,
@@ -154,9 +158,6 @@ impl<F: Field> RestoreContextGadget<F> {
                 CallContextFieldTag::ReversibleWriteCounter,
             ]
             .map(|field_tag| cb.call_context(Some(caller_id.expr()), field_tag));
-
-        let caller_code_hash =
-            cb.call_context_read_as_word(Some(caller_id.expr()), CallContextFieldTag::CodeHash);
 
         // Update caller's last callee information
         // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0

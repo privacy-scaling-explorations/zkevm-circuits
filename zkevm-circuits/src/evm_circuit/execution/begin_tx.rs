@@ -371,6 +371,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         });
 
         // TODO: 2. Handle call to precompiled contracts.
+        
 
         // 3. Call to account with empty code.
         cb.condition(
