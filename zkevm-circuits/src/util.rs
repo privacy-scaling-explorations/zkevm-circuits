@@ -202,7 +202,7 @@ pub(crate) fn get_push_size(byte: u8) -> u64 {
     }
 }
 
-pub(crate) fn unwrap_value<F: Field>(value: &Value<F>) -> F {
+pub(crate) fn unwrap_value<T>(value: Value<T>) -> T {
     let mut inner = None;
     _ = value.map(|v| {
         inner = Some(v);

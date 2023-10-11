@@ -11,10 +11,12 @@ use itertools::Itertools;
 
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, TxLogFieldTag, TxReceiptFieldTag},
-    util::{build_tx_log_address, word},
+    util::{build_tx_log_address, unwrap_value, word},
 };
 
 use super::MptUpdates;
+
+const U64_BYTES: usize = u64::BITS as usize / 8usize;
 
 /// Rw constainer for a witness block
 #[derive(Debug, Default, Clone)]
@@ -360,7 +362,7 @@ impl<F: Field> RwRow<Value<F>> {
             _ = f.map(|v| {
                 inner = Some(v);
             });
-            inner.unwrap()
+            inner.unwrap_or_default()
         };
         let unwrap_w = |f: word::Word<Value<F>>| {
             let (lo, hi) = f.into_lo_hi();
@@ -379,6 +381,87 @@ impl<F: Field> RwRow<Value<F>> {
             value_prev: unwrap_w(self.value_prev),
             init_val: unwrap_w(self.init_val),
         }
+    }
+
+    /// padding Rw::Start/Rw::Padding accordingly
+    pub fn padding(
+        rows: &[RwRow<Value<F>>],
+        target_len: usize,
+        is_first_row_padding: bool,
+    ) -> (Vec<RwRow<Value<F>>>, usize) {
+        // Remove Start/Padding rows as we will add them from scratch.
+        let rows_trimmed = rows
+            .iter()
+            .filter(|rw| {
+                let tag = unwrap_value(rw.tag);
+                !(tag == F::from(Target::Start as u64) || tag == F::from(Target::Padding as u64))
+                    && tag != F::ZERO // 0 is invalid tag
+            })
+            .cloned()
+            .collect::<Vec<RwRow<Value<F>>>>();
+        let padding_length = {
+            let length = RwMap::padding_len(rows_trimmed.len(), target_len);
+            if is_first_row_padding {
+                length.saturating_sub(1)
+            } else {
+                length
+            }
+        };
+        let start_padding_rw_counter = {
+            let start_padding_rw_counter = rows_trimmed
+                .last()
+                .map(|row| unwrap_value(row.rw_counter))
+                .unwrap_or(F::from(1u64))
+                + F::ONE;
+            // Assume root of unity < 2**64
+            assert!(
+                start_padding_rw_counter.to_repr()[U64_BYTES..]
+                    .iter()
+                    .cloned()
+                    .sum::<u8>()
+                    == 0,
+                "rw counter > 2 ^ 64"
+            );
+            u64::from_le_bytes(
+                start_padding_rw_counter.to_repr()[..U64_BYTES]
+                    .try_into()
+                    .unwrap(),
+            )
+        } as usize;
+
+        let padding = (start_padding_rw_counter..start_padding_rw_counter + padding_length).map(
+            |rw_counter| RwRow {
+                rw_counter: Value::known(F::from(rw_counter as u64)),
+                tag: Value::known(F::from(Target::Padding as u64)),
+                ..Default::default()
+            },
+        );
+        (
+            iter::once(RwRow {
+                rw_counter: Value::known(F::ONE),
+                tag: Value::known(F::from(Target::Start as u64)),
+                ..Default::default()
+            })
+            .take(if is_first_row_padding { 1 } else { 0 })
+            .chain(rows_trimmed.into_iter())
+            .chain(padding.into_iter())
+            .collect(),
+            padding_length,
+        )
+    }
+}
+
+impl<F: Field> ToVec<Value<F>> for Vec<RwRow<Value<F>>> {
+    fn to2dvec(&self) -> Vec<Vec<Value<F>>> {
+        self.iter()
+            .map(|row| {
+                row.unwrap()
+                    .values()
+                    .iter()
+                    .map(|f| Value::known(*f))
+                    .collect::<Vec<Value<F>>>()
+            })
+            .collect::<Vec<Vec<Value<F>>>>()
     }
 }
 
@@ -878,7 +961,9 @@ impl From<&operation::OperationContainer> for RwMap {
                     is_write: op.rw().is_write(),
                     call_id: op.op().call_id(),
                     memory_address: u64::from_le_bytes(
-                        op.op().address().to_le_bytes()[..8].try_into().unwrap(),
+                        op.op().address().to_le_bytes()[..U64_BYTES]
+                            .try_into()
+                            .unwrap(),
                     ),
                     byte: op.op().value(),
                 })

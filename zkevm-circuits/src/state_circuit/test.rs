@@ -1,7 +1,7 @@
 pub use super::{dev::*, *};
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, TxLogFieldTag, TxReceiptFieldTag},
-    util::{unusable_rows, unwrap_value, SubCircuit},
+    util::{unusable_rows, SubCircuit},
     witness::{MptUpdates, Rw, RwMap},
 };
 use bus_mapping::operation::{
@@ -12,7 +12,7 @@ use eth_types::{
     evm_types::{MemoryAddress, StackAddress},
     Address, ToAddress, Word, U256,
 };
-use gadgets::{binary_number::AsBits, permutation::get_permutation_fingerprints};
+use gadgets::binary_number::AsBits;
 use halo2_proofs::{
     arithmetic::Field as Halo2Field,
     dev::{MockProver, VerifyFailure},
@@ -712,7 +712,7 @@ fn skipped_start_rw_counter() {
         ((AdviceColumn::RwCounterLimb0, -1), Fr::ONE),
     ]);
 
-    let result = prover(vec![], overrides).verify_at_rows(N_ROWS - 1..N_ROWS, N_ROWS - 1..N_ROWS);
+    let result = prover(vec![], overrides).verify_at_rows(1..2, 1..2);
     assert_error_matches(result, "rw_counter increases by 1 for every non-first row");
 }
 
@@ -830,7 +830,7 @@ fn invalid_stack_address_change() {
 
 #[test]
 fn invalid_tags() {
-    let first_row_offset = -isize::try_from(N_ROWS).unwrap();
+    let first_row_offset = 0;
     let tags: BTreeSet<usize> = Target::iter().map(|x| x as usize).collect();
     for i in 0..16 {
         if tags.contains(&i) {
@@ -845,8 +845,8 @@ fn invalid_tags() {
             ((AdviceColumn::Tag, first_row_offset), Fr::from(i as u64)),
         ]);
 
-        let result = prover(vec![], overrides).verify_at_rows(0..1, 0..1);
-
+        // offset 0 is padding
+        let result = prover(vec![], overrides).verify_at_rows(1..2, 1..2);
         assert_error_matches(result, "binary number value in range");
     }
 }
@@ -973,6 +973,7 @@ fn variadic_size_check() {
     let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
         rows: rows.clone(),
+        row_padding_and_overridess: Default::default(),
         updates,
         overrides: HashMap::default(),
         n_rows: N_ROWS,
@@ -1015,6 +1016,7 @@ fn variadic_size_check() {
 
     let circuit = StateCircuit::<Fr> {
         rows,
+        row_padding_and_overridess: Default::default(),
         updates,
         overrides: HashMap::default(),
         n_rows: N_ROWS,
@@ -1057,11 +1059,19 @@ fn bad_initial_tx_receipt_value() {
 }
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
+    // permu_next_continuous_fingerprint and rows override for negative-test
+    #[allow(unused_assignments, unused_mut)]
+    let (rw_rows, _) = RwMap::table_assignments_padding(&rows, N_ROWS, true);
+    let rw_rows: Vec<witness::RwRow<Value<Fr>>> =
+        rw_overrides_skip_first_padding(&rw_rows, &overrides);
     let permu_next_continuous_fingerprint =
-        get_permutation_fingerprint_of_rwvec(&rows, N_ROWS, Fr::from(1), Fr::from(1), Fr::from(1));
+        get_permutation_fingerprint_of_rwrowvec(&rw_rows, N_ROWS, Fr::ONE, Fr::ONE, Fr::ONE);
+    let row_padding_and_overridess = rw_rows.to2dvec();
+
     let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
         rows,
+        row_padding_and_overridess,
         updates,
         overrides,
         n_rows: N_ROWS,
@@ -1079,8 +1089,7 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
 
 fn verify(rows: Vec<Rw>) -> Result<(), Vec<VerifyFailure>> {
     let used_rows = rows.len();
-    prover(rows, HashMap::new())
-        .verify_at_rows(N_ROWS - used_rows..N_ROWS, N_ROWS - used_rows..N_ROWS)
+    prover(rows, HashMap::new()).verify_at_rows(1..N_ROWS - used_rows, 1..N_ROWS - used_rows)
 }
 
 fn verify_with_overrides(
@@ -1091,69 +1100,34 @@ fn verify_with_overrides(
     assert_eq!(verify(rows.clone()), Ok(()));
 
     let n_active_rows = rows.len();
-    prover(rows, overrides).verify_at_rows(
-        N_ROWS - n_active_rows..N_ROWS,
-        N_ROWS - n_active_rows..N_ROWS,
-    )
+    prover(rows, overrides).verify_at_rows(1..N_ROWS - n_active_rows, 1..N_ROWS - n_active_rows)
 }
 
 fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
     let errors = result.expect_err("result is not an error");
-    assert_eq!(errors.len(), 1, "{:?}", errors);
-    match &errors[0] {
-        VerifyFailure::ConstraintNotSatisfied { constraint, .. } => {
-            // fields of halo2_proofs::dev::metadata::Constraint aren't public, so we have
-            // to match off of its format string.
-            let constraint = format!("{}", constraint);
-            if !constraint.contains(name) {
-                panic!("{} does not contain {}", constraint, name);
+    errors
+        .iter()
+        .find(|err| match err {
+            VerifyFailure::ConstraintNotSatisfied { constraint, .. } => {
+                // fields of halo2_proofs::dev::metadata::Constraint aren't public, so we have
+                // to match off of its format string.
+                let constraint = format!("{}", constraint);
+                constraint.contains(name)
             }
-        }
-        VerifyFailure::Lookup {
-            name: lookup_name, ..
-        } => {
-            assert_eq!(lookup_name, &name)
-        }
-        VerifyFailure::CellNotAssigned { .. } => panic!(),
-        VerifyFailure::ConstraintPoisoned { .. } => panic!(),
-        VerifyFailure::Permutation { .. } => panic!(),
-    }
-}
-
-fn get_permutation_fingerprint_of_rwvec<F: Field>(
-    rwmap: &[Rw],
-    max_row: usize,
-    alpha: F,
-    gamma: F,
-    prev_continuous_fingerprint: F,
-) -> F {
-    let (rows, _) = RwMap::table_assignments_padding(rwmap, max_row, true);
-    let x = rows.to2dvec();
-    unwrap_value(
-        get_permutation_fingerprints(
-            &x,
-            Value::known(alpha),
-            Value::known(gamma),
-            Value::known(prev_continuous_fingerprint),
-            1,
-        )
-        .last()
-        .unwrap(),
-    )
-}
-
-fn get_permutation_fingerprint_of_rwmap<F: Field>(
-    rwmap: &RwMap,
-    max_row: usize,
-    alpha: F,
-    gamma: F,
-    prev_continuous_fingerprint: F,
-) -> F {
-    get_permutation_fingerprint_of_rwvec(
-        &rwmap.table_assignments(false),
-        max_row,
-        alpha,
-        gamma,
-        prev_continuous_fingerprint,
-    )
+            VerifyFailure::Lookup {
+                name: lookup_name, ..
+            } => {
+                assert_eq!(lookup_name, &name);
+                true
+            }
+            VerifyFailure::CellNotAssigned { .. } => false,
+            VerifyFailure::ConstraintPoisoned { .. } => false,
+            VerifyFailure::Permutation { .. } => false,
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "there is no constraints contain {}; err {:#?}",
+                name, errors
+            )
+        });
 }

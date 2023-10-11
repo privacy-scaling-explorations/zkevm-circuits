@@ -315,6 +315,7 @@ pub fn block_convert<F: Field>(
             1,
         )
         .last()
+        .cloned()
         .unwrap(),
     );
     block.permu_chronological_rwtable_next_continuous_fingerprint = unwrap_value(
@@ -326,6 +327,7 @@ pub fn block_convert<F: Field>(
             1,
         )
         .last()
+        .cloned()
         .unwrap(),
     );
     Ok(block)

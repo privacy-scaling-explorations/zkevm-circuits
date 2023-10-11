@@ -131,12 +131,12 @@ impl<F: Field> PermutationChipConfig<F> {
         ]
         .iter()
         .cloned()
-        .chain(self.power_of_gamma.iter().enumerate().map(|(i, col)| {
-            (
-                col.clone(),
-                format!("GADGETS_PermutationChipConfig_gamma_{}", i),
-            )
-        }))
+        .chain(
+            self.power_of_gamma
+                .iter()
+                .enumerate()
+                .map(|(i, col)| (*col, format!("GADGETS_PermutationChipConfig_gamma_{}", i))),
+        )
         .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), col));
     }
 }

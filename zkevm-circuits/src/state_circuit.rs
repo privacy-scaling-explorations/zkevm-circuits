@@ -465,6 +465,8 @@ impl SortKeysConfig {
 pub struct StateCircuit<F> {
     /// Rw rows
     pub rows: Vec<Rw>,
+    #[cfg(test)]
+    row_padding_and_overridess: Vec<Vec<Value<F>>>,
     updates: MptUpdates,
     pub(crate) n_rows: usize,
     #[cfg(test)]
@@ -497,6 +499,8 @@ impl<F: Field> StateCircuit<F> {
         let updates = MptUpdates::mock_from(&rows);
         Self {
             rows,
+            #[cfg(test)]
+            row_padding_and_overridess: Default::default(),
             updates,
             n_rows,
             #[cfg(test)]
@@ -585,21 +589,40 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     self.rw_table_chunked_index == 0,
                 );
 
+                // permu_next_continuous_fingerprint and rows override for negative-test
+                #[allow(unused_assignments, unused_mut)]
+                let rows = if cfg!(test) {
+                    let mut row_padding_and_overridess = None;
+                    // NOTE need wrap in cfg(test) block even already under if cfg!(test) to make
+                    // compiler happy
+                    #[cfg(test)]
+                    {
+                        row_padding_and_overridess = if self.row_padding_and_overridess.is_empty() {
+                            debug_assert!(
+                                self.overrides.is_empty(),
+                                "overrides size > 0 but row_padding_and_overridess = 0"
+                            );
+                            Some(rows.to2dvec())
+                        } else {
+                            Some(self.row_padding_and_overridess.clone())
+                        };
+                    }
+                    row_padding_and_overridess.unwrap()
+                } else {
+                    rows.to2dvec()
+                };
                 let permutation_cells = config.rw_permutation_config.assign(
                     &mut region,
                     Value::known(self.permu_alpha),
                     Value::known(self.permu_gamma),
                     Value::known(self.permu_prev_continuous_fingerprint),
-                    Value::known(self.permu_next_continuous_fingerprint),
-                    &rows.to2dvec(),
+                    &rows,
                 )?;
                 #[cfg(test)]
                 {
-                    let first_non_padding_index = if self.rows.len() < self.n_rows {
-                        RwMap::padding_len(self.rows.len(), self.n_rows)
-                    } else {
-                        1 // at least 1 StartOp padding in idx 0, so idx 1 is first non-padding row
-                    };
+                    // we already handle rw_table override for negative test
+                    // below is to support override value other than rw_table
+                    let first_non_padding_index = 1;
 
                     for ((column, row_offset), &f) in &self.overrides {
                         let advice_column = column.value(config);
@@ -645,20 +668,54 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     }
 
     fn instance(&self) -> Vec<Vec<F>> {
-        let (rows, _) = RwMap::table_assignments_padding(
-            &self.rows,
-            self.n_rows,
-            self.rw_table_chunked_index == 0,
-        );
-
-        let rws_values = [rows.first(), rows.last()] // get first/last row and concat
-            .iter()
-            .map(|row| {
-                row.map(|row| row.table_assignment().unwrap().values())
-                    .unwrap_or_default()
-                    .to_vec()
-            })
-            .collect::<Vec<Vec<F>>>();
+        // need wrap in cfg(test) block even already under if cfg!(test) to make compiler
+        // happy
+        let is_use_test_padding_row = if cfg!(test) {
+            #[allow(unused_assignments, unused_mut)]
+            let mut is_use_test_padding_row = false;
+            #[cfg(test)]
+            {
+                is_use_test_padding_row = !self.row_padding_and_overridess.is_empty();
+            }
+            is_use_test_padding_row
+        } else {
+            false
+        };
+        let rws_values = if is_use_test_padding_row {
+            #[allow(unused_assignments, unused_mut)]
+            let mut rws_values = None;
+            #[cfg(test)]
+            {
+                use crate::util::unwrap_value;
+                rws_values = Some(
+                    [
+                        self.row_padding_and_overridess.first(),
+                        self.row_padding_and_overridess.last(),
+                    ]
+                    .iter()
+                    .map(|row| {
+                        row.map(|row| row.iter().map(|v| unwrap_value(*v)).collect())
+                            .unwrap_or_default()
+                    })
+                    .collect::<Vec<Vec<F>>>(),
+                );
+            }
+            rws_values.unwrap()
+        } else {
+            let (rows, _) = RwMap::table_assignments_padding(
+                &self.rows,
+                self.n_rows,
+                self.rw_table_chunked_index == 0,
+            );
+            [rows.first(), rows.last()] // get first/last row and concat
+                .iter()
+                .map(|row| {
+                    row.map(|row| row.table_assignment().unwrap().values())
+                        .unwrap_or_default()
+                        .to_vec()
+                })
+                .collect::<Vec<Vec<F>>>()
+        };
         vec![
             vec![
                 rws_values[0].clone(),

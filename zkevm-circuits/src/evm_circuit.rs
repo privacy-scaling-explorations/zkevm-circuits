@@ -338,7 +338,6 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                     Value::known(block.permu_alpha),
                     Value::known(block.permu_gamma),
                     Value::known(block.permu_chronological_rwtable_prev_continuous_fingerprint),
-                    Value::known(block.permu_chronological_rwtable_next_continuous_fingerprint),
                     &rw_rows_padding.to2dvec(),
                 )?;
                 Ok((rw_table_first_n_last_cells, permutation_cells))
