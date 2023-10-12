@@ -10,6 +10,7 @@ use std::{cmp::min, iter, marker::PhantomData};
 #[cfg(feature = "test-circuits")]
 pub use PiCircuit as TestPiCircuit;
 
+use bus_mapping::circuit_input_builder::Withdrawal;
 use eth_types::{self, Field, ToLittleEndian};
 use halo2_proofs::plonk::{Expression, Instance, SecondPhase};
 use itertools::Itertools;
@@ -19,7 +20,7 @@ use crate::{
     evm_circuit::{
         param::{
             N_BYTES_BLOCK, N_BYTES_EXTRA_VALUE, N_BYTES_HALF_WORD, N_BYTES_TX, N_BYTES_U64,
-            N_BYTES_WORD,
+            N_BYTES_WITHDRAWAL, N_BYTES_WORD,
         },
         util::{
             constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
@@ -30,7 +31,7 @@ use crate::{
         public_data_convert, BlockValues, ExtraValues, PublicData, TxValues, NONZERO_BYTE_GAS_COST,
         ZERO_BYTE_GAS_COST,
     },
-    table::{BlockTable, KeccakTable, LookupTable, TxFieldTag, TxTable},
+    table::{BlockTable, KeccakTable, LookupTable, TxFieldTag, TxTable, WdTable},
     tx_circuit::TX_LEN,
     util::{word::Word, Challenges, SubCircuit, SubCircuitConfig},
     witness,
@@ -50,6 +51,8 @@ use halo2_proofs::{
 pub struct PiCircuitConfig<F: Field> {
     /// Max number of supported transactions
     max_txs: usize,
+    /// Max number of supported withdrawals
+    max_withdrawals: usize,
     /// Max number of supported calldata bytes
     max_calldata: usize,
 
@@ -66,7 +69,7 @@ pub struct PiCircuitConfig<F: Field> {
     // q_rpi_keccak_lookup: enable keccak lookup
     q_rpi_keccak_lookup: Selector,
     // q_rpi_value_start: assure rpi_bytes sync with rpi_value_lc when cross boundary.
-    // because we layout rpi bytes vertically, which is concated from multiple original values.
+    // because we layout rpi bytes vertically, which is concatenate from multiple original values.
     // The value can be one byte or multiple bytes. The order of values is pre-defined and
     // hardcode. can't use selector here because we need rotation
     q_rpi_value_start: Column<Fixed>,
@@ -83,15 +86,15 @@ pub struct PiCircuitConfig<F: Field> {
     calldata_gas_cost: Column<Advice>,
     is_final: Column<Advice>,
 
-    // rpi_bytes: raw public input bytes laid verticlly
+    // rpi_bytes: raw public input bytes laid vertically
     rpi_bytes: Column<Advice>,
-    // rpi_bytes_keccakrlc: rpi_bytes rlc by keccak challenge. This is for Keccak lookup input
+    // rpi_bytes_keccak_rlc: rpi_bytes rlc by keccak challenge. This is for Keccak lookup input
     // rlc
-    rpi_bytes_keccakrlc: Column<Advice>,
-    // rpi_value_lc: This is similar with rpi_bytes_keccakrlc, while the key differences is
+    rpi_bytes_keccak_rlc: Column<Advice>,
+    // rpi_value_lc: This is similar with rpi_bytes_keccak_rlc, while the key differences is
     // it's linear combination with base 256.
     rpi_value_lc: Column<Advice>,
-    // rpi_digest_bytes: Keccak digest raw bytes laid verticlly in this column
+    // rpi_digest_bytes: Keccak digest raw bytes laid vertically in this column
     rpi_digest_bytes: Column<Advice>,
     // rpi_digest_bytes_limbs: hi, lo limbs of digest
     rpi_digest_bytes_limbs: Column<Advice>,
@@ -104,6 +107,7 @@ pub struct PiCircuitConfig<F: Field> {
     // External tables
     block_table: BlockTable,
     tx_table: TxTable,
+    wd_table: WdTable,
     keccak_table: KeccakTable,
 }
 
@@ -111,10 +115,14 @@ pub struct PiCircuitConfig<F: Field> {
 pub struct PiCircuitConfigArgs<F: Field> {
     /// Max number of supported transactions
     pub max_txs: usize,
+    /// Max number of supported withdrawals
+    pub max_withdrawals: usize,
     /// Max number of supported calldata bytes
     pub max_calldata: usize,
     /// TxTable
     pub tx_table: TxTable,
+    /// WdTable
+    pub wd_table: WdTable,
     /// BlockTable
     pub block_table: BlockTable,
     /// Keccak Table
@@ -131,9 +139,11 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         meta: &mut ConstraintSystem<F>,
         Self::ConfigArgs {
             max_txs,
+            max_withdrawals,
             max_calldata,
             block_table,
             tx_table,
+            wd_table,
             keccak_table,
             challenges,
         }: Self::ConfigArgs,
@@ -165,7 +175,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let q_digest_value_start = meta.fixed_column();
 
         let rpi_bytes = meta.advice_column();
-        let rpi_bytes_keccakrlc = meta.advice_column_in(SecondPhase);
+        let rpi_bytes_keccak_rlc = meta.advice_column_in(SecondPhase);
         let rpi_value_lc = meta.advice_column();
         let rpi_digest_bytes = meta.advice_column();
         let rpi_digest_bytes_limbs = meta.advice_column();
@@ -174,6 +184,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
 
         // Annotate table columns
         tx_table.annotate_columns(meta);
+        wd_table.annotate_columns(meta);
         block_table.annotate_columns(meta);
 
         meta.enable_equality(block_table.value.lo());
@@ -183,42 +194,48 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         meta.enable_equality(tx_table.value.lo());
         meta.enable_equality(tx_table.value.hi());
 
+        meta.enable_equality(wd_table.id);
+        meta.enable_equality(wd_table.validator_id);
+        meta.enable_equality(wd_table.address.lo());
+        meta.enable_equality(wd_table.address.hi());
+        meta.enable_equality(wd_table.amount);
+
         meta.enable_equality(rpi_value_lc);
-        meta.enable_equality(rpi_bytes_keccakrlc);
+        meta.enable_equality(rpi_bytes_keccak_rlc);
 
         meta.enable_equality(rpi_digest_bytes_limbs);
 
         meta.enable_equality(pi_instance);
 
         // gate 1 and gate 2 are compensation branch
-        // 1: rpi_bytes_keccakrlc[last] = rpi_bytes[last]
-        meta.create_gate("rpi_bytes_keccakrlc[last] = rpi_bytes[last]", |meta| {
+        // 1: rpi_bytes_keccak_rlc[last] = rpi_bytes[last]
+        meta.create_gate("rpi_bytes_keccak_rlc[last] = rpi_bytes[last]", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_equal(
-                "rpi_bytes_keccakrlc[last] = rpi_bytes[last]",
-                meta.query_advice(rpi_bytes_keccakrlc, Rotation::cur()),
+                "rpi_bytes_keccak_rlc[last] = rpi_bytes[last]",
+                meta.query_advice(rpi_bytes_keccak_rlc, Rotation::cur()),
                 meta.query_advice(rpi_bytes, Rotation::cur()),
             );
 
             cb.gate(meta.query_selector(q_bytes_last) * meta.query_selector(q_rpi_byte_enable))
         });
 
-        // 2: rpi_bytes_keccakrlc[i] = keccak_rand * rpi_bytes_keccakrlc[i+1] + rpi_bytes[i]"
+        // 2: rpi_bytes_keccak_rlc[i] = keccak_rand * rpi_bytes_keccak_rlc[i+1] + rpi_bytes[i]"
         meta.create_gate(
-            "rpi_bytes_keccakrlc[i] = keccak_rand * rpi_bytes_keccakrlc[i+1] + rpi_bytes[i]",
+            "rpi_bytes_keccak_rlc[i] = keccak_rand * rpi_bytes_keccak_rlc[i+1] + rpi_bytes[i]",
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
 
                 let rpi_bytes_keccakrlc_cur =
-                    meta.query_advice(rpi_bytes_keccakrlc, Rotation::cur());
+                    meta.query_advice(rpi_bytes_keccak_rlc, Rotation::cur());
                 let rpi_bytes_keccakrlc_next =
-                    meta.query_advice(rpi_bytes_keccakrlc, Rotation::next());
+                    meta.query_advice(rpi_bytes_keccak_rlc, Rotation::next());
                 let rpi_bytes_cur = meta.query_advice(rpi_bytes, Rotation::cur());
 
                 let keccak_rand = challenges.keccak_input();
                 cb.require_equal(
-                    "rpi_bytes_keccakrlc[i] = keccak_rand * rpi_bytes_keccakrlc[i+1] + rpi_bytes[i]",
+                    "rpi_bytes_keccak_rlc[i] = keccak_rand * rpi_bytes_keccak_rlc[i+1] + rpi_bytes[i]",
                     rpi_bytes_keccakrlc_cur,
                     rpi_bytes_keccakrlc_next * keccak_rand + rpi_bytes_cur,
                 );
@@ -266,12 +283,13 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             cb.gate(q_rpi_value_start_cur * meta.query_selector(q_rpi_byte_enable))
         });
 
-        // 5. lookup rpi_bytes_keccakrlc against rpi_digest_bytes_limbs
+        // 5. lookup rpi_bytes_keccak_rlc against rpi_digest_bytes_limbs
         meta.lookup_any(
-            "lookup rpi_bytes_keccakrlc against rpi_digest_bytes_limbs",
+            "lookup rpi_bytes_keccak_rlc against rpi_digest_bytes_limbs",
             |meta| {
                 let circuit_len =
-                    PiCircuitConfig::<F>::circuit_len_by_txs_calldata(max_txs, max_calldata).expr();
+                    PiCircuitConfig::<F>::circuit_len_all(max_txs, max_withdrawals, max_calldata)
+                        .expr();
                 let is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
                 let input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
                 let input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
@@ -282,7 +300,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
                 let q_rpi_keccak_lookup = meta.query_selector(q_rpi_keccak_lookup);
                 // input_rlc
                 let rpi_bytes_keccakrlc_cur =
-                    meta.query_advice(rpi_bytes_keccakrlc, Rotation::cur());
+                    meta.query_advice(rpi_bytes_keccak_rlc, Rotation::cur());
                 // output
                 let rpi_digest_lo = meta.query_advice(rpi_digest_bytes_limbs, Rotation::cur());
                 let rpi_digest_hi = meta.query_advice(rpi_digest_bytes_limbs, Rotation::next());
@@ -480,6 +498,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
 
         Self {
             max_txs,
+            max_withdrawals,
             max_calldata,
             block_table,
             q_digest_last,
@@ -491,6 +510,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             q_tx_table,
             q_digest_value_start,
             tx_table,
+            wd_table,
             keccak_table,
             tx_id_inv,
             tx_value_lo_inv,
@@ -499,7 +519,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             calldata_gas_cost,
             is_final,
             rpi_bytes,
-            rpi_bytes_keccakrlc,
+            rpi_bytes_keccak_rlc,
             rpi_value_lc,
             rpi_digest_bytes,
             rpi_digest_bytes_limbs,
@@ -514,12 +534,12 @@ impl<F: Field> PiCircuitConfig<F> {
     /// Return the number of rows in the circuit
     #[inline]
     fn circuit_len(&self) -> usize {
-        Self::circuit_len_by_txs_calldata(self.max_txs, self.max_calldata)
+        Self::circuit_len_all(self.max_txs, self.max_withdrawals, self.max_calldata)
     }
 
     /// Return the number of rows for txs and calldata
     #[inline]
-    fn circuit_len_by_txs_calldata(txs: usize, calldata: usize) -> usize {
+    fn circuit_len_all(txs: usize, wds: usize, calldata: usize) -> usize {
         N_BYTES_ONE
             + N_BYTES_BLOCK
             + N_BYTES_EXTRA_VALUE
@@ -527,6 +547,7 @@ impl<F: Field> PiCircuitConfig<F> {
             + Self::circuit_len_tx_index(txs)
             + Self::circuit_len_tx_values(txs)
             + calldata
+            + Self::circuit_len_withdrawal(wds)
     }
 
     #[inline]
@@ -542,6 +563,11 @@ impl<F: Field> PiCircuitConfig<F> {
     #[inline]
     fn circuit_len_tx_index(txs: usize) -> usize {
         N_BYTES_U64 * TX_LEN * txs + N_BYTES_U64 // empty row
+    }
+
+    #[inline]
+    fn circuit_len_withdrawal(withdrawals: usize) -> usize {
+        N_BYTES_WITHDRAWAL * withdrawals
     }
 
     fn assign_empty_txtable_row(
@@ -628,10 +654,10 @@ impl<F: Field> PiCircuitConfig<F> {
             || Value::known(F::ZERO),
         )?;
 
-        // assign rpi_bytes_keccakrlc
+        // assign rpi_bytes_keccak_rlc
         region.assign_advice(
-            || "rpi_bytes_keccakrlc",
-            self.rpi_bytes_keccakrlc,
+            || "rpi_bytes_keccak_rlc",
+            self.rpi_bytes_keccak_rlc,
             offset,
             || Value::known(F::ZERO),
         )?;
@@ -658,9 +684,9 @@ impl<F: Field> PiCircuitConfig<F> {
         tag: TxFieldTag,
         index: u64,
         tx_value_bytes_le: &[u8],
-        rpi_bytes_keccakrlc: &mut Value<F>,
+        rpi_bytes_keccak_rlc: &mut Value<F>,
         challenges: &Challenges<Value<F>>,
-        current_offset: &mut usize,
+        current_rpi_offset: &mut usize,
         rpi_bytes: &mut [u8],
         zero_cell: AssignedCell<F, F>,
     ) -> Result<(), Error> {
@@ -710,9 +736,9 @@ impl<F: Field> PiCircuitConfig<F> {
         let (_, raw_tx_id) = self.assign_raw_bytes(
             region,
             &tx_id.to_le_bytes(),
-            rpi_bytes_keccakrlc,
+            rpi_bytes_keccak_rlc,
             rpi_bytes,
-            current_offset,
+            current_rpi_offset,
             challenges,
             zero_cell.clone(),
         )?;
@@ -722,9 +748,9 @@ impl<F: Field> PiCircuitConfig<F> {
         let (_, raw_tx_index) = self.assign_raw_bytes(
             region,
             &index.to_le_bytes(),
-            rpi_bytes_keccakrlc,
+            rpi_bytes_keccak_rlc,
             rpi_bytes,
-            current_offset,
+            current_rpi_offset,
             challenges,
             zero_cell.clone(),
         )?;
@@ -734,9 +760,9 @@ impl<F: Field> PiCircuitConfig<F> {
         let (_, raw_tx_value) = self.assign_raw_bytes(
             region,
             tx_value_bytes_le,
-            rpi_bytes_keccakrlc,
+            rpi_bytes_keccak_rlc,
             rpi_bytes,
-            current_offset,
+            current_rpi_offset,
             challenges,
             zero_cell,
         )?;
@@ -771,9 +797,9 @@ impl<F: Field> PiCircuitConfig<F> {
         tx_id_next: usize,
         index: usize,
         tx_value_byte: u8,
-        rpi_bytes_keccakrlc: &mut Value<F>,
+        rpi_bytes_keccak_rlc: &mut Value<F>,
         challenges: &Challenges<Value<F>>,
-        current_offset: &mut usize,
+        current_rpi_offset: &mut usize,
         rpi_bytes: &mut [u8],
         is_final: bool,
         gas_cost: F,
@@ -843,9 +869,9 @@ impl<F: Field> PiCircuitConfig<F> {
         let (rpi_bytes_keccakrlc_cell, rpi_value_lc_cell) = self.assign_raw_bytes(
             region,
             &[tx_value_byte],
-            rpi_bytes_keccakrlc,
+            rpi_bytes_keccak_rlc,
             rpi_bytes,
-            current_offset,
+            current_rpi_offset,
             challenges,
             zero_cell,
         )?;
@@ -858,15 +884,111 @@ impl<F: Field> PiCircuitConfig<F> {
         Ok(rpi_bytes_keccakrlc_cell)
     }
 
+    /// Assigns a wd_table row and stores the values in a vec for the raw_public_inputs column
+    /// current_rpi_offset is used to record current rpi offset
+    #[allow(clippy::too_many_arguments)]
+    fn assign_wd_table_row(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        wd: &Withdrawal,
+        rpi_bytes_keccak_rlc: &mut Value<F>,
+        challenges: &Challenges<Value<F>>,
+        current_rpi_offset: &mut usize,
+        rpi_bytes: &mut [u8],
+        zero_cell: AssignedCell<F, F>,
+    ) -> Result<(), Error> {
+        let id_assigned_cell = region.assign_advice(
+            || "withdrawal_id",
+            self.wd_table.id,
+            offset,
+            || Value::known(F::from(wd.id)),
+        )?;
+        let vid_assigned_cell = region.assign_advice(
+            || "validator_id",
+            self.wd_table.validator_id,
+            offset,
+            || Value::known(F::from(wd.validator_id)),
+        )?;
+        let address_assigned_cell = Word::<F>::from(wd.address).into_value().assign_advice(
+            region,
+            || "address",
+            self.wd_table.address,
+            offset,
+        )?;
+        let amount_assigned_cell = region.assign_advice(
+            || "amount",
+            self.wd_table.amount,
+            offset,
+            || Value::known(F::from(wd.amount)),
+        )?;
+
+        // id
+        let (_, raw_id) = self.assign_raw_bytes(
+            region,
+            &wd.id.to_le_bytes(),
+            rpi_bytes_keccak_rlc,
+            rpi_bytes,
+            current_rpi_offset,
+            challenges,
+            zero_cell.clone(),
+        )?;
+        region.constrain_equal(id_assigned_cell.cell(), raw_id.lo().cell())?;
+
+        // validator_id
+        let (_, raw_vid) = self.assign_raw_bytes(
+            region,
+            &wd.validator_id.to_le_bytes(),
+            rpi_bytes_keccak_rlc,
+            rpi_bytes,
+            current_rpi_offset,
+            challenges,
+            zero_cell.clone(),
+        )?;
+        region.constrain_equal(vid_assigned_cell.cell(), raw_vid.lo().cell())?;
+
+        // address
+        let (_, raw_address) = self.assign_raw_bytes(
+            region,
+            &wd.address
+                .to_fixed_bytes()
+                .iter()
+                .copied()
+                .rev()
+                .collect_vec(),
+            rpi_bytes_keccak_rlc,
+            rpi_bytes,
+            current_rpi_offset,
+            challenges,
+            zero_cell.clone(),
+        )?;
+        region.constrain_equal(address_assigned_cell.lo().cell(), raw_address.lo().cell())?;
+        region.constrain_equal(address_assigned_cell.hi().cell(), raw_address.hi().cell())?;
+
+        // amount
+        let (_, raw_amount) = self.assign_raw_bytes(
+            region,
+            &wd.amount.to_le_bytes(),
+            rpi_bytes_keccak_rlc,
+            rpi_bytes,
+            current_rpi_offset,
+            challenges,
+            zero_cell,
+        )?;
+        region.constrain_equal(amount_assigned_cell.cell(), raw_amount.lo().cell())?;
+
+        Ok(())
+    }
+
     /// assign raw bytes
     #[allow(clippy::too_many_arguments)]
     fn assign_raw_bytes(
         &self,
         region: &mut Region<'_, F>,
         value_bytes_le: &[u8],
-        rpi_bytes_keccakrlc: &mut Value<F>,
+        rpi_bytes_keccak_rlc: &mut Value<F>,
         rpi_bytes: &mut [u8],
-        current_offset: &mut usize,
+        current_rpi_offset: &mut usize,
         challenges: &Challenges<Value<F>>,
         zero_cell: AssignedCell<F, F>,
     ) -> Result<AssignedByteCells<F>, Error> {
@@ -877,7 +999,7 @@ impl<F: Field> PiCircuitConfig<F> {
 
         let mut rpi_value_lc_cells: Vec<AssignedCell<F, F>> = vec![];
         let mut rpi_bytes_keccakrlc_cells: Vec<AssignedCell<F, F>> = vec![];
-        let start_offset = *current_offset;
+        let start_offset = *current_rpi_offset;
 
         let value_bytes_be: Vec<u8> = value_bytes_le.iter().rev().copied().collect_vec();
         let value_bytes_chunk: Vec<Vec<u8>> = value_bytes_be
@@ -888,7 +1010,7 @@ impl<F: Field> PiCircuitConfig<F> {
             .map(|x| x.to_vec())
             .collect();
 
-        *current_offset = value_bytes_chunk.iter().try_fold(
+        *current_rpi_offset = value_bytes_chunk.iter().try_fold(
             // after rchunk
             start_offset,
             |mut offset, bytes| -> Result<usize, Error> {
@@ -928,8 +1050,8 @@ impl<F: Field> PiCircuitConfig<F> {
                         rpi_bytes[offset] = *byte;
 
                         // this is mutable for accumulated across value
-                        *rpi_bytes_keccakrlc =
-                            rpi_bytes_keccakrlc
+                        *rpi_bytes_keccak_rlc =
+                            rpi_bytes_keccak_rlc
                                 .zip(keccak_rand)
                                 .and_then(|(acc, rand)| {
                                     Value::known(acc * rand + F::from(*byte as u64))
@@ -946,12 +1068,12 @@ impl<F: Field> PiCircuitConfig<F> {
                             || Value::known(F::from(*byte as u64)),
                         )?;
 
-                        // assign rpi_bytes_keccakrlc
+                        // assign rpi_bytes_keccak_rlc
                         let rpi_bytes_keccakrlc_cell = region.assign_advice(
-                            || "rpi_bytes_keccakrlc",
-                            self.rpi_bytes_keccakrlc,
+                            || "rpi_bytes_keccak_rlc",
+                            self.rpi_bytes_keccak_rlc,
                             offset,
-                            || *rpi_bytes_keccakrlc,
+                            || *rpi_bytes_keccak_rlc,
                         )?;
 
                         if start_offset - offset == value_bytes_le.len() - 1 {
@@ -992,9 +1114,9 @@ impl<F: Field> PiCircuitConfig<F> {
         region: &mut Region<'_, F>,
         block_table_offset: &mut usize,
         block_values: BlockValues,
-        rpi_bytes_keccakrlc: &mut Value<F>,
+        rpi_bytes_keccak_rlc: &mut Value<F>,
         challenges: &Challenges<Value<F>>,
-        current_offset: &mut usize,
+        current_rpi_offset: &mut usize,
         rpi_bytes: &mut [u8],
         zero_cell: AssignedCell<F, F>,
     ) -> Result<(), Error> {
@@ -1018,9 +1140,9 @@ impl<F: Field> PiCircuitConfig<F> {
                 .rev()
                 .copied()
                 .collect_vec(),
-            rpi_bytes_keccakrlc,
+            rpi_bytes_keccak_rlc,
             rpi_bytes,
-            current_offset,
+            current_rpi_offset,
             challenges,
             zero_cell.clone(),
         )?;
@@ -1039,9 +1161,9 @@ impl<F: Field> PiCircuitConfig<F> {
         let (_, word) = self.assign_raw_bytes(
             region,
             &block_values.gas_limit.to_le_bytes(),
-            rpi_bytes_keccakrlc,
+            rpi_bytes_keccak_rlc,
             rpi_bytes,
-            current_offset,
+            current_rpi_offset,
             challenges,
             zero_cell.clone(),
         )?;
@@ -1058,9 +1180,9 @@ impl<F: Field> PiCircuitConfig<F> {
         let (_, word) = self.assign_raw_bytes(
             region,
             &block_values.number.to_le_bytes(),
-            rpi_bytes_keccakrlc,
+            rpi_bytes_keccak_rlc,
             rpi_bytes,
-            current_offset,
+            current_rpi_offset,
             challenges,
             zero_cell.clone(),
         )?;
@@ -1079,9 +1201,9 @@ impl<F: Field> PiCircuitConfig<F> {
         let (_, word) = self.assign_raw_bytes(
             region,
             &block_values.timestamp.to_le_bytes(),
-            rpi_bytes_keccakrlc,
+            rpi_bytes_keccak_rlc,
             rpi_bytes,
-            current_offset,
+            current_rpi_offset,
             challenges,
             zero_cell.clone(),
         )?;
@@ -1100,9 +1222,9 @@ impl<F: Field> PiCircuitConfig<F> {
         let (_, word) = self.assign_raw_bytes(
             region,
             &block_values.difficulty.to_le_bytes(),
-            rpi_bytes_keccakrlc,
+            rpi_bytes_keccak_rlc,
             rpi_bytes,
-            current_offset,
+            current_rpi_offset,
             challenges,
             zero_cell.clone(),
         )?;
@@ -1121,9 +1243,9 @@ impl<F: Field> PiCircuitConfig<F> {
         let (_, word) = self.assign_raw_bytes(
             region,
             &block_values.base_fee.to_le_bytes(),
-            rpi_bytes_keccakrlc,
+            rpi_bytes_keccak_rlc,
             rpi_bytes,
-            current_offset,
+            current_rpi_offset,
             challenges,
             zero_cell.clone(),
         )?;
@@ -1142,9 +1264,30 @@ impl<F: Field> PiCircuitConfig<F> {
         let (_, word) = self.assign_raw_bytes(
             region,
             &block_values.chain_id.to_le_bytes(),
-            rpi_bytes_keccakrlc,
+            rpi_bytes_keccak_rlc,
             rpi_bytes,
-            current_offset,
+            current_rpi_offset,
+            challenges,
+            zero_cell.clone(),
+        )?;
+        block_copy_cells.push((block_value, word));
+        *block_table_offset += 1;
+
+        // withdrawals_root
+        let block_value = Word::from(block_values.withdrawals_root)
+            .into_value()
+            .assign_advice(
+                region,
+                || "withdrawals_root",
+                self.block_table.value,
+                *block_table_offset,
+            )?;
+        let (_, word) = self.assign_raw_bytes(
+            region,
+            &block_values.withdrawals_root.to_le_bytes(),
+            rpi_bytes_keccak_rlc,
+            rpi_bytes,
+            current_rpi_offset,
             challenges,
             zero_cell.clone(),
         )?;
@@ -1166,9 +1309,9 @@ impl<F: Field> PiCircuitConfig<F> {
                     .rev()
                     .copied()
                     .collect_vec(),
-                rpi_bytes_keccakrlc,
+                rpi_bytes_keccak_rlc,
                 rpi_bytes,
-                current_offset,
+                current_rpi_offset,
                 challenges,
                 zero_cell.clone(),
             )?;
@@ -1195,9 +1338,9 @@ impl<F: Field> PiCircuitConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         extra: ExtraValues,
-        rpi_bytes_keccakrlc: &mut Value<F>,
+        rpi_bytes_keccak_rlc: &mut Value<F>,
         challenges: &Challenges<Value<F>>,
-        current_offset: &mut usize,
+        current_rpi_offset: &mut usize,
         rpi_bytes: &mut [u8],
         zero_cell: AssignedCell<F, F>,
     ) -> Result<(), Error> {
@@ -1211,9 +1354,9 @@ impl<F: Field> PiCircuitConfig<F> {
                 .copied()
                 .rev()
                 .collect_vec(),
-            rpi_bytes_keccakrlc,
+            rpi_bytes_keccak_rlc,
             rpi_bytes,
-            current_offset,
+            current_rpi_offset,
             challenges,
             zero_cell.clone(),
         )?;
@@ -1228,9 +1371,9 @@ impl<F: Field> PiCircuitConfig<F> {
                 .copied()
                 .rev()
                 .collect_vec(),
-            rpi_bytes_keccakrlc,
+            rpi_bytes_keccak_rlc,
             rpi_bytes,
-            current_offset,
+            current_rpi_offset,
             challenges,
             zero_cell.clone(),
         )?;
@@ -1245,9 +1388,9 @@ impl<F: Field> PiCircuitConfig<F> {
                 .copied()
                 .rev()
                 .collect_vec(),
-            rpi_bytes_keccakrlc,
+            rpi_bytes_keccak_rlc,
             rpi_bytes,
-            current_offset,
+            current_rpi_offset,
             challenges,
             zero_cell,
         )?;
@@ -1281,6 +1424,7 @@ impl<F: Field> PiCircuitConfig<F> {
 #[derive(Clone, Default, Debug)]
 pub struct PiCircuit<F: Field> {
     max_txs: usize,
+    max_withdrawals: usize,
     max_calldata: usize,
     /// PublicInputs data known by the verifier
     pub public_data: PublicData,
@@ -1289,9 +1433,15 @@ pub struct PiCircuit<F: Field> {
 
 impl<F: Field> PiCircuit<F> {
     /// Creates a new PiCircuit
-    pub fn new(max_txs: usize, max_calldata: usize, public_data: PublicData) -> Self {
+    pub fn new(
+        max_txs: usize,
+        max_withdrawals: usize,
+        max_calldata: usize,
+        public_data: PublicData,
+    ) -> Self {
         Self {
             max_txs,
+            max_withdrawals,
             max_calldata,
             public_data,
             _marker: PhantomData,
@@ -1312,6 +1462,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         let public_data = public_data_convert(block);
         PiCircuit::new(
             block.circuits_params.max_txs,
+            block.circuits_params.max_withdrawals,
             block.circuits_params.max_calldata,
             public_data,
         )
@@ -1321,9 +1472,10 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         let calldata_len = block.txs.iter().map(|tx| tx.call_data.len()).sum();
         (
-            Self::Config::circuit_len_by_txs_calldata(block.txs.len(), calldata_len),
-            Self::Config::circuit_len_by_txs_calldata(
+            Self::Config::circuit_len_all(block.txs.len(), block.withdrawals().len(), calldata_len),
+            Self::Config::circuit_len_all(
                 block.circuits_params.max_txs,
+                block.circuits_params.max_withdrawals,
                 block.circuits_params.max_calldata,
             ),
         )
@@ -1331,9 +1483,11 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
     /// Compute the public inputs for this circuit.
     fn instance(&self) -> Vec<Vec<F>> {
-        let rpi_digest_byte_field = self
-            .public_data
-            .get_rpi_digest_word(self.max_txs, self.max_calldata);
+        let rpi_digest_byte_field = self.public_data.get_rpi_digest_word(
+            self.max_txs,
+            self.max_withdrawals,
+            self.max_calldata,
+        );
 
         vec![vec![rpi_digest_byte_field.lo(), rpi_digest_byte_field.hi()]]
     }
@@ -1364,14 +1518,14 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
             || "region 0",
             |mut region| {
                 // Annotate columns
-
                 config.tx_table.annotate_columns_in_region(&mut region);
+                config.wd_table.annotate_columns_in_region(&mut region);
                 config.block_table.annotate_columns_in_region(&mut region);
                 config.keccak_table.annotate_columns_in_region(&mut region);
 
                 region.name_column(|| "q_rpi_value_start", config.q_rpi_value_start);
                 region.name_column(|| "rpi_bytes", config.rpi_bytes);
-                region.name_column(|| "rpi_bytes_keccakrlc", config.rpi_bytes_keccakrlc);
+                region.name_column(|| "rpi_bytes_keccak_rlc", config.rpi_bytes_keccak_rlc);
                 region.name_column(|| "rpi_value_lc", config.rpi_value_lc);
                 region.name_column(|| "q_digest_value_start", config.q_digest_value_start);
                 region.name_column(|| "rpi_digest_bytes", config.rpi_digest_bytes);
@@ -1389,16 +1543,16 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 let circuit_len = config.circuit_len();
                 let mut rpi_bytes = vec![0u8; circuit_len];
 
-                let mut rpi_bytes_keccakrlc = Value::known(F::ZERO);
+                let mut rpi_bytes_keccak_rlc = Value::known(F::ZERO);
 
                 // traverse reversely of the region
-                let mut current_offset: usize = circuit_len - 1;
-                let start_offset = current_offset;
+                let mut current_rpi_offset: usize = circuit_len - 1;
+                let start_offset = current_rpi_offset;
 
                 config.q_digest_last.enable(&mut region, N_BYTES_WORD - 1)?; // digest is 32 bytes
                 config.q_bytes_last.enable(&mut region, start_offset)?;
 
-                // assign last + 1 to 0 to as wordaround to skip CellNotAssigned Error from
+                // assign last + 1 to 0 to as workaround to skip CellNotAssigned Error from
                 // Mock_prover
                 config.reset_rpi_bytes_row(&mut region, start_offset + 1)?;
                 config.reset_rpi_digest_row(&mut region, N_BYTES_WORD)?;
@@ -1418,9 +1572,9 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 let (_, _) = config.assign_raw_bytes(
                     &mut region,
                     &0u8.to_le_bytes(),
-                    &mut rpi_bytes_keccakrlc,
+                    &mut rpi_bytes_keccak_rlc,
                     &mut rpi_bytes,
-                    &mut current_offset,
+                    &mut current_rpi_offset,
                     challenges,
                     zero_cell.clone(),
                 )?;
@@ -1429,27 +1583,30 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                     &mut region,
                     &mut block_table_offset,
                     block_values,
-                    &mut rpi_bytes_keccakrlc,
+                    &mut rpi_bytes_keccak_rlc,
                     challenges,
-                    &mut current_offset,
+                    &mut current_rpi_offset,
                     &mut rpi_bytes,
                     zero_cell.clone(),
                 )?;
-                assert_eq!(start_offset - current_offset, N_BYTES_ONE + N_BYTES_BLOCK);
+                assert_eq!(
+                    start_offset - current_rpi_offset,
+                    N_BYTES_ONE + N_BYTES_BLOCK
+                );
 
                 // Assign extra fields
                 let extra_vals = self.public_data.get_extra_values();
                 config.assign_extra_fields(
                     &mut region,
                     extra_vals,
-                    &mut rpi_bytes_keccakrlc,
+                    &mut rpi_bytes_keccak_rlc,
                     challenges,
-                    &mut current_offset,
+                    &mut current_rpi_offset,
                     &mut rpi_bytes,
                     zero_cell,
                 )?;
                 assert_eq!(
-                    start_offset - current_offset,
+                    start_offset - current_rpi_offset,
                     N_BYTES_ONE + N_BYTES_BLOCK + N_BYTES_EXTRA_VALUE
                 );
 
@@ -1473,9 +1630,9 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                     TxFieldTag::Null,
                     0u64,
                     &[0u8; 1],
-                    &mut rpi_bytes_keccakrlc,
+                    &mut rpi_bytes_keccak_rlc,
                     challenges,
-                    &mut current_offset,
+                    &mut current_rpi_offset,
                     &mut rpi_bytes,
                     zero_cell.clone(),
                 )?;
@@ -1530,9 +1687,9 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                                 *tag,
                                 0,
                                 value_bytes,
-                                &mut rpi_bytes_keccakrlc,
+                                &mut rpi_bytes_keccak_rlc,
                                 challenges,
-                                &mut current_offset,
+                                &mut current_rpi_offset,
                                 &mut rpi_bytes,
                                 zero_cell.clone(),
                             )?;
@@ -1541,7 +1698,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                         Ok(())
                     })?;
                 assert_eq!(
-                    start_offset - current_offset,
+                    start_offset - current_rpi_offset,
                     N_BYTES_ONE
                         + N_BYTES_BLOCK
                         + N_BYTES_EXTRA_VALUE
@@ -1591,9 +1748,9 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                             tx_id_next,
                             index,
                             *byte,
-                            &mut rpi_bytes_keccakrlc,
+                            &mut rpi_bytes_keccak_rlc,
                             challenges,
-                            &mut current_offset,
+                            &mut current_rpi_offset,
                             &mut rpi_bytes,
                             is_final,
                             gas_cost,
@@ -1612,9 +1769,9 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                         0,
                         0,
                         0u8,
-                        &mut rpi_bytes_keccakrlc,
+                        &mut rpi_bytes_keccak_rlc,
                         challenges,
-                        &mut current_offset,
+                        &mut current_rpi_offset,
                         &mut rpi_bytes,
                         false,
                         F::ZERO,
@@ -1622,19 +1779,56 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                     )?;
                     call_data_offset += 1;
                 }
-                assert_eq!(current_offset, 0);
-
-                // assign keccak digest
-                let digest_word = self
-                    .public_data
-                    .get_rpi_digest_word::<F>(config.max_txs, config.max_calldata);
-
-                let digest_word_assigned =
-                    config.assign_rpi_digest_word(&mut region, digest_word)?;
+                assert_eq!(
+                    start_offset - current_rpi_offset,
+                    N_BYTES_ONE
+                        + N_BYTES_BLOCK
+                        + N_BYTES_EXTRA_VALUE
+                        + Self::Config::circuit_len_tx_id(config.max_txs)
+                        + Self::Config::circuit_len_tx_index(config.max_txs)
+                        + Self::Config::circuit_len_tx_values(config.max_txs)
+                        + config.max_calldata
+                );
 
                 // lookup assignment
                 // also assign empty to last of TxTable
                 config.assign_empty_txtable_row(&mut region, call_data_offset)?;
+
+                // assign withdrawal table and padding rows
+                let mut withdrawal_offset = 0;
+                let wd_default = Withdrawal::default();
+                iter::empty()
+                    .chain(&self.public_data.withdrawals)
+                    .chain(
+                        (0..(config.max_withdrawals - self.public_data.withdrawals.len()))
+                            .map(|_| &wd_default),
+                    )
+                    .enumerate()
+                    .try_for_each(|(_, wd)| -> Result<(), Error> {
+                        config.assign_wd_table_row(
+                            &mut region,
+                            withdrawal_offset,
+                            wd,
+                            &mut rpi_bytes_keccak_rlc,
+                            challenges,
+                            &mut current_rpi_offset,
+                            &mut rpi_bytes,
+                            zero_cell.clone(),
+                        )?;
+                        withdrawal_offset += 1;
+                        Ok(())
+                    })?;
+                assert_eq!(current_rpi_offset, 0);
+
+                // assign keccak digest
+                let digest_word = self.public_data.get_rpi_digest_word::<F>(
+                    config.max_txs,
+                    config.max_withdrawals,
+                    config.max_calldata,
+                );
+
+                let digest_word_assigned =
+                    config.assign_rpi_digest_word(&mut region, digest_word)?;
 
                 // keccak lookup occur on offset 0
                 config.q_rpi_keccak_lookup.enable(&mut region, 0)?;
@@ -1644,7 +1838,6 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         )?;
 
         // Constrain raw_public_input cells to public inputs
-
         layouter.constrain_instance(digest_word_assigned.lo().cell(), config.pi_instance, 0)?;
         layouter.constrain_instance(digest_word_assigned.hi().cell(), config.pi_instance, 1)?;
 

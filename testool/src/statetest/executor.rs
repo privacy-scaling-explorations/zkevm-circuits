@@ -7,14 +7,18 @@ use bus_mapping::{
 use eth_types::{geth_types, Address, Bytes, Error, GethExecTrace, U256, U64};
 use ethers_core::{
     k256::ecdsa::SigningKey,
-    types::{transaction::eip2718::TypedTransaction, TransactionRequest},
+    types::{transaction::eip2718::TypedTransaction, TransactionRequest, Withdrawal},
 };
 use ethers_signers::{LocalWallet, Signer};
 use external_tracer::TraceConfig;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
-use zkevm_circuits::{super_circuit::SuperCircuit, test_util::CircuitTestBuilder, witness::Block};
+use zkevm_circuits::{
+    super_circuit::SuperCircuit,
+    test_util::{CircuitTestBuilder, CircuitTestError},
+    witness::Block,
+};
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
@@ -279,6 +283,19 @@ pub fn run_test(
         })
         .collect();
 
+    let withdrawals = trace_config
+        .withdrawals
+        .into_iter()
+        .map(|wd| {
+            Some(Withdrawal {
+                index: wd.id.into(),
+                validator_index: wd.validator_id.into(),
+                address: wd.address,
+                amount: wd.amount.into(),
+            })
+        })
+        .collect();
+
     let eth_block = eth_types::Block {
         author: Some(trace_config.block_constants.coinbase),
         timestamp: trace_config.block_constants.timestamp,
@@ -286,6 +303,7 @@ pub fn run_test(
         difficulty: trace_config.block_constants.difficulty,
         gas_limit: trace_config.block_constants.gas_limit,
         base_fee_per_gas: Some(trace_config.block_constants.base_fee),
+        withdrawals,
         transactions,
         ..eth_types::Block::default()
     };
@@ -311,6 +329,7 @@ pub fn run_test(
     if !circuits_config.super_circuit {
         let circuits_params = FixedCParams {
             max_txs: 1,
+            max_withdrawals: 1,
             max_rws: 55000,
             max_calldata: 5000,
             max_bytecode: 5000,
@@ -329,12 +348,26 @@ pub fn run_test(
         let block: Block<Fr> =
             zkevm_circuits::evm_circuit::witness::block_convert(&builder).unwrap();
 
-        CircuitTestBuilder::<1, 1>::new_from_block(block).run();
+        CircuitTestBuilder::<1, 1>::new_from_block(block)
+            .run_with_result()
+            .map_err(|err| match err {
+                CircuitTestError::VerificationFailed { reasons, .. } => {
+                    StateTestError::CircuitUnsatisfied {
+                        num_failure: reasons.len(),
+                        first_failure: reasons[0].to_string(),
+                    }
+                }
+                err => StateTestError::Exception {
+                    expected: false,
+                    found: err.to_string(),
+                },
+            })?;
     } else {
         geth_data.sign(&wallets);
 
         let circuits_params = FixedCParams {
             max_txs: 1,
+            max_withdrawals: 1,
             max_calldata: 32,
             max_rws: 256,
             max_copy_rows: 256,

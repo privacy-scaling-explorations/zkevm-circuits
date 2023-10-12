@@ -124,6 +124,7 @@ pub(crate) const N_BYTES_DIFFICULTY: usize = N_BYTES_WORD;
 pub(crate) const N_BYTES_BASE_FEE: usize = N_BYTES_WORD;
 pub(crate) const N_BYTES_CHAIN_ID: usize = N_BYTES_U64;
 pub(crate) const N_BYTES_PREV_HASH: usize = 256 * N_BYTES_WORD;
+pub(crate) const N_BYTES_WITHDRAWAL_ROOT: usize = N_BYTES_WORD;
 
 pub(crate) const N_BYTES_BLOCK: usize = N_BYTES_COINBASE
     + N_BYTES_GAS_LIMIT
@@ -132,7 +133,8 @@ pub(crate) const N_BYTES_BLOCK: usize = N_BYTES_COINBASE
     + N_BYTES_DIFFICULTY
     + N_BYTES_BASE_FEE
     + N_BYTES_CHAIN_ID
-    + N_BYTES_PREV_HASH;
+    + N_BYTES_PREV_HASH
+    + N_BYTES_WITHDRAWAL_ROOT;
 
 pub(crate) const N_BYTES_EXTRA_VALUE: usize = N_BYTES_WORD // block hash
     + N_BYTES_WORD // state root
@@ -159,6 +161,11 @@ pub(crate) const N_BYTES_TX: usize = N_BYTES_TX_NONCE
     + N_BYTES_TX_CALLDATA_LEN
     + N_BYTES_TX_CALLDATA_GASCOST
     + N_BYTES_TX_TXSIGNHASH;
+
+pub(crate) const N_BYTES_WITHDRAWAL: usize = N_BYTES_U64 //id 
+    + N_BYTES_U64 // validator id
+    + N_BYTES_ACCOUNT_ADDRESS // address
+    + N_BYTES_U64; // amount
 
 lazy_static::lazy_static! {
     // Step slot height in evm circuit

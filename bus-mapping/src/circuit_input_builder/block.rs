@@ -1,11 +1,14 @@
 //! Block-related utility module
 
-use super::{execution::ExecState, transaction::Transaction, CopyEvent, ExecStep, ExpEvent};
+use super::{
+    execution::ExecState, transaction::Transaction, CopyEvent, ExecStep, ExpEvent, Withdrawal,
+};
 use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
 };
-use eth_types::{evm_unimplemented, Address, Word};
+use eth_types::{evm_unimplemented, Address, Word, H256};
+use itertools::Itertools;
 use std::collections::HashMap;
 
 /// Context of a [`Block`] which can mutate in a [`Transaction`].
@@ -60,13 +63,13 @@ pub struct Block {
     pub history_hashes: Vec<Word>,
     /// coinbase
     pub coinbase: Address,
-    /// time
+    /// gas limit
     pub gas_limit: u64,
     /// number
     pub number: Word,
-    /// difficulty
+    /// time
     pub timestamp: Word,
-    /// gas limit
+    /// difficulty
     pub difficulty: Word,
     /// base fee
     pub base_fee: Word,
@@ -116,7 +119,15 @@ impl Block {
                 .low_u64()
                 .into(),
             timestamp: eth_block.timestamp,
-            difficulty: eth_block.difficulty,
+            difficulty: if eth_block.difficulty.is_zero() {
+                eth_block
+                    .mix_hash
+                    .unwrap_or_default()
+                    .to_fixed_bytes()
+                    .into()
+            } else {
+                eth_block.difficulty
+            },
             base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
             prev_state_root,
             container: OperationContainer::new(),
@@ -146,6 +157,30 @@ impl Block {
     #[cfg(test)]
     pub fn txs_mut(&mut self) -> &mut Vec<Transaction> {
         &mut self.txs
+    }
+
+    /// Return the list of withdrawals of this block.
+    pub fn withdrawals(&self) -> Vec<Withdrawal> {
+        let eth_withdrawals = self.eth_block.withdrawals.clone().unwrap();
+        eth_withdrawals
+            .iter()
+            .map({
+                |w| {
+                    Withdrawal::new(
+                        w.index.as_u64(),
+                        w.validator_index.as_u64(),
+                        w.address,
+                        w.amount.as_u64(),
+                    )
+                    .unwrap()
+                }
+            })
+            .collect_vec()
+    }
+
+    /// Return root of withdrawals of this block
+    pub fn withdrawals_root(&self) -> H256 {
+        self.eth_block.withdrawals_root.unwrap_or_default()
     }
 
     /// Push a copy event to the block.
