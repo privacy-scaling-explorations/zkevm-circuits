@@ -37,7 +37,7 @@ use eth_types::{
     Field, ToBigEndian, ToScalar, ToWord, U256,
 };
 use ethers_core::utils::keccak256;
-use gadgets::util::{and, or, select};
+use gadgets::util::{and, select};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
