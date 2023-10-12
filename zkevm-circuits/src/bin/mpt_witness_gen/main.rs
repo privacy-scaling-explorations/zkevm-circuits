@@ -98,7 +98,7 @@ async fn get_account_proof() {
     let client = GethClient::new(transport);
     let account = Address::from_str("0xccc9f924222776534d9bec025ef6231d8ae4d11a").unwrap();
     let keys = vec![Word::zero()];
-    let block_num = 1;
+    let block_num = 0;
     let proof = client
         .get_proof(account, keys, block_num.into())
         .await
@@ -207,8 +207,9 @@ fn end_node() -> Node2 {
         ],
     }
 }
-
-fn main() {
+#[tokio::main]
+async fn main() {
     println!("mpt testing case gen");
-    generate_delete()
+    // generate_delete()
+    get_account_proof().await
 }
