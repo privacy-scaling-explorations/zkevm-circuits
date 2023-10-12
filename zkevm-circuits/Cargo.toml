@@ -15,6 +15,7 @@ array-init = "2.0.0"
 bus-mapping = { path = "../bus-mapping" }
 eth-types = { path = "../eth-types" }
 gadgets = { path = "../gadgets" }
+ethers-providers = "2.0.7"
 ethers-core = "2.0.7"
 ethers-signers = { version = "2.0.7", optional = true }
 mock = { path = "../mock", optional = true }
@@ -40,6 +41,8 @@ serde = { version = "1.0.130", features = ["derive"] }
 serde_json = "1.0.78"
 thiserror = "1.0"
 hex = {version = "0.4.3", features = ["serde"]}
+url = "2.2.2"
+
 
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }

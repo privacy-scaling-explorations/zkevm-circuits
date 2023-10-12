@@ -1,11 +1,15 @@
-use bus_mapping::state_db::StateDB;
+use bus_mapping::{rpc::GethClient, state_db::StateDB};
 use eth_types::{address, Address, Word, H256, U256};
+use ethers_core::utils::rlp::Rlp;
+use ethers_providers::Http;
 use itertools::Itertools;
 use std::iter;
+use url::Url;
 use zkevm_circuits::{
     mpt_circuit::witness_row::{Node2, StartNode},
     table::MPTProofType,
 };
+use std::str::FromStr;
 
 #[derive(Debug, Default, Clone)]
 struct TrieModification {
@@ -89,6 +93,21 @@ fn obtain_account_proof_and_convert_to_witness() -> Vec<Node2> {
     vec![]
 }
 
+async fn get_account_proof() {
+    let GETH0_URL = "http://localhost:8545/";
+    let transport = Http::new(Url::parse(&GETH0_URL).expect("invalid url"));
+    let client = GethClient::new(transport);
+    let account = Address::from_str("0xccc9f924222776534d9bec025ef6231d8ae4d11a").unwrap();
+    let keys = vec![Word::zero()];
+    let block_num = 1;
+    let proof = client.get_proof(account, keys, block_num.into()).await.unwrap();
+    println!("proof {:?}", proof);
+}
+
+fn prepare_extensions() {
+    // Rlp::new(bytes)
+}
+
 fn convert_proof_to_witness() -> Vec<Node2> {
     // 1. Determine upto
     // loop through upto
@@ -150,7 +169,10 @@ fn end_node() -> Node2 {
         ],
     }
 }
-fn main() {
+
+#[tokio::main]
+async fn main() {
     println!("mpt testing case gen");
-    generate_delete()
+    // generate_delete()
+    let future = get_account_proof();
 }
