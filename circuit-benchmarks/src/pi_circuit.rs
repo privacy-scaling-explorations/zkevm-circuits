@@ -34,6 +34,7 @@ mod tests {
         const BENCHMARK_ID: &str = "Pi Circuit";
 
         const MAX_TXS: usize = 10;
+        const MAX_WITHDRAWALS: usize = 10;
         const MAX_CALLDATA: usize = 128;
 
         let degree: u32 = var("DEGREE")
@@ -42,7 +43,7 @@ mod tests {
             .expect("Cannot parse DEGREE env var as u32");
 
         let public_data = generate_publicdata(MAX_TXS);
-        let circuit = PiCircuit::<Fr>::new(MAX_TXS, MAX_CALLDATA, public_data);
+        let circuit = PiCircuit::<Fr>::new(MAX_TXS, MAX_WITHDRAWALS, MAX_CALLDATA, public_data);
         let public_inputs = circuit.instance();
         let instance: Vec<&[Fr]> = public_inputs.iter().map(|input| &input[..]).collect();
         let instances = &[&instance[..]];

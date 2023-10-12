@@ -14,6 +14,7 @@ fn super_circuit_degree() {
     let mut cs = ConstraintSystem::<Fr>::default();
     let params = SuperCircuitParams {
         max_txs: 1,
+        max_withdrawals: 5,
         max_calldata: 32,
         mock_randomness: Fr::from(0x100),
     };
@@ -130,6 +131,7 @@ fn serial_test_super_circuit_1tx_1max_tx() {
     let block = block_1tx();
     let circuits_params = FixedCParams {
         max_txs: 1,
+        max_withdrawals: 5,
         max_calldata: 32,
         max_rws: 256,
         max_copy_rows: 256,
@@ -146,6 +148,7 @@ fn serial_test_super_circuit_1tx_2max_tx() {
     let block = block_1tx();
     let circuits_params = FixedCParams {
         max_txs: 2,
+        max_withdrawals: 5,
         max_calldata: 32,
         max_rws: 256,
         max_copy_rows: 256,
@@ -162,6 +165,7 @@ fn serial_test_super_circuit_2tx_2max_tx() {
     let block = block_2tx();
     let circuits_params = FixedCParams {
         max_txs: 2,
+        max_withdrawals: 5,
         max_calldata: 32,
         max_rws: 256,
         max_copy_rows: 256,

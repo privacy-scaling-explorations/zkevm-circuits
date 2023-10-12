@@ -4682,6 +4682,7 @@ dependencies = [
  "snark-verifier",
  "strum",
  "strum_macros",
+ "thiserror",
 ]
 
 [[package]]
