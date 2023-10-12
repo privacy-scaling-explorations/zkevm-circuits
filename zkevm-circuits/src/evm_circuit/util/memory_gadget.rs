@@ -719,19 +719,20 @@ mod test {
                 .clone()
                 .iter()
                 .map(|e| e.expr())
-                .collect();
-            let buffer_reader_gadget_bytet_expr: Vec<Expression<F>> = buffer_reader_gadget.bytes
+                .collect::<Vec<Expression<F>>>();
+            let buffer_reader_gadget_bytes_expr = buffer_reader_gadget.bytes
                 .clone()
                 .iter()
                 .map(|e| e.expr())
-                .collect();
-            // let byte_expr = from_bytes::expr(&bytes);
-            /* let byte_expr_lo = from_bytes::expr(&bytes[0..16]);
-            let byte_expr_hi = from_bytes::expr(&bytes[16..32]);
-            require!(config.word => [lo, hi]); */
+                .collect::<Vec<Expression<F>>>();
+            let buffer_reader_gadget_seletor_expr = buffer_reader_gadget.selectors
+                .clone()
+                .iter()
+                .map(|e| e.expr())
+                .collect::<Vec<Expression<F>>>();
 
             // test byte API
-            for (byte_expr, buffer_reader_gadget_byte_expr) in bytes_expr.iter().zip(buffer_reader_gadget_bytet_expr.iter()) {
+            for (byte_expr, buffer_reader_gadget_byte_expr) in bytes_expr.iter().zip(buffer_reader_gadget_bytes_expr.iter()) {
                 cb.require_equal(
                     "bytes equal",
                     byte_expr.expr(),
@@ -740,7 +741,13 @@ mod test {
             }
 
             // test read_flag API
-            // TODO
+            println!("{}", buffer_reader_gadget_bytes_expr.len());
+            // println!("{}", addr_end - addr_start);
+            cb.require_equal(
+                "length equal",
+                buffer_reader_gadget_bytes_expr.len().expr(),
+                (addr_end.expr() - addr_start.expr()),
+            );
 
             // cb.require_equal("bytes equal", byte_expr, buffer_reader_gadget_byte_expr);
 
@@ -757,11 +764,11 @@ mod test {
             witnesses: &[Word],
             region: &mut CachedRegion<'_, '_, F>,
         ) -> Result<(), Error> {
-            let offset = witnesses[0].to_scalar().unwrap();
-            let addr_start= u64::from_le_bytes(witnesses[1].to_le_bytes()[..8].try_into().unwrap());
-            let addr_end= u64::from_le_bytes(witnesses[2].to_le_bytes()[..8].try_into().unwrap()); // TODO why not u64 from?
+            let offset = 0;
+            let addr_start= u64::from_le_bytes(witnesses[0].to_le_bytes()[..8].try_into().unwrap());
+            let addr_end= u64::from_le_bytes(witnesses[1].to_le_bytes()[..8].try_into().unwrap()); // TODO why not u64 from?
             let mut input_bytes: Vec<u8> = Vec::new();
-            input_bytes.extend_from_slice(&witnesses[3].to_le_bytes());
+            input_bytes.extend_from_slice(&witnesses[2].to_le_bytes());
             self.addr_start.assign(region, offset, Some(addr_start.to_le_bytes()))?; // TODO or Value::known(addr_end)?? 
             self.addr_end.assign(region, offset, Some(addr_end.to_le_bytes()))?; // TODO or Value::known(addr_end)??
             self.bytes
@@ -786,7 +793,6 @@ mod test {
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 32, 10>, // TODO how to configure last parameter
             vec![
-                Word::from(0),
                 Word::from(0), 
                 Word::from(2), 
                 Word::from(256),
@@ -798,7 +804,6 @@ mod test {
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 32, 10>, // TODO how to configure last parameter
             vec![
-                Word::from(0),
                 Word::from(0), 
                 Word::from(31), // TODO or 32?
                 Word::from(255),
@@ -815,7 +820,6 @@ mod test {
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 32, 10>, // TODO how to configure last parameter
             vec![
-                Word::from(0),
                 Word::from(7), // TODO ? 
                 Word::from(8), 
                 Word::from(1024),
@@ -827,7 +831,6 @@ mod test {
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 32, 10>, // TODO how to configure last parameter
             vec![
-                Word::from(0),
                 Word::from(2), 
                 Word::from(1), 
                 Word::from(1),
@@ -839,7 +842,6 @@ mod test {
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 32, 10>, // TODO how to configure last parameter
             vec![
-                Word::from(0),
                 Word::from(1), 
                 Word::from(1), 
                 Word::from(1),
