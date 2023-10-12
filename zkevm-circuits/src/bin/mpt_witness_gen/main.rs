@@ -52,7 +52,7 @@ fn generate_delete() {
     let state_db = StateDB::new();
 
     let nodes = prepare_witness(vec![trie_mod], state_db);
-    println!("nodes {:?}", nodes);
+    println!("nodes {}", serde_json::to_string_pretty(&nodes).unwrap());
     // dump nodes to file
 }
 
