@@ -6,7 +6,6 @@ members = [
     "keccak256",
     "gadgets",
     "integration-tests",
-    "circuit-benchmarks",
     "eth-types",
     "external-tracer",
     "mock",
@@ -14,7 +13,7 @@ members = [
 ]
 
 [patch.crates-io]
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_04_20" }
+halo2_proofs = { git = "https://github.com/taikoxyz/halo2.git", tag = "v0.0.1"}
 
 # Definition of benchmarks profile to use.
 [profile.bench]

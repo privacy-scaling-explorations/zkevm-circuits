@@ -6,9 +6,9 @@ authors = ["The appliedzkp team"]
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", features = [
+halo2_proofs = { git = "https://github.com/taikoxyz/halo2.git", features = [
   "circuit-params",
-], tag = "v2023_04_20" }
+], tag = "v0.0.1" }
 eth-types = { path = "../eth-types" }
 external-tracer = { path = "../external-tracer" }
 lazy_static = "1.4"
