@@ -106,8 +106,44 @@ async fn get_account_proof() {
     println!("proof {:?}", proof);
 }
 
+fn prepare_account_leaf_node() -> Node2 {
+    // mpt-witness-generator/witness/leaf.go
+    Node2::Account {
+        node: todo!(),
+        values: todo!(),
+        keccak_data: todo!(),
+    }
+}
+
+fn prepare_storage_leaf_node() -> Node2 {
+    // mpt-witness-generator/witness/leaf.go
+    Node2::Storage {
+        node: todo!(),
+        values: todo!(),
+        keccak_data: todo!(),
+    }
+}
+
+fn prepare_branch_node() -> Node2 {
+    // mpt-witness-generator/witness/branch.go
+    Node2::ExtensionBranch {
+        node: todo!(),
+        values: todo!(),
+        keccak_data: todo!(),
+    }
+}
+
 fn prepare_extensions() {
-    // Rlp::new(bytes)
+    // Return numberOfNibbles, listRlpBytes, values
+}
+
+fn add_branch_and_placeholder() -> Node2 {
+    // mpt-witness-generator/witness/branch.go
+    Node2::ExtensionBranch {
+        node: todo!(),
+        values: todo!(),
+        keccak_data: todo!(),
+    }
 }
 
 fn convert_proof_to_witness() -> Vec<Node2> {
