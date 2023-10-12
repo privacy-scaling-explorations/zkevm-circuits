@@ -67,12 +67,12 @@ mod stackonlyop_tests {
         bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
-        word, Bytecode, Word,
+        word, Bytecode, Hash, ToWord, Word,
     };
     use itertools::Itertools;
     use mock::{
         test_ctx::{helpers::*, TestContext},
-        MOCK_BASEFEE, MOCK_DIFFICULTY, MOCK_GASLIMIT,
+        MOCK_BASEFEE, MOCK_DIFFICULTY, MOCK_GASLIMIT, MOCK_MIX_HASH,
     };
     use pretty_assertions::assert_eq;
     use std::ops::{BitOr, BitXor};
@@ -83,12 +83,28 @@ mod stackonlyop_tests {
         pops: Vec<StackOp>,
         pushes: Vec<StackOp>,
     ) {
+        stack_only_opcode_impl_ext::<N_POP, N_PUSH>(opcode, code, pops, pushes, None);
+    }
+
+    fn stack_only_opcode_impl_ext<const N_POP: usize, const N_PUSH: usize>(
+        opcode: OpcodeId,
+        code: Bytecode,
+        pops: Vec<StackOp>,
+        pushes: Vec<StackOp>,
+        mix_hash: Option<Hash>,
+    ) {
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<2, 1>::new(
             None,
             account_0_code_account_1_no_code(code),
             tx_from_1_to_0,
-            |block, _tx| block.number(0xcafeu64),
+            |block, _tx| {
+                if let Some(mix_hash) = mix_hash {
+                    block.difficulty(Word::zero());
+                    block.mix_hash(mix_hash);
+                }
+                block.number(0xcafeu64)
+            },
         )
         .unwrap()
         .into();
@@ -389,6 +405,20 @@ mod stackonlyop_tests {
             },
             vec![],
             vec![StackOp::new(1, StackAddress(1023), *MOCK_DIFFICULTY)],
+        );
+    }
+
+    #[test]
+    fn prevrandao_opcode_impl() {
+        stack_only_opcode_impl_ext::<0, 1>(
+            OpcodeId::DIFFICULTY,
+            bytecode! {
+                DIFFICULTY
+                STOP
+            },
+            vec![],
+            vec![StackOp::new(1, StackAddress(1023), MOCK_MIX_HASH.to_word())],
+            Some(*MOCK_MIX_HASH),
         );
     }
 

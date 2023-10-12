@@ -18,6 +18,7 @@ async fn test_circuit_input_builder_block(block_num: u64) {
         FixedCParams {
             max_rws: 16384,
             max_txs: 1,
+            max_withdrawals: 1,
             max_calldata: 4000,
             max_bytecode: 4000,
             max_copy_rows: 16384,

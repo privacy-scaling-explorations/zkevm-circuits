@@ -50,6 +50,8 @@ const TEST_MOCK_RANDOMNESS: u64 = 0x100;
 
 /// MAX_TXS
 const MAX_TXS: usize = 4;
+/// MAX_WITHDRAWALS
+const MAX_WITHDRAWALS: usize = 4;
 /// MAX_CALLDATA
 const MAX_CALLDATA: usize = 512;
 /// MAX_RWS
@@ -68,6 +70,7 @@ const MAX_KECCAK_ROWS: usize = 38000;
 const CIRCUITS_PARAMS: FixedCParams = FixedCParams {
     max_rws: MAX_RWS,
     max_txs: MAX_TXS,
+    max_withdrawals: MAX_WITHDRAWALS,
     max_calldata: MAX_CALLDATA,
     max_bytecode: MAX_BYTECODE,
     max_copy_rows: MAX_COPY_ROWS,
