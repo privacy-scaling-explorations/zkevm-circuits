@@ -171,13 +171,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         }
 
         let (initialization_code, code_hash) = if length > 0 {
-            handle_copy(
-                state,
-                &mut exec_step,
-                state.caller()?.call_id,
-                offset,
-                length,
-            )?
+            handle_copy(state, &mut exec_step, state.call()?.call_id, offset, length)?
         } else {
             (vec![], CodeDB::empty_code_hash())
         };

@@ -209,8 +209,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 // empty_code_hash_word))` to represent `(callee_nonce == 0 && (prev_code_hash_word
                 // == 0 or prev_code_hash_word == empty_code_hash_word))`
                 let prev_code_hash_word = prev_code_hash.to_word();
-                let prev_code_hash_is_zero =
-                    IsZeroWordGadget::construct(cb, &prev_code_hash_word.clone());
+                let prev_code_hash_is_zero = IsZeroWordGadget::construct(cb, &prev_code_hash_word);
                 cb.condition(not::expr(prev_code_hash_is_zero.expr()), |cb| {
                     cb.account_read(
                         contract_addr.to_word(),
