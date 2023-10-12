@@ -3,13 +3,12 @@ use eth_types::{address, Address, Word, H256, U256};
 use ethers_core::utils::rlp::Rlp;
 use ethers_providers::Http;
 use itertools::Itertools;
-use std::iter;
+use std::{iter, str::FromStr};
 use url::Url;
 use zkevm_circuits::{
     mpt_circuit::witness_row::{Node2, StartNode},
     table::MPTProofType,
 };
-use std::str::FromStr;
 
 #[derive(Debug, Default, Clone)]
 struct TrieModification {
@@ -100,7 +99,10 @@ async fn get_account_proof() {
     let account = Address::from_str("0xccc9f924222776534d9bec025ef6231d8ae4d11a").unwrap();
     let keys = vec![Word::zero()];
     let block_num = 1;
-    let proof = client.get_proof(account, keys, block_num.into()).await.unwrap();
+    let proof = client
+        .get_proof(account, keys, block_num.into())
+        .await
+        .unwrap();
     println!("proof {:?}", proof);
 }
 
@@ -170,9 +172,7 @@ fn end_node() -> Node2 {
     }
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     println!("mpt testing case gen");
-    // generate_delete()
-    let future = get_account_proof();
+    generate_delete()
 }
