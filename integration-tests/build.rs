@@ -1,12 +1,15 @@
 use ethers::{
     abi::Contract,
     core::types::Bytes,
-    solc::{CompilerInput, CompilerOutput, EvmVersion, Solc},
+    solc::{
+        artifacts::{CompactContractRef, Error as SolcArtifactError},
+        CompilerInput, CompilerOutput, EvmVersion, Solc,
+    },
 };
 use ethers_contract_abigen::Abigen;
-use log::info;
 use serde::{Deserialize, Serialize};
 use std::{fs::File, path::Path};
+use thiserror::Error;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CompiledContract {
@@ -20,6 +23,55 @@ pub struct CompiledContract {
     pub bin: Bytes,
     /// Runtime Bytecode
     pub bin_runtime: Bytes,
+}
+
+#[derive(Error, Debug)]
+enum BuildError {
+    /// Failed to detect solidity compiler or compiler version.
+    #[error("FailedToGetSolidity({0:})")]
+    FailedToGetSolidity(String),
+    /// Failed to create CompilerInput artifact for given contract  
+    #[error("FailedToComposeCompilerInputs(path: {path:}, {reason:}))")]
+    FailedToComposeCompilerInputs { path: String, reason: String },
+    /// Errors or non-ignored warnings exist in the CompilerOutpu struct
+    #[error("CompilerOutputContainsErrors(path: {path:}, errors: {errors:#?})")]
+    CompilerOutputContainsErrors {
+        path: String,
+        errors: Vec<SolcArtifactError>,
+    },
+    /// Vec<CompilerInput> is empty
+    #[error("ArtifactError({0:})")]
+    ArtifactError(String),
+    /// Functon compile_output failed to encode CompilerInput to Vec<u8>
+    #[error("CompileOutputFailure({0:})")]
+    CompileOutputFailure(String),
+    /// Could not convert Vec<u8> to CompilerOutput
+    #[error("CompilerOutputDeSerError({0:})")]
+    CompilerOutputDeSerError(String),
+    /// Failed loading Abi from CompactContractRef
+    #[error("ErrorLoadingContractAbi({0:})")]
+    ErrorLoadingContractAbi(String),
+    /// Failed loading Bin from CompactContractRef
+    #[error("ErrorLoadingContractBin({0:})")]
+    ErrorLoadingContractBin(String),
+    /// Failed loading BinRuntime from CompactContractRef
+    #[error("ErrorLoadingContractBinRuntime({0:})")]
+    ErrorLoadingContractBinRuntime(String),
+    /// Failed to convert PathBuff to String
+    #[error("StringConversionError({0:})")]
+    StringConversionError(String),
+    /// Failed to create CompactContractRef from path + name
+    #[error("FailedToLoadCompactContractRef({0:})")]
+    FailedToLoadCompactContractRef(String),
+    /// Failed Bytecode to Bytes conversion
+    #[error("ByteCodeToBytesError({0:})")]
+    ByteCodeToBytesError(String),
+    /// Error serializing json to file
+    #[error("JsonSerializatonError({0:})")]
+    JsonSerializatonError(String),
+    /// Errors from Abigen
+    #[error("GenerateContractBindingsError({0:})")]
+    GenerateContractBindingsError(String),
 }
 
 /// Path to the test contracts
@@ -45,63 +97,101 @@ const CONTRACTS: &[(&str, &str)] = &[
 /// Target directory for rust contract bingings
 const BINDINGS_DR: &str = "src";
 
-fn main() {
+fn main() -> Result<(), BuildError> {
     println!("cargo:rerun-if-changed=build.rs");
 
     let solc: Solc = Solc::default();
-    let _solc_version = solc.version().expect("Version Works");
+    let _solc_version = solc
+        .version()
+        .map_err(|err| BuildError::FailedToGetSolidity(err.to_string()))?;
 
     for (name, contract_path) in CONTRACTS {
         let path_sol = Path::new(CONTRACTS_PATH).join(contract_path);
-        let inputs = CompilerInput::new(&path_sol).expect("CompilerInput Created");
-        // ethers-solc: explicitly indicate the EvmVersion that corresponds to the zkevm circuit's
-        // supported Upgrade, e.g. `London/Shanghai/...` specifications.
-        let input: CompilerInput = inputs
-            .clone()
-            .first_mut()
-            .expect("first exists")
-            .clone()
+        let input = CompilerInput::new(&path_sol)
+            .map_err(|err| BuildError::FailedToComposeCompilerInputs {
+                path: path_sol.to_string_lossy().to_string(),
+                reason: err.to_string(),
+            })?
+            .pop()
+            .ok_or_else(|| BuildError::ArtifactError("No Artifact Found".to_string()))?
+            // ethers-solc: explicitly indicate the EvmVersion that corresponds to the zkevm
+            // circuit's supported Upgrade, e.g. `London/Shanghai/...` specifications.
             .evm_version(EvmVersion::London);
 
         // compilation will either fail with Err variant or return Ok(CompilerOutput)
         // which may contain Errors or Warnings
-        let output: Vec<u8> = solc.compile_output(&input).unwrap();
+        let output: Vec<u8> = solc
+            .compile_output(&input)
+            .map_err(|err| BuildError::CompileOutputFailure(err.to_string()))?;
         let mut deserializer: serde_json::Deserializer<serde_json::de::SliceRead<'_>> =
             serde_json::Deserializer::from_slice(&output);
         // The contracts to test the worst-case usage of certain opcodes, such as SDIV, MLOAD, and
         // EXTCODESIZE, generate big JSON compilation outputs. We disable the recursion limit to
         // avoid parsing failure.
         deserializer.disable_recursion_limit();
-        let compiled = match CompilerOutput::deserialize(&mut deserializer) {
-            Err(error) => {
-                panic!("COMPILATION ERROR {:?}\n{:?}", &path_sol, error);
-            }
-            // CompilationOutput is succesfully created (might contain Errors or Warnings)
-            Ok(output) => {
-                info!("COMPILATION OK: {:?}", name);
-                output
-            }
-        };
 
-        if compiled.has_error() || compiled.has_warning(WARN) {
-            panic!(
-                "... but CompilerOutput contains errors/warnings: {:?}:\n{:#?}",
-                &path_sol, compiled.errors
-            );
-        }
+        let p = path_sol.to_str().ok_or_else(|| {
+            BuildError::StringConversionError(
+                "Failed to convert provided path to string".to_string(),
+            )
+        })?;
 
-        let contract = compiled
-            .get(path_sol.to_str().expect("path is not a string"), name)
-            .expect("contract not found");
-        let abi = contract.abi.expect("no abi found").clone();
-        let bin = contract.bin.expect("no bin found").clone();
-        let bin_runtime = contract.bin_runtime.expect("no bin_runtime found").clone();
+        let compiled = CompilerOutput::deserialize(&mut deserializer)
+            .map_err(|err| BuildError::CompilerOutputDeSerError(err.to_string()))?;
+        let compiled_binding = compiled.clone();
+
+        let error_free = !{ compiled.has_error() || compiled.has_warning(WARN) };
+
+        let _ = error_free.then_some(|| ()).ok_or_else(|| {
+            BuildError::CompilerOutputContainsErrors {
+                path: p.to_string(),
+                errors: compiled.errors,
+            }
+        })?;
+
+        let contract: CompactContractRef = compiled_binding.get(p, name).ok_or_else(|| {
+            BuildError::FailedToLoadCompactContractRef("FailedToLoadCompactContractRef".to_string())
+        })?;
+
+        let abi = contract
+            .abi
+            .ok_or_else(|| {
+                BuildError::ErrorLoadingContractAbi("Failed to get contract Abi".to_string())
+            })?
+            .clone();
+
+        let bin = contract
+            .bin
+            .ok_or_else(|| {
+                BuildError::ErrorLoadingContractBin("Failed to get contract Bin".to_string())
+            })?
+            .clone()
+            .into_bytes()
+            .ok_or_else(|| {
+                BuildError::ByteCodeToBytesError("Could not convert bin to bytes".to_string())
+            })?;
+
+        let bin_runtime = contract
+            .bin_runtime
+            .ok_or_else(|| {
+                BuildError::ErrorLoadingContractBinRuntime(
+                    "Failed to get contract bin-runtime".to_string(),
+                )
+            })?
+            .clone()
+            .into_bytes()
+            .ok_or_else(|| {
+                BuildError::ByteCodeToBytesError(
+                    "Could not convert bin-runtime to bytes".to_string(),
+                )
+            })?;
+
         let compiled_contract = CompiledContract {
-            path: path_sol.to_str().expect("path is not str").to_string(),
+            path: p.to_string(),
             name: name.to_string(),
             abi,
-            bin: bin.into_bytes().expect("bin"),
-            bin_runtime: bin_runtime.into_bytes().expect("bin_runtime"),
+            bin,
+            bin_runtime,
         };
 
         // Save CompiledContract object to json files in "contracts" folder
@@ -111,20 +201,21 @@ fn main() {
             &File::create(&path_json).expect("cannot create file"),
             &compiled_contract,
         )
-        .expect("cannot serialize json into file");
+        .map_err(|err| BuildError::JsonSerializatonError(err.to_string()))?;
     }
     // Generate contract binding for compiled contracts
     for entry in glob::glob("./contracts/*.json").unwrap() {
         match entry {
             Ok(path) => {
-                generate_rust_contract_bindings(BINDINGS_DR, &path);
+                let _ = generate_rust_contract_bindings(BINDINGS_DR, &path);
             }
             Err(e) => eprintln!("{:#?}", e),
         }
     }
+    Ok(())
 }
 
-fn generate_rust_contract_bindings(bindings_dir: &str, file: &Path) {
+fn generate_rust_contract_bindings(bindings_dir: &str, file: &Path) -> Result<(), BuildError> {
     const SLASH: char = '/';
     const DOT: char = '.';
 
@@ -143,10 +234,14 @@ fn generate_rust_contract_bindings(bindings_dir: &str, file: &Path) {
     let destpath = Path::new(&bindings_dir).join(destpath);
     let _ = Abigen::new(
         contractname,
-        abi_source.into_os_string().into_string().expect("error"),
+        abi_source
+            .into_os_string()
+            .into_string()
+            .expect("FAILED CONVERSION TO STRING"),
     )
-    .expect("error")
+    .map_err(|err| BuildError::GenerateContractBindingsError(err.to_string()))?
     .generate()
-    .expect("error")
+    .map_err(|err| BuildError::GenerateContractBindingsError(err.to_string()))?
     .write_to_file(destpath);
+    Ok(())
 }
