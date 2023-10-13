@@ -4,17 +4,21 @@ use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, FixedCParams},
     mock::BlockData,
 };
-use eth_types::{geth_types, Address, Bytes, GethExecTrace, U256, U64};
+use eth_types::{geth_types, Address, Bytes, Error, GethExecTrace, U256, U64};
 use ethers_core::{
     k256::ecdsa::SigningKey,
-    types::{transaction::eip2718::TypedTransaction, TransactionRequest},
+    types::{transaction::eip2718::TypedTransaction, TransactionRequest, Withdrawal},
 };
 use ethers_signers::{LocalWallet, Signer};
 use external_tracer::TraceConfig;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
-use zkevm_circuits::{super_circuit::SuperCircuit, test_util::CircuitTestBuilder, witness::Block};
+use zkevm_circuits::{
+    super_circuit::SuperCircuit,
+    test_util::{CircuitTestBuilder, CircuitTestError},
+    witness::Block,
+};
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
@@ -32,25 +36,44 @@ pub enum StateTestError {
         expected: U256,
         found: U256,
     },
+    #[error("CircuitUnsatisfied(num_failure: {num_failure:?}  first: {first_failure:?}")]
+    CircuitUnsatisfied {
+        num_failure: usize,
+        first_failure: String,
+    },
     #[error("SkipTestMaxGasLimit({0})")]
     SkipTestMaxGasLimit(u64),
     #[error("SkipTestMaxSteps({0})")]
     SkipTestMaxSteps(usize),
+    #[error("SkipTestSelfDestruct")]
+    SkipTestSelfDestruct,
+    #[error("SkipTestDifficulty")]
+    SkipTestDifficulty,
+    #[error("SkipTestBalanceOverflow")]
+    SkipTestBalanceOverflow,
     #[error("Exception(expected:{expected:?}, found:{found:?})")]
     Exception { expected: bool, found: String },
 }
 
 impl StateTestError {
     pub fn is_skip(&self) -> bool {
+        // Avoid lint `variant is never constructed`
+        // We plan to add runtime-feature set in the future to include these skipping options
+        let _ = StateTestError::SkipTestDifficulty;
+        let _ = StateTestError::SkipTestBalanceOverflow;
+
         matches!(
             self,
-            StateTestError::SkipTestMaxSteps(_) | StateTestError::SkipTestMaxGasLimit(_)
+            StateTestError::SkipTestMaxSteps(_)
+                | StateTestError::SkipTestMaxGasLimit(_)
+                | StateTestError::SkipTestSelfDestruct
         )
     }
 }
 
 #[derive(Default, Debug, Clone)]
 pub struct CircuitsConfig {
+    pub verbose: bool,
     pub super_circuit: bool,
 }
 
@@ -58,11 +81,13 @@ fn check_post(
     builder: &CircuitInputBuilder<FixedCParams>,
     post: &HashMap<Address, AccountMatch>,
 ) -> Result<(), StateTestError> {
+    log::trace!("check post");
     // check if the generated account data is the expected one
     for (address, expected) in post {
         let (_, actual) = builder.sdb.get_account(address);
 
         if expected.balance.map(|v| v == actual.balance) == Some(false) {
+            log::error!("balance mismatch, expected {expected:?} actual {actual:?}");
             return Err(StateTestError::BalanceMismatch {
                 expected: expected.balance.unwrap(),
                 found: actual.balance,
@@ -70,6 +95,7 @@ fn check_post(
         }
 
         if expected.nonce.map(|v| v == actual.nonce) == Some(false) {
+            log::error!("nonce mismatch, expected {expected:?} actual {actual:?}");
             return Err(StateTestError::NonceMismatch {
                 expected: expected.nonce.unwrap(),
                 found: actual.nonce,
@@ -96,6 +122,9 @@ fn check_post(
         for (slot, expected_value) in &expected.storage {
             let actual_value = actual.storage.get(slot).cloned().unwrap_or_else(U256::zero);
             if expected_value != &actual_value {
+                log::error!(
+                    "StorageMismatch address {address:?}, expected {expected:?} actual {actual:?}"
+                );
                 return Err(StateTestError::StorageMismatch {
                     slot: *slot,
                     expected: *expected_value,
@@ -104,6 +133,7 @@ fn check_post(
             }
         }
     }
+    log::trace!("check post done");
     Ok(())
 }
 
@@ -137,7 +167,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 number: U64::from(st.env.current_number),
                 difficulty: st.env.current_difficulty,
                 gas_limit: U256::from(st.env.current_gas_limit),
-                base_fee: U256::one(),
+                base_fee: st.env.current_base_fee,
             },
 
             transactions: vec![geth_types::Transaction {
@@ -155,7 +185,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 r: sig.r,
                 s: sig.s,
             }],
-            accounts: st.pre,
+            accounts: st.pre.into_iter().collect(),
             ..Default::default()
         },
         st.result,
@@ -169,6 +199,37 @@ pub fn geth_trace(st: StateTest) -> Result<GethExecTrace, StateTestError> {
         .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
     Ok(geth_traces.remove(0))
+}
+
+fn check_geth_traces(
+    geth_traces: &[GethExecTrace],
+    suite: &TestSuite,
+    verbose: bool,
+) -> Result<(), StateTestError> {
+    if geth_traces.iter().any(|gt| {
+        gt.struct_logs.iter().any(|sl| {
+            sl.op == eth_types::evm_types::OpcodeId::SELFDESTRUCT
+                || sl.op == eth_types::evm_types::OpcodeId::INVALID(0xff)
+        })
+    }) {
+        return Err(StateTestError::SkipTestSelfDestruct);
+    }
+
+    if geth_traces[0].struct_logs.len() as u64 > suite.max_steps {
+        return Err(StateTestError::SkipTestMaxSteps(
+            geth_traces[0].struct_logs.len(),
+        ));
+    }
+
+    if suite.max_gas > 0 && geth_traces[0].gas > suite.max_gas {
+        return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas));
+    }
+    if verbose {
+        if let Err(e) = crate::utils::print_trace(geth_traces[0].clone()) {
+            log::error!("fail to pretty print trace {e:?}");
+        }
+    }
+    Ok(())
 }
 
 pub fn run_test(
@@ -192,22 +253,22 @@ pub fn run_test(
         }
         (Err(_), true) => return Ok(()),
         (Err(err), false) => {
+            if let Error::TracingError(ref err) = err {
+                if err.contains("max initcode size exceeded") {
+                    return Err(StateTestError::Exception {
+                        expected: true,
+                        found: err.to_string(),
+                    });
+                }
+            }
             return Err(StateTestError::Exception {
                 expected: false,
                 found: err.to_string(),
-            })
+            });
         }
     };
 
-    if geth_traces[0].struct_logs.len() as u64 > suite.max_steps {
-        return Err(StateTestError::SkipTestMaxSteps(
-            geth_traces[0].struct_logs.len(),
-        ));
-    }
-
-    if suite.max_gas > 0 && geth_traces[0].gas > suite.max_gas {
-        return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas));
-    }
+    check_geth_traces(&geth_traces, &suite, circuits_config.verbose)?;
 
     let transactions = trace_config
         .transactions
@@ -222,6 +283,19 @@ pub fn run_test(
         })
         .collect();
 
+    let withdrawals = trace_config
+        .withdrawals
+        .into_iter()
+        .map(|wd| {
+            Some(Withdrawal {
+                index: wd.id.into(),
+                validator_index: wd.validator_id.into(),
+                address: wd.address,
+                amount: wd.amount.into(),
+            })
+        })
+        .collect();
+
     let eth_block = eth_types::Block {
         author: Some(trace_config.block_constants.coinbase),
         timestamp: trace_config.block_constants.timestamp,
@@ -229,6 +303,7 @@ pub fn run_test(
         difficulty: trace_config.block_constants.difficulty,
         gas_limit: trace_config.block_constants.gas_limit,
         base_fee_per_gas: Some(trace_config.block_constants.base_fee),
+        withdrawals,
         transactions,
         ..eth_types::Block::default()
     };
@@ -254,6 +329,7 @@ pub fn run_test(
     if !circuits_config.super_circuit {
         let circuits_params = FixedCParams {
             max_txs: 1,
+            max_withdrawals: 1,
             max_rws: 55000,
             max_calldata: 5000,
             max_bytecode: 5000,
@@ -272,12 +348,26 @@ pub fn run_test(
         let block: Block<Fr> =
             zkevm_circuits::evm_circuit::witness::block_convert(&builder).unwrap();
 
-        CircuitTestBuilder::<1, 1>::new_from_block(block).run();
+        CircuitTestBuilder::<1, 1>::new_from_block(block)
+            .run_with_result()
+            .map_err(|err| match err {
+                CircuitTestError::VerificationFailed { reasons, .. } => {
+                    StateTestError::CircuitUnsatisfied {
+                        num_failure: reasons.len(),
+                        first_failure: reasons[0].to_string(),
+                    }
+                }
+                err => StateTestError::Exception {
+                    expected: false,
+                    found: err.to_string(),
+                },
+            })?;
     } else {
         geth_data.sign(&wallets);
 
         let circuits_params = FixedCParams {
             max_txs: 1,
+            max_withdrawals: 1,
             max_calldata: 32,
             max_rws: 256,
             max_copy_rows: 256,
@@ -291,9 +381,13 @@ pub fn run_test(
         builder = _builder;
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();
-        prover.assert_satisfied_par();
+        prover
+            .verify_par()
+            .map_err(|err| StateTestError::CircuitUnsatisfied {
+                num_failure: err.len(),
+                first_failure: err[0].to_string(),
+            })?;
     };
-
     check_post(&builder, &post)?;
 
     Ok(())

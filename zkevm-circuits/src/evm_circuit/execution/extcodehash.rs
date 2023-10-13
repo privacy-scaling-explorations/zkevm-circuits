@@ -122,7 +122,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let code_hash = block.get_rws(step, 5).account_value_pair().0;
+        let code_hash = block.get_rws(step, 5).account_codehash_pair().0;
         self.code_hash.assign_u256(region, offset, code_hash)?;
 
         Ok(())
@@ -136,7 +136,7 @@ mod test {
         address, bytecode, geth_types::Account, Address, Bytecode, Bytes, ToWord, Word, U256, U64,
     };
     use lazy_static::lazy_static;
-    use mock::TestContext;
+    use mock::{eth, TestContext};
 
     lazy_static! {
         static ref EXTERNAL_ADDRESS: Address =
@@ -262,5 +262,29 @@ mod test {
         ] {
             test_ok(Some(account), false);
         }
+    }
+
+    #[test]
+    // Regression test to ensure that the code hash for an account that is is being initialized is
+    // the empty code hash.
+    fn create_tx_extcodehash() {
+        let code = bytecode! {
+            ADDRESS
+            EXTCODEHASH
+        };
+
+        let ctx = TestContext::<1, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(Address::repeat_byte(23)).balance(eth(10));
+            },
+            |mut txs, accs| {
+                txs[0].from(accs[0].address).input(code.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run()
     }
 }

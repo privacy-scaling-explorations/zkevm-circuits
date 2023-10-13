@@ -28,7 +28,10 @@ use crate::{
     },
 };
 use bus_mapping::state_db::CodeDB;
-use eth_types::{evm_types::GasCost, keccak256, Field, ToWord, U256};
+use eth_types::{
+    evm_types::{GasCost, PRECOMPILE_COUNT},
+    keccak256, Field, ToWord, U256,
+};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -170,6 +173,17 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let gas_left = tx_gas.expr() - intrinsic_gas_cost;
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
 
+        // Add precompile contract address to access list
+        for addr in 1..=PRECOMPILE_COUNT {
+            cb.account_access_list_write_unchecked(
+                tx_id.expr(),
+                Word::new([addr.expr(), 0.expr()]),
+                1.expr(),
+                0.expr(),
+                None,
+            );
+        } // rwc_delta += PRECOMPILE_COUNT
+
         // Prepare access list of caller and callee
         cb.account_access_list_write_unchecked(
             tx_id.expr(),
@@ -216,13 +230,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let no_callee_code = is_empty_code_hash.expr() + callee_not_exists.expr();
 
         // TODO: And not precompile
-        cb.condition(not::expr(tx_is_create.expr()), |cb| {
-            cb.account_read(
-                tx_callee_address.to_word(),
-                AccountFieldTag::CodeHash,
-                code_hash.to_word(),
-            ); // rwc_delta += 1
-        });
+        // i think this needs to be removed....
+
+        cb.account_read(
+            tx_callee_address.to_word(),
+            AccountFieldTag::CodeHash,
+            code_hash.to_word(),
+        );
 
         // Transfer value from caller to callee, creating account if necessary.
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
@@ -320,6 +334,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsPersistent
                 //   - Write CallContext IsSuccess
                 //   - Write Account (Caller) Nonce
+                //   - Write TxAccessListAccount (Precompile) x PRECOMPILE_COUNT
                 //   - Write TxAccessListAccount (Caller)
                 //   - Write TxAccessListAccount (Callee)
                 //   - Write TxAccessListAccount (Coinbase) for EIP-3651
@@ -338,7 +353,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsRoot
                 //   - Write CallContext IsCreate
                 //   - Write CallContext CodeHash
-                rw_counter: Delta(22.expr() + transfer_with_gas_fee.rw_delta()),
+                rw_counter: Delta(
+                    23.expr() + transfer_with_gas_fee.rw_delta() + PRECOMPILE_COUNT.expr(),
+                ),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
                 is_create: To(tx_is_create.expr()),
@@ -377,12 +394,15 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsPersistent
                     //   - Write CallContext IsSuccess
                     //   - Write Account Nonce
+                    //   - Write TxAccessListAccount (Precompile) x PRECOMPILE_COUNT
                     //   - Write TxAccessListAccount (Caller)
                     //   - Write TxAccessListAccount (Callee)
                     //   - Write TxAccessListAccount (Coinbase) for EIP-3651
                     //   - Read Account CodeHash
                     //   - a TransferWithGasFeeGadget
-                    rw_counter: Delta(9.expr() + transfer_with_gas_fee.rw_delta()),
+                    rw_counter: Delta(
+                        9.expr() + transfer_with_gas_fee.rw_delta() + PRECOMPILE_COUNT.expr(),
+                    ),
                     call_id: To(call_id.expr()),
                     ..StepStateTransition::any()
                 });
@@ -437,6 +457,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsPersistent
                     //   - Write CallContext IsSuccess
                     //   - Write Account Nonce
+                    //   - Write TxAccessListAccount (Precompile) x PRECOMPILE_COUNT
                     //   - Write TxAccessListAccount (Caller)
                     //   - Write TxAccessListAccount (Callee)
                     //   - Write TxAccessListAccount (Coinbase) for EIP-3651
@@ -455,7 +476,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsRoot
                     //   - Write CallContext IsCreate
                     //   - Write CallContext CodeHash
-                    rw_counter: Delta(22.expr() + transfer_with_gas_fee.rw_delta()),
+                    rw_counter: Delta(
+                        22.expr() + transfer_with_gas_fee.rw_delta() + PRECOMPILE_COUNT.expr(),
+                    ),
                     call_id: To(call_id.expr()),
                     is_root: To(true.expr()),
                     is_create: To(tx_is_create.expr()),
@@ -511,23 +534,25 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let mut rws = StepRws::new(block, step);
         rws.offset_add(7);
 
+        rws.offset_add(PRECOMPILE_COUNT as usize);
+
         let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
         let mut callee_code_hash = zero;
-        if !is_precompiled(&tx.to_or_contract_addr()) && !tx.is_create() {
-            callee_code_hash = rws.next().account_value_pair().1;
+        if !is_precompiled(&tx.to_or_contract_addr()) {
+            callee_code_hash = rws.next().account_codehash_pair().1;
         }
-        let callee_exists = is_precompiled(&tx.to_or_contract_addr())
-            || (!tx.is_create() && !callee_code_hash.is_zero());
-        let caller_balance_sub_fee_pair = rws.next().account_value_pair();
+        let callee_exists =
+            is_precompiled(&tx.to_or_contract_addr()) || !callee_code_hash.is_zero();
+        let caller_balance_sub_fee_pair = rws.next().account_balance_pair();
         let must_create = tx.is_create();
-        if (!callee_exists && !tx.value.is_zero()) || must_create {
-            callee_code_hash = rws.next().account_value_pair().1;
+        if !callee_exists && (!tx.value.is_zero() || must_create) {
+            callee_code_hash = rws.next().account_codehash_pair().1;
         }
         let mut caller_balance_sub_value_pair = (zero, zero);
         let mut callee_balance_pair = (zero, zero);
         if !tx.value.is_zero() {
-            caller_balance_sub_value_pair = rws.next().account_value_pair();
-            callee_balance_pair = rws.next().account_value_pair();
+            caller_balance_sub_value_pair = rws.next().account_balance_pair();
+            callee_balance_pair = rws.next().account_balance_pair();
         };
 
         self.tx_id
@@ -634,13 +659,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use std::vec;
-
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{self, bytecode, evm_types::GasCost, word, Bytecode, Word};
-
+    use eth_types::{self, bytecode, evm_types::GasCost, word, Address, Bytecode, Word};
+    use ethers_core::utils::get_contract_address;
     use mock::{eth, gwei, MockTransaction, TestContext, MOCK_ACCOUNTS};
+    use std::vec;
 
     fn gas(call_data: &[u8]) -> Word {
         Word::from(
@@ -919,5 +943,27 @@ mod test {
         begin_tx_deploy(0x0100000000000000u64);
         begin_tx_deploy(0x1020304050607080u64);
         begin_tx_deploy(0xfffffffffffffffeu64);
+    }
+
+    #[test]
+    fn create_tx_for_existing_account() {
+        let address = Address::repeat_byte(23);
+        let nonce = 10;
+        let new_address = get_contract_address(address, nonce + 1);
+
+        let ctx = TestContext::<1, 2>::new(
+            None,
+            |accs| {
+                accs[0].address(address).nonce(nonce).balance(eth(10));
+            },
+            |mut txs, _| {
+                txs[0].from(address).to(new_address).value(eth(2)); // Initialize new_address with some balance and an empty code hash
+                txs[1].from(address); // Run a CREATE tx on new_address
+            },
+            |block, _| block,
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }

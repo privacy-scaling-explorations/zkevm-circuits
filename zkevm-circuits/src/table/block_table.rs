@@ -21,6 +21,8 @@ pub enum BlockContextFieldTag {
     /// Chain ID field.  Although this is not a field in the block header, we
     /// add it here for convenience.
     ChainId,
+    /// Withdrawal Root field
+    WithdrawalRoot,
 }
 impl_expr!(BlockContextFieldTag);
 

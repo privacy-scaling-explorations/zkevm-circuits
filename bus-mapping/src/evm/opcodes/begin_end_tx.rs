@@ -6,7 +6,7 @@ use crate::{
     Error,
 };
 use eth_types::{
-    evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
+    evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED, PRECOMPILE_COUNT},
     evm_unimplemented, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
@@ -57,7 +57,21 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         AccountField::Nonce,
         (nonce_prev + 1).into(),
         nonce_prev.into(),
+        false,
     )?;
+
+    // Add precompile contract address to access list
+    for address in 1..=PRECOMPILE_COUNT {
+        let address = eth_types::Address::from_low_u64_be(address);
+        let is_warm_prev = !state.sdb.add_account_to_access_list(address);
+        state.tx_accesslist_account_write(
+            &mut exec_step,
+            state.tx_ctx.id(),
+            address,
+            true,
+            is_warm_prev,
+        )?;
+    }
 
     // Add caller, callee and coinbase (for EIP-3651) to access list.
     for address in [call.caller_address, call.address, state.block.coinbase] {
@@ -97,7 +111,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     } else {
         (Word::zero(), true)
     };
-    if !state.is_precompiled(&call.address) && !call.is_create() {
+    if !state.is_precompiled(&call.address) {
         state.account_read(
             &mut exec_step,
             call.address,
@@ -270,6 +284,7 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
         AccountField::Balance,
         caller_balance,
         caller_balance_prev,
+        false,
     )?;
 
     let effective_tip = state.tx.gas_price - state.block.base_fee;
@@ -277,10 +292,8 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
     if !found {
         return Err(Error::AccountNotFound(state.block.coinbase));
     }
-    let coinbase_account = coinbase_account.clone();
-    let coinbase_balance_prev = coinbase_account.balance;
+    let coinbase_exist = !coinbase_account.is_empty();
     let coinbase_transfer_value = effective_tip * (state.tx.gas() - exec_step.gas_left);
-    let coinbase_balance = coinbase_balance_prev + coinbase_transfer_value;
     state.account_read(
         &mut exec_step,
         state.block.coinbase,
@@ -291,21 +304,13 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
             coinbase_account.code_hash.to_word()
         },
     );
-    if coinbase_account.is_empty() {
-        state.account_write(
-            &mut exec_step,
-            state.block.coinbase,
-            AccountField::CodeHash,
-            CodeDB::empty_code_hash().to_word(),
-            Word::zero(),
-        )?;
-    }
-    state.account_write(
+    state.transfer_to(
         &mut exec_step,
         state.block.coinbase,
-        AccountField::Balance,
-        coinbase_balance,
-        coinbase_balance_prev,
+        coinbase_exist,
+        false,
+        coinbase_transfer_value,
+        false,
     )?;
 
     // handle tx receipt tag

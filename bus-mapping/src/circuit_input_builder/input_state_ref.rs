@@ -370,9 +370,14 @@ impl<'a> CircuitInputStateRef<'a> {
         field: AccountField,
         value: Word,
         value_prev: Word,
+        reversible: bool,
     ) -> Result<(), Error> {
         let op = AccountOp::new(address, field, value, value_prev);
-        self.push_op(step, RW::WRITE, op);
+        if reversible {
+            self.push_op_reversible(step, op)?;
+        } else {
+            self.push_op(step, RW::WRITE, op);
+        }
         Ok(())
     }
 
@@ -548,7 +553,7 @@ impl<'a> CircuitInputStateRef<'a> {
             sender_balance
         );
         // If receiver doesn't exist, create it
-        if (!receiver_exists && !value.is_zero()) || must_create {
+        if !receiver_exists && (!value.is_zero() || must_create) {
             self.push_op_reversible(
                 step,
                 AccountOp {
@@ -609,6 +614,46 @@ impl<'a> CircuitInputStateRef<'a> {
             value,
             None,
         )
+    }
+
+    /// Transfer to an address. Create an account if it is not existed before.
+    pub fn transfer_to(
+        &mut self,
+        step: &mut ExecStep,
+        receiver: Address,
+        receiver_exists: bool,
+        must_create: bool,
+        value: Word,
+        reversible: bool,
+    ) -> Result<(), Error> {
+        // If receiver doesn't exist, create it
+        if (!receiver_exists && !value.is_zero()) || must_create {
+            self.account_write(
+                step,
+                receiver,
+                AccountField::CodeHash,
+                CodeDB::empty_code_hash().to_word(),
+                Word::zero(),
+                reversible,
+            )?;
+        }
+        if value.is_zero() {
+            // Skip transfer if value == 0
+            return Ok(());
+        }
+        let (_found, receiver_account) = self.sdb.get_account(&receiver);
+        let receiver_balance_prev = receiver_account.balance;
+        let receiver_balance = receiver_account.balance + value;
+        self.account_write(
+            step,
+            receiver,
+            AccountField::Balance,
+            receiver_balance,
+            receiver_balance_prev,
+            reversible,
+        )?;
+
+        Ok(())
     }
 
     /// Fetch and return code for the given code hash from the code DB.
@@ -1149,7 +1194,11 @@ impl<'a> CircuitInputStateRef<'a> {
             } else {
                 0
             };
-            geth_step.gas - memory_expansion_gas_cost - code_deposit_cost
+            let constant_step_gas = match geth_step.op {
+                OpcodeId::SELFDESTRUCT => geth_step.gas_cost,
+                _ => 0, // RETURN/STOP/REVERT have no "constant_step_gas"
+            };
+            geth_step.gas - memory_expansion_gas_cost - code_deposit_cost - constant_step_gas
         };
 
         let caller_gas_left = if is_revert_or_return_call_success || call.is_success {
@@ -1366,7 +1415,10 @@ impl<'a> CircuitInputStateRef<'a> {
         {
             if step.depth == 1025 {
                 return Ok(Some(ExecError::Depth(match step.op {
-                    OpcodeId::CALL | OpcodeId::CALLCODE => DepthError::Call,
+                    OpcodeId::CALL
+                    | OpcodeId::CALLCODE
+                    | OpcodeId::DELEGATECALL
+                    | OpcodeId::STATICCALL => DepthError::Call,
                     OpcodeId::CREATE => DepthError::Create,
                     OpcodeId::CREATE2 => DepthError::Create2,
                     op => {

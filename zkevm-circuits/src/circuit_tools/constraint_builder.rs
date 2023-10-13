@@ -1,6 +1,7 @@
 //! Circuit utilities
 use std::{
     collections::HashMap,
+    marker::PhantomData,
     ops::{Add, Mul},
     vec,
 };
@@ -8,14 +9,11 @@ use std::{
 use crate::{
     evm_circuit::util::rlc,
     table::LookupTable,
-    util::{word::Word, Expr},
+    util::{query_expression, word::Word, Expr},
 };
 use eth_types::Field;
 use gadgets::util::{and, sum, Scalar};
-use halo2_proofs::{
-    plonk::{ConstraintSystem, Expression},
-    poly::Rotation,
-};
+use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Expression};
 use itertools::Itertools;
 
 use super::{
@@ -31,21 +29,94 @@ fn get_condition_expr<F: Field>(conditions: &Vec<Expression<F>>) -> Expression<F
     }
 }
 
-/// Data for dynamic lookup
+/// Table data
 #[derive(Clone, Debug)]
-pub struct DynamicData<F> {
+pub struct TableData<F> {
     /// Desciption
     pub description: &'static str,
     /// Condition under which the lookup needs to be done
-    pub condition: Expression<F>,
+    pub regional_condition: Expression<F>,
+    /// Need to store local condition for dyn table checks
+    pub local_condition: Expression<F>,
     /// The values to lookup
     pub values: Vec<Expression<F>>,
     /// region
     pub region_id: usize,
-    /// If is fixed, use static table for lookup
-    pub is_fixed: bool,
-    /// Use rlc
-    pub compress: bool,
+}
+
+/// Lookup data
+#[derive(Clone, Debug)]
+pub struct LookupData<F> {
+    /// Desciption
+    pub description: String,
+    /// Condition under which the lookup needs to be done
+    pub regional_condition: Expression<F>,
+    /// Need to store local condition for dyn table checks
+    pub local_condition: Expression<F>,
+    /// The values to lookup
+    pub values: Vec<Expression<F>>,
+    /// The values to lookup
+    pub table: Vec<Expression<F>>,
+    /// region
+    pub region_id: usize,
+}
+
+impl<F: Field> TableData<F> {
+    fn condition(&self) -> Expression<F> {
+        self.regional_condition.expr() * self.local_condition.expr()
+    }
+}
+
+impl<F: Field> LookupData<F> {
+    fn condition(&self) -> Expression<F> {
+        self.regional_condition.expr() * self.local_condition.expr()
+    }
+}
+
+struct TableMerger<F, C> {
+    data: Vec<TableData<F>>,
+    _phantom: PhantomData<C>,
+}
+
+impl<F: Field, C: CellType> TableMerger<F, C> {
+    fn merge_check(&self, cb: &mut ConstraintBuilder<F, C>) {
+        let selector = sum::expr(self.data.iter().map(|t| t.condition()));
+        crate::circuit!([meta, cb], {
+            require!(selector => bool);
+        });
+    }
+
+    fn merge_unsafe(&self) -> (Expression<F>, Vec<Expression<F>>) {
+        if self.data.is_empty() {
+            return (0.expr(), Vec::new());
+        }
+        let selector = sum::expr(self.data.iter().map(|v| v.condition()));
+        // Merge
+        let max_length = self.data.iter().map(|t| t.values.len()).max().unwrap();
+        let mut merged_values = vec![0.expr(); max_length];
+        let default_value = 0.expr();
+        merged_values.iter_mut().enumerate().for_each(|(idx, v)| {
+            *v = sum::expr(
+                self.data
+                    .iter()
+                    .map(|t| t.condition() * t.values.get(idx).unwrap_or(&default_value).expr()),
+            );
+        });
+        (selector, merged_values)
+    }
+
+    fn check_and_merge(
+        &self,
+        cb: &mut ConstraintBuilder<F, C>,
+    ) -> (Expression<F>, Vec<Expression<F>>) {
+        self.merge_check(cb);
+        self.merge_unsafe()
+    }
+
+    fn merge_and_select(&self, _cb: &mut ConstraintBuilder<F, C>) -> Vec<Expression<F>> {
+        let (selector, v) = self.merge_unsafe();
+        v.iter().map(|v| selector.expr() * v.expr()).collect()
+    }
 }
 
 /// Constraint builder
@@ -59,12 +130,12 @@ pub struct ConstraintBuilder<F, C: CellType> {
     max_degree: usize,
     /// conditions for constraints
     conditions: Vec<Expression<F>>,
-    /// The lookups generated during synthesis
-    /// assembles runtime access to RAM
-    pub dynamic_lookups: HashMap<C, Vec<DynamicData<F>>>,
-    /// The tables written during synthesis
-    /// write to RAM
-    pub dynamic_tables: HashMap<C, Vec<DynamicData<F>>>,
+    /// Columns whoes equality constraints needed to be enable
+    equalities: Vec<Column<Advice>>,
+    /// The tables
+    pub tables: HashMap<C::TableType, Vec<TableData<F>>>,
+    /// Lookups
+    pub lookups: Vec<LookupData<F>>,
     /// All stored expressions
     pub stored_expressions: HashMap<usize, Vec<StoredExpression<F, C>>>,
     /// CellManager
@@ -79,9 +150,7 @@ pub struct ConstraintBuilder<F, C: CellType> {
     /// state contect
     pub state_context: Vec<Expression<F>>,
     /// state constraints start
-    pub state_constraints_start: usize,
-    /// Lookups
-    pub lookups: HashMap<C, Vec<DynamicData<F>>>,
+    pub region_constraints_start: usize,
 }
 
 impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
@@ -95,16 +164,31 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             max_global_degree: max_degree,
             max_degree,
             conditions: Vec::new(),
-            dynamic_lookups: HashMap::new(),
-            dynamic_tables: HashMap::new(),
+            equalities: Vec::new(),
+            tables: HashMap::new(),
+            lookups: Vec::new(),
             cell_manager,
             disable_description: false,
             stored_expressions: HashMap::new(),
             region_id: 0,
             lookup_challenge,
             state_context: Vec::new(),
-            state_constraints_start: 0,
-            lookups: HashMap::new(),
+            region_constraints_start: 0,
+        }
+    }
+
+    pub(crate) fn restart(&mut self) {
+        self.constraints.clear();
+        self.conditions.clear();
+        self.equalities.clear();
+        self.tables.clear();
+        self.lookups.clear();
+        self.stored_expressions.clear();
+        self.region_id = 0;
+        self.state_context.clear();
+        self.region_constraints_start = 0;
+        if let Some(cell_manager) = &mut self.cell_manager {
+            cell_manager.restart();
         }
     }
 
@@ -116,37 +200,28 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         self.max_global_degree = max_degree;
     }
 
-    pub(crate) fn push_region(&mut self, region_id: usize) {
+    pub(crate) fn push_region(&mut self, region_id: usize, height: usize) {
         assert!(region_id != 0);
         self.region_id = region_id;
         self.state_context = self.conditions.clone();
         self.max_degree = self.max_global_degree - self.get_condition_expr().degree();
         self.conditions.clear();
-        self.state_constraints_start = self.constraints.len();
+        self.region_constraints_start = self.constraints.len();
+
+        // Simply resets the cell manager for now, so all previously allocated cells will be freed
+        self.cell_manager.as_mut().unwrap().reset(height);
     }
 
     pub(crate) fn pop_region(&mut self) {
+        // Apply the region condition to all contraints added in this region
         let condition = get_condition_expr(&self.state_context);
-        for idx in self.state_constraints_start..self.constraints.len() {
+        for idx in self.region_constraints_start..self.constraints.len() {
             self.constraints[idx].1 = condition.expr() * self.constraints[idx].1.clone();
-        }
-        for (_, values) in self.dynamic_lookups.iter_mut() {
-            for value in values {
-                if value.region_id == self.region_id {
-                    value.condition = condition.expr() * value.condition.expr();
-                }
-            }
-        }
-        for (_key, values) in self.dynamic_tables.iter_mut() {
-            for value in values {
-                if value.region_id == self.region_id {
-                    value.condition = condition.expr() * value.condition.expr();
-                }
-            }
         }
         self.conditions = self.state_context.clone();
         self.max_degree = self.max_global_degree - self.get_condition_expr().degree();
         self.region_id = 0;
+        self.state_context.clear();
     }
 
     pub(crate) fn set_disable_description(&mut self, disable_description: bool) {
@@ -181,6 +256,10 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             set.iter()
                 .fold(1.expr(), |acc, item| acc * (value.clone() - item.clone())),
         );
+    }
+
+    pub(crate) fn enable_equality(&mut self, column: Column<Advice>) {
+        self.equalities.push(column);
     }
 
     pub(crate) fn condition<R>(
@@ -219,6 +298,18 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         let constraint = self.split_expression(name, constraint);
         self.validate_degree(constraint.degree(), name);
         self.constraints.push((name, constraint));
+    }
+
+    pub(crate) fn get_condition(&self) -> Option<Expression<F>> {
+        if self.conditions.is_empty() {
+            None
+        } else {
+            Some(and::expr(self.conditions.iter()))
+        }
+    }
+
+    pub(crate) fn get_condition_expr(&self) -> Expression<F> {
+        self.get_condition().unwrap_or_else(|| 1.expr())
     }
 
     // Query
@@ -278,273 +369,146 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
     }
 
     pub(crate) fn build_constraints(&self) -> Vec<(&'static str, Expression<F>)> {
+        if self.constraints.is_empty() {
+            return vec![("No constraints", 0.expr())];
+        }
         self.constraints.clone()
     }
 
-    pub(crate) fn build_lookups(
-        &self,
-        meta: &mut ConstraintSystem<F>,
-        cell_managers: Vec<CellManager<F, C>>,
-        tables: Vec<(C, &dyn LookupTable<F>)>,
-    ) {
-        for cm in cell_managers {
-            for (cell_type, table) in &tables {
-                for col in cm.get_typed_columns(*cell_type) {
-                    let name = format!("{:?}", cell_type);
-                    meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
-                        vec![(
-                            col.expr,
-                            rlc::expr(
-                                &table.table_exprs(meta),
-                                self.lookup_challenge.clone().unwrap(),
-                            ),
-                        )]
-                    });
-                }
+    pub(crate) fn build_equalities(&self, meta: &mut ConstraintSystem<F>) {
+        self.equalities
+            .iter()
+            .for_each(|c| meta.enable_equality(*c));
+    }
+
+    pub(crate) fn build_lookups(&mut self, meta: &mut ConstraintSystem<F>) {
+        for lookup in self.lookups.iter() {
+            let mut values: Vec<_> = lookup
+                .values
+                .iter()
+                .map(|value| value.expr() * lookup.condition())
+                .collect();
+            // Align the length of values and table
+            assert!(lookup.table.len() >= values.len());
+            while values.len() < lookup.table.len() {
+                values.push(0.expr());
             }
+            meta.lookup_any(
+                Box::leak(lookup.description.clone().into_boxed_str()),
+                |_meta| {
+                    values
+                        .iter()
+                        .zip(lookup.table.iter())
+                        .map(|(v, t)| (v.expr(), t.expr()))
+                        .collect()
+                },
+            );
         }
     }
 
-    pub(crate) fn build_dynamic_lookups(
-        &mut self,
-        meta: &mut ConstraintSystem<F>,
-        lookup_names: &[C],
-        fixed_table: Vec<(C, &dyn LookupTable<F>)>,
-    ) {
-        let lookups = self.dynamic_lookups.clone();
-        for lookup_name in lookup_names.iter() {
-            if let Some(lookups) = lookups.get(lookup_name) {
-                for lookup in lookups.iter() {
-                    meta.lookup_any(lookup.description, |meta| {
-                        // Fixed lookup is a direct lookup into the pre-difined fixed tables
-                        // i.e. cond * (v1, v2, v3) => (t1, t2, t3)
-                        // equivalent to the vanilla lookup operation of Halo2.
-                        // Dynamic lookup applies condition to the advice values stored at
-                        // configuration time i.e. cond * (v1, v2, v3) =>
-                        // cond * (t1, t2, t3) the dynamic lookup in a ifx!
-                        // branch would become trivial 0 => 0
-                        // when the elsex! branch evaluates to true
-
-                        let table = if lookup.is_fixed {
-                            let table_cols = fixed_table
-                                .iter()
-                                .find(|(name, _)| name == lookup_name)
-                                .unwrap()
-                                .1
-                                .columns();
-                            table_cols
-                                .iter()
-                                .map(|col| meta.query_any(*col, Rotation(0)))
-                                .collect()
-                        } else {
-                            self.get_dynamic_table_values(*lookup_name)
-                        };
-
-                        let mut values: Vec<_> = lookup
-                            .values
-                            .iter()
-                            .map(|value| value.expr() * lookup.condition.clone())
-                            .collect();
-                        // align the length of values and table
-                        assert!(table.len() >= values.len());
-                        while values.len() < table.len() {
-                            values.push(0.expr());
-                        }
-
-                        // Perform rlc if specified
-                        // i.e. (v1*r + v2*r^2 + v3*r^3) => (t1*r + t2*r^2 + t3*r^3)
-                        // lastly is_split had been fulfilled at insertion time
-
-                        let ret = if lookup.compress {
-                            vec![(
-                                rlc::expr(&values, self.lookup_challenge.clone().unwrap()),
-                                rlc::expr(&table, self.lookup_challenge.clone().unwrap()),
-                            )]
-                        } else {
-                            values
-                                .iter()
-                                .zip(table.iter())
-                                .map(|(v, t)| (v.expr(), t.expr()))
-                                .collect()
-                        };
-                        ret
-                    });
-                }
-            } else {
-                unreachable!("lookup not found: {:?}", lookup_name);
-            }
-        }
-    }
-
-    pub(crate) fn get_condition(&self) -> Option<Expression<F>> {
-        if self.conditions.is_empty() {
-            None
-        } else {
-            Some(and::expr(self.conditions.iter()))
-        }
-    }
-
-    pub(crate) fn get_condition_expr(&self) -> Expression<F> {
-        self.get_condition().unwrap_or_else(|| 1.expr())
-    }
-
-    pub(crate) fn store_dynamic_table(
+    pub(crate) fn store_tuple(
         &mut self,
         description: &'static str,
-        tag: C,
+        cell_type: C,
         values: Vec<Expression<F>>,
-        compress: bool,
-        store: bool,
+    ) -> Expression<F> {
+        let challenge = self.lookup_challenge.clone().unwrap();
+        let rlc = rlc::expr(&values, challenge.expr()) * self.get_condition_expr();
+        let reduced_rlc = self.split_expression("compression", rlc);
+        self.store_expression(description, reduced_rlc, cell_type, None)
+    }
+
+    /// Store the table as is without taking into account any active conditions
+    pub(crate) fn load_table(
+        &mut self,
+        meta: &mut ConstraintSystem<F>,
+        table_type: C::TableType,
+        table: &dyn LookupTable<F>,
     ) {
-        let condition = self.get_condition_expr();
-        let mut values = if compress {
-            vec![rlc::expr(&values, self.lookup_challenge.clone().unwrap())]
-        } else {
-            values
-        };
-        if store {
-            values.iter_mut().for_each(|v| {
-                *v = self.split_expression(
-                    Box::leak(format!("compression value - {:?}", tag).into_boxed_str()),
-                    v.clone(),
-                )
-            });
-            // values = vec![self.store_expression(description, values[0].expr(), tag)];
-        }
-        let lookup = DynamicData {
+        query_expression(meta, |meta| {
+            let description = format!("{:?}", table_type);
+            self.store_table_with_condition(
+                Box::leak(description.into_boxed_str()),
+                table_type,
+                table.table_exprs(meta),
+                1.expr(),
+                1.expr(),
+            );
+        });
+    }
+
+    /// Store the table taking into account the current active conditions
+    pub(crate) fn store_table(
+        &mut self,
+        description: &'static str,
+        table_type: C::TableType,
+        values: Vec<Expression<F>>,
+    ) {
+        self.store_table_with_condition(
             description,
-            condition,
+            table_type,
+            values,
+            self.get_condition_expr(),
+            get_condition_expr(&self.state_context),
+        );
+    }
+
+    pub(crate) fn store_table_with_condition(
+        &mut self,
+        description: &'static str,
+        table_type: C::TableType,
+        values: Vec<Expression<F>>,
+        local_condition: Expression<F>,
+        regional_condition: Expression<F>,
+    ) {
+        let data = TableData {
+            description,
+            local_condition,
+            regional_condition,
             values,
             region_id: self.region_id,
-            // cannot be is_fixed
-            is_fixed: false,
-            compress: false,
         };
-        if let Some(table_data) = self.dynamic_tables.get_mut(&tag) {
-            table_data.push(lookup);
+        if let Some(tables) = self.tables.get_mut(&table_type) {
+            tables.push(data);
         } else {
-            self.dynamic_tables.insert(tag, vec![lookup]);
+            self.tables.insert(table_type, vec![data]);
         }
     }
 
-    pub(crate) fn add_dynamic_lookup(
-        &mut self,
-        description: &'static str,
-        tag: C,
-        values: Vec<Expression<F>>,
-        is_fixed: bool,
-        compress: bool,
-        store: bool,
-    ) {
-        let condition = self.get_condition_expr();
-        let mut values = if compress {
-            vec![rlc::expr(&values, self.lookup_challenge.clone().unwrap())]
-        } else {
-            values
-        };
-        if store {
-            values.iter_mut().for_each(|v| {
-                *v = self.split_expression(
-                    Box::leak(format!("compression value - {:?}", tag).into_boxed_str()),
-                    v.clone(),
-                )
-            });
-        }
-        let lookup = DynamicData {
-            description,
-            condition,
-            values,
-            region_id: self.region_id,
-            is_fixed,
-            compress,
-        };
-        if let Some(lookup_data) = self.dynamic_lookups.get_mut(&tag) {
-            lookup_data.push(lookup);
-        } else {
-            self.dynamic_lookups.insert(tag, vec![lookup]);
-        }
+    pub(crate) fn table(&self, table_type: C::TableType) -> Vec<Expression<F>> {
+        let tables = self.tables.get(&table_type).unwrap();
+        assert!(tables.len() == 1);
+        tables[0].values.clone()
     }
 
     pub(crate) fn add_lookup(
         &mut self,
-        description: &str,
-        cell_type: C,
+        description: String,
         values: Vec<Expression<F>>,
+        table: Vec<Expression<F>>,
     ) {
-        let condition = self.get_condition_expr();
-        let values = values
-            .iter()
-            .map(|value| condition.expr() * value.expr())
-            .collect_vec();
-        let compressed_expr = self.split_expression(
-            "compression",
-            rlc::expr(&values, self.lookup_challenge.clone().unwrap().expr()),
-        );
-        self.store_expression(description, compressed_expr, cell_type);
-
-        let lookup = DynamicData {
-            description: Box::leak(description.to_string().into_boxed_str()),
-            condition,
+        let data = LookupData {
+            description,
+            local_condition: self.get_condition_expr(),
+            regional_condition: get_condition_expr(&self.state_context),
             values,
+            table,
             region_id: self.region_id,
-            is_fixed: true,
-            compress: true,
         };
-        if let Some(lookup_data) = self.lookups.get_mut(&cell_type) {
-            lookup_data.push(lookup);
-        } else {
-            self.lookups.insert(cell_type, vec![lookup]);
-        }
+        self.lookups.push(data);
     }
 
-    pub(crate) fn get_stored_expressions(&self, region_id: usize) -> Vec<StoredExpression<F, C>> {
-        self.stored_expressions
-            .get(&region_id)
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    pub(crate) fn get_dynamic_table(&self, tag: C) -> (Expression<F>, Vec<Expression<F>>) {
-        let table_values = self
-            .dynamic_tables
-            .get(&tag)
-            .unwrap_or_else(|| panic!("Dynamic table {:?} not found", tag));
-        merge_values_unsafe(
-            table_values
-                .iter()
-                .map(|table| (table.condition.clone(), table.values.clone()))
-                .collect::<Vec<_>>(),
-        )
-    }
-
-    pub(crate) fn get_dynamic_table_values(&self, tag: C) -> Vec<Expression<F>> {
-        let condition_and_values = self.get_dynamic_table(tag);
-        condition_and_values
-            .1
-            .iter()
-            .map(|value| value.expr() * condition_and_values.0.expr())
-            .collect::<Vec<_>>()
-    }
-
-    pub(crate) fn generate_lookup_table_checks(&mut self, tag: C) {
-        let table_values = self
-            .dynamic_tables
+    pub(crate) fn dynamic_table_merged(&mut self, tag: C::TableType) -> Vec<Expression<F>> {
+        let data = self
+            .tables
             .get(&tag)
             .unwrap_or_else(|| panic!("Dynamic table {:?} not found", tag))
             .clone();
-        let selectors = table_values
-            .into_iter()
-            .map(|value| {
-                let sel = value.condition.expr();
-                self.require_boolean("lookup table condition needs to be boolean", sel.clone());
-                sel
-            })
-            .collect::<Vec<_>>();
-        let selector = sum::expr(&selectors);
-        self.require_boolean(
-            "lookup table conditions sum needs to be boolean",
-            selector.expr(),
-        );
+        let table_merger = TableMerger {
+            data,
+            _phantom: PhantomData,
+        };
+        table_merger.merge_and_select(self)
     }
 
     pub(crate) fn store_expression(
@@ -552,6 +516,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         name: &str,
         expr: Expression<F>,
         cell_type: C,
+        target_cell: Option<Cell<F>>,
     ) -> Expression<F> {
         // Check if we already stored the expression somewhere
         let stored_expression = self.find_stored_expression(&expr, cell_type);
@@ -559,7 +524,11 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             Some(stored_expression) => stored_expression.cell.expr(),
             None => {
                 // Require the stored value to equal the value of the expression
-                let cell = self.query_one(cell_type);
+                let cell = if let Some(tc) = target_cell {
+                    tc
+                } else {
+                    self.query_one(cell_type)
+                };
                 let name = format!("{} (stored expression)", name);
                 self.constraints.push((
                     Box::leak(name.clone().into_boxed_str()),
@@ -580,6 +549,13 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         }
     }
 
+    pub(crate) fn get_stored_expressions(&self, region_id: usize) -> Vec<StoredExpression<F, C>> {
+        self.stored_expressions
+            .get(&region_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
     pub(crate) fn find_stored_expression(
         &self,
         expr: &Expression<F>,
@@ -595,7 +571,11 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
         }
     }
 
-    fn split_expression(&mut self, name: &'static str, expr: Expression<F>) -> Expression<F> {
+    pub(crate) fn split_expression(
+        &mut self,
+        name: &'static str,
+        expr: Expression<F>,
+    ) -> Expression<F> {
         if expr.degree() > self.max_degree && self.region_id != 0 {
             match expr {
                 Expression::Negated(poly) => {
@@ -617,7 +597,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                                 self.split_expression(name, expr)
                             } else {
                                 let cell_type = C::storage_for_expr(&expr);
-                                self.store_expression(name, expr, cell_type)
+                                self.store_expression(name, expr, cell_type, None)
                             }
                         };
                         if a.degree() >= b.degree() {
@@ -642,49 +622,6 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
             println!("'{}': {}", name, expr.degree());
         }
     }
-}
-
-pub(crate) fn merge_lookups<F: Field, C: CellType>(
-    cb: &mut ConstraintBuilder<F, C>,
-    lookups: Vec<DynamicData<F>>,
-) -> (Expression<F>, Vec<Expression<F>>) {
-    merge_values(
-        cb,
-        lookups
-            .iter()
-            .map(|lookup| (lookup.condition.clone(), lookup.values.clone()))
-            .collect::<Vec<_>>(),
-    )
-}
-
-pub(crate) fn merge_values<F: Field, C: CellType>(
-    cb: &mut ConstraintBuilder<F, C>,
-    values: Vec<(Expression<F>, Vec<Expression<F>>)>,
-) -> (Expression<F>, Vec<Expression<F>>) {
-    let selector = sum::expr(values.iter().map(|(condition, _)| condition.expr()));
-    crate::circuit!([meta, cb], {
-        require!(selector => bool);
-    });
-    merge_values_unsafe(values)
-}
-
-pub(crate) fn merge_values_unsafe<F: Field>(
-    values: Vec<(Expression<F>, Vec<Expression<F>>)>,
-) -> (Expression<F>, Vec<Expression<F>>) {
-    if values.is_empty() {
-        return (0.expr(), Vec::new());
-    }
-    let selector = sum::expr(values.iter().map(|(condition, _)| condition.expr()));
-    // Merge
-    let max_length = values.iter().map(|(_, values)| values.len()).max().unwrap();
-    let mut merged_values = vec![0.expr(); max_length];
-    let default_value = 0.expr();
-    for (idx, value) in merged_values.iter_mut().enumerate() {
-        *value = sum::expr(values.iter().map(|(condition, values)| {
-            condition.expr() * values.get(idx).unwrap_or(&default_value).expr()
-        }));
-    }
-    (selector, merged_values)
 }
 
 /// General trait to convert to a vec
@@ -1177,184 +1114,61 @@ macro_rules! _require {
         }
     }};
 
-    // Lookup using a tuple
-    ($cb:expr, ($($v:expr),+) => @$tag:expr) => {{
+    // Store tuple
+    ($cb:expr, $values:expr =>> @$tag:expr) => {{
         let description = concat_with_preamble!(
-            "(",
-            $(
-                stringify!($v),
-                ", ",
-            )*
-            ") => @",
+            stringify!($values),
+            " =>> @",
             stringify!($tag),
         );
-        $cb.add_lookup(
+        $cb.store_tuple(
             description,
             $tag,
-            vec![$($v.expr(),)*],
+            $values,
         );
     }};
-    ($cb:expr, $descr:expr, ($($v:expr),+)  => @$tag:expr) => {{
-        $cb.add_lookup(
-            Box::leak($descr.into_boxed_str()),
+    ($cb:expr, $descr:expr, $values:expr =>> @$tag:expr) => {{
+        $cb.store_tuple(
+            Box::leak($descr.to_string().into_boxed_str()),
             $tag,
-            vec![$($v.expr(),)*],
+            $values,
         );
     }};
 
-    // Lookup using an array
-    ($cb:expr, $values:expr => @$tag:expr) => {{
+    // Do lookup
+    ($cb:expr, $values:expr => @$table:expr) => {{
         let description = concat_with_preamble!(
             stringify!($values),
             " => @",
             stringify!($tag),
         );
         $cb.add_lookup(
-            description,
-            $tag,
-            $values.clone(),
+            description.to_string(),
+            $values,
+            $table,
         );
     }};
-    ($cb:expr, $descr:expr, $values:expr => @$tag:expr) => {{
+    ($cb:expr, $descr:expr, $values:expr => @$table:expr) => {{
         $cb.add_lookup(
-            Box::leak($descr.to_string().into_boxed_str()),
-            $tag,
-            $values.clone(),
-        );
-    }};
-
-        // Lookup using a tuple
-        ($cb:expr, ($($v:expr),+) => @$tag:expr, $is_fixed:expr, $compress:expr, $is_split:expr) => {{
-            let description = concat_with_preamble!(
-                "(",
-                $(
-                    stringify!($v),
-                    ", ",
-                )*
-                ") => @",
-                stringify!($tag),
-            );
-            $cb.add_dynamic_lookup(
-                description,
-                $tag,
-                vec![$($v.expr(),)*],
-                $is_fixed,
-                $compress,
-                $is_split,
-            );
-        }};
-        ($cb:expr, $descr:expr, ($($v:expr),+)  => @$tag:expr, $is_fixed:expr, $compress:expr, $is_split:expr) => {{
-            $cb.add_dynamic_lookup(
-                Box::leak($descr.into_boxed_str()),
-                $tag,
-                vec![$($v.expr(),)*],
-                $is_fixed,
-                $compress,
-                $is_split,
-            );
-        }};
-
-
-        // Lookup using an array
-        ($cb:expr, $values:expr => @$tag:expr, $is_fixed:expr, $compress:expr, $is_split:expr) => {{
-            let description = concat_with_preamble!(
-                stringify!($values),
-                " => @",
-                stringify!($tag),
-            );
-            $cb.add_dynamic_lookup(
-                description,
-                $tag,
-                $values.clone(),
-                $is_fixed,
-                $compress,
-                $is_split,
-            );
-        }};
-        ($cb:expr, $descr:expr, $values:expr => @$tag:expr, $is_fixed:expr, $compress:expr, $is_split:expr) => {{
-            $cb.add_dynamic_lookup(
-                Box::leak($descr.into_boxed_str()),
-                $tag,
-                $values.clone(),
-                $is_fixed,
-                $compress,
-                $is_split,
-            );
-        }};
-
-    // Put values in a lookup table using a tuple
-    ($cb:expr, @$tag:expr => ($($v:expr),+)) => {{
-        let description = concat_with_preamble!(
-            "@",
-            stringify!($tag),
-            " => (",
-            $(
-                stringify!($v),
-                ", ",
-            )*
-            ")",
-        );
-        $cb.store_dynamic_table(
-            description,
-            $tag,
-            vec![$($v.expr(),)*],
-            false,
-            false,
-        );
-    }};
-    // Put values in a lookup table using an array
-    ($cb:expr, @$tag:expr => $values:expr) => {{
-        let description = concat_with_preamble!(
-            "@",
-            stringify!($tag),
-            " => (",
-            stringify!($values),
-            ")",
-        );
-        $cb.store_dynamic_table(
-            description,
-            $tag,
+            Box::leak($descr.into_boxed_str()),
             $values,
-            false,
-            false,
+            $table,
         );
     }};
 
     // Put values in a lookup table using a tuple
-    ($cb:expr, @$tag:expr => ($($v:expr),+), $compress:expr, $is_split:expr) => {{
+    ($cb:expr, @$table:expr => $values:expr) => {{
         let description = concat_with_preamble!(
             "@",
-            stringify!($tag),
-            " => (",
-            $(
-                stringify!($v),
-                ", ",
-            )*
-            ")",
-        );
-        $cb.store_dynamic_table(
-            description,
-            $tag,
-            vec![$($v.expr(),)*],
-            $compress,
-            $is_split,
-        );
-    }};
-    // Put values in a lookup table using an array
-    ($cb:expr, @$tag:expr => $values:expr, $compress:expr, $is_split:expr) => {{
-        let description = concat_with_preamble!(
-            "@",
-            stringify!($tag),
+            stringify!($table),
             " => (",
             stringify!($values),
             ")",
         );
-        $cb.store_dynamic_table(
+        $cb.store_table(
             description,
-            $tag,
+            $table,
             $values,
-            $compress,
-            $is_split,
         );
     }};
 }
@@ -1366,7 +1180,7 @@ macro_rules! _require {
 /// unreachablex! macro).
 #[macro_export]
 macro_rules! _matchx {
-    ($cb:expr, $($condition:expr => $when:expr),* $(, _ => $catch_all:expr)? $(,)?)  => {{
+    ($cb:expr, ($($condition:expr => $when:expr),* $(, _ => $catch_all:expr)? $(,)?))  => {{
         let mut conditions = Vec::new();
         let mut cases = Vec::new();
         $(
@@ -1402,11 +1216,20 @@ macro_rules! _matchx {
     }};
 }
 
+#[macro_export]
+macro_rules! _to_and {
+    (($($condition:expr),*)) => {
+        and::expr([$($condition.expr()),*])
+    };
+    ($condition:expr) => {
+        $condition.expr()
+    }
+}
 /// ifx
 #[macro_export]
 macro_rules! _ifx {
-    ($cb:expr, $($condition:expr),* => $when_true:block $(elsex $when_false:block)?)  => {{
-        let condition = and::expr([$($condition.expr()),*]);
+    ($cb:expr,$condition:tt => $when_true:block $(elsex $when_false:block)?)  => {{
+        let condition = _to_and!($condition);
 
         $cb.push_condition(condition.expr());
         let ret_true = $when_true;
@@ -1502,6 +1325,19 @@ macro_rules! assignf {
     }};
 }
 
+#[macro_export]
+macro_rules! _to_values_vec {
+    (($($tts:expr), *)) => {
+        vec![$($tts.expr()), *]
+    };
+}
+
+#[macro_export]
+macro_rules! _to_options_vec {
+    (($($tts:expr), *)) => {
+        vec![$($tts), *]
+    };
+}
 /// Circuit builder macros
 /// Nested macro's can't do repetition <https://github.com/rust-lang/rust/issues/35853>
 /// so we expose a couple of permutations here manually.
@@ -1509,11 +1345,14 @@ macro_rules! assignf {
 macro_rules! circuit {
     ([$meta:expr, $cb:expr], $content:block) => {{
         #[allow(unused_imports)]
-        use $crate::{concat_with_preamble, _require, _matchx, _ifx, _unreachablex};
-        #[allow(unused_imports)]
         use gadgets::util::{and, not, or, sum, Expr};
         #[allow(unused_imports)]
-        use $crate::circuit_tools::constraint_builder::{ExprVec, ExprResult};
+        use $crate::circuit_tools::constraint_builder::{ExprResult, ExprVec};
+        #[allow(unused_imports)]
+        use $crate::{
+            _ifx, _matchx, _require, _to_and, _to_options_vec, _to_values_vec, _unreachablex,
+            concat_with_preamble,
+        };
 
         #[allow(unused_macros)]
         macro_rules! f {
@@ -1532,6 +1371,20 @@ macro_rules! circuit {
             }};
             ($column:expr) => {{
                 $meta.query_advice($column.clone(), Rotation::cur())
+            }};
+        }
+
+        #[allow(unused_macros)]
+        macro_rules! c {
+            ($column:expr) => {{
+                $meta.query_challenge($column.clone())
+            }};
+        }
+
+        #[allow(unused_macros)]
+        macro_rules! q {
+            ($column:expr) => {{
+                $meta.query_selector($column.clone())
             }};
         }
 
@@ -1564,130 +1417,57 @@ macro_rules! circuit {
             ($lhs:expr => bool) => {{
                 _require!($cb, $lhs => bool);
             }};
-
             ($lhs:expr => $rhs:expr) => {{
                 _require!($cb, $lhs => $rhs);
             }};
-
             ($name:expr, $lhs:expr => $rhs:expr) => {{
                 _require!($cb, $name, $lhs => $rhs);
             }};
-
-            (($a:expr) => @$tag:expr) => {{
-                _require!($cb, ($a) => @$tag);
+            // Store tuple
+            ($values:tt =>> @$tag:expr) => {{
+                let values = _to_values_vec!($values);
+                _require!($cb, values =>> @$tag);
             }};
-
-            (($a:expr, $b:expr) => @$tag:expr) => {{
-                _require!($cb, ($a, $b) => @$tag);
+            ($descr:expr, $values:tt =>> @$tag:expr) => {{
+                let values = _to_values_vec!($values);
+                _require!($cb, $descr, values =>> @$tag);
             }};
-
-            (($a:expr, $b:expr, $c:expr) => @$tag:expr) => {{
-                _require!($cb, ($a, $b, $c) => @$tag);
+            // Do lookups
+            ($values:tt => @$table:expr) => {{
+                let values = _to_values_vec!($values);
+                _require!($cb, values => @$table);
             }};
-
-            (($a:expr, $b:expr, $c:expr, $d:expr) => @$tag:expr) => {{
-                _require!($cb, ($a, $b, $c, $d) => @$tag);
+            ($descr:expr, $values:tt => @$table:expr) => {{
+                let values = _to_values_vec!($values);
+                _require!($cb, $descr, values => @$table);
             }};
-
-            ($values:expr => @$tag:expr) => {{
-                _require!($cb, $values => @$tag);
-            }};
-
-            ($descr:expr, $values:expr => @$tag:expr) => {{
-                _require!($cb, $descr, $values => @$tag);
-            }};
-
-            (($a:expr) => @$tag:expr, $is_fixed:expr, $compress:expr, $is_split:expr) => {{
-                _require!($cb, ($a) => @$tag, $is_fixed, $compress, $is_split);
-            }};
-
-            (($a:expr, $b:expr) => @$tag:expr, $is_fixed:expr, $compress:expr, $is_split:expr) => {{
-                _require!($cb, ($a, $b) => @$tag, $is_fixed, $compress, $is_split);
-            }};
-
-            (($a:expr, $b:expr, $c:expr) => @$tag:expr, $is_fixed:expr, $compress:expr, $is_split:expr) => {{
-                _require!($cb, ($a, $b, $c) => @$tag, $is_fixed, $compress, $is_split);
-            }};
-
-            (($a:expr, $b:expr, $c:expr, $d:expr) => @$tag:expr, $is_fixed:expr, $compress:expr, $is_split:expr) => {{
-                _require!($cb, ($a, $b, $c, $d) => @$tag, $is_fixed, $compress, $is_split);
-            }};
-
-            ($values:expr => @$tag:expr, $is_fixed:expr, $compress:expr, $is_split:expr) => {{
-                _require!($cb, $values => @$tag, $is_fixed, $compress, $is_split);
-            }};
-
-            ($descr:expr, $values:expr => @$tag:expr, $is_fixed:expr, $compress:expr, $is_split:expr) => {{
-                _require!($cb, $descr, $values => @$tag, $is_fixed, $compress, $is_split);
-            }};
-
-            (@$tag:expr => ($a:expr, $b:expr, $c:expr)) => {{
-                _require!($cb, @$tag => ($a, $b, $c));
-            }};
-
-            (@$tag:expr => $values:expr) => {{
-                _require!($cb, @$tag => $values);
+            // Build lookup tables
+            (@$table:expr => $values:expr) => {{
+                _require!($cb, @$table => $values);
             }};
         }
 
         #[allow(unused_macros)]
         macro_rules! ifx {
-            ($condition:expr => $when_true:block elsex $when_false:block) => {{
-                _ifx!($cb, $condition => $when_true elsex $when_false)
-            }};
-            ($condition_a:expr, $condition_b:expr => $when_true:block elsex $when_false:block) => {{
-                _ifx!($cb, $condition_a, $condition_b => $when_true elsex $when_false)
-            }};
-            ($condition_a:expr, $condition_b:expr, $condition_c:expr => $when_true:block elsex $when_false:block) => {{
-                _ifx!($cb, $condition_a, $condition_b, $condition_c => $when_true elsex $when_false)
-            }};
-            ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr => $when_true:block elsex $when_false:block) => {{
-                _ifx!($cb, $condition_a, $condition_b, $condition_c, $condition_d => $when_true elsex $when_false)
-            }};
+                                ($condition:tt => $when_true:block elsex $when_false:block) => {{
+                                    _ifx!($cb, ($condition) => $when_true elsex $when_false)
+                                }};
+                                ($condition:expr => $when_true:block elsex $when_false:block) => {{
+                                    _ifx!($cb, $condition => $when_true elsex $when_false)
+                                }};
 
-            ($condition:expr => $when_true:block) => {{
-                _ifx!($cb, $condition => $when_true)
-            }};
-            ($condition_a:expr, $condition_b:expr => $when_true:block) => {{
-                _ifx!($cb, $condition_a, $condition_b => $when_true)
-            }};
-            ($condition_a:expr, $condition_b:expr, $condition_c:expr => $when_true:block) => {{
-                _ifx!($cb, $condition_a, $condition_b, $condition_c => $when_true)
-            }};
-            ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr => $when_true:block) => {{
-                _ifx!($cb, $condition_a, $condition_b, $condition_c, $condition_d => $when_true)
-            }};
-            ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr, $condition_e:expr => $when_true:block) => {{
-                _ifx!($cb, $condition_a, $condition_b, $condition_c, $condition_d, $condition_e => $when_true)
-            }};
-        }
+                                ($condition:tt => $when_true:block) => {{
+                                    _ifx!($cb, $condition => $when_true)
+                                }};
+                                ($condition:expr => $when_true:block) => {{
+                                    _ifx!($cb, $condition => $when_true)
+                                }};
+                            }
 
         #[allow(unused_macros)]
         macro_rules! matchx {
-            ($condition_a:expr => $when_a:expr,) => {{
-                _matchx!($cb, $condition_a => $when_a)
-            }};
-            ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr,) => {{
-                _matchx!($cb, $condition_a => $when_a, $condition_b => $when_b)
-            }};
-            ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr, $condition_c:expr => $when_c:expr,) => {{
-                _matchx!($cb, $condition_a => $when_a, $condition_b => $when_b, $condition_c => $when_c)
-            }};
-            ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr, $condition_c:expr => $when_c:expr, $condition_d:expr => $when_d:expr,) => {{
-                _matchx!($cb, $condition_a => $when_a, $condition_b => $when_b, $condition_c => $when_c, $condition_d => $when_d,)
-            }};
-
-            ($condition_a:expr => $when_a:expr, _ => $catch_all:expr,) => {{
-                _matchx!($cb, $condition_a => $when_a, _ => $catch_all,)
-            }};
-            ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr, _ => $catch_all:expr,) => {{
-                _matchx!($cb, $condition_a => $when_a, $condition_b => $when_b, _ => $catch_all,)
-            }};
-            ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr, $condition_c:expr => $when_c:expr, _ => $catch_all:expr,) => {{
-                _matchx!($cb, $condition_a => $when_a, $condition_b => $when_b, $condition_c => $when_c, _ => $catch_all,)
-            }};
-            ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr, $condition_c:expr => $when_c:expr, $condition_d:expr => $when_d:expr, _ => $catch_all:expr,) => {{
-                _matchx!($cb, $condition_a => $when_a, $condition_b => $when_b, $condition_c => $when_c, $condition_d => $when_d, _ => $catch_all,)
+            ($condition_to_when:tt) => {{
+                _matchx!($cb, $condition_to_when)
             }};
         }
 

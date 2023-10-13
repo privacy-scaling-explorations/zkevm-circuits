@@ -2,7 +2,7 @@ use super::{
     constraint_builder::ConstrainBuilderCommon,
     from_bytes,
     math_gadget::{IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget, LtGadget},
-    memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget},
+    memory_gadget::{CommonMemoryAddressGadget, MemoryExpansionGadget},
     AccountAddress, CachedRegion,
 };
 use crate::{
@@ -11,6 +11,7 @@ use crate::{
         step::ExecutionState,
         table::{FixedTableTag, Lookup},
         util::{
+            and,
             constraint_builder::{
                 EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, Same, To},
@@ -358,7 +359,7 @@ impl<F: Field> TransferToGadget<F> {
     ) -> Self {
         let value_is_zero = IsZeroWordGadget::construct(cb, &value);
         if account_write {
-            Self::creat_account(
+            Self::create_account(
                 cb,
                 receiver_address.clone(),
                 receiver_exists.clone(),
@@ -384,7 +385,7 @@ impl<F: Field> TransferToGadget<F> {
         }
     }
 
-    pub(crate) fn creat_account(
+    pub(crate) fn create_account(
         cb: &mut EVMConstraintBuilder<F>,
         receiver_address: Word<Expression<F>>,
         receiver_exists: Expression<F>,
@@ -393,9 +394,9 @@ impl<F: Field> TransferToGadget<F> {
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
         cb.condition(
-            or::expr([
-                not::expr(value_is_zero.expr()) * not::expr(receiver_exists.expr()),
-                must_create,
+            and::expr([
+                not::expr(receiver_exists.expr()),
+                or::expr([not::expr(value_is_zero.expr()), must_create]),
             ]),
             |cb| {
                 cb.account_write(
@@ -426,6 +427,16 @@ impl<F: Field> TransferToGadget<F> {
         self.value_is_zero
             .assign_value(region, offset, Value::known(Word::from(value)))?;
         Ok(())
+    }
+
+    pub(crate) fn rw_delta(&self) -> Expression<F> {
+        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        and::expr([
+                not::expr(self.receiver_exists.expr()),
+                or::expr([not::expr(self.value_is_zero.expr()), self.must_create.clone()]),
+            ]) +
+        // +1 Write Account (receiver) Balance
+        not::expr(self.value_is_zero.expr())
     }
 }
 
@@ -460,7 +471,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             UpdateBalanceGadget::construct(cb, sender_address.to_word(), vec![gas_fee], None);
         let value_is_zero = IsZeroWordGadget::construct(cb, &value);
         // If receiver doesn't exist, create it
-        TransferToGadget::creat_account(
+        TransferToGadget::create_account(
             cb,
             receiver_address.clone(),
             receiver_exists.clone(),
@@ -499,10 +510,10 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         // +1 Write Account (sender) Balance (Not Reversible tx fee)
         1.expr() +
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
-        or::expr([
-            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver.receiver_exists.expr()),
+        and::expr([not::expr(self.receiver.receiver_exists.expr()), or::expr([
+            not::expr(self.value_is_zero.expr()),
             self.receiver.must_create.clone()]
-        ) * 1.expr() +
+        )]) * 1.expr() +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()
@@ -511,10 +522,10 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
     pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
         // NOTE: Write Account (sender) Balance (Not Reversible tx fee)
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
-        or::expr([
-            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver.receiver_exists.expr()),
+        and::expr([not::expr(self.receiver.receiver_exists.expr()), or::expr([
+            not::expr(self.value_is_zero.expr()),
             self.receiver.must_create.clone()]
-        ) * 1.expr() +
+        )]) +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()
@@ -580,7 +591,7 @@ impl<F: Field> TransferGadget<F> {
     ) -> Self {
         let value_is_zero = IsZeroWordGadget::construct(cb, &value);
         // If receiver doesn't exist, create it
-        TransferToGadget::creat_account(
+        TransferToGadget::create_account(
             cb,
             receiver_address.clone(),
             receiver_exists.clone(),
@@ -653,15 +664,15 @@ impl<F: Field> TransferGadget<F> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct CommonCallGadget<F, const IS_SUCCESS_CALL: bool> {
+pub(crate) struct CommonCallGadget<F, MemAddrGadget, const IS_SUCCESS_CALL: bool> {
     pub is_success: Cell<F>,
 
     pub gas: Word32Cell<F>,
     pub gas_is_u64: IsZeroGadget<F>,
     pub callee_address: AccountAddress<F>,
     pub value: Word32Cell<F>,
-    pub cd_address: MemoryAddressGadget<F>,
-    pub rd_address: MemoryAddressGadget<F>,
+    pub cd_address: MemAddrGadget,
+    pub rd_address: MemAddrGadget,
     pub memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
 
     value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
@@ -672,7 +683,9 @@ pub(crate) struct CommonCallGadget<F, const IS_SUCCESS_CALL: bool> {
     pub callee_not_exists: IsZeroWordGadget<F, WordCell<F>>,
 }
 
-impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL> {
+impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CALL: bool>
+    CommonCallGadget<F, MemAddrGadget, IS_SUCCESS_CALL>
+{
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         is_call: Expression<F>,
@@ -690,12 +703,10 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         let gas_word = cb.query_word32();
         let callee_address = cb.query_account_address();
         let value = cb.query_word32();
-        let cd_offset = cb.query_word_unchecked();
-        let cd_length = cb.query_memory_address();
-        let rd_offset = cb.query_word_unchecked();
-        let rd_length = cb.query_memory_address();
         let is_success = cb.query_bool();
 
+        let cd_address = MemAddrGadget::construct_self(cb);
+        let rd_address = MemAddrGadget::construct_self(cb);
         // Lookup values from stack
         // `callee_address` is poped from stack and used to check if it exists in
         // access list and get code hash.
@@ -709,10 +720,10 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
 
         // `CALL` and `CALLCODE` opcodes have an additional stack pop `value`.
         cb.condition(is_call + is_callcode, |cb| cb.stack_pop(value.to_word()));
-        cb.stack_pop(cd_offset.to_word());
-        cb.stack_pop(cd_length.to_word());
-        cb.stack_pop(rd_offset.to_word());
-        cb.stack_pop(rd_length.to_word());
+        cb.stack_pop(cd_address.offset_word());
+        cb.stack_pop(cd_address.length_word());
+        cb.stack_pop(rd_address.offset_word());
+        cb.stack_pop(rd_address.length_word());
         cb.stack_push(if IS_SUCCESS_CALL {
             Word::from_lo_unchecked(is_success.expr()) // is_success is bool
         } else {
@@ -721,8 +732,6 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
 
         // Recomposition of random linear combination to integer
         let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.limbs[N_BYTES_GAS..]));
-        let cd_address = MemoryAddressGadget::construct(cb, cd_offset, cd_length);
-        let rd_address = MemoryAddressGadget::construct(cb, rd_offset, rd_length);
         let memory_expansion =
             MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
 

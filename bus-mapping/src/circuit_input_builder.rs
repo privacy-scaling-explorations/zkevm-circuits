@@ -9,6 +9,7 @@ mod input_state_ref;
 #[cfg(test)]
 mod tracer_tests;
 mod transaction;
+mod withdrawal;
 
 use self::access::gen_state_access_trace;
 use crate::{
@@ -36,6 +37,7 @@ use itertools::Itertools;
 use log::warn;
 use std::{collections::HashMap, ops::Deref};
 pub use transaction::{Transaction, TransactionContext};
+pub use withdrawal::{Withdrawal, WithdrawalContext};
 
 /// Circuit Setup Parameters
 #[derive(Debug, Clone, Copy)]
@@ -47,6 +49,8 @@ pub struct FixedCParams {
     // TODO: evm_rows: Maximum number of rows in the EVM Circuit
     /// Maximum number of txs in the Tx Circuit
     pub max_txs: usize,
+    /// Maximum number of withdrawals in the Withdrawal Circuit
+    pub max_withdrawals: usize,
     /// Maximum number of bytes from all txs calldata in the Tx Circuit
     pub max_calldata: usize,
     /// Max ammount of rows that the CopyCircuit can have.
@@ -70,7 +74,10 @@ pub struct FixedCParams {
     pub max_keccak_rows: usize,
 }
 
-/// Unset Circuits Parameters, computed dynamically together with circuit witness generation.
+/// Unset Circuits Parameters
+///
+/// To reduce the testing overhead, we determine the parameters by the testing inputs.
+/// A new [`FixedCParams`] will be computed from the generated circuit witness.
 #[derive(Debug, Clone, Copy)]
 pub struct DynamicCParams {}
 
@@ -86,6 +93,7 @@ impl Default for FixedCParams {
         FixedCParams {
             max_rws: 1000,
             max_txs: 1,
+            max_withdrawals: 1,
             max_calldata: 256,
             // TODO: Check whether this value is correct or we should increase/decrease based on
             // this lib tests
@@ -367,6 +375,7 @@ impl CircuitInputBuilder<DynamicCParams> {
         // Compute subcircuits parameters
         let c_params = {
             let max_txs = eth_block.transactions.len();
+            let max_withdrawals = eth_block.withdrawals.as_ref().unwrap().len();
             let max_bytecode = self.code_db.num_rows_required_for_bytecode_table();
 
             let max_calldata = eth_block
@@ -388,7 +397,7 @@ impl CircuitInputBuilder<DynamicCParams> {
                 .iter()
                 .fold(0, |acc, c| acc + c.bytes.len())
                 * 2
-                + 2;
+                + 4; // disabled and unused rows.
 
             let total_rws_before_padding: usize =
                 <RWCounter as Into<usize>>::into(self.block_ctx.rwc) - 1; // -1 since rwc start from index `1`
@@ -408,6 +417,7 @@ impl CircuitInputBuilder<DynamicCParams> {
             FixedCParams {
                 max_rws: max_rws_after_padding,
                 max_txs,
+                max_withdrawals,
                 max_calldata,
                 max_copy_rows,
                 max_exp_steps,

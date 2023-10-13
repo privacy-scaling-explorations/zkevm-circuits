@@ -140,7 +140,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let code_hash = block.get_rws(step, 5).account_value_pair().0;
+        let code_hash = block.get_rws(step, 5).account_codehash_pair().0;
         self.code_hash.assign_u256(region, offset, code_hash)?;
         self.not_exists
             .assign(region, offset, Word::from(code_hash))?;

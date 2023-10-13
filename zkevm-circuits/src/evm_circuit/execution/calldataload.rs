@@ -213,7 +213,15 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         // Assign to the buffer reader gadget.
         let (src_id, call_data_offset, call_data_length) = if call.is_root {
-            (tx.id, 0, tx.call_data.len() as u64)
+            (
+                tx.id,
+                0,
+                if tx.is_create() {
+                    0
+                } else {
+                    tx.call_data.len() as u64
+                },
+            )
         } else {
             (
                 call.caller_id as u64,
@@ -249,7 +257,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             for (i, byte) in calldata_bytes.iter_mut().enumerate() {
                 if call.is_root {
                     // Fetch from tx call data.
-                    if src_addr + (i as u64) < tx.call_data.len() as u64 {
+                    if src_addr + (i as u64) < call_data_length {
                         *byte = tx.call_data[src_addr as usize + i];
                     }
                 } else {

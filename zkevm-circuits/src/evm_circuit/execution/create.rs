@@ -497,8 +497,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let rw_offset = if is_create2 { 8 } else { 7 };
 
         // Pre-check: call depth, user's nonce and user's balance
-        let (caller_balance, _) = block.get_rws(step, rw_offset + 1).account_value_pair();
-        let (caller_nonce, _) = block.get_rws(step, rw_offset + 2).account_value_pair();
+        let (caller_balance, _) = block.get_rws(step, rw_offset + 1).account_balance_pair();
+        let (caller_nonce, _) = block.get_rws(step, rw_offset + 2).account_nonce_pair();
         let is_precheck_ok =
             if call.depth < 1025 && caller_balance >= value && caller_nonce.as_u64() < u64::MAX {
                 1
@@ -513,7 +513,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 .get_rws(step, rw_offset + 4)
                 .tx_access_list_value_pair();
             let (callee_prev_code_hash, _) =
-                block.get_rws(step, rw_offset + 5).account_value_pair();
+                block.get_rws(step, rw_offset + 5).account_codehash_pair();
             (callee_prev_code_hash, was_warm)
         } else {
             (U256::from(0), false)
@@ -586,7 +586,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     rw_offset + copy_rw_increase + 14,
                     rw_offset + copy_rw_increase + 15,
                 ]
-                .map(|i| block.get_rws(step, i).account_value_pair())
+                .map(|i| block.get_rws(step, i).account_balance_pair())
             } else {
                 [(0.into(), 0.into()), (0.into(), 0.into())]
             };

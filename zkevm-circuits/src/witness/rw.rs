@@ -240,7 +240,7 @@ pub enum Rw {
         tx_id: usize,
         log_id: u64, // pack this can index together into address?
         field_tag: TxLogFieldTag,
-        /// index has 3 usages depends on [`crate::table::TxLogFieldTag`]
+        /// index has 3 usages depends on `crate::table::TxLogFieldTag`
         /// - topic index (0..4) if field_tag is TxLogFieldTag::Topic
         /// - byte index if field_tag is TxLogFieldTag:Data
         /// - 0 for other field tags
@@ -357,11 +357,47 @@ impl Rw {
         }
     }
 
-    pub(crate) fn account_value_pair(&self) -> (Word, Word) {
+    pub(crate) fn account_balance_pair(&self) -> (Word, Word) {
         match self {
             Self::Account {
-                value, value_prev, ..
-            } => (*value, *value_prev),
+                value,
+                value_prev,
+                field_tag,
+                ..
+            } => {
+                debug_assert_eq!(field_tag, &AccountFieldTag::Balance);
+                (*value, *value_prev)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    pub(crate) fn account_nonce_pair(&self) -> (Word, Word) {
+        match self {
+            Self::Account {
+                value,
+                value_prev,
+                field_tag,
+                ..
+            } => {
+                debug_assert_eq!(field_tag, &AccountFieldTag::Nonce);
+                (*value, *value_prev)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    pub(crate) fn account_codehash_pair(&self) -> (Word, Word) {
+        match self {
+            Self::Account {
+                value,
+                value_prev,
+                field_tag,
+                ..
+            } => {
+                debug_assert_eq!(field_tag, &AccountFieldTag::CodeHash);
+                (*value, *value_prev)
+            }
             _ => unreachable!(),
         }
     }
