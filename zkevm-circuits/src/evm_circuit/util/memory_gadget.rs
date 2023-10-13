@@ -692,7 +692,7 @@ mod test_util;
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::util::{constraint_builder::ConstrainBuilderCommon, Cell, U64Cell};
-    use eth_types::{ToScalar, Word};
+    use eth_types::Word;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     use super::{test_util::*, *};
@@ -719,13 +719,13 @@ mod test {
                 .iter()
                 .map(|e| e.expr())
                 .collect::<Vec<Expression<F>>>();
-            let buffer_reader_gadget_bytes_expr = buffer_reader_gadget.bytes
-                .clone()
-                .iter()
-                .map(|e| e.expr())
+            let buffer_reader_gadget_bytes_expr = (0..MAX_BYTES)
+                .map(|e| buffer_reader_gadget.byte(e))
                 .collect::<Vec<Expression<F>>>();
-            let buffer_reader_gadget_seletor = buffer_reader_gadget.selectors
-                .clone();
+            let buffer_reader_gadget_seletor = (0..MAX_BYTES)
+                .clone()
+                .map(|e| buffer_reader_gadget.read_flag(e))
+                .collect::<Vec<Expression<F>>>();
 
             // test byte API
             for (byte_expr, buffer_reader_gadget_byte_expr) in bytes_expr.iter().zip(buffer_reader_gadget_bytes_expr.iter()) {
@@ -738,17 +738,11 @@ mod test {
 
             // test read_flag API
             cb.require_equal(
-                "length equal",
+                "selector length equal",
                 sum::expr(buffer_reader_gadget_seletor),
-                (addr_end.expr() - addr_start.expr()),
+                addr_end.expr() - addr_start.expr(),
             );
-            for () {
-                cb.require_equal(
-                    "selector correct",
-                    byte_expr,
-                    buffer_reader_gadget_byte_expr
-                );
-            }
+
             BufferReaderGadgetTestContainer { 
                 buffer_reader_gadget, 
                 addr_start,
@@ -784,12 +778,10 @@ mod test {
     
     #[test]
     fn test_buffer_reader_gadget(){
-        // TODO test different start and end address
-        
         // completeness
         // buffer len = data len
         try_test!(
-            BufferReaderGadgetTestContainer<Fr, 32, 10>, // TODO how to configure last parameter
+            BufferReaderGadgetTestContainer<Fr, 32, 10>,
             vec![
                 Word::from(0), 
                 Word::from(2), 
@@ -800,7 +792,7 @@ mod test {
 
         // buffer len > data len
         try_test!(
-            BufferReaderGadgetTestContainer<Fr, 32, 10>, // TODO how to configure last parameter
+            BufferReaderGadgetTestContainer<Fr, 32, 10>,
             vec![
                 Word::from(0), 
                 Word::from(31), // TODO or 32?
@@ -810,7 +802,7 @@ mod test {
         );
 
         // buffer len < data len
-        try_test!( // TODO should fail?
+        try_test!(
             BufferReaderGadgetTestContainer<Fr, 32, 10>, // TODO how to configure last parameter
             vec![
                 Word::from(0), 
@@ -822,7 +814,6 @@ mod test {
 
         // TODO check this comment above: Completeness: MinMaxGadget requires `signed_len ∈ (cap-RANGE; cap+RANGE]`, covering all
         // cases. If is_empty, signed_len ∈ (-RANGE; 0], otherwise signed_len ∈ [1; RANGE).
-
 
         // soundness
         // buffer len < data len
