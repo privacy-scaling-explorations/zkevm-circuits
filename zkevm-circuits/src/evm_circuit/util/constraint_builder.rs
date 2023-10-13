@@ -6,8 +6,8 @@ use crate::{
         util::{Cell, RandomLinearCombination},
     },
     table::{
-        AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, TxContextFieldTag, TxLogFieldTag,
-        TxReceiptFieldTag,
+        AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, StepStateFieldTag,
+        TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
     },
     util::{
         build_tx_log_expression, query_expression,
@@ -90,6 +90,22 @@ impl<F: Field> StepStateTransition<F> {
             memory_word_size: Transition::Any,
             reversible_write_counter: Transition::Any,
             log_id: Transition::Any,
+        }
+    }
+
+    pub(crate) fn same() -> Self {
+        Self {
+            rw_counter: Transition::Same,
+            call_id: Transition::Same,
+            is_root: Transition::Same,
+            is_create: Transition::Same,
+            code_hash: Transition::Same,
+            program_counter: Transition::Same,
+            stack_pointer: Transition::Same,
+            gas_left: Transition::Same,
+            memory_word_size: Transition::Same,
+            reversible_write_counter: Transition::Same,
+            log_id: Transition::Same,
         }
     }
 }
@@ -1288,6 +1304,67 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 Word::zero(),
             ),
         );
+    }
+
+    pub(crate) fn step_state_lookup(&mut self, is_write: Expression<F>) {
+        self.rw_lookup(
+            "StepState lookup",
+            is_write.clone(),
+            Target::StepState,
+            RwValues::new(
+                0.expr(),
+                0.expr(),
+                StepStateFieldTag::CodeHash.expr(),
+                Word::zero(),
+                self.curr.state.code_hash.to_word(),
+                Word::zero(),
+                Word::zero(),
+            ),
+        );
+
+        vec![
+            (self.curr.state.call_id.clone(), StepStateFieldTag::CallID),
+            (self.curr.state.is_root.clone(), StepStateFieldTag::IsRoot),
+            (
+                self.curr.state.is_create.clone(),
+                StepStateFieldTag::IsCreate,
+            ),
+            (
+                self.curr.state.program_counter.clone(),
+                StepStateFieldTag::ProgramCounter,
+            ),
+            (
+                self.curr.state.stack_pointer.clone(),
+                StepStateFieldTag::StackPointer,
+            ),
+            (self.curr.state.gas_left.clone(), StepStateFieldTag::GasLeft),
+            (
+                self.curr.state.memory_word_size.clone(),
+                StepStateFieldTag::MemoryWordSize,
+            ),
+            (
+                self.curr.state.reversible_write_counter.clone(),
+                StepStateFieldTag::ReversibleWriteCounter,
+            ),
+            (self.curr.state.log_id.clone(), StepStateFieldTag::LogID),
+        ]
+        .iter()
+        .for_each(|(cell, field_tag)| {
+            self.rw_lookup(
+                "StepState lookup",
+                is_write.clone(),
+                Target::StepState,
+                RwValues::new(
+                    0.expr(),
+                    0.expr(),
+                    field_tag.expr(),
+                    Word::zero(),
+                    Word::from_lo_unchecked(cell.expr()),
+                    Word::zero(),
+                    Word::zero(),
+                ),
+            );
+        });
     }
 
     // RwTable Start (Start tag)

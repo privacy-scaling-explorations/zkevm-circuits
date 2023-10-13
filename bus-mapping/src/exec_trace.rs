@@ -25,6 +25,7 @@ impl fmt::Debug for OperationRef {
                 Target::CallContext => "CallContext",
                 Target::TxReceipt => "TxReceipt",
                 Target::TxLog => "TxLog",
+                Target::StepState => "StepState",
             },
             self.1
         ))

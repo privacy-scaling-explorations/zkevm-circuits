@@ -115,6 +115,8 @@ pub enum Target {
     TxReceipt,
     /// Means the target of the operation is the TxLog.
     TxLog,
+    /// StepState
+    StepState,
     /// padding operation.
     Padding,
 }

@@ -47,6 +47,7 @@ mod add_sub;
 mod addmod;
 mod address;
 mod balance;
+mod begin_chunk;
 mod begin_tx;
 mod bitwise;
 mod block_ctx;
@@ -66,6 +67,7 @@ mod create;
 mod dummy;
 mod dup;
 mod end_block;
+mod end_chunk;
 mod end_tx;
 mod error_code_store;
 mod error_invalid_creation_code;
@@ -121,7 +123,10 @@ mod sstore;
 mod stop;
 mod swap;
 
-use self::{block_ctx::BlockCtxGadget, sha3::Sha3Gadget};
+use self::{
+    begin_chunk::BeginChunkGadget, block_ctx::BlockCtxGadget, end_chunk::EndChunkGadget,
+    sha3::Sha3Gadget,
+};
 use add_sub::AddSubGadget;
 use addmod::AddModGadget;
 use address::AddressGadget;
@@ -242,6 +247,8 @@ pub struct ExecutionConfig<F> {
     begin_tx_gadget: Box<BeginTxGadget<F>>,
     end_block_gadget: Box<EndBlockGadget<F>>,
     end_tx_gadget: Box<EndTxGadget<F>>,
+    begin_chunk_gadget: Box<BeginChunkGadget<F>>,
+    end_chunk_gadget: Box<EndChunkGadget<F>>,
     // opcode gadgets
     add_sub_gadget: Box<AddSubGadget<F>>,
     addmod_gadget: Box<AddModGadget<F>>,
@@ -510,6 +517,8 @@ impl<F: Field> ExecutionConfig<F> {
             begin_tx_gadget: configure_gadget!(),
             end_block_gadget: configure_gadget!(),
             end_tx_gadget: configure_gadget!(),
+            begin_chunk_gadget: configure_gadget!(),
+            end_chunk_gadget: configure_gadget!(),
             // opcode gadgets
             add_sub_gadget: configure_gadget!(),
             addmod_gadget: configure_gadget!(),
@@ -1227,6 +1236,8 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
+            ExecutionState::BeginChunk => assign_exec_step!(self.begin_chunk_gadget),
+            ExecutionState::EndChunk => assign_exec_step!(self.end_chunk_gadget),
             // opcode
             ExecutionState::ADD_SUB => assign_exec_step!(self.add_sub_gadget),
             ExecutionState::ADDMOD => assign_exec_step!(self.addmod_gadget),

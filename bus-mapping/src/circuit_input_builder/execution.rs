@@ -124,12 +124,16 @@ impl ExecStep {
 pub enum ExecState {
     /// EVM Opcode ID
     Op(OpcodeId),
+    /// Virtual step Begin Chunk
+    BeginChunk,
     /// Virtual step Begin Tx
     BeginTx,
     /// Virtual step End Tx
     EndTx,
     /// Virtual step End Block
     EndBlock,
+    /// Virtual step End Chunk
+    EndChunk,
 }
 
 impl Default for ExecState {

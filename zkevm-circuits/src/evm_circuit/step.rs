@@ -42,6 +42,8 @@ pub enum ExecutionState {
     BeginTx,
     EndTx,
     EndBlock,
+    BeginChunk,
+    EndChunk,
     // Opcode successful cases
     STOP,
     /// ADD and SUB opcodes share this state
@@ -301,6 +303,8 @@ impl From<&ExecStep> for ExecutionState {
             ExecState::BeginTx => ExecutionState::BeginTx,
             ExecState::EndTx => ExecutionState::EndTx,
             ExecState::EndBlock => ExecutionState::EndBlock,
+            ExecState::BeginChunk => ExecutionState::BeginChunk,
+            ExecState::EndChunk => ExecutionState::EndChunk,
         }
     }
 }
