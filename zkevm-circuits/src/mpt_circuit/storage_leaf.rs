@@ -288,17 +288,32 @@ impl<F: Field> StorageLeafConfig<F> {
                     require!((1.expr(), address_item.bytes_le()[1..33].rlc(&cb.keccak_r), 32.expr(), key.lo(), key.hi()) =>> @KECCAK);
                 }
             }};
-            ctx.mpt_table.constrain(
-                meta,
-                &mut cb.base,
-                config.main_data.address.expr(),
-                proof_type,
-                address_item.word(),
-                config.main_data.new_root.expr(),
-                config.main_data.old_root.expr(),
-                value_word[false.idx()].clone(),
-                value_word[true.idx()].clone(),
-            );
+
+            ifx! {not!(config.parent_data[false.idx()].is_placeholder) => {
+                ctx.mpt_table.constrain(
+                    meta,
+                    &mut cb.base,
+                    config.main_data.address.expr(),
+                    proof_type.clone(),
+                    address_item.word(),
+                    config.main_data.new_root.expr(),
+                    config.main_data.old_root.expr(),
+                    value_word[false.idx()].clone(),
+                    value_word[true.idx()].clone(),
+                );
+            } elsex {
+                ctx.mpt_table.constrain(
+                    meta,
+                    &mut cb.base,
+                    config.main_data.address.expr(),
+                    proof_type,
+                    address_item.word(),
+                    config.main_data.new_root.expr(),
+                    config.main_data.old_root.expr(),
+                    Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    value_word[true.idx()].clone(),
+                );
+            }};
         });
 
         config
@@ -477,6 +492,11 @@ impl<F: Field> StorageLeafConfig<F> {
         } else {
             MPTProofType::Disabled
         };
+
+        let mut new_value = value_word[false.idx()];
+        if parent_data[false.idx()].is_placeholder {
+            new_value = word::Word::<F>::new([0.scalar(), 0.scalar()]);
+        }
         mpt_config.mpt_table.assign_cached(
             region,
             offset,
@@ -486,7 +506,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 proof_type: Value::known(proof_type.scalar()),
                 new_root: main_data.new_root.into_value(),
                 old_root: main_data.old_root.into_value(),
-                new_value: value_word[false.idx()].into_value(),
+                new_value: new_value.into_value(),
                 old_value: value_word[true.idx()].into_value(),
             },
         )?;

@@ -86,16 +86,6 @@ func GetWitness(nodeUrl string, blockNum int, trieModifications []TrieModificati
 	database := state.NewDatabase(blockHeaderParent)
 	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
 
-	for i := 0; i < len(trieModifications); i++ {
-		// TODO: remove SetState (using it now just because this particular key might
-		// not be set and we will obtain empty storageProof)
-		v := common.BigToHash(big.NewInt(int64(17)))
-		statedb.SetState(trieModifications[i].Address, trieModifications[i].Key, v)
-		// TODO: enable GetState to get the preimages -
-		// GetState calls GetCommittedState which calls PrefetchStorage to get the preimages
-		// statedb.GetState(addr, keys[i])
-	}
-
 	return obtainTwoProofsAndConvertToWitness(trieModifications, statedb, 0)
 }
 
@@ -106,14 +96,14 @@ func obtainAccountProofAndConvertToWitness(i int, tMod TrieModification, tModsLe
 	addrh := crypto.Keccak256(addr.Bytes())
 	accountAddr := trie.KeybytesToHex(addrh)
 
-	// This needs to called before oracle.PrefetchAccount, otherwise oracle.PrefetchAccount
+	// This needs to be called before oracle.PrefetchAccount, otherwise oracle.PrefetchAccount
 	// will cache the proof and won't return it.
 	// Calling oracle.PrefetchAccount after statedb.SetStateObjectIfExists is needed only
 	// for cases when statedb.loadRemoteAccountsIntoStateObjects = false.
 	statedb.SetStateObjectIfExists(tMod.Address)
 
 	oracle.PrefetchAccount(statedb.Db.BlockNumber, tMod.Address, nil)
-	accountProof, aNeighbourNode1, aExtNibbles1, isLastLeaf1, err := statedb.GetProof(addr)
+	accountProof, aNeighbourNode1, aExtNibbles1, isLastLeaf1, aIsNeighbourNodeHashed1, err := statedb.GetProof(addr)
 	check(err)
 
 	var nodes []Node
@@ -125,7 +115,7 @@ func obtainAccountProofAndConvertToWitness(i int, tMod TrieModification, tModsLe
 	} else if tMod.Type == BalanceChanged {
 		statedb.SetBalance(addr, tMod.Balance)
 	} else if tMod.Type == CodeHashChanged {
-		statedb.SetCode(addr, tMod.CodeHash)
+		statedb.SetCodeHash(addr, tMod.CodeHash)
 	} else if tMod.Type == AccountCreate {
 		statedb.CreateAccount(tMod.Address)
 	} else if tMod.Type == AccountDestructed {
@@ -137,7 +127,7 @@ func obtainAccountProofAndConvertToWitness(i int, tMod TrieModification, tModsLe
 
 	cRoot := statedb.GetTrie().Hash()
 
-	accountProof1, aNeighbourNode2, aExtNibbles2, isLastLeaf2, err := statedb.GetProof(addr)
+	accountProof1, aNeighbourNode2, aExtNibbles2, isLastLeaf2, aIsNeighbourNodeHashed2, err := statedb.GetProof(addr)
 	check(err)
 
 	if tMod.Type == AccountDoesNotExist && len(accountProof) == 0 {
@@ -156,10 +146,16 @@ func obtainAccountProofAndConvertToWitness(i int, tMod TrieModification, tModsLe
 	addrh, accountAddr, accountProof, accountProof1, sRoot, cRoot = modifyAccountProofSpecialTests(addrh, accountAddr, sRoot, cRoot, accountProof, accountProof1, aNeighbourNode2, specialTest)
 	aNode := aNeighbourNode2
 	isShorterProofLastLeaf := isLastLeaf1
+	aIsNeighbourNodeHashed := aIsNeighbourNodeHashed2
 	if len(accountProof) > len(accountProof1) {
 		// delete operation
 		aNode = aNeighbourNode1
 		isShorterProofLastLeaf = isLastLeaf2
+		aIsNeighbourNodeHashed = aIsNeighbourNodeHashed1
+	}
+
+	if aIsNeighbourNodeHashed {
+		aNode, _ = oracle.Preimage(common.BytesToHash(aNode[1:]))
 	}
 
 	proofType := "NonceChanged"
@@ -170,7 +166,7 @@ func obtainAccountProofAndConvertToWitness(i int, tMod TrieModification, tModsLe
 	} else if tMod.Type == AccountDoesNotExist {
 		proofType = "AccountDoesNotExist"
 	} else if tMod.Type == CodeHashChanged {
-		proofType = "CodeHashExists" // TODO: change when it changes in the circuit
+		proofType = "CodeHashChanged"
 	}
 
 	nodes = append(nodes, GetStartNode(proofType, sRoot, cRoot, specialTest))
@@ -205,15 +201,25 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 			accountAddr := trie.KeybytesToHex(addrh)
 
 			oracle.PrefetchAccount(statedb.Db.BlockNumber, tMod.Address, nil)
-			// oracle.PrefetchStorage(statedb.Db.BlockNumber, addr, tMod.Key, nil)
+			oracle.PrefetchStorage(statedb.Db.BlockNumber, addr, tMod.Key, nil)
 
 			if specialTest == 1 {
 				statedb.CreateAccount(addr)
 			}
 
-			accountProof, aNeighbourNode1, aExtNibbles1, aIsLastLeaf1, err := statedb.GetProof(addr)
+			accountProof, aNeighbourNode1, aExtNibbles1, aIsLastLeaf1, aIsNeighbourNodeHashed1, err := statedb.GetProof(addr)
 			check(err)
-			storageProof, neighbourNode1, extNibbles1, isLastLeaf1, err := statedb.GetStorageProof(addr, tMod.Key)
+
+			// When the account has not been created yet and PrefetchAccount gets the wrong
+			// account - because the first part of the address is the same and
+			// the queried address doesn't have the account yet.
+			if !statedb.Exist(addr) {
+				// Note: the storage modification should not be the first modification for the account that does
+				// not exist yet.
+				panic("The account should exist at this point - created by SetNonce, SetBalance, or SetCodehash")
+			}
+
+			storageProof, neighbourNode1, extNibbles1, isLastLeaf1, isNeighbourNodeHashed1, err := statedb.GetStorageProof(addr, tMod.Key)
 			check(err)
 
 			sRoot := statedb.GetTrie().Hash()
@@ -230,26 +236,44 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 				proofType = "StorageDoesNotExist"
 			}
 
-			accountProof1, aNeighbourNode2, aExtNibbles2, aIsLastLeaf2, err := statedb.GetProof(addr)
+			accountProof1, aNeighbourNode2, aExtNibbles2, aIsLastLeaf2, aIsNeighbourNodeHashed2, err := statedb.GetProof(addr)
 			check(err)
 
-			storageProof1, neighbourNode2, extNibbles2, isLastLeaf2, err := statedb.GetStorageProof(addr, tMod.Key)
+			storageProof1, neighbourNode2, extNibbles2, isLastLeaf2, isNeighbourNodeHashed2, err := statedb.GetStorageProof(addr, tMod.Key)
 			check(err)
 
 			aNode := aNeighbourNode2
 			aIsLastLeaf := aIsLastLeaf1
+			aIsNeighbourNodeHashed := aIsNeighbourNodeHashed2
 			if len(accountProof) > len(accountProof1) {
 				// delete operation
 				aNode = aNeighbourNode1
 				aIsLastLeaf = aIsLastLeaf2
+				aIsNeighbourNodeHashed = aIsNeighbourNodeHashed1
+			}
+
+			// Note: oracle.Preimage is called here and not in Proof function because the preimage
+			// is not available yet there (GetProof / GetStorageProof fetch the preimages).
+			if aIsNeighbourNodeHashed {
+				// The error is not handled here, because it is ok to continue when the preimage is not found
+				// for the cases when neighbour node is not needed.
+				aNode, _ = oracle.Preimage(common.BytesToHash(aNode[1:]))
 			}
 
 			node := neighbourNode2
 			isLastLeaf := isLastLeaf1
+			isNeighbourNodeHashed := isNeighbourNodeHashed2
 			if len(storageProof) > len(storageProof1) {
 				// delete operation
 				node = neighbourNode1
 				isLastLeaf = isLastLeaf2
+				isNeighbourNodeHashed = isNeighbourNodeHashed1
+			}
+
+			if isNeighbourNodeHashed {
+				// The error is not handled here, because it is ok to continue when the preimage is not found
+				// for the cases when neighbour node is not needed.
+				node, _ = oracle.Preimage(common.BytesToHash(node[1:]))
 			}
 
 			if specialTest == 1 {
@@ -273,7 +297,8 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 			nodes = append(nodes, nodesStorage...)
 			nodes = append(nodes, GetEndNode())
 		} else {
-			nodes = obtainAccountProofAndConvertToWitness(i, tMod, len(trieModifications), statedb, specialTest)
+			accountNodes := obtainAccountProofAndConvertToWitness(i, tMod, len(trieModifications), statedb, specialTest)
+			nodes = append(nodes, accountNodes...)
 		}
 	}
 

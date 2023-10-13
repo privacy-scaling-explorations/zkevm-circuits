@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/privacy-scaling-explorations/mpt-witness-generator/oracle"
+	"github.com/privacy-scaling-explorations/mpt-witness-generator/trie"
 )
 
 var emptyCodeHash = crypto.Keccak256(nil)
@@ -359,7 +360,7 @@ func (s *stateObject) updateTrie(db Database) Trie {
 			// Get absense proof of key in case the deletion needs the sister node.
 
 			// Note: commented for now because of `ExtNodeDeleted`
-			// oracle.PrefetchStorage(big.NewInt(db.BlockNumber.Int64()+1), s.address, key, trie.GenPossibleShortNodePreimage)
+			oracle.PrefetchStorage(big.NewInt(db.BlockNumber.Int64()+1), s.address, key, trie.GenPossibleShortNodePreimage)
 			s.setError(tr.TryDelete(key[:]))
 		} else {
 			//fmt.Println("update", s.address, key, value)
