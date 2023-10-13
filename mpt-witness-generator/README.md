@@ -71,23 +71,12 @@ What is changed compared to geth:
 
 ## Generate witnesses
 
-<<<<<<< HEAD
-To generate witnesses for MPT circuit, go into witness folder and execute
-
-```
-go test gen_witness_from_infura_blockchain_test.go prepare_witness.go leaf.go extension_node.go modified_extension_node.go nodes.go test_tools.go branch.go util.go
-```
-
-to generate the tests that use Infura blockchain.
-
-=======
 To generate witnesses for MPT circuit, execute
 
 ```
 go test -v ./...
 ```
 
->>>>>>> beed49c46653a1d85aa041c82632a3f9c8d196eb
 To generate the tests that use a local blockchain you need a local `geth`. You would
 need to run something like:
 ```

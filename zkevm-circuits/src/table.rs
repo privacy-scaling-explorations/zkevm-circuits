@@ -45,6 +45,8 @@ pub(crate) mod rw_table;
 pub(crate) mod tx_table;
 /// ux table
 pub(crate) mod ux_table;
+/// withdrawal table
+pub(crate) mod wd_table;
 
 pub(crate) use block_table::{BlockContextFieldTag, BlockTable};
 pub(crate) use bytecode_table::{BytecodeFieldTag, BytecodeTable};
@@ -58,6 +60,7 @@ pub(crate) use rw_table::RwTable;
 pub(crate) use tx_table::{
     TxContextFieldTag, TxFieldTag, TxLogFieldTag, TxReceiptFieldTag, TxTable,
 };
+pub(crate) use wd_table::WdTable;
 
 /// Trait used to define lookup tables
 pub trait LookupTable<F: Field> {

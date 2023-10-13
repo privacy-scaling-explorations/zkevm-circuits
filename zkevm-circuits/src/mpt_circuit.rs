@@ -734,13 +734,11 @@ pub fn load_proof(path: &str) -> Vec<Node> {
 
     // Add the address and the key to the list of values in the Account and Storage nodes
     for node in nodes.iter_mut() {
-        if node.account.is_some() {
-            let account = node.account.clone().unwrap();
+        if let Some(account) = node.account.clone() {
             node.values.push([vec![148], account.address].concat());
             node.values.push([vec![160], account.key].concat());
         }
-        if node.storage.is_some() {
-            let storage: witness_row::StorageNode = node.storage.clone().unwrap();
+        if let Some(storage) = node.storage.clone() {
             node.values.push([vec![160], storage.address].concat());
             node.values.push([vec![160], storage.key].concat());
         }
