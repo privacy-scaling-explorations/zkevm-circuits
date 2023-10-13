@@ -203,18 +203,19 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
             count_decrement_less_one_inv,
         );
 
-        meta.create_gate("if not padding, count descreases monotonically", |meta| {
+        meta.create_gate("if not padding, count decreases monotonically", |meta| {
             let q_enable = meta.query_selector(q_enable);
             vec![q_enable * xif(not::expr(is_padding.expr()), count_decrement.expr())]
         });
 
         meta.create_gate("if last or padding, new_root is propagated ", |meta| {
             let q_enable = meta.query_selector(q_enable);
-            vec![q_enable * xif(is_padding.expr(), new_root_propagation.expr())]
+            let is_last_or_padding = or::expr([is_padding.expr(), is_last.expr()]);
+            vec![q_enable * xif(is_last_or_padding.expr(), new_root_propagation.expr())]
         });
 
         meta.create_gate(
-            "if not padding and not last row, roots should be chanined",
+            "if not padding and not last row, roots should be chained",
             |meta| {
                 let q_enable = meta.query_selector(q_enable);
 
@@ -222,7 +223,7 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
                     or::expr([is_padding.expr(), is_last.expr()]);
 
                 // TODO: quite ugly, need to compare with zero
-                let zero_if_roots_are_chanined = (meta
+                let zero_if_roots_are_chained = (meta
                     .query_advice(pi_mpt.new_root.lo(), Rotation::cur())
                     - meta.query_advice(pi_mpt.old_root.lo(), Rotation::next()))
                     + (meta.query_advice(pi_mpt.new_root.hi(), Rotation::cur())
@@ -232,7 +233,7 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
                     q_enable
                         * xif(
                             not::expr(one_if_not_padding_and_not_last_rot),
-                            not::expr(zero_if_roots_are_chanined),
+                            not::expr(zero_if_roots_are_chained),
                         ),
                 ]
             },
@@ -378,7 +379,7 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
                     let padding = count_usize == 0;
                     let count = Value::known(F::from(count_usize as u64));
 
-                    // do not enable the last row, to avoid errors in constrains that involves next rotation
+                    // do not enable the last row, to avoid errors in constraints that involves next rotation
                     if offset < self.max_proof_count - 1 {
                         config.q_enable.enable(&mut region, offset)?;
                     }

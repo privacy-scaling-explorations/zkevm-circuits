@@ -102,16 +102,6 @@ database if you already have some accounts:
 geth removedb
 ```
 
-<<<<<<< HEAD
-And to generate the tests:
-
-```
-go test gen_witness_from_local_blockchain_test.go prepare_witness.go leaf.go extension_node.go modified_extension_node.go nodes.go test_tools.go branch.go util.go
-```
-
-The witness files will appear in generated_witnesses folder.
-
-=======
 The witness files will appear in generated_witnesses folder.
 
 ## Format the code
@@ -122,7 +112,6 @@ To format the code use:
 gofmt -w ./*
 ```
 
->>>>>>> beed49c46653a1d85aa041c82632a3f9c8d196eb
 ## Calling from Rust
 
 Build:

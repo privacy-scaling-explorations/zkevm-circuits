@@ -72,89 +72,89 @@ pub(crate) enum StartRowType {
 /// MPT branch node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BranchNode {
-    /// TODO
+    /// TODO Doc.
     pub modified_index: usize,
-    /// TODO
+    /// TODO Doc.
     pub drifted_index: usize,
-    /// TODO
+    /// TODO Doc.
     pub list_rlp_bytes: [Vec<u8>; 2],
 }
 
 /// MPT extension node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExtensionNode {
-    /// TODO
+    /// TODO Doc.
     pub list_rlp_bytes: Vec<u8>,
 }
 
 /// MPT start node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StartNode {
-    /// TODO
+    /// TODO Doc.
     pub disable_preimage_check: bool,
-    /// TODO
+    /// TODO Doc.
     pub proof_type: MPTProofType,
 }
 
 /// MPT extension branch node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExtensionBranchNode {
-    /// TODO
+    /// TODO Doc.
     pub is_extension: bool,
-    /// TODO
+    /// TODO Doc.
     pub is_placeholder: [bool; 2],
-    /// TODO
+    /// TODO Doc.
     pub extension: ExtensionNode,
-    /// TODO
+    /// TODO Doc.
     pub branch: BranchNode,
 }
 
 /// MPT account node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AccountNode {
-    /// TODO
+    /// TODO Doc.
     pub address: Vec<u8>,
-    /// TODO
+    /// TODO Doc.
     pub key: Vec<u8>,
-    /// TODO
+    /// TODO Doc.
     pub list_rlp_bytes: [Vec<u8>; 2],
-    /// TODO
+    /// TODO Doc.
     pub value_rlp_bytes: [Vec<u8>; 2],
-    /// TODO
+    /// TODO Doc.
     pub value_list_rlp_bytes: [Vec<u8>; 2],
-    /// TODO
+    /// TODO Doc.
     pub drifted_rlp_bytes: Vec<u8>,
-    /// TODO
+    /// TODO Doc.
     pub wrong_rlp_bytes: Vec<u8>,
 }
 
 /// MPT storage node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StorageNode {
-    /// TODO
+    /// TODO Doc.
     pub address: Vec<u8>,
-    /// TODO
+    /// TODO Doc.
     pub key: Vec<u8>,
-    /// TODO
+    /// TODO Doc.
     pub list_rlp_bytes: [Vec<u8>; 2],
-    /// TODO
+    /// TODO Doc.
     pub value_rlp_bytes: [Vec<u8>; 2],
-    /// TODO
+    /// TODO Doc.
     pub drifted_rlp_bytes: Vec<u8>,
-    /// TODO
+    /// TODO Doc.
     pub wrong_rlp_bytes: Vec<u8>,
 }
 
 /// MPT node
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Node {
-    /// TODO
+    /// TODO Doc.
     pub start: Option<StartNode>,
-    /// TODO
+    /// TODO Doc.
     pub extension_branch: Option<ExtensionBranchNode>,
-    /// TODO
+    /// TODO Doc.
     pub account: Option<AccountNode>,
-    /// TODO
+    /// TODO Doc.
     pub storage: Option<StorageNode>,
     /// MPT node values
     pub values: Vec<Vec<u8>>,

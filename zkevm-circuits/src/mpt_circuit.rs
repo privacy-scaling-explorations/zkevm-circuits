@@ -515,7 +515,7 @@ impl<F: Field> MPTConfig<F> {
         Ok(height)
     }
 
-    ///
+    /// Loads MPT fixed table
     pub fn load_fixed_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_region(
             || "fixed table",
