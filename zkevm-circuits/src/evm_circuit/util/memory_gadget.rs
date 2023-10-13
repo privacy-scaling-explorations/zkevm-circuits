@@ -758,11 +758,11 @@ mod test {
         ) -> Result<(), Error> {
             let offset = 0;
             let addr_start= u64::from_le_bytes(witnesses[0].to_le_bytes()[..8].try_into().unwrap());
-            let addr_end= u64::from_le_bytes(witnesses[1].to_le_bytes()[..8].try_into().unwrap()); // TODO why not u64 from?
+            let addr_end= u64::from_le_bytes(witnesses[1].to_le_bytes()[..8].try_into().unwrap());
             let mut input_bytes: Vec<u8> = Vec::new();
             input_bytes.extend_from_slice(&witnesses[2].to_le_bytes());
-            self.addr_start.assign(region, offset, Some(addr_start.to_le_bytes()))?; // TODO or Value::known(addr_end)?? 
-            self.addr_end.assign(region, offset, Some(addr_end.to_le_bytes()))?; // TODO or Value::known(addr_end)??
+            self.addr_start.assign(region, offset, Some(addr_start.to_le_bytes()))?;
+            self.addr_end.assign(region, offset, Some(addr_end.to_le_bytes()))?;
             self.bytes
                 .iter()
                 .zip(input_bytes.iter())
@@ -777,8 +777,7 @@ mod test {
     }
     
     #[test]
-    fn test_buffer_reader_gadget(){
-        // completeness
+    fn test_buffer_reader_gadget_completness(){
         // buffer len = data len
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 32, 10>,
@@ -795,33 +794,21 @@ mod test {
             BufferReaderGadgetTestContainer<Fr, 32, 10>,
             vec![
                 Word::from(0), 
-                Word::from(31), // TODO or 32?
+                Word::from(31),
                 Word::from(255),
             ],
             true,
         );
+    }
 
+    #[test]
+    fn test_buffer_reader_gadget_soundness(){
         // buffer len < data len
         try_test!(
-            BufferReaderGadgetTestContainer<Fr, 32, 10>, // TODO how to configure last parameter
+            BufferReaderGadgetTestContainer<Fr, 32, 10>,
             vec![
-                Word::from(0), 
-                Word::from(2),
-                Word::from(1024),
-            ],
-            true,
-        );
-
-        // TODO check this comment above: Completeness: MinMaxGadget requires `signed_len ∈ (cap-RANGE; cap+RANGE]`, covering all
-        // cases. If is_empty, signed_len ∈ (-RANGE; 0], otherwise signed_len ∈ [1; RANGE).
-
-        // soundness
-        // buffer len < data len
-        try_test!(
-            BufferReaderGadgetTestContainer<Fr, 32, 10>, // TODO how to configure last parameter
-            vec![
-                Word::from(7), // TODO ? 
-                Word::from(8), 
+                Word::from(0),
+                Word::from(1), 
                 Word::from(1024),
             ],
             false,
@@ -829,7 +816,7 @@ mod test {
 
         // buffer len <= 0
         try_test!(
-            BufferReaderGadgetTestContainer<Fr, 32, 10>, // TODO how to configure last parameter
+            BufferReaderGadgetTestContainer<Fr, 32, 10>,
             vec![
                 Word::from(2), 
                 Word::from(1), 
@@ -840,7 +827,7 @@ mod test {
 
         // empty buffer
         try_test!(
-            BufferReaderGadgetTestContainer<Fr, 32, 10>, // TODO how to configure last parameter
+            BufferReaderGadgetTestContainer<Fr, 32, 10>,
             vec![
                 Word::from(1), 
                 Word::from(1), 
