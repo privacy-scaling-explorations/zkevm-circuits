@@ -709,7 +709,6 @@ mod test {
         for BufferReaderGadgetTestContainer<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>
     {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let offset = cb.query_cell();
             let addr_start = cb.query_u64();
             let addr_end = cb.query_u64();
             let buffer_reader_gadget 
@@ -725,32 +724,31 @@ mod test {
                 .iter()
                 .map(|e| e.expr())
                 .collect::<Vec<Expression<F>>>();
-            let buffer_reader_gadget_seletor_expr = buffer_reader_gadget.selectors
-                .clone()
-                .iter()
-                .map(|e| e.expr())
-                .collect::<Vec<Expression<F>>>();
+            let buffer_reader_gadget_seletor = buffer_reader_gadget.selectors
+                .clone();
 
             // test byte API
             for (byte_expr, buffer_reader_gadget_byte_expr) in bytes_expr.iter().zip(buffer_reader_gadget_bytes_expr.iter()) {
                 cb.require_equal(
-                    "bytes equal",
+                    "every byte equal",
                     byte_expr.expr(),
                     buffer_reader_gadget_byte_expr.expr(),
                 );
             }
 
             // test read_flag API
-            println!("{}", buffer_reader_gadget_bytes_expr.len());
-            // println!("{}", addr_end - addr_start);
             cb.require_equal(
                 "length equal",
-                buffer_reader_gadget_bytes_expr.len().expr(),
+                sum::expr(buffer_reader_gadget_seletor),
                 (addr_end.expr() - addr_start.expr()),
             );
-
-            // cb.require_equal("bytes equal", byte_expr, buffer_reader_gadget_byte_expr);
-
+            for () {
+                cb.require_equal(
+                    "selector correct",
+                    byte_expr,
+                    buffer_reader_gadget_byte_expr
+                );
+            }
             BufferReaderGadgetTestContainer { 
                 buffer_reader_gadget, 
                 addr_start,
@@ -807,6 +805,17 @@ mod test {
                 Word::from(0), 
                 Word::from(31), // TODO or 32?
                 Word::from(255),
+            ],
+            true,
+        );
+
+        // buffer len < data len
+        try_test!( // TODO should fail?
+            BufferReaderGadgetTestContainer<Fr, 32, 10>, // TODO how to configure last parameter
+            vec![
+                Word::from(0), 
+                Word::from(2),
+                Word::from(1024),
             ],
             true,
         );
