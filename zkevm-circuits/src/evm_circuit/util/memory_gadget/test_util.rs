@@ -16,27 +16,13 @@ use crate::{
     table::LookupTable,
     util::{cell_manager::CellType, Challenges},
 };
-use eth_types::{Field, Word, U256};
+use eth_types::{Field, Word};
 pub(crate) use halo2_proofs::circuit::{Layouter, Value};
 use halo2_proofs::{
     circuit::SimpleFloorPlanner,
     dev::MockProver,
     plonk::{Circuit, ConstraintSystem, Error, FirstPhase, SecondPhase, Selector, ThirdPhase},
 };
-
-pub(crate) const WORD_LOW_MAX: Word = U256([u64::MAX, u64::MAX, 0, 0]);
-pub(crate) const WORD_HIGH_MAX: Word = U256([0, 0, u64::MAX, u64::MAX]);
-// Maximum field value in bn256: bn256::MODULES - 1
-pub(crate) const WORD_CELL_MAX: Word = U256([
-    0x43e1f593f0000000,
-    0x2833e84879b97091,
-    0xb85045b68181585d,
-    0x30644e72e131a029,
-]);
-
-// I256::MAX = 2^255 - 1, and I256::MIN = 2^255.
-pub(crate) const WORD_SIGNED_MAX: Word = U256([u64::MAX, u64::MAX, u64::MAX, i64::MAX as _]);
-pub(crate) const WORD_SIGNED_MIN: Word = U256([0, 0, 0, i64::MIN as _]);
 
 pub(crate) trait MemoryGadgetContainer<F: Field>: Clone {
     fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self
