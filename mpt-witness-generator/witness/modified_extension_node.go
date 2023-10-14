@@ -71,9 +71,9 @@ func prepareModExtensionNode(statedb *state.StateDB, addr common.Address, rows *
 	var proof [][]byte
 	var err error
 	if isAccountProof {
-		proof, _, _, _, err = statedb.GetProof(addr)
+		proof, _, _, _, _, err = statedb.GetProof(addr)
 	} else {
-		proof, _, _, _, err = statedb.GetStorageProof(addr, ky)
+		proof, _, _, _, _, err = statedb.GetStorageProof(addr, ky)
 	}
 	check(err)
 

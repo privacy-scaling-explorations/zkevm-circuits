@@ -170,7 +170,7 @@ func TestAccountExtensionInFirstLevel(t *testing.T) {
 		statedb.IntermediateRoot(false)
 
 		oracle.PrefetchAccount(statedb.Db.BlockNumber, addr, nil)
-		proof1, _, _, _, err := statedb.GetProof(addr)
+		proof1, _, _, _, _, err := statedb.GetProof(addr)
 		check(err)
 
 		for j := 0; j < len(proof1)-1; j++ {
@@ -296,7 +296,7 @@ func TestExtensionTwoNibblesInEvenLevel(t *testing.T) {
 		statedb.IntermediateRoot(false)
 
 		oracle.PrefetchAccount(statedb.Db.BlockNumber, addr, nil)
-		proof1, _, _, _, err := statedb.GetProof(addr)
+		proof1, _, _, _, _, err := statedb.GetProof(addr)
 		check(err)
 
 		for j := 0; j < len(proof1)-1; j++ {
@@ -344,7 +344,7 @@ func TestExtensionThreeNibblesInEvenLevel(t *testing.T) {
 		statedb.IntermediateRoot(false)
 
 		oracle.PrefetchAccount(statedb.Db.BlockNumber, addr, nil)
-		proof1, _, _, _, err := statedb.GetProof(addr)
+		proof1, _, _, _, _, err := statedb.GetProof(addr)
 		check(err)
 
 		for j := 0; j < len(proof1)-1; j++ {
@@ -392,7 +392,7 @@ func TestExtensionThreeNibblesInOddLevel(t *testing.T) {
 		statedb.IntermediateRoot(false)
 
 		oracle.PrefetchAccount(statedb.Db.BlockNumber, addr, nil)
-		proof1, _, _, _, err := statedb.GetProof(addr)
+		proof1, _, _, _, _, err := statedb.GetProof(addr)
 		check(err)
 
 		for j := 0; j < len(proof1)-1; j++ {

@@ -351,22 +351,25 @@ impl<F: Field> AccountLeafConfig<F> {
                     config.parent_data[false.idx()].is_placeholder.expr()
                 ]) => true);
             } elsex {
-                // Check that there is only one modification (except when the account is being deleted).
-                // Nonce needs to remain the same when not modifying the nonce
-                ifx!{not!(config.is_nonce_mod) => {
-                    require!(nonce[false.idx()] => nonce[true.idx()]);
-                }}
-                // Balance needs to remain the same when not modifying the balance
-                ifx!{not!(config.is_balance_mod) => {
-                    require!(balance[false.idx()] => balance[true.idx()]);
-                }}
-                // Storage root needs to remain the same when not modifying the storage root
-                ifx!{not!(config.is_storage_mod) => {
-                    require!(storage[false.idx()] => storage[true.idx()]);
-                }}
-                // Codehash root needs to remain the same when not modifying the codehash
-                ifx!{not!(config.is_codehash_mod) => {
-                    require!(codehash[false.idx()] => codehash[true.idx()]);
+                ifx! {and::expr(&[not!(config.parent_data[true.idx()].is_placeholder), not!(config.parent_data[false.idx()].is_placeholder)]) => {
+                    // Check that there is only one modification, except when the account is being deleted or
+                    // the parent branch is a placeholder (meaning the account leafs in S are C are different).
+                    // Nonce needs to remain the same when not modifying the nonce
+                    ifx!{not!(config.is_nonce_mod) => {
+                        require!(nonce[false.idx()] => nonce[true.idx()]);
+                    }}
+                    // Balance needs to remain the same when not modifying the balance
+                    ifx!{not!(config.is_balance_mod) => {
+                        require!(balance[false.idx()] => balance[true.idx()]);
+                    }}
+                    // Storage root needs to remain the same when not modifying the storage root
+                    ifx!{not!(config.is_storage_mod) => {
+                        require!(storage[false.idx()] => storage[true.idx()]);
+                    }}
+                    // Codehash root needs to remain the same when not modifying the codehash
+                    ifx!{not!(config.is_codehash_mod) => {
+                        require!(codehash[false.idx()] => codehash[true.idx()]);
+                    }}
                 }}
             }}
             ifx! {config.is_non_existing_account_proof => {
@@ -403,17 +406,32 @@ impl<F: Field> AccountLeafConfig<F> {
             let lo = address_item.word().lo();
             let hi = address_item.word().hi() * to_hi;
             let address = lo + hi;
-            ctx.mpt_table.constrain(
-                meta,
-                &mut cb.base,
-                address,
-                proof_type,
-                Word::<Expression<F>>::new([0.expr(), 0.expr()]),
-                config.main_data.new_root.expr(),
-                config.main_data.old_root.expr(),
-                Word::<Expression<F>>::new([new_value_lo, new_value_hi]),
-                Word::<Expression<F>>::new([old_value_lo, old_value_hi]),
-            );
+
+            ifx! {not!(config.parent_data[false.idx()].is_placeholder) => {
+                ctx.mpt_table.constrain(
+                    meta,
+                    &mut cb.base,
+                    address.clone(),
+                    proof_type.clone(),
+                    Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    config.main_data.new_root.expr(),
+                    config.main_data.old_root.expr(),
+                    Word::<Expression<F>>::new([new_value_lo, new_value_hi]),
+                    Word::<Expression<F>>::new([old_value_lo.clone(), old_value_hi.clone()]),
+                );
+            } elsex {
+                ctx.mpt_table.constrain(
+                    meta,
+                    &mut cb.base,
+                    address,
+                    proof_type,
+                    Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    config.main_data.new_root.expr(),
+                    config.main_data.old_root.expr(),
+                    Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    Word::<Expression<F>>::new([old_value_lo, old_value_hi]),
+                );
+            }};
         });
 
         config
@@ -648,6 +666,10 @@ impl<F: Field> AccountLeafConfig<F> {
             )
         };
 
+        let mut new_value = value[false.idx()];
+        if parent_data[false.idx()].is_placeholder {
+            new_value = word::Word::<F>::new([0.scalar(), 0.scalar()]);
+        }
         mpt_config.mpt_table.assign_cached(
             region,
             offset,
@@ -659,7 +681,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 proof_type: Value::known(proof_type.scalar()),
                 new_root: main_data.new_root.into_value(),
                 old_root: main_data.old_root.into_value(),
-                new_value: value[false.idx()].into_value(),
+                new_value: new_value.into_value(),
                 old_value: value[true.idx()].into_value(),
             },
         )?;

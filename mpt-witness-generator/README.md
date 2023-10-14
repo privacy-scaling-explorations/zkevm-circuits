@@ -71,13 +71,11 @@ What is changed compared to geth:
 
 ## Generate witnesses
 
-To generate witnesses for MPT circuit, go into witness folder and execute
+To generate witnesses for MPT circuit, execute
 
 ```
-go test gen_witness_from_infura_blockchain_test.go prepare_witness.go leaf.go extension_node.go modified_extension_node.go nodes.go test_tools.go branch.go util.go
+go test -v ./...
 ```
-
-to generate the tests that use Infura blockchain.
 
 To generate the tests that use a local blockchain you need a local `geth`. You would
 need to run something like:
@@ -93,13 +91,15 @@ database if you already have some accounts:
 geth removedb
 ```
 
-And to generate the tests:
-
-```
-go test gen_witness_from_local_blockchain_test.go prepare_witness.go leaf.go extension_node.go modified_extension_node.go nodes.go test_tools.go branch.go util.go
-```
-
 The witness files will appear in generated_witnesses folder.
+
+## Format the code
+
+To format the code use:
+
+```
+gofmt -w ./*
+```
 
 ## Calling from Rust
 

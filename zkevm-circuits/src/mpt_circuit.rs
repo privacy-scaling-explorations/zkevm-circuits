@@ -727,15 +727,17 @@ pub fn load_proof(path: &str) -> Vec<Node> {
 
     // Add the address and the key to the list of values in the Account and Storage nodes
     for node in nodes.iter_mut() {
-        if node.account.is_some() {
-            let account = node.account.clone().unwrap();
-            node.values.push([vec![148], account.address].concat());
-            node.values.push([vec![160], account.key].concat());
+        if let Some(account) = node.account.clone() {
+            node.values
+                .push([vec![148], account.address.to_vec()].concat().into());
+            node.values
+                .push([vec![160], account.key.to_vec()].concat().into());
         }
-        if node.storage.is_some() {
-            let storage: witness_row::StorageNode = node.storage.clone().unwrap();
-            node.values.push([vec![160], storage.address].concat());
-            node.values.push([vec![160], storage.key].concat());
+        if let Some(storage) = node.storage.clone() {
+            node.values
+                .push([vec![160], storage.address.to_vec()].concat().into());
+            node.values
+                .push([vec![160], storage.key.to_vec()].concat().into());
         }
     }
     nodes
@@ -745,7 +747,7 @@ pub fn load_proof(path: &str) -> Vec<Node> {
 mod tests {
     use super::*;
     use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-    use std::fs;
+    use std::{fs, ops::Deref};
 
     #[test]
     fn test_mpt() {
@@ -772,7 +774,7 @@ mod tests {
                 let mut keccak_data = vec![];
                 for node in nodes.iter() {
                     for k in node.keccak_data.iter() {
-                        keccak_data.push(k.clone());
+                        keccak_data.push(k.deref().clone());
                     }
                 }
 
