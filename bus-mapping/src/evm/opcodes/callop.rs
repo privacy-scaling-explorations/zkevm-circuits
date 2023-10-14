@@ -284,6 +284,9 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     callee_gas_left_with_stipend
                 );
 
+                // RAY_INCOMPLETE
+                let result = vec![];
+
                 // mutate the callee memory by at least the precompile call's result that will be
                 // written from memory addr 0 to memory addr result.len()
                 state.call_ctx_mut()?.memory.extend_at_least(result.len());
