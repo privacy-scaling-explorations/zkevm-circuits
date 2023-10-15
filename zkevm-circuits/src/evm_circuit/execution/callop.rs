@@ -784,6 +784,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_callcode = opcode == OpcodeId::CALLCODE;
         let is_delegatecall = opcode == OpcodeId::DELEGATECALL;
         let mut rws = StepRws::new(block, step);
+
+        log::trace!("=> block rws: {:?}", block.rws);
+        log::trace!("=> step: {:?}", step);
+
         let tx_id = rws.next().call_context_value();
         rws.next(); // RwCounterEndOfReversion
         rws.next(); // IsPersistent
@@ -793,8 +797,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let current_callee_address = rws.next().call_context_value();
 
         let _is_valid_depth = depth.low_u64() < 1025;
+
         self.is_depth_ok
             .assign(region, offset, F::from(depth.low_u64()), F::from(1025))?;
+
         // This offset is used to change the index offset of `step.rw_indices`.
         // Since both CALL and CALLCODE have an extra stack pop `value`, and
         // opcode DELEGATECALL has two extra call context lookups - current

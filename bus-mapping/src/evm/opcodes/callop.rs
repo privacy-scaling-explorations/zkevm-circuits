@@ -285,7 +285,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 );
 
                 // RAY_INCOMPLETE
-                let result = vec![];
+                // let result = vec![];
 
                 // mutate the callee memory by at least the precompile call's result that will be
                 // written from memory addr 0 to memory addr result.len()

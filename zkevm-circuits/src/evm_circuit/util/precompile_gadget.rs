@@ -53,6 +53,7 @@ impl<F: Field> PrecompileGadget<F> {
         ];
 
         let constraints: Vec<BoxedClosure<F>> = vec![
+            // RAY_INCOMPLETE
             Box::new(|cb| {
                 /* Identity */
                 cb.require_equal(
@@ -64,7 +65,8 @@ impl<F: Field> PrecompileGadget<F> {
             // add more precompile constraint closures
         ];
 
-        cb.constrain_mutually_exclusive_next_step(conditions, next_states, constraints);
+        // RAY_INCOMPLETE
+        // cb.constrain_mutually_exclusive_next_step(conditions, next_states, constraints);
 
         Self { address }
     }
