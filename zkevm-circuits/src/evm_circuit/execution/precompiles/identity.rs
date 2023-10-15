@@ -192,6 +192,7 @@ mod test {
                     call_data_length: 0x10.into(),
                     ret_offset: 0x20.into(),
                     ret_size: 0x10.into(),
+                    gas: 0xFFF.into(),
                     address: PrecompileCalls::Identity.address().to_word(),
                     ..Default::default()
                 },

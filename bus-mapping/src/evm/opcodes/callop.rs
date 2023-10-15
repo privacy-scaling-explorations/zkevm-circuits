@@ -17,7 +17,7 @@ use eth_types::{
         gas_utils::{eip150_gas, memory_expansion_gas_cost},
         GasCost, OpcodeId, GAS_STIPEND_CALL_WITH_VALUE,
     },
-    GethExecStep, ToWord, Word,
+    GethExecStep, ToWord, Word, U256
 };
 // use revm_precompile::Precompile;
 use std::cmp::min;
@@ -215,6 +215,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let has_value = !call.value.is_zero() && !call.is_delegatecall();
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
+
         let gas_cost = if is_warm {
             GasCost::WARM_ACCESS
         } else {
@@ -230,6 +231,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             0
         } + memory_expansion_gas_cost;
         let gas_specified = geth_step.stack.last()?;
+        assert!(gas_specified < U256::from(geth_step.gas - gas_cost), "Specified gas can't exceed allocated gas for this exec step.");
         let stipend = if has_value {
             GAS_STIPEND_CALL_WITH_VALUE
         } else {
@@ -283,7 +285,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     },
                     callee_gas_left_with_stipend
                 );
-
+                
                 // RAY_INCOMPLETE
                 let result = vec![];
 

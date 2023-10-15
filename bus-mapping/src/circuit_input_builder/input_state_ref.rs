@@ -1182,6 +1182,55 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
+    // The returned (return_data_offset, return_data_len) pair, is the values used to calculate
+    // memory expansion cost when successful case. So for "successful deployment" case, it will
+    // be non 0 while the call_ctx.return should be empty for this case. EIP-211: CREATE/CREATE2
+    // call successful case should set RETURNDATASIZE = 0
+    fn get_return_data_offset_and_len(
+        exec_step: &ExecStep,
+        geth_step: &GethExecStep,
+        caller_ctx: &CallContext,
+    ) -> Result<(U256, U256), Error> {
+        let is_err = exec_step.error.is_some();
+        let [last_callee_return_data_offset, last_callee_return_data_length] = if is_err {
+            [Word::zero(), Word::zero()]
+        } else {
+            match geth_step.op {
+                OpcodeId::STOP => [Word::zero(); 2],
+                OpcodeId::CALL
+                | OpcodeId::CALLCODE
+                | OpcodeId::STATICCALL
+                | OpcodeId::DELEGATECALL => {
+                    let return_data_length = match exec_step.exec_state {
+                        ExecState::Precompile(_) => {
+                            // successful precompile call
+                            caller_ctx.return_data.len().into()
+                        }
+                        _ => Word::zero(),
+                    };
+                    [Word::zero(), return_data_length]
+                }
+                OpcodeId::REVERT | OpcodeId::RETURN => {
+                    let offset = geth_step.stack.nth_last(0)?;
+                    let length = geth_step.stack.nth_last(1)?;
+                    // This is the convention we are using for memory addresses so that there is no
+                    // memory expansion cost when the length is 0.
+                    // https://github.com/privacy-scaling-explorations/zkevm-circuits/pull/279/files#r787806678
+                    if length.is_zero() {
+                        [Word::zero(); 2]
+                    } else {
+                        [offset, length]
+                    }
+                }
+                _ => [Word::zero(), Word::zero()],
+            }
+        };
+        Ok((
+            last_callee_return_data_offset,
+            last_callee_return_data_length,
+        ))
+    }
+
     /// Bus mapping for the RestoreContextGadget as used in RETURN.
     pub fn handle_restore_context(
         &mut self,
@@ -1192,11 +1241,17 @@ impl<'a> CircuitInputStateRef<'a> {
         let geth_step = steps
             .get(0)
             .ok_or(Error::InternalError("invalid index 0"))?;
+        let is_err = exec_step.error.is_some();
         let is_revert_or_return_call_success = (geth_step.op == OpcodeId::REVERT
             || geth_step.op == OpcodeId::RETURN)
             && exec_step.error.is_none();
 
-        if !is_revert_or_return_call_success && !call.is_success {
+
+        if !is_revert_or_return_call_success 
+            && !call.is_success
+            && !exec_step.is_precompiled()
+            && !exec_step.is_precompile_oog_err()
+        {
             // add call failure ops for exception cases
             self.call_context_read(
                 exec_step,
@@ -1232,24 +1287,13 @@ impl<'a> CircuitInputStateRef<'a> {
             caller.call_id.into(),
         );
 
-        let [last_callee_return_data_offset, last_callee_return_data_length] = match geth_step.op {
-            OpcodeId::STOP => [Word::zero(); 2],
-            OpcodeId::REVERT | OpcodeId::RETURN => {
-                let offset = geth_step.stack.nth_last(0)?;
-                let length = geth_step.stack.nth_last(1)?;
-                // This is the convention we are using for memory addresses so that there is no
-                // memory expansion cost when the length is 0.
-                if length.is_zero() {
-                    [Word::zero(); 2]
-                } else {
-                    [offset, length]
-                }
-            }
-            _ => [Word::zero(), Word::zero()],
-        };
+        let (last_callee_return_data_offset, last_callee_return_data_length) = 
+            Self::get_return_data_offset_and_len(exec_step, geth_step, self.caller_ctx()?)?;
 
         let gas_refund = if exec_step.error.is_some() {
             0
+        } else if exec_step.is_precompiled() {
+            exec_step.gas_left - exec_step.gas_cost
         } else {
             let curr_memory_word_size = (exec_step.memory_size as u64) / 32;
             let next_memory_word_size = if !last_callee_return_data_length.is_zero() {
@@ -1276,13 +1320,12 @@ impl<'a> CircuitInputStateRef<'a> {
             geth_step.gas - memory_expansion_gas_cost - code_deposit_cost - constant_step_gas
         };
 
-        let caller_gas_left = if is_revert_or_return_call_success || call.is_success {
-            geth_step_next.gas + gas_refund
-
-        } else {
-            geth_step_next.gas
-        };
-
+        let caller_gas_left = geth_step_next.gas.checked_sub(gas_refund).unwrap_or_else (
+            || {
+                panic!("caller_gas_left underflow geth_step_next {geth_step_next:?}, gas_refund {gas_refund:?}, exec_step {exec_step:?}, geth_step {geth_step:?}");
+            }
+        );
+        
         for (field, value) in [
             (CallContextField::IsRoot, (caller.is_root as u64).into()),
             (
