@@ -110,10 +110,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             CallContextFieldTag::Depth,
         ]
         .map(|field_tag| cb.call_context(None, field_tag));
+        let current_callee_address = cb.call_context_read_as_word(None, CallContextFieldTag::CalleeAddress);
 
-        let (current_callee_address, current_caller_address, current_value) = cb.condition(is_delegatecall.expr(), |cb| {
+        let (current_caller_address, current_value) = cb.condition(is_delegatecall.expr(), |cb| {
             (
-                cb.call_context_read_as_word(None, CallContextFieldTag::CalleeAddress),
                 cb.call_context_read_as_word(None, CallContextFieldTag::CallerAddress),
                 cb.call_context_read_as_word(None, CallContextFieldTag::Value),
             )
@@ -785,8 +785,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_delegatecall = opcode == OpcodeId::DELEGATECALL;
         let mut rws = StepRws::new(block, step);
 
-        log::trace!("=> block rws: {:?}", block.rws);
-        log::trace!("=> step: {:?}", step);
+        // RAY_INCOMPLETE
+        // log::trace!("=> block rws: {:?}", block.rws);
+        // log::trace!("=> step: {:?}", step);
 
         let tx_id = rws.next().call_context_value();
         rws.next(); // RwCounterEndOfReversion
