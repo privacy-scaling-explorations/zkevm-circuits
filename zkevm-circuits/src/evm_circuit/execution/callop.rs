@@ -489,10 +489,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 let callee_gas_left = callee_gas_left.expr()
                     + call_gadget.has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr();
 
-                cb.debug_expression("=> [CallOp] Curr state memory_word_size", cb.curr.state.memory_word_size.expr());
-                cb.debug_expression("=> [CallOp] precompile_output_rws", precompile_output_rws.expr());
-                cb.debug_expression("=> [CallOp] Next state memory_word_size", cb.next.state.memory_word_size.expr());
-
                 // RAY_INCOMPLETE
                 let precompile_output_word_size_div: ConstantDivisionGadget<F, N_BYTES_U64> = 
                     ConstantDivisionGadget::construct(cb, precompile_output_rws.expr(), 32);
@@ -511,10 +507,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     program_counter: Delta(1.expr()),
                     stack_pointer: Delta(stack_pointer_delta.expr()),
                     gas_left: To(callee_gas_left.expr()),
-
-                    // memory_word_size: To(precompile_output_word_size),
-                    memory_word_size: To(1.expr()),
-
+                    memory_word_size: To(precompile_output_word_size),
                     reversible_write_counter: To(callee_reversible_rwc_delta.expr()),
                     ..StepStateTransition::default()
                 });
@@ -1132,11 +1125,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             let input_rws = input_bytes.len() as u64;
             let output_rws = output_bytes.len() as u64;
             let return_rws = (return_bytes.len() * 2) as u64;
-
-            // let input_rws = Value::known(F::from(input_bytes.len() as u64));
-            // // let input_rws = Value::known(F::from(input_bytes_word_count as u64));
-            // let output_rws = Value::known(F::from(output_bytes.len() as u64));
-            // let return_rws = Value::known(F::from((return_bytes.len() * 2) as u64));
 
             (
                 input_len as u64,
