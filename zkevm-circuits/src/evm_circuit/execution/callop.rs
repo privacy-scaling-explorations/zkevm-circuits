@@ -27,7 +27,7 @@ use crate::{
     },
 };
 use bus_mapping::{
-    circuit_input_builder::CopyDataType, 
+    // circuit_input_builder::CopyDataType, 
     evm::OpcodeId, 
     precompile::{is_precompiled, PrecompileCalls}
 };
@@ -489,7 +489,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 let callee_gas_left = callee_gas_left.expr()
                     + call_gadget.has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr();
 
-                // RAY_INCOMPLETE
                 let precompile_output_word_size_div: ConstantDivisionGadget<F, N_BYTES_U64> = 
                     ConstantDivisionGadget::construct(cb, precompile_output_rws.expr(), 32);
                 let precompile_output_word_size_div_remainder_zero = IsZeroGadget::construct(cb, precompile_output_word_size_div.remainder());
