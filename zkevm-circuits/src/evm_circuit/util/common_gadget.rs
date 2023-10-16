@@ -690,7 +690,8 @@ impl<F: Field> TransferGadget<F> {
 
     pub(crate) fn rw_delta(&self) -> Expression<F> {
         // +1 Write Account (sender) Balance (Not Reversible tx fee)
-        1.expr() +
+        // TODO: PR1628
+        // 1.expr() +
         // +1 Write Account (sender) Balance
         not::expr(self.value_is_zero.expr()) +
         self.receiver.rw_delta()
