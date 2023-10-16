@@ -1,8 +1,8 @@
 //! CircuitInput builder tooling module.
 
 use super::{
-    get_call_memory_offset_length, get_create_init_code, Block, BlockContext,
-    Call, CallContext, CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, Transaction,
+    get_call_memory_offset_length, get_create_init_code, Block, BlockContext, Call, CallContext,
+    CallKind, ChunkContext, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, Transaction,
     TransactionContext,
 };
 use crate::{
@@ -36,6 +36,8 @@ pub struct CircuitInputStateRef<'a> {
     pub block: &'a mut Block,
     /// Block Context
     pub block_ctx: &'a mut BlockContext,
+    /// Block Context
+    pub chunk_ctx: &'a mut ChunkContext,
     /// Transaction
     pub tx: &'a mut Transaction,
     /// Transaction Context
@@ -51,7 +53,7 @@ impl<'a> CircuitInputStateRef<'a> {
             geth_step,
             call_ctx,
             self.block_ctx.rwc,
-            self.block_ctx.rwc,
+            self.chunk_ctx.rwc,
             call_ctx.reversible_write_counter,
             self.tx_ctx.log_id,
         ))
@@ -119,10 +121,12 @@ impl<'a> CircuitInputStateRef<'a> {
         if let OpEnum::Account(op) = op.clone().into_enum() {
             self.check_update_sdb_account(rw, &op)
         }
-        let op_ref =
-            self.block
-                .container
-                .insert(Operation::new(self.block_ctx.rwc.inc_pre(), rw, op));
+        let op_ref = self.block.container.insert(Operation::new(
+            self.block_ctx.rwc.inc_pre(),
+            self.chunk_ctx.rwc.inc_pre(),
+            rw,
+            op,
+        ));
         step.bus_mapping_instance.push(op_ref);
     }
 
@@ -185,6 +189,7 @@ impl<'a> CircuitInputStateRef<'a> {
         self.check_apply_op(&op.clone().into_enum());
         let op_ref = self.block.container.insert(Operation::new_reversible(
             self.block_ctx.rwc.inc_pre(),
+            self.chunk_ctx.rwc.inc_pre(),
             RW::WRITE,
             op,
         ));
@@ -987,6 +992,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 self.check_apply_op(&op);
                 let rev_op_ref = self.block.container.insert_op_enum(
                     self.block_ctx.rwc.inc_pre(),
+                    self.chunk_ctx.rwc.inc_pre(),
                     RW::WRITE,
                     false,
                     op,

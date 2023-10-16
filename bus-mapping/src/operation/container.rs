@@ -1,7 +1,7 @@
 use super::{
     AccountOp, CallContextOp, MemoryOp, Op, OpEnum, Operation, PaddingOp, RWCounter, StackOp,
-    StartOp, StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxLogOp,
-    TxReceiptOp, TxRefundOp, RW,
+    StartOp, StepStateOp, StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp,
+    TxLogOp, TxReceiptOp, TxRefundOp, RW,
 };
 use crate::exec_trace::OperationRef;
 use itertools::Itertools;
@@ -46,6 +46,8 @@ pub struct OperationContainer {
     pub start: Vec<Operation<StartOp>>,
     /// Operations of Padding
     pub padding: Vec<Operation<PaddingOp>>,
+    /// Operations of StepState
+    pub step_state: Vec<Operation<StepStateOp>>,
 }
 
 impl Default for OperationContainer {
@@ -71,6 +73,7 @@ impl OperationContainer {
             tx_log: Vec::new(),
             start: Vec::new(),
             padding: Vec::new(),
+            step_state: Vec::new(),
         }
     }
 
@@ -80,9 +83,10 @@ impl OperationContainer {
     /// vector.
     pub fn insert<T: Op>(&mut self, op: Operation<T>) -> OperationRef {
         let rwc = op.rwc();
+        let rwc_inner_chunk = op.rwc_inner_chunk();
         let rw = op.rw();
         let reversible = op.reversible();
-        self.insert_op_enum(rwc, rw, reversible, op.op.into_enum())
+        self.insert_op_enum(rwc, rwc_inner_chunk, rw, reversible, op.op.into_enum())
     }
 
     /// Inserts an [`OpEnum`] into the  container returning a lightweight
@@ -92,32 +96,35 @@ impl OperationContainer {
     pub fn insert_op_enum(
         &mut self,
         rwc: RWCounter,
+        rwc_inner_chunk: RWCounter,
         rw: RW,
         reversible: bool,
         op_enum: OpEnum,
     ) -> OperationRef {
         match op_enum {
             OpEnum::Memory(op) => {
-                self.memory.push(Operation::new(rwc, rw, op));
+                self.memory
+                    .push(Operation::new(rwc, rwc_inner_chunk, rw, op));
                 OperationRef::from((Target::Memory, self.memory.len() - 1))
             }
             OpEnum::Stack(op) => {
-                self.stack.push(Operation::new(rwc, rw, op));
+                self.stack
+                    .push(Operation::new(rwc, rwc_inner_chunk, rw, op));
                 OperationRef::from((Target::Stack, self.stack.len() - 1))
             }
             OpEnum::Storage(op) => {
                 self.storage.push(if reversible {
-                    Operation::new_reversible(rwc, rw, op)
+                    Operation::new_reversible(rwc, rwc_inner_chunk, rw, op)
                 } else {
-                    Operation::new(rwc, rw, op)
+                    Operation::new(rwc, rwc_inner_chunk, rw, op)
                 });
                 OperationRef::from((Target::Storage, self.storage.len() - 1))
             }
             OpEnum::TxAccessListAccount(op) => {
                 self.tx_access_list_account.push(if reversible {
-                    Operation::new_reversible(rwc, rw, op)
+                    Operation::new_reversible(rwc, rwc_inner_chunk, rw, op)
                 } else {
-                    Operation::new(rwc, rw, op)
+                    Operation::new(rwc, rwc_inner_chunk, rw, op)
                 });
                 OperationRef::from((
                     Target::TxAccessListAccount,
@@ -126,9 +133,9 @@ impl OperationContainer {
             }
             OpEnum::TxAccessListAccountStorage(op) => {
                 self.tx_access_list_account_storage.push(if reversible {
-                    Operation::new_reversible(rwc, rw, op)
+                    Operation::new_reversible(rwc, rwc_inner_chunk, rw, op)
                 } else {
-                    Operation::new(rwc, rw, op)
+                    Operation::new(rwc, rwc_inner_chunk, rw, op)
                 });
                 OperationRef::from((
                     Target::TxAccessListAccountStorage,
@@ -137,39 +144,49 @@ impl OperationContainer {
             }
             OpEnum::TxRefund(op) => {
                 self.tx_refund.push(if reversible {
-                    Operation::new_reversible(rwc, rw, op)
+                    Operation::new_reversible(rwc, rwc_inner_chunk, rw, op)
                 } else {
-                    Operation::new(rwc, rw, op)
+                    Operation::new(rwc, rwc_inner_chunk, rw, op)
                 });
                 OperationRef::from((Target::TxRefund, self.tx_refund.len() - 1))
             }
             OpEnum::Account(op) => {
                 self.account.push(if reversible {
-                    Operation::new_reversible(rwc, rw, op)
+                    Operation::new_reversible(rwc, rwc_inner_chunk, rw, op)
                 } else {
-                    Operation::new(rwc, rw, op)
+                    Operation::new(rwc, rwc_inner_chunk, rw, op)
                 });
                 OperationRef::from((Target::Account, self.account.len() - 1))
             }
             OpEnum::CallContext(op) => {
-                self.call_context.push(Operation::new(rwc, rw, op));
+                self.call_context
+                    .push(Operation::new(rwc, rwc_inner_chunk, rw, op));
                 OperationRef::from((Target::CallContext, self.call_context.len() - 1))
             }
             OpEnum::TxReceipt(op) => {
-                self.tx_receipt.push(Operation::new(rwc, rw, op));
+                self.tx_receipt
+                    .push(Operation::new(rwc, rwc_inner_chunk, rw, op));
                 OperationRef::from((Target::TxReceipt, self.tx_receipt.len() - 1))
             }
             OpEnum::TxLog(op) => {
-                self.tx_log.push(Operation::new(rwc, rw, op));
+                self.tx_log
+                    .push(Operation::new(rwc, rwc_inner_chunk, rw, op));
                 OperationRef::from((Target::TxLog, self.tx_log.len() - 1))
             }
             OpEnum::Start(op) => {
-                self.start.push(Operation::new(rwc, rw, op));
+                self.start
+                    .push(Operation::new(rwc, rwc_inner_chunk, rw, op));
                 OperationRef::from((Target::Start, self.start.len() - 1))
             }
             OpEnum::Padding(op) => {
-                self.padding.push(Operation::new(rwc, rw, op));
+                self.padding
+                    .push(Operation::new(rwc, rwc_inner_chunk, rw, op));
                 OperationRef::from((Target::Padding, self.padding.len() - 1))
+            }
+            OpEnum::StepState(op) => {
+                self.step_state
+                    .push(Operation::new(rwc, rwc_inner_chunk, rw, op));
+                OperationRef::from((Target::StepState, self.step_state.len() - 1))
             }
         }
     }
@@ -205,20 +222,25 @@ mod container_test {
 
     #[test]
     fn operation_container_test() {
+        // global counter same as intra_chunk_counter in single chunk
         let mut global_counter = RWCounter::default();
+        let mut intra_chunk_counter = RWCounter::default();
         let mut operation_container = OperationContainer::default();
         let stack_operation = Operation::new(
             global_counter.inc_pre(),
+            intra_chunk_counter.inc_pre(),
             RW::WRITE,
             StackOp::new(1, StackAddress(1023), Word::from(0x100)),
         );
         let memory_operation = Operation::new(
             global_counter.inc_pre(),
+            intra_chunk_counter.inc_pre(),
             RW::WRITE,
             MemoryOp::new(1, MemoryAddress::from(1), 1),
         );
         let storage_operation = Operation::new(
             global_counter.inc_pre(),
+            intra_chunk_counter.inc_pre(),
             RW::WRITE,
             StorageOp::new(
                 Address::zero(),

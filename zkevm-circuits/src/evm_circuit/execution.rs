@@ -1006,7 +1006,7 @@ impl<F: Field> ExecutionConfig<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<(), Error> {
+    ) -> Result<usize, Error> {
         // Track number of calls to `layouter.assign_region` as layouter assignment passes.
         let mut assign_pass = 0;
         layouter.assign_region(
@@ -1035,10 +1035,12 @@ impl<F: Field> ExecutionConfig<F> {
                     .unwrap_or_else(Call::default);
                 let end_block_not_last = &block.end_block_not_last;
                 let end_block_last = &block.end_block_last;
+                let begin_chunk = &block.begin_chunk;
+                let end_chunk = &block.end_chunk;
                 // Collect all steps
                 let mut steps =
                     // first step is BeginChunk
-                    std::iter::once((&dummy_tx, &prev_chunk_last_call, end_block_not_last))
+                    std::iter::once((&dummy_tx, &prev_chunk_last_call, begin_chunk))
                         .chain(block.txs.iter().flat_map(|tx| {
                             tx.steps()
                                 .iter()
@@ -1085,7 +1087,8 @@ impl<F: Field> ExecutionConfig<F> {
                     offset += height;
                 }
 
-                let is_reached_end_chunk = offset < evm_rows - 1;
+                let is_end_chunk =
+                    block.chunk_context.chunk_index == block.chunk_context.total_chunks - 1;
 
                 // part2: assign non-last EndBlock steps when padding needed
                 if !no_padding {
@@ -1124,7 +1127,7 @@ impl<F: Field> ExecutionConfig<F> {
                     offset = last_row;
                 }
 
-                let height = if is_reached_end_chunk {
+                let height = if is_end_chunk {
                     // part3: assign the last EndBlock at offset `evm_rows - 1`
                     let height = ExecutionState::EndBlock.get_step_height();
                     debug_assert_eq!(height, 1);
@@ -1135,7 +1138,7 @@ impl<F: Field> ExecutionConfig<F> {
                         block,
                         &dummy_tx,
                         &last_call,
-                        end_block_last,
+                        &end_chunk.clone().unwrap(),
                         height,
                         None,
                         challenges,
@@ -1183,7 +1186,7 @@ impl<F: Field> ExecutionConfig<F> {
                 )?;
 
                 assign_pass += 1;
-                Ok(())
+                Ok(offset)
             },
         )
     }

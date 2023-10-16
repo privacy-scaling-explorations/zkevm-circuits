@@ -99,6 +99,7 @@ fn verifying_key_independent_of_rw_length() {
         RwMap::from(&OperationContainer {
             memory: vec![Operation::new(
                 RWCounter::from(1),
+                RWCounter::from(1),
                 RW::WRITE,
                 MemoryOp::new(1, MemoryAddress::from(0), 32),
             )],
@@ -111,6 +112,7 @@ fn verifying_key_independent_of_rw_length() {
         get_permutation_fingerprint_of_rwmap(
             &RwMap::from(&OperationContainer {
                 memory: vec![Operation::new(
+                    RWCounter::from(1),
                     RWCounter::from(1),
                     RW::WRITE,
                     MemoryOp::new(1, MemoryAddress::from(0), 32),
@@ -141,10 +143,12 @@ fn verifying_key_independent_of_rw_length() {
 fn state_circuit_simple_2() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
+        RWCounter::from(12),
         RW::WRITE,
         MemoryOp::new(1, MemoryAddress::from(0), 32),
     );
     let memory_op_1 = Operation::new(
+        RWCounter::from(24),
         RWCounter::from(24),
         RW::READ,
         MemoryOp::new(1, MemoryAddress::from(0), 32),
@@ -152,10 +156,12 @@ fn state_circuit_simple_2() {
 
     let memory_op_2 = Operation::new(
         RWCounter::from(17),
+        RWCounter::from(17),
         RW::WRITE,
         MemoryOp::new(1, MemoryAddress::from(1), 32),
     );
     let memory_op_3 = Operation::new(
+        RWCounter::from(87),
         RWCounter::from(87),
         RW::READ,
         MemoryOp::new(1, MemoryAddress::from(1), 32),
@@ -163,16 +169,19 @@ fn state_circuit_simple_2() {
 
     let stack_op_0 = Operation::new(
         RWCounter::from(17),
+        RWCounter::from(17),
         RW::WRITE,
         StackOp::new(1, StackAddress::from(1), Word::from(32)),
     );
     let stack_op_1 = Operation::new(
+        RWCounter::from(87),
         RWCounter::from(87),
         RW::READ,
         StackOp::new(1, StackAddress::from(1), Word::from(32)),
     );
 
     let storage_op_0 = Operation::new(
+        RWCounter::from(0),
         RWCounter::from(0),
         RW::WRITE,
         StorageOp::new(
@@ -186,6 +195,7 @@ fn state_circuit_simple_2() {
     );
     let storage_op_1 = Operation::new(
         RWCounter::from(18),
+        RWCounter::from(18),
         RW::WRITE,
         StorageOp::new(
             U256::from(100).to_address(),
@@ -197,6 +207,7 @@ fn state_circuit_simple_2() {
         ),
     );
     let storage_op_2 = Operation::new(
+        RWCounter::from(19),
         RWCounter::from(19),
         RW::WRITE,
         StorageOp::new(
@@ -220,15 +231,18 @@ fn state_circuit_simple_2() {
 fn state_circuit_simple_6() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
+        RWCounter::from(12),
         RW::WRITE,
         MemoryOp::new(1, MemoryAddress::from(0), 32),
     );
     let memory_op_1 = Operation::new(
         RWCounter::from(13),
+        RWCounter::from(13),
         RW::READ,
         MemoryOp::new(1, MemoryAddress::from(0), 32),
     );
     let storage_op_2 = Operation::new(
+        RWCounter::from(19),
         RWCounter::from(19),
         RW::WRITE,
         StorageOp::new(
@@ -247,10 +261,12 @@ fn state_circuit_simple_6() {
 fn lexicographic_ordering_test_1() {
     let memory_op = Operation::new(
         RWCounter::from(12),
+        RWCounter::from(12),
         RW::WRITE,
         MemoryOp::new(1, MemoryAddress::from(0), 32),
     );
     let storage_op = Operation::new(
+        RWCounter::from(19),
         RWCounter::from(19),
         RW::WRITE,
         StorageOp::new(
@@ -269,10 +285,12 @@ fn lexicographic_ordering_test_1() {
 fn lexicographic_ordering_test_2() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
+        RWCounter::from(12),
         RW::WRITE,
         MemoryOp::new(1, MemoryAddress::from(0), 32),
     );
     let memory_op_1 = Operation::new(
+        RWCounter::from(13),
         RWCounter::from(13),
         RW::WRITE,
         MemoryOp::new(1, MemoryAddress::from(0), 32),

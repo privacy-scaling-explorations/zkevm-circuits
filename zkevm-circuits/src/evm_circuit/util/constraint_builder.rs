@@ -571,6 +571,27 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             };
         }
 
+        // Note: special case handling: rw_counter_intra_chunk shared the same Transition with
+        // rw_conuter
+        match &step_state_transition.rw_counter {
+            Transition::Same => self.require_equal(
+                "State transition (same) constraint of rw_counter_intra_chunk",
+                self.next.state.rw_counter_intra_chunk.expr(),
+                self.curr.state.rw_counter_intra_chunk.expr(),
+            ),
+            Transition::Delta(delta) => self.require_equal(
+                concat!("State transition (delta) constraint of ", stringify!($name)),
+                self.next.state.rw_counter_intra_chunk.expr(),
+                self.curr.state.rw_counter_intra_chunk.expr() + delta.clone(),
+            ),
+            Transition::To(to) => self.require_equal(
+                "State transition (to) constraint of rw_counter_intra_chunk",
+                self.next.state.rw_counter_intra_chunk.expr(),
+                to.clone(),
+            ),
+            _ => {}
+        }
+
         constrain!(rw_counter);
         constrain!(call_id);
         constrain!(is_root);

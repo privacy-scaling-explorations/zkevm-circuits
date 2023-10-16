@@ -15,7 +15,10 @@ use self::access::gen_state_access_trace;
 use crate::{
     error::Error,
     evm::opcodes::{gen_associated_ops, gen_associated_steps},
-    operation::{CallContextField, Op, Operation, OperationContainer, RWCounter, StartOp, RW},
+    operation::{
+        CallContextField, Op, Operation, OperationContainer, RWCounter, StartOp, StepStateField,
+        StepStateOp, RW,
+    },
     rpc::GethClient,
     state_db::{self, CodeDB, StateDB},
 };
@@ -133,6 +136,8 @@ pub struct CircuitInputBuilder<C: CircuitsParams> {
     pub circuits_params: C,
     /// Block Context
     pub block_ctx: BlockContext,
+    /// Chunk Context
+    pub chunk_ctx: ChunkContext,
 }
 
 impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
@@ -145,6 +150,8 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             block,
             circuits_params: params,
             block_ctx: BlockContext::new(),
+            // TODO support multiple chunk
+            chunk_ctx: ChunkContext::new_one_chunk(),
         }
     }
 
@@ -161,6 +168,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             code_db: &mut self.code_db,
             block: &mut self.block,
             block_ctx: &mut self.block_ctx,
+            chunk_ctx: &mut self.chunk_ctx,
             tx,
             tx_ctx,
         }
@@ -260,6 +268,50 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
 
         Ok(())
     }
+
+    fn set_begin_chunk(&mut self) {
+        let mut dummy_tx = Transaction::default();
+        let mut dummy_tx_ctx = TransactionContext::default();
+        let tags = [
+            StepStateField::CodeHash,
+            StepStateField::CallID,
+            StepStateField::IsRoot,
+            StepStateField::IsCreate,
+            StepStateField::ProgramCounter,
+            StepStateField::StackPointer,
+            StepStateField::MemoryWordSize,
+            StepStateField::ReversibleWriteCounter,
+            StepStateField::LogID,
+        ];
+        let rw_counters = (1..tags.len())
+            .map(|_| self.block_ctx.rwc.inc_pre())
+            .collect::<Vec<RWCounter>>();
+        // just bump rwc in chunk_ctx as block_ctx rwc to assure same delta apply
+        let rw_counters_inner_chunk = (1..tags.len())
+            .map(|_| self.chunk_ctx.rwc.inc_pre())
+            .collect::<Vec<RWCounter>>();
+        let mut begin_chunk = self.block.block_steps.begin_chunk.clone();
+        let state = self.state_ref(&mut dummy_tx, &mut dummy_tx_ctx);
+
+        tags.iter()
+            .zip_eq(rw_counters)
+            .zip_eq(rw_counters_inner_chunk)
+            .for_each(|((tag, rw_counter), rw_counter_inner_chunk)| {
+                push_op(
+                    &mut state.block.container,
+                    &mut begin_chunk,
+                    rw_counter,
+                    rw_counter_inner_chunk,
+                    RW::READ,
+                    StepStateOp {
+                        field: tag.clone(),
+                        value: Word::zero(),
+                    },
+                );
+            });
+
+        self.block.block_steps.begin_chunk = begin_chunk;
+    }
 }
 
 impl CircuitInputBuilder<FixedCParams> {
@@ -270,6 +322,7 @@ impl CircuitInputBuilder<FixedCParams> {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<&CircuitInputBuilder<FixedCParams>, Error> {
+        self.set_begin_chunk();
         // accumulates gas across all txs in the block
         self.begin_handle_block(eth_block, geth_traces)?;
         self.set_end_block(self.circuits_params.max_rws);
@@ -307,10 +360,11 @@ impl CircuitInputBuilder<FixedCParams> {
                 max_rws
             );
         }
-        // TODO fix below to adapt multiple chunk logic
+        // TODO fix below to adapt multiple chunk
         push_op(
             &mut state.block.container,
             &mut end_block_last,
+            RWCounter(1),
             RWCounter(1),
             RW::READ,
             StartOp {},
@@ -340,15 +394,15 @@ impl CircuitInputBuilder<FixedCParams> {
     }
 }
 
-#[allow(dead_code)]
 fn push_op<T: Op>(
     container: &mut OperationContainer,
     step: &mut ExecStep,
     rwc: RWCounter,
+    rwc_inner_chunk: RWCounter,
     rw: RW,
     op: T,
 ) {
-    let op_ref = container.insert(Operation::new(rwc, rw, op));
+    let op_ref = container.insert(Operation::new(rwc, rwc_inner_chunk, rw, op));
     step.bus_mapping_instance.push(op_ref);
 }
 
@@ -447,6 +501,7 @@ impl CircuitInputBuilder<DynamicCParams> {
             block: self.block,
             circuits_params: c_params,
             block_ctx: self.block_ctx,
+            chunk_ctx: self.chunk_ctx,
         };
 
         cib.set_end_block(c_params.max_rws);

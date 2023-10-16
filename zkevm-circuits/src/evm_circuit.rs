@@ -1,8 +1,11 @@
 //! The EVM circuit implementation.
 
-use gadgets::permutation::{PermutationChip, PermutationChipConfig};
+use gadgets::{
+    permutation::{PermutationChip, PermutationChipConfig},
+    util::Expr,
+};
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
+    circuit::{AssignedCell, Layouter, SimpleFloorPlanner, Value},
     plonk::*,
     poly::Rotation,
 };
@@ -29,7 +32,7 @@ use crate::{
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::RwMap,
 };
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{circuit_input_builder::ChunkContext, evm::OpcodeId};
 use eth_types::Field;
 use execution::ExecutionConfig;
 use itertools::Itertools;
@@ -63,6 +66,12 @@ pub struct EvmCircuitConfig<F> {
     pi_next_continuity: Column<Instance>,
     // pi for permutation challenge
     pi_permutation_challenges: Column<Instance>,
+
+    // chunk context related field
+    q_chunk_non_first: Selector,
+    chunk_index: Column<Advice>,
+    chunk_index_next: Column<Advice>,
+    total_chunks: Column<Advice>,
 }
 
 /// Circuit configuration arguments
@@ -110,7 +119,9 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
     ) -> Self {
         // chunk context
         let chunk_index = meta.advice_column();
+        let chunk_index_next = meta.advice_column();
         let total_chunks = meta.advice_column();
+        let q_chunk_non_first = meta.selector();
 
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
 
@@ -162,16 +173,25 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         meta.enable_equality(pi_pre_continuity);
         meta.enable_equality(pi_next_continuity);
         meta.enable_equality(pi_permutation_challenges);
+        meta.enable_equality(chunk_index);
+        meta.enable_equality(chunk_index_next);
+        meta.enable_equality(total_chunks);
 
         meta.create_gate("chunk context", |meta| {
+            let q_chunk_non_first = meta.query_selector(q_chunk_non_first);
             let chunk_index_pre = meta.query_advice(chunk_index, Rotation::prev());
             let chunk_index_cur = meta.query_advice(chunk_index, Rotation::cur());
+            let chunk_index_next_prev = meta.query_advice(chunk_index_next, Rotation::prev());
+            let chunk_index_next_cur = meta.query_advice(chunk_index_next, Rotation::cur());
             let total_chunk_pre = meta.query_advice(total_chunks, Rotation::prev());
             let total_chunk_cur = meta.query_advice(total_chunks, Rotation::cur());
 
             [
-                chunk_index_cur - chunk_index_pre,
-                total_chunk_cur - total_chunk_pre,
+                q_chunk_non_first.clone() * (chunk_index_cur.clone() - chunk_index_pre),
+                q_chunk_non_first.clone() * (total_chunk_cur - total_chunk_pre),
+                q_chunk_non_first.clone() * (chunk_index_next_cur.clone() - chunk_index_next_prev),
+                // chunk_index_next = chunk_index_cur + 1
+                q_chunk_non_first * (chunk_index_next_cur - chunk_index_cur - 1.expr()),
             ]
         });
 
@@ -191,9 +211,20 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             pi_pre_continuity,
             pi_next_continuity,
             pi_permutation_challenges,
+            chunk_index,
+            chunk_index_next,
+            q_chunk_non_first,
+            total_chunks,
         }
     }
 }
+
+type AssignedChunkContextCell<F> = (
+    AssignedCell<F, F>,
+    AssignedCell<F, F>,
+    AssignedCell<F, F>,
+    AssignedCell<F, F>,
+);
 
 impl<F: Field> EvmCircuitConfig<F> {
     /// Load fixed table
@@ -215,6 +246,61 @@ impl<F: Field> EvmCircuitConfig<F> {
                 }
 
                 Ok(())
+            },
+        )
+    }
+    /// assign chunk context
+    pub fn assign_chunk_context(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        chunk_context: &ChunkContext,
+        max_offset_index: usize,
+    ) -> Result<AssignedChunkContextCell<F>, Error> {
+        let mut assigned_cells = vec![];
+        layouter.assign_region(
+            || "chunk context",
+            |mut region| {
+                for offset in 0..max_offset_index + 1 {
+                    // offset 0 will be constraint via public input
+                    if offset > 0 {
+                        self.q_chunk_non_first.enable(&mut region, offset)?;
+                    }
+                    let chunk_index_cell = region.assign_advice(
+                        || "chunk_index",
+                        self.chunk_index,
+                        offset,
+                        || Value::known(F::from(chunk_context.chunk_index as u64)),
+                    )?;
+
+                    let chunk_index_next_cell = region.assign_advice(
+                        || "chunk_index_next",
+                        self.chunk_index_next,
+                        offset,
+                        || Value::known(F::from(chunk_context.chunk_index as u64 + 1u64)),
+                    )?;
+
+                    let total_chunk_cell = region.assign_advice(
+                        || "total_chunks",
+                        self.total_chunks,
+                        offset,
+                        || Value::known(F::from(chunk_context.total_chunks as u64)),
+                    )?;
+                    if offset == 0 {
+                        assigned_cells.push(chunk_index_cell.clone());
+                        assigned_cells.push(total_chunk_cell.clone());
+                    }
+
+                    if offset == max_offset_index {
+                        assigned_cells.push(chunk_index_next_cell);
+                        assigned_cells.push(total_chunk_cell);
+                    }
+                }
+                Ok((
+                    assigned_cells[0].clone(),
+                    assigned_cells[1].clone(),
+                    assigned_cells[2].clone(),
+                    assigned_cells[3].clone(),
+                ))
             },
         )
     }
@@ -321,7 +407,10 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
 
         config.load_fixed_table(layouter, self.fixed_table_tags.clone())?;
 
-        config.execution.assign_block(layouter, block, challenges)?;
+        let max_offset_index = config.execution.assign_block(layouter, block, challenges)?;
+
+        let (prev_chunk_index, prev_total_chunks, next_chunk_index_next, next_total_chunks) =
+            config.assign_chunk_context(layouter, &block.chunk_context, max_offset_index)?;
 
         let (rw_rows_padding, _) = RwMap::table_assignments_padding(
             &block.rws.table_assignments(true),
@@ -372,20 +461,34 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                 layouter.constrain_instance(cell.cell(), config.pi_permutation_challenges, i)
             })?;
         // constraints prev,next fingerprints
-        [rw_table_row_first, vec![prev_continuous_fingerprint_cell]]
-            .iter()
-            .flatten()
-            .enumerate()
-            .try_for_each(|(i, cell)| {
-                layouter.constrain_instance(cell.cell(), config.pi_pre_continuity, i)
-            })?;
-        [rw_table_row_last, vec![next_continuous_fingerprint_cell]]
-            .iter()
-            .flatten()
-            .enumerate()
-            .try_for_each(|(i, cell)| {
-                layouter.constrain_instance(cell.cell(), config.pi_next_continuity, i)
-            })?;
+        [
+            rw_table_row_first,
+            vec![
+                prev_continuous_fingerprint_cell,
+                prev_chunk_index,
+                prev_total_chunks,
+            ],
+        ]
+        .iter()
+        .flatten()
+        .enumerate()
+        .try_for_each(|(i, cell)| {
+            layouter.constrain_instance(cell.cell(), config.pi_pre_continuity, i)
+        })?;
+        [
+            rw_table_row_last,
+            vec![
+                next_continuous_fingerprint_cell,
+                next_chunk_index_next,
+                next_total_chunks,
+            ],
+        ]
+        .iter()
+        .flatten()
+        .enumerate()
+        .try_for_each(|(i, cell)| {
+            layouter.constrain_instance(cell.cell(), config.pi_next_continuity, i)
+        })?;
         Ok(())
     }
 
