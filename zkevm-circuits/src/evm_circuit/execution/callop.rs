@@ -36,7 +36,6 @@ use eth_types::{
     Field, ToAddress, ToScalar, U256,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
-use log::trace;
 use std::cmp::min;
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,

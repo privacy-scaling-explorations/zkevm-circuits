@@ -140,8 +140,8 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             offset,
             Value::known(F::from(call.return_data_length)),
         )?;
-        // self.restore_context
-        //     .assign(region, offset, block, call, step, 7)
+        self.restore_context
+            .assign(region, offset, block, call, step, 7)?;
 
         Ok(())
     }
