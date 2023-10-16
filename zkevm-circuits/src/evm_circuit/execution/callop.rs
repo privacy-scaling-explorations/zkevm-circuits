@@ -82,6 +82,9 @@ pub(crate) struct CallOpGadget<F> {
     precompile_input_rws: Cell<F>,
     precompile_output_rws: Cell<F>,
     precompile_return_rws: Cell<F>,
+    // rws are in bytes, obtain word size for memory size transition
+    precompile_output_word_size_div: ConstantDivisionGadget<F, N_BYTES_U64>,
+    precompile_output_word_size_div_remainder_zero: IsZeroGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
@@ -307,6 +310,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             precompile_input_bytes_rlc,
             precompile_output_bytes_rlc,
             precompile_return_bytes_rlc,
+            precompile_output_word_size_div,
+            precompile_output_word_size_div_remainder_zero,
         ) = cb.condition(
             and::expr([is_precompile.expr(), is_precheck_ok.expr()]),
             |cb| {
@@ -400,18 +405,19 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 let precompile_input_bytes_rlc =
                     cb.condition(call_gadget.cd_address.has_length(), |cb| {
                         let precompile_input_bytes_rlc = cb.query_cell_phase2();
-                        cb.copy_table_lookup(
-                            Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                            CopyDataType::Memory.expr(),
-                            Word::from_lo_unchecked(callee_call_id.expr()),
-                            CopyDataType::RlcAcc.expr(),
-                            call_gadget.cd_address.offset(),
-                            call_gadget.cd_address.offset() + precompile_input_len.expr(),
-                            0.expr(),
-                            precompile_input_len.expr(),
-                            precompile_input_bytes_rlc.expr(),
-                            precompile_input_rws.expr(), // reads + writes
-                        );
+                        // RAY_INCOMPLETE
+                        // cb.copy_table_lookup(
+                        //     Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                        //     CopyDataType::Memory.expr(),
+                        //     Word::from_lo_unchecked(callee_call_id.expr()),
+                        //     CopyDataType::RlcAcc.expr(),
+                        //     call_gadget.cd_address.offset(),
+                        //     call_gadget.cd_address.offset() + precompile_input_len.expr(),
+                        //     0.expr(),
+                        //     precompile_input_len.expr(),
+                        //     precompile_input_bytes_rlc.expr(),
+                        //     precompile_input_rws.expr(), // reads + writes
+                        // );
                         precompile_input_bytes_rlc
                     });
 
@@ -425,18 +431,19 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ]),
                     |cb| {
                         let precompile_output_bytes_rlc = cb.query_cell_phase2();
-                        cb.copy_table_lookup(
-                            Word::from_lo_unchecked(callee_call_id.expr()),
-                            CopyDataType::RlcAcc.expr(),
-                            Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                            CopyDataType::Memory.expr(),
-                            0.expr(),
-                            precompile_return_length.expr(),
-                            0.expr(),
-                            precompile_return_length.expr(),
-                            precompile_output_bytes_rlc.expr(),
-                            precompile_output_rws.expr(),
-                        );
+                        // RAY_INCOMPLETE
+                        // cb.copy_table_lookup(
+                        //     Word::from_lo_unchecked(callee_call_id.expr()),
+                        //     CopyDataType::RlcAcc.expr(),
+                        //     Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                        //     CopyDataType::Memory.expr(),
+                        //     0.expr(),
+                        //     precompile_return_length.expr(),
+                        //     0.expr(),
+                        //     precompile_return_length.expr(),
+                        //     precompile_output_bytes_rlc.expr(),
+                        //     precompile_output_rws.expr(),
+                        // );
                         precompile_output_bytes_rlc
                     }
                 );
@@ -454,18 +461,19 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ]),
                     |cb| {
                         let precompile_return_bytes_rlc = cb.query_cell_phase2();
-                        cb.copy_table_lookup(
-                            Word::from_lo_unchecked(callee_call_id.expr()),
-                            CopyDataType::Memory.expr(), // refer u64::from(CopyDataType)
-                            Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                            CopyDataType::Memory.expr(),
-                            0.expr(),
-                            precompile_return_data_copy_size.min(),
-                            call_gadget.rd_address.offset(),
-                            precompile_return_data_copy_size.min(),
-                            0.expr(),
-                            precompile_return_rws.expr(), // writes
-                        ); // rwc_delta += `return_data_copy_size.min()` for precompile
+                        // RAY_INCOMPLETE
+                        // cb.copy_table_lookup(
+                        //     Word::from_lo_unchecked(callee_call_id.expr()),
+                        //     CopyDataType::Memory.expr(), // refer u64::from(CopyDataType)
+                        //     Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                        //     CopyDataType::Memory.expr(),
+                        //     0.expr(),
+                        //     precompile_return_data_copy_size.min(),
+                        //     call_gadget.rd_address.offset(),
+                        //     precompile_return_data_copy_size.min(),
+                        //     0.expr(),
+                        //     precompile_return_rws.expr(), // writes
+                        // ); // rwc_delta += `return_data_copy_size.min()` for precompile
                         precompile_return_bytes_rlc
                     },
                 );
@@ -485,6 +493,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 cb.debug_expression("=> [CallOp] precompile_output_rws", precompile_output_rws.expr());
                 cb.debug_expression("=> [CallOp] Next state memory_word_size", cb.next.state.memory_word_size.expr());
 
+                // RAY_INCOMPLETE
+                let precompile_output_word_size_div: ConstantDivisionGadget<F, N_BYTES_U64> = 
+                    ConstantDivisionGadget::construct(cb, precompile_output_rws.expr(), 32);
+                let precompile_output_word_size_div_remainder_zero = IsZeroGadget::construct(cb, precompile_output_word_size_div.remainder());
+                let precompile_output_word_size = 
+                    precompile_output_word_size_div.quotient() 
+                    + 1.expr() 
+                    - precompile_output_word_size_div_remainder_zero.expr();
+                
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(rw_counter_delta),
                     call_id: To(callee_call_id.expr()),
@@ -494,7 +511,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     program_counter: Delta(1.expr()),
                     stack_pointer: Delta(stack_pointer_delta.expr()),
                     gas_left: To(callee_gas_left.expr()),
-                    memory_word_size: To(precompile_output_rws.expr()),
+
+                    // memory_word_size: To(precompile_output_word_size),
+                    memory_word_size: To(1.expr()),
+
                     reversible_write_counter: To(callee_reversible_rwc_delta.expr()),
                     ..StepStateTransition::default()
                 });
@@ -519,6 +539,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     precompile_input_bytes_rlc,
                     precompile_output_bytes_rlc,
                     precompile_return_bytes_rlc,
+                    precompile_output_word_size_div,
+                    precompile_output_word_size_div_remainder_zero,
                 )
             },
         );
@@ -782,6 +804,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             precompile_input_rws,
             precompile_output_rws,
             precompile_return_rws,
+            precompile_output_word_size_div,
+            precompile_output_word_size_div_remainder_zero,
         }
     }
 
@@ -1105,10 +1129,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 )
             });
 
-            let input_rws = Value::known(F::from(input_bytes.len() as u64));
-            // let input_rws = Value::known(F::from(input_bytes_word_count as u64));
-            let output_rws = Value::known(F::from(output_bytes.len() as u64));
-            let return_rws = Value::known(F::from((return_bytes.len() * 2) as u64));
+            let input_rws = input_bytes.len() as u64;
+            let output_rws = output_bytes.len() as u64;
+            let return_rws = (return_bytes.len() * 2) as u64;
+
+            // let input_rws = Value::known(F::from(input_bytes.len() as u64));
+            // // let input_rws = Value::known(F::from(input_bytes_word_count as u64));
+            // let output_rws = Value::known(F::from(output_bytes.len() as u64));
+            // let return_rws = Value::known(F::from((return_bytes.len() * 2) as u64));
 
             (
                 input_len as u64,
@@ -1125,9 +1153,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 Value::known(F::ZERO),
                 Value::known(F::ZERO),
                 Value::known(F::ZERO),
-                Value::known(F::ZERO),
-                Value::known(F::ZERO),
-                Value::known(F::ZERO),
+                0u64,
+                0u64,
+                0u64,
             )
         };
 
@@ -1143,11 +1171,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         self.precompile_return_bytes_rlc
             .assign(region, offset, precompile_return_bytes_rlc)?;
         self.precompile_input_rws
-            .assign(region, offset, input_rws)?;
+            .assign(region, offset, Value::known(F::from(input_rws)))?;
         self.precompile_output_rws
-            .assign(region, offset, output_rws)?;
+            .assign(region, offset, Value::known(F::from(output_rws)))?;
         self.precompile_return_rws
-            .assign(region, offset, return_rws)?;
+            .assign(region, offset, Value::known(F::from(return_rws)))?;
+
+        let (_, remainder) = self.precompile_output_word_size_div
+            .assign(region, offset, output_rws.into())?;
+        self.precompile_output_word_size_div_remainder_zero.assign(region, offset, F::from_u128(remainder))?;
 
         if is_precompiled(&callee_address.to_address()) {
             self.precompile_gadget.assign(
