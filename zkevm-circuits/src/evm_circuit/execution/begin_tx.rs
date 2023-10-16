@@ -80,6 +80,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let call_id = cb.curr.state.rw_counter.clone();
 
         let tx_id = cb.query_cell(); // already constrain `if step_first && tx_id = 1` and `tx_id += 1` at EndTx
+        cb.debug_expression("tx_id", tx_id.expr());
 
         cb.call_context_lookup_write(
             Some(call_id.expr()),
