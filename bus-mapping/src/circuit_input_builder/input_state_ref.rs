@@ -1290,7 +1290,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let (last_callee_return_data_offset, last_callee_return_data_length) = 
             Self::get_return_data_offset_and_len(exec_step, geth_step, self.caller_ctx()?)?;
 
-        let gas_refund = if exec_step.error.is_some() {
+        let gas_refund = if is_err {
             0
         } else if exec_step.is_precompiled() {
             exec_step.gas_left - exec_step.gas_cost
