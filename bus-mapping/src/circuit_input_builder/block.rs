@@ -1,6 +1,9 @@
 //! Block-related utility module
 
-use super::{execution::ExecState, transaction::Transaction, CopyEvent, ExecStep, ExpEvent};
+use super::{
+    chunk::ChunkContext, execution::ExecState, transaction::Transaction, CopyEvent, ExecStep,
+    ExpEvent,
+};
 use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
@@ -47,6 +50,11 @@ pub struct BlockSteps {
     pub end_block_not_last: ExecStep,
     /// Last EndBlock step that appears in the last EVM row.
     pub end_block_last: ExecStep,
+    /// TODO Define and move chunk related step to Chunk struct
+    /// Begin op of a chunk
+    pub begin_chunk: ExecStep,
+    /// End op of a chunk
+    pub end_chunk: Option<ExecStep>,
 }
 
 // TODO: Remove fields that are duplicated in`eth_block`
@@ -78,6 +86,8 @@ pub struct Block {
     pub txs: Vec<Transaction>,
     /// Block-wise steps
     pub block_steps: BlockSteps,
+    /// Chunk context
+    pub chunk_context: ChunkContext,
     /// Copy events in this block.
     pub copy_events: Vec<CopyEvent>,
     /// Inputs to the SHA3 opcode
@@ -122,6 +132,10 @@ impl Block {
             container: OperationContainer::new(),
             txs: Vec::new(),
             block_steps: BlockSteps {
+                begin_chunk: ExecStep {
+                    exec_state: ExecState::BeginChunk,
+                    ..ExecStep::default()
+                },
                 end_block_not_last: ExecStep {
                     exec_state: ExecState::EndBlock,
                     ..ExecStep::default()
@@ -130,7 +144,12 @@ impl Block {
                     exec_state: ExecState::EndBlock,
                     ..ExecStep::default()
                 },
+                end_chunk: Some(ExecStep {
+                    exec_state: ExecState::EndChunk,
+                    ..ExecStep::default()
+                }),
             },
+            chunk_context: ChunkContext::new(0, 1),
             copy_events: Vec::new(),
             exp_events: Vec::new(),
             sha3_inputs: Vec::new(),

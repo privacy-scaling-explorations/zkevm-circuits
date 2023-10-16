@@ -4,6 +4,7 @@
 mod access;
 mod block;
 mod call;
+mod chunk;
 mod execution;
 mod input_state_ref;
 #[cfg(test)]
@@ -21,6 +22,7 @@ use crate::{
 pub use access::{Access, AccessSet, AccessValue, CodeSource};
 pub use block::{Block, BlockContext};
 pub use call::{Call, CallContext, CallKind};
+pub use chunk::ChunkContext;
 use core::fmt::Debug;
 use eth_types::{
     self, geth_types,

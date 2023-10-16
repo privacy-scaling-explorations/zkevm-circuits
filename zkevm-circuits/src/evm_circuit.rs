@@ -4,6 +4,7 @@ use gadgets::permutation::{PermutationChip, PermutationChipConfig};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::*,
+    poly::Rotation,
 };
 
 mod execution;
@@ -107,7 +108,12 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             u16_table,
         }: Self::ConfigArgs,
     ) -> Self {
+        // chunk context
+        let chunk_index = meta.advice_column();
+        let total_chunks = meta.advice_column();
+
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
+
         let execution = Box::new(ExecutionConfig::configure(
             meta,
             challenges,
@@ -121,6 +127,8 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &copy_table,
             &keccak_table,
             &exp_table,
+            &chunk_index,
+            &total_chunks,
         ));
 
         u8_table.annotate_columns(meta);
@@ -154,6 +162,18 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         meta.enable_equality(pi_pre_continuity);
         meta.enable_equality(pi_next_continuity);
         meta.enable_equality(pi_permutation_challenges);
+
+        meta.create_gate("chunk context", |meta| {
+            let chunk_index_pre = meta.query_advice(chunk_index, Rotation::prev());
+            let chunk_index_cur = meta.query_advice(chunk_index, Rotation::cur());
+            let total_chunk_pre = meta.query_advice(total_chunks, Rotation::prev());
+            let total_chunk_cur = meta.query_advice(total_chunks, Rotation::cur());
+
+            [
+                chunk_index_cur - chunk_index_pre,
+                total_chunk_cur - total_chunk_pre,
+            ]
+        });
 
         Self {
             fixed_table,
@@ -306,7 +326,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         let (rw_rows_padding, _) = RwMap::table_assignments_padding(
             &block.rws.table_assignments(true),
             block.circuits_params.max_rws,
-            block.rw_table_chunked_index == 0,
+            block.chunk_context.chunk_index == 0,
         );
         let (
             (rw_table_row_first, rw_table_row_last),
@@ -331,7 +351,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                     &block.rws.table_assignments(true),
                     // align with state circuit to padding to same max_rws
                     block.circuits_params.max_rws,
-                    block.rw_table_chunked_index == 0,
+                    block.chunk_context.chunk_index == 0,
                 )?;
                 let permutation_cells = config.rw_permutation_config.assign(
                     &mut region,
@@ -373,11 +393,16 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     fn instance(&self) -> Vec<Vec<F>> {
         let block = self.block.as_ref().unwrap();
 
+        let (rw_table_chunked_index, rw_table_total_chunks) = (
+            block.chunk_context.chunk_index,
+            block.chunk_context.total_chunks,
+        );
+
         let (rws_assignments_padding, _) = RwMap::table_assignments_padding(
             &block.rws.table_assignments(true),
             block.circuits_params.max_rws,
             // only padding first row
-            block.rw_table_chunked_index == 0,
+            block.chunk_context.chunk_index == 0,
         );
 
         assert!(!rws_assignments_padding.is_empty());
@@ -396,12 +421,22 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         vec![
             vec![
                 rws_values[0].clone(),
-                vec![block.permu_chronological_rwtable_prev_continuous_fingerprint],
+                vec![
+                    block.permu_chronological_rwtable_prev_continuous_fingerprint,
+                    F::from(block.chunk_context.chunk_index as u64),
+                    F::from(rw_table_chunked_index as u64),
+                    F::from(rw_table_total_chunks as u64),
+                ],
             ]
             .concat(),
             vec![
                 rws_values[1].clone(),
-                vec![block.permu_chronological_rwtable_next_continuous_fingerprint],
+                vec![
+                    block.permu_chronological_rwtable_next_continuous_fingerprint,
+                    F::from(block.chunk_context.chunk_index as u64 + 1u64),
+                    F::from(rw_table_chunked_index as u64) + F::ONE,
+                    F::from(rw_table_total_chunks as u64),
+                ],
             ]
             .concat(),
             vec![block.permu_alpha, block.permu_gamma],

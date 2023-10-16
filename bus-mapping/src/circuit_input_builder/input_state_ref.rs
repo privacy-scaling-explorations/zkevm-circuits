@@ -1,8 +1,8 @@
 //! CircuitInput builder tooling module.
 
 use super::{
-    get_call_memory_offset_length, get_create_init_code, Block, BlockContext, Call, CallContext,
-    CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, Transaction,
+    get_call_memory_offset_length, get_create_init_code, Block, BlockContext,
+    Call, CallContext, CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, Transaction,
     TransactionContext,
 };
 use crate::{
@@ -50,6 +50,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(ExecStep::new(
             geth_step,
             call_ctx,
+            self.block_ctx.rwc,
             self.block_ctx.rwc,
             call_ctx.reversible_write_counter,
             self.tx_ctx.log_id,

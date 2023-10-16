@@ -7,7 +7,7 @@ use crate::{
     util::{log2_ceil, unwrap_value, word, SubCircuit},
 };
 use bus_mapping::{
-    circuit_input_builder::{self, CopyEvent, ExpEvent, FixedCParams},
+    circuit_input_builder::{self, ChunkContext, CopyEvent, ExpEvent, FixedCParams},
     state_db::CodeDB,
     Error,
 };
@@ -29,6 +29,12 @@ pub struct Block<F> {
     pub end_block_not_last: ExecStep,
     /// Last EndBlock step that appears in the last EVM row.
     pub end_block_last: ExecStep,
+    /// BeginChunk step to propagate State
+    pub begin_chunk: ExecStep,
+    /// EndChunk step that appears in the last EVM row for all the chunks other than the last.
+    pub end_chunk: Option<ExecStep>,
+    /// chunk context
+    pub chunk_context: ChunkContext,
     /// Read write events in the RwTable
     pub rws: RwMap,
     /// Bytecode used in the block
@@ -65,10 +71,8 @@ pub struct Block<F> {
     /// next chronological rw_table permutation fingerprint
     pub permu_chronological_rwtable_next_continuous_fingerprint: F,
 
-    /// index start from 0
-    pub rw_table_chunked_index: usize,
-    /// bool flag to indicate last rw_table chunk or not
-    pub is_rw_table_last_chunk: bool,
+    /// prev_chunk_last_call
+    pub prev_block: Box<Option<Block<F>>>,
 }
 
 impl<F: Field> Block<F> {
@@ -270,13 +274,15 @@ pub fn block_convert<F: Field>(
         permu_rwtable_next_continuous_fingerprint: F::from(1),
         permu_chronological_rwtable_prev_continuous_fingerprint: F::from(1),
         permu_chronological_rwtable_next_continuous_fingerprint: F::from(1),
-        rw_table_chunked_index: 0, // chunk index start from 0
-        is_rw_table_last_chunk: true,
+        end_block_not_last: block.block_steps.end_block_not_last.clone(),
+        end_block_last: block.block_steps.end_block_last.clone(),
+        begin_chunk: block.block_steps.begin_chunk.clone(),
+        end_chunk: block.block_steps.end_chunk.clone(),
+        chunk_context: block.chunk_context.clone(),
+        prev_block: Box::new(None),
         context: block.into(),
         rws,
         txs: block.txs().to_vec(),
-        end_block_not_last: block.block_steps.end_block_not_last.clone(),
-        end_block_last: block.block_steps.end_block_last.clone(),
         bytecodes: code_db.clone(),
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
@@ -299,12 +305,12 @@ pub fn block_convert<F: Field>(
     let (rws_rows, _) = RwMap::table_assignments_padding(
         &block.rws.table_assignments(false),
         block.circuits_params.max_rws,
-        block.rw_table_chunked_index == 0,
+        block.chunk_context.chunk_index == 0,
     );
     let (chronological_rws_rows, _) = RwMap::table_assignments_padding(
         &block.rws.table_assignments(true),
         block.circuits_params.max_rws,
-        block.rw_table_chunked_index == 0,
+        block.chunk_context.chunk_index == 0,
     );
     block.permu_rwtable_next_continuous_fingerprint = unwrap_value(
         get_permutation_fingerprints(

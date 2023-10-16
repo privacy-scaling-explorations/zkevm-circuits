@@ -25,7 +25,7 @@ use bus_mapping::{
 };
 use eth_types::{evm_unimplemented, Field, ToWord};
 use halo2_proofs::{
-    circuit::Value,
+    circuit::{AssignedCell, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
 };
 use std::{fmt::Display, iter};
@@ -667,6 +667,8 @@ pub(crate) struct StepState<F> {
     pub(crate) execution_state: DynamicSelectorHalf<F>,
     /// The Read/Write counter
     pub(crate) rw_counter: Cell<F>,
+    /// The Read/Write counter accumulated in current chunk
+    pub(crate) rw_counter_intra_chunk: Cell<F>,
     /// The unique identifier of call in the whole proof, using the
     /// `rw_counter` at the call step.
     pub(crate) call_id: Cell<F>,
@@ -721,6 +723,7 @@ impl<F: Field> Step<F> {
                     ExecutionState::amount(),
                 ),
                 rw_counter: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                rw_counter_intra_chunk: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 call_id: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 is_root: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 is_create: cell_manager.query_cell(meta, CellType::StoragePhase1),
@@ -758,13 +761,19 @@ impl<F: Field> Step<F> {
         _block: &Block<F>,
         call: &Call,
         step: &ExecStep,
-    ) -> Result<(), Error> {
+    ) -> Result<AssignedCell<F, F>, Error> {
         self.state
             .execution_state
             .assign(region, offset, step.execution_state() as usize)?;
-        self.state
-            .rw_counter
-            .assign(region, offset, Value::known(F::from(step.rwc.into())))?;
+        let rw_counter_assigned_cell =
+            self.state
+                .rw_counter
+                .assign(region, offset, Value::known(F::from(step.rwc.into())))?;
+        self.state.rw_counter_intra_chunk.assign(
+            region,
+            offset,
+            Value::known(F::from(step.rwc.into())),
+        )?;
         self.state
             .call_id
             .assign(region, offset, Value::known(F::from(call.call_id as u64)))?;
@@ -803,6 +812,6 @@ impl<F: Field> Step<F> {
         self.state
             .log_id
             .assign(region, offset, Value::known(F::from(step.log_id as u64)))?;
-        Ok(())
+        Ok(rw_counter_assigned_cell)
     }
 }
