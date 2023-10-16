@@ -785,10 +785,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_delegatecall = opcode == OpcodeId::DELEGATECALL;
         let mut rws = StepRws::new(block, step);
 
-        // RAY_INCOMPLETE
-        // log::trace!("=> block rws: {:?}", block.rws);
-        // log::trace!("=> step: {:?}", step);
-
         let tx_id = rws.next().call_context_value();
         rws.next(); // RwCounterEndOfReversion
         rws.next(); // IsPersistent
@@ -1094,12 +1090,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 )
             });
 
-            let input_rws = Value::known(F::from(input_bytes_word_count as u64));
-            let output_rws = Value::known(F::from(output_bytes_word_count as u64));
-            let return_rws = Value::known(F::from((return_bytes_word_count * 2) as u64));
-            trace!("input_rws: {input_rws:?}");
-            trace!("output_rws: {output_rws:?}");
-            trace!("return_rws: {return_rws:?}");
+            let input_rws = Value::known(F::from(input_bytes.len() as u64));
+            // let input_rws = Value::known(F::from(input_bytes_word_count as u64));
+            let output_rws = Value::known(F::from(output_bytes.len() as u64));
+            let return_rws = Value::known(F::from((return_bytes.len() * 2) as u64));
+
             (
                 input_len as u64,
                 input_bytes_rlc,

@@ -27,8 +27,7 @@ pub struct IdentityGadget<F> {
     call_data_length: Cell<F>,
     return_data_offset: Cell<F>,
     return_data_length: Cell<F>,
-    // RAY_INCOMPLETE
-    // restore_context: RestoreContextGadget<F>,
+    restore_context: RestoreContextGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
@@ -68,17 +67,16 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             cb.execution_state().precompile_base_gas_cost().expr(),
         );
 
-        // RAY_INCOMPLETE
-        // let restore_context = RestoreContextGadget::construct2(
-        //     cb,
-        //     is_success.expr(),
-        //     gas_cost.expr(),
-        //     0.expr(),
-        //     0x00.expr(),             // ReturnDataOffset
-        //     call_data_length.expr(), // ReturnDataLength
-        //     0.expr(),
-        //     0.expr(),
-        // );
+        let restore_context = RestoreContextGadget::construct2(
+            cb,
+            is_success.expr(),
+            gas_cost.expr(),
+            0.expr(),
+            0x00.expr(),             // ReturnDataOffset
+            call_data_length.expr(), // ReturnDataLength
+            0.expr(),
+            0.expr(),
+        );
 
         Self {
             input_word_size,
@@ -89,8 +87,7 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             call_data_length,
             return_data_offset,
             return_data_length,
-            // RAY_INCOMPLETE
-            // restore_context
+            restore_context
         }
     }
 

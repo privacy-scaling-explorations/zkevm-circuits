@@ -53,20 +53,18 @@ impl<F: Field> PrecompileGadget<F> {
         ];
 
         let constraints: Vec<BoxedClosure<F>> = vec![
-            // RAY_INCOMPLETE
-            // Box::new(|cb| {
-            //     /* Identity */
-            //     cb.require_equal(
-            //         "input length and precompile return length are the same",
-            //         cd_length,
-            //         precompile_return_length
-            //     );
-            // })
+            Box::new(|cb| {
+                /* Identity */
+                cb.require_equal(
+                    "input length and precompile return length are the same",
+                    cd_length,
+                    precompile_return_length
+                );
+            })
             // add more precompile constraint closures
         ];
 
-        // RAY_INCOMPLETE
-        // cb.constrain_mutually_exclusive_next_step(conditions, next_states, constraints);
+        cb.constrain_mutually_exclusive_next_step(conditions, next_states, constraints);
 
         Self { address }
     }
