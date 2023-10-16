@@ -405,7 +405,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 let precompile_input_bytes_rlc =
                     cb.condition(call_gadget.cd_address.has_length(), |cb| {
                         let precompile_input_bytes_rlc = cb.query_cell_phase2();
-                        // RAY_INCOMPLETE
                         // cb.copy_table_lookup(
                         //     Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
                         //     CopyDataType::Memory.expr(),
@@ -431,7 +430,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ]),
                     |cb| {
                         let precompile_output_bytes_rlc = cb.query_cell_phase2();
-                        // RAY_INCOMPLETE
                         // cb.copy_table_lookup(
                         //     Word::from_lo_unchecked(callee_call_id.expr()),
                         //     CopyDataType::RlcAcc.expr(),
@@ -461,7 +459,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ]),
                     |cb| {
                         let precompile_return_bytes_rlc = cb.query_cell_phase2();
-                        // RAY_INCOMPLETE
                         // cb.copy_table_lookup(
                         //     Word::from_lo_unchecked(callee_call_id.expr()),
                         //     CopyDataType::Memory.expr(), // refer u64::from(CopyDataType)
