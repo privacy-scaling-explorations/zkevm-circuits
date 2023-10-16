@@ -385,6 +385,7 @@ pub(crate) struct KeyData<F> {
     pub(crate) drifted_num_nibbles: Cell<F>,
     pub(crate) drifted_is_odd: Cell<F>,
     pub(crate) nibbles_rlc: Cell<F>,
+    pub(crate) drifted_index: Cell<F>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -398,6 +399,7 @@ pub(crate) struct KeyDataWitness<F> {
     pub(crate) drifted_num_nibbles: usize,
     pub(crate) drifted_is_odd: bool,
     pub(crate) nibbles_rlc: F,
+    pub(crate) drifted_index: F,
 }
 
 impl<F: Field> KeyData<F> {
@@ -416,6 +418,7 @@ impl<F: Field> KeyData<F> {
             drifted_num_nibbles: cb.query_cell(),
             drifted_is_odd: cb.query_cell(),
             nibbles_rlc: cb.query_cell_with_type(MptCellType::StoragePhase2),
+            drifted_index: cb.query_cell(),
         };
         circuit!([meta, cb.base], {
             memory.load(
@@ -432,6 +435,7 @@ impl<F: Field> KeyData<F> {
                     key_data.drifted_num_nibbles.expr(),
                     key_data.drifted_is_odd.expr(),
                     key_data.nibbles_rlc.expr(),
+                    key_data.drifted_index.expr(),
                 ],
             );
         });
@@ -451,6 +455,7 @@ impl<F: Field> KeyData<F> {
         drifted_num_nibbles: Expression<F>,
         drifted_is_odd: Expression<F>,
         nibbles_rlc: Expression<F>,
+        drifted_index: Expression<F>,
     ) {
         memory.store(
             &mut cb.base,
@@ -464,6 +469,7 @@ impl<F: Field> KeyData<F> {
                 drifted_num_nibbles,
                 drifted_is_odd,
                 nibbles_rlc,
+                drifted_index,
             ],
         );
     }
@@ -475,7 +481,7 @@ impl<F: Field> KeyData<F> {
         memory.store(&mut cb.base, &KeyData::default_values_expr());
     }
 
-    pub(crate) fn default_values_expr() -> [Expression<F>; 9] {
+    pub(crate) fn default_values_expr() -> [Expression<F>; 10] {
         [
             0.expr(),
             1.expr(),
@@ -485,6 +491,7 @@ impl<F: Field> KeyData<F> {
             1.expr(),
             0.expr(),
             false.expr(),
+            0.expr(),
             0.expr(),
         ]
     }
@@ -501,6 +508,7 @@ impl<F: Field> KeyData<F> {
         drifted_mult: F,
         drifted_num_nibbles: usize,
         nibbles_rlc: F,
+        drifted_index: F,
     ) -> Result<(), Error> {
         let values = [
             rlc,
@@ -512,6 +520,7 @@ impl<F: Field> KeyData<F> {
             drifted_num_nibbles.scalar(),
             (drifted_num_nibbles % 2 == 1).scalar(),
             nibbles_rlc,
+            drifted_index,
         ];
         memory.witness_store(offset, &values);
 
@@ -536,6 +545,7 @@ impl<F: Field> KeyData<F> {
         self.drifted_num_nibbles.assign(region, offset, values[6])?;
         self.drifted_is_odd.assign(region, offset, values[7])?;
         self.nibbles_rlc.assign(region, offset, values[8]);
+        self.drifted_index.assign(region, offset, values[9]);
 
         Ok(KeyDataWitness {
             rlc: values[0],
@@ -547,6 +557,7 @@ impl<F: Field> KeyData<F> {
             drifted_num_nibbles: values[6].get_lower_32() as usize,
             drifted_is_odd: values[7] != F::ZERO,
             nibbles_rlc: values[8],
+            drifted_index: values[9],
         })
     }
 }

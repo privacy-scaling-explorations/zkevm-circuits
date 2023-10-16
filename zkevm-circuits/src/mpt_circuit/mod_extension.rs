@@ -182,7 +182,8 @@ impl<F: Field> ModExtensionGadget<F> {
             require!(config.is_key_part_odd[1] => true.expr());
             require!(config.rlp_key[1].key_value.num_bytes() => 1.expr());
 
-            require!(5.expr() => key_data[0].drifted_rlc);
+            require!(5.expr() => key_data[0].drifted_index);
+
             // config.rlp_key[1].key_value.mult()
             // nibbles_rlc_short.rlc_chain_rev(other)
 

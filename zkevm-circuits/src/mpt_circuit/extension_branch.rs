@@ -170,6 +170,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         0.expr(),
                         false.expr(),
                         nibbles_rlc.clone(),
+                        0.expr(),
                     );
                     ParentData::store(
                         cb,
@@ -193,6 +194,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         branch.num_nibbles.expr(),
                         branch.is_key_odd.expr(),
                         nibbles_rlc.clone(),
+                        branch.drifted_index.expr(),
                     );
                     ParentData::store(
                         cb,
@@ -279,6 +281,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
             key_mult_post_branch,
             mod_node_hash_word,
             mod_node_hash_rlc,
+            drifted_index,
         ) = self.branch.assign(
             region,
             mpt_config,
@@ -307,6 +310,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     0.scalar(),
                     0,
                     nibbles_rlc,
+                    0.scalar(),
                 )?;
                 ParentData::witness_store(
                     region,
@@ -330,6 +334,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     key_mult_post_branch,
                     num_nibbles,
                     nibbles_rlc,
+                    drifted_index,
                 )?;
                 ParentData::witness_store(
                     region,

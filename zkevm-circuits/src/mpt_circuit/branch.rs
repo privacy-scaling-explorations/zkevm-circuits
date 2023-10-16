@@ -35,6 +35,7 @@ pub(crate) struct BranchState<F> {
     pub(crate) is_key_odd: Expression<F>,
     pub(crate) mod_word: [Word<Expression<F>>; 2],
     pub(crate) mod_rlc: [Expression<F>; 2],
+    pub(crate) drifted_index: Expression<F>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -273,6 +274,7 @@ impl<F: Field> BranchGadget<F> {
                     config.mod_rlc[true.idx()].expr(),
                     config.mod_rlc[false.idx()].expr(),
                 ],
+                drifted_index,
             });
         });
 
@@ -299,7 +301,7 @@ impl<F: Field> BranchGadget<F> {
         is_key_odd: &mut bool,
         node: &Node,
         rlp_values: &[RLPItemWitness],
-    ) -> Result<(F, F, F, [word::Word<F>; 2], [F; 2]), Error> {
+    ) -> Result<(F, F, F, [word::Word<F>; 2], [F; 2], F), Error> {
         let branch = &node.extension_branch.clone().unwrap().branch;
 
         for is_s in [true, false] {
@@ -395,6 +397,7 @@ impl<F: Field> BranchGadget<F> {
             key_mult_post_branch,
             mod_node_hash_word,
             mod_node_hash_rlc,
+            F::from(branch.drifted_index as u64)
         ))
     }
 }
