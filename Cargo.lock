@@ -2051,7 +2051,9 @@ dependencies = [
  "futures-util",
  "http",
  "hyper",
+ "log",
  "rustls",
+ "rustls-native-certs",
  "tokio",
  "tokio-rustls",
 ]
@@ -2401,9 +2403,13 @@ dependencies = [
  "eth-types",
  "ethers",
  "eyre",
+ "futures",
+ "futures-util",
  "gadgets",
  "halo2_proofs",
  "hex",
+ "hyper",
+ "hyper-rustls",
  "mpt-witness-generator",
  "num_enum 0.6.1",
  "rand",
@@ -3608,6 +3614,18 @@ dependencies = [
  "ring",
  "rustls-webpki 0.101.4",
  "sct",
+]
+
+[[package]]
+name = "rustls-native-certs"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9aace74cb666635c918e9c12bc0d348266037aa8eb599b5cba565709a8dff00"
+dependencies = [
+ "openssl-probe",
+ "rustls-pemfile",
+ "schannel",
+ "security-framework",
 ]
 
 [[package]]
