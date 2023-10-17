@@ -1595,18 +1595,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Some(condition) => lookup.conditional(condition),
             None => lookup,
         };
-        // let lookup_exprs = &lookup.input_exprs();
-        // for (i, expr) in lookup_exprs.iter().enumerate() {
-        //     self.debug_expression(format!("{:?}-{:?}", name, i), expr.clone());
-        // }
-        // self.debug_expression(
-        //     format!("{:?}-challenge", name),
-        //     self.challenges.lookup_input(),
-        // );
-        // self.debug_expression(
-        //     format!("{:?}-rlc", name),
-        //     rlc::expr(&lookup.input_exprs(), self.challenges.lookup_input()),
-        // );
 
         let compressed_expr = self.split_expression(
             "Lookup compression",

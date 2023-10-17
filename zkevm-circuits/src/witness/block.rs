@@ -267,19 +267,6 @@ pub fn block_convert<F: Field>(
     let mut block = Block {
         // randomness: F::from(0x100), // Special value to reveal elements after RLC
         randomness: F::from(0xcafeu64),
-        // TODO get permutation fingerprint & challenges
-        permu_alpha: F::from(1),
-        permu_gamma: F::from(1),
-        permu_rwtable_prev_continuous_fingerprint: F::from(1),
-        permu_rwtable_next_continuous_fingerprint: F::from(1),
-        permu_chronological_rwtable_prev_continuous_fingerprint: F::from(1),
-        permu_chronological_rwtable_next_continuous_fingerprint: F::from(1),
-        end_block_not_last: block.block_steps.end_block_not_last.clone(),
-        end_block_last: block.block_steps.end_block_last.clone(),
-        begin_chunk: block.block_steps.begin_chunk.clone(),
-        end_chunk: block.block_steps.end_chunk.clone(),
-        chunk_context: block.chunk_context.clone(),
-        prev_block: Box::new(None),
         context: block.into(),
         rws,
         txs: block.txs().to_vec(),
@@ -292,6 +279,21 @@ pub fn block_convert<F: Field>(
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         eth_block: block.eth_block.clone(),
+
+        // TODO get permutation fingerprint & challenges
+        permu_alpha: F::from(1),
+        permu_gamma: F::from(1),
+        permu_rwtable_prev_continuous_fingerprint: F::from(1),
+        permu_rwtable_next_continuous_fingerprint: F::from(1),
+        permu_chronological_rwtable_prev_continuous_fingerprint: F::from(1),
+        permu_chronological_rwtable_next_continuous_fingerprint: F::from(1),
+        end_block_not_last: block.block_steps.end_block_not_last.clone(),
+        end_block_last: block.block_steps.end_block_last.clone(),
+        // TODO refactor chunk related field to chunk structure
+        begin_chunk: block.block_steps.begin_chunk.clone(),
+        end_chunk: block.block_steps.end_chunk.clone(),
+        chunk_context: block.chunk_context.clone(),
+        prev_block: Box::new(None),
     };
     let public_data = public_data_convert(&block);
     let rpi_bytes = public_data.get_pi_bytes(

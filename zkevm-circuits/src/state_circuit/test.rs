@@ -64,8 +64,8 @@ fn test_state_circuit_ok(
     );
     let instance = circuit.instance();
 
-    let prover = MockProver::<Fr>::run(19, &circuit, instance);
-    let verify_result = prover.map_err(|err| println!("{}", err)).unwrap().verify();
+    let prover = MockProver::<Fr>::run(19, &circuit, instance).unwrap();
+    let verify_result = prover.verify();
     assert_eq!(verify_result, Ok(()));
 }
 
