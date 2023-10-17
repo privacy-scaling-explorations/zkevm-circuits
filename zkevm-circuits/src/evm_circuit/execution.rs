@@ -391,15 +391,6 @@ impl<F: Field> ExecutionConfig<F> {
 
             let execution_state_selector_constraints = step_curr.state.execution_state.configure();
 
-            let first_step_first_chunk_check = {
-                let begin_tx_selector =
-                    step_curr.execution_state_selector([ExecutionState::BeginTx]);
-                iter::once((
-                    "First step first chunk should be BeginTx",
-                    is_first_chunk.expr() * q_step_first.clone() * (1.expr() - begin_tx_selector),
-                ))
-            };
-
             let first_step_non_first_chunk_check = {
                 let begin_chunk_selector =
                     step_curr.execution_state_selector([ExecutionState::BeginChunk]);
@@ -434,7 +425,6 @@ impl<F: Field> ExecutionConfig<F> {
             execution_state_selector_constraints
                 .into_iter()
                 .map(move |(name, poly)| (name, q_usable.clone() * q_step.clone() * poly))
-                .chain(first_step_first_chunk_check)
                 .chain(first_step_non_first_chunk_check)
                 .chain(last_step_last_chunk_check)
                 .chain(last_step_non_last_chunk_check)
