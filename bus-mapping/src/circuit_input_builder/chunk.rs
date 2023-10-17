@@ -1,6 +1,6 @@
 use crate::operation::RWCounter;
 
-/// Context of a [`Chunk`].
+/// Context of a [`ChunkContext`].
 #[derive(Debug, Clone)]
 pub struct ChunkContext {
     /// Used to track the intra chunk counter in every operation in the chunk.

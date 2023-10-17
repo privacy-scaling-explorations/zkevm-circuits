@@ -353,6 +353,7 @@ impl CircuitInputBuilder<FixedCParams> {
         // rwc index start from 1
         let total_rws = state.block_ctx.rwc.0 - 1;
         // We need at least 1 extra Start row
+        // because total_rws exclude Rw::Start
         #[allow(clippy::int_plus_one)]
         {
             assert!(
@@ -372,7 +373,7 @@ impl CircuitInputBuilder<FixedCParams> {
             StartOp {},
         );
         if max_rws - total_rws > 1 {
-            let (padding_start, padding_end) = (max_rws - total_rws, max_rws); // rw counter start from 1
+            let (padding_start, padding_end) = (total_rws + 1, max_rws - 1);
             push_op(
                 &mut state.block.container,
                 &mut end_block_last,
@@ -481,8 +482,7 @@ impl CircuitInputBuilder<DynamicCParams> {
                 <RWCounter as Into<usize>>::into(self.block_ctx.rwc) - 1; // -1 since rwc start from index `1`
             let max_rws = total_rws_before_end_block
                 + {
-                    // EndBlock rwlookup
-                    1 // +1 for RW::Start lookup
+                    1 // +1 for reserving RW::Start at row 1 (offset 0)
                     + if total_rws_before_end_block > 0 { 1 /*end_block -> CallContextFieldTag::TxId lookup*/ } else { 0 }
                 };
             // Computing the number of rows for the EVM circuit requires the size of ExecStep,

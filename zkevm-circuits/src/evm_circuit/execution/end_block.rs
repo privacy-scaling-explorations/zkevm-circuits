@@ -81,9 +81,8 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         });
 
         // TODO fix below logic checking logic
-        let inner_rws_before_padding = cb.curr.state.rw_counter_intra_chunk.clone().expr()
+        let total_inner_rws_before_padding = cb.curr.state.rw_counter_intra_chunk.clone().expr()
             - 1.expr() // start from 1
-            + 1.expr() // for Rw::Start lookup below
             + select::expr( // CallContext lookup to check total_txs
                 is_empty_rwc.expr(),
                 0.expr(),
@@ -100,22 +99,12 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         cb.rw_table_start_lookup(1.expr());
         let is_end_padding_exist = LtGadget::<_, MAX_RW_BYTES>::construct(
             cb,
-            0.expr(),
-            max_rws.expr() - inner_rws_before_padding.expr(),
+            1.expr(),
+            max_rws.expr() - total_inner_rws_before_padding.expr(),
         );
-        cb.debug_expression("max_rws.expr()", max_rws.expr());
-        cb.debug_expression(
-            "inner_rws_before_padding.expr()",
-            inner_rws_before_padding.expr(),
-        );
-        cb.debug_expression(
-            "max_rws.expr() - inner_rws_before_padding.expr()",
-            max_rws.expr() - inner_rws_before_padding.expr(),
-        );
-        cb.debug_expression("is_end_padding_exist", is_end_padding_exist.expr());
         cb.condition(is_end_padding_exist.expr(), |cb| {
-            cb.rw_table_padding_lookup(inner_rws_before_padding.expr() + 1.expr());
-            cb.rw_table_padding_lookup(max_rws.expr());
+            cb.rw_table_padding_lookup(total_inner_rws_before_padding.expr() + 1.expr());
+            cb.rw_table_padding_lookup(max_rws.expr() - 1.expr());
         });
         // Since every lookup done in the EVM circuit must succeed and uses
         // a unique rw_counter, we know that at least there are
