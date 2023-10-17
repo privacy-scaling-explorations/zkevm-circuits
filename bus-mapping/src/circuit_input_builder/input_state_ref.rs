@@ -48,7 +48,6 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Create a new step from a `GethExecStep`
     pub fn new_step(&self, geth_step: &GethExecStep) -> Result<ExecStep, Error> {
         let call_ctx = self.tx_ctx.call_ctx()?;
-
         Ok(ExecStep::new(
             geth_step,
             call_ctx,
@@ -65,6 +64,7 @@ impl<'a> CircuitInputStateRef<'a> {
             exec_state: ExecState::BeginTx,
             gas_left: self.tx.gas(),
             rwc: self.block_ctx.rwc,
+            rwc_intra_chunk: self.chunk_ctx.rwc,
             ..Default::default()
         }
     }
@@ -100,6 +100,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 0
             },
             rwc: self.block_ctx.rwc,
+            rwc_intra_chunk: self.chunk_ctx.rwc,
             // For tx without code execution
             reversible_write_counter: if let Some(call_ctx) = self.tx_ctx.calls().last() {
                 call_ctx.reversible_write_counter

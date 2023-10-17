@@ -580,7 +580,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 self.curr.state.rw_counter_intra_chunk.expr(),
             ),
             Transition::Delta(delta) => self.require_equal(
-                concat!("State transition (delta) constraint of ", stringify!($name)),
+                concat!("State transition (delta) constraint of rw_counter_intra_chunk"),
                 self.next.state.rw_counter_intra_chunk.expr(),
                 self.curr.state.rw_counter_intra_chunk.expr() + delta.clone(),
             ),
@@ -1329,7 +1329,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     pub(crate) fn step_state_lookup(&mut self, is_write: Expression<F>) {
         self.rw_lookup(
-            "StepState lookup",
+            "StepState lookup codehash",
             is_write.clone(),
             Target::StepState,
             RwValues::new(
@@ -1344,35 +1344,56 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
 
         vec![
-            (self.curr.state.call_id.clone(), StepStateFieldTag::CallID),
-            (self.curr.state.is_root.clone(), StepStateFieldTag::IsRoot),
             (
+                "StepState lookup CallID",
+                self.curr.state.call_id.clone(),
+                StepStateFieldTag::CallID,
+            ),
+            (
+                "StepState lookup IsRoot",
+                self.curr.state.is_root.clone(),
+                StepStateFieldTag::IsRoot,
+            ),
+            (
+                "StepState lookup IsCreate",
                 self.curr.state.is_create.clone(),
                 StepStateFieldTag::IsCreate,
             ),
             (
+                "StepState lookup ProgramCounter",
                 self.curr.state.program_counter.clone(),
                 StepStateFieldTag::ProgramCounter,
             ),
             (
+                "StepState lookup StackPointer",
                 self.curr.state.stack_pointer.clone(),
                 StepStateFieldTag::StackPointer,
             ),
-            (self.curr.state.gas_left.clone(), StepStateFieldTag::GasLeft),
             (
+                "StepState lookup GasLeft",
+                self.curr.state.gas_left.clone(),
+                StepStateFieldTag::GasLeft,
+            ),
+            (
+                "StepState lookup MemoryWordSize",
                 self.curr.state.memory_word_size.clone(),
                 StepStateFieldTag::MemoryWordSize,
             ),
             (
+                "StepState lookup ReversibleWriteCounter",
                 self.curr.state.reversible_write_counter.clone(),
                 StepStateFieldTag::ReversibleWriteCounter,
             ),
-            (self.curr.state.log_id.clone(), StepStateFieldTag::LogID),
+            (
+                "StepState lookup LogID",
+                self.curr.state.log_id.clone(),
+                StepStateFieldTag::LogID,
+            ),
         ]
         .iter()
-        .for_each(|(cell, field_tag)| {
+        .for_each(|(name, cell, field_tag)| {
             self.rw_lookup(
-                "StepState lookup",
+                name,
                 is_write.clone(),
                 Target::StepState,
                 RwValues::new(
@@ -1574,6 +1595,19 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Some(condition) => lookup.conditional(condition),
             None => lookup,
         };
+        // let lookup_exprs = &lookup.input_exprs();
+        // for (i, expr) in lookup_exprs.iter().enumerate() {
+        //     self.debug_expression(format!("{:?}-{:?}", name, i), expr.clone());
+        // }
+        // self.debug_expression(
+        //     format!("{:?}-challenge", name),
+        //     self.challenges.lookup_input(),
+        // );
+        // self.debug_expression(
+        //     format!("{:?}-rlc", name),
+        //     rlc::expr(&lookup.input_exprs(), self.challenges.lookup_input()),
+        // );
+
         let compressed_expr = self.split_expression(
             "Lookup compression",
             rlc::expr(&lookup.input_exprs(), self.challenges.lookup_input()),

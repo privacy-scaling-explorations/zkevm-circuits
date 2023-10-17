@@ -16,8 +16,8 @@ use crate::{
     error::Error,
     evm::opcodes::{gen_associated_ops, gen_associated_steps},
     operation::{
-        CallContextField, Op, Operation, OperationContainer, RWCounter, StartOp, StepStateField,
-        StepStateOp, RW,
+        CallContextField, Op, Operation, OperationContainer, PaddingOp, RWCounter, StartOp,
+        StepStateField, StepStateOp, RW,
     },
     rpc::GethClient,
     state_db::{self, CodeDB, StateDB},
@@ -279,15 +279,16 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             StepStateField::IsCreate,
             StepStateField::ProgramCounter,
             StepStateField::StackPointer,
+            StepStateField::GasLeft,
             StepStateField::MemoryWordSize,
             StepStateField::ReversibleWriteCounter,
             StepStateField::LogID,
         ];
-        let rw_counters = (1..tags.len())
+        let rw_counters = (0..tags.len())
             .map(|_| self.block_ctx.rwc.inc_pre())
             .collect::<Vec<RWCounter>>();
         // just bump rwc in chunk_ctx as block_ctx rwc to assure same delta apply
-        let rw_counters_inner_chunk = (1..tags.len())
+        let rw_counters_inner_chunk = (0..tags.len())
             .map(|_| self.chunk_ctx.rwc.inc_pre())
             .collect::<Vec<RWCounter>>();
         let mut begin_chunk = self.block.block_steps.begin_chunk.clone();
@@ -322,7 +323,6 @@ impl CircuitInputBuilder<FixedCParams> {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<&CircuitInputBuilder<FixedCParams>, Error> {
-        self.set_begin_chunk();
         // accumulates gas across all txs in the block
         self.begin_handle_block(eth_block, geth_traces)?;
         self.set_end_block(self.circuits_params.max_rws);
@@ -334,6 +334,8 @@ impl CircuitInputBuilder<FixedCParams> {
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
         end_block_not_last.rwc = self.block_ctx.rwc;
         end_block_last.rwc = self.block_ctx.rwc;
+        end_block_not_last.rwc_intra_chunk = self.chunk_ctx.rwc;
+        end_block_last.rwc_intra_chunk = self.chunk_ctx.rwc;
 
         let mut dummy_tx = Transaction::default();
         let mut dummy_tx_ctx = TransactionContext::default();
@@ -369,25 +371,27 @@ impl CircuitInputBuilder<FixedCParams> {
             RW::READ,
             StartOp {},
         );
-        // if max_rws - total_rws > 1 {
-        // let (padding_start, padding_end) = (max_rws - total_rws, max_rws); // rw counter
-        // start from 1 push_op(
-        //     &mut state.block.container,
-        //     &mut end_block_last,
-        //     RWCounter(padding_start),
-        //     RW::READ,
-        //     PaddingOp {},
-        // );
-        // if padding_end != padding_start {
-        //     push_op(
-        //         &mut state.block.container,
-        //         &mut end_block_last,
-        //         RWCounter(padding_end),
-        //         RW::READ,
-        //         PaddingOp {},
-        //     );
-        // }
-        // }
+        if max_rws - total_rws > 1 {
+            let (padding_start, padding_end) = (max_rws - total_rws, max_rws); // rw counter start from 1
+            push_op(
+                &mut state.block.container,
+                &mut end_block_last,
+                RWCounter(padding_start),
+                RWCounter(padding_start),
+                RW::READ,
+                PaddingOp {},
+            );
+            if padding_end != padding_start {
+                push_op(
+                    &mut state.block.container,
+                    &mut end_block_last,
+                    RWCounter(padding_end),
+                    RWCounter(padding_end),
+                    RW::READ,
+                    PaddingOp {},
+                );
+            }
+        }
 
         self.block.block_steps.end_block_not_last = end_block_not_last;
         self.block.block_steps.end_block_last = end_block_last;
@@ -413,6 +417,10 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<(), Error> {
+        if self.chunk_ctx.chunk_index > 0 {
+            self.set_begin_chunk();
+        }
+
         // accumulates gas across all txs in the block
         for (idx, tx) in eth_block.transactions.iter().enumerate() {
             let geth_trace = &geth_traces[idx];
@@ -471,8 +479,8 @@ impl CircuitInputBuilder<DynamicCParams> {
             // TODO fix below logic for multiple rw_table chunks
             let total_rws_before_end_block: usize =
                 <RWCounter as Into<usize>>::into(self.block_ctx.rwc) - 1; // -1 since rwc start from index `1`
-            let max_rws_after_padding = total_rws_before_end_block
-                + 1 // +1 for RW::Start padding in offset 0
+            let max_rws = total_rws_before_end_block
+                + 1 // +1 for RW::Start lookup in offset 0
                 + if total_rws_before_end_block > 0 { 1 /*end_block -> CallContextFieldTag::TxId lookup*/ } else { 0 };
             // Computing the number of rows for the EVM circuit requires the size of ExecStep,
             // which is determined in the code of zkevm-circuits and cannot be imported here.
@@ -485,7 +493,7 @@ impl CircuitInputBuilder<DynamicCParams> {
             // needed.
             let max_keccak_rows = 0;
             FixedCParams {
-                max_rws: max_rws_after_padding,
+                max_rws,
                 max_txs,
                 max_calldata,
                 max_copy_rows,

@@ -765,11 +765,10 @@ impl<F: Field> Step<F> {
         self.state
             .execution_state
             .assign(region, offset, step.execution_state() as usize)?;
-        let rw_counter_assigned_cell = self.state.rw_counter.assign(
-            region,
-            offset,
-            Value::known(F::from(step.rwc_intra_chunk.into())),
-        )?;
+        let rw_counter_assigned_cell =
+            self.state
+                .rw_counter
+                .assign(region, offset, Value::known(F::from(step.rwc.into())))?;
         self.state.rw_counter_intra_chunk.assign(
             region,
             offset,

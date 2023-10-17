@@ -1,6 +1,7 @@
 //! The EVM circuit implementation.
 
 use gadgets::{
+    is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
     permutation::{PermutationChip, PermutationChipConfig},
     util::Expr,
 };
@@ -72,6 +73,9 @@ pub struct EvmCircuitConfig<F> {
     chunk_index: Column<Advice>,
     chunk_index_next: Column<Advice>,
     total_chunks: Column<Advice>,
+    q_chunk_context: Selector,
+    is_first_chunk: IsZeroConfig<F>,
+    is_last_chunk: IsZeroConfig<F>,
 }
 
 /// Circuit configuration arguments
@@ -119,11 +123,33 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
     ) -> Self {
         // chunk context
         let chunk_index = meta.advice_column();
+        let chunk_index_inv = meta.advice_column();
         let chunk_index_next = meta.advice_column();
+        let chunk_diff = meta.advice_column();
         let total_chunks = meta.advice_column();
         let q_chunk_non_first = meta.selector();
+        let q_chunk_context = meta.selector();
 
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
+
+        let is_first_chunk = IsZeroChip::configure(
+            meta,
+            |meta| meta.query_selector(q_chunk_context),
+            |meta| meta.query_advice(chunk_index, Rotation::cur()),
+            chunk_index_inv,
+        );
+
+        let is_last_chunk = IsZeroChip::configure(
+            meta,
+            |meta| meta.query_selector(q_chunk_context),
+            |meta| {
+                let chunk_index = meta.query_advice(chunk_index, Rotation::cur());
+                let total_chunks = meta.query_advice(total_chunks, Rotation::cur());
+
+                chunk_index + 1.expr() - total_chunks
+            },
+            chunk_diff,
+        );
 
         let execution = Box::new(ExecutionConfig::configure(
             meta,
@@ -138,8 +164,8 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &copy_table,
             &keccak_table,
             &exp_table,
-            &chunk_index,
-            &total_chunks,
+            &is_first_chunk,
+            &is_last_chunk,
         ));
 
         u8_table.annotate_columns(meta);
@@ -215,6 +241,9 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             chunk_index_next,
             q_chunk_non_first,
             total_chunks,
+            is_first_chunk,
+            is_last_chunk,
+            q_chunk_context,
         }
     }
 }
@@ -256,6 +285,8 @@ impl<F: Field> EvmCircuitConfig<F> {
         chunk_context: &ChunkContext,
         max_offset_index: usize,
     ) -> Result<AssignedChunkContextCell<F>, Error> {
+        let is_first_chunk = IsZeroChip::construct(self.is_first_chunk.clone());
+        let is_last_chunk = IsZeroChip::construct(self.is_last_chunk.clone());
         let mut assigned_cells = vec![];
         layouter.assign_region(
             || "chunk context",
@@ -294,6 +325,20 @@ impl<F: Field> EvmCircuitConfig<F> {
                         assigned_cells.push(chunk_index_next_cell);
                         assigned_cells.push(total_chunk_cell);
                     }
+
+                    self.q_chunk_context.enable(&mut region, offset)?;
+                    is_first_chunk.assign(
+                        &mut region,
+                        offset,
+                        Value::known(F::from(chunk_context.chunk_index as u64)),
+                    )?;
+                    is_last_chunk.assign(
+                        &mut region,
+                        offset,
+                        Value::known(F::from(
+                            (chunk_context.chunk_index + 1 - chunk_context.total_chunks) as u64,
+                        )),
+                    )?;
                 }
                 Ok((
                     assigned_cells[0].clone(),
@@ -526,7 +571,6 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                 rws_values[0].clone(),
                 vec![
                     block.permu_chronological_rwtable_prev_continuous_fingerprint,
-                    F::from(block.chunk_context.chunk_index as u64),
                     F::from(rw_table_chunked_index as u64),
                     F::from(rw_table_total_chunks as u64),
                 ],
@@ -536,7 +580,6 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                 rws_values[1].clone(),
                 vec![
                     block.permu_chronological_rwtable_next_continuous_fingerprint,
-                    F::from(block.chunk_context.chunk_index as u64 + 1u64),
                     F::from(rw_table_chunked_index as u64) + F::ONE,
                     F::from(rw_table_total_chunks as u64),
                 ],
@@ -644,34 +687,12 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let tx_table = TxTable::construct(meta);
-        println!("fixed column after txtable {:?}", meta.num_fixed_columns());
         let rw_table = RwTable::construct(meta);
-        println!("fixed column after rw_table {:?}", meta.num_fixed_columns());
         let bytecode_table = BytecodeTable::construct(meta);
-        println!(
-            "fixed column after bytecode_table {:?}",
-            meta.num_fixed_columns()
-        );
         let block_table = BlockTable::construct(meta);
-        println!(
-            "fixed column after block_table {:?}",
-            meta.num_fixed_columns()
-        );
         let q_copy_table = meta.fixed_column();
-        println!(
-            "fixed column after q_copy_table {:?}",
-            meta.num_fixed_columns()
-        );
         let copy_table = CopyTable::construct(meta, q_copy_table);
-        println!(
-            "fixed column after copy_table {:?}",
-            meta.num_fixed_columns()
-        );
         let keccak_table = KeccakTable::construct(meta);
-        println!(
-            "fixed column after keccak_table {:?}",
-            meta.num_fixed_columns()
-        );
         let exp_table = ExpTable::construct(meta);
         let u8_table = UXTable::construct(meta);
         let u16_table = UXTable::construct(meta);

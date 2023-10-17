@@ -3,14 +3,18 @@ use std::{collections::HashMap, iter};
 
 use bus_mapping::{
     exec_trace::OperationRef,
-    operation::{self, AccountField, CallContextField, Target, TxLogField, TxReceiptField},
+    operation::{
+        self, AccountField, CallContextField, StepStateField, Target, TxLogField, TxReceiptField,
+    },
 };
 use eth_types::{Address, Field, ToAddress, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 
 use crate::{
-    table::{AccountFieldTag, CallContextFieldTag, TxLogFieldTag, TxReceiptFieldTag},
+    table::{
+        AccountFieldTag, CallContextFieldTag, StepStateFieldTag, TxLogFieldTag, TxReceiptFieldTag,
+    },
     util::{build_tx_log_address, unwrap_value, word},
 };
 
@@ -282,6 +286,14 @@ pub enum Rw {
         tx_id: usize,
         field_tag: TxReceiptFieldTag,
         value: u64,
+    },
+
+    /// StepState
+    StepState {
+        rw_counter: usize,
+        is_write: bool,
+        field_tag: StepStateFieldTag,
+        value: Word,
     },
 
     /// ...
@@ -617,6 +629,7 @@ impl Rw {
             | Self::TxRefund { rw_counter, .. }
             | Self::Account { rw_counter, .. }
             | Self::CallContext { rw_counter, .. }
+            | Self::StepState { rw_counter, .. }
             | Self::TxLog { rw_counter, .. }
             | Self::TxReceipt { rw_counter, .. } => *rw_counter,
         }
@@ -633,6 +646,7 @@ impl Rw {
             | Self::TxRefund { is_write, .. }
             | Self::Account { is_write, .. }
             | Self::CallContext { is_write, .. }
+            | Self::StepState { is_write, .. }
             | Self::TxLog { is_write, .. }
             | Self::TxReceipt { is_write, .. } => *is_write,
         }
@@ -652,6 +666,7 @@ impl Rw {
             Self::CallContext { .. } => Target::CallContext,
             Self::TxLog { .. } => Target::TxLog,
             Self::TxReceipt { .. } => Target::TxReceipt,
+            Self::StepState { .. } => Target::StepState,
         }
     }
 
@@ -666,7 +681,10 @@ impl Rw {
             Self::CallContext { call_id, .. }
             | Self::Stack { call_id, .. }
             | Self::Memory { call_id, .. } => Some(*call_id),
-            Self::Padding { .. } | Self::Start { .. } | Self::Account { .. } => None,
+            Self::Padding { .. }
+            | Self::Start { .. }
+            | Self::Account { .. }
+            | Self::StepState { .. } => None,
         }
     }
 
@@ -700,6 +718,7 @@ impl Rw {
             Self::Padding { .. }
             | Self::Start { .. }
             | Self::CallContext { .. }
+            | Self::StepState { .. }
             | Self::TxRefund { .. }
             | Self::TxReceipt { .. } => None,
         }
@@ -709,6 +728,7 @@ impl Rw {
         match self {
             Self::Account { field_tag, .. } => Some(*field_tag as u64),
             Self::CallContext { field_tag, .. } => Some(*field_tag as u64),
+            Self::StepState { field_tag, .. } => Some(*field_tag as u64),
             Self::TxReceipt { field_tag, .. } => Some(*field_tag as u64),
             Self::Padding { .. }
             | Self::Start { .. }
@@ -729,6 +749,7 @@ impl Rw {
             Self::Padding { .. }
             | Self::Start { .. }
             | Self::CallContext { .. }
+            | Self::StepState { .. }
             | Self::Stack { .. }
             | Self::Memory { .. }
             | Self::TxRefund { .. }
@@ -743,6 +764,7 @@ impl Rw {
         match self {
             Self::Padding { .. } | Self::Start { .. } => U256::zero(),
             Self::CallContext { value, .. }
+            | Self::StepState { value, .. }
             | Self::Account { value, .. }
             | Self::AccountStorage { value, .. }
             | Self::Stack { value, .. }
@@ -769,6 +791,7 @@ impl Rw {
             | Self::Stack { .. }
             | Self::Memory { .. }
             | Self::CallContext { .. }
+            | Self::StepState { .. }
             | Self::TxLog { .. }
             | Self::TxReceipt { .. } => None,
         }
@@ -1002,6 +1025,32 @@ impl From<&operation::OperationContainer> for RwMap {
                         TxReceiptField::PostStateOrStatus => TxReceiptFieldTag::PostStateOrStatus,
                         TxReceiptField::LogLength => TxReceiptFieldTag::LogLength,
                         TxReceiptField::CumulativeGasUsed => TxReceiptFieldTag::CumulativeGasUsed,
+                    },
+                    value: op.op().value,
+                })
+                .collect(),
+        );
+        rws.insert(
+            Target::StepState,
+            container
+                .step_state
+                .iter()
+                .map(|op| Rw::StepState {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    field_tag: match op.op().field {
+                        StepStateField::CallID => StepStateFieldTag::CallID,
+                        StepStateField::IsRoot => StepStateFieldTag::IsRoot,
+                        StepStateField::IsCreate => StepStateFieldTag::IsCreate,
+                        StepStateField::CodeHash => StepStateFieldTag::CodeHash,
+                        StepStateField::ProgramCounter => StepStateFieldTag::ProgramCounter,
+                        StepStateField::StackPointer => StepStateFieldTag::StackPointer,
+                        StepStateField::GasLeft => StepStateFieldTag::GasLeft,
+                        StepStateField::MemoryWordSize => StepStateFieldTag::MemoryWordSize,
+                        StepStateField::ReversibleWriteCounter => {
+                            StepStateFieldTag::ReversibleWriteCounter
+                        }
+                        StepStateField::LogID => StepStateFieldTag::LogID,
                     },
                     value: op.op().value,
                 })

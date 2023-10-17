@@ -6,7 +6,7 @@ use crate::{
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition::Same,
             },
-            math_gadget::{IsEqualGadget, IsZeroGadget},
+            math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
             not, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -18,13 +18,17 @@ use eth_types::Field;
 use gadgets::util::select;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
+/// current SRS size < 2^30 so use 4 bytes (2^32) in LtGadet should be enough
+const MAX_RW_BYTES: usize = u32::BITS as usize / 4;
+
 #[derive(Clone, Debug)]
 pub(crate) struct EndBlockGadget<F> {
     total_txs: Cell<F>,
     total_txs_is_max_txs: IsEqualGadget<F>,
-    is_empty_block: IsZeroGadget<F>,
+    is_empty_rwc: IsZeroGadget<F>,
     max_rws: Cell<F>,
     max_txs: Cell<F>,
+    is_end_padding_exist: LtGadget<F, MAX_RW_BYTES>,
 }
 
 impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
@@ -37,24 +41,17 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let max_rws = cb.query_copy_cell();
         let total_txs = cb.query_cell();
         let total_txs_is_max_txs = IsEqualGadget::construct(cb, total_txs.expr(), max_txs.expr());
-        // Note that rw_counter starts at 1
-        let is_empty_block =
+        // Note that rw_counter_intra_chunk starts at 1
+        let is_empty_rwc =
             IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
-
-        let _total_rws_before_padding = cb.curr.state.rw_counter.clone().expr() - 1.expr()
-            + select::expr(
-                is_empty_block.expr(),
-                0.expr(),
-                1.expr(), // If the block is not empty, we will do 1 call_context lookup below
-            );
 
         // 1. Constraint total_rws and total_txs witness values depending on the empty
         // block case.
-        cb.condition(is_empty_block.expr(), |cb| {
+        cb.condition(is_empty_rwc.expr(), |cb| {
             // 1a.
             cb.require_equal("total_txs is 0 in empty block", total_txs.expr(), 0.expr());
         });
-        cb.condition(not::expr(is_empty_block.expr()), |cb| {
+        cb.condition(not::expr(is_empty_rwc.expr()), |cb| {
             // 1b. total_txs matches the tx_id that corresponds to the final step.
             cb.call_context_lookup_read(
                 None,
@@ -84,6 +81,14 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         });
 
         // TODO fix below logic checking logic
+        let inner_rws_before_padding = cb.curr.state.rw_counter_intra_chunk.clone().expr()
+            - 1.expr() // start from 1
+            + 1.expr() // for Rw::Start lookup below
+            + select::expr( // CallContext lookup to check total_txs
+                is_empty_rwc.expr(),
+                0.expr(),
+                1.expr(),
+            );
         // - startop only exist in first chunk
         // - total_rws_before_padding are across chunk. We need new way, maybe new
         //   `rw_counter_intra_chunk` to lookup padding logic
@@ -93,21 +98,25 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         // Verify that there are at most total_rws meaningful entries in the rw_table
         // TODO only lookup start on first rwtable chunk
         cb.rw_table_start_lookup(1.expr());
-        // current SRS size < 2^30 so use 4 bytes (2^32) in LtGadet should be enough
-        // TODO find better way other than hardcode
-        // let is_end_padding_exist = LtGadget::<_, 32>::construct(
-        //     cb,
-        //     1.expr(),
-        //     max_rws.expr() - total_rws_before_padding.expr(),
-        // );
-        // cb.debug_expression(
-        //     "is_end_padding_exist",
-        //     max_rws.expr() - total_rws_before_padding.expr(),
-        // );
-        // cb.condition(is_end_padding_exist.expr(), |cb| {
-        //     cb.rw_table_padding_lookup(total_rws_before_padding.expr() + 1.expr());
-        //     cb.rw_table_padding_lookup(max_rws.expr());
-        // });
+        let is_end_padding_exist = LtGadget::<_, MAX_RW_BYTES>::construct(
+            cb,
+            0.expr(),
+            max_rws.expr() - inner_rws_before_padding.expr(),
+        );
+        cb.debug_expression("max_rws.expr()", max_rws.expr());
+        cb.debug_expression(
+            "inner_rws_before_padding.expr()",
+            inner_rws_before_padding.expr(),
+        );
+        cb.debug_expression(
+            "max_rws.expr() - inner_rws_before_padding.expr()",
+            max_rws.expr() - inner_rws_before_padding.expr(),
+        );
+        cb.debug_expression("is_end_padding_exist", is_end_padding_exist.expr());
+        cb.condition(is_end_padding_exist.expr(), |cb| {
+            cb.rw_table_padding_lookup(inner_rws_before_padding.expr() + 1.expr());
+            cb.rw_table_padding_lookup(max_rws.expr());
+        });
         // Since every lookup done in the EVM circuit must succeed and uses
         // a unique rw_counter, we know that at least there are
         // total_rws meaningful entries in the rw_table.
@@ -132,7 +141,8 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             max_rws,
             total_txs,
             total_txs_is_max_txs,
-            is_empty_block,
+            is_empty_rwc,
+            is_end_padding_exist,
         }
     }
 
@@ -145,10 +155,20 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.is_empty_block
-            .assign(region, offset, F::from(u64::from(step.rwc) - 1))?;
+        let total_rwc = u64::from(step.rwc) - 1;
+        self.is_empty_rwc
+            .assign(region, offset, F::from(total_rwc))?;
         let max_rws = F::from(block.circuits_params.max_rws as u64);
         let max_rws_assigned = self.max_rws.assign(region, offset, Value::known(max_rws))?;
+
+        self.is_end_padding_exist.assign(
+            region,
+            offset,
+            F::ZERO,
+            max_rws.sub(F::from(
+                step.rwc_intra_chunk.0 as u64 - 1 + 1 + if total_rwc > 0 { 1 } else { 0 },
+            )),
+        )?;
 
         let total_txs = F::from(block.txs.len() as u64);
         let max_txs = F::from(block.circuits_params.max_txs as u64);

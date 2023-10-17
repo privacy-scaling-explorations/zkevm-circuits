@@ -206,7 +206,6 @@ impl<F: Field> RestoreContextGadget<F> {
             gas_left: To(gas_left),
             memory_word_size: To(caller_memory_word_size.expr()),
             reversible_write_counter: To(reversible_write_counter),
-            log_id: Same,
             ..Default::default()
         });
 
