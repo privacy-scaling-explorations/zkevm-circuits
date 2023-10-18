@@ -68,7 +68,7 @@ pub struct EvmCircuitConfig<F> {
 
     // pi for carry over previous chunk context
     pi_pre_continuity: Column<Instance>,
-    // pi for carry over previous chunk context
+    // pi for carry over chunk context to the next chunk
     pi_next_continuity: Column<Instance>,
     // pi for permutation challenge
     pi_permutation_challenges: Column<Instance>,
