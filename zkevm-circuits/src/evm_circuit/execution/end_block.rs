@@ -11,7 +11,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{CallContextFieldTag, TxContextFieldTag},
+    table::{chunkctx_table::ChunkCtxFieldTag, CallContextFieldTag, TxContextFieldTag},
     util::{word::Word, Expr},
 };
 use eth_types::Field;
@@ -40,10 +40,15 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let max_txs = cb.query_copy_cell();
         let max_rws = cb.query_copy_cell();
         let total_txs = cb.query_cell();
+        let chunk_index = cb.query_cell();
         let total_txs_is_max_txs = IsEqualGadget::construct(cb, total_txs.expr(), max_txs.expr());
         // Note that inner_rw_counter starts at 1
         let is_empty_rwc =
             IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
+
+        // lookup to get chunk index
+        cb.chunk_context_lookup(ChunkCtxFieldTag::CurrentChunkIndex, chunk_index.expr());
+        let is_first_chunk = IsZeroGadget::construct(cb, chunk_index.expr());
 
         // 1. Constraint total_rws and total_txs witness values depending on the empty
         // block case.
@@ -80,7 +85,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             // meaningful txs in the tx_table is total_tx.
         });
 
-        // TODO fix below logic checking logic
+        // TODO fix below checking logic
         let total_inner_rws_before_padding = cb.curr.state.inner_rw_counter.clone().expr()
             - 1.expr() // start from 1
             + select::expr( // CallContext lookup to check total_txs
@@ -88,15 +93,15 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
                 0.expr(),
                 1.expr(),
             );
-        // - startop only exist in first chunk
-        // - total_rws_before_padding are across chunk. We need new way, maybe new
-        //   `inner_rw_counter` to lookup padding logic
-
         // 3. Verify rw_counter counts to the same number of meaningful rows in
         // rw_table to ensure there is no malicious insertion.
         // Verify that there are at most total_rws meaningful entries in the rw_table
-        // TODO only lookup start on first rwtable chunk
-        cb.rw_table_start_lookup(1.expr());
+        // - startop only exist in first chunk
+        cb.condition(is_first_chunk.expr(), |cb| {
+            cb.rw_table_start_lookup(1.expr());
+        });
+
+        // TODO Fix below for multiple chunk logic
         let is_end_padding_exist = LtGadget::<_, MAX_RW_BYTES>::construct(
             cb,
             1.expr(),

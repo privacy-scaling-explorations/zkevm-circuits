@@ -104,6 +104,9 @@ impl Instrument {
                     CellType::Lookup(Table::Exp) => {
                         report.exp_table = data_entry;
                     }
+                    CellType::Lookup(Table::ChunkCtx) => {
+                        report.chunkctx_table = data_entry;
+                    }
                 }
             }
             report_collection.push(report);
@@ -131,6 +134,7 @@ pub struct ExecStateReport {
     pub copy_table: StateReportRow,
     pub keccak_table: StateReportRow,
     pub exp_table: StateReportRow,
+    pub chunkctx_table: StateReportRow,
 }
 
 impl From<ExecutionState> for ExecStateReport {

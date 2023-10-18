@@ -336,6 +336,7 @@ impl CircuitInputBuilder<FixedCParams> {
         end_block_last.rwc = self.block_ctx.rwc;
         end_block_not_last.rwc_inner_chunk = self.chunk_ctx.rwc;
         end_block_last.rwc_inner_chunk = self.chunk_ctx.rwc;
+        let is_first_chunk = self.chunk_ctx.chunk_index == 0;
 
         let mut dummy_tx = Transaction::default();
         let mut dummy_tx_ctx = TransactionContext::default();
@@ -363,15 +364,18 @@ impl CircuitInputBuilder<FixedCParams> {
                 max_rws
             );
         }
+
+        if is_first_chunk {
+            push_op(
+                &mut state.block.container,
+                &mut end_block_last,
+                RWCounter(1),
+                RWCounter(1),
+                RW::READ,
+                StartOp {},
+            );
+        }
         // TODO fix below to adapt multiple chunk
-        push_op(
-            &mut state.block.container,
-            &mut end_block_last,
-            RWCounter(1),
-            RWCounter(1),
-            RW::READ,
-            StartOp {},
-        );
         if max_rws - total_rws > 1 {
             let (padding_start, padding_end) = (total_rws + 1, max_rws - 1);
             push_op(

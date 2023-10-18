@@ -31,6 +31,8 @@ use strum_macros::{EnumCount, EnumIter};
 pub(crate) mod block_table;
 /// bytecode table
 pub(crate) mod bytecode_table;
+/// chunk context table
+pub(crate) mod chunkctx_table;
 /// copy Table
 pub(crate) mod copy_table;
 /// exp(exponentiation) table
