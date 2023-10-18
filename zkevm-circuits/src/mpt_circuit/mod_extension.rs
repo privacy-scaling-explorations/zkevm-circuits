@@ -121,26 +121,21 @@ impl<F: Field> ModExtensionGadget<F> {
                     );
  
                 if is_s {
-                    let parent_data = &mut parent_data[is_s.idx()];
-                    *parent_data =
-                        ParentData::load("leaf load", cb, &ctx.memory[parent_memory(is_s)], 0.expr());
-                    ifx!{or::expr(&[parent_data.is_root.expr(), not!(is_not_hashed)]) => {
+                    ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
                         // Hashed branch hash in parent branch
-                        require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data.hash.lo().expr(), parent_data.hash.hi().expr()] => @KECCAK);
+                        require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data[is_s.idx()].hash.lo().expr(), parent_data[is_s.idx()].hash.hi().expr()] => @KECCAK);
                     } elsex {
                         // Non-hashed branch hash in parent branch
-                        require!(rlc => parent_data.rlc);
+                        require!(rlc => parent_data[is_s.idx()].rlc);
                     }} 
                 } else {
-                    /*
-                    ifx!{or::expr(&[parent_data.is_root.expr(), not!(is_not_hashed)]) => {
+                    ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
                         // Hashed branch hash in parent branch
-                        require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data.drifted_parent_hash.lo().expr(), parent_data.drifted_parent_hash.hi().expr()] => @KECCAK);
+                        require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data[is_s.idx()].drifted_parent_hash.lo().expr(), parent_data[is_s.idx()].drifted_parent_hash.hi().expr()] => @KECCAK);
                     } elsex {
                         // Non-hashed branch hash in parent branch
-                        require!(rlc => parent_data.rlc);
+                        require!(rlc => parent_data[is_s.idx()].rlc);
                     }}
-                    */
                 }
             }
 

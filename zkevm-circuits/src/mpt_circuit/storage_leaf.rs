@@ -114,19 +114,22 @@ impl<F: Field> StorageLeafConfig<F> {
             let mut value_word = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
             let mut value_rlp_rlc = vec![0.expr(); 2];
             let mut value_rlp_rlc_mult = vec![0.expr(); 2];
+
+            let parent_data = &mut config.parent_data;
+            parent_data[0] =
+                ParentData::load("leaf load", cb, &ctx.memory[parent_memory(true)], 0.expr());
+            parent_data[1] =
+                ParentData::load("leaf load", cb, &ctx.memory[parent_memory(false)], 0.expr());
+
             for is_s in [true, false] {
                 ifx! {not!(config.is_mod_extension[is_s.idx()].expr()) => {
-                    // Parent data
-                    let parent_data = &mut config.parent_data[is_s.idx()];
-                    *parent_data =
-                        ParentData::load("leaf load", cb, &ctx.memory[parent_memory(is_s)], 0.expr());
                     // Key data
                     let key_data = &mut config.key_data[is_s.idx()];
                     *key_data = KeyData::load(cb, &ctx.memory[key_memory(is_s)], 0.expr());
 
                     // Placeholder leaf checks
                     config.is_placeholder_leaf[is_s.idx()] =
-                        IsPlaceholderLeafGadget::construct(cb, parent_data.hash.expr());
+                        IsPlaceholderLeafGadget::construct(cb, parent_data[is_s.idx()].hash.expr());
                     let is_placeholder_leaf = config.is_placeholder_leaf[is_s.idx()].expr();
 
                     let rlp_key = &mut config.rlp_key[is_s.idx()];
@@ -196,13 +199,13 @@ impl<F: Field> StorageLeafConfig<F> {
                     // Check is skipped for placeholder leaves which are dummy leaves
                     ifx! {not!(is_placeholder_leaf) => {
                         config.is_not_hashed[is_s.idx()] = LtGadget::construct(&mut cb.base, rlp_key.rlp_list.num_bytes(), 32.expr());
-                        ifx!{or::expr(&[parent_data.is_root.expr(), not!(config.is_not_hashed[is_s.idx()])]) => {
+                        ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(config.is_not_hashed[is_s.idx()])]) => {
                             // Hashed branch hash in parent branch
-                            let hash = parent_data.hash.expr();
+                            let hash = parent_data[is_s.idx()].hash.expr();
                             require!(vec![1.expr(), leaf_rlc.expr(), rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()] => @KECCAK);
                         } elsex {
                             // Non-hashed branch hash in parent branch
-                            require!(leaf_rlc => parent_data.rlc.expr());
+                            require!(leaf_rlc => parent_data[is_s.idx()].rlc.expr());
                         }}
                     }} 
                 }};
@@ -225,7 +228,7 @@ impl<F: Field> StorageLeafConfig<F> {
                     meta,
                     cb,
                     ctx.clone(),
-                    &mut config.parent_data,
+                    parent_data,
                     &mut config.key_data,
                 );
             }};
