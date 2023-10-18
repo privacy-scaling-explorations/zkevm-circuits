@@ -3,7 +3,7 @@ use crate::operation::RWCounter;
 /// Context of a [`ChunkContext`].
 #[derive(Debug, Clone)]
 pub struct ChunkContext {
-    /// Used to track the intra chunk counter in every operation in the chunk.
+    /// Used to track the inner chunk counter in every operation in the chunk.
     /// Contains the next available value.
     pub rwc: RWCounter,
     /// index of current chunk, start from 0

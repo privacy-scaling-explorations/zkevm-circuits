@@ -668,7 +668,7 @@ pub(crate) struct StepState<F> {
     /// The Read/Write counter
     pub(crate) rw_counter: Cell<F>,
     /// The Read/Write counter accumulated in current chunk
-    pub(crate) rw_counter_intra_chunk: Cell<F>,
+    pub(crate) inner_rw_counter: Cell<F>,
     /// The unique identifier of call in the whole proof, using the
     /// `rw_counter` at the call step.
     pub(crate) call_id: Cell<F>,
@@ -723,7 +723,7 @@ impl<F: Field> Step<F> {
                     ExecutionState::amount(),
                 ),
                 rw_counter: cell_manager.query_cell(meta, CellType::StoragePhase1),
-                rw_counter_intra_chunk: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                inner_rw_counter: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 call_id: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 is_root: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 is_create: cell_manager.query_cell(meta, CellType::StoragePhase1),
@@ -769,10 +769,10 @@ impl<F: Field> Step<F> {
             self.state
                 .rw_counter
                 .assign(region, offset, Value::known(F::from(step.rwc.into())))?;
-        self.state.rw_counter_intra_chunk.assign(
+        self.state.inner_rw_counter.assign(
             region,
             offset,
-            Value::known(F::from(step.rwc_intra_chunk.into())),
+            Value::known(F::from(step.rwc_inner_chunk.into())),
         )?;
         self.state
             .call_id

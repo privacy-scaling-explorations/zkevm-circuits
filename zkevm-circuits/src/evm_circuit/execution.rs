@@ -445,8 +445,8 @@ impl<F: Field> ExecutionConfig<F> {
             cb.condition(q_step_first, |cb| {
                 cb.require_equal("q_step == 1", q_step.clone(), 1.expr());
                 cb.require_equal(
-                    "rw_counter_intra_chunk is initialized to be 1",
-                    step_curr.state.rw_counter_intra_chunk.expr(),
+                    "inner_rw_counter is initialized to be 1",
+                    step_curr.state.inner_rw_counter.expr(),
                     1.expr(),
                 )
             });

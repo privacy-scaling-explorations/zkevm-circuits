@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let max_rws = cb.query_copy_cell();
         let total_txs = cb.query_cell();
         let total_txs_is_max_txs = IsEqualGadget::construct(cb, total_txs.expr(), max_txs.expr());
-        // Note that rw_counter_intra_chunk starts at 1
+        // Note that inner_rw_counter starts at 1
         let is_empty_rwc =
             IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
 
@@ -81,7 +81,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         });
 
         // TODO fix below logic checking logic
-        let total_inner_rws_before_padding = cb.curr.state.rw_counter_intra_chunk.clone().expr()
+        let total_inner_rws_before_padding = cb.curr.state.inner_rw_counter.clone().expr()
             - 1.expr() // start from 1
             + select::expr( // CallContext lookup to check total_txs
                 is_empty_rwc.expr(),
@@ -90,7 +90,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             );
         // - startop only exist in first chunk
         // - total_rws_before_padding are across chunk. We need new way, maybe new
-        //   `rw_counter_intra_chunk` to lookup padding logic
+        //   `inner_rw_counter` to lookup padding logic
 
         // 3. Verify rw_counter counts to the same number of meaningful rows in
         // rw_table to ensure there is no malicious insertion.
@@ -155,7 +155,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             offset,
             F::ZERO,
             max_rws.sub(F::from(
-                step.rwc_intra_chunk.0 as u64 - 1 + 1 + if total_rwc > 0 { 1 } else { 0 },
+                step.rwc_inner_chunk.0 as u64 - 1 + 1 + if total_rwc > 0 { 1 } else { 0 },
             )),
         )?;
 

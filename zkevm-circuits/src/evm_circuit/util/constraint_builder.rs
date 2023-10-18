@@ -571,22 +571,22 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             };
         }
 
-        // Note: special case handling: rw_counter_intra_chunk shared the same Transition with
+        // Note: special case handling: inner_rw_counter shared the same Transition with
         // rw_conuter
         match &step_state_transition.rw_counter {
             Transition::Same => self.require_equal(
-                "State transition (same) constraint of rw_counter_intra_chunk",
-                self.next.state.rw_counter_intra_chunk.expr(),
-                self.curr.state.rw_counter_intra_chunk.expr(),
+                "State transition (same) constraint of inner_rw_counter",
+                self.next.state.inner_rw_counter.expr(),
+                self.curr.state.inner_rw_counter.expr(),
             ),
             Transition::Delta(delta) => self.require_equal(
-                concat!("State transition (delta) constraint of rw_counter_intra_chunk"),
-                self.next.state.rw_counter_intra_chunk.expr(),
-                self.curr.state.rw_counter_intra_chunk.expr() + delta.clone(),
+                concat!("State transition (delta) constraint of inner_rw_counter"),
+                self.next.state.inner_rw_counter.expr(),
+                self.curr.state.inner_rw_counter.expr() + delta.clone(),
             ),
             Transition::To(to) => self.require_equal(
-                "State transition (to) constraint of rw_counter_intra_chunk",
-                self.next.state.rw_counter_intra_chunk.expr(),
+                "State transition (to) constraint of inner_rw_counter",
+                self.next.state.inner_rw_counter.expr(),
                 to.clone(),
             ),
             _ => {}

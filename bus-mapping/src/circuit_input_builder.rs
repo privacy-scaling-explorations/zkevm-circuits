@@ -297,12 +297,12 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         tags.iter()
             .zip_eq(rw_counters)
             .zip_eq(rw_counters_inner_chunk)
-            .for_each(|((tag, rw_counter), rw_counter_inner_chunk)| {
+            .for_each(|((tag, rw_counter), inner_rw_counter)| {
                 push_op(
                     &mut state.block.container,
                     &mut begin_chunk,
                     rw_counter,
-                    rw_counter_inner_chunk,
+                    inner_rw_counter,
                     RW::READ,
                     StepStateOp {
                         field: tag.clone(),
@@ -334,8 +334,8 @@ impl CircuitInputBuilder<FixedCParams> {
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
         end_block_not_last.rwc = self.block_ctx.rwc;
         end_block_last.rwc = self.block_ctx.rwc;
-        end_block_not_last.rwc_intra_chunk = self.chunk_ctx.rwc;
-        end_block_last.rwc_intra_chunk = self.chunk_ctx.rwc;
+        end_block_not_last.rwc_inner_chunk = self.chunk_ctx.rwc;
+        end_block_last.rwc_inner_chunk = self.chunk_ctx.rwc;
 
         let mut dummy_tx = Transaction::default();
         let mut dummy_tx_ctx = TransactionContext::default();
