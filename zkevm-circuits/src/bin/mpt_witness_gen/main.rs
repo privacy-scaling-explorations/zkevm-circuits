@@ -3,7 +3,8 @@ use eth_types::{address, Address, Word, H256, U256};
 use ethers_core::utils::rlp::Rlp;
 use ethers_providers::Http;
 use itertools::Itertools;
-use std::{iter, str::FromStr};
+use sha3::digest::typenum::U2;
+use std::{iter, ops::Add, str::FromStr};
 use url::Url;
 use zkevm_circuits::{
     mpt_circuit::witness_row::{Node2, StartNode},
@@ -20,6 +21,23 @@ struct TrieModification {
     balance: U256,
     code_hash: H256,
 }
+
+struct MPTProofRequest {
+    state_root: H256,
+    address: Address,
+    request_type: MPTProofRequestType,
+}
+enum MPTProofRequestType {
+    UpdateNonce { nonce: u64 },
+    UpdateBalance { balance: U256 },
+    UpdateCodeHash { code_hash: H256 },
+    AccountDestructed,
+    AccountDoesNotExist,
+    StorageUpdate { key: Word, value: Word },
+    StorageDoesNotExist { key: Word },
+}
+
+enum MPTProofResponse {}
 
 fn generate_delete() {
     let keys = [
