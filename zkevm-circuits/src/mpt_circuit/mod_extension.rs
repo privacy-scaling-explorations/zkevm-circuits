@@ -1,3 +1,5 @@
+use std::f32::consts::E;
+
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::plonk::{Error, VirtualCells};
@@ -10,14 +12,14 @@ use super::{
 use crate::{
     circuit,
     circuit_tools::{
-        cached_region::CachedRegion, cell_manager::Cell, constraint_builder::{RLCChainableRev, RLCChainableValue},
+        cached_region::CachedRegion, cell_manager::Cell, constraint_builder::{RLCChainableRev, RLCChainable},
         gadgets::LtGadget,
     },
     mpt_circuit::{
         helpers::{
             Indexable, ParentData, KECCAK, parent_memory, FIXED, ext_key_rlc_value, key_memory, ext_key_rlc_expr,
         },
-        RlpItemType, witness_row::StorageRowType, FixedTableTag, param::{HASH_WIDTH, KEY_PREFIX_EVEN},
+        RlpItemType, witness_row::StorageRowType, FixedTableTag, param::{HASH_WIDTH, KEY_PREFIX_EVEN, KEY_LEN_IN_NIBBLES},
     }, matchw,
 };
 
@@ -25,7 +27,7 @@ use crate::{
 pub(crate) struct ModExtensionGadget<F> {
     rlp_key: [ListKeyGadget<F>; 2],
     is_not_hashed: [LtGadget<F, 2>; 2],
-    is_key_part_odd: [Cell<F>; 2],
+    is_key_part_odd: [Cell<F>; 2], // Whether the number of nibbles is odd or not.
     mult_key: Cell<F>,
 }
 
@@ -117,13 +119,11 @@ impl<F: Field> ModExtensionGadget<F> {
                         config.rlp_key[is_s.idx()].rlp_list.num_bytes(),
                         config.is_not_hashed[is_s.idx()].expr(),
                     );
-
-                 
+ 
                 if is_s {
                     let parent_data = &mut parent_data[is_s.idx()];
                     *parent_data =
-                    ParentData::load("leaf load", cb, &ctx.memory[parent_memory(is_s)], 0.expr());
-
+                        ParentData::load("leaf load", cb, &ctx.memory[parent_memory(is_s)], 0.expr());
                     ifx!{or::expr(&[parent_data.is_root.expr(), not!(is_not_hashed)]) => {
                         // Hashed branch hash in parent branch
                         require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data.hash.lo().expr(), parent_data.hash.hi().expr()] => @KECCAK);
@@ -131,23 +131,28 @@ impl<F: Field> ModExtensionGadget<F> {
                         // Non-hashed branch hash in parent branch
                         require!(rlc => parent_data.rlc);
                     }} 
+                } else {
+                    /*
+                    ifx!{or::expr(&[parent_data.is_root.expr(), not!(is_not_hashed)]) => {
+                        // Hashed branch hash in parent branch
+                        require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data.drifted_parent_hash.lo().expr(), parent_data.drifted_parent_hash.hi().expr()] => @KECCAK);
+                    } elsex {
+                        // Non-hashed branch hash in parent branch
+                        require!(rlc => parent_data.rlc);
+                    }}
+                    */
                 }
-
             }
 
+            // TODO: inverse operation (delete)
             (*key_data)[0] = KeyData::load(cb, &ctx.memory[key_memory(true)], 0.expr());
-
-            let r = cb.key_r.clone();
-            let debug_check = (1.expr() * 16.expr() + 2.expr()) + (3.expr() * 16.expr() + 4.expr()) * r.clone();
-            let debug_check1 = (1.expr() * 16.expr() + 2.expr()) + (3.expr() * 16.expr() + 4.expr()) * r.clone()
-                + (5.expr() * 16.expr() + 6.expr()) * r.clone() * r.clone();
-            require!(debug_check => key_data[0].nibbles_rlc);
 
             let nibbles_rlc_long = ext_key_rlc_expr(
                 cb,
                 config.rlp_key[0].key_value.clone(),
                 1.expr(),
                 config.is_key_part_odd[0].expr(),
+                // Always false because we calculate the RLC of nibbles only (we ignore the key nibbles above the extension):
                 false.expr(),
                 key_items
                     .iter()
@@ -158,15 +163,15 @@ impl<F: Field> ModExtensionGadget<F> {
                 &cb.key_r.expr(),
             );
 
-            require!(debug_check1 => nibbles_rlc_long);
-
             let data = [key_items[1].clone(), key_nibbles[1].clone()];
+
             let nibbles_rlc_short = ext_key_rlc_expr(
                 cb,
                 config.rlp_key[1].key_value.clone(),
                 1.expr(),
                 config.is_key_part_odd[1].expr(),
-                false.expr(),
+                // Taking into account the nibbles and the drifted_index:
+                not!(config.is_key_part_odd[0]),
                 data
                     .iter()
                     .map(|item| item.bytes_be())
@@ -176,17 +181,38 @@ impl<F: Field> ModExtensionGadget<F> {
                 &cb.key_r.expr(),
             );
 
-            let debug_check2 = 6.expr() * 16.expr();
-            // debugging:
-            require!(debug_check2 => nibbles_rlc_short);
+            let mult = key_data[0].drifted_mult.expr();
+            ifx! {config.is_key_part_odd[0] => {
+                let r = cb.key_r.clone();
+                let rlc1 = (key_data[0].nibbles_rlc.expr(), mult.clone()).rlc_chain(key_data[0].drifted_index.expr());
+                let rlc = (rlc1, mult.clone() * r).rlc_chain(nibbles_rlc_short.clone());
+
+                require!(nibbles_rlc_long => rlc);
+            } elsex {
+                let rlc2 = key_data[0].drifted_index.expr() * 16.expr() + nibbles_rlc_short; 
+                let rlc = (key_data[0].nibbles_rlc.expr(), mult).rlc_chain(rlc2);
+
+                require!(nibbles_rlc_long => rlc);
+            }}
+
+
+            // require!(nibbles_rlc_long => d);
+            // require!(debug_check => key_data[0].nibbles_rlc);
+            // require!(debug_check1 => d);
+ 
+            /*
+            let r = cb.key_r.clone();
+            let debug_check = (1.expr() * 16.expr() + 2.expr()) + (3.expr() * 16.expr() + 4.expr()) * r.clone();
+            let debug_check1 = (1.expr() * 16.expr() + 2.expr()) + (3.expr() * 16.expr() + 4.expr()) * r.clone()
+                + (5.expr() * 16.expr() + 6.expr()) * r.clone() * r.clone();
+            require!(debug_check => key_data[0].nibbles_rlc);
+            require!(debug_check1 => nibbles_rlc_long);
+
             require!(config.is_key_part_odd[1] => true.expr());
             require!(config.rlp_key[1].key_value.num_bytes() => 1.expr());
 
             require!(5.expr() => key_data[0].drifted_index);
-
-            // config.rlp_key[1].key_value.mult()
-            // nibbles_rlc_short.rlc_chain_rev(other)
-
+            */
 
             // TODO:
         });
@@ -245,8 +271,8 @@ impl<F: Field> ModExtensionGadget<F> {
                 HASH_WIDTH.scalar(),
             )?;
 
-            /*
             // Debugging:
+            /*
             if !is_s {
                 let data = [key_items[1].clone(), key_nibbles[1].clone()];
                 let (nibbles_rlc, _) = ext_key_rlc_calc_value(
