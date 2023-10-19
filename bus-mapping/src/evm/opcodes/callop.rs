@@ -395,8 +395,10 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         .collect();
                 
                     // PR1628_DEBUG
-                    // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] input_bytes: {:?}", input_bytes);
-                    // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] input_bytes length: {:?}", input_bytes.len());
+                    log::trace!("=> [BusMapping CallOpcode gen_associated_ops] input_bytes: {:?}", input_bytes);
+                    log::trace!("=> [BusMapping CallOpcode gen_associated_ops] input_bytes length: {:?}", input_bytes.len());
+                    log::trace!("=> [BusMapping CallOpcode gen_associated_ops] n_input_bytes: {:?}", n_input_bytes);
+
                     let copy_event = CopyEvent {
                         src_id: NumberOrHash::Number(call.caller_id),
                         src_type: CopyDataType::Memory,
@@ -409,7 +411,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         rw_counter_start,
                         bytes: copy_steps.iter().map(|s| (s.0, s.1)).collect(),
                     };
-                    // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] push CopyEvent: {:?}", copy_event);
+                    log::trace!("=> [BusMapping CallOpcode gen_associated_ops] push CopyEvent: {:?}", copy_event);
 
                     state.push_copy(
                         &mut exec_step, 

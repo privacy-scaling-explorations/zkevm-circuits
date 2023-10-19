@@ -161,44 +161,44 @@ impl CopyTable {
             let is_code = Value::known(copy_step.is_code.map_or(F::ZERO, |v| F::from(v as u64)));
 
             // PR1628_DEBUG
-            let pushed_assignments = (
-                tag,
-                [
-                    (is_first, "is_first"),
-                    (id.lo(), "id_lo"),
-                    (id.hi(), "id_hi"),
-                    (addr, "addr"),
-                    (
-                        Value::known(F::from(copy_event.src_addr_end)),
-                        "src_addr_end",
-                    ),
-                    (Value::known(F::from(bytes_left)), "bytes_left"),
-                    (
-                        match (copy_event.src_type, copy_event.dst_type) {
-                            (CopyDataType::Memory, CopyDataType::Bytecode) => rlc_acc,
-                            (_, CopyDataType::RlcAcc) => rlc_acc,
-                            _ => Value::known(F::ZERO),
-                        },
-                        "rlc_acc",
-                    ),
-                    (
-                        Value::known(F::from(copy_event.rw_counter(step_idx))),
-                        "rw_counter",
-                    ),
-                    (
-                        Value::known(F::from(copy_event.rw_counter_increase_left(step_idx))),
-                        "rwc_inc_left",
-                    ),
-                ],
-                [
-                    (is_last, "is_last"),
-                    (value, "value"),
-                    (value_acc, "value_acc"),
-                    (is_pad, "is_pad"),
-                    (is_code, "is_code"),
-                ],
-            );
-            log::trace!("=> [CopyTable] table assignment: {:?}", pushed_assignments);
+            // let pushed_assignments = (
+            //     tag,
+            //     [
+            //         (is_first, "is_first"),
+            //         (id.lo(), "id_lo"),
+            //         (id.hi(), "id_hi"),
+            //         (addr, "addr"),
+            //         (
+            //             Value::known(F::from(copy_event.src_addr_end)),
+            //             "src_addr_end",
+            //         ),
+            //         (Value::known(F::from(bytes_left)), "bytes_left"),
+            //         (
+            //             match (copy_event.src_type, copy_event.dst_type) {
+            //                 (CopyDataType::Memory, CopyDataType::Bytecode) => rlc_acc,
+            //                 (_, CopyDataType::RlcAcc) => rlc_acc,
+            //                 _ => Value::known(F::ZERO),
+            //             },
+            //             "rlc_acc",
+            //         ),
+            //         (
+            //             Value::known(F::from(copy_event.rw_counter(step_idx))),
+            //             "rw_counter",
+            //         ),
+            //         (
+            //             Value::known(F::from(copy_event.rw_counter_increase_left(step_idx))),
+            //             "rwc_inc_left",
+            //         ),
+            //     ],
+            //     [
+            //         (is_last, "is_last"),
+            //         (value, "value"),
+            //         (value_acc, "value_acc"),
+            //         (is_pad, "is_pad"),
+            //         (is_code, "is_code"),
+            //     ],
+            // );
+            // log::trace!("=> [CopyTable] table assignment: {:?}", pushed_assignments);
 
             assignments.push((
                 tag,
