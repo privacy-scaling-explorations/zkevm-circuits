@@ -52,7 +52,7 @@ impl RwMap {
             .flat_map(|(_tag, rs)| rs)
             .map(|r| r.rw_counter())
             .sorted()
-            .tuples()
+            .tuple_windows()
         {
             debug_assert_eq!(rw_counter_cur - rw_counter_prev, 1);
         }
@@ -137,7 +137,7 @@ impl RwMap {
         // Remove Start/Padding rows as we will add them from scratch.
         let rows_trimmed: Vec<Rw> = rows
             .iter()
-            .filter(|rw| !(matches!(rw, Rw::Start { .. }) || matches!(rw, Rw::Padding { .. })))
+            .filter(|rw| !matches!(rw, Rw::Start { .. } | Rw::Padding { .. }))
             .cloned()
             .collect();
         let padding_length = {
@@ -153,8 +153,8 @@ impl RwMap {
         let padding = (start_padding_rw_counter..start_padding_rw_counter + padding_length)
             .map(|rw_counter| Rw::Padding { rw_counter });
         (
-            iter::once(Rw::Start { rw_counter: 1 })
-                .take(if is_first_row_padding { 1 } else { 0 })
+            iter::empty()
+                .chain(is_first_row_padding.then_some(Rw::Start { rw_counter: 1 }))
                 .chain(rows_trimmed.into_iter())
                 .chain(padding.into_iter())
                 .collect(),

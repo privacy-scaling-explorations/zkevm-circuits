@@ -991,7 +991,7 @@ fn variadic_size_check() {
     let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
         rows: rows.clone(),
-        row_padding_and_overridess: Default::default(),
+        row_padding_and_overrides: Default::default(),
         updates,
         overrides: HashMap::default(),
         n_rows: N_ROWS,
@@ -1034,7 +1034,7 @@ fn variadic_size_check() {
 
     let circuit = StateCircuit::<Fr> {
         rows,
-        row_padding_and_overridess: Default::default(),
+        row_padding_and_overrides: Default::default(),
         updates,
         overrides: HashMap::default(),
         n_rows: N_ROWS,
@@ -1089,7 +1089,7 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
     let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
         rows,
-        row_padding_and_overridess,
+        row_padding_and_overrides: row_padding_and_overridess,
         updates,
         overrides,
         n_rows: N_ROWS,

@@ -25,7 +25,7 @@ use bus_mapping::{
 };
 use eth_types::{evm_unimplemented, Field, ToWord};
 use halo2_proofs::{
-    circuit::{AssignedCell, Value},
+    circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
 };
 use std::{fmt::Display, iter};
@@ -761,14 +761,13 @@ impl<F: Field> Step<F> {
         _block: &Block<F>,
         call: &Call,
         step: &ExecStep,
-    ) -> Result<AssignedCell<F, F>, Error> {
+    ) -> Result<(), Error> {
         self.state
             .execution_state
             .assign(region, offset, step.execution_state() as usize)?;
-        let rw_counter_assigned_cell =
-            self.state
-                .rw_counter
-                .assign(region, offset, Value::known(F::from(step.rwc.into())))?;
+        self.state
+            .rw_counter
+            .assign(region, offset, Value::known(F::from(step.rwc.into())))?;
         self.state.inner_rw_counter.assign(
             region,
             offset,
@@ -812,6 +811,6 @@ impl<F: Field> Step<F> {
         self.state
             .log_id
             .assign(region, offset, Value::known(F::from(step.log_id as u64)))?;
-        Ok(rw_counter_assigned_cell)
+        Ok(())
     }
 }

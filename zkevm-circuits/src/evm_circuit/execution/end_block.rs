@@ -19,7 +19,7 @@ use gadgets::util::select;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// current SRS size < 2^30 so use 4 bytes (2^32) in LtGadet should be enough
-const MAX_RW_BYTES: usize = u32::BITS as usize / 4;
+const MAX_RW_BYTES: usize = u32::BITS as usize / 8;
 
 #[derive(Clone, Debug)]
 pub(crate) struct EndBlockGadget<F> {

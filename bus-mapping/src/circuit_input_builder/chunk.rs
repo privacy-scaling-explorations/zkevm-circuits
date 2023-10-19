@@ -10,6 +10,10 @@ pub struct ChunkContext {
     pub chunk_index: usize,
     /// number of chunks
     pub total_chunks: usize,
+    /// initial rw counter
+    pub initial_rwc: usize,
+    /// end rw counter
+    pub end_rwc: usize,
 }
 
 impl Default for ChunkContext {
@@ -25,6 +29,8 @@ impl ChunkContext {
             rwc: RWCounter::new(),
             chunk_index,
             total_chunks,
+            initial_rwc: 1, // rw counter start from 1
+            end_rwc: 0,     // end_rwc should be set in later phase
         }
     }
 
@@ -34,6 +40,8 @@ impl ChunkContext {
             rwc: RWCounter::new(),
             chunk_index: 0,
             total_chunks: 1,
+            initial_rwc: 1, // rw counter start from 1
+            end_rwc: 0,     // end_rwc should be set in later phase
         }
     }
 }

@@ -30,7 +30,7 @@ use bus_mapping::operation::Target;
 use eth_types::{evm_unimplemented, Field};
 use gadgets::{is_zero::IsZeroConfig, util::not};
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, Value},
+    circuit::{Layouter, Region, Value},
     plonk::{
         Advice, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, SecondPhase,
         Selector, ThirdPhase, VirtualCells,
@@ -801,9 +801,9 @@ impl<F: Field> ExecutionConfig<F> {
                             ],
                         ),
                         (
-                            "EndChunk can only transit to EndChunk or EndBlock",
+                            "EndChunk can only transit to EndChunk",
                             ExecutionState::EndChunk,
-                            vec![ExecutionState::EndChunk, ExecutionState::EndBlock],
+                            vec![ExecutionState::EndChunk],
                         ),
                         (
                             "EndBlock can only transit to EndBlock",
@@ -835,9 +835,9 @@ impl<F: Field> ExecutionConfig<F> {
                             vec![ExecutionState::EndTx, ExecutionState::EndBlock],
                         ),
                         (
-                            "Only EndChunk or BeginChunk can transit to BeginChunk",
+                            "Only BeginChunk can transit to BeginChunk",
                             ExecutionState::BeginChunk,
-                            vec![ExecutionState::EndChunk, ExecutionState::BeginChunk],
+                            vec![ExecutionState::BeginChunk],
                         ),
                     ])
                     .filter(move |(_, _, from)| !from.contains(&execution_state))
@@ -998,7 +998,6 @@ impl<F: Field> ExecutionConfig<F> {
 
                 let evm_rows = block.circuits_params.max_evm_rows;
                 let no_padding = evm_rows == 0;
-                let mut rw_counter_assigned_cells: Vec<AssignedCell<F, F>> = vec![];
 
                 // part1: assign real steps
                 loop {
@@ -1010,7 +1009,7 @@ impl<F: Field> ExecutionConfig<F> {
                     let height = step.execution_state().get_step_height();
 
                     // Assign the step witness
-                    let rw_counter_cell = self.assign_exec_step(
+                    self.assign_exec_step(
                         &mut region,
                         offset,
                         block,
@@ -1022,11 +1021,6 @@ impl<F: Field> ExecutionConfig<F> {
                         challenges,
                         assign_pass,
                     )?;
-
-                    // for copy constraints in offset 0
-                    if offset == 0 {
-                        rw_counter_assigned_cells.push(rw_counter_cell);
-                    }
 
                     // q_step logic
                     self.assign_q_step(&mut region, offset, height)?;
@@ -1232,7 +1226,7 @@ impl<F: Field> ExecutionConfig<F> {
         next: Option<(&Transaction, &Call, &ExecStep)>,
         challenges: &Challenges<Value<F>>,
         assign_pass: usize,
-    ) -> Result<AssignedCell<F, F>, Error> {
+    ) -> Result<(), Error> {
         if !matches!(step.execution_state(), ExecutionState::EndBlock) {
             log::trace!(
                 "assign_exec_step offset: {} state {:?} step: {:?} call: {:?}",
@@ -1297,9 +1291,8 @@ impl<F: Field> ExecutionConfig<F> {
         is_next: bool,
         // Layouter assignment pass
         assign_pass: usize,
-    ) -> Result<AssignedCell<F, F>, Error> {
-        let rw_counter_assigned_cell = self
-            .step
+    ) -> Result<(), Error> {
+        self.step
             .assign_exec_step(region, offset, block, call, step)?;
 
         macro_rules! assign_exec_step {
@@ -1471,7 +1464,7 @@ impl<F: Field> ExecutionConfig<F> {
                 }
             }
         }
-        Ok(rw_counter_assigned_cell)
+        Ok(())
     }
 
     fn assign_stored_expressions(

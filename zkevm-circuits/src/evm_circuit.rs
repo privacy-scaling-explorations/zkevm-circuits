@@ -252,7 +252,13 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
     }
 }
 
-type AssignedChunkContextCell<F> = (AssignedCell<F, F>, AssignedCell<F, F>, AssignedCell<F, F>);
+type AssignedChunkContextCell<F> = (
+    AssignedCell<F, F>,
+    AssignedCell<F, F>,
+    AssignedCell<F, F>,
+    AssignedCell<F, F>,
+    AssignedCell<F, F>,
+);
 
 impl<F: Field> EvmCircuitConfig<F> {
     /// Load fixed table
@@ -285,8 +291,13 @@ impl<F: Field> EvmCircuitConfig<F> {
         chunk_context: &ChunkContext,
         max_offset_index: usize,
     ) -> Result<AssignedChunkContextCell<F>, Error> {
-        let (chunk_index_cell, chunk_index_next_cell, total_chunk_cell) =
-            self.chunkctx_table.load(layouter, chunk_context)?;
+        let (
+            chunk_index_cell,
+            chunk_index_next_cell,
+            total_chunk_cell,
+            initial_rwc_cell,
+            end_rwc_cell,
+        ) = self.chunkctx_table.load(layouter, chunk_context)?;
 
         let is_first_chunk = IsZeroChip::construct(self.is_first_chunk.clone());
         let is_last_chunk = IsZeroChip::construct(self.is_last_chunk.clone());
@@ -333,7 +344,13 @@ impl<F: Field> EvmCircuitConfig<F> {
                 Ok(())
             },
         )?;
-        Ok((chunk_index_cell, chunk_index_next_cell, total_chunk_cell))
+        Ok((
+            chunk_index_cell,
+            chunk_index_next_cell,
+            total_chunk_cell,
+            initial_rwc_cell,
+            end_rwc_cell,
+        ))
     }
 }
 
@@ -440,7 +457,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
 
         let max_offset_index = config.execution.assign_block(layouter, block, challenges)?;
 
-        let (prev_chunk_index, next_chunk_index_next, total_chunks) =
+        let (prev_chunk_index, next_chunk_index_next, total_chunks, initial_rwc, end_rwc) =
             config.assign_chunk_context(layouter, &block.chunk_context, max_offset_index)?;
 
         let (rw_rows_padding, _) = RwMap::table_assignments_padding(
@@ -476,6 +493,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                     Value::known(block.permu_gamma),
                     Value::known(block.permu_chronological_rwtable_prev_continuous_fingerprint),
                     &rw_rows_padding.to2dvec(),
+                    "evm circuit",
                 )?;
                 Ok(permutation_cells)
             },
@@ -493,6 +511,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
             prev_continuous_fingerprint_cell,
             prev_chunk_index,
             total_chunks.clone(),
+            initial_rwc,
         ]]
         .iter()
         .flatten()
@@ -504,6 +523,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
             next_continuous_fingerprint_cell,
             next_chunk_index_next,
             total_chunks,
+            end_rwc,
         ]]
         .iter()
         .flatten()
@@ -528,11 +548,13 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                 block.permu_chronological_rwtable_prev_continuous_fingerprint,
                 F::from(rw_table_chunked_index as u64),
                 F::from(rw_table_total_chunks as u64),
+                F::from(block.chunk_context.initial_rwc as u64),
             ],
             vec![
                 block.permu_chronological_rwtable_next_continuous_fingerprint,
                 F::from(rw_table_chunked_index as u64) + F::ONE,
                 F::from(rw_table_total_chunks as u64),
+                F::from(block.chunk_context.end_rwc as u64),
             ],
             vec![block.permu_alpha, block.permu_gamma],
         ]

@@ -462,7 +462,7 @@ pub struct StateCircuit<F> {
     /// Rw rows
     pub rows: Vec<Rw>,
     #[cfg(test)]
-    row_padding_and_overridess: Vec<Vec<Value<F>>>,
+    row_padding_and_overrides: Vec<Vec<Value<F>>>,
     updates: MptUpdates,
     pub(crate) n_rows: usize,
     #[cfg(test)]
@@ -496,7 +496,7 @@ impl<F: Field> StateCircuit<F> {
         Self {
             rows,
             #[cfg(test)]
-            row_padding_and_overridess: Default::default(),
+            row_padding_and_overrides: Default::default(),
             updates,
             n_rows,
             #[cfg(test)]
@@ -590,14 +590,14 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     // compiler happy
                     #[cfg(test)]
                     {
-                        row_padding_and_overridess = if self.row_padding_and_overridess.is_empty() {
+                        row_padding_and_overridess = if self.row_padding_and_overrides.is_empty() {
                             debug_assert!(
                                 self.overrides.is_empty(),
                                 "overrides size > 0 but row_padding_and_overridess = 0"
                             );
                             Some(rows.to2dvec())
                         } else {
-                            Some(self.row_padding_and_overridess.clone())
+                            Some(self.row_padding_and_overrides.clone())
                         };
                     }
                     row_padding_and_overridess.unwrap()
@@ -610,6 +610,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     Value::known(self.permu_gamma),
                     Value::known(self.permu_prev_continuous_fingerprint),
                     &rows,
+                    "state_circuit",
                 )?;
                 #[cfg(test)]
                 {
@@ -643,20 +644,16 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                 layouter.constrain_instance(cell.cell(), config.pi_permutation_challenges, i)
             })?;
         // constraints prev,next fingerprints
-        [vec![prev_continuous_fingerprint_cell]]
-            .iter()
-            .flatten()
-            .enumerate()
-            .try_for_each(|(i, cell)| {
-                layouter.constrain_instance(cell.cell(), config.pi_pre_continuity, i)
-            })?;
-        [vec![next_continuous_fingerprint_cell]]
-            .iter()
-            .flatten()
-            .enumerate()
-            .try_for_each(|(i, cell)| {
-                layouter.constrain_instance(cell.cell(), config.pi_next_continuity, i)
-            })?;
+        layouter.constrain_instance(
+            prev_continuous_fingerprint_cell.cell(),
+            config.pi_pre_continuity,
+            0,
+        )?;
+        layouter.constrain_instance(
+            next_continuous_fingerprint_cell.cell(),
+            config.pi_next_continuity,
+            0,
+        )?;
         Ok(())
     }
 

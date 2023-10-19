@@ -352,7 +352,9 @@ impl CircuitInputBuilder<FixedCParams> {
         }
 
         // rwc index start from 1
-        let total_rws = state.block_ctx.rwc.0 - 1;
+        let end_rwc = state.block_ctx.rwc.0;
+        let total_rws = end_rwc - 1;
+
         // We need at least 1 extra Start row
         // because total_rws exclude Rw::Start
         #[allow(clippy::int_plus_one)]
@@ -400,6 +402,9 @@ impl CircuitInputBuilder<FixedCParams> {
 
         self.block.block_steps.end_block_not_last = end_block_not_last;
         self.block.block_steps.end_block_last = end_block_last;
+
+        // set final rwc value to chunkctx
+        self.chunk_ctx.end_rwc = end_rwc;
     }
 }
 

@@ -14,6 +14,10 @@ pub enum ChunkCtxFieldTag {
     NextChunkIndex,
     /// Total Chunks field
     TotalChunks,
+    /// initial rw counter
+    InitialRWC,
+    /// end rw counter
+    EndRWC,
 }
 impl_expr!(ChunkCtxFieldTag);
 
@@ -27,7 +31,13 @@ pub struct ChunkCtxTable {
     pub value: Column<Advice>,
 }
 
-type ChunkCtxTableAssignedCells<F> = (AssignedCell<F, F>, AssignedCell<F, F>, AssignedCell<F, F>);
+type ChunkCtxTableAssignedCells<F> = (
+    AssignedCell<F, F>,
+    AssignedCell<F, F>,
+    AssignedCell<F, F>,
+    AssignedCell<F, F>,
+    AssignedCell<F, F>,
+);
 
 impl ChunkCtxTable {
     /// Construct a new ChunkCtxTable
@@ -79,6 +89,16 @@ impl ChunkCtxTable {
                     (
                         F::from(ChunkCtxFieldTag::TotalChunks as u64),
                         F::from(chunkctx.total_chunks as u64),
+                    ),
+                    // InitialRWC
+                    (
+                        F::from(ChunkCtxFieldTag::InitialRWC as u64),
+                        F::from(chunkctx.initial_rwc as u64),
+                    ),
+                    // EndRWC
+                    (
+                        F::from(ChunkCtxFieldTag::EndRWC as u64),
+                        F::from(chunkctx.end_rwc as u64),
                     ),
                 ]
                 .iter()

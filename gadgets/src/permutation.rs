@@ -1,12 +1,13 @@
 //! Chip that implements permutation fingerprints
 //! fingerprints &= \prod_{row_j} \left ( \alpha - \sum_k (\gamma^k \cdot cell_j(k))  \right )
+//! power of gamma are defined in columns to trade more columns with less degrees
 use std::iter;
 #[rustfmt::skip]
-// | q_row_non_first | alpha     | gamma     | fingerprints    |
-// |-----------------|-----------|-----------|-----------------|
-// | 0               | alpha     | gamma     | fingerprints_0  |
-// | 1               | alpha     | gamma     | fingerprints_1  |
-// | 1               | alpha     | gamma     | fingerprints_2  |
+// | q_row_non_first | q_row_enable | alpha     | gamma     | gamma power 2   | ... | row fingerprint | accmulated fingerprint |
+// |-----------------|--------------|-----------|-----------|-----------------|     | --------------- | ---------------------- |
+// | 0               |1             |alpha      | gamma     | gamma **2       | ... |  F              |  F                     |
+// | 1               |1             |alpha      | gamma     | gamma **2       | ... |  F              |  F                     |
+// | 1               |1             |alpha      | gamma     | gamma **2       | ... |  F              |  F                     |
 
 use std::marker::PhantomData;
 
@@ -50,8 +51,9 @@ impl<F: Field> PermutationChipConfig<F> {
         gamma: Value<F>,
         acc_fingerprints_prev: Value<F>,
         col_values: &[Vec<Value<F>>],
+        prefix: &'static str,
     ) -> Result<PermutationAssignedCells<F>, Error> {
-        self.annotate_columns_in_region(region, "state_circuit");
+        self.annotate_columns_in_region(region, prefix);
 
         // get accumulated fingerprints of each row
         let fingerprints =
@@ -174,7 +176,7 @@ impl<F: Field> PermutationChip<F> {
         let row_fingerprints = meta.advice_column();
         let alpha = meta.advice_column();
 
-        // trade more column to reduce degree of power of gamma
+        // trade more columns with less degrees
         let power_of_gamma = (0..cols.len() - 1)
             .map(|_| meta.advice_column())
             .collect::<Vec<Column<Advice>>>(); // first element is gamma**1
@@ -294,11 +296,9 @@ pub fn get_permutation_fingerprints<F: Field>(
             let tmp = row
                 .iter()
                 .zip_eq(power_of_gamma.iter())
-                .map(|(a, b)| a.zip(*b).map(|(a, b)| a * b))
-                .fold(Value::known(F::ZERO), |prev, cur| {
-                    prev.zip(cur).map(|(a, b)| a + b)
-                });
-            alpha.zip(tmp).map(|(alpha, tmp)| alpha - tmp)
+                .map(|(a, b)| *a * b)
+                .fold(Value::known(F::ZERO), |prev, cur| prev + cur);
+            alpha - tmp
         })
         .enumerate()
         .for_each(|(i, value)| {

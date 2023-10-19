@@ -28,9 +28,19 @@ impl<F: Field> ExecutionGadget<F> for EndChunkGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         // State transition
-        cb.step_state_lookup(1.expr());
-        let step_state_transition = StepStateTransition::same();
-        cb.require_step_state_transition(step_state_transition);
+        cb.not_step_last(|cb| {
+            // Propagate  all the way down.
+            cb.require_step_state_transition(StepStateTransition::same());
+        });
+
+        cb.step_last(|cb| {
+            cb.step_state_lookup(1.expr());
+        });
+
+        cb.step_last_constraint_rwc();
+
+        // TODO constraint Rw::Padding are append consecutively to avoid malicious insert
+
         Self {
             _marker: PhantomData {},
         }

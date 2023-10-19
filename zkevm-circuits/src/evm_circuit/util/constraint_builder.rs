@@ -293,6 +293,7 @@ enum ConstraintLocation {
     Step,
     StepFirst,
     NotStepLast,
+    StepLast,
 }
 
 /// Collection of constraints grouped by which selectors will enable them
@@ -1539,6 +1540,28 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
+    /// constraint step first rwc should match with chunkctx table value
+    pub(crate) fn step_first_constraint_rwc(&mut self) {
+        // Add first BeginTx step constraint to have tx_id == 1
+        self.step_first(|cb| {
+            cb.chunk_context_lookup(
+                ChunkCtxFieldTag::InitialRWC,
+                cb.curr.state.rw_counter.expr(),
+            );
+        });
+    }
+
+    /// constraint step last rwc should match with chunkctx table value
+    pub(crate) fn step_last_constraint_rwc(&mut self) {
+        // Add first BeginTx step constraint to have tx_id == 1
+        self.step_last(|cb| {
+            cb.chunk_context_lookup(
+                ChunkCtxFieldTag::EndRWC,
+                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset.clone(),
+            );
+        });
+    }
+
     // Validation
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
@@ -1594,6 +1617,11 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     /// TODO: Doc
+    pub(crate) fn step_last<R>(&mut self, constraint: impl FnOnce(&mut Self) -> R) -> R {
+        self.constraint_at_location(ConstraintLocation::StepLast, constraint)
+    }
+
+    /// TODO: Doc
     fn push_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
         match self.constraints_location {
             ConstraintLocation::Step => self.constraints.step.push((name, constraint)),
@@ -1601,6 +1629,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             ConstraintLocation::NotStepLast => {
                 self.constraints.not_step_last.push((name, constraint))
             }
+            ConstraintLocation::StepLast => self.constraints.step_last.push((name, constraint)),
         }
     }
 

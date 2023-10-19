@@ -292,7 +292,7 @@ pub fn block_convert<F: Field>(
         // TODO refactor chunk related field to chunk structure
         begin_chunk: block.block_steps.begin_chunk.clone(),
         end_chunk: block.block_steps.end_chunk.clone(),
-        chunk_context: block.chunk_context.clone(),
+        chunk_context: builder.chunk_ctx.clone(),
         prev_block: Box::new(None),
     };
     let public_data = public_data_convert(&block);
