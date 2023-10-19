@@ -1668,7 +1668,7 @@ impl<'a> CircuitInputStateRef<'a> {
         if copy_length == 0 {
             return Ok(vec![]);
         }
-        // PR1628_DEBUG
+        // PR1628_DEBUG_COPY_STEP_GEN
         // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] - [gen] memory: {:?}", &self.caller_ctx()?.memory);
         // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] - [gen] memory length: {:?}", &self.caller_ctx()?.memory.0.len());
         let range = MemoryWordRange::align_range(src_addr, copy_length);

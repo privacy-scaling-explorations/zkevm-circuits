@@ -1348,7 +1348,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         rlc_acc: Expression<F>,
         rwc_inc: Expression<F>,
     ) {
-        // PR1628_DEBUG
+        // PR1628_DEBUG_LOOKUP_PUSH
         // self.debug_expression("=> [ConstraintBuilder is_first]", 1.expr());
         // self.debug_expression("=> [ConstraintBuilder src_id, lo]", src_id.to_lo_hi().0.clone());
         // self.debug_expression("=> [ConstraintBuilder src_id, hi]", src_id.to_lo_hi().1.clone());

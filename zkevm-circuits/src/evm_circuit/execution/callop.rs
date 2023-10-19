@@ -405,19 +405,19 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 let precompile_input_bytes_rlc =
                     cb.condition(call_gadget.cd_address.has_length(), |cb| {
                         let precompile_input_bytes_rlc = cb.query_cell_phase2();
-                        // PR1628_DEBUG
-                        // cb.copy_table_lookup(
-                        //     Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                        //     CopyDataType::Memory.expr(),
-                        //     Word::from_lo_unchecked(callee_call_id.expr()),
-                        //     CopyDataType::RlcAcc.expr(),
-                        //     call_gadget.cd_address.offset(),
-                        //     call_gadget.cd_address.offset() + precompile_input_len.expr(),
-                        //     0.expr(),
-                        //     precompile_input_len.expr(),
-                        //     precompile_input_bytes_rlc.expr(),
-                        //     precompile_input_rws.expr(), // reads + writes
-                        // );
+                        // PR1628_DEBUG_OBJECTIVE
+                        cb.copy_table_lookup(
+                            Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                            CopyDataType::Memory.expr(),
+                            Word::from_lo_unchecked(callee_call_id.expr()),
+                            CopyDataType::RlcAcc.expr(),
+                            call_gadget.cd_address.offset(),
+                            call_gadget.cd_address.offset() + precompile_input_len.expr(),
+                            0.expr(),
+                            precompile_input_len.expr(),
+                            precompile_input_bytes_rlc.expr(),
+                            precompile_input_rws.expr(), // reads + writes
+                        );
                         precompile_input_bytes_rlc
                     });
 
@@ -814,7 +814,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_delegatecall = opcode == OpcodeId::DELEGATECALL;
         let mut rws = StepRws::new(block, step);
 
-        // PR1628_DEBUG
+        // PR1628_DEBUG_CALLOP_ASSIGN
         // log::trace!("=> [Execution CallOpcode assign_exec_step] new StepRWs -> rws: {:?}", rws.rws);
         // log::trace!("=> [Execution CallOpcode assign_exec_step] new StepRWs -> exec_step: {:?}", rws.step);
         // log::trace!("=> [Execution CallOpcode assign_exec_step] new StepRWs -> offset: {:?}", rws.offset);
@@ -1091,7 +1091,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     [start_offset, end_offset, dst_range.word_count()]
                 };
 
-            // PR1628_DEBUG
+            // PR1628_DEBUG_INPUT_BYTES_RLC
             // log::trace!("=> [Execution CallOpcode assign_exec_step] before getting input_bytes, StepRWs -> offset: {:?}", rws.offset);
 
             let input_bytes = (0..(input_bytes_word_count * N_BYTES_WORD))
@@ -1107,8 +1107,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 .collect::<Vec<_>>();
 
             // log::trace!("=> [Execution CallOpcode assign_exec_step] after getting input/output/return bytes, StepRWs -> offset: {:?}", rws.offset);
-
-            // PR1628_DEBUG
             // log::trace!("=> [Execution CallOpcode assign_exec_step] input_bytes (not truncated): {:?}", input_bytes);
             // log::trace!("=> [Execution CallOpcode assign_exec_step] input_bytes_start_offset: {:?}", input_bytes_start_offset);
             // log::trace!("=> [Execution CallOpcode assign_exec_step] input_bytes_end_offset: {:?}", input_bytes_end_offset);
@@ -1122,7 +1120,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     randomness,
                 )
             });
-            log::trace!("=> [Execution CallOpcode assign_exec_step] input_bytes_rlc: {:?}", input_bytes_rlc);
+            // log::trace!("=> [Execution CallOpcode assign_exec_step] input_bytes_rlc: {:?}", input_bytes_rlc);
             let output_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
                 rlc::value(output_bytes[..output_bytes_end].iter().rev(), randomness)
             });

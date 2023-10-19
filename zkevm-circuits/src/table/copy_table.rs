@@ -160,7 +160,7 @@ impl CopyTable {
             // is_code
             let is_code = Value::known(copy_step.is_code.map_or(F::ZERO, |v| F::from(v as u64)));
 
-            // PR1628_DEBUG
+            // PR1628_DEBUG_LOOKUP_ASSIGN
             // let pushed_assignments = (
             //     tag,
             //     [

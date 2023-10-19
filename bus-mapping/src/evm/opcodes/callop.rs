@@ -35,8 +35,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
-        // PR1628_DEBUG
-        // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] geth_steps: {:?}", geth_steps);
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
@@ -47,7 +45,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let ret_offset = geth_step.stack.nth_last(N_ARGS - 2)?.low_u64() as usize;
         let ret_length = geth_step.stack.nth_last(N_ARGS - 1)?.as_usize();
 
-        // PR1628_DEBUG
+        // PR1628_DEBUG_BUS_MAPPING_ARGS
         // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] args_offset: {:?}", args_offset);
         // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] args_length: {:?}", args_length);
         // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] ret_offset: {:?}", ret_offset);
@@ -368,7 +366,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
 
-                // PR1628_DEBUG
+                // PR1628_DEBUG_BUS_MAPPING
                 // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] CopyEventGeneration Starts!");
                 // insert a copy event (input) for this step and generate word memory read & write
                 // rws also handle prev_bytes internally.
@@ -393,25 +391,24 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         .filter(|(_, _, is_mask)| !*is_mask)
                         .map(|t| t.0)
                         .collect();
-                
-                    // PR1628_DEBUG
-                    log::trace!("=> [BusMapping CallOpcode gen_associated_ops] input_bytes: {:?}", input_bytes);
-                    log::trace!("=> [BusMapping CallOpcode gen_associated_ops] input_bytes length: {:?}", input_bytes.len());
-                    log::trace!("=> [BusMapping CallOpcode gen_associated_ops] n_input_bytes: {:?}", n_input_bytes);
 
-                    let copy_event = CopyEvent {
-                        src_id: NumberOrHash::Number(call.caller_id),
-                        src_type: CopyDataType::Memory,
-                        src_addr: call.call_data_offset,
-                        src_addr_end: call.call_data_offset + n_input_bytes as u64,
-                        dst_id: NumberOrHash::Number(call.call_id),
-                        dst_type: CopyDataType::RlcAcc,
-                        dst_addr: 0,
-                        log_id: None,
-                        rw_counter_start,
-                        bytes: copy_steps.iter().map(|s| (s.0, s.1)).collect(),
-                    };
-                    log::trace!("=> [BusMapping CallOpcode gen_associated_ops] push CopyEvent: {:?}", copy_event);
+                    // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] input_bytes: {:?}", input_bytes);
+                    // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] input_bytes length: {:?}", input_bytes.len());
+                    // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] n_input_bytes: {:?}", n_input_bytes);
+
+                    // let copy_event = CopyEvent {
+                    //     src_id: NumberOrHash::Number(call.caller_id),
+                    //     src_type: CopyDataType::Memory,
+                    //     src_addr: call.call_data_offset,
+                    //     src_addr_end: call.call_data_offset + n_input_bytes as u64,
+                    //     dst_id: NumberOrHash::Number(call.call_id),
+                    //     dst_type: CopyDataType::RlcAcc,
+                    //     dst_addr: 0,
+                    //     log_id: None,
+                    //     rw_counter_start,
+                    //     bytes: copy_steps.iter().map(|s| (s.0, s.1)).collect(),
+                    // };
+                    // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] push CopyEvent: {:?}", copy_event);
 
                     state.push_copy(
                         &mut exec_step, 
