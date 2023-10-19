@@ -221,8 +221,25 @@ impl<'a> CircuitInputStateRef<'a> {
         _value: u8,
     ) -> Result<u8, Error> {
         let byte = &self.call_ctx()?.memory.read_chunk(address, 1.into())[0];
-
         let call_id = self.call()?.call_id;
+        self.push_op(step, RW::READ, MemoryOp::new(call_id, address, *byte));
+        Ok(*byte)
+    }
+
+    /// Push a read type [`MemoryOp`] into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter) and `caller_id`, and then
+    /// adds a reference to the stored operation ([`OperationRef`]) inside
+    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
+    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    pub fn memory_read_caller(
+        &mut self,
+        step: &mut ExecStep,
+        address: MemoryAddress, //Caution: make sure this address = slot passing
+        _value: u8,
+    ) -> Result<u8, Error> {
+        let byte = &self.caller_ctx()?.memory.read_chunk(address, 1.into())[0];
+        let call_id = self.call()?.caller_id;
         self.push_op(step, RW::READ, MemoryOp::new(call_id, address, *byte));
         Ok(*byte)
     }
@@ -1651,9 +1668,13 @@ impl<'a> CircuitInputStateRef<'a> {
         if copy_length == 0 {
             return Ok(vec![]);
         }
-
+        // PR1628_DEBUG
+        // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] - [gen] memory: {:?}", &self.caller_ctx()?.memory);
+        // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] - [gen] memory length: {:?}", &self.caller_ctx()?.memory.0.len());
         let range = MemoryWordRange::align_range(src_addr, copy_length);
         let slot_bytes = &self.caller_ctx()?.memory.read_chunk(range.start_slot(), range.end_slot() - range.start_slot());
+        // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] - [gen] slot_bytes: {:?}", slot_bytes);
+        // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] - [gen] slot_bytes length: {:?}", slot_bytes.len());
 
         let copy_steps = CopyEventStepsBuilder::memory_range(range)
             .source(slot_bytes.as_slice())
@@ -1661,7 +1682,7 @@ impl<'a> CircuitInputStateRef<'a> {
     
         let mut byte_index = range.start_slot().0;
         for byte in slot_bytes {
-            self.memory_read(exec_step, byte_index.into(), *byte)?;
+            self.memory_read_caller(exec_step, byte_index.into(), *byte)?;
             byte_index += 1;
         }
 

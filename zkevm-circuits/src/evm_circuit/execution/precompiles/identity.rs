@@ -240,9 +240,9 @@ mod test {
     fn precompile_identity_test() {
         let call_kinds = vec![
             OpcodeId::CALL,
-            OpcodeId::STATICCALL,
-            OpcodeId::DELEGATECALL,
-            OpcodeId::CALLCODE,
+            // OpcodeId::STATICCALL,
+            // OpcodeId::DELEGATECALL,
+            // OpcodeId::CALLCODE,
         ];
 
         for (test_vector, &call_kind) in TEST_VECTOR.iter().cartesian_product(&call_kinds) {

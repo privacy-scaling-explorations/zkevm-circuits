@@ -27,7 +27,7 @@ use crate::{
     },
 };
 use bus_mapping::{
-    // circuit_input_builder::CopyDataType, 
+    circuit_input_builder::CopyDataType, 
     evm::OpcodeId, 
     precompile::{is_precompiled, PrecompileCalls}
 };
@@ -405,18 +405,18 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 let precompile_input_bytes_rlc =
                     cb.condition(call_gadget.cd_address.has_length(), |cb| {
                         let precompile_input_bytes_rlc = cb.query_cell_phase2();
-                        // cb.copy_table_lookup(
-                        //     Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                        //     CopyDataType::Memory.expr(),
-                        //     Word::from_lo_unchecked(callee_call_id.expr()),
-                        //     CopyDataType::RlcAcc.expr(),
-                        //     call_gadget.cd_address.offset(),
-                        //     call_gadget.cd_address.offset() + precompile_input_len.expr(),
-                        //     0.expr(),
-                        //     precompile_input_len.expr(),
-                        //     precompile_input_bytes_rlc.expr(),
-                        //     precompile_input_rws.expr(), // reads + writes
-                        // );
+                        cb.copy_table_lookup(
+                            Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                            CopyDataType::Memory.expr(),
+                            Word::from_lo_unchecked(callee_call_id.expr()),
+                            CopyDataType::RlcAcc.expr(),
+                            call_gadget.cd_address.offset(),
+                            call_gadget.cd_address.offset() + precompile_input_len.expr(),
+                            0.expr(),
+                            precompile_input_len.expr(),
+                            precompile_input_bytes_rlc.expr(),
+                            precompile_input_rws.expr(), // reads + writes
+                        );
                         precompile_input_bytes_rlc
                     });
 
@@ -813,6 +813,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_delegatecall = opcode == OpcodeId::DELEGATECALL;
         let mut rws = StepRws::new(block, step);
 
+        // PR1628_DEBUG
+        // log::trace!("=> [Execution CallOpcode assign_exec_step] new StepRWs -> rws: {:?}", rws.rws);
+        // log::trace!("=> [Execution CallOpcode assign_exec_step] new StepRWs -> exec_step: {:?}", rws.step);
+        // log::trace!("=> [Execution CallOpcode assign_exec_step] new StepRWs -> offset: {:?}", rws.offset);
+
         let tx_id = rws.next().call_context_value();
         rws.next(); // RwCounterEndOfReversion
         rws.next(); // IsPersistent
@@ -1085,27 +1090,38 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     [start_offset, end_offset, dst_range.word_count()]
                 };
 
+            // PR1628_DEBUG
+            // log::trace!("=> [Execution CallOpcode assign_exec_step] before getting input_bytes, StepRWs -> offset: {:?}", rws.offset);
+
             let input_bytes = (0..(input_bytes_word_count * N_BYTES_WORD))
                 .map(|_| rws.next().memory_value() )
                 .collect::<Vec<_>>();
+            // log::trace!("=> [Execution CallOpcode assign_exec_step] after getting input_bytes, StepRWs -> offset: {:?}", rws.offset);
             let output_bytes = (0..(output_bytes_word_count * N_BYTES_WORD))
                 .map(|_| rws.next().memory_value() )
-                .flat_map(|word| word.to_be_bytes())
                 .collect::<Vec<_>>();
             let return_bytes = (0..(return_bytes_word_count * 2 * N_BYTES_WORD))
                 .step_by(2)
                 .map(|_| rws.next().memory_value() )
-                .flat_map(|word| word.to_be_bytes())
                 .collect::<Vec<_>>();
+
+            // log::trace!("=> [Execution CallOpcode assign_exec_step] after getting input/output/return bytes, StepRWs -> offset: {:?}", rws.offset);
+
+            // PR1628_DEBUG
+            // log::trace!("=> [Execution CallOpcode assign_exec_step] input_bytes (not truncated): {:?}", input_bytes);
+            // log::trace!("=> [Execution CallOpcode assign_exec_step] input_bytes_start_offset: {:?}", input_bytes_start_offset);
+            // log::trace!("=> [Execution CallOpcode assign_exec_step] input_bytes_end_offset: {:?}", input_bytes_end_offset);
 
             let input_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
                 rlc::value(
-                    input_bytes[input_bytes_start_offset..input_bytes_end_offset]
+                    // input_bytes[input_bytes_start_offset..input_bytes_end_offset]
+                input_bytes
                         .iter()
                         .rev(),
                     randomness,
                 )
             });
+            log::trace!("=> [Execution CallOpcode assign_exec_step] input_bytes_rlc: {:?}", input_bytes_rlc);
             let output_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
                 rlc::value(output_bytes[..output_bytes_end].iter().rev(), randomness)
             });
@@ -1146,7 +1162,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         self.precompile_input_len.assign(
             region,
             offset,
-            Value::known(F::from(precompile_input_len)),
+            Value::known(F::from(input_rws)),
         )?;
         self.precompile_input_bytes_rlc
             .assign(region, offset, precompile_input_bytes_rlc)?;

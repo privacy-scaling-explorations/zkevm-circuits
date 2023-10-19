@@ -460,9 +460,10 @@ pub fn address_word_to_expr<F: Field>(address: Word<Expression<F>>) -> Expressio
 
 /// Helper struct to read rw operations from a step sequentially.
 pub(crate) struct StepRws<'a> {
-    rws: &'a RwMap,
-    step: &'a ExecStep,
-    offset: usize,
+    // PR1628_DEBUG, remove "pub"
+    pub rws: &'a RwMap,
+    pub step: &'a ExecStep,
+    pub offset: usize,
 }
 
 impl<'a> StepRws<'a> {
