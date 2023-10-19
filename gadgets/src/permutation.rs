@@ -23,11 +23,13 @@ use itertools::Itertools;
 #[derive(Clone, Debug)]
 pub struct PermutationChipConfig<F> {
     // column
-    fingerprints: Column<Advice>,
+    acc_fingerprints: Column<Advice>,
+    row_fingerprints: Column<Advice>,
     alpha: Column<Advice>,
     power_of_gamma: Vec<Column<Advice>>,
     // selector
     q_row_non_first: Selector, // 1 between (first, end], exclude first
+    q_row_enable: Selector,    // 1 for all rows (including first)
 
     _phantom: PhantomData<F>,
 }
@@ -46,14 +48,14 @@ impl<F: Field> PermutationChipConfig<F> {
         region: &mut Region<'_, F>,
         alpha: Value<F>,
         gamma: Value<F>,
-        prev_continuous_fingerprint: Value<F>,
+        acc_fingerprints_prev: Value<F>,
         col_values: &[Vec<Value<F>>],
     ) -> Result<PermutationAssignedCells<F>, Error> {
         self.annotate_columns_in_region(region, "state_circuit");
 
         // get accumulated fingerprints of each row
         let fingerprints =
-            get_permutation_fingerprints(col_values, alpha, gamma, prev_continuous_fingerprint, 1);
+            get_permutation_fingerprints(col_values, alpha, gamma, acc_fingerprints_prev);
 
         let power_of_gamma = {
             let num_of_col = col_values.get(0).map(|row| row.len()).unwrap_or_default();
@@ -65,19 +67,29 @@ impl<F: Field> PermutationChipConfig<F> {
         let mut last_fingerprint_cell = None;
         let mut alpha_first_cell = None;
         let mut gamma_first_cell = None;
-        let mut prev_continuous_fingerprint_cell = None;
-        for (offset, row_fingerprint) in fingerprints.iter().enumerate() {
+        let mut acc_fingerprints_prev_cell = None;
+        for (offset, (row_acc_fingerprints, row_fingerprints)) in fingerprints.iter().enumerate() {
             // skip first fingerprint for its prev_fingerprint
             if offset != 0 {
                 self.q_row_non_first.enable(region, offset)?;
             }
 
-            let fingerprint_cell = region.assign_advice(
-                || format!("fingerprint at index {}", offset),
-                self.fingerprints,
+            self.q_row_enable.enable(region, offset)?;
+
+            let row_acc_fingerprint_cell = region.assign_advice(
+                || format!("acc_fingerprints at index {}", offset),
+                self.acc_fingerprints,
                 offset,
-                || *row_fingerprint,
+                || *row_acc_fingerprints,
             )?;
+
+            region.assign_advice(
+                || format!("row_fingerprints at index {}", offset),
+                self.row_fingerprints,
+                offset,
+                || *row_fingerprints,
+            )?;
+
             let alpha_cell = region.assign_advice(
                 || format!("alpha at index {}", offset),
                 self.alpha,
@@ -101,18 +113,18 @@ impl<F: Field> PermutationChipConfig<F> {
             if offset == 0 {
                 alpha_first_cell = Some(alpha_cell);
                 gamma_first_cell = Some(gamma_cells[0].clone());
-                prev_continuous_fingerprint_cell = Some(fingerprint_cell.clone());
+                acc_fingerprints_prev_cell = Some(row_acc_fingerprint_cell.clone());
             }
             // last offset
             if offset == fingerprints.len() - 1 {
-                last_fingerprint_cell = Some(fingerprint_cell);
+                last_fingerprint_cell = Some(row_acc_fingerprint_cell);
             }
         }
 
         Ok((
             alpha_first_cell.unwrap(),
             gamma_first_cell.unwrap(),
-            prev_continuous_fingerprint_cell.unwrap(),
+            acc_fingerprints_prev_cell.unwrap(),
             last_fingerprint_cell.unwrap(),
         ))
     }
@@ -121,8 +133,12 @@ impl<F: Field> PermutationChipConfig<F> {
     pub fn annotate_columns_in_region(&self, region: &mut Region<F>, prefix: &str) {
         [
             (
-                self.fingerprints,
-                "GADGETS_PermutationChipConfig_fingerprints".to_string(),
+                self.acc_fingerprints,
+                "GADGETS_PermutationChipConfig_acc_fingerprints".to_string(),
+            ),
+            (
+                self.row_fingerprints,
+                "GADGETS_PermutationChipConfig_row_fingerprints".to_string(),
             ),
             (
                 self.alpha,
@@ -154,7 +170,8 @@ impl<F: Field> PermutationChip<F> {
         meta: &mut ConstraintSystem<F>,
         cols: Vec<Column<Advice>>,
     ) -> PermutationChipConfig<F> {
-        let fingerprints = meta.advice_column();
+        let acc_fingerprints = meta.advice_column();
+        let row_fingerprints = meta.advice_column();
         let alpha = meta.advice_column();
 
         // trade more column to reduce degree of power of gamma
@@ -163,36 +180,52 @@ impl<F: Field> PermutationChip<F> {
             .collect::<Vec<Column<Advice>>>(); // first element is gamma**1
 
         let q_row_non_first = meta.selector();
+        let q_row_enable = meta.selector();
 
-        meta.enable_equality(fingerprints);
+        meta.enable_equality(acc_fingerprints);
         meta.enable_equality(alpha);
         meta.enable_equality(power_of_gamma[0]);
 
-        meta.create_gate("permutation fingerprint update logic", |meta| {
-            let alpha = meta.query_advice(alpha, Rotation::cur());
-            let power_of_gamma = iter::once(1.expr())
-                .chain(
-                    power_of_gamma
-                        .iter()
-                        .map(|column| meta.query_advice(*column, Rotation::cur())),
-                )
-                .collect::<Vec<Expression<F>>>();
+        meta.create_gate(
+            "acc_fingerprints_cur = acc_fingerprints_prev * row_fingerprints_cur",
+            |meta| {
+                let q_row_non_first = meta.query_selector(q_row_non_first);
+                let acc_fingerprints_prev = meta.query_advice(acc_fingerprints, Rotation::prev());
+                let acc_fingerprints_cur = meta.query_advice(acc_fingerprints, Rotation::cur());
+                let row_fingerprints_cur = meta.query_advice(row_fingerprints, Rotation::cur());
 
-            let q_row_non_first = meta.query_selector(q_row_non_first);
-            let cols_cur_exprs = cols
-                .iter()
-                .map(|col| meta.query_advice(*col, Rotation::cur()))
-                .collect::<Vec<Expression<F>>>();
-            let fingerprint_prev = meta.query_advice(fingerprints, Rotation::prev());
-            let fingerprint_cur = meta.query_advice(fingerprints, Rotation::cur());
+                [q_row_non_first
+                    * (acc_fingerprints_cur - acc_fingerprints_prev * row_fingerprints_cur)]
+            },
+        );
 
-            let perf_term = cols_cur_exprs
-                .iter()
-                .zip_eq(power_of_gamma.iter())
-                .map(|(a, b)| a.clone() * b.clone())
-                .fold(0.expr(), |a, b| a + b);
-            [q_row_non_first * (fingerprint_cur - fingerprint_prev * (alpha - perf_term))]
-        });
+        meta.create_gate(
+            "row_fingerprints_cur = fingerprints(column_exprs)",
+            |meta| {
+                let alpha = meta.query_advice(alpha, Rotation::cur());
+                let row_fingerprints_cur = meta.query_advice(row_fingerprints, Rotation::cur());
+                let power_of_gamma = iter::once(1.expr())
+                    .chain(
+                        power_of_gamma
+                            .iter()
+                            .map(|column| meta.query_advice(*column, Rotation::cur())),
+                    )
+                    .collect::<Vec<Expression<F>>>();
+
+                let q_row_enable = meta.query_selector(q_row_enable);
+                let cols_cur_exprs = cols
+                    .iter()
+                    .map(|col| meta.query_advice(*col, Rotation::cur()))
+                    .collect::<Vec<Expression<F>>>();
+
+                let perf_term = cols_cur_exprs
+                    .iter()
+                    .zip_eq(power_of_gamma.iter())
+                    .map(|(a, b)| a.clone() * b.clone())
+                    .fold(0.expr(), |a, b| a + b);
+                [q_row_enable * (row_fingerprints_cur - (alpha - perf_term))]
+            },
+        );
 
         meta.create_gate("challenges consistency", |meta| {
             let q_row_non_first = meta.query_selector(q_row_non_first);
@@ -228,8 +261,10 @@ impl<F: Field> PermutationChip<F> {
         });
 
         PermutationChipConfig {
-            fingerprints,
+            acc_fingerprints,
+            row_fingerprints,
             q_row_non_first,
+            q_row_enable,
             alpha,
             power_of_gamma,
             _phantom: PhantomData::<F> {},
@@ -244,19 +279,17 @@ pub fn get_permutation_fingerprints<F: Field>(
     col_values: &[Vec<Value<F>>],
     alpha: Value<F>,
     gamma: Value<F>,
-    prev_continuous_fingerprint: Value<F>,
-    row_skip: usize,
-) -> Vec<Value<F>> {
+    acc_fingerprints_prev: Value<F>,
+) -> Vec<(Value<F>, Value<F>)> {
     let power_of_gamma = {
         let num_of_col = col_values.get(0).map(|row| row.len()).unwrap_or_default();
         std::iter::successors(Some(Value::known(F::ONE)), |prev| (*prev * gamma).into())
             .take(num_of_col)
             .collect::<Vec<Value<F>>>()
     };
-    let mut fingerprints = vec![prev_continuous_fingerprint];
+    let mut result = vec![];
     col_values
         .iter()
-        .skip(row_skip)
         .map(|row| {
             let tmp = row
                 .iter()
@@ -267,8 +300,13 @@ pub fn get_permutation_fingerprints<F: Field>(
                 });
             alpha.zip(tmp).map(|(alpha, tmp)| alpha - tmp)
         })
-        .for_each(|value| {
-            fingerprints.push(fingerprints[fingerprints.len() - 1] * value);
+        .enumerate()
+        .for_each(|(i, value)| {
+            if i == 0 {
+                result.push((acc_fingerprints_prev, value));
+            } else {
+                result.push((result[result.len() - 1].0 * value, value));
+            }
         });
-    fingerprints
+    result
 }

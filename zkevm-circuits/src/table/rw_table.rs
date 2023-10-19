@@ -68,8 +68,6 @@ impl<F: Field> LookupTable<F> for RwTable {
     }
 }
 
-type RwTableFirstNLastAssignedCell<F> = (Vec<AssignedCell<F, F>>, Vec<AssignedCell<F, F>>);
-
 impl RwTable {
     /// Construct a new RwTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
@@ -133,7 +131,7 @@ impl RwTable {
         rws: &[Rw],
         n_rows: usize,
         is_first_row_padding: bool,
-    ) -> Result<RwTableFirstNLastAssignedCell<F>, Error> {
+    ) -> Result<(), Error> {
         layouter.assign_region(
             || "rw table",
             |mut region| self.load_with_region(&mut region, rws, n_rows, is_first_row_padding),
@@ -146,18 +144,11 @@ impl RwTable {
         rws: &[Rw],
         n_rows: usize,
         is_first_row_padding: bool,
-    ) -> Result<RwTableFirstNLastAssignedCell<F>, Error> {
-        let mut assigned_cells = vec![];
+    ) -> Result<(), Error> {
         let (rows, _) = RwMap::table_assignments_padding(rws, n_rows, is_first_row_padding);
         for (offset, row) in rows.iter().enumerate() {
-            let row_assigned_cells = self.assign(region, offset, &row.table_assignment())?;
-            if offset == 0 {
-                assigned_cells.push(row_assigned_cells.clone());
-            }
-            if offset == rows.len() - 1 {
-                assigned_cells.push(row_assigned_cells);
-            }
+            self.assign(region, offset, &row.table_assignment())?;
         }
-        Ok(assigned_cells.iter().cloned().collect_tuple().unwrap())
+        Ok(())
     }
 }

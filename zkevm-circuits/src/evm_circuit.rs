@@ -209,10 +209,6 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         u16_table.annotate_columns(meta);
         chunkctx_table.annotate_columns(meta);
 
-        <RwTable as LookupTable<F>>::columns(&rw_table)
-            .iter()
-            .for_each(|c| meta.enable_equality(*c));
-
         let rw_permutation_config = PermutationChip::configure(
             meta,
             <RwTable as LookupTable<F>>::advice_columns(&rw_table),
@@ -453,13 +449,10 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
             block.chunk_context.chunk_index == 0,
         );
         let (
-            (rw_table_row_first, rw_table_row_last),
-            (
-                alpha_cell,
-                gamma_cell,
-                prev_continuous_fingerprint_cell,
-                next_continuous_fingerprint_cell,
-            ),
+            alpha_cell,
+            gamma_cell,
+            prev_continuous_fingerprint_cell,
+            next_continuous_fingerprint_cell,
         ) = layouter.assign_region(
             || "evm circuit",
             |mut region| {
@@ -469,7 +462,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                     || "EVM_pi_permutation_challenges",
                     config.pi_permutation_challenges,
                 );
-                let rw_table_first_n_last_cells = config.rw_table.load_with_region(
+                config.rw_table.load_with_region(
                     &mut region,
                     // pass non-padding rws to `load_with_region` since it will be padding inside
                     &block.rws.table_assignments(true),
@@ -484,7 +477,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                     Value::known(block.permu_chronological_rwtable_prev_continuous_fingerprint),
                     &rw_rows_padding.to2dvec(),
                 )?;
-                Ok((rw_table_first_n_last_cells, permutation_cells))
+                Ok(permutation_cells)
             },
         )?;
 
@@ -496,28 +489,22 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                 layouter.constrain_instance(cell.cell(), config.pi_permutation_challenges, i)
             })?;
         // constraints prev,next fingerprints
-        [
-            rw_table_row_first,
-            vec![
-                prev_continuous_fingerprint_cell,
-                prev_chunk_index,
-                total_chunks.clone(),
-            ],
-        ]
+        [vec![
+            prev_continuous_fingerprint_cell,
+            prev_chunk_index,
+            total_chunks.clone(),
+        ]]
         .iter()
         .flatten()
         .enumerate()
         .try_for_each(|(i, cell)| {
             layouter.constrain_instance(cell.cell(), config.pi_pre_continuity, i)
         })?;
-        [
-            rw_table_row_last,
-            vec![
-                next_continuous_fingerprint_cell,
-                next_chunk_index_next,
-                total_chunks,
-            ],
-        ]
+        [vec![
+            next_continuous_fingerprint_cell,
+            next_chunk_index_next,
+            total_chunks,
+        ]]
         .iter()
         .flatten()
         .enumerate()
@@ -536,45 +523,17 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
             block.chunk_context.total_chunks,
         );
 
-        let (rws_assignments_padding, _) = RwMap::table_assignments_padding(
-            &block.rws.table_assignments(true),
-            block.circuits_params.max_rws,
-            // only padding first row
-            block.chunk_context.chunk_index == 0,
-        );
-
-        assert!(!rws_assignments_padding.is_empty());
-
-        let rws_values = [
-            rws_assignments_padding.first(),
-            rws_assignments_padding.last(),
-        ] // get first/last row and concat
-        .iter()
-        .map(|row| {
-            row.map(|row| row.table_assignment().unwrap().values())
-                .unwrap_or_default()
-                .to_vec()
-        })
-        .collect::<Vec<Vec<F>>>();
         vec![
             vec![
-                rws_values[0].clone(),
-                vec![
-                    block.permu_chronological_rwtable_prev_continuous_fingerprint,
-                    F::from(rw_table_chunked_index as u64),
-                    F::from(rw_table_total_chunks as u64),
-                ],
-            ]
-            .concat(),
+                block.permu_chronological_rwtable_prev_continuous_fingerprint,
+                F::from(rw_table_chunked_index as u64),
+                F::from(rw_table_total_chunks as u64),
+            ],
             vec![
-                rws_values[1].clone(),
-                vec![
-                    block.permu_chronological_rwtable_next_continuous_fingerprint,
-                    F::from(rw_table_chunked_index as u64) + F::ONE,
-                    F::from(rw_table_total_chunks as u64),
-                ],
-            ]
-            .concat(),
+                block.permu_chronological_rwtable_next_continuous_fingerprint,
+                F::from(rw_table_chunked_index as u64) + F::ONE,
+                F::from(rw_table_total_chunks as u64),
+            ],
             vec![block.permu_alpha, block.permu_gamma],
         ]
     }

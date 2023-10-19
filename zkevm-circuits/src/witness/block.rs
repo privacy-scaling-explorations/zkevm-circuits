@@ -320,11 +320,11 @@ pub fn block_convert<F: Field>(
             Value::known(block.permu_alpha),
             Value::known(block.permu_gamma),
             Value::known(block.permu_rwtable_prev_continuous_fingerprint),
-            1,
         )
         .last()
         .cloned()
-        .unwrap(),
+        .unwrap()
+        .0,
     );
     block.permu_chronological_rwtable_next_continuous_fingerprint = unwrap_value(
         get_permutation_fingerprints(
@@ -332,11 +332,11 @@ pub fn block_convert<F: Field>(
             Value::known(block.permu_alpha),
             Value::known(block.permu_gamma),
             Value::known(block.permu_chronological_rwtable_prev_continuous_fingerprint),
-            1,
         )
         .last()
         .cloned()
-        .unwrap(),
+        .unwrap()
+        .0,
     );
     Ok(block)
 }

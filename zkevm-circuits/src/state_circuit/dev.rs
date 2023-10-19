@@ -250,10 +250,10 @@ pub(crate) fn get_permutation_fingerprint_of_rwrowvec<F: Field>(
             Value::known(alpha),
             Value::known(gamma),
             Value::known(prev_continuous_fingerprint),
-            1,
         )
         .last()
         .cloned()
-        .unwrap(),
+        .unwrap()
+        .0,
     )
 }

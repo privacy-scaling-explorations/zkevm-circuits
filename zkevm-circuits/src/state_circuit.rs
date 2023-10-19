@@ -172,10 +172,6 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         u10_table.annotate_columns(meta);
         u16_table.annotate_columns(meta);
 
-        <RwTable as LookupTable<F>>::columns(&rw_table)
-            .iter()
-            .for_each(|c| meta.enable_equality(*c));
-
         let pi_pre_continuity = meta.instance_column();
         let pi_next_continuity = meta.instance_column();
         let pi_permutation_challenges = meta.instance_column();
@@ -557,18 +553,15 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         // Here we use one single region to assign `overrides` to both rw table and
         // other parts.
         let (
-            (rw_table_row_first, rw_table_row_last),
-            (
-                alpha_cell,
-                gamma_cell,
-                prev_continuous_fingerprint_cell,
-                next_continuous_fingerprint_cell,
-            ),
+            alpha_cell,
+            gamma_cell,
+            prev_continuous_fingerprint_cell,
+            next_continuous_fingerprint_cell,
         ) = layouter.assign_region(
             || "state circuit",
             |mut region| {
                 // TODO optimimise RwMap::table_assignments_prepad calls from 3 times -> 1
-                let rw_table_first_n_last_cells = config.rw_table.load_with_region(
+                config.rw_table.load_with_region(
                     &mut region,
                     &self.rows,
                     self.n_rows,
@@ -639,7 +632,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     }
                 }
 
-                Ok((rw_table_first_n_last_cells, permutation_cells))
+                Ok(permutation_cells)
             },
         )?;
         // constrain permutation challenges
@@ -650,14 +643,14 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                 layouter.constrain_instance(cell.cell(), config.pi_permutation_challenges, i)
             })?;
         // constraints prev,next fingerprints
-        [rw_table_row_first, vec![prev_continuous_fingerprint_cell]]
+        [vec![prev_continuous_fingerprint_cell]]
             .iter()
             .flatten()
             .enumerate()
             .try_for_each(|(i, cell)| {
                 layouter.constrain_instance(cell.cell(), config.pi_pre_continuity, i)
             })?;
-        [rw_table_row_last, vec![next_continuous_fingerprint_cell]]
+        [vec![next_continuous_fingerprint_cell]]
             .iter()
             .flatten()
             .enumerate()
@@ -668,65 +661,9 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     }
 
     fn instance(&self) -> Vec<Vec<F>> {
-        // need wrap in cfg(test) block even already under if cfg!(test) to make compiler
-        // happy
-        let is_use_test_padding_row = if cfg!(test) {
-            #[allow(unused_assignments, unused_mut)]
-            let mut is_use_test_padding_row = false;
-            #[cfg(test)]
-            {
-                is_use_test_padding_row = !self.row_padding_and_overridess.is_empty();
-            }
-            is_use_test_padding_row
-        } else {
-            false
-        };
-        let rws_values = if is_use_test_padding_row {
-            #[allow(unused_assignments, unused_mut)]
-            let mut rws_values = None;
-            #[cfg(test)]
-            {
-                use crate::util::unwrap_value;
-                rws_values = Some(
-                    [
-                        self.row_padding_and_overridess.first(),
-                        self.row_padding_and_overridess.last(),
-                    ]
-                    .iter()
-                    .map(|row| {
-                        row.map(|row| row.iter().map(|v| unwrap_value(*v)).collect())
-                            .unwrap_or_default()
-                    })
-                    .collect::<Vec<Vec<F>>>(),
-                );
-            }
-            rws_values.unwrap()
-        } else {
-            let (rows, _) = RwMap::table_assignments_padding(
-                &self.rows,
-                self.n_rows,
-                self.rw_table_chunked_index == 0,
-            );
-            [rows.first(), rows.last()] // get first/last row and concat
-                .iter()
-                .map(|row| {
-                    row.map(|row| row.table_assignment().unwrap().values())
-                        .unwrap_or_default()
-                        .to_vec()
-                })
-                .collect::<Vec<Vec<F>>>()
-        };
         vec![
-            vec![
-                rws_values[0].clone(),
-                vec![self.permu_prev_continuous_fingerprint],
-            ]
-            .concat(),
-            vec![
-                rws_values[1].clone(),
-                vec![self.permu_next_continuous_fingerprint],
-            ]
-            .concat(),
+            vec![self.permu_prev_continuous_fingerprint],
+            vec![self.permu_next_continuous_fingerprint],
             vec![self.permu_alpha, self.permu_gamma],
         ]
     }
