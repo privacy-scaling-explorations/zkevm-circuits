@@ -19,18 +19,23 @@ use halo2_proofs::{
 };
 
 use zkevm_circuits::{
-    keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
     mpt_circuit::{MPTCircuit, MPTCircuitParams, MPTConfig},
     table::{KeccakTable, MptTable},
-    util::{word, Challenges, SubCircuit, SubCircuitConfig},
+    util::{word, Challenges},
 };
-
-pub const DEFAULT_MAX_PROOF_COUNT: usize = 20;
-pub const DEFAULT_CIRCUIT_DEGREE: usize = 14;
 
 use super::witness::{
     SingleTrieModification, SingleTrieModifications, StateUpdateWitness, Transforms,
 };
+
+#[cfg(not(feature = "disable-keccak"))]
+use zkevm_circuits::{
+    keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
+    util::{SubCircuit, SubCircuitConfig},
+};
+
+pub const DEFAULT_MAX_PROOF_COUNT: usize = 20;
+pub const DEFAULT_CIRCUIT_DEGREE: usize = 14;
 
 // A=>B  eq ~(A & ~B) (it is not the case that A is true and B is false)
 fn xif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
