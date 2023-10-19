@@ -223,13 +223,7 @@ mod test {
     async fn test_block_2000004() -> Result<()> {
         let block_no = 2000004;
         let access_list = blocks().get(&block_no).unwrap().clone();
-        let _ = mock_prove(
-            block_no,
-            &access_list,
-            18,
-            DEFAULT_MAX_PROOF_COUNT,
-        )
-        .await?;
+        let _ = mock_prove(block_no, &access_list, 18, DEFAULT_MAX_PROOF_COUNT).await?;
         Ok(())
     }
 
@@ -238,13 +232,7 @@ mod test {
     async fn test_block_2000070() -> Result<()> {
         let block_no = 2000070;
         let access_list = blocks().get(&block_no).unwrap().clone();
-        let _ = mock_prove(
-            block_no,
-            &access_list,
-            18,
-            DEFAULT_MAX_PROOF_COUNT,
-        )
-        .await?;
+        let _ = mock_prove(block_no, &access_list, 18, DEFAULT_MAX_PROOF_COUNT).await?;
         Ok(())
     }
 }
