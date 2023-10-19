@@ -122,7 +122,7 @@ impl<F: Field> ModExtensionGadget<F> {
  
                 if is_s {
                     ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
-                        // Hashed branch hash in parent branch
+                        // Hashed branch hash in long extension is in parent branch
                         require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data[is_s.idx()].hash.lo().expr(), parent_data[is_s.idx()].hash.hi().expr()] => @KECCAK);
                     } elsex {
                         // Non-hashed branch hash in parent branch
@@ -130,11 +130,11 @@ impl<F: Field> ModExtensionGadget<F> {
                     }} 
                 } else {
                     ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
-                        // Hashed branch hash in parent branch
-                        require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data[is_s.idx()].drifted_parent_hash.lo().expr(), parent_data[is_s.idx()].drifted_parent_hash.hi().expr()] => @KECCAK);
+                        // Hashed branch hash in short extension is in parent branch (stored in placeholder branch)
+                        require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data[(!is_s).idx()].drifted_parent_hash.lo().expr(), parent_data[(!is_s).idx()].drifted_parent_hash.hi().expr()] => @KECCAK);
                     } elsex {
                         // Non-hashed branch hash in parent branch
-                        require!(rlc => parent_data[is_s.idx()].rlc);
+                        require!(rlc => parent_data[(!is_s).idx()].rlc);
                     }}
                 }
             }
