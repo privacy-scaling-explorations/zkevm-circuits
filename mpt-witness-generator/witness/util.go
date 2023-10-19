@@ -27,7 +27,7 @@ func StoreNodes(testName string, nodes []Node) {
 	f, err := os.Create(path)
 	check(err)
 	defer f.Close()
-	b, err := json.Marshal(nodes)
+	b, err := json.MarshalIndent(nodes, "", "    ")
 	if err != nil {
 		fmt.Println(err)
 	}

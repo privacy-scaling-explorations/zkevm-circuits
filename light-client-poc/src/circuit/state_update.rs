@@ -473,7 +473,7 @@ impl StateUpdateCircuit<Fr> {
         let mut keccak_data = vec![];
         for node in mpt_witness.iter() {
             for k in node.keccak_data.iter() {
-                keccak_data.push(k.clone());
+                keccak_data.push(k.to_vec());
             }
         }
 

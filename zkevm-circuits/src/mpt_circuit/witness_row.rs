@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use crate::table::MPTProofType;
 
 use serde::{Deserialize, Serialize};
@@ -69,6 +71,28 @@ pub(crate) enum StartRowType {
     Count,
 }
 
+/// Serde for hex
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(transparent)]
+pub struct Hex {
+    #[serde(with = "hex::serde")]
+    bytes: Vec<u8>,
+}
+
+impl From<Vec<u8>> for Hex {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self { bytes }
+    }
+}
+
+impl Deref for Hex {
+    type Target = Vec<u8>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.bytes
+    }
+}
+
 /// MPT branch node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BranchNode {
@@ -77,14 +101,14 @@ pub struct BranchNode {
     /// TODO Doc.
     pub drifted_index: usize,
     /// TODO Doc.
-    pub list_rlp_bytes: [Vec<u8>; 2],
+    pub list_rlp_bytes: [Hex; 2],
 }
 
 /// MPT extension node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExtensionNode {
     /// TODO Doc.
-    pub list_rlp_bytes: Vec<u8>,
+    pub list_rlp_bytes: Hex,
 }
 
 /// MPT start node
@@ -113,36 +137,36 @@ pub struct ExtensionBranchNode {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AccountNode {
     /// TODO Doc.
-    pub address: Vec<u8>,
+    pub address: Hex,
     /// TODO Doc.
-    pub key: Vec<u8>,
+    pub key: Hex,
     /// TODO Doc.
-    pub list_rlp_bytes: [Vec<u8>; 2],
+    pub list_rlp_bytes: [Hex; 2],
     /// TODO Doc.
-    pub value_rlp_bytes: [Vec<u8>; 2],
+    pub value_rlp_bytes: [Hex; 2],
     /// TODO Doc.
-    pub value_list_rlp_bytes: [Vec<u8>; 2],
+    pub value_list_rlp_bytes: [Hex; 2],
     /// TODO Doc.
-    pub drifted_rlp_bytes: Vec<u8>,
+    pub drifted_rlp_bytes: Hex,
     /// TODO Doc.
-    pub wrong_rlp_bytes: Vec<u8>,
+    pub wrong_rlp_bytes: Hex,
 }
 
 /// MPT storage node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StorageNode {
     /// TODO Doc.
-    pub address: Vec<u8>,
+    pub address: Hex,
     /// TODO Doc.
-    pub key: Vec<u8>,
+    pub key: Hex,
     /// TODO Doc.
-    pub list_rlp_bytes: [Vec<u8>; 2],
+    pub list_rlp_bytes: [Hex; 2],
     /// TODO Doc.
-    pub value_rlp_bytes: [Vec<u8>; 2],
+    pub value_rlp_bytes: [Hex; 2],
     /// TODO Doc.
-    pub drifted_rlp_bytes: Vec<u8>,
+    pub drifted_rlp_bytes: Hex,
     /// TODO Doc.
-    pub wrong_rlp_bytes: Vec<u8>,
+    pub wrong_rlp_bytes: Hex,
 }
 
 /// MPT node
@@ -157,9 +181,9 @@ pub struct Node {
     /// TODO Doc.
     pub storage: Option<StorageNode>,
     /// MPT node values
-    pub values: Vec<Vec<u8>>,
+    pub values: Vec<Hex>,
     /// MPT keccak data
-    pub keccak_data: Vec<Vec<u8>>,
+    pub keccak_data: Vec<Hex>,
 }
 
 /// RLP types start
