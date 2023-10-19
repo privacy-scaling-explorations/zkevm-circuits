@@ -10,7 +10,7 @@ mod test {
     use crate::{circuit::{
         PublicInputs, StateUpdateCircuit, StateUpdateCircuitKeys, StateUpdateWitness,
         DEFAULT_CIRCUIT_DEGREE, DEFAULT_MAX_PROOF_COUNT,
-    }, tests::cache::ORACLE_URL};
+    }, tests::web3_rpc_cache::CACHE_URL};
 
     #[ctor::ctor]
     fn init_tests() {
@@ -25,13 +25,13 @@ mod test {
         max_proof_count: usize,
     ) -> Result<StateUpdateCircuit<Fr>> {
         const PVK: &str = "7ccb34dc5fd31fd0aa7860de89a4adc37ccb34dc5fd31fd0aa7860de89a4adc3";
-        let client = crate::utils::new_eth_signer_client(&ORACLE_URL, PVK).await?;
+        let client = crate::utils::new_eth_signer_client(&CACHE_URL, PVK).await?;
 
         let access_list : AccessList = serde_json::from_str(access_list)?;
 
         let witness = StateUpdateWitness::<Fr>::build(
             client.clone(),
-            ORACLE_URL,
+            CACHE_URL,
             U64::from(block_no),
             Some(access_list),
         )
