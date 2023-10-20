@@ -366,136 +366,136 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
 
-                // PR1628_DEBUG_BUS_MAPPING
-                // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] CopyEventGeneration Starts!");
-                // insert a copy event (input) for this step and generate word memory read & write
-                // rws also handle prev_bytes internally.
-                let rw_counter_start = state.block_ctx.rwc;
-                // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] start rwc: {:?}", rw_counter_start);
-                let input_bytes = if call.is_success && call.call_data_length > 0 {
-                    let n_input_bytes = if let Some(input_len) = precompile_call.input_len() {
-                        min(input_len, call.call_data_length as usize)
-                    } else {
-                        call.call_data_length as usize
-                    };
-                    // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] n_input_bytes: {:?}", n_input_bytes);
-                    let copy_steps = state.gen_copy_steps_for_precompile_calldata(
-                        &mut exec_step, 
-                        call.call_data_offset, 
-                        n_input_bytes as u64
-                    )?;
-                    // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] copy_steps: {:?}", copy_steps);
+                // // PR1628_DEBUG_BUS_MAPPING
+                // // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] CopyEventGeneration Starts!");
+                // // insert a copy event (input) for this step and generate word memory read & write
+                // // rws also handle prev_bytes internally.
+                // let rw_counter_start = state.block_ctx.rwc;
+                // // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] start rwc: {:?}", rw_counter_start);
+                // let input_bytes = if call.is_success && call.call_data_length > 0 {
+                //     let n_input_bytes = if let Some(input_len) = precompile_call.input_len() {
+                //         min(input_len, call.call_data_length as usize)
+                //     } else {
+                //         call.call_data_length as usize
+                //     };
+                //     // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] n_input_bytes: {:?}", n_input_bytes);
+                //     let copy_steps = state.gen_copy_steps_for_precompile_calldata(
+                //         &mut exec_step, 
+                //         call.call_data_offset, 
+                //         n_input_bytes as u64
+                //     )?;
+                //     // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] copy_steps: {:?}", copy_steps);
 
-                    let input_bytes: Vec<u8> = copy_steps
-                        .iter()
-                        .filter(|(_, _, is_mask)| !*is_mask)
-                        .map(|t| t.0)
-                        .collect();
+                //     let input_bytes: Vec<u8> = copy_steps
+                //         .iter()
+                //         .filter(|(_, _, is_mask)| !*is_mask)
+                //         .map(|t| t.0)
+                //         .collect();
 
-                    // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] input_bytes: {:?}", input_bytes);
-                    // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] input_bytes length: {:?}", input_bytes.len());
-                    // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] n_input_bytes: {:?}", n_input_bytes);
+                //     // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] input_bytes: {:?}", input_bytes);
+                //     // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] input_bytes length: {:?}", input_bytes.len());
+                //     // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] n_input_bytes: {:?}", n_input_bytes);
 
-                    // let copy_event = CopyEvent {
-                    //     src_id: NumberOrHash::Number(call.caller_id),
-                    //     src_type: CopyDataType::Memory,
-                    //     src_addr: call.call_data_offset,
-                    //     src_addr_end: call.call_data_offset + n_input_bytes as u64,
-                    //     dst_id: NumberOrHash::Number(call.call_id),
-                    //     dst_type: CopyDataType::RlcAcc,
-                    //     dst_addr: 0,
-                    //     log_id: None,
-                    //     rw_counter_start,
-                    //     bytes: copy_steps.iter().map(|s| (s.0, s.1)).collect(),
-                    // };
-                    // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] push CopyEvent: {:?}", copy_event);
+                //     // let copy_event = CopyEvent {
+                //     //     src_id: NumberOrHash::Number(call.caller_id),
+                //     //     src_type: CopyDataType::Memory,
+                //     //     src_addr: call.call_data_offset,
+                //     //     src_addr_end: call.call_data_offset + n_input_bytes as u64,
+                //     //     dst_id: NumberOrHash::Number(call.call_id),
+                //     //     dst_type: CopyDataType::RlcAcc,
+                //     //     dst_addr: 0,
+                //     //     log_id: None,
+                //     //     rw_counter_start,
+                //     //     bytes: copy_steps.iter().map(|s| (s.0, s.1)).collect(),
+                //     // };
+                //     // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] push CopyEvent: {:?}", copy_event);
 
-                    state.push_copy(
-                        &mut exec_step, 
-                        CopyEvent {
-                            src_id: NumberOrHash::Number(call.caller_id),
-                            src_type: CopyDataType::Memory,
-                            src_addr: call.call_data_offset,
-                            src_addr_end: call.call_data_offset + n_input_bytes as u64,
-                            dst_id: NumberOrHash::Number(call.call_id),
-                            dst_type: CopyDataType::RlcAcc,
-                            dst_addr: 0,
-                            log_id: None,
-                            rw_counter_start,
-                            bytes: copy_steps.iter().map(|s| (s.0, s.1)).collect(),
-                        }
-                    );
+                //     state.push_copy(
+                //         &mut exec_step, 
+                //         CopyEvent {
+                //             src_id: NumberOrHash::Number(call.caller_id),
+                //             src_type: CopyDataType::Memory,
+                //             src_addr: call.call_data_offset,
+                //             src_addr_end: call.call_data_offset + n_input_bytes as u64,
+                //             dst_id: NumberOrHash::Number(call.call_id),
+                //             dst_type: CopyDataType::RlcAcc,
+                //             dst_addr: 0,
+                //             log_id: None,
+                //             rw_counter_start,
+                //             bytes: copy_steps.iter().map(|s| (s.0, s.1)).collect(),
+                //         }
+                //     );
 
-                    Some(input_bytes)
-                } else {
-                    None
-                };
+                //     Some(input_bytes)
+                // } else {
+                //     None
+                // };
 
                 // write the result in the callee's memory
-                let rw_counter_start = state.block_ctx.rwc;
-                let output_bytes = if call.is_success && !result.is_empty() {
-                    let (copy_steps, _prev_bytes) = state
-                        .gen_copy_steps_for_precompile_callee_memory(&mut exec_step, &result)?;
-                    let output_bytes: Vec<u8> = copy_steps
-                        .iter()
-                        .filter(|(_, _, is_mask)| !*is_mask)
-                        .map(|t| t.0)
-                        .collect();
+                // let rw_counter_start = state.block_ctx.rwc;
+                // let output_bytes = if call.is_success && !result.is_empty() {
+                //     let (copy_steps, _prev_bytes) = state
+                //         .gen_copy_steps_for_precompile_callee_memory(&mut exec_step, &result)?;
+                //     let output_bytes: Vec<u8> = copy_steps
+                //         .iter()
+                //         .filter(|(_, _, is_mask)| !*is_mask)
+                //         .map(|t| t.0)
+                //         .collect();
 
-                    state.push_copy(
-                        &mut exec_step, 
-                        CopyEvent {
-                            src_id: NumberOrHash::Number(call.call_id),
-                            src_type: CopyDataType::RlcAcc,
-                            src_addr: 0,
-                            src_addr_end: result.len() as u64,
-                            dst_id: NumberOrHash::Number(call.call_id),
-                            dst_type: CopyDataType::Memory,
-                            dst_addr: 0,
-                            log_id: None,
-                            rw_counter_start,
-                            bytes: copy_steps.iter().map(|s| (s.0, s.1)).collect()
-                        }
-                    );
-                    Some(output_bytes)
-                } else {
-                    None
-                };
+                //     state.push_copy(
+                //         &mut exec_step, 
+                //         CopyEvent {
+                //             src_id: NumberOrHash::Number(call.call_id),
+                //             src_type: CopyDataType::RlcAcc,
+                //             src_addr: 0,
+                //             src_addr_end: result.len() as u64,
+                //             dst_id: NumberOrHash::Number(call.call_id),
+                //             dst_type: CopyDataType::Memory,
+                //             dst_addr: 0,
+                //             log_id: None,
+                //             rw_counter_start,
+                //             bytes: copy_steps.iter().map(|s| (s.0, s.1)).collect()
+                //         }
+                //     );
+                //     Some(output_bytes)
+                // } else {
+                //     None
+                // };
 
                 // insert another copy event (output) for this step.
-                let rw_counter_start = state.block_ctx.rwc;
-                let returned_bytes = if call.is_success && length > 0 {
-                    let (read_steps, _write_steps, _prev_bytes) = state
-                        .gen_copy_steps_for_precompile_returndata(
-                            &mut exec_step, 
-                            call.return_data_offset, 
-                            length, 
-                            &result,
-                        )?;
-                    let returned_bytes: Vec<u8> = read_steps
-                        .iter()
-                        .filter(|(_, _, is_mask)| !*is_mask)
-                        .map(|t| t.0)
-                        .collect();
-                    state.push_copy(
-                        &mut exec_step,
-                        CopyEvent {
-                            src_id: NumberOrHash::Number(call.call_id),
-                            src_type: CopyDataType::Memory,
-                            src_addr: 0,
-                            src_addr_end: length as u64,
-                            dst_id: NumberOrHash::Number(call.caller_id),
-                            dst_type: CopyDataType::Memory,
-                            dst_addr: call.return_data_offset,
-                            log_id: None,
-                            rw_counter_start,
-                            bytes: read_steps.iter().map(|s| (s.0, s.1)).collect()
-                        }
-                    );
-                    Some(returned_bytes)
-                } else {
-                    None
-                };
+                // let rw_counter_start = state.block_ctx.rwc;
+                // let returned_bytes = if call.is_success && length > 0 {
+                //     let (read_steps, _write_steps, _prev_bytes) = state
+                //         .gen_copy_steps_for_precompile_returndata(
+                //             &mut exec_step, 
+                //             call.return_data_offset, 
+                //             length, 
+                //             &result,
+                //         )?;
+                //     let returned_bytes: Vec<u8> = read_steps
+                //         .iter()
+                //         .filter(|(_, _, is_mask)| !*is_mask)
+                //         .map(|t| t.0)
+                //         .collect();
+                //     state.push_copy(
+                //         &mut exec_step,
+                //         CopyEvent {
+                //             src_id: NumberOrHash::Number(call.call_id),
+                //             src_type: CopyDataType::Memory,
+                //             src_addr: 0,
+                //             src_addr_end: length as u64,
+                //             dst_id: NumberOrHash::Number(call.caller_id),
+                //             dst_type: CopyDataType::Memory,
+                //             dst_addr: call.return_data_offset,
+                //             log_id: None,
+                //             rw_counter_start,
+                //             bytes: read_steps.iter().map(|s| (s.0, s.1)).collect()
+                //         }
+                //     );
+                //     Some(returned_bytes)
+                // } else {
+                //     None
+                // };
 
                 if has_oog_err {
                     let mut oog_step = ErrorOOGPrecompile::gen_associated_ops(
@@ -518,7 +518,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         geth_steps[1].clone(),
                         call.clone(),
                         precompile_call,
-                        (input_bytes, output_bytes, returned_bytes),
+                        // (input_bytes, output_bytes, returned_bytes),
                     )?;
 
                     // Set gas left and gas cost for precompile step.
