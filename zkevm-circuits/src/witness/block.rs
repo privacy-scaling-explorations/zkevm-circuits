@@ -281,8 +281,8 @@ pub fn block_convert<F: Field>(
         eth_block: block.eth_block.clone(),
 
         // TODO get permutation fingerprint & challenges
-        permu_alpha: F::from(1),
-        permu_gamma: F::from(1),
+        permu_alpha: F::from(103),
+        permu_gamma: F::from(101),
         permu_rwtable_prev_continuous_fingerprint: F::from(1),
         permu_rwtable_next_continuous_fingerprint: F::from(1),
         permu_chronological_rwtable_prev_continuous_fingerprint: F::from(1),

@@ -35,6 +35,7 @@ pub struct PermutationChipConfig<F> {
     _phantom: PhantomData<F>,
 }
 
+/// (alpha, gamma, prev_acc_fingerprints, next_acc_fingerprints)
 type PermutationAssignedCells<F> = (
     AssignedCell<F, F>,
     AssignedCell<F, F>,
@@ -59,10 +60,11 @@ impl<F: Field> PermutationChipConfig<F> {
         let fingerprints =
             get_permutation_fingerprints(col_values, alpha, gamma, acc_fingerprints_prev);
 
+        // power_of_gamma start from gamma**1
         let power_of_gamma = {
             let num_of_col = col_values.get(0).map(|row| row.len()).unwrap_or_default();
-            std::iter::successors(Some(Value::known(F::ONE)), |prev| (*prev * gamma).into())
-                .take(num_of_col)
+            std::iter::successors(Some(gamma), |prev| (*prev * gamma).into())
+                .take(num_of_col.saturating_sub(1))
                 .collect::<Vec<Value<F>>>()
         };
 
@@ -101,7 +103,7 @@ impl<F: Field> PermutationChipConfig<F> {
             let gamma_cells = self
                 .power_of_gamma
                 .iter()
-                .zip(power_of_gamma.iter())
+                .zip_eq(power_of_gamma.iter())
                 .map(|(col, value)| {
                     region.assign_advice(
                         || format!("gamma at index {}", offset),
@@ -149,12 +151,12 @@ impl<F: Field> PermutationChipConfig<F> {
         ]
         .iter()
         .cloned()
-        .chain(
-            self.power_of_gamma
-                .iter()
-                .enumerate()
-                .map(|(i, col)| (*col, format!("GADGETS_PermutationChipConfig_gamma_{}", i))),
-        )
+        .chain(self.power_of_gamma.iter().enumerate().map(|(i, col)| {
+            (
+                *col,
+                format!("GADGETS_PermutationChipConfig_gamma_{}", i + 1),
+            )
+        }))
         .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), col));
     }
 }

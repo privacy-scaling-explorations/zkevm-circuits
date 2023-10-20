@@ -36,7 +36,7 @@ pub struct CircuitInputStateRef<'a> {
     pub block: &'a mut Block,
     /// Block Context
     pub block_ctx: &'a mut BlockContext,
-    /// Block Context
+    /// Chunk Context
     pub chunk_ctx: &'a mut ChunkContext,
     /// Transaction
     pub tx: &'a mut Transaction,

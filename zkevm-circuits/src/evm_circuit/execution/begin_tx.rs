@@ -73,8 +73,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::BeginTx;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        // constraint rwc at step first
-        cb.step_first_constraint_rwc();
+        // TODO constraint rwc at step first
+        // cb.step_first_constraint_rwc();
 
         // Use rw_counter of the step which triggers next call as its call_id.
         let call_id = cb.curr.state.rw_counter.clone();
