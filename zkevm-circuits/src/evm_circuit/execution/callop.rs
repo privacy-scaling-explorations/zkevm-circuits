@@ -406,18 +406,18 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     cb.condition(call_gadget.cd_address.has_length(), |cb| {
                         let precompile_input_bytes_rlc = cb.query_cell_phase2();
                         // PR1628_DEBUG_OBJECTIVE
-                        cb.copy_table_lookup(
-                            Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                            CopyDataType::Memory.expr(),
-                            Word::from_lo_unchecked(callee_call_id.expr()),
-                            CopyDataType::RlcAcc.expr(),
-                            call_gadget.cd_address.offset(),
-                            call_gadget.cd_address.offset() + precompile_input_len.expr(),
-                            0.expr(),
-                            precompile_input_len.expr(),
-                            precompile_input_bytes_rlc.expr(),
-                            precompile_input_rws.expr(), // reads + writes
-                        );
+                        // cb.copy_table_lookup(
+                        //     Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                        //     CopyDataType::Memory.expr(),
+                        //     Word::from_lo_unchecked(callee_call_id.expr()),
+                        //     CopyDataType::RlcAcc.expr(),
+                        //     call_gadget.cd_address.offset(),
+                        //     call_gadget.cd_address.offset() + precompile_input_len.expr(),
+                        //     0.expr(),
+                        //     precompile_input_len.expr(),
+                        //     precompile_input_bytes_rlc.expr(),
+                        //     precompile_input_rws.expr(), // reads + writes
+                        // );
                         precompile_input_bytes_rlc
                     });
 
