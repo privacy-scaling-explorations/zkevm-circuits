@@ -6,7 +6,7 @@ use crate::{
     error::{ExecError, OogError},
 };
 use eth_types::{
-    evm_types::{memory::MemoryWordRange, MemoryAddress, OpcodeId}, 
+    evm_types::OpcodeId,
     GethExecStep, Word, H256
 };
 use gadgets::impl_expr;
@@ -274,9 +274,6 @@ pub struct CopyEvent {
     /// Represents the list of (bytes, is_code) copied during this copy event
     pub bytes: Vec<(u8, bool)>,
 }
-
-pub type CopyEventSteps = Vec<(u8, bool, bool)>;
-pub type CopyEventPrevBytes = Vec<u8>;
 
 impl CopyEvent {
     /// rw counter at step index
