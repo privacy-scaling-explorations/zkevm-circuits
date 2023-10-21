@@ -6,7 +6,6 @@ use super::{
     TransactionContext,
 };
 use crate::{
-    circuit_input_builder::execution::{CopyEventPrevBytes, CopyEventSteps, CopyEventStepsBuilder},
     error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError},
     exec_trace::OperationRef,
     operation::{
@@ -19,7 +18,7 @@ use crate::{
 };
 use eth_types::{
     evm_types::{
-        memory::{MemoryWordRange, MemoryRef},
+        memory::MemoryWordRange,
         gas_utils::memory_expansion_gas_cost, GasCost, Memory, MemoryAddress, OpcodeId, StackAddress,
     },
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
