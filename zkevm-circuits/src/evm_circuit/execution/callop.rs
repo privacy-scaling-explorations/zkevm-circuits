@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_U64},
         step::ExecutionState,
         util::{
             and,
@@ -32,7 +32,7 @@ use bus_mapping::{
     precompile::{is_precompiled, PrecompileCalls}
 };
 use eth_types::{
-    evm_types::{memory::MemoryWordRange, GAS_STIPEND_CALL_WITH_VALUE}, 
+    evm_types::GAS_STIPEND_CALL_WITH_VALUE,
     Field, ToAddress, ToScalar, U256,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
