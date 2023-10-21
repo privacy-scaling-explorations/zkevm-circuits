@@ -18,13 +18,12 @@ use crate::{
 };
 use eth_types::{
     evm_types::{
-        memory::MemoryWordRange,
-        gas_utils::memory_expansion_gas_cost, GasCost, Memory, MemoryAddress, OpcodeId, StackAddress,
+        gas_utils::memory_expansion_gas_cost, GasCost, MemoryAddress, OpcodeId, StackAddress,
     },
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
-use std::{cmp::max, iter::repeat};
+use std::cmp::max;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
 /// [`ExecStep`].
