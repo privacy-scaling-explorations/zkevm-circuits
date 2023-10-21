@@ -405,19 +405,18 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 let precompile_input_bytes_rlc =
                     cb.condition(call_gadget.cd_address.has_length(), |cb| {
                         let precompile_input_bytes_rlc = cb.query_cell_phase2();
-                        // PR1628_DEBUG_OBJECTIVE
-                        // cb.copy_table_lookup(
-                        //     Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                        //     CopyDataType::Memory.expr(),
-                        //     Word::from_lo_unchecked(callee_call_id.expr()),
-                        //     CopyDataType::RlcAcc.expr(),
-                        //     call_gadget.cd_address.offset(),
-                        //     call_gadget.cd_address.offset() + precompile_input_len.expr(),
-                        //     0.expr(),
-                        //     precompile_input_len.expr(),
-                        //     precompile_input_bytes_rlc.expr(),
-                        //     precompile_input_rws.expr(), // reads + writes
-                        // );
+                        cb.copy_table_lookup(
+                            Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                            CopyDataType::Memory.expr(),
+                            Word::from_lo_unchecked(callee_call_id.expr()),
+                            CopyDataType::RlcAcc.expr(),
+                            call_gadget.cd_address.offset(),
+                            call_gadget.cd_address.offset() + precompile_input_len.expr(),
+                            0.expr(),
+                            precompile_input_len.expr(),
+                            precompile_input_bytes_rlc.expr(),
+                            precompile_input_rws.expr(), // reads + writes
+                        );
                         precompile_input_bytes_rlc
                     });
 
@@ -476,12 +475,20 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     },
                 );
 
+                cb.debug_expression("=> [Execution CallOp] rw_counter_delta: ", rw_counter_delta.expr());
+
                 // +15 call context lookups for precompile.
                 let rw_counter_delta = 15.expr()
                     + rw_counter_delta.expr()
                     + precompile_input_rws.expr()
                     + precompile_output_rws.expr()
                     + precompile_return_rws.expr();
+
+                cb.debug_expression("=> [Execution CallOp] precompile_input_rws: ", precompile_input_rws.expr());
+                cb.debug_expression("=> [Execution CallOp] precompile_output_rws: ", precompile_output_rws.expr());
+                cb.debug_expression("=> [Execution CallOp] precompile_return_rws: ", precompile_return_rws.expr());
+                cb.debug_expression("=> [Execution CallOp] rw_counter_delta: ", rw_counter_delta.expr());
+
 
                 // Give gas stipend if value is not zero
                 let callee_gas_left = callee_gas_left.expr()
@@ -1026,10 +1033,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             precompile_input_len,
             precompile_input_bytes_rlc,
             precompile_output_bytes_rlc,
-            // precompile_return_bytes_rlc,
+            precompile_return_bytes_rlc,
             input_rws,
             output_rws,
-            // return_rws,
+            return_rws,
         ) = if is_precheck_ok && is_precompiled(&callee_address.to_address()) {
             let precompile_call: PrecompileCalls = precompile_addr.0[19].into();
             let input_len = if let Some(input_len) = precompile_call.input_len() {
@@ -1037,53 +1044,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             } else {
                 cd_length.as_usize()
             };
-            let [input_bytes_start_offset, input_bytes_end_offset, input_bytes_word_count] =
-                if input_len == 0 {
-                    [0; 3]
-                } else {
-                    let begin = cd_offset.as_usize();
-                    let end = cd_offset.as_usize() + input_len;
-                    let range = MemoryWordRange::align_range(begin, input_len);
-
-                    // input may not be aligned to 32 bytes. actual input is
-                    // [start_offset..end_offset]
-                    // TODO: turn it into MemoryWordRange method
-                    let start_offset = begin - range.start_slot().0;
-                    let end_offset = end - range.start_slot().0;
-
-                    [start_offset, end_offset, range.word_count()]
-                };
-
-            let [output_bytes_end, output_bytes_word_count] =
-                if precompile_return_length.is_zero() {
-                    [0; 2]
-                } else {
-                    let end = precompile_return_length.as_usize();
-
-                    [end, MemoryWordRange::align_range(0, end).word_count()]
-                };
-
-            // let [return_bytes_start_offset, return_bytes_end_offset, return_bytes_word_count] =
-            //     if min(precompile_return_length, rd_length).is_zero()
-            //     {
-            //         [0; 3]
-            //     } else {
-            //         let length = min(rd_length.as_usize(), output_bytes_end);
-            //         let begin = rd_offset.as_usize();
-            //         let end = begin + length;
-
-            //         let mut src_range = MemoryWordRange::align_range(0, length);
-            //         let mut dst_range = MemoryWordRange::align_range(begin, length);
-            //         src_range.ensure_equal_length(&mut dst_range);
-
-            //         // return data may not be aligned to 32 bytes. actual return data is
-            //         // [start_offset..end_offset]
-            //         // TODO: turn it into MemoryWordRange method
-            //         let start_offset = begin - dst_range.start_slot().0;
-            //         let end_offset = end - dst_range.start_slot().0;
-
-            //         [start_offset, end_offset, dst_range.word_count()]
-            //     };
 
             // PR1628_DEBUG_INPUT_BYTES_RLC
             // log::trace!("=> [Execution CallOpcode assign_exec_step] before getting input_bytes, StepRWs -> offset: {:?}", rws.offset);
@@ -1091,15 +1051,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             let input_bytes = (0..input_len)
                 .map(|_| rws.next().memory_value() )
                 .collect::<Vec<_>>();
-            // log::trace!("=> [Execution CallOpcode assign_exec_step] after getting input_bytes, StepRWs -> offset: {:?}", rws.offset);
             let output_bytes = (0..precompile_return_length.as_u64())
                 .map(|_| rws.next().memory_value() )
                 .collect::<Vec<_>>();
 
-            // let return_bytes = (0..(return_bytes_word_count * 2 * N_BYTES_WORD))
-            //     .step_by(2)
-            //     .map(|_| rws.next().memory_value() )
-            //     .collect::<Vec<_>>();
+            let return_length = min(precompile_return_length, rd_length);
+            let return_bytes = (0..(return_length.as_u64() * 2))
+                .step_by(2)
+                .map(|_| rws.next().memory_value() )
+                .collect::<Vec<_>>();
 
             // log::trace!("=> [Execution CallOpcode assign_exec_step] after getting input/output/return bytes, StepRWs -> offset: {:?}", rws.offset);
             // log::trace!("=> [Execution CallOpcode assign_exec_step] input_bytes (not truncated): {:?}", input_bytes);
@@ -1108,7 +1068,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
             let input_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
                 rlc::value(
-                    // input_bytes[input_bytes_start_offset..input_bytes_end_offset]
                 input_bytes
                         .iter()
                         .rev(),
@@ -1117,39 +1076,39 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             });
             // log::trace!("=> [Execution CallOpcode assign_exec_step] input_bytes_rlc: {:?}", input_bytes_rlc);
             let output_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
-                rlc::value(output_bytes[..output_bytes_end].iter().rev(), randomness)
+                rlc::value(output_bytes.iter().rev(), randomness)
             });
-            // let return_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
-            //     rlc::value(
-            //         return_bytes[return_bytes_start_offset..return_bytes_end_offset]
-            //             .iter()
-            //             .rev(),
-            //         randomness,
-            //     )
-            // });
+            let return_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
+                rlc::value(
+                    return_bytes
+                        .iter()
+                        .rev(),
+                    randomness,
+                )
+            });
 
             let input_rws = input_bytes.len() as u64;
             let output_rws = output_bytes.len() as u64;
-            // let return_rws = (return_bytes.len() * 2) as u64;
+            let return_rws = (return_bytes.len() * 2) as u64;
 
             (
                 input_len as u64,
                 input_bytes_rlc,
                 output_bytes_rlc,
-                // return_bytes_rlc,
+                return_bytes_rlc,
                 input_rws,
                 output_rws,
-                // return_rws,
+                return_rws,
             )
         } else {
             (
                 0,
                 Value::known(F::ZERO),
                 Value::known(F::ZERO),
-                // Value::known(F::ZERO),
+                Value::known(F::ZERO),
                 0u64,
                 0u64,
-                // 0u64,
+                0u64,
             )
         };
 
@@ -1162,14 +1121,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .assign(region, offset, precompile_input_bytes_rlc)?;
         self.precompile_output_bytes_rlc
             .assign(region, offset, precompile_output_bytes_rlc)?;
-        // self.precompile_return_bytes_rlc
-        //     .assign(region, offset, precompile_return_bytes_rlc)?;
+        self.precompile_return_bytes_rlc
+            .assign(region, offset, precompile_return_bytes_rlc)?;
         self.precompile_input_rws
             .assign(region, offset, Value::known(F::from(input_rws)))?;
         self.precompile_output_rws
             .assign(region, offset, Value::known(F::from(output_rws)))?;
-        // self.precompile_return_rws
-        //     .assign(region, offset, Value::known(F::from(return_rws)))?;
+        self.precompile_return_rws
+            .assign(region, offset, Value::known(F::from(return_rws)))?;
 
         let (_, remainder) = self.precompile_output_word_size_div
             .assign(region, offset, output_rws.into())?;

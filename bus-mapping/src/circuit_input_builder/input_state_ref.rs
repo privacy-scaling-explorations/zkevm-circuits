@@ -1703,53 +1703,32 @@ impl<'a> CircuitInputStateRef<'a> {
         dst_addr: impl Into<MemoryAddress>,
         copy_length: impl Into<MemoryAddress>,
         result: &[u8],
-    ) -> Result<(CopyEventSteps, CopyEventSteps, CopyEventPrevBytes), Error> {
+    ) -> Result<Vec<u8>, Error> {
         let copy_length = copy_length.into().0;
-        if copy_length == 0 {
-            return Ok((vec![], vec![], vec![]));
-        }
-        assert!(copy_length <= result.len());
+        let mut return_bytes: Vec<u8> = vec![];
 
-        let (src_range, dst_range, write_slot_bytes) = combine_copy_slot_bytes(
-            0,
-            dst_addr.into().0,
-            copy_length,
-            result,
-            &mut self.caller_ctx_mut()?.memory,
-        );
+        if copy_length != 0 {
+            assert!(copy_length <= result.len());
 
-        let read_slot_bytes = MemoryRef(result).read_chunk(src_range);
-        debug_assert_eq!(read_slot_bytes.len(), write_slot_bytes.len());
+            let mut src_byte_index: usize = 0;
+            let mut dst_byte_index: usize = dst_addr.into().0;
 
-        let read_steps = CopyEventStepsBuilder::memory_range(src_range)
-            .source(read_slot_bytes.as_slice())
-            .build();
+            for b in result.iter().take(copy_length) {
+                self.memory_read(exec_step, src_byte_index.into(), 0)?;
+                src_byte_index += 1;
 
-        let write_steps = CopyEventStepsBuilder::memory_range(dst_range)
-            .source(write_slot_bytes.as_slice())
-            .build();
+                self.memory_write_caller(
+                    exec_step,
+                    dst_byte_index.into(),
+                    *b
+                )?;
+                dst_byte_index += 1;
 
-        let mut src_byte_index = src_range.start_slot().0;
-        let mut dst_byte_index = dst_range.start_slot().0;
-
-        let mut prev_bytes = vec![];
-
-        for (read_byte, write_byte) in read_slot_bytes.into_iter().zip(write_slot_bytes.into_iter())
-        {
-            let v = self.memory_read(exec_step, src_byte_index.into(), read_byte)?;
-            debug_assert_eq!(read_byte, v);
-            src_byte_index += 1;
-
-            let prev_byte = self.memory_write_caller(
-                exec_step, 
-                dst_byte_index.into(), 
-                write_byte
-            )?;
-            prev_bytes.push(prev_byte);
-            dst_byte_index += 1;
+                return_bytes.push(*b);
+            }
         }
 
-        Ok((read_steps, write_steps, prev_bytes))
+        Ok(return_bytes)
     }
 
     /// Generate copy steps for call data.

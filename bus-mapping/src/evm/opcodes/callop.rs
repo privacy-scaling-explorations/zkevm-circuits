@@ -429,39 +429,34 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 };
 
                 // insert another copy event (output) for this step.
-                // let rw_counter_start = state.block_ctx.rwc;
-                // if call.is_success && length > 0 {
-                //     let (read_steps, _write_steps, _prev_bytes) = state
-                //         .gen_copy_steps_for_precompile_returndata(
-                //             &mut exec_step, 
-                //             call.return_data_offset, 
-                //             length, 
-                //             &result,
-                //         )?;
-                //     let returned_bytes: Vec<u8> = read_steps
-                //         .iter()
-                //         .filter(|(_, _, is_mask)| !*is_mask)
-                //         .map(|t| t.0)
-                //         .collect();
-                //     state.push_copy(
-                //         &mut exec_step,
-                //         CopyEvent {
-                //             src_id: NumberOrHash::Number(call.call_id),
-                //             src_type: CopyDataType::Memory,
-                //             src_addr: 0,
-                //             src_addr_end: length as u64,
-                //             dst_id: NumberOrHash::Number(call.caller_id),
-                //             dst_type: CopyDataType::Memory,
-                //             dst_addr: call.return_data_offset,
-                //             log_id: None,
-                //             rw_counter_start,
-                //             bytes: read_steps.iter().map(|s| (s.0, s.1)).collect()
-                //         }
-                //     );
-                //     Some(returned_bytes)
-                // } else {
-                //     None
-                // };
+                let rw_counter_start = state.block_ctx.rwc;
+                if call.is_success && length > 0 {
+                    let return_bytes = state
+                        .gen_copy_steps_for_precompile_returndata(
+                            &mut exec_step, 
+                            call.return_data_offset, 
+                            length, 
+                            &result
+                        )?;
+                    state.push_copy(
+                        &mut exec_step,
+                        CopyEvent {
+                            src_id: NumberOrHash::Number(call.call_id),
+                            src_type: CopyDataType::Memory,
+                            src_addr: 0,
+                            src_addr_end: length as u64,
+                            dst_id: NumberOrHash::Number(call.caller_id),
+                            dst_type: CopyDataType::Memory,
+                            dst_addr: call.return_data_offset,
+                            log_id: None,
+                            rw_counter_start,
+                            bytes: return_bytes.iter().map(|s| (*s, false)).collect()
+                        }
+                    );
+                    Some(return_bytes)
+                } else {
+                    None
+                };
 
                 if has_oog_err {
                     let mut oog_step = ErrorOOGPrecompile::gen_associated_ops(
