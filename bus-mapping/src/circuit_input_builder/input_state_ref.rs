@@ -236,7 +236,6 @@ impl<'a> CircuitInputStateRef<'a> {
         &mut self,
         step: &mut ExecStep,
         address: MemoryAddress, //Caution: make sure this address = slot passing
-        _value: u8,
     ) -> Result<u8, Error> {
         let byte = &self.caller_ctx()?.memory.read_chunk(address, 1.into())[0];
         let call_id = self.call()?.caller_id;
@@ -1664,59 +1663,38 @@ impl<'a> CircuitInputStateRef<'a> {
         exec_step: &mut ExecStep,
         src_addr: u64,
         copy_length: u64,
-    ) -> Result<CopyEventSteps, Error> {
-        if copy_length == 0 {
-            return Ok(vec![]);
-        }
-        // PR1628_DEBUG_COPY_STEP_GEN
-        // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] - [gen] memory: {:?}", &self.caller_ctx()?.memory);
-        // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] - [gen] memory length: {:?}", &self.caller_ctx()?.memory.0.len());
-        let range = MemoryWordRange::align_range(src_addr, copy_length);
-        let slot_bytes = &self.caller_ctx()?.memory.read_chunk(range.start_slot(), range.end_slot() - range.start_slot());
-        // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] - [gen] slot_bytes: {:?}", slot_bytes);
-        // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] - [gen] slot_bytes length: {:?}", slot_bytes.len());
+    ) -> Result<Vec<u8>, Error> {
+        let mut input_bytes: Vec<u8> = vec![];
 
-        let copy_steps = CopyEventStepsBuilder::memory_range(range)
-            .source(slot_bytes.as_slice())
-            .build();
-    
-        let mut byte_index = range.start_slot().0;
-        for byte in slot_bytes {
-            self.memory_read_caller(exec_step, byte_index.into(), *byte)?;
-            byte_index += 1;
+        if copy_length != 0 {
+            let start_byte_index = src_addr;
+            for i in 0..copy_length {
+                let b = self.memory_read_caller(exec_step, (start_byte_index + i).into())?;
+                input_bytes.push(b);
+            }
         }
 
-        Ok(copy_steps)
+        Ok(input_bytes)
     }
 
     pub(crate) fn gen_copy_steps_for_precompile_callee_memory(
         &mut self,
         exec_step: &mut ExecStep,
         result: &[u8]
-    ) -> Result<(CopyEventSteps, CopyEventPrevBytes), Error> {
+    ) -> Result<(Vec<u8>, Vec<u8>), Error> {
         if result.is_empty() {
             return Ok((vec![], vec![]));
+        } else {
+            let mut prev_bytes = vec![];
+            let mut byte_index = 0;
+            for byte in result {
+                let prev_byte = self.memory_write(exec_step, byte_index.into(), *byte)?;
+                prev_bytes.push(prev_byte);
+                byte_index += 1;
+            }
+
+            Ok((result.into(), prev_bytes.into()))
         }
-
-        let range = MemoryWordRange::align_range(0, result.len());
-        let copy_steps = CopyEventStepsBuilder::memory_range(range)
-            .source(result)
-            .build();
-        
-        let mut prev_bytes = vec![];
-
-        let full_length = range.full_length().0;
-        assert!(full_length >= result.len() && full_length % 32 == 0);
-        let padding: Vec<_> = repeat(0).take(full_length - result.len()).collect();
-
-        let mut byte_index = 0;
-        for byte in [result, &padding].concat() {
-            let prev_byte = self.memory_write(exec_step, byte_index.into(), byte)?;
-            prev_bytes.push(prev_byte);
-            byte_index += 1;
-        }
-
-        Ok((copy_steps, prev_bytes))
     }
 
     pub(crate) fn gen_copy_steps_for_precompile_returndata(

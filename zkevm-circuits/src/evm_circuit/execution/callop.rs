@@ -1026,10 +1026,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             precompile_input_len,
             precompile_input_bytes_rlc,
             precompile_output_bytes_rlc,
-            precompile_return_bytes_rlc,
+            // precompile_return_bytes_rlc,
             input_rws,
             output_rws,
-            return_rws,
+            // return_rws,
         ) = if is_precheck_ok && is_precompiled(&callee_address.to_address()) {
             let precompile_call: PrecompileCalls = precompile_addr.0[19].into();
             let input_len = if let Some(input_len) = precompile_call.input_len() {
@@ -1038,8 +1038,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 cd_length.as_usize()
             };
             let [input_bytes_start_offset, input_bytes_end_offset, input_bytes_word_count] =
-                // Correspond to this check in bus-mapping.
-                // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/evm/opcodes/callop.rs#L349>
                 if input_len == 0 {
                     [0; 3]
                 } else {
@@ -1057,8 +1055,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 };
 
             let [output_bytes_end, output_bytes_word_count] =
-                // Correspond to this check in bus-mapping.
-                // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/evm/opcodes/callop.rs#L387>
                 if precompile_return_length.is_zero() {
                     [0; 2]
                 } else {
@@ -1067,44 +1063,43 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     [end, MemoryWordRange::align_range(0, end).word_count()]
                 };
 
-            let [return_bytes_start_offset, return_bytes_end_offset, return_bytes_word_count] =
-                // Correspond to this check in bus-mapping.
-                // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/evm/opcodes/callop.rs#L416>
-                if min(precompile_return_length, rd_length).is_zero()
-                {
-                    [0; 3]
-                } else {
-                    let length = min(rd_length.as_usize(), output_bytes_end);
-                    let begin = rd_offset.as_usize();
-                    let end = begin + length;
+            // let [return_bytes_start_offset, return_bytes_end_offset, return_bytes_word_count] =
+            //     if min(precompile_return_length, rd_length).is_zero()
+            //     {
+            //         [0; 3]
+            //     } else {
+            //         let length = min(rd_length.as_usize(), output_bytes_end);
+            //         let begin = rd_offset.as_usize();
+            //         let end = begin + length;
 
-                    let mut src_range = MemoryWordRange::align_range(0, length);
-                    let mut dst_range = MemoryWordRange::align_range(begin, length);
-                    src_range.ensure_equal_length(&mut dst_range);
+            //         let mut src_range = MemoryWordRange::align_range(0, length);
+            //         let mut dst_range = MemoryWordRange::align_range(begin, length);
+            //         src_range.ensure_equal_length(&mut dst_range);
 
-                    // return data may not be aligned to 32 bytes. actual return data is
-                    // [start_offset..end_offset]
-                    // TODO: turn it into MemoryWordRange method
-                    let start_offset = begin - dst_range.start_slot().0;
-                    let end_offset = end - dst_range.start_slot().0;
+            //         // return data may not be aligned to 32 bytes. actual return data is
+            //         // [start_offset..end_offset]
+            //         // TODO: turn it into MemoryWordRange method
+            //         let start_offset = begin - dst_range.start_slot().0;
+            //         let end_offset = end - dst_range.start_slot().0;
 
-                    [start_offset, end_offset, dst_range.word_count()]
-                };
+            //         [start_offset, end_offset, dst_range.word_count()]
+            //     };
 
             // PR1628_DEBUG_INPUT_BYTES_RLC
             // log::trace!("=> [Execution CallOpcode assign_exec_step] before getting input_bytes, StepRWs -> offset: {:?}", rws.offset);
 
-            let input_bytes = (0..(input_bytes_word_count * N_BYTES_WORD))
+            let input_bytes = (0..input_len)
                 .map(|_| rws.next().memory_value() )
                 .collect::<Vec<_>>();
             // log::trace!("=> [Execution CallOpcode assign_exec_step] after getting input_bytes, StepRWs -> offset: {:?}", rws.offset);
-            let output_bytes = (0..(output_bytes_word_count * N_BYTES_WORD))
+            let output_bytes = (0..precompile_return_length.as_u64())
                 .map(|_| rws.next().memory_value() )
                 .collect::<Vec<_>>();
-            let return_bytes = (0..(return_bytes_word_count * 2 * N_BYTES_WORD))
-                .step_by(2)
-                .map(|_| rws.next().memory_value() )
-                .collect::<Vec<_>>();
+
+            // let return_bytes = (0..(return_bytes_word_count * 2 * N_BYTES_WORD))
+            //     .step_by(2)
+            //     .map(|_| rws.next().memory_value() )
+            //     .collect::<Vec<_>>();
 
             // log::trace!("=> [Execution CallOpcode assign_exec_step] after getting input/output/return bytes, StepRWs -> offset: {:?}", rws.offset);
             // log::trace!("=> [Execution CallOpcode assign_exec_step] input_bytes (not truncated): {:?}", input_bytes);
@@ -1124,37 +1119,37 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             let output_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
                 rlc::value(output_bytes[..output_bytes_end].iter().rev(), randomness)
             });
-            let return_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
-                rlc::value(
-                    return_bytes[return_bytes_start_offset..return_bytes_end_offset]
-                        .iter()
-                        .rev(),
-                    randomness,
-                )
-            });
+            // let return_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
+            //     rlc::value(
+            //         return_bytes[return_bytes_start_offset..return_bytes_end_offset]
+            //             .iter()
+            //             .rev(),
+            //         randomness,
+            //     )
+            // });
 
             let input_rws = input_bytes.len() as u64;
             let output_rws = output_bytes.len() as u64;
-            let return_rws = (return_bytes.len() * 2) as u64;
+            // let return_rws = (return_bytes.len() * 2) as u64;
 
             (
                 input_len as u64,
                 input_bytes_rlc,
                 output_bytes_rlc,
-                return_bytes_rlc,
+                // return_bytes_rlc,
                 input_rws,
                 output_rws,
-                return_rws,
+                // return_rws,
             )
         } else {
             (
                 0,
                 Value::known(F::ZERO),
                 Value::known(F::ZERO),
-                Value::known(F::ZERO),
+                // Value::known(F::ZERO),
                 0u64,
                 0u64,
-                0u64,
+                // 0u64,
             )
         };
 
@@ -1167,14 +1162,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .assign(region, offset, precompile_input_bytes_rlc)?;
         self.precompile_output_bytes_rlc
             .assign(region, offset, precompile_output_bytes_rlc)?;
-        self.precompile_return_bytes_rlc
-            .assign(region, offset, precompile_return_bytes_rlc)?;
+        // self.precompile_return_bytes_rlc
+        //     .assign(region, offset, precompile_return_bytes_rlc)?;
         self.precompile_input_rws
             .assign(region, offset, Value::known(F::from(input_rws)))?;
         self.precompile_output_rws
             .assign(region, offset, Value::known(F::from(output_rws)))?;
-        self.precompile_return_rws
-            .assign(region, offset, Value::known(F::from(return_rws)))?;
+        // self.precompile_return_rws
+        //     .assign(region, offset, Value::known(F::from(return_rws)))?;
 
         let (_, remainder) = self.precompile_output_word_size_div
             .assign(region, offset, output_rws.into())?;
