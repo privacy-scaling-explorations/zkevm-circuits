@@ -45,12 +45,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let ret_offset = geth_step.stack.nth_last(N_ARGS - 2)?.low_u64() as usize;
         let ret_length = geth_step.stack.nth_last(N_ARGS - 1)?.as_usize();
 
-        // PR1628_DEBUG_BUS_MAPPING_ARGS
-        // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] args_offset: {:?}", args_offset);
-        // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] args_length: {:?}", args_length);
-        // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] ret_offset: {:?}", ret_offset);
-        // log::trace!("=> [BusMapping CallOpcode gen_associated_ops] ret_length: {:?}", ret_length);
-
         // we need to keep the memory until parse_call complete
         state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
 

@@ -475,20 +475,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     },
                 );
 
-                cb.debug_expression("=> [Execution CallOp] rw_counter_delta: ", rw_counter_delta.expr());
-
                 // +15 call context lookups for precompile.
                 let rw_counter_delta = 15.expr()
                     + rw_counter_delta.expr()
                     + precompile_input_rws.expr()
                     + precompile_output_rws.expr()
                     + precompile_return_rws.expr();
-
-                cb.debug_expression("=> [Execution CallOp] precompile_input_rws: ", precompile_input_rws.expr());
-                cb.debug_expression("=> [Execution CallOp] precompile_output_rws: ", precompile_output_rws.expr());
-                cb.debug_expression("=> [Execution CallOp] precompile_return_rws: ", precompile_return_rws.expr());
-                cb.debug_expression("=> [Execution CallOp] rw_counter_delta: ", rw_counter_delta.expr());
-
 
                 // Give gas stipend if value is not zero
                 let callee_gas_left = callee_gas_left.expr()
@@ -821,11 +813,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_delegatecall = opcode == OpcodeId::DELEGATECALL;
         let mut rws = StepRws::new(block, step);
 
-        // PR1628_DEBUG_CALLOP_ASSIGN
-        // log::trace!("=> [Execution CallOpcode assign_exec_step] new StepRWs -> rws: {:?}", rws.rws);
-        // log::trace!("=> [Execution CallOpcode assign_exec_step] new StepRWs -> exec_step: {:?}", rws.step);
-        // log::trace!("=> [Execution CallOpcode assign_exec_step] new StepRWs -> offset: {:?}", rws.offset);
-
         let tx_id = rws.next().call_context_value();
         rws.next(); // RwCounterEndOfReversion
         rws.next(); // IsPersistent
@@ -1045,9 +1032,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 cd_length.as_usize()
             };
 
-            // PR1628_DEBUG_INPUT_BYTES_RLC
-            // log::trace!("=> [Execution CallOpcode assign_exec_step] before getting input_bytes, StepRWs -> offset: {:?}", rws.offset);
-
             let input_bytes = (0..input_len)
                 .map(|_| rws.next().memory_value() )
                 .collect::<Vec<_>>();
@@ -1061,11 +1045,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 .map(|_| rws.next().memory_value() )
                 .collect::<Vec<_>>();
 
-            // log::trace!("=> [Execution CallOpcode assign_exec_step] after getting input/output/return bytes, StepRWs -> offset: {:?}", rws.offset);
-            // log::trace!("=> [Execution CallOpcode assign_exec_step] input_bytes (not truncated): {:?}", input_bytes);
-            // log::trace!("=> [Execution CallOpcode assign_exec_step] input_bytes_start_offset: {:?}", input_bytes_start_offset);
-            // log::trace!("=> [Execution CallOpcode assign_exec_step] input_bytes_end_offset: {:?}", input_bytes_end_offset);
-
             let input_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
                 rlc::value(
                 input_bytes
@@ -1074,7 +1053,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     randomness,
                 )
             });
-            // log::trace!("=> [Execution CallOpcode assign_exec_step] input_bytes_rlc: {:?}", input_bytes_rlc);
             let output_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
                 rlc::value(output_bytes.iter().rev(), randomness)
             });

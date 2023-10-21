@@ -194,8 +194,6 @@ mod test {
                 //     address: PrecompileCalls::Identity.address().to_word(),
                 //     ..Default::default()
                 // },
-
-                // PR1628_DEBUG_TEST
                 PrecompileCallArgs {
                     name: "multi-bytes success (more than 32 bytes)",
                     setup_code: bytecode! {
@@ -217,7 +215,6 @@ mod test {
                     address: PrecompileCalls::Identity.address().to_word(),
                     ..Default::default()
                 },
-                
                 // PrecompileCallArgs {
                 //     name: "insufficient gas (precompile call should fail)",
                 //     setup_code: bytecode! {
