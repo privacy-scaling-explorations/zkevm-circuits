@@ -390,11 +390,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             bytes: input_bytes.iter().map(|s| (*s, false)).collect(),
                         }
                     );
-
-                    Some(input_bytes)
-                } else {
-                    None
-                };
+                }
 
                 // write the result in the callee's memory
                 let rw_counter_start = state.block_ctx.rwc;
@@ -402,6 +398,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     let (output_bytes, _prev_bytes) = state
                     .gen_copy_steps_for_precompile_callee_memory(&mut exec_step, &result)?;
 
+                    log::trace!("=> [BusMapping CallOp] gen_associated_ops - output_btyes: {:?}", output_bytes);
                     state.push_copy(
                         &mut exec_step, 
                         CopyEvent {
@@ -417,10 +414,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             bytes: output_bytes.iter().map(|s| (*s, false)).collect()
                         }
                     );
-                    Some(output_bytes)
-                } else {
-                    None
-                };
+                }
 
                 // insert another copy event (output) for this step.
                 let rw_counter_start = state.block_ctx.rwc;

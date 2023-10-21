@@ -430,18 +430,18 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ]),
                     |cb| {
                         let precompile_output_bytes_rlc = cb.query_cell_phase2();
-                        // cb.copy_table_lookup(
-                        //     Word::from_lo_unchecked(callee_call_id.expr()),
-                        //     CopyDataType::RlcAcc.expr(),
-                        //     Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                        //     CopyDataType::Memory.expr(),
-                        //     0.expr(),
-                        //     precompile_return_length.expr(),
-                        //     0.expr(),
-                        //     precompile_return_length.expr(),
-                        //     precompile_output_bytes_rlc.expr(),
-                        //     precompile_output_rws.expr(),
-                        // );
+                        cb.copy_table_lookup(
+                            Word::from_lo_unchecked(callee_call_id.expr()),
+                            CopyDataType::RlcAcc.expr(),
+                            Word::from_lo_unchecked(callee_call_id.expr()),
+                            CopyDataType::Memory.expr(),
+                            0.expr(),
+                            precompile_return_length.expr(),
+                            0.expr(),
+                            precompile_return_length.expr(),
+                            precompile_output_bytes_rlc.expr(),
+                            precompile_output_rws.expr(),
+                        );
                         precompile_output_bytes_rlc
                     }
                 );
@@ -459,18 +459,20 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ]),
                     |cb| {
                         let precompile_return_bytes_rlc = cb.query_cell_phase2();
-                        // cb.copy_table_lookup(
-                        //     Word::from_lo_unchecked(callee_call_id.expr()),
-                        //     CopyDataType::Memory.expr(), // refer u64::from(CopyDataType)
-                        //     Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                        //     CopyDataType::Memory.expr(),
-                        //     0.expr(),
-                        //     precompile_return_data_copy_size.min(),
-                        //     call_gadget.rd_address.offset(),
-                        //     precompile_return_data_copy_size.min(),
-                        //     0.expr(),
-                        //     precompile_return_rws.expr(), // writes
-                        // ); // rwc_delta += `return_data_copy_size.min()` for precompile
+
+                        // PR1628_DEBUG
+                        cb.copy_table_lookup(
+                            Word::from_lo_unchecked(callee_call_id.expr()),
+                            CopyDataType::Memory.expr(), // refer u64::from(CopyDataType)
+                            Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                            CopyDataType::Memory.expr(),
+                            0.expr(),
+                            precompile_return_data_copy_size.min(),
+                            call_gadget.rd_address.offset(),
+                            precompile_return_data_copy_size.min(),
+                            precompile_return_bytes_rlc.expr(),
+                            precompile_return_rws.expr(), // writes
+                        ); // rwc_delta += `return_data_copy_size.min()` for precompile
                         precompile_return_bytes_rlc
                     },
                 );
@@ -813,6 +815,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_delegatecall = opcode == OpcodeId::DELEGATECALL;
         let mut rws = StepRws::new(block, step);
 
+        log::trace!("=> [Execution CallOp] assign_exec_step - block.copy_events: {:?}", block.copy_events);
+
         let tx_id = rws.next().call_context_value();
         rws.next(); // RwCounterEndOfReversion
         rws.next(); // IsPersistent
@@ -999,6 +1003,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         } else {
             0.into()
         };
+        log::trace!("=> [Execution CallOp] assign_exec_step - precompile_return_length: {:?}", precompile_return_length);
         self.precompile_return_length.assign(
             region,
             offset,
@@ -1038,6 +1043,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             let output_bytes = (0..precompile_return_length.as_u64())
                 .map(|_| rws.next().memory_value() )
                 .collect::<Vec<_>>();
+            log::trace!("=> [Execution CallOp] assign_exec_step - output_bytes: {:?}", output_bytes);
 
             let return_length = min(precompile_return_length, rd_length);
             let return_bytes = (0..(return_length.as_u64() * 2))
