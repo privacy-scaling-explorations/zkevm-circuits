@@ -459,8 +459,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ]),
                     |cb| {
                         let precompile_return_bytes_rlc = cb.query_cell_phase2();
-
-                        // PR1628_DEBUG
                         cb.copy_table_lookup(
                             Word::from_lo_unchecked(callee_call_id.expr()),
                             CopyDataType::Memory.expr(), // refer u64::from(CopyDataType)
