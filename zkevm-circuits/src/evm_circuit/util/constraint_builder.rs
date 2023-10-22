@@ -1349,20 +1349,20 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         rwc_inc: Expression<F>,
     ) {
         // PR1628_DEBUG
-        // self.debug_expression("=> [ConstraintBuilder is_first]", 1.expr());
-        // self.debug_expression("=> [ConstraintBuilder src_id, lo]", src_id.to_lo_hi().0.clone());
-        // self.debug_expression("=> [ConstraintBuilder src_id, hi]", src_id.to_lo_hi().1.clone());
-        // self.debug_expression("=> [ConstraintBuilder src_tag]", src_tag.clone());
-        // self.debug_expression("=> [ConstraintBuilder dst_id, lo]", dst_id.to_lo_hi().0.clone());
-        // self.debug_expression("=> [ConstraintBuilder dst_id, hi]", dst_id.to_lo_hi().1.clone());
-        // self.debug_expression("=> [ConstraintBuilder dst_tag]", dst_tag.clone());
-        // self.debug_expression("=> [ConstraintBuilder src_addr]", src_addr.clone());
-        // self.debug_expression("=> [ConstraintBuilder src_addr_end]", src_addr_end.clone());
-        // self.debug_expression("=> [ConstraintBuilder dst_addr]", dst_addr.clone());
-        // self.debug_expression("=> [ConstraintBuilder length]", length.clone());
-        // self.debug_expression("=> [ConstraintBuilder rlc_acc]", rlc_acc.clone());
-        // self.debug_expression("=> [ConstraintBuilder rw_counter]", self.curr.state.rw_counter.expr() + self.rw_counter_offset());
-        // self.debug_expression("=> [ConstraintBuilder rwc_inc]", rwc_inc.clone());
+        self.debug_expression("=> [ConstraintBuilder is_first]", 1.expr());
+        self.debug_expression("=> [ConstraintBuilder src_id, lo]", src_id.to_lo_hi().0.clone());
+        self.debug_expression("=> [ConstraintBuilder src_id, hi]", src_id.to_lo_hi().1.clone());
+        self.debug_expression("=> [ConstraintBuilder src_tag]", src_tag.clone());
+        self.debug_expression("=> [ConstraintBuilder dst_id, lo]", dst_id.to_lo_hi().0.clone());
+        self.debug_expression("=> [ConstraintBuilder dst_id, hi]", dst_id.to_lo_hi().1.clone());
+        self.debug_expression("=> [ConstraintBuilder dst_tag]", dst_tag.clone());
+        self.debug_expression("=> [ConstraintBuilder src_addr]", src_addr.clone());
+        self.debug_expression("=> [ConstraintBuilder src_addr_end]", src_addr_end.clone());
+        self.debug_expression("=> [ConstraintBuilder dst_addr]", dst_addr.clone());
+        self.debug_expression("=> [ConstraintBuilder length]", length.clone());
+        self.debug_expression("=> [ConstraintBuilder rlc_acc]", rlc_acc.clone());
+        self.debug_expression("=> [ConstraintBuilder rw_counter]", self.curr.state.rw_counter.expr() + self.rw_counter_offset());
+        self.debug_expression("=> [ConstraintBuilder rwc_inc]", rwc_inc.clone());
 
         self.add_lookup(
             "copy lookup",

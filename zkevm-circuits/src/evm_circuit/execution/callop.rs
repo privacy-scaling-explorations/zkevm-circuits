@@ -461,18 +461,18 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         let precompile_return_bytes_rlc = cb.query_cell_phase2();
 
                         // PR1628_DEBUG
-                        cb.copy_table_lookup(
-                            Word::from_lo_unchecked(callee_call_id.expr()),
-                            CopyDataType::Memory.expr(), // refer u64::from(CopyDataType)
-                            Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                            CopyDataType::Memory.expr(),
-                            0.expr(),
-                            precompile_return_data_copy_size.min(),
-                            call_gadget.rd_address.offset(),
-                            precompile_return_data_copy_size.min(),
-                            precompile_return_bytes_rlc.expr(),
-                            precompile_return_rws.expr(), // writes
-                        ); // rwc_delta += `return_data_copy_size.min()` for precompile
+                        // cb.copy_table_lookup(
+                        //     Word::from_lo_unchecked(callee_call_id.expr()),
+                        //     CopyDataType::Memory.expr(), // refer u64::from(CopyDataType)
+                        //     Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                        //     CopyDataType::Memory.expr(),
+                        //     0.expr(),
+                        //     precompile_return_data_copy_size.min(),
+                        //     call_gadget.rd_address.offset(),
+                        //     precompile_return_data_copy_size.min(),
+                        //     precompile_return_bytes_rlc.expr(),
+                        //     precompile_return_rws.expr(), // writes
+                        // ); // rwc_delta += `return_data_copy_size.min()` for precompile
                         precompile_return_bytes_rlc
                     },
                 );
@@ -1047,8 +1047,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
             let return_length = min(precompile_return_length, rd_length);
             let return_bytes = (0..(return_length.as_u64() * 2))
-                .step_by(2)
                 .map(|_| rws.next().memory_value() )
+                .step_by(2)
                 .collect::<Vec<_>>();
 
             let input_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
