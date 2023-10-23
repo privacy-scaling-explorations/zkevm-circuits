@@ -100,6 +100,8 @@ impl ChunkCtxTable {
                         F::from(ChunkCtxFieldTag::EndRWC as u64),
                         F::from(chunkctx.end_rwc as u64),
                     ),
+                    // Empty row for disable lookup
+                    (F::ZERO, F::ZERO),
                 ]
                 .iter()
                 .map(|(tag, value)| {
@@ -122,6 +124,10 @@ impl ChunkCtxTable {
                     Ok(assigned_value)
                 })
                 .collect::<Result<Vec<AssignedCell<F, F>>, Error>>()?;
+
+                // remove last empty cell
+                let assigned_cells = assigned_cells.split_last().unwrap().1;
+
                 Ok(assigned_cells.iter().cloned().collect_tuple().unwrap())
             },
         )

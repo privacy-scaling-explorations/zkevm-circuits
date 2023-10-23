@@ -27,9 +27,6 @@ impl<F: Field> ExecutionGadget<F> for BeginChunkGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::BeginChunk;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        // constraint rwc at step first
-        cb.step_first_constraint_rwc();
-
         // state lookup
         cb.step_state_lookup(0.expr());
         let step_state_transition = StepStateTransition::same();

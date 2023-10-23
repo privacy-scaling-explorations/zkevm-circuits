@@ -20,7 +20,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::LookupTable,
+    table::{chunkctx_table::ChunkCtxFieldTag, LookupTable},
     util::{
         cell_manager::{CMFixedWidthStrategy, CellManager, CellType},
         Challenges, Expr,
@@ -38,7 +38,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeSet, HashMap, HashSet},
     iter,
 };
 use strum::IntoEnumIterator;
@@ -383,6 +383,14 @@ impl<F: Field> ExecutionConfig<F> {
 
         let step_curr = Step::new(meta, advices, 0);
         let mut height_map = HashMap::new();
+        let (execute_state_first_step_whitelist, execute_state_last_step_whitelist) = (
+            HashSet::from([
+                ExecutionState::BeginTx,
+                ExecutionState::EndBlock,
+                ExecutionState::BeginChunk,
+            ]),
+            HashSet::from([ExecutionState::EndBlock, ExecutionState::EndChunk]),
+        );
 
         meta.create_gate("Constrain execution state", |meta| {
             let q_usable = meta.query_selector(q_usable);
@@ -391,6 +399,17 @@ impl<F: Field> ExecutionConfig<F> {
             let q_step_last = meta.query_selector(q_step_last);
 
             let execution_state_selector_constraints = step_curr.state.execution_state.configure();
+
+            let first_step_first_chunk_check = {
+                let exestates = step_curr
+                    .execution_state_selector(execute_state_first_step_whitelist.iter().cloned());
+                iter::once((
+                    "First step first chunk should be BeginTx or EndBlock or BeginChunk",
+                    (1.expr() - is_first_chunk.expr())
+                        * q_step_first.clone()
+                        * (1.expr() - exestates),
+                ))
+            };
 
             let first_step_non_first_chunk_check = {
                 let begin_chunk_selector =
@@ -426,6 +445,7 @@ impl<F: Field> ExecutionConfig<F> {
             execution_state_selector_constraints
                 .into_iter()
                 .map(move |(name, poly)| (name, q_usable.clone() * q_step.clone() * poly))
+                .chain(first_step_first_chunk_check)
                 .chain(first_step_non_first_chunk_check)
                 .chain(last_step_last_chunk_check)
                 .chain(last_step_non_last_chunk_check)
@@ -507,6 +527,9 @@ impl<F: Field> ExecutionConfig<F> {
                         q_step_first,
                         q_step_last,
                         &step_curr,
+                        chunkctx_table,
+                        &execute_state_first_step_whitelist,
+                        &execute_state_last_step_whitelist,
                         &mut height_map,
                         &mut stored_expressions_map,
                         &mut debug_expressions_map,
@@ -655,6 +678,9 @@ impl<F: Field> ExecutionConfig<F> {
         q_step_first: Selector,
         q_step_last: Selector,
         step_curr: &Step<F>,
+        chunkctx_table: &dyn LookupTable<F>,
+        execute_state_first_step_whitelist: &HashSet<ExecutionState>,
+        execute_state_last_step_whitelist: &HashSet<ExecutionState>,
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
         debug_expressions_map: &mut HashMap<ExecutionState, Vec<(String, Expression<F>)>>,
@@ -678,6 +704,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         // Now actually configure the gadget with the correct minimal height
         let step_next = &Step::new(meta, advices, height);
+
         let mut cb = EVMConstraintBuilder::new(
             meta,
             step_curr.clone(),
@@ -699,11 +726,15 @@ impl<F: Field> ExecutionConfig<F> {
             height_map,
             stored_expressions_map,
             debug_expressions_map,
+            execute_state_first_step_whitelist,
+            execute_state_last_step_whitelist,
             instrument,
             G::NAME,
             G::EXECUTION_STATE,
             height,
             cb,
+            chunkctx_table,
+            challenges,
         );
 
         gadget
@@ -721,11 +752,15 @@ impl<F: Field> ExecutionConfig<F> {
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
         debug_expressions_map: &mut HashMap<ExecutionState, Vec<(String, Expression<F>)>>,
+        execute_state_first_step_whitelist: &HashSet<ExecutionState>,
+        execute_state_last_step_whitelist: &HashSet<ExecutionState>,
         instrument: &mut Instrument,
         name: &'static str,
         execution_state: ExecutionState,
         height: usize,
         mut cb: EVMConstraintBuilder<F>,
+        chunkctx_table: &dyn LookupTable<F>,
+        challenges: &Challenges<Expression<F>>,
     ) {
         // Enforce the step height for this opcode
         let num_rows_until_next_step_next = cb
@@ -738,6 +773,8 @@ impl<F: Field> ExecutionConfig<F> {
 
         instrument.on_gadget_built(execution_state, &cb);
 
+        let step_curr_rw_counter = cb.curr.state.rw_counter.clone();
+        let step_curr_rw_counter_offset = cb.rw_counter_offset();
         let debug_expressions = cb.debug_expressions.clone();
         let (constraints, stored_expressions, _, meta) = cb.build();
         debug_assert!(
@@ -779,6 +816,53 @@ impl<F: Field> ExecutionConfig<F> {
                     })
                 });
             }
+        }
+
+        // constraint global rw counter value at first/last step via chunkctx_table lookup
+        // we can't do it inside constraint_builder(cb)
+        // because lookup expression in constraint builder DONOT support apply conditional
+        // `step_first/step_last` selector at lookup cell.
+        if execute_state_first_step_whitelist.contains(&execution_state) {
+            meta.lookup_any("first must lookup initial rw_counter", |meta| {
+                let q_usable = meta.query_selector(q_usable);
+                let q_step_first = meta.query_selector(q_step_first);
+                let execute_state_selector = step_curr.execution_state_selector([execution_state]);
+
+                vec![(
+                    q_usable
+                        * q_step_first
+                        * execute_state_selector
+                        * rlc::expr(
+                            &[
+                                ChunkCtxFieldTag::InitialRWC.expr(),
+                                step_curr.state.rw_counter.expr(),
+                            ],
+                            challenges.lookup_input(),
+                        ),
+                    rlc::expr(&chunkctx_table.table_exprs(meta), challenges.lookup_input()),
+                )]
+            });
+        }
+
+        if execute_state_last_step_whitelist.contains(&execution_state) {
+            meta.lookup_any("last step must lookup end rw_counter", |meta| {
+                let q_usable = meta.query_selector(q_usable);
+                let q_step_last = meta.query_selector(q_step_last);
+                let execute_state_selector = step_curr.execution_state_selector([execution_state]);
+                vec![(
+                    q_usable
+                        * q_step_last
+                        * execute_state_selector
+                        * rlc::expr(
+                            &[
+                                ChunkCtxFieldTag::EndRWC.expr(),
+                                step_curr_rw_counter.expr() + step_curr_rw_counter_offset.clone(),
+                            ],
+                            challenges.lookup_input(),
+                        ),
+                    rlc::expr(&chunkctx_table.table_exprs(meta), challenges.lookup_input()),
+                )]
+            });
         }
 
         // Enforce the state transitions for this opcode

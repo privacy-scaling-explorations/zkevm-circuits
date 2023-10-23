@@ -37,8 +37,6 @@ impl<F: Field> ExecutionGadget<F> for EndChunkGadget<F> {
             cb.step_state_lookup(1.expr());
         });
 
-        cb.step_last_constraint_rwc();
-
         // TODO constraint Rw::Padding are append consecutively to avoid malicious insert
 
         Self {

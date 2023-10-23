@@ -1540,30 +1540,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
-    /// constraint step first rwc should match with chunkctx table value
-    pub(crate) fn step_first_constraint_rwc(&mut self) {
-        // Add first BeginTx step constraint to have tx_id == 1
-        self.step_first(|cb| {
-            cb.chunk_context_lookup(
-                ChunkCtxFieldTag::InitialRWC,
-                cb.curr.state.rw_counter.expr(),
-            );
-        });
-    }
-
-    /// constraint step last rwc should match with chunkctx table value
-    pub(crate) fn step_last_constraint_rwc(&mut self) {
-        // Add first BeginTx step constraint to have tx_id == 1
-        self.step_last(|cb| {
-            cb.chunk_context_lookup(
-                ChunkCtxFieldTag::EndRWC,
-                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset.clone(),
-            );
-        });
-    }
-
     // Validation
-
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
         // We need to subtract IMPLICIT_DEGREE from MAX_DEGREE because all expressions
         // will be multiplied by state selector and q_step/q_step_first
@@ -1644,6 +1621,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             rlc::expr(&lookup.input_exprs(), self.challenges.lookup_input()),
             MAX_DEGREE - IMPLICIT_DEGREE,
         );
+
         self.store_expression(name, compressed_expr, CellType::Lookup(lookup.table()));
     }
 
@@ -1671,6 +1649,11 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 self.in_next_step = false;
                 let cell = self.query_cell_with_type(cell_type);
                 self.in_next_step = in_next_step;
+
+                // cb.step_XXXXXXX(|cb| {cb.context_lookup()})
+
+                // gate1: step_first_selector * (lookup_cell.expr() == by_pass_expr()) == 0
+                // lookup_gate = lookup(by_pass_expr())
 
                 // Require the stored value to equal the value of the expression
                 let name = format!("{} (stored expression)", name);
