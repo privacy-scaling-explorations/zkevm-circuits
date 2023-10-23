@@ -813,8 +813,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_delegatecall = opcode == OpcodeId::DELEGATECALL;
         let mut rws = StepRws::new(block, step);
 
-        log::trace!("=> [Execution CallOp] assign_exec_step - block.copy_events: {:?}", block.copy_events);
-
         let tx_id = rws.next().call_context_value();
         rws.next(); // RwCounterEndOfReversion
         rws.next(); // IsPersistent
@@ -823,7 +821,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let depth = rws.next().call_context_value();
         let current_callee_address = rws.next().call_context_value();
 
-        let _is_valid_depth = depth.low_u64() < 1025;
+        // let _is_valid_depth = depth.low_u64() < 1025;
 
         self.is_depth_ok
             .assign(region, offset, F::from(depth.low_u64()), F::from(1025))?;
@@ -1001,7 +999,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         } else {
             0.into()
         };
-        log::trace!("=> [Execution CallOp] assign_exec_step - precompile_return_length: {:?}", precompile_return_length);
         self.precompile_return_length.assign(
             region,
             offset,
@@ -1041,8 +1038,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             let output_bytes = (0..precompile_return_length.as_u64())
                 .map(|_| rws.next().memory_value() )
                 .collect::<Vec<_>>();
-            log::trace!("=> [Execution CallOp] assign_exec_step - output_bytes: {:?}", output_bytes);
-
             let return_length = min(precompile_return_length, rd_length);
             let return_bytes = (0..(return_length.as_u64() * 2))
                 .map(|_| rws.next().memory_value() )

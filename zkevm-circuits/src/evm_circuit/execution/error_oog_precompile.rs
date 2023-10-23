@@ -211,7 +211,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
 
         // restore context
         self.restore_context
-            .assign(region, offset, block, call, step, 2)
+            .assign(region, offset, block, call, step, 2)?;
+
+        Ok(())
     }
 }
 

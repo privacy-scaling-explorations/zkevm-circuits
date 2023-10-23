@@ -416,6 +416,7 @@ impl ExecutionState {
                 | Self::ErrorOutOfGasSHA3
                 | Self::ErrorOutOfGasEXTCODECOPY
                 | Self::ErrorOutOfGasCall
+                | Self::ErrorOutOfGasPrecompile
                 | Self::ErrorOutOfGasSloadSstore
                 | Self::ErrorOutOfGasCREATE
                 | Self::ErrorOutOfGasSELFDESTRUCT

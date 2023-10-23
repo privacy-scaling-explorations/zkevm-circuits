@@ -362,7 +362,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 // insert a copy event (input) for this step and generate memory op
                 let rw_counter_start = state.block_ctx.rwc;
-                if call.is_success && call.call_data_length > 0 {
+                if call.call_data_length > 0 {
                     let n_input_bytes = if let Some(input_len) = precompile_call.input_len() {
                         min(input_len, call.call_data_length as usize)
                     } else {
@@ -398,7 +398,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     let (output_bytes, _prev_bytes) = state
                     .gen_copy_steps_for_precompile_callee_memory(&mut exec_step, &result)?;
 
-                    log::trace!("=> [BusMapping CallOp] gen_associated_ops - output_btyes: {:?}", output_bytes);
                     state.push_copy(
                         &mut exec_step, 
                         CopyEvent {

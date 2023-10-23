@@ -13,6 +13,7 @@ use crate::{
         StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField, TxReceiptOp,
         RW,
     },
+    precompile::{is_precompiled, PrecompileCalls},
     state_db::{CodeDB, StateDB},
     Error,
 };
@@ -1595,6 +1596,43 @@ impl<'a> CircuitInputStateRef<'a> {
                 let (found, _) = self.sdb.get_account(&address);
                 if found {
                     return Ok(Some(ExecError::ContractAddressCollision));
+                }
+            }
+
+            // Precompile call failures.
+            if matches!(
+                step.op,
+                OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL
+            ) {
+                let code_address = step.stack.nth_last(1)?.to_address();
+                // NOTE: we do not know the amount of gas that precompile got here
+                //   because the callGasTemp might probably be smaller than the gas
+                //   on top of the stack (step.stack.last())
+                // Therefore we postpone the oog handling to the implementor of callop.
+                if is_precompiled(&code_address) {
+                    let precompile_call: PrecompileCalls = code_address[19].into();
+                    match precompile_call {
+                        PrecompileCalls::Sha256
+                        | PrecompileCalls::Ripemd160
+                        | PrecompileCalls::Blake2F => {
+                            // Log the precompile address and gas left. Since this failure is mainly
+                            // caused by out of gas.
+                            log::trace!(
+                                "Precompile failed: code_address = {}, step.gas = {}",
+                                code_address,
+                                step.gas,
+                            );
+                            return Ok(Some(ExecError::PrecompileFailed));
+                        }
+                        pre_call => {
+                            log::trace!(
+                                "Precompile call failed: addr={:?}, step.gas={:?}",
+                                pre_call,
+                                step.gas
+                            );
+                            return Ok(None);
+                        }
+                    }
                 }
             }
 

@@ -16,14 +16,15 @@ pub(crate) fn execute_precompiled(address: &Address, input: &[u8], gas: u64) -> 
         .get(address.as_fixed_bytes())  else {
         panic!("calling non-exist precompiled contract address")
     };
-
     let (return_data, gas_cost, is_oog, _is_ok) = match precompile_fn(input, gas) {
         Ok((gas_cost, return_value)) => {
             // Some Revm behavior for invalid inputs might be overridden.
             (return_value, gas_cost, false, true)
         },
         Err(err) => match err {
-            PrecompileError::OutOfGas => (vec![], gas, true, false),
+            PrecompileError::OutOfGas => {
+                (vec![], gas, true, false)
+            }
             _ => {
                 log::warn!("unknown precompile err {err:?}");
                 (vec![], gas, false, false)
