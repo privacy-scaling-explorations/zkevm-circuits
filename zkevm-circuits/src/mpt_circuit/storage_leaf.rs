@@ -121,12 +121,12 @@ impl<F: Field> StorageLeafConfig<F> {
             parent_data[1] =
                 ParentData::load("leaf load", cb, &ctx.memory[parent_memory(false)], 0.expr());
 
+            let key_data = &mut config.key_data;
+            key_data[0] = KeyData::load(cb, &ctx.memory[key_memory(true)], 0.expr());
+            key_data[1] = KeyData::load(cb, &ctx.memory[key_memory(false)], 0.expr());
+
             for is_s in [true, false] {
                 ifx! {not!(config.is_mod_extension[is_s.idx()].expr()) => {
-                    // Key data
-                    let key_data = &mut config.key_data[is_s.idx()];
-                    *key_data = KeyData::load(cb, &ctx.memory[key_memory(is_s)], 0.expr());
-
                     // Placeholder leaf checks
                     config.is_placeholder_leaf[is_s.idx()] =
                         IsPlaceholderLeafGadget::construct(cb, parent_data[is_s.idx()].hash.expr());
@@ -173,18 +173,18 @@ impl<F: Field> StorageLeafConfig<F> {
                     ));
 
                     // Key
-                    key_rlc[is_s.idx()] = key_data.rlc.expr()
+                    key_rlc[is_s.idx()] = key_data[is_s.idx()].rlc.expr()
                         + rlp_key.key.expr(
                             cb,
                             rlp_key.key_value.clone(),
-                            key_data.mult.expr(),
-                            key_data.is_odd.expr(),
+                            key_data[is_s.idx()].mult.expr(),
+                            key_data[is_s.idx()].is_odd.expr(),
                             &cb.key_r.expr(),
                         );
                     // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES
                     let num_nibbles =
-                        num_nibbles::expr(rlp_key.key_value.len(), key_data.is_odd.expr());
-                    require!(key_data.num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
+                        num_nibbles::expr(rlp_key.key_value.len(), key_data[is_s.idx()].is_odd.expr());
+                    require!(key_data[is_s.idx()].num_nibbles.expr() + num_nibbles.clone() => KEY_LEN_IN_NIBBLES);
 
                     // Placeholder leaves default to value `0`.
                     ifx! {is_placeholder_leaf => {
@@ -209,9 +209,10 @@ impl<F: Field> StorageLeafConfig<F> {
                         }}
                     }} 
                 }};
-            
+
                 // Key done, set the default values
                 KeyData::store_defaults(cb, &ctx.memory[key_memory(is_s)]);
+            
                 // Store the new parent
                 ParentData::store(
                     cb,
@@ -229,7 +230,7 @@ impl<F: Field> StorageLeafConfig<F> {
                     cb,
                     ctx.clone(),
                     parent_data,
-                    &mut config.key_data,
+                    key_data,
                 );
             }};
 

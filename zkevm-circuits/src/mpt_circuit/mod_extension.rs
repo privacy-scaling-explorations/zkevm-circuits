@@ -1,5 +1,3 @@
-use std::f32::consts::E;
-
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::plonk::{Error, VirtualCells};
@@ -140,7 +138,6 @@ impl<F: Field> ModExtensionGadget<F> {
             }
 
             // TODO: inverse operation (delete)
-            (*key_data)[0] = KeyData::load(cb, &ctx.memory[key_memory(true)], 0.expr());
 
             let nibbles_rlc_long = ext_key_rlc_expr(
                 cb,
@@ -189,7 +186,6 @@ impl<F: Field> ModExtensionGadget<F> {
 
                 require!(nibbles_rlc_long => rlc);
             }}
-
 
             // require!(nibbles_rlc_long => d);
             // require!(debug_check => key_data[0].nibbles_rlc);
