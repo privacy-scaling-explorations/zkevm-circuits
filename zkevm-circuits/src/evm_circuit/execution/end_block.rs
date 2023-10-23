@@ -3,32 +3,28 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
+            common_gadget::RwTablePaddingGadget,
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition::Same,
             },
-            math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
+            math_gadget::{IsEqualGadget, IsZeroGadget},
             not, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{chunkctx_table::ChunkCtxFieldTag, CallContextFieldTag, TxContextFieldTag},
+    table::{CallContextFieldTag, TxContextFieldTag},
     util::{word::Word, Expr},
 };
 use eth_types::Field;
-use gadgets::util::select;
 use halo2_proofs::{circuit::Value, plonk::Error};
-
-/// current SRS size < 2^30 so use 4 bytes (2^32) in LtGadet should be enough
-const MAX_RW_BYTES: usize = u32::BITS as usize / 8;
 
 #[derive(Clone, Debug)]
 pub(crate) struct EndBlockGadget<F> {
     total_txs: Cell<F>,
     total_txs_is_max_txs: IsEqualGadget<F>,
     is_empty_rwc: IsZeroGadget<F>,
-    max_rws: Cell<F>,
     max_txs: Cell<F>,
-    is_end_padding_exist: LtGadget<F, MAX_RW_BYTES>,
+    rw_table_padding_gadget: RwTablePaddingGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
@@ -38,17 +34,10 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let max_txs = cb.query_copy_cell();
-        let max_rws = cb.query_copy_cell();
         let total_txs = cb.query_cell();
-        let chunk_index = cb.query_cell();
         let total_txs_is_max_txs = IsEqualGadget::construct(cb, total_txs.expr(), max_txs.expr());
-        // Note that inner_rw_counter starts at 1
         let is_empty_rwc =
             IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
-
-        // lookup to get chunk index
-        cb.chunk_context_lookup(ChunkCtxFieldTag::CurrentChunkIndex, chunk_index.expr());
-        let is_first_chunk = IsZeroGadget::construct(cb, chunk_index.expr());
 
         // 1. Constraint total_rws and total_txs witness values depending on the empty
         // block case.
@@ -85,32 +74,16 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             // meaningful txs in the tx_table is total_tx.
         });
 
-        // TODO fix below checking logic
         let total_inner_rws_before_padding = cb.curr.state.inner_rw_counter.clone().expr()
             - 1.expr() // start from 1
-            + select::expr( // CallContext lookup to check total_txs
-                is_empty_rwc.expr(),
-                0.expr(),
-                1.expr(),
-            );
+            + cb.rw_counter_offset();
         // 3. Verify rw_counter counts to the same number of meaningful rows in
         // rw_table to ensure there is no malicious insertion.
         // Verify that there are at most total_rws meaningful entries in the rw_table
         // - startop only exist in first chunk
-        cb.condition(is_first_chunk.expr(), |cb| {
-            cb.rw_table_start_lookup(1.expr());
-        });
 
-        // TODO Fix below for multiple chunk logic
-        let is_end_padding_exist = LtGadget::<_, MAX_RW_BYTES>::construct(
-            cb,
-            1.expr(),
-            max_rws.expr() - total_inner_rws_before_padding.expr(),
-        );
-        cb.condition(is_end_padding_exist.expr(), |cb| {
-            cb.rw_table_padding_lookup(total_inner_rws_before_padding.expr() + 1.expr());
-            cb.rw_table_padding_lookup(max_rws.expr() - 1.expr());
-        });
+        let rw_table_padding_gadget =
+            RwTablePaddingGadget::construct(cb, total_inner_rws_before_padding);
         // Since every lookup done in the EVM circuit must succeed and uses
         // a unique rw_counter, we know that at least there are
         // total_rws meaningful entries in the rw_table.
@@ -132,11 +105,10 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
 
         Self {
             max_txs,
-            max_rws,
             total_txs,
             total_txs_is_max_txs,
             is_empty_rwc,
-            is_end_padding_exist,
+            rw_table_padding_gadget,
         }
     }
 
@@ -152,16 +124,15 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let total_rwc = u64::from(step.rwc) - 1;
         self.is_empty_rwc
             .assign(region, offset, F::from(total_rwc))?;
-        let max_rws = F::from(block.circuits_params.max_rws as u64);
-        let max_rws_assigned = self.max_rws.assign(region, offset, Value::known(max_rws))?;
 
-        self.is_end_padding_exist.assign(
+        let inner_rws_before_padding =
+            step.rwc_inner_chunk.0 as u64 - 1 + if total_rwc > 0 { 1 } else { 0 };
+        self.rw_table_padding_gadget.assign_exec_step(
             region,
             offset,
-            F::ZERO,
-            max_rws.sub(F::from(
-                step.rwc_inner_chunk.0 as u64 - 1 + 1 + if total_rwc > 0 { 1 } else { 0 },
-            )),
+            block,
+            inner_rws_before_padding,
+            step,
         )?;
 
         let total_txs = F::from(block.txs.len() as u64);
@@ -175,7 +146,6 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         // last row (at a fixed offset), where we need to access the max_rws and max_txs
         // constant.
         if step.rw_indices_len() != 0 {
-            region.constrain_constant(max_rws_assigned, max_rws)?;
             region.constrain_constant(max_txs_assigned, max_txs)?;
         }
         Ok(())

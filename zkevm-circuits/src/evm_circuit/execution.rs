@@ -1059,7 +1059,7 @@ impl<F: Field> ExecutionConfig<F> {
                     .map(|tx| tx.calls()[0].clone())
                     .unwrap_or_else(Call::default);
 
-                let is_first_chunk = block.chunk_context.chunk_index == 0;
+                let is_first_chunk = block.chunk_context.is_first_chunk();
                 let is_last_chunk =
                     block.chunk_context.chunk_index == block.chunk_context.total_chunks - 1;
 

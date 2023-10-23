@@ -8,7 +8,7 @@ use halo2_proofs::{
 use std::collections::HashMap;
 
 // Step dimension
-pub(crate) const STEP_WIDTH: usize = 128;
+pub(crate) const STEP_WIDTH: usize = 131;
 /// Step height
 pub const MAX_STEP_HEIGHT: usize = 19;
 /// The height of the state of a step, used by gates that connect two
@@ -64,7 +64,7 @@ pub const FIXED_TABLE_LOOKUPS: usize = 8;
 pub const TX_TABLE_LOOKUPS: usize = 4;
 
 /// Rw Table lookups done in EVMCircuit
-pub const RW_TABLE_LOOKUPS: usize = 8;
+pub const RW_TABLE_LOOKUPS: usize = 13;
 
 /// Bytecode Table lookups done in EVMCircuit
 pub const BYTECODE_TABLE_LOOKUPS: usize = 4;

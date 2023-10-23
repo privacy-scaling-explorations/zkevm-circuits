@@ -44,4 +44,14 @@ impl ChunkContext {
             end_rwc: 0,     // end_rwc should be set in later phase
         }
     }
+
+    /// is first chunk
+    pub fn is_first_chunk(&self) -> bool {
+        self.chunk_index == 0
+    }
+
+    /// is last chunk
+    pub fn is_last_chunk(&self) -> bool {
+        self.total_chunks - self.chunk_index - 1 == 0
+    }
 }

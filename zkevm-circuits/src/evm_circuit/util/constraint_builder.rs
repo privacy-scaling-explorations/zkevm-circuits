@@ -293,7 +293,6 @@ enum ConstraintLocation {
     Step,
     StepFirst,
     NotStepLast,
-    StepLast,
 }
 
 /// Collection of constraints grouped by which selectors will enable them
@@ -1594,11 +1593,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     /// TODO: Doc
-    pub(crate) fn step_last<R>(&mut self, constraint: impl FnOnce(&mut Self) -> R) -> R {
-        self.constraint_at_location(ConstraintLocation::StepLast, constraint)
-    }
-
-    /// TODO: Doc
     fn push_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
         match self.constraints_location {
             ConstraintLocation::Step => self.constraints.step.push((name, constraint)),
@@ -1606,7 +1600,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             ConstraintLocation::NotStepLast => {
                 self.constraints.not_step_last.push((name, constraint))
             }
-            ConstraintLocation::StepLast => self.constraints.step_last.push((name, constraint)),
         }
     }
 

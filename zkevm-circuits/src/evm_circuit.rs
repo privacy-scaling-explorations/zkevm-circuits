@@ -172,7 +172,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
                 let chunk_index = meta.query_advice(chunk_index, Rotation::cur());
                 let total_chunks = meta.query_advice(total_chunks, Rotation::cur());
 
-                chunk_index + 1.expr() - total_chunks
+                total_chunks - chunk_index - 1.expr()
             },
             chunk_diff,
         );
@@ -337,7 +337,7 @@ impl<F: Field> EvmCircuitConfig<F> {
                         &mut region,
                         offset,
                         Value::known(F::from(
-                            (chunk_context.chunk_index + 1 - chunk_context.total_chunks) as u64,
+                            (chunk_context.total_chunks - chunk_context.chunk_index - 1) as u64,
                         )),
                     )?;
                 }
@@ -463,7 +463,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         let (rw_rows_padding, _) = RwMap::table_assignments_padding(
             &block.rws.table_assignments(true),
             block.circuits_params.max_rws,
-            block.chunk_context.chunk_index == 0,
+            block.chunk_context.is_first_chunk(),
         );
         let (
             alpha_cell,
@@ -485,7 +485,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                     &block.rws.table_assignments(true),
                     // align with state circuit to padding to same max_rws
                     block.circuits_params.max_rws,
-                    block.chunk_context.chunk_index == 0,
+                    block.chunk_context.is_first_chunk(),
                 )?;
                 let permutation_cells = config.rw_permutation_config.assign(
                     &mut region,

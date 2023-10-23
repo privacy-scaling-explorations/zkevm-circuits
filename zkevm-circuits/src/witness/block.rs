@@ -307,12 +307,12 @@ pub fn block_convert<F: Field>(
     let (rws_rows, _) = RwMap::table_assignments_padding(
         &block.rws.table_assignments(false),
         block.circuits_params.max_rws,
-        block.chunk_context.chunk_index == 0,
+        block.chunk_context.is_first_chunk(),
     );
     let (chronological_rws_rows, _) = RwMap::table_assignments_padding(
         &block.rws.table_assignments(true),
         block.circuits_params.max_rws,
-        block.chunk_context.chunk_index == 0,
+        block.chunk_context.is_first_chunk(),
     );
     block.permu_rwtable_next_continuous_fingerprint = unwrap_value(
         get_permutation_fingerprints(
