@@ -83,6 +83,18 @@ impl<F: Field> ModExtensionGadget<F> {
                 ),
             ];
 
+            let is_insert = parent_data[0].is_placeholder.expr(); // insert or delete
+
+            let lo_s = is_insert.clone() * parent_data[0].hash.lo().expr() + (1.expr() - is_insert.clone()) * parent_data[1].hash.lo().expr();
+            let hi_s = is_insert.clone() * parent_data[0].hash.hi().expr() + (1.expr() - is_insert.clone()) * parent_data[1].hash.hi().expr();
+            let lo_c = is_insert.clone() * parent_data[1].drifted_parent_hash.lo().expr() + (1.expr() - is_insert.clone()) * parent_data[0].drifted_parent_hash.lo().expr();
+            let hi_c = is_insert.clone() * parent_data[1].drifted_parent_hash.hi().expr() + (1.expr() - is_insert.clone()) * parent_data[0].drifted_parent_hash.hi().expr();
+            let parent_data_lo = vec![lo_s, lo_c];
+            let parent_data_hi = vec![hi_s, hi_c];
+            // TODO: non-hashed .rlc
+
+            // require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data[(!is_s).idx()].drifted_parent_hash.lo().expr(), parent_data[(!is_s).idx()].drifted_parent_hash.hi().expr()] => @KECCAK);
+
             for is_s in [true, false] {
                 config.rlp_key[is_s.idx()] = ListKeyGadget::construct(cb, &key_items[is_s.idx()]);
                 config.is_key_part_odd[is_s.idx()] = cb.query_cell();
@@ -118,26 +130,26 @@ impl<F: Field> ModExtensionGadget<F> {
                         config.is_not_hashed[is_s.idx()].expr(),
                     );
  
-                if is_s {
-                    ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
-                        // Hashed branch hash in long extension is in parent branch
-                        require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data[is_s.idx()].hash.lo().expr(), parent_data[is_s.idx()].hash.hi().expr()] => @KECCAK);
-                    } elsex {
-                        // Non-hashed branch hash in parent branch
-                        require!(rlc => parent_data[is_s.idx()].rlc);
-                    }} 
-                } else {
+                ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
+                    // Hashed branch hash in long extension is in parent branch
+                    // require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data[is_s.idx()].hash.lo().expr(), parent_data[is_s.idx()].hash.hi().expr()] => @KECCAK);
+                    require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data_lo[is_s.idx()].clone(), parent_data_hi[is_s.idx()].clone()] => @KECCAK);
+                } elsex {
+                    // Non-hashed branch hash in parent branch
+                    require!(rlc => parent_data[is_s.idx()].rlc);
+                }} 
+                /*else {
                     ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
                         // Hashed branch hash in short extension is in parent branch (stored in placeholder branch)
+                        // require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data[(!is_s).idx()].drifted_parent_hash.lo().expr(), parent_data[(!is_s).idx()].drifted_parent_hash.hi().expr()] => @KECCAK);
                         require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data[(!is_s).idx()].drifted_parent_hash.lo().expr(), parent_data[(!is_s).idx()].drifted_parent_hash.hi().expr()] => @KECCAK);
                     } elsex {
                         // Non-hashed branch hash in parent branch
                         require!(rlc => parent_data[(!is_s).idx()].rlc);
                     }}
                 }
+                */
             }
-
-            // TODO: inverse operation (delete)
 
             let nibbles_rlc_long = ext_key_rlc_expr(
                 cb,
@@ -173,16 +185,39 @@ impl<F: Field> ModExtensionGadget<F> {
                 &cb.key_r.expr(),
             );
 
-            let mult = key_data[0].drifted_mult.expr();
-            ifx! {config.is_key_part_odd[0] => {
+            let drifted_index = is_insert.clone() * key_data[0].drifted_index.expr() + (1.expr() - is_insert.clone()) * key_data[1].drifted_index.expr();
+            let mult = is_insert.clone() * key_data[0].drifted_mult.expr() + (1.expr() - is_insert.clone()) * key_data[1].drifted_mult.expr();
+            let nibbles_rlc = key_data[0].nibbles_rlc.expr(); // same value is stored in S and C
+
+            // long is even, short is even -> middle is odd (note the nibble for the position in branch)
+            // long is even, short is odd -> middle is even
+            // long is odd, short is even -> middle is even
+            // long is odd, short is odd -> middle is odd
+            let long_is_odd = config.is_key_part_odd[0].expr();
+            let short_is_odd = config.is_key_part_odd[1].expr();
+            let middle_is_odd = long_is_odd.clone() * short_is_odd.clone() + (1.expr() - long_is_odd.clone()) * (1.expr() - short_is_odd.clone());
+            
+            require!(0.expr() => long_is_odd);
+            require!(1.expr() => short_is_odd);
+            require!(5.expr() => drifted_index.clone());
+
+            ifx! {middle_is_odd => {
                 let r = cb.key_r.clone();
-                let rlc1 = (key_data[0].nibbles_rlc.expr(), mult.clone()).rlc_chain(key_data[0].drifted_index.expr());
+                let rlc1 = (nibbles_rlc.expr(), mult.clone()).rlc_chain(drifted_index.clone());
                 let rlc = (rlc1, mult.clone() * r).rlc_chain(nibbles_rlc_short.clone());
+
+                let debug_check1 = 17.expr();
+                require!(debug_check1 => nibbles_rlc);
 
                 require!(nibbles_rlc_long => rlc);
             } elsex {
-                let rlc2 = key_data[0].drifted_index.expr() * 16.expr() + nibbles_rlc_short; 
-                let rlc = (key_data[0].nibbles_rlc.expr(), mult).rlc_chain(rlc2);
+                let rlc2 = drifted_index * 16.expr() + nibbles_rlc_short;
+                let rlc = (nibbles_rlc.expr(), mult).rlc_chain(rlc2);
+
+                // let debug_check2 = 17.expr();
+                let r = cb.key_r.clone();
+                let debug_check2 = (1.expr() * 16.expr() + 2.expr()) + (3.expr() * 16.expr() + 4.expr()) * r.clone();
+                require!(debug_check2 => nibbles_rlc);
 
                 require!(nibbles_rlc_long => rlc);
             }}
@@ -194,9 +229,10 @@ impl<F: Field> ModExtensionGadget<F> {
             /*
             let r = cb.key_r.clone();
             let debug_check = (1.expr() * 16.expr() + 2.expr()) + (3.expr() * 16.expr() + 4.expr()) * r.clone();
+            require!(debug_check => key_data[0].nibbles_rlc);
+
             let debug_check1 = (1.expr() * 16.expr() + 2.expr()) + (3.expr() * 16.expr() + 4.expr()) * r.clone()
                 + (5.expr() * 16.expr() + 6.expr()) * r.clone() * r.clone();
-            require!(debug_check => key_data[0].nibbles_rlc);
             require!(debug_check1 => nibbles_rlc_long);
 
             require!(config.is_key_part_odd[1] => true.expr());
