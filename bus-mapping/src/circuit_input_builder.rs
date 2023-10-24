@@ -150,7 +150,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             block,
             circuits_params: params,
             block_ctx: BlockContext::new(),
-            chunk_ctx: None,
+            chunk_ctx: Some(ChunkContext::new_one_chunk()),
         }
     }
 
