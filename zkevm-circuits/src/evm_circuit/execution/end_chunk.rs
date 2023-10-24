@@ -71,7 +71,8 @@ impl<F: Field> ExecutionGadget<F> for EndChunkGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::CircuitTestBuilder;
+    use crate::{test_util::CircuitTestBuilder, witness::Rw};
+    use bus_mapping::{circuit_input_builder::ChunkContext, operation::Target};
     use eth_types::bytecode;
     use mock::TestContext;
 
@@ -84,7 +85,9 @@ mod test {
 
     #[test]
     #[ignore] // still under development and testing
-    fn end_chunk_test() {
+    fn test_intermediate_single_chunk() {
+        // TODO test multiple chunk logic
+        let intermediate_single_chunkctx = ChunkContext::new(3, 10);
         let bytecode = bytecode! {
             STOP
         };
@@ -93,9 +96,13 @@ mod test {
         )
         .block_modifier(Box::new(move |block| {
             block.circuits_params.max_evm_rows = 0; // auto padding
-            block.chunk_context.chunk_index = 3;
-            block.chunk_context.total_chunks = 10;
+
+            // TODO FIXME padding start as a workaround. The practical should be last chunk last row
+            // rws
+            if let Some(a) = block.rws.0.get_mut(&Target::Start) {
+                a.push(Rw::Start { rw_counter: 1 });
+            }
         }))
-        .run();
+        .run_with_chunkctx(Some(intermediate_single_chunkctx));
     }
 }

@@ -6,7 +6,10 @@ use crate::{
     util::SubCircuit,
     witness::{Block, Rw},
 };
-use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
+use bus_mapping::{
+    circuit_input_builder::{ChunkContext, FixedCParams},
+    mock::BlockData,
+};
 use eth_types::geth_types::GethData;
 use std::cmp;
 
@@ -181,11 +184,20 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// into a [`Block`] and apply the default or provided block_modifiers or
     /// circuit checks to the provers generated for the State and EVM circuits.
     pub fn run(self) {
+        self.run_with_chunkctx(None);
+    }
+
+    /// run with chunk context
+    pub fn run_with_chunkctx(self, chunk_ctx: Option<ChunkContext>) {
         let block: Block<Fr> = if self.block.is_some() {
             self.block.unwrap()
         } else if self.test_ctx.is_some() {
             let block: GethData = self.test_ctx.unwrap().into();
-            let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+            let mut builder =
+                BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+            if let Some(chunk_ctx) = chunk_ctx {
+                builder.set_chunkctx(chunk_ctx)
+            }
             let builder = builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
