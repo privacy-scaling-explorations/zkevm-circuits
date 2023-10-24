@@ -113,7 +113,7 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
         // Actually set the value
         let res = self.region.assign_advice(annotation, column, offset, &to);
         // Cache the value
-        // Note that the `value_field` in `AssignedCell` might be `Value::unkonwn` if
+        // Note that the `value_field` in `AssignedCell` might be `Value::unknown` if
         // the column has different phase than current one, so we call to `to`
         // again here to cache the value.
         if res.is_ok() {
