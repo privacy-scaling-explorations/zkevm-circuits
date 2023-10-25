@@ -140,6 +140,24 @@ mod test {
         mock_prove(18363442, include_str!("al/18363442.json"), 16, DEFAULT_MAX_PROOF_COUNT).await?;
         Ok(())
     }
+    #[ignore]
+    #[tokio::test]
+    async fn test_block_18363443() -> Result<()> {
+        mock_prove(18363442, include_str!("al/18363443.json"), 16, DEFAULT_MAX_PROOF_COUNT).await?;
+        Ok(())
+    }
+    #[ignore]
+    #[tokio::test]
+    async fn test_block_18363444() -> Result<()> {
+        mock_prove(18363442, include_str!("al/18363444.json"), 16, DEFAULT_MAX_PROOF_COUNT).await?;
+        Ok(())
+    }
+    #[ignore]
+    #[tokio::test]
+    async fn test_block_18363445() -> Result<()> {
+        mock_prove(18363442, include_str!("al/18363445.json"), 16, DEFAULT_MAX_PROOF_COUNT).await?;
+        Ok(())
+    }
 
 
 }
