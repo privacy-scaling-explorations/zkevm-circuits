@@ -252,6 +252,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
     }
 }
 
+/// chunk_index, chunk_index_next, total_chunk, initial_rwc, end_rwc
 type AssignedChunkContextCell<F> = (
     AssignedCell<F, F>,
     AssignedCell<F, F>,
