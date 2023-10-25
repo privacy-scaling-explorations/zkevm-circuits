@@ -257,27 +257,28 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             cb.call_context_lookup_write(None, field_tag, value);
         }
 
-        cb.condition(
-            and::expr([is_precheck_ok.clone(), not_address_collision.expr()]),
-            |cb| {
-                cb.condition(init_code.has_length(), |cb| {
-                    // the init code is being copied from memory to bytecode, so a copy table lookup
-                    // to verify that the associated fields for the copy event.
-                    cb.copy_table_lookup(
-                        Word::from_lo_unchecked(current_call_id.expr()),
-                        CopyDataType::Memory.expr(),
-                        create.code_hash(),
-                        CopyDataType::Bytecode.expr(),
-                        init_code.offset(),
-                        init_code.address(),
-                        0.expr(),             // dst_addr
-                        init_code.length(),   // length
-                        init_code_rlc.expr(), // rlc_acc
-                        init_code.length(),   // rwc_inc
-                    );
-                });
-            },
-        );
+        // We will put the initcode into bytecode circuit when is_precheck_ok.
+        // Inside the bytecode, there will be a keccak codehash lookup.
+        // So we don't need to put a `keccak_table_lookup` here since it is implicitly
+        // done inside bytecode circuit.
+        cb.condition(is_precheck_ok.clone(), |cb| {
+            cb.condition(init_code.has_length(), |cb| {
+                // the init code is being copied from memory to bytecode, so a copy table lookup
+                // to verify that the associated fields for the copy event.
+                cb.copy_table_lookup(
+                    Word::from_lo_unchecked(current_call_id.expr()),
+                    CopyDataType::Memory.expr(),
+                    create.code_hash(),
+                    CopyDataType::Bytecode.expr(),
+                    init_code.offset(),
+                    init_code.address(),
+                    0.expr(),             // dst_addr
+                    init_code.length(),   // length
+                    init_code_rlc.expr(), // rlc_acc
+                    init_code.length(),   // rwc_inc
+                );
+            });
+        });
 
         let mut callee_reversion_info =
             cb.reversion_info_write_unchecked(Some(callee_call_id.expr()));
