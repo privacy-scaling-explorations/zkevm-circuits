@@ -20,6 +20,9 @@ pub mod cell_manager;
 /// Cell Placement strategies
 pub mod cell_placement_strategy;
 
+/// Chunk Ctx Config
+pub mod chunkctx_config;
+
 /// Steal the expression from gate
 pub fn query_expression<F: Field, T>(
     meta: &mut ConstraintSystem<F>,

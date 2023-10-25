@@ -3,11 +3,11 @@
 //! power of gamma are defined in columns to trade more columns with less degrees
 use std::iter;
 #[rustfmt::skip]
-// | q_row_non_first | q_row_enable | alpha     | gamma     | gamma power 2   | ... | row fingerprint | accmulated fingerprint |
-// |-----------------|--------------|-----------|-----------|-----------------|     | --------------- | ---------------------- |
-// | 0               |1             |alpha      | gamma     | gamma **2       | ... |  F              |  F                     |
-// | 1               |1             |alpha      | gamma     | gamma **2       | ... |  F              |  F                     |
-// | 1               |1             |alpha      | gamma     | gamma **2       | ... |  F              |  F                     |
+// | q_row_non_first | q_row_enable | q_row_last | alpha     | gamma     | gamma power 2   | ... | row fingerprint | accmulated fingerprint |
+// |-----------------|--------------|------------|-----------|-----------|-----------------|     | --------------- | ---------------------- |
+// | 0               |1             |0           |alpha      | gamma     | gamma **2       | ... |  F              |  F                     |
+// | 1               |1             |0           |alpha      | gamma     | gamma **2       | ... |  F              |  F                     |
+// | 1               |1             |1           |alpha      | gamma     | gamma **2       | ... |  F              |  F                     |
 
 use std::marker::PhantomData;
 
@@ -23,14 +23,16 @@ use itertools::Itertools;
 /// Config for PermutationChipConfig
 #[derive(Clone, Debug)]
 pub struct PermutationChipConfig<F> {
-    // column
-    acc_fingerprints: Column<Advice>,
+    /// acc_fingerprints
+    pub acc_fingerprints: Column<Advice>,
     row_fingerprints: Column<Advice>,
     alpha: Column<Advice>,
     power_of_gamma: Vec<Column<Advice>>,
     // selector
     q_row_non_first: Selector, // 1 between (first, end], exclude first
     q_row_enable: Selector,    // 1 for all rows (including first)
+    /// q_row_last
+    pub q_row_last: Selector, // 1 in the last row
 
     _phantom: PhantomData<F>,
 }
@@ -122,6 +124,7 @@ impl<F: Field> PermutationChipConfig<F> {
             // last offset
             if offset == fingerprints.len() - 1 {
                 last_fingerprint_cell = Some(row_acc_fingerprint_cell);
+                self.q_row_last.enable(region, offset)?;
             }
         }
 
@@ -185,6 +188,7 @@ impl<F: Field> PermutationChip<F> {
 
         let q_row_non_first = meta.selector();
         let q_row_enable = meta.selector();
+        let q_row_last = meta.selector();
 
         meta.enable_equality(acc_fingerprints);
         meta.enable_equality(alpha);
@@ -269,6 +273,7 @@ impl<F: Field> PermutationChip<F> {
             row_fingerprints,
             q_row_non_first,
             q_row_enable,
+            q_row_last,
             alpha,
             power_of_gamma,
             _phantom: PhantomData::<F> {},
