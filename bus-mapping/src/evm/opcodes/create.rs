@@ -170,15 +170,13 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             state.call_context_write(&mut exec_step, caller.call_id, field, value);
         }
 
-        let (initialization_code, code_hash) = if length > 0 {
+        let (initialization_code, code_hash) = if is_precheck_ok && length > 0 {
             handle_copy(state, &mut exec_step, state.call()?.call_id, offset, length)?
         } else {
             (vec![], CodeDB::empty_code_hash())
         };
-
         state.push_call(callee.clone());
         state.reversion_info_write(&mut exec_step, &callee);
-
         // handle init_code hashing & address generation
         if is_precheck_ok {
             // handle keccak_table_lookup
@@ -297,7 +295,7 @@ fn handle_copy(
     offset: usize,
     length: usize,
 ) -> Result<(Vec<u8>, H256), Error> {
-    let initialization_bytes = state.caller_ctx()?.memory.0[offset..(offset + length)].to_vec();
+    let initialization_bytes = state.call_ctx()?.memory.0[offset..(offset + length)].to_vec();
 
     let initialization = Bytecode::from(initialization_bytes.clone());
     let code_hash = initialization.hash_h256();

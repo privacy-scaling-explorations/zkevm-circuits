@@ -283,7 +283,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             cb.reversion_info_write_unchecked(Some(callee_call_id.expr()));
 
         // Case1: Handle the case where an error of ErrDepth, ErrInsufficientBalance,
-        // ErrNonceUintOverflow or ErrContractAddressCollision occurred.
+        // ErrNonceUintOverflow occurred.
         cb.condition(not::expr(is_precheck_ok.expr()), |cb| {
             // Save caller's call state
             cb.call_context_lookup_write(
@@ -308,6 +308,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             });
         });
 
+        // Case2: Normal create call, precheck is ok and no address collision
         let transfer = cb.condition(
             and::expr([is_precheck_ok.clone(), not_address_collision.expr()]),
             |cb| {
@@ -447,8 +448,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             },
         );
 
-        // Case3: Handle the case where an error of ErrDepth, ErrInsufficientBalance,
-        // ErrNonceUintOverflow or ErrContractAddressCollision occurred.
+        // Case3: Handle the case where an error of ErrContractAddressCollision occurred.
         cb.condition(
             and::expr([is_precheck_ok, not::expr(not_address_collision.expr())]),
             |cb| {
@@ -532,16 +532,15 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             offset,
             Value::known(call.depth.to_scalar().unwrap()),
         )?;
+
+        let mut rws = StepRws::new(block, step);
+        rws.offset_add(2); // TxId, Depth
         self.reversion_info.assign(
             region,
             offset,
-            block.get_rws(step, 2).call_context_value().as_usize(),
-            block.get_rws(step, 3).call_context_value().as_usize() != 0,
+            rws.next().call_context_value().as_usize(),
+            rws.next().call_context_value().as_usize() != 0,
         )?;
-
-        let mut rws = StepRws::new(block, step);
-        // 0..3 : TxId, Depth, RwCounterEndOfReversion and IsPersistent
-        // stack value starts from 4
         let [value, init_code_start, init_code_length] = [(); 3].map(|_| rws.next().stack_value());
         self.value.assign_u256(region, offset, value)?;
         let salt = if is_create2 {
@@ -573,14 +572,13 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             (false, U256::from(0), 0)
         };
 
-        // 3 RWs while is_precheck_ok is true
-        rws.offset_add(5); // skip caller call context
+        // skip caller call context writes
+        rws.offset_add(5);
 
         let callee_nonce_is_zero = callee_nonce == 0;
         let codehash_non_empty = !callee_prev_code_hash.is_zero()
             && callee_prev_code_hash != CodeDB::empty_code_hash().to_word();
         let is_address_collision = !callee_nonce_is_zero || codehash_non_empty;
-
         self.prev_code_hash
             .assign_u256(region, offset, callee_prev_code_hash)?;
         self.prev_code_hash_is_zero
@@ -588,13 +586,10 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         self.not_address_collision.assign_u256(
             region,
             offset,
-            callee_nonce.to_word()
-                + callee_prev_code_hash
-                    * (callee_prev_code_hash - CodeDB::empty_code_hash().to_word()),
+            U256::from(is_address_collision as u8),
         )?;
 
         let copy_rw_increase = init_code_length.as_usize();
-        // copy_table_lookup
         let values: Vec<u8> = if is_precheck_ok {
             (0..copy_rw_increase)
                 .map(|_| rws.next().memory_value())
@@ -602,7 +597,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         } else {
             Vec::new()
         };
-        // account_write(caller), tx_access_list_write(callee) and  account_read(callee)
         let [callee_rw_counter_end_of_reversion, callee_is_persistent] =
             [(); 2].map(|_| rws.next().call_context_value());
 
@@ -621,14 +615,14 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             offset,
             (31u64 + init_code_length.as_u64()).into(),
         )?;
-        let keccak_gas_cost = u64::try_from(init_code_word_size).unwrap()
+        let initcode_gas_cost = u64::try_from(init_code_word_size).unwrap()
             * if is_create2 {
                 INIT_CODE_WORD_GAS + GasCost::COPY_SHA3
             } else {
                 INIT_CODE_WORD_GAS
             };
         let gas_left =
-            step.gas_left - GasCost::CREATE - memory_expansion_gas_cost - keccak_gas_cost;
+            step.gas_left - GasCost::CREATE - memory_expansion_gas_cost - initcode_gas_cost;
         self.gas_left.assign(region, offset, gas_left.into())?;
         self.callee_reversion_info.assign(
             region,
@@ -642,6 +636,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let code_hash = if is_precheck_ok {
             if !is_address_collision {
                 // transfer
+                if callee_prev_code_hash.is_zero() {
+                    rws.next(); // codehash update
+                }
                 let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
                     [(); 2].map(|_| rws.next().account_balance_pair())
                 } else {
