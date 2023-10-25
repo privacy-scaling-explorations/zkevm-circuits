@@ -76,6 +76,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
             // impl_expr_result accept only up to 12 elements, so nibbles_rlc cannot be added to
             // the tuple below.
             let mut nibbles_rlc = 0.expr();
+            let mut nibbles_mult = 1.expr();
 
             // Extension
             let (
@@ -102,6 +103,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 );
                 let ext = config.extension.get_post_state();
                 nibbles_rlc = ext.nibbles_rlc;
+                nibbles_mult = ext.nibbles_mult;
                 (
                     ext.num_nibbles,
                     ext.is_key_odd,
@@ -190,7 +192,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         config.key_data.num_nibbles.expr(),
                         config.key_data.is_odd.expr(),
                         branch.key_rlc_post_drifted.expr(),
-                        branch.key_mult_post_drifted.expr(),
+                        nibbles_mult.clone(),
                         branch.num_nibbles.expr(),
                         branch.is_key_odd.expr(),
                         nibbles_rlc.clone(),
@@ -255,6 +257,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
         let mut num_nibbles = key_data.num_nibbles;
         let mut is_key_odd = key_data.is_odd;
         let mut nibbles_rlc = F::ZERO;
+        let mut nibbles_mult = F::ONE;
 
         // Extension
         if extension_branch.is_extension {
@@ -269,6 +272,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 &mut num_nibbles,
                 &mut is_key_odd,
                 &mut nibbles_rlc,
+                &mut nibbles_mult,
                 node,
                 rlp_values,
             )?;
@@ -331,7 +335,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     key_data.mult,
                     key_data.num_nibbles,
                     key_rlc_post_drifted,
-                    key_mult_post_branch,
+                    nibbles_mult,
                     num_nibbles,
                     nibbles_rlc,
                     drifted_index,
