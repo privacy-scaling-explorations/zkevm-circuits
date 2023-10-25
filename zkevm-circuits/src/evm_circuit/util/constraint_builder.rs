@@ -1440,7 +1440,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     /// and constrain it using the provided respective constraint. This mechanism is specifically
     /// used for constraining the internal states for precompile calls. Each precompile call
     /// expects a different cell layout, but since the next state can be at the most one precompile
-    /// state, we can re-use cells assgined across all thos conditions. 
+    /// state, we can re-use cells assgined across all thos conditions.
     pub(crate) fn constrain_mutually_exclusive_next_step(
         &mut self,
         conditions: Vec<Expression<F>>,

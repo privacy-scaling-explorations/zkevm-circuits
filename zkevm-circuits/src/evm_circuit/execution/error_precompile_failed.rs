@@ -3,7 +3,7 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            constraint_builder::{EVMConstraintBuilder, ConstrainBuilderCommon},
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::IsZeroGadget,
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
             sum, CachedRegion, Cell, Word,
@@ -62,7 +62,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
                 is_delegatecall.expr(),
                 is_staticcall.expr(),
             ]),
-            1.expr()
+            1.expr(),
         );
 
         // Use rw_counter of the step which triggers next call as its call_id.
@@ -167,8 +167,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         self.gas.assign_u256(region, offset, gas)?;
         self.callee_address
             .assign_u256(region, offset, callee_address)?;
-        self.value
-            .assign_u256(region, offset, value)?;
+        self.value.assign_u256(region, offset, value)?;
         self.cd_address
             .assign(region, offset, cd_offset, cd_length)?;
         self.rd_address

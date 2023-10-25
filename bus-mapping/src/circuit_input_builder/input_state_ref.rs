@@ -234,7 +234,7 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn memory_read_caller(
         &mut self,
         step: &mut ExecStep,
-        address: MemoryAddress, //Caution: make sure this address = slot passing
+        address: MemoryAddress, // Caution: make sure this address = slot passing
     ) -> Result<u8, Error> {
         let byte = &self.caller_ctx()?.memory.read_chunk(address, 1.into())[0];
         let call_id = self.call()?.caller_id;
@@ -273,7 +273,7 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn memory_write_caller(
         &mut self,
         step: &mut ExecStep,
-        address: MemoryAddress, //Caution: make sure this address = slot passing
+        address: MemoryAddress, // Caution: make sure this address = slot passing
         value: u8,
     ) -> Result<u8, Error> {
         let call_id = self.call()?.caller_id;
@@ -281,12 +281,8 @@ impl<'a> CircuitInputStateRef<'a> {
         let mem = &mut self.caller_ctx_mut()?.memory;
         let value_prev = mem.read_chunk(address, 1.into())[0];
         mem.write_chunk(address, &[value_prev]);
-        
-        self.push_op(
-            step,
-            RW::WRITE,
-            MemoryOp::new(call_id, address, value),
-        );
+
+        self.push_op(step, RW::WRITE, MemoryOp::new(call_id, address, value));
         Ok(value_prev)
     }
 
@@ -1261,8 +1257,7 @@ impl<'a> CircuitInputStateRef<'a> {
             || geth_step.op == OpcodeId::RETURN)
             && exec_step.error.is_none();
 
-
-        if !is_revert_or_return_call_success 
+        if !is_revert_or_return_call_success
             && !call.is_success
             && !exec_step.is_precompiled()
             && !exec_step.is_precompile_oog_err()
@@ -1302,7 +1297,7 @@ impl<'a> CircuitInputStateRef<'a> {
             caller.call_id.into(),
         );
 
-        let (last_callee_return_data_offset, last_callee_return_data_length) = 
+        let (last_callee_return_data_offset, last_callee_return_data_length) =
             Self::get_return_data_offset_and_len(exec_step, geth_step, self.caller_ctx()?)?;
 
         let gas_refund = if is_err {
@@ -1340,7 +1335,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 panic!("caller_gas_left underflow geth_step_next {geth_step_next:?}, gas_refund {gas_refund:?}, exec_step {exec_step:?}, geth_step {geth_step:?}");
             }
         );
-        
+
         for (field, value) in [
             (CallContextField::IsRoot, (caller.is_root as u64).into()),
             (
@@ -1716,7 +1711,7 @@ impl<'a> CircuitInputStateRef<'a> {
     pub(crate) fn gen_copy_steps_for_precompile_callee_memory(
         &mut self,
         exec_step: &mut ExecStep,
-        result: &[u8]
+        result: &[u8],
     ) -> Result<(Vec<u8>, Vec<u8>), Error> {
         if result.is_empty() {
             return Ok((vec![], vec![]));
@@ -1753,11 +1748,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 self.memory_read(exec_step, src_byte_index.into(), 0)?;
                 src_byte_index += 1;
 
-                self.memory_write_caller(
-                    exec_step,
-                    dst_byte_index.into(),
-                    *b
-                )?;
+                self.memory_write_caller(exec_step, dst_byte_index.into(), *b)?;
                 dst_byte_index += 1;
 
                 return_bytes.push(*b);

@@ -1,14 +1,13 @@
 //! Execution step related module.
 
 use crate::{
-    circuit_input_builder::CallContext, exec_trace::OperationRef,
-    operation::RWCounter, precompile::PrecompileCalls,
+    circuit_input_builder::CallContext,
     error::{ExecError, OogError},
+    exec_trace::OperationRef,
+    operation::RWCounter,
+    precompile::PrecompileCalls,
 };
-use eth_types::{
-    evm_types::OpcodeId,
-    GethExecStep, Word, H256
-};
+use eth_types::{evm_types::OpcodeId, GethExecStep, Word, H256};
 use gadgets::impl_expr;
 use halo2_proofs::plonk::Expression;
 use strum_macros::EnumIter;
@@ -64,7 +63,7 @@ impl ExecStep {
         ExecStep {
             exec_state: ExecState::Op(step.op),
             pc: step.pc,
-            
+
             stack_size: step.stack.0.len(),
             memory_size: call_ctx.memory.len(),
             gas_left: step.gas,

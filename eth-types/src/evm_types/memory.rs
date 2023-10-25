@@ -578,7 +578,6 @@ impl From<MemoryWordRange> for MemoryRange {
     }
 }
 
-
 #[cfg(test)]
 mod memory_tests {
 

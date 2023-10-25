@@ -189,11 +189,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
             // }
             PrecompileCalls::Identity => {
                 let n_words = (call.call_data_length + 31) / 32;
-                precompile_call.base_gas_cost()
-                    + n_words * GasCost::PRECOMPILE_IDENTITY_PER_WORD
+                precompile_call.base_gas_cost() + n_words * GasCost::PRECOMPILE_IDENTITY_PER_WORD
             }
-            // PrecompileCalls::Bn128Add | PrecompileCalls::Bn128Mul | PrecompileCalls::ECRecover => {
-            //     precompile_call.base_gas_cost()
+            // PrecompileCalls::Bn128Add | PrecompileCalls::Bn128Mul | PrecompileCalls::ECRecover =>
+            // {     precompile_call.base_gas_cost()
             // }
             _ => unreachable!(),
         };

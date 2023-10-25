@@ -48,20 +48,18 @@ impl<F: Field> PrecompileGadget<F> {
         .collect::<Vec<_>>();
 
         let next_states = vec![
-            ExecutionState::PrecompileIdentity
-            // add more precompile execution states
+            ExecutionState::PrecompileIdentity, // add more precompile execution states
         ];
 
         let constraints: Vec<BoxedClosure<F>> = vec![
             Box::new(|cb| {
-                /* Identity */
+                // Identity
                 cb.require_equal(
                     "input length and precompile return length are the same",
                     cd_length,
-                    precompile_return_length
+                    precompile_return_length,
                 );
-            })
-            // add more precompile constraint closures
+            }), // add more precompile constraint closures
         ];
 
         cb.constrain_mutually_exclusive_next_step(conditions, next_states, constraints);

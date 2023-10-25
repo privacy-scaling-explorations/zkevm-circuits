@@ -22,19 +22,16 @@ use crate::{
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
+        word::{WordCell, WordExpr},
         Expr,
-        word::{WordCell, WordExpr}
     },
 };
 use bus_mapping::{
-    circuit_input_builder::CopyDataType, 
-    evm::OpcodeId, 
-    precompile::{is_precompiled, PrecompileCalls}
+    circuit_input_builder::CopyDataType,
+    evm::OpcodeId,
+    precompile::{is_precompiled, PrecompileCalls},
 };
-use eth_types::{
-    evm_types::GAS_STIPEND_CALL_WITH_VALUE,
-    Field, ToAddress, ToScalar, U256,
-};
+use eth_types::{evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, ToScalar, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use std::cmp::min;
 
@@ -110,13 +107,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // rwc_delta = 1
         let mut reversion_info = cb.reversion_info_read(None);
         // rwc_delta = 3
-        let [is_static, depth] = [
-            CallContextFieldTag::IsStatic,
-            CallContextFieldTag::Depth,
-        ]
-        .map(|field_tag| cb.call_context(None, field_tag));
+        let [is_static, depth] = [CallContextFieldTag::IsStatic, CallContextFieldTag::Depth]
+            .map(|field_tag| cb.call_context(None, field_tag));
         // rwc_delta = 5
-        let current_callee_address = cb.call_context_read_as_word(None, CallContextFieldTag::CalleeAddress);
+        let current_callee_address =
+            cb.call_context_read_as_word(None, CallContextFieldTag::CalleeAddress);
         // rwc_delta = 6
         let (current_caller_address, current_value) = cb.condition(is_delegatecall.expr(), |cb| {
             (
@@ -142,16 +137,16 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         });
 
         let caller_address = Word::select(
-            is_delegatecall.expr(), 
-            current_caller_address.to_word(), 
+            is_delegatecall.expr(),
+            current_caller_address.to_word(),
             current_callee_address.to_word(),
         );
         let callee_address = Word::select(
             is_callcode.expr() + is_delegatecall.expr(),
-            current_callee_address.to_word(), 
-            call_gadget.callee_address.to_word()
+            current_callee_address.to_word(),
+            call_gadget.callee_address.to_word(),
         );
-        
+
         // Add callee to access list
         let is_warm = cb.query_bool();
         let is_warm_prev = cb.query_bool();
@@ -329,11 +324,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 cb.call_context_lookup_write(
                     Some(callee_call_id.expr()),
                     CallContextFieldTag::IsSuccess,
-                    Word::from_lo_unchecked(call_gadget.is_success.expr())
+                    Word::from_lo_unchecked(call_gadget.is_success.expr()),
                 );
                 cb.call_context_lookup_write(
-                    Some(callee_call_id.expr()), 
-                    CallContextFieldTag::CalleeAddress, 
+                    Some(callee_call_id.expr()),
+                    CallContextFieldTag::CalleeAddress,
                     call_gadget.callee_address.to_word(),
                 );
                 for (field_tag, value) in [
@@ -358,7 +353,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     cb.call_context_lookup_write(
                         Some(callee_call_id.expr()),
                         field_tag,
-                        Word::from_lo_unchecked(value)
+                        Word::from_lo_unchecked(value),
                     );
                 }
 
@@ -392,11 +387,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         precompile_return_length.expr(),
                     ),
                 ] {
-                    cb.call_context_lookup_write(
-                        None, 
-                        field_tag, 
-                        Word::from_lo_unchecked(value),
-                    );
+                    cb.call_context_lookup_write(None, field_tag, Word::from_lo_unchecked(value));
                 }
 
                 // copy table lookup to verify the copying of bytes:
@@ -443,7 +434,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             precompile_output_rws.expr(),
                         );
                         precompile_output_bytes_rlc
-                    }
+                    },
                 );
 
                 // copy table lookup to verify the copying of bytes if the precompile call was
@@ -486,14 +477,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 let callee_gas_left = callee_gas_left.expr()
                     + call_gadget.has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr();
 
-                let precompile_output_word_size_div: ConstantDivisionGadget<F, N_BYTES_U64> = 
+                let precompile_output_word_size_div: ConstantDivisionGadget<F, N_BYTES_U64> =
                     ConstantDivisionGadget::construct(cb, precompile_output_rws.expr(), 32);
-                let precompile_output_word_size_div_remainder_zero = IsZeroGadget::construct(cb, precompile_output_word_size_div.remainder());
-                let precompile_output_word_size = 
-                    precompile_output_word_size_div.quotient() 
-                    + 1.expr() 
+                let precompile_output_word_size_div_remainder_zero =
+                    IsZeroGadget::construct(cb, precompile_output_word_size_div.remainder());
+                let precompile_output_word_size = precompile_output_word_size_div.quotient()
+                    + 1.expr()
                     - precompile_output_word_size_div_remainder_zero.expr();
-                
+
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(rw_counter_delta),
                     call_id: To(callee_call_id.expr()),
@@ -867,7 +858,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .assign_u256(region, offset, caller_balance)?;
         self.is_insufficient_balance
             .assign(region, offset, caller_balance, value)?;
-        let is_precheck_ok = 
+        let is_precheck_ok =
             depth.low_u64() < 1025 && (!(is_call || is_callcode) || caller_balance >= value);
 
         // conditionally assign
@@ -917,16 +908,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
-        self.current_callee_address.assign_u256(
-            region,
-            offset,
-            current_callee_address,
-        )?;
-        self.current_caller_address.assign_u256(
-            region,
-            offset,
-            current_caller_address,
-        )?;
+        self.current_callee_address
+            .assign_u256(region, offset, current_callee_address)?;
+        self.current_caller_address
+            .assign_u256(region, offset, current_caller_address)?;
         self.current_value
             .assign_u256(region, offset, current_value)?;
         self.is_static
@@ -1033,36 +1018,29 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             };
 
             let input_bytes = (0..input_len)
-                .map(|_| rws.next().memory_value() )
+                .map(|_| rws.next().memory_value())
                 .collect::<Vec<_>>();
             let output_bytes = (0..precompile_return_length.as_u64())
-                .map(|_| rws.next().memory_value() )
+                .map(|_| rws.next().memory_value())
                 .collect::<Vec<_>>();
             let return_length = min(precompile_return_length, rd_length);
             let return_bytes = (0..(return_length.as_u64() * 2))
-                .map(|_| rws.next().memory_value() )
+                .map(|_| rws.next().memory_value())
                 .step_by(2)
                 .collect::<Vec<_>>();
 
-            let input_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
-                rlc::value(
-                input_bytes
-                        .iter()
-                        .rev(),
-                    randomness,
-                )
-            });
-            let output_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
-                rlc::value(output_bytes.iter().rev(), randomness)
-            });
-            let return_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
-                rlc::value(
-                    return_bytes
-                        .iter()
-                        .rev(),
-                    randomness,
-                )
-            });
+            let input_bytes_rlc = region
+                .challenges()
+                .keccak_input()
+                .map(|randomness| rlc::value(input_bytes.iter().rev(), randomness));
+            let output_bytes_rlc = region
+                .challenges()
+                .keccak_input()
+                .map(|randomness| rlc::value(output_bytes.iter().rev(), randomness));
+            let return_bytes_rlc = region
+                .challenges()
+                .keccak_input()
+                .map(|randomness| rlc::value(return_bytes.iter().rev(), randomness));
 
             let input_rws = input_bytes.len() as u64;
             let output_rws = output_bytes.len() as u64;
@@ -1107,9 +1085,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         self.precompile_return_rws
             .assign(region, offset, Value::known(F::from(return_rws)))?;
 
-        let (_, remainder) = self.precompile_output_word_size_div
-            .assign(region, offset, output_rws.into())?;
-        self.precompile_output_word_size_div_remainder_zero.assign(region, offset, F::from_u128(remainder))?;
+        let (_, remainder) =
+            self.precompile_output_word_size_div
+                .assign(region, offset, output_rws.into())?;
+        self.precompile_output_word_size_div_remainder_zero.assign(
+            region,
+            offset,
+            F::from_u128(remainder),
+        )?;
 
         if is_precompiled(&callee_address.to_address()) {
             self.precompile_gadget.assign(

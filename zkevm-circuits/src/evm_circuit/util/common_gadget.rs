@@ -690,8 +690,7 @@ impl<F: Field> TransferGadget<F> {
 
     pub(crate) fn rw_delta(&self) -> Expression<F> {
         // +1 Write Account (sender) Balance
-        not::expr(self.value_is_zero.expr()) +
-        self.receiver.rw_delta()
+        not::expr(self.value_is_zero.expr()) + self.receiver.rw_delta()
     }
 }
 
@@ -757,7 +756,9 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         cb.stack_pop(callee_address.to_word());
 
         // `CALL` and `CALLCODE` opcodes have an additional stack pop `value`.
-        cb.condition(is_call.clone() + is_callcode.clone(), |cb| cb.stack_pop(value.to_word()));
+        cb.condition(is_call.clone() + is_callcode.clone(), |cb| {
+            cb.stack_pop(value.to_word())
+        });
         cb.stack_pop(cd_address.offset_word());
         cb.stack_pop(cd_address.length_word());
         cb.stack_pop(rd_address.offset_word());

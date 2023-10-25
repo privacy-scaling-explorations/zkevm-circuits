@@ -17,7 +17,7 @@ use eth_types::{
         gas_utils::{eip150_gas, memory_expansion_gas_cost},
         GasCost, OpcodeId, GAS_STIPEND_CALL_WITH_VALUE,
     },
-    GethExecStep, ToWord, Word, U256
+    GethExecStep, ToWord, Word, U256,
 };
 // use revm_precompile::Precompile;
 use std::cmp::min;
@@ -231,7 +231,10 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             0
         } + memory_expansion_gas_cost;
         let gas_specified = geth_step.stack.last()?;
-        assert!(gas_specified < U256::from(geth_step.gas - gas_cost), "Specified gas can't exceed allocated gas for this exec step.");
+        assert!(
+            gas_specified < U256::from(geth_step.gas - gas_cost),
+            "Specified gas can't exceed allocated gas for this exec step."
+        );
         let stipend = if has_value {
             GAS_STIPEND_CALL_WITH_VALUE
         } else {
@@ -266,7 +269,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 "{full_ctx}"
             );
         }
-        
+
         match (is_precheck_ok, is_precompile, is_empty_code_hash) {
             // 1. Call to precompiled.
             (true, true, _) => {
@@ -283,7 +286,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     } else {
                         &[]
                     },
-                    callee_gas_left_with_stipend
+                    callee_gas_left_with_stipend,
                 );
 
                 // mutate the callee memory by at least the precompile call's result that will be
@@ -330,13 +333,10 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, call.call_id, field, value);
                 }
-                
+
                 // return while restoring some of caller's context.
                 for (field, value) in [
-                    (
-                        CallContextField::ProgramCounter,
-                        (geth_step.pc + 1).into(),
-                    ),
+                    (CallContextField::ProgramCounter, (geth_step.pc + 1).into()),
                     (
                         CallContextField::StackPointer,
                         (geth_step.stack.stack_pointer().0 + N_ARGS - 1).into(),
@@ -370,13 +370,13 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     };
 
                     let input_bytes = state.gen_copy_steps_for_precompile_calldata(
-                        &mut exec_step, 
-                        call.call_data_offset, 
-                        n_input_bytes as u64
+                        &mut exec_step,
+                        call.call_data_offset,
+                        n_input_bytes as u64,
                     )?;
 
                     state.push_copy(
-                        &mut exec_step, 
+                        &mut exec_step,
                         CopyEvent {
                             src_id: NumberOrHash::Number(call.caller_id),
                             src_type: CopyDataType::Memory,
@@ -388,7 +388,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             log_id: None,
                             rw_counter_start,
                             bytes: input_bytes.iter().map(|s| (*s, false)).collect(),
-                        }
+                        },
                     );
                 }
 
@@ -396,10 +396,10 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 let rw_counter_start = state.block_ctx.rwc;
                 if call.is_success && !result.is_empty() {
                     let (output_bytes, _prev_bytes) = state
-                    .gen_copy_steps_for_precompile_callee_memory(&mut exec_step, &result)?;
+                        .gen_copy_steps_for_precompile_callee_memory(&mut exec_step, &result)?;
 
                     state.push_copy(
-                        &mut exec_step, 
+                        &mut exec_step,
                         CopyEvent {
                             src_id: NumberOrHash::Number(call.call_id),
                             src_type: CopyDataType::RlcAcc,
@@ -410,21 +410,20 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             dst_addr: 0,
                             log_id: None,
                             rw_counter_start,
-                            bytes: output_bytes.iter().map(|s| (*s, false)).collect()
-                        }
+                            bytes: output_bytes.iter().map(|s| (*s, false)).collect(),
+                        },
                     );
                 }
 
                 // insert another copy event (output) for this step.
                 let rw_counter_start = state.block_ctx.rwc;
                 if call.is_success && length > 0 {
-                    let return_bytes = state
-                        .gen_copy_steps_for_precompile_returndata(
-                            &mut exec_step, 
-                            call.return_data_offset, 
-                            length, 
-                            &result
-                        )?;
+                    let return_bytes = state.gen_copy_steps_for_precompile_returndata(
+                        &mut exec_step,
+                        call.return_data_offset,
+                        length,
+                        &result,
+                    )?;
                     state.push_copy(
                         &mut exec_step,
                         CopyEvent {
@@ -437,8 +436,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             dst_addr: call.return_data_offset,
                             log_id: None,
                             rw_counter_start,
-                            bytes: return_bytes.iter().map(|s| (*s, false)).collect()
-                        }
+                            bytes: return_bytes.iter().map(|s| (*s, false)).collect(),
+                        },
                     );
                     Some(return_bytes)
                 } else {
@@ -449,7 +448,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     let mut oog_step = ErrorOOGPrecompile::gen_associated_ops(
                         state,
                         &geth_steps[1],
-                        call.clone()
+                        call.clone(),
                     )?;
                     oog_step.gas_left = callee_gas_left_with_stipend;
                     oog_step.gas_cost = precompile_call_gas_cost;
@@ -474,8 +473,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     // Make the Precompile execution step to handle return logic and restore to
                     // caller context (similar as STOP and RETURN).
                     state.handle_return(
-                        &mut [&mut exec_step, &mut precompile_step], 
-                        geth_steps, 
+                        &mut [&mut exec_step, &mut precompile_step],
+                        geth_steps,
                         true,
                     )?;
 

@@ -9,8 +9,8 @@ use crate::{
         param::{N_BYTES_MEMORY_WORD_SIZE, N_BYTES_WORD},
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget, constraint_builder::EVMConstraintBuilder, 
-            math_gadget::ConstantDivisionGadget, CachedRegion, Cell
+            common_gadget::RestoreContextGadget, constraint_builder::EVMConstraintBuilder,
+            math_gadget::ConstantDivisionGadget, CachedRegion, Cell,
         },
     },
     table::CallContextFieldTag,
@@ -87,7 +87,7 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             call_data_length,
             return_data_offset,
             return_data_length,
-            restore_context
+            restore_context,
         }
     }
 

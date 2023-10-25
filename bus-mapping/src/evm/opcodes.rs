@@ -52,12 +52,12 @@ mod error_oog_call;
 mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_memory_copy;
+mod error_oog_precompile;
 mod error_oog_sload_sstore;
+mod error_precompile_failed;
 mod error_return_data_outofbound;
 mod error_simple;
 mod error_write_protection;
-mod error_oog_precompile;
-mod error_precompile_failed;
 
 mod precompiles;
 

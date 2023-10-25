@@ -11,7 +11,11 @@ pub fn is_precompiled(address: &Address) -> bool {
         .is_some()
 }
 
-pub(crate) fn execute_precompiled(address: &Address, input: &[u8], gas: u64) -> (Vec<u8>, u64, bool) {
+pub(crate) fn execute_precompiled(
+    address: &Address,
+    input: &[u8],
+    gas: u64,
+) -> (Vec<u8>, u64, bool) {
     let Some(Precompile::Standard(precompile_fn)) = Precompiles::berlin()
         .get(address.as_fixed_bytes())  else {
         panic!("calling non-exist precompiled contract address")
@@ -20,16 +24,14 @@ pub(crate) fn execute_precompiled(address: &Address, input: &[u8], gas: u64) -> 
         Ok((gas_cost, return_value)) => {
             // Some Revm behavior for invalid inputs might be overridden.
             (return_value, gas_cost, false, true)
-        },
+        }
         Err(err) => match err {
-            PrecompileError::OutOfGas => {
-                (vec![], gas, true, false)
-            }
+            PrecompileError::OutOfGas => (vec![], gas, true, false),
             _ => {
                 log::warn!("unknown precompile err {err:?}");
                 (vec![], gas, false, false)
             }
-        }
+        },
     };
     (return_data, gas_cost, is_oog)
 }
