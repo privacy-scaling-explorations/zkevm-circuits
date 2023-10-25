@@ -32,7 +32,7 @@ pub fn print_nodes(node: &[Node]) {
             println!("      extension:");
             println!(
                 "         list_rlp_bytes: {}",
-                hex::encode(&extension_branch.extension.list_rlp_bytes)
+                hex::encode(&extension_branch.extension.list_rlp_bytes.to_vec())
             );
             println!("      branch:");
             println!(
@@ -45,88 +45,88 @@ pub fn print_nodes(node: &[Node]) {
             );
             println!(
                 "         list_rlp_bytes[0]: {}",
-                hex::encode(&extension_branch.branch.list_rlp_bytes[0])
+                hex::encode(&extension_branch.branch.list_rlp_bytes[0].to_vec())
             );
             println!(
                 "         list_rlp_bytes[1]: {}",
-                hex::encode(&extension_branch.branch.list_rlp_bytes[1])
+                hex::encode(&extension_branch.branch.list_rlp_bytes[1].to_vec())
             );
         }
         if let Some(account) = &n.account {
             println!("   account:");
-            println!("       address: {}", hex::encode(&account.address));
-            println!("       key: {}", hex::encode(&account.key));
+            println!("       address: {}", hex::encode(&*account.address));
+            println!("       key: {}", hex::encode(&account.key.to_vec()));
             println!(
                 "       list_rlp_bytes[0]: {}",
-                hex::encode(&account.list_rlp_bytes[0])
+                hex::encode(&account.list_rlp_bytes[0].to_vec())
             );
             println!(
                 "       list_rlp_bytes[1]: {}",
-                hex::encode(&account.list_rlp_bytes[1])
+                hex::encode(&account.list_rlp_bytes[1].to_vec())
             );
             println!(
                 "       value_rlp_bytes[0]: {}",
-                hex::encode(&account.value_rlp_bytes[0])
+                hex::encode(&account.value_rlp_bytes[0].to_vec())
             );
             println!(
                 "       value_rlp_bytes[1]: {}",
-                hex::encode(&account.value_rlp_bytes[1])
+                hex::encode(&account.value_rlp_bytes[1].to_vec())
             );
             println!(
                 "       value_list_rlp_bytes[0]: {}",
-                hex::encode(&account.value_list_rlp_bytes[0])
+                hex::encode(&account.value_list_rlp_bytes[0].to_vec())
             );
             println!(
                 "       value_list_rlp_bytes[1]: {}",
-                hex::encode(&account.value_list_rlp_bytes[1])
+                hex::encode(&account.value_list_rlp_bytes[1].to_vec())
             );
             println!(
                 "       drifted_rlp_bytes: {}",
-                hex::encode(&account.drifted_rlp_bytes)
+                hex::encode(&account.drifted_rlp_bytes.to_vec())
             );
             println!(
                 "       wrong_rlp_bytes: {}",
-                hex::encode(&account.wrong_rlp_bytes)
+                hex::encode(&account.wrong_rlp_bytes.to_vec())
             );
         }
 
         if let Some(storage) = &n.storage {
             println!("   storage:");
-            println!("       address: {}", hex::encode(&storage.address));
-            println!("       key: {}", hex::encode(&storage.key));
+            println!("       address: {}", hex::encode(&*storage.address));
+            println!("       key: {}", hex::encode(&storage.key.to_vec()));
             println!(
                 "       list_rlp_bytes[0]: {}",
-                hex::encode(&storage.list_rlp_bytes[0])
+                hex::encode(&storage.list_rlp_bytes[0].to_vec())
             );
             println!(
                 "       list_rlp_bytes[1]: {}",
-                hex::encode(&storage.list_rlp_bytes[1])
+                hex::encode(&storage.list_rlp_bytes[1].to_vec())
             );
             println!(
                 "       value_rlp_bytes[0]: {}",
-                hex::encode(&storage.value_rlp_bytes[0])
+                hex::encode(&storage.value_rlp_bytes[0].to_vec())
             );
             println!(
                 "       value_rlp_bytes[1]: {}",
-                hex::encode(&storage.value_rlp_bytes[1])
+                hex::encode(&storage.value_rlp_bytes[1].to_vec())
             );
             println!(
                 "       drifted_rlp_bytes: {}",
-                hex::encode(&storage.drifted_rlp_bytes)
+                hex::encode(&storage.drifted_rlp_bytes.to_vec())
             );
             println!(
                 "       wrong_rlp_bytes: {}",
-                hex::encode(&storage.wrong_rlp_bytes)
+                hex::encode(&storage.wrong_rlp_bytes.to_vec())
             );
         }
         println!("   values:");
         for (idx, value) in n.values.iter().enumerate() {
-            println!("      [{}]: {}", idx, hex::encode(value));
+            println!("      [{}]: {}", idx, hex::encode(value.to_vec()));
         }
 
         println!("   keccak_data:");
         for (idx, value) in n.keccak_data.iter().enumerate() {
-            println!("      [{}]: {}", idx, hex::encode(value));
+            println!("      [{}]: {}", idx, hex::encode(value.to_vec()));
         }
     }
 }
@@ -139,7 +139,7 @@ pub fn verify_mpt_witness(nodes: Vec<Node>) -> Result<()> {
     let mut keccak_data = vec![];
     for node in nodes.iter() {
         for k in node.keccak_data.iter() {
-            keccak_data.push(k.clone());
+            keccak_data.push(k.to_vec());
         }
     }
 

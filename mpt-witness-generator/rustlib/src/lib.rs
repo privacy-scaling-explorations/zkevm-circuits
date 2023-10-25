@@ -107,13 +107,17 @@ pub fn get_witness(block_no: u64, mods: &[TrieModification], node_url: &str) -> 
     for node in nodes.iter_mut() {
         if node.account.is_some() {
             let account = node.account.clone().unwrap();
-            node.values.push([vec![148], account.address].concat());
-            node.values.push([vec![160], account.key].concat());
+            node.values
+                .push([vec![148], account.address.to_vec()].concat().into());
+            node.values
+                .push([vec![160], account.key.to_vec()].concat().into());
         }
         if node.storage.is_some() {
             let storage = node.storage.clone().unwrap();
-            node.values.push([vec![160], storage.address].concat());
-            node.values.push([vec![160], storage.key].concat());
+            node.values
+                .push([vec![160], storage.address.to_vec()].concat().into());
+            node.values
+                .push([vec![160], storage.key.to_vec()].concat().into());
         }
     }
     nodes

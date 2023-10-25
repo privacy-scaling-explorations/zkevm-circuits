@@ -1,5 +1,4 @@
-#![allow(unused_imports)]
-
+use super::equal_words::EqualWordsConfig;
 use eth_types::Field;
 use eyre::Result;
 use gadgets::{
@@ -12,47 +11,31 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    dev::MockProver,
     halo2curves::bn256::Fr,
     plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, ProvingKey,
-        Selector,
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, Selector,
     },
     poly::Rotation,
-    SerdeFormat,
 };
-use rand::SeedableRng;
-use rand_chacha::ChaCha20Rng;
-use std::time::Instant;
+
 use zkevm_circuits::{
-    keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
     mpt_circuit::{MPTCircuit, MPTCircuitParams, MPTConfig},
     table::{KeccakTable, MptTable},
-    util::{word, Challenges, SubCircuit, SubCircuitConfig},
+    util::{word, Challenges},
+};
+
+use super::witness::{
+    SingleTrieModification, SingleTrieModifications, StateUpdateWitness, Transforms,
+};
+
+#[cfg(not(feature = "disable-keccak"))]
+use zkevm_circuits::{
+    keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
+    util::{SubCircuit, SubCircuitConfig},
 };
 
 pub const DEFAULT_MAX_PROOF_COUNT: usize = 20;
 pub const DEFAULT_CIRCUIT_DEGREE: usize = 14;
-
-use super::witness::{
-    PublicInputs, SingleTrieModification, SingleTrieModifications, StateUpdateWitness, Transforms,
-};
-
-use halo2_proofs::{
-    halo2curves::bn256::{Bn256, G1Affine},
-    plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
-    poly::{
-        commitment::ParamsProver,
-        kzg::{
-            commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG},
-            multiopen::{ProverSHPLONK, VerifierSHPLONK},
-            strategy::SingleStrategy,
-        },
-    },
-    transcript::{
-        Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
-    },
-};
 
 // A=>B  eq ~(A & ~B) (it is not the case that A is true and B is false)
 fn xif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
@@ -73,7 +56,8 @@ pub struct StateUpdateCircuitConfig<F: Field> {
     pub is_padding: IsZeroConfig<F>,
     pub is_last: IsZeroConfig<F>,
 
-    pub new_root_propagation: IsZeroConfig<F>,
+    pub new_root_propagation: EqualWordsConfig<F>,
+    pub root_chained: EqualWordsConfig<F>,
 
     pub count: Column<Advice>,
     pub count_decrement: IsZeroConfig<F>,
@@ -177,18 +161,18 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
             is_last_inv,
         );
 
-        let new_root_propagation_inv = meta.advice_column();
-        let new_root_propagation = IsZeroChip::configure(
+        let new_root_propagation = EqualWordsConfig::configure(
             meta,
-            |meta| meta.query_selector(q_enable),
-            |meta| {
-                // TODO: quite ugly, need to compare with zero
-                (meta.query_advice(pi_mpt.new_root.lo(), Rotation::cur())
-                    - meta.query_advice(pi_mpt.new_root.lo(), Rotation::next()))
-                    + (meta.query_advice(pi_mpt.new_root.hi(), Rotation::cur())
-                        - meta.query_advice(pi_mpt.new_root.hi(), Rotation::next()))
-            },
-            new_root_propagation_inv,
+            q_enable,
+            (pi_mpt.new_root, Rotation::cur()),
+            (pi_mpt.new_root, Rotation::next()),
+        );
+
+        let root_chained = EqualWordsConfig::configure(
+            meta,
+            q_enable,
+            (pi_mpt.new_root, Rotation::cur()),
+            (pi_mpt.old_root, Rotation::next()),
         );
 
         let count_decrement_less_one_inv = meta.advice_column();
@@ -222,18 +206,11 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
                 let one_if_not_padding_and_not_last_rot =
                     or::expr([is_padding.expr(), is_last.expr()]);
 
-                // TODO: quite ugly, need to compare with zero
-                let zero_if_roots_are_chained = (meta
-                    .query_advice(pi_mpt.new_root.lo(), Rotation::cur())
-                    - meta.query_advice(pi_mpt.old_root.lo(), Rotation::next()))
-                    + (meta.query_advice(pi_mpt.new_root.hi(), Rotation::cur())
-                        - meta.query_advice(pi_mpt.old_root.hi(), Rotation::next()));
-
                 vec![
                     q_enable
                         * xif(
                             not::expr(one_if_not_padding_and_not_last_rot),
-                            not::expr(zero_if_roots_are_chained),
+                            root_chained.expr(),
                         ),
                 ]
             },
@@ -302,6 +279,7 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
             is_last,
             count_decrement,
             new_root_propagation,
+            root_chained,
             q_enable,
             pi_instance,
             pi_mpt,
@@ -356,8 +334,6 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
                     IsZeroChip::construct(config.is_last.clone());
                 let count_decrement =
                     IsZeroChip::construct(config.count_decrement.clone());
-                    let new_root_propagation =
-                    IsZeroChip::construct(config.new_root_propagation.clone());
 
                 region.name_column(|| "LC_first", config.is_first);
                 region.name_column(|| "LC_count", config.count);
@@ -410,8 +386,13 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
                         ..Default::default()
                     });
 
-                    new_root_propagation.assign(&mut region, offset,
-                        Value::known(stm.new_root.lo() - stm_next.new_root.lo() + stm.new_root.hi() - stm_next.new_root.hi())
+                    config.new_root_propagation.assign(&mut region, offset,
+                        "new_root_propagation",  &stm.new_root, &stm_next.new_root
+                    )?;
+
+                    config.root_chained.assign(&mut region, offset,
+                        "root_chained",
+                        &stm.new_root, &stm_next.old_root
                     )?;
 
                     let count_cell = region.assign_advice(|| "", config.count, offset, || count)?;
@@ -481,65 +462,6 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
     }
 }
 
-#[derive(Clone)]
-pub struct StateUpdateCircuitKeys {
-    general_params: ParamsKZG<Bn256>,
-    verifier_params: ParamsVerifierKZG<Bn256>,
-    pk: ProvingKey<G1Affine>,
-}
-
-impl StateUpdateCircuitKeys {
-    pub fn new(circuit: &StateUpdateCircuit<Fr>) -> StateUpdateCircuitKeys {
-        let mut rng = ChaCha20Rng::seed_from_u64(42);
-
-        let start = Instant::now();
-
-        // let circuit = StateUpdateCircuit::default();
-
-        let general_params = ParamsKZG::<Bn256>::setup(circuit.degree as u32, &mut rng);
-        let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
-
-        // Initialize the proving key
-        let vk = keygen_vk(&general_params, circuit).expect("keygen_vk should not fail");
-        let pk = keygen_pk(&general_params, vk, circuit).expect("keygen_pk should not fail");
-
-        println!("key generation time: {:?}", start.elapsed());
-
-        StateUpdateCircuitKeys {
-            general_params,
-            verifier_params,
-            pk,
-        }
-    }
-
-    pub fn serialize(&self) -> Result<Vec<u8>> {
-        let mut buffer = Vec::new();
-        self.general_params
-            .write_custom(&mut buffer, SerdeFormat::RawBytes)?;
-        self.verifier_params
-            .write_custom(&mut buffer, SerdeFormat::RawBytes)?;
-        self.pk.write(&mut buffer, SerdeFormat::RawBytes).unwrap();
-        Ok(buffer)
-    }
-
-    pub fn unserialize(mut bytes: &[u8]) -> Result<Self> {
-        let general_params = ParamsKZG::<Bn256>::read_custom(&mut bytes, SerdeFormat::RawBytes)?;
-        let verifier_params =
-            ParamsVerifierKZG::<Bn256>::read_custom(&mut bytes, SerdeFormat::RawBytes)?;
-        let circuit_params = StateUpdateCircuit::<Fr>::default().params();
-        let pk = ProvingKey::<G1Affine>::read::<_, StateUpdateCircuit<Fr>>(
-            &mut bytes,
-            SerdeFormat::RawBytes,
-            circuit_params,
-        )?;
-        Ok(Self {
-            general_params,
-            verifier_params,
-            pk,
-        })
-    }
-}
-
 impl StateUpdateCircuit<Fr> {
     pub fn new(
         witness: StateUpdateWitness<Fr>,
@@ -556,7 +478,7 @@ impl StateUpdateCircuit<Fr> {
         let mut keccak_data = vec![];
         for node in mpt_witness.iter() {
             for k in node.keccak_data.iter() {
-                keccak_data.push(k.clone());
+                keccak_data.push(k.to_vec());
             }
         }
 
@@ -585,82 +507,5 @@ impl StateUpdateCircuit<Fr> {
         };
 
         Ok(lc_circuit)
-    }
-
-    pub fn assert_satisfied(&self) {
-        let num_rows: usize = self
-            .mpt_circuit
-            .nodes
-            .iter()
-            .map(|node| node.values.len())
-            .sum();
-
-        let public_inputs: PublicInputs<Fr> = (&self.lc_witness).into();
-
-        for (i, input) in public_inputs.iter().enumerate() {
-            println!("input[{i:}]: {input:?}");
-        }
-
-        let prover =
-            MockProver::<Fr>::run(self.degree as u32, self, vec![public_inputs.0]).unwrap();
-        prover.assert_satisfied_at_rows_par(0..num_rows, 0..num_rows);
-    }
-
-    pub fn prove(self, keys: &StateUpdateCircuitKeys) -> Result<Vec<u8>> {
-        let rng = ChaCha20Rng::seed_from_u64(42);
-
-        // Create a proof
-        let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
-
-        let public_inputs: PublicInputs<Fr> = (&self.lc_witness).into();
-
-        // Bench proof generation time
-        let start = Instant::now();
-        create_proof::<
-            KZGCommitmentScheme<Bn256>,
-            ProverSHPLONK<'_, Bn256>,
-            Challenge255<G1Affine>,
-            ChaCha20Rng,
-            Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            StateUpdateCircuit<Fr>,
-        >(
-            &keys.general_params,
-            &keys.pk,
-            &[self],
-            &[&[&public_inputs]],
-            rng,
-            &mut transcript,
-        )?;
-
-        let proof = transcript.finalize();
-
-        println!("proof generation time: {:?}", start.elapsed());
-
-        Ok(proof)
-    }
-
-    pub fn verify(proof: &[u8], public_inputs: &[Fr], keys: &StateUpdateCircuitKeys) -> Result<()> {
-        // Bench verification time
-        let start = Instant::now();
-        let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(proof);
-        let strategy = SingleStrategy::new(&keys.general_params);
-
-        verify_proof::<
-            KZGCommitmentScheme<Bn256>,
-            VerifierSHPLONK<'_, Bn256>,
-            Challenge255<G1Affine>,
-            Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
-            SingleStrategy<'_, Bn256>,
-        >(
-            &keys.verifier_params,
-            keys.pk.get_vk(),
-            strategy,
-            &[&[public_inputs]],
-            &mut verifier_transcript,
-        )?;
-
-        println!("verification time: {:?}", start.elapsed());
-
-        Ok(())
     }
 }
