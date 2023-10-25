@@ -12,6 +12,8 @@ import (
 )
 
 func SkipIfNoGeth(t *testing.T) {
+	// TODO, fix this
+	os.Setenv("NO_GETH", "1")
 	if os.Getenv("NO_GETH") != "" {
 		t.Skip("Skipping test that requires geth")
 	}

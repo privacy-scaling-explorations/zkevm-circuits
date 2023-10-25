@@ -50,6 +50,7 @@ use crate::{
     table::{KeccakTable, MPTProofType, MptTable},
     util::Challenges,
 };
+
 use extension_branch::ExtensionBranchConfig;
 use param::HASH_WIDTH;
 
@@ -173,8 +174,10 @@ pub struct MPTConfig<F: Field> {
     pub(crate) q_first: Column<Fixed>,
     pub(crate) q_last: Column<Fixed>,
     pub(crate) memory: MptMemory<F>,
-    pub(crate) mpt_table: MptTable,
-    keccak_table: KeccakTable,
+    /// MPT table
+    pub mpt_table: MptTable,
+    /// Keccak table
+    pub keccak_table: KeccakTable,
     fixed_table: [Column<Fixed>; 6],
     mult_table: [Column<Advice>; 2],
     rlp_item: MainRLPGadget<F>,
@@ -512,7 +515,8 @@ impl<F: Field> MPTConfig<F> {
         Ok(height)
     }
 
-    fn load_fixed_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    /// Loads MPT fixed table
+    pub fn load_fixed_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_region(
             || "fixed table",
             |mut region| {
@@ -613,7 +617,8 @@ impl<F: Field> MPTConfig<F> {
         )
     }
 
-    fn load_mult_table(
+    ///
+    pub fn load_mult_table(
         &self,
         layouter: &mut impl Layouter<F>,
         challenges: &Challenges<Value<F>>,
@@ -656,8 +661,10 @@ pub struct MPTCircuit<F: Field> {
 /// MPT Circuit configuration parameters
 #[derive(Copy, Clone, Debug, Default)]
 pub struct MPTCircuitParams {
-    degree: usize,
-    disable_preimage_check: bool,
+    ///
+    pub degree: usize,
+    ///
+    pub disable_preimage_check: bool,
 }
 
 impl MPTCircuitParams {
