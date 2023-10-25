@@ -87,13 +87,11 @@ impl<F: Field> ModExtensionGadget<F> {
 
             let lo_s = is_insert.clone() * parent_data[0].hash.lo().expr() + (1.expr() - is_insert.clone()) * parent_data[1].hash.lo().expr();
             let hi_s = is_insert.clone() * parent_data[0].hash.hi().expr() + (1.expr() - is_insert.clone()) * parent_data[1].hash.hi().expr();
-            let lo_c = is_insert.clone() * parent_data[1].drifted_parent_hash.lo().expr() + (1.expr() - is_insert.clone()) * parent_data[0].drifted_parent_hash.lo().expr();
-            let hi_c = is_insert.clone() * parent_data[1].drifted_parent_hash.hi().expr() + (1.expr() - is_insert.clone()) * parent_data[0].drifted_parent_hash.hi().expr();
+            let lo_c = is_insert.clone() * parent_data[0].drifted_parent_hash.lo().expr() + (1.expr() - is_insert.clone()) * parent_data[1].drifted_parent_hash.lo().expr();
+            let hi_c = is_insert.clone() * parent_data[0].drifted_parent_hash.hi().expr() + (1.expr() - is_insert.clone()) * parent_data[1].drifted_parent_hash.hi().expr();
             let parent_data_lo = vec![lo_s, lo_c];
             let parent_data_hi = vec![hi_s, hi_c];
-            // TODO: non-hashed .rlc
-
-            // require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data[(!is_s).idx()].drifted_parent_hash.lo().expr(), parent_data[(!is_s).idx()].drifted_parent_hash.hi().expr()] => @KECCAK);
+            let parent_data_rlc = is_insert.clone() * parent_data[0].rlc.expr() + (1.expr() - is_insert.clone()) * parent_data[1].rlc.expr();
 
             for is_s in [true, false] {
                 config.rlp_key[is_s.idx()] = ListKeyGadget::construct(cb, &key_items[is_s.idx()]);
@@ -132,23 +130,11 @@ impl<F: Field> ModExtensionGadget<F> {
  
                 ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
                     // Hashed branch hash in long extension is in parent branch
-                    // require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data[is_s.idx()].hash.lo().expr(), parent_data[is_s.idx()].hash.hi().expr()] => @KECCAK);
                     require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data_lo[is_s.idx()].clone(), parent_data_hi[is_s.idx()].clone()] => @KECCAK);
                 } elsex {
                     // Non-hashed branch hash in parent branch
-                    require!(rlc => parent_data[is_s.idx()].rlc);
+                    require!(rlc => parent_data_rlc);
                 }} 
-                /*else {
-                    ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
-                        // Hashed branch hash in short extension is in parent branch (stored in placeholder branch)
-                        // require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data[(!is_s).idx()].drifted_parent_hash.lo().expr(), parent_data[(!is_s).idx()].drifted_parent_hash.hi().expr()] => @KECCAK);
-                        require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data[(!is_s).idx()].drifted_parent_hash.lo().expr(), parent_data[(!is_s).idx()].drifted_parent_hash.hi().expr()] => @KECCAK);
-                    } elsex {
-                        // Non-hashed branch hash in parent branch
-                        require!(rlc => parent_data[(!is_s).idx()].rlc);
-                    }}
-                }
-                */
             }
 
             let nibbles_rlc_long = ext_key_rlc_expr(
