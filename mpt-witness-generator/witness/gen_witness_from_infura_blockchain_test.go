@@ -1399,7 +1399,7 @@ func TestOnlyLeafInStorageProof(t *testing.T) {
 	// statedb.IntermediateRoot(false)
 	statedb.CreateAccount(addr)
 
-	accountProof, _, _, _, err := statedb.GetProof(addr)
+	accountProof, _, _, _, _, err := statedb.GetProof(addr)
 	fmt.Println(len(accountProof))
 	check(err)
 
@@ -1438,7 +1438,7 @@ func TestStorageLeafInFirstLevelAfterPlaceholder(t *testing.T) {
 	// statedb.IntermediateRoot(false)
 	statedb.CreateAccount(addr)
 
-	accountProof, _, _, _, err := statedb.GetProof(addr)
+	accountProof, _, _, _, _, err := statedb.GetProof(addr)
 	fmt.Println(len(accountProof))
 	check(err)
 
@@ -1480,7 +1480,7 @@ func TestLeafAddedToEmptyTrie(t *testing.T) {
 	// statedb.IntermediateRoot(false)
 	statedb.CreateAccount(addr)
 
-	accountProof, _, _, _, err := statedb.GetProof(addr)
+	accountProof, _, _, _, _, err := statedb.GetProof(addr)
 	fmt.Println(len(accountProof))
 	check(err)
 
@@ -1522,7 +1522,7 @@ func TestDeleteToEmptyTrie(t *testing.T) {
 	// statedb.IntermediateRoot(false)
 	statedb.CreateAccount(addr)
 
-	accountProof, _, _, _, err := statedb.GetProof(addr)
+	accountProof, _, _, _, _, err := statedb.GetProof(addr)
 	fmt.Println(len(accountProof))
 	check(err)
 
@@ -1964,7 +1964,7 @@ func TestLeafInLastLevel(t *testing.T) {
 		key2 = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3]
 	*/
 
-	storageProof, _, _, _, err := statedb.GetStorageProof(addr, key1)
+	storageProof, _, _, _, _, err := statedb.GetStorageProof(addr, key1)
 	check(err)
 
 	fmt.Println(storageProof[0])
@@ -2006,7 +2006,7 @@ func TestLeafWithOneNibble(t *testing.T) {
 	statedb.SetState(addr, key2, val1)
 	statedb.IntermediateRoot(false)
 
-	storageProof, _, _, _, err := statedb.GetStorageProof(addr, key1)
+	storageProof, _, _, _, _, err := statedb.GetStorageProof(addr, key1)
 	check(err)
 
 	fmt.Println(storageProof[0])
@@ -2060,7 +2060,7 @@ func TestLeafWithMoreNibbles(t *testing.T) {
 	statedb.SetState(addr, key2, val1)
 	statedb.IntermediateRoot(false)
 
-	storageProof, _, _, _, err := statedb.GetStorageProof(addr, key1)
+	storageProof, _, _, _, _, err := statedb.GetStorageProof(addr, key1)
 	check(err)
 
 	fmt.Println(storageProof[0])
@@ -2214,4 +2214,149 @@ func TestNonExistingStorageNil(t *testing.T) {
 	trieModifications := []TrieModification{trieMod}
 
 	updateStateAndPrepareWitness("NonExistingStorageNil", ks[:], values, addresses, trieModifications)
+}
+
+func TestNeighbourNodeInHashedBranch(t *testing.T) {
+	blockNum := 2000069
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0xBB9bc244D798123fDe783fCc1C72d3Bb8C189413")
+
+	statedb.DisableLoadingRemoteAccounts()
+
+	key := common.HexToHash("0x83390858478ca0e9bd8e0b6f9c61cb360f78d42e5c5c2908d9a885b766925386")
+	val := common.Hash{} // empty value deletes the key
+
+	trieMod := TrieModification{
+		Type:    StorageChanged,
+		Key:     key,
+		Value:   val,
+		Address: addr,
+	}
+	trieModifications := []TrieModification{trieMod}
+
+	prepareWitness("NeighbourNodeInHashedBranch", trieModifications, statedb)
+}
+
+func TestLongKey(t *testing.T) {
+	blockNum := 2000069
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0xBB9bc244D798123fDe783fCc1C72d3Bb8C189413")
+
+	statedb.DisableLoadingRemoteAccounts()
+
+	key1 := common.HexToHash("0x4312ad16021fb135960665020d410e3ca0e42488b684d61315e73d368c7182ad")
+	v := common.FromHex("500000000000000000")
+	val1 := common.BytesToHash(v)
+
+	trieMod1 := TrieModification{
+		Type:    StorageChanged,
+		Key:     key1,
+		Value:   val1,
+		Address: addr,
+	}
+
+	trieModifications := []TrieModification{trieMod1}
+
+	prepareWitness("LongKey", trieModifications, statedb)
+}
+
+func TestTrieDoesNotExistShortVal(t *testing.T) {
+	// No keys yet in the trie, when the first is added, a placeholder leaf is used in `S` proof.
+	blockNum := 2000003
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0xcaac46d9bd68bffb533320545a90cd92c6e98e58")
+
+	statedb.CreateAccount(addr)
+
+	statedb.DisableLoadingRemoteAccounts()
+
+	key1 := common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000")
+	// Let the value occupy more than 1 byte - the placeholder leaf needs to be properly adapted to have
+	// a correct RLP (as it has a value 0, but it's derived from the non-placeholder leaf):
+	val1 := common.HexToHash("0x111")
+
+	trieMod1 := TrieModification{
+		Type:    StorageChanged,
+		Key:     key1,
+		Value:   val1,
+		Address: addr,
+	}
+
+	trieModifications := []TrieModification{trieMod1}
+
+	prepareWitness("TrieDoesNotExistShortVal", trieModifications, statedb)
+}
+
+func TestTrieDoesNotExistLongVal(t *testing.T) {
+	// No keys yet in the trie, when the first is added, a placeholder leaf is used in `S` proof.
+	blockNum := 2000003
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0xcaac46d9bd68bffb533320545a90cd92c6e98e58")
+
+	statedb.CreateAccount(addr)
+
+	statedb.DisableLoadingRemoteAccounts()
+
+	key1 := common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000")
+	val1 := common.HexToHash("0xEC9F6C9634165F91E22E58B90E3EDE393D959E47")
+
+	trieMod1 := TrieModification{
+		Type:    StorageChanged,
+		Key:     key1,
+		Value:   val1,
+		Address: addr,
+	}
+
+	trieModifications := []TrieModification{trieMod1}
+
+	prepareWitness("TrieDoesNotExistLongVal", trieModifications, statedb)
+}
+
+func TestWrongAccount(t *testing.T) {
+	// "Wrong" account is returned by PrefetchAccount - it needs to be ignored in
+	// statedb.go/SetStateObjectIfExists function.
+	blockNum := 2000003
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0xcaac46d9bd68bffb533320545a90cd92c6e98e58")
+
+	// Implicitly create account:
+	trieMod1 := TrieModification{
+		Type:    BalanceChanged,
+		Balance: big.NewInt(98),
+		Address: addr,
+	}
+
+	trieMod2 := TrieModification{
+		Type:    CodeHashChanged,
+		Address: addr,
+	}
+
+	key1 := common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000")
+	val1 := common.HexToHash("0x111")
+
+	trieMod3 := TrieModification{
+		Type:    StorageChanged,
+		Key:     key1,
+		Value:   val1,
+		Address: addr,
+	}
+
+	trieModifications := []TrieModification{trieMod1, trieMod2, trieMod3}
+
+	prepareWitness("WrongAccount", trieModifications, statedb)
 }

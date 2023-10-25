@@ -290,28 +290,21 @@ impl<'a> YamlStateTestBuilder<'a> {
     }
     /// returns the element as an address
     fn parse_address(yaml: &Yaml) -> Result<Address> {
-        if let Some(as_str) = yaml.as_str() {
-            parse::parse_address(as_str)
-        } else if let Some(as_i64) = yaml.as_i64() {
-            let hex = format!("{as_i64:0>40}");
-            Ok(Address::from_slice(&hex::decode(hex)?))
-        } else if let Yaml::Real(as_real) = yaml {
-            Ok(Address::from_str(as_real)?)
-        } else {
-            bail!("cannot parse address {yaml:?}");
+        match yaml {
+            Yaml::Real(real) => Ok(Address::from_str(real)?),
+            Yaml::Integer(int) => {
+                let hex = format!("{int:0>40}");
+                Ok(Address::from_slice(&hex::decode(hex)?))
+            }
+            Yaml::String(str) => parse::parse_address(str),
+            _ => bail!("cannot parse address {yaml:?}"),
         }
     }
 
     /// returns the element as a to address
     fn parse_to_address(yaml: &Yaml) -> Result<Option<Address>> {
-        if let Some(as_str) = yaml.as_str() {
-            if as_str.trim().is_empty() {
-                return Ok(None);
-            }
-            parse::parse_to_address(as_str)
-        } else {
-            bail!("cannot parse to address {:?}", yaml);
-        }
+        let as_str = yaml.as_str().context("to_address_as_str")?;
+        parse::parse_to_address(as_str)
     }
 
     /// returns the element as an array of bytes
@@ -323,28 +316,24 @@ impl<'a> YamlStateTestBuilder<'a> {
     /// returns the element as calldata bytes, supports 0x, :raw, :abi, :yul and
     /// { LLL }
     fn parse_calldata(&mut self, yaml: &Yaml) -> Result<(Bytes, Option<Label>)> {
-        if let Some(as_str) = yaml.as_str() {
-            return parse::parse_calldata(self.compiler, as_str);
-        } else if let Some(as_map) = yaml.as_hash() {
-            if let Some(Yaml::String(data)) = as_map.get(&Yaml::String("data".to_string())) {
-                return parse::parse_calldata(self.compiler, data);
-            } else {
-                bail!("do not know what to do with calldata(3): {:?}", yaml);
-            }
+        match yaml {
+            Yaml::String(str) => parse::parse_calldata(self.compiler, str),
+            Yaml::Hash(map) => match map.get(&Yaml::String("data".to_string())) {
+                Some(Yaml::String(data)) => parse::parse_calldata(self.compiler, data),
+                _ => bail!("do not know what to do with calldata(3): {:?}", yaml),
+            },
+            _ => bail!("do not know what to do with calldata(4): {:?}", yaml),
         }
-        bail!("do not know what to do with calldata(4): {:?}", yaml);
     }
 
     /// parse entry as code, can be 0x, :raw, :yul or { LLL }
     fn parse_code(&mut self, yaml: &Yaml) -> Result<Bytes> {
-        let as_str = if let Some(as_str) = yaml.as_str() {
-            as_str.to_string()
-        } else if let Some(as_int) = yaml.as_i64() {
-            format!("0x{as_int:x}")
-        } else {
-            bail!(format!("code '{yaml:?}' not an str"));
+        let str = match yaml {
+            Yaml::Integer(int) => format!("0x{int:x}"),
+            Yaml::String(str) => str.to_string(),
+            _ => bail!(format!("code '{yaml:?}' not an str")),
         };
-        parse::parse_code(self.compiler, &as_str)
+        parse::parse_code(self.compiler, &str)
     }
 
     /// parse a hash entry
@@ -355,30 +344,20 @@ impl<'a> YamlStateTestBuilder<'a> {
 
     /// parse an uint256 entry
     fn parse_u256(yaml: &Yaml) -> Result<U256> {
-        if let Some(as_int) = yaml.as_i64() {
-            Ok(U256::from(as_int))
-        } else if let Some(as_str) = yaml.as_str() {
-            parse::parse_u256(as_str)
-        } else if yaml.as_f64().is_some() {
-            if let Yaml::Real(value) = yaml {
-                Ok(U256::from_str_radix(value, 10)?)
-            } else {
-                unreachable!()
-            }
-        } else {
-            bail!("parse_u256 {:?}", yaml)
+        match yaml {
+            Yaml::Integer(int) => Ok((*int).into()),
+            Yaml::String(str) => parse::parse_u256(str),
+            Yaml::Real(value) => Ok(U256::from_str_radix(value, 10)?),
+            _ => bail!("parse_u256 {:?}", yaml),
         }
     }
 
     /// parse u64 entry
-    #[allow(clippy::cast_sign_loss)]
     fn parse_u64(yaml: &Yaml) -> Result<u64> {
-        if let Some(as_int) = yaml.as_i64() {
-            Ok(as_int as u64)
-        } else if let Some(as_str) = yaml.as_str() {
-            parse::parse_u64(as_str)
-        } else {
-            bail!("parse_u64 {:?}", yaml)
+        match yaml {
+            Yaml::Integer(int) => Ok((*int) as u64),
+            Yaml::String(str) => parse::parse_u64(str),
+            _ => bail!("parse_u64 {:?}", yaml),
         }
     }
 
@@ -387,7 +366,6 @@ impl<'a> YamlStateTestBuilder<'a> {
     ///   a int value => Ref::Index(value)
     ///   :label xxx => Ref::Label(value)
     ///   <range_lo>-<range_hi> >= Ref::Index(range_lo)..=RefIndex(range_hi)
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn parse_refs(yaml: &Yaml) -> Result<Refs> {
         if yaml.is_badvalue() {
             // It is considered as Any if missing this field.
@@ -395,40 +373,35 @@ impl<'a> YamlStateTestBuilder<'a> {
         }
 
         // convert a unique element into a list
-        let yamls = if yaml.is_array() {
-            yaml.as_vec().context("as_vec")?.iter().collect()
-        } else {
-            vec![yaml]
+        let yamls = match yaml {
+            Yaml::Array(array) => array.iter().collect(),
+            single => vec![single],
         };
 
         let mut refs = Vec::new();
 
         for yaml in yamls {
-            if let Some(as_int) = yaml.as_i64() {
-                // index or any
-                if as_int == -1 {
-                    refs.push(Ref::Any)
-                } else {
-                    refs.push(Ref::Index(as_int as usize))
-                }
-            } else if let Some(as_str) = yaml.as_str() {
-                let tags = Self::decompose_tags(as_str);
-                if let Some(label) = tags.get(":label") {
-                    // label
-                    refs.push(Ref::Label(label.to_string()))
-                } else if as_str.contains('-') {
-                    // range
-                    let mut range = as_str.splitn(2, '-');
-                    let lo = range.next().unwrap().parse::<usize>()?;
-                    let hi = range.next().unwrap().parse::<usize>()?;
-                    for i in lo..=hi {
-                        refs.push(Ref::Index(i))
+            match yaml {
+                Yaml::Integer(-1) => refs.push(Ref::Any),
+                Yaml::Integer(int) => refs.push(Ref::Index(*int as usize)),
+                Yaml::String(str) => {
+                    let tags = Self::decompose_tags(str);
+                    if let Some(label) = tags.get(":label") {
+                        // label
+                        refs.push(Ref::Label(label.to_string()))
+                    } else if str.contains('-') {
+                        // range
+                        let mut range = str.splitn(2, '-');
+                        let lo = range.next().unwrap().parse::<usize>()?;
+                        let hi = range.next().unwrap().parse::<usize>()?;
+                        for i in lo..=hi {
+                            refs.push(Ref::Index(i))
+                        }
+                    } else {
+                        bail!("parse_ref(1) {:?}", yaml);
                     }
-                } else {
-                    bail!("parse_ref(1) {:?}", yaml);
                 }
-            } else {
-                bail!("parse_ref(2) {:?}", yaml);
+                _ => bail!("parse_ref {:?}", yaml),
             };
         }
         Ok(Refs(refs))

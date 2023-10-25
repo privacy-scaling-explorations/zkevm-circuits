@@ -21,7 +21,7 @@ mod tests {
     };
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
-    use std::env::var;
+    use std::{env::var, ops::Deref};
     use zkevm_circuits::mpt_circuit::{load_proof, witness_row::Node, MPTCircuit};
 
     #[cfg_attr(not(feature = "benches"), ignore)]
@@ -44,7 +44,7 @@ mod tests {
         let mut keccak_data = vec![];
         for node in nodes.iter() {
             for k in node.keccak_data.iter() {
-                keccak_data.push(k.clone());
+                keccak_data.push(k.deref().clone());
             }
         }
 
