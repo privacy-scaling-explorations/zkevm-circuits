@@ -13,7 +13,7 @@ use crate::{
             is_precompiled,
             math_gadget::{
                 ConstantDivisionGadget, ContractCreateGadget, IsEqualWordGadget, IsZeroWordGadget,
-                MulWordByU64Gadget, RangeCheckGadget, LtWordGadget,
+                MulWordByU64Gadget, RangeCheckGadget,
             },
             not, or, select, AccountAddress, CachedRegion, Cell, StepRws,
         },
@@ -48,7 +48,6 @@ pub(crate) struct BeginTxGadget<F> {
     tx_caller_address: WordCell<F>,
     tx_caller_address_is_zero: IsZeroWordGadget<F, WordCell<F>>,
     tx_callee_address: WordCell<F>,
-    tx_callee_address_is_zero: IsZeroWordGadget<F, WordCell<F>>,
     call_callee_address: AccountAddress<F>,
     tx_is_create: Cell<F>,
     tx_call_data_length: Cell<F>,
@@ -69,9 +68,6 @@ pub(crate) struct BeginTxGadget<F> {
     // coinbase, and may be duplicate.
     // <https://github.com/ethereum/go-ethereum/blob/604e215d1bb070dff98fb76aa965064c74e3633f/core/state/statedb.go#LL1119C9-L1119C9>
     is_coinbase_warm: Cell<F>,
-    // Determine whether callee address is within precompile address range
-    max_precompile_addr: WordCell<F>,
-    // is_addr_lt: LtWordGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -130,7 +126,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 call_callee_address.to_word(),
             );
         });
-        let tx_callee_address_is_zero = IsZeroWordGadget::construct(cb, &tx_callee_address);
 
         // Add first BeginTx step constraint to have tx_id == 1
         cb.step_first(|cb| {
@@ -375,65 +370,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         });
 
         // TODO: 2. Handle call to precompiled contracts.
-        let max_precompile_addr = cb.query_word_unchecked();
-        // let is_addr_lt = LtWordGadget::construct(
-        //     cb, 
-        //     &tx_callee_address.to_word(), 
-        //     &max_precompile_addr.to_word()
-        // );
-
-        let is_precompile = and::expr([
-            not::expr(tx_callee_address_is_zero.expr()),
-            // is_addr_lt.expr(),
-        ]);
-        cb.condition(is_precompile.expr(), |cb| {
-            // cb.require_equal(
-            //     "precompile should be empty code hash",
-            //     // FIXME: see in opcodes.rs gen_begin_tx_ops
-            //     account_code_hash_is_empty_or_zero.expr(),
-            //     true.expr(),
-            // );
-            // cb.require_equal(
-            //     "Go to EndTx when Tx to precompile",
-            //     cb.next.execution_state_selector([ExecutionState::EndTx]),
-            //     1.expr(),
-            // );
-
-            // cb.require_step_state_transition(StepStateTransition {
-            //     // 7 + TxL1FeeGadget + TransferWithGasFeeGadget associated reads or writes:
-            //     //   - Write CallContext TxId
-            //     //   - Write CallContext RwCounterEndOfReversion
-            //     //   - Write CallContext IsPersistent
-            //     //   - Write CallContext IsSuccess
-            //     //   - Write Account (Caller) Nonce
-            //     //   - Write TxAccessListAccount (Precompile) x PRECOMPILE_COUNT
-            //     //   - Write TxAccessListAccount (Caller)
-            //     //   - Write TxAccessListAccount (Callee)
-            //     //   - Write TxAccessListAccount (Coinbase) only for Shanghai
-            //     //   - Read Account CodeHash
-            //     //   - a TxL1FeeGadget
-            //     //   - a TransferWithGasFeeGadget
-            //     rw_counter: Delta(
-            //         8.expr()
-            //             + l1_rw_delta.expr()
-            //             + transfer_with_gas_fee.rw_delta()
-            //             + SHANGHAI_RW_DELTA.expr()
-            //             + PRECOMPILE_COUNT.expr()
-            //             // TRICKY:
-            //             // Process the reversion only for Precompile in begin TX. Since no
-            //             // associated opcodes could process reversion afterwards
-            //             // (corresponding to `handle_reversion` call in `gen_begin_tx_ops`).
-            //             // TODO:
-            //             // Move it to code of generating precompiled operations when implemented.
-            //             + not::expr(is_persistent.expr())
-            //                 * transfer_with_gas_fee.reversible_w_delta(),
-            //     ),
-            //     call_id: To(call_id.expr()),
-            //     // FIXME
-            //     end_tx: To(1.expr()),
-            //     ..StepStateTransition::any()
-            // });
-        });
+        
 
         // 3. Call to account with empty code.
         cb.condition(
@@ -563,7 +500,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_caller_address,
             tx_caller_address_is_zero,
             tx_callee_address,
-            tx_callee_address_is_zero,
             call_callee_address,
             tx_is_create,
             tx_call_data_length,
@@ -580,8 +516,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_caller_callee_equal,
             coinbase,
             is_coinbase_warm,
-            max_precompile_addr,
-            // is_addr_lt,
         }
     }
 
@@ -640,11 +574,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         )?;
         self.tx_callee_address
             .assign_h160(region, offset, tx.to_or_contract_addr())?;
-        self.tx_callee_address_is_zero.assign_u256(
-            region,
-            offset,
-            U256::from_big_endian(&tx.to_or_contract_addr().to_fixed_bytes()),
-        )?;
         self.call_callee_address
             .assign_h160(region, offset, tx.to_or_contract_addr())?;
         self.is_caller_callee_equal.assign(
@@ -723,7 +652,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             offset,
             Value::known(F::from(is_coinbase_warm as u64)),
         )?;
-        self.max_precompile_addr.assign_u64(region, offset, 0x0A as u64)?;
 
         Ok(())
     }

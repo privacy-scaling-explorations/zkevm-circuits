@@ -37,7 +37,7 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
         let lt = cb.query_bool();
         let diff = cb.query_bytes();
         let range = pow_of_two(N_BYTES * 8);
-        
+
         // The equation we require to hold: `lhs - rhs == diff - (lt * range)`.
         cb.require_equal(
             "lhs - rhs == diff - (lt ⋅ range)",
