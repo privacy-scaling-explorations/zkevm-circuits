@@ -53,7 +53,7 @@ pub struct FixedCParams {
     pub max_withdrawals: usize,
     /// Maximum number of bytes from all txs calldata in the Tx Circuit
     pub max_calldata: usize,
-    /// Max ammount of rows that the CopyCircuit can have.
+    /// Max amount of rows that the CopyCircuit can have.
     pub max_copy_rows: usize,
     /// Max number of steps that the ExpCircuit can have. Each step is further
     /// expressed in 7 rows
