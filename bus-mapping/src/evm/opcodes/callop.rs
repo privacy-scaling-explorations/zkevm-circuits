@@ -285,13 +285,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     },
                     callee_gas_left_with_stipend,
                 );
-                print!("=> result: {:?}\n", result);
-                print!("=> result.len(): {:?}\n", result.len());
-                print!(
-                    "=> precompile_call_gas_cost: {:?}\n",
-                    precompile_call_gas_cost
-                );
-                print!("=> has_oog_err: {:?}\n", has_oog_err);
 
                 // mutate the callee memory by at least the precompile call's result that will be
                 // written from memory addr 0 to memory addr result.len()
@@ -460,7 +453,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     // Make the Precompile execution step to handle return logic and restore to
                     // caller context (similar as STOP and RETURN).
                     state.handle_return(&mut [&mut exec_step, &mut oog_step], geth_steps, true)?;
-                    print!("handle precompile failed return");
 
                     Ok(vec![exec_step, oog_step])
                 } else {
@@ -483,7 +475,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         geth_steps,
                         true,
                     )?;
-                    print!("handle precompile successful return");
+
                     debug_assert_eq!(
                         geth_steps[0].gas - gas_cost - precompile_call_gas_cost + stipend,
                         geth_steps[1].gas,
@@ -941,12 +933,12 @@ pub mod tests {
             //     stack_value: vec![
             //         (
             //             Word::from(0x20),
-            //             
+            //
             // word!("d282e6ad7f520e511f6c3e2b8c68059b9442be0454267ce079217e1319cde05b"),
             //         ),
             //         (
             //             Word::from(0x0),
-            //             
+            //
             // word!("8c9bcf367e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54fa5"),
             //         ),
             //     ],
