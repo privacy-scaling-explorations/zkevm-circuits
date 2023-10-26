@@ -989,7 +989,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             0.into()
         };
         // PR1628_DEBUG
-        log::trace!("=> [Execution CallOp] assign_exec_step - precompile_return_length: {:?}", precompile_return_length);
+        log::trace!(
+            "=> [Execution CallOp] assign_exec_step - precompile_return_length: {:?}",
+            precompile_return_length
+        );
         self.precompile_return_length.assign(
             region,
             offset,

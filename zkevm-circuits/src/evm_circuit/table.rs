@@ -139,27 +139,31 @@ impl FixedTableTag {
                         ]
                     }),
             ),
-            Self::PrecompileInfo => Box::new(vec![
-                PrecompileCalls::ECRecover,
-                PrecompileCalls::Sha256,
-                PrecompileCalls::Ripemd160,
-                PrecompileCalls::Identity,
-                PrecompileCalls::Modexp,
-                PrecompileCalls::Bn128Add,
-                PrecompileCalls::Bn128Mul,
-                PrecompileCalls::Bn128Pairing,
-                PrecompileCalls::Blake2F,
-            ].into_iter().map(move |precompile| {
-                [
-                    tag,
-                    F::from({
-                        let state: ExecutionState = precompile.into();
-                        state.as_u64()
-                    }),
-                    F::from(u64::from(precompile)),
-                    F::from(precompile.base_gas_cost()),
+            Self::PrecompileInfo => Box::new(
+                vec![
+                    PrecompileCalls::ECRecover,
+                    PrecompileCalls::Sha256,
+                    PrecompileCalls::Ripemd160,
+                    PrecompileCalls::Identity,
+                    PrecompileCalls::Modexp,
+                    PrecompileCalls::Bn128Add,
+                    PrecompileCalls::Bn128Mul,
+                    PrecompileCalls::Bn128Pairing,
+                    PrecompileCalls::Blake2F,
                 ]
-            })),
+                .into_iter()
+                .map(move |precompile| {
+                    [
+                        tag,
+                        F::from({
+                            let state: ExecutionState = precompile.into();
+                            state.as_u64()
+                        }),
+                        F::from(u64::from(precompile)),
+                        F::from(precompile.base_gas_cost()),
+                    ]
+                }),
+            ),
         }
     }
 }
