@@ -54,7 +54,7 @@ fn common_call_ctx_reads(
             call.return_data_length.into(),
         ),
     ] {
-        state.call_context_read(exec_step, call.call_id, field, value);
+        state.call_context_read(exec_step, call.call_id, field, value)?;
     }
 
     Ok(())
