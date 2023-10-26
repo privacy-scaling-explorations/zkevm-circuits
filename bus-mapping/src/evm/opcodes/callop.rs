@@ -354,10 +354,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         result.len().into(),
                     ),
                 ] {
-                    // PR1628_DEBUG
-                    if field == CallContextField::LastCalleeReturnDataLength {
-                        log::trace!("=> [BusMapping - CallOp] gen_associated_ops: {:?}", value);
-                    }
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value)?;
                 }
 

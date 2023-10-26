@@ -1236,55 +1236,6 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
-    // The returned (return_data_offset, return_data_len) pair, is the values used to calculate
-    // memory expansion cost when successful case. So for "successful deployment" case, it will
-    // be non 0 while the call_ctx.return should be empty for this case. EIP-211: CREATE/CREATE2
-    // call successful case should set RETURNDATASIZE = 0
-    fn _get_return_data_offset_and_len(
-        exec_step: &ExecStep,
-        geth_step: &GethExecStep,
-        caller_ctx: &CallContext,
-    ) -> Result<(U256, U256), Error> {
-        let is_err = exec_step.error.is_some();
-        let [last_callee_return_data_offset, last_callee_return_data_length] = if is_err {
-            [Word::zero(), Word::zero()]
-        } else {
-            match geth_step.op {
-                OpcodeId::STOP => [Word::zero(); 2],
-                OpcodeId::CALL
-                | OpcodeId::CALLCODE
-                | OpcodeId::STATICCALL
-                | OpcodeId::DELEGATECALL => {
-                    let return_data_length = match exec_step.exec_state {
-                        ExecState::Precompile(_) => {
-                            // successful precompile call
-                            caller_ctx.return_data.len().into()
-                        }
-                        _ => Word::zero(),
-                    };
-                    [Word::zero(), return_data_length]
-                }
-                OpcodeId::REVERT | OpcodeId::RETURN => {
-                    let offset = geth_step.stack.nth_last(0)?;
-                    let length = geth_step.stack.nth_last(1)?;
-                    // This is the convention we are using for memory addresses so that there is no
-                    // memory expansion cost when the length is 0.
-                    // https://github.com/privacy-scaling-explorations/zkevm-circuits/pull/279/files#r787806678
-                    if length.is_zero() {
-                        [Word::zero(); 2]
-                    } else {
-                        [offset, length]
-                    }
-                }
-                _ => [Word::zero(), Word::zero()],
-            }
-        };
-        Ok((
-            last_callee_return_data_offset,
-            last_callee_return_data_length,
-        ))
-    }
-
     /// Bus mapping for the RestoreContextGadget as used in RETURN.
     pub fn handle_restore_context(
         &mut self,
