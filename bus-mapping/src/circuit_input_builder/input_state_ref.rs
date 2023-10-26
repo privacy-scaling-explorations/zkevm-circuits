@@ -1128,6 +1128,25 @@ impl<'a> CircuitInputStateRef<'a> {
                         }
                         (offset, length)
                     }
+                    OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
+                        if self.call()?.is_success {
+                            let callee_memory = self.call_ctx()?.memory.clone();
+                            let caller_ctx = self.caller_ctx_mut()?;
+
+                            let return_data_offset = caller_ctx.memory.len() - callee_memory.len();
+                            let return_data_length = callee_memory.len();
+
+                            caller_ctx.memory.copy_from(
+                                (return_data_offset).into(), 
+                                0.into(), 
+                                return_data_length.into(), 
+                                &callee_memory.0
+                            );
+                            (return_data_offset, return_data_length)
+                        } else {
+                            (0, 0)
+                        }
+                    }
                     _ => {
                         let caller_ctx = self.caller_ctx_mut()?;
                         caller_ctx.return_data.truncate(0);
