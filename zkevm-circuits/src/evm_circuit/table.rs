@@ -139,7 +139,17 @@ impl FixedTableTag {
                         ]
                     }),
             ),
-            Self::PrecompileInfo => Box::new(PrecompileCalls::iter().map(move |precompile| {
+            Self::PrecompileInfo => Box::new(vec![
+                PrecompileCalls::ECRecover,
+                PrecompileCalls::Sha256,
+                PrecompileCalls::Ripemd160,
+                PrecompileCalls::Identity,
+                PrecompileCalls::Modexp,
+                PrecompileCalls::Bn128Add,
+                PrecompileCalls::Bn128Mul,
+                PrecompileCalls::Bn128Pairing,
+                PrecompileCalls::Blake2F,
+            ].into_iter().map(move |precompile| {
                 [
                     tag,
                     F::from({

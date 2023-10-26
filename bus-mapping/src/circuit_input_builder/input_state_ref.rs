@@ -276,7 +276,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let value_prev = mem.read_chunk(address, 1.into())[0];
         mem.write_chunk(address, &[value]);
 
-        self.push_op(step, RW::WRITE, MemoryOp::new(call_id, address, value));
+        self.push_op(step, RW::WRITE, MemoryOp::new(call_id, address, value))?;
         Ok(value_prev)
     }
 
@@ -298,7 +298,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let value_prev = mem.read_chunk(address, 1.into())[0];
         mem.write_chunk(address, &[value_prev]);
 
-        self.push_op(step, RW::WRITE, MemoryOp::new(call_id, address, value));
+        self.push_op(step, RW::WRITE, MemoryOp::new(call_id, address, value))?;
         Ok(value_prev)
     }
 

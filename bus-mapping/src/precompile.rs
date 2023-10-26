@@ -2,7 +2,6 @@
 
 use eth_types::{evm_types::GasCost, Address};
 use revm_precompile::{Precompile, PrecompileError, Precompiles};
-use strum::EnumIter;
 
 /// Check if address is a precompiled or not.
 pub fn is_precompiled(address: &Address) -> bool {
@@ -37,7 +36,7 @@ pub(crate) fn execute_precompiled(
 }
 
 /// Addresses of the precompiled contracts.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, EnumIter)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum PrecompileCalls {
     /// Elliptic Curve Recovery
     ECRecover = 0x01,
