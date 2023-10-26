@@ -1107,7 +1107,7 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
 
 fn verify(rows: Vec<Rw>) -> Result<(), Vec<VerifyFailure>> {
     let used_rows = rows.len();
-    prover(rows, HashMap::new()).verify_at_rows(1..N_ROWS - used_rows, 1..N_ROWS - used_rows)
+    prover(rows, HashMap::new()).verify_at_rows(1..used_rows + 1, 1..used_rows + 1)
 }
 
 fn verify_with_overrides(
@@ -1118,7 +1118,7 @@ fn verify_with_overrides(
     assert_eq!(verify(rows.clone()), Ok(()));
 
     let n_active_rows = rows.len();
-    prover(rows, overrides).verify_at_rows(1..N_ROWS - n_active_rows, 1..N_ROWS - n_active_rows)
+    prover(rows, overrides).verify_at_rows(1..n_active_rows + 1, 1..n_active_rows + 1)
 }
 
 fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
