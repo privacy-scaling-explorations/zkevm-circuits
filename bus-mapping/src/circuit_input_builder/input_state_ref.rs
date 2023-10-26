@@ -1129,7 +1129,7 @@ impl<'a> CircuitInputStateRef<'a> {
             if !self.call()?.is_root {
                 let (offset, length) = match step.op {
                     OpcodeId::RETURN | OpcodeId::REVERT => {
-                        let (offset, length) = if step.error.is_some()
+                        let (offset, length) = if exec_step.error.is_some()
                             || (self.call()?.is_create() && self.call()?.is_success)
                         {
                             (0, 0)
