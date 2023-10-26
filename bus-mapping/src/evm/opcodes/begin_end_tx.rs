@@ -195,7 +195,6 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             ] {
                 state.call_context_write(&mut exec_step, call.call_id, field, value)?;
             }
-            ()
         }
         // 2. Call to precompiled.
         (_, true, _) => (),
@@ -232,8 +231,6 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             ] {
                 state.call_context_write(&mut exec_step, call.call_id, field, value)?;
             }
-
-            ()
         }
     }
 

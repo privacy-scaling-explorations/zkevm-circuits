@@ -1787,17 +1787,15 @@ impl<'a> CircuitInputStateRef<'a> {
         result: &[u8],
     ) -> Result<(Vec<u8>, Vec<u8>), Error> {
         if result.is_empty() {
-            return Ok((vec![], vec![]));
+            Ok((vec![], vec![]))
         } else {
             let mut prev_bytes = vec![];
-            let mut byte_index = 0;
-            for byte in result {
+            for (byte_index, byte) in result.iter().enumerate() {
                 let prev_byte = self.memory_write(exec_step, byte_index.into(), *byte)?;
                 prev_bytes.push(prev_byte);
-                byte_index += 1;
             }
 
-            Ok((result.into(), prev_bytes.into()))
+            Ok((result.into(), prev_bytes))
         }
     }
 
@@ -1814,13 +1812,10 @@ impl<'a> CircuitInputStateRef<'a> {
         if copy_length != 0 {
             assert!(copy_length <= result.len());
 
-            let mut src_byte_index: usize = 0;
             let mut dst_byte_index: usize = dst_addr.into().0;
 
-            for b in result.iter().take(copy_length) {
+            for (src_byte_index, b) in result.iter().take(copy_length).enumerate() {
                 self.memory_read(exec_step, src_byte_index.into(), 0)?;
-                src_byte_index += 1;
-
                 self.memory_write_caller(exec_step, dst_byte_index.into(), *b)?;
                 dst_byte_index += 1;
 

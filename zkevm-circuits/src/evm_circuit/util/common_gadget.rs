@@ -129,6 +129,7 @@ impl<F: Field> RestoreContextGadget<F> {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct2(
         cb: &mut EVMConstraintBuilder<F>,
         is_success: Expression<F>,
