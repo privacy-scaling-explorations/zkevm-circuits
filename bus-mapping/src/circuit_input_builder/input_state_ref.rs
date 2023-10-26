@@ -1071,23 +1071,22 @@ impl<'a> CircuitInputStateRef<'a> {
     ) -> Result<(), Error> {
         let step = &geth_steps[0];
 
-        // TODO: clear return_data for specific opcodes
-        // // For these 6 opcodes, the return data should be handled in opcodes respectively.
-        // // For other opcodes/states, return data must be empty.
-        // if !matches!(
-        //     step.op,
-        //     OpcodeId::RETURN
-        //         | OpcodeId::REVERT
-        //         | OpcodeId::CALL
-        //         | OpcodeId::CALLCODE
-        //         | OpcodeId::DELEGATECALL
-        //         | OpcodeId::STATICCALL
-        // ) || current_exec_steps[0].error.is_some()
-        // {
-        //     if let Ok(caller) = self.caller_ctx_mut() {
-        //         caller.return_data.clear();
-        //     }
-        // }
+        // For these 6 opcodes, the return data should be handled in opcodes respectively.
+        // For other opcodes/states, return data must be empty.
+        if !matches!(
+            step.op,
+            OpcodeId::RETURN
+                | OpcodeId::REVERT
+                | OpcodeId::CALL
+                | OpcodeId::CALLCODE
+                | OpcodeId::DELEGATECALL
+                | OpcodeId::STATICCALL
+        ) || current_exec_steps[0].error.is_some()
+        {
+            if let Ok(caller) = self.caller_ctx_mut() {
+                caller.return_data.clear();
+            }
+        }
         if need_restore {
             // only precompile needs more than 1 current_exec_steps
             if current_exec_steps.len() > 1 {

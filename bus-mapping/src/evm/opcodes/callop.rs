@@ -435,11 +435,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             rw_counter_start,
                             bytes: return_bytes.iter().map(|s| (*s, false)).collect(),
                         },
-                    );
-                    Some(return_bytes)
-                } else {
-                    None
-                };
+                    );    
+                }
 
                 if has_oog_err {
                     let mut oog_step = ErrorOOGPrecompile::gen_associated_ops(
