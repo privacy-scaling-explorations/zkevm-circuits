@@ -237,7 +237,7 @@ impl<'a> CircuitInputStateRef<'a> {
     ) -> Result<u8, Error> {
         let byte = &self.call_ctx()?.memory.read_chunk(address, 1.into())[0];
         let call_id = self.call()?.call_id;
-        self.push_op(step, RW::READ, MemoryOp::new(call_id, address, *byte));
+        self.push_op(step, RW::READ, MemoryOp::new(call_id, address, *byte))?;
         Ok(*byte)
     }
 
@@ -254,7 +254,7 @@ impl<'a> CircuitInputStateRef<'a> {
     ) -> Result<u8, Error> {
         let byte = &self.caller_ctx()?.memory.read_chunk(address, 1.into())[0];
         let call_id = self.call()?.caller_id;
-        self.push_op(step, RW::READ, MemoryOp::new(call_id, address, *byte));
+        self.push_op(step, RW::READ, MemoryOp::new(call_id, address, *byte))?;
         Ok(*byte)
     }
 
@@ -1237,7 +1237,7 @@ impl<'a> CircuitInputStateRef<'a> {
     // memory expansion cost when successful case. So for "successful deployment" case, it will
     // be non 0 while the call_ctx.return should be empty for this case. EIP-211: CREATE/CREATE2
     // call successful case should set RETURNDATASIZE = 0
-    fn get_return_data_offset_and_len(
+    fn _get_return_data_offset_and_len(
         exec_step: &ExecStep,
         geth_step: &GethExecStep,
         caller_ctx: &CallContext,
@@ -1292,7 +1292,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let geth_step = steps
             .get(0)
             .ok_or(Error::InternalError("invalid index 0"))?;
-        let is_err = exec_step.error.is_some();
+        let _is_err = exec_step.error.is_some();
         let is_revert_or_return_call_success = (geth_step.op == OpcodeId::REVERT
             || geth_step.op == OpcodeId::RETURN)
             && exec_step.error.is_none();
