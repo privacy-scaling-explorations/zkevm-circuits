@@ -387,6 +387,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         precompile_return_length.expr(),
                     ),
                 ] {
+                    // PR1628_DEBUG
+                    if field_tag == CallContextFieldTag::LastCalleeReturnDataLength {
+                        cb.debug_expression("=> [Execution CallOp] configure - CallContextFieldTag::LastCalleeReturnDataLength", precompile_return_length.expr());
+                    }
                     cb.call_context_lookup_write(None, field_tag, Word::from_lo_unchecked(value));
                 }
 
@@ -984,6 +988,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         } else {
             0.into()
         };
+        // PR1628_DEBUG
+        log::trace!("=> [Execution CallOp] assign_exec_step - precompile_return_length: {:?}", precompile_return_length);
         self.precompile_return_length.assign(
             region,
             offset,

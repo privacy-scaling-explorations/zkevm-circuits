@@ -1343,6 +1343,19 @@ impl<'a> CircuitInputStateRef<'a> {
             } else {
                 match geth_step.op {
                     OpcodeId::STOP => [Word::zero(); 2],
+                    OpcodeId::CALL
+                    | OpcodeId::CALLCODE
+                    | OpcodeId::STATICCALL
+                    | OpcodeId::DELEGATECALL => {
+                        let return_data_length = match exec_step.exec_state {
+                            ExecState::Precompile(_) => {
+                                // successful precompile call
+                                self.caller_ctx()?.return_data.len().into()
+                            }
+                            _ => Word::zero()
+                        };
+                        [Word::zero(), return_data_length]
+                    }
                     OpcodeId::REVERT | OpcodeId::RETURN => {
                         let offset = geth_step.stack.nth_last(0)?;
                         let length = geth_step.stack.nth_last(1)?;
