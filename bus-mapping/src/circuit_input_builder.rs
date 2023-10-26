@@ -35,7 +35,10 @@ pub use execution::{
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
 use log::warn;
-use std::{collections::HashMap, ops::Deref};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Deref,
+};
 pub use transaction::{Transaction, TransactionContext};
 pub use withdrawal::{Withdrawal, WithdrawalContext};
 
@@ -455,19 +458,23 @@ impl CircuitInputBuilder<DynamicCParams> {
 /// Return all the keccak inputs used during the processing of the current
 /// block.
 pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Error> {
-    let mut keccak_inputs = Vec::new();
+    let mut keccak_inputs: HashSet<Vec<u8>> = HashSet::new();
     // Tx Circuit
     let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.deref().clone()).collect();
-    keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs, block.chain_id.as_u64())?);
+    for input in keccak_inputs_tx_circuit(&txs, block.chain_id.as_u64())? {
+        keccak_inputs.insert(input);
+    }
     // Bytecode Circuit
     for bytecode in code_db.clone().into_iter() {
-        keccak_inputs.push(bytecode.code());
+        keccak_inputs.insert(bytecode.code());
     }
     // EVM Circuit
-    keccak_inputs.extend_from_slice(&block.sha3_inputs);
+    for input in &block.sha3_inputs {
+        keccak_inputs.insert(input.clone());
+    }
     // MPT Circuit
     // TODO https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/696
-    Ok(keccak_inputs)
+    Ok(keccak_inputs.into_iter().collect_vec())
 }
 
 /// Generate the keccak inputs required by the SignVerify Chip from the
