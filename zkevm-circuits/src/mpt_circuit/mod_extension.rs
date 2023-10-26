@@ -142,8 +142,9 @@ impl<F: Field> ModExtensionGadget<F> {
                 config.rlp_key[0].key_value.clone(),
                 1.expr(),
                 config.is_key_part_odd[0].expr(),
-                // Always false because we calculate the RLC of nibbles only (we ignore the key nibbles above the extension):
-                false.expr(),
+                // Note that when the key is odd, one nibble is stored in the first byte, while otherwise
+                // the first byte is empty:
+                config.is_key_part_odd[0].expr(),
                 key_items
                     .iter()
                     .map(|item| item.bytes_be())
@@ -170,7 +171,6 @@ impl<F: Field> ModExtensionGadget<F> {
                 config.is_key_part_odd[1].expr(),
                 // Taking into account the nibbles and the drifted_index:
                 not!(middle_is_odd),
-                // not!(config.is_key_part_odd[0]),
                 data
                     .iter()
                     .map(|item| item.bytes_be())
@@ -187,37 +187,26 @@ impl<F: Field> ModExtensionGadget<F> {
             /*
             require!(0.expr() => long_is_odd);
             require!(1.expr() => short_is_odd);
-            require!(5.expr() => drifted_index.clone());
+            require!(3.expr() => drifted_index.clone());
             */
 
             ifx! {middle_is_odd => {
-                let r = cb.key_r.clone();
-                let rlc1 = nibbles_rlc.expr() + drifted_index.clone() * mult.clone();
-                // let rlc1 = (nibbles_rlc.expr(), mult.clone()).rlc_chain(drifted_index.clone());
-                let rlc = (rlc1, mult.clone() * r).rlc_chain(nibbles_rlc_short.clone());
-
-                /*
-                let r = cb.key_r.clone();
-                let debug_check = (1.expr() * 16.expr() + 2.expr()) + 3.expr() * 16.expr() * r.clone();
-                require!(debug_check => key_data[0].nibbles_rlc);
-
-                require!(mult => r);
-                let c = 5.expr() * 16.expr() + 6.expr();
-                require!(nibbles_rlc_short => c);
-                */
-
-                // let debug_check1 = 17.expr();
-                // require!(debug_check1 => nibbles_rlc);
-
-                require!(nibbles_rlc_long => rlc);
+                ifx! {long_is_odd => {
+                    // TODO
+                } elsex {
+                    let r = cb.key_r.clone();
+                    let rlc1 = nibbles_rlc.expr() + drifted_index.clone() * mult.clone();
+                    let rlc = (rlc1, mult.clone() * r).rlc_chain(nibbles_rlc_short.clone());
+                    require!(nibbles_rlc_long => rlc);
+                }}
             } elsex {
-                let rlc2 = drifted_index * 16.expr() + nibbles_rlc_short;
-                let rlc = (nibbles_rlc.expr(), mult).rlc_chain(rlc2);
-
-                // let debug_check2 = 17.expr();
-                // require!(debug_check2 => nibbles_rlc);
-
-                require!(nibbles_rlc_long => rlc);
+                ifx! {long_is_odd => {
+                    // TODO
+                } elsex {
+                    let rlc2 = drifted_index * 16.expr() + nibbles_rlc_short;
+                    let rlc = (nibbles_rlc.expr(), mult).rlc_chain(rlc2);
+                    require!(nibbles_rlc_long => rlc);
+                }}
             }}
 
             // require!(nibbles_rlc_long => d);
@@ -295,27 +284,40 @@ impl<F: Field> ModExtensionGadget<F> {
                 rlp_key[is_s.idx()].rlp_list.num_bytes().scalar(),
                 HASH_WIDTH.scalar(),
             )?;
-
+            
             // Debugging:
             /*
-            if !is_s {
-                let data = [key_items[1].clone(), key_nibbles[1].clone()];
+            let r = F::from(7 as u64);
+            if is_s {
+                let data = [key_items[0].clone(), key_nibbles[0].clone()];
                 let (nibbles_rlc, _) = ext_key_rlc_calc_value(
                     rlp_key[is_s.idx()].key_item.clone(),
                     F::ONE,
                     is_key_part_odd,
-                    false,
+                    is_key_part_odd,
                     data
                         .iter()
                         .map(|item| item.bytes.clone())
                         .collect::<Vec<_>>()
                         .try_into()
                         .unwrap(),
-                    region.key_r,
+                    // region.key_r,
+                    r
                 );
 
+                /*
+                let s1 = F::from(2 * 16 + 3);
+                let s2 = F::from(4 * 16 + 5 as u64) * r;
+                let s3 = F::from(6 as u64) * r * r;
+                */
+                let s1 = F::from(2); 
+                let s2 = F::from(3 * 16 + 4 as u64) * r;
+                let s3 = F::from(5 * 16 + 6 as u64) * r * r;
+
+                let s = s1 + s2 + s3;
+
                 println!("{:?}", nibbles_rlc);
-                println!("{:?}", F::from(16*6));
+                println!("{:?}", s);
                 println!("=====");
             }
             */
