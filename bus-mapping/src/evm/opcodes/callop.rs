@@ -231,10 +231,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             0
         } + memory_expansion_gas_cost;
         let gas_specified = geth_step.stack.last()?;
-        assert!(
-            gas_specified < U256::from(geth_step.gas - gas_cost),
-            "Specified gas can't exceed allocated gas for this exec step."
-        );
+
         let stipend = if has_value {
             GAS_STIPEND_CALL_WITH_VALUE
         } else {
