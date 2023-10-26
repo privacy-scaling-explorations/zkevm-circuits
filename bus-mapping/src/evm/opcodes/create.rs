@@ -74,6 +74,8 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         let callee_account = &state.sdb.get_account(&address).1.clone();
         let callee_exists = !callee_account.is_empty();
+        let is_address_collision =
+            callee_account.code_hash != CodeDB::empty_code_hash() || callee_account.nonce != 0;
         state.stack_write(
             &mut exec_step,
             geth_step.stack.nth_last_filled(n_pop - 1),
@@ -124,7 +126,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             // operation happens in evm create() method before checking
             // ErrContractAddressCollision
             let code_hash_previous = if callee_exists {
-                if is_precheck_ok {
+                if is_precheck_ok && is_address_collision {
                     exec_step.error = Some(ExecError::ContractAddressCollision);
                 }
                 callee_account.code_hash
@@ -138,6 +140,15 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 AccountField::CodeHash,
                 code_hash_previous.to_word(),
             )?;
+            // read callee nonce for address collision checking
+            if !code_hash_previous.is_zero() {
+                state.account_read(
+                    &mut exec_step,
+                    callee.address,
+                    AccountField::Nonce,
+                    callee_account.nonce.into(),
+                )?;
+            }
         }
 
         // Per EIP-150, all but one 64th of the caller's gas is sent to the
@@ -159,23 +170,15 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             state.call_context_write(&mut exec_step, caller.call_id, field, value)?;
         }
 
+        let (initialization_code, code_hash) = if is_precheck_ok && length > 0 {
+            handle_copy(state, &mut exec_step, state.call()?.call_id, offset, length)?
+        } else {
+            (vec![], CodeDB::empty_code_hash())
+        };
         state.push_call(callee.clone());
         state.reversion_info_write(&mut exec_step, &callee)?;
-
-        // successful contract creation
-        if is_precheck_ok && !callee_exists {
-            let (initialization_code, code_hash) = if length > 0 {
-                handle_copy(
-                    state,
-                    &mut exec_step,
-                    state.caller()?.call_id,
-                    offset,
-                    length,
-                )?
-            } else {
-                (vec![], CodeDB::empty_code_hash())
-            };
-
+        // handle init_code hashing & address generation
+        if is_precheck_ok {
             // handle keccak_table_lookup
             let keccak_input = if IS_CREATE2 {
                 let salt = geth_step.stack.nth_last(3)?;
@@ -206,7 +209,8 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
             state.block.sha3_inputs.push(keccak_input);
             state.block.sha3_inputs.push(initialization_code);
-
+        }
+        if is_precheck_ok && !is_address_collision {
             // Transfer function will skip transfer if the value is zero
             state.transfer(
                 &mut exec_step,
@@ -251,6 +255,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                     (CallContextField::IsStatic, false.to_word()),
                     (CallContextField::IsCreate, true.to_word()),
                     (CallContextField::CodeHash, code_hash.to_word()),
+                    (CallContextField::Value, callee.value),
                 ] {
                     state.call_context_write(&mut exec_step, callee.call_id, field, value)?;
                 }
@@ -258,7 +263,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             // if it's empty init code
             else {
                 for (field, value) in [
-                    (CallContextField::LastCalleeId, 0.into()),
+                    (CallContextField::LastCalleeId, callee.call_id.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                     (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 ] {
@@ -267,10 +272,10 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 state.handle_return(&mut exec_step, geth_steps, false)?;
             };
         }
-        // failed case: is_precheck_ok is false or callee_exists is true
+        // failed case: is_precheck_ok is false or is_address_collision is true
         else {
             for (field, value) in [
-                (CallContextField::LastCalleeId, 0.into()),
+                (CallContextField::LastCalleeId, callee.call_id.into()),
                 (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
             ] {
@@ -290,7 +295,7 @@ fn handle_copy(
     offset: usize,
     length: usize,
 ) -> Result<(Vec<u8>, H256), Error> {
-    let initialization_bytes = state.caller_ctx()?.memory.0[offset..(offset + length)].to_vec();
+    let initialization_bytes = state.call_ctx()?.memory.0[offset..(offset + length)].to_vec();
 
     let initialization = Bytecode::from(initialization_bytes.clone());
     let code_hash = initialization.hash_h256();

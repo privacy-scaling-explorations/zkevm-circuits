@@ -85,7 +85,6 @@ func GetWitness(nodeUrl string, blockNum int, trieModifications []TrieModificati
 	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
 	database := state.NewDatabase(blockHeaderParent)
 	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
-
 	return obtainTwoProofsAndConvertToWitness(trieModifications, statedb, 0)
 }
 
