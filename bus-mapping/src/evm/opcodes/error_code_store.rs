@@ -38,7 +38,7 @@ impl Opcode for ErrorCodeStore {
             state.call()?.call_id,
             CallContextField::IsStatic,
             Word::from(state.call()?.is_static as u8),
-        );
+        )?;
         // create context check
         assert!(state.call()?.is_create());
 

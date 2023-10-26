@@ -30,7 +30,7 @@ impl Opcode for Stop {
             call.call_id,
             CallContextField::IsSuccess,
             1.into(),
-        );
+        )?;
 
         state.handle_return(&mut [&mut exec_step], geth_steps, !call.is_root)?;
         Ok(vec![exec_step])

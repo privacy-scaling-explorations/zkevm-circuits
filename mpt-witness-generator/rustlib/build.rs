@@ -40,7 +40,7 @@ fn main() {
 fn fail(message: String) {
     let _ = writeln!(
         io::stderr(),
-        "\n\nError while building mpt-witness-generator: {}\n\n",
+        "\n\nError while building geth-utils: {}\n\n",
         message
     );
     std::process::exit(1);

@@ -10,7 +10,8 @@ members = [
     "external-tracer",
     "mock",
     "testool",
-    "mpt-witness-generator/rustlib"
+    "mpt-witness-generator/rustlib",
+    "light-client-poc"
 ]
 
 [patch.crates-io]

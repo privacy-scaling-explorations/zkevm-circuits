@@ -37,7 +37,7 @@ impl Opcode for ReturnRevert {
             call.call_id,
             CallContextField::IsSuccess,
             call.is_success.to_word(),
-        );
+        )?;
 
         // Get low Uint64 of offset to generate copy steps. Since offset could
         // be Uint64 overflow if length is zero.
@@ -72,7 +72,7 @@ impl Opcode for ReturnRevert {
                 ),
                 (CallContextField::IsPersistent, call.is_persistent.to_word()),
             ] {
-                state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
+                state.call_context_read(&mut exec_step, state.call()?.call_id, field, value)?;
             }
 
             state.push_op_reversible(
@@ -93,7 +93,7 @@ impl Opcode for ReturnRevert {
                 call.call_id,
                 CallContextField::IsPersistent,
                 call.is_persistent.to_word(),
-            );
+            )?;
         }
 
         // Case C in the specs.
@@ -107,7 +107,7 @@ impl Opcode for ReturnRevert {
                 (CallContextField::ReturnDataOffset, call.return_data_offset),
                 (CallContextField::ReturnDataLength, call.return_data_length),
             ] {
-                state.call_context_read(&mut exec_step, call.call_id, field, value.into());
+                state.call_context_read(&mut exec_step, call.call_id, field, value.into())?;
             }
 
             let return_data_length = usize::try_from(call.return_data_length).unwrap();
@@ -173,12 +173,12 @@ fn handle_copy(
             step,
             RW::READ,
             MemoryOp::new(source.id, (source.offset + i).into(), *byte),
-        );
+        )?;
         state.push_op(
             step,
             RW::WRITE,
             MemoryOp::new(destination.id, (destination.offset + i).into(), *byte),
-        );
+        )?;
     }
 
     state.push_copy(
@@ -216,7 +216,7 @@ fn handle_create(
             step,
             RW::READ,
             MemoryOp::new(source.id, (source.offset + i).into(), *byte),
-        );
+        )?;
     }
 
     state.push_copy(

@@ -40,6 +40,8 @@ pub enum Error {
     ExecutionError(ExecError),
     /// Internal Code error
     InternalError(&'static str),
+    /// Rw number overflow
+    RwsNotEnough(usize, usize),
 }
 
 impl From<eth_types::Error> for Error {
