@@ -285,6 +285,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     },
                     callee_gas_left_with_stipend,
                 );
+                print!("=> result: {:?}\n", result);
+                print!("=> result.len(): {:?}\n", result.len());
+                print!("=> precompile_call_gas_cost: {:?}\n", precompile_call_gas_cost);
+                print!("=> has_oog_err: {:?}\n", has_oog_err);
+
 
                 // mutate the callee memory by at least the precompile call's result that will be
                 // written from memory addr 0 to memory addr result.len()
@@ -453,6 +458,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     // Make the Precompile execution step to handle return logic and restore to
                     // caller context (similar as STOP and RETURN).
                     state.handle_return(&mut [&mut exec_step, &mut oog_step], geth_steps, true)?;
+                    print!("handle precompile failed return");
+
                     Ok(vec![exec_step, oog_step])
                 } else {
                     let precompile_call: PrecompileCalls = code_address.0[19].into();
@@ -474,6 +481,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         geth_steps,
                         true,
                     )?;
+                    print!("handle precompile successful return");
                     debug_assert_eq!(
                         geth_steps[0].gas - gas_cost - precompile_call_gas_cost + stipend,
                         geth_steps[1].gas,
