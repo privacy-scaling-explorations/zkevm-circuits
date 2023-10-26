@@ -17,7 +17,7 @@ use eth_types::{
         gas_utils::{eip150_gas, memory_expansion_gas_cost},
         GasCost, OpcodeId, GAS_STIPEND_CALL_WITH_VALUE,
     },
-    GethExecStep, ToWord, Word, U256,
+    GethExecStep, ToWord, Word,
 };
 // use revm_precompile::Precompile;
 use std::cmp::min;
