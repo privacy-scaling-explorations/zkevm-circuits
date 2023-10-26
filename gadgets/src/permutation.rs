@@ -35,6 +35,8 @@ pub struct PermutationChipConfig<F> {
     pub q_row_last: Selector, // 1 in the last row
 
     _phantom: PhantomData<F>,
+
+    acc_fingerprints_cur_expr: Expression<F>,
 }
 
 /// (alpha, gamma, prev_acc_fingerprints, next_acc_fingerprints)
@@ -162,6 +164,11 @@ impl<F: Field> PermutationChipConfig<F> {
         }))
         .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), col));
     }
+
+    /// acc_fingerprints_cur_expr
+    pub fn acc_fingerprints_cur_expr(&self) -> Expression<F> {
+        self.acc_fingerprints_cur_expr.clone()
+    }
 }
 
 /// permutation fingerprint gadget
@@ -194,6 +201,8 @@ impl<F: Field> PermutationChip<F> {
         meta.enable_equality(alpha);
         meta.enable_equality(power_of_gamma[0]);
 
+        let mut acc_fingerprints_cur_expr: Expression<F> = 0.expr();
+
         meta.create_gate(
             "acc_fingerprints_cur = acc_fingerprints_prev * row_fingerprints_cur",
             |meta| {
@@ -201,6 +210,8 @@ impl<F: Field> PermutationChip<F> {
                 let acc_fingerprints_prev = meta.query_advice(acc_fingerprints, Rotation::prev());
                 let acc_fingerprints_cur = meta.query_advice(acc_fingerprints, Rotation::cur());
                 let row_fingerprints_cur = meta.query_advice(row_fingerprints, Rotation::cur());
+
+                acc_fingerprints_cur_expr = acc_fingerprints_cur.clone();
 
                 [q_row_non_first
                     * (acc_fingerprints_cur - acc_fingerprints_prev * row_fingerprints_cur)]
@@ -270,6 +281,7 @@ impl<F: Field> PermutationChip<F> {
 
         PermutationChipConfig {
             acc_fingerprints,
+            acc_fingerprints_cur_expr,
             row_fingerprints,
             q_row_non_first,
             q_row_enable,

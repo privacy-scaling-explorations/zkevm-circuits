@@ -79,7 +79,6 @@ use eth_types::{geth_types::GethData, Field};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Circuit, ConstraintSystem, Error, Expression},
-    poly::Rotation,
 };
 
 use std::array;
@@ -233,14 +232,12 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             "chronological rwtable fingerprint == by address rwtable fingerprint",
             |meta| {
                 let is_last_chunk = chunkctx_config.is_last_chunk.expr();
-                let chronological_rwtable_acc_fingerprint = meta.query_advice(
-                    evm_circuit.rw_permutation_config.acc_fingerprints,
-                    Rotation::cur(),
-                );
-                let by_address_rwtable_acc_fingerprint = meta.query_advice(
-                    state_circuit.rw_permutation_config.acc_fingerprints,
-                    Rotation::cur(),
-                );
+                let chronological_rwtable_acc_fingerprint = evm_circuit
+                    .rw_permutation_config
+                    .acc_fingerprints_cur_expr();
+                let by_address_rwtable_acc_fingerprint = state_circuit
+                    .rw_permutation_config
+                    .acc_fingerprints_cur_expr();
 
                 let q_row_last = meta.query_selector(evm_circuit.rw_permutation_config.q_row_last);
 

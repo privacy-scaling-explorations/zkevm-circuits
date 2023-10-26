@@ -720,18 +720,21 @@ fn all_padding() {
 }
 
 #[test]
-fn skipped_start_rw_counter() {
+fn invalid_padding_rw_counter_change() {
     let overrides = HashMap::from([
         (
-            (AdviceColumn::RwCounter, -1),
+            (AdviceColumn::RwCounter, 0),
             // The original assignment is 1 << 16.
             Fr::from((1 << 16) + 1),
         ),
-        ((AdviceColumn::RwCounterLimb0, -1), Fr::ONE),
+        ((AdviceColumn::RwCounterLimb0, 0), Fr::ONE),
     ]);
 
-    let result = prover(vec![], overrides).verify_at_rows(1..2, 1..2);
-    assert_error_matches(result, "rw_counter increases by 1 for every non-first row");
+    let result = prover(vec![], overrides).verify_at_rows(2..3, 2..3);
+    assert_error_matches(
+        result,
+        "if previous row is also Padding. rw counter change is 0 or 1",
+    );
 }
 
 #[test]
