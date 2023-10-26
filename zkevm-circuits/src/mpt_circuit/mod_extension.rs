@@ -155,13 +155,22 @@ impl<F: Field> ModExtensionGadget<F> {
 
             let data = [key_items[1].clone(), key_nibbles[1].clone()];
 
+            // long is even, short is even -> middle is odd (note the nibble for the position in branch)
+            // long is even, short is odd -> middle is even
+            // long is odd, short is even -> middle is even
+            // long is odd, short is odd -> middle is odd
+            let long_is_odd = config.is_key_part_odd[0].expr();
+            let short_is_odd = config.is_key_part_odd[1].expr();
+            let middle_is_odd = long_is_odd.clone() * short_is_odd.clone() + (1.expr() - long_is_odd.clone()) * (1.expr() - short_is_odd.clone());
+
             let nibbles_rlc_short = ext_key_rlc_expr(
                 cb,
                 config.rlp_key[1].key_value.clone(),
                 1.expr(),
                 config.is_key_part_odd[1].expr(),
                 // Taking into account the nibbles and the drifted_index:
-                not!(config.is_key_part_odd[0]),
+                not!(middle_is_odd),
+                // not!(config.is_key_part_odd[0]),
                 data
                     .iter()
                     .map(|item| item.bytes_be())
@@ -174,26 +183,31 @@ impl<F: Field> ModExtensionGadget<F> {
             let drifted_index = is_insert.clone() * key_data[0].drifted_index.expr() + (1.expr() - is_insert.clone()) * key_data[1].drifted_index.expr();
             let mult = is_insert.clone() * key_data[0].drifted_mult.expr() + (1.expr() - is_insert.clone()) * key_data[1].drifted_mult.expr();
             let nibbles_rlc = key_data[0].nibbles_rlc.expr(); // same value is stored in S and C
-
-            // long is even, short is even -> middle is odd (note the nibble for the position in branch)
-            // long is even, short is odd -> middle is even
-            // long is odd, short is even -> middle is even
-            // long is odd, short is odd -> middle is odd
-            let long_is_odd = config.is_key_part_odd[0].expr();
-            let short_is_odd = config.is_key_part_odd[1].expr();
-            let middle_is_odd = long_is_odd.clone() * short_is_odd.clone() + (1.expr() - long_is_odd.clone()) * (1.expr() - short_is_odd.clone());
             
+            /*
             require!(0.expr() => long_is_odd);
             require!(1.expr() => short_is_odd);
             require!(5.expr() => drifted_index.clone());
+            */
 
             ifx! {middle_is_odd => {
                 let r = cb.key_r.clone();
-                let rlc1 = (nibbles_rlc.expr(), mult.clone()).rlc_chain(drifted_index.clone());
+                let rlc1 = nibbles_rlc.expr() + drifted_index.clone() * mult.clone();
+                // let rlc1 = (nibbles_rlc.expr(), mult.clone()).rlc_chain(drifted_index.clone());
                 let rlc = (rlc1, mult.clone() * r).rlc_chain(nibbles_rlc_short.clone());
 
-                let debug_check1 = 17.expr();
-                require!(debug_check1 => nibbles_rlc);
+                /*
+                let r = cb.key_r.clone();
+                let debug_check = (1.expr() * 16.expr() + 2.expr()) + 3.expr() * 16.expr() * r.clone();
+                require!(debug_check => key_data[0].nibbles_rlc);
+
+                require!(mult => r);
+                let c = 5.expr() * 16.expr() + 6.expr();
+                require!(nibbles_rlc_short => c);
+                */
+
+                // let debug_check1 = 17.expr();
+                // require!(debug_check1 => nibbles_rlc);
 
                 require!(nibbles_rlc_long => rlc);
             } elsex {
@@ -201,9 +215,7 @@ impl<F: Field> ModExtensionGadget<F> {
                 let rlc = (nibbles_rlc.expr(), mult).rlc_chain(rlc2);
 
                 // let debug_check2 = 17.expr();
-                let r = cb.key_r.clone();
-                let debug_check2 = (1.expr() * 16.expr() + 2.expr()) + (3.expr() * 16.expr() + 4.expr()) * r.clone();
-                require!(debug_check2 => nibbles_rlc);
+                // require!(debug_check2 => nibbles_rlc);
 
                 require!(nibbles_rlc_long => rlc);
             }}
