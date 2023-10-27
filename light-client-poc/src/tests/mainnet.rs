@@ -1,16 +1,18 @@
 #[cfg(test)]
 mod test {
+    use eth_types::address;
     use ethers::{
         prelude::*,
         types::transaction::eip2930::AccessList,
     };
     use eyre::Result;
     use halo2_proofs::halo2curves::bn256::Fr;
+    use mpt_witness_generator::{TrieModification, ProofType};
 
-    use crate::{circuit::{
-        PublicInputs, StateUpdateCircuit, StateUpdateCircuitKeys, StateUpdateWitness,
+    use crate::{circuits::{state_update::{
+        PublicInputs, StateUpdateCircuit, StateUpdateCircuitKeys,
         DEFAULT_CIRCUIT_DEGREE, DEFAULT_MAX_PROOF_COUNT,
-    }, tests::web3_rpc_cache::CACHE_URL};
+    }, Witness}, tests::web3_rpc_cache::CACHE_URL};
 
     #[ctor::ctor]
     fn init_tests() {
@@ -24,16 +26,21 @@ mod test {
         degree: usize,
         max_proof_count: usize,
     ) -> Result<StateUpdateCircuit<Fr>> {
+
+        let provider = std::env::var("PROVIDER_URL").unwrap();
+        println!("provider: {}", provider);
+
         const PVK: &str = "7ccb34dc5fd31fd0aa7860de89a4adc37ccb34dc5fd31fd0aa7860de89a4adc3";
-        let client = crate::utils::new_eth_signer_client(&CACHE_URL, PVK).await?;
+        let client = crate::utils::new_eth_signer_client(&provider, PVK).await?;
 
         let access_list : AccessList = serde_json::from_str(access_list)?;
 
-        let witness = StateUpdateWitness::<Fr>::build(
+        let mut witness = Witness::<Fr>::build(
             client.clone(),
-            CACHE_URL,
+            &provider,
             U64::from(block_no),
             Some(access_list),
+            false,
         )
         .await?
         .unwrap();

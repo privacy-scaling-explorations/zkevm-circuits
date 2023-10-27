@@ -1,4 +1,4 @@
-use super::equal_words::EqualWordsConfig;
+use crate::circuits::utils::EqualWordsConfig;
 use eth_types::Field;
 use eyre::Result;
 use gadgets::{
@@ -24,8 +24,8 @@ use zkevm_circuits::{
     util::{word, Challenges},
 };
 
-use super::witness::{
-    SingleTrieModification, SingleTrieModifications, StateUpdateWitness, Transforms,
+use crate::circuits::witness::{
+    SingleTrieModification, SingleTrieModifications, Witness, Transforms,
 };
 
 #[cfg(not(feature = "disable-keccak"))]
@@ -464,11 +464,11 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
 
 impl StateUpdateCircuit<Fr> {
     pub fn new(
-        witness: StateUpdateWitness<Fr>,
+        witness: Witness<Fr>,
         degree: usize,
         max_proof_count: usize,
     ) -> Result<StateUpdateCircuit<Fr>> {
-        let StateUpdateWitness {
+        let Witness {
             mpt_witness,
             transforms,
             lc_witness,
@@ -508,4 +508,6 @@ impl StateUpdateCircuit<Fr> {
 
         Ok(lc_circuit)
     }
+
+
 }

@@ -72,7 +72,7 @@ impl TrieModificationBuilder for TrieModification {
 }
 
 #[derive(Default)]
-pub struct StateUpdateWitness<F: Field> {
+pub struct Witness<F: Field> {
     pub transforms: Transforms,
     pub lc_witness: SingleTrieModifications<F>,
     pub mpt_witness: Vec<Node>,
@@ -99,46 +99,16 @@ impl<F: Field> Deref for SingleTrieModifications<F> {
     }
 }
 
-pub struct PublicInputs<F: Field>(pub Vec<F>);
-impl<F: Field> Deref for PublicInputs<F> {
-    type Target = Vec<F>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<F: Field> From<&SingleTrieModifications<F>> for PublicInputs<F> {
-    fn from(stm: &SingleTrieModifications<F>) -> Self {
-        let mut inputs = vec![
-            stm.0[0].old_root.lo(),
-            stm.0[0].old_root.hi(),
-            stm.0.last().unwrap().new_root.lo(),
-            stm.0.last().unwrap().new_root.hi(),
-            F::from(stm.0.len() as u64),
-        ];
-
-        for proof in &stm.0 {
-            inputs.push(proof.typ);
-            inputs.push(proof.address);
-            inputs.push(proof.value.lo());
-            inputs.push(proof.value.hi());
-            inputs.push(proof.key.lo());
-            inputs.push(proof.key.hi());
-        }
-
-        PublicInputs(inputs)
-    }
-}
-
-impl<F: Field> StateUpdateWitness<F> {
+impl<F: Field> Witness<F> {
     pub async fn build(
         client: Arc<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
         provider: &str,
         block_no: U64,
         access_list: Option<AccessList>,
+        include_unchanged: bool,
     ) -> Result<Option<Self>> {
-        let transforms = Self::get_transforms(client, block_no, access_list).await?;
+        let transforms =
+            Self::get_transforms(client, block_no, access_list, include_unchanged).await?;
         println!("### trns : {:#?}", transforms);
         if transforms.prev_state_root == transforms.curr_state_root {
             Ok(None)
@@ -156,14 +126,14 @@ impl<F: Field> StateUpdateWitness<F> {
         client: Arc<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
         block_no: U64,
         access_list: Option<AccessList>,
+        include_initial_values: bool,
     ) -> Result<Transforms> {
-        let mut trie_modifications = Vec::new();
-
         // get previous block and this block
         let prev_block = client
             .get_block(BlockId::Number(BlockNumber::Number(block_no - 1)))
             .await?
             .unwrap();
+
         let curr_block = client
             .get_block_with_txs(BlockId::Number(BlockNumber::Number(block_no)))
             .await?
@@ -207,6 +177,9 @@ impl<F: Field> StateUpdateWitness<F> {
             }
         }
 
+        let mut initial_values  = Vec::new();
+        let mut changed_values = Vec::new();
+
         for entry in access_list.0 {
             let AccessListItem {
                 address,
@@ -229,32 +202,49 @@ impl<F: Field> StateUpdateWitness<F> {
                 )
                 .await?;
 
-            // if nothing changed, skip
+            // if nothing changed, append all values
             if old.balance == new.balance
                 && old.nonce == new.nonce
                 && old.code_hash == new.code_hash
                 && old.storage_hash == new.storage_hash
+                && !include_initial_values
             {
-                println!("Skipping {:?} as nothing changed", address);
                 continue;
+            }
+
+            if include_initial_values {
+                initial_values.push(TrieModification::balance(address, old.balance));
+                initial_values.push(TrieModification::nonce(address, old.nonce));
+                initial_values.push(TrieModification::codehash(address, old.code_hash));
+
+                for key in storage_keys.iter() {
+                    let old = old.storage_proof.iter().find(|p| p.key == *key).unwrap();
+                    initial_values.push(TrieModification::storage(address, *key, old.value));
+                }
+
             }
 
             // check for this address changes
             if old.nonce != new.nonce {
-                trie_modifications.push(TrieModification::nonce(address, new.nonce));
+                changed_values.push(TrieModification::nonce(address, new.nonce));
             }
             if old.balance != new.balance {
-                trie_modifications.push(TrieModification::balance(address, new.balance));
+                changed_values.push(TrieModification::balance(address, new.balance));
             }
             if old.code_hash != new.code_hash {
-                trie_modifications.push(TrieModification::codehash(address, new.code_hash));
+                changed_values.push(TrieModification::codehash(address, new.code_hash));
             }
 
             for key in storage_keys {
                 let new = new.storage_proof.iter().find(|p| p.key == key).unwrap();
-                trie_modifications.push(TrieModification::storage(address, key, new.value));
+                changed_values.push(TrieModification::storage(address, key, new.value));
             }
         }
+
+        dbg!(&initial_values);
+
+        let mut trie_modifications = initial_values;
+        trie_modifications.append(&mut changed_values);
 
         Ok(Transforms {
             block_no,

@@ -3,7 +3,7 @@ extern crate lazy_static;
 
 use eyre::Result;
 
-pub mod circuit;
+pub mod circuits;
 pub mod server;
 pub mod tests;
 pub mod utils;

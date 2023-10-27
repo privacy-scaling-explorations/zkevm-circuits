@@ -4,7 +4,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use std::time::Instant;
 
-use super::witness::PublicInputs;
+use crate::circuits::state_update::PublicInputs;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, G1Affine},
     plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, ProvingKey},
@@ -21,7 +21,7 @@ use halo2_proofs::{
     },
 };
 
-use super::state_update::StateUpdateCircuit;
+use super::StateUpdateCircuit;
 
 #[derive(Clone)]
 pub struct StateUpdateCircuitKeys {

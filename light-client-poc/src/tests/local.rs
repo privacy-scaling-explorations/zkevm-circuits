@@ -6,8 +6,8 @@ mod tests {
     use std::sync::Arc;
 
     use crate::{
-        circuit::StateUpdateWitness,
-        utils::{new_eth_signer_client, verify_mpt_witness, MM},
+        circuits::{initial_state::InitialStateCircuit, Witness},
+        utils::{new_eth_signer_client, MM},
     };
 
     const PVK: &str = "7ccb34dc5fd31fd0aa7860de89a4adc37ccb34dc5fd31fd0aa7860de89a4adc3";
@@ -21,16 +21,21 @@ mod tests {
     ) -> Result<()> {
         println!("Running test {}", test);
 
-        let witness = StateUpdateWitness::<Fr>::build(
+        let witness = Witness::<Fr>::build(
             client.clone(),
             provider_url,
             recipt.block_number.unwrap(),
             None,
+            true,
         )
         .await?
         .unwrap();
-        println!("trns: {:#?}", witness.transforms);
-        verify_mpt_witness(witness.mpt_witness)
+
+        let circuit = InitialStateCircuit::new(witness, 17, 20)?;
+
+        circuit.assert_satisfied();
+
+        Ok(())
     }
 
     async fn run_localnode_test() -> Result<()> {
