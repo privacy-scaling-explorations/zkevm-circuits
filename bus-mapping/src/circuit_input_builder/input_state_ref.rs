@@ -24,7 +24,7 @@ use eth_types::{
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
-use std::cmp::max;
+use std::{cmp::max, env::current_exe};
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
 /// [`ExecStep`].
@@ -1129,6 +1129,7 @@ impl<'a> CircuitInputStateRef<'a> {
             if !self.call()?.is_root {
                 let (offset, length) = match step.op {
                     OpcodeId::RETURN | OpcodeId::REVERT => {
+                        let exec_step = current_exec_steps[current_exec_steps.len() - 1].clone();
                         let (offset, length) = if exec_step.error.is_some()
                             || (self.call()?.is_create() && self.call()?.is_success)
                         {
