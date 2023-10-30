@@ -3,6 +3,13 @@
 use eth_types::{evm_types::GasCost, Address};
 use revm_precompile::{Precompile, PrecompileError, Precompiles};
 
+/// The number of pairing inputs per pairing operation. If the inputs provided to the precompile
+/// call are < 4, we append (G1::infinity, G2::generator) until we have the required no. of inputs.
+pub const N_PAIRING_PER_OP: usize = 4;
+
+/// The number of bytes taken to represent a pair (G1, G2).
+pub const N_BYTES_PER_PAIR: usize = 192;
+
 /// Check if address is a precompiled or not.
 pub fn is_precompiled(address: &Address) -> bool {
     Precompiles::berlin()
@@ -21,8 +28,21 @@ pub(crate) fn execute_precompiled(
     };
     let (return_data, gas_cost, is_oog, _is_ok) = match precompile_fn(input, gas) {
         Ok((gas_cost, return_value)) => {
-            // Some Revm behavior for invalid inputs might be overridden.
-            (return_value, gas_cost, false, true)
+            // override revm behavior for consistency with own evm
+            match PrecompileCalls::from(address.0[19]) {
+                PrecompileCalls::Blake2F
+                | PrecompileCalls::Sha256
+                | PrecompileCalls::Ripemd160 => (vec![], gas, false, false),
+                PrecompileCalls::Bn128Pairing => {
+                    if input.len() > N_PAIRING_PER_OP * N_BYTES_PER_PAIR {
+                        (vec![], gas, false, false)
+                    } else {
+                        (return_value, gas_cost, false, true)
+                    }
+                }
+                // PrecompileCalls::Modexp => TODO: Not going to introduce modexp aux data validity tests for now
+                _ => (return_value, gas_cost, false, false)
+            }
         }
         Err(err) => match err {
             PrecompileError::OutOfGas => (vec![], gas, true, false),
