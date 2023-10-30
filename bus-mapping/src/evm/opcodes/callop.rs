@@ -330,6 +330,10 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, call.call_id, field, value)?;
                 }
+                
+                let caller_ctx = state.caller_ctx_mut()?;
+                caller_ctx.memory.0[ret_offset..ret_offset + length]
+                    .copy_from_slice(&result[..length]);
 
                 // return while restoring some of caller's context.
                 for (field, value) in [
@@ -739,6 +743,7 @@ pub mod tests {
                 stack_value: vec![(Word::from(0x20), word!("0123456789ABCDEF0123456789ABCDEF"))],
                 ..Default::default()
             },
+            // PR1628_DEBUG
             // PrecompileCallArgs {
             //     name: "modexp",
             //     setup_code: bytecode! {
@@ -824,6 +829,7 @@ pub mod tests {
                 ],
                 ..Default::default()
             },
+            // PR1628_DEBUG
             // PrecompileCallArgs {
             //     name: "ecPairing",
             //     setup_code: bytecode! {
@@ -881,6 +887,7 @@ pub mod tests {
             //     stack_value: vec![(Word::from(0x0), Word::from(1))],
             //     ..Default::default()
             // },
+            // PR1628_DEBUG
             // PrecompileCallArgs {
             //     name: "blake2f",
             //     setup_code: bytecode! {

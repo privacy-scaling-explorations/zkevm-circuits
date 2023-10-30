@@ -459,8 +459,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             precompile_return_data_copy_size.min(),
                             call_gadget.rd_address.offset(),
                             precompile_return_data_copy_size.min(),
-                            // PR1628_DEBUG
-                            // precompile_return_bytes_rlc.expr(),
                             0.expr(),
                             precompile_return_rws.expr(), // writes
                         ); // rwc_delta += `return_data_copy_size.min()` for precompile
