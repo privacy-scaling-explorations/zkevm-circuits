@@ -1,3 +1,5 @@
+use halo2_proofs::circuit::AssignedCell;
+
 use super::*;
 
 /// The RwTable shared between EVM Circuit and State Circuit, which contains
@@ -65,6 +67,7 @@ impl<F: Field> LookupTable<F> for RwTable {
         ]
     }
 }
+
 impl RwTable {
     /// Construct a new RwTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
@@ -86,7 +89,8 @@ impl RwTable {
         region: &mut Region<'_, F>,
         offset: usize,
         row: &RwRow<Value<F>>,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+        let mut assigned_cells = vec![];
         for (column, value) in [
             (self.rw_counter, row.rw_counter),
             (self.is_write, row.is_write),
@@ -95,7 +99,12 @@ impl RwTable {
             (self.address, row.address),
             (self.field_tag, row.field_tag),
         ] {
-            region.assign_advice(|| "assign rw row on rw table", column, offset, || value)?;
+            assigned_cells.push(region.assign_advice(
+                || "assign rw row on rw table",
+                column,
+                offset,
+                || value,
+            )?);
         }
         for (column, value) in [
             (self.storage_key, row.storage_key),
@@ -103,10 +112,15 @@ impl RwTable {
             (self.value_prev, row.value_prev),
             (self.init_val, row.init_val),
         ] {
-            value.assign_advice(region, || "assign rw row on rw table", column, offset)?;
+            assigned_cells.extend(
+                value
+                    .assign_advice(region, || "assign rw row on rw table", column, offset)?
+                    .limbs
+                    .clone(),
+            );
         }
 
-        Ok(())
+        Ok(assigned_cells)
     }
 
     /// Assign the `RwTable` from a `RwMap`, following the same
@@ -116,10 +130,11 @@ impl RwTable {
         layouter: &mut impl Layouter<F>,
         rws: &[Rw],
         n_rows: usize,
+        is_first_row_padding: bool,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "rw table",
-            |mut region| self.load_with_region(&mut region, rws, n_rows),
+            |mut region| self.load_with_region(&mut region, rws, n_rows, is_first_row_padding),
         )
     }
 
@@ -128,8 +143,9 @@ impl RwTable {
         region: &mut Region<'_, F>,
         rws: &[Rw],
         n_rows: usize,
+        is_first_row_padding: bool,
     ) -> Result<(), Error> {
-        let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
+        let (rows, _) = RwMap::table_assignments_padding(rws, n_rows, is_first_row_padding);
         for (offset, row) in rows.iter().enumerate() {
             self.assign(region, offset, &row.table_assignment())?;
         }

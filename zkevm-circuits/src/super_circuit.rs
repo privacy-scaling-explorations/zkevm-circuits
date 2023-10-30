@@ -122,7 +122,10 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         }: Self::ConfigArgs,
     ) -> Self {
         let tx_table = TxTable::construct(meta);
-        let rw_table = RwTable::construct(meta);
+
+        let chronological_rw_table = RwTable::construct(meta);
+        let by_address_rw_table = RwTable::construct(meta);
+
         let mpt_table = MptTable::construct(meta);
         let bytecode_table = BytecodeTable::construct(meta);
         let block_table = BlockTable::construct(meta);
@@ -183,7 +186,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             meta,
             CopyCircuitConfigArgs {
                 tx_table: tx_table.clone(),
-                rw_table,
+                rw_table: chronological_rw_table,
                 bytecode_table: bytecode_table.clone(),
                 copy_table,
                 q_enable: q_copy_table,
@@ -193,7 +196,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         let state_circuit = StateCircuitConfig::new(
             meta,
             StateCircuitConfigArgs {
-                rw_table,
+                rw_table: by_address_rw_table,
                 mpt_table,
                 u8_table,
                 u10_table,
@@ -207,7 +210,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             EvmCircuitConfigArgs {
                 challenges,
                 tx_table,
-                rw_table,
+                rw_table: chronological_rw_table,
                 bytecode_table,
                 block_table: block_table.clone(),
                 copy_table,

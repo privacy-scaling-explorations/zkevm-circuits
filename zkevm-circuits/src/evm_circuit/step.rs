@@ -42,6 +42,8 @@ pub enum ExecutionState {
     BeginTx,
     EndTx,
     EndBlock,
+    BeginChunk,
+    EndChunk,
     // Opcode successful cases
     STOP,
     /// ADD and SUB opcodes share this state
@@ -301,6 +303,8 @@ impl From<&ExecStep> for ExecutionState {
             ExecState::BeginTx => ExecutionState::BeginTx,
             ExecState::EndTx => ExecutionState::EndTx,
             ExecState::EndBlock => ExecutionState::EndBlock,
+            ExecState::BeginChunk => ExecutionState::BeginChunk,
+            ExecState::EndChunk => ExecutionState::EndChunk,
         }
     }
 }
@@ -663,6 +667,8 @@ pub(crate) struct StepState<F> {
     pub(crate) execution_state: DynamicSelectorHalf<F>,
     /// The Read/Write counter
     pub(crate) rw_counter: Cell<F>,
+    /// The Read/Write counter accumulated in current chunk
+    pub(crate) inner_rw_counter: Cell<F>,
     /// The unique identifier of call in the whole proof, using the
     /// `rw_counter` at the call step.
     pub(crate) call_id: Cell<F>,
@@ -717,6 +723,7 @@ impl<F: Field> Step<F> {
                     ExecutionState::amount(),
                 ),
                 rw_counter: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                inner_rw_counter: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 call_id: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 is_root: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 is_create: cell_manager.query_cell(meta, CellType::StoragePhase1),
@@ -761,6 +768,11 @@ impl<F: Field> Step<F> {
         self.state
             .rw_counter
             .assign(region, offset, Value::known(F::from(step.rwc.into())))?;
+        self.state.inner_rw_counter.assign(
+            region,
+            offset,
+            Value::known(F::from(step.rwc_inner_chunk.into())),
+        )?;
         self.state
             .call_id
             .assign(region, offset, Value::known(F::from(call.call_id as u64)))?;

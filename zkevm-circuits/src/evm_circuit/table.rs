@@ -164,6 +164,8 @@ pub enum Table {
     Keccak,
     /// Lookup for exp table
     Exp,
+    /// Lookup for chunk context
+    ChunkCtx,
 }
 
 #[derive(Clone, Debug)]
@@ -332,6 +334,13 @@ pub(crate) enum Lookup<F> {
         exponent_lo_hi: [Expression<F>; 2],
         exponentiation_lo_hi: [Expression<F>; 2],
     },
+    /// Lookup to block table, which contains constants of this block.
+    ChunkCtx {
+        /// Tag to specify which field to read.
+        field_tag: Expression<F>,
+        /// value
+        value: Expression<F>,
+    },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
 }
@@ -344,6 +353,7 @@ impl<F: Field> Lookup<F> {
     pub(crate) fn table(&self) -> Table {
         match self {
             Self::Fixed { .. } => Table::Fixed,
+            Self::ChunkCtx { .. } => Table::ChunkCtx,
             Self::Tx { .. } => Table::Tx,
             Self::Rw { .. } => Table::Rw,
             Self::Bytecode { .. } => Table::Bytecode,
@@ -469,6 +479,9 @@ impl<F: Field> Lookup<F> {
                 exponentiation_lo_hi[0].clone(),
                 exponentiation_lo_hi[1].clone(),
             ],
+            Self::ChunkCtx { field_tag, value } => {
+                vec![field_tag.clone(), value.clone()]
+            }
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()
                 .into_iter()

@@ -6,6 +6,6 @@ mod block;
 pub use block::{block_convert, Block, BlockContext};
 mod mpt;
 pub use mpt::{MptUpdate, MptUpdateRow, MptUpdates};
-mod rw;
+pub mod rw;
 pub use bus_mapping::circuit_input_builder::{Call, ExecStep, Transaction};
 pub use rw::{Rw, RwMap, RwRow};

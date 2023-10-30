@@ -31,6 +31,8 @@ use strum_macros::{EnumCount, EnumIter};
 pub(crate) mod block_table;
 /// bytecode table
 pub(crate) mod bytecode_table;
+/// chunk context table
+pub(crate) mod chunkctx_table;
 /// copy Table
 pub(crate) mod copy_table;
 /// exp(exponentiation) table
@@ -190,3 +192,29 @@ pub enum CallContextFieldTag {
     ReversibleWriteCounter,
 }
 impl_expr!(CallContextFieldTag);
+
+/// Tag for an StepState in RwTable
+#[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum StepStateFieldTag {
+    /// caller id field
+    CallID = 1,
+    /// is_root field
+    IsRoot,
+    /// is_create field
+    IsCreate,
+    /// code_hash field
+    CodeHash,
+    /// program_counter field
+    ProgramCounter,
+    /// stack_pointer field
+    StackPointer,
+    /// gas_left field
+    GasLeft,
+    /// memory_word_size field
+    MemoryWordSize,
+    /// reversible_write_counter field
+    ReversibleWriteCounter,
+    /// log_id field
+    LogID,
+}
+impl_expr!(StepStateFieldTag);

@@ -32,6 +32,8 @@ pub struct ExecStep {
     pub call_index: usize,
     /// The global counter when this step was executed.
     pub rwc: RWCounter,
+    /// The inner chunk counter when this step was executed.
+    pub rwc_inner_chunk: RWCounter,
     /// Reversible Write Counter.  Counter of write operations in the call that
     /// will need to be undone in case of a revert.  Value at the beginning of
     /// the step.
@@ -54,6 +56,7 @@ impl ExecStep {
         step: &GethExecStep,
         call_ctx: &CallContext,
         rwc: RWCounter,
+        rwc_inner_chunk: RWCounter,
         reversible_write_counter: usize,
         log_id: usize,
     ) -> Self {
@@ -67,6 +70,7 @@ impl ExecStep {
             gas_refund: step.refund,
             call_index: call_ctx.index,
             rwc,
+            rwc_inner_chunk,
             reversible_write_counter,
             reversible_write_counter_delta: 0,
             log_id,
@@ -124,12 +128,16 @@ impl ExecStep {
 pub enum ExecState {
     /// EVM Opcode ID
     Op(OpcodeId),
+    /// Virtual step Begin Chunk
+    BeginChunk,
     /// Virtual step Begin Tx
     BeginTx,
     /// Virtual step End Tx
     EndTx,
     /// Virtual step End Block
     EndBlock,
+    /// Virtual step End Chunk
+    EndChunk,
 }
 
 impl Default for ExecState {

@@ -46,7 +46,22 @@ fn test_state_circuit_ok(
         ..Default::default()
     });
 
-    let circuit = StateCircuit::<Fr>::new(rw_map, N_ROWS);
+    let next_permutation_fingerprints = get_permutation_fingerprint_of_rwmap(
+        &rw_map,
+        N_ROWS,
+        Fr::from(1),
+        Fr::from(1),
+        Fr::from(1),
+    );
+    let circuit = StateCircuit::<Fr>::new(
+        rw_map,
+        N_ROWS,
+        Fr::from(1),
+        Fr::from(1),
+        Fr::from(1),
+        next_permutation_fingerprints,
+        0,
+    );
     let instance = circuit.instance();
 
     let prover = MockProver::<Fr>::run(19, &circuit, instance).unwrap();
@@ -65,10 +80,25 @@ fn degree() {
 fn verifying_key_independent_of_rw_length() {
     let params = ParamsKZG::<Bn256>::setup(17, rand_chacha::ChaCha20Rng::seed_from_u64(2));
 
-    let no_rows = StateCircuit::<Fr>::new(RwMap::default(), N_ROWS);
+    let no_rows = StateCircuit::<Fr>::new(
+        RwMap::default(),
+        N_ROWS,
+        Fr::from(1),
+        Fr::from(1),
+        Fr::from(1),
+        get_permutation_fingerprint_of_rwmap(
+            &RwMap::default(),
+            N_ROWS,
+            Fr::from(1),
+            Fr::from(1),
+            Fr::from(1),
+        ),
+        0,
+    );
     let one_row = StateCircuit::<Fr>::new(
         RwMap::from(&OperationContainer {
             memory: vec![Operation::new(
+                RWCounter::from(1),
                 RWCounter::from(1),
                 RW::WRITE,
                 MemoryOp::new(1, MemoryAddress::from(0), 32),
@@ -76,6 +106,25 @@ fn verifying_key_independent_of_rw_length() {
             ..Default::default()
         }),
         N_ROWS,
+        Fr::from(1),
+        Fr::from(1),
+        Fr::from(1),
+        get_permutation_fingerprint_of_rwmap(
+            &RwMap::from(&OperationContainer {
+                memory: vec![Operation::new(
+                    RWCounter::from(1),
+                    RWCounter::from(1),
+                    RW::WRITE,
+                    MemoryOp::new(1, MemoryAddress::from(0), 32),
+                )],
+                ..Default::default()
+            }),
+            N_ROWS,
+            Fr::from(1),
+            Fr::from(1),
+            Fr::from(1),
+        ),
+        0,
     );
 
     let vk_no_rows = keygen_vk(&params, &no_rows).unwrap();
@@ -94,10 +143,12 @@ fn verifying_key_independent_of_rw_length() {
 fn state_circuit_simple_2() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
+        RWCounter::from(12),
         RW::WRITE,
         MemoryOp::new(1, MemoryAddress::from(0), 32),
     );
     let memory_op_1 = Operation::new(
+        RWCounter::from(24),
         RWCounter::from(24),
         RW::READ,
         MemoryOp::new(1, MemoryAddress::from(0), 32),
@@ -105,10 +156,12 @@ fn state_circuit_simple_2() {
 
     let memory_op_2 = Operation::new(
         RWCounter::from(17),
+        RWCounter::from(17),
         RW::WRITE,
         MemoryOp::new(1, MemoryAddress::from(1), 32),
     );
     let memory_op_3 = Operation::new(
+        RWCounter::from(87),
         RWCounter::from(87),
         RW::READ,
         MemoryOp::new(1, MemoryAddress::from(1), 32),
@@ -116,16 +169,19 @@ fn state_circuit_simple_2() {
 
     let stack_op_0 = Operation::new(
         RWCounter::from(17),
+        RWCounter::from(17),
         RW::WRITE,
         StackOp::new(1, StackAddress::from(1), Word::from(32)),
     );
     let stack_op_1 = Operation::new(
+        RWCounter::from(87),
         RWCounter::from(87),
         RW::READ,
         StackOp::new(1, StackAddress::from(1), Word::from(32)),
     );
 
     let storage_op_0 = Operation::new(
+        RWCounter::from(0),
         RWCounter::from(0),
         RW::WRITE,
         StorageOp::new(
@@ -139,6 +195,7 @@ fn state_circuit_simple_2() {
     );
     let storage_op_1 = Operation::new(
         RWCounter::from(18),
+        RWCounter::from(18),
         RW::WRITE,
         StorageOp::new(
             U256::from(100).to_address(),
@@ -150,6 +207,7 @@ fn state_circuit_simple_2() {
         ),
     );
     let storage_op_2 = Operation::new(
+        RWCounter::from(19),
         RWCounter::from(19),
         RW::WRITE,
         StorageOp::new(
@@ -173,15 +231,18 @@ fn state_circuit_simple_2() {
 fn state_circuit_simple_6() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
+        RWCounter::from(12),
         RW::WRITE,
         MemoryOp::new(1, MemoryAddress::from(0), 32),
     );
     let memory_op_1 = Operation::new(
         RWCounter::from(13),
+        RWCounter::from(13),
         RW::READ,
         MemoryOp::new(1, MemoryAddress::from(0), 32),
     );
     let storage_op_2 = Operation::new(
+        RWCounter::from(19),
         RWCounter::from(19),
         RW::WRITE,
         StorageOp::new(
@@ -200,10 +261,12 @@ fn state_circuit_simple_6() {
 fn lexicographic_ordering_test_1() {
     let memory_op = Operation::new(
         RWCounter::from(12),
+        RWCounter::from(12),
         RW::WRITE,
         MemoryOp::new(1, MemoryAddress::from(0), 32),
     );
     let storage_op = Operation::new(
+        RWCounter::from(19),
         RWCounter::from(19),
         RW::WRITE,
         StorageOp::new(
@@ -222,10 +285,12 @@ fn lexicographic_ordering_test_1() {
 fn lexicographic_ordering_test_2() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
+        RWCounter::from(12),
         RW::WRITE,
         MemoryOp::new(1, MemoryAddress::from(0), 32),
     );
     let memory_op_1 = Operation::new(
+        RWCounter::from(13),
         RWCounter::from(13),
         RW::WRITE,
         MemoryOp::new(1, MemoryAddress::from(0), 32),
@@ -665,7 +730,7 @@ fn skipped_start_rw_counter() {
         ((AdviceColumn::RwCounterLimb0, -1), Fr::ONE),
     ]);
 
-    let result = prover(vec![], overrides).verify_at_rows(N_ROWS - 1..N_ROWS, N_ROWS - 1..N_ROWS);
+    let result = prover(vec![], overrides).verify_at_rows(1..2, 1..2);
     assert_error_matches(result, "rw_counter increases by 1 for every non-first row");
 }
 
@@ -783,7 +848,7 @@ fn invalid_stack_address_change() {
 
 #[test]
 fn invalid_tags() {
-    let first_row_offset = -isize::try_from(N_ROWS).unwrap();
+    let first_row_offset = 0;
     let tags: BTreeSet<usize> = Target::iter().map(|x| x as usize).collect();
     for i in 0..16 {
         if tags.contains(&i) {
@@ -798,8 +863,8 @@ fn invalid_tags() {
             ((AdviceColumn::Tag, first_row_offset), Fr::from(i as u64)),
         ]);
 
-        let result = prover(vec![], overrides).verify_at_rows(0..1, 0..1);
-
+        // offset 0 is padding
+        let result = prover(vec![], overrides).verify_at_rows(1..2, 1..2);
         assert_error_matches(result, "binary number value in range");
     }
 }
@@ -926,9 +991,21 @@ fn variadic_size_check() {
     let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
         rows: rows.clone(),
+        row_padding_and_overrides: Default::default(),
         updates,
         overrides: HashMap::default(),
         n_rows: N_ROWS,
+        permu_alpha: Fr::from(1),
+        permu_gamma: Fr::from(1),
+        permu_prev_continuous_fingerprint: Fr::from(1),
+        permu_next_continuous_fingerprint: get_permutation_fingerprint_of_rwvec(
+            &rows,
+            N_ROWS,
+            Fr::from(1),
+            Fr::from(1),
+            Fr::from(1),
+        ),
+        rw_table_chunked_index: 0,
         _marker: std::marker::PhantomData::default(),
     };
     let power_of_randomness = circuit.instance();
@@ -952,11 +1029,20 @@ fn variadic_size_check() {
     ]);
 
     let updates = MptUpdates::mock_from(&rows);
+    let permu_next_continuous_fingerprint =
+        get_permutation_fingerprint_of_rwvec(&rows, N_ROWS, Fr::from(1), Fr::from(1), Fr::from(1));
+
     let circuit = StateCircuit::<Fr> {
         rows,
+        row_padding_and_overrides: Default::default(),
         updates,
         overrides: HashMap::default(),
         n_rows: N_ROWS,
+        permu_alpha: Fr::from(1),
+        permu_gamma: Fr::from(1),
+        permu_prev_continuous_fingerprint: Fr::from(1),
+        permu_next_continuous_fingerprint,
+        rw_table_chunked_index: 0,
         _marker: std::marker::PhantomData::default(),
     };
     let power_of_randomness = circuit.instance();
@@ -991,12 +1077,27 @@ fn bad_initial_tx_receipt_value() {
 }
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
+    // permu_next_continuous_fingerprint and rows override for negative-test
+    #[allow(unused_assignments, unused_mut)]
+    let (rw_rows, _) = RwMap::table_assignments_padding(&rows, N_ROWS, true);
+    let rw_rows: Vec<witness::RwRow<Value<Fr>>> =
+        rw_overrides_skip_first_padding(&rw_rows, &overrides);
+    let permu_next_continuous_fingerprint =
+        get_permutation_fingerprint_of_rwrowvec(&rw_rows, N_ROWS, Fr::ONE, Fr::ONE, Fr::ONE);
+    let row_padding_and_overridess = rw_rows.to2dvec();
+
     let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
         rows,
+        row_padding_and_overrides: row_padding_and_overridess,
         updates,
         overrides,
         n_rows: N_ROWS,
+        permu_alpha: Fr::from(1),
+        permu_gamma: Fr::from(1),
+        permu_prev_continuous_fingerprint: Fr::from(1),
+        permu_next_continuous_fingerprint,
+        rw_table_chunked_index: 0,
         _marker: std::marker::PhantomData::default(),
     };
     let instance = circuit.instance();
@@ -1006,8 +1107,7 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
 
 fn verify(rows: Vec<Rw>) -> Result<(), Vec<VerifyFailure>> {
     let used_rows = rows.len();
-    prover(rows, HashMap::new())
-        .verify_at_rows(N_ROWS - used_rows..N_ROWS, N_ROWS - used_rows..N_ROWS)
+    prover(rows, HashMap::new()).verify_at_rows(1..used_rows + 1, 1..used_rows + 1)
 }
 
 fn verify_with_overrides(
@@ -1018,31 +1118,34 @@ fn verify_with_overrides(
     assert_eq!(verify(rows.clone()), Ok(()));
 
     let n_active_rows = rows.len();
-    prover(rows, overrides).verify_at_rows(
-        N_ROWS - n_active_rows..N_ROWS,
-        N_ROWS - n_active_rows..N_ROWS,
-    )
+    prover(rows, overrides).verify_at_rows(1..n_active_rows + 1, 1..n_active_rows + 1)
 }
 
 fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
     let errors = result.expect_err("result is not an error");
-    assert_eq!(errors.len(), 1, "{:?}", errors);
-    match &errors[0] {
-        VerifyFailure::ConstraintNotSatisfied { constraint, .. } => {
-            // fields of halo2_proofs::dev::metadata::Constraint aren't public, so we have
-            // to match off of its format string.
-            let constraint = format!("{}", constraint);
-            if !constraint.contains(name) {
-                panic!("{} does not contain {}", constraint, name);
+    errors
+        .iter()
+        .find(|err| match err {
+            VerifyFailure::ConstraintNotSatisfied { constraint, .. } => {
+                // fields of halo2_proofs::dev::metadata::Constraint aren't public, so we have
+                // to match off of its format string.
+                let constraint = format!("{}", constraint);
+                constraint.contains(name)
             }
-        }
-        VerifyFailure::Lookup {
-            name: lookup_name, ..
-        } => {
-            assert_eq!(lookup_name, &name)
-        }
-        VerifyFailure::CellNotAssigned { .. } => panic!(),
-        VerifyFailure::ConstraintPoisoned { .. } => panic!(),
-        VerifyFailure::Permutation { .. } => panic!(),
-    }
+            VerifyFailure::Lookup {
+                name: lookup_name, ..
+            } => {
+                assert_eq!(lookup_name, &name);
+                true
+            }
+            VerifyFailure::CellNotAssigned { .. } => false,
+            VerifyFailure::ConstraintPoisoned { .. } => false,
+            VerifyFailure::Permutation { .. } => false,
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "there is no constraints contain {}; err {:#?}",
+                name, errors
+            )
+        });
 }

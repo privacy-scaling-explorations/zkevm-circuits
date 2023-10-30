@@ -1,8 +1,8 @@
 use super::{
     param::{
-        BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, EXP_TABLE_LOOKUPS,
-        FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_U16_LOOKUPS,
-        N_U8_LOOKUPS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
+        BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, CHUNK_CTX_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS,
+        EXP_TABLE_LOOKUPS, FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_COPY_COLUMNS,
+        N_PHASE1_COLUMNS, N_U16_LOOKUPS, N_U8_LOOKUPS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
     step::HasExecutionState,
     util::{instrumentation::Instrument, CachedRegion, StoredExpression},
@@ -20,7 +20,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::LookupTable,
+    table::{chunkctx_table::ChunkCtxFieldTag, LookupTable},
     util::{
         cell_manager::{CMFixedWidthStrategy, CellManager, CellType},
         Challenges, Expr,
@@ -28,7 +28,7 @@ use crate::{
 };
 use bus_mapping::operation::Target;
 use eth_types::{evm_unimplemented, Field};
-use gadgets::util::not;
+use gadgets::{is_zero::IsZeroConfig, util::not};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{
@@ -38,7 +38,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeSet, HashMap, HashSet},
     iter,
 };
 use strum::IntoEnumIterator;
@@ -47,6 +47,7 @@ mod add_sub;
 mod addmod;
 mod address;
 mod balance;
+mod begin_chunk;
 mod begin_tx;
 mod bitwise;
 mod block_ctx;
@@ -66,6 +67,7 @@ mod create;
 mod dummy;
 mod dup;
 mod end_block;
+mod end_chunk;
 mod end_tx;
 mod error_code_store;
 mod error_invalid_creation_code;
@@ -121,7 +123,10 @@ mod sstore;
 mod stop;
 mod swap;
 
-use self::{block_ctx::BlockCtxGadget, sha3::Sha3Gadget};
+use self::{
+    begin_chunk::BeginChunkGadget, block_ctx::BlockCtxGadget, end_chunk::EndChunkGadget,
+    sha3::Sha3Gadget,
+};
 use add_sub::AddSubGadget;
 use addmod::AddModGadget;
 use address::AddressGadget;
@@ -242,6 +247,8 @@ pub struct ExecutionConfig<F> {
     begin_tx_gadget: Box<BeginTxGadget<F>>,
     end_block_gadget: Box<EndBlockGadget<F>>,
     end_tx_gadget: Box<EndTxGadget<F>>,
+    begin_chunk_gadget: Box<BeginChunkGadget<F>>,
+    end_chunk_gadget: Box<EndChunkGadget<F>>,
     // opcode gadgets
     add_sub_gadget: Box<AddSubGadget<F>>,
     addmod_gadget: Box<AddModGadget<F>>,
@@ -344,6 +351,9 @@ impl<F: Field> ExecutionConfig<F> {
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
+        chunkctx_table: &dyn LookupTable<F>,
+        is_first_chunk: &IsZeroConfig<F>,
+        is_last_chunk: &IsZeroConfig<F>,
     ) -> Self {
         let mut instrument = Instrument::default();
         let q_usable = meta.complex_selector();
@@ -373,6 +383,14 @@ impl<F: Field> ExecutionConfig<F> {
 
         let step_curr = Step::new(meta, advices, 0);
         let mut height_map = HashMap::new();
+        let (execute_state_first_step_whitelist, execute_state_last_step_whitelist) = (
+            HashSet::from([
+                ExecutionState::BeginTx,
+                ExecutionState::EndBlock,
+                ExecutionState::BeginChunk,
+            ]),
+            HashSet::from([ExecutionState::EndBlock, ExecutionState::EndChunk]),
+        );
 
         meta.create_gate("Constrain execution state", |meta| {
             let q_usable = meta.query_selector(q_usable);
@@ -382,30 +400,55 @@ impl<F: Field> ExecutionConfig<F> {
 
             let execution_state_selector_constraints = step_curr.state.execution_state.configure();
 
-            // NEW: Enabled, this will break hand crafted tests, maybe we can remove them?
-            let first_step_check = {
-                let begin_tx_end_block_selector = step_curr
-                    .execution_state_selector([ExecutionState::BeginTx, ExecutionState::EndBlock]);
+            let first_step_first_chunk_check = {
+                let exestates = step_curr
+                    .execution_state_selector(execute_state_first_step_whitelist.iter().cloned());
                 iter::once((
-                    "First step should be BeginTx or EndBlock",
-                    q_step_first * (1.expr() - begin_tx_end_block_selector),
+                    "First step first chunk should be BeginTx or EndBlock or BeginChunk",
+                    (1.expr() - is_first_chunk.expr())
+                        * q_step_first.clone()
+                        * (1.expr() - exestates),
                 ))
             };
 
-            let last_step_check = {
+            let first_step_non_first_chunk_check = {
+                let begin_chunk_selector =
+                    step_curr.execution_state_selector([ExecutionState::BeginChunk]);
+                iter::once((
+                    "First step (non first chunk) should be BeginChunk",
+                    (1.expr() - is_first_chunk.expr())
+                        * q_step_first
+                        * (1.expr() - begin_chunk_selector),
+                ))
+            };
+
+            let last_step_last_chunk_check = {
                 let end_block_selector =
                     step_curr.execution_state_selector([ExecutionState::EndBlock]);
                 iter::once((
-                    "Last step should be EndBlock",
-                    q_step_last * (1.expr() - end_block_selector),
+                    "Last step last chunk should be EndBlock",
+                    is_last_chunk.expr() * q_step_last.clone() * (1.expr() - end_block_selector),
+                ))
+            };
+
+            let last_step_non_last_chunk_check = {
+                let end_chunk_selector =
+                    step_curr.execution_state_selector([ExecutionState::EndChunk]);
+                iter::once((
+                    "Last step (non last chunk) should be EndChunk",
+                    (1.expr() - is_last_chunk.expr())
+                        * q_step_last
+                        * (1.expr() - end_chunk_selector),
                 ))
             };
 
             execution_state_selector_constraints
                 .into_iter()
                 .map(move |(name, poly)| (name, q_usable.clone() * q_step.clone() * poly))
-                .chain(first_step_check)
-                .chain(last_step_check)
+                .chain(first_step_first_chunk_check)
+                .chain(first_step_non_first_chunk_check)
+                .chain(last_step_last_chunk_check)
+                .chain(last_step_non_last_chunk_check)
         });
 
         meta.create_gate("q_step", |meta| {
@@ -423,8 +466,8 @@ impl<F: Field> ExecutionConfig<F> {
             cb.condition(q_step_first, |cb| {
                 cb.require_equal("q_step == 1", q_step.clone(), 1.expr());
                 cb.require_equal(
-                    "rw_counter is initialized to be 1",
-                    step_curr.state.rw_counter.expr(),
+                    "inner_rw_counter is initialized to be 1",
+                    step_curr.state.inner_rw_counter.expr(),
                     1.expr(),
                 )
             });
@@ -477,13 +520,16 @@ impl<F: Field> ExecutionConfig<F> {
                     Box::new(Self::configure_gadget(
                         meta,
                         advices,
+                        &challenges,
                         q_usable,
                         q_step,
                         num_rows_until_next_step,
                         q_step_first,
                         q_step_last,
-                        &challenges,
                         &step_curr,
+                        chunkctx_table,
+                        &execute_state_first_step_whitelist,
+                        &execute_state_last_step_whitelist,
                         &mut height_map,
                         &mut stored_expressions_map,
                         &mut debug_expressions_map,
@@ -508,6 +554,8 @@ impl<F: Field> ExecutionConfig<F> {
             begin_tx_gadget: configure_gadget!(),
             end_block_gadget: configure_gadget!(),
             end_tx_gadget: configure_gadget!(),
+            begin_chunk_gadget: configure_gadget!(),
+            end_chunk_gadget: configure_gadget!(),
             // opcode gadgets
             add_sub_gadget: configure_gadget!(),
             addmod_gadget: configure_gadget!(),
@@ -608,6 +656,7 @@ impl<F: Field> ExecutionConfig<F> {
             copy_table,
             keccak_table,
             exp_table,
+            chunkctx_table,
             &challenges,
             &cell_manager,
         );
@@ -622,13 +671,16 @@ impl<F: Field> ExecutionConfig<F> {
     fn configure_gadget<G: ExecutionGadget<F>>(
         meta: &mut ConstraintSystem<F>,
         advices: [Column<Advice>; STEP_WIDTH],
+        challenges: &Challenges<Expression<F>>,
         q_usable: Selector,
         q_step: Column<Advice>,
         num_rows_until_next_step: Column<Advice>,
         q_step_first: Selector,
         q_step_last: Selector,
-        challenges: &Challenges<Expression<F>>,
         step_curr: &Step<F>,
+        chunkctx_table: &dyn LookupTable<F>,
+        execute_state_first_step_whitelist: &HashSet<ExecutionState>,
+        execute_state_last_step_whitelist: &HashSet<ExecutionState>,
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
         debug_expressions_map: &mut HashMap<ExecutionState, Vec<(String, Expression<F>)>>,
@@ -652,6 +704,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         // Now actually configure the gadget with the correct minimal height
         let step_next = &Step::new(meta, advices, height);
+
         let mut cb = EVMConstraintBuilder::new(
             meta,
             step_curr.clone(),
@@ -673,11 +726,15 @@ impl<F: Field> ExecutionConfig<F> {
             height_map,
             stored_expressions_map,
             debug_expressions_map,
+            execute_state_first_step_whitelist,
+            execute_state_last_step_whitelist,
             instrument,
             G::NAME,
             G::EXECUTION_STATE,
             height,
             cb,
+            chunkctx_table,
+            challenges,
         );
 
         gadget
@@ -695,11 +752,15 @@ impl<F: Field> ExecutionConfig<F> {
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
         debug_expressions_map: &mut HashMap<ExecutionState, Vec<(String, Expression<F>)>>,
+        execute_state_first_step_whitelist: &HashSet<ExecutionState>,
+        execute_state_last_step_whitelist: &HashSet<ExecutionState>,
         instrument: &mut Instrument,
         name: &'static str,
         execution_state: ExecutionState,
         height: usize,
         mut cb: EVMConstraintBuilder<F>,
+        chunkctx_table: &dyn LookupTable<F>,
+        challenges: &Challenges<Expression<F>>,
     ) {
         // Enforce the step height for this opcode
         let num_rows_until_next_step_next = cb
@@ -712,6 +773,8 @@ impl<F: Field> ExecutionConfig<F> {
 
         instrument.on_gadget_built(execution_state, &cb);
 
+        let step_curr_rw_counter = cb.curr.state.rw_counter.clone();
+        let step_curr_rw_counter_offset = cb.rw_counter_offset();
         let debug_expressions = cb.debug_expressions.clone();
         let (constraints, stored_expressions, _, meta) = cb.build();
         debug_assert!(
@@ -755,6 +818,53 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
+        // constraint global rw counter value at first/last step via chunkctx_table lookup
+        // we can't do it inside constraint_builder(cb)
+        // because lookup expression in constraint builder DONOT support apply conditional
+        // `step_first/step_last` selector at lookup cell.
+        if execute_state_first_step_whitelist.contains(&execution_state) {
+            meta.lookup_any("first must lookup initial rw_counter", |meta| {
+                let q_usable = meta.query_selector(q_usable);
+                let q_step_first = meta.query_selector(q_step_first);
+                let execute_state_selector = step_curr.execution_state_selector([execution_state]);
+
+                vec![(
+                    q_usable
+                        * q_step_first
+                        * execute_state_selector
+                        * rlc::expr(
+                            &[
+                                ChunkCtxFieldTag::InitialRWC.expr(),
+                                step_curr.state.rw_counter.expr(),
+                            ],
+                            challenges.lookup_input(),
+                        ),
+                    rlc::expr(&chunkctx_table.table_exprs(meta), challenges.lookup_input()),
+                )]
+            });
+        }
+
+        if execute_state_last_step_whitelist.contains(&execution_state) {
+            meta.lookup_any("last step must lookup end rw_counter", |meta| {
+                let q_usable = meta.query_selector(q_usable);
+                let q_step_last = meta.query_selector(q_step_last);
+                let execute_state_selector = step_curr.execution_state_selector([execution_state]);
+                vec![(
+                    q_usable
+                        * q_step_last
+                        * execute_state_selector
+                        * rlc::expr(
+                            &[
+                                ChunkCtxFieldTag::EndRWC.expr(),
+                                step_curr_rw_counter.expr() + step_curr_rw_counter_offset.clone(),
+                            ],
+                            challenges.lookup_input(),
+                        ),
+                    rlc::expr(&chunkctx_table.table_exprs(meta), challenges.lookup_input()),
+                )]
+            });
+        }
+
         // Enforce the state transitions for this opcode
         meta.create_gate("Constrain state machine transitions", |meta| {
             let q_usable = meta.query_selector(q_usable);
@@ -766,9 +876,18 @@ impl<F: Field> ExecutionConfig<F> {
                 .chain(
                     IntoIterator::into_iter([
                         (
-                            "EndTx can only transit to BeginTx or EndBlock",
+                            "EndTx can only transit to BeginTx or EndBlock or EndChunk",
                             ExecutionState::EndTx,
-                            vec![ExecutionState::BeginTx, ExecutionState::EndBlock],
+                            vec![
+                                ExecutionState::BeginTx,
+                                ExecutionState::EndBlock,
+                                ExecutionState::EndChunk,
+                            ],
+                        ),
+                        (
+                            "EndChunk can only transit to EndChunk",
+                            ExecutionState::EndChunk,
+                            vec![ExecutionState::EndChunk],
                         ),
                         (
                             "EndBlock can only transit to EndBlock",
@@ -798,6 +917,11 @@ impl<F: Field> ExecutionConfig<F> {
                             "Only EndTx or EndBlock can transit to EndBlock",
                             ExecutionState::EndBlock,
                             vec![ExecutionState::EndTx, ExecutionState::EndBlock],
+                        ),
+                        (
+                            "Only BeginChunk can transit to BeginChunk",
+                            ExecutionState::BeginChunk,
+                            vec![ExecutionState::BeginChunk],
                         ),
                     ])
                     .filter(move |(_, _, from)| !from.contains(&execution_state))
@@ -829,6 +953,7 @@ impl<F: Field> ExecutionConfig<F> {
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
+        chunkctx_table: &dyn LookupTable<F>,
         challenges: &Challenges<Expression<F>>,
         cell_manager: &CellManager<CMFixedWidthStrategy>,
     ) {
@@ -848,6 +973,7 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Copy => copy_table,
                         Table::Keccak => keccak_table,
                         Table::Exp => exp_table,
+                        Table::ChunkCtx => chunkctx_table,
                     }
                     .table_exprs(meta);
                     vec![(
@@ -905,7 +1031,7 @@ impl<F: Field> ExecutionConfig<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<(), Error> {
+    ) -> Result<usize, Error> {
         // Track number of calls to `layouter.assign_region` as layouter assignment passes.
         let mut assign_pass = 0;
         layouter.assign_region(
@@ -924,19 +1050,35 @@ impl<F: Field> ExecutionConfig<F> {
                     .last()
                     .map(|tx| tx.calls()[0].clone())
                     .unwrap_or_else(Call::default);
+                let prev_chunk_last_call = block
+                    .prev_block
+                    .clone()
+                    .unwrap_or_default()
+                    .txs
+                    .last()
+                    .map(|tx| tx.calls()[0].clone())
+                    .unwrap_or_else(Call::default);
+
+                let is_first_chunk = block.chunk_context.is_first_chunk();
+                let is_last_chunk =
+                    block.chunk_context.chunk_index == block.chunk_context.total_chunks - 1;
+
                 let end_block_not_last = &block.end_block_not_last;
                 let end_block_last = &block.end_block_last;
+                let begin_chunk = &block.begin_chunk;
+                let end_chunk = &block.end_chunk;
                 // Collect all steps
-                let mut steps = block
-                    .txs
-                    .iter()
-                    .flat_map(|tx| {
-                        tx.steps()
-                            .iter()
-                            .map(move |step| (tx, &tx.calls()[step.call_index], step))
-                    })
-                    .chain(std::iter::once((&dummy_tx, &last_call, end_block_not_last)))
-                    .peekable();
+                let mut steps =
+                    // attach `BeginChunk` step in first step non first chunk
+                    std::iter::once((&dummy_tx, &prev_chunk_last_call, begin_chunk)).take(if is_first_chunk {0} else {1})
+                        .chain(block.txs.iter().flat_map(|tx| {
+                            tx.steps()
+                                .iter()
+                                .map(move |step| (tx, &tx.calls()[step.call_index], step))
+                        }))
+                        // add last dummy step just to satisfy below logic, which will not be assigned and count as real step
+                        .chain(std::iter::once((&dummy_tx, &last_call, end_block_not_last)))
+                        .peekable();
 
                 let evm_rows = block.circuits_params.max_evm_rows;
                 let no_padding = evm_rows == 0;
@@ -1007,22 +1149,44 @@ impl<F: Field> ExecutionConfig<F> {
                     offset = last_row;
                 }
 
-                // part3: assign the last EndBlock at offset `evm_rows - 1`
-                let height = ExecutionState::EndBlock.get_step_height();
-                debug_assert_eq!(height, 1);
-                log::trace!("assign last EndBlock at offset {}", offset);
-                self.assign_exec_step(
-                    &mut region,
-                    offset,
-                    block,
-                    &dummy_tx,
-                    &last_call,
-                    end_block_last,
-                    height,
-                    None,
-                    challenges,
-                    assign_pass,
-                )?;
+                let height = if is_last_chunk {
+                    // part3: assign the last EndBlock at offset `evm_rows - 1`
+                    let height = ExecutionState::EndBlock.get_step_height();
+                    debug_assert_eq!(height, 1);
+                    log::trace!("assign last EndBlock at offset {}", offset);
+                    self.assign_exec_step(
+                        &mut region,
+                        offset,
+                        block,
+                        &dummy_tx,
+                        &last_call,
+                        end_block_last,
+                        height,
+                        None,
+                        challenges,
+                        assign_pass,
+                    )?;
+                    height
+                } else {
+                    // or assign EndChunk at offset `evm_rows - 1`
+                    let height = ExecutionState::EndChunk.get_step_height();
+                    debug_assert_eq!(height, 1);
+                    log::trace!("assign Chunk at offset {}", offset);
+                    self.assign_exec_step(
+                        &mut region,
+                        offset,
+                        block,
+                        &dummy_tx,
+                        &last_call,
+                        &end_chunk.clone().unwrap(),
+                        height,
+                        None,
+                        challenges,
+                        assign_pass,
+                    )?;
+                    height
+                };
+
                 self.assign_q_step(&mut region, offset, height)?;
                 // enable q_step_last
                 self.q_step_last.enable(&mut region, offset)?;
@@ -1044,7 +1208,7 @@ impl<F: Field> ExecutionConfig<F> {
                 )?;
 
                 assign_pass += 1;
-                Ok(())
+                Ok(offset)
             },
         )
     }
@@ -1059,6 +1223,7 @@ impl<F: Field> ExecutionConfig<F> {
             ("EVM_lookup_copy", COPY_TABLE_LOOKUPS),
             ("EVM_lookup_keccak", KECCAK_TABLE_LOOKUPS),
             ("EVM_lookup_exp", EXP_TABLE_LOOKUPS),
+            ("EVM_lookup_chunkctx", CHUNK_CTX_TABLE_LOOKUPS),
             ("EVM_adv_phase2", N_PHASE2_COLUMNS),
             ("EVM_copy", N_COPY_COLUMNS),
             ("EVM_lookup_u8", N_U8_LOOKUPS),
@@ -1225,6 +1390,8 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
+            ExecutionState::BeginChunk => assign_exec_step!(self.begin_chunk_gadget),
+            ExecutionState::EndChunk => assign_exec_step!(self.end_chunk_gadget),
             // opcode
             ExecutionState::ADD_SUB => assign_exec_step!(self.add_sub_gadget),
             ExecutionState::ADDMOD => assign_exec_step!(self.addmod_gadget),

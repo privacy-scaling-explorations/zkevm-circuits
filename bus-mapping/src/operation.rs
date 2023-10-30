@@ -93,7 +93,7 @@ impl RWCounter {
 /// Enum used to differenciate between EVM Stack, Memory and Storage operations.
 #[derive(Debug, Clone, PartialEq, Eq, Copy, EnumIter, Hash)]
 pub enum Target {
-    /// Start is a padding operation.
+    /// Start operation in the first row
     Start = 1,
     /// Means the target of the operation is the Memory.
     Memory,
@@ -115,6 +115,11 @@ pub enum Target {
     TxReceipt,
     /// Means the target of the operation is the TxLog.
     TxLog,
+    /// StepState
+    StepState,
+
+    /// padding operation.
+    Padding,
 }
 
 impl_expr!(Target);
@@ -885,6 +890,116 @@ impl Op for StartOp {
     }
 }
 
+/// Represents a field parameter of the StepStateField.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum StepStateField {
+    /// caller id field
+    CallID,
+    /// is_root field
+    IsRoot,
+    /// is_create field
+    IsCreate,
+    /// code_hash field
+    CodeHash,
+    /// program_counter field
+    ProgramCounter,
+    /// stack_pointer field
+    StackPointer,
+    /// gas_left field
+    GasLeft,
+    /// memory_word_size field
+    MemoryWordSize,
+    /// reversible_write_counter field
+    ReversibleWriteCounter,
+    /// log_id field
+    LogID,
+}
+
+/// Represents an CallContext read/write operation.
+#[derive(Clone, PartialEq, Eq)]
+pub struct StepStateOp {
+    /// field of CallContext
+    pub field: StepStateField,
+    /// value of CallContext
+    pub value: Word,
+}
+
+impl fmt::Debug for StepStateOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("StepStateOp { ")?;
+        f.write_fmt(format_args!(
+            "field: {:?}, value: {:?}",
+            self.field, self.value,
+        ))?;
+        f.write_str(" }")
+    }
+}
+
+impl PartialOrd for StepStateOp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for StepStateOp {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.field.cmp(&other.field)
+    }
+}
+
+impl Op for StepStateOp {
+    fn into_enum(self) -> OpEnum {
+        OpEnum::StepState(self)
+    }
+
+    fn reverse(&self) -> Self {
+        unreachable!("StepStateOp can't be reverted")
+    }
+}
+
+impl StepStateOp {
+    /// Create a new instance of a `StepStateOp` from it's components.
+    pub const fn new(field: StepStateField, value: Word) -> StepStateOp {
+        StepStateOp { field, value }
+    }
+
+    /// Returns the [`Target`] (operation type) of this operation.
+    pub const fn target(&self) -> Target {
+        Target::StepState
+    }
+
+    /// Returns the [`Word`] read or written by this operation.
+    pub const fn value(&self) -> &Word {
+        &self.value
+    }
+}
+
+/// Represent a Padding padding operation
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct PaddingOp {}
+
+impl PartialOrd for PaddingOp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for PaddingOp {
+    fn cmp(&self, _other: &Self) -> Ordering {
+        Ordering::Equal
+    }
+}
+
+impl Op for PaddingOp {
+    fn into_enum(self) -> OpEnum {
+        OpEnum::Padding(self)
+    }
+
+    fn reverse(&self) -> Self {
+        unreachable!("Padding can't be reverted")
+    }
+}
+
 /// Represents TxReceipt read/write operation.
 #[derive(Clone, PartialEq, Eq)]
 pub struct TxReceiptOp {
@@ -955,12 +1070,17 @@ pub enum OpEnum {
     TxLog(TxLogOp),
     /// Start
     Start(StartOp),
+    /// Padding
+    Padding(PaddingOp),
+    /// StepState
+    StepState(StepStateOp),
 }
 
 /// Operation is a Wrapper over a type that implements Op with a RWCounter.
 #[derive(Debug, Clone)]
 pub struct Operation<T: Op> {
     rwc: RWCounter,
+    rwc_inner_chunk: RWCounter,
     rw: RW,
     /// True when this Operation should be reverted or not when
     /// handle_reversion.
@@ -993,9 +1113,10 @@ impl<T: Op> Ord for Operation<T> {
 
 impl<T: Op> Operation<T> {
     /// Create a new Operation from an `op` with a `rwc`
-    pub fn new(rwc: RWCounter, rw: RW, op: T) -> Self {
+    pub fn new(rwc: RWCounter, rwc_inner_chunk: RWCounter, rw: RW, op: T) -> Self {
         Self {
             rwc,
+            rwc_inner_chunk,
             rw,
             reversible: false,
             op,
@@ -1003,9 +1124,10 @@ impl<T: Op> Operation<T> {
     }
 
     /// Create a new reversible Operation from an `op` with a `rwc`
-    pub fn new_reversible(rwc: RWCounter, rw: RW, op: T) -> Self {
+    pub fn new_reversible(rwc: RWCounter, rwc_inner_chunk: RWCounter, rw: RW, op: T) -> Self {
         Self {
             rwc,
+            rwc_inner_chunk,
             rw,
             reversible: true,
             op,
@@ -1015,6 +1137,11 @@ impl<T: Op> Operation<T> {
     /// Return this `Operation` `rwc`
     pub fn rwc(&self) -> RWCounter {
         self.rwc
+    }
+
+    /// Return this `Operation` `rwc_inner_chunk`
+    pub fn rwc_inner_chunk(&self) -> RWCounter {
+        self.rwc_inner_chunk
     }
 
     /// Return this `Operation` `rw`
@@ -1100,11 +1227,13 @@ mod operation_tests {
     fn unchecked_op_transmutations_are_safe() {
         let stack_op = StackOp::new(1, StackAddress::from(1024), Word::from(0x40));
 
-        let stack_op_as_operation = Operation::new(RWCounter(1), RW::WRITE, stack_op.clone());
+        let stack_op_as_operation =
+            Operation::new(RWCounter(1), RWCounter(1), RW::WRITE, stack_op.clone());
 
         let memory_op = MemoryOp::new(1, MemoryAddress(0x40), 0x40);
 
-        let memory_op_as_operation = Operation::new(RWCounter(1), RW::WRITE, memory_op.clone());
+        let memory_op_as_operation =
+            Operation::new(RWCounter(1), RWCounter(1), RW::WRITE, memory_op.clone());
 
         assert_eq!(stack_op, stack_op_as_operation.op);
         assert_eq!(memory_op, memory_op_as_operation.op)

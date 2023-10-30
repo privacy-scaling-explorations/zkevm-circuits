@@ -61,7 +61,19 @@ where
 }
 
 #[cfg(test)]
-use halo2_proofs::plonk::{Advice, Column};
+use crate::util::word::Word;
+
+#[cfg(test)]
+use crate::state_circuit::HashMap;
+#[cfg(test)]
+use crate::witness::{rw::ToVec, Rw, RwMap, RwRow};
+#[cfg(test)]
+use gadgets::permutation::get_permutation_fingerprints;
+#[cfg(test)]
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Advice, Column},
+};
 
 #[cfg(test)]
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
@@ -134,4 +146,114 @@ impl AdviceColumn {
             Self::NonEmptyWitness => config.is_non_exist.nonempty_witness,
         }
     }
+
+    pub(crate) fn rw_row_overrides<F: Field>(&self, row: &mut RwRow<Value<F>>, value: F) {
+        match self {
+            Self::IsWrite => row.is_write = Value::known(value),
+            Self::_Address => row.address = Value::known(value),
+            Self::_StorageKeyLo => {
+                row.storage_key = Word::new([Value::known(value), row.storage_key.hi()])
+            }
+            Self::_StorageKeyHi => {
+                row.storage_key = Word::new([row.storage_key.lo(), Value::known(value)])
+            }
+            Self::ValueLo => row.value = Word::new([Value::known(value), row.value.hi()]),
+            Self::ValueHi => row.value = Word::new([row.value.lo(), Value::known(value)]),
+            Self::ValuePrevLo => {
+                row.value_prev = Word::new([Value::known(value), row.value_prev.hi()])
+            }
+            Self::ValuePrevHi => {
+                row.value_prev = Word::new([row.value_prev.lo(), Value::known(value)])
+            }
+            Self::RwCounter => row.rw_counter = Value::known(value),
+            Self::Tag => row.tag = Value::known(value),
+            Self::InitialValueLo => {
+                row.init_val = Word::new([Value::known(value), row.init_val.hi()])
+            }
+            Self::InitialValueHi => {
+                row.init_val = Word::new([row.init_val.lo(), Value::known(value)])
+            }
+            _ => (),
+        };
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn rw_overrides_skip_first_padding<F: Field>(
+    rws: &[Rw],
+    overrides: &HashMap<(AdviceColumn, isize), F>,
+) -> Vec<RwRow<Value<F>>> {
+    let first_non_padding_index = 1;
+    let mut rws: Vec<RwRow<Value<F>>> = rws.iter().map(|row| row.table_assignment()).collect();
+
+    for ((column, row_offset), &f) in overrides {
+        let offset =
+            usize::try_from(isize::try_from(first_non_padding_index).unwrap() + *row_offset)
+                .unwrap();
+        column.rw_row_overrides(&mut rws[offset], f);
+    }
+    rws
+}
+
+#[cfg(test)]
+pub(crate) fn get_permutation_fingerprint_of_rwmap<F: Field>(
+    rwmap: &RwMap,
+    max_row: usize,
+    alpha: F,
+    gamma: F,
+    prev_continuous_fingerprint: F,
+) -> F {
+    get_permutation_fingerprint_of_rwvec(
+        &rwmap.table_assignments(false),
+        max_row,
+        alpha,
+        gamma,
+        prev_continuous_fingerprint,
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn get_permutation_fingerprint_of_rwvec<F: Field>(
+    rwvec: &[Rw],
+    max_row: usize,
+    alpha: F,
+    gamma: F,
+    prev_continuous_fingerprint: F,
+) -> F {
+    get_permutation_fingerprint_of_rwrowvec(
+        &rwvec
+            .iter()
+            .map(|row| row.table_assignment())
+            .collect::<Vec<RwRow<Value<F>>>>(),
+        max_row,
+        alpha,
+        gamma,
+        prev_continuous_fingerprint,
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn get_permutation_fingerprint_of_rwrowvec<F: Field>(
+    rwrowvec: &[RwRow<Value<F>>],
+    max_row: usize,
+    alpha: F,
+    gamma: F,
+    prev_continuous_fingerprint: F,
+) -> F {
+    use crate::util::unwrap_value;
+
+    let (rows, _) = RwRow::padding(rwrowvec, max_row, true);
+    let x = rows.to2dvec();
+    unwrap_value(
+        get_permutation_fingerprints(
+            &x,
+            Value::known(alpha),
+            Value::known(gamma),
+            Value::known(prev_continuous_fingerprint),
+        )
+        .last()
+        .cloned()
+        .unwrap()
+        .0,
+    )
 }

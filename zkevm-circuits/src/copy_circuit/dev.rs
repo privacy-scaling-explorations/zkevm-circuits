@@ -61,8 +61,9 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
 
         config.0.rw_table.load(
             &mut layouter,
-            &self.external_data.rws.table_assignments(),
+            &self.external_data.rws.table_assignments(true),
             self.external_data.max_rws,
+            true,
         )?;
 
         config

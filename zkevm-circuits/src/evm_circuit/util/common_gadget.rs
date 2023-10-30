@@ -20,7 +20,7 @@ use crate::{
             not, or, Cell,
         },
     },
-    table::{AccountFieldTag, CallContextFieldTag},
+    table::{chunkctx_table::ChunkCtxFieldTag, AccountFieldTag, CallContextFieldTag},
     util::{
         word::{Word, Word32, Word32Cell, WordCell, WordExpr},
         Expr,
@@ -206,7 +206,7 @@ impl<F: Field> RestoreContextGadget<F> {
             gas_left: To(gas_left),
             memory_word_size: To(caller_memory_word_size.expr()),
             reversible_write_counter: To(reversible_write_counter),
-            log_id: Same,
+            ..Default::default()
         });
 
         Self {
@@ -1243,5 +1243,107 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
 
     pub(crate) fn not_overflow(&self) -> Expression<F> {
         self.not_overflow.expr()
+    }
+}
+
+/// current SRS size < 2^30 so use 4 bytes (2^32) in LtGadet should be enough
+const MAX_RW_BYTES: usize = u32::BITS as usize / 8;
+
+/// Check consecutive Rw::Padding in rw_table to assure rw_table no malicious insertion
+#[derive(Clone, Debug)]
+pub(crate) struct RwTablePaddingGadget<F> {
+    is_empty_rwc: IsZeroGadget<F>,
+    max_rws: Cell<F>,
+    chunk_index: Cell<F>,
+    is_end_padding_exist: LtGadget<F, MAX_RW_BYTES>,
+    is_first_chunk: IsZeroGadget<F>,
+}
+
+impl<F: Field> RwTablePaddingGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        inner_rws_before_padding: Expression<F>,
+    ) -> Self {
+        let max_rws = cb.query_copy_cell();
+        let chunk_index = cb.query_cell();
+        let is_empty_rwc =
+            IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
+
+        cb.chunk_context_lookup(ChunkCtxFieldTag::CurrentChunkIndex, chunk_index.expr());
+        let is_first_chunk = IsZeroGadget::construct(cb, chunk_index.expr());
+
+        // Verify rw_counter counts to the same number of meaningful rows in
+        // rw_table to ensure there is no malicious insertion.
+        // Verify that there are at most total_rws meaningful entries in the rw_table
+        // - startop only exist in first chunk
+        // - end paddings are consecutively
+        cb.condition(is_first_chunk.expr(), |cb| {
+            cb.rw_table_start_lookup(1.expr());
+        });
+
+        let is_end_padding_exist = LtGadget::<_, MAX_RW_BYTES>::construct(
+            cb,
+            1.expr(),
+            max_rws.expr() - inner_rws_before_padding.expr(),
+        );
+        cb.condition(is_end_padding_exist.expr(), |cb| {
+            cb.rw_table_padding_lookup(inner_rws_before_padding.expr() + 1.expr());
+            cb.rw_table_padding_lookup(max_rws.expr() - 1.expr());
+        });
+        // Since every lookup done in the EVM circuit must succeed and uses
+        // a unique rw_counter, we know that at least there are
+        // total_rws meaningful entries in the rw_table.
+        // We conclude that the number of meaningful entries in the rw_table
+        // is total_rws.
+
+        Self {
+            is_empty_rwc,
+            max_rws,
+            chunk_index,
+            is_first_chunk,
+            is_end_padding_exist,
+        }
+    }
+
+    pub(crate) fn assign_exec_step(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        block: &Block<F>,
+        inner_rws_before_padding: u64,
+        step: &ExecStep,
+    ) -> Result<(), Error> {
+        let total_rwc = u64::from(step.rwc) - 1;
+        self.is_empty_rwc
+            .assign(region, offset, F::from(total_rwc))?;
+        let max_rws = F::from(block.circuits_params.max_rws as u64);
+        let max_rws_assigned = self.max_rws.assign(region, offset, Value::known(max_rws))?;
+
+        self.chunk_index.assign(
+            region,
+            offset,
+            Value::known(F::from(block.chunk_context.chunk_index as u64)),
+        )?;
+
+        self.is_first_chunk.assign(
+            region,
+            offset,
+            F::from(block.chunk_context.chunk_index as u64),
+        )?;
+
+        self.is_end_padding_exist.assign(
+            region,
+            offset,
+            F::ONE,
+            max_rws.sub(F::from(inner_rws_before_padding)),
+        )?;
+
+        // When rw_indices is not empty, means current step is non-padding step, we're at the
+        // last row (at a fixed offset), where we need to access the max_rws
+        // constant.
+        if step.rw_indices_len() != 0 {
+            region.constrain_constant(max_rws_assigned, max_rws)?;
+        }
+        Ok(())
     }
 }

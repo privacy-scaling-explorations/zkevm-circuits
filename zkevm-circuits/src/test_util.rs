@@ -6,7 +6,10 @@ use crate::{
     util::SubCircuit,
     witness::{Block, Rw},
 };
-use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
+use bus_mapping::{
+    circuit_input_builder::{ChunkContext, FixedCParams},
+    mock::BlockData,
+};
 use eth_types::geth_types::GethData;
 use std::cmp;
 
@@ -181,11 +184,20 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// into a [`Block`] and apply the default or provided block_modifiers or
     /// circuit checks to the provers generated for the State and EVM circuits.
     pub fn run(self) {
+        self.run_with_chunkctx(None);
+    }
+
+    /// run with chunk context
+    pub fn run_with_chunkctx(self, chunk_ctx: Option<ChunkContext>) {
         let block: Block<Fr> = if self.block.is_some() {
             self.block.unwrap()
         } else if self.test_ctx.is_some() {
             let block: GethData = self.test_ctx.unwrap().into();
-            let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+            let mut builder =
+                BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+            if let Some(chunk_ctx) = chunk_ctx {
+                builder.set_chunkctx(chunk_ctx)
+            }
             let builder = builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
@@ -208,7 +220,8 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
             let circuit = EvmCircuitCached::get_test_circuit_from_block(block.clone());
-            let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
+            let instance = circuit.instance();
+            let prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
 
             self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows)
         }
@@ -219,14 +232,22 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         {
             let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block).1;
             let k = cmp::max(log2_ceil(rows_needed + NUM_BLINDING_ROWS), 18);
-            let state_circuit = StateCircuit::<Fr>::new(block.rws, params.max_rws);
+            let state_circuit = StateCircuit::<Fr>::new(
+                block.rws,
+                params.max_rws,
+                block.permu_alpha,
+                block.permu_gamma,
+                block.permu_rwtable_prev_continuous_fingerprint,
+                block.permu_rwtable_next_continuous_fingerprint,
+                block.chunk_context.chunk_index,
+            );
             let instance = state_circuit.instance();
             let prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();
             // Skip verification of Start rows to accelerate testing
             let non_start_rows_len = state_circuit
                 .rows
                 .iter()
-                .filter(|rw| !matches!(rw, Rw::Start { .. }))
+                .filter(|rw| !matches!(rw, Rw::Padding { .. }))
                 .count();
             let rows = (params.max_rws - non_start_rows_len..params.max_rws).collect();
 
