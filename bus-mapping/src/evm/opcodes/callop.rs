@@ -667,82 +667,82 @@ pub mod tests {
         };
 
         let test_vector = [
-            // PrecompileCallArgs {
-            //     name: "ecRecover",
-            //     setup_code: bytecode! {
-            //         PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3")) // hash
-            //         PUSH1(0x0)
-            //         MSTORE
-            //         PUSH1(28) // v
-            //         PUSH1(0x20)
-            //         MSTORE
-            //         PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608")) // r
-            //         PUSH1(0x40)
-            //         MSTORE
-            //         PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada")) // s
-            //         PUSH1(0x60)
-            //         MSTORE
-            //     },
-            //     ret_size: Word::from(0x20),
-            //     ret_offset: Word::from(0x80),
-            //     call_data_length: Word::from(0x80),
-            //     address: Word::from(0x1),
-            //     stack_value: vec![(
-            //         Word::from(0x80),
-            //         word!("7156526fbd7a3c72969b54f64e42c10fbb768c8a"),
-            //     )],
-            //     ..Default::default()
-            // },
-            // PrecompileCallArgs {
-            //     name: "SHA2-256",
-            //     setup_code: bytecode! {
-            //         PUSH1(0xFF) // data
-            //         PUSH1(0)
-            //         MSTORE
-            //     },
-            //     ret_size: Word::from(0x20),
-            //     ret_offset: Word::from(0x20),
-            //     call_data_length: Word::from(0x1),
-            //     call_data_offset: Word::from(0x1F),
-            //     address: Word::from(0x2),
-            //     stack_value: vec![(
-            //         Word::from(0x20),
-            //         word!("a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"),
-            //     )],
-            //     ..Default::default()
-            // },
-            // PrecompileCallArgs {
-            //     name: "RIPEMD-160",
-            //     setup_code: bytecode! {
-            //         PUSH1(0xFF) // data
-            //         PUSH1(0)
-            //         MSTORE
-            //     },
-            //     ret_size: Word::from(0x20),
-            //     ret_offset: Word::from(0x20),
-            //     call_data_length: Word::from(0x1),
-            //     call_data_offset: Word::from(0x1F),
-            //     address: Word::from(0x3),
-            //     stack_value: vec![(
-            //         Word::from(0x20),
-            //         word!("2c0c45d3ecab80fe060e5f1d7057cd2f8de5e557"),
-            //     )],
-            //     ..Default::default()
-            // },
-            // PrecompileCallArgs {
-            //     name: "identity",
-            //     setup_code: bytecode! {
-            //         PUSH16(word!("0123456789ABCDEF0123456789ABCDEF"))
-            //         PUSH1(0x00)
-            //         MSTORE
-            //     },
-            //     ret_size: Word::from(0x20),
-            //     ret_offset: Word::from(0x20),
-            //     call_data_length: Word::from(0x20),
-            //     address: Word::from(0x4),
-            //     stack_value: vec![(Word::from(0x20), word!("0123456789ABCDEF0123456789ABCDEF"))],
-            //     ..Default::default()
-            // },
+            PrecompileCallArgs {
+                name: "ecRecover",
+                setup_code: bytecode! {
+                    PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3")) // hash
+                    PUSH1(0x0)
+                    MSTORE
+                    PUSH1(28) // v
+                    PUSH1(0x20)
+                    MSTORE
+                    PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608")) // r
+                    PUSH1(0x40)
+                    MSTORE
+                    PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada")) // s
+                    PUSH1(0x60)
+                    MSTORE
+                },
+                ret_size: Word::from(0x20),
+                ret_offset: Word::from(0x80),
+                call_data_length: Word::from(0x80),
+                address: Word::from(0x1),
+                stack_value: vec![(
+                    Word::from(0x80),
+                    word!("7156526fbd7a3c72969b54f64e42c10fbb768c8a"),
+                )],
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "SHA2-256",
+                setup_code: bytecode! {
+                    PUSH1(0xFF) // data
+                    PUSH1(0)
+                    MSTORE
+                },
+                ret_size: Word::from(0x20),
+                ret_offset: Word::from(0x20),
+                call_data_length: Word::from(0x1),
+                call_data_offset: Word::from(0x1F),
+                address: Word::from(0x2),
+                stack_value: vec![(
+                    Word::from(0x20),
+                    word!("a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"),
+                )],
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "RIPEMD-160",
+                setup_code: bytecode! {
+                    PUSH1(0xFF) // data
+                    PUSH1(0)
+                    MSTORE
+                },
+                ret_size: Word::from(0x20),
+                ret_offset: Word::from(0x20),
+                call_data_length: Word::from(0x1),
+                call_data_offset: Word::from(0x1F),
+                address: Word::from(0x3),
+                stack_value: vec![(
+                    Word::from(0x20),
+                    word!("2c0c45d3ecab80fe060e5f1d7057cd2f8de5e557"),
+                )],
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "identity",
+                setup_code: bytecode! {
+                    PUSH16(word!("0123456789ABCDEF0123456789ABCDEF"))
+                    PUSH1(0x00)
+                    MSTORE
+                },
+                ret_size: Word::from(0x20),
+                ret_offset: Word::from(0x20),
+                call_data_length: Word::from(0x20),
+                address: Word::from(0x4),
+                stack_value: vec![(Word::from(0x20), word!("0123456789ABCDEF0123456789ABCDEF"))],
+                ..Default::default()
+            },
             // PR1628_DEBUG
             // PrecompileCallArgs {
             //     name: "modexp",
@@ -768,125 +768,125 @@ pub mod tests {
             //     stack_value: vec![(Word::from(0x80), Word::from(8))],
             //     ..Default::default()
             // },
-            // PrecompileCallArgs {
-            //     name: "ecAdd",
-            //     setup_code: bytecode! {
-            //         PUSH1(1) // x1
-            //         PUSH1(0)
-            //         MSTORE
-            //         PUSH1(2) // y1
-            //         PUSH1(0x20)
-            //         MSTORE
-            //         PUSH1(1) // x2
-            //         PUSH1(0x40)
-            //         MSTORE
-            //         PUSH1(2) // y2
-            //         PUSH1(0x60)
-            //         MSTORE
-            //     },
-            //     ret_size: Word::from(0x40),
-            //     ret_offset: Word::from(0x80),
-            //     call_data_length: Word::from(0x80),
-            //     address: Word::from(0x6),
-            //     stack_value: vec![
-            //         (
-            //             Word::from(0x80),
-            //             word!("30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd3"),
-            //         ),
-            //         (
-            //             Word::from(0xA0),
-            //             word!("15ed738c0e0a7c92e7845f96b2ae9c0a68a6a449e3538fc7ff3ebf7a5a18a2c4"),
-            //         ),
-            //     ],
-            //     ..Default::default()
-            // },
-            // PrecompileCallArgs {
-            //     name: "ecMul",
-            //     setup_code: bytecode! {
-            //         PUSH1(1) // x1
-            //         PUSH1(0)
-            //         MSTORE
-            //         PUSH1(2) // y1
-            //         PUSH1(0x20)
-            //         MSTORE
-            //         PUSH1(2) // s
-            //         PUSH1(0x40)
-            //         MSTORE
-            //     },
-            //     ret_size: Word::from(0x40),
-            //     ret_offset: Word::from(0x60),
-            //     call_data_length: Word::from(0x60),
-            //     address: Word::from(0x7),
-            //     stack_value: vec![
-            //         (
-            //             Word::from(0x60),
-            //             word!("30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd3"),
-            //         ),
-            //         (
-            //             Word::from(0x80),
-            //             word!("15ed738c0e0a7c92e7845f96b2ae9c0a68a6a449e3538fc7ff3ebf7a5a18a2c4"),
-            //         ),
-            //     ],
-            //     ..Default::default()
-            // },
-            // PR1628_DEBUG
             PrecompileCallArgs {
-                name: "ecPairing",
+                name: "ecAdd",
                 setup_code: bytecode! {
-                    PUSH32(word!("
-            0x23a8eb0b0996252cb548a4487da97b02422ebc0e834613f954de6c7e0afdc1fc"))
-                    PUSH32(word!("
-            0x2a23af9a5ce2ba2796c1f4e453a370eb0af8c212d9dc9acd8fc02c2e907baea2"))
-                    PUSH32(word!("
-            0x091058a3141822985733cbdddfed0fd8d6c104e9e9eff40bf5abfef9ab163bc7"))
-                    PUSH32(word!("
-            0x1971ff0471b09fa93caaf13cbf443c1aede09cc4328f5a62aad45f40ec133eb4"))
-                    PUSH32(word!("
-            0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd45"))
-                    PUSH32(word!("
-            0x0000000000000000000000000000000000000000000000000000000000000001"))
-                    PUSH32(word!("
-            0x2fe02e47887507adf0ff1743cbac6ba291e66f59be6bd763950bb16041a0a85e"))
-                    PUSH32(word!("
-            0x2bd368e28381e8eccb5fa81fc26cf3f048eea9abfdd85d7ed3ab3698d63e4f90"))
-                    PUSH32(word!("
-            0x22606845ff186793914e03e21df544c34ffe2f2f3504de8a79d9159eca2d98d9"))
-                    PUSH32(word!("
-            0x1fb19bb476f6b9e44e2a32234da8212f61cd63919354bc06aef31e3cfaff3ebc"))
-                    PUSH32(word!("
-            0x2c0f001f52110ccfe69108924926e45f0b0c868df0e7bde1fe16d3242dc715f6"))
-                    PUSH32(word!("
-            0x2cf44499d5d27bb186308b7af7af02ac5bc9eeb6a3d147c186b21fb1b76e18da"))
-
-                    PUSH1(12)
-                    PUSH2(0x200)
+                    PUSH1(1) // x1
+                    PUSH1(0)
                     MSTORE
-
-                    JUMPDEST
-
-                    PUSH2(0x200)
-                    MLOAD
-                    PUSH1(12)
-                    SUB
+                    PUSH1(2) // y1
                     PUSH1(0x20)
-                    MUL
                     MSTORE
-                    PUSH1(1)
-                    PUSH2(0x200)
-                    MLOAD
-                    SUB
-                    DUP1
-                    PUSH2(0x200)
+                    PUSH1(1) // x2
+                    PUSH1(0x40)
                     MSTORE
-                    PUSH2(0x192)
-                    JUMPI
+                    PUSH1(2) // y2
+                    PUSH1(0x60)
+                    MSTORE
                 },
-                ret_size: Word::from(0x20),
-                call_data_length: Word::from(0x180),
-                address: Word::from(0x8),
-                stack_value: vec![(Word::from(0x0), Word::from(1))],
+                ret_size: Word::from(0x40),
+                ret_offset: Word::from(0x80),
+                call_data_length: Word::from(0x80),
+                address: Word::from(0x6),
+                stack_value: vec![
+                    (
+                        Word::from(0x80),
+                        word!("30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd3"),
+                    ),
+                    (
+                        Word::from(0xA0),
+                        word!("15ed738c0e0a7c92e7845f96b2ae9c0a68a6a449e3538fc7ff3ebf7a5a18a2c4"),
+                    ),
+                ],
                 ..Default::default()
             },
+            PrecompileCallArgs {
+                name: "ecMul",
+                setup_code: bytecode! {
+                    PUSH1(1) // x1
+                    PUSH1(0)
+                    MSTORE
+                    PUSH1(2) // y1
+                    PUSH1(0x20)
+                    MSTORE
+                    PUSH1(2) // s
+                    PUSH1(0x40)
+                    MSTORE
+                },
+                ret_size: Word::from(0x40),
+                ret_offset: Word::from(0x60),
+                call_data_length: Word::from(0x60),
+                address: Word::from(0x7),
+                stack_value: vec![
+                    (
+                        Word::from(0x60),
+                        word!("30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd3"),
+                    ),
+                    (
+                        Word::from(0x80),
+                        word!("15ed738c0e0a7c92e7845f96b2ae9c0a68a6a449e3538fc7ff3ebf7a5a18a2c4"),
+                    ),
+                ],
+                ..Default::default()
+            },
+            // PR1628_DEBUG
+            // PrecompileCallArgs {
+            //     name: "ecPairing",
+            //     setup_code: bytecode! {
+            //         PUSH32(word!("
+            // 0x23a8eb0b0996252cb548a4487da97b02422ebc0e834613f954de6c7e0afdc1fc"))
+            //         PUSH32(word!("
+            // 0x2a23af9a5ce2ba2796c1f4e453a370eb0af8c212d9dc9acd8fc02c2e907baea2"))
+            //         PUSH32(word!("
+            // 0x091058a3141822985733cbdddfed0fd8d6c104e9e9eff40bf5abfef9ab163bc7"))
+            //         PUSH32(word!("
+            // 0x1971ff0471b09fa93caaf13cbf443c1aede09cc4328f5a62aad45f40ec133eb4"))
+            //         PUSH32(word!("
+            // 0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd45"))
+            //         PUSH32(word!("
+            // 0x0000000000000000000000000000000000000000000000000000000000000001"))
+            //         PUSH32(word!("
+            // 0x2fe02e47887507adf0ff1743cbac6ba291e66f59be6bd763950bb16041a0a85e"))
+            //         PUSH32(word!("
+            // 0x2bd368e28381e8eccb5fa81fc26cf3f048eea9abfdd85d7ed3ab3698d63e4f90"))
+            //         PUSH32(word!("
+            // 0x22606845ff186793914e03e21df544c34ffe2f2f3504de8a79d9159eca2d98d9"))
+            //         PUSH32(word!("
+            // 0x1fb19bb476f6b9e44e2a32234da8212f61cd63919354bc06aef31e3cfaff3ebc"))
+            //         PUSH32(word!("
+            // 0x2c0f001f52110ccfe69108924926e45f0b0c868df0e7bde1fe16d3242dc715f6"))
+            //         PUSH32(word!("
+            // 0x2cf44499d5d27bb186308b7af7af02ac5bc9eeb6a3d147c186b21fb1b76e18da"))
+
+            //         PUSH1(12)
+            //         PUSH2(0x200)
+            //         MSTORE
+
+            //         JUMPDEST
+
+            //         PUSH2(0x200)
+            //         MLOAD
+            //         PUSH1(12)
+            //         SUB
+            //         PUSH1(0x20)
+            //         MUL
+            //         MSTORE
+            //         PUSH1(1)
+            //         PUSH2(0x200)
+            //         MLOAD
+            //         SUB
+            //         DUP1
+            //         PUSH2(0x200)
+            //         MSTORE
+            //         PUSH2(0x192)
+            //         JUMPI
+            //     },
+            //     ret_size: Word::from(0x20),
+            //     call_data_length: Word::from(0x180),
+            //     address: Word::from(0x8),
+            //     stack_value: vec![(Word::from(0x0), Word::from(1))],
+            //     ..Default::default()
+            // },
             // PR1628_DEBUG
             // PrecompileCallArgs {
             //     name: "blake2f",
@@ -952,9 +952,9 @@ pub mod tests {
 
         let call_ops = [
             OpcodeId::CALL,
-            // OpcodeId::CALLCODE,
-            // OpcodeId::DELEGATECALL,
-            // OpcodeId::STATICCALL,
+            OpcodeId::CALLCODE,
+            OpcodeId::DELEGATECALL,
+            OpcodeId::STATICCALL,
         ];
 
         for (test_call, call_op) in itertools::iproduct!(test_vector.iter(), call_ops.iter()) {
