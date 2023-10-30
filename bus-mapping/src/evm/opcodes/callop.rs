@@ -330,7 +330,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, call.call_id, field, value)?;
                 }
-                
+
                 let caller_ctx = state.caller_ctx_mut()?;
                 caller_ctx.memory.0[ret_offset..ret_offset + length]
                     .copy_from_slice(&result[..length]);
