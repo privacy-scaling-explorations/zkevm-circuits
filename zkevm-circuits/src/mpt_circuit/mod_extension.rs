@@ -93,6 +93,19 @@ impl<F: Field> ModExtensionGadget<F> {
             let parent_data_hi = vec![hi_s, hi_c];
             let parent_data_rlc = is_insert.clone() * parent_data[0].rlc.expr() + (1.expr() - is_insert.clone()) * parent_data[1].rlc.expr();
 
+            let key_rlc_before = key_data[0].rlc.expr() * is_insert.clone() + (1.expr() - is_insert.clone()) * key_data[1].rlc.expr();
+            let key_mult_before = key_data[0].mult.expr() * is_insert.clone() + (1.expr() - is_insert.clone()) * key_data[1].mult.expr();
+            let key_is_odd_before = key_data[0].is_odd.expr() * is_insert.clone() + (1.expr() - is_insert.clone()) * key_data[1].is_odd.expr();
+
+            // TODO: remove
+            require!(key_rlc_before => 0.expr());
+            require!(key_mult_before => 1.expr());
+            require!(key_is_odd_before => 0.expr());
+
+            let middle_key_rlc = key_data[1].drifted_rlc.expr() * is_insert.clone() + (1.expr() - is_insert.clone()) * key_data[0].drifted_rlc.expr();
+            let middle_key_mult = key_data[1].mult.expr() * is_insert.clone() + (1.expr() - is_insert.clone()) * key_data[0].mult.expr();
+            let middle_key_is_odd = key_data[1].is_odd.expr() * is_insert.clone() + (1.expr() - is_insert.clone()) * key_data[0].is_odd.expr();
+
             for is_s in [true, false] {
                 config.rlp_key[is_s.idx()] = ListKeyGadget::construct(cb, &key_items[is_s.idx()]);
                 config.is_key_part_odd[is_s.idx()] = cb.query_cell();
@@ -137,22 +150,21 @@ impl<F: Field> ModExtensionGadget<F> {
                 }} 
             }
 
-            let nibbles_rlc_long = ext_key_rlc_expr(
-                cb,
-                config.rlp_key[0].key_value.clone(),
-                1.expr(),
-                config.is_key_part_odd[0].expr(),
-                // Note that when the key is odd, one nibble is stored in the first byte, while otherwise
-                // the first byte is empty:
-                config.is_key_part_odd[0].expr(),
-                key_items
-                    .iter()
-                    .map(|item| item.bytes_be())
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .unwrap(),
-                &cb.key_r.expr(),
-            );
+            let nibbles_rlc_long = key_rlc_before
+                + ext_key_rlc_expr(
+                    cb,
+                    config.rlp_key[0].key_value.clone(),
+                    key_mult_before,
+                    config.is_key_part_odd[0].expr(),
+                    key_is_odd_before,
+                    key_items
+                        .iter()
+                        .map(|item| item.bytes_be())
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap(),
+                    &cb.key_r.expr(),
+                );
 
             let data = [key_items[1].clone(), key_nibbles[1].clone()];
 
@@ -164,13 +176,24 @@ impl<F: Field> ModExtensionGadget<F> {
             let short_is_odd = config.is_key_part_odd[1].expr();
             let middle_is_odd = long_is_odd.clone() * short_is_odd.clone() + (1.expr() - long_is_odd.clone()) * (1.expr() - short_is_odd.clone());
 
-            let nibbles_rlc_short = ext_key_rlc_expr(
+
+            let drifted_index = is_insert.clone() * key_data[0].drifted_index.expr() + (1.expr() - is_insert.clone()) * key_data[1].drifted_index.expr();
+            let mult = is_insert.clone() * key_data[0].drifted_mult.expr() + (1.expr() - is_insert.clone()) * key_data[1].drifted_mult.expr();
+            let nibbles_rlc = key_data[0].nibbles_rlc.expr(); // same value is stored in S and C
+            
+            let r = cb.key_r.clone();
+            let dc = (2.expr() * 16.expr() + 3.expr()) + (4.expr() * 16.expr() + 5.expr()) * r.clone() + (6.expr() * 16.expr()) * r.clone() * r.clone();
+            require!(nibbles_rlc_long => dc);
+    
+            let dc1 = (1.expr() * 16.expr() + 2.expr()) + (3.expr() * 16.expr() + 4.expr()) * r.clone() + 5.expr() * 16.expr() * r.clone() * r.clone();
+            // require!(middle_key_rlc => dc1);
+
+            let rlc_after_short = middle_key_rlc + ext_key_rlc_expr(
                 cb,
                 config.rlp_key[1].key_value.clone(),
-                1.expr(),
+                middle_key_mult,
                 config.is_key_part_odd[1].expr(),
-                // Taking into account the nibbles and the drifted_index:
-                not!(middle_is_odd),
+                middle_key_is_odd,
                 data
                     .iter()
                     .map(|item| item.bytes_be())
@@ -180,38 +203,7 @@ impl<F: Field> ModExtensionGadget<F> {
                 &cb.key_r.expr(),
             );
 
-            let drifted_index = is_insert.clone() * key_data[0].drifted_index.expr() + (1.expr() - is_insert.clone()) * key_data[1].drifted_index.expr();
-            let mult = is_insert.clone() * key_data[0].drifted_mult.expr() + (1.expr() - is_insert.clone()) * key_data[1].drifted_mult.expr();
-            let nibbles_rlc = key_data[0].nibbles_rlc.expr(); // same value is stored in S and C
-            
-            /*
-            require!(0.expr() => long_is_odd);
-            require!(1.expr() => short_is_odd);
-            require!(3.expr() => drifted_index.clone());
-            */
-
-            ifx! {middle_is_odd => {
-                ifx! {long_is_odd => {
-                    // TODO
-                } elsex {
-                    let r = cb.key_r.clone();
-                    let rlc1 = nibbles_rlc.expr() + drifted_index.clone() * mult.clone();
-                    let rlc = (rlc1, mult.clone() * r).rlc_chain(nibbles_rlc_short.clone());
-                    require!(nibbles_rlc_long => rlc);
-                }}
-            } elsex {
-                ifx! {long_is_odd => {
-                    // TODO
-                } elsex {
-                    let rlc2 = drifted_index * 16.expr() + nibbles_rlc_short;
-                    let rlc = (nibbles_rlc.expr(), mult).rlc_chain(rlc2);
-                    require!(nibbles_rlc_long => rlc);
-                }}
-            }}
-
-            // require!(nibbles_rlc_long => d);
-            // require!(debug_check => key_data[0].nibbles_rlc);
-            // require!(debug_check1 => d);
+            require!(rlc_after_short => nibbles_rlc_long);
  
             /*
             let r = cb.key_r.clone();
@@ -284,6 +276,25 @@ impl<F: Field> ModExtensionGadget<F> {
                 rlp_key[is_s.idx()].rlp_list.num_bytes().scalar(),
                 HASH_WIDTH.scalar(),
             )?;
+
+            /*
+            let nibbles_rlc_long = key_rlc_before
+                + ext_key_rlc_expr(
+                    cb,
+                    config.rlp_key[0].key_value.clone(),
+                    key_mult_before,
+                    config.is_key_part_odd[0].expr(),
+                    key_is_odd_before,
+                    key_items
+                        .iter()
+                        .map(|item| item.bytes_be())
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap(),
+                    &cb.key_r.expr(),
+                );
+            */
+
             
             // Debugging:
             /*
@@ -294,7 +305,7 @@ impl<F: Field> ModExtensionGadget<F> {
                     rlp_key[is_s.idx()].key_item.clone(),
                     F::ONE,
                     is_key_part_odd,
-                    is_key_part_odd,
+                    false,
                     data
                         .iter()
                         .map(|item| item.bytes.clone())
