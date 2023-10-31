@@ -1,19 +1,21 @@
-
 use base64::{engine::general_purpose, Engine};
 use eth_types::keccak256;
 use eyre::{ensure, Result};
+use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
 use hyper::{
     body::{self},
     service::{make_service_fn, service_fn},
     Body, Client, Request, Response, Server,
 };
 use serde::Deserialize;
-use std::{convert::Infallible, collections::HashMap, fs::File, io::{Write, Read}};
-use std::io::prelude::*;
-use flate2::{Compression, read::ZlibDecoder};
-use flate2::write::ZlibEncoder;
+use std::{
+    collections::HashMap,
+    convert::Infallible,
+    fs::File,
+    io::{prelude::*, Read, Write},
+};
 
-pub const CACHE_URL : &str = "http://localhost:3000";
+pub const CACHE_URL: &str = "http://localhost:3000";
 
 #[allow(dead_code)]
 #[derive(Deserialize, Debug)]
@@ -33,21 +35,22 @@ enum Param {
 }
 
 lazy_static! {
-    static ref CACHED: tokio::sync::Mutex<HashMap<String, Vec<u8>>> = tokio::sync::Mutex::new(HashMap::new());
+    static ref CACHED: tokio::sync::Mutex<HashMap<String, Vec<u8>>> =
+        tokio::sync::Mutex::new(HashMap::new());
 }
 
 impl RequestBody {
     fn name(&self) -> String {
         let params = if let Some(params) = &self.params {
             params
-            .iter()
-            .map(|s| match s {
-                Param::String(s) => s.to_owned(),
-                Param::Bool(b) => format!("{}", b),
-                Param::StringVec(v) => v.join(""),
-            })
-            .collect::<Vec<_>>()
-            .join("-")
+                .iter()
+                .map(|s| match s {
+                    Param::String(s) => s.to_owned(),
+                    Param::Bool(b) => format!("{}", b),
+                    Param::StringVec(v) => v.join(""),
+                })
+                .collect::<Vec<_>>()
+                .join("-")
         } else {
             "".to_owned()
         };
@@ -99,7 +102,7 @@ async fn web3_proxy(req: Request<Body>) -> Result<Response<Body>> {
 
         for (key, value) in headers {
             if let Some(key) = key {
-                if !["host", "accept-encoding", "date"].contains(&key.as_str()){
+                if !["host", "accept-encoding", "date"].contains(&key.as_str()) {
                     req.headers_mut().append(key, value);
                 }
             }
@@ -111,7 +114,10 @@ async fn web3_proxy(req: Request<Body>) -> Result<Response<Body>> {
 
         let response_bytes = body::to_bytes(response_body).await?.to_vec();
 
-        CACHED.lock().await.insert(key.clone(), response_bytes.clone());
+        CACHED
+            .lock()
+            .await
+            .insert(key.clone(), response_bytes.clone());
 
         let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(&response_bytes)?;
@@ -131,18 +137,20 @@ async fn web3_proxy(req: Request<Body>) -> Result<Response<Body>> {
 }
 
 pub async fn run() -> Result<()> {
-
     if let Ok(mut f) = File::open(CACHE_PATH) {
         let mut buf = String::new();
         f.read_to_string(&mut buf)?;
-        let kvs : Vec<_> = buf.lines().map(|line| {
-            let (k,v) = line.split_once('=').unwrap();
-            let response_bytes_compressed = general_purpose::STANDARD.decode(v).unwrap();
-            let mut decoder = ZlibDecoder::new(&response_bytes_compressed[..]);
-            let mut buf = Vec::new();
-            decoder.read_to_end(&mut buf).unwrap();
-            (k.to_string(),buf)
-        }).collect();
+        let kvs: Vec<_> = buf
+            .lines()
+            .map(|line| {
+                let (k, v) = line.split_once('=').unwrap();
+                let response_bytes_compressed = general_purpose::STANDARD.decode(v).unwrap();
+                let mut decoder = ZlibDecoder::new(&response_bytes_compressed[..]);
+                let mut buf = Vec::new();
+                decoder.read_to_end(&mut buf).unwrap();
+                (k.to_string(), buf)
+            })
+            .collect();
         println!("loaded {} cached responses", kvs.len());
         CACHED.lock().await.extend(kvs);
     }

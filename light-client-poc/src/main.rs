@@ -10,7 +10,6 @@ pub mod utils;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-
     if let Some(arg1) = std::env::args().nth(1) {
         if arg1 == "--cache" {
             println!("Running cache server");
@@ -19,5 +18,4 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
-
 }

@@ -25,7 +25,7 @@ use zkevm_circuits::{
 };
 
 use crate::circuits::witness::{
-    SingleTrieModification, SingleTrieModifications, Witness, Transforms,
+    SingleTrieModification, SingleTrieModifications, Transforms, Witness,
 };
 
 #[cfg(not(feature = "disable-keccak"))]
@@ -508,6 +508,4 @@ impl StateUpdateCircuit<Fr> {
 
         Ok(lc_circuit)
     }
-
-
 }

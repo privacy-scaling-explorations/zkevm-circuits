@@ -1,6 +1,6 @@
-use halo2_proofs::{halo2curves::bn256::Fr, dev::MockProver};
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 
-use super::{InitialStateCircuit, pi::PublicInputs};
+use super::{pi::PublicInputs, InitialStateCircuit};
 
 impl InitialStateCircuit<Fr> {
     pub fn assert_satisfied(&self) {

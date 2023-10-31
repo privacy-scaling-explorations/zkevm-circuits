@@ -26,7 +26,7 @@ use zkevm_circuits::{
 };
 
 use crate::circuits::witness::{
-    SingleTrieModification, SingleTrieModifications, Witness, Transforms,
+    SingleTrieModification, SingleTrieModifications, Transforms, Witness,
 };
 
 #[cfg(not(feature = "disable-keccak"))]
@@ -71,10 +71,9 @@ pub struct InitialStateCircuitConfig<F: Field> {
     pub count: Column<Advice>,
     pub count_decrement: IsZeroConfig<F>,
 
-    // pub rlc_acc: Column<Advice>,
+    pub rlc_acc: Column<Advice>,
     // pub rlc_acc_enabled_inv: Column<Advice>,
     // pub rlc_acc_disabled_inv: Column<Advice>,
-
     pub q_enable: Selector,
 }
 
@@ -112,7 +111,7 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
 
         let keccak_table = KeccakTable::construct(meta);
 
-        // let rlc_acc = meta.advice_column_in(SecondPhase);
+        let rlc_acc = meta.advice_column_in(SecondPhase);
 
         #[cfg(not(feature = "disable-keccak"))]
         let keccak_config = KeccakCircuitConfig::new(
@@ -228,58 +227,57 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
             let is_last_or_padding = or::expr([is_padding.expr(), is_last.expr()]);
             vec![q_enable * xif(is_last_or_padding.expr(), new_root_propagation.expr())]
         });
-/*
-        let rlc_acc_enabled_inv = meta.advice_column();
-        let rlc_acc_enabled = IsZeroChip::configure(
-            meta,
-            |meta| meta.query_selector(q_enable),
-            |meta| {
-                let rlc_acc_cur = meta.query_advice(rlc_acc, Rotation::cur());
-                let rlc_acc_prev = meta.query_advice(rlc_acc, Rotation::prev());
 
-                let is_first = meta.query_fixed(is_first, Rotation::cur());
+        // the idea for rlc acummulator is
+        // when roots are equal accumulate rlc
+        //   if we are in first row, do not add previous rlc row
+        //   if we are not in first row, add previous rlc
+        // when roots are not equal propagate rlc
+        //   roots are not equal
+        //   or we are in padding
+        //
+        // we always have non-changing rows (e.g. read nonce at the beginning of the block)
+        // we always have changing rows (e.g. write nonce at the end of the block)
+        //
+        // if is_first
+        //    compulte rlc
+        // if
 
-                let rlc_acc = [
-                    pi_mpt.proof_type,
-                    pi_mpt.address,
-                    pi_mpt.old_value.lo(),
-                    pi_mpt.old_value.hi(),
-                    pi_mpt.storage_key.lo(),
-                    pi_mpt.storage_key.hi(),
-                ]
-                .iter()
-                .fold(not::expr(is_first) * rlc_acc_prev, |acc, col| {
-                    acc * challenges_expr.keccak_input() + meta.query_advice(*col, Rotation::cur())
-                });
-                rlc_acc - rlc_acc_cur;
-                0.expr()
-            },
-            rlc_acc_enabled_inv,
-        );
-
-        let rlc_acc_disabled_inv = meta.advice_column();
-        let rlc_acc_disabled = IsZeroChip::configure(
-            meta,
-            |meta| meta.query_selector(q_enable),
-            |meta| {
-                let rlc_acc_cur = meta.query_advice(rlc_acc, Rotation::cur());
-                let rlc_acc_prev = meta.query_advice(rlc_acc, Rotation::prev());
-                rlc_acc_cur - rlc_acc_prev
-            },
-            rlc_acc_disabled_inv,
-        );
-
-        meta.create_gate("", |meta| {
+        meta.create_gate("rlc: accumulate if no_state_change and q_enabled", |meta| {
             let q_enable = meta.query_selector(q_enable);
 
+            let rlc_acc_cur = meta.query_advice(rlc_acc, Rotation::cur());
+            let rlc_acc_next = meta.query_advice(rlc_acc, Rotation::next());
+
+            let rlc = [
+                pi_mpt.proof_type,
+                pi_mpt.address,
+                pi_mpt.new_value.lo(),
+                pi_mpt.new_value.hi(),
+                pi_mpt.storage_key.lo(),
+                pi_mpt.storage_key.hi(),
+            ]
+            .iter()
+            .fold(rlc_acc_cur, |acc, col| {
+                acc * challenges_expr.keccak_input() + meta.query_advice(*col, Rotation::cur())
+            });
+
             [q_enable
-                *
-                and::expr(
-                    [
-                        bool_if(no_state_change_cur.expr(),rlc_acc_enabled.expr() ),
-                        bool_if(not::expr(no_state_change_cur.expr()), rlc_acc_disabled.expr())
-                    ]
-                )
+                * no_state_change_cur.expr()
+                * not::expr(is_padding.expr())
+                * (rlc_acc_next - rlc)]
+        });
+
+
+        meta.create_gate("rlc: propagate if state changed or padding", |meta| {
+            let q_enable = meta.query_selector(q_enable);
+            let rlc_acc_cur = meta.query_advice(rlc_acc, Rotation::cur());
+            let rlc_acc_next = meta.query_advice(rlc_acc, Rotation::next());
+
+            [
+            q_enable
+             * or::expr([is_padding.expr(), not::expr(no_state_change_cur.expr())])
+             * (rlc_acc_cur - rlc_acc_next )
             ]
         });
 
@@ -302,7 +300,7 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                 ]
             },
         );
-*/
+
         meta.create_gate(
             "if not padding and not last row, roots should be chained",
             |meta| {
@@ -381,7 +379,7 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
             q_enable,
             pi_instance,
             pi_mpt,
-            // rlc_acc,
+            rlc_acc,
             // rlc_acc_enabled_inv,
             // rlc_acc_disabled_inv
         };
@@ -422,6 +420,8 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
         self.keccak_circuit
             .synthesize_sub(&config.keccak_config, &challenges, &mut layouter)?;
 
+        let keccak_input = challenges.keccak_input();
+
         // assign LC witness
 
         let pi = layouter.assign_region(
@@ -445,12 +445,28 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                     config.count_decrement.value_inv,
                 );
                 region.name_column(|| "LC_pi_instance", config.pi_instance);
+                region.name_column(|| "LC_rlc_acc", config.rlc_acc);
+                // region.name_column(|| "LC_rlc_acc_enabled_inv", config.rlc_acc_enabled_inv);
 
-                region.assign_fixed(|| "", config.is_first, 0, || Value::known(F::ONE))?;
+                region.name_column(|| "LC_old_root_hi", config.pi_mpt.old_root.hi());
+                region.name_column(|| "LC_old_root_lo", config.pi_mpt.old_root.lo());
+                region.name_column(|| "LC_new_root_hi", config.pi_mpt.new_root.hi());
+                region.name_column(|| "LC_new_root_lo", config.pi_mpt.new_root.lo());
+                region.name_column(|| "LC_address", config.pi_mpt.address);
+                region.name_column(|| "LC_proof_type", config.pi_mpt.proof_type);
+                region.name_column(|| "LC_old_value_hi", config.pi_mpt.old_value.hi());
+                region.name_column(|| "LC_old_value_lo", config.pi_mpt.old_value.lo());
+                region.name_column(|| "LC_new_value_hi", config.pi_mpt.new_value.hi());
+                region.name_column(|| "LC_new_value_lo", config.pi_mpt.new_value.lo());
+                region.name_column(|| "LC_storagekey_hi", config.pi_mpt.storage_key.hi());
+                region.name_column(|| "LC_storagekey_lo", config.pi_mpt.storage_key.lo());
 
                 let mut pi = Vec::new();
+                let mut rlc_acc = Value::known(F::ZERO);
 
                 for offset in 0..self.max_proof_count {
+
+                    region.assign_fixed(|| "LC_first", config.is_first, offset, || Value::known(if offset==0 { F::ONE } else { F::ZERO }))?;
 
                     let count_usize = self.lc_witness.len().saturating_sub(offset);
                     let padding = count_usize == 0;
@@ -506,6 +522,27 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                         &stm_next.old_root, &stm_next.new_root
                     )?;
 
+                    // compute rlc accumulator
+                    if stm.old_root == stm.new_root  {
+                        rlc_acc = [
+                            stm.typ,
+                            stm.address,
+                            stm.value.lo(),
+                            stm.value.hi(),
+                            stm.key.lo(),
+                            stm.key.hi(),
+                        ]
+                        .iter()
+                        .fold(rlc_acc, |acc, val| {
+                            acc * keccak_input + Value::known(val)
+                        });
+                    }
+                    if offset == 0 {
+                        region.assign_advice(|| "", config.rlc_acc, 0, || Value::known(F::ZERO))?;
+                    }
+                    region.assign_advice(|| "", config.rlc_acc, offset+1, || rlc_acc)?;
+
+                    // assign SMT inputs
                     let count_cell = region.assign_advice(|| "", config.count, offset, || count)?;
 
                     let [typ,

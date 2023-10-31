@@ -109,7 +109,7 @@ impl<F: Field> Witness<F> {
     ) -> Result<Option<Self>> {
         let transforms =
             Self::get_transforms(client, block_no, access_list, include_unchanged).await?;
-        println!("### trns : {:#?}", transforms);
+
         if transforms.prev_state_root == transforms.curr_state_root {
             Ok(None)
         } else {
@@ -177,7 +177,7 @@ impl<F: Field> Witness<F> {
             }
         }
 
-        let mut initial_values  = Vec::new();
+        let mut initial_values = Vec::new();
         let mut changed_values = Vec::new();
 
         for entry in access_list.0 {
@@ -221,7 +221,6 @@ impl<F: Field> Witness<F> {
                     let old = old.storage_proof.iter().find(|p| p.key == *key).unwrap();
                     initial_values.push(TrieModification::storage(address, *key, old.value));
                 }
-
             }
 
             // check for this address changes
@@ -241,7 +240,8 @@ impl<F: Field> Witness<F> {
             }
         }
 
-        dbg!(&initial_values);
+        println!("initial_values.len(): {}", initial_values.len());
+        println!("changed_values.len(): {}", changed_values.len());
 
         let mut trie_modifications = initial_values;
         trie_modifications.append(&mut changed_values);

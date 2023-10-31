@@ -7,11 +7,13 @@ use eyre::Result;
 use halo2_proofs::halo2curves::bn256::Fr;
 use std::{collections::HashMap, str::FromStr, time::SystemTime};
 
-use crate::circuits::state_update::{
-    PublicInputs, StateUpdateCircuit, StateUpdateCircuitKeys,
-    DEFAULT_CIRCUIT_DEGREE, DEFAULT_MAX_PROOF_COUNT,
+use crate::circuits::{
+    state_update::{
+        PublicInputs, StateUpdateCircuit, StateUpdateCircuitKeys, DEFAULT_CIRCUIT_DEGREE,
+        DEFAULT_MAX_PROOF_COUNT,
+    },
+    Witness,
 };
-use crate::circuits::Witness;
 
 pub async fn serve() -> Result<()> {
     const PROVIDER_URL: &str = "http://localhost:8545";

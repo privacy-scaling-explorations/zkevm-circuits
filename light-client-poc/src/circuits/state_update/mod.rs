@@ -1,7 +1,7 @@
 mod circuit;
-mod prover;
 mod pi;
+mod prover;
 
-pub use circuit::{StateUpdateCircuit, DEFAULT_MAX_PROOF_COUNT, DEFAULT_CIRCUIT_DEGREE};
+pub use circuit::{StateUpdateCircuit, DEFAULT_CIRCUIT_DEGREE, DEFAULT_MAX_PROOF_COUNT};
 pub use pi::PublicInputs;
 pub use prover::StateUpdateCircuitKeys;
