@@ -97,11 +97,6 @@ impl<F: Field> ModExtensionGadget<F> {
             let key_mult_before = key_data[0].mult.expr() * is_insert.clone() + (1.expr() - is_insert.clone()) * key_data[1].mult.expr();
             let key_is_odd_before = key_data[0].is_odd.expr() * is_insert.clone() + (1.expr() - is_insert.clone()) * key_data[1].is_odd.expr();
 
-            // TODO: remove
-            require!(key_rlc_before => 0.expr());
-            require!(key_mult_before => 1.expr());
-            require!(key_is_odd_before => 0.expr());
-
             let middle_key_rlc = key_data[1].drifted_rlc.expr() * is_insert.clone() + (1.expr() - is_insert.clone()) * key_data[0].drifted_rlc.expr();
             let middle_key_mult = key_data[1].mult.expr() * is_insert.clone() + (1.expr() - is_insert.clone()) * key_data[0].mult.expr();
             let middle_key_is_odd = key_data[1].is_odd.expr() * is_insert.clone() + (1.expr() - is_insert.clone()) * key_data[0].is_odd.expr();
@@ -150,6 +145,7 @@ impl<F: Field> ModExtensionGadget<F> {
                 }} 
             }
 
+            let data0 = [key_items[0].clone(), key_nibbles[0].clone()];
             let nibbles_rlc_long = key_rlc_before
                 + ext_key_rlc_expr(
                     cb,
@@ -157,7 +153,7 @@ impl<F: Field> ModExtensionGadget<F> {
                     key_mult_before,
                     config.is_key_part_odd[0].expr(),
                     key_is_odd_before,
-                    key_items
+                    data0
                         .iter()
                         .map(|item| item.bytes_be())
                         .collect::<Vec<_>>()
@@ -166,35 +162,29 @@ impl<F: Field> ModExtensionGadget<F> {
                     &cb.key_r.expr(),
                 );
 
-            let data = [key_items[1].clone(), key_nibbles[1].clone()];
+            let data1 = [key_items[1].clone(), key_nibbles[1].clone()];
 
             // long is even, short is even -> middle is odd (note the nibble for the position in branch)
             // long is even, short is odd -> middle is even
             // long is odd, short is even -> middle is even
             // long is odd, short is odd -> middle is odd
+            /*
             let long_is_odd = config.is_key_part_odd[0].expr();
             let short_is_odd = config.is_key_part_odd[1].expr();
             let middle_is_odd = long_is_odd.clone() * short_is_odd.clone() + (1.expr() - long_is_odd.clone()) * (1.expr() - short_is_odd.clone());
 
-
             let drifted_index = is_insert.clone() * key_data[0].drifted_index.expr() + (1.expr() - is_insert.clone()) * key_data[1].drifted_index.expr();
             let mult = is_insert.clone() * key_data[0].drifted_mult.expr() + (1.expr() - is_insert.clone()) * key_data[1].drifted_mult.expr();
             let nibbles_rlc = key_data[0].nibbles_rlc.expr(); // same value is stored in S and C
+            */
             
-            let r = cb.key_r.clone();
-            let dc = (2.expr() * 16.expr() + 3.expr()) + (4.expr() * 16.expr() + 5.expr()) * r.clone() + (6.expr() * 16.expr()) * r.clone() * r.clone();
-            require!(nibbles_rlc_long => dc);
-    
-            let dc1 = (1.expr() * 16.expr() + 2.expr()) + (3.expr() * 16.expr() + 4.expr()) * r.clone() + 5.expr() * 16.expr() * r.clone() * r.clone();
-            // require!(middle_key_rlc => dc1);
-
             let rlc_after_short = middle_key_rlc + ext_key_rlc_expr(
                 cb,
                 config.rlp_key[1].key_value.clone(),
                 middle_key_mult,
                 config.is_key_part_odd[1].expr(),
                 middle_key_is_odd,
-                data
+                data1
                     .iter()
                     .map(|item| item.bytes_be())
                     .collect::<Vec<_>>()
@@ -219,8 +209,6 @@ impl<F: Field> ModExtensionGadget<F> {
 
             require!(5.expr() => key_data[0].drifted_index);
             */
-
-            // TODO:
         });
 
         config
@@ -317,13 +305,18 @@ impl<F: Field> ModExtensionGadget<F> {
                 );
 
                 /*
+                let s1 = F::from(2 * 16);
+                let s2 = F::from(3 * 16 + 4 as u64) * r;
+                let s3 = F::from(5 * 16 + 6 as u64) * r * r;
+                */
                 let s1 = F::from(2 * 16 + 3);
                 let s2 = F::from(4 * 16 + 5 as u64) * r;
-                let s3 = F::from(6 as u64) * r * r;
-                */
+                let s3 = F::from(6 * 16 as u64) * r * r;
+                /*
                 let s1 = F::from(2); 
                 let s2 = F::from(3 * 16 + 4 as u64) * r;
                 let s3 = F::from(5 * 16 + 6 as u64) * r * r;
+                */
 
                 let s = s1 + s2 + s3;
 
