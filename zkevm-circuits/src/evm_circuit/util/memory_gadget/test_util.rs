@@ -5,8 +5,7 @@ use crate::{
         param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
         step::{ExecutionState, Step},
         util::{
-            constraint_builder::EVMConstraintBuilder, CachedRegion, StoredExpression,
-            LOOKUP_CONFIG,
+            constraint_builder::EVMConstraintBuilder, CachedRegion, StoredExpression, LOOKUP_CONFIG,
         },
         Advice, Column,
     },
