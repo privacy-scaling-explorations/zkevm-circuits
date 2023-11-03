@@ -687,6 +687,7 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
     }
 }
 
+#[cfg(test)]
 mod test_util;
 
 #[cfg(test)]
@@ -771,7 +772,8 @@ mod test {
                 u64::from_le_bytes(witnesses[0].to_le_bytes()[..8].try_into().unwrap());
             let addr_end = u64::from_le_bytes(witnesses[1].to_le_bytes()[..8].try_into().unwrap());
             let mut input_bytes: Vec<u8> = Vec::new();
-            input_bytes.extend_from_slice(&witnesses[2].to_le_bytes());
+            input_bytes
+                .extend_from_slice(&witnesses[2].to_le_bytes()[0..required_bytes(witnesses[2])]);
             self.addr_start
                 .assign(region, offset, Some(addr_start.to_le_bytes()))?;
             self.addr_end
@@ -799,7 +801,7 @@ mod test {
     fn test_buffer_reader_gadget_completness() {
         // buffer len = data len
         try_test!(
-            BufferReaderGadgetTestContainer<Fr, 32, 10>,
+            BufferReaderGadgetTestContainer<Fr, 2, 10>,
             vec![
                 Word::from(0),
                 Word::from(2),
@@ -810,10 +812,10 @@ mod test {
 
         // buffer len > data len
         try_test!(
-            BufferReaderGadgetTestContainer<Fr, 32, 10>,
+            BufferReaderGadgetTestContainer<Fr, 2, 10>,
             vec![
                 Word::from(0),
-                Word::from(31),
+                Word::from(2),
                 Word::from(256),
             ],
             true,
@@ -824,7 +826,7 @@ mod test {
     fn test_buffer_reader_gadget_soundness() {
         // buffer len < data len
         try_test!(
-            BufferReaderGadgetTestContainer<Fr, 32, 10>,
+            BufferReaderGadgetTestContainer<Fr, 2, 10>,
             vec![
                 Word::from(0),
                 Word::from(1),
@@ -835,22 +837,33 @@ mod test {
 
         // buffer len <= 0
         try_test!(
-            BufferReaderGadgetTestContainer<Fr, 32, 10>,
+            BufferReaderGadgetTestContainer<Fr, 2, 10>,
             vec![
-                Word::from(2),
                 Word::from(1),
-                Word::from(1),
+                Word::from(0),
+                Word::from(256),
             ],
             false,
         );
 
         // empty buffer
         try_test!(
-            BufferReaderGadgetTestContainer<Fr, 32, 10>,
+            BufferReaderGadgetTestContainer<Fr, 2, 10>,
             vec![
-                Word::from(1),
-                Word::from(1),
-                Word::from(1),
+                Word::from(0),
+                Word::from(0),
+                Word::from(256),
+            ],
+            false,
+        );
+
+        // MAX_BYTES < buffer size
+        try_test!(
+            BufferReaderGadgetTestContainer<Fr, 2, 10>,
+            vec![
+                Word::from(0),
+                Word::from(31),
+                Word::from(256),
             ],
             false,
         );

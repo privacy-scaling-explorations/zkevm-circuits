@@ -185,6 +185,16 @@ pub(crate) fn test_memory_gadget_container<F: Field, G: MemoryGadgetContainer<F>
     }
 }
 
+pub(crate) fn required_bytes(value: Word) -> usize {
+    for i in (0..32).rev() {
+        let byte = (value >> (i * 8)) & Word::from(0xff);
+        if byte != Word::zero() {
+            return i + 1;
+        }
+    }
+    0
+}
+
 /// A simple macro for less code & better readability
 macro_rules! try_test {
     ($base_class:ty, $witnesses:expr, $expect_success:expr $(,)?) => {{
