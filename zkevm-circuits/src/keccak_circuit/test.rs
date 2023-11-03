@@ -4,7 +4,7 @@ use crate::{
     util::{unusable_rows, word::Word},
 };
 use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
-use eth_types::{Field, H256};
+use eth_types::{Field, H256, U256};
 use halo2_proofs::{
     dev::{CellValue, MockProver},
     halo2curves::bn256::Fr,
@@ -90,9 +90,11 @@ fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, digests: Vec<String>, success:
         let expected = (rlc_input(input), len, lo, hi);
 
         expected.0.assert_if_known(|value| *value == hash.0);
-        // assert_eq!(*hash[2], expected);
+        assert_eq!(hash.1, expected.1);
+        assert_eq!(hash.2, expected.2);
+        assert_eq!(hash.3, expected.3);
     }
-    let (lo, hi) = Word::from(H256::from_slice(EMPTY_CODE_HASH_LE.as_slice())).to_lo_hi();
+    let (lo, hi) = Word::from(U256::from_little_endian(EMPTY_CODE_HASH_LE.as_slice())).to_lo_hi();
 
     // Check that other digests are the digest of the empty message.
     let empty_hash = (F::ZERO, F::ZERO, lo, hi);
