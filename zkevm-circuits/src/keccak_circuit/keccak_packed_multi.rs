@@ -908,6 +908,11 @@ pub(crate) fn multi_keccak<F: Field>(
         }
         // Check that we are not over capacity
         if rows.len() > (1 + capacity * (NUM_ROUNDS + 1)) * get_num_rows_per_round() {
+            log::error!(
+                "Keccack inputs exceed capacity.  needed_rows = {}, available_rows = {}",
+                rows.len(),
+                (1 + capacity * (NUM_ROUNDS + 1)) * get_num_rows_per_round()
+            );
             return Err(Error::BoundsFailure);
         }
     }

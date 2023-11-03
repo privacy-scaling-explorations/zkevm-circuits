@@ -38,6 +38,9 @@ jobs:
     runs-on: ["${{github.run_id}}", self-hosted, c5.9xlarge]
 
     steps:
+      - name: Install OpenSSL lib
+        run: sudo apt-get -y install libssl-dev
+
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
@@ -87,6 +90,9 @@ jobs:
     runs-on: ["${{github.run_id}}", self-hosted, c5.9xlarge]
 
     steps:
+      - name: Install OpenSSL lib
+        run: sudo apt-get -y install libssl-dev
+
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:

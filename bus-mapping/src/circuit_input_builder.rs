@@ -35,7 +35,10 @@ pub use execution::{
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
 use log::warn;
-use std::{collections::HashMap, ops::Deref};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Deref,
+};
 pub use transaction::{Transaction, TransactionContext};
 pub use withdrawal::{Withdrawal, WithdrawalContext};
 
@@ -53,7 +56,7 @@ pub struct FixedCParams {
     pub max_withdrawals: usize,
     /// Maximum number of bytes from all txs calldata in the Tx Circuit
     pub max_calldata: usize,
-    /// Max ammount of rows that the CopyCircuit can have.
+    /// Max amount of rows that the CopyCircuit can have.
     pub max_copy_rows: usize,
     /// Max number of steps that the ExpCircuit can have. Each step is further
     /// expressed in 7 rows
@@ -82,10 +85,21 @@ pub struct FixedCParams {
 pub struct DynamicCParams {}
 
 /// Circuit Setup Parameters. These can be fixed/concrete or unset/dynamic.
-pub trait CircuitsParams: Debug + Copy {}
+pub trait CircuitsParams: Debug + Copy {
+    /// Returns the max number of rws allowed
+    fn max_rws(&self) -> Option<usize>;
+}
 
-impl CircuitsParams for FixedCParams {}
-impl CircuitsParams for DynamicCParams {}
+impl CircuitsParams for FixedCParams {
+    fn max_rws(&self) -> Option<usize> {
+        Some(self.max_rws)
+    }
+}
+impl CircuitsParams for DynamicCParams {
+    fn max_rws(&self) -> Option<usize> {
+        None
+    }
+}
 
 impl Default for FixedCParams {
     /// Default values for most of the unit tests of the Circuit Parameters
@@ -166,6 +180,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             block_ctx: &mut self.block_ctx,
             tx,
             tx_ctx,
+            max_rws: self.circuits_params.max_rws(),
         }
     }
 
@@ -275,11 +290,11 @@ impl CircuitInputBuilder<FixedCParams> {
     ) -> Result<&CircuitInputBuilder<FixedCParams>, Error> {
         // accumulates gas across all txs in the block
         self.begin_handle_block(eth_block, geth_traces)?;
-        self.set_end_block(self.circuits_params.max_rws);
+        self.set_end_block(self.circuits_params.max_rws)?;
         Ok(self)
     }
 
-    fn set_end_block(&mut self, max_rws: usize) {
+    fn set_end_block(&mut self, max_rws: usize) -> Result<(), Error> {
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
         end_block_not_last.rwc = self.block_ctx.rwc;
@@ -295,7 +310,7 @@ impl CircuitInputBuilder<FixedCParams> {
                 call_id,
                 CallContextField::TxId,
                 Word::from(state.block.txs.len() as u64),
-            );
+            )?;
         }
 
         let mut push_op = |step: &mut ExecStep, rwc: RWCounter, rw: RW, op: StartOp| {
@@ -333,6 +348,7 @@ impl CircuitInputBuilder<FixedCParams> {
 
         self.block.block_steps.end_block_not_last = end_block_not_last;
         self.block.block_steps.end_block_last = end_block_last;
+        Ok(())
     }
 }
 
@@ -434,7 +450,7 @@ impl CircuitInputBuilder<DynamicCParams> {
             block_ctx: self.block_ctx,
         };
 
-        cib.set_end_block(c_params.max_rws);
+        cib.set_end_block(c_params.max_rws)?;
         Ok(cib)
     }
 }
@@ -442,19 +458,23 @@ impl CircuitInputBuilder<DynamicCParams> {
 /// Return all the keccak inputs used during the processing of the current
 /// block.
 pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Error> {
-    let mut keccak_inputs = Vec::new();
+    let mut keccak_inputs: HashSet<Vec<u8>> = HashSet::new();
     // Tx Circuit
     let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.deref().clone()).collect();
-    keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs, block.chain_id.as_u64())?);
+    for input in keccak_inputs_tx_circuit(&txs, block.chain_id.as_u64())? {
+        keccak_inputs.insert(input);
+    }
     // Bytecode Circuit
     for bytecode in code_db.clone().into_iter() {
-        keccak_inputs.push(bytecode.code());
+        keccak_inputs.insert(bytecode.code());
     }
     // EVM Circuit
-    keccak_inputs.extend_from_slice(&block.sha3_inputs);
+    for input in &block.sha3_inputs {
+        keccak_inputs.insert(input.clone());
+    }
     // MPT Circuit
     // TODO https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/696
-    Ok(keccak_inputs)
+    Ok(keccak_inputs.into_iter().collect_vec())
 }
 
 /// Generate the keccak inputs required by the SignVerify Chip from the
@@ -501,21 +521,21 @@ pub fn keccak_inputs_tx_circuit(
 }
 
 /// Retrieve the init_code from memory for {CREATE, CREATE2}
-pub fn get_create_init_code<'a>(
-    call_ctx: &'a CallContext,
-    step: &GethExecStep,
-) -> Result<&'a [u8], Error> {
+pub fn get_create_init_code(call_ctx: &CallContext, step: &GethExecStep) -> Result<Vec<u8>, Error> {
     let offset = step.stack.nth_last(1)?.low_u64() as usize;
     let length = step.stack.nth_last(2)?.as_usize();
 
     let mem_len = call_ctx.memory.0.len();
-    if offset >= mem_len {
-        return Ok(&[]);
+    let mut result = vec![0u8; length];
+    if length > 0 && offset < mem_len {
+        let offset_end = offset
+            .checked_add(length)
+            .expect("overflow should be handled using OOG error")
+            .min(mem_len);
+        let copy_len = offset_end - offset;
+        result[..copy_len].copy_from_slice(&call_ctx.memory.0[offset..offset_end]);
     }
-
-    let offset_end = offset.checked_add(length).unwrap_or(mem_len);
-
-    Ok(&call_ctx.memory.0[offset..offset_end])
+    Ok(result)
 }
 
 /// Retrieve the memory offset and length of call.

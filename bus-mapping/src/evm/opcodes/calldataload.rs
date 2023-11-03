@@ -33,32 +33,32 @@ impl Opcode for Calldataload {
                     call_id,
                     CallContextField::TxId,
                     state.tx_ctx.id().into(),
-                );
+                )?;
                 state.call_context_read(
                     &mut exec_step,
                     call_id,
                     CallContextField::CallDataLength,
                     state.call()?.call_data_length.into(),
-                );
+                )?;
             } else {
                 state.call_context_read(
                     &mut exec_step,
                     call_id,
                     CallContextField::CallerId,
                     state.call()?.caller_id.into(),
-                );
+                )?;
                 state.call_context_read(
                     &mut exec_step,
                     call_id,
                     CallContextField::CallDataLength,
                     state.call()?.call_data_length.into(),
-                );
+                )?;
                 state.call_context_read(
                     &mut exec_step,
                     call_id,
                     CallContextField::CallDataOffset,
                     state.call()?.call_data_offset.into(),
-                );
+                )?;
             }
 
             let call_data_offset = state.call()?.call_data_offset;
@@ -70,8 +70,8 @@ impl Opcode for Calldataload {
                 state.call_ctx()?.call_data.to_vec(),
             );
 
-            let calldata: Vec<_> = (0..32)
-                .map(|idx| {
+            let calldata: Vec<u8> = (0..32)
+                .map(|idx| -> Result<u8, Error> {
                     let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
                     if addr < src_addr_end {
                         let byte = call_data[(addr - call_data_offset) as usize];
@@ -80,14 +80,14 @@ impl Opcode for Calldataload {
                                 &mut exec_step,
                                 RW::READ,
                                 MemoryOp::new(caller_id, (src_addr + idx).into(), byte),
-                            );
+                            )?;
                         }
-                        byte
+                        Ok(byte)
                     } else {
-                        0
+                        Ok(0)
                     }
                 })
-                .collect();
+                .collect::<Result<Vec<u8>, Error>>()?;
 
             U256::from_big_endian(&calldata)
         } else {
