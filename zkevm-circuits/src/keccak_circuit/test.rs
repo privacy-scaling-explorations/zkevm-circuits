@@ -63,14 +63,13 @@ fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, digests: Vec<String>, success:
 
         // Keep the rows that are supposed to contain hash results.
         izip!(is_enabled, input_rlc, input_len, output.lo(), output.hi())
-            .filter(|(enabled, _, _, _, _)| assigned_non_zero(enabled))
-            .map(|(_, input_rlc, input_len, output_lo, output_hi)| {
-                (
+            .filter_map(|(enabled, input_rlc, input_len, output_lo, output_hi)| {
+                assigned_non_zero(enabled).then_some((
                     unwrap(input_rlc),
                     unwrap(input_len),
                     unwrap(output_lo),
                     unwrap(output_hi),
-                )
+                ))
             })
             .collect::<Vec<(F, F, F, F)>>()
     };
