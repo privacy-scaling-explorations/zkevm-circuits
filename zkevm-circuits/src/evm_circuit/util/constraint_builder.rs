@@ -149,6 +149,9 @@ impl<F: Field> ReversionInfo<F> {
     }
 
     pub(crate) fn rw_delta(&self) -> Expression<F> {
+        // From definition, rws include:
+        // Field [`CallContextFieldTag::RwCounterEndOfReversion`] read from call context.
+        // Field [`CallContextFieldTag::IsPersistent`] read from call context.
         2.expr()
     }
 }
