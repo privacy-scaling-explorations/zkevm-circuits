@@ -1109,8 +1109,8 @@ impl<'a> CircuitInputStateRef<'a> {
             }
         }
         if need_restore {
-            // The only case where `current_exec_steps` are more than 1 is for precompiled contract calls.
-            // In this case, we have: [..., CALLOP, PRECOMPILE_EXEC_STEP]
+            // The only case where `current_exec_steps` are more than 1 is for precompiled contract
+            // calls. In this case, we have: [..., CALLOP, PRECOMPILE_EXEC_STEP]
             // as the current execution steps. And in case of return, we
             // restore context from the internal precompile execution
             // step to the `CALLOP` step.
