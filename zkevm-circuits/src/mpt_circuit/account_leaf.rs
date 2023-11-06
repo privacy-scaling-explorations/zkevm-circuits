@@ -559,7 +559,6 @@ impl<F: Field> AccountLeafConfig<F> {
                 F::ONE,
                 0,
                 F::ZERO,
-                F::ZERO,
             )?;
             ParentData::witness_store(
                 region,
