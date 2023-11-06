@@ -31,7 +31,6 @@ pub(crate) struct ExtState<F> {
     pub(crate) key_mult: Expression<F>,
     pub(crate) num_nibbles: Expression<F>,
     pub(crate) is_key_odd: Expression<F>,
-    pub(crate) nibbles_mult: Expression<F>,
 
     pub(crate) branch_rlp_word: [Word<Expression<F>>; 2],
     pub(crate) branch_rlp_rlc: [Expression<F>; 2],
@@ -43,7 +42,6 @@ pub(crate) struct ExtensionGadget<F> {
     is_not_hashed: LtGadget<F, 2>,
     is_key_part_odd: Cell<F>,
     mult_key: Cell<F>,
-    mult_nibbles: Cell<F>,
 
     // Post extension state
     post_state: Option<ExtState<F>>,
@@ -192,19 +190,12 @@ impl<F: Field> ExtensionGadget<F> {
             config.mult_key = cb.query_cell_with_type(MptCellType::StoragePhase2);
             require!((key_num_bytes_for_mult, config.mult_key.expr()) => @MULT);
 
-            config.mult_nibbles = cb.query_cell_with_type(MptCellType::StoragePhase2);
-
-            let n = (1.expr() - config.is_key_part_odd.expr()) * num_nibbles.clone() + config.is_key_part_odd.expr() * (num_nibbles.clone() - 1.expr());
-            let two_inverse = F::from(2 as u64).invert().unwrap_or(F::ZERO);
-            require!((n * two_inverse, config.mult_nibbles.expr()) => @MULT);
-            
             // Store the post ext state
             config.post_state = Some(ExtState {
                 key_rlc,
                 key_mult: key_data.mult.expr() * config.mult_key.expr(),
                 num_nibbles,
                 is_key_odd,
-                nibbles_mult: config.mult_nibbles.expr(),
                 branch_rlp_word: branch_rlp_word.try_into().unwrap(),
                 branch_rlp_rlc: branch_rlp_rlc.try_into().unwrap(),
             });
@@ -229,7 +220,6 @@ impl<F: Field> ExtensionGadget<F> {
         key_mult: &mut F,
         num_nibbles: &mut usize,
         is_key_odd: &mut bool,
-        nibbles_mult: &mut F,
         node: &Node,
         rlp_values: &[RLPItemWitness],
     ) -> Result<(), Error> {
@@ -278,14 +268,6 @@ impl<F: Field> ExtensionGadget<F> {
         // Update number of nibbles
         *num_nibbles += num_nibbles::value(rlp_key.key_item.len(), is_key_part_odd);
 
-        let mut num_nibbles_even_part = *num_nibbles;
-        if is_key_part_odd {
-            num_nibbles_even_part = num_nibbles_even_part - 1;
-        }
-        for _ in 0..num_nibbles_even_part / 2 {
-            *nibbles_mult = *nibbles_mult * region.key_r; 
-        }
-
         // Key RLC
         let (key_rlc_ext, _) = ext_key_rlc_calc_value(
             rlp_key.key_item,
@@ -313,8 +295,6 @@ impl<F: Field> ExtensionGadget<F> {
         let mult_key = pow::value(region.key_r, key_len_mult);
         self.mult_key.assign(region, offset, mult_key)?;
         *key_mult = key_data.mult * mult_key;
-
-        self.mult_nibbles.assign(region, offset, *nibbles_mult)?;
 
         Ok(())
     }

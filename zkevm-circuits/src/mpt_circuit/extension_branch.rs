@@ -73,10 +73,6 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 require!(config.parent_data[is_s.idx()].is_placeholder => false);
             }
 
-            // impl_expr_result accept only up to 12 elements, so nibbles_mult cannot be added to
-            // the tuple below.
-            let mut nibbles_mult = 1.expr();
-
             // Extension
             let (
                 num_nibbles,
@@ -101,7 +97,6 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     &config.is_placeholder,
                 );
                 let ext = config.extension.get_post_state();
-                nibbles_mult = ext.nibbles_mult;
                 (
                     ext.num_nibbles,
                     ext.is_key_odd,
@@ -189,7 +184,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         config.key_data.num_nibbles.expr(),
                         config.key_data.is_odd.expr(),
                         branch.key_rlc_post_drifted.expr(),
-                        nibbles_mult.clone(),
+                        branch.key_mult_post_drifted.expr(),
                         branch.num_nibbles.expr(),
                         branch.is_key_odd.expr(),
                         branch.drifted_index.expr(),
@@ -252,7 +247,6 @@ impl<F: Field> ExtensionBranchConfig<F> {
         let mut key_mult = key_data.mult;
         let mut num_nibbles = key_data.num_nibbles;
         let mut is_key_odd = key_data.is_odd;
-        let mut nibbles_mult = F::ONE;
 
         // Extension
         if extension_branch.is_extension {
@@ -266,7 +260,6 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 &mut key_mult,
                 &mut num_nibbles,
                 &mut is_key_odd,
-                &mut nibbles_mult,
                 node,
                 rlp_values,
             )?;
@@ -328,7 +321,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     key_data.mult,
                     key_data.num_nibbles,
                     key_rlc_post_drifted,
-                    nibbles_mult,
+                    key_mult_post_branch,
                     num_nibbles,
                     drifted_index,
                 )?;
