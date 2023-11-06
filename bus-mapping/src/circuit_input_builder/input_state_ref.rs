@@ -1087,7 +1087,6 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn handle_return(
         &mut self,
         current_exec_steps: &mut [&mut ExecStep],
-        // exec_step: &mut ExecStep,
         geth_steps: &[GethExecStep],
         need_restore: bool,
     ) -> Result<(), Error> {
@@ -1110,7 +1109,11 @@ impl<'a> CircuitInputStateRef<'a> {
             }
         }
         if need_restore {
-            // only precompile needs more than 1 current_exec_steps
+            // The only case where `current_exec_steps` are more than 1 is for precompiled contract calls.
+            // In this case, we have: [..., CALLOP, PRECOMPILE_EXEC_STEP]
+            // as the current execution steps. And in case of return, we
+            // restore context from the internal precompile execution
+            // step to the `CALLOP` step.
             if current_exec_steps.len() > 1 {
                 debug_assert!(
                     current_exec_steps[1].is_precompiled()
@@ -1611,6 +1614,11 @@ impl<'a> CircuitInputStateRef<'a> {
                     let precompile_call: PrecompileCalls = code_address[19].into();
                     match precompile_call {
                         PrecompileCalls::Sha256
+                        | PrecompileCalls::ECRecover
+                        | PrecompileCalls::Bn128Add
+                        | PrecompileCalls::Bn128Mul
+                        | PrecompileCalls::Bn128Pairing
+                        | PrecompileCalls::Modexp
                         | PrecompileCalls::Ripemd160
                         | PrecompileCalls::Blake2F => {
                             // Log the precompile address and gas left. Since this failure is mainly

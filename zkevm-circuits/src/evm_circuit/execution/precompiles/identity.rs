@@ -67,6 +67,11 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             cb.execution_state().precompile_base_gas_cost().expr(),
         );
 
+        // In the case of Identity precompile, the only failure is in the case of insufficient gas for the call,
+        // which is diverted and handled in the ErrorOogPrecompile gadget.
+
+        // A separate select statement is not added here, as we expect execution that's verified
+        // under this specific gadget to always succeed. 
         let restore_context = RestoreContextGadget::construct2(
             cb,
             is_success.expr(),

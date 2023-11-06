@@ -238,7 +238,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // skip the transfer (this is necessary for non-existing accounts, which
         // will not be crated when value is 0 and so the callee balance lookup
         // would be invalid).
-        // let code_hash_previous = cb.query_word32();
         let transfer = cb.condition(is_call.expr() * is_precheck_ok.expr(), |cb| {
             TransferGadget::construct(
                 cb,
@@ -246,7 +245,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 callee_address.to_word(),
                 not::expr(call_gadget.callee_not_exists.expr()),
                 0.expr(),
-                // code_hash_previous.to_word(),
                 call_gadget.value.clone(),
                 &mut callee_reversion_info,
             )
@@ -296,7 +294,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             + callee_reversion_info.rw_delta()
             + transfer_rwc_delta.expr();
 
-        // let caller_reversible_rwc_delta = 1.expr(); // AccessList
         let callee_reversible_rwc_delta = is_call.expr() * transfer.reversible_w_delta();
 
         // 1. handle precompile calls.
@@ -811,8 +808,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_static = rws.next().call_context_value();
         let depth = rws.next().call_context_value();
         let current_callee_address = rws.next().call_context_value();
-
-        // let _is_valid_depth = depth.low_u64() < 1025;
 
         self.is_depth_ok
             .assign(region, offset, F::from(depth.low_u64()), F::from(1025))?;
