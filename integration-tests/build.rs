@@ -113,7 +113,7 @@ fn main() -> Result<(), BuildError> {
                 reason: err.to_string(),
             })?
             .pop()
-            .ok_or_else(|| BuildError::ArtifactError("No Artifact Found".to_string()))?
+            .ok_or_else(|| BuildError::ArtifactError)?
             // ethers-solc: explicitly indicate the EvmVersion that corresponds to the zkevm
             // circuit's supported Upgrade, e.g. `London/Shanghai/...` specifications.
             .evm_version(EvmVersion::London);
