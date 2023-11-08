@@ -13,10 +13,6 @@ impl InitialStateCircuit<Fr> {
 
         let public_inputs: PublicInputs<Fr> = (&self.lc_witness).into();
 
-        for (i, input) in public_inputs.iter().enumerate() {
-            println!("input[{i:}]: {input:?}");
-        }
-
         let prover =
             MockProver::<Fr>::run(self.degree as u32, self, vec![public_inputs.0]).unwrap();
         prover.assert_satisfied_at_rows_par(0..num_rows, 0..num_rows);

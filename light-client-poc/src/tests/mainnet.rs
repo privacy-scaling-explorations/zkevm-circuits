@@ -48,8 +48,6 @@ mod test {
         .await?
         .unwrap();
 
-        println!("trns: {:#?}", witness.transforms);
-
         let circuit = InitialStateCircuit::new(witness, degree, max_proof_count)?;
 
         circuit.assert_satisfied();

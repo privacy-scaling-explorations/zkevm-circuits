@@ -15,7 +15,10 @@ members = [
 ]
 
 [patch.crates-io]
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_04_20" }
+halo2_proofs = { path = "/Users/adria0/w/ef/light_client/halo2/halo2_proofs"}
+
+[patch."https://github.com/privacy-scaling-explorations/halo2.git"]
+halo2_proofs = { path = "/Users/adria0/w/ef/light_client/halo2/halo2_proofs"}
 
 # Definition of benchmarks profile to use.
 [profile.bench]

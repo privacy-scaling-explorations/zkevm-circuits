@@ -1,4 +1,3 @@
-use crate::circuits::utils::EqualWordsConfig;
 use eth_types::Field;
 use eyre::Result;
 use gadgets::{
@@ -9,11 +8,12 @@ use gadgets::{
         or, Expr,
     },
 };
+
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::Fr,
     plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, SecondPhase,
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance,
         Selector,
     },
     poly::Rotation,
@@ -37,6 +37,8 @@ use zkevm_circuits::{
 
 pub const DEFAULT_MAX_PROOF_COUNT: usize = 20;
 pub const DEFAULT_CIRCUIT_DEGREE: usize = 14;
+
+use crate::circuits::utils::{EqualWordsConfig, FixedRlcConfig};
 
 // A=>B  eq ~(A & ~B) (it is not the case that A is true and B is false)
 fn xif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
@@ -71,10 +73,9 @@ pub struct InitialStateCircuitConfig<F: Field> {
     pub count: Column<Advice>,
     pub count_decrement: IsZeroConfig<F>,
 
-    pub rlc_acc: Column<Advice>,
-    // pub rlc_acc_enabled_inv: Column<Advice>,
-    // pub rlc_acc_disabled_inv: Column<Advice>,
     pub q_enable: Selector,
+
+    pub rlc_adder_config: FixedRlcConfig<F>,
 }
 
 /// MPT Circuit for proving the storage modification is valid.
@@ -110,8 +111,6 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
         let challenges_expr = challenges.exprs(meta);
 
         let keccak_table = KeccakTable::construct(meta);
-
-        let rlc_acc = meta.advice_column_in(SecondPhase);
 
         #[cfg(not(feature = "disable-keccak"))]
         let keccak_config = KeccakCircuitConfig::new(
@@ -228,59 +227,6 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
             vec![q_enable * xif(is_last_or_padding.expr(), new_root_propagation.expr())]
         });
 
-        // the idea for rlc acummulator is
-        // when roots are equal accumulate rlc
-        //   if we are in first row, do not add previous rlc row
-        //   if we are not in first row, add previous rlc
-        // when roots are not equal propagate rlc
-        //   roots are not equal
-        //   or we are in padding
-        //
-        // we always have non-changing rows (e.g. read nonce at the beginning of the block)
-        // we always have changing rows (e.g. write nonce at the end of the block)
-        //
-        // if is_first
-        //    compulte rlc
-        // if
-
-        meta.create_gate("rlc: accumulate if no_state_change and q_enabled", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-
-            let rlc_acc_cur = meta.query_advice(rlc_acc, Rotation::cur());
-            let rlc_acc_next = meta.query_advice(rlc_acc, Rotation::next());
-
-            let rlc = [
-                pi_mpt.proof_type,
-                pi_mpt.address,
-                pi_mpt.new_value.lo(),
-                pi_mpt.new_value.hi(),
-                pi_mpt.storage_key.lo(),
-                pi_mpt.storage_key.hi(),
-            ]
-            .iter()
-            .fold(rlc_acc_cur, |acc, col| {
-                acc * challenges_expr.keccak_input() + meta.query_advice(*col, Rotation::cur())
-            });
-
-            [q_enable
-                * no_state_change_cur.expr()
-                * not::expr(is_padding.expr())
-                * (rlc_acc_next - rlc)]
-        });
-
-
-        meta.create_gate("rlc: propagate if state changed or padding", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-            let rlc_acc_cur = meta.query_advice(rlc_acc, Rotation::cur());
-            let rlc_acc_next = meta.query_advice(rlc_acc, Rotation::next());
-
-            [
-            q_enable
-             * or::expr([is_padding.expr(), not::expr(no_state_change_cur.expr())])
-             * (rlc_acc_cur - rlc_acc_next )
-            ]
-        });
-
         meta.create_gate(
             "if not last or padding, if state changed in cur row, next row must change state also",
             |meta| {
@@ -363,6 +309,9 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                 .collect()
         });
 
+        let rlc_adder_config =
+            FixedRlcConfig::configure(meta, &[1, 16, 20], challenges_expr.keccak_input(), None);
+
         let config = InitialStateCircuitConfig {
             #[cfg(not(feature = "disable-keccak"))]
             keccak_config,
@@ -379,9 +328,7 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
             q_enable,
             pi_instance,
             pi_mpt,
-            rlc_acc,
-            // rlc_acc_enabled_inv,
-            // rlc_acc_disabled_inv
+            rlc_adder_config,
         };
 
         (config, challenges)
@@ -420,9 +367,47 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
         self.keccak_circuit
             .synthesize_sub(&config.keccak_config, &challenges, &mut layouter)?;
 
-        let keccak_input = challenges.keccak_input();
-
         // assign LC witness
+
+        let first_root = self
+            .lc_witness
+            .first()
+            .cloned()
+            .unwrap_or_default()
+            .old_root;
+        let last_root = self.lc_witness.last().cloned().unwrap_or_default().new_root;
+
+        let mut rlc_values = vec![
+            (first_root.lo(), 16),
+            (first_root.hi(), 16),
+            (last_root.lo(), 16),
+            (last_root.hi(), 16),
+        ];
+        for i in 0..self.max_proof_count {
+            if let Some(w) = self.lc_witness.get(i) {
+                rlc_values.push((w.typ, 1));
+                rlc_values.push((w.address, 20));
+                rlc_values.push((w.value.lo(), 16));
+                rlc_values.push((w.value.hi(), 16));
+                rlc_values.push((w.key.lo(), 16));
+                rlc_values.push((w.key.hi(), 16));
+            } else {
+                rlc_values.push((0u64.into(), 1));
+                rlc_values.push((0u64.into(), 20));
+                rlc_values.push((0u64.into(), 16));
+                rlc_values.push((0u64.into(), 16));
+                rlc_values.push((0u64.into(), 16));
+                rlc_values.push((0u64.into(), 16));
+            }
+        }
+        let initial_values_len = self.lc_witness.0.iter().enumerate().find(|(_,t)| t.old_root != t.new_root).unwrap().0;
+        assert!(initial_values_len > 0);
+        dbg!(initial_values_len);
+
+        let (rlc_acc, lc_values) =
+            config
+                .rlc_adder_config
+                .assign(&mut layouter, rlc_values, initial_values_len, challenges.keccak_input())?;
 
         let pi = layouter.assign_region(
             || "lc witness",
@@ -445,8 +430,6 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                     config.count_decrement.value_inv,
                 );
                 region.name_column(|| "LC_pi_instance", config.pi_instance);
-                region.name_column(|| "LC_rlc_acc", config.rlc_acc);
-                // region.name_column(|| "LC_rlc_acc_enabled_inv", config.rlc_acc_enabled_inv);
 
                 region.name_column(|| "LC_old_root_hi", config.pi_mpt.old_root.hi());
                 region.name_column(|| "LC_old_root_lo", config.pi_mpt.old_root.lo());
@@ -462,7 +445,6 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                 region.name_column(|| "LC_storagekey_lo", config.pi_mpt.storage_key.lo());
 
                 let mut pi = Vec::new();
-                let mut rlc_acc = Value::known(F::ZERO);
 
                 for offset in 0..self.max_proof_count {
 
@@ -522,27 +504,8 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                         &stm_next.old_root, &stm_next.new_root
                     )?;
 
-                    // compute rlc accumulator
-                    if stm.old_root == stm.new_root  {
-                        rlc_acc = [
-                            stm.typ,
-                            stm.address,
-                            stm.value.lo(),
-                            stm.value.hi(),
-                            stm.key.lo(),
-                            stm.key.hi(),
-                        ]
-                        .iter()
-                        .fold(rlc_acc, |acc, val| {
-                            acc * keccak_input + Value::known(val)
-                        });
-                    }
-                    if offset == 0 {
-                        region.assign_advice(|| "", config.rlc_acc, 0, || Value::known(F::ZERO))?;
-                    }
-                    region.assign_advice(|| "", config.rlc_acc, offset+1, || rlc_acc)?;
-
                     // assign SMT inputs
+
                     let count_cell = region.assign_advice(|| "", config.count, offset, || count)?;
 
                     let [typ,
@@ -577,9 +540,27 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                                 ).unwrap()
                             );
 
+                    let value_of = |v: Value<&F>| -> String {
+                        let mut ret = String::from("None");
+                        v.map(|ff| ret=format!("{:?}", ff));
+                        ret
+                    };
+
+                    // */ region.constrain_equal(typ.cell(), lc_values[4+6*offset].cell())?;
+                    /*
+                    region.constrain_equal(addr.cell(), lc_values[4+6*offset+1].cell())?;
+                    region.constrain_equal(value_lo.cell(), lc_values[4+6*offset+2].cell())?;
+                    region.constrain_equal(value_hi.cell(), lc_values[4+6*offset+3].cell())?;
+                    region.constrain_equal(key_lo.cell(), lc_values[4+6*offset+4].cell())?;
+                    region.constrain_equal(key_hi.cell(), lc_values[4+6*offset+5].cell())?;
+                    */
+
                     // at beggining, set the old root and number of proofs
 
                     if offset == 0 {
+                        // region.constrain_equal(old_root_lo.cell(), lc_values[0].cell())?;
+                        // region.constrain_equal(old_root_hi.cell(), lc_values[1].cell())?;
+
                         pi.push(Some(old_root_lo));
                         pi.push(Some(old_root_hi));
                         pi.push(None);
@@ -592,6 +573,9 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                     // at ending, set the last root in the last row (valid since we are propagating it)
 
                     if offset == self.max_proof_count -1 {
+                        // region.constrain_equal(new_root_lo.cell(), lc_values[2].cell())?;
+                        // region.constrain_equal(new_root_hi.cell(), lc_values[3].cell())?;
+
                         pi[2] = Some(new_root_lo);
                         pi[3] = Some(new_root_hi);
                     }

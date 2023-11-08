@@ -4,7 +4,6 @@ use eyre::Result;
 use gadgets::{
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
     util::{
-        and,
         not::{self},
         or, Expr,
     },
@@ -13,7 +12,7 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::Fr,
     plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, Selector,
+        Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance, Selector,
     },
     poly::Rotation,
 };
@@ -34,13 +33,10 @@ use zkevm_circuits::{
     util::{SubCircuit, SubCircuitConfig},
 };
 
+use crate::circuits::utils::xnif;
+
 pub const DEFAULT_MAX_PROOF_COUNT: usize = 20;
 pub const DEFAULT_CIRCUIT_DEGREE: usize = 14;
-
-// A=>B  eq ~(A & ~B) (it is not the case that A is true and B is false)
-fn xif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
-    and::expr([a, not::expr(b)])
-}
 
 ///
 #[derive(Clone)]
@@ -189,13 +185,13 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
 
         meta.create_gate("if not padding, count decreases monotonically", |meta| {
             let q_enable = meta.query_selector(q_enable);
-            vec![q_enable * xif(not::expr(is_padding.expr()), count_decrement.expr())]
+            vec![q_enable * xnif(not::expr(is_padding.expr()), count_decrement.expr())]
         });
 
         meta.create_gate("if last or padding, new_root is propagated ", |meta| {
             let q_enable = meta.query_selector(q_enable);
             let is_last_or_padding = or::expr([is_padding.expr(), is_last.expr()]);
-            vec![q_enable * xif(is_last_or_padding.expr(), new_root_propagation.expr())]
+            vec![q_enable * xnif(is_last_or_padding.expr(), new_root_propagation.expr())]
         });
 
         meta.create_gate(
@@ -208,7 +204,7 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
 
                 vec![
                     q_enable
-                        * xif(
+                        * xnif(
                             not::expr(one_if_not_padding_and_not_last_rot),
                             root_chained.expr(),
                         ),

@@ -32,7 +32,7 @@ yaml-rust = "0.4.5"
 zkevm-circuits = { path="../zkevm-circuits", features=["test-util", "test-circuits"] }
 rand_chacha = "0.3"
 rand = "0.8"
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_04_20" }
+halo2_proofs = { path = "/Users/adria0/w/ef/light_client/halo2/halo2_proofs"}
 urlencoding = "2.1.2"
 
 
