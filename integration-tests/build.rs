@@ -156,7 +156,7 @@ fn main() -> Result<(), BuildError> {
         let abi = contract
             .abi
             .ok_or_else(|| {
-                BuildError::ErrorLoadingContractAbi("Failed to get contract Abi".to_string())
+                BuildError::ErrorLoadingContractAbi
             })?
             .clone();
 
