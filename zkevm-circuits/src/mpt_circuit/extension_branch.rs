@@ -28,6 +28,7 @@ pub(crate) struct ExtensionBranchConfig<F> {
     is_placeholder: [Cell<F>; 2],
     is_extension: Cell<F>,
     is_mod_extension: [Cell<F>; 2],
+    is_short_not_branch: Cell<F>,
     extension: ExtensionGadget<F>,
     branch: BranchGadget<F>,
 }
@@ -51,6 +52,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
             for is_s in [true, false] {
                 config.is_mod_extension[is_s.idx()] = cb.query_bool();
             }
+            config.is_short_not_branch = cb.query_bool();
             // If we're in a placeholder, both the extension and the branch parts are
             // placeholders
             for is_s in [true, false] {
@@ -150,6 +152,11 @@ impl<F: Field> ExtensionBranchConfig<F> {
             );
             let branch = config.branch.get_post_state();
 
+            /*
+            let is_short_not_branch = 
+            config.is_short_not_branch
+            */
+
             // Set the new keys
             for is_s in [true, false] {
                 ifx! {not!(config.is_placeholder[is_s.idx()].expr()) => {
@@ -218,18 +225,18 @@ impl<F: Field> ExtensionBranchConfig<F> {
         let extension_branch = &node.extension_branch.clone().unwrap();
 
         self.is_extension
-            .assign(region, offset, extension_branch.is_extension.scalar())?;
+            .assign(region, offset, extension_branch.is_extension.scalar())?; 
 
         let key_data =
             self.key_data
                 .witness_load(region, offset, &pv.memory[key_memory(true)], 0)?;
         let mut parent_data = vec![ParentDataWitness::default(); 2];
-        for is_s in [true, false] {
+        for is_s in [true, false] { 
             self.is_mod_extension[is_s.idx()].assign(
                 region,
                 offset,
                 extension_branch.is_mod_extension[is_s.idx()].scalar(),
-            )?;
+            )?; 
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
                 region,
                 offset,
