@@ -150,7 +150,7 @@ fn main() -> Result<(), BuildError> {
         })?;
 
         let contract: CompactContractRef = compiled_binding.get(p, name).ok_or_else(|| {
-            BuildError::FailedToLoadCompactContractRef("FailedToLoadCompactContractRef".to_string())
+            BuildError::FailedToLoadCompactContractRef
         })?;
 
         let abi = contract
