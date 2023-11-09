@@ -115,6 +115,7 @@ impl<F: Field> ModExtensionGadget<F> {
                 .rlc_chain_rev(rlp_value[1].rlc_chain_data());
             let node_rlc = vec![node_rlc_s.expr(), node_rlc_c.expr()];
 
+            // TODO: make it boolean
             let is_short_not_branch = node_rlc_s.expr() - node_rlc_c.expr();
 
             for is_s in [true, false] {
@@ -156,16 +157,18 @@ impl<F: Field> ModExtensionGadget<F> {
                 } elsex {
                     if is_s {
                         ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
-                            // Hashed branch hash in long extension is in parent branch
                             require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data_lo[is_s.idx()].clone(), parent_data_hi[is_s.idx()].clone()] => @KECCAK);
                         } elsex {
-                            // Non-hashed branch hash in parent branch
                             require!(rlc => parent_data_rlc);
                         }}
                     } else {
-                        let branch_rlp_rlc = rlp_value[0].rlc_rlp();
-                        // TODO:
-                        // require!(branch_rlp_rlc => parent_data[1].rlc);
+                        ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
+                            let branch_rlp_word = rlp_value[1].word();
+                            require!(branch_rlp_word.lo() => parent_data_lo[1]);
+                            require!(branch_rlp_word.hi() => parent_data_hi[1]);
+                        } elsex {
+                            require!(rlp_value[1].rlc_rlp() => parent_data_rlc);
+                        }}
                     }
                 }} 
             }
@@ -189,7 +192,7 @@ impl<F: Field> ModExtensionGadget<F> {
 
             let data1 = [key_items[1].clone(), key_nibbles[1].clone()];
 
-            let rlc_after_short = middle_key_rlc + ext_key_rlc_expr(
+            let rlc_after_short = middle_key_rlc.clone() + ext_key_rlc_expr(
                 cb,
                 config.rlp_key[1].key_value.clone(),
                 middle_key_mult,
@@ -207,7 +210,7 @@ impl<F: Field> ModExtensionGadget<F> {
             ifx! {is_short_not_branch => {
                 require!(rlc_after_short => nibbles_rlc_long);
             } elsex {
-                // TODO
+                require!(middle_key_rlc => nibbles_rlc_long);
             }}
         });
 
