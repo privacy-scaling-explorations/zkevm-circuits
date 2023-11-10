@@ -1,8 +1,8 @@
 package witness
 
 import (
-	"fmt"
-	"strings"
+	"encoding/hex"
+	"encoding/json"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/privacy-scaling-explorations/mpt-witness-generator/oracle"
@@ -15,11 +15,16 @@ type BranchNode struct {
 }
 
 func (n *BranchNode) MarshalJSON() ([]byte, error) {
-	listRlpBytes1 := base64ToString(n.ListRlpBytes[0])
-	listRlpBytes2 := base64ToString(n.ListRlpBytes[1])
-	jsonResult := fmt.Sprintf(`{"modified_index": %d, "drifted_index": %d, "list_rlp_bytes":[%s,%s]}`,
-		n.ModifiedIndex, n.DriftedIndex, listRlpBytes1, listRlpBytes2)
-	return []byte(jsonResult), nil
+	jsonData := struct {
+		ModifiedIndex int      `json:"modified_index"`
+		DriftedIndex  int      `json:"drifted_index"`
+		ListRlpBytes  []string `json:"list_rlp_bytes"`
+	}{
+		ModifiedIndex: n.ModifiedIndex,
+		DriftedIndex:  n.DriftedIndex,
+		ListRlpBytes:  encodeArray(n.ListRlpBytes[:]),
+	}
+	return json.Marshal(jsonData)
 }
 
 type ExtensionNode struct {
@@ -27,29 +32,28 @@ type ExtensionNode struct {
 }
 
 func (n *ExtensionNode) MarshalJSON() ([]byte, error) {
-	listRlpBytes := base64ToString(n.ListRlpBytes)
-	jsonResult := fmt.Sprintf(`{"list_rlp_bytes":%s}`, listRlpBytes)
-	return []byte(jsonResult), nil
+	jsonData := struct {
+		ListRlpBytes string `json:"list_rlp_bytes"`
+	}{
+		ListRlpBytes: base64ToString(n.ListRlpBytes),
+	}
+	return json.Marshal(jsonData)
 }
 
 // When marshalling, []byte encodes as a base64-encoded string.
 func base64ToString(bs []byte) string {
-	var s string
 	if bs == nil {
-		f := make([]string, valueLen)
-		s = "["
-		for i := 0; i < len(f); i++ {
-			if i != len(f)-1 {
-				s += "0, "
-			} else {
-				s += "0]"
-			}
-		}
-	} else {
-		s = strings.Join(strings.Fields(fmt.Sprintf("%d", bs)), ",")
+		bs = make([]byte, valueLen)
 	}
+	return hex.EncodeToString(bs)
+}
 
-	return s
+func encodeArray(arrayBytes [][]byte) []string {
+	hexStrings := make([]string, len(arrayBytes))
+	for i, item := range arrayBytes {
+		hexStrings[i] = base64ToString(item)
+	}
+	return hexStrings
 }
 
 type StartNode struct {
@@ -74,10 +78,12 @@ type ModExtensionNode struct {
 }
 
 func (n *ModExtensionNode) MarshalJSON() ([]byte, error) {
-	listRlpBytes1 := base64ToString(n.ListRlpBytes[0])
-	listRlpBytes2 := base64ToString(n.ListRlpBytes[1])
-	jsonResult := fmt.Sprintf(`{"list_rlp_bytes":[%s,%s]}`, listRlpBytes1, listRlpBytes2)
-	return []byte(jsonResult), nil
+	jsonData := struct {
+		ListRlpBytes []string `json:"list_rlp_bytes"`
+	}{
+		ListRlpBytes: encodeArray(n.ListRlpBytes[:]),
+	}
+	return json.Marshal(jsonData)
 }
 
 type AccountNode struct {
@@ -88,60 +94,67 @@ type AccountNode struct {
 	ValueListRlpBytes [2][]byte
 	DriftedRlpBytes   []byte
 	WrongRlpBytes     []byte
-	IsModExtension    [2]bool `json:"is_mod_extension"`
+	IsModExtension    [2]bool
 }
 
 func (n *AccountNode) MarshalJSON() ([]byte, error) {
-	address := base64ToString(n.Address.Bytes())
-	key := base64ToString(n.Key)
-	listRlpBytes1 := base64ToString(n.ListRlpBytes[0])
-	listRlpBytes2 := base64ToString(n.ListRlpBytes[1])
-	valueRlpBytes1 := base64ToString(n.ValueRlpBytes[0])
-	valueRlpBytes2 := base64ToString(n.ValueRlpBytes[1])
-	valueListRlpBytes1 := base64ToString(n.ValueListRlpBytes[0])
-	valueListRlpBytes2 := base64ToString(n.ValueListRlpBytes[1])
-	driftedRlpBytes := base64ToString(n.DriftedRlpBytes)
-	wrongRlpBytes := base64ToString(n.WrongRlpBytes)
-	jsonResult := fmt.Sprintf(`{"address":%s, "key":%s, "list_rlp_bytes":[%s,%s], "value_rlp_bytes":[%s,%s], "value_list_rlp_bytes":[%s,%s], "drifted_rlp_bytes":%s, "wrong_rlp_bytes":%s, "is_mod_extension": [%t, %t]}`,
-		address, key, listRlpBytes1, listRlpBytes2, valueRlpBytes1, valueRlpBytes2, valueListRlpBytes1, valueListRlpBytes2,
-		driftedRlpBytes, wrongRlpBytes, n.IsModExtension[0], n.IsModExtension[1])
-	return []byte(jsonResult), nil
+	jsonData := struct {
+		Address           string   `json:"address"`
+		Key               string   `json:"key"`
+		ListRlpBytes      []string `json:"list_rlp_bytes"`
+		ValueRlpBytes     []string `json:"value_rlp_bytes"`
+		ValueListRlpBytes []string `json:"value_list_rlp_bytes"`
+		DriftedRlpBytes   string   `json:"drifted_rlp_bytes"`
+		WrongRlpBytes     string   `json:"wrong_rlp_bytes"`
+		IsModExtension    [2]bool  `json:"is_mod_extension"`
+	}{
+		Address:           base64ToString(n.Address.Bytes()),
+		Key:               base64ToString(n.Key),
+		ListRlpBytes:      encodeArray(n.ListRlpBytes[:]),
+		ValueRlpBytes:     encodeArray(n.ValueRlpBytes[:]),
+		ValueListRlpBytes: encodeArray(n.ValueListRlpBytes[:]),
+		DriftedRlpBytes:   base64ToString(n.DriftedRlpBytes),
+		WrongRlpBytes:     base64ToString(n.WrongRlpBytes),
+		IsModExtension:    n.IsModExtension,
+	}
+	return json.Marshal(jsonData)
 }
 
 type StorageNode struct {
-	Address         common.Hash `json:"address"`
-	Key             []byte      `json:"key"`
-	ListRlpBytes    [2][]byte   `json:"list_rlp_bytes"`
-	ValueRlpBytes   [2][]byte   `json:"value_rlp_bytes"`
-	DriftedRlpBytes []byte      `json:"drifted_rlp_bytes"`
-	WrongRlpBytes   []byte      `json:"wrong_rlp_bytes"`
-	IsModExtension  [2]bool     `json:"is_mod_extension"`
+	Address         common.Hash
+	Key             []byte
+	ListRlpBytes    [2][]byte
+	ValueRlpBytes   [2][]byte
+	DriftedRlpBytes []byte
+	WrongRlpBytes   []byte
+	IsModExtension  [2]bool
 }
 
 func (n *StorageNode) MarshalJSON() ([]byte, error) {
-	address := base64ToString(n.Address.Bytes())
-	key := base64ToString(n.Key)
-	listRlpBytes1 := base64ToString(n.ListRlpBytes[0])
-	listRlpBytes2 := base64ToString(n.ListRlpBytes[1])
-	valueRlpBytes1 := base64ToString(n.ValueRlpBytes[0])
-	valueRlpBytes2 := base64ToString(n.ValueRlpBytes[1])
-	driftedRlpBytes := base64ToString(n.DriftedRlpBytes)
-	wrongRlpBytes := base64ToString(n.WrongRlpBytes)
-	jsonResult := fmt.Sprintf(`{"address":%s, "key":%s, "list_rlp_bytes":[%s,%s], "value_rlp_bytes":[%s,%s], "drifted_rlp_bytes":%s, "wrong_rlp_bytes":%s, "is_mod_extension": [%t, %t]}`,
-		address, key, listRlpBytes1, listRlpBytes2, valueRlpBytes1, valueRlpBytes2, driftedRlpBytes, wrongRlpBytes, n.IsModExtension[0], n.IsModExtension[1])
-	return []byte(jsonResult), nil
+	jsonData := struct {
+		Address         string   `json:"address"`
+		Key             string   `json:"key"`
+		ListRlpBytes    []string `json:"list_rlp_bytes"`
+		ValueRlpBytes   []string `json:"value_rlp_bytes"`
+		DriftedRlpBytes string   `json:"drifted_rlp_bytes"`
+		WrongRlpBytes   string   `json:"wrong_rlp_bytes"`
+		IsModExtension  [2]bool  `json:"is_mod_extension"`
+	}{
+		Address:         base64ToString(n.Address.Bytes()),
+		Key:             base64ToString(n.Key),
+		ListRlpBytes:    encodeArray(n.ListRlpBytes[:]),
+		ValueRlpBytes:   encodeArray(n.ValueRlpBytes[:]),
+		DriftedRlpBytes: base64ToString(n.DriftedRlpBytes),
+		WrongRlpBytes:   base64ToString(n.WrongRlpBytes),
+		IsModExtension:  n.IsModExtension,
+	}
+	return json.Marshal(jsonData)
 }
 
 type JSONableValues [][]byte
 
 func (u JSONableValues) MarshalJSON() ([]byte, error) {
-	var result string
-	if u == nil {
-		result = "[]"
-	} else {
-		result = strings.Join(strings.Fields(fmt.Sprintf("%d", u)), ",")
-	}
-	return []byte(result), nil
+	return json.Marshal(encodeArray(u))
 }
 
 /*

@@ -411,62 +411,65 @@ func prepareStorageLeafPlaceholderNode(storage_key common.Hash, key []byte, keyI
 func prepareStorageLeafInfo(row []byte, valueIsZero, isPlaceholder bool) ([]byte, []byte, []byte, []byte) {
 	var keyRlp []byte
 	var valueRlp []byte
-
 	var keyRlpLen byte
-	var valueRlpLen byte
-
 	key := make([]byte, valueLen)
 	value := make([]byte, valueLen)
 
-	var setValue = func(keyLen, offset byte) {
+	var setKeyValue = func(keyLen, offset byte) {
 		if !isPlaceholder {
-			valueRlp = row[keyLen+offset : keyLen+offset+valueRlpLen]
+			valueRlp = row[keyLen+offset : keyLen+offset+1]
 			if !valueIsZero {
-				copy(value, row[keyLen+offset+valueRlpLen:])
+				copy(value, row[keyLen+offset+1:])
 			}
 		} else {
+			// If placeholder, we leave the value to be 0.
 			valueRlp = []byte{0}
+			// We need to take into account that the value is 0, so of length 1.
+			// keyRlp holds the RLP of the whole leaf:
+			// - (keyLen + 1) is the number of key bytes
+			// - 1 is the number of value bytes
+			if row[0] == 248 {
+				// keyRlp have two bytes, we need to have only one (when value is 0, it's always short)
+				keyRlp = []byte{192 + keyLen + 2}
+			} else {
+				keyRlp[0] = 192 + keyLen + 2
+			}
 		}
 	}
 
+	keyLen := byte(0)
+	offset := byte(1)
 	if len(row) < 32 { // the node doesn't get hashed in this case
+		keyRlpLen = 1
+		keyRlp = make([]uint8, keyRlpLen)
+		copy(keyRlp, row[:keyRlpLen])
+
 		// 192 + 32 = 224
 		if row[1] < 128 {
 			// last level: [194,32,1]
 			// or
 			// only one nibble in a leaf (as soon as the leaf has two nibbles, row[1] will have 128 + length)
 			// [194,48,1] - this one contains nibble 0 = 48 - 48
-			keyRlpLen = 1
-			keyLen := byte(1)
-			keyRlp = row[:keyRlpLen]
+			keyLen = byte(1)
 			copy(key, row[keyRlpLen:keyLen+1])
-			valueRlpLen = 1
-			offset := byte(1)
-			// If placeholder, we leave the value to be 0.
-			setValue(keyLen, offset)
+			offset = byte(1)
 		} else {
 			// [196,130,32,0,1]
-			keyRlpLen = 1
-			keyLen := row[1] - 128
-			keyRlp = row[:keyRlpLen]
+			keyLen = row[1] - 128
 			copy(key, row[keyRlpLen:keyLen+2])
-			valueRlpLen = 1
-			offset := byte(2)
-			// If placeholder, we leave the value to be 0.
-			setValue(keyLen, offset)
+			offset = byte(2)
 		}
 	} else if row[0] == 248 {
 		// [248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,...
 		keyRlpLen = 2
-		keyLen := row[2] - 128
+		keyLen = row[2] - 128
 		keyRlp = row[:keyRlpLen]
 		copy(key, row[keyRlpLen:keyLen+3])
-		valueRlpLen = 1
-		offset := byte(3)
-		// there are two RLP meta data bytes which are put in s_rlp1 and s_rlp2,
-		// value starts in s_advices[0]
-		setValue(keyLen, offset)
+		offset = byte(3)
 	} else {
+		keyRlpLen = 1
+		keyRlp = make([]uint8, keyRlpLen)
+		copy(keyRlp, row[:keyRlpLen])
 		if row[1] < 128 {
 			// last level:
 			// [227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
@@ -474,23 +477,16 @@ func prepareStorageLeafInfo(row []byte, valueIsZero, isPlaceholder bool) ([]byte
 			// [227,48,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
 			key[0] = row[0]
 			key[1] = row[1]
-			keyLen := byte(2)
-			offset := byte(0)
-			valueRlpLen = 1
-			// If placeholder, we leave the value to be 0.
-			setValue(keyLen, offset)
+			keyLen = byte(2)
+			offset = byte(0)
 		} else {
 			// [226,160,59,138,106,70,105,186,37,13,38[227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
-			keyRlpLen = 1
-			keyLen := row[1] - 128
-			keyRlp = row[:keyRlpLen]
+			keyLen = row[1] - 128
 			copy(key, row[keyRlpLen:keyLen+2])
-			valueRlpLen = 1
-			offset := byte(2)
-			// If placeholder, we leave the value to be 0.
-			setValue(keyLen, offset)
+			offset = byte(2)
 		}
 	}
+	setKeyValue(keyLen, offset)
 
 	return key, value, keyRlp, valueRlp
 }

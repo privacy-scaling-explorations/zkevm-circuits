@@ -1,8 +1,8 @@
 package oracle
 
 import (
+	"errors"
 	"fmt"
-	"io/ioutil"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -10,18 +10,17 @@ import (
 
 var preimages = make(map[common.Hash][]byte)
 
-func Preimage(hash common.Hash) []byte {
+func Preimage(hash common.Hash) ([]byte, error) {
 	val, ok := preimages[hash]
-	key := fmt.Sprintf("/tmp/eth/%s", hash)
-	ioutil.WriteFile(key, val, 0644)
 	if !ok {
-		fmt.Println("can't find preimage", hash)
+		return nil, errors.New("can't find preimage")
 	}
 	comphash := crypto.Keccak256Hash(val)
 	if hash != comphash {
-		panic("corruption in hash " + hash.String())
+		fmt.Println("corruption in hash " + hash.String())
+		return nil, errors.New("corruption in hash " + hash.String())
 	}
-	return val
+	return val, nil
 }
 
 // TODO: Maybe we will want to have a seperate preimages for next block's preimages?

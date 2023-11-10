@@ -1430,17 +1430,18 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.constraints_location = ConstraintLocation::Step;
         ret
     }
-    /// TODO: Doc
+
+    /// register constraints to be applied `step_first` selector
     pub(crate) fn step_first<R>(&mut self, constraint: impl FnOnce(&mut Self) -> R) -> R {
         self.constraint_at_location(ConstraintLocation::StepFirst, constraint)
     }
 
-    /// TODO: Doc
+    /// register constraints to be applied on step other than first step
     pub(crate) fn not_step_last<R>(&mut self, constraint: impl FnOnce(&mut Self) -> R) -> R {
         self.constraint_at_location(ConstraintLocation::NotStepLast, constraint)
     }
 
-    /// TODO: Doc
+    /// register constraints to be applied on respective selector later
     fn push_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
         match self.constraints_location {
             ConstraintLocation::Step => self.constraints.step.push((name, constraint)),
@@ -1452,6 +1453,11 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn add_lookup(&mut self, name: &str, lookup: Lookup<F>) {
+        debug_assert_eq!(
+            self.constraints_location,
+            ConstraintLocation::Step,
+            "lookup do not support conditional on constraint location other than `ConstraintLocation::Step`"
+        );
         let lookup = match self.condition_expr_opt() {
             Some(condition) => lookup.conditional(condition),
             None => lookup,

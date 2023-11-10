@@ -52,7 +52,7 @@ func (db *Database) Node(hash common.Hash) ([]byte, error) {
 // found in the memory cache.
 func (db *Database) node(hash common.Hash) Node {
 	//fmt.Println("node", hash)
-	if val := oracle.Preimage(hash); val != nil {
+	if val, _ := oracle.Preimage(hash); val != nil {
 		return mustDecodeNode(hash[:], val)
 	}
 	return nil

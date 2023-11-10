@@ -191,7 +191,8 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	}
 
 	// For opcode PREVRANDAO
-	randao := common.BigToHash(toBigInt(config.Block.Difficulty)) // TODO: fix
+	// Difficulty is one of MixHash or Difficulty.
+	randao := common.BigToHash(toBigInt(config.Block.Difficulty))
 
 	blockCtx := vm.BlockContext{
 		CanTransfer: core.CanTransfer,

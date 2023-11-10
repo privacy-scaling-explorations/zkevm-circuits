@@ -45,7 +45,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         ),
         (CallContextField::IsSuccess, call.is_success.to_word()),
     ] {
-        state.call_context_write(&mut exec_step, call.call_id, field, value);
+        state.call_context_write(&mut exec_step, call.call_id, field, value)?;
     }
 
     // Increase caller's nonce
@@ -117,7 +117,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             call.address,
             AccountField::CodeHash,
             callee_code_hash,
-        );
+        )?;
     }
 
     // Transfer with fee
@@ -193,7 +193,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
                 (CallContextField::IsCreate, 1.into()),
                 (CallContextField::CodeHash, call.code_hash.to_word()),
             ] {
-                state.call_context_write(&mut exec_step, call.call_id, field, value);
+                state.call_context_write(&mut exec_step, call.call_id, field, value)?;
             }
             Ok(exec_step)
         }
@@ -233,7 +233,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
                 (CallContextField::IsCreate, 0.into()),
                 (CallContextField::CodeHash, callee_code_hash),
             ] {
-                state.call_context_write(&mut exec_step, call.call_id, field, value);
+                state.call_context_write(&mut exec_step, call.call_id, field, value)?;
             }
 
             Ok(exec_step)
@@ -250,13 +250,13 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
         call.call_id,
         CallContextField::TxId,
         state.tx_ctx.id().into(),
-    );
+    )?;
     state.call_context_read(
         &mut exec_step,
         call.call_id,
         CallContextField::IsPersistent,
         Word::from(call.is_persistent as u8),
-    );
+    )?;
 
     let refund = state.sdb.refund();
     state.push_op(
@@ -267,7 +267,7 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
             value: refund,
             value_prev: refund,
         },
-    );
+    )?;
 
     let effective_refund =
         refund.min((state.tx.gas() - exec_step.gas_left) / MAX_REFUND_QUOTIENT_OF_GAS_USED as u64);
@@ -303,7 +303,7 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
         } else {
             coinbase_account.code_hash.to_word()
         },
-    );
+    )?;
     state.transfer_to(
         &mut exec_step,
         state.block.coinbase,
@@ -353,7 +353,7 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
             state.block_ctx.rwc.0 + 1,
             CallContextField::TxId,
             (state.tx_ctx.id() + 1).into(),
-        );
+        )?;
     }
 
     Ok(exec_step)

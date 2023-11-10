@@ -112,7 +112,6 @@ impl AddrOrWallet {
         }
     }
 }
-
 #[derive(Debug, Clone)]
 /// Mock structure which represents a Transaction and can be used for tests.
 /// It contains all the builder-pattern methods required to be able to specify
