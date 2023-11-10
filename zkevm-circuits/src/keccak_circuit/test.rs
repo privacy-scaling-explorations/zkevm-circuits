@@ -63,14 +63,17 @@ fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, digests: Vec<String>, success:
 
         // Keep the rows that are supposed to contain hash results.
         izip!(is_enabled, input_rlc, input_len, output.lo(), output.hi())
-            .filter_map(|(enabled, input_rlc, input_len, output_lo, output_hi)| {
-                assigned_non_zero(enabled).then_some((
-                    unwrap(input_rlc),
-                    unwrap(input_len),
-                    unwrap(output_lo),
-                    unwrap(output_hi),
-                ))
-            })
+            .enumerate()
+            .filter_map(
+                |(idx, (enabled, input_rlc, input_len, output_lo, output_hi))| {
+                    assigned_non_zero(enabled).then_some((
+                        unwrap(idx, "rlc", input_rlc),
+                        unwrap(idx, "len", input_len),
+                        unwrap(idx, "lo", output_lo),
+                        unwrap(idx, "hi", output_hi),
+                    ))
+                },
+            )
             .collect::<Vec<(F, F, F, F)>>()
     };
 
@@ -131,10 +134,10 @@ fn assigned_non_zero<F: Field>(cv: &CellValue<F>) -> bool {
     }
 }
 
-fn unwrap<F: Field>(cv: &CellValue<F>) -> F {
+fn unwrap<F: Field>(idx: usize, name: &str, cv: &CellValue<F>) -> F {
     match *cv {
         CellValue::Assigned(f) => f,
-        _ => panic!("the cell should be assigned"),
+        _ => panic!("#{idx} {name}: the cell should be assigned"),
     }
 }
 
