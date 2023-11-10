@@ -11,7 +11,7 @@ use crate::{
     circuit,
     circuit_tools::{
         cached_region::CachedRegion, cell_manager::Cell, constraint_builder::{RLCChainableRev, RLCChainable},
-        gadgets::LtGadget,
+        gadgets::{LtGadget, IsZeroGadget},
     },
     mpt_circuit::{
         helpers::{
@@ -25,6 +25,7 @@ use crate::{
 pub(crate) struct ModExtensionGadget<F> {
     rlp_key: [ListKeyGadget<F>; 2],
     is_not_hashed: [LtGadget<F, 2>; 2],
+    is_short_branch: IsZeroGadget<F>,
     is_key_part_odd: [Cell<F>; 2], // Whether the number of nibbles is odd or not.
     mult_key: Cell<F>,
 }
@@ -103,24 +104,35 @@ impl<F: Field> ModExtensionGadget<F> {
 
             config.rlp_key[0] = ListKeyGadget::construct(cb, &key_items[0]);
             config.rlp_key[1] = ListKeyGadget::construct(cb, &key_items[1]);
-
-            // Extension node RLC
-            let node_rlc_s = config
-                .rlp_key[0]
-                .rlc2(&cb.keccak_r)
-                .rlc_chain_rev(rlp_value[0].rlc_chain_data());
-            let node_rlc_c = config
-                .rlp_key[1]
-                .rlc2(&cb.keccak_r)
-                .rlc_chain_rev(rlp_value[1].rlc_chain_data());
-            let node_rlc = vec![node_rlc_s.expr(), node_rlc_c.expr()];
-
-            // TODO: make it boolean
-            let is_short_not_branch = node_rlc_s.expr() - node_rlc_c.expr();
-
+ 
+            let mut key_rlc = vec![];
             for is_s in [true, false] {
                 config.is_key_part_odd[is_s.idx()] = cb.query_cell();
 
+                let items = vec![key_items[is_s.idx()].clone(), key_nibbles[is_s.idx()].clone()];
+                let rlc = ext_key_rlc_expr(
+                        cb,
+                        config.rlp_key[is_s.idx()].key_value.clone(),
+                        1.expr(),
+                        config.is_key_part_odd[is_s.idx()].expr(),
+                        false.expr(),
+                        items
+                            .iter()
+                            .map(|item| item.bytes_be())
+                            .collect::<Vec<_>>()
+                            .try_into()
+                            .unwrap(),
+                        &cb.key_r.expr(),
+                    );
+                key_rlc.push(rlc);
+            }
+
+            config.is_short_branch = IsZeroGadget::construct(
+                &mut cb.base,
+                key_rlc[0].expr() - key_rlc[1].expr(),
+            );
+
+            for is_s in [true, false] {
                 let first_byte = matchx! {
                     key_items[is_s.idx()].is_short() => key_items[is_s.idx()].bytes_be()[0].expr(),
                     key_items[is_s.idx()].is_long() => key_items[is_s.idx()].bytes_be()[1].expr(),
@@ -139,22 +151,20 @@ impl<F: Field> ModExtensionGadget<F> {
                     HASH_WIDTH.expr(),
                 );
 
+                // Extension node RLC
+                let node_rlc = config
+                    .rlp_key[is_s.idx()]
+                    .rlc2(&cb.keccak_r)
+                    .rlc_chain_rev(rlp_value[is_s.idx()].rlc_chain_data());
+
                 let (rlc, num_bytes, is_not_hashed) =  
                     (
-                        node_rlc[is_s.idx()].clone(),
+                        node_rlc.expr(),
                         config.rlp_key[is_s.idx()].rlp_list.num_bytes(),
                         config.is_not_hashed[is_s.idx()].expr(),
                     );
  
-                ifx! {is_short_not_branch => {
-                    ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
-                        // Hashed branch hash in long extension is in parent branch
-                        require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data_lo[is_s.idx()].clone(), parent_data_hi[is_s.idx()].clone()] => @KECCAK);
-                    } elsex {
-                        // Non-hashed branch hash in parent branch
-                        require!(rlc => parent_data_rlc);
-                    }} 
-                } elsex {
+                ifx! {config.is_short_branch => {
                     if is_s {
                         ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
                             require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data_lo[is_s.idx()].clone(), parent_data_hi[is_s.idx()].clone()] => @KECCAK);
@@ -170,6 +180,14 @@ impl<F: Field> ModExtensionGadget<F> {
                             require!(rlp_value[1].rlc_rlp() => parent_data_rlc);
                         }}
                     }
+                } elsex {
+                    ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
+                        // Hashed branch hash in long extension is in parent branch
+                        require!(vec![1.expr(), rlc.expr(), num_bytes.expr(), parent_data_lo[is_s.idx()].clone(), parent_data_hi[is_s.idx()].clone()] => @KECCAK);
+                    } elsex {
+                        // Non-hashed branch hash in parent branch
+                        require!(rlc => parent_data_rlc);
+                    }} 
                 }} 
             }
 
@@ -207,10 +225,10 @@ impl<F: Field> ModExtensionGadget<F> {
                 &cb.key_r.expr(),
             );
 
-            ifx! {is_short_not_branch => {
-                require!(rlc_after_short => nibbles_rlc_long);
-            } elsex {
+            ifx! {config.is_short_branch => {
                 require!(middle_key_rlc => nibbles_rlc_long);
+            } elsex {
+                require!(rlc_after_short => nibbles_rlc_long);
             }}
         });
 
@@ -229,16 +247,19 @@ impl<F: Field> ModExtensionGadget<F> {
             rlp_values[StorageRowType::LongExtNodeKey as usize].clone(),
             rlp_values[StorageRowType::ShortExtNodeKey as usize].clone(),
         ];
-        let key_nibbles = [
-            rlp_values[StorageRowType::LongExtNodeNibbles as usize].clone(),
-            rlp_values[StorageRowType::ShortExtNodeNibbles as usize].clone(),
-        ];
-        let value_bytes = [
-            rlp_values[StorageRowType::LongExtNodeValue as usize].clone(),
-            rlp_values[StorageRowType::ShortExtNodeValue as usize].clone(),
-        ];
 
         let mut rlp_key = vec![ListKeyWitness::default(); 2];
+        let mut key_rlc = vec![];
+
+        let items_s = [
+            rlp_values[StorageRowType::LongExtNodeKey as usize].clone(),
+            rlp_values[StorageRowType::LongExtNodeNibbles as usize].clone(),
+        ];
+        let items_c = [
+            rlp_values[StorageRowType::ShortExtNodeKey as usize].clone(),
+            rlp_values[StorageRowType::ShortExtNodeNibbles as usize].clone(),
+        ];
+        let items = vec![items_s, items_c];
 
         for is_s in [true, false] {
             rlp_key[is_s.idx()] = self.rlp_key[is_s.idx()].assign(
@@ -266,71 +287,30 @@ impl<F: Field> ModExtensionGadget<F> {
                 offset,
                 rlp_key[is_s.idx()].rlp_list.num_bytes().scalar(),
                 HASH_WIDTH.scalar(),
-            )?;
+            )?; 
 
-            /*
-            let nibbles_rlc_long = key_rlc_before
-                + ext_key_rlc_expr(
-                    cb,
-                    config.rlp_key[0].key_value.clone(),
-                    key_mult_before,
-                    config.is_key_part_odd[0].expr(),
-                    key_is_odd_before,
-                    key_items
-                        .iter()
-                        .map(|item| item.bytes_be())
-                        .collect::<Vec<_>>()
-                        .try_into()
-                        .unwrap(),
-                    &cb.key_r.expr(),
-                );
-            */
+            let (key_rlc_ext, _) = ext_key_rlc_calc_value(
+                rlp_key[is_s.idx()].key_item.clone(),
+                1.scalar(),
+                is_key_part_odd,
+                false,
+                items[is_s.idx()]
+                    .iter()
+                    .map(|item| item.bytes.clone())
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap(),
+                region.key_r,
+            );
 
-            
-            // Debugging:
-            /*
-            let r = F::from(7 as u64);
-            if is_s {
-                let data = [key_items[0].clone(), key_nibbles[0].clone()];
-                let (nibbles_rlc, _) = ext_key_rlc_calc_value(
-                    rlp_key[is_s.idx()].key_item.clone(),
-                    F::ONE,
-                    is_key_part_odd,
-                    false,
-                    data
-                        .iter()
-                        .map(|item| item.bytes.clone())
-                        .collect::<Vec<_>>()
-                        .try_into()
-                        .unwrap(),
-                    // region.key_r,
-                    r
-                );
-
-                /*
-                let s1 = F::from(2 * 16);
-                let s2 = F::from(3 * 16 + 4 as u64) * r;
-                let s3 = F::from(5 * 16 + 6 as u64) * r * r;
-                */
-                let s1 = F::from(2 * 16 + 3);
-                let s2 = F::from(4 * 16 + 5 as u64) * r;
-                let s3 = F::from(6 * 16 as u64) * r * r;
-                /*
-                let s1 = F::from(2); 
-                let s2 = F::from(3 * 16 + 4 as u64) * r;
-                let s3 = F::from(5 * 16 + 6 as u64) * r * r;
-                */
-
-                let s = s1 + s2 + s3;
-
-                println!("{:?}", nibbles_rlc);
-                println!("{:?}", s);
-                println!("=====");
-            }
-            */
+            key_rlc.push(key_rlc_ext);
         }
-        
-        // TODO
+
+        self.is_short_branch.assign(
+            region,
+            offset,
+            key_rlc[0] - key_rlc[1],
+        )?;
 
         Ok(())
     }
