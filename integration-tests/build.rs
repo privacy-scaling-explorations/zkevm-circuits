@@ -218,20 +218,18 @@ fn main() -> Result<(), BuildError> {
 }
 
 fn generate_rust_contract_bindings(bindings_dir: &str, file: &Path) -> Result<(), BuildError> {
-    const SLASH: char = '/';
-    const DOT: char = '.';
-
     let abi_source = file.to_path_buf();
-    let tempbinding = file
-        .to_path_buf()
-        .into_os_string()
-        .into_string()
-        .expect("FAILED CONVERSION TO STRING");
-    let filenamevec: Vec<&str> = tempbinding.split(SLASH).collect();
-    let filename = filenamevec[1];
+    let tempbinding = abi_source.clone();
 
-    let contractnamevector: Vec<&str> = filename.split(DOT).collect();
-    let contractname = contractnamevector[0].to_lowercase();
+    let contractname = tempbinding
+        .file_stem()
+        .ok_or(BuildError::ArtifactError)?
+        .to_str()
+        .ok_or(BuildError::StringConversionError(
+            "Could not convert &OsStr to &str".to_string(),
+        ))?
+        .to_lowercase();
+
     let destpath = format!("{}{}{}", "bindings_", contractname, ".rs");
     let destpath = Path::new(&bindings_dir).join(destpath);
     let _ = Abigen::new(
