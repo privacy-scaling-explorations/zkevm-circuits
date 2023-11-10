@@ -139,6 +139,13 @@ fn main() -> Result<(), BuildError> {
 
         let error_free = !{ compiled.has_error() || compiled.has_warning(WARN) };
 
+        if !error_free {
+            return Err(BuildError::CompilerOutputContainsErrors {
+                path: p.to_string(),
+                errors: compiled.errors,
+            });
+        }
+
         let _ = error_free.then_some(|| ()).ok_or_else(|| {
             BuildError::CompilerOutputContainsErrors {
                 path: p.to_string(),
@@ -147,7 +154,7 @@ fn main() -> Result<(), BuildError> {
         })?;
 
         let contract: CompactContractRef = compiled_binding
-            .get(&p, name)
+            .get(p, name)
             .ok_or(BuildError::FailedToLoadCompactContractRef)?;
 
         let abi = contract
