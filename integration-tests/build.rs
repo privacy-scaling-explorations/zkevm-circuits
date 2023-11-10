@@ -107,9 +107,12 @@ fn main() -> Result<(), BuildError> {
 
     for (name, contract_path) in CONTRACTS {
         let path_sol = Path::new(CONTRACTS_PATH).join(contract_path);
+        let p = path_sol.to_str().ok_or_else(|| {
+            BuildError::StringConversionError("Failed to convert provided path to &str".to_string())
+        })?;
         let input = CompilerInput::new(&path_sol)
             .map_err(|err| BuildError::FailedToComposeCompilerInputs {
-                path: path_sol.to_string_lossy().to_string(),
+                path: p.to_string(),
                 reason: err.to_string(),
             })?
             .pop()
@@ -130,12 +133,6 @@ fn main() -> Result<(), BuildError> {
         // avoid parsing failure.
         deserializer.disable_recursion_limit();
 
-        let p = path_sol.to_str().ok_or_else(|| {
-            BuildError::StringConversionError(
-                "Failed to convert provided path to string".to_string(),
-            )
-        })?;
-
         let compiled = CompilerOutput::deserialize(&mut deserializer)
             .map_err(|err| BuildError::CompilerOutputDeSerError(err.to_string()))?;
         let compiled_binding = compiled.clone();
@@ -150,7 +147,7 @@ fn main() -> Result<(), BuildError> {
         })?;
 
         let contract: CompactContractRef = compiled_binding
-            .get(p, name)
+            .get(&p, name)
             .ok_or(BuildError::FailedToLoadCompactContractRef)?;
 
         let abi = contract
