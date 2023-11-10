@@ -149,15 +149,13 @@ fn main() -> Result<(), BuildError> {
             }
         })?;
 
-        let contract: CompactContractRef = compiled_binding.get(p, name).ok_or(
-            BuildError::FailedToLoadCompactContractRef
-        )?;
+        let contract: CompactContractRef = compiled_binding
+            .get(p, name)
+            .ok_or(BuildError::FailedToLoadCompactContractRef)?;
 
         let abi = contract
             .abi
-            .ok_or(
-                BuildError::ErrorLoadingContractAbi
-            )?
+            .ok_or(BuildError::ErrorLoadingContractAbi)?
             .clone();
 
         let bin = contract
