@@ -113,7 +113,7 @@ fn main() -> Result<(), BuildError> {
                 reason: err.to_string(),
             })?
             .pop()
-            .ok_or_else(|| BuildError::ArtifactError)?
+            .ok_or(BuildError::ArtifactError)?
             // ethers-solc: explicitly indicate the EvmVersion that corresponds to the zkevm
             // circuit's supported Upgrade, e.g. `London/Shanghai/...` specifications.
             .evm_version(EvmVersion::London);
@@ -149,15 +149,15 @@ fn main() -> Result<(), BuildError> {
             }
         })?;
 
-        let contract: CompactContractRef = compiled_binding.get(p, name).ok_or_else(|| {
+        let contract: CompactContractRef = compiled_binding.get(p, name).ok_or(
             BuildError::FailedToLoadCompactContractRef
-        })?;
+        )?;
 
         let abi = contract
             .abi
-            .ok_or_else(|| {
+            .ok_or(
                 BuildError::ErrorLoadingContractAbi
-            })?
+            )?
             .clone();
 
         let bin = contract
