@@ -40,8 +40,8 @@ enum BuildError {
         errors: Vec<SolcArtifactError>,
     },
     /// Vec<CompilerInput> is empty
-    #[error("ArtifactError({0:})")]
-    ArtifactError(String),
+    #[error("ArtifactError")]
+    ArtifactError,
     /// Functon compile_output failed to encode CompilerInput to Vec<u8>
     #[error("CompileOutputFailure({0:})")]
     CompileOutputFailure(String),
@@ -49,8 +49,8 @@ enum BuildError {
     #[error("CompilerOutputDeSerError({0:})")]
     CompilerOutputDeSerError(String),
     /// Failed loading Abi from CompactContractRef
-    #[error("ErrorLoadingContractAbi({0:})")]
-    ErrorLoadingContractAbi(String),
+    #[error("ErrorLoadingContractAbi")]
+    ErrorLoadingContractAbi,
     /// Failed loading Bin from CompactContractRef
     #[error("ErrorLoadingContractBin({0:})")]
     ErrorLoadingContractBin(String),
@@ -61,8 +61,8 @@ enum BuildError {
     #[error("StringConversionError({0:})")]
     StringConversionError(String),
     /// Failed to create CompactContractRef from path + name
-    #[error("FailedToLoadCompactContractRef({0:})")]
-    FailedToLoadCompactContractRef(String),
+    #[error("FailedToLoadCompactContractRef")]
+    FailedToLoadCompactContractRef,
     /// Failed Bytecode to Bytes conversion
     #[error("ByteCodeToBytesError({0:})")]
     ByteCodeToBytesError(String),
