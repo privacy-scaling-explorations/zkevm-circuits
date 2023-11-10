@@ -83,8 +83,8 @@ fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, digests: Vec<String>, success:
     assert_eq!(inputs.len(), digests.len());
     for (input, digest, hash) in izip!(&inputs, &digests, &hash_lookup_table) {
         let len = F::from(input.len() as u64);
-        let di_slice: [u8; 32] = hex::decode(digest).unwrap().try_into().unwrap();
-        let (lo, hi): (F, F) = Word::from(H256::from(di_slice)).to_lo_hi();
+        let digest_slice: [u8; 32] = hex::decode(digest).unwrap().try_into().unwrap();
+        let (lo, hi): (F, F) = Word::from(H256::from(digest_slice)).to_lo_hi();
 
         let expected = (rlc_input(input), len, lo, hi);
 
