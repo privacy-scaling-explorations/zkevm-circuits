@@ -148,8 +148,18 @@ impl RwMap {
                 length
             }
         };
-        let start_padding_rw_counter =
-            rows_trimmed.last().map(|row| row.rw_counter()).unwrap_or(1) + 1;
+
+        // option 1: need to provide padding starting rw_counter at function parameters
+        // option 2: just padding after local max rw_counter + 1
+        // We adapt option 2 for now
+        // the side effect is it introduce malleable proof when append `Rw::Padding` rw_counter,
+        // because `Rw::Padding` is not global unique
+        let start_padding_rw_counter = rows_trimmed
+            .iter()
+            .map(|rw| rw.rw_counter())
+            .max()
+            .unwrap_or(1)
+            + 1;
         let padding = (start_padding_rw_counter..start_padding_rw_counter + padding_length)
             .map(|rw_counter| Rw::Padding { rw_counter });
         (
@@ -165,7 +175,7 @@ impl RwMap {
     pub fn table_assignments(&self, keep_chronological_order: bool) -> Vec<Rw> {
         let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();
         if keep_chronological_order {
-            rows.sort_by_key(|row| row.rw_counter());
+            rows.sort_by_key(|row| (row.rw_counter(), row.tag() as u64));
         } else {
             rows.sort_by_key(|row| {
                 (
@@ -421,8 +431,9 @@ impl<F: Field> RwRow<Value<F>> {
         };
         let start_padding_rw_counter = {
             let start_padding_rw_counter = rows_trimmed
-                .last()
-                .map(|row| unwrap_value(row.rw_counter))
+                .iter()
+                .map(|rw| unwrap_value(rw.rw_counter))
+                .max()
                 .unwrap_or(F::from(1u64))
                 + F::ONE;
             // Assume root of unity < 2**64

@@ -71,8 +71,8 @@ pub struct StateCircuitConfig<F> {
     // External tables
     mpt_table: MptTable,
 
-    // rw permutation config
-    rw_permutation_config: PermutationChipConfig<F>,
+    /// rw permutation config
+    pub rw_permutation_config: PermutationChipConfig<F>,
 
     // pi for carry over previous chunk context
     pi_pre_continuity: Column<Instance>,
@@ -610,7 +610,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     Value::known(self.permu_gamma),
                     Value::known(self.permu_prev_continuous_fingerprint),
                     &rows,
-                    "state_circuit",
+                    "state_circuit-rw_permutation",
                 )?;
                 #[cfg(test)]
                 {

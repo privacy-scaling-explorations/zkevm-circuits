@@ -28,7 +28,7 @@ use crate::{
 };
 use bus_mapping::operation::Target;
 use eth_types::{evm_unimplemented, Field};
-use gadgets::{is_zero::IsZeroConfig, util::not};
+use gadgets::util::not;
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{
@@ -236,7 +236,7 @@ pub struct ExecutionConfig<F> {
     // Selector enabled in the row where the first execution step starts.
     q_step_first: Selector,
     // Selector enabled in the row where the last execution step starts.
-    q_step_last: Selector,
+    pub q_step_last: Selector,
     advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
     pub(crate) height_map: HashMap<ExecutionState, usize>,
@@ -352,8 +352,8 @@ impl<F: Field> ExecutionConfig<F> {
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
         chunkctx_table: &dyn LookupTable<F>,
-        is_first_chunk: &IsZeroConfig<F>,
-        is_last_chunk: &IsZeroConfig<F>,
+        is_first_chunk: Expression<F>,
+        is_last_chunk: Expression<F>,
     ) -> Self {
         let mut instrument = Instrument::default();
         let q_usable = meta.complex_selector();
@@ -1031,7 +1031,7 @@ impl<F: Field> ExecutionConfig<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<usize, Error> {
+    ) -> Result<(), Error> {
         // Track number of calls to `layouter.assign_region` as layouter assignment passes.
         let mut assign_pass = 0;
         layouter.assign_region(
@@ -1208,7 +1208,8 @@ impl<F: Field> ExecutionConfig<F> {
                 )?;
 
                 assign_pass += 1;
-                Ok(offset)
+
+                Ok(())
             },
         )
     }
