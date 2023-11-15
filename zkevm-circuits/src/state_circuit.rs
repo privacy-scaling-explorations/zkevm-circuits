@@ -74,12 +74,9 @@ pub struct StateCircuitConfig<F> {
     /// rw permutation config
     pub rw_permutation_config: PermutationChipConfig<F>,
 
-    // pi for carry over previous chunk context
-    pi_pre_continuity: Column<Instance>,
-    // pi for carry over chunk context to the next chunk
-    pi_next_continuity: Column<Instance>,
-    // pi for permutation challenge
-    pi_permutation_challenges: Column<Instance>,
+    // pi for chunk context continuity
+    pi_chunk_continuity: Column<Instance>,
+
     _marker: PhantomData<F>,
 }
 
@@ -172,13 +169,8 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         u10_table.annotate_columns(meta);
         u16_table.annotate_columns(meta);
 
-        let pi_pre_continuity = meta.instance_column();
-        let pi_next_continuity = meta.instance_column();
-        let pi_permutation_challenges = meta.instance_column();
-
-        meta.enable_equality(pi_pre_continuity);
-        meta.enable_equality(pi_next_continuity);
-        meta.enable_equality(pi_permutation_challenges);
+        let pi_chunk_continuity = meta.instance_column();
+        meta.enable_equality(pi_chunk_continuity);
 
         let config = Self {
             selector,
@@ -193,9 +185,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             rw_table,
             mpt_table,
             rw_permutation_config,
-            pi_pre_continuity,
-            pi_next_continuity,
-            pi_permutation_challenges,
+            pi_chunk_continuity,
             _marker: PhantomData::default(),
         };
 
@@ -424,12 +414,7 @@ impl<F: Field> StateCircuitConfig<F> {
         region.name_column(|| "STATE_mpt_proof_type", self.mpt_proof_type);
         region.name_column(|| "STATE_state_root lo", self.state_root.lo());
         region.name_column(|| "STATE_state_root hi", self.state_root.hi());
-        region.name_column(|| "STATE_pi_pre_continuity", self.pi_pre_continuity);
-        region.name_column(|| "STATE_pi_next_continuity", self.pi_next_continuity);
-        region.name_column(
-            || "STATE_pi_permutation_challenges",
-            self.pi_permutation_challenges,
-        );
+        region.name_column(|| "STATE_pi_chunk_continuity", self.pi_chunk_continuity);
     }
 }
 
@@ -637,32 +622,27 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
             },
         )?;
         // constrain permutation challenges
-        [alpha_cell, gamma_cell]
-            .iter()
-            .enumerate()
-            .try_for_each(|(i, cell)| {
-                layouter.constrain_instance(cell.cell(), config.pi_permutation_challenges, i)
-            })?;
-        // constraints prev,next fingerprints
-        layouter.constrain_instance(
-            prev_continuous_fingerprint_cell.cell(),
-            config.pi_pre_continuity,
-            0,
-        )?;
-        layouter.constrain_instance(
-            next_continuous_fingerprint_cell.cell(),
-            config.pi_next_continuity,
-            0,
-        )?;
+        [
+            alpha_cell,
+            gamma_cell,
+            prev_continuous_fingerprint_cell,
+            next_continuous_fingerprint_cell,
+        ]
+        .iter()
+        .enumerate()
+        .try_for_each(|(i, cell)| {
+            layouter.constrain_instance(cell.cell(), config.pi_chunk_continuity, i)
+        })?;
         Ok(())
     }
 
     fn instance(&self) -> Vec<Vec<F>> {
-        vec![
-            vec![self.permu_prev_continuous_fingerprint],
-            vec![self.permu_next_continuous_fingerprint],
-            vec![self.permu_alpha, self.permu_gamma],
-        ]
+        vec![vec![
+            self.permu_alpha,
+            self.permu_gamma,
+            self.permu_prev_continuous_fingerprint,
+            self.permu_next_continuous_fingerprint,
+        ]]
     }
 }
 
