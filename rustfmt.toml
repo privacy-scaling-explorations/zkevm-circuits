@@ -7,3 +7,9 @@ newline_style = "Unix"
 normalize_comments = true
 reorder_imports = true
 wrap_comments = true
+
+ignore = [
+    "integration-tests/src/bindings_benchmarks.rs",
+    "integration-tests/src/bindings_greeter.rs",
+    "integration-tests/src/bindings_openzeppelinerc20testtoken.rs"
+]
