@@ -71,7 +71,7 @@ pub(crate) enum ExtensionBranchRowType {
     Child15,
     KeyS,
     ValueS,
-    KeyC,
+    Nibbles,
     ValueC,
     Count,
 }

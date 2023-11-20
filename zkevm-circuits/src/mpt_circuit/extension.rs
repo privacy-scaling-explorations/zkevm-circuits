@@ -71,7 +71,7 @@ impl<F: Field> ExtensionGadget<F> {
                 ctx.rlp_item(
                     meta,
                     cb,
-                    ExtensionBranchRowType::KeyC as usize,
+                    ExtensionBranchRowType::Nibbles as usize,
                     RlpItemType::Nibbles,
                 ),
             ];
@@ -228,7 +228,7 @@ impl<F: Field> ExtensionGadget<F> {
         // Data
         let key_items = [
             rlp_values[ExtensionBranchRowType::KeyS as usize].clone(),
-            rlp_values[ExtensionBranchRowType::KeyC as usize].clone(),
+            rlp_values[ExtensionBranchRowType::Nibbles as usize].clone(),
         ];
         let _value_bytes = [
             rlp_values[ExtensionBranchRowType::ValueS as usize].clone(),
