@@ -276,7 +276,7 @@ func prepareAccountLeafNode(addr common.Address, addrh []byte, leafS, leafC, nei
 	values[AccountWrong] = wrongValue
 	
 	for i := 0; i < 6; i++ {
-		row := make([]byte, rowLen)
+		row := make([]byte, valueLen)
 		values = append(values, row)
 	}
 
@@ -367,7 +367,7 @@ func prepareAccountLeafPlaceholderNode(addr common.Address, addrh, key []byte, k
 	keyLen := int(math.Floor(float64(64-keyIndex)/float64(2))) + 1
 	remainingNibbles := key[keyIndex:]
 	offset := 0
-	leaf := make([]byte, rowLen)
+	leaf := make([]byte, valueLen)
 	leaf[0] = 248
 	leaf[1] = byte(keyLen) + 73
 	leaf[2] = byte(keyLen) + 128
@@ -405,7 +405,7 @@ func prepareAccountLeafPlaceholderNode(addr common.Address, addrh, key []byte, k
 }
 
 func prepareStorageLeafPlaceholderNode(storage_key common.Hash, key []byte, keyIndex int) Node {
-	leaf := make([]byte, rowLen)
+	leaf := make([]byte, valueLen)
 	setStorageLeafKeyRLP(&leaf, key, keyIndex)
 	keyLen := getLeafKeyLen(keyIndex)
 	leaf[0] = 192 + 1 + byte(keyLen) + 1
@@ -535,7 +535,7 @@ func prepareStorageLeafNode(leafS, leafC, neighbourNode []byte, storage_key comm
 	rows = append(rows, nonExistingStorageRow)
 
 	for i := 0; i < 6; i++ {
-		row := make([]byte, rowLen)
+		row := make([]byte, valueLen)
 		rows = append(rows, row)
 	}
 

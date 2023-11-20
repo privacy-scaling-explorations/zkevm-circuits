@@ -36,62 +36,6 @@ func setExtNodeSelectors(row, proofEl []byte, numberOfNibbles int, branchC16 byt
 	}
 }
 
-func prepareEmptyExtensionRows(beforeModification, afterModification bool) [][]byte {
-	ext_row1 := make([]byte, rowLen)
-	ext_row2 := make([]byte, rowLen)
-	if !beforeModification && !afterModification {
-		ext_row1 = append(ext_row1, 16)
-		ext_row2 = append(ext_row2, 17)
-	} else if beforeModification {
-		ext_row1 = append(ext_row1, 20)
-		ext_row2 = append(ext_row2, 21)
-	} else if afterModification {
-		ext_row1 = append(ext_row1, 22)
-		ext_row2 = append(ext_row2, 23)
-	}
-
-	return [][]byte{ext_row1, ext_row2}
-}
-
-// TODO: remove when Nodes are fully implemented
-func prepareExtensionRows(extNibbles [][]byte, extensionNodeInd int, proofEl1, proofEl2 []byte, beforeModification, afterModification bool) (byte, []byte, []byte) {
-	var extensionRowS []byte
-	var extensionRowC []byte
-
-	extRows := prepareEmptyExtensionRows(beforeModification, afterModification)
-	extensionRowS = extRows[0]
-	extensionRowC = extRows[1]
-	prepareExtensionRow(extensionRowS, proofEl1, true)
-	prepareExtensionRow(extensionRowC, proofEl2, false)
-
-	evenNumberOfNibbles := proofEl1[2] == 0
-	keyLen := getExtensionNodeKeyLen(proofEl1)
-	numberOfNibbles := getExtensionNumberOfNibbles(proofEl1)
-
-	// We need nibbles as witness to compute key RLC, so we set them
-	// into extensionRowC s_advices (we can do this because both extension
-	// nodes have the same key, so we can have this info only in one).
-	// There can be more up to 64 nibbles, but there is only 32 bytes
-	// in extensionRowC s_advices. So we store every second nibble (having
-	// the whole byte and one nibble is enough to compute the other nibble).
-	startNibblePos := 2 // we don't need any nibbles for case keyLen = 1
-	if keyLen > 1 {
-		if evenNumberOfNibbles {
-			startNibblePos = 1
-		} else {
-			startNibblePos = 2
-		}
-	}
-	ind := 0
-	for j := startNibblePos; j < len(extNibbles[extensionNodeInd]); j += 2 {
-		extensionRowC[branchNodeRLPLen+ind] =
-			extNibbles[extensionNodeInd][j]
-		ind++
-	}
-
-	return numberOfNibbles, extensionRowS, extensionRowC
-}
-
 func prepareExtensions(extNibbles [][]byte, extensionNodeInd int, proofEl1, proofEl2 []byte) (byte, []byte, [][]byte) {
 	var values [][]byte
 	v1 := make([]byte, valueLen)

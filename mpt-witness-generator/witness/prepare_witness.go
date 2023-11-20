@@ -14,8 +14,6 @@ const branchNodeRLPLen = 2 // we have two positions for RLP meta data
 const branch2start = branchNodeRLPLen + 32
 const branchRows = 19 // 1 (init) + 16 (children) + 2 (extension S and C)
 
-// rowLen - each branch node has 2 positions for RLP meta data and 32 positions for hash
-const rowLen = branch2start + 2 + 32 + 1 // +1 is for info about what type of row is it
 const valueLen = 34
 const driftedPos = 13
 const isExtensionPos = 14

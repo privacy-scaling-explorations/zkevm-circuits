@@ -33,20 +33,7 @@ func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr c
 		extNibbles = extNibblesS
 	}
 
-	numberOfNibbles0, extensionRowS, extensionRowC :=
-		prepareExtensionRows(extNibbles, extensionNodeInd, longExtNode, longExtNode, true, false)
-
-	extNodeSelectors := make([]byte, rowLen)
-	setExtNodeSelectors(extNodeSelectors, longExtNode, int(numberOfNibbles0), branchC16)
-	extNodeSelectors = append(extNodeSelectors, 24)
-
 	_, extListRlpBytesS, extValuesS := prepareExtensions(extNibbles, extensionNodeInd, longExtNode, longExtNode)
-
-	var extRows [][]byte
-	// We need to prove the old extension node is in S proof (when ext. node inserted).
-	extRows = append(extRows, extNodeSelectors)
-	extRows = append(extRows, extensionRowS)
-	extRows = append(extRows, extensionRowC)
 
 	// Get nibbles of the extension node that gets shortened because of the newly insertd
 	// extension node:
