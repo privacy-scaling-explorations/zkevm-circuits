@@ -557,7 +557,6 @@ func ExtNodeDeleted(key1, key2, key3 common.Hash, testName string) {
 }
 
 func TestExtNodeInsertedBefore6After1FirstLevel(t *testing.T) {
-	t.Skip("To be fixed")
 	key1 := common.HexToHash("0x1234561000000000000000000000000000000000000000000000000000000000")
 	// key1 bytes: [1 * 16 + 2, 3 * 16 + 4, 5 * 16 + 6, 1 * 16, 0, ..., 0]
 
