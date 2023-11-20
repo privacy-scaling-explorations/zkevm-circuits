@@ -14,6 +14,12 @@ pub(crate) enum StorageRowType {
     ValueC,
     Drifted,
     Wrong,
+    LongExtNodeKey,
+    LongExtNodeNibbles,
+    LongExtNodeValue,
+    ShortExtNodeKey,
+    ShortExtNodeNibbles,
+    ShortExtNodeValue,
     Address,
     Key,
     Count,
@@ -33,6 +39,12 @@ pub(crate) enum AccountRowType {
     CodehashC,
     Drifted,
     Wrong,
+    LongExtNodeKey,
+    LongExtNodeNibbles,
+    LongExtNodeValue,
+    ShortExtNodeKey,
+    ShortExtNodeNibbles,
+    ShortExtNodeValue,
     Address,
     Key,
     Count,
@@ -126,6 +138,8 @@ pub struct ExtensionBranchNode {
     /// TODO Doc.
     pub is_extension: bool,
     /// TODO Doc.
+    pub(crate) is_mod_extension: [bool; 2],
+    /// TODO Doc.
     pub is_placeholder: [bool; 2],
     /// TODO Doc.
     pub extension: ExtensionNode,
@@ -150,6 +164,10 @@ pub struct AccountNode {
     pub drifted_rlp_bytes: Hex,
     /// TODO Doc.
     pub wrong_rlp_bytes: Hex,
+    /// TODO Doc.
+    pub(crate) is_mod_extension: [bool; 2],
+    /// TODO Doc.
+    pub(crate) mod_list_rlp_bytes: [Hex; 2],
 }
 
 /// MPT storage node
@@ -167,6 +185,10 @@ pub struct StorageNode {
     pub drifted_rlp_bytes: Hex,
     /// TODO Doc.
     pub wrong_rlp_bytes: Hex,
+    /// TODO Doc.
+    pub(crate) is_mod_extension: [bool; 2],
+    /// TODO Doc.
+    pub(crate) mod_list_rlp_bytes: [Hex; 2],
 }
 
 /// MPT node
@@ -229,11 +251,17 @@ pub const NODE_RLP_TYPES_ACCOUNT: [RlpItemType; AccountRowType::Count as usize] 
     RlpItemType::Hash,
     RlpItemType::Key,
     RlpItemType::Key,
-    RlpItemType::Address,
+    RlpItemType::Key,
+    RlpItemType::Nibbles,
+    RlpItemType::Value,
+    RlpItemType::Key,
+    RlpItemType::Nibbles,
+    RlpItemType::Value,
+    RlpItemType::Value,
     RlpItemType::Hash,
 ];
 
-/// RLP types account
+/// RLP types storage
 pub const NODE_RLP_TYPES_STORAGE: [RlpItemType; StorageRowType::Count as usize] = [
     RlpItemType::Key,
     RlpItemType::Value,
@@ -241,6 +269,12 @@ pub const NODE_RLP_TYPES_STORAGE: [RlpItemType; StorageRowType::Count as usize] 
     RlpItemType::Value,
     RlpItemType::Key,
     RlpItemType::Key,
-    RlpItemType::Hash,
+    RlpItemType::Key,
+    RlpItemType::Nibbles,
+    RlpItemType::Value,
+    RlpItemType::Key,
+    RlpItemType::Nibbles,
+    RlpItemType::Value,
+    RlpItemType::Value,
     RlpItemType::Hash,
 ];

@@ -1135,6 +1135,7 @@ impl<F: Field> DriftedGadget<F> {
         leaf_no_key_rlc: &[Expression<F>],
         leaf_no_key_rlc_mult: &[Expression<F>],
         drifted_item: &RLPItemView<F>,
+        is_mod_extension: &[Cell<F>; 2],
         r: &Expression<F>,
     ) -> Self {
         let mut config = DriftedGadget::default();
@@ -1142,45 +1143,47 @@ impl<F: Field> DriftedGadget<F> {
             ifx! {parent_data[true.idx()].is_placeholder.expr() + parent_data[false.idx()].is_placeholder.expr() => {
                 config.drifted_rlp_key = ListKeyGadget::construct(cb, drifted_item);
                 for is_s in [true, false] {
-                    ifx! {parent_data[is_s.idx()].is_placeholder.expr() => {
-                        // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
+                    ifx! {and::expr(&[parent_data[is_s.idx()].is_placeholder.expr(), not!(is_mod_extension[is_s.idx()].expr())]) => {
+                        ifx! {parent_data[is_s.idx()].is_placeholder.expr() => {
+                            // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
 
-                        // Make sure the RLP is still consistent with the new key part
-                        require!(
-                            config.drifted_rlp_key.rlp_list.len()
-                                => config.drifted_rlp_key.key_value.num_bytes() + value_list_num_bytes[is_s.idx()].clone()
+                            // Make sure the RLP is still consistent with the new key part
+                            require!(
+                                config.drifted_rlp_key.rlp_list.len()
+                                    => config.drifted_rlp_key.key_value.num_bytes() + value_list_num_bytes[is_s.idx()].clone()
+                                );
+
+                            // Calculate the drifted key RLC
+                            // Get the key RLC for the drifted branch
+                            let (key_rlc, key_mult, key_num_nibbles, is_key_odd) = (
+                                key_data[is_s.idx()].drifted_rlc.expr(),
+                                key_data[is_s.idx()].drifted_mult.expr(),
+                                key_data[is_s.idx()].drifted_num_nibbles.expr(),
+                                key_data[is_s.idx()].drifted_is_odd.expr(),
                             );
+                            let key_rlc = key_rlc.expr() + config.drifted_rlp_key.key.expr(
+                                cb,
+                                config.drifted_rlp_key.key_value.clone(),
+                                key_mult.expr(),
+                                is_key_odd.expr(),
+                                r
+                            );
+                            // The key of the drifted leaf needs to match the key of the leaf
+                            require!(key_rlc => expected_key_rlc[is_s.idx()]);
 
-                        // Calculate the drifted key RLC
-                        // Get the key RLC for the drifted branch
-                        let (key_rlc, key_mult, key_num_nibbles, is_key_odd) = (
-                            key_data[is_s.idx()].drifted_rlc.expr(),
-                            key_data[is_s.idx()].drifted_mult.expr(),
-                            key_data[is_s.idx()].drifted_num_nibbles.expr(),
-                            key_data[is_s.idx()].drifted_is_odd.expr(),
-                        );
-                        let key_rlc = key_rlc.expr() + config.drifted_rlp_key.key.expr(
-                            cb,
-                            config.drifted_rlp_key.key_value.clone(),
-                            key_mult.expr(),
-                            is_key_odd.expr(),
-                            r
-                        );
-                        // The key of the drifted leaf needs to match the key of the leaf
-                        require!(key_rlc => expected_key_rlc[is_s.idx()]);
+                            // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES
+                            // (RLC encoding could be the same for addresses with zero's at the end)
+                            let num_nibbles = num_nibbles::expr(config.drifted_rlp_key.key_value.len(), is_key_odd.expr());
+                            require!(key_num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
 
-                        // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES
-                        // (RLC encoding could be the same for addresses with zero's at the end)
-                        let num_nibbles = num_nibbles::expr(config.drifted_rlp_key.key_value.len(), is_key_odd.expr());
-                        require!(key_num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
-
-                        // Complete the drifted leaf rlc by adding the bytes on the value row
-                        //let leaf_rlc = (config.drifted_rlp_key.rlc(be_r), mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
-                        let leaf_rlc = config.drifted_rlp_key.rlc2(&cb.keccak_r).rlc_chain_rev((leaf_no_key_rlc[is_s.idx()].expr(), leaf_no_key_rlc_mult[is_s.idx()].expr()));
-                        // The drifted leaf needs to be stored in the branch at `drifted_index`.
-                        let hash = parent_data[is_s.idx()].drifted_parent_hash.expr();
-                        require!((1.expr(), leaf_rlc.expr(), config.drifted_rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
-                    }
+                            // Complete the drifted leaf rlc by adding the bytes on the value row
+                            //let leaf_rlc = (config.drifted_rlp_key.rlc(be_r), mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
+                            let leaf_rlc = config.drifted_rlp_key.rlc2(&cb.keccak_r).rlc_chain_rev((leaf_no_key_rlc[is_s.idx()].expr(), leaf_no_key_rlc_mult[is_s.idx()].expr()));
+                            // The drifted leaf needs to be stored in the branch at `drifted_index`.
+                            let hash = parent_data[is_s.idx()].drifted_parent_hash.expr();
+                            require!((1.expr(), leaf_rlc.expr(), config.drifted_rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
+                        }
+                    }}
                 }}
             }}
             config
@@ -1479,6 +1482,9 @@ impl<F: Field> MainRLPGadget<F> {
         } else {
             self.max_length(item_type)
         };
+        if offset == 44 {
+            println!(";lakjfda");
+        }
         self.max_len.assign(region, offset, max_len.scalar())?;
         self.below_limit
             .assign(region, offset, rlp.len().scalar(), (max_len + 1).scalar())?;
