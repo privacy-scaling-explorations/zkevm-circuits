@@ -84,7 +84,6 @@ impl<F: Field> ModExtensionGadget<F> {
                 ),
             ];
 
-            /*
             let is_insert = parent_data[0].is_placeholder.expr(); // insert or delete
 
             let lo_s = is_insert.clone() * parent_data[0].hash.lo().expr() + (1.expr() - is_insert.clone()) * parent_data[1].hash.lo().expr();
@@ -192,6 +191,7 @@ impl<F: Field> ModExtensionGadget<F> {
                 }} 
             }
 
+            /*
             let data0 = [key_items[0].clone(), key_nibbles[0].clone()];
             let nibbles_rlc_long = key_rlc_before
                 + ext_key_rlc_expr(
@@ -251,7 +251,7 @@ impl<F: Field> ModExtensionGadget<F> {
         ];
 
         let mut rlp_key = vec![ListKeyWitness::default(); 2];
-        // let mut key_rlc = vec![];
+        let mut key_rlc = vec![];
 
         let items_s = [
             rlp_values[StorageRowType::LongExtNodeKey as usize].clone(),
@@ -263,7 +263,6 @@ impl<F: Field> ModExtensionGadget<F> {
         ];
         let items = vec![items_s, items_c];
 
-        /*
         for is_s in [true, false] {
             rlp_key[is_s.idx()] = self.rlp_key[is_s.idx()].assign(
                 region,
@@ -314,7 +313,6 @@ impl<F: Field> ModExtensionGadget<F> {
             offset,
             key_rlc[0] - key_rlc[1],
         )?;
-        */
 
         Ok(())
     }
