@@ -10,9 +10,9 @@ use gadgets::{
 
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    halo2curves::{bn256::Fr, ff::PrimeField},
+    halo2curves::bn256::Fr,
     plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, SecondPhase,
+        Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance, SecondPhase,
         Selector,
     },
     poly::Rotation,
@@ -41,17 +41,6 @@ pub const DEFAULT_MAX_PROOF_COUNT: usize = 20;
 pub const DEFAULT_CIRCUIT_DEGREE: usize = 14;
 
 use crate::circuits::utils::{xif, xnif, EqualWordsConfig, FixedRlcConfig};
-
-// keccak lookup
-// advice[0] -> keccak.lo
-// advice[1] -> keccak.hi
-//
-// lookup  (keccak.lo, keccak.hi, rlc_acc)
-//
-// bind rlc_acc -> keccak_values
-//
-// keccak.lo == advice[0]
-// keccak.hi == advice[1]
 
 pub trait STMHelper<F> {
     fn get_padded_values(&self, max_proof_count: usize) -> Vec<(F, usize)>;
@@ -119,32 +108,14 @@ impl<F: Field> STMHelper<F> for SingleTrieModifications<F> {
         values
             .iter()
             .take(initial_values_len)
-            .flat_map(|(f, len)| f.to_repr()[0..*len as usize].to_vec())
+            .flat_map(|(f, len)| f.to_repr()[0..*len].to_vec())
             .collect()
     }
     fn initial_values_hash(&self) -> Word<F> {
         let initial_values_bytes = self.initial_values_bytes();
         let initial_values_hash = keccak256(&initial_values_bytes);
-        Word::<F>::from(H256(initial_values_hash))
+        Word::from(H256(initial_values_hash))
     }
-}
-
-#[test]
-fn test_stmhelper() {
-    let s = |s: &str| -> Fr { Fr::from_str_vartime(s).unwrap() };
-
-    let address = Fr::from_str_vartime("").unwrap();
-    let word_hi = Fr::from_str_vartime("161608102011034763426291125516264774166").unwrap();
-    let byte = Fr::from_str_vartime("7").unwrap();
-
-    SingleTrieModifications::<Fr>(vec![SingleTrieModification {
-        typ: s("1"),
-        address: s("1378211552805413204046691570283904042755861616012"),
-        value: word::Word::new([s(""), s("")]),
-        key: word::Word::new([5u64.into(), 6u64.into()]),
-        old_root: word::Word::new([7u64.into(), 8u64.into()]),
-        new_root: word::Word::new([9u64.into(), 10u64.into()]),
-    }]);
 }
 
 ///
@@ -403,7 +374,7 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
         let fixed_rlc =
             FixedRlcConfig::configure(meta, &[1, 16, 20], challenges_expr.keccak_input());
 
-        meta.lookup_any("lookup input keccak into rlc", |meta| {
+        meta.lookup_any("lookup keccak from public inputs", |meta| {
             let lookups = vec![
                 (lookup_pi_rlc_value, keccak_table.input_rlc),
                 (lookup_pi_rlc_len, keccak_table.input_len),
@@ -457,6 +428,8 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
         (config, _challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
+        assert!(self.lc_witness.len() < self.max_proof_count);
+
         let challenges = _challenges.values(&mut layouter);
 
         // keccak value
@@ -540,7 +513,6 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
             || "lc witness",
             |mut region| {
 
-                assert!(self.lc_witness.len() < self.max_proof_count);
 
                 let is_padding = IsZeroChip::construct(config.is_padding.clone());
                 let is_last =
@@ -571,6 +543,8 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                 region.name_column(|| "LC_storagekey_hi", config.pi_mpt.storage_key.hi());
                 region.name_column(|| "LC_storagekey_lo", config.pi_mpt.storage_key.lo());
 
+
+                let mut values = vec![];
                 for offset in 0..self.max_proof_count {
 
                     region.assign_fixed(|| "LC_first", config.is_first, offset, || Value::known(if offset==0 { F::ONE } else { F::ZERO }))?;
@@ -630,7 +604,7 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
 
                     // assign SMT inputs
 
-                    let count_cell = region.assign_advice(|| "", config.count, offset, || count)?;
+                    region.assign_advice(|| "", config.count, offset, || count)?;
 
                     let [typ,
                          addr,
@@ -664,33 +638,27 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                                 ).unwrap()
                             );
 
-                    let value_of = |v: Value<&F>| -> String {
-                        let mut ret = String::from("None");
-                        v.map(|ff| ret=format!("{:?}", ff));
-                        ret
-                    };
 
-                    region.constrain_equal(typ.cell(), initial_value_cells[4+6*offset].cell())?;
-                    region.constrain_equal(addr.cell(), initial_value_cells[4+6*offset+1].cell())?;
-                    region.constrain_equal(value_lo.cell(), initial_value_cells[4+6*offset+2].cell())?;
-                    region.constrain_equal(value_hi.cell(), initial_value_cells[4+6*offset+3].cell())?;
-                    region.constrain_equal(key_lo.cell(), initial_value_cells[4+6*offset+4].cell())?;
-                    region.constrain_equal(key_hi.cell(), initial_value_cells[4+6*offset+5].cell())?;
-
-                    // at beggining, set the old root and number of proofs
-
+                    // at beggining, set the old root
                     if offset == 0 {
-                        region.constrain_equal(old_root_lo.cell(), initial_value_cells[0].cell())?;
-                        region.constrain_equal(old_root_hi.cell(), initial_value_cells[1].cell())?;
+                        values.push(old_root_lo.clone());
+                        values.push(old_root_hi.clone());
+                        values.push(old_root_lo); // dummy values, to be replaced at the end
+                        values.push(old_root_hi);
                     }
+
+                    values.append(&mut vec![typ,addr,value_lo,value_hi, key_lo, key_hi]);
 
                     // at ending, set the last root in the last row (valid since we are propagating it)
-
                     if offset == self.max_proof_count -1 {
-                        region.constrain_equal(new_root_lo.cell(), initial_value_cells[2].cell())?;
-                        region.constrain_equal(new_root_hi.cell(), initial_value_cells[3].cell())?;
+                        values[2] = new_root_lo;
+                        values[3] = new_root_hi;
                     }
 
+                }
+
+                for (pos, value) in values.iter().enumerate() {
+                    region.constrain_equal(value.cell(), initial_value_cells[pos].cell())?;
                 }
                 Ok(())
             },

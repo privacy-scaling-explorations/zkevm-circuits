@@ -1,7 +1,7 @@
 use eth_types::Field;
 use eyre::Result;
 use gadgets::{
-    is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
+    is_zero::{IsZeroChip, IsZeroInstruction},
     util::{not, Expr},
 };
 use halo2_proofs::{
@@ -13,9 +13,10 @@ use halo2_proofs::{
 #[derive(Clone, Debug)]
 pub struct Countdown<F: Field> {
     count: Column<Advice>,
-    count_is_zero: IsZeroConfig<F>,
-    count_propagate: IsZeroConfig<F>,
-    count_decrement: IsZeroConfig<F>,
+    is_zero_expr : Expression<F>,
+    count_is_zero: IsZeroChip<F>,
+    count_propagate: IsZeroChip<F>,
+    count_decrement: IsZeroChip<F>,
 }
 
 use super::xnif;
@@ -69,30 +70,22 @@ impl<F: Field> Countdown<F> {
 
         Self {
             count,
-            count_is_zero,
-            count_propagate,
-            count_decrement,
+            is_zero_expr : count_is_zero.expr(),
+            count_is_zero : IsZeroChip::construct(count_is_zero),
+            count_propagate : IsZeroChip::construct(count_propagate),
+            count_decrement : IsZeroChip::construct(count_decrement),
         }
     }
 
-    pub fn name_columns(&self, region: &mut Region<'_, F>, prefix: &str) {
+    pub fn annotate_columns_in_region(&self, region: &mut Region<'_, F>, prefix: &str) {
         region.name_column(|| format!("{}_countdown", prefix), self.count);
-        region.name_column(
-            || format!("{}_countdown_is_zero_inv", prefix),
-            self.count_is_zero.value_inv,
-        );
-        region.name_column(
-            || format!("{}_countdown_propagate_inv", prefix),
-            self.count_propagate.value_inv,
-        );
-        region.name_column(
-            || format!("{}_countdown_decrement_inv", prefix),
-            self.count_decrement.value_inv,
-        );
+        self.count_is_zero.annotate_columns_in_region(region, "count_is_zero");
+        self.count_propagate.annotate_columns_in_region(region, "count_propagate");
+        self.count_decrement.annotate_columns_in_region(region, "count_decrement");
     }
 
     pub fn is_zero(&self) -> Expression<F> {
-        self.count_is_zero.expr()
+        self.is_zero_expr.clone()
     }
 
     pub fn assign(
@@ -106,13 +99,9 @@ impl<F: Field> Countdown<F> {
 
         region.assign_advice(|| "count", self.count, offset, || Value::known(curr_count))?;
 
-        let count_is_zero = IsZeroChip::construct(self.count_is_zero.clone());
-        let count_propagate = IsZeroChip::construct(self.count_propagate.clone());
-        let count_decrement = IsZeroChip::construct(self.count_decrement.clone());
-
-        count_is_zero.assign(region, offset, Value::known(curr_count))?;
-        count_propagate.assign(region, offset, Value::known(curr_count - next_count))?;
-        count_decrement.assign(
+        self.count_is_zero.assign(region, offset, Value::known(curr_count))?;
+        self.count_propagate.assign(region, offset, Value::known(curr_count - next_count))?;
+        self.count_decrement.assign(
             region,
             offset,
             Value::known(curr_count - next_count - F::ONE),

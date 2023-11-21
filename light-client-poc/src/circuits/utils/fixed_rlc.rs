@@ -197,7 +197,7 @@ impl<F: Field> FixedRlcConfig<F> {
 
                 // name columns
 
-                self.countdown.name_columns(&mut region, "rlc");
+                self.countdown.annotate_columns_in_region(&mut region, "rlc");
 
                 region.name_column(|| "RLC_len", self.len_col);
                 region.name_column(|| "RLC_value", self.value_col);
