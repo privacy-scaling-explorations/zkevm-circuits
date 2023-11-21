@@ -31,7 +31,7 @@ use crate::{
 use super::{
     helpers::{Indexable, KeyDataWitness, ListKeyGadget, WrongGadget},
     rlp_gadgets::{RLPItemWitness, RLPValueGadget},
-    witness_row::{Node, StorageRowType},
+    witness_row::{Node, StorageRowType}, mod_extension::ModExtensionGadget,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -50,6 +50,7 @@ pub(crate) struct StorageLeafConfig<F> {
     is_storage_mod_proof: IsEqualGadget<F>,
     is_non_existing_storage_proof: IsEqualGadget<F>,
     is_mod_extension: [Cell<F>; 2],
+    mod_extension: ModExtensionGadget<F>,
 }
 
 impl<F: Field> StorageLeafConfig<F> {
@@ -105,18 +106,22 @@ impl<F: Field> StorageLeafConfig<F> {
             let mut value_word = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
             let mut value_rlp_rlc = vec![0.expr(); 2];
             let mut value_rlp_rlc_mult = vec![0.expr(); 2];
+
+            let parent_data = &mut config.parent_data;
+            parent_data[0] =
+                ParentData::load(cb, &mut ctx.memory[parent_memory(true)], 0.expr());
+            parent_data[1] =
+                ParentData::load(cb, &mut ctx.memory[parent_memory(false)], 0.expr());
+
+            let key_data = &mut config.key_data;
+            key_data[0] = KeyData::load(cb, &mut ctx.memory[key_memory(true)], 0.expr());
+            key_data[1] = KeyData::load(cb, &mut ctx.memory[key_memory(false)], 0.expr());
+
             for is_s in [true, false] {
                 ifx! {not!(config.is_mod_extension[is_s.idx()].expr()) => {
-                    // Parent data
-                    let parent_data = &mut config.parent_data[is_s.idx()];
-                    *parent_data = ParentData::load(cb, &mut ctx.memory[parent_memory(is_s)], 0.expr());
-                    // Key data
-                    let key_data = &mut config.key_data[is_s.idx()];
-                    *key_data = KeyData::load(cb, &mut ctx.memory[key_memory(is_s)], 0.expr());
-
                     // Placeholder leaf checks
                     config.is_placeholder_leaf[is_s.idx()] =
-                        IsPlaceholderLeafGadget::construct(cb, parent_data.hash.expr());
+                        IsPlaceholderLeafGadget::construct(cb, parent_data[is_s.idx()].hash.expr());
                     let is_placeholder_leaf = config.is_placeholder_leaf[is_s.idx()].expr();
 
                     let rlp_key = &mut config.rlp_key[is_s.idx()];
@@ -160,18 +165,18 @@ impl<F: Field> StorageLeafConfig<F> {
                     ));
 
                     // Key
-                    key_rlc[is_s.idx()] = key_data.rlc.expr()
+                    key_rlc[is_s.idx()] = key_data[is_s.idx()].rlc.expr()
                         + rlp_key.key.expr(
                             cb,
                             rlp_key.key_value.clone(),
-                            key_data.mult.expr(),
-                            key_data.is_odd.expr(),
+                            key_data[is_s.idx()].mult.expr(),
+                            key_data[is_s.idx()].is_odd.expr(),
                             &cb.key_r.expr(),
                         );
                     // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES
                     let num_nibbles =
-                        num_nibbles::expr(rlp_key.key_value.len(), key_data.is_odd.expr());
-                    require!(key_data.num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
+                        num_nibbles::expr(rlp_key.key_value.len(), key_data[is_s.idx()].is_odd.expr());
+                    require!(key_data[is_s.idx()].num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
 
                     // Placeholder leaves default to value `0`.
                     ifx! {is_placeholder_leaf => {
@@ -186,13 +191,13 @@ impl<F: Field> StorageLeafConfig<F> {
                     // Check is skipped for placeholder leaves which are dummy leaves
                     ifx! {not!(is_placeholder_leaf) => {
                         config.is_not_hashed[is_s.idx()] = LtGadget::construct(&mut cb.base, rlp_key.rlp_list.num_bytes(), 32.expr());
-                        ifx!{or::expr(&[parent_data.is_root.expr(), not!(config.is_not_hashed[is_s.idx()])]) => {
+                        ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(config.is_not_hashed[is_s.idx()])]) => {
                             // Hashed branch hash in parent branch
-                            let hash = parent_data.hash.expr();
+                            let hash = parent_data[is_s.idx()].hash.expr();
                             require!((1.expr(), leaf_rlc.expr(), rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
                         } elsex {
                             // Non-hashed branch hash in parent branch
-                            require!(leaf_rlc => parent_data.rlc.expr());
+                            require!(leaf_rlc => parent_data[is_s.idx()].rlc.expr());
                         }}
                     }}
                 }};
@@ -210,6 +215,16 @@ impl<F: Field> StorageLeafConfig<F> {
                     word::Word::<Expression<F>>::new([0.expr(), 0.expr()]),
                 );
             }
+
+            ifx! {or::expr(&[config.is_mod_extension[0].clone(), config.is_mod_extension[1].clone()]) => {
+                config.mod_extension = ModExtensionGadget::configure(
+                    meta,
+                    cb,
+                    ctx.clone(),
+                    parent_data,
+                    key_data,
+                );
+            }};
 
             // Proof types
             config.is_storage_mod_proof = IsEqualGadget::construct(
@@ -506,6 +521,11 @@ impl<F: Field> StorageLeafConfig<F> {
         } else {
             MPTProofType::Disabled
         };
+
+        if storage.is_mod_extension[0] || storage.is_mod_extension[1] {
+            let mod_list_rlp_bytes: [&[u8]; 2]= [&storage.mod_list_rlp_bytes[0], &storage.mod_list_rlp_bytes[1]];
+            self.mod_extension.assign(region, offset, rlp_values, mod_list_rlp_bytes);
+        }
 
         let mut new_value = value_word[false.idx()];
         if parent_data[false.idx()].is_placeholder {

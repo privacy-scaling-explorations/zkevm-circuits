@@ -7,7 +7,7 @@ use halo2_proofs::{
 
 use super::{
     helpers::{KeyDataWitness, ListKeyGadget, MainData, ParentDataWitness},
-    rlp_gadgets::RLPItemWitness,
+    rlp_gadgets::RLPItemWitness, mod_extension::ModExtensionGadget,
     witness_row::{AccountRowType, Node},
 };
 use crate::{
@@ -51,6 +51,7 @@ pub(crate) struct AccountLeafConfig<F> {
     is_storage_mod: IsEqualGadget<F>,
     is_codehash_mod: IsEqualGadget<F>,
     is_mod_extension: [Cell<F>; 2],
+    mod_extension: ModExtensionGadget<F>,
 }
 
 impl<F: Field> AccountLeafConfig<F> {
@@ -153,19 +154,22 @@ impl<F: Field> AccountLeafConfig<F> {
             let mut leaf_no_key_rlc = vec![0.expr(); 2];
             let mut leaf_no_key_rlc_mult = vec![0.expr(); 2];
             let mut value_list_num_bytes = vec![0.expr(); 2];
+
+            let parent_data = &mut config.parent_data;
+            parent_data[0] =
+                ParentData::load(cb, &mut ctx.memory[parent_memory(true)], 0.expr());
+            parent_data[1] =
+                ParentData::load(cb, &mut ctx.memory[parent_memory(false)], 0.expr());
+
+            let key_data = &mut config.key_data;
+            key_data[0] = KeyData::load(cb, &mut ctx.memory[key_memory(true)], 0.expr());
+            key_data[1] = KeyData::load(cb, &mut ctx.memory[key_memory(false)], 0.expr());
+
             for is_s in [true, false] {
                 ifx! {not!(config.is_mod_extension[is_s.idx()].expr()) => {
-                    // Key data
-                    let key_data = &mut config.key_data[is_s.idx()];
-                    *key_data = KeyData::load(cb, &mut ctx.memory[key_memory(is_s)], 0.expr());
-
-                    // Parent data
-                    let parent_data = &mut config.parent_data[is_s.idx()];
-                    *parent_data = ParentData::load(cb, &mut ctx.memory[parent_memory(is_s)], 0.expr());
-
                     // Placeholder leaf checks
                     config.is_placeholder_leaf[is_s.idx()] =
-                        IsPlaceholderLeafGadget::construct(cb, parent_data.hash.expr());
+                        IsPlaceholderLeafGadget::construct(cb, parent_data[is_s.idx()].hash.expr());
 
                     // Calculate the key RLC
                     let rlp_key = &mut config.rlp_key[is_s.idx()];
@@ -217,23 +221,23 @@ impl<F: Field> AccountLeafConfig<F> {
                     ));
 
                     // Key
-                    key_rlc[is_s.idx()] = key_data.rlc.expr()
+                    key_rlc[is_s.idx()] = key_data[is_s.idx()].rlc.expr()
                         + rlp_key.key.expr(
                             cb,
                             rlp_key.key_value.clone(),
-                            key_data.mult.expr(),
-                            key_data.is_odd.expr(),
+                            key_data[is_s.idx()].mult.expr(),
+                            key_data[is_s.idx()].is_odd.expr(),
                             &cb.key_r.expr(),
                         );
                     // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES.
                     let num_nibbles =
-                        num_nibbles::expr(rlp_key.key_value.len(), key_data.is_odd.expr());
-                    require!(key_data.num_nibbles.expr() + num_nibbles.expr() => KEY_LEN_IN_NIBBLES);
+                        num_nibbles::expr(rlp_key.key_value.len(), key_data[is_s.idx()].is_odd.expr());
+                    require!(key_data[is_s.idx()].num_nibbles.expr() + num_nibbles.expr() => KEY_LEN_IN_NIBBLES);
 
                     // Check if the account is in its parent.
                     // Check is skipped for placeholder leaves which are dummy leaves
-                    ifx! {not!(and::expr(&[not!(parent_data.is_placeholder), config.is_placeholder_leaf[is_s.idx()].expr()])) => {
-                        let hash = parent_data.hash.expr();
+                    ifx! {not!(and::expr(&[not!(parent_data[is_s.idx()].is_placeholder), config.is_placeholder_leaf[is_s.idx()].expr()])) => {
+                        let hash = parent_data[is_s.idx()].hash.expr();
                         require!((1.expr(), leaf_rlc, rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
                     }}
 
@@ -255,6 +259,16 @@ impl<F: Field> AccountLeafConfig<F> {
                     require!(config.rlp_key[is_s.idx()].rlp_list.len() => config.rlp_key[is_s.idx()].key_value.num_bytes() + value_list_num_bytes[is_s.idx()].expr());
                 }};
 
+                ifx! {or::expr(&[config.is_mod_extension[0].clone(), config.is_mod_extension[1].clone()]) => {
+                    config.mod_extension = ModExtensionGadget::configure(
+                        meta,
+                        cb,
+                        ctx.clone(),
+                        parent_data,
+                        key_data,
+                    );
+                }};
+
                 // Key done, set the starting values
                 KeyData::store_defaults(cb, &mut ctx.memory[key_memory(is_s)]);
                 // Store the new parent
@@ -268,6 +282,17 @@ impl<F: Field> AccountLeafConfig<F> {
                     storage_items[is_s.idx()].word(),
                 );
             }
+
+            ifx! {or::expr(&[config.is_mod_extension[0].clone(), config.is_mod_extension[1].clone()]) => {
+                config.mod_extension = ModExtensionGadget::configure(
+                    meta,
+                    cb,
+                    ctx.clone(),
+                    parent_data,
+                    key_data,
+                );
+            }};
+            
             // Proof types
             config.is_non_existing_account_proof = IsEqualGadget::construct(
                 &mut cb.base,
@@ -679,6 +704,11 @@ impl<F: Field> AccountLeafConfig<F> {
                 vec![Word::<F>::new([0.scalar(), 0.scalar()]); 2],
             )
         };
+
+        if account.is_mod_extension[0] || account.is_mod_extension[1] {
+            let mod_list_rlp_bytes: [&[u8]; 2] = [&account.mod_list_rlp_bytes[0], &account.mod_list_rlp_bytes[1]];
+            self.mod_extension.assign(region, offset, rlp_values, mod_list_rlp_bytes);
+        }
 
         let mut new_value = value[false.idx()];
         if parent_data[false.idx()].is_placeholder {
