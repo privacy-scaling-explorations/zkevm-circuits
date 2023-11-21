@@ -92,7 +92,8 @@ impl<T: Clone> Challenges<T> {
         [&self.keccak_input, &self.lookup_input]
     }
 
-    pub(crate) fn mock(keccak_input: T, lookup_input: T) -> Self {
+    /// Mocks challange values for testing
+    pub fn mock(keccak_input: T, lookup_input: T) -> Self {
         Self {
             keccak_input,
             lookup_input,

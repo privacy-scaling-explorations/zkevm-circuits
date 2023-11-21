@@ -12,3 +12,8 @@ pub use fixed_rlc::FixedRlcConfig;
 pub fn xnif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
     and::expr([a, not::expr(b)])
 }
+
+// A=>B  eq ~(A & ~B) (it is not the case that A is true and B is false)
+pub fn xif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
+    not::expr(and::expr([a, not::expr(b)]))
+}

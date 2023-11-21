@@ -3,7 +3,6 @@ use eyre::Result;
 use gadgets::{
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
     util::{
-        and,
         not::{self},
         or, Expr,
     },
@@ -11,10 +10,9 @@ use gadgets::{
 
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    halo2curves::bn256::Fr,
+    halo2curves::{bn256::Fr, ff::PrimeField},
     plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance,
-        Selector,
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, Selector,
     },
     poly::Rotation,
 };
@@ -22,7 +20,10 @@ use halo2_proofs::{
 use zkevm_circuits::{
     mpt_circuit::{MPTCircuit, MPTCircuitParams, MPTConfig},
     table::{KeccakTable, MptTable},
-    util::{word, Challenges},
+    util::{
+        word::{self, Word},
+        Challenges,
+    },
 };
 
 use crate::circuits::witness::{
@@ -38,15 +39,97 @@ use zkevm_circuits::{
 pub const DEFAULT_MAX_PROOF_COUNT: usize = 20;
 pub const DEFAULT_CIRCUIT_DEGREE: usize = 14;
 
-use crate::circuits::utils::{EqualWordsConfig, FixedRlcConfig};
+use crate::circuits::utils::{xif, xnif, EqualWordsConfig, FixedRlcConfig};
 
-// A=>B  eq ~(A & ~B) (it is not the case that A is true and B is false)
-fn xif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
-    and::expr([a, not::expr(b)])
+trait STMHelper<F> {
+    fn get_padded_values(&self, max_proof_count: usize) -> Vec<(F, usize)>;
+    fn first_root(&self) -> Word<F>;
+    fn last_root(&self) -> Word<F>;
+    fn initial_values_len(&self) -> usize;
+    fn initial_values_bytes(&self) -> Vec<u8>;
 }
 
-fn bool_if<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
-    not::expr(and::expr([a, not::expr(b)]))
+impl<F: Field> STMHelper<F> for SingleTrieModifications<F> {
+    fn first_root(&self) -> Word<F> {
+        self.0.first().cloned().unwrap().old_root
+    }
+
+    fn last_root(&self) -> Word<F> {
+        self.0.last().cloned().unwrap().new_root
+    }
+
+    fn get_padded_values(&self, len: usize) -> Vec<(F, usize)> {
+        assert!(self.0.len() <= len);
+
+        let first_root = self.first_root();
+        let last_root = self.last_root();
+
+        let mut rlc_values = vec![
+            (first_root.lo(), 16),
+            (first_root.hi(), 16),
+            (last_root.lo(), 16),
+            (last_root.hi(), 16),
+        ];
+        for i in 0..len {
+            if let Some(w) = self.0.get(i) {
+                rlc_values.push((w.typ, 1));
+                rlc_values.push((w.address, 20));
+                rlc_values.push((w.value.lo(), 16));
+                rlc_values.push((w.value.hi(), 16));
+                rlc_values.push((w.key.lo(), 16));
+                rlc_values.push((w.key.hi(), 16));
+            } else {
+                rlc_values.push((0u64.into(), 1));
+                rlc_values.push((0u64.into(), 20));
+                rlc_values.push((0u64.into(), 16));
+                rlc_values.push((0u64.into(), 16));
+                rlc_values.push((0u64.into(), 16));
+                rlc_values.push((0u64.into(), 16));
+            }
+        }
+        rlc_values
+    }
+
+    fn initial_values_len(&self) -> usize {
+        self.0
+            .iter()
+            .enumerate()
+            .find(|(_, t)| t.old_root != t.new_root)
+            .unwrap()
+            .0
+    }
+
+    fn initial_values_bytes(&self) -> Vec<u8> {
+        let values = self.get_padded_values(self.0.len());
+        let initial_values_len = self.initial_values_len();
+
+        values
+            .iter()
+            .take(initial_values_len)
+            .flat_map(|(f, len)| f.to_repr()[0..*len as usize].to_vec())
+            .collect()
+    }
+}
+
+#[test]
+fn test_stmhelper() {
+
+    let s = |s:&str| -> Fr { Fr::from_str_vartime(s).unwrap() };
+
+    let address =
+    Fr::from_str_vartime("").unwrap();
+    let word_hi = Fr::from_str_vartime("161608102011034763426291125516264774166").unwrap();
+    let byte = Fr::from_str_vartime("7").unwrap();
+
+
+    SingleTrieModifications::<Fr>(vec![SingleTrieModification {
+        typ: s("1"),
+        address: s("1378211552805413204046691570283904042755861616012"),
+        value: word::Word::new([s(""),s("")]),
+        key: word::Word::new([5u64.into(), 6u64.into()]),
+        old_root: word::Word::new([7u64.into(), 8u64.into()]),
+        new_root: word::Word::new([9u64.into(), 10u64.into()]),
+    }]);
 }
 
 ///
@@ -75,7 +158,7 @@ pub struct InitialStateCircuitConfig<F: Field> {
 
     pub q_enable: Selector,
 
-    pub rlc_adder_config: FixedRlcConfig<F>,
+    pub fixed_rlc: FixedRlcConfig<F>,
 }
 
 /// MPT Circuit for proving the storage modification is valid.
@@ -216,7 +299,7 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
 
         meta.create_gate("if not padding, count decreases monotonically", |meta| {
             let q_enable = meta.query_selector(q_enable);
-            vec![q_enable * xif(not::expr(is_padding.expr()), count_decrement.expr())]
+            vec![q_enable * xnif(not::expr(is_padding.expr()), count_decrement.expr())]
         });
 
         let not_padding_nor_last_row = or::expr([is_padding.expr(), is_last.expr()]);
@@ -224,7 +307,7 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
         meta.create_gate("if last or padding, new_root is propagated ", |meta| {
             let q_enable = meta.query_selector(q_enable);
             let is_last_or_padding = or::expr([is_padding.expr(), is_last.expr()]);
-            vec![q_enable * xif(is_last_or_padding.expr(), new_root_propagation.expr())]
+            vec![q_enable * xnif(is_last_or_padding.expr(), new_root_propagation.expr())]
         });
 
         meta.create_gate(
@@ -232,14 +315,14 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
             |meta| {
                 let q_enable = meta.query_selector(q_enable);
 
-                let if_cur_state_changes_next_too = bool_if(
+                let if_cur_state_changes_next_too = xif(
                     not::expr(no_state_change_cur.expr()),
                     not::expr(no_state_change_next.expr()),
                 );
 
                 vec![
                     q_enable
-                        * xif(
+                        * xnif(
                             not::expr(not_padding_nor_last_row.clone()),
                             if_cur_state_changes_next_too,
                         ),
@@ -252,7 +335,7 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
             |meta| {
                 let q_enable = meta.query_selector(q_enable);
 
-                vec![q_enable * xif(not::expr(not_padding_nor_last_row), root_chained.expr())]
+                vec![q_enable * xnif(not::expr(not_padding_nor_last_row), root_chained.expr())]
             },
         );
 
@@ -309,7 +392,7 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                 .collect()
         });
 
-        let rlc_adder_config =
+        let fixed_rlc =
             FixedRlcConfig::configure(meta, &[1, 16, 20], challenges_expr.keccak_input(), None);
 
         let config = InitialStateCircuitConfig {
@@ -328,7 +411,7 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
             q_enable,
             pi_instance,
             pi_mpt,
-            rlc_adder_config,
+            fixed_rlc,
         };
 
         (config, challenges)
@@ -369,45 +452,19 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
 
         // assign LC witness
 
-        let first_root = self
-            .lc_witness
-            .first()
-            .cloned()
-            .unwrap_or_default()
-            .old_root;
-        let last_root = self.lc_witness.last().cloned().unwrap_or_default().new_root;
+        let rlc_values = self.lc_witness.get_padded_values(self.max_proof_count);
+        let initial_values_len = self.lc_witness.initial_values_len();
+        let initial_values_bytes = self.lc_witness.initial_values_bytes();
 
-        let mut rlc_values = vec![
-            (first_root.lo(), 16),
-            (first_root.hi(), 16),
-            (last_root.lo(), 16),
-            (last_root.hi(), 16),
-        ];
-        for i in 0..self.max_proof_count {
-            if let Some(w) = self.lc_witness.get(i) {
-                rlc_values.push((w.typ, 1));
-                rlc_values.push((w.address, 20));
-                rlc_values.push((w.value.lo(), 16));
-                rlc_values.push((w.value.hi(), 16));
-                rlc_values.push((w.key.lo(), 16));
-                rlc_values.push((w.key.hi(), 16));
-            } else {
-                rlc_values.push((0u64.into(), 1));
-                rlc_values.push((0u64.into(), 20));
-                rlc_values.push((0u64.into(), 16));
-                rlc_values.push((0u64.into(), 16));
-                rlc_values.push((0u64.into(), 16));
-                rlc_values.push((0u64.into(), 16));
-            }
-        }
-        let initial_values_len = self.lc_witness.0.iter().enumerate().find(|(_,t)| t.old_root != t.new_root).unwrap().0;
         assert!(initial_values_len > 0);
         dbg!(initial_values_len);
 
-        let (rlc_acc, lc_values) =
-            config
-                .rlc_adder_config
-                .assign(&mut layouter, rlc_values, initial_values_len, challenges.keccak_input())?;
+        let (rlc_acc, lc_values) = config.fixed_rlc.assign(
+            &mut layouter,
+            rlc_values,
+            initial_values_len,
+            challenges.keccak_input(),
+        )?;
 
         let pi = layouter.assign_region(
             || "lc witness",
@@ -460,7 +517,6 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                     }
 
                     // assign is_padding, is_last, count_decrement
-
                     is_padding.assign(&mut region, offset, count)?;
                     is_last.assign(
                         &mut region,
@@ -546,20 +602,18 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                         ret
                     };
 
-                    // */ region.constrain_equal(typ.cell(), lc_values[4+6*offset].cell())?;
-                    /*
+                    region.constrain_equal(typ.cell(), lc_values[4+6*offset].cell())?;
                     region.constrain_equal(addr.cell(), lc_values[4+6*offset+1].cell())?;
                     region.constrain_equal(value_lo.cell(), lc_values[4+6*offset+2].cell())?;
                     region.constrain_equal(value_hi.cell(), lc_values[4+6*offset+3].cell())?;
                     region.constrain_equal(key_lo.cell(), lc_values[4+6*offset+4].cell())?;
                     region.constrain_equal(key_hi.cell(), lc_values[4+6*offset+5].cell())?;
-                    */
 
                     // at beggining, set the old root and number of proofs
 
                     if offset == 0 {
-                        // region.constrain_equal(old_root_lo.cell(), lc_values[0].cell())?;
-                        // region.constrain_equal(old_root_hi.cell(), lc_values[1].cell())?;
+                        region.constrain_equal(old_root_lo.cell(), lc_values[0].cell())?;
+                        region.constrain_equal(old_root_hi.cell(), lc_values[1].cell())?;
 
                         pi.push(Some(old_root_lo));
                         pi.push(Some(old_root_hi));
@@ -573,8 +627,8 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                     // at ending, set the last root in the last row (valid since we are propagating it)
 
                     if offset == self.max_proof_count -1 {
-                        // region.constrain_equal(new_root_lo.cell(), lc_values[2].cell())?;
-                        // region.constrain_equal(new_root_hi.cell(), lc_values[3].cell())?;
+                        region.constrain_equal(new_root_lo.cell(), lc_values[2].cell())?;
+                        region.constrain_equal(new_root_hi.cell(), lc_values[3].cell())?;
 
                         pi[2] = Some(new_root_lo);
                         pi[3] = Some(new_root_hi);

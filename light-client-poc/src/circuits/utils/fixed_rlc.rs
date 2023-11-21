@@ -179,7 +179,11 @@ impl<F: Field> FixedRlcConfig<F> {
                 let inv = meta.advice_column_in(SecondPhase);
                 let is_zero = IsZeroChip::configure(
                     meta,
-                    |meta| meta.query_selector(q_enable) * is_lens_config.get(len).unwrap().expr(),
+                    |meta| {
+                        meta.query_selector(q_enable)
+                            * is_lens_config.get(len).unwrap().expr()
+                            * not::expr(count_is_zero.expr())
+                    },
                     |meta| {
                         let mut rlc_acc_cur = meta.query_advice(rlc_acc, Rotation::cur());
                         let rlc_acc_next = meta.query_advice(rlc_acc, Rotation::next());
@@ -246,7 +250,7 @@ impl<F: Field> FixedRlcConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         values: Vec<(F, usize)>,
-        values_to_accumulate: usize, // we only accoumulate the first values
+        values_to_accumulate: usize, // we only accoumulate the row values
         rlc_r: Value<F>,
     ) -> Result<(AssignedCell<F, F>, Vec<AssignedCell<F, F>>), Error> {
         let ret = layouter.assign_region(
@@ -269,7 +273,7 @@ impl<F: Field> FixedRlcConfig<F> {
                 region.name_column(|| "RLC_count_propagate_inv", self.count_propagate.value_inv);
                 region.name_column(|| "RLC_count_decrement_inv", self.count_decrement.value_inv);
 
-                let mut count = F::from(values_to_accumulate as u64 + 1);
+                let mut count = F::from(values_to_accumulate as u64);
                 let mut rlc_acc = Value::known(F::ZERO);
                 let mut last_rlc_acc_cell = None;
 
@@ -490,19 +494,50 @@ mod test {
         ) -> Result<(), Error> {
             let challenges = config.challenges.values(&mut layouter);
 
-            config.fixed_rlc.assign(
+            let address =
+                F::from_str_vartime("1378211552805413204046691570283904042755861616012").unwrap();
+            let word_hi = F::from_str_vartime("161608102011034763426291125516264774166").unwrap();
+            let byte = F::from_str_vartime("7").unwrap();
+
+            let values = vec![
+                (byte, 1),
+                (word_hi, 16),
+                (address, 20),
+                (address, 20),
+                (word_hi, 16),
+            ];
+            let values_to_accumulate = 3;
+
+            let (rlc_acc_cell, _) = config.fixed_rlc.assign(
                 &mut layouter,
-                vec![(F::from(7), 1), (F::from(0xF1F2), 16), (F::from(0xF1F2), 16)],
-                2,
+                values.clone(),
+                values_to_accumulate,
                 challenges.keccak_input(),
             )?;
+
+            // check rlc is correct
+
+            let expected_rlc_acc_value = values
+                .iter()
+                .take(values_to_accumulate)
+                .flat_map(|(f, n)| f.to_repr()[0..*n].to_vec())
+                .fold(Value::known(F::ZERO), |acc, b| {
+                    acc * challenges.keccak_input() + Value::known(F::from(b as u64))
+                });
+
+            let _ = rlc_acc_cell.value().zip(expected_rlc_acc_value).and_then(
+                |(rlc_acc_cell, expected_rlc_acc_value)| {
+                    assert_eq!(*rlc_acc_cell, expected_rlc_acc_value);
+                    Value::known(F::ZERO)
+                },
+            );
 
             Ok(())
         }
     }
 
     #[test]
-    fn test_fixed_rlc() {
+    fn test_fixed_rlc_success() {
         let circuit = TestCircuit::default();
         let k = 4;
         let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
@@ -524,5 +559,4 @@ mod test {
         let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
         assert!(prover.verify_par().is_err());
     }
-
 }
