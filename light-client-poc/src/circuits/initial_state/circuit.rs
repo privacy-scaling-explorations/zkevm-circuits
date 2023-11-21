@@ -370,52 +370,33 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
             let is_not_padding = 1.expr() - is_padding.expr();
 
             let lookups = vec![
+                (pi_mpt.proof_type, mpt_config.mpt_table.proof_type),
+                (pi_mpt.address, mpt_config.mpt_table.address),
+                (pi_mpt.new_value.lo(), mpt_config.mpt_table.new_value.lo()),
+                (pi_mpt.new_value.hi(), mpt_config.mpt_table.new_value.hi()),
                 (
-                    meta.query_advice(pi_mpt.proof_type, Rotation::cur()),
-                    meta.query_advice(mpt_config.mpt_table.proof_type, Rotation::cur()),
+                    pi_mpt.storage_key.lo(),
+                    mpt_config.mpt_table.storage_key.lo(),
                 ),
                 (
-                    meta.query_advice(pi_mpt.address, Rotation::cur()),
-                    meta.query_advice(mpt_config.mpt_table.address, Rotation::cur()),
-                ),
-                (
-                    meta.query_advice(pi_mpt.new_value.lo(), Rotation::cur()),
-                    meta.query_advice(mpt_config.mpt_table.new_value.lo(), Rotation::cur()),
-                ),
-                (
-                    meta.query_advice(pi_mpt.new_value.hi(), Rotation::cur()),
-                    meta.query_advice(mpt_config.mpt_table.new_value.hi(), Rotation::cur()),
-                ),
-                (
-                    meta.query_advice(pi_mpt.storage_key.lo(), Rotation::cur()),
-                    meta.query_advice(mpt_config.mpt_table.storage_key.lo(), Rotation::cur()),
-                ),
-                (
-                    meta.query_advice(pi_mpt.storage_key.hi(), Rotation::cur()),
-                    meta.query_advice(mpt_config.mpt_table.storage_key.hi(), Rotation::cur()),
+                    pi_mpt.storage_key.hi(),
+                    mpt_config.mpt_table.storage_key.hi(),
                 ),
                 // TODO: MPT_table new/old roots are reversed
-                (
-                    meta.query_advice(pi_mpt.old_root.lo(), Rotation::cur()),
-                    meta.query_advice(mpt_config.mpt_table.new_root.lo(), Rotation::cur()),
-                ),
-                (
-                    meta.query_advice(pi_mpt.old_root.hi(), Rotation::cur()),
-                    meta.query_advice(mpt_config.mpt_table.new_root.hi(), Rotation::cur()),
-                ),
-                (
-                    meta.query_advice(pi_mpt.new_root.lo(), Rotation::cur()),
-                    meta.query_advice(mpt_config.mpt_table.old_root.lo(), Rotation::cur()),
-                ),
-                (
-                    meta.query_advice(pi_mpt.new_root.hi(), Rotation::cur()),
-                    meta.query_advice(mpt_config.mpt_table.old_root.hi(), Rotation::cur()),
-                ),
+                (pi_mpt.old_root.lo(), mpt_config.mpt_table.new_root.lo()),
+                (pi_mpt.old_root.hi(), mpt_config.mpt_table.new_root.hi()),
+                (pi_mpt.new_root.lo(), mpt_config.mpt_table.old_root.lo()),
+                (pi_mpt.new_root.hi(), mpt_config.mpt_table.old_root.hi()),
             ];
 
             lookups
                 .into_iter()
-                .map(|(from, to)| (from * is_not_padding.clone(), to))
+                .map(|(from, to)| {
+                    (
+                        meta.query_advice(from, Rotation::cur()) * is_not_padding.clone(),
+                        meta.query_advice(to, Rotation::cur()),
+                    )
+                })
                 .collect()
         });
 
@@ -424,27 +405,21 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
 
         meta.lookup_any("lookup input keccak into rlc", |meta| {
             let lookups = vec![
-                (
-                    meta.query_advice(lookup_pi_rlc_value, Rotation::cur()),
-                    meta.query_advice(keccak_table.input_rlc, Rotation::cur()),
-                ),
-                (
-                    meta.query_advice(lookup_pi_rlc_len, Rotation::cur()),
-                    meta.query_advice(keccak_table.input_len, Rotation::cur()),
-                ),
-                (
-                    meta.query_advice(lookup_pi_keccak.lo(), Rotation::cur()),
-                    meta.query_advice(keccak_table.output.lo(), Rotation::cur()),
-                ),
-                (
-                    meta.query_advice(lookup_pi_keccak.hi(), Rotation::cur()),
-                    meta.query_advice(keccak_table.output.hi(), Rotation::cur()),
-                ),
+                (lookup_pi_rlc_value, keccak_table.input_rlc),
+                (lookup_pi_rlc_len, keccak_table.input_len),
+                (lookup_pi_keccak.lo(), keccak_table.output.lo()),
+                (lookup_pi_keccak.hi(), keccak_table.output.hi()),
             ];
 
             lookups
                 .into_iter()
-                .map(|(from, to)| (from * meta.query_fixed(is_first, Rotation::cur()), to))
+                .map(|(from, to)| {
+                    (
+                        meta.query_advice(from, Rotation::cur())
+                            * meta.query_fixed(is_first, Rotation::cur()),
+                        meta.query_advice(to, Rotation::cur()),
+                    )
+                })
                 .collect()
         });
 
@@ -520,7 +495,12 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
         layouter.assign_region(
             || "rlc",
             |mut region| {
-                let rlc_acc = region.assign_advice(|| "rlc acc", config.lookup_pi_rlc_value, 0, || rlc_acc_cell.value().map(|v| *v))?;
+                let rlc_acc = region.assign_advice(
+                    || "rlc acc",
+                    config.lookup_pi_rlc_value,
+                    0,
+                    || rlc_acc_cell.value().map(|v| *v),
+                )?;
                 region.constrain_equal(rlc_acc_cell.cell(), rlc_acc.cell())?;
 
                 let len = F::from(self.lc_witness.initial_values_bytes().len() as u64);
