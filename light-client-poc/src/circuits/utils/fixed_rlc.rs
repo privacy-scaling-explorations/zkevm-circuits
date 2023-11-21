@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use eth_types::{keccak256, Field, H256};
+use eth_types::Field;
 use eyre::Result;
 use gadgets::{
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
@@ -179,16 +179,6 @@ impl<F: Field> FixedRlcConfig<F> {
             bytes_cols,
             is_lens_config,
         }
-    }
-
-    pub fn hash(values: Vec<(F, usize)>) -> H256 {
-        // TODO: update digest incrementally
-        let mut bytes = Vec::new();
-        for (value, len) in values {
-            let mut value = value.to_repr()[0..len].to_vec();
-            bytes.append(&mut value);
-        }
-        H256::from(keccak256(&bytes))
     }
 
     #[allow(clippy::type_complexity)]
@@ -385,7 +375,7 @@ mod test {
 
         fn configure_with_params(
             meta: &mut ConstraintSystem<F>,
-            params: Self::Params,
+            _params: Self::Params,
         ) -> Self::Config {
             TestCircuitConfig::new(meta)
         }

@@ -2,7 +2,7 @@ use eth_types::Field;
 use eyre::Result;
 use gadgets::{
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
-    util::{and, not, Expr},
+    util::{not, Expr},
 };
 use halo2_proofs::{
     circuit::{Region, Value},
@@ -99,8 +99,8 @@ impl<F: Field> Countdown<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        prev_count: F,
         curr_count: F,
+        next_count: F,
         last: bool,
     ) -> Result<(), Error> {
 
@@ -111,15 +111,15 @@ impl<F: Field> Countdown<F> {
         let count_decrement = IsZeroChip::construct(self.count_decrement.clone());
 
         count_is_zero.assign(region, offset, Value::known(curr_count))?;
-        count_propagate.assign(region, offset, Value::known(prev_count - curr_count))?;
+        count_propagate.assign(region, offset, Value::known(curr_count - next_count))?;
         count_decrement.assign(
             region,
             offset,
-            Value::known(prev_count - curr_count - F::ONE),
+            Value::known(curr_count - next_count - F::ONE),
         )?;
 
         if last {
-            region.assign_advice(|| "count", self.count, offset+1, || Value::known(curr_count))?;
+            region.assign_advice(|| "count", self.count, offset+1, || Value::known(next_count))?;
         }
 
         Ok(())
