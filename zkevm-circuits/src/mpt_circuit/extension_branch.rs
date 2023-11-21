@@ -27,6 +27,7 @@ pub(crate) struct ExtensionBranchConfig<F> {
     is_placeholder: [Cell<F>; 2],
     is_extension: Cell<F>,
     is_mod_extension: [Cell<F>; 2],
+    is_short_not_branch: Cell<F>,
     extension: ExtensionGadget<F>,
     branch: BranchGadget<F>,
 }
@@ -45,6 +46,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
             for is_s in [true, false] {
                 config.is_mod_extension[is_s.idx()] = cb.query_bool();
             }
+            config.is_short_not_branch = cb.query_bool();
             // If we're in a placeholder, both the extension and the branch parts are
             // placeholders
             for is_s in [true, false] {
@@ -150,7 +152,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         branch.key_mult_post_branch.expr(),
                         branch.num_nibbles.expr(),
                         branch.is_key_odd.expr(),
-                        0.expr(),
+                        branch.key_rlc_post_drifted.expr(),
                         0.expr(),
                         0.expr(),
                         false.expr(),
@@ -284,7 +286,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     key_rlc_post_branch,
                     key_mult_post_branch,
                     num_nibbles,
-                    0.scalar(),
+                    key_rlc_post_drifted,
                     0.scalar(),
                     0,
                 )?;
