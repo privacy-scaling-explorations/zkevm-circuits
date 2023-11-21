@@ -1,4 +1,4 @@
-use eth_types::Field;
+use eth_types::{keccak256, Field, H256};
 use eyre::Result;
 use gadgets::{
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
@@ -12,7 +12,8 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::{bn256::Fr, ff::PrimeField},
     plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, Selector,
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, SecondPhase,
+        Selector,
     },
     poly::Rotation,
 };
@@ -41,12 +42,24 @@ pub const DEFAULT_CIRCUIT_DEGREE: usize = 14;
 
 use crate::circuits::utils::{xif, xnif, EqualWordsConfig, FixedRlcConfig};
 
-trait STMHelper<F> {
+// keccak lookup
+// advice[0] -> keccak.lo
+// advice[1] -> keccak.hi
+//
+// lookup  (keccak.lo, keccak.hi, rlc_acc)
+//
+// bind rlc_acc -> keccak_values
+//
+// keccak.lo == advice[0]
+// keccak.hi == advice[1]
+
+pub trait STMHelper<F> {
     fn get_padded_values(&self, max_proof_count: usize) -> Vec<(F, usize)>;
     fn first_root(&self) -> Word<F>;
     fn last_root(&self) -> Word<F>;
     fn initial_values_len(&self) -> usize;
     fn initial_values_bytes(&self) -> Vec<u8>;
+    fn initial_values_hash(&self) -> Word<F>;
 }
 
 impl<F: Field> STMHelper<F> for SingleTrieModifications<F> {
@@ -109,23 +122,25 @@ impl<F: Field> STMHelper<F> for SingleTrieModifications<F> {
             .flat_map(|(f, len)| f.to_repr()[0..*len as usize].to_vec())
             .collect()
     }
+    fn initial_values_hash(&self) -> Word<F> {
+        let initial_values_bytes = self.initial_values_bytes();
+        let initial_values_hash = keccak256(&initial_values_bytes);
+        Word::<F>::from(H256(initial_values_hash))
+    }
 }
 
 #[test]
 fn test_stmhelper() {
+    let s = |s: &str| -> Fr { Fr::from_str_vartime(s).unwrap() };
 
-    let s = |s:&str| -> Fr { Fr::from_str_vartime(s).unwrap() };
-
-    let address =
-    Fr::from_str_vartime("").unwrap();
+    let address = Fr::from_str_vartime("").unwrap();
     let word_hi = Fr::from_str_vartime("161608102011034763426291125516264774166").unwrap();
     let byte = Fr::from_str_vartime("7").unwrap();
-
 
     SingleTrieModifications::<Fr>(vec![SingleTrieModification {
         typ: s("1"),
         address: s("1378211552805413204046691570283904042755861616012"),
-        value: word::Word::new([s(""),s("")]),
+        value: word::Word::new([s(""), s("")]),
         key: word::Word::new([5u64.into(), 6u64.into()]),
         old_root: word::Word::new([7u64.into(), 8u64.into()]),
         new_root: word::Word::new([9u64.into(), 10u64.into()]),
@@ -141,6 +156,9 @@ pub struct InitialStateCircuitConfig<F: Field> {
 
     pub pi_mpt: MptTable,
     pub pi_instance: Column<Instance>,
+    pub lookup_pi_keccak: Word<Column<Advice>>,
+    pub lookup_pi_rlc_value: Column<Advice>,
+    pub lookup_pi_rlc_len: Column<Advice>,
 
     pub is_first: Column<Fixed>,
     pub is_padding: IsZeroConfig<F>,
@@ -203,12 +221,17 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                 challenges: challenges_expr.clone(),
             },
         );
-        let mpt_config = MPTConfig::new(meta, challenges_expr.clone(), keccak_table, params);
+        let mpt_config =
+            MPTConfig::new(meta, challenges_expr.clone(), keccak_table.clone(), params);
 
         let is_first = meta.fixed_column();
         let count = meta.advice_column();
         let q_enable = meta.complex_selector();
         let pi_instance = meta.instance_column();
+        let lookup_pi_keccak = word::Word::new([meta.advice_column(), meta.advice_column()]);
+        let lookup_pi_rlc_value = meta.advice_column_in(SecondPhase);
+        let lookup_pi_rlc_len = meta.advice_column();
+
         let pi_mpt = MptTable {
             address: meta.advice_column(),
             storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
@@ -232,6 +255,10 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
             pi_mpt.new_value.hi(),
             pi_mpt.old_value.lo(),
             pi_mpt.old_value.hi(),
+            lookup_pi_keccak.lo(),
+            lookup_pi_keccak.hi(),
+            lookup_pi_rlc_value,
+            lookup_pi_rlc_len,
         ]
         .iter()
         {
@@ -393,7 +420,33 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
         });
 
         let fixed_rlc =
-            FixedRlcConfig::configure(meta, &[1, 16, 20], challenges_expr.keccak_input(), None);
+            FixedRlcConfig::configure(meta, &[1, 16, 20], challenges_expr.keccak_input());
+
+        meta.lookup_any("lookup input keccak into rlc", |meta| {
+            let lookups = vec![
+                (
+                    meta.query_advice(lookup_pi_rlc_value, Rotation::cur()),
+                    meta.query_advice(keccak_table.input_rlc, Rotation::cur()),
+                ),
+                (
+                    meta.query_advice(lookup_pi_rlc_len, Rotation::cur()),
+                    meta.query_advice(keccak_table.input_len, Rotation::cur()),
+                ),
+                (
+                    meta.query_advice(lookup_pi_keccak.lo(), Rotation::cur()),
+                    meta.query_advice(keccak_table.output.lo(), Rotation::cur()),
+                ),
+                (
+                    meta.query_advice(lookup_pi_keccak.hi(), Rotation::cur()),
+                    meta.query_advice(keccak_table.output.hi(), Rotation::cur()),
+                ),
+            ];
+
+            lookups
+                .into_iter()
+                .map(|(from, to)| (from * meta.query_fixed(is_first, Rotation::cur()), to))
+                .collect()
+        });
 
         let config = InitialStateCircuitConfig {
             #[cfg(not(feature = "disable-keccak"))]
@@ -410,6 +463,9 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
             root_chained,
             q_enable,
             pi_instance,
+            lookup_pi_keccak,
+            lookup_pi_rlc_value,
+            lookup_pi_rlc_len,
             pi_mpt,
             fixed_rlc,
         };
@@ -428,12 +484,62 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
     ) -> Result<(), Error> {
         let challenges = _challenges.values(&mut layouter);
 
+        // keccak value
+
+        let (keccak_lo, keccak_hi) = layouter.assign_region(
+            || "keccak value",
+            |mut region| {
+                let hash = self.lc_witness.initial_values_hash();
+                let lo = region.assign_advice(
+                    || "keccak_lo",
+                    config.lookup_pi_keccak.lo(),
+                    0,
+                    || Value::known(hash.lo()),
+                )?;
+                let hi = region.assign_advice(
+                    || "keccak_hi",
+                    config.lookup_pi_keccak.hi(),
+                    0,
+                    || Value::known(hash.hi()),
+                )?;
+                Ok((lo, hi))
+            },
+        )?;
+        layouter.constrain_instance(keccak_lo.cell(), config.pi_instance, 0)?;
+        layouter.constrain_instance(keccak_hi.cell(), config.pi_instance, 1)?;
+
+        // assign LC witness
+
+        let (rlc_acc_cell, initial_value_cells) = config.fixed_rlc.assign(
+            &mut layouter,
+            self.lc_witness.get_padded_values(self.max_proof_count),
+            self.lc_witness.initial_values_len(),
+            challenges.keccak_input(),
+        )?;
+
+        layouter.assign_region(
+            || "rlc",
+            |mut region| {
+                let rlc_acc = region.assign_advice(|| "rlc acc", config.lookup_pi_rlc_value, 0, || rlc_acc_cell.value().map(|v| *v))?;
+                region.constrain_equal(rlc_acc_cell.cell(), rlc_acc.cell())?;
+
+                let len = F::from(self.lc_witness.initial_values_bytes().len() as u64);
+                region.assign_advice(
+                    || "rlc len",
+                    config.lookup_pi_rlc_len,
+                    0,
+                    || Value::known(len),
+                )
+            },
+        )?;
+
         // assign MPT witness
 
         let height =
             config
                 .mpt_config
                 .assign(&mut layouter, &self.mpt_circuit.nodes, &challenges)?;
+
         config.mpt_config.load_fixed_table(&mut layouter)?;
         config
             .mpt_config
@@ -450,23 +556,7 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
         self.keccak_circuit
             .synthesize_sub(&config.keccak_config, &challenges, &mut layouter)?;
 
-        // assign LC witness
-
-        let rlc_values = self.lc_witness.get_padded_values(self.max_proof_count);
-        let initial_values_len = self.lc_witness.initial_values_len();
-        let initial_values_bytes = self.lc_witness.initial_values_bytes();
-
-        assert!(initial_values_len > 0);
-        dbg!(initial_values_len);
-
-        let (rlc_acc, lc_values) = config.fixed_rlc.assign(
-            &mut layouter,
-            rlc_values,
-            initial_values_len,
-            challenges.keccak_input(),
-        )?;
-
-        let pi = layouter.assign_region(
+        layouter.assign_region(
             || "lc witness",
             |mut region| {
 
@@ -500,8 +590,6 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                 region.name_column(|| "LC_new_value_lo", config.pi_mpt.new_value.lo());
                 region.name_column(|| "LC_storagekey_hi", config.pi_mpt.storage_key.hi());
                 region.name_column(|| "LC_storagekey_lo", config.pi_mpt.storage_key.lo());
-
-                let mut pi = Vec::new();
 
                 for offset in 0..self.max_proof_count {
 
@@ -602,47 +690,31 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                         ret
                     };
 
-                    region.constrain_equal(typ.cell(), lc_values[4+6*offset].cell())?;
-                    region.constrain_equal(addr.cell(), lc_values[4+6*offset+1].cell())?;
-                    region.constrain_equal(value_lo.cell(), lc_values[4+6*offset+2].cell())?;
-                    region.constrain_equal(value_hi.cell(), lc_values[4+6*offset+3].cell())?;
-                    region.constrain_equal(key_lo.cell(), lc_values[4+6*offset+4].cell())?;
-                    region.constrain_equal(key_hi.cell(), lc_values[4+6*offset+5].cell())?;
+                    region.constrain_equal(typ.cell(), initial_value_cells[4+6*offset].cell())?;
+                    region.constrain_equal(addr.cell(), initial_value_cells[4+6*offset+1].cell())?;
+                    region.constrain_equal(value_lo.cell(), initial_value_cells[4+6*offset+2].cell())?;
+                    region.constrain_equal(value_hi.cell(), initial_value_cells[4+6*offset+3].cell())?;
+                    region.constrain_equal(key_lo.cell(), initial_value_cells[4+6*offset+4].cell())?;
+                    region.constrain_equal(key_hi.cell(), initial_value_cells[4+6*offset+5].cell())?;
 
                     // at beggining, set the old root and number of proofs
 
                     if offset == 0 {
-                        region.constrain_equal(old_root_lo.cell(), lc_values[0].cell())?;
-                        region.constrain_equal(old_root_hi.cell(), lc_values[1].cell())?;
-
-                        pi.push(Some(old_root_lo));
-                        pi.push(Some(old_root_hi));
-                        pi.push(None);
-                        pi.push(None);
-                        pi.push(Some(count_cell));
+                        region.constrain_equal(old_root_lo.cell(), initial_value_cells[0].cell())?;
+                        region.constrain_equal(old_root_hi.cell(), initial_value_cells[1].cell())?;
                     }
-
-                    pi.append(vec![Some(typ), Some(addr), Some(value_lo), Some(value_hi), Some(key_lo), Some(key_hi)].as_mut());
 
                     // at ending, set the last root in the last row (valid since we are propagating it)
 
                     if offset == self.max_proof_count -1 {
-                        region.constrain_equal(new_root_lo.cell(), lc_values[2].cell())?;
-                        region.constrain_equal(new_root_hi.cell(), lc_values[3].cell())?;
-
-                        pi[2] = Some(new_root_lo);
-                        pi[3] = Some(new_root_hi);
+                        region.constrain_equal(new_root_lo.cell(), initial_value_cells[2].cell())?;
+                        region.constrain_equal(new_root_hi.cell(), initial_value_cells[3].cell())?;
                     }
 
                 }
-                Ok(pi)
+                Ok(())
             },
         )?;
-
-        // check that state updates to lookup are the same that the specified in the public inputs
-        for (n, value) in pi.into_iter().enumerate() {
-            layouter.constrain_instance(value.unwrap().cell(), config.pi_instance, n)?;
-        }
 
         Ok(())
     }
@@ -667,6 +739,7 @@ impl InitialStateCircuit<Fr> {
                 keccak_data.push(k.to_vec());
             }
         }
+        keccak_data.push(lc_witness.initial_values_bytes());
 
         // verify the circuit
         let disable_preimage_check = mpt_witness[0].start.clone().unwrap().disable_preimage_check;

@@ -14,14 +14,6 @@ use halo2_proofs::{
 
 use super::xnif;
 
-type Offset = usize;
-
-#[derive(Clone)]
-pub enum AlterWitness {
-    Rlc(Offset),
-    ByteEncoding(Offset),
-}
-
 #[derive(Clone)]
 pub struct FixedRlcConfig<F: Field> {
     q_enable: Selector,
@@ -43,9 +35,6 @@ pub struct FixedRlcConfig<F: Field> {
     count_is_zero: IsZeroConfig<F>,
     count_propagate: IsZeroConfig<F>,
     count_decrement: IsZeroConfig<F>,
-
-    // for tests
-    alter: Option<AlterWitness>,
 }
 
 impl<F: Field> FixedRlcConfig<F> {
@@ -54,7 +43,6 @@ impl<F: Field> FixedRlcConfig<F> {
         meta: &mut ConstraintSystem<F>,
         allowed_lens: &[usize],
         rlc_r: Expression<F>,
-        alter: Option<AlterWitness>,
     ) -> Self {
         let rlc_acc = meta.advice_column_in(SecondPhase);
         let largest = *allowed_lens.iter().max().unwrap();
@@ -65,6 +53,7 @@ impl<F: Field> FixedRlcConfig<F> {
         let q_enable = meta.complex_selector();
 
         meta.enable_equality(value_col);
+        meta.enable_equality(rlc_acc);
 
         // count constraints
 
@@ -216,7 +205,6 @@ impl<F: Field> FixedRlcConfig<F> {
             [q_enable * xnif(count_is_zero.expr(), rlc_acc_propagate.expr())]
         });
         Self {
-            alter,
             eq_values_config,
             rlc_check_config,
             rlc_acc_propagate,
@@ -318,18 +306,11 @@ impl<F: Field> FixedRlcConfig<F> {
                     let bytes = &(&value.to_repr())[0..self.bytes_cols.len()];
 
                     for (i, b) in bytes.iter().enumerate() {
-                        let mut b = *b;
-                        if let Some(AlterWitness::ByteEncoding(alter_offset)) = self.alter {
-                            if offset == alter_offset {
-                                let (b_1, _) = b.overflowing_add(1);
-                                b = b_1;
-                            }
-                        }
                         region.assign_advice(
                             || format!("byte {}", i),
                             self.bytes_cols[i],
                             offset,
-                            || Value::known(F::from(b as u64)),
+                            || Value::known(F::from(*b as u64)),
                         )?;
                     }
 
@@ -357,10 +338,10 @@ impl<F: Field> FixedRlcConfig<F> {
                     }
 
                     for (len, eq_value) in &self.eq_values_config {
-                        let mut sum = F::ZERO;
-                        for i in 0..*len {
-                            sum = sum * F::from(256) + F::from(bytes[i] as u64);
-                        }
+                        let sum = bytes
+                            .iter()
+                            .take(*len)
+                            .fold(F::ZERO, |acc, v| acc + F::from(256) * F::from(*v as u64));
                         IsZeroChip::construct(eq_value.clone()).assign(
                             &mut region,
                             offset,
@@ -373,11 +354,6 @@ impl<F: Field> FixedRlcConfig<F> {
                     if count > F::ZERO {
                         for b in bytes.iter().take(*len) {
                             rlc_acc = rlc_acc * rlc_r + Value::known(F::from(*b as u64));
-                        }
-                        if let Some(AlterWitness::Rlc(alter_offset)) = self.alter {
-                            if offset == alter_offset {
-                                rlc_acc = rlc_acc + Value::known(F::ONE);
-                            }
                         }
                         count -= F::ONE;
                     }
@@ -437,10 +413,10 @@ mod test {
     }
 
     impl<F: Field> TestCircuitConfig<F> {
-        pub(crate) fn new(meta: &mut ConstraintSystem<F>, alter: Option<AlterWitness>) -> Self {
+        pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
             let challenges = Challenges::construct(meta);
             let rlc_r = challenges.exprs(meta).keccak_input();
-            let fixed_rlc = FixedRlcConfig::configure(meta, &[1, 16, 20], rlc_r, alter);
+            let fixed_rlc = FixedRlcConfig::configure(meta, &[1, 16, 20], rlc_r);
             Self {
                 challenges,
                 fixed_rlc,
@@ -450,23 +426,13 @@ mod test {
 
     #[derive(Default)]
     struct TestCircuit<F: Field> {
-        alter: Option<AlterWitness>,
         _marker: PhantomData<F>,
-    }
-
-    impl<F: Field> TestCircuit<F> {
-        pub(crate) fn alter(alter: AlterWitness) -> Self {
-            Self {
-                alter: Some(alter),
-                _marker: PhantomData,
-            }
-        }
     }
 
     impl<F: Field> Circuit<F> for TestCircuit<F> {
         type Config = TestCircuitConfig<F>;
         type FloorPlanner = SimpleFloorPlanner;
-        type Params = Option<AlterWitness>;
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()
@@ -477,14 +443,14 @@ mod test {
         }
 
         fn params(&self) -> Self::Params {
-            self.alter.clone()
+            ()
         }
 
         fn configure_with_params(
             meta: &mut ConstraintSystem<F>,
             params: Self::Params,
         ) -> Self::Config {
-            TestCircuitConfig::new(meta, params)
+            TestCircuitConfig::new(meta)
         }
 
         fn synthesize(
@@ -544,19 +510,4 @@ mod test {
         prover.assert_satisfied_par()
     }
 
-    #[test]
-    fn test_fixed_rlc_bad_byte_encoding() {
-        let circuit = TestCircuit::alter(AlterWitness::ByteEncoding(0));
-        let k = 4;
-        let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
-        assert!(prover.verify_par().is_err());
-    }
-
-    #[test]
-    fn test_fixed_rlc_bad_rlc() {
-        let circuit = TestCircuit::alter(AlterWitness::Rlc(0));
-        let k = 4;
-        let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
-        assert!(prover.verify_par().is_err());
-    }
 }

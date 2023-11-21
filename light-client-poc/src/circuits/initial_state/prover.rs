@@ -1,6 +1,5 @@
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-
-use super::{pi::PublicInputs, InitialStateCircuit};
+use super::{InitialStateCircuit, circuit::STMHelper };
 
 impl InitialStateCircuit<Fr> {
     pub fn assert_satisfied(&self) {
@@ -11,10 +10,9 @@ impl InitialStateCircuit<Fr> {
             .map(|node| node.values.len())
             .sum();
 
-        let public_inputs: PublicInputs<Fr> = (&self.lc_witness).into();
-
+        let hash = self.lc_witness.initial_values_hash();
         let prover =
-            MockProver::<Fr>::run(self.degree as u32, self, vec![public_inputs.0]).unwrap();
+            MockProver::<Fr>::run(self.degree as u32, self, vec![vec![hash.lo(), hash.hi()]]).unwrap();
         prover.assert_satisfied_at_rows_par(0..num_rows, 0..num_rows);
     }
 }
