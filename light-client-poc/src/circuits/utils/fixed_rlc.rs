@@ -12,7 +12,18 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use super::xnif;
+use super::{xnif, countdown::Countdown};
+
+///*
+///  This circuit takes a list of values and their lengths
+///  and returns
+///     - an AssignedCell with the rlc of the first `values_to_accumulate` values
+///     - an AssignedCell for each value
+///
+///  Some restrictions
+///     - the length of the values must be fixed per circuit
+///
+///*
 
 #[derive(Clone)]
 pub struct FixedRlcConfig<F: Field> {
@@ -31,10 +42,7 @@ pub struct FixedRlcConfig<F: Field> {
     rlc_check_config: HashMap<usize, IsZeroConfig<F>>,
 
     // count
-    count: Column<Advice>,
-    count_is_zero: IsZeroConfig<F>,
-    count_propagate: IsZeroConfig<F>,
-    count_decrement: IsZeroConfig<F>,
+    countdown: Countdown<F>
 }
 
 impl<F: Field> FixedRlcConfig<F> {
@@ -46,59 +54,14 @@ impl<F: Field> FixedRlcConfig<F> {
     ) -> Self {
         let rlc_acc = meta.advice_column_in(SecondPhase);
         let largest = *allowed_lens.iter().max().unwrap();
-        let count = meta.advice_column();
         let value_col = meta.advice_column();
         let len_col = meta.fixed_column();
         let bytes_cols: Vec<_> = (0..largest).map(|_| meta.advice_column()).collect();
         let q_enable = meta.complex_selector();
+        let countdown = Countdown::configure(meta, q_enable);
 
         meta.enable_equality(value_col);
         meta.enable_equality(rlc_acc);
-
-        // count constraints
-
-        let count_is_zero_inv = meta.advice_column();
-        let count_is_zero = IsZeroChip::configure(
-            meta,
-            |meta| meta.query_selector(q_enable),
-            |meta| meta.query_advice(count, Rotation::cur()),
-            count_is_zero_inv,
-        );
-
-        let count_propagate_inv = meta.advice_column();
-        let count_propagate = IsZeroChip::configure(
-            meta,
-            |meta| meta.query_selector(q_enable),
-            |meta| {
-                meta.query_advice(count, Rotation::cur())
-                    - meta.query_advice(count, Rotation::next())
-            },
-            count_propagate_inv,
-        );
-
-        let count_decrement_inv = meta.advice_column();
-        let count_decrement = IsZeroChip::configure(
-            meta,
-            |meta| meta.query_selector(q_enable),
-            |meta| {
-                meta.query_advice(count, Rotation::cur())
-                    - meta.query_advice(count, Rotation::next())
-                    - 1.expr()
-            },
-            count_decrement_inv,
-        );
-
-        meta.create_gate("count decrements if > 0", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-
-            [q_enable * xnif(not::expr(count_is_zero.expr()), count_decrement.expr())]
-        });
-
-        meta.create_gate("count propagates if == 0", |meta| {
-            let q_enable = meta.query_selector(q_enable);
-
-            [q_enable * xnif(count_is_zero.expr(), count_propagate.expr())]
-        });
 
         // byte encoding constraints
 
@@ -171,7 +134,7 @@ impl<F: Field> FixedRlcConfig<F> {
                     |meta| {
                         meta.query_selector(q_enable)
                             * is_lens_config.get(len).unwrap().expr()
-                            * not::expr(count_is_zero.expr())
+                            * not::expr(countdown.is_zero())
                     },
                     |meta| {
                         let mut rlc_acc_cur = meta.query_advice(rlc_acc, Rotation::cur());
@@ -196,22 +159,19 @@ impl<F: Field> FixedRlcConfig<F> {
                 .map(|v| v.expr())
                 .collect::<Vec<_>>();
 
-            [q_enable * xnif(not::expr(count_is_zero.expr()), or::expr(switch))]
+            [q_enable * xnif(not::expr(countdown.is_zero()), or::expr(switch))]
         });
 
         meta.create_gate("propagate rlc_acc if count == 0", |meta| {
             let q_enable = meta.query_selector(q_enable);
 
-            [q_enable * xnif(count_is_zero.expr(), rlc_acc_propagate.expr())]
+            [q_enable * xnif(countdown.is_zero(), rlc_acc_propagate.expr())]
         });
         Self {
             eq_values_config,
             rlc_check_config,
             rlc_acc_propagate,
-            count_propagate,
-            count_decrement,
-            count_is_zero,
-            count,
+            countdown,
             rlc_acc,
             q_enable,
             value_col,
@@ -244,7 +204,10 @@ impl<F: Field> FixedRlcConfig<F> {
         let ret = layouter.assign_region(
             || "rlc checker",
             |mut region| {
-                let mut value_cells = Vec::new();
+
+                // name columns
+
+                self.countdown.name_columns(&mut region, "rlc");
 
                 region.name_column(|| "RLC_len", self.len_col);
                 region.name_column(|| "RLC_value", self.value_col);
@@ -255,20 +218,14 @@ impl<F: Field> FixedRlcConfig<F> {
                 for (len, is_len) in self.is_lens_config.iter() {
                     region.name_column(|| format!("RLC_islen_{}_inv", len), is_len.value_inv);
                 }
-                region.name_column(|| "RLC_count", self.count);
 
-                region.name_column(|| "RLC_count_is_zero_inv", self.count_is_zero.value_inv);
-                region.name_column(|| "RLC_count_propagate_inv", self.count_propagate.value_inv);
-                region.name_column(|| "RLC_count_decrement_inv", self.count_decrement.value_inv);
+                let mut value_cells = Vec::new();
+
 
                 let mut count = F::from(values_to_accumulate as u64);
                 let mut rlc_acc = Value::known(F::ZERO);
                 let mut last_rlc_acc_cell = None;
-
-                let count_is_zero = IsZeroChip::construct(self.count_is_zero.clone());
                 let rlc_acc_propagate = IsZeroChip::construct(self.rlc_acc_propagate.clone());
-                let count_propagate = IsZeroChip::construct(self.count_propagate.clone());
-                let count_decrement = IsZeroChip::construct(self.count_decrement.clone());
 
                 for (offset, (value, len)) in values.iter().enumerate() {
                     self.q_enable.enable(&mut region, offset)?;
@@ -288,9 +245,6 @@ impl<F: Field> FixedRlcConfig<F> {
                         offset,
                         || Value::known(F::from(*len as u64)),
                     )?;
-
-                    region.assign_advice(|| "count", self.count, offset, || Value::known(count))?;
-                    count_is_zero.assign(&mut region, offset, Value::known(count))?;
 
                     value_cells.push(region.assign_advice(
                         || "value",
@@ -357,17 +311,7 @@ impl<F: Field> FixedRlcConfig<F> {
                         }
                         count -= F::ONE;
                     }
-
-                    count_propagate.assign(
-                        &mut region,
-                        offset,
-                        Value::known(count_prev - count),
-                    )?;
-                    count_decrement.assign(
-                        &mut region,
-                        offset,
-                        Value::known(count_prev - count - F::ONE),
-                    )?;
+                    self.countdown.assign(&mut region, offset, count_prev, count, offset == values.len() -1 )?;
 
                     rlc_acc_propagate.assign(&mut region, offset, rlc_acc_prev - rlc_acc)?;
 
@@ -378,13 +322,6 @@ impl<F: Field> FixedRlcConfig<F> {
                         || rlc_acc,
                     )?);
                 }
-
-                region.assign_advice(
-                    || "count",
-                    self.count,
-                    values.len(),
-                    || Value::known(count),
-                )?;
 
                 Ok((last_rlc_acc_cell.unwrap(), value_cells))
             },

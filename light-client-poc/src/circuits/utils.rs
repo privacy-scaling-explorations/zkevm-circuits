@@ -4,6 +4,7 @@ use halo2_proofs::plonk::Expression;
 
 mod equal_words;
 mod fixed_rlc;
+mod countdown;
 
 pub use equal_words::EqualWordsConfig;
 pub use fixed_rlc::FixedRlcConfig;
