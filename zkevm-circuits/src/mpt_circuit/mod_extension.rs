@@ -191,7 +191,6 @@ impl<F: Field> ModExtensionGadget<F> {
                 }} 
             }
 
-            /*
             let data0 = [key_items[0].clone(), key_nibbles[0].clone()];
             let nibbles_rlc_long = key_rlc_before
                 + ext_key_rlc_expr(
@@ -210,7 +209,6 @@ impl<F: Field> ModExtensionGadget<F> {
                 );
 
             let data1 = [key_items[1].clone(), key_nibbles[1].clone()];
-
             let rlc_after_short = middle_key_rlc.clone() + ext_key_rlc_expr(
                 cb,
                 config.rlp_key[1].key_value.clone(),
@@ -231,7 +229,6 @@ impl<F: Field> ModExtensionGadget<F> {
             } elsex {
                 require!(rlc_after_short => nibbles_rlc_long);
             }}
-            */
         });
 
         config

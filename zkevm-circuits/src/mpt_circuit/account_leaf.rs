@@ -259,16 +259,6 @@ impl<F: Field> AccountLeafConfig<F> {
                     require!(config.rlp_key[is_s.idx()].rlp_list.len() => config.rlp_key[is_s.idx()].key_value.num_bytes() + value_list_num_bytes[is_s.idx()].expr());
                 }};
 
-                ifx! {or::expr(&[config.is_mod_extension[0].clone(), config.is_mod_extension[1].clone()]) => {
-                    config.mod_extension = ModExtensionGadget::configure(
-                        meta,
-                        cb,
-                        ctx.clone(),
-                        parent_data,
-                        key_data,
-                    );
-                }};
-
                 // Key done, set the starting values
                 KeyData::store_defaults(cb, &mut ctx.memory[key_memory(is_s)]);
                 // Store the new parent
@@ -707,7 +697,7 @@ impl<F: Field> AccountLeafConfig<F> {
 
         if account.is_mod_extension[0] || account.is_mod_extension[1] {
             let mod_list_rlp_bytes: [&[u8]; 2] = [&account.mod_list_rlp_bytes[0], &account.mod_list_rlp_bytes[1]];
-            self.mod_extension.assign(region, offset, rlp_values, mod_list_rlp_bytes);
+            self.mod_extension.assign(region, offset, rlp_values, mod_list_rlp_bytes)?;
         }
 
         let mut new_value = value[false.idx()];

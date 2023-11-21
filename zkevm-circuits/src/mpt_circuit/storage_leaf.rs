@@ -524,7 +524,7 @@ impl<F: Field> StorageLeafConfig<F> {
 
         if storage.is_mod_extension[0] || storage.is_mod_extension[1] {
             let mod_list_rlp_bytes: [&[u8]; 2]= [&storage.mod_list_rlp_bytes[0], &storage.mod_list_rlp_bytes[1]];
-            self.mod_extension.assign(region, offset, rlp_values, mod_list_rlp_bytes);
+            self.mod_extension.assign(region, offset, rlp_values, mod_list_rlp_bytes)?;
         }
 
         let mut new_value = value_word[false.idx()];
