@@ -367,7 +367,7 @@ func prepareAccountLeafPlaceholderNode(addr common.Address, addrh, key []byte, k
 	keyLen := int(math.Floor(float64(64-keyIndex)/float64(2))) + 1
 	remainingNibbles := key[keyIndex:]
 	offset := 0
-	leaf := make([]byte, valueLen)
+	leaf := make([]byte, 40)
 	leaf[0] = 248
 	leaf[1] = byte(keyLen) + 73
 	leaf[2] = byte(keyLen) + 128
