@@ -308,7 +308,11 @@ func getProofAccount(blockNumber *big.Int, addr common.Address, skey common.Hash
 	json.NewDecoder(getAPI(jsonData)).Decode(&jr)
 
 	if storage {
-		return jr.Result.StorageProof[0].Proof
+		if len(jr.Result.StorageProof) != 0 {
+			return jr.Result.StorageProof[0].Proof
+		} else {
+			return []string{}
+		}
 	} else {
 		return jr.Result.AccountProof
 	}

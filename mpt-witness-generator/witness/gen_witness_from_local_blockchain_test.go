@@ -534,7 +534,7 @@ func ExtNodeDeleted(key1, key2, key3 common.Hash, testName string) {
 	oracle.PreventHashingInSecureTrie = true // to store the unchanged key
 
 	// make the value long to have a hashed branch
-	v1 := common.FromHex("0xbbefaa12580138bc263c95757826df4e24eb81c9aaaaaaaaaaaaaaaaaaaaaaaa")
+	v1 := common.FromHex("0xbbefaa12580138bc263c95757826df4e24eb81c9aaaaaaaaaaaaaaaaaaaaaaab")
 	val1 := common.BytesToHash(v1)
 	statedb.SetState(addr, key1, val1)
 	statedb.SetState(addr, key2, val1)
@@ -543,6 +543,7 @@ func ExtNodeDeleted(key1, key2, key3 common.Hash, testName string) {
 	statedb.IntermediateRoot(false)
 
 	val := common.Hash{} // empty value deletes the key
+
 	trieMod := TrieModification{
 		Type:    StorageChanged,
 		Key:     key3,
@@ -568,4 +569,17 @@ func TestExtNodeInsertedBefore6After1FirstLevel(t *testing.T) {
 	key3 := common.HexToHash("0x1234400000000000000000000000000000000000000000000000000000000000")
 
 	ExtNodeInserted(key1, key2, key3, "ExtNodeInsertedBefore6After1FirstLevel")
+}
+
+func TestExtNodeDeletedBefore6After1FirstLevel(t *testing.T) {
+	key1 := common.HexToHash("0x1234561000000000000000000000000000000000000000000000000000000000")
+	// key1 bytes: [1 * 16 + 2, 3 * 16 + 4, 5 * 16 + 6, 1 * 16, 0, ..., 0]
+
+	key2 := common.HexToHash("0x1234563000000000000000000000000000000000000000000000000000000000")
+	// key2 bytes: [1 * 16 + 2, 3 * 16 + 4, 5 * 16 + 6, 3 * 16, 0, ..., 0]
+	// We now have an extension node with nibbles: [1, 2, 3, 4, 5, 6].
+
+	key3 := common.HexToHash("0x1234400000000000000000000000000000000000000000000000000000000000")
+
+	ExtNodeDeleted(key1, key2, key3, "ExtNodeDeletedBefore6After1FirstLevel")
 }
