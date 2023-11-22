@@ -118,7 +118,7 @@ func (n *AccountNode) MarshalJSON() ([]byte, error) {
 		DriftedRlpBytes:   base64ToString(n.DriftedRlpBytes),
 		WrongRlpBytes:     base64ToString(n.WrongRlpBytes),
 		IsModExtension:    n.IsModExtension,
-		ModListRlpBytes:      encodeArray(n.ModListRlpBytes[:]),
+		ModListRlpBytes:   encodeArray(n.ModListRlpBytes[:]),
 	}
 	return json.Marshal(jsonData)
 }
@@ -136,13 +136,13 @@ type StorageNode struct {
 
 func (n *StorageNode) MarshalJSON() ([]byte, error) {
 	jsonData := struct {
-		Address         string    `json:"address"`
-		Key             string    `json:"key"`
-		ListRlpBytes    []string  `json:"list_rlp_bytes"`
-		ValueRlpBytes   []string  `json:"value_rlp_bytes"`
-		DriftedRlpBytes string    `json:"drifted_rlp_bytes"`
-		WrongRlpBytes   string    `json:"wrong_rlp_bytes"`
-		IsModExtension  [2]bool   `json:"is_mod_extension"`
+		Address         string   `json:"address"`
+		Key             string   `json:"key"`
+		ListRlpBytes    []string `json:"list_rlp_bytes"`
+		ValueRlpBytes   []string `json:"value_rlp_bytes"`
+		DriftedRlpBytes string   `json:"drifted_rlp_bytes"`
+		WrongRlpBytes   string   `json:"wrong_rlp_bytes"`
+		IsModExtension  [2]bool  `json:"is_mod_extension"`
 		ModListRlpBytes []string `json:"mod_list_rlp_bytes"`
 	}{
 		Address:         base64ToString(n.Address.Bytes()),

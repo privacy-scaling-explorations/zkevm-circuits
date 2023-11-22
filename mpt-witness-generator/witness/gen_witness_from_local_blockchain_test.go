@@ -680,9 +680,9 @@ func TestExtNodeInsertedBefore4After1(t *testing.T) {
 	v1 = common.FromHex("0xbb")
 	val := common.BytesToHash(v1)
 	trieMod := TrieModification{
-    	Type: StorageChanged,
-		Key: key3,
-		Value: val,
+		Type:    StorageChanged,
+		Key:     key3,
+		Value:   val,
 		Address: addr,
 	}
 	trieModifications := []TrieModification{trieMod}
@@ -731,9 +731,9 @@ func TestExtNodeDeletedBefore4After1(t *testing.T) {
 
 	val := common.Hash{} // empty value deletes the key
 	trieMod := TrieModification{
-    	Type: StorageChanged,
-		Key: key3,
-		Value: val,
+		Type:    StorageChanged,
+		Key:     key3,
+		Value:   val,
 		Address: addr,
 	}
 	trieModifications := []TrieModification{trieMod}

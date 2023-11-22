@@ -274,7 +274,7 @@ func prepareAccountLeafNode(addr common.Address, addrh []byte, leafS, leafC, nei
 	values[AccountCodehashC] = codeHashValueC
 	values[AccountDrifted] = keyDrifted
 	values[AccountWrong] = wrongValue
-	
+
 	for i := 0; i < 6; i++ {
 		row := make([]byte, valueLen)
 		values = append(values, row)

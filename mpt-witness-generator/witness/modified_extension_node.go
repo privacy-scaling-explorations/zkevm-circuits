@@ -11,11 +11,11 @@ import (
 // of the extension node nibbles) because of another extension node being added or deleted.
 // The rows added are somewhat exceptional as otherwise they do not appear.
 func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr common.Address, proof1, proof2,
-		extNibblesS, extNibblesC [][]byte,
-		key, neighbourNode []byte,
-		keyIndex, extensionNodeInd, numberOfNibbles int,
-		additionalBranch, isAccountProof, nonExistingAccountProof,
-		isShorterProofLastLeaf bool, branchC16, branchC1 byte, toBeHashed *[][]byte) Node {
+	extNibblesS, extNibblesC [][]byte,
+	key, neighbourNode []byte,
+	keyIndex, extensionNodeInd, numberOfNibbles int,
+	additionalBranch, isAccountProof, nonExistingAccountProof,
+	isShorterProofLastLeaf bool, branchC16, branchC1 byte, toBeHashed *[][]byte) Node {
 	len1 := len(proof1)
 	len2 := len(proof2)
 
@@ -141,7 +141,7 @@ func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr c
 
 	l := len(leafNode.Values)
 	for i := 0; i < 6; i++ {
-		leafNode.Values[l - 6 + i] = values[i]
+		leafNode.Values[l-6+i] = values[i]
 	}
 
 	leafNode.KeccakData = append(leafNode.KeccakData, keccakData...)
