@@ -23,6 +23,7 @@ mod start;
 mod storage_leaf;
 /// MPT witness row
 pub mod witness_row;
+pub mod mod_extension;
 
 use self::{
     account_leaf::AccountLeafConfig,

@@ -27,7 +27,6 @@ pub(crate) struct ExtensionBranchConfig<F> {
     is_placeholder: [Cell<F>; 2],
     is_extension: Cell<F>,
     is_mod_extension: [Cell<F>; 2],
-    is_short_not_branch: Cell<F>,
     extension: ExtensionGadget<F>,
     branch: BranchGadget<F>,
 }
@@ -46,7 +45,6 @@ impl<F: Field> ExtensionBranchConfig<F> {
             for is_s in [true, false] {
                 config.is_mod_extension[is_s.idx()] = cb.query_bool();
             }
-            config.is_short_not_branch = cb.query_bool();
             // If we're in a placeholder, both the extension and the branch parts are
             // placeholders
             for is_s in [true, false] {

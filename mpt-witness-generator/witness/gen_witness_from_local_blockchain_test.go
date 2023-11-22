@@ -583,3 +583,194 @@ func TestExtNodeDeletedBefore6After1FirstLevel(t *testing.T) {
 
 	ExtNodeDeleted(key1, key2, key3, "ExtNodeDeletedBefore6After1FirstLevel")
 }
+
+func TestExtNodeInsertedBefore6After2FirstLevel(t *testing.T) {
+	key1 := common.HexToHash("0x1234561000000000000000000000000000000000000000000000000000000000")
+	// key1 bytes: [1 * 16 + 2, 3 * 16 + 4, 5 * 16 + 6, 1 * 16, 0, ..., 0]
+
+	key2 := common.HexToHash("0x1234563000000000000000000000000000000000000000000000000000000000")
+	// key2 bytes: [1 * 16 + 2, 3 * 16 + 4, 5 * 16 + 6, 3 * 16, 0, ..., 0]
+
+	key3 := common.HexToHash("0x1235400000000000000000000000000000000000000000000000000000000000")
+	// key3 bytes: [1 * 16 + 2, 3 * 16 + 5, 4 * 16 + 0, 0, ..., 0]
+
+	ExtNodeInserted(key1, key2, key3, "ExtNodeInsertedBefore6After2FirstLevel")
+}
+
+func TestExtNodeInsertedBefore6After4FirstLevel(t *testing.T) {
+	key1 := common.HexToHash("0x1234561000000000000000000000000000000000000000000000000000000000")
+	// key1 bytes: [1 * 16 + 2, 3 * 16 + 4, 5 * 16 + 6, 1 * 16, 0, ..., 0]
+
+	key2 := common.HexToHash("0x1234563000000000000000000000000000000000000000000000000000000000")
+	// key2 bytes: [1 * 16 + 2, 3 * 16 + 4, 5 * 16 + 6, 3 * 16, 0, ..., 0]
+
+	key3 := common.HexToHash("0x1635400000000000000000000000000000000000000000000000000000000000")
+
+	ExtNodeInserted(key1, key2, key3, "ExtNodeInsertedBefore6After4FirstLevel")
+}
+
+func TestExtNodeInsertedBefore5After3FirstLevel(t *testing.T) {
+	key1 := common.HexToHash("0x2345610000000000000000000000000000000000000000000000000000000000")
+	key2 := common.HexToHash("0x2345630000000000000000000000000000000000000000000000000000000000")
+	key3 := common.HexToHash("0x2635400000000000000000000000000000000000000000000000000000000000")
+
+	ExtNodeInserted(key1, key2, key3, "ExtNodeInsertedBefore5After3FirstLevel")
+}
+
+func TestExtNodeInsertedBefore5After2FirstLevel(t *testing.T) {
+	key1 := common.HexToHash("0x2345610000000000000000000000000000000000000000000000000000000000")
+	key2 := common.HexToHash("0x2345630000000000000000000000000000000000000000000000000000000000")
+	key3 := common.HexToHash("0x2335400000000000000000000000000000000000000000000000000000000000")
+
+	ExtNodeInserted(key1, key2, key3, "ExtNodeInsertedBefore5After2FirstLevel")
+}
+
+func TestExtNodeInsertedBefore5After1FirstLevel(t *testing.T) {
+	key1 := common.HexToHash("0x2345610000000000000000000000000000000000000000000000000000000000")
+	key2 := common.HexToHash("0x2345630000000000000000000000000000000000000000000000000000000000")
+	key3 := common.HexToHash("0x2343540000000000000000000000000000000000000000000000000000000000")
+
+	ExtNodeInserted(key1, key2, key3, "ExtNodeInsertedBefore5After1FirstLevel")
+}
+
+func TestExtNodeInsertedBefore4After1(t *testing.T) {
+	oracle.NodeUrl = oracle.LocalUrl
+
+	blockNum := 0
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0x50efbf12580138bc623c95757286df4e24eb81c9")
+
+	statedb.DisableLoadingRemoteAccounts()
+
+	statedb.CreateAccount(addr)
+
+	oracle.PreventHashingInSecureTrie = true // to store the unchanged key
+
+	val0 := common.BigToHash(big.NewInt(int64(1)))
+	key0 := common.HexToHash("0x1000000000000000000000000000000000000000000000000000000000000000")
+	statedb.SetState(addr, key0, val0)
+
+	key00 := common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000")
+	statedb.SetState(addr, key00, val0)
+
+	key1 := common.HexToHash("0x1234561000000000000000000000000000000000000000000000000000000000")
+	// key1 bytes: [1 * 16 + 2, 3 * 16 + 4, 5 * 16 + 6, 1 * 16, 0, ..., 0]
+
+	// make the value long to have a hashed branch
+	v1 := common.FromHex("0xbbefaa12580138bc263c95757826df4e24eb81c9aaaaaaaaaaaaaaaaaaaaaaaa")
+	val1 := common.BytesToHash(v1)
+	// val1 := common.BigToHash(big.NewInt(int64(1)))
+	statedb.SetState(addr, key1, val1)
+
+	key2 := common.HexToHash("0x1234563000000000000000000000000000000000000000000000000000000000")
+	// key2 bytes: [1 * 16 + 2, 3 * 16 + 4, 5 * 16 + 6, 3 * 16, 0, ..., 0]
+
+	// We now have an extension node with nibbles: [3, 4, 5, 6].
+
+	statedb.SetState(addr, key2, val1)
+	statedb.IntermediateRoot(false)
+
+	key3 := common.HexToHash("0x1234400000000000000000000000000000000000000000000000000000000000")
+	// After adding key3 we will have an extension node with nibbles [3, 4]
+	// and another one with nibbles [5, 6].
+
+	v1 = common.FromHex("0xbb")
+	val := common.BytesToHash(v1)
+	trieMod := TrieModification{
+    	Type: StorageChanged,
+		Key: key3,
+		Value: val,
+		Address: addr,
+	}
+	trieModifications := []TrieModification{trieMod}
+
+	prepareWitness("ExtNodeInsertedBefore4After1", trieModifications, statedb)
+
+	oracle.PreventHashingInSecureTrie = false
+}
+
+func TestExtNodeDeletedBefore4After1(t *testing.T) {
+	oracle.NodeUrl = oracle.LocalUrl
+
+	blockNum := 0
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0x50efbf12580138bc623c95757286df4e24eb81c9")
+
+	statedb.DisableLoadingRemoteAccounts()
+
+	statedb.CreateAccount(addr)
+
+	oracle.PreventHashingInSecureTrie = true // to store the unchanged key
+
+	val0 := common.BigToHash(big.NewInt(int64(1)))
+	key0 := common.HexToHash("0x1000000000000000000000000000000000000000000000000000000000000000")
+	statedb.SetState(addr, key0, val0)
+
+	key00 := common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000")
+	statedb.SetState(addr, key00, val0)
+
+	key1 := common.HexToHash("0x1234561000000000000000000000000000000000000000000000000000000000")
+
+	// make the value long to have a hashed branch
+	v1 := common.FromHex("0xbbefaa12580138bc263c95757826df4e24eb81c9aaaaaaaaaaaaaaaaaaaaaaaa")
+	val1 := common.BytesToHash(v1)
+	statedb.SetState(addr, key1, val1)
+
+	key2 := common.HexToHash("0x1234563000000000000000000000000000000000000000000000000000000000")
+	statedb.SetState(addr, key2, val1)
+
+	key3 := common.HexToHash("0x1234400000000000000000000000000000000000000000000000000000000000")
+	statedb.SetState(addr, key3, val1)
+	statedb.IntermediateRoot(false)
+
+	val := common.Hash{} // empty value deletes the key
+	trieMod := TrieModification{
+    	Type: StorageChanged,
+		Key: key3,
+		Value: val,
+		Address: addr,
+	}
+	trieModifications := []TrieModification{trieMod}
+
+	prepareWitness("ExtNodeDeletedBefore4After1", trieModifications, statedb)
+
+	oracle.PreventHashingInSecureTrie = false
+}
+
+func TestExtNodeInNewBranchFirstLevel(t *testing.T) {
+	key1 := common.HexToHash("0x2345610000000000000000000000000000000000000000000000000000000000")
+	key2 := common.HexToHash("0x2345630000000000000000000000000000000000000000000000000000000000")
+	key3 := common.HexToHash("0x6354000000000000000000000000000000000000000000000000000000000000")
+
+	ExtNodeInserted(key1, key2, key3, "ExtNodeInsertedInNewBranchFirstLevel")
+}
+
+func TestExtNodeDeletedBranchDeletedFirstLevel(t *testing.T) {
+	key1 := common.HexToHash("0x2345610000000000000000000000000000000000000000000000000000000000")
+	key2 := common.HexToHash("0x2345630000000000000000000000000000000000000000000000000000000000")
+	key3 := common.HexToHash("0x6354000000000000000000000000000000000000000000000000000000000000")
+
+	ExtNodeDeleted(key1, key2, key3, "ExtNodeDeletedBranchDeletedFirstLevel")
+}
+
+func TestExtNodeInsertedExtShortIsBranchFirstLevel(t *testing.T) {
+	key1 := common.HexToHash("0x2345610000000000000000000000000000000000000000000000000000000000")
+	key2 := common.HexToHash("0x2345630000000000000000000000000000000000000000000000000000000000")
+	key3 := common.HexToHash("0x2345100000000000000000000000000000000000000000000000000000000000")
+
+	ExtNodeInserted(key1, key2, key3, "ExtNodeInsertedExtShortIsBranchFirstLevel")
+}
+
+func TestExtNodeDeletedExtShortIsBranchFirstLevel(t *testing.T) {
+	key1 := common.HexToHash("0x2345610000000000000000000000000000000000000000000000000000000000")
+	key2 := common.HexToHash("0x2345630000000000000000000000000000000000000000000000000000000000")
+	key3 := common.HexToHash("0x2345100000000000000000000000000000000000000000000000000000000000")
+
+	ExtNodeDeleted(key1, key2, key3, "ExtNodeDeletedExtShortIsBranchFirstLevel")
+}
