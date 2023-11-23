@@ -558,6 +558,7 @@ func ExtNodeDeleted(key1, key2, key3 common.Hash, testName string) {
 }
 
 func TestExtNodeInsertedBefore6After1FirstLevel(t *testing.T) {
+	SkipIfNoGeth(t)
 	key1 := common.HexToHash("0x1234561000000000000000000000000000000000000000000000000000000000")
 	// key1 bytes: [1 * 16 + 2, 3 * 16 + 4, 5 * 16 + 6, 1 * 16, 0, ..., 0]
 
@@ -572,6 +573,7 @@ func TestExtNodeInsertedBefore6After1FirstLevel(t *testing.T) {
 }
 
 func TestExtNodeDeletedBefore6After1FirstLevel(t *testing.T) {
+	SkipIfNoGeth(t)
 	key1 := common.HexToHash("0x1234561000000000000000000000000000000000000000000000000000000000")
 	// key1 bytes: [1 * 16 + 2, 3 * 16 + 4, 5 * 16 + 6, 1 * 16, 0, ..., 0]
 
@@ -585,6 +587,7 @@ func TestExtNodeDeletedBefore6After1FirstLevel(t *testing.T) {
 }
 
 func TestExtNodeInsertedBefore6After2FirstLevel(t *testing.T) {
+	SkipIfNoGeth(t)
 	key1 := common.HexToHash("0x1234561000000000000000000000000000000000000000000000000000000000")
 	// key1 bytes: [1 * 16 + 2, 3 * 16 + 4, 5 * 16 + 6, 1 * 16, 0, ..., 0]
 
@@ -598,6 +601,7 @@ func TestExtNodeInsertedBefore6After2FirstLevel(t *testing.T) {
 }
 
 func TestExtNodeInsertedBefore6After4FirstLevel(t *testing.T) {
+	SkipIfNoGeth(t)
 	key1 := common.HexToHash("0x1234561000000000000000000000000000000000000000000000000000000000")
 	// key1 bytes: [1 * 16 + 2, 3 * 16 + 4, 5 * 16 + 6, 1 * 16, 0, ..., 0]
 
@@ -610,6 +614,7 @@ func TestExtNodeInsertedBefore6After4FirstLevel(t *testing.T) {
 }
 
 func TestExtNodeInsertedBefore5After3FirstLevel(t *testing.T) {
+	SkipIfNoGeth(t)
 	key1 := common.HexToHash("0x2345610000000000000000000000000000000000000000000000000000000000")
 	key2 := common.HexToHash("0x2345630000000000000000000000000000000000000000000000000000000000")
 	key3 := common.HexToHash("0x2635400000000000000000000000000000000000000000000000000000000000")
@@ -618,6 +623,7 @@ func TestExtNodeInsertedBefore5After3FirstLevel(t *testing.T) {
 }
 
 func TestExtNodeInsertedBefore5After2FirstLevel(t *testing.T) {
+	SkipIfNoGeth(t)
 	key1 := common.HexToHash("0x2345610000000000000000000000000000000000000000000000000000000000")
 	key2 := common.HexToHash("0x2345630000000000000000000000000000000000000000000000000000000000")
 	key3 := common.HexToHash("0x2335400000000000000000000000000000000000000000000000000000000000")
@@ -626,6 +632,7 @@ func TestExtNodeInsertedBefore5After2FirstLevel(t *testing.T) {
 }
 
 func TestExtNodeInsertedBefore5After1FirstLevel(t *testing.T) {
+	SkipIfNoGeth(t)
 	key1 := common.HexToHash("0x2345610000000000000000000000000000000000000000000000000000000000")
 	key2 := common.HexToHash("0x2345630000000000000000000000000000000000000000000000000000000000")
 	key3 := common.HexToHash("0x2343540000000000000000000000000000000000000000000000000000000000")
@@ -634,6 +641,7 @@ func TestExtNodeInsertedBefore5After1FirstLevel(t *testing.T) {
 }
 
 func TestExtNodeInsertedBefore4After1(t *testing.T) {
+	SkipIfNoGeth(t)
 	oracle.NodeUrl = oracle.LocalUrl
 
 	blockNum := 0
@@ -693,6 +701,7 @@ func TestExtNodeInsertedBefore4After1(t *testing.T) {
 }
 
 func TestExtNodeDeletedBefore4After1(t *testing.T) {
+	SkipIfNoGeth(t)
 	oracle.NodeUrl = oracle.LocalUrl
 
 	blockNum := 0
@@ -744,6 +753,7 @@ func TestExtNodeDeletedBefore4After1(t *testing.T) {
 }
 
 func TestExtNodeInNewBranchFirstLevel(t *testing.T) {
+	SkipIfNoGeth(t)
 	key1 := common.HexToHash("0x2345610000000000000000000000000000000000000000000000000000000000")
 	key2 := common.HexToHash("0x2345630000000000000000000000000000000000000000000000000000000000")
 	key3 := common.HexToHash("0x6354000000000000000000000000000000000000000000000000000000000000")
@@ -752,6 +762,7 @@ func TestExtNodeInNewBranchFirstLevel(t *testing.T) {
 }
 
 func TestExtNodeDeletedBranchDeletedFirstLevel(t *testing.T) {
+	SkipIfNoGeth(t)
 	key1 := common.HexToHash("0x2345610000000000000000000000000000000000000000000000000000000000")
 	key2 := common.HexToHash("0x2345630000000000000000000000000000000000000000000000000000000000")
 	key3 := common.HexToHash("0x6354000000000000000000000000000000000000000000000000000000000000")
@@ -760,6 +771,7 @@ func TestExtNodeDeletedBranchDeletedFirstLevel(t *testing.T) {
 }
 
 func TestExtNodeInsertedExtShortIsBranchFirstLevel(t *testing.T) {
+	SkipIfNoGeth(t)
 	key1 := common.HexToHash("0x2345610000000000000000000000000000000000000000000000000000000000")
 	key2 := common.HexToHash("0x2345630000000000000000000000000000000000000000000000000000000000")
 	key3 := common.HexToHash("0x2345100000000000000000000000000000000000000000000000000000000000")
@@ -768,6 +780,7 @@ func TestExtNodeInsertedExtShortIsBranchFirstLevel(t *testing.T) {
 }
 
 func TestExtNodeDeletedExtShortIsBranchFirstLevel(t *testing.T) {
+	SkipIfNoGeth(t)
 	key1 := common.HexToHash("0x2345610000000000000000000000000000000000000000000000000000000000")
 	key2 := common.HexToHash("0x2345630000000000000000000000000000000000000000000000000000000000")
 	key3 := common.HexToHash("0x2345100000000000000000000000000000000000000000000000000000000000")
