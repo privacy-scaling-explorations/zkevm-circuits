@@ -34,7 +34,7 @@ mod tests {
         const BENCHMARK_ID: &str = "MPT Circuit";
 
         let degree: u32 = var("DEGREE")
-            .expect("No DEGREE env var was provided")
+            .unwrap_or_else(|_| "15".to_string())
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
