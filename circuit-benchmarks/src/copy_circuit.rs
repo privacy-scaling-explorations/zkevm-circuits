@@ -51,9 +51,10 @@ mod tests {
         ]);
 
         // Create the circuit
-        let block = generate_full_events_block(degree);
+        let mut block = generate_full_events_block(degree);
+        block.circuits_params.max_rws = 10_000;
+        block.circuits_params.max_copy_rows = 10_000;
         let circuit = TestCopyCircuit::<Fr>::new_from_block(&block);
-
         // Bench setup generation
         let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
         let start1 = start_timer!(|| setup_message);
