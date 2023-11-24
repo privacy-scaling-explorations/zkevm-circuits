@@ -302,7 +302,6 @@ func TestExtensionTwoNibblesInEvenLevel(t *testing.T) {
 
 		for j := 0; j < len(proof1)-1; j++ {
 			if proof1[j][0] == 228 && proof1[j][1] == 130 && j%2 == 0 {
-				fmt.Println(proof1[j])
 				found = true
 			}
 		}
@@ -350,7 +349,6 @@ func TestExtensionThreeNibblesInEvenLevel(t *testing.T) {
 
 		for j := 0; j < len(proof1)-1; j++ {
 			if proof1[j][0] == 228 && proof1[j][1] == 130 && j%2 == 1 {
-				fmt.Println(proof1[j])
 				found = true
 			}
 		}
@@ -398,7 +396,6 @@ func TestExtensionThreeNibblesInOddLevel(t *testing.T) {
 
 		for j := 0; j < len(proof1)-1; j++ {
 			if proof1[j][0] == 228 && proof1[j][1] == 130 && proof1[j][2] != 0 && j%2 == 0 {
-				fmt.Println(proof1[j])
 				found = true
 			}
 		}
