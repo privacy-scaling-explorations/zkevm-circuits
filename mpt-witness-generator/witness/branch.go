@@ -65,7 +65,7 @@ func prepareBranchWitness(rows [][]byte, branch []byte, branchStart int, branchR
 }
 
 func prepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes []byte, extValues [][]byte, key, driftedInd,
-	branchC16, branchC1 byte, isBranchSPlaceholder, isBranchCPlaceholder, isExtension, isSModExtension, isCModExtension bool) Node {
+	branchC16, branchC1 byte, isBranchSPlaceholder, isBranchCPlaceholder, isExtension bool) Node {
 	extensionNode := ExtensionNode{
 		ListRlpBytes: extListRlpBytes,
 	}
@@ -113,7 +113,6 @@ func prepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes []b
 
 	extensionBranch := ExtensionBranchNode{
 		IsExtension:    isExtension,
-		IsModExtension: [2]bool{isSModExtension, isCModExtension},
 		IsPlaceholder:  [2]bool{isBranchSPlaceholder, isBranchCPlaceholder},
 		Extension:      extensionNode,
 		Branch:         branchNode,
@@ -282,15 +281,6 @@ func addBranchAndPlaceholder(proof1, proof2,
 
 	// Note that isModifiedExtNode happens also when we have a branch instead of shortExtNode
 	isModifiedExtNode := !isBranch(longExtNode) && !isShorterProofLastLeaf
-	isSModifiedExtNode := false
-	isCModifiedExtNode := false
-	if isModifiedExtNode {
-		if len1 < len2 {
-			isSModifiedExtNode = true
-		} else {
-			isCModifiedExtNode = true
-		}
-	}
 
 	if len1 > len2 {
 		// We now get the first nibble of the leaf that was turned into branch.
@@ -300,7 +290,7 @@ func addBranchAndPlaceholder(proof1, proof2,
 
 		node = prepareBranchNode(proof1[len1-2], proof1[len1-2], extNode, extNode, extListRlpBytes, extValues,
 			key[keyIndex+numberOfNibbles], driftedInd,
-			branchC16, branchC1, false, true, isExtension, isSModifiedExtNode, isCModifiedExtNode)
+			branchC16, branchC1, false, true, isExtension)
 
 		// We now get the first nibble of the leaf that was turned into branch.
 		// This first nibble presents the position of the leaf once it moved
@@ -313,7 +303,7 @@ func addBranchAndPlaceholder(proof1, proof2,
 
 		node = prepareBranchNode(proof2[len2-2], proof2[len2-2], extNode, extNode, extListRlpBytes, extValues,
 			key[keyIndex+numberOfNibbles], driftedInd,
-			branchC16, branchC1, true, false, isExtension, isSModifiedExtNode, isCModifiedExtNode)
+			branchC16, branchC1, true, false, isExtension)
 	}
 
 	return isModifiedExtNode, isExtension, numberOfNibbles, branchC16, node

@@ -442,7 +442,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			}
 
 			bNode := prepareBranchNode(proof1[i], proof2[i], extNode1, extNode2, extListRlpBytes, extValues,
-				key[keyIndex], key[keyIndex], branchC16, branchC1, false, false, isExtension, false, false)
+				key[keyIndex], key[keyIndex], branchC16, branchC1, false, false, isExtension)
 			nodes = append(nodes, bNode)
 
 			keyIndex += 1

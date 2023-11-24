@@ -3,7 +3,7 @@ package witness
 import (
 	"fmt"
 	"math/big"
-	"os"
+	"os/exec"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -12,9 +12,8 @@ import (
 )
 
 func SkipIfNoGeth(t *testing.T) {
-	// TODO, fix this
-	os.Setenv("NO_GETH", "1")
-	if os.Getenv("NO_GETH") != "" {
+	_, err := exec.LookPath("geth")
+	if err != nil {
 		t.Skip("Skipping test that requires geth")
 	}
 }
