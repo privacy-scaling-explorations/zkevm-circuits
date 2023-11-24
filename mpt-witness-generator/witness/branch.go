@@ -112,10 +112,10 @@ func prepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes []b
 	}
 
 	extensionBranch := ExtensionBranchNode{
-		IsExtension:    isExtension,
-		IsPlaceholder:  [2]bool{isBranchSPlaceholder, isBranchCPlaceholder},
-		Extension:      extensionNode,
-		Branch:         branchNode,
+		IsExtension:   isExtension,
+		IsPlaceholder: [2]bool{isBranchSPlaceholder, isBranchCPlaceholder},
+		Extension:     extensionNode,
+		Branch:        branchNode,
 	}
 
 	values := make([][]byte, 17)

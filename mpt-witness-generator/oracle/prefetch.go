@@ -107,19 +107,19 @@ func cacheWrite(key string, value []byte) {
 func getAPI(jsonData []byte) io.Reader {
 	key := hexutil.Encode(crypto.Keccak256(jsonData))
 	var (
-        err      error
-        resp *http.Response
-        retries  int = 3
-    )
-    for retries > 0 {
+		err     error
+		resp    *http.Response
+		retries int = 3
+	)
+	for retries > 0 {
 		resp, err = http.Post(NodeUrl, "application/json", bytes.NewBuffer(jsonData))
-        if err != nil {
-            retries -= 1
+		if err != nil {
+			retries -= 1
 			time.Sleep(1000)
-        } else {
-            break
-        }
-    }
+		} else {
+			break
+		}
+	}
 	defer resp.Body.Close()
 	ret, _ := io.ReadAll(resp.Body)
 	cacheWrite(key, ret)
