@@ -3,6 +3,7 @@
 //! used to generate witnesses for circuits.
 
 mod block;
+mod chunk;
 pub use block::{block_convert, Block, BlockContext};
 mod mpt;
 pub use mpt::{MptUpdate, MptUpdateRow, MptUpdates};

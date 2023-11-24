@@ -11,7 +11,7 @@ mod input_state_ref;
 mod tracer_tests;
 mod transaction;
 
-use self::access::gen_state_access_trace;
+use self::{access::gen_state_access_trace, chunk::{Chunk, ChunkSteps}};
 use crate::{
     error::Error,
     evm::opcodes::{gen_associated_ops, gen_associated_steps},
@@ -83,10 +83,21 @@ pub struct FixedCParams {
 pub struct DynamicCParams {}
 
 /// Circuit Setup Parameters. These can be fixed/concrete or unset/dynamic.
-pub trait CircuitsParams: Debug + Copy {}
+pub trait CircuitsParams: Debug + Copy {
+    /// Return the best number of chunks given circuit params
+    fn best_chuncks(&self) -> usize;
+}
 
-impl CircuitsParams for FixedCParams {}
-impl CircuitsParams for DynamicCParams {}
+impl CircuitsParams for FixedCParams {
+    fn best_chuncks(&self) -> usize {
+        2 // TODO(Cecilia)
+    }
+}
+impl CircuitsParams for DynamicCParams {
+    fn best_chuncks(&self) -> usize {
+        3 // TODO(Cecilia)
+    }
+}
 
 impl Default for FixedCParams {
     /// Default values for most of the unit tests of the Circuit Parameters
@@ -132,6 +143,8 @@ pub struct CircuitInputBuilder<C: CircuitsParams> {
     pub code_db: CodeDB,
     /// Block
     pub block: Block,
+    /// Chunk
+    pub chunks: Vec<Chunk>,
     /// Circuits Setup Paramteres
     pub circuits_params: C,
     /// Block Context
@@ -144,13 +157,30 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     /// Create a new CircuitInputBuilder from the given `eth_block` and
     /// `constants`.
     pub fn new(sdb: StateDB, code_db: CodeDB, block: Block, params: C) -> Self {
+        let total_chunks = params.best_chuncks();
+        let chunks = (0..total_chunks).map(|i| Chunk {
+            chunk_index: i,
+            total_chunks,
+            chunk_steps: ChunkSteps {
+                begin_chunk: ExecStep {
+                    exec_state: ExecState::BeginChunk,
+                    ..ExecStep::default()
+                },
+                end_chunk: Some(ExecStep {
+                    exec_state: ExecState::EndChunk,
+                    ..ExecStep::default()
+                }),
+            },
+            ..Chunk::default()
+        }).collect::<Vec<Chunk>>();
         Self {
             sdb,
             code_db,
             block,
+            chunks,
             circuits_params: params,
             block_ctx: BlockContext::new(),
-            chunk_ctx: Some(ChunkContext::new_one_chunk()),
+            chunk_ctx: Some(ChunkContext::new(0, total_chunks)),
         }
     }
 
@@ -346,6 +376,13 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     pub fn set_chunkctx(&mut self, chunk_ctx: ChunkContext) {
         self.chunk_ctx = Some(chunk_ctx);
     }
+
+    /// 
+    pub fn cur_chunk(&self) -> &Chunk {
+        self.chunk_ctx
+            .as_ref()
+            .map_or_else(|| &self.chunks[0], |chunk_ctx| &self.chunks[chunk_ctx.cur])
+    }
 }
 
 impl CircuitInputBuilder<FixedCParams> {
@@ -363,15 +400,13 @@ impl CircuitInputBuilder<FixedCParams> {
     }
 
     fn set_end_chunk_or_block(&mut self, max_rws: usize) {
-        if self
-            .chunk_ctx
-            .as_ref()
-            .map_or(false, |chunk_ctx| !chunk_ctx.is_last_chunk())
-        {
-            self.set_end_chunk(max_rws);
-            return;
-        }
-
+        self.chunk_ctx.clone().map(|chunk_ctx| {
+            if !chunk_ctx.is_last_chunk() {
+                self.set_end_chunk(max_rws);
+                return;
+            }
+        }).unwrap_or(());
+        
         // set end block
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
@@ -461,7 +496,7 @@ impl CircuitInputBuilder<FixedCParams> {
     }
 
     fn set_end_chunk(&mut self, max_rws: usize) {
-        let mut end_chunk = self.block.block_steps.end_chunk.clone().unwrap();
+        let mut end_chunk = self.cur_chunk().chunk_steps.end_chunk.clone().unwrap();
         end_chunk.rwc = self.block_ctx.rwc;
         end_chunk.rwc_inner_chunk = self
             .chunk_ctx
@@ -524,8 +559,7 @@ impl CircuitInputBuilder<FixedCParams> {
                 );
             }
         }
-
-        self.block.block_steps.end_chunk = Some(end_chunk);
+        self.chunks[self.chunk_ctx.as_ref().unwrap().cur].chunk_steps.end_chunk = Some(end_chunk);
 
         // set final rwc value to chunkctx
         if let Some(chunk_ctx) = self.chunk_ctx.as_mut() {
@@ -553,16 +587,12 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<(), Error> {
-        if self
-            .chunk_ctx
-            .as_ref()
-            .map(|chunk_ctx| !chunk_ctx.is_first_chunk())
-            .unwrap_or(false)
-        {
-            let mut begin_chunk = self.block.block_steps.begin_chunk.clone();
-            self.gen_chunk_associated_steps(&mut begin_chunk, RW::READ);
-            self.block.block_steps.begin_chunk = begin_chunk;
-        }
+        self.chunk_ctx.clone().map(|chunk_ctx| {
+            if !chunk_ctx.is_first_chunk() {
+                let mut begin_chunk = self.cur_chunk().chunk_steps.begin_chunk.clone();
+                self.gen_chunk_associated_steps(&mut begin_chunk, RW::READ);
+            }
+        }).unwrap_or(());
 
         // accumulates gas across all txs in the block
         for (idx, tx) in eth_block.transactions.iter().enumerate() {
@@ -655,6 +685,7 @@ impl CircuitInputBuilder<DynamicCParams> {
             sdb: self.sdb,
             code_db: self.code_db,
             block: self.block,
+            chunks: self.chunks,
             circuits_params: c_params,
             block_ctx: self.block_ctx,
             chunk_ctx: self.chunk_ctx,

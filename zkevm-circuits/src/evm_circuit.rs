@@ -312,14 +312,14 @@ impl<F: Field> EvmCircuitConfig<F> {
                         || "chunk_index",
                         self.chunk_index,
                         offset,
-                        || Value::known(F::from(chunk_context.chunk_index as u64)),
+                        || Value::known(F::from(chunk_context.cur as u64)),
                     )?;
 
                     region.assign_advice(
                         || "chunk_index_next",
                         self.chunk_index_next,
                         offset,
-                        || Value::known(F::from(chunk_context.chunk_index as u64 + 1u64)),
+                        || Value::known(F::from(chunk_context.cur as u64 + 1u64)),
                     )?;
 
                     region.assign_advice(
@@ -332,13 +332,13 @@ impl<F: Field> EvmCircuitConfig<F> {
                     is_first_chunk.assign(
                         &mut region,
                         offset,
-                        Value::known(F::from(chunk_context.chunk_index as u64)),
+                        Value::known(F::from(chunk_context.cur as u64)),
                     )?;
                     is_last_chunk.assign(
                         &mut region,
                         offset,
                         Value::known(F::from(
-                            (chunk_context.total_chunks - chunk_context.chunk_index - 1) as u64,
+                            (chunk_context.total_chunks - chunk_context.cur - 1) as u64,
                         )),
                     )?;
                 }
@@ -540,7 +540,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         let block = self.block.as_ref().unwrap();
 
         let (rw_table_chunked_index, rw_table_total_chunks) = (
-            block.chunk_context.chunk_index,
+            block.chunk_context.cur,
             block.chunk_context.total_chunks,
         );
 

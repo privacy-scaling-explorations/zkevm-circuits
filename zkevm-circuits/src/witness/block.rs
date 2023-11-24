@@ -12,7 +12,6 @@ use bus_mapping::{
     Error,
 };
 use eth_types::{Address, Field, ToScalar, Word};
-use gadgets::permutation::get_permutation_fingerprints;
 use halo2_proofs::circuit::Value;
 
 // TODO: Remove fields that are duplicated in`eth_block`
@@ -29,12 +28,6 @@ pub struct Block<F> {
     pub end_block_not_last: ExecStep,
     /// Last EndBlock step that appears in the last EVM row.
     pub end_block_last: ExecStep,
-    /// BeginChunk step to propagate State
-    pub begin_chunk: ExecStep,
-    /// EndChunk step that appears in the last EVM row for all the chunks other than the last.
-    pub end_chunk: Option<ExecStep>,
-    /// chunk context
-    pub chunk_context: ChunkContext,
     /// Read write events in the RwTable
     pub rws: RwMap,
     /// Bytecode used in the block
@@ -57,22 +50,6 @@ pub struct Block<F> {
     pub keccak_inputs: Vec<Vec<u8>>,
     /// Original Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
-
-    /// permutation challenge alpha
-    pub permu_alpha: F,
-    /// permutation challenge gamma
-    pub permu_gamma: F,
-    /// pre rw_table permutation fingerprint
-    pub permu_rwtable_prev_continuous_fingerprint: F,
-    /// next rw_table permutation fingerprint
-    pub permu_rwtable_next_continuous_fingerprint: F,
-    /// pre chronological rw_table permutation fingerprint
-    pub permu_chronological_rwtable_prev_continuous_fingerprint: F,
-    /// next chronological rw_table permutation fingerprint
-    pub permu_chronological_rwtable_next_continuous_fingerprint: F,
-
-    /// prev_chunk_last_call
-    pub prev_block: Box<Option<Block<F>>>,
 }
 
 impl<F: Field> Block<F> {
@@ -278,25 +255,9 @@ pub fn block_convert<F: Field>(
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
-        eth_block: block.eth_block.clone(),
-
-        // TODO get permutation fingerprint & challenges
-        permu_alpha: F::from(103),
-        permu_gamma: F::from(101),
-        permu_rwtable_prev_continuous_fingerprint: F::from(1),
-        permu_rwtable_next_continuous_fingerprint: F::from(1),
-        permu_chronological_rwtable_prev_continuous_fingerprint: F::from(1),
-        permu_chronological_rwtable_next_continuous_fingerprint: F::from(1),
         end_block_not_last: block.block_steps.end_block_not_last.clone(),
         end_block_last: block.block_steps.end_block_last.clone(),
-        // TODO refactor chunk related field to chunk structure
-        begin_chunk: block.block_steps.begin_chunk.clone(),
-        end_chunk: block.block_steps.end_chunk.clone(),
-        chunk_context: builder
-            .chunk_ctx
-            .clone()
-            .unwrap_or_else(ChunkContext::new_one_chunk),
-        prev_block: Box::new(None),
+        eth_block: block.eth_block.clone(),
     };
     let public_data = public_data_convert(&block);
     let rpi_bytes = public_data.get_pi_bytes(
@@ -306,40 +267,5 @@ pub fn block_convert<F: Field>(
     // PI Circuit
     block.keccak_inputs.extend_from_slice(&[rpi_bytes]);
 
-    // Permutation fingerprints
-    let (rws_rows, _) = RwMap::table_assignments_padding(
-        &block.rws.table_assignments(false),
-        block.circuits_params.max_rws,
-        block.chunk_context.is_first_chunk(),
-    );
-    let (chronological_rws_rows, _) = RwMap::table_assignments_padding(
-        &block.rws.table_assignments(true),
-        block.circuits_params.max_rws,
-        block.chunk_context.is_first_chunk(),
-    );
-    block.permu_rwtable_next_continuous_fingerprint = unwrap_value(
-        get_permutation_fingerprints(
-            &<dyn ToVec<Value<F>>>::to2dvec(&rws_rows),
-            Value::known(block.permu_alpha),
-            Value::known(block.permu_gamma),
-            Value::known(block.permu_rwtable_prev_continuous_fingerprint),
-        )
-        .last()
-        .cloned()
-        .unwrap()
-        .0,
-    );
-    block.permu_chronological_rwtable_next_continuous_fingerprint = unwrap_value(
-        get_permutation_fingerprints(
-            &<dyn ToVec<Value<F>>>::to2dvec(&chronological_rws_rows),
-            Value::known(block.permu_alpha),
-            Value::known(block.permu_gamma),
-            Value::known(block.permu_chronological_rwtable_prev_continuous_fingerprint),
-        )
-        .last()
-        .cloned()
-        .unwrap()
-        .0,
-    );
     Ok(block)
 }

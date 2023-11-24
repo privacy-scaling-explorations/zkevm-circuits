@@ -522,7 +522,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
             block.permu_gamma,
             block.permu_rwtable_prev_continuous_fingerprint,
             block.permu_rwtable_next_continuous_fingerprint,
-            block.chunk_context.chunk_index,
+            block.chunk_context.cur,
         )
     }
 
