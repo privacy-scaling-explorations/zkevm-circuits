@@ -4,21 +4,21 @@ use halo2_proofs::plonk::{Error, VirtualCells};
 
 use super::{
     helpers::{ListKeyGadget, MPTConstraintBuilder, ListKeyWitness, KeyData, ext_key_rlc_calc_value},
-    rlp_gadgets::{RLPItemWitness, get_ext_odd_nibble_value},
+    rlp_gadgets::RLPItemWitness,
     MPTContext,
 };
 use crate::{
     circuit,
     circuit_tools::{
-        cached_region::CachedRegion, cell_manager::Cell, constraint_builder::{RLCChainableRev, RLCChainable},
+        cached_region::CachedRegion, cell_manager::Cell, constraint_builder::RLCChainableRev,
         gadgets::{LtGadget, IsZeroGadget},
     },
     mpt_circuit::{
         helpers::{
-            Indexable, ParentData, KECCAK, parent_memory, FIXED, ext_key_rlc_value, key_memory, ext_key_rlc_expr,
+            Indexable, ParentData, KECCAK, FIXED, ext_key_rlc_expr,
         },
-        RlpItemType, witness_row::StorageRowType, FixedTableTag, param::{HASH_WIDTH, KEY_PREFIX_EVEN, KEY_LEN_IN_NIBBLES},
-    }, matchw,
+        RlpItemType, witness_row::StorageRowType, FixedTableTag, param::HASH_WIDTH,
+    },
 };
 
 #[derive(Clone, Debug, Default)]
@@ -182,10 +182,10 @@ impl<F: Field> ModExtensionGadget<F> {
                     }
                 } elsex {
                     ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
-                        // Hashed branch hash in long extension is in parent branch
+                        // Hashed extension node in long extension is in parent branch
                         require!((1.expr(), rlc.expr(), num_bytes.expr(), parent_data_lo[is_s.idx()].clone(), parent_data_hi[is_s.idx()].clone()) =>> @KECCAK);
                     } elsex {
-                        // Non-hashed branch hash in parent branch
+                        // Non-hashed extension node in parent branch
                         require!(rlc => parent_data_rlc);
                     }} 
                 }} 

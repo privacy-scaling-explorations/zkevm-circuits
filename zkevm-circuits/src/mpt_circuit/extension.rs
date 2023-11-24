@@ -136,10 +136,10 @@ impl<F: Field> ExtensionGadget<F> {
                 };
                 ifx! {not!(is_placeholder[is_s.idx()]) => {
                     ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
-                        // Hashed branch hash in parent branch
+                        // Hashed extension node in parent branch
                         require!((1.expr(), rlc.expr(), num_bytes.expr(), parent_data[is_s.idx()].hash.lo().expr(), parent_data[is_s.idx()].hash.hi().expr()) =>> @KECCAK);
                     } elsex {
-                        // Non-hashed branch hash in parent branch
+                        // Non-hashed extension node in parent branch
                         require!(rlc => parent_data[is_s.idx()].rlc);
                     }}
                 }}
