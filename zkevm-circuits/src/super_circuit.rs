@@ -67,7 +67,7 @@ use crate::{
     },
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
-    witness::{block_convert, Block, MptUpdates},
+    witness::{block_convert, chunk_convert, Block, Chunk, MptUpdates},
 };
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, FixedCParams},
@@ -294,15 +294,15 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
         .unwrap()
     }
 
-    fn new_from_block(block: &Block<F>) -> Self {
-        let evm_circuit = EvmCircuit::new_from_block(block);
-        let state_circuit = StateCircuit::new_from_block(block);
-        let tx_circuit = TxCircuit::new_from_block(block);
-        let pi_circuit = PiCircuit::new_from_block(block);
-        let bytecode_circuit = BytecodeCircuit::new_from_block(block);
+    fn new_from_block(block: &Block<F>, chunk: Option<&Chunk<F>>) -> Self {
+        let evm_circuit = EvmCircuit::new_from_block(block, chunk);
+        let state_circuit = StateCircuit::new_from_block(block, chunk);
+        let tx_circuit = TxCircuit::new_from_block(block, chunk);
+        let pi_circuit = PiCircuit::new_from_block(block, chunk);
+        let bytecode_circuit = BytecodeCircuit::new_from_block(block, chunk);
         let copy_circuit = CopyCircuit::new_from_block_no_external(block);
-        let exp_circuit = ExpCircuit::new_from_block(block);
-        let keccak_circuit = KeccakCircuit::new_from_block(block);
+        let exp_circuit = ExpCircuit::new_from_block(block, chunk);
+        let keccak_circuit = KeccakCircuit::new_from_block(block, chunk);
 
         SuperCircuit::<_> {
             evm_circuit,
@@ -480,13 +480,14 @@ impl<F: Field> SuperCircuit<F> {
         mock_randomness: F,
     ) -> Result<(u32, Self, Vec<Vec<F>>), bus_mapping::Error> {
         let mut block = block_convert(builder).unwrap();
+        let chunk = chunk_convert(builder).unwrap();
         block.randomness = mock_randomness;
 
         let (_, rows_needed) = Self::min_num_rows_block(&block);
         let k = log2_ceil(Self::unusable_rows() + rows_needed);
         log::debug!("super circuit uses k = {}", k);
 
-        let circuit = SuperCircuit::new_from_block(&block);
+        let circuit = SuperCircuit::new_from_block(&block, Some(&chunk));
 
         let instance = circuit.instance();
         Ok((k, circuit, instance))

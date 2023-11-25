@@ -12,7 +12,7 @@ use crate::{
     evm_circuit::util::constraint_builder::BaseConstraintBuilder,
     table::{ExpTable, LookupTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
-    witness,
+    witness::{self, Chunk},
 };
 use bus_mapping::circuit_input_builder::{ExpEvent, ExpStep};
 use eth_types::{Field, ToScalar, U256};
@@ -521,7 +521,7 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
         11
     }
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
+    fn new_from_block(block: &witness::Block<F>, _chunk: Option<&Chunk<F>>) -> Self {
         // Hardcoded to pass unit tests for now. In the future, insert:
         // "block.circuits_params.max_exp_rows"
         Self::new(

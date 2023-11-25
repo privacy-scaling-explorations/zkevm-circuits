@@ -25,7 +25,7 @@ use crate::{
         word::{Word, Word32, Word32Cell, WordCell, WordExpr},
         Expr,
     },
-    witness::{Block, Call, ExecStep},
+    witness::{Block, Call, Chunk, ExecStep},
 };
 use bus_mapping::state_db::CodeDB;
 use eth_types::{evm_types::GasCost, Field, ToAddress, ToLittleEndian, ToScalar, ToWord, U256};
@@ -1310,6 +1310,7 @@ impl<F: Field> RwTablePaddingGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        chunk: &Chunk<F>,
         inner_rws_before_padding: u64,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -1322,14 +1323,11 @@ impl<F: Field> RwTablePaddingGadget<F> {
         self.chunk_index.assign(
             region,
             offset,
-            Value::known(F::from(block.chunk_context.cur as u64)),
+            Value::known(F::from(chunk.chunk_context.cur as u64)),
         )?;
 
-        self.is_first_chunk.assign(
-            region,
-            offset,
-            F::from(block.chunk_context.cur as u64),
-        )?;
+        self.is_first_chunk
+            .assign(region, offset, F::from(chunk.chunk_context.cur as u64))?;
 
         self.is_end_padding_exist.assign(
             region,

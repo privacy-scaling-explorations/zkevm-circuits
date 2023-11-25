@@ -18,7 +18,7 @@ use crate::{
             },
             evaluate_expression, rlc,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::{chunkctx_table::ChunkCtxFieldTag, LookupTable},
     util::{
@@ -214,6 +214,7 @@ pub(crate) trait ExecutionGadget<F: Field> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        chunk: &Chunk<F>,
         transaction: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -1030,6 +1031,7 @@ impl<F: Field> ExecutionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
+        chunk: &Chunk<F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<usize, Error> {
         // Track number of calls to `layouter.assign_region` as layouter assignment passes.
@@ -1050,7 +1052,7 @@ impl<F: Field> ExecutionConfig<F> {
                     .last()
                     .map(|tx| tx.calls()[0].clone())
                     .unwrap_or_else(Call::default);
-                let prev_chunk_last_call = block
+                let prev_chunk_last_call = chunk
                     .prev_block
                     .clone()
                     .unwrap_or_default()
@@ -1059,14 +1061,14 @@ impl<F: Field> ExecutionConfig<F> {
                     .map(|tx| tx.calls()[0].clone())
                     .unwrap_or_else(Call::default);
 
-                let is_first_chunk = block.chunk_context.is_first_chunk();
+                let is_first_chunk = chunk.chunk_context.is_first_chunk();
                 let is_last_chunk =
-                    block.chunk_context.cur == block.chunk_context.total_chunks - 1;
+                    chunk.chunk_context.cur == chunk.chunk_context.total_chunks - 1;
 
                 let end_block_not_last = &block.end_block_not_last;
                 let end_block_last = &block.end_block_last;
-                let begin_chunk = &block.begin_chunk;
-                let end_chunk = &block.end_chunk;
+                let begin_chunk = &chunk.begin_chunk;
+                let end_chunk = &chunk.end_chunk;
                 // Collect all steps
                 let mut steps =
                     // attach `BeginChunk` step in first step non first chunk
@@ -1097,6 +1099,7 @@ impl<F: Field> ExecutionConfig<F> {
                         &mut region,
                         offset,
                         block,
+                        chunk,
                         transaction,
                         call,
                         step,
@@ -1135,6 +1138,7 @@ impl<F: Field> ExecutionConfig<F> {
                         offset,
                         last_row,
                         block,
+                        chunk,
                         &dummy_tx,
                         &last_call,
                         end_block_not_last,
@@ -1158,6 +1162,7 @@ impl<F: Field> ExecutionConfig<F> {
                         &mut region,
                         offset,
                         block,
+                        chunk,
                         &dummy_tx,
                         &last_call,
                         end_block_last,
@@ -1176,6 +1181,7 @@ impl<F: Field> ExecutionConfig<F> {
                         &mut region,
                         offset,
                         block,
+                        chunk,
                         &dummy_tx,
                         &last_call,
                         &end_chunk.clone().unwrap(),
@@ -1255,6 +1261,7 @@ impl<F: Field> ExecutionConfig<F> {
         offset_begin: usize,
         offset_end: usize,
         block: &Block<F>,
+        chunk: &Chunk<F>,
         transaction: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -1281,6 +1288,7 @@ impl<F: Field> ExecutionConfig<F> {
             region,
             offset_begin,
             block,
+            chunk,
             transaction,
             call,
             step,
@@ -1303,6 +1311,7 @@ impl<F: Field> ExecutionConfig<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
+        chunk: &Chunk<F>,
         transaction: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -1340,6 +1349,7 @@ impl<F: Field> ExecutionConfig<F> {
                 region,
                 offset + height,
                 block,
+                chunk,
                 transaction_next,
                 call_next,
                 step_next,
@@ -1352,6 +1362,7 @@ impl<F: Field> ExecutionConfig<F> {
             region,
             offset,
             block,
+            chunk,
             transaction,
             call,
             step,
@@ -1366,6 +1377,7 @@ impl<F: Field> ExecutionConfig<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        chunk: &Chunk<F>,
         transaction: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -1381,7 +1393,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         macro_rules! assign_exec_step {
             ($gadget:expr) => {
-                $gadget.assign_exec_step(region, offset, block, transaction, call, step)?
+                $gadget.assign_exec_step(region, offset, block, chunk, transaction, call, step)?
             };
         }
 

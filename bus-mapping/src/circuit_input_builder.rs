@@ -11,7 +11,10 @@ mod input_state_ref;
 mod tracer_tests;
 mod transaction;
 
-use self::{access::gen_state_access_trace, chunk::{Chunk, ChunkSteps}};
+use self::{
+    access::gen_state_access_trace,
+    chunk::{Chunk, ChunkSteps},
+};
 use crate::{
     error::Error,
     evm::opcodes::{gen_associated_ops, gen_associated_steps},
@@ -158,21 +161,23 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     /// `constants`.
     pub fn new(sdb: StateDB, code_db: CodeDB, block: Block, params: C) -> Self {
         let total_chunks = params.best_chuncks();
-        let chunks = (0..total_chunks).map(|i| Chunk {
-            chunk_index: i,
-            total_chunks,
-            chunk_steps: ChunkSteps {
-                begin_chunk: ExecStep {
-                    exec_state: ExecState::BeginChunk,
-                    ..ExecStep::default()
+        let chunks = (0..total_chunks)
+            .map(|i| Chunk {
+                chunk_index: i,
+                total_chunks,
+                chunk_steps: ChunkSteps {
+                    begin_chunk: ExecStep {
+                        exec_state: ExecState::BeginChunk,
+                        ..ExecStep::default()
+                    },
+                    end_chunk: Some(ExecStep {
+                        exec_state: ExecState::EndChunk,
+                        ..ExecStep::default()
+                    }),
                 },
-                end_chunk: Some(ExecStep {
-                    exec_state: ExecState::EndChunk,
-                    ..ExecStep::default()
-                }),
-            },
-            ..Chunk::default()
-        }).collect::<Vec<Chunk>>();
+                ..Chunk::default()
+            })
+            .collect::<Vec<Chunk>>();
         Self {
             sdb,
             code_db,
@@ -373,11 +378,28 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     }
 
     /// set chunk context
-    pub fn set_chunkctx(&mut self, chunk_ctx: ChunkContext) {
+    pub fn set_chunk_ctx(&mut self, chunk_ctx: ChunkContext) {
+        self.chunks = (0..chunk_ctx.total_chunks)
+            .map(|i| Chunk {
+                chunk_index: i,
+                total_chunks: chunk_ctx.total_chunks,
+                chunk_steps: ChunkSteps {
+                    begin_chunk: ExecStep {
+                        exec_state: ExecState::BeginChunk,
+                        ..ExecStep::default()
+                    },
+                    end_chunk: Some(ExecStep {
+                        exec_state: ExecState::EndChunk,
+                        ..ExecStep::default()
+                    }),
+                },
+                ..Chunk::default()
+            })
+            .collect::<Vec<Chunk>>();
         self.chunk_ctx = Some(chunk_ctx);
     }
 
-    /// 
+    ///
     pub fn cur_chunk(&self) -> &Chunk {
         self.chunk_ctx
             .as_ref()
@@ -400,13 +422,16 @@ impl CircuitInputBuilder<FixedCParams> {
     }
 
     fn set_end_chunk_or_block(&mut self, max_rws: usize) {
-        self.chunk_ctx.clone().map(|chunk_ctx| {
-            if !chunk_ctx.is_last_chunk() {
-                self.set_end_chunk(max_rws);
-                return;
-            }
-        }).unwrap_or(());
-        
+        self.chunk_ctx
+            .clone()
+            .map(|chunk_ctx| {
+                if !chunk_ctx.is_last_chunk() {
+                    self.set_end_chunk(max_rws);
+                    return;
+                }
+            })
+            .unwrap_or(());
+
         // set end block
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
@@ -559,7 +584,9 @@ impl CircuitInputBuilder<FixedCParams> {
                 );
             }
         }
-        self.chunks[self.chunk_ctx.as_ref().unwrap().cur].chunk_steps.end_chunk = Some(end_chunk);
+        self.chunks[self.chunk_ctx.as_ref().unwrap().cur]
+            .chunk_steps
+            .end_chunk = Some(end_chunk);
 
         // set final rwc value to chunkctx
         if let Some(chunk_ctx) = self.chunk_ctx.as_mut() {
@@ -587,12 +614,15 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<(), Error> {
-        self.chunk_ctx.clone().map(|chunk_ctx| {
-            if !chunk_ctx.is_first_chunk() {
-                let mut begin_chunk = self.cur_chunk().chunk_steps.begin_chunk.clone();
-                self.gen_chunk_associated_steps(&mut begin_chunk, RW::READ);
-            }
-        }).unwrap_or(());
+        self.chunk_ctx
+            .clone()
+            .map(|chunk_ctx| {
+                if !chunk_ctx.is_first_chunk() {
+                    let mut begin_chunk = self.cur_chunk().chunk_steps.begin_chunk.clone();
+                    self.gen_chunk_associated_steps(&mut begin_chunk, RW::READ);
+                }
+            })
+            .unwrap_or(());
 
         // accumulates gas across all txs in the block
         for (idx, tx) in eth_block.transactions.iter().enumerate() {

@@ -10,7 +10,10 @@ use halo2_proofs::{
     },
 };
 
-use crate::{table::TxLogFieldTag, witness};
+use crate::{
+    table::{TxLogFieldTag},
+    witness::{self, Chunk},
+};
 use eth_types::{keccak256, Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
@@ -150,7 +153,7 @@ pub trait SubCircuit<F: Field> {
     fn unusable_rows() -> usize;
 
     /// Create a new SubCircuit from a witness Block
-    fn new_from_block(block: &witness::Block<F>) -> Self;
+    fn new_from_block(block: &witness::Block<F>, chunk: Option<&Chunk<F>>) -> Self;
 
     /// Returns the instance columns required for this circuit.
     fn instance(&self) -> Vec<Vec<F>> {

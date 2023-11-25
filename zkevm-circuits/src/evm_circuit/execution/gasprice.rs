@@ -7,7 +7,7 @@ use crate::{
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
     util::{
@@ -71,6 +71,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         tx: &Transaction,
         _: &Call,
         step: &ExecStep,

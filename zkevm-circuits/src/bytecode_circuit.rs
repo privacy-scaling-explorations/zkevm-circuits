@@ -20,7 +20,7 @@ use crate::{
         word::{empty_code_hash_word_value, Word, Word32, WordExpr},
         Challenges, Expr, SubCircuit, SubCircuitConfig,
     },
-    witness::{self},
+    witness::{self, Chunk},
 };
 use bus_mapping::state_db::{CodeDB, EMPTY_CODE_HASH_LE};
 use eth_types::{Bytecode, Field};
@@ -794,7 +794,7 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
         6
     }
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
+    fn new_from_block(block: &witness::Block<F>, _chunk: Option<&Chunk<F>>) -> Self {
         Self::new(block.bytecodes.clone(), block.circuits_params.max_bytecode)
     }
 

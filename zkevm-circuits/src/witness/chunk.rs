@@ -1,26 +1,22 @@
-use super::{rw::ToVec, ExecStep, Rw, RwMap, Transaction};
+///
+use super::{rw::ToVec, ExecStep, RwMap};
 use crate::{
-    evm_circuit::{detect_fixed_table_tags, EvmCircuit},
-    exp_circuit::param::OFFSET_INCREMENT,
-    instance::public_data_convert,
-    table::BlockContextFieldTag,
-    util::{log2_ceil, unwrap_value, word, SubCircuit},
+    util::{unwrap_value},
+    witness::Block,
 };
 use bus_mapping::{
-    circuit_input_builder::{self, ChunkContext, CopyEvent, ExpEvent, FixedCParams},
-    state_db::CodeDB,
+    circuit_input_builder::{self, ChunkContext, FixedCParams},
     Error,
 };
-use eth_types::{Address, Field, ToScalar, Word};
+use eth_types::{Field};
 use gadgets::permutation::get_permutation_fingerprints;
 use halo2_proofs::circuit::Value;
-use crate::witness::Block;
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
 /// data for witness generation.
 #[derive(Debug, Clone, Default)]
-pub struct Chunck<F>{
+pub struct Chunk<F> {
     /// BeginChunk step to propagate State
     pub begin_chunk: ExecStep,
     /// EndChunk step that appears in the last EVM row for all the chunks other than the last.
@@ -44,17 +40,19 @@ pub struct Chunck<F>{
 }
 
 /// Convert a chunk struct in bus-mapping to a witness chunk used in circuits
+/// Todo(Cecilia): param should specify which chunk to return form Vec<Chunk>
 pub fn chunk_convert<F: Field>(
     builder: &circuit_input_builder::CircuitInputBuilder<FixedCParams>,
-) -> Result<Chunck<F>, Error> {
+) -> Result<Chunk<F>, Error> {
     let block = &builder.block;
-    let code_db = &builder.code_db;
+    let _code_db = &builder.code_db;
     let rws = RwMap::from(&block.container);
     let chunck_ctx = builder
         .chunk_ctx
         .clone()
         .unwrap_or_else(ChunkContext::new_one_chunk);
-    let mut chunck = Chunck {
+    // Todo(Cecilia): should set prev data from builder.prev_chunk()
+    let mut chunck = Chunk {
         permu_alpha: F::from(103),
         permu_gamma: F::from(101),
         permu_rwtable_prev_continuous_fingerprint: F::from(1),
@@ -63,7 +61,7 @@ pub fn chunk_convert<F: Field>(
         permu_chronological_rwtable_next_continuous_fingerprint: F::from(1),
         begin_chunk: builder.cur_chunk().chunk_steps.begin_chunk.clone(),
         end_chunk: builder.cur_chunk().chunk_steps.end_chunk.clone(),
-        chunk_context: chunck_ctx,
+        chunk_context: chunck_ctx.clone(),
         prev_block: Box::new(None),
     };
 

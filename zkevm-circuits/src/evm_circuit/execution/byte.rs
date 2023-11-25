@@ -8,7 +8,7 @@ use crate::{
             math_gadget::{IsEqualGadget, IsZeroGadget},
             sum, CachedRegion,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
         word::{Word, Word32Cell, WordExpr},
@@ -97,6 +97,7 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,

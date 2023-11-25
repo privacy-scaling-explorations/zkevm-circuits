@@ -1,13 +1,13 @@
-use super::{rw::ToVec, ExecStep, Rw, RwMap, Transaction};
+use super::{ExecStep, Rw, RwMap, Transaction};
 use crate::{
     evm_circuit::{detect_fixed_table_tags, EvmCircuit},
     exp_circuit::param::OFFSET_INCREMENT,
     instance::public_data_convert,
     table::BlockContextFieldTag,
-    util::{log2_ceil, unwrap_value, word, SubCircuit},
+    util::{log2_ceil, word, SubCircuit},
 };
 use bus_mapping::{
-    circuit_input_builder::{self, ChunkContext, CopyEvent, ExpEvent, FixedCParams},
+    circuit_input_builder::{self, CopyEvent, ExpEvent, FixedCParams},
     state_db::CodeDB,
     Error,
 };

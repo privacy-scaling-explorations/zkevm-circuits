@@ -1,7 +1,7 @@
 //! Block-related utility module
 
 use super::{
-    chunk::ChunkContext, execution::ExecState, transaction::Transaction, CopyEvent, ExecStep,
+    execution::ExecState, transaction::Transaction, CopyEvent, ExecStep,
     ExpEvent,
 };
 use crate::{
@@ -87,12 +87,9 @@ pub struct Block {
     /// Block-wise steps
     pub block_steps: BlockSteps,
 
-
     // /// Chunk context
     // pub chunk_context: ChunkContext,
     /// Copy events in this block.
-
-
     pub copy_events: Vec<CopyEvent>,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,

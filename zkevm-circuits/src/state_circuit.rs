@@ -20,7 +20,7 @@ use self::{
 use crate::{
     table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable, UXTable},
     util::{word, Challenges, Expr, SubCircuit, SubCircuitConfig},
-    witness::{self, rw::ToVec, MptUpdates, Rw, RwMap},
+    witness::{self, rw::ToVec, Chunk, MptUpdates, Rw, RwMap},
 };
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field, Word};
@@ -514,15 +514,16 @@ impl<F: Field> StateCircuit<F> {
 impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     type Config = StateCircuitConfig<F>;
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
+    fn new_from_block(block: &witness::Block<F>, chunk: Option<&Chunk<F>>) -> Self {
+        let chunk = chunk.unwrap();
         Self::new(
             block.rws.clone(),
             block.circuits_params.max_rws,
-            block.permu_alpha,
-            block.permu_gamma,
-            block.permu_rwtable_prev_continuous_fingerprint,
-            block.permu_rwtable_next_continuous_fingerprint,
-            block.chunk_context.cur,
+            chunk.permu_alpha,
+            chunk.permu_gamma,
+            chunk.permu_rwtable_prev_continuous_fingerprint,
+            chunk.permu_rwtable_next_continuous_fingerprint,
+            chunk.chunk_context.cur,
         )
     }
 
