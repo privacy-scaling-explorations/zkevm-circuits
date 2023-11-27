@@ -23,6 +23,7 @@ mod start;
 mod storage_leaf;
 /// MPT witness row
 pub mod witness_row;
+/// Gadget for modified extension nodes
 pub mod mod_extension;
 
 use self::{
