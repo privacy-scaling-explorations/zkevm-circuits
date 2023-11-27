@@ -1471,7 +1471,7 @@ impl<F: Field> MainRLPGadget<F> {
         for (byte, column) in value_bytes.iter().zip(self.bytes.iter()) {
             assign!(region, (column.column(), offset) => byte.scalar())?;
         }
-        
+
         // Make sure the RLP item is within a valid range
         let max_len = if item_type == RlpItemType::Node {
             if rlp.is_string() {
@@ -1481,7 +1481,7 @@ impl<F: Field> MainRLPGadget<F> {
             }
         } else {
             self.max_length(item_type)
-        }; 
+        };
         self.max_len.assign(region, offset, max_len.scalar())?;
         self.below_limit
             .assign(region, offset, rlp.len().scalar(), (max_len + 1).scalar())?;

@@ -30,8 +30,9 @@ use crate::{
 
 use super::{
     helpers::{Indexable, KeyDataWitness, ListKeyGadget, WrongGadget},
+    mod_extension::ModExtensionGadget,
     rlp_gadgets::{RLPItemWitness, RLPValueGadget},
-    witness_row::{Node, StorageRowType}, mod_extension::ModExtensionGadget,
+    witness_row::{Node, StorageRowType},
 };
 
 #[derive(Clone, Debug, Default)]
@@ -108,10 +109,8 @@ impl<F: Field> StorageLeafConfig<F> {
             let mut value_rlp_rlc_mult = vec![0.expr(); 2];
 
             let parent_data = &mut config.parent_data;
-            parent_data[0] =
-                ParentData::load(cb, &mut ctx.memory[parent_memory(true)], 0.expr());
-            parent_data[1] =
-                ParentData::load(cb, &mut ctx.memory[parent_memory(false)], 0.expr());
+            parent_data[0] = ParentData::load(cb, &mut ctx.memory[parent_memory(true)], 0.expr());
+            parent_data[1] = ParentData::load(cb, &mut ctx.memory[parent_memory(false)], 0.expr());
 
             let key_data = &mut config.key_data;
             key_data[0] = KeyData::load(cb, &mut ctx.memory[key_memory(true)], 0.expr());
@@ -523,8 +522,12 @@ impl<F: Field> StorageLeafConfig<F> {
         };
 
         if storage.is_mod_extension[0] || storage.is_mod_extension[1] {
-            let mod_list_rlp_bytes: [&[u8]; 2]= [&storage.mod_list_rlp_bytes[0], &storage.mod_list_rlp_bytes[1]];
-            self.mod_extension.assign(region, offset, rlp_values, mod_list_rlp_bytes)?;
+            let mod_list_rlp_bytes: [&[u8]; 2] = [
+                &storage.mod_list_rlp_bytes[0],
+                &storage.mod_list_rlp_bytes[1],
+            ];
+            self.mod_extension
+                .assign(region, offset, rlp_values, mod_list_rlp_bytes)?;
         }
 
         let mut new_value = value_word[false.idx()];

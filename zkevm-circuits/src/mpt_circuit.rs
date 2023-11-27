@@ -17,14 +17,14 @@ mod branch;
 mod extension;
 mod extension_branch;
 mod helpers;
+/// Gadget for modified extension nodes
+pub mod mod_extension;
 mod param;
 mod rlp_gadgets;
 mod start;
 mod storage_leaf;
 /// MPT witness row
 pub mod witness_row;
-/// Gadget for modified extension nodes
-pub mod mod_extension;
 
 use self::{
     account_leaf::AccountLeafConfig,

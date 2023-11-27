@@ -3,21 +3,25 @@ use gadgets::util::Scalar;
 use halo2_proofs::plonk::{Error, VirtualCells};
 
 use super::{
-    helpers::{ListKeyGadget, MPTConstraintBuilder, ListKeyWitness, KeyData, ext_key_rlc_calc_value},
+    helpers::{
+        ext_key_rlc_calc_value, KeyData, ListKeyGadget, ListKeyWitness, MPTConstraintBuilder,
+    },
     rlp_gadgets::RLPItemWitness,
     MPTContext,
 };
 use crate::{
     circuit,
     circuit_tools::{
-        cached_region::CachedRegion, cell_manager::Cell, constraint_builder::RLCChainableRev,
-        gadgets::{LtGadget, IsZeroGadget},
+        cached_region::CachedRegion,
+        cell_manager::Cell,
+        constraint_builder::RLCChainableRev,
+        gadgets::{IsZeroGadget, LtGadget},
     },
     mpt_circuit::{
-        helpers::{
-            Indexable, ParentData, KECCAK, FIXED, ext_key_rlc_expr,
-        },
-        RlpItemType, witness_row::StorageRowType, FixedTableTag, param::HASH_WIDTH,
+        helpers::{ext_key_rlc_expr, Indexable, ParentData, FIXED, KECCAK},
+        param::HASH_WIDTH,
+        witness_row::StorageRowType,
+        FixedTableTag, RlpItemType,
     },
 };
 
@@ -86,51 +90,63 @@ impl<F: Field> ModExtensionGadget<F> {
 
             let is_insert = parent_data[0].is_placeholder.expr(); // insert or delete
 
-            let lo_s = is_insert.clone() * parent_data[0].hash.lo().expr() + (1.expr() - is_insert.clone()) * parent_data[1].hash.lo().expr();
-            let hi_s = is_insert.clone() * parent_data[0].hash.hi().expr() + (1.expr() - is_insert.clone()) * parent_data[1].hash.hi().expr();
-            let lo_c = is_insert.clone() * parent_data[0].drifted_parent_hash.lo().expr() + (1.expr() - is_insert.clone()) * parent_data[1].drifted_parent_hash.lo().expr();
-            let hi_c = is_insert.clone() * parent_data[0].drifted_parent_hash.hi().expr() + (1.expr() - is_insert.clone()) * parent_data[1].drifted_parent_hash.hi().expr();
+            let lo_s = is_insert.clone() * parent_data[0].hash.lo().expr()
+                + (1.expr() - is_insert.clone()) * parent_data[1].hash.lo().expr();
+            let hi_s = is_insert.clone() * parent_data[0].hash.hi().expr()
+                + (1.expr() - is_insert.clone()) * parent_data[1].hash.hi().expr();
+            let lo_c = is_insert.clone() * parent_data[0].drifted_parent_hash.lo().expr()
+                + (1.expr() - is_insert.clone()) * parent_data[1].drifted_parent_hash.lo().expr();
+            let hi_c = is_insert.clone() * parent_data[0].drifted_parent_hash.hi().expr()
+                + (1.expr() - is_insert.clone()) * parent_data[1].drifted_parent_hash.hi().expr();
             let parent_data_lo = vec![lo_s, lo_c];
             let parent_data_hi = vec![hi_s, hi_c];
-            let parent_data_rlc = is_insert.clone() * parent_data[0].rlc.expr() + (1.expr() - is_insert.clone()) * parent_data[1].rlc.expr();
+            let parent_data_rlc = is_insert.clone() * parent_data[0].rlc.expr()
+                + (1.expr() - is_insert.clone()) * parent_data[1].rlc.expr();
 
-            let key_rlc_before = key_data[0].rlc.expr() * is_insert.clone() + (1.expr() - is_insert.clone()) * key_data[1].rlc.expr();
-            let key_mult_before = key_data[0].mult.expr() * is_insert.clone() + (1.expr() - is_insert.clone()) * key_data[1].mult.expr();
-            let key_is_odd_before = key_data[0].is_odd.expr() * is_insert.clone() + (1.expr() - is_insert.clone()) * key_data[1].is_odd.expr();
+            let key_rlc_before = key_data[0].rlc.expr() * is_insert.clone()
+                + (1.expr() - is_insert.clone()) * key_data[1].rlc.expr();
+            let key_mult_before = key_data[0].mult.expr() * is_insert.clone()
+                + (1.expr() - is_insert.clone()) * key_data[1].mult.expr();
+            let key_is_odd_before = key_data[0].is_odd.expr() * is_insert.clone()
+                + (1.expr() - is_insert.clone()) * key_data[1].is_odd.expr();
 
-            let middle_key_rlc = key_data[1].drifted_rlc.expr() * is_insert.clone() + (1.expr() - is_insert.clone()) * key_data[0].drifted_rlc.expr();
-            let middle_key_mult = key_data[1].mult.expr() * is_insert.clone() + (1.expr() - is_insert.clone()) * key_data[0].mult.expr();
-            let middle_key_is_odd = key_data[1].is_odd.expr() * is_insert.clone() + (1.expr() - is_insert.clone()) * key_data[0].is_odd.expr();
+            let middle_key_rlc = key_data[1].drifted_rlc.expr() * is_insert.clone()
+                + (1.expr() - is_insert.clone()) * key_data[0].drifted_rlc.expr();
+            let middle_key_mult = key_data[1].mult.expr() * is_insert.clone()
+                + (1.expr() - is_insert.clone()) * key_data[0].mult.expr();
+            let middle_key_is_odd = key_data[1].is_odd.expr() * is_insert.clone()
+                + (1.expr() - is_insert.clone()) * key_data[0].is_odd.expr();
 
             config.rlp_key[0] = ListKeyGadget::construct(cb, &key_items[0]);
             config.rlp_key[1] = ListKeyGadget::construct(cb, &key_items[1]);
- 
+
             let mut key_rlc = vec![];
             for is_s in [true, false] {
                 config.is_key_part_odd[is_s.idx()] = cb.query_cell();
 
-                let items = vec![key_items[is_s.idx()].clone(), key_nibbles[is_s.idx()].clone()];
+                let items = vec![
+                    key_items[is_s.idx()].clone(),
+                    key_nibbles[is_s.idx()].clone(),
+                ];
                 let rlc = ext_key_rlc_expr(
-                        cb,
-                        config.rlp_key[is_s.idx()].key_value.clone(),
-                        1.expr(),
-                        config.is_key_part_odd[is_s.idx()].expr(),
-                        false.expr(),
-                        items
-                            .iter()
-                            .map(|item| item.bytes_be())
-                            .collect::<Vec<_>>()
-                            .try_into()
-                            .unwrap(),
-                        &cb.key_r.expr(),
-                    );
+                    cb,
+                    config.rlp_key[is_s.idx()].key_value.clone(),
+                    1.expr(),
+                    config.is_key_part_odd[is_s.idx()].expr(),
+                    false.expr(),
+                    items
+                        .iter()
+                        .map(|item| item.bytes_be())
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap(),
+                    &cb.key_r.expr(),
+                );
                 key_rlc.push(rlc);
             }
 
-            config.is_short_branch = IsZeroGadget::construct(
-                &mut cb.base,
-                key_rlc[0].expr() - key_rlc[1].expr(),
-            );
+            config.is_short_branch =
+                IsZeroGadget::construct(&mut cb.base, key_rlc[0].expr() - key_rlc[1].expr());
 
             for is_s in [true, false] {
                 let first_byte = matchx! {(
@@ -140,7 +156,7 @@ impl<F: Field> ModExtensionGadget<F> {
                 )};
                 require!((FixedTableTag::ExtOddKey.expr(),
                     first_byte, config.is_key_part_odd[is_s.idx()].expr()) =>> @FIXED);
-                
+
                 // RLP encoding checks: [key, branch]
                 // Verify that the lengths are consistent.
                 require!(config.rlp_key[is_s.idx()].rlp_list.len() => config.rlp_key[is_s.idx()].key_value.num_bytes() + rlp_value[is_s.idx()].num_bytes());
@@ -152,18 +168,16 @@ impl<F: Field> ModExtensionGadget<F> {
                 );
 
                 // Extension node RLC
-                let node_rlc = config
-                    .rlp_key[is_s.idx()]
+                let node_rlc = config.rlp_key[is_s.idx()]
                     .rlc2(&cb.keccak_r)
                     .rlc_chain_rev(rlp_value[is_s.idx()].rlc_chain_data());
 
-                let (rlc, num_bytes, is_not_hashed) =  
-                    (
-                        node_rlc.expr(),
-                        config.rlp_key[is_s.idx()].rlp_list.num_bytes(),
-                        config.is_not_hashed[is_s.idx()].expr(),
-                    );
- 
+                let (rlc, num_bytes, is_not_hashed) = (
+                    node_rlc.expr(),
+                    config.rlp_key[is_s.idx()].rlp_list.num_bytes(),
+                    config.is_not_hashed[is_s.idx()].expr(),
+                );
+
                 ifx! {config.is_short_branch => {
                     if is_s {
                         ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
@@ -187,8 +201,8 @@ impl<F: Field> ModExtensionGadget<F> {
                     } elsex {
                         // Non-hashed extension node in parent branch
                         require!(rlc => parent_data_rlc);
-                    }} 
-                }} 
+                    }}
+                }}
             }
 
             let data0 = [key_items[0].clone(), key_nibbles[0].clone()];
@@ -209,20 +223,21 @@ impl<F: Field> ModExtensionGadget<F> {
                 );
 
             let data1 = [key_items[1].clone(), key_nibbles[1].clone()];
-            let rlc_after_short = middle_key_rlc.clone() + ext_key_rlc_expr(
-                cb,
-                config.rlp_key[1].key_value.clone(),
-                middle_key_mult,
-                config.is_key_part_odd[1].expr(),
-                middle_key_is_odd,
-                data1
-                    .iter()
-                    .map(|item| item.bytes_be())
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .unwrap(),
-                &cb.key_r.expr(),
-            );
+            let rlc_after_short = middle_key_rlc.clone()
+                + ext_key_rlc_expr(
+                    cb,
+                    config.rlp_key[1].key_value.clone(),
+                    middle_key_mult,
+                    config.is_key_part_odd[1].expr(),
+                    middle_key_is_odd,
+                    data1
+                        .iter()
+                        .map(|item| item.bytes_be())
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap(),
+                    &cb.key_r.expr(),
+                );
 
             ifx! {config.is_short_branch => {
                 require!(middle_key_rlc => nibbles_rlc_long);
@@ -278,15 +293,14 @@ impl<F: Field> ModExtensionGadget<F> {
                 assert!(first_key_byte == 0);
             }
 
-            self.is_key_part_odd[is_s.idx()]
-            .assign(region, offset, is_key_part_odd.scalar())?;
+            self.is_key_part_odd[is_s.idx()].assign(region, offset, is_key_part_odd.scalar())?;
 
             self.is_not_hashed[is_s.idx()].assign(
                 region,
                 offset,
                 rlp_key[is_s.idx()].rlp_list.num_bytes().scalar(),
                 HASH_WIDTH.scalar(),
-            )?; 
+            )?;
 
             let (key_rlc_ext, _) = ext_key_rlc_calc_value(
                 rlp_key[is_s.idx()].key_item.clone(),
@@ -305,11 +319,8 @@ impl<F: Field> ModExtensionGadget<F> {
             key_rlc.push(key_rlc_ext);
         }
 
-        self.is_short_branch.assign(
-            region,
-            offset,
-            key_rlc[0] - key_rlc[1],
-        )?;
+        self.is_short_branch
+            .assign(region, offset, key_rlc[0] - key_rlc[1])?;
 
         Ok(())
     }

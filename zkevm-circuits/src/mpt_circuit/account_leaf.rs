@@ -7,7 +7,8 @@ use halo2_proofs::{
 
 use super::{
     helpers::{KeyDataWitness, ListKeyGadget, MainData, ParentDataWitness},
-    rlp_gadgets::RLPItemWitness, mod_extension::ModExtensionGadget,
+    mod_extension::ModExtensionGadget,
+    rlp_gadgets::RLPItemWitness,
     witness_row::{AccountRowType, Node},
 };
 use crate::{
@@ -156,10 +157,8 @@ impl<F: Field> AccountLeafConfig<F> {
             let mut value_list_num_bytes = vec![0.expr(); 2];
 
             let parent_data = &mut config.parent_data;
-            parent_data[0] =
-                ParentData::load(cb, &mut ctx.memory[parent_memory(true)], 0.expr());
-            parent_data[1] =
-                ParentData::load(cb, &mut ctx.memory[parent_memory(false)], 0.expr());
+            parent_data[0] = ParentData::load(cb, &mut ctx.memory[parent_memory(true)], 0.expr());
+            parent_data[1] = ParentData::load(cb, &mut ctx.memory[parent_memory(false)], 0.expr());
 
             let key_data = &mut config.key_data;
             key_data[0] = KeyData::load(cb, &mut ctx.memory[key_memory(true)], 0.expr());
@@ -282,7 +281,7 @@ impl<F: Field> AccountLeafConfig<F> {
                     key_data,
                 );
             }};
-            
+
             // Proof types
             config.is_non_existing_account_proof = IsEqualGadget::construct(
                 &mut cb.base,
@@ -696,8 +695,12 @@ impl<F: Field> AccountLeafConfig<F> {
         };
 
         if account.is_mod_extension[0] || account.is_mod_extension[1] {
-            let mod_list_rlp_bytes: [&[u8]; 2] = [&account.mod_list_rlp_bytes[0], &account.mod_list_rlp_bytes[1]];
-            self.mod_extension.assign(region, offset, rlp_values, mod_list_rlp_bytes)?;
+            let mod_list_rlp_bytes: [&[u8]; 2] = [
+                &account.mod_list_rlp_bytes[0],
+                &account.mod_list_rlp_bytes[1],
+            ];
+            self.mod_extension
+                .assign(region, offset, rlp_values, mod_list_rlp_bytes)?;
         }
 
         let mut new_value = value[false.idx()];
