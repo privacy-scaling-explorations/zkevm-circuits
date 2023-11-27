@@ -78,7 +78,7 @@ impl<F: Field> Block<F> {
 
     /// Return the list of withdrawals of this block.
     pub fn withdrawals(&self) -> Vec<Withdrawal> {
-        let eth_withdrawals = self.eth_block.withdrawals.clone().unwrap();
+        let eth_withdrawals = self.eth_block.withdrawals.clone().unwrap_or_default();
         eth_withdrawals
             .iter()
             .map({
