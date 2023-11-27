@@ -16,7 +16,7 @@ pub use dev::TxCircuit as TestTxCircuit;
 use crate::{
     table::{KeccakTable, TxFieldTag, TxTable},
     util::{word::Word, Challenges, SubCircuit, SubCircuitConfig},
-    witness,
+    witness::{self, Chunk},
 };
 use eth_types::{geth_types::Transaction, sign_types::SignData, Field};
 use halo2_proofs::{
@@ -303,7 +303,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         6
     }
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
+    fn new_from_block(block: &witness::Block<F>, _chunk: Option<&Chunk<F>>) -> Self {
         Self::new(
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,

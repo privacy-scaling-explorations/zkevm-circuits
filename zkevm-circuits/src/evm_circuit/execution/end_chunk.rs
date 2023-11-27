@@ -8,7 +8,7 @@ use crate::{
             constraint_builder::{EVMConstraintBuilder, StepStateTransition},
             CachedRegion,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -54,6 +54,7 @@ impl<F: Field> ExecutionGadget<F> for EndChunkGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,
@@ -62,6 +63,7 @@ impl<F: Field> ExecutionGadget<F> for EndChunkGadget<F> {
             region,
             offset,
             block,
+            chunk,
             (step.rwc_inner_chunk.0 - 1 + step.bus_mapping_instance.len()) as u64,
             step,
         )?;
@@ -103,6 +105,6 @@ mod test {
                 a.push(Rw::Start { rw_counter: 1 });
             }
         }))
-        .run_with_chunkctx(Some(intermediate_single_chunkctx));
+        .run_with_chunk(Some(intermediate_single_chunkctx));
     }
 }

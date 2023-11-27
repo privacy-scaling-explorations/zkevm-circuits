@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
-use crate::{pi_circuit::dev::PiCircuitParams, util::unusable_rows, witness::block_convert};
+use crate::{
+    pi_circuit::dev::PiCircuitParams,
+    util::unusable_rows,
+    witness::{block_convert, chunk_convert},
+};
 
 use super::*;
 use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
@@ -129,8 +133,9 @@ fn test_1tx_1maxtx() {
         .unwrap();
 
     let block = block_convert(&builder).unwrap();
+    let chunk = chunk_convert(&builder).unwrap();
     // MAX_TXS, MAX_TXS align with `CircuitsParams`
-    let circuit = PiCircuit::<Fr>::new_from_block(&block);
+    let circuit = PiCircuit::<Fr>::new_from_block(&block, Some(&chunk));
     let public_inputs = circuit.instance();
 
     let prover = match MockProver::run(degree, &circuit, public_inputs) {

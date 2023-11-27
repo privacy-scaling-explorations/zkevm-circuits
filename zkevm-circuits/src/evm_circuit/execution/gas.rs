@@ -10,7 +10,7 @@ use crate::{
             },
             CachedRegion, U64Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{word::WordExpr, Expr},
 };
@@ -63,8 +63,9 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        _block: &Block<F>,
-        _transaction: &Transaction,
+        _: &Block<F>,
+        _: &Chunk<F>,
+        _: &Transaction,
         _call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {

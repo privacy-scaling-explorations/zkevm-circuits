@@ -42,7 +42,7 @@ use zkevm_circuits::{
     super_circuit::SuperCircuit,
     tx_circuit::TestTxCircuit,
     util::SubCircuit,
-    witness::{block_convert, Block},
+    witness::{block_convert, chunk_convert, Block, Chunk},
 };
 
 /// TEST_MOCK_RANDOMNESS
@@ -280,8 +280,8 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         match self.key.clone() {
             Some(key) => key,
             None => {
-                let block = new_empty_block();
-                let circuit = C::new_from_block(&block);
+                let (block, chunk) = new_empty_block_chunk();
+                let circuit = C::new_from_block(&block, Some(&chunk));
                 let general_params = get_general_params(self.degree);
 
                 let verifying_key =
@@ -301,8 +301,8 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                 let params = get_general_params(self.degree);
                 let pk = self.get_key();
 
-                let block = new_empty_block();
-                let circuit = C::new_from_block(&block);
+                let (block, chunk) = new_empty_block_chunk();
+                let circuit = C::new_from_block(&block, Some(&chunk));
                 let instance = circuit.instance();
 
                 let protocol = compile(
@@ -411,8 +411,9 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             block_tag,
         );
         let mut block = block_convert(&builder).unwrap();
+        let chunk = chunk_convert(&builder).unwrap();
         block.randomness = Fr::from(TEST_MOCK_RANDOMNESS);
-        let circuit = C::new_from_block(&block);
+        let circuit = C::new_from_block(&block, Some(&chunk));
         let instance = circuit.instance();
 
         #[allow(clippy::collapsible_else_if)]
@@ -480,7 +481,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
     }
 }
 
-fn new_empty_block() -> Block<Fr> {
+fn new_empty_block_chunk() -> (Block<Fr>, Chunk<Fr>) {
     let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
         .unwrap()
         .into();
@@ -489,7 +490,10 @@ fn new_empty_block() -> Block<Fr> {
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
-    block_convert(&builder).unwrap()
+    (
+        block_convert(&builder).unwrap(),
+        chunk_convert(&builder).unwrap(),
+    )
 }
 
 fn get_general_params(degree: u32) -> ParamsKZG<Bn256> {

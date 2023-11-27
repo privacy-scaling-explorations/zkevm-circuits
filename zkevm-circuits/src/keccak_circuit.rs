@@ -35,7 +35,7 @@ use crate::{
         word::{self, WordExpr},
         Challenges, SubCircuit, SubCircuitConfig,
     },
-    witness,
+    witness::{self, Chunk},
 };
 use eth_types::Field;
 use gadgets::util::{and, not, select, sum, Expr};
@@ -1008,7 +1008,7 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
     /// The `block.circuits_params.keccak_padding` parmeter, when enabled, sets
     /// up the circuit to support a fixed number of permutations/keccak_f's,
     /// independently of the permutations required by `inputs`.
-    fn new_from_block(block: &witness::Block<F>) -> Self {
+    fn new_from_block(block: &witness::Block<F>, _chunk: Option<&Chunk<F>>) -> Self {
         Self::new(
             block.circuits_params.max_keccak_rows,
             block.keccak_inputs.clone(),

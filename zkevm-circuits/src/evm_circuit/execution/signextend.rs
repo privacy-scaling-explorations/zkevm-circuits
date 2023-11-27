@@ -13,7 +13,7 @@ use crate::{
             math_gadget::{IsEqualGadget, IsZeroGadget},
             select, sum, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
         word::{Word32, Word32Cell, WordExpr},
@@ -159,6 +159,7 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,

@@ -4,7 +4,7 @@ use crate::{
     evm_circuit::{cached::EvmCircuitCached, EvmCircuit},
     state_circuit::StateCircuit,
     util::SubCircuit,
-    witness::{Block, Rw},
+    witness::{Block, Chunk, Rw},
 };
 use bus_mapping::{
     circuit_input_builder::{ChunkContext, FixedCParams},
@@ -81,6 +81,7 @@ pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     test_ctx: Option<TestContext<NACC, NTX>>,
     circuits_params: Option<FixedCParams>,
     block: Option<Block<Fr>>,
+    chunk: Option<Chunk<Fr>>,
     evm_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
     state_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
     block_modifiers: Vec<Box<dyn Fn(&mut Block<Fr>)>>,
@@ -93,6 +94,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             test_ctx: None,
             circuits_params: None,
             block: None,
+            chunk: None,
             evm_checks: Box::new(|prover, gate_rows, lookup_rows| {
                 prover.assert_satisfied_at_rows_par(
                     gate_rows.iter().cloned(),
@@ -184,30 +186,31 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// into a [`Block`] and apply the default or provided block_modifiers or
     /// circuit checks to the provers generated for the State and EVM circuits.
     pub fn run(self) {
-        self.run_with_chunkctx(None);
+        self.run_with_chunk(None);
     }
 
     /// run with chunk context
-    pub fn run_with_chunkctx(self, chunk_ctx: Option<ChunkContext>) {
-        let block: Block<Fr> = if self.block.is_some() {
-            self.block.unwrap()
+    pub fn run_with_chunk(self, chunk_ctx: Option<ChunkContext>) {
+        let (block, chunk) = if self.block.is_some() && self.chunk.is_some() {
+            (self.block.unwrap(), self.chunk.unwrap())
         } else if self.test_ctx.is_some() {
             let block: GethData = self.test_ctx.unwrap().into();
             let mut builder =
                 BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
             if let Some(chunk_ctx) = chunk_ctx {
-                builder.set_chunkctx(chunk_ctx)
+                builder.set_chunk_ctx(chunk_ctx)
             }
             let builder = builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
             // Build a witness block from trace result.
             let mut block = crate::witness::block_convert(&builder).unwrap();
+            let chunk = crate::witness::chunk_convert(&builder).unwrap();
 
             for modifier_fn in self.block_modifiers {
                 modifier_fn.as_ref()(&mut block);
             }
-            block
+            (block, chunk)
         } else {
             panic!("No attribute to build a block was passed to the CircuitTestBuilder")
         };
@@ -219,7 +222,8 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
             let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
-            let circuit = EvmCircuitCached::get_test_circuit_from_block(block.clone());
+            let circuit =
+                EvmCircuitCached::get_test_circuit_from_block(block.clone(), Some(chunk.clone()));
             let instance = circuit.instance();
             let prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
 
@@ -235,11 +239,11 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let state_circuit = StateCircuit::<Fr>::new(
                 block.rws,
                 params.max_rws,
-                block.permu_alpha,
-                block.permu_gamma,
-                block.permu_rwtable_prev_continuous_fingerprint,
-                block.permu_rwtable_next_continuous_fingerprint,
-                block.chunk_context.chunk_index,
+                chunk.permu_alpha,
+                chunk.permu_gamma,
+                chunk.rw_prev_fingerprint,
+                chunk.rw_fingerprint,
+                chunk.chunk_context.cur,
             );
             let instance = state_circuit.instance();
             let prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();

@@ -10,7 +10,7 @@ use crate::{
             },
             CachedRegion, U64Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{word::WordExpr, Expr},
 };
@@ -64,6 +64,7 @@ impl<F: Field> ExecutionGadget<F> for PcGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         _: &Block<F>,
+        _: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,

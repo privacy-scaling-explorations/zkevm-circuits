@@ -18,7 +18,7 @@ use crate::{
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
-    witness::{RwMap, Transaction},
+    witness::{Chunk, RwMap, Transaction},
 };
 use bus_mapping::{
     circuit_input_builder::{CopyDataType, CopyEvent},
@@ -847,7 +847,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
         6
     }
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
+    fn new_from_block(block: &witness::Block<F>, _chunk: Option<&Chunk<F>>) -> Self {
         Self::new_with_external_data(
             block.copy_events.clone(),
             block.circuits_params.max_copy_rows,
