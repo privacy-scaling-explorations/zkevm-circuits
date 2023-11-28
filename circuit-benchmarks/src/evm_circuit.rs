@@ -36,7 +36,7 @@ mod evm_circ_benches {
         const BENCHMARK_ID: &str = "EVM Circuit";
 
         let degree: u32 = var("DEGREE")
-            .unwrap_or_else(|_| "18".to_string())
+            .unwrap_or("18".to_string())
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 

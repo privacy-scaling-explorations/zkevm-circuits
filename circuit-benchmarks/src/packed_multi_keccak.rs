@@ -33,7 +33,7 @@ mod tests {
         const BENCHMARK_ID: &str = "Packed Multi-Keccak Circuit";
 
         let degree: u32 = var("DEGREE")
-            .unwrap_or_else(|_| "11".to_string())
+            .unwrap_or("11".to_string())
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 

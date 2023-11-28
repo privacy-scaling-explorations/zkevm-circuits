@@ -37,7 +37,7 @@ mod tests {
         let proof_gen_prfx = crate::constants::PROOFGEN_PREFIX;
         let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;
         let degree: u32 = var("DEGREE")
-            .unwrap_or_else(|_| "14".to_string())
+            .unwrap_or("14".to_string())
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
