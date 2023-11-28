@@ -1926,11 +1926,6 @@ func TestLeafInLastLevel(t *testing.T) {
 		key2 = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3]
 	*/
 
-	storageProof, _, _, _, _, err := statedb.GetStorageProof(addr, key1)
-	check(err)
-
-	fmt.Println(storageProof[0])
-
 	val := common.BigToHash(big.NewInt(int64(17)))
 	trieMod := TrieModification{
 		Type:    StorageChanged,
@@ -1967,11 +1962,6 @@ func TestLeafWithOneNibble(t *testing.T) {
 	key2 := common.HexToHash("0x30")
 	statedb.SetState(addr, key2, val1)
 	statedb.IntermediateRoot(false)
-
-	storageProof, _, _, _, _, err := statedb.GetStorageProof(addr, key1)
-	check(err)
-
-	fmt.Println(storageProof[0])
 
 	val := common.BigToHash(big.NewInt(int64(17)))
 	trieMod := TrieModification{
@@ -2022,11 +2012,6 @@ func TestLeafWithMoreNibbles(t *testing.T) {
 	statedb.SetState(addr, key2, val1)
 	statedb.IntermediateRoot(false)
 
-	storageProof, _, _, _, _, err := statedb.GetStorageProof(addr, key1)
-	check(err)
-
-	fmt.Println(storageProof[0])
-
 	val := common.BigToHash(big.NewInt(int64(17)))
 	trieMod := TrieModification{
 		Type:    StorageChanged,
@@ -2064,18 +2049,13 @@ func TestBranchAfterExtNode(t *testing.T) {
 	val2 := common.BigToHash(big.NewInt(int64(222)))
 
 	statedb.SetState(addr, key1, val1)
-	fmt.Println(key1)
-
 	statedb.SetState(addr, key2, val2)
-	fmt.Println(key2)
 
 	statedb.IntermediateRoot(false)
 
 	key1Hex += "1"
 	key3 := common.HexToHash(key1Hex)
 	statedb.SetState(addr, key3, val2)
-	fmt.Println(key3)
-
 	statedb.IntermediateRoot(false)
 
 	val := common.BigToHash(big.NewInt(int64(17)))

@@ -141,7 +141,7 @@ pub struct MPTContext<F: Field> {
 }
 
 /// RLP item type
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum RlpItemType {
     /// Node (string with len == 0 or 32, OR list with len <= 31)
     Node,

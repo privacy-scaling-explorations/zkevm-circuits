@@ -115,7 +115,7 @@ impl<F: Field> ModExtensionGadget<F> {
             let middle_key_mult = key_data[1].mult.expr() * is_insert.clone()
                 + (1.expr() - is_insert.clone()) * key_data[0].mult.expr();
             let middle_key_is_odd = key_data[1].is_odd.expr() * is_insert.clone()
-                + (1.expr() - is_insert.clone()) * key_data[0].is_odd.expr();
+                + (1.expr() - is_insert) * key_data[0].is_odd.expr();
 
             config.rlp_key[0] = ListKeyGadget::construct(cb, &key_items[0]);
             config.rlp_key[1] = ListKeyGadget::construct(cb, &key_items[1]);
@@ -279,7 +279,7 @@ impl<F: Field> ModExtensionGadget<F> {
             rlp_key[is_s.idx()] = self.rlp_key[is_s.idx()].assign(
                 region,
                 offset,
-                &list_rlp_bytes[is_s.idx()],
+                list_rlp_bytes[is_s.idx()],
                 &key_items[is_s.idx()],
             )?;
 

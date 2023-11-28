@@ -230,7 +230,7 @@ pub(crate) fn ext_key_rlc_expr<F: Field>(
 ) -> Expression<F> {
     circuit!([meta, cb.base], {
         let (is_short, is_long) = (key_value.is_short(), key_value.is_long());
-        let mult_first_odd = ifx! {is_key_odd.clone() => { 1.expr() } elsex { 16.expr() }};
+        let mult_first_odd = ifx! {is_key_odd.expr() => { 1.expr() } elsex { 16.expr() }};
         let calc_rlc = |cb: &mut MPTConstraintBuilder<F>,
                         bytes: &[Expression<F>],
                         key_mult_first_even: Expression<F>| {
@@ -245,7 +245,7 @@ pub(crate) fn ext_key_rlc_expr<F: Field>(
             )
         };
         matchx! {(
-            and::expr(&[is_long.expr(), or::expr(&[and::expr(&[is_key_odd.clone(), not!(is_key_part_odd.clone())]), and::expr(&[not!(is_key_odd.clone()), is_key_part_odd.clone()])])]) => {
+            and::expr(&[is_long.expr(), or::expr(&[and::expr(&[is_key_odd.expr(), not!(is_key_part_odd.expr())]), and::expr(&[not!(is_key_odd.expr()), is_key_part_odd.expr()])])]) => {
                 // Here we need to multiply nibbles over bytes with different r's so we need to rlc over separate nibbles.
                 // Note that there can be at max 31 key bytes because 32 same bytes would mean
                 // the two keys being the same - update operation, not splitting into extension node.
@@ -261,7 +261,7 @@ pub(crate) fn ext_key_rlc_expr<F: Field>(
                 }).collect::<Vec<_>>());
                 calc_rlc(cb, &key_bytes, 1.expr())
             },
-            and::expr(&[is_long.expr(), or::expr(&[and::expr(&[not!(is_key_odd.clone()), not!(is_key_part_odd.clone())]), and::expr(&[is_key_odd.clone(), is_key_part_odd.clone()])])]) => {
+            and::expr(&[is_long.expr(), or::expr(&[and::expr(&[not!(is_key_odd.expr()), not!(is_key_part_odd.expr())]), and::expr(&[is_key_odd.expr(), is_key_part_odd.expr()])])]) => {
                 let additional_mult = ifx! {is_key_part_odd => { r.expr() } elsex { 1.expr() }};
                 calc_rlc(cb, &data[0][1..], additional_mult)
             },
