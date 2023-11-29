@@ -2,9 +2,42 @@
  
 pragma solidity >=0.7.0 <0.9.0;
  
-contract CheckExtCodeSize100 {
+contract Benchmarks {
+    struct Len {
+        uint32 l;
+    }
+ 
+    function checkMload(Len calldata l) external returns (uint32 r) {
+        assembly {
+            let input := calldataload(4)
+            let len := div(input, 100)
+            let b := 77
+            for {
+                let i := 0
+            } lt(i, len) {
+                i := add(i, 1)
+            } {
+                r := mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(mload(0))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+            }
+        }
+    }
 
-    function checkBatchYul(address[] calldata addresses) external returns (uint256 length) {
+    function checkSdiv(Len calldata l) external returns (uint32 r) {
+        assembly {
+            let input := calldataload(4)
+            let len := div(input, 100)
+            let b := 77
+            for {
+                let i := 0
+            } lt(i, len) {
+                i := add(i, 1)
+            } {
+                r := sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,sdiv(b,r))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+            }
+        }
+    }
+
+    function checkExtCodeSize(address[] calldata addresses) external returns (uint256 length) {
         uint256 ptr = 68;
         uint256 len = addresses.length/100;
         uint8 inc = 32;
