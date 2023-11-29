@@ -62,8 +62,8 @@ use crate::{
     pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
-        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RwTable, TxTable,
-        UXTable,
+        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, MptTable,
+        RwTable, TxTable, UXTable,
     },
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{
@@ -78,7 +78,7 @@ use bus_mapping::{
 use eth_types::{geth_types::GethData, Field};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error, Expression},
+    plonk::{Advice, Any, Circuit, Column, ConstraintSystem, Error, Expression},
 };
 
 use std::array;
@@ -111,6 +111,19 @@ pub struct SuperCircuitConfigArgs<F: Field> {
     /// Mock randomness
     pub mock_randomness: F,
 }
+
+impl<F: Field> SuperCircuitConfig<F> {
+    /// get chronological_rwtable and byaddr_rwtable advice columns
+    pub fn get_rwtable_columns(&self) -> Vec<Column<Any>> {
+        // concat rw_table columns: [chronological_rwtable] ++ [byaddr_rwtable]
+        let mut columns = <RwTable as LookupTable<F>>::columns(&self.evm_circuit.rw_table);
+        columns.append(&mut <RwTable as LookupTable<F>>::columns(
+            &self.state_circuit.rw_table,
+        ));
+        columns
+    }
+}
+
 impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
     type ConfigArgs = SuperCircuitConfigArgs<F>;
 

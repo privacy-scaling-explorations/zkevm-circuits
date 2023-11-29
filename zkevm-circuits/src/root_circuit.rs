@@ -4,7 +4,7 @@ use halo2_proofs::{
     arithmetic::Field as Halo2Field,
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::serde::SerdeObject,
-    plonk::{Circuit, ConstraintSystem, Error},
+    plonk::{Any, Circuit, Column, ConstraintSystem, Error},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use itertools::Itertools;
@@ -48,6 +48,7 @@ pub struct RootCircuit<'a, M: MultiMillerLoop, As> {
     svk: KzgSvk<M>,
     snark: SnarkWitness<'a, M::G1Affine>,
     instance: Vec<M::Scalar>,
+    rwtable_columns: Vec<Column<Any>>,
     _marker: PhantomData<As>,
 }
 
@@ -75,8 +76,11 @@ where
         super_circuit_protocol: &'a PlonkProtocol<M::G1Affine>,
         super_circuit_instances: Value<&'a Vec<Vec<M::Scalar>>>,
         super_circuit_proof: Value<&'a [u8]>,
+        rwtable_columns: Vec<Column<Any>>,
     ) -> Result<Self, snark_verifier::Error> {
         let num_instances = super_circuit_protocol.num_instance.iter().sum::<usize>() + 4 * LIMBS;
+
+        // compute real instance value
         let instance = {
             let mut instance = Ok(vec![M::Scalar::ZERO; num_instances]);
             super_circuit_instances
@@ -109,6 +113,7 @@ where
                 super_circuit_proof,
             ),
             instance,
+            rwtable_columns,
             _marker: PhantomData,
         })
     }
@@ -155,6 +160,7 @@ where
         Self {
             svk: self.svk,
             snark: self.snark.without_witnesses(),
+            rwtable_columns: self.rwtable_columns.clone(),
             instance: vec![M::Scalar::ZERO; self.instance.len()],
             _marker: PhantomData,
         }

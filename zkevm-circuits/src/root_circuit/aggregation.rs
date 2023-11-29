@@ -1,4 +1,5 @@
 use eth_types::Field;
+use halo2::plonk::{Any, Column};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
     halo2curves::{
@@ -23,7 +24,10 @@ use snark_verifier::{
         PolynomialCommitmentScheme,
     },
     system::halo2::transcript,
-    util::arithmetic::{fe_to_limbs, MultiMillerLoop},
+    util::{
+        arithmetic::{fe_to_limbs, MultiMillerLoop},
+        transcript::Transcript,
+    },
     verifier::{self, plonk::PlonkProtocol, SnarkVerifier},
 };
 use std::{io, iter, rc::Rc};
@@ -205,12 +209,14 @@ impl AggregationConfig {
     /// Aggregate snarks into a single accumulator and decompose it into
     /// `4 * LIMBS` limbs.
     /// Returns assigned instances of snarks and aggregated accumulator limbs.
+    /// TODO Fine tune or generalize design to avoid hacky pass rwtable_columns
     #[allow(clippy::type_complexity)]
     pub fn aggregate<'a, M, As>(
         &self,
         layouter: &mut impl Layouter<M::Scalar>,
         svk: &KzgSvk<M>,
         snarks: impl IntoIterator<Item = SnarkWitness<'a, M::G1Affine>>,
+        rwtable_columns: Vec<Column<Any>>,
     ) -> Result<
         (
             Vec<Vec<Vec<AssignedCell<M::Scalar, M::Scalar>>>>,
@@ -235,6 +241,13 @@ impl AggregationConfig {
     {
         type PoseidonTranscript<'a, C, S> =
             transcript::halo2::PoseidonTranscript<C, Rc<Halo2Loader<'a, C>>, S, T, RATE, R_F, R_P>;
+
+        // get rwtable witness column index
+        let rwtable_witness_colindex = rwtable_columns
+            .iter()
+            .map(|col| col.index())
+            .collect::<Vec<usize>>();
+
         let snarks = snarks.into_iter().collect_vec();
         layouter.assign_region(
             || "Aggregate snarks",
@@ -252,7 +265,8 @@ impl AggregationConfig {
 
                 // Verify the cheap part and get accumulator (left-hand and right-hand side of
                 // pairing) of individual proof.
-                let (instances, accumulators) = snarks
+                // which will be used to compute poseidon script
+                let (instance_witnesses, accumulators) = snarks
                     .iter()
                     .map(|snark| {
                         let protocol = snark.protocol.loaded(&loader);
@@ -265,14 +279,48 @@ impl AggregationConfig {
                             &mut transcript,
                         )
                         .unwrap();
+
+                        let rwtable_col_witness = rwtable_witness_colindex
+                            .iter()
+                            .map(|col_index| proof.witnesses[*col_index])
+                            .collect();
+
                         let accumulators =
                             PlonkSuccinctVerifier::verify(svk, &protocol, &instances, &proof)
                                 .unwrap();
-                        (instances, accumulators)
+                        (vec![(instances, rwtable_col_witness)], accumulators)
                     })
                     .collect_vec()
                     .into_iter()
                     .unzip::<_, _, Vec<_>, Vec<_>>();
+
+                let (instances, rwtable_witness) = instance_witnesses
+                    .into_iter()
+                    .unzip::<_, _, Vec<_>, Vec<_>>();
+
+                // TODO 1. process raw instances from all snarks into 2 collections: {public input
+                // instances} and {chunk consistency instances} 1st snark {public
+                // input instance} and last snark {public input instance} should be concat into
+                // final instances, whereas {chunk consistency instances} will be
+                // converted to witness, and constraints it equality between i and i+1 snark.
+                // since they are loaded field, consistency can encoded into circuit by simply
+                // taking 2 loaded field a, b and then `a - b = 0`, which will be
+                // reflected into the plonk circuit
+
+                // TODO 2. get all column commitment loaded ec points (witness of rw_table from all
+                // snark proof, then absorb them into fresh transcript to squeeze to
+                // get challenge alpha', following by absorb alpha' and squeeze to get challenge
+                // gamma'. At the end, constraint alpha', gamma' field value equal to alpha,
+                // gamma appear at public input instances by simply invoke loaded field value
+                // equality: `alpha' - alpha = 0` and `gamma' - gamma = 0`
+                let mut transcript = PoseidonTranscript::new(&loader, snark.proof());
+                rwtable_witness
+                    .iter()
+                    .map(|rwtable_col_ec_point| transcript.common_ec_point(rwtable_col_ec_point));
+                let alpha = transcript.squeeze_challenge();
+                transcript.common_scalar(&alpha).unwrap();
+                let gamma = transcript.squeeze_challenge();
+                // TODO assert alpha = instance.alpha and gamma = instance.gamma
 
                 // Verify proof for accumulation of all accumulators into new one.
                 let accumulator = {

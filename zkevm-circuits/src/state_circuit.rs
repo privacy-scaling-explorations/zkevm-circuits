@@ -52,7 +52,7 @@ pub struct StateCircuitConfig<F> {
     // Figure out why you get errors when this is Selector.
     selector: Column<Fixed>,
     // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/407
-    rw_table: RwTable,
+    pub rw_table: RwTable,
     sort_keys: SortKeysConfig,
     // Assigned value at the start of the block. For Rw::Account and
     // Rw::AccountStorage rows this is the committed value in the MPT, for
