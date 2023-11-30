@@ -37,7 +37,7 @@ pub struct CircuitInputStateRef<'a> {
     /// Block Context
     pub block_ctx: &'a mut BlockContext,
     /// Chunk Context
-    pub chunk_ctx: Option<&'a mut ChunkContext>,
+    pub chunk_ctx: &'a mut ChunkContext,
     /// Transaction
     pub tx: &'a mut Transaction,
     /// Transaction Context
@@ -52,9 +52,7 @@ impl<'a> CircuitInputStateRef<'a> {
             geth_step,
             call_ctx,
             self.block_ctx.rwc,
-            self.chunk_ctx
-                .as_ref()
-                .map_or_else(RWCounter::new, |chunk_ctx| chunk_ctx.rwc),
+            self.chunk_ctx.rwc,
             call_ctx.reversible_write_counter,
             self.tx_ctx.log_id,
         ))
@@ -66,10 +64,7 @@ impl<'a> CircuitInputStateRef<'a> {
             exec_state: ExecState::BeginTx,
             gas_left: self.tx.gas(),
             rwc: self.block_ctx.rwc,
-            rwc_inner_chunk: self
-                .chunk_ctx
-                .as_ref()
-                .map_or_else(RWCounter::new, |chunk_ctx| chunk_ctx.rwc),
+            rwc_inner_chunk: self.chunk_ctx.rwc,
             ..Default::default()
         }
     }
@@ -105,10 +100,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 0
             },
             rwc: self.block_ctx.rwc,
-            rwc_inner_chunk: self
-                .chunk_ctx
-                .as_ref()
-                .map_or_else(RWCounter::new, |chunk_ctx| chunk_ctx.rwc),
+            rwc_inner_chunk: self.chunk_ctx.rwc,
             // For tx without code execution
             reversible_write_counter: if let Some(call_ctx) = self.tx_ctx.calls().last() {
                 call_ctx.reversible_write_counter
@@ -132,9 +124,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
         let op_ref = self.block.container.insert(Operation::new(
             self.block_ctx.rwc.inc_pre(),
-            self.chunk_ctx
-                .as_mut()
-                .map_or_else(RWCounter::new, |chunk_ctx| chunk_ctx.rwc.inc_pre()),
+            self.chunk_ctx.rwc.inc_pre(),
             rw,
             op,
         ));
@@ -200,9 +190,7 @@ impl<'a> CircuitInputStateRef<'a> {
         self.check_apply_op(&op.clone().into_enum());
         let op_ref = self.block.container.insert(Operation::new_reversible(
             self.block_ctx.rwc.inc_pre(),
-            self.chunk_ctx
-                .as_mut()
-                .map_or_else(RWCounter::new, |chunk_ctx| chunk_ctx.rwc.inc_pre()),
+            self.chunk_ctx.rwc.inc_pre(),
             RW::WRITE,
             op,
         ));
@@ -1005,9 +993,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 self.check_apply_op(&op);
                 let rev_op_ref = self.block.container.insert_op_enum(
                     self.block_ctx.rwc.inc_pre(),
-                    self.chunk_ctx
-                        .as_mut()
-                        .map_or_else(RWCounter::new, |chunk_ctx| chunk_ctx.rwc.inc_pre()),
+                    self.chunk_ctx.rwc.inc_pre(),
                     RW::WRITE,
                     false,
                     op,

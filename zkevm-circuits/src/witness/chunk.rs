@@ -18,7 +18,6 @@ pub struct Chunk<F> {
     pub begin_chunk: ExecStep,
     /// EndChunk step that appears in the last EVM row for all the chunks other than the last.
     pub end_chunk: Option<ExecStep>,
-
     /// chunk context
     pub chunk_context: ChunkContext,
     /// permutation challenge alpha

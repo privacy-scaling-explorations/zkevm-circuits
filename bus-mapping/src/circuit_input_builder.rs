@@ -160,7 +160,7 @@ pub struct CircuitInputBuilder<C: CircuitsParams> {
     /// Block Context
     pub block_ctx: BlockContext,
     /// Chunk Context
-    pub chunk_ctx: Option<ChunkContext>,
+    pub chunk_ctx: ChunkContext,
 }
 
 impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
@@ -188,7 +188,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             chunks,
             circuits_params: params,
             block_ctx: BlockContext::new(),
-            chunk_ctx: Some(ChunkContext::new(0, total_chunks)),
+            chunk_ctx: ChunkContext::new(0, total_chunks),
         }
     }
 
@@ -205,7 +205,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             code_db: &mut self.code_db,
             block: &mut self.block,
             block_ctx: &mut self.block_ctx,
-            chunk_ctx: self.chunk_ctx.as_mut(),
+            chunk_ctx: &mut self.chunk_ctx,
             tx,
             tx_ctx,
         }
@@ -295,11 +295,9 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             tx.steps_mut().extend(exec_steps);
             
             // Chunk 
-            if let Some(chunk_ctx) = & self.chunk_ctx {
-                if chunk_ctx.rwc.0 >= self.circuits_params.max_rws() {
-                    self.cur_chunk().steps = tx.steps().to_vec();
-                    self.inc_chunk();
-                }
+            if self.chunk_ctx.rwc.0 >= self.circuits_params.max_rws() {
+                self.cur_chunk().steps = tx.steps().to_vec();
+                // self.inc_chunk();
             }
         }
 
@@ -326,11 +324,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             .collect::<Vec<RWCounter>>();
         // just bump rwc in chunk_ctx as block_ctx rwc to assure same delta apply
         let rw_counters_inner_chunk = (0..STEP_STATE_LEN)
-            .map(|_| {
-                self.chunk_ctx
-                    .as_mut()
-                    .map_or_else(RWCounter::new, |chunk_ctx| chunk_ctx.rwc.inc_pre())
-            })
+            .map(|_| self.chunk_ctx.rwc.inc_pre())
             .collect::<Vec<RWCounter>>();
 
         let tags = {
@@ -403,58 +397,45 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
                 ..Chunk::default()
             })
             .collect::<Vec<Chunk>>();
-        self.chunk_ctx = Some(chunk_ctx);
+        self.chunk_ctx = chunk_ctx;
     }
 
     ///
     pub fn get_chunk(&self, i: usize) -> Chunk {
-        self.chunk_ctx
-            .as_ref()
-            .map(|_| self.chunks[i].clone())
-            .expect("No chunk found")
+        self.chunks[i].clone()
     }
 
     ///
     pub fn cur_chunk(&self) -> Chunk {
-        self.chunk_ctx
-            .as_ref()
-            .map(|ctx|self.chunks[ctx.idx].clone())
-            .expect("No chunk found")
+        self.chunks[self.chunk_ctx.idx].clone()
     }
 
     ///
     pub fn prev_chunk(&self) -> Chunk {
-        self.chunk_ctx
-            .as_ref()
-            .map(|ctx| self.chunks[ctx.idx - 1].clone())
-            .expect("No chunk found")
+        self.chunks[self.chunk_ctx.idx - 1].clone()
     }
 
     /// 
-    pub fn inc_chunk(&mut self) {
-        self.chunk_ctx
-            .as_mut()
-            .map(|ctx|{
-                let cur_ctx = ctx.end_cur_chunk();
-                ctx.end_rwc = ctx.rwc.0;
-                self.chunks[ctx.idx].ctx = cur_ctx;
-                ctx.idx += 1;
-            })
-            .expect("No chunk found");
-    }
+    // pub fn inc_chunk(&mut self) {
+    //     self.chunk_ctx
+    //         .as_mut()
+    //         .map(|ctx|{
+    //             let cur_ctx = ctx.end_cur_chunk();
+    //             ctx.end_rwc = ctx.rwc.0;
+    //             self.chunks[ctx.idx].ctx = cur_ctx;
+    //             ctx.idx += 1;
+    //         })
+    //         .expect("No chunk found");
+    // }
 
     ///
     pub fn is_first_chunk(&self) -> bool {
-        self.chunk_ctx
-            .as_ref()
-            .map_or(true, |ctx| ctx.is_first_chunk())
+        self.chunk_ctx.is_first_chunk()
     }
 
     ///
     pub fn is_last_chunk(&self) -> bool {
-        self.chunk_ctx
-            .as_ref()
-            .map_or(true, |ctx| ctx.is_last_chunk())
+        self.chunk_ctx.is_last_chunk()
     }
 }
 
@@ -473,33 +454,19 @@ impl CircuitInputBuilder<FixedCParams> {
     }
 
     fn set_end_chunk_or_block(&mut self, max_rws: usize) {
-        self.chunk_ctx
-            .clone()
-            .map(|chunk_ctx| {
-                if !chunk_ctx.is_last_chunk() {
-                    self.set_end_chunk(max_rws);
-                    return;
-                }
-            })
-            .unwrap_or(());
+        if !self.chunk_ctx.is_last_chunk() {
+            self.set_end_chunk(max_rws);
+            return;
+        }
 
         // set end block
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
         end_block_not_last.rwc = self.block_ctx.rwc;
         end_block_last.rwc = self.block_ctx.rwc;
-        end_block_not_last.rwc_inner_chunk = self
-            .chunk_ctx
-            .as_ref()
-            .map_or_else(RWCounter::new, |chunk_ctx| chunk_ctx.rwc);
-        end_block_last.rwc_inner_chunk = self
-            .chunk_ctx
-            .as_ref()
-            .map_or_else(RWCounter::new, |chunk_ctx| chunk_ctx.rwc);
-        let is_first_chunk = self
-            .chunk_ctx
-            .as_ref()
-            .map_or(true, |chunk_ctx| chunk_ctx.is_first_chunk());
+        end_block_not_last.rwc_inner_chunk = self.chunk_ctx.rwc;
+        end_block_last.rwc_inner_chunk = self.chunk_ctx.rwc;
+        let is_first_chunk = self.chunk_ctx.is_first_chunk();
         let mut dummy_tx = Transaction::default();
         let mut dummy_tx_ctx = TransactionContext::default();
         let mut state = self.state_ref(&mut dummy_tx, &mut dummy_tx_ctx);
@@ -566,22 +533,14 @@ impl CircuitInputBuilder<FixedCParams> {
         self.block.block_steps.end_block_last = end_block_last;
 
         // set final rwc value to chunkctx
-        if let Some(chunk_ctx) = self.chunk_ctx.as_mut() {
-            chunk_ctx.end_rwc = end_rwc
-        }
+        self.chunk_ctx.end_rwc = end_rwc;
     }
 
     fn set_end_chunk(&mut self, max_inner_rws: usize) {
         let mut end_chunk = self.cur_chunk().end_chunk.clone().unwrap();
         end_chunk.rwc = self.block_ctx.rwc;
-        end_chunk.rwc_inner_chunk = self
-            .chunk_ctx
-            .as_ref()
-            .map_or_else(RWCounter::new, |chunk_ctx| chunk_ctx.rwc);
-        let is_first_chunk = self
-            .chunk_ctx
-            .as_ref()
-            .map_or(true, |chunk_ctx| chunk_ctx.is_first_chunk());
+        end_chunk.rwc_inner_chunk = self.chunk_ctx.rwc;
+        let is_first_chunk = self.chunk_ctx.is_first_chunk();
 
         let mut dummy_tx = Transaction::default();
         let mut dummy_tx_ctx = TransactionContext::default();
@@ -589,7 +548,7 @@ impl CircuitInputBuilder<FixedCParams> {
         let state = self.state_ref(&mut dummy_tx, &mut dummy_tx_ctx);
 
         // rwc index start from 1
-        let end_rwc = state.chunk_ctx.map_or(1, |chunk_ctx| chunk_ctx.rwc.0);
+        let end_rwc = state.chunk_ctx.rwc.0;
         let total_inner_rws = end_rwc - 1;
 
         // We need at least 1 extra row at offset 0 for chunk continuous
@@ -635,12 +594,10 @@ impl CircuitInputBuilder<FixedCParams> {
                 );
             }
         }
-        self.chunks[self.chunk_ctx.as_ref().unwrap().idx].end_chunk = Some(end_chunk);
+        self.chunks[self.chunk_ctx.idx].end_chunk = Some(end_chunk);
 
         // set final rwc value to chunkctx
-        if let Some(chunk_ctx) = self.chunk_ctx.as_mut() {
-            chunk_ctx.end_rwc = end_rwc
-        }
+        self.chunk_ctx.end_rwc = end_rwc;
     }
 }
 
@@ -780,15 +737,10 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<(), Error> {
-        self.chunk_ctx
-            .clone()
-            .map(|chunk_ctx| {
-                if !chunk_ctx.is_first_chunk() {
-                    let mut begin_chunk = self.cur_chunk().begin_chunk.clone();
-                    self.gen_chunk_associated_steps(&mut begin_chunk, RW::READ);
-                }
-            })
-            .unwrap_or(());
+        if !self.chunk_ctx.is_first_chunk() {
+            let mut begin_chunk = self.cur_chunk().begin_chunk.clone();
+            self.gen_chunk_associated_steps(&mut begin_chunk, RW::READ);
+        }
 
         // accumulates gas across all txs in the block
         for (idx, tx) in eth_block.transactions.iter().enumerate() {

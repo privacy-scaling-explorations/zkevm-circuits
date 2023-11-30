@@ -84,15 +84,15 @@ impl ChunkContext {
         self.total_chunks - self.idx - 1 == 0
     }
 
-    ///
-    pub fn end_cur_chunk(&mut self) -> Self {
-        self.end_rwc = self.rwc.0;
-        let cur_ctx = self.clone();
+    // ///
+    // pub fn end_cur_chunk(&mut self) -> Self {
+    //     self.end_rwc = self.rwc.0;
+    //     let cur_ctx = self.clone();
 
-        self.idx += 1;
-        self.initial_rwc = self.rwc.0 + 1;
-        self.rwc = RWCounter::new();
+    //     self.idx += 1;
+    //     self.initial_rwc = self.rwc.0 + 1;
+    //     self.rwc = RWCounter::new();
 
-        cur_ctx
-    }
+    //     cur_ctx
+    // }
 }
