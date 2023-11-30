@@ -78,12 +78,12 @@ impl ChunkCtxTable {
                     // CurrentChunkIndex
                     (
                         F::from(ChunkCtxFieldTag::CurrentChunkIndex as u64),
-                        F::from(chunk_ctx.cur as u64),
+                        F::from(chunk_ctx.idx as u64),
                     ),
                     // NextChunkIndex
                     (
                         F::from(ChunkCtxFieldTag::NextChunkIndex as u64),
-                        F::from(chunk_ctx.cur as u64 + 1u64),
+                        F::from(chunk_ctx.idx as u64 + 1u64),
                     ),
                     // TotalChunks
                     (

@@ -1063,7 +1063,7 @@ impl<F: Field> ExecutionConfig<F> {
 
                 let is_first_chunk = chunk.chunk_context.is_first_chunk();
                 let is_last_chunk =
-                    chunk.chunk_context.cur == chunk.chunk_context.total_chunks - 1;
+                    chunk.chunk_context.idx == chunk.chunk_context.total_chunks - 1;
 
                 let end_block_not_last = &block.end_block_not_last;
                 let end_block_last = &block.end_block_last;

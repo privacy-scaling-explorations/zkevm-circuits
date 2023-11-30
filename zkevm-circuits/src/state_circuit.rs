@@ -523,7 +523,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
             chunk.permu_gamma,
             chunk.rw_prev_fingerprint,
             chunk.rw_fingerprint,
-            chunk.chunk_context.cur,
+            chunk.chunk_context.idx,
         )
     }
 

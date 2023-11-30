@@ -480,7 +480,7 @@ impl<F: Field> SuperCircuit<F> {
         mock_randomness: F,
     ) -> Result<(u32, Self, Vec<Vec<F>>), bus_mapping::Error> {
         let mut block = block_convert(builder).unwrap();
-        let chunk = chunk_convert(builder).unwrap();
+        let chunk = chunk_convert(builder, 0).unwrap();
         block.randomness = mock_randomness;
 
         let (_, rows_needed) = Self::min_num_rows_block(&block);

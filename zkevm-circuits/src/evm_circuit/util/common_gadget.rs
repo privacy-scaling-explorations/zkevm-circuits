@@ -1323,11 +1323,11 @@ impl<F: Field> RwTablePaddingGadget<F> {
         self.chunk_index.assign(
             region,
             offset,
-            Value::known(F::from(chunk.chunk_context.cur as u64)),
+            Value::known(F::from(chunk.chunk_context.idx as u64)),
         )?;
 
         self.is_first_chunk
-            .assign(region, offset, F::from(chunk.chunk_context.cur as u64))?;
+            .assign(region, offset, F::from(chunk.chunk_context.idx as u64))?;
 
         self.is_end_padding_exist.assign(
             region,

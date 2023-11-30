@@ -133,7 +133,7 @@ fn test_1tx_1maxtx() {
         .unwrap();
 
     let block = block_convert(&builder).unwrap();
-    let chunk = chunk_convert(&builder).unwrap();
+    let chunk = chunk_convert(&builder, 0).unwrap();
     // MAX_TXS, MAX_TXS align with `CircuitsParams`
     let circuit = PiCircuit::<Fr>::new_from_block(&block, Some(&chunk));
     let public_inputs = circuit.instance();

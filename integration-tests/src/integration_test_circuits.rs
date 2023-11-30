@@ -411,7 +411,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             block_tag,
         );
         let mut block = block_convert(&builder).unwrap();
-        let chunk = chunk_convert(&builder).unwrap();
+        let chunk = chunk_convert(&builder, 0).unwrap();
         block.randomness = Fr::from(TEST_MOCK_RANDOMNESS);
         let circuit = C::new_from_block(&block, Some(&chunk));
         let instance = circuit.instance();
@@ -492,7 +492,7 @@ fn new_empty_block_chunk() -> (Block<Fr>, Chunk<Fr>) {
         .unwrap();
     (
         block_convert(&builder).unwrap(),
-        chunk_convert(&builder).unwrap(),
+        chunk_convert(&builder, 0).unwrap(),
     )
 }
 

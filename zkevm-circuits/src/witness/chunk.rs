@@ -18,6 +18,7 @@ pub struct Chunk<F> {
     pub begin_chunk: ExecStep,
     /// EndChunk step that appears in the last EVM row for all the chunks other than the last.
     pub end_chunk: Option<ExecStep>,
+
     /// chunk context
     pub chunk_context: ChunkContext,
     /// permutation challenge alpha
@@ -39,8 +40,10 @@ pub struct Chunk<F> {
 /// Convert a chunk struct in bus-mapping to a witness chunk used in circuits
 pub fn chunk_convert<F: Field>(
     builder: &circuit_input_builder::CircuitInputBuilder<FixedCParams>,
+    idx: usize
 ) -> Result<Chunk<F>, Error> {
     let block = &builder.block;
+    let chunk = builder.get_chunk(idx);
     let _code_db = &builder.code_db;
     let rws = RwMap::from(&block.container);
 
@@ -48,7 +51,7 @@ pub fn chunk_convert<F: Field>(
     let (rw_prev_fingerprint, chrono_rw_prev_fingerprint) = if builder.is_first_chunk() {
         (F::from(1), F::from(1))
     } else {
-        let last_chunk = builder.last_chunk();
+        let last_chunk = builder.prev_chunk();
         (
             last_chunk.rw_fingerprint.to_scalar().unwrap(),
             last_chunk.rw_fingerprint.to_scalar().unwrap(),
@@ -97,12 +100,9 @@ pub fn chunk_convert<F: Field>(
         rw_fingerprint: rw_fingerprints[0],
         chrono_rw_prev_fingerprint,
         chrono_rw_fingerprint: rw_fingerprints[1],
-        begin_chunk: builder.cur_chunk().chunk_steps.begin_chunk.clone(),
-        end_chunk: builder.cur_chunk().chunk_steps.end_chunk.clone(),
-        chunk_context: builder
-            .chunk_ctx
-            .as_ref()
-            .map_or(ChunkContext::default(), |ctx| ctx.clone()),
+        begin_chunk: chunk.begin_chunk.clone(),
+        end_chunk: chunk.end_chunk.clone(),
+        chunk_context: chunk.ctx.clone(),
         prev_block: Box::new(None),
     };
 

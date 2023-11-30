@@ -312,14 +312,14 @@ impl<F: Field> EvmCircuitConfig<F> {
                         || "chunk_index",
                         self.chunk_index,
                         offset,
-                        || Value::known(F::from(chunk_ctx.cur as u64)),
+                        || Value::known(F::from(chunk_ctx.idx as u64)),
                     )?;
 
                     region.assign_advice(
                         || "chunk_index_next",
                         self.chunk_index_next,
                         offset,
-                        || Value::known(F::from(chunk_ctx.cur as u64 + 1u64)),
+                        || Value::known(F::from(chunk_ctx.idx as u64 + 1u64)),
                     )?;
 
                     region.assign_advice(
@@ -332,12 +332,12 @@ impl<F: Field> EvmCircuitConfig<F> {
                     is_first_chunk.assign(
                         &mut region,
                         offset,
-                        Value::known(F::from(chunk_ctx.cur as u64)),
+                        Value::known(F::from(chunk_ctx.idx as u64)),
                     )?;
                     is_last_chunk.assign(
                         &mut region,
                         offset,
-                        Value::known(F::from((chunk_ctx.total_chunks - chunk_ctx.cur - 1) as u64)),
+                        Value::known(F::from((chunk_ctx.total_chunks - chunk_ctx.idx - 1) as u64)),
                     )?;
                 }
                 Ok(())
@@ -546,7 +546,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         let chunk = self.chunk.as_ref().unwrap();
 
         let (rw_table_chunked_index, rw_table_total_chunks) =
-            (chunk.chunk_context.cur, chunk.chunk_context.total_chunks);
+            (chunk.chunk_context.idx, chunk.chunk_context.total_chunks);
 
         vec![
             vec![
@@ -793,7 +793,7 @@ mod evm_circuit_stats {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert::<Fr>(&builder).unwrap();
-        let chunk = chunk_convert::<Fr>(&builder).unwrap();
+        let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
         let k = block.get_test_degree();
 
         let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block, Some(chunk));
@@ -817,7 +817,7 @@ mod evm_circuit_stats {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert::<Fr>(&builder).unwrap();
-        let chunk = chunk_convert::<Fr>(&builder).unwrap();
+        let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
         let k = block.get_test_degree();
         let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block, Some(chunk));
         let instance = circuit.instance();

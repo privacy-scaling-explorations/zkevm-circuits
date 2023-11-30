@@ -205,7 +205,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 .unwrap();
             // Build a witness block from trace result.
             let mut block = crate::witness::block_convert(&builder).unwrap();
-            let chunk = crate::witness::chunk_convert(&builder).unwrap();
+            let chunk = crate::witness::chunk_convert(&builder, 0).unwrap();
 
             for modifier_fn in self.block_modifiers {
                 modifier_fn.as_ref()(&mut block);
@@ -243,7 +243,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 chunk.permu_gamma,
                 chunk.rw_prev_fingerprint,
                 chunk.rw_fingerprint,
-                chunk.chunk_context.cur,
+                chunk.chunk_context.idx,
             );
             let instance = state_circuit.instance();
             let prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();
