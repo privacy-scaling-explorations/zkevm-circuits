@@ -48,6 +48,8 @@ pub use transaction::{Transaction, TransactionContext};
 /// Circuit Setup Parameters
 #[derive(Debug, Clone, Copy)]
 pub struct FixedCParams {
+    ///
+    pub total_chunks: usize,
     /// Maximum number of rw operations in the state circuit (RwTable length /
     /// nummber of rows). This must be at least the number of rw operations
     /// + 1, in order to allocate at least a Start row.
@@ -83,18 +85,21 @@ pub struct FixedCParams {
 /// To reduce the testing overhead, we determine the parameters by the testing inputs.
 /// A new [`FixedCParams`] will be computed from the generated circuit witness.
 #[derive(Debug, Clone, Copy)]
-pub struct DynamicCParams {}
+pub struct DynamicCParams {
+    ///
+    pub total_chunks: usize,
+}
 /// Circuit Setup Parameters. These can be fixed/concrete or unset/dynamic.
 pub trait CircuitsParams: Debug + Copy {
     /// Return the best number of chunks given circuit params
-    fn best_chuncks(&self) -> usize;
+    fn total_chunks(&self) -> usize;
     /// 
     fn max_rws(&self) -> usize;
 }
 
 impl CircuitsParams for FixedCParams {
-    fn best_chuncks(&self) -> usize {
-        2 // TODO(Cecilia)
+    fn total_chunks(&self) -> usize {
+        self.total_chunks
     }
     fn max_rws(&self) -> usize {
         self.max_rws
@@ -102,17 +107,24 @@ impl CircuitsParams for FixedCParams {
 
 }
 impl CircuitsParams for DynamicCParams {
-    fn best_chuncks(&self) -> usize {
-        3 // TODO(Cecilia)
+    fn total_chunks(&self) -> usize {
+        self.total_chunks
     }
     fn max_rws(&self) -> usize {
-        self.max_rws()
+        unreachable!()
+    }
+}
+
+impl Default for DynamicCParams {
+    fn default() -> Self {
+        DynamicCParams { total_chunks: 1 }
     }
 }
 impl Default for FixedCParams {
     /// Default values for most of the unit tests of the Circuit Parameters
     fn default() -> Self {
         FixedCParams {
+            total_chunks: 1,
             max_rws: 1000,
             max_txs: 1,
             max_calldata: 256,
@@ -145,7 +157,7 @@ impl Default for FixedCParams {
 /// [`OpcodeId`](crate::evm::OpcodeId)s used in each `ExecTrace` step so that
 /// the State Proof witnesses are already generated on a structured manner and
 /// ready to be added into the State circuit.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CircuitInputBuilder<C: CircuitsParams> {
     /// StateDB key-value DB
     pub sdb: StateDB,
@@ -167,7 +179,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     /// Create a new CircuitInputBuilder from the given `eth_block` and
     /// `constants`.
     pub fn new(sdb: StateDB, code_db: CodeDB, block: Block, params: C) -> Self {
-        let total_chunks = params.best_chuncks();
+        let total_chunks = params.total_chunks();
         let chunks = vec![Chunk::default(); total_chunks];
         Self {
             sdb,
@@ -284,8 +296,11 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             
             // Chunk 
             if self.chunk_ctx.rwc.0 >= self.circuits_params.max_rws() {
-                self.cur_chunk().steps = tx.steps().to_vec();
                 self.set_end_chunk();
+                if let Some(params) = self.chunk_ctx.circuit_param.as_mut() {
+                    // Only update the part that depends on CircuitInputBuilder state
+                    self.compute_param_inner(params);
+                }
                 self.commit_chunk(true);
                 self.set_begin_chunk();
             }
@@ -420,7 +435,6 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             );
         }
         // TODO fix below to adapt multiple chunk
-        // TODO (Cecilia): Fix how? why not while loop?
         if max_rws - total_rws > 1 {
             let (padding_start, padding_end) = (total_rws + 1, max_rws - 1);
             push_op(
@@ -444,12 +458,6 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         }
     }
 
-
-    /// set chunk context
-    pub fn set_chunk_ctx(&mut self, chunk_ctx: ChunkContext) {
-        self.chunks = vec![Chunk::default(); chunk_ctx.total_chunks];
-        self.chunk_ctx = chunk_ctx;
-    }
 
     ///
     pub fn get_chunk(&self, i: usize) -> Chunk {
@@ -485,6 +493,7 @@ impl CircuitInputBuilder<FixedCParams> {
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<&CircuitInputBuilder<FixedCParams>, Error> {
         // accumulates gas across all txs in the block
+        // when total_chunks == 1, will skip set_begin_chunk & set_end_chunk
         self.begin_handle_block(eth_block, geth_traces)?;
         if !self.chunk_ctx.is_last_chunk() {
             self.set_end_chunk();
@@ -537,101 +546,12 @@ fn push_op<T: Op>(
 }
 
 impl<C: CircuitsParams> CircuitInputBuilder<C> {
-    fn dry_run(
-        &mut self,
-        eth_block: &EthBlock,
-        geth_traces: &[eth_types::GethExecTrace],
-    ) -> Result<BlockContext, Error> {
-        // accumulates gas across all txs in the block
-        for (idx, tx) in eth_block.transactions.iter().enumerate() {
-            let geth_trace = &geth_traces[idx];
-            // Transaction index starts from 1
-            let tx_id = idx + 1;
-            self.handle_tx(
-                tx,
-                geth_trace,
-                tx_id == eth_block.transactions.len(),
-                tx_id as u64,
-            )?;
-        }
-        // set eth_block
-        self.block.eth_block = eth_block.clone();
-        self.set_value_ops_call_context_rwc_eor();
-
-        let block_ctx = self.block_ctx.clone();
-        self.clear();
-
-        Ok(block_ctx)
-    }
-
-    fn clear(&mut self) {
-        let OperationContainer {
-            memory,
-            stack,
-            storage,
-            tx_access_list_account,
-            tx_access_list_account_storage,
-            tx_refund,
-            account,
-            call_context,
-            tx_receipt,
-            tx_log,
-            start,
-            padding,
-            step_state,
-        } = &mut self.block.container;
-        memory.clear();
-        stack.clear();
-        storage.clear();
-        tx_access_list_account.clear();
-        tx_access_list_account_storage.clear();
-        tx_refund.clear();
-        account.clear();
-        call_context.clear();
-        tx_receipt.clear();
-        tx_log.clear();
-        start.clear();
-        padding.clear();
-        step_state.clear();
-        self.block_ctx = BlockContext::new();
-    }
-
     fn compute_param(&self, eth_block: &EthBlock) -> FixedCParams {
         let max_txs = eth_block.transactions.len();
-        let max_bytecode = self.code_db.num_rows_required_for_bytecode_table();
-
         let max_calldata = eth_block
             .transactions
             .iter()
             .fold(0, |acc, tx| acc + tx.input.len());
-        let max_exp_steps = self
-            .block
-            .exp_events
-            .iter()
-            .fold(0usize, |acc, e| acc + e.steps.len());
-        // The `+ 2` is used to take into account the two extra empty copy rows needed
-        // to satisfy the query at `Rotation(2)` performed inside of the
-        // `rows[2].value == rows[0].value * r + rows[1].value` requirement in the RLC
-        // Accumulation gate.
-        let max_copy_rows = self
-            .block
-            .copy_events
-            .iter()
-            .fold(0, |acc, c| acc + c.bytes.len())
-            * 2
-            + 4; // disabled and unused rows.
-
-        // TODO fix below logic for multiple rw_table chunks
-        let total_rws_before_end_block: usize =
-            <RWCounter as Into<usize>>::into(self.block_ctx.rwc) - 1; // -1 since rwc start from index `1`
-        let max_rws = total_rws_before_end_block
-            + {
-                1 // +1 for reserving RW::Start at row 1 (offset 0)
-                    + if self.chunk_ctx.is_last_chunk() && total_rws_before_end_block > 0 { 1 /*end_block -> CallContextFieldTag::TxId lookup*/ } else { 0 }
-                    + if self.chunk_ctx.is_last_chunk() {
-                        10  /* stepstate lookup */
-                    } else { 0 }
-            };
         // Computing the number of rows for the EVM circuit requires the size of ExecStep,
         // which is determined in the code of zkevm-circuits and cannot be imported here.
         // When the evm circuit receives a 0 value it dynamically computes the minimum
@@ -642,34 +562,65 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
         // With a 0 value the keccak circuit computes dynamically the minimum number of rows
         // needed.
         let max_keccak_rows = 0;
-        FixedCParams {
-            max_rws,
+        let mut params = FixedCParams {
             max_txs,
             max_calldata,
-            max_copy_rows,
-            max_exp_steps,
-            max_bytecode,
             max_evm_rows,
             max_keccak_rows,
-        }
+            ..Default::default()
+        };
+        self.compute_param_inner(&mut params);
+        params
     }
 
-    /// First part of handle_block, common for dynamic and static circuit parameters.
-    pub fn begin_handle_block(
-        &mut self,
+    fn compute_param_inner(&self, params: &mut FixedCParams) {
+        params.max_bytecode = self.code_db.num_rows_required_for_bytecode_table();
+        params.max_exp_steps = self
+            .block
+            .exp_events
+            .iter()
+            .fold(0usize, |acc, e| acc + e.steps.len());
+        // The `+ 2` is used to take into account the two extra empty copy rows needed
+        // to satisfy the query at `Rotation(2)` performed inside of the
+        // `rows[2].value == rows[0].value * r + rows[1].value` requirement in the RLC
+        // Accumulation gate.
+        params.max_copy_rows = self
+            .block
+            .copy_events
+            .iter()
+            .fold(0, |acc, c| acc + c.bytes.len())
+            * 2
+            + 4; // disabled and unused rows.
+
+        // TODO fix below logic for multiple rw_table chunks
+        let total_rws_before_end_block: usize =
+            <RWCounter as Into<usize>>::into(self.block_ctx.rwc) - 1; // -1 since rwc start from index `1`
+        params.max_rws = total_rws_before_end_block
+        + {
+            1 // +1 for reserving RW::Start at row 1 (offset 0)
+                + if self.chunk_ctx.is_last_chunk() && total_rws_before_end_block > 0 { 1 /*end_block -> CallContextFieldTag::TxId lookup*/ } else { 0 }
+                + if self.chunk_ctx.is_last_chunk() {
+                    10  /* stepstate lookup */
+                } else { 0 }
+        };
+    }
+
+}
+
+impl CircuitInputBuilder<DynamicCParams> {
+    fn dry_run(
+        &self,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
-    ) -> Result<(), Error> {
-        if !self.chunk_ctx.is_first_chunk() {
-            self.set_begin_chunk();
-        }
-
+    ) -> Result<CircuitInputBuilder<DynamicCParams>, Error> {
+        let mut builder = self.clone();
+        builder.circuits_params.total_chunks = 1;
         // accumulates gas across all txs in the block
         for (idx, tx) in eth_block.transactions.iter().enumerate() {
             let geth_trace = &geth_traces[idx];
             // Transaction index starts from 1
             let tx_id = idx + 1;
-            self.handle_tx(
+            builder.handle_tx(
                 tx,
                 geth_trace,
                 tx_id == eth_block.transactions.len(),
@@ -677,13 +628,12 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
             )?;
         }
         // set eth_block
-        self.block.eth_block = eth_block.clone();
-        self.set_value_ops_call_context_rwc_eor();
-        Ok(())
-    }
-}
+        builder.block.eth_block = eth_block.clone();
+        builder.set_value_ops_call_context_rwc_eor();
 
-impl CircuitInputBuilder<DynamicCParams> {
+        Ok(builder)
+    }
+
     /// Handle a block by handling each transaction to generate all the
     /// associated operations. From these operations, the optimal circuit parameters
     /// are derived and set.
@@ -692,66 +642,15 @@ impl CircuitInputBuilder<DynamicCParams> {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<CircuitInputBuilder<FixedCParams>, Error> {
-        self.begin_handle_block(eth_block, geth_traces)?;
+        let mut c_params = self
+            .dry_run(eth_block, geth_traces)
+            .expect("Dry run failure")
+            .compute_param(eth_block);
 
-        // Compute subcircuits parameters
-        let c_params = {
-            let max_txs = eth_block.transactions.len();
-            let max_bytecode = self.code_db.num_rows_required_for_bytecode_table();
+        let total_chunks = self.circuits_params.total_chunks;
+        c_params.total_chunks = total_chunks;
+        c_params.max_rws = (c_params.max_rws + 1) /total_chunks;
 
-            let max_calldata = eth_block
-                .transactions
-                .iter()
-                .fold(0, |acc, tx| acc + tx.input.len());
-            let max_exp_steps = self
-                .block
-                .exp_events
-                .iter()
-                .fold(0usize, |acc, e| acc + e.steps.len());
-            // The `+ 2` is used to take into account the two extra empty copy rows needed
-            // to satisfy the query at `Rotation(2)` performed inside of the
-            // `rows[2].value == rows[0].value * r + rows[1].value` requirement in the RLC
-            // Accumulation gate.
-            let max_copy_rows = self
-                .block
-                .copy_events
-                .iter()
-                .fold(0, |acc, c| acc + c.bytes.len())
-                * 2
-                + 4; // disabled and unused rows.
-
-            // TODO fix below logic for multiple rw_table chunks
-            let total_rws_before_end_block: usize =
-                <RWCounter as Into<usize>>::into(self.block_ctx.rwc) - 1; // -1 since rwc start from index `1`
-            let max_rws = total_rws_before_end_block
-                + {
-                    1 // +1 for reserving RW::Start at row 1 (offset 0)
-                    + if self.chunk_ctx.is_last_chunk() && total_rws_before_end_block > 0 { 1 /*end_block -> CallContextFieldTag::TxId lookup*/ } else { 0 }
-                    + if self.chunk_ctx.is_last_chunk() {
-                        10  /* stepstate lookup */
-                    } else {0}
-                };
-            // Computing the number of rows for the EVM circuit requires the size of ExecStep,
-            // which is determined in the code of zkevm-circuits and cannot be imported here.
-            // When the evm circuit receives a 0 value it dynamically computes the minimum
-            // number of rows necessary.
-            let max_evm_rows = 0;
-            // Similarly, computing the number of rows for the Keccak circuit requires
-            // constants that cannot be accessed from here (NUM_ROUNDS and KECCAK_ROWS).
-            // With a 0 value the keccak circuit computes dynamically the minimum number of rows
-            // needed.
-            let max_keccak_rows = 0;
-            FixedCParams {
-                max_rws,
-                max_txs,
-                max_calldata,
-                max_copy_rows,
-                max_exp_steps,
-                max_bytecode,
-                max_evm_rows,
-                max_keccak_rows,
-            }
-        };
         let mut cib = CircuitInputBuilder::<FixedCParams> {
             sdb: self.sdb,
             code_db: self.code_db,
@@ -759,11 +658,11 @@ impl CircuitInputBuilder<DynamicCParams> {
             chunks: self.chunks,
             circuits_params: c_params,
             block_ctx: self.block_ctx,
-            chunk_ctx: self.chunk_ctx,
+            chunk_ctx: ChunkContext::new(0, total_chunks),
         };
 
         if !cib.chunk_ctx.is_last_chunk() {
-            cib.set_end_chunk();
+            cib.begin_handle_block(eth_block, geth_traces);
         } else {
             cib.set_end_block();
             cib.commit_chunk(false);

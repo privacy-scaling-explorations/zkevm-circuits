@@ -98,7 +98,7 @@ impl BlockData<DynamicCParams> {
             history_hashes: geth_data.history_hashes,
             eth_block: geth_data.eth_block,
             geth_traces: geth_data.geth_traces,
-            circuits_params: DynamicCParams {},
+            circuits_params: DynamicCParams::default(),
         }
     }
 }

@@ -40,7 +40,7 @@ impl BlockContext {
 }
 
 /// Block-wise execution steps that don't belong to any Transaction.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockSteps {
     /// EndBlock step that is repeated after the last transaction and before
     /// reaching the last EVM row.
@@ -56,7 +56,7 @@ pub struct BlockSteps {
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Circuit Input related to a block.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Block {
     /// chain id
     pub chain_id: Word,

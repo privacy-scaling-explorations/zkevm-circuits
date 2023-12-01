@@ -47,7 +47,8 @@ use zkevm_circuits::{
 
 /// TEST_MOCK_RANDOMNESS
 const TEST_MOCK_RANDOMNESS: u64 = 0x100;
-
+///
+const TOTAL_CHUNKS: usize = 1;
 /// MAX_TXS
 const MAX_TXS: usize = 4;
 /// MAX_CALLDATA
@@ -66,6 +67,7 @@ const MAX_EXP_STEPS: usize = 1000;
 const MAX_KECCAK_ROWS: usize = 38000;
 
 const CIRCUITS_PARAMS: FixedCParams = FixedCParams {
+    total_chunks: TOTAL_CHUNKS,
     max_rws: MAX_RWS,
     max_txs: MAX_TXS,
     max_calldata: MAX_CALLDATA,

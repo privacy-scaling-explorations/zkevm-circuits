@@ -1,6 +1,6 @@
 use eth_types::{Word, U256};
 
-use super::ExecStep;
+use super::{ExecStep, FixedCParams};
 use crate::operation::RWCounter;
 
 #[derive(Debug, Default, Clone)]
@@ -11,8 +11,6 @@ pub struct Chunk {
     pub begin_chunk: ExecStep,
     /// End op of a chunk
     pub end_chunk: Option<ExecStep>,
-    /// 
-    pub steps: Vec<ExecStep>,
     // Set in chunk_convert, used when converting the next chunk
     /// rw_table permutation fingerprint for this chunk
     pub rw_fingerprint: Word,
@@ -43,6 +41,8 @@ pub struct ChunkContext {
     pub initial_rwc: usize,
     /// end rw counter
     pub end_rwc: usize,
+    ///
+    pub circuit_param: Option<FixedCParams>,
 }
 
 impl Default for ChunkContext {
@@ -60,6 +60,7 @@ impl ChunkContext {
             total_chunks,
             initial_rwc: 1, // rw counter start from 1
             end_rwc: 0,     // end_rwc should be set in later phase
+            circuit_param: None,
         }
     }
 
@@ -71,6 +72,7 @@ impl ChunkContext {
             total_chunks: 1,
             initial_rwc: 1, // rw counter start from 1
             end_rwc: 0,     // end_rwc should be set in later phase
+            circuit_param: None,
         }
     }
 
