@@ -74,6 +74,14 @@ impl ChunkContext {
         }
     }
 
+    ///
+    pub fn next(&mut self, initial_rwc: usize) {
+        assert!(self.idx + 1 < self.total_chunks, "Exceed total chunks");
+        self.idx += 1;
+        self.initial_rwc = initial_rwc;
+        self.end_rwc = 0;
+    }
+
     /// is first chunk
     pub fn is_first_chunk(&self) -> bool {
         self.idx == 0
@@ -83,16 +91,4 @@ impl ChunkContext {
     pub fn is_last_chunk(&self) -> bool {
         self.total_chunks - self.idx - 1 == 0
     }
-
-    // ///
-    // pub fn end_cur_chunk(&mut self) -> Self {
-    //     self.end_rwc = self.rwc.0;
-    //     let cur_ctx = self.clone();
-
-    //     self.idx += 1;
-    //     self.initial_rwc = self.rwc.0 + 1;
-    //     self.rwc = RWCounter::new();
-
-    //     cur_ctx
-    // }
 }

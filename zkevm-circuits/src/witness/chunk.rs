@@ -47,25 +47,25 @@ pub fn chunk_convert<F: Field>(
     let rws = RwMap::from(&block.container);
 
     // Get prev fingerprint if it exists, otherwise start with 1
-    let (rw_prev_fingerprint, chrono_rw_prev_fingerprint) = if builder.is_first_chunk() {
+    let (rw_prev_fingerprint, chrono_rw_prev_fingerprint) = if chunk.ctx.is_first_chunk() {
         (F::from(1), F::from(1))
     } else {
         let last_chunk = builder.prev_chunk();
         (
             last_chunk.rw_fingerprint.to_scalar().unwrap(),
-            last_chunk.rw_fingerprint.to_scalar().unwrap(),
+            last_chunk.chrono_rw_fingerprint.to_scalar().unwrap(),
         )
     };
     // Compute fingerprint of this chunk from rw tables
     let (rws_rows, _) = RwMap::table_assignments_padding(
         &rws.table_assignments(false),
         builder.circuits_params.max_rws,
-        builder.is_first_chunk(),
+        chunk.ctx.is_first_chunk(),
     );
     let (chrono_rws_rows, _) = RwMap::table_assignments_padding(
         &rws.table_assignments(true),
         builder.circuits_params.max_rws,
-        builder.is_first_chunk(),
+        builder.chunk_ctx.is_first_chunk(),
     );
 
     // Todo: poseidon hash
