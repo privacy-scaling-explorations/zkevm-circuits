@@ -25,6 +25,7 @@ func isBranch(proofEl []byte) bool {
 // S occupies the first 34 columns, C occupies the next 34 columns.
 // The branch children are positioned each in its own row.
 func prepareBranchWitness(rows [][]byte, branch []byte, branchStart int, branchRLPOffset int) {
+	branchNodeRLPLen := 2 // we have two positions for RLP meta data
 	rowInd := 1
 	colInd := branchNodeRLPLen - 1
 

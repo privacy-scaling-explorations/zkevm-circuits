@@ -275,7 +275,9 @@ func prepareAccountLeafNode(addr common.Address, addrh []byte, leafS, leafC, nei
 	values[AccountDrifted] = keyDrifted
 	values[AccountWrong] = wrongValue
 
-	for i := 0; i < 6; i++ {
+	// These rows are only used in the case of a modified extension node.
+	// These rows are actually set in equipLeafWithModExtensionNode function.
+	for i := 0; i < modifiedExtensionNodeRowLen; i++ {
 		row := make([]byte, valueLen)
 		values = append(values, row)
 	}
@@ -367,7 +369,7 @@ func prepareAccountLeafPlaceholderNode(addr common.Address, addrh, key []byte, k
 	keyLen := int(math.Floor(float64(64-keyIndex)/float64(2))) + 1
 	remainingNibbles := key[keyIndex:]
 	offset := 0
-	leaf := make([]byte, 40)
+	leaf := make([]byte, 40) // valueLen is not enough for this case, so we use a larger value.
 	leaf[0] = 248
 	leaf[1] = byte(keyLen) + 73
 	leaf[2] = byte(keyLen) + 128
@@ -534,7 +536,9 @@ func prepareStorageLeafNode(leafS, leafC, neighbourNode []byte, storage_key comm
 	}
 	rows = append(rows, nonExistingStorageRow)
 
-	for i := 0; i < 6; i++ {
+	// These rows are only used in the case of a modified extension node.
+	// These rows are actually set in equipLeafWithModExtensionNode function.
+	for i := 0; i < modifiedExtensionNodeRowLen; i++ {
 		row := make([]byte, valueLen)
 		rows = append(rows, row)
 	}

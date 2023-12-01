@@ -10,29 +10,8 @@ import (
 	"github.com/privacy-scaling-explorations/mpt-witness-generator/trie"
 )
 
-const branchNodeRLPLen = 2 // we have two positions for RLP meta data
-const branch2start = branchNodeRLPLen + 32
-const branchRows = 19 // 1 (init) + 16 (children) + 2 (extension S and C)
-
 const valueLen = 34
-const driftedPos = 13
-const isExtensionPos = 14
-
-// extension key even or odd is about nibbles - that determines whether the first byte (not
-// considering RLP bytes) is 0 or 1 (see encoding.go hexToCompact)
-const isExtShortC16Pos = 21
-const isExtShortC1Pos = 22
-const isExtLongEvenC16Pos = 23
-const isExtLongEvenC1Pos = 24
-const isExtLongOddC16Pos = 25
-const isExtLongOddC1Pos = 26
-
-// short/long means having one or more than one nibbles
-const isSExtLongerThan55Pos = 27
-const isExtNodeSNonHashedPos = 31
-
-// nibbles_counter_pos = 33, set in the assign function.
-const isShortExtNodeBranch = 36
+const modifiedExtensionNodeRowLen = 6
 
 type AccountRowType int64
 
@@ -185,6 +164,7 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 
 	for i := 0; i < len(trieModifications); i++ {
 		tMod := trieModifications[i]
+
 		if tMod.Type == StorageChanged || tMod.Type == StorageDoesNotExist {
 			kh := crypto.Keccak256(tMod.Key.Bytes())
 			if oracle.PreventHashingInSecureTrie {
@@ -514,7 +494,6 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 		// as the last row.
 		// When non existing proof and only the branches are returned, we add a placeholder leaf.
 		// This is to enable the lookup (in account leaf row), most constraints are disabled for these rows.
-
 		if isAccountProof {
 			node := prepareAccountLeafPlaceholderNode(addr, addrh, key, keyIndex)
 			nodes = append(nodes, node)

@@ -40,7 +40,6 @@ func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr c
 	longNibbles := getExtensionNodeNibbles(longExtNode)
 
 	ind := byte(keyIndex) + byte(numberOfNibbles) // where the old and new extension nodes start to be different
-	// diffNibble := oldNibbles[ind]
 	longExtNodeKey := make([]byte, len(key))
 	copy(longExtNodeKey, key)
 	// We would like to retrieve the shortened extension node from the trie via GetProof or
@@ -109,6 +108,9 @@ func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr c
 
 		_, extListRlpBytesC, extValuesC = prepareExtensions(extNibbles, extensionNodeInd+1, shortExtNode, shortExtNode)
 	} else {
+		// When the short node is a branch (and not an extension node), we have nothing to be put in
+		// the C extension node witness (as a short node). We copy the long node (S extension node) to let
+		// the circuit know that the short node is a branch (the circuit checks whether long node RLC == short node RLC).
 		extValuesC = append(extValuesC, make([]byte, valueLen))
 		extValuesC = append(extValuesC, make([]byte, valueLen))
 		extValuesC = append(extValuesC, make([]byte, valueLen))
@@ -140,8 +142,11 @@ func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr c
 	}
 
 	l := len(leafNode.Values)
-	for i := 0; i < 6; i++ {
-		leafNode.Values[l-6+i] = values[i]
+	// We put the information about the long and short extension node in the last rows of the leaf
+	// An alternative would be to add this information into extension node rows (which are in the branch rows),
+	// but this would significantly increase the space needed for every branch.
+	for i := 0; i < modifiedExtensionNodeRowLen; i++ {
+		leafNode.Values[l-modifiedExtensionNodeRowLen+i] = values[i]
 	}
 
 	leafNode.KeccakData = append(leafNode.KeccakData, keccakData...)
