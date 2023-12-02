@@ -95,8 +95,6 @@ pub trait CircuitsParams: Debug + Copy {
     fn total_chunks(&self) -> usize;
     /// 
     fn max_rws(&self) -> usize;
-    ///
-    fn is_dynamic(&self) -> bool;
 }
 
 impl CircuitsParams for FixedCParams {
@@ -106,9 +104,6 @@ impl CircuitsParams for FixedCParams {
     fn max_rws(&self) -> usize {
         self.max_rws
     }
-    fn is_dynamic(&self) -> bool {
-        false
-    }
 }
 impl CircuitsParams for DynamicCParams {
     fn total_chunks(&self) -> usize {
@@ -116,9 +111,6 @@ impl CircuitsParams for DynamicCParams {
     }
     fn max_rws(&self) -> usize {
         unreachable!()
-    }
-    fn is_dynamic(&self) -> bool {
-        true
     }
 }
 
@@ -183,22 +175,6 @@ pub struct CircuitInputBuilder<C: CircuitsParams> {
 }
 
 impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
-    /// Create a new CircuitInputBuilder from the given `eth_block` and
-    /// `constants`.
-    pub fn new(sdb: StateDB, code_db: CodeDB, block: Block, params: C) -> Self {
-        let total_chunks = params.total_chunks();
-        let chunks = vec![Chunk::default(); total_chunks];
-        Self {
-            sdb,
-            code_db,
-            block,
-            chunks,
-            block_ctx: BlockContext::new(),
-            chunk_ctx: ChunkContext::new(0, total_chunks, params.is_dynamic()),
-            circuits_params: params,
-        }
-    }
-
     /// Obtain a mutable reference to the state that the `CircuitInputBuilder`
     /// maintains, contextualized to a particular transaction and a
     /// particular execution step in that transaction.
@@ -524,6 +500,21 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
 }
 
 impl CircuitInputBuilder<FixedCParams> {
+        /// Create a new CircuitInputBuilder from the given `eth_block` and
+    /// `constants`.
+    pub fn new(sdb: StateDB, code_db: CodeDB, block: Block, params: FixedCParams) -> Self {
+        let total_chunks = params.total_chunks();
+        let chunks = vec![Chunk::default(); total_chunks];
+        Self {
+            sdb,
+            code_db,
+            block,
+            chunks,
+            block_ctx: BlockContext::new(),
+            chunk_ctx: ChunkContext::new(0, total_chunks, false),
+            circuits_params: params,
+        }
+    }
     /// Handle a block by handling each transaction to generate all the
     /// associated operations.
     pub fn handle_block(
@@ -616,8 +607,8 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
         let max_rws = total_rws_before_end_block
             + {
                 1 // +1 for reserving RW::Start at row 1 (offset 0)
-                + if self.chunk_ctx.as_ref().map(|chunk_ctx|chunk_ctx.is_last_chunk()).unwrap_or(true) && total_rws_before_end_block > 0 { 1 /*end_block -> CallContextFieldTag::TxId lookup*/ } else { 0 }
-                + if self.chunk_ctx.as_ref().map(|chunk_ctx|!chunk_ctx.is_last_chunk()).unwrap_or(false) {
+                + if self.chunk_ctx.is_last_chunk() && total_rws_before_end_block > 0 { 1 /*end_block -> CallContextFieldTag::TxId lookup*/ } else { 0 }
+                + if self.chunk_ctx.is_last_chunk() {
                     10  /* stepstate lookup */
                 } else {0}
             };
@@ -646,6 +637,22 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
 }
 
 impl CircuitInputBuilder<DynamicCParams> {
+    /// Create a new CircuitInputBuilder from the given `eth_block` and
+    /// `constants`.
+    pub fn new(sdb: StateDB, code_db: CodeDB, block: Block, params: DynamicCParams) -> Self {
+        let total_chunks = params.total_chunks();
+        let chunks = vec![Chunk::default(); total_chunks];
+        Self {
+            sdb,
+            code_db,
+            block,
+            chunks,
+            block_ctx: BlockContext::new(),
+            chunk_ctx: ChunkContext::new(0, total_chunks, true),
+            circuits_params: params,
+        }
+    }
+
     fn dry_run(
         &self,
         eth_block: &EthBlock,
