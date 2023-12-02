@@ -1,6 +1,7 @@
 use eth_types::{Word, U256};
+use halo2_proofs::circuit;
 
-use super::{ExecStep, FixedCParams};
+use super::{ExecStep, FixedCParams, CircuitsParams, DynamicCParams};
 use crate::operation::RWCounter;
 
 #[derive(Debug, Default, Clone)]
@@ -29,7 +30,7 @@ pub struct ChunkSteps {
 
 /// Context of a [`ChunkContext`].
 #[derive(Debug, Clone)]
-pub struct ChunkContext {
+pub struct ChunkContext<C: CircuitsParams> {
     /// index of current chunk, start from 0
     pub idx: usize,
     /// Used to track the inner chunk counter in every operation in the chunk.
@@ -42,25 +43,25 @@ pub struct ChunkContext {
     /// end rw counter
     pub end_rwc: usize,
     ///
-    pub circuit_param: Option<FixedCParams>,
+    pub circuit_param: C,
 }
 
-impl Default for ChunkContext {
+impl<C: CircuitsParams>  Default for ChunkContext<C> {
     fn default() -> Self {
-        Self::new(0, 1)
+        Self::new(0, 1, DynamicCParams::default())
     }
 }
 
-impl ChunkContext {
+impl<C: CircuitsParams>  ChunkContext<C> {
     /// Create a new Self
-    pub fn new(cur_idx: usize, total_chunks: usize) -> Self {
+    pub fn new(cur_idx: usize, total_chunks: usize, circuit_param: C) -> Self {
         Self {
             rwc: RWCounter::new(),
             idx: cur_idx,
             total_chunks,
             initial_rwc: 1, // rw counter start from 1
             end_rwc: 0,     // end_rwc should be set in later phase
-            circuit_param: None,
+            circuit_param,
         }
     }
 
@@ -72,7 +73,7 @@ impl ChunkContext {
             total_chunks: 1,
             initial_rwc: 1, // rw counter start from 1
             end_rwc: 0,     // end_rwc should be set in later phase
-            circuit_param: None,
+            circuit_param: DynamicCParams { total_chunks: 1},
         }
     }
 
