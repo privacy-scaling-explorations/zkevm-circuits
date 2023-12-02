@@ -334,9 +334,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             if self.chunk_ctx.rwc.0 >= self.circuits_params.max_rws() {
                 self.set_end_chunk();
                 if self.chunk_ctx.is_dynamic {
-                    let mut params = self.compute_param(&self.block.eth_block);
-                    self.compute_param_inner(&mut params);
-                    self.cur_chunk_mut().fixed_param = params;
+                    self.cur_chunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
                 }
                 self.commit_chunk(true);
                 self.set_begin_chunk();
@@ -589,35 +587,13 @@ fn push_op<T: Op>(
 impl<C: CircuitsParams> CircuitInputBuilder<C> {
     fn compute_param(&self, eth_block: &EthBlock) -> FixedCParams {
         let max_txs = eth_block.transactions.len();
+        let max_bytecode = self.code_db.num_rows_required_for_bytecode_table();
+
         let max_calldata = eth_block
             .transactions
             .iter()
             .fold(0, |acc, tx| acc + tx.input.len());
-        // Computing the number of rows for the EVM circuit requires the size of ExecStep,
-        // which is determined in the code of zkevm-circuits and cannot be imported here.
-        // When the evm circuit receives a 0 value it dynamically computes the minimum
-        // number of rows necessary.
-        let max_evm_rows = 0;
-        // Similarly, computing the number of rows for the Keccak circuit requires
-        // constants that cannot be accessed from here (NUM_ROUNDS and KECCAK_ROWS).
-        // With a 0 value the keccak circuit computes dynamically the minimum number of rows
-        // needed.
-        let max_keccak_rows = 0;
-        let mut params = FixedCParams {
-            max_txs,
-            max_calldata,
-            max_evm_rows,
-            max_keccak_rows,
-            ..Default::default()
-        };
-        self.compute_param_inner(&mut params);
-        params
-    }
-
-    /// Compute the params that depends on CircuitInputBuilder state
-    fn compute_param_inner(&self, params: &mut FixedCParams) {
-        params.max_bytecode = self.code_db.num_rows_required_for_bytecode_table();
-        params.max_exp_steps = self
+        let max_exp_steps = self
             .block
             .exp_events
             .iter()
@@ -626,7 +602,7 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
         // to satisfy the query at `Rotation(2)` performed inside of the
         // `rows[2].value == rows[0].value * r + rows[1].value` requirement in the RLC
         // Accumulation gate.
-        params.max_copy_rows = self
+        let max_copy_rows = self
             .block
             .copy_events
             .iter()
@@ -637,16 +613,36 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
         // TODO fix below logic for multiple rw_table chunks
         let total_rws_before_end_block: usize =
             <RWCounter as Into<usize>>::into(self.block_ctx.rwc) - 1; // -1 since rwc start from index `1`
-        params.max_rws = total_rws_before_end_block
-        + {
-            1 // +1 for reserving RW::Start at row 1 (offset 0)
-                + if self.chunk_ctx.is_last_chunk() && total_rws_before_end_block > 0 { 1 /*end_block -> CallContextFieldTag::TxId lookup*/ } else { 0 }
-                + if self.chunk_ctx.is_last_chunk() {
+        let max_rws = total_rws_before_end_block
+            + {
+                1 // +1 for reserving RW::Start at row 1 (offset 0)
+                + if self.chunk_ctx.as_ref().map(|chunk_ctx|chunk_ctx.is_last_chunk()).unwrap_or(true) && total_rws_before_end_block > 0 { 1 /*end_block -> CallContextFieldTag::TxId lookup*/ } else { 0 }
+                + if self.chunk_ctx.as_ref().map(|chunk_ctx|!chunk_ctx.is_last_chunk()).unwrap_or(false) {
                     10  /* stepstate lookup */
-                } else { 0 }
-        };
+                } else {0}
+            };
+        // Computing the number of rows for the EVM circuit requires the size of ExecStep,
+        // which is determined in the code of zkevm-circuits and cannot be imported here.
+        // When the evm circuit receives a 0 value it dynamically computes the minimum
+        // number of rows necessary.
+        let max_evm_rows = 0;
+        // Similarly, computing the number of rows for the Keccak circuit requires
+        // constants that cannot be accessed from here (NUM_ROUNDS and KECCAK_ROWS).
+        // With a 0 value the keccak circuit computes dynamically the minimum number of rows
+        // needed.
+        let max_keccak_rows = 0;
+        FixedCParams {
+            total_chunks: self.circuits_params.total_chunks(),
+            max_rws,
+            max_txs,
+            max_calldata,
+            max_copy_rows,
+            max_exp_steps,
+            max_bytecode,
+            max_evm_rows,
+            max_keccak_rows,
+        }
     }
-
 }
 
 impl CircuitInputBuilder<DynamicCParams> {
