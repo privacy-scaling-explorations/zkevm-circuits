@@ -700,7 +700,8 @@ impl CircuitInputBuilder<DynamicCParams> {
         };
 
         if !cib.chunk_ctx.is_last_chunk() {
-            cib.begin_handle_block(eth_block, geth_traces);
+            cib.begin_handle_block(eth_block, geth_traces)
+                .expect("Begin handle block failed");
         } else {
             cib.set_end_block();
             cib.commit_chunk(false);

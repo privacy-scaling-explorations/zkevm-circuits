@@ -794,7 +794,7 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
         6
     }
 
-    fn new_from_block(block: &witness::Block<F>, _chunk: Option<&Chunk<F>>) -> Self {
+    fn new_from_block(block: &witness::Block<F>, _chunk: &Chunk<F>) -> Self {
         Self::new(block.bytecodes.clone(), block.circuits_params.max_bytecode)
     }
 

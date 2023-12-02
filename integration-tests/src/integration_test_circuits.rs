@@ -283,7 +283,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             Some(key) => key,
             None => {
                 let (block, chunk) = new_empty_block_chunk();
-                let circuit = C::new_from_block(&block, Some(&chunk));
+                let circuit = C::new_from_block(&block, &chunk);
                 let general_params = get_general_params(self.degree);
 
                 let verifying_key =
@@ -304,7 +304,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                 let pk = self.get_key();
 
                 let (block, chunk) = new_empty_block_chunk();
-                let circuit = C::new_from_block(&block, Some(&chunk));
+                let circuit = C::new_from_block(&block, &chunk);
                 let instance = circuit.instance();
 
                 let protocol = compile(
@@ -415,7 +415,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         let mut block = block_convert(&builder).unwrap();
         let chunk = chunk_convert(&builder, 0).unwrap();
         block.randomness = Fr::from(TEST_MOCK_RANDOMNESS);
-        let circuit = C::new_from_block(&block, Some(&chunk));
+        let circuit = C::new_from_block(&block, &chunk);
         let instance = circuit.instance();
 
         #[allow(clippy::collapsible_else_if)]

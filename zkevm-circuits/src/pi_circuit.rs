@@ -1308,7 +1308,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         6
     }
 
-    fn new_from_block(block: &witness::Block<F>, _chunk: Option<&Chunk<F>>) -> Self {
+    fn new_from_block(block: &witness::Block<F>, _chunk: &Chunk<F>) -> Self {
         let public_data = public_data_convert(block);
         PiCircuit::new(
             block.circuits_params.max_txs,

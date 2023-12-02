@@ -186,18 +186,12 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// into a [`Block`] and apply the default or provided block_modifiers or
     /// circuit checks to the provers generated for the State and EVM circuits.
     pub fn run(self) {
-        self.run_with_chunk(None);
-    }
-
-    /// run with chunk context
-    pub fn run_with_chunk(self, chunk_ctx: Option<ChunkContext>) {
         let (block, chunk) = if self.block.is_some() && self.chunk.is_some() {
             (self.block.unwrap(), self.chunk.unwrap())
         } else if self.test_ctx.is_some() {
             let block: GethData = self.test_ctx.unwrap().into();
-            let mut builder =
+            let builder =
                 BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-            builder.chunk_ctx = chunk_ctx.unwrap();
             let builder = builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
@@ -237,11 +231,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let state_circuit = StateCircuit::<Fr>::new(
                 block.rws,
                 params.max_rws,
-                chunk.permu_alpha,
-                chunk.permu_gamma,
-                chunk.rw_prev_fingerprint,
-                chunk.rw_fingerprint,
-                chunk.chunk_context.idx,
+                &chunk,
             );
             let instance = state_circuit.instance();
             let prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();

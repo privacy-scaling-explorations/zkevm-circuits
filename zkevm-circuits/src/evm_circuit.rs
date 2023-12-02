@@ -365,10 +365,10 @@ pub struct EvmCircuit<F: Field> {
 
 impl<F: Field> EvmCircuit<F> {
     /// Return a new EvmCircuit
-    pub fn new(block: Block<F>, chunk: Option<Chunk<F>>) -> Self {
+    pub fn new(block: Block<F>, chunk:Chunk<F>) -> Self {
         Self {
             block: Some(block),
-            chunk,
+            chunk: Some(chunk),
             fixed_table_tags: FixedTableTag::iter().collect(),
         }
     }
@@ -427,8 +427,8 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         MAX_STEP_HEIGHT + STEP_STATE_HEIGHT + 3
     }
 
-    fn new_from_block(block: &witness::Block<F>, chunk: Option<&witness::Chunk<F>>) -> Self {
-        Self::new(block.clone(), chunk.map(|c| c.clone()))
+    fn new_from_block(block: &witness::Block<F>, chunk: &witness::Chunk<F>) -> Self {
+        Self::new(block.clone(), chunk.clone())
     }
 
     /// Return the minimum number of rows required to prove the block

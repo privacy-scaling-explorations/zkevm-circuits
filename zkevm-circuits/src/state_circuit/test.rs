@@ -1000,15 +1000,15 @@ fn variadic_size_check() {
         n_rows: N_ROWS,
         permu_alpha: Fr::from(1),
         permu_gamma: Fr::from(1),
-        permu_prev_continuous_fingerprint: Fr::from(1),
-        permu_next_continuous_fingerprint: get_permutation_fingerprint_of_rwvec(
+        rw_prev_fingerprint: Fr::from(1),
+        rw_cur_fingerprint: get_permutation_fingerprint_of_rwvec(
             &rows,
             N_ROWS,
             Fr::from(1),
             Fr::from(1),
             Fr::from(1),
         ),
-        rw_table_chunked_index: 0,
+        chunk_idx: 0,
         _marker: std::marker::PhantomData::default(),
     };
     let power_of_randomness = circuit.instance();
@@ -1043,9 +1043,9 @@ fn variadic_size_check() {
         n_rows: N_ROWS,
         permu_alpha: Fr::from(1),
         permu_gamma: Fr::from(1),
-        permu_prev_continuous_fingerprint: Fr::from(1),
-        permu_next_continuous_fingerprint,
-        rw_table_chunked_index: 0,
+        rw_prev_fingerprint: Fr::from(1),
+        rw_cur_fingerprint: permu_next_continuous_fingerprint,
+        chunk_idx: 0,
         _marker: std::marker::PhantomData::default(),
     };
     let power_of_randomness = circuit.instance();
@@ -1098,9 +1098,9 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
         n_rows: N_ROWS,
         permu_alpha: Fr::from(1),
         permu_gamma: Fr::from(1),
-        permu_prev_continuous_fingerprint: Fr::from(1),
-        permu_next_continuous_fingerprint,
-        rw_table_chunked_index: 0,
+        rw_prev_fingerprint: Fr::from(1),
+        rw_cur_fingerprint: permu_next_continuous_fingerprint,
+        chunk_idx: 0,
         _marker: std::marker::PhantomData::default(),
     };
     let instance = circuit.instance();

@@ -153,7 +153,7 @@ pub trait SubCircuit<F: Field> {
     fn unusable_rows() -> usize;
 
     /// Create a new SubCircuit from a witness Block
-    fn new_from_block(block: &witness::Block<F>, chunk: Option<&Chunk<F>>) -> Self;
+    fn new_from_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> Self;
 
     /// Returns the instance columns required for this circuit.
     fn instance(&self) -> Vec<Vec<F>> {

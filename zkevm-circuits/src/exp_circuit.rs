@@ -521,7 +521,7 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
         11
     }
 
-    fn new_from_block(block: &witness::Block<F>, _chunk: Option<&Chunk<F>>) -> Self {
+    fn new_from_block(block: &witness::Block<F>, _chunk: &Chunk<F>) -> Self {
         // Hardcoded to pass unit tests for now. In the future, insert:
         // "block.circuits_params.max_exp_rows"
         Self::new(

@@ -471,11 +471,11 @@ pub struct StateCircuit<F> {
     /// permutation challenge
     permu_alpha: F,
     permu_gamma: F,
-    permu_prev_continuous_fingerprint: F,
-    permu_next_continuous_fingerprint: F,
+    rw_prev_fingerprint: F,
+    rw_cur_fingerprint: F,
 
     // current chunk index
-    rw_table_chunked_index: usize,
+    chunk_idx: usize,
 
     _marker: PhantomData<F>,
 }
@@ -485,11 +485,7 @@ impl<F: Field> StateCircuit<F> {
     pub fn new(
         rw_map: RwMap,
         n_rows: usize,
-        permu_alpha: F,
-        permu_gamma: F,
-        permu_prev_continuous_fingerprint: F,
-        permu_next_continuous_fingerprint: F,
-        rw_table_chunked_index: usize,
+        chunk: &Chunk<F>,
     ) -> Self {
         let rows = rw_map.table_assignments(false); // address sorted
         let updates = MptUpdates::mock_from(&rows);
@@ -501,11 +497,11 @@ impl<F: Field> StateCircuit<F> {
             n_rows,
             #[cfg(test)]
             overrides: HashMap::new(),
-            permu_alpha,
-            permu_gamma,
-            permu_prev_continuous_fingerprint,
-            permu_next_continuous_fingerprint,
-            rw_table_chunked_index,
+            permu_alpha: chunk.permu_alpha,
+            permu_gamma: chunk.permu_gamma,
+            rw_prev_fingerprint: chunk.rw_prev_fingerprint,
+            rw_cur_fingerprint: chunk.rw_fingerprint,
+            chunk_idx: chunk.chunk_context.idx,
             _marker: PhantomData::default(),
         }
     }
@@ -514,16 +510,11 @@ impl<F: Field> StateCircuit<F> {
 impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     type Config = StateCircuitConfig<F>;
 
-    fn new_from_block(block: &witness::Block<F>, chunk: Option<&Chunk<F>>) -> Self {
-        let chunk = chunk.unwrap();
+    fn new_from_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> Self {
         Self::new(
             block.rws.clone(),
             block.circuits_params.max_rws,
-            chunk.permu_alpha,
-            chunk.permu_gamma,
-            chunk.rw_prev_fingerprint,
-            chunk.rw_fingerprint,
-            chunk.chunk_context.idx,
+            chunk,
         )
     }
 
@@ -566,7 +557,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     &mut region,
                     &self.rows,
                     self.n_rows,
-                    self.rw_table_chunked_index == 0,
+                    self.chunk_idx == 0,
                 )?;
 
                 config.assign_with_region(
@@ -574,13 +565,13 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     &self.rows,
                     &self.updates,
                     self.n_rows,
-                    self.rw_table_chunked_index,
+                    self.chunk_idx,
                 )?;
 
                 let (rows, _) = RwMap::table_assignments_padding(
                     &self.rows,
                     self.n_rows,
-                    self.rw_table_chunked_index == 0,
+                    self.chunk_idx == 0,
                 );
 
                 // permu_next_continuous_fingerprint and rows override for negative-test
@@ -609,7 +600,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     &mut region,
                     Value::known(self.permu_alpha),
                     Value::known(self.permu_gamma),
-                    Value::known(self.permu_prev_continuous_fingerprint),
+                    Value::known(self.rw_prev_fingerprint),
                     &rows,
                     "state_circuit",
                 )?;
@@ -660,8 +651,8 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
 
     fn instance(&self) -> Vec<Vec<F>> {
         vec![
-            vec![self.permu_prev_continuous_fingerprint],
-            vec![self.permu_next_continuous_fingerprint],
+            vec![self.rw_prev_fingerprint],
+            vec![self.rw_cur_fingerprint],
             vec![self.permu_alpha, self.permu_gamma],
         ]
     }

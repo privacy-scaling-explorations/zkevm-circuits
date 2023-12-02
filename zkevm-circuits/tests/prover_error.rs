@@ -101,7 +101,7 @@ fn prover_error() {
         block.randomness = Fr::from(MOCK_RANDOMNESS);
         (block, chunk)
     };
-    let circuit = SuperCircuit::new_from_block(&block, Some(&chunk));
+    let circuit = SuperCircuit::new_from_block(&block, &chunk);
     let res = MockProver::run(k, &circuit, circuit.instance())
         .expect("MockProver::run")
         .verify_par();

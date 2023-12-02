@@ -847,7 +847,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
         6
     }
 
-    fn new_from_block(block: &witness::Block<F>, _chunk: Option<&Chunk<F>>) -> Self {
+    fn new_from_block(block: &witness::Block<F>, _chunk: &Chunk<F>) -> Self {
         Self::new_with_external_data(
             block.copy_events.clone(),
             block.circuits_params.max_copy_rows,

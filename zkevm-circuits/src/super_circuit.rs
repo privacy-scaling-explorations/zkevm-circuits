@@ -294,7 +294,7 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
         .unwrap()
     }
 
-    fn new_from_block(block: &Block<F>, chunk: Option<&Chunk<F>>) -> Self {
+    fn new_from_block(block: &Block<F>, chunk: &Chunk<F>) -> Self {
         let evm_circuit = EvmCircuit::new_from_block(block, chunk);
         let state_circuit = StateCircuit::new_from_block(block, chunk);
         let tx_circuit = TxCircuit::new_from_block(block, chunk);
@@ -487,7 +487,7 @@ impl<F: Field> SuperCircuit<F> {
         let k = log2_ceil(Self::unusable_rows() + rows_needed);
         log::debug!("super circuit uses k = {}", k);
 
-        let circuit = SuperCircuit::new_from_block(&block, Some(&chunk));
+        let circuit = SuperCircuit::new_from_block(&block, &chunk);
 
         let instance = circuit.instance();
         Ok((k, circuit, instance))
