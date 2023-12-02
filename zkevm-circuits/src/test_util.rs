@@ -185,19 +185,24 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// Triggers the `CircuitTestBuilder` to convert the [`TestContext`] if any,
     /// into a [`Block`] and apply the default or provided block_modifiers or
     /// circuit checks to the provers generated for the State and EVM circuits.
-    pub fn run(self) {
+    pub fn run(mut self) {
+        self.run_with_chunk(1, 0);
+    }
+    
+    ///
+    pub fn run_with_chunk(mut self, total_chunk: usize, chunk_index: usize) {
         let (block, chunk) = if self.block.is_some() && self.chunk.is_some() {
             (self.block.unwrap(), self.chunk.unwrap())
         } else if self.test_ctx.is_some() {
             let block: GethData = self.test_ctx.unwrap().into();
             let builder =
-                BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+                BlockData::new_from_geth_data_chunked(block.clone(), total_chunk).new_circuit_input_builder();
             let builder = builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
             // Build a witness block from trace result.
             let mut block = crate::witness::block_convert(&builder).unwrap();
-            let chunk = crate::witness::chunk_convert(&builder, 0).unwrap();
+            let chunk = crate::witness::chunk_convert(&builder, chunk_index).unwrap();
 
             for modifier_fn in self.block_modifiers {
                 modifier_fn.as_ref()(&mut block);

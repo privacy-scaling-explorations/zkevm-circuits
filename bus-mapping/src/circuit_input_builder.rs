@@ -289,6 +289,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
                 tx,
                 geth_trace,
                 tx_id == eth_block.transactions.len(),
+                true,
                 tx_id as u64,
             )?;
         }
@@ -308,6 +309,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         eth_tx: &eth_types::Transaction,
         geth_trace: &GethExecTrace,
         is_last_tx: bool,
+        is_chunked: bool,
         tx_index: u64,
     ) -> Result<(), Error> {
         let mut tx = self.new_tx(tx_index, eth_tx, !geth_trace.failed)?;
@@ -331,7 +333,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             tx.steps_mut().extend(exec_steps);
             
             // Chunk 
-            if self.chunk_ctx.rwc.0 >= self.circuits_params.max_rws() {
+            if is_chunked && self.chunk_ctx.rwc.0 >= self.circuits_params.max_rws() {
                 self.set_end_chunk();
                 if self.chunk_ctx.is_dynamic {
                     self.cur_chunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
@@ -662,6 +664,7 @@ impl CircuitInputBuilder<DynamicCParams> {
                 tx,
                 geth_trace,
                 tx_id == eth_block.transactions.len(),
+                false,
                 tx_id as u64,
             )?;
         }

@@ -4,9 +4,9 @@ use crate::{
     util::{unusable_rows, SubCircuit},
     witness::{MptUpdates, Rw, RwMap},
 };
-use bus_mapping::operation::{
+use bus_mapping::{operation::{
     MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
-};
+}, circuit_input_builder::ChunkContext};
 use eth_types::{
     address,
     evm_types::{MemoryAddress, StackAddress},
@@ -53,14 +53,18 @@ fn test_state_circuit_ok(
         Fr::from(1),
         Fr::from(1),
     );
+    let chunk = Chunk {
+        permu_alpha: Fr::from(1),
+        permu_gamma: Fr::from(1),
+        rw_prev_fingerprint: Fr::from(1),
+        rw_fingerprint: next_permutation_fingerprints,
+        ..Default::default()
+    };
+    
     let circuit = StateCircuit::<Fr>::new(
         rw_map,
         N_ROWS,
-        Fr::from(1),
-        Fr::from(1),
-        Fr::from(1),
-        next_permutation_fingerprints,
-        0,
+        &chunk,
     );
     let instance = circuit.instance();
 
@@ -79,24 +83,28 @@ fn degree() {
 #[test]
 fn verifying_key_independent_of_rw_length() {
     let params = ParamsKZG::<Bn256>::setup(17, rand_chacha::ChaCha20Rng::seed_from_u64(2));
-
-    let no_rows = StateCircuit::<Fr>::new(
-        RwMap::default(),
-        N_ROWS,
-        Fr::from(1),
-        Fr::from(1),
-        Fr::from(1),
-        get_permutation_fingerprint_of_rwmap(
+    let mut chunk = Chunk {
+        permu_alpha: Fr::from(1),
+        permu_gamma: Fr::from(1),
+        rw_prev_fingerprint: Fr::from(1),
+        rw_fingerprint: get_permutation_fingerprint_of_rwmap(
             &RwMap::default(),
             N_ROWS,
             Fr::from(1),
             Fr::from(1),
             Fr::from(1),
         ),
-        0,
+        ..Default::default()
+    };
+    
+    let no_rows = StateCircuit::<Fr>::new(
+        RwMap::default(),
+        N_ROWS,
+        &chunk.clone(),
     );
-    let one_row = StateCircuit::<Fr>::new(
-        RwMap::from(&OperationContainer {
+
+    chunk.rw_fingerprint = get_permutation_fingerprint_of_rwmap(
+        &RwMap::from(&OperationContainer {
             memory: vec![Operation::new(
                 RWCounter::from(1),
                 RWCounter::from(1),
@@ -109,22 +117,20 @@ fn verifying_key_independent_of_rw_length() {
         Fr::from(1),
         Fr::from(1),
         Fr::from(1),
-        get_permutation_fingerprint_of_rwmap(
-            &RwMap::from(&OperationContainer {
-                memory: vec![Operation::new(
-                    RWCounter::from(1),
-                    RWCounter::from(1),
-                    RW::WRITE,
-                    MemoryOp::new(1, MemoryAddress::from(0), 32),
-                )],
-                ..Default::default()
-            }),
-            N_ROWS,
-            Fr::from(1),
-            Fr::from(1),
-            Fr::from(1),
-        ),
-        0,
+    );
+
+    let one_row = StateCircuit::<Fr>::new(
+        RwMap::from(&OperationContainer {
+            memory: vec![Operation::new(
+                RWCounter::from(1),
+                RWCounter::from(1),
+                RW::WRITE,
+                MemoryOp::new(1, MemoryAddress::from(0), 32),
+            )],
+            ..Default::default()
+        }),
+        N_ROWS,
+        &chunk
     );
 
     let vk_no_rows = keygen_vk(&params, &no_rows).unwrap();

@@ -88,8 +88,6 @@ mod test {
     #[test]
     #[ignore] // still under development and testing
     fn test_intermediate_single_chunk() {
-        // TODO test multiple chunk logic
-        let intermediate_single_chunkctx = ChunkContext::new(3, 10);
         let bytecode = bytecode! {
             STOP
         };
@@ -105,6 +103,6 @@ mod test {
                 a.push(Rw::Start { rw_counter: 1 });
             }
         }))
-        .run_with_chunk(Some(intermediate_single_chunkctx));
+        .run_with_chunk(3, 10);
     }
 }
