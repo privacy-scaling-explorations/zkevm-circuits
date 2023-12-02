@@ -616,8 +616,8 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
         let max_rws = total_rws_before_end_block
             + {
                 1 // +1 for reserving RW::Start at row 1 (offset 0)
-                + if self.chunk_ctx.as_ref().map(|chunk_ctx|chunk_ctx.is_last_chunk()).unwrap_or(true) && total_rws_before_end_block > 0 { 1 /*end_block -> CallContextFieldTag::TxId lookup*/ } else { 0 }
-                + if self.chunk_ctx.as_ref().map(|chunk_ctx|!chunk_ctx.is_last_chunk()).unwrap_or(false) {
+                + if self.chunk_ctx.is_last_chunk() && total_rws_before_end_block > 0 { 1 /*end_block -> CallContextFieldTag::TxId lookup*/ } else { 0 }
+                + if !self.chunk_ctx.is_last_chunk() {
                     10  /* stepstate lookup */
                 } else {0}
             };
