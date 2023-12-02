@@ -1,13 +1,15 @@
 use eth_types::{Word, U256};
 use halo2_proofs::circuit;
 
-use super::{ExecStep, FixedCParams, CircuitsParams, DynamicCParams};
+use super::{ExecStep, FixedCParams, CircuitsParams};
 use crate::operation::RWCounter;
 
 #[derive(Debug, Default, Clone)]
 pub struct Chunk {
     /// current context 
     pub ctx: ChunkContext,
+    /// fixed param for the chunk
+    pub fixed_param: FixedCParams,
     /// Begin op of a chunk
     pub begin_chunk: ExecStep,
     /// End op of a chunk
@@ -30,7 +32,7 @@ pub struct ChunkSteps {
 
 /// Context of a [`ChunkContext`].
 #[derive(Debug, Clone)]
-pub struct ChunkContext<C: CircuitsParams> {
+pub struct ChunkContext {
     /// index of current chunk, start from 0
     pub idx: usize,
     /// Used to track the inner chunk counter in every operation in the chunk.
@@ -43,25 +45,25 @@ pub struct ChunkContext<C: CircuitsParams> {
     /// end rw counter
     pub end_rwc: usize,
     ///
-    pub circuit_param: C,
+    pub is_dynamic: bool,
 }
 
-impl<C: CircuitsParams>  Default for ChunkContext<C> {
+impl Default for ChunkContext {
     fn default() -> Self {
-        Self::new(0, 1, DynamicCParams::default())
+        Self::new(0, 1, false)
     }
 }
 
-impl<C: CircuitsParams>  ChunkContext<C> {
+impl ChunkContext {
     /// Create a new Self
-    pub fn new(cur_idx: usize, total_chunks: usize, circuit_param: C) -> Self {
+    pub fn new(cur_idx: usize, total_chunks: usize, is_dynamic: bool) -> Self {
         Self {
             rwc: RWCounter::new(),
             idx: cur_idx,
             total_chunks,
             initial_rwc: 1, // rw counter start from 1
             end_rwc: 0,     // end_rwc should be set in later phase
-            circuit_param,
+            is_dynamic,
         }
     }
 
@@ -73,7 +75,7 @@ impl<C: CircuitsParams>  ChunkContext<C> {
             total_chunks: 1,
             initial_rwc: 1, // rw counter start from 1
             end_rwc: 0,     // end_rwc should be set in later phase
-            circuit_param: DynamicCParams { total_chunks: 1},
+            is_dynamic: false
         }
     }
 

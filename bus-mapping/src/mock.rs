@@ -44,7 +44,7 @@ impl<C: CircuitsParams> BlockData<C> {
                 &self.eth_block,
             )
             .unwrap(),
-            self.circuits_params,
+        self.circuits_params,
         )
     }
 

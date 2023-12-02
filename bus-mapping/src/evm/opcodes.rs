@@ -343,9 +343,9 @@ fn fn_gen_error_state_associated_ops(
 #[allow(clippy::collapsible_else_if)]
 /// Generate the associated operations according to the particular
 /// [`OpcodeId`].
-pub fn gen_associated_ops<C>(
+pub fn gen_associated_ops(
     opcode_id: &OpcodeId,
-    state: &mut CircuitInputStateRef<C>,
+    state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
     let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
@@ -402,8 +402,8 @@ pub fn gen_associated_ops<C>(
     fn_gen_associated_ops(state, geth_steps)
 }
 
-pub fn gen_associated_steps<C>(
-    state: &mut CircuitInputStateRef<C>,
+pub fn gen_associated_steps(
+    state: &mut CircuitInputStateRef,
     execution_step: ExecState,
 ) -> Result<ExecStep, Error> {
     let fn_gen_associated_steps = match execution_step {
@@ -420,15 +420,15 @@ pub fn gen_associated_steps<C>(
 struct DummySelfDestruct;
 
 impl Opcode for DummySelfDestruct {
-    fn gen_associated_ops<C>(
-        state: &mut CircuitInputStateRef<C>,
+    fn gen_associated_ops(
+        state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         dummy_gen_selfdestruct_ops(state, geth_steps)
     }
 }
-fn dummy_gen_selfdestruct_ops<C>(
-    state: &mut CircuitInputStateRef<C>,
+fn dummy_gen_selfdestruct_ops(
+    state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
     let geth_step = &geth_steps[0];

@@ -27,7 +27,7 @@ use std::cmp::max;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
 /// [`ExecStep`].
-pub struct CircuitInputStateRef<'a, C> {
+pub struct CircuitInputStateRef<'a> {
     /// StateDB
     pub sdb: &'a mut StateDB,
     /// CodeDB
@@ -37,14 +37,14 @@ pub struct CircuitInputStateRef<'a, C> {
     /// Block Context
     pub block_ctx: &'a mut BlockContext,
     /// Chunk Context
-    pub chunk_ctx: &'a mut ChunkContext<C>,
+    pub chunk_ctx: &'a mut ChunkContext,
     /// Transaction
     pub tx: &'a mut Transaction,
     /// Transaction Context
     pub tx_ctx: &'a mut TransactionContext,
 }
 
-impl<'a, C> CircuitInputStateRef<'a, C> {
+impl<'a> CircuitInputStateRef<'a> {
     /// Create a new step from a `GethExecStep`
     pub fn new_step(&self, geth_step: &GethExecStep) -> Result<ExecStep, Error> {
         let call_ctx = self.tx_ctx.call_ctx()?;

@@ -197,9 +197,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let block: GethData = self.test_ctx.unwrap().into();
             let mut builder =
                 BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-            if let Some(chunk_ctx) = chunk_ctx {
-                builder.set_chunk_ctx(chunk_ctx)
-            }
+            builder.chunk_ctx = chunk_ctx.unwrap();
             let builder = builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();

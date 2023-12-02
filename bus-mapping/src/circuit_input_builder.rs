@@ -80,26 +80,6 @@ pub struct FixedCParams {
     pub max_keccak_rows: usize,
 }
 
-pub enum CircuitsParams_ {
-    Fixed(FixedCParams),
-    Dynamic(DynamicCParams),
-}
-
-impl CircuitsParams_ {
-    pub fn total_chunks(&self) -> usize {
-        match self {
-            CircuitsParams_::Fixed(params) => params.total_chunks,
-            CircuitsParams_::Dynamic(params) => params.total_chunks,
-        }
-    }
-    pub fn max_rws(&self) -> usize {
-        match self {
-            CircuitsParams_::Fixed(params) => params.max_rws,
-            CircuitsParams_::Dynamic(params) => unreachable!(),
-        }
-    }
-}
-
 /// Unset Circuits Parameters
 ///
 /// To reduce the testing overhead, we determine the parameters by the testing inputs.
@@ -197,7 +177,9 @@ pub struct CircuitInputBuilder<C: CircuitsParams> {
     /// Block Context
     pub block_ctx: BlockContext,
     /// Chunk Context
-    pub chunk_ctx: ChunkContext<C>,
+    pub chunk_ctx: ChunkContext,
+    /// Circuit Params
+    pub circuits_params: C,
 }
 
 impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
@@ -212,7 +194,8 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             block,
             chunks,
             block_ctx: BlockContext::new(),
-            chunk_ctx: ChunkContext::new(0, total_chunks, params),
+            chunk_ctx: ChunkContext::new(0, total_chunks, params.is_dynamic()),
+            circuits_params: params,
         }
     }
 
@@ -350,16 +333,15 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             // Chunk 
             if self.chunk_ctx.rwc.0 >= self.circuits_params.max_rws() {
                 self.set_end_chunk();
-                if self.circuit_params.is_dynamic() {
-                    let mut params = self.chunk_ctx.circuit_param.clone();
+                if self.chunk_ctx.is_dynamic {
+                    let mut params = self.compute_param(&self.block.eth_block);
                     self.compute_param_inner(&mut params);
-                    self.chunk_ctx.circuit_param = params;
+                    self.cur_chunk_mut().fixed_param = params;
                 }
                 self.commit_chunk(true);
                 self.set_begin_chunk();
             }
         }
-
         // Generate EndTx step
         let end_tx_step =
             gen_associated_steps(&mut self.state_ref(&mut tx, &mut tx_ctx), ExecState::EndTx)?;
@@ -521,6 +503,11 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     ///
     pub fn cur_chunk(&self) -> Chunk {
         self.chunks[self.chunk_ctx.idx].clone()
+    }
+
+    ///
+    pub fn cur_chunk_mut(&mut self) -> &mut Chunk {
+        &mut self.chunks[self.chunk_ctx.idx]
     }
 
     ///
@@ -712,7 +699,8 @@ impl CircuitInputBuilder<DynamicCParams> {
             block: self.block,
             chunks: self.chunks,
             block_ctx: self.block_ctx,
-            chunk_ctx: ChunkContext::new(0, total_chunks, c_params),
+            chunk_ctx: ChunkContext::new(0, total_chunks, true),
+            circuits_params: c_params,
         };
 
         if !cib.chunk_ctx.is_last_chunk() {
