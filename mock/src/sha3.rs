@@ -76,14 +76,14 @@ impl Sha3CodeGen {
 
         // add opcodes to populate memory in the current context.
         let mut code = Bytecode::default();
-        for (i, memchunk) in data.chunks(32).enumerate() {
-            let mem_value = if memchunk.len() < 32 {
+        for (i, mem_chunk) in data.chunks(32).enumerate() {
+            let mem_value = if mem_chunk.len() < 32 {
                 std::iter::repeat(0u8)
-                    .take(32 - memchunk.len())
-                    .chain(memchunk.to_vec())
+                    .take(32 - mem_chunk.len())
+                    .chain(mem_chunk.to_vec())
                     .collect::<Vec<u8>>()
             } else {
-                memchunk.to_vec()
+                mem_chunk.to_vec()
             };
             memory.extend_from_slice(&mem_value);
             code.op_mstore(32 * i, U256::from_big_endian(&mem_value));

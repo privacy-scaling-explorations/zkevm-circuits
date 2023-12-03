@@ -295,12 +295,12 @@ impl Memory {
     /// Reads an entire [`Word`] which starts at the provided [`MemoryAddress`]
     /// `addr` and finnishes at `addr + 32`.
     pub fn read_word(&self, addr: MemoryAddress) -> Word {
-        Word::from_big_endian(&self.readchunk(addr, MemoryAddress::from(32)))
+        Word::from_big_endian(&self.read_chunk(addr, MemoryAddress::from(32)))
     }
 
     /// Reads an chunk of memory[offset..offset+length]. Zeros will be padded if
     /// index out of range.
-    pub fn readchunk(&self, offset: MemoryAddress, length: MemoryAddress) -> Vec<u8> {
+    pub fn read_chunk(&self, offset: MemoryAddress, length: MemoryAddress) -> Vec<u8> {
         let chunk = if self.0.len() < offset.0 {
             &[]
         } else {

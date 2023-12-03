@@ -732,7 +732,7 @@ impl<'a> CircuitInputStateRef<'a> {
             CallKind::Call | CallKind::CallCode | CallKind::DelegateCall | CallKind::StaticCall => {
                 current_call
                     .memory
-                    .readchunk(call.call_data_offset.into(), call.call_data_length.into())
+                    .read_chunk(call.call_data_offset.into(), call.call_data_length.into())
             }
             CallKind::Create | CallKind::Create2 => Vec::new(),
         };
@@ -1075,7 +1075,7 @@ impl<'a> CircuitInputStateRef<'a> {
             let length = step.stack.nth_last(1)?;
             let code = call_ctx
                 .memory
-                .readchunk(offset.low_u64().into(), length.low_u64().into());
+                .read_chunk(offset.low_u64().into(), length.low_u64().into());
             let code_hash = self.code_db.insert(code);
             let (found, callee_account) = self.sdb.get_account_mut(&call.address);
             if !found {

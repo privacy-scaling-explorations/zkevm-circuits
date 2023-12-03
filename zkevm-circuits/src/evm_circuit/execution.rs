@@ -248,7 +248,7 @@ pub struct ExecutionConfig<F> {
     begin_tx_gadget: Box<BeginTxGadget<F>>,
     end_block_gadget: Box<EndBlockGadget<F>>,
     end_tx_gadget: Box<EndTxGadget<F>>,
-    beginchunk_gadget: Box<BeginChunkGadget<F>>,
+    begin_chunk_gadget: Box<BeginChunkGadget<F>>,
     endchunk_gadget: Box<EndChunkGadget<F>>,
     // opcode gadgets
     add_sub_gadget: Box<AddSubGadget<F>>,
@@ -555,7 +555,7 @@ impl<F: Field> ExecutionConfig<F> {
             begin_tx_gadget: configure_gadget!(),
             end_block_gadget: configure_gadget!(),
             end_tx_gadget: configure_gadget!(),
-            beginchunk_gadget: configure_gadget!(),
+            begin_chunk_gadget: configure_gadget!(),
             endchunk_gadget: configure_gadget!(),
             // opcode gadgets
             add_sub_gadget: configure_gadget!(),
@@ -1399,7 +1399,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
-            ExecutionState::BeginChunk => assign_exec_step!(self.beginchunk_gadget),
+            ExecutionState::BeginChunk => assign_exec_step!(self.begin_chunk_gadget),
             ExecutionState::EndChunk => assign_exec_step!(self.endchunk_gadget),
             // opcode
             ExecutionState::ADD_SUB => assign_exec_step!(self.add_sub_gadget),

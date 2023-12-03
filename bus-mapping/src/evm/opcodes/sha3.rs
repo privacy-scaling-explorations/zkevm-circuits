@@ -41,7 +41,7 @@ impl Opcode for Sha3 {
             .memory
             // Get low Uint64 of offset to generate copy steps. Since offset
             // could be Uint64 overflow if length is zero.
-            .readchunk(offset.low_u64().into(), size.as_usize().into());
+            .read_chunk(offset.low_u64().into(), size.as_usize().into());
 
         // keccak-256 hash of the given data in memory.
         let sha3 = keccak256(&memory);

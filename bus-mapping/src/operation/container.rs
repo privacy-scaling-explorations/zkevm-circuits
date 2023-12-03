@@ -222,25 +222,25 @@ mod container_test {
 
     #[test]
     fn operation_container_test() {
-        // global counter same as intrachunk_counter in single chunk
+        // global counter same as intra_chunk_counter in single chunk
         let mut global_counter = RWCounter::default();
-        let mut intrachunk_counter = RWCounter::default();
+        let mut intra_chunk_counter = RWCounter::default();
         let mut operation_container = OperationContainer::default();
         let stack_operation = Operation::new(
             global_counter.inc_pre(),
-            intrachunk_counter.inc_pre(),
+            intra_chunk_counter.inc_pre(),
             RW::WRITE,
             StackOp::new(1, StackAddress(1023), Word::from(0x100)),
         );
         let memory_operation = Operation::new(
             global_counter.inc_pre(),
-            intrachunk_counter.inc_pre(),
+            intra_chunk_counter.inc_pre(),
             RW::WRITE,
             MemoryOp::new(1, MemoryAddress::from(1), 1),
         );
         let storage_operation = Operation::new(
             global_counter.inc_pre(),
-            intrachunk_counter.inc_pre(),
+            intra_chunk_counter.inc_pre(),
             RW::WRITE,
             StorageOp::new(
                 Address::zero(),

@@ -77,7 +77,7 @@ pub struct EvmCircuitConfig<F> {
     chunk_index: Column<Advice>,
     chunk_index_next: Column<Advice>,
     total_chunks: Column<Advice>,
-    qchunk_context: Selector,
+    q_chunk_context: Selector,
     is_first_chunk: IsZeroConfig<F>,
     is_lastchunk: IsZeroConfig<F>,
 }
@@ -131,7 +131,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         let chunk_index_next = meta.advice_column();
         let chunk_diff = meta.advice_column();
         let total_chunks = meta.advice_column();
-        let qchunk_context = meta.complex_selector();
+        let q_chunk_context = meta.complex_selector();
 
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
         let chunkctx_table = ChunkCtxTable::construct(meta);
@@ -144,11 +144,11 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         .iter()
         .for_each(|(tag_expr, value_col)| {
             meta.lookup_any("chunk context lookup", |meta| {
-                let qchunk_context = meta.query_selector(qchunk_context);
+                let q_chunk_context = meta.query_selector(q_chunk_context);
                 let value_col_expr = meta.query_advice(*value_col, Rotation::cur());
 
                 vec![(
-                    qchunk_context
+                    q_chunk_context
                         * rlc::expr(
                             &[tag_expr.clone(), value_col_expr],
                             challenges.lookup_input(),
@@ -160,14 +160,14 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
 
         let is_first_chunk = IsZeroChip::configure(
             meta,
-            |meta| meta.query_selector(qchunk_context),
+            |meta| meta.query_selector(q_chunk_context),
             |meta| meta.query_advice(chunk_index, Rotation::cur()),
             chunk_index_inv,
         );
 
         let is_lastchunk = IsZeroChip::configure(
             meta,
-            |meta| meta.query_selector(qchunk_context),
+            |meta| meta.query_selector(q_chunk_context),
             |meta| {
                 let chunk_index = meta.query_advice(chunk_index, Rotation::cur());
                 let total_chunks = meta.query_advice(total_chunks, Rotation::cur());
@@ -247,7 +247,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             total_chunks,
             is_first_chunk,
             is_lastchunk,
-            qchunk_context,
+            q_chunk_context,
         }
     }
 }
@@ -295,7 +295,7 @@ impl<F: Field> EvmCircuitConfig<F> {
         let (
             chunk_index_cell,
             chunk_index_next_cell,
-            totalchunk_cell,
+            total_chunk_cell,
             initial_rwc_cell,
             end_rwc_cell,
         ) = self.chunkctx_table.load(layouter, chunk_ctx)?;
@@ -306,7 +306,7 @@ impl<F: Field> EvmCircuitConfig<F> {
             || "chunk context",
             |mut region| {
                 for offset in 0..max_offset_index + 1 {
-                    self.qchunk_context.enable(&mut region, offset)?;
+                    self.q_chunk_context.enable(&mut region, offset)?;
 
                     region.assign_advice(
                         || "chunk_index",
@@ -346,7 +346,7 @@ impl<F: Field> EvmCircuitConfig<F> {
         Ok((
             chunk_index_cell,
             chunk_index_next_cell,
-            totalchunk_cell,
+            total_chunk_cell,
             initial_rwc_cell,
             end_rwc_cell,
         ))
