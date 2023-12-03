@@ -93,7 +93,7 @@ impl ChunkContext {
     }
 
     /// is last chunk
-    pub fn is_lastchunk(&self) -> bool {
+    pub fn is_last_chunk(&self) -> bool {
         self.total_chunks - self.idx - 1 == 0
     }
 }

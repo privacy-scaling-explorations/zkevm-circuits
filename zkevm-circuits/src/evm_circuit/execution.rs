@@ -354,7 +354,7 @@ impl<F: Field> ExecutionConfig<F> {
         exp_table: &dyn LookupTable<F>,
         chunkctx_table: &dyn LookupTable<F>,
         is_first_chunk: &IsZeroConfig<F>,
-        is_lastchunk: &IsZeroConfig<F>,
+        is_last_chunk: &IsZeroConfig<F>,
     ) -> Self {
         let mut instrument = Instrument::default();
         let q_usable = meta.complex_selector();
@@ -428,7 +428,7 @@ impl<F: Field> ExecutionConfig<F> {
                     step_curr.execution_state_selector([ExecutionState::EndBlock]);
                 iter::once((
                     "Last step last chunk should be EndBlock",
-                    is_lastchunk.expr() * q_step_last.clone() * (1.expr() - end_block_selector),
+                    is_last_chunk.expr() * q_step_last.clone() * (1.expr() - end_block_selector),
                 ))
             };
 
@@ -437,7 +437,7 @@ impl<F: Field> ExecutionConfig<F> {
                     step_curr.execution_state_selector([ExecutionState::EndChunk]);
                 iter::once((
                     "Last step (non last chunk) should be EndChunk",
-                    (1.expr() - is_lastchunk.expr())
+                    (1.expr() - is_last_chunk.expr())
                         * q_step_last
                         * (1.expr() - endchunk_selector),
                 ))
@@ -1150,7 +1150,7 @@ impl<F: Field> ExecutionConfig<F> {
                     offset = last_row;
                 }
 
-                let height = if chunk.chunk_context.is_lastchunk() {
+                let height = if chunk.chunk_context.is_last_chunk() {
                     // part3: assign the last EndBlock at offset `evm_rows - 1`
                     let height = ExecutionState::EndBlock.get_step_height();
                     debug_assert_eq!(height, 1);

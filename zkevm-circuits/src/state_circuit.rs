@@ -223,13 +223,13 @@ impl<F: Field> StateCircuitConfig<F> {
         layouter: &mut impl Layouter<F>,
         rows: &[Rw],
         n_rows: usize, // 0 means dynamically calculated from `rows`.
-        rw_tablechunked_index: usize,
+        rw_table_chunked_index: usize,
     ) -> Result<(), Error> {
         let updates = MptUpdates::mock_from(rows);
         layouter.assign_region(
             || "state circuit",
             |mut region| {
-                self.assign_with_region(&mut region, rows, &updates, n_rows, rw_tablechunked_index)
+                self.assign_with_region(&mut region, rows, &updates, n_rows, rw_table_chunked_index)
             },
         )
     }
@@ -240,12 +240,12 @@ impl<F: Field> StateCircuitConfig<F> {
         rows: &[Rw],
         updates: &MptUpdates,
         n_rows: usize, // 0 means dynamically calculated from `rows`.
-        rw_tablechunked_index: usize,
+        rw_table_chunked_index: usize,
     ) -> Result<(), Error> {
         let tag_chip = BinaryNumberChip::construct(self.sort_keys.tag);
 
         let (rows, padding_length) =
-            RwMap::table_assignments_padding(rows, n_rows, rw_tablechunked_index == 0);
+            RwMap::table_assignments_padding(rows, n_rows, rw_table_chunked_index == 0);
         let rows_len = rows.len();
 
         let mut state_root = updates.old_root();

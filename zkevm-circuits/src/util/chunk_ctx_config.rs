@@ -30,15 +30,15 @@ pub struct ChunkContextConfig<F> {
 
     /// is_first_chunk config
     pub is_first_chunk: IsZeroConfig<F>,
-    /// is_lastchunk config
-    pub is_lastchunk: IsZeroConfig<F>,
+    /// is_last_chunk config
+    pub is_last_chunk: IsZeroConfig<F>,
 
     /// ChunkCtxTable
     pub chunkctx_table: ChunkCtxTable,
     /// instance column for prev chunk context
     pub pi_pre_chunk_ctx: Column<Instance>,
     /// instance column for next chunk context
-    pub pi_nextchunkctx: Column<Instance>,
+    pub pi_next_chunk_ctx: Column<Instance>,
 }
 
 impl<F: Field> ChunkContextConfig<F> {
@@ -52,9 +52,9 @@ impl<F: Field> ChunkContextConfig<F> {
         let total_chunks = meta.advice_column();
 
         let pi_pre_chunk_ctx = meta.instance_column();
-        let pi_nextchunkctx = meta.instance_column();
+        let pi_next_chunk_ctx = meta.instance_column();
         meta.enable_equality(pi_pre_chunk_ctx);
-        meta.enable_equality(pi_nextchunkctx);
+        meta.enable_equality(pi_next_chunk_ctx);
 
         let chunkctx_table = ChunkCtxTable::construct(meta);
         chunkctx_table.annotate_columns(meta);
@@ -88,7 +88,7 @@ impl<F: Field> ChunkContextConfig<F> {
             chunk_index_inv,
         );
 
-        let is_lastchunk = IsZeroChip::configure(
+        let is_last_chunk = IsZeroChip::configure(
             meta,
             |meta| meta.query_selector(q_chunk_context),
             |meta| {
@@ -106,15 +106,15 @@ impl<F: Field> ChunkContextConfig<F> {
             chunk_index_next,
             total_chunks,
             is_first_chunk,
-            is_lastchunk,
+            is_last_chunk,
             chunkctx_table,
             pi_pre_chunk_ctx,
-            pi_nextchunkctx,
+            pi_next_chunk_ctx,
         }
     }
 
     /// assign chunk context
-    pub fn assignchunk_context(
+    pub fn assign_chunk_context(
         &self,
         layouter: &mut impl Layouter<F>,
         chunk_context: &ChunkContext,
@@ -129,7 +129,7 @@ impl<F: Field> ChunkContextConfig<F> {
         ) = self.chunkctx_table.load(layouter, chunk_context)?;
 
         let is_first_chunk = IsZeroChip::construct(self.is_first_chunk.clone());
-        let is_lastchunk = IsZeroChip::construct(self.is_lastchunk.clone());
+        let is_last_chunk = IsZeroChip::construct(self.is_last_chunk.clone());
         layouter.assign_region(
             || "chunk context",
             |mut region| {
@@ -137,11 +137,11 @@ impl<F: Field> ChunkContextConfig<F> {
                 region.name_column(|| "chunk_index_next", self.chunk_index_next);
                 region.name_column(|| "total_chunks", self.total_chunks);
                 region.name_column(|| "pi_pre_chunk_ctx", self.pi_pre_chunk_ctx);
-                region.name_column(|| "pi_nextchunkctx", self.pi_nextchunkctx);
+                region.name_column(|| "pi_next_chunk_ctx", self.pi_next_chunk_ctx);
                 self.is_first_chunk
                     .annotate_columns_in_region(&mut region, "is_first_chunk");
-                self.is_lastchunk
-                    .annotate_columns_in_region(&mut region, "is_lastchunk");
+                self.is_last_chunk
+                    .annotate_columns_in_region(&mut region, "is_last_chunk");
                 self.chunkctx_table.annotate_columns_in_region(&mut region);
 
                 for offset in 0..max_offset_index + 1 {
@@ -173,7 +173,7 @@ impl<F: Field> ChunkContextConfig<F> {
                         offset,
                         Value::known(F::from(chunk_context.chunk_index as u64)),
                     )?;
-                    is_lastchunk.assign(
+                    is_last_chunk.assign(
                         &mut region,
                         offset,
                         Value::known(F::from(
@@ -195,7 +195,7 @@ impl<F: Field> ChunkContextConfig<F> {
             .iter()
             .enumerate()
             .try_for_each(|(i, cell)| {
-                layouter.constrain_instance(cell.cell(), self.pi_nextchunkctx, i)
+                layouter.constrain_instance(cell.cell(), self.pi_next_chunk_ctx, i)
             })?;
 
         Ok(())

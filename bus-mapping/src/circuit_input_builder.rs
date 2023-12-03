@@ -334,7 +334,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             
             // Generate EndChunk and proceed to the next if it's not the last chunk 
             if ischunked 
-                && !self.chunk_ctx.is_lastchunk() 
+                && !self.chunk_ctx.is_last_chunk() 
                 && self.chunk_ctx.rwc.0 >= self.circuits_params.max_rws() 
                 {
                     // Update param accordding to number of rws actually generated
@@ -631,9 +631,9 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
                 // reserving RW::Start at row 1 (offset 0)
                 1
                 // end_block -> CallContextFieldTag::TxId lookup
-                + if self.chunk_ctx.is_lastchunk() && rws_before_end_block_orchunk > 0 { 1 } else { 0 }
+                + if self.chunk_ctx.is_last_chunk() && rws_before_end_block_orchunk > 0 { 1 } else { 0 }
                 // endchunk -> stepstate lookups
-                + if !self.chunk_ctx.is_lastchunk() { 10  } else {0}
+                + if !self.chunk_ctx.is_last_chunk() { 10  } else {0}
             };
         // Computing the number of rows for the EVM circuit requires the size of ExecStep,
         // which is determined in the code of zkevm-circuits and cannot be imported here.

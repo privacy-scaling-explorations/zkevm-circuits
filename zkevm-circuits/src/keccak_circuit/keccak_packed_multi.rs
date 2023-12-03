@@ -540,9 +540,9 @@ pub(crate) fn keccak<F: Field>(
     let mut length = 0usize;
     let mut data_rlc = Value::known(F::ZERO);
     let chunks = bits.chunks(RATE_IN_BITS);
-    let numchunks = chunks.len();
+    let num_chunks = chunks.len();
     for (idx, chunk) in chunks.enumerate() {
-        let is_final_block = idx == numchunks - 1;
+        let is_final_block = idx == num_chunks - 1;
 
         let mut absorb_rows = Vec::new();
         // Absorb

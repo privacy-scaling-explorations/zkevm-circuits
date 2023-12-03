@@ -164,10 +164,10 @@ pub(crate) fn field_xor<F: Field>(a: F, b: F) -> F {
 /// in parts of `part_size`
 pub(crate) fn target_part_sizes(part_size: usize) -> Vec<usize> {
     let num_fullchunks = NUM_BITS_PER_WORD / part_size;
-    let partialchunk_size = NUM_BITS_PER_WORD % part_size;
+    let partial_chunk_size = NUM_BITS_PER_WORD % part_size;
     let mut part_sizes = vec![part_size; num_fullchunks];
-    if partialchunk_size > 0 {
-        part_sizes.push(partialchunk_size);
+    if partial_chunk_size > 0 {
+        part_sizes.push(partial_chunk_size);
     }
     part_sizes
 }
