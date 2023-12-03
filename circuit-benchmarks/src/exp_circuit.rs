@@ -52,7 +52,7 @@ mod tests {
         let block = generate_full_events_block(degree, base, exponent);
         let circuit = TestExpCircuit::<Fr>::new(
             block.exp_events.clone(),
-            block.circuits_params.max_exp_steps,
+            chunk.fixed_param.max_exp_steps,
         );
 
         // Initialize the polynomial commitment parameters

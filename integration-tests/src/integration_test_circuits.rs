@@ -67,7 +67,7 @@ const MAX_EXP_STEPS: usize = 1000;
 const MAX_KECCAK_ROWS: usize = 38000;
 
 const CIRCUITS_PARAMS: FixedCParams = FixedCParams {
-    total_chunks: TOTAL_CHUNKS,
+    totalchunks: TOTAL_CHUNKS,
     max_rws: MAX_RWS,
     max_txs: MAX_TXS,
     max_calldata: MAX_CALLDATA,
@@ -282,7 +282,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         match self.key.clone() {
             Some(key) => key,
             None => {
-                let (block, chunk) = new_empty_block_chunk();
+                let (block, chunk) = new_empty_blockchunk();
                 let circuit = C::new_from_block(&block, &chunk);
                 let general_params = get_general_params(self.degree);
 
@@ -303,7 +303,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                 let params = get_general_params(self.degree);
                 let pk = self.get_key();
 
-                let (block, chunk) = new_empty_block_chunk();
+                let (block, chunk) = new_empty_blockchunk();
                 let circuit = C::new_from_block(&block, &chunk);
                 let instance = circuit.instance();
 
@@ -483,7 +483,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
     }
 }
 
-fn new_empty_block_chunk() -> (Block<Fr>, Chunk<Fr>) {
+fn new_empty_blockchunk() -> (Block<Fr>, Chunk<Fr>) {
     let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
         .unwrap()
         .into();

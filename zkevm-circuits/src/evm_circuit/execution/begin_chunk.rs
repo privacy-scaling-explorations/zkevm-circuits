@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for BeginChunkGadget<F> {
         _region: &mut CachedRegion<'_, '_, F>,
         _offset: usize,
         _block: &Block<F>,
-        _chunk: &Chunk<F>,
+        chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         _step: &ExecStep,
@@ -64,7 +64,7 @@ mod test {
     }
 
     #[test]
-    fn begin_chunk_test() {
+    fn beginchunk_test() {
         let bytecode = bytecode! {
             STOP
         };

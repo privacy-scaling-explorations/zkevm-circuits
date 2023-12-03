@@ -111,7 +111,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _chunk: &Chunk<F>,
+        chunk: &Chunk<F>,
         _: &Transaction,
         call: &Call,
         step: &ExecStep,

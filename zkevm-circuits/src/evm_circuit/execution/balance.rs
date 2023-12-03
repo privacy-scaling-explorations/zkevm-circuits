@@ -111,7 +111,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _chunk: &Chunk<F>,
+        chunk: &Chunk<F>,
         tx: &Transaction,
         call: &Call,
         step: &ExecStep,

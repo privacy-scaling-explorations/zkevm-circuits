@@ -1,3 +1,5 @@
+use crate::witness::Chunk;
+
 use super::*;
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 9];
@@ -206,6 +208,7 @@ impl CopyTable {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
+        chunk: &Chunk<F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
@@ -240,7 +243,7 @@ impl CopyTable {
                 }
 
                 // Enable selector at all rows
-                let max_copy_rows = block.circuits_params.max_copy_rows;
+                let max_copy_rows = chunk.fixed_param.max_copy_rows;
                 for offset in 0..max_copy_rows {
                     region.assign_fixed(
                         || "q_enable",

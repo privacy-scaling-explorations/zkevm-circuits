@@ -266,10 +266,10 @@ pub struct SuperCircuit<F: Field> {
 
 impl<F: Field> SuperCircuit<F> {
     /// Return the number of rows required to verify a given block
-    pub fn get_num_rows_required(block: &Block<F>) -> usize {
-        let num_rows_evm_circuit = EvmCircuit::<F>::get_num_rows_required(block);
+    pub fn get_num_rows_required(block: &Block<F>, chunk: &Chunk<F>) -> usize {
+        let num_rows_evm_circuit = EvmCircuit::<F>::get_num_rows_required(block, chunk);
         let num_rows_tx_circuit =
-            TxCircuitConfig::<F>::get_num_rows_required(block.circuits_params.max_txs);
+            TxCircuitConfig::<F>::get_num_rows_required(chunk.fixed_param.max_txs);
         num_rows_evm_circuit.max(num_rows_tx_circuit)
     }
 }
@@ -300,7 +300,7 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
         let tx_circuit = TxCircuit::new_from_block(block, chunk);
         let pi_circuit = PiCircuit::new_from_block(block, chunk);
         let bytecode_circuit = BytecodeCircuit::new_from_block(block, chunk);
-        let copy_circuit = CopyCircuit::new_from_block_no_external(block);
+        let copy_circuit = CopyCircuit::new_from_block_no_external(block, chunk);
         let exp_circuit = ExpCircuit::new_from_block(block, chunk);
         let keccak_circuit = KeccakCircuit::new_from_block(block, chunk);
 
@@ -313,7 +313,7 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
             copy_circuit,
             exp_circuit,
             keccak_circuit,
-            circuits_params: block.circuits_params,
+            circuits_params: chunk.fixed_param,
             mock_randomness: block.randomness,
         }
     }
@@ -334,15 +334,15 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &Block<F>) -> (usize, usize) {
-        let evm = EvmCircuit::min_num_rows_block(block);
-        let state = StateCircuit::min_num_rows_block(block);
-        let bytecode = BytecodeCircuit::min_num_rows_block(block);
-        let copy = CopyCircuit::min_num_rows_block(block);
-        let keccak = KeccakCircuit::min_num_rows_block(block);
-        let tx = TxCircuit::min_num_rows_block(block);
-        let exp = ExpCircuit::min_num_rows_block(block);
-        let pi = PiCircuit::min_num_rows_block(block);
+    fn min_num_rows_block(block: &Block<F>, chunk: &Chunk<F>) -> (usize, usize) {
+        let evm = EvmCircuit::min_num_rows_block(block, chunk);
+        let state = StateCircuit::min_num_rows_block(block, chunk);
+        let bytecode = BytecodeCircuit::min_num_rows_block(block, chunk);
+        let copy = CopyCircuit::min_num_rows_block(block, chunk);
+        let keccak = KeccakCircuit::min_num_rows_block(block, chunk);
+        let tx = TxCircuit::min_num_rows_block(block, chunk);
+        let exp = ExpCircuit::min_num_rows_block(block, chunk);
+        let pi = PiCircuit::min_num_rows_block(block, chunk);
 
         let rows: Vec<(usize, usize)> = vec![evm, state, bytecode, copy, keccak, tx, exp, pi];
         let (rows_without_padding, rows_with_padding): (Vec<usize>, Vec<usize>) =
@@ -483,7 +483,7 @@ impl<F: Field> SuperCircuit<F> {
         let chunk = chunk_convert(builder, 0).unwrap();
         block.randomness = mock_randomness;
 
-        let (_, rows_needed) = Self::min_num_rows_block(&block);
+        let (_, rows_needed) = Self::min_num_rows_block(&block, &chunk);
         let k = log2_ceil(Self::unusable_rows() + rows_needed);
         log::debug!("super circuit uses k = {}", k);
 

@@ -11,9 +11,9 @@ pub struct Chunk {
     /// fixed param for the chunk
     pub fixed_param: FixedCParams,
     /// Begin op of a chunk
-    pub begin_chunk: ExecStep,
+    pub beginchunk: ExecStep,
     /// End op of a chunk
-    pub end_chunk: Option<ExecStep>,
+    pub endchunk: Option<ExecStep>,
     // Set in chunk_convert, used when converting the next chunk
     /// rw_table permutation fingerprint for this chunk
     pub rw_fingerprint: Word,
@@ -25,9 +25,9 @@ pub struct Chunk {
 #[derive(Debug, Default)]
 pub struct ChunkSteps {
     /// Begin op of a chunk
-    pub begin_chunk: ExecStep,
+    pub beginchunk: ExecStep,
     /// End op of a chunk
-    pub end_chunk: Option<ExecStep>,
+    pub endchunk: Option<ExecStep>,
 }
 
 /// Context of a [`ChunkContext`].
@@ -39,7 +39,7 @@ pub struct ChunkContext {
     /// Contains the next available value.
     pub rwc: RWCounter,
     /// number of chunks
-    pub total_chunks: usize,
+    pub totalchunks: usize,
     /// initial rw counter
     pub initial_rwc: usize,
     /// end rw counter
@@ -56,11 +56,11 @@ impl Default for ChunkContext {
 
 impl ChunkContext {
     /// Create a new Self
-    pub fn new(cur_idx: usize, total_chunks: usize, is_dynamic: bool) -> Self {
+    pub fn new(cur_idx: usize, totalchunks: usize, is_dynamic: bool) -> Self {
         Self {
             rwc: RWCounter::new(),
             idx: cur_idx,
-            total_chunks,
+            totalchunks,
             initial_rwc: 1, // rw counter start from 1
             end_rwc: 0,     // end_rwc should be set in later phase
             is_dynamic,
@@ -68,11 +68,11 @@ impl ChunkContext {
     }
 
     /// new Self with one chunk
-    pub fn new_one_chunk() -> Self {
+    pub fn new_onechunk() -> Self {
         Self {
             rwc: RWCounter::new(),
             idx: 0,
-            total_chunks: 1,
+            totalchunks: 1,
             initial_rwc: 1, // rw counter start from 1
             end_rwc: 0,     // end_rwc should be set in later phase
             is_dynamic: false
@@ -81,19 +81,19 @@ impl ChunkContext {
 
     ///
     pub fn next(&mut self, initial_rwc: usize) {
-        assert!(self.idx + 1 < self.total_chunks, "Exceed total chunks");
+        assert!(self.idx + 1 < self.totalchunks, "Exceed total chunks");
         self.idx += 1;
         self.initial_rwc = initial_rwc;
         self.end_rwc = 0;
     }
 
     /// is first chunk
-    pub fn is_first_chunk(&self) -> bool {
+    pub fn is_firstchunk(&self) -> bool {
         self.idx == 0
     }
 
     /// is last chunk
-    pub fn is_last_chunk(&self) -> bool {
-        self.total_chunks - self.idx - 1 == 0
+    pub fn is_lastchunk(&self) -> bool {
+        self.totalchunks - self.idx - 1 == 0
     }
 }

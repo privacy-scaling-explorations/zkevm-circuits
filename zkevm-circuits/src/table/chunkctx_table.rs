@@ -88,7 +88,7 @@ impl ChunkCtxTable {
                     // TotalChunks
                     (
                         F::from(ChunkCtxFieldTag::TotalChunks as u64),
-                        F::from(chunk_ctx.total_chunks as u64),
+                        F::from(chunk_ctx.totalchunks as u64),
                     ),
                     // InitialRWC
                     (

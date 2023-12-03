@@ -49,9 +49,9 @@ pub struct BlockSteps {
     pub end_block_last: ExecStep,
     // /// TODO Define and move chunk related step to Chunk struct
     // /// Begin op of a chunk
-    // pub begin_chunk: ExecStep,
+    // pub beginchunk: ExecStep,
     // /// End op of a chunk
-    // pub end_chunk: Option<ExecStep>,
+    // pub endchunk: Option<ExecStep>,
 }
 
 // TODO: Remove fields that are duplicated in`eth_block`
@@ -130,7 +130,7 @@ impl Block {
             container: OperationContainer::new(),
             txs: Vec::new(),
             block_steps: BlockSteps {
-                // begin_chunk: ExecStep {
+                // beginchunk: ExecStep {
                 //     exec_state: ExecState::BeginChunk,
                 //     ..ExecStep::default()
                 // },
@@ -142,7 +142,7 @@ impl Block {
                     exec_state: ExecState::EndBlock,
                     ..ExecStep::default()
                 },
-                // end_chunk: Some(ExecStep {
+                // endchunk: Some(ExecStep {
                 //     exec_state: ExecState::EndChunk,
                 //     ..ExecStep::default()
                 // }),

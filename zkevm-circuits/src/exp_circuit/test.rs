@@ -23,7 +23,7 @@ fn exp_circuit_unusable_rows() {
 pub fn test_exp_circuit<F: Field>(k: u32, block: Block<F>) {
     let circuit = ExpCircuit::<F>::new(
         block.exp_events.clone(),
-        block.circuits_params.max_exp_steps,
+        chunk.fixed_param.max_exp_steps,
     );
     let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
     prover.assert_satisfied_par()
@@ -132,7 +132,7 @@ fn variadic_size_check() {
     let block = block_convert::<Fr>(&builder).unwrap();
     let circuit = ExpCircuit::<Fr>::new(
         block.exp_events.clone(),
-        block.circuits_params.max_exp_steps,
+        chunk.fixed_param.max_exp_steps,
     );
     let prover1 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
@@ -150,7 +150,7 @@ fn variadic_size_check() {
     let block = block_convert::<Fr>(&builder).unwrap();
     let circuit = ExpCircuit::<Fr>::new(
         block.exp_events.clone(),
-        block.circuits_params.max_exp_steps,
+        chunk.fixed_param.max_exp_steps,
     );
     let prover2 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 

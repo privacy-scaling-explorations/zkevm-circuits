@@ -139,7 +139,7 @@ fn gen_copy_steps(
     let mem = state
         .call_ctx()?
         .memory
-        .read_chunk(src_addr.into(), bytes_left.into());
+        .readchunk(src_addr.into(), bytes_left.into());
 
     let mut copy_steps = Vec::with_capacity(bytes_left);
     for (idx, byte) in mem.iter().enumerate() {

@@ -98,7 +98,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _chunk: &Chunk<F>,
+        chunk: &Chunk<F>,
         _tx: &Transaction,
         call: &Call,
         step: &ExecStep,

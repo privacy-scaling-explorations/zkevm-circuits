@@ -129,7 +129,7 @@ const TEST_MOCK_RANDOMNESS: u64 = 0x100;
 fn serial_test_super_circuit_1tx_1max_tx() {
     let block = block_1tx();
     let circuits_params = FixedCParams {
-        total_chunks: 1,
+        totalchunks: 1,
         max_txs: 1,
         max_calldata: 32,
         max_rws: 256,
@@ -146,7 +146,7 @@ fn serial_test_super_circuit_1tx_1max_tx() {
 fn serial_test_super_circuit_1tx_2max_tx() {
     let block = block_1tx();
     let circuits_params = FixedCParams {
-        total_chunks: 1,
+        totalchunks: 1,
         max_txs: 2,
         max_calldata: 32,
         max_rws: 256,
@@ -163,7 +163,7 @@ fn serial_test_super_circuit_1tx_2max_tx() {
 fn serial_test_super_circuit_2tx_2max_tx() {
     let block = block_2tx();
     let circuits_params = FixedCParams {
-        total_chunks: 1,
+        totalchunks: 1,
         max_txs: 2,
         max_calldata: 32,
         max_rws: 256,

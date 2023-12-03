@@ -138,7 +138,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         )?;
 
         let total_txs = F::from(block.txs.len() as u64);
-        let max_txs = F::from(block.circuits_params.max_txs as u64);
+        let max_txs = F::from(chunk.fixed_param.max_txs as u64);
         self.total_txs
             .assign(region, offset, Value::known(total_txs))?;
         self.total_txs_is_max_txs
@@ -173,7 +173,7 @@ mod test {
         // finish required tests using this witness block
         CircuitTestBuilder::<2, 1>::new_from_test_ctx(ctx)
             .block_modifier(Box::new(move |block| {
-                block.circuits_params.max_evm_rows = evm_circuit_pad_to
+                chunk.fixed_param.max_evm_rows = evm_circuit_pad_to
             }))
             .run();
     }

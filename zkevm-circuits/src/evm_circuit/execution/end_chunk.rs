@@ -87,7 +87,7 @@ mod test {
 
     #[test]
     #[ignore] // still under development and testing
-    fn test_intermediate_single_chunk() {
+    fn test_intermediate_singlechunk() {
         let bytecode = bytecode! {
             STOP
         };
@@ -95,7 +95,7 @@ mod test {
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
         )
         .block_modifier(Box::new(move |block| {
-            block.circuits_params.max_evm_rows = 0; // auto padding
+            chunk.fixed_param.max_evm_rows = 0; // auto padding
 
             // TODO FIXME padding start as a workaround. The practical should be last chunk last row
             // rws
@@ -103,12 +103,12 @@ mod test {
                 a.push(Rw::Start { rw_counter: 1 });
             }
         }))
-        .run_with_chunk(3, 1);
+        .run_withchunk(3, 1);
     }
 
     #[test]
     #[ignore] // still under development and testing
-    fn test_single_chunk() {
+    fn test_singlechunk() {
         let bytecode = bytecode! {
             STOP
         };
@@ -116,7 +116,7 @@ mod test {
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
         )
         .block_modifier(Box::new(move |block| {
-            block.circuits_params.max_evm_rows = 0; // auto padding
+            chunk.fixed_param.max_evm_rows = 0; // auto padding
 
             // TODO FIXME padding start as a workaround. The practical should be last chunk last row
             // rws
@@ -124,6 +124,6 @@ mod test {
                 a.push(Rw::Start { rw_counter: 1 });
             }
         }))
-        .run_with_chunk(1, 0);
+        .run_withchunk(1, 0);
     }
 }

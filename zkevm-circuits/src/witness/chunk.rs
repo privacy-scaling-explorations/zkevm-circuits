@@ -15,9 +15,9 @@ use halo2_proofs::circuit::Value;
 #[derive(Debug, Clone, Default)]
 pub struct Chunk<F> {
     /// BeginChunk step to propagate State
-    pub begin_chunk: ExecStep,
+    pub beginchunk: ExecStep,
     /// EndChunk step that appears in the last EVM row for all the chunks other than the last.
-    pub end_chunk: Option<ExecStep>,
+    pub endchunk: Option<ExecStep>,
     /// chunk context
     pub chunk_context: ChunkContext,
     /// permutation challenge alpha
@@ -32,7 +32,9 @@ pub struct Chunk<F> {
     pub chrono_rw_prev_fingerprint: F,
     /// next chronological rw_table permutation fingerprint
     pub chrono_rw_fingerprint: F,
-    /// prev_chunk_last_call
+    /// fixed param for the chunk
+    pub fixed_param: FixedCParams,
+    /// prevchunk_last_call
     pub prev_block: Box<Option<Block<F>>>,
 }
 
@@ -42,7 +44,7 @@ pub fn chunk_convert<F: Field>(
     idx: usize
 ) -> Result<Chunk<F>, Error> {
     let block = &builder.block;
-    let chunk = builder.get_chunk(idx);
+    let chunk = builder.getchunk(idx);
     let _code_db = &builder.code_db;
     let rws = RwMap::from(&block.container);
 
@@ -50,25 +52,25 @@ pub fn chunk_convert<F: Field>(
     println!("| {:?} ... {:?} |", chunk.ctx.initial_rwc, chunk.ctx.end_rwc);
 
     // Get prev fingerprint if it exists, otherwise start with 1
-    let (rw_prev_fingerprint, chrono_rw_prev_fingerprint) = if chunk.ctx.is_first_chunk() {
+    let (rw_prev_fingerprint, chrono_rw_prev_fingerprint) = if chunk.ctx.is_firstchunk() {
         (F::from(1), F::from(1))
     } else {
-        let last_chunk = builder.prev_chunk();
+        let lastchunk = builder.prevchunk();
         (
-            last_chunk.rw_fingerprint.to_scalar().unwrap(),
-            last_chunk.chrono_rw_fingerprint.to_scalar().unwrap(),
+            lastchunk.rw_fingerprint.to_scalar().unwrap(),
+            lastchunk.chrono_rw_fingerprint.to_scalar().unwrap(),
         )
     };
     // Compute fingerprint of this chunk from rw tables
     let (rws_rows, _) = RwMap::table_assignments_padding(
         &rws.table_assignments(false),
         chunk.fixed_param.max_rws,
-        chunk.ctx.is_first_chunk(),
+        chunk.ctx.is_firstchunk(),
     );
     let (chrono_rws_rows, _) = RwMap::table_assignments_padding(
         &rws.table_assignments(true),
         chunk.fixed_param.max_rws,
-        builder.chunk_ctx.is_first_chunk(),
+        builder.chunk_ctx.is_firstchunk(),
     );
 
     // Todo: poseidon hash
@@ -94,7 +96,7 @@ pub fn chunk_convert<F: Field>(
         })
         .collect::<Vec<F>>();
 
-    // Todo(Cecilia): should set prev data from builder.prev_chunk()
+    // Todo(Cecilia): should set prev data from builder.prevchunk()
     let chunck = Chunk {
         permu_alpha,
         permu_gamma,
@@ -102,9 +104,10 @@ pub fn chunk_convert<F: Field>(
         rw_fingerprint: rw_fingerprints[0],
         chrono_rw_prev_fingerprint,
         chrono_rw_fingerprint: rw_fingerprints[1],
-        begin_chunk: chunk.begin_chunk.clone(),
-        end_chunk: chunk.end_chunk.clone(),
+        beginchunk: chunk.beginchunk.clone(),
+        endchunk: chunk.endchunk.clone(),
         chunk_context: chunk.ctx.clone(),
+        fixed_param: chunk.fixed_param.clone(),
         prev_block: Box::new(None),
     };
 

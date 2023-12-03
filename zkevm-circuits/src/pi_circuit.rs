@@ -880,7 +880,7 @@ impl<F: Field> PiCircuitConfig<F> {
         let start_offset = *current_offset;
 
         let value_bytes_be: Vec<u8> = value_bytes_le.iter().rev().copied().collect_vec();
-        let value_bytes_chunk: Vec<Vec<u8>> = value_bytes_be
+        let value_byteschunk: Vec<Vec<u8>> = value_bytes_be
             .rchunks(N_BYTES_HALF_WORD)
             // chunks will go from right to left first, here we reverse the order to assure left to
             // right
@@ -888,7 +888,7 @@ impl<F: Field> PiCircuitConfig<F> {
             .map(|x| x.to_vec())
             .collect();
 
-        *current_offset = value_bytes_chunk.iter().try_fold(
+        *current_offset = value_byteschunk.iter().try_fold(
             // after rchunk
             start_offset,
             |mut offset, bytes| -> Result<usize, Error> {
@@ -1308,23 +1308,23 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         6
     }
 
-    fn new_from_block(block: &witness::Block<F>, _chunk: &Chunk<F>) -> Self {
+    fn new_from_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> Self {
         let public_data = public_data_convert(block);
         PiCircuit::new(
-            block.circuits_params.max_txs,
-            block.circuits_params.max_calldata,
+            chunk.fixed_param.max_txs,
+            chunk.fixed_param.max_calldata,
             public_data,
         )
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> (usize, usize) {
         let calldata_len = block.txs.iter().map(|tx| tx.call_data.len()).sum();
         (
             Self::Config::circuit_len_by_txs_calldata(block.txs.len(), calldata_len),
             Self::Config::circuit_len_by_txs_calldata(
-                block.circuits_params.max_txs,
-                block.circuits_params.max_calldata,
+                chunk.fixed_param.max_txs,
+                chunk.fixed_param.max_calldata,
             ),
         )
     }

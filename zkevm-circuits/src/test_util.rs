@@ -73,7 +73,7 @@ const NUM_BLINDING_ROWS: usize = 64;
 /// .unwrap();
 ///
 /// CircuitTestBuilder::new_from_test_ctx(ctx)
-///     .block_modifier(Box::new(|block| block.circuits_params.max_evm_rows = (1 << 18) - 100))
+///     .block_modifier(Box::new(|block| chunk.fixed_param.max_evm_rows = (1 << 18) - 100))
 ///     .state_checks(Box::new(|prover, evm_rows, lookup_rows| assert!(prover.verify_at_rows_par(evm_rows.iter().cloned(), lookup_rows.iter().cloned()).is_err())))
 ///     .run();
 /// ```
@@ -190,13 +190,13 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     }
     
     ///
-    pub fn run_with_chunk(mut self, total_chunk: usize, chunk_index: usize) {
+    pub fn run_with_chunk(mut self, totalchunk: usize, chunk_index: usize) {
         let (block, chunk) = if self.block.is_some() && self.chunk.is_some() {
             (self.block.unwrap(), self.chunk.unwrap())
         } else if self.test_ctx.is_some() {
             let block: GethData = self.test_ctx.unwrap().into();
             let builder =
-                BlockData::new_from_geth_data_chunked(block.clone(), total_chunk).new_circuit_input_builder();
+                BlockData::new_from_geth_datachunked(block.clone(), totalchunk).new_circuit_input_builder();
             let builder = builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
@@ -212,13 +212,13 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         } else {
             panic!("No attribute to build a block was passed to the CircuitTestBuilder")
         };
-        let params = block.circuits_params;
+        let params = chunk.fixed_param;
 
         // Run evm circuit test
         {
-            let k = block.get_test_degree();
+            let k = block.get_test_degree(&chunk);
 
-            let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
+            let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block, &chunk);
 
             let circuit =
                 EvmCircuitCached::get_test_circuit_from_block(block.clone(), Some(chunk.clone()));
@@ -232,7 +232,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         // TODO: use randomness as one of the circuit public input, since randomness in
         // state circuit and evm circuit must be same
         {
-            let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block).1;
+            let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block, &chunk).1;
             let k = cmp::max(log2_ceil(rows_needed + NUM_BLINDING_ROWS), 18);
             let state_circuit = StateCircuit::<Fr>::new(
                 block.rws,

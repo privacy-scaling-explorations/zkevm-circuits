@@ -65,7 +65,7 @@ impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _chunk: &Chunk<F>,
+        chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,

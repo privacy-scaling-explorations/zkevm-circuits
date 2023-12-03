@@ -456,7 +456,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _chunk: &Chunk<F>,
+        chunk: &Chunk<F>,
         tx: &Transaction,
         call: &Call,
         step: &ExecStep,

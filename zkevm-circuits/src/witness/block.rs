@@ -1,10 +1,10 @@
-use super::{ExecStep, Rw, RwMap, Transaction};
+use super::{ExecStep, Rw, RwMap, Transaction, chunk};
 use crate::{
     evm_circuit::{detect_fixed_table_tags, EvmCircuit},
     exp_circuit::param::OFFSET_INCREMENT,
     instance::public_data_convert,
     table::BlockContextFieldTag,
-    util::{log2_ceil, word, SubCircuit},
+    util::{log2_ceil, word, SubCircuit}, witness::Chunk,
 };
 use bus_mapping::{
     circuit_input_builder::{self, CopyEvent, ExpEvent, FixedCParams},
@@ -78,9 +78,9 @@ impl<F: Field> Block<F> {
     /// Obtains the expected Circuit degree needed in order to be able to test
     /// the EvmCircuit with this block without needing to configure the
     /// `ConstraintSystem`.
-    pub fn get_test_degree(&self) -> u32 {
+    pub fn get_test_degree(&self, chunk: &Chunk<F>) -> u32 {
         let num_rows_required_for_execution_steps: usize =
-            EvmCircuit::<F>::get_num_rows_required(self);
+            EvmCircuit::<F>::get_num_rows_required(self, chunk);
         let num_rows_required_for_rw_table: usize = self.circuits_params.max_rws;
         let num_rows_required_for_fixed_table: usize = detect_fixed_table_tags(self)
             .iter()
@@ -260,6 +260,9 @@ pub fn block_convert<F: Field>(
         eth_block: block.eth_block.clone(),
     };
     let public_data = public_data_convert(&block);
+
+    // We can use params from block 
+    // because max_txs and max_calldata are independent from Chunk
     let rpi_bytes = public_data.get_pi_bytes(
         block.circuits_params.max_txs,
         block.circuits_params.max_calldata,

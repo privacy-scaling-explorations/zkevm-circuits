@@ -830,10 +830,10 @@ impl<F: Field> CopyCircuit<F> {
     /// to assign lookup tables.  This constructor is only suitable to be
     /// used by the SuperCircuit, which already assigns the external lookup
     /// tables.
-    pub fn new_from_block_no_external(block: &witness::Block<F>) -> Self {
+    pub fn new_from_block_no_external(block: &witness::Block<F>, chunk: &Chunk<F>) -> Self {
         Self::new(
             block.copy_events.clone(),
-            block.circuits_params.max_copy_rows,
+            chunk.fixed_param.max_copy_rows,
         )
     }
 }
@@ -847,15 +847,15 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
         6
     }
 
-    fn new_from_block(block: &witness::Block<F>, _chunk: &Chunk<F>) -> Self {
+    fn new_from_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> Self {
         Self::new_with_external_data(
             block.copy_events.clone(),
-            block.circuits_params.max_copy_rows,
+            chunk.fixed_param.max_copy_rows,
             ExternalData {
-                max_txs: block.circuits_params.max_txs,
-                max_calldata: block.circuits_params.max_calldata,
+                max_txs: chunk.fixed_param.max_txs,
+                max_calldata: chunk.fixed_param.max_calldata,
                 txs: block.txs.clone(),
-                max_rws: block.circuits_params.max_rws,
+                max_rws: chunk.fixed_param.max_rws,
                 rws: block.rws.clone(),
                 bytecodes: block.bytecodes.clone(),
             },
@@ -863,7 +863,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> (usize, usize) {
         (
             block
                 .copy_events
@@ -871,7 +871,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
                 .map(|c| c.bytes.len() * 2)
                 .sum::<usize>()
                 + 2,
-            block.circuits_params.max_copy_rows,
+            chunk.fixed_param.max_copy_rows,
         )
     }
 

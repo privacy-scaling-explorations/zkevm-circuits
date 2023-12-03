@@ -794,15 +794,15 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
         6
     }
 
-    fn new_from_block(block: &witness::Block<F>, _chunk: &Chunk<F>) -> Self {
-        Self::new(block.bytecodes.clone(), block.circuits_params.max_bytecode)
+    fn new_from_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> Self {
+        Self::new(block.bytecodes.clone(), chunk.fixed_param.max_bytecode)
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> (usize, usize) {
         (
             block.bytecodes.num_rows_required_for_bytecode_table(),
-            block.circuits_params.max_bytecode,
+            chunk.fixed_param.max_bytecode,
         )
     }
 

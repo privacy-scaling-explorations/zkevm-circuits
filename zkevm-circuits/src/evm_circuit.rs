@@ -76,10 +76,10 @@ pub struct EvmCircuitConfig<F> {
     // chunk context related field
     chunk_index: Column<Advice>,
     chunk_index_next: Column<Advice>,
-    total_chunks: Column<Advice>,
-    q_chunk_context: Selector,
-    is_first_chunk: IsZeroConfig<F>,
-    is_last_chunk: IsZeroConfig<F>,
+    totalchunks: Column<Advice>,
+    qchunk_context: Selector,
+    is_firstchunk: IsZeroConfig<F>,
+    is_lastchunk: IsZeroConfig<F>,
 }
 
 /// Circuit configuration arguments
@@ -130,8 +130,8 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         let chunk_index_inv = meta.advice_column();
         let chunk_index_next = meta.advice_column();
         let chunk_diff = meta.advice_column();
-        let total_chunks = meta.advice_column();
-        let q_chunk_context = meta.complex_selector();
+        let totalchunks = meta.advice_column();
+        let qchunk_context = meta.complex_selector();
 
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
         let chunkctx_table = ChunkCtxTable::construct(meta);
@@ -139,16 +139,16 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         [
             (ChunkCtxFieldTag::CurrentChunkIndex.expr(), chunk_index),
             (ChunkCtxFieldTag::NextChunkIndex.expr(), chunk_index_next),
-            (ChunkCtxFieldTag::TotalChunks.expr(), total_chunks),
+            (ChunkCtxFieldTag::TotalChunks.expr(), totalchunks),
         ]
         .iter()
         .for_each(|(tag_expr, value_col)| {
             meta.lookup_any("chunk context lookup", |meta| {
-                let q_chunk_context = meta.query_selector(q_chunk_context);
+                let qchunk_context = meta.query_selector(qchunk_context);
                 let value_col_expr = meta.query_advice(*value_col, Rotation::cur());
 
                 vec![(
-                    q_chunk_context
+                    qchunk_context
                         * rlc::expr(
                             &[tag_expr.clone(), value_col_expr],
                             challenges.lookup_input(),
@@ -158,21 +158,21 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             });
         });
 
-        let is_first_chunk = IsZeroChip::configure(
+        let is_firstchunk = IsZeroChip::configure(
             meta,
-            |meta| meta.query_selector(q_chunk_context),
+            |meta| meta.query_selector(qchunk_context),
             |meta| meta.query_advice(chunk_index, Rotation::cur()),
             chunk_index_inv,
         );
 
-        let is_last_chunk = IsZeroChip::configure(
+        let is_lastchunk = IsZeroChip::configure(
             meta,
-            |meta| meta.query_selector(q_chunk_context),
+            |meta| meta.query_selector(qchunk_context),
             |meta| {
                 let chunk_index = meta.query_advice(chunk_index, Rotation::cur());
-                let total_chunks = meta.query_advice(total_chunks, Rotation::cur());
+                let totalchunks = meta.query_advice(totalchunks, Rotation::cur());
 
-                total_chunks - chunk_index - 1.expr()
+                totalchunks - chunk_index - 1.expr()
             },
             chunk_diff,
         );
@@ -191,8 +191,8 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &keccak_table,
             &exp_table,
             &chunkctx_table,
-            &is_first_chunk,
-            &is_last_chunk,
+            &is_firstchunk,
+            &is_lastchunk,
         ));
 
         fixed_table.iter().enumerate().for_each(|(idx, &col)| {
@@ -223,7 +223,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         meta.enable_equality(pi_permutation_challenges);
         meta.enable_equality(chunk_index);
         meta.enable_equality(chunk_index_next);
-        meta.enable_equality(total_chunks);
+        meta.enable_equality(totalchunks);
 
         Self {
             fixed_table,
@@ -244,15 +244,15 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             pi_permutation_challenges,
             chunk_index,
             chunk_index_next,
-            total_chunks,
-            is_first_chunk,
-            is_last_chunk,
-            q_chunk_context,
+            totalchunks,
+            is_firstchunk,
+            is_lastchunk,
+            qchunk_context,
         }
     }
 }
 
-/// chunk_index, chunk_index_next, total_chunk, initial_rwc, end_rwc
+/// chunk_index, chunk_index_next, totalchunk, initial_rwc, end_rwc
 type AssignedChunkContextCell<F> = (
     AssignedCell<F, F>,
     AssignedCell<F, F>,
@@ -286,7 +286,7 @@ impl<F: Field> EvmCircuitConfig<F> {
     }
 
     /// assign chunk context
-    pub fn assign_chunk_context(
+    pub fn assignchunk_context(
         &self,
         layouter: &mut impl Layouter<F>,
         chunk_ctx: &ChunkContext,
@@ -295,18 +295,18 @@ impl<F: Field> EvmCircuitConfig<F> {
         let (
             chunk_index_cell,
             chunk_index_next_cell,
-            total_chunk_cell,
+            totalchunk_cell,
             initial_rwc_cell,
             end_rwc_cell,
         ) = self.chunkctx_table.load(layouter, chunk_ctx)?;
 
-        let is_first_chunk = IsZeroChip::construct(self.is_first_chunk.clone());
-        let is_last_chunk = IsZeroChip::construct(self.is_last_chunk.clone());
+        let is_firstchunk = IsZeroChip::construct(self.is_firstchunk.clone());
+        let is_lastchunk = IsZeroChip::construct(self.is_lastchunk.clone());
         layouter.assign_region(
             || "chunk context",
             |mut region| {
                 for offset in 0..max_offset_index + 1 {
-                    self.q_chunk_context.enable(&mut region, offset)?;
+                    self.qchunk_context.enable(&mut region, offset)?;
 
                     region.assign_advice(
                         || "chunk_index",
@@ -323,21 +323,21 @@ impl<F: Field> EvmCircuitConfig<F> {
                     )?;
 
                     region.assign_advice(
-                        || "total_chunks",
-                        self.total_chunks,
+                        || "totalchunks",
+                        self.totalchunks,
                         offset,
-                        || Value::known(F::from(chunk_ctx.total_chunks as u64)),
+                        || Value::known(F::from(chunk_ctx.totalchunks as u64)),
                     )?;
 
-                    is_first_chunk.assign(
+                    is_firstchunk.assign(
                         &mut region,
                         offset,
                         Value::known(F::from(chunk_ctx.idx as u64)),
                     )?;
-                    is_last_chunk.assign(
+                    is_lastchunk.assign(
                         &mut region,
                         offset,
-                        Value::known(F::from((chunk_ctx.total_chunks - chunk_ctx.idx - 1) as u64)),
+                        Value::known(F::from((chunk_ctx.totalchunks - chunk_ctx.idx - 1) as u64)),
                     )?;
                 }
                 Ok(())
@@ -346,7 +346,7 @@ impl<F: Field> EvmCircuitConfig<F> {
         Ok((
             chunk_index_cell,
             chunk_index_next_cell,
-            total_chunk_cell,
+            totalchunk_cell,
             initial_rwc_cell,
             end_rwc_cell,
         ))
@@ -385,8 +385,8 @@ impl<F: Field> EvmCircuit<F> {
     }
     #[cfg(any(test, feature = "test-circuits"))]
     /// Calculate which rows are "actually" used in the circuit
-    pub(crate) fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
-        let max_offset = Self::get_num_rows_required(block);
+    pub(crate) fn get_active_rows(block: &Block<F>, chunk: &Chunk<F>) -> (Vec<usize>, Vec<usize>) {
+        let max_offset = Self::get_num_rows_required(block, chunk);
         // some gates are enabled on all rows
         let gates_row_ids = (0..max_offset).collect();
         // lookups are enabled at "q_step" rows and byte lookup rows
@@ -395,21 +395,23 @@ impl<F: Field> EvmCircuit<F> {
     }
     /// Get the minimum number of rows required to process the block
     /// If unspecified, then compute it
-    pub(crate) fn get_num_rows_required(block: &Block<F>) -> usize {
-        let evm_rows = block.circuits_params.max_evm_rows;
+    pub(crate) fn get_num_rows_required(block: &Block<F>, chunk: &Chunk<F>) -> usize {
+        let evm_rows = chunk.fixed_param.max_evm_rows;
         if evm_rows == 0 {
-            Self::get_min_num_rows_required(block)
+            Self::get_min_num_rows_required(block, chunk)
         } else {
             // It must have at least one unused row.
-            block.circuits_params.max_evm_rows + 1
+            chunk.fixed_param.max_evm_rows + 1
         }
     }
     /// Compute the minimum number of rows required to process the block
-    fn get_min_num_rows_required(block: &Block<F>) -> usize {
+    fn get_min_num_rows_required(block: &Block<F>, chunk: &Chunk<F>) -> usize {
         let mut num_rows = 0;
         for transaction in &block.txs {
             for step in transaction.steps() {
-                num_rows += step.execution_state().get_step_height();
+                if chunk.chunk_context.initial_rwc <= step.rwc.0 || step.rwc.0 <= chunk.chunk_context.end_rwc {
+                    num_rows += step.execution_state().get_step_height();
+                }
             }
         }
 
@@ -432,8 +434,8 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        let num_rows_required_for_execution_steps: usize = Self::get_num_rows_required(block);
+    fn min_num_rows_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> (usize, usize) {
+        let num_rows_required_for_execution_steps: usize = Self::get_num_rows_required(block, chunk);
         let num_rows_required_for_fixed_table: usize = detect_fixed_table_tags(block)
             .iter()
             .map(|tag| tag.build::<F>().count())
@@ -443,7 +445,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                 num_rows_required_for_execution_steps,
                 num_rows_required_for_fixed_table,
             ),
-            block.circuits_params.max_evm_rows,
+            chunk.fixed_param.max_evm_rows,
         )
     }
 
@@ -463,13 +465,13 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
             .execution
             .assign_block(layouter, block, chunk, challenges)?;
 
-        let (prev_chunk_index, next_chunk_index_next, total_chunks, initial_rwc, end_rwc) =
-            config.assign_chunk_context(layouter, &chunk.chunk_context, max_offset_index)?;
+        let (prevchunk_index, nextchunk_index_next, totalchunks, initial_rwc, end_rwc) =
+            config.assignchunk_context(layouter, &chunk.chunk_context, max_offset_index)?;
 
         let (rw_rows_padding, _) = RwMap::table_assignments_padding(
             &block.rws.table_assignments(true),
-            block.circuits_params.max_rws,
-            chunk.chunk_context.is_first_chunk(),
+            chunk.fixed_param.max_rws,
+            chunk.chunk_context.is_firstchunk(),
         );
         let (
             alpha_cell,
@@ -490,8 +492,8 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                     // pass non-padding rws to `load_with_region` since it will be padding inside
                     &block.rws.table_assignments(true),
                     // align with state circuit to padding to same max_rws
-                    block.circuits_params.max_rws,
-                    chunk.chunk_context.is_first_chunk(),
+                    chunk.fixed_param.max_rws,
+                    chunk.chunk_context.is_firstchunk(),
                 )?;
                 let permutation_cells = config.rw_permutation_config.assign(
                     &mut region,
@@ -515,8 +517,8 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         // constraints prev,next fingerprints
         [vec![
             prev_continuous_fingerprint_cell,
-            prev_chunk_index,
-            total_chunks.clone(),
+            prevchunk_index,
+            totalchunks.clone(),
             initial_rwc,
         ]]
         .iter()
@@ -527,8 +529,8 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         })?;
         [vec![
             next_continuous_fingerprint_cell,
-            next_chunk_index_next,
-            total_chunks,
+            nextchunk_index_next,
+            totalchunks,
             end_rwc,
         ]]
         .iter()
@@ -545,20 +547,20 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         let _block = self.block.as_ref().unwrap();
         let chunk = self.chunk.as_ref().unwrap();
 
-        let (rw_table_chunked_index, rw_table_total_chunks) =
-            (chunk.chunk_context.idx, chunk.chunk_context.total_chunks);
+        let (rw_tablechunked_index, rw_table_totalchunks) =
+            (chunk.chunk_context.idx, chunk.chunk_context.totalchunks);
 
         vec![
             vec![
                 chunk.chrono_rw_prev_fingerprint,
-                F::from(rw_table_chunked_index as u64),
-                F::from(rw_table_total_chunks as u64),
+                F::from(rw_tablechunked_index as u64),
+                F::from(rw_table_totalchunks as u64),
                 F::from(chunk.chunk_context.initial_rwc as u64),
             ],
             vec![
                 chunk.chrono_rw_fingerprint,
-                F::from(rw_table_chunked_index as u64) + F::ONE,
-                F::from(rw_table_total_chunks as u64),
+                F::from(rw_tablechunked_index as u64) + F::ONE,
+                F::from(rw_table_totalchunks as u64),
                 F::from(chunk.chunk_context.end_rwc as u64),
             ],
             vec![chunk.permu_alpha, chunk.permu_gamma],
@@ -704,6 +706,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let block = self.block.as_ref().unwrap();
+        let chunk = self.chunk.as_ref().unwrap();
 
         let (config, challenges) = config;
         let challenges = challenges.values(&mut layouter);
@@ -711,19 +714,19 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         config.tx_table.load(
             &mut layouter,
             &block.txs,
-            block.circuits_params.max_txs,
-            block.circuits_params.max_calldata,
+            chunk.fixed_param.max_txs,
+            chunk.fixed_param.max_calldata,
         )?;
         block.rws.check_rw_counter_sanity();
         config
             .bytecode_table
             .load(&mut layouter, block.bytecodes.clone())?;
         config.block_table.load(&mut layouter, &block.context)?;
-        config.copy_table.load(&mut layouter, block, &challenges)?;
+        config.copy_table.load(&mut layouter, block, chunk, &challenges)?;
         config
             .keccak_table
             .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;
-        config.exp_table.load(&mut layouter, block)?;
+        config.exp_table.load(&mut layouter, block, chunk)?;
 
         config.u8_table.load(&mut layouter)?;
         config.u16_table.load(&mut layouter)?;
@@ -772,7 +775,7 @@ mod evm_circuit_stats {
             TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b).unwrap(),
         )
         .block_modifier(Box::new(|block| {
-            block.circuits_params.max_evm_rows = (1 << 18) - 100
+            chunk.fixed_param.max_evm_rows = (1 << 18) - 100
         }))
         .run();
     }
@@ -794,7 +797,7 @@ mod evm_circuit_stats {
             .unwrap();
         let block = block_convert::<Fr>(&builder).unwrap();
         let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
-        let k = block.get_test_degree();
+        let k = block.get_test_degree(&chunk);
 
         let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block, Some(chunk));
         let instance = circuit.instance();
@@ -818,7 +821,7 @@ mod evm_circuit_stats {
             .unwrap();
         let block = block_convert::<Fr>(&builder).unwrap();
         let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
-        let k = block.get_test_degree();
+        let k = block.get_test_degree(&chunk);
         let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block, Some(chunk));
         let instance = circuit.instance();
         let prover2 = MockProver::<Fr>::run(k, &circuit, instance).unwrap();

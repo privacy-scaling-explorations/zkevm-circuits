@@ -170,7 +170,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _chunk: &Chunk<F>,
+        chunk: &Chunk<F>,
         _tx: &Transaction,
         _call: &Call,
         step: &ExecStep,

@@ -3,7 +3,7 @@ use super::*;
 use crate::{
     exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP},
     table::LookupTable,
-    witness::Block,
+    witness::{Block, Chunk},
 };
 use bus_mapping::circuit_input_builder::ExpEvent;
 
@@ -118,6 +118,7 @@ impl ExpTable {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
+        chunk: &Chunk<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "exponentiation table",
@@ -150,7 +151,7 @@ impl ExpTable {
                 }
 
                 // Enable selector at all rows
-                let max_exp_steps = block.circuits_params.max_exp_steps;
+                let max_exp_steps = chunk.fixed_param.max_exp_steps;
                 for offset in 0..max_exp_steps * OFFSET_INCREMENT {
                     let is_step = if offset % OFFSET_INCREMENT == 0 {
                         F::ONE

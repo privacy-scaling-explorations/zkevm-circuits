@@ -1256,7 +1256,7 @@ pub(crate) struct RwTablePaddingGadget<F> {
     max_rws: Cell<F>,
     chunk_index: Cell<F>,
     is_end_padding_exist: LtGadget<F, MAX_RW_BYTES>,
-    is_first_chunk: IsZeroGadget<F>,
+    is_firstchunk: IsZeroGadget<F>,
 }
 
 impl<F: Field> RwTablePaddingGadget<F> {
@@ -1270,14 +1270,14 @@ impl<F: Field> RwTablePaddingGadget<F> {
             IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
 
         cb.chunk_context_lookup(ChunkCtxFieldTag::CurrentChunkIndex, chunk_index.expr());
-        let is_first_chunk = IsZeroGadget::construct(cb, chunk_index.expr());
+        let is_firstchunk = IsZeroGadget::construct(cb, chunk_index.expr());
 
         // Verify rw_counter counts to the same number of meaningful rows in
         // rw_table to ensure there is no malicious insertion.
         // Verify that there are at most total_rws meaningful entries in the rw_table
         // - startop only exist in first chunk
         // - end paddings are consecutively
-        cb.condition(is_first_chunk.expr(), |cb| {
+        cb.condition(is_firstchunk.expr(), |cb| {
             cb.rw_table_start_lookup(1.expr());
         });
 
@@ -1300,7 +1300,7 @@ impl<F: Field> RwTablePaddingGadget<F> {
             is_empty_rwc,
             max_rws,
             chunk_index,
-            is_first_chunk,
+            is_firstchunk,
             is_end_padding_exist,
         }
     }
@@ -1317,7 +1317,7 @@ impl<F: Field> RwTablePaddingGadget<F> {
         let total_rwc = u64::from(step.rwc) - 1;
         self.is_empty_rwc
             .assign(region, offset, F::from(total_rwc))?;
-        let max_rws = F::from(block.circuits_params.max_rws as u64);
+        let max_rws = F::from(chunk.fixed_param.max_rws as u64);
         let max_rws_assigned = self.max_rws.assign(region, offset, Value::known(max_rws))?;
 
         self.chunk_index.assign(
@@ -1326,7 +1326,7 @@ impl<F: Field> RwTablePaddingGadget<F> {
             Value::known(F::from(chunk.chunk_context.idx as u64)),
         )?;
 
-        self.is_first_chunk
+        self.is_firstchunk
             .assign(region, offset, F::from(chunk.chunk_context.idx as u64))?;
 
         self.is_end_padding_exist.assign(

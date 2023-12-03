@@ -172,7 +172,7 @@ pub trait SubCircuit<F: Field> {
 
     /// Return the minimum number of rows required to prove the block.
     /// Row numbers without/with padding are both returned.
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize);
+    fn min_num_rows_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> (usize, usize);
 }
 
 /// SubCircuit configuration

@@ -47,12 +47,12 @@ pub fn test_copy_circuit_from_block<F: Field>(
     test_copy_circuit::<F>(
         k,
         block.copy_events,
-        block.circuits_params.max_copy_rows,
+        chunk.fixed_param.max_copy_rows,
         ExternalData {
-            max_txs: block.circuits_params.max_txs,
-            max_calldata: block.circuits_params.max_calldata,
+            max_txs: chunk.fixed_param.max_txs,
+            max_calldata: chunk.fixed_param.max_calldata,
             txs: block.txs,
-            max_rws: block.circuits_params.max_rws,
+            max_rws: chunk.fixed_param.max_rws,
             rws: block.rws,
             bytecodes: block.bytecodes,
         },
