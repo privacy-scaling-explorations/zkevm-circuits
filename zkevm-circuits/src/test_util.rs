@@ -200,6 +200,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let builder = builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
+            println!("chunks: {:?}", builder.chunks);
             // Build a witness block from trace result.
             let mut block = crate::witness::block_convert(&builder).unwrap();
             let chunk = crate::witness::chunk_convert(&builder, chunk_index).unwrap();

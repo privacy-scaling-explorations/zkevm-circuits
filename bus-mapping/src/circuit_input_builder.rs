@@ -332,15 +332,20 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             )?;
             tx.steps_mut().extend(exec_steps);
             
-            // Chunk 
-            if is_chunked && self.chunk_ctx.rwc.0 >= self.circuits_params.max_rws() {
-                self.set_end_chunk();
-                if self.chunk_ctx.is_dynamic {
-                    self.cur_chunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
+            // Generate EndChunk and proceed to the next if it's not the last chunk 
+            if is_chunked 
+                && !self.chunk_ctx.is_last_chunk() 
+                && self.chunk_ctx.rwc.0 >= self.circuits_params.max_rws() 
+                {
+                    // Update param accordding to number of rws actually generated
+                    // the initial self.circuits_params function as a chunking thresholded but not constrain
+                    if self.chunk_ctx.is_dynamic {
+                        self.cur_chunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
+                    }
+                    self.set_end_chunk();
+                    self.commit_chunk(true);
+                    self.set_begin_chunk();
                 }
-                self.commit_chunk(true);
-                self.set_begin_chunk();
-            }
         }
         // Generate EndTx step
         let end_tx_step =
@@ -448,17 +453,16 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         // rwc index start from 1
         let end_rwc = self.chunk_ctx.rwc.0;
         let total_rws = end_rwc - 1;
-        let max_rws = self.circuits_params.max_rws();
+        let max_rws = self.cur_chunk().fixed_param.max_rws;
+
         // We need at least 1 extra row at offset 0 for chunk continuous
         #[allow(clippy::int_plus_one)]
-        {
-            assert!(
-                total_rws + 1 <= max_rws,
-                "total_inner_rws + 1 <= max_rws, total_inner_rws={}, max_rws={}",
-                total_rws,
-                max_rws
-            );
-        }
+        assert!(
+            total_rws + 1 <= max_rws,
+            "total_inner_rws + 1 <= max_rws, total_inner_rws={}, max_rws={}",
+            total_rws,
+            max_rws
+        );
 
         if self.chunk_ctx.is_first_chunk() {
             push_op(
@@ -470,7 +474,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
                 StartOp {},
             );
         }
-        // TODO fix below to adapt multiple chunk
+
         if max_rws - total_rws > 1 {
             let (padding_start, padding_end) = (total_rws + 1, max_rws - 1);
             push_op(
@@ -497,7 +501,9 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
 
     ///
     pub fn get_chunk(&self, i: usize) -> Chunk {
-        self.chunks[i].clone()
+        self.chunks.get(i)
+            .expect("Chunk does not exist")
+            .clone()
     }
 
     ///
@@ -537,7 +543,9 @@ impl CircuitInputBuilder<FixedCParams> {
         // when total_chunks == 1, will skip set_begin_chunk & set_end_chunk
         self.begin_handle_block(eth_block, geth_traces)?;
         if !self.chunk_ctx.is_last_chunk() {
-            self.set_end_chunk();
+            let mut used_chunks = self.chunks.clone();
+            used_chunks.truncate(self.chunk_ctx.idx + 1);
+            self.chunks = used_chunks;
         } else {
             self.set_end_block();
             self.commit_chunk(false);
@@ -546,7 +554,6 @@ impl CircuitInputBuilder<FixedCParams> {
     }
 
     fn set_end_block(&mut self) {
-
         // set end block
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
@@ -613,15 +620,16 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
             + 4; // disabled and unused rows.
 
         // TODO fix below logic for multiple rw_table chunks
-        let total_rws_before_end_block: usize =
+        let rws_before_end_block_or_chunk: usize =
             <RWCounter as Into<usize>>::into(self.block_ctx.rwc) - 1; // -1 since rwc start from index `1`
-        let max_rws = total_rws_before_end_block
+        let max_rws = rws_before_end_block_or_chunk
             + {
-                1 // +1 for reserving RW::Start at row 1 (offset 0)
-                + if self.chunk_ctx.is_last_chunk() && total_rws_before_end_block > 0 { 1 /*end_block -> CallContextFieldTag::TxId lookup*/ } else { 0 }
-                + if !self.chunk_ctx.is_last_chunk() {
-                    10  /* stepstate lookup */
-                } else {0}
+                // reserving RW::Start at row 1 (offset 0)
+                1
+                // end_block -> CallContextFieldTag::TxId lookup
+                + if self.chunk_ctx.is_last_chunk() && rws_before_end_block_or_chunk > 0 { 1 } else { 0 }
+                // end_chunk -> stepstate lookups
+                + if !self.chunk_ctx.is_last_chunk() { 10  } else {0}
             };
         // Computing the number of rows for the EVM circuit requires the size of ExecStep,
         // which is determined in the code of zkevm-circuits and cannot be imported here.
@@ -655,6 +663,7 @@ impl CircuitInputBuilder<DynamicCParams> {
     ) -> Result<CircuitInputBuilder<DynamicCParams>, Error> {
         let mut builder = self.clone();
         builder.circuits_params.total_chunks = 1;
+        builder.chunk_ctx.total_chunks = 1;
         // accumulates gas across all txs in the block
         for (idx, tx) in eth_block.transactions.iter().enumerate() {
             let geth_trace = &geth_traces[idx];
@@ -679,18 +688,18 @@ impl CircuitInputBuilder<DynamicCParams> {
     /// associated operations. From these operations, the optimal circuit parameters
     /// are derived and set.
     pub fn handle_block(
-        mut self,
+        self,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<CircuitInputBuilder<FixedCParams>, Error> {
-        let mut c_params = self
+        let mut target_params = self
             .dry_run(eth_block, geth_traces)
             .expect("Dry run failure")
             .compute_param(eth_block);
 
         let total_chunks = self.circuits_params.total_chunks;
-        c_params.total_chunks = total_chunks;
-        c_params.max_rws = (c_params.max_rws + 1) /total_chunks;
+        target_params.total_chunks = total_chunks;
+        target_params.max_rws = (target_params.max_rws + 1) /total_chunks;
 
         let mut cib = CircuitInputBuilder::<FixedCParams> {
             sdb: self.sdb,
@@ -699,16 +708,9 @@ impl CircuitInputBuilder<DynamicCParams> {
             chunks: self.chunks,
             block_ctx: self.block_ctx,
             chunk_ctx: ChunkContext::new(0, total_chunks, true),
-            circuits_params: c_params,
+            circuits_params: target_params,
         };
-
-        if !cib.chunk_ctx.is_last_chunk() {
-            cib.begin_handle_block(eth_block, geth_traces)
-                .expect("Begin handle block failed");
-        } else {
-            cib.set_end_block();
-            cib.commit_chunk(false);
-        }
+        cib.handle_block(eth_block, geth_traces)?;
         Ok(cib)
     }
 }

@@ -46,6 +46,9 @@ pub fn chunk_convert<F: Field>(
     let _code_db = &builder.code_db;
     let rws = RwMap::from(&block.container);
 
+    println!("{:?}", chunk.fixed_param);
+    println!("| {:?} ... {:?} |", chunk.ctx.initial_rwc, chunk.ctx.end_rwc);
+
     // Get prev fingerprint if it exists, otherwise start with 1
     let (rw_prev_fingerprint, chrono_rw_prev_fingerprint) = if chunk.ctx.is_first_chunk() {
         (F::from(1), F::from(1))
@@ -59,12 +62,12 @@ pub fn chunk_convert<F: Field>(
     // Compute fingerprint of this chunk from rw tables
     let (rws_rows, _) = RwMap::table_assignments_padding(
         &rws.table_assignments(false),
-        builder.circuits_params.max_rws,
+        chunk.fixed_param.max_rws,
         chunk.ctx.is_first_chunk(),
     );
     let (chrono_rws_rows, _) = RwMap::table_assignments_padding(
         &rws.table_assignments(true),
-        builder.circuits_params.max_rws,
+        chunk.fixed_param.max_rws,
         builder.chunk_ctx.is_first_chunk(),
     );
 
