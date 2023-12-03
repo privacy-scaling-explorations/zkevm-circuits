@@ -94,7 +94,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
         )
-        .block_modifier(Box::new(move |block| {
+        .modifier(Box::new(move |block, chunk| {
             chunk.fixed_param.max_evm_rows = 0; // auto padding
 
             // TODO FIXME padding start as a workaround. The practical should be last chunk last row
@@ -103,7 +103,7 @@ mod test {
                 a.push(Rw::Start { rw_counter: 1 });
             }
         }))
-        .run_withchunk(3, 1);
+        .run_with_chunk(3, 1);
     }
 
     #[test]
@@ -115,7 +115,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
         )
-        .block_modifier(Box::new(move |block| {
+        .modifier(Box::new(move |block, chunk| {
             chunk.fixed_param.max_evm_rows = 0; // auto padding
 
             // TODO FIXME padding start as a workaround. The practical should be last chunk last row
@@ -124,6 +124,6 @@ mod test {
                 a.push(Rw::Start { rw_counter: 1 });
             }
         }))
-        .run_withchunk(1, 0);
+        .run_with_chunk(1, 0);
     }
 }

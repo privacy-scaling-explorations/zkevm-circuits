@@ -23,7 +23,7 @@ fn test_root_circuit() {
         // Preprocess
         const TEST_MOCK_RANDOMNESS: u64 = 0x100;
         let circuits_params = FixedCParams {
-            totalchunks: 1,
+            total_chunks: 1,
             max_txs: 1,
             max_calldata: 32,
             max_rws: 256,

@@ -93,7 +93,7 @@ impl BlockData<DynamicCParams> {
     }
 
     /// Create a new block from the given Geth data with default CircuitsParams.
-    pub fn new_from_geth_datachunked(geth_data: GethData, totalchunks: usize) -> Self {
+    pub fn new_from_geth_datachunked(geth_data: GethData, total_chunks: usize) -> Self {
         let (sdb, code_db) = Self::init_dbs(&geth_data);
 
         Self {
@@ -103,7 +103,7 @@ impl BlockData<DynamicCParams> {
             history_hashes: geth_data.history_hashes,
             eth_block: geth_data.eth_block,
             geth_traces: geth_data.geth_traces,
-            circuits_params: DynamicCParams { totalchunks },
+            circuits_params: DynamicCParams { total_chunks },
         }
     }
 }

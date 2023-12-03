@@ -52,7 +52,7 @@ pub fn chunk_convert<F: Field>(
     println!("| {:?} ... {:?} |", chunk.ctx.initial_rwc, chunk.ctx.end_rwc);
 
     // Get prev fingerprint if it exists, otherwise start with 1
-    let (rw_prev_fingerprint, chrono_rw_prev_fingerprint) = if chunk.ctx.is_firstchunk() {
+    let (rw_prev_fingerprint, chrono_rw_prev_fingerprint) = if chunk.ctx.is_first_chunk() {
         (F::from(1), F::from(1))
     } else {
         let lastchunk = builder.prevchunk();
@@ -65,12 +65,12 @@ pub fn chunk_convert<F: Field>(
     let (rws_rows, _) = RwMap::table_assignments_padding(
         &rws.table_assignments(false),
         chunk.fixed_param.max_rws,
-        chunk.ctx.is_firstchunk(),
+        chunk.ctx.is_first_chunk(),
     );
     let (chrono_rws_rows, _) = RwMap::table_assignments_padding(
         &rws.table_assignments(true),
         chunk.fixed_param.max_rws,
-        builder.chunk_ctx.is_firstchunk(),
+        builder.chunk_ctx.is_first_chunk(),
     );
 
     // Todo: poseidon hash

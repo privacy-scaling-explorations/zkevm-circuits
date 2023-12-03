@@ -49,7 +49,7 @@ pub use transaction::{Transaction, TransactionContext};
 #[derive(Debug, Clone, Copy)]
 pub struct FixedCParams {
     ///
-    pub totalchunks: usize,
+    pub total_chunks: usize,
     /// Maximum number of rw operations in the state circuit (RwTable length /
     /// nummber of rows). This must be at least the number of rw operations
     /// + 1, in order to allocate at least a Start row.
@@ -87,12 +87,12 @@ pub struct FixedCParams {
 #[derive(Debug, Clone, Copy)]
 pub struct DynamicCParams {
     ///
-    pub totalchunks: usize,
+    pub total_chunks: usize,
 }
 /// Circuit Setup Parameters. These can be fixed/concrete or unset/dynamic.
 pub trait CircuitsParams: Debug + Copy {
     /// Return the best number of chunks given circuit params
-    fn totalchunks(&self) -> usize;
+    fn total_chunks(&self) -> usize;
     /// 
     fn max_rws(&self) -> usize;
     ///
@@ -100,8 +100,8 @@ pub trait CircuitsParams: Debug + Copy {
 }
 
 impl CircuitsParams for FixedCParams {
-    fn totalchunks(&self) -> usize {
-        self.totalchunks
+    fn total_chunks(&self) -> usize {
+        self.total_chunks
     }
     fn max_rws(&self) -> usize {
         self.max_rws
@@ -111,8 +111,8 @@ impl CircuitsParams for FixedCParams {
     }
 }
 impl CircuitsParams for DynamicCParams {
-    fn totalchunks(&self) -> usize {
-        self.totalchunks
+    fn total_chunks(&self) -> usize {
+        self.total_chunks
     }
     fn max_rws(&self) -> usize {
         unreachable!()
@@ -124,14 +124,14 @@ impl CircuitsParams for DynamicCParams {
 
 impl Default for DynamicCParams {
     fn default() -> Self {
-        DynamicCParams { totalchunks: 1 }
+        DynamicCParams { total_chunks: 1 }
     }
 }
 impl Default for FixedCParams {
     /// Default values for most of the unit tests of the Circuit Parameters
     fn default() -> Self {
         FixedCParams {
-            totalchunks: 1,
+            total_chunks: 1,
             max_rws: 1000,
             max_txs: 1,
             max_calldata: 256,
@@ -186,15 +186,15 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     /// Create a new CircuitInputBuilder from the given `eth_block` and
     /// `constants`.
     pub fn new(sdb: StateDB, code_db: CodeDB, block: Block, params: C) -> Self {
-        let totalchunks = params.totalchunks();
-        let chunks = vec![Chunk::default(); totalchunks];
+        let total_chunks = params.total_chunks();
+        let chunks = vec![Chunk::default(); total_chunks];
         Self {
             sdb,
             code_db,
             block,
             chunks,
             block_ctx: BlockContext::new(),
-            chunk_ctx: ChunkContext::new(0, totalchunks, params.is_dynamic()),
+            chunk_ctx: ChunkContext::new(0, total_chunks, params.is_dynamic()),
             circuits_params: params,
         }
     }
@@ -276,7 +276,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<(), Error> {
-        if !self.chunk_ctx.is_firstchunk() {
+        if !self.chunk_ctx.is_first_chunk() {
             self.set_beginchunk();
         }
 
@@ -464,7 +464,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             max_rws
         );
 
-        if self.chunk_ctx.is_firstchunk() {
+        if self.chunk_ctx.is_first_chunk() {
             push_op(
                 &mut self.block.container,
                 step,
@@ -540,17 +540,17 @@ impl CircuitInputBuilder<FixedCParams> {
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<&CircuitInputBuilder<FixedCParams>, Error> {
         // accumulates gas across all txs in the block
-        // when totalchunks == 1, will skip set_beginchunk & set_endchunk
+        // when total_chunks == 1, will skip set_beginchunk & set_endchunk
         self.begin_handle_block(eth_block, geth_traces)?;
         self.set_end_block();
         self.commitchunk(false);
 
-        // Truncate chunks to the actual used amount & correct ctx.totalchunks
+        // Truncate chunks to the actual used amount & correct ctx.total_chunks
         let mut usedchunks = self.chunks.clone();
         // Set length to the actual used amont of chunks
         usedchunks.truncate(self.chunk_ctx.idx + 1);
         usedchunks.iter_mut().for_each(|chunk| {
-            chunk.ctx.totalchunks = self.chunk_ctx.idx + 1;
+            chunk.ctx.total_chunks = self.chunk_ctx.idx + 1;
         });
         self.chunks = usedchunks;
 
@@ -646,7 +646,7 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
         // needed.
         let max_keccak_rows = 0;
         FixedCParams {
-            totalchunks: self.circuits_params.totalchunks(),
+            total_chunks: self.circuits_params.total_chunks(),
             max_rws,
             max_txs,
             max_calldata,
@@ -666,8 +666,8 @@ impl CircuitInputBuilder<DynamicCParams> {
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<CircuitInputBuilder<DynamicCParams>, Error> {
         let mut builder = self.clone();
-        builder.circuits_params.totalchunks = 1;
-        builder.chunk_ctx.totalchunks = 1;
+        builder.circuits_params.total_chunks = 1;
+        builder.chunk_ctx.total_chunks = 1;
         // accumulates gas across all txs in the block
         for (idx, tx) in eth_block.transactions.iter().enumerate() {
             let geth_trace = &geth_traces[idx];
@@ -701,9 +701,9 @@ impl CircuitInputBuilder<DynamicCParams> {
             .expect("Dry run failure")
             .compute_param(eth_block);
 
-        let totalchunks = self.circuits_params.totalchunks;
-        target_params.totalchunks = totalchunks;
-        target_params.max_rws = (target_params.max_rws + 1) /totalchunks;
+        let total_chunks = self.circuits_params.total_chunks;
+        target_params.total_chunks = total_chunks;
+        target_params.max_rws = (target_params.max_rws + 1) /total_chunks;
 
         let mut cib = CircuitInputBuilder::<FixedCParams> {
             sdb: self.sdb,
@@ -711,7 +711,7 @@ impl CircuitInputBuilder<DynamicCParams> {
             block: self.block,
             chunks: self.chunks,
             block_ctx: self.block_ctx,
-            chunk_ctx: ChunkContext::new(0, totalchunks, true),
+            chunk_ctx: ChunkContext::new(0, total_chunks, true),
             circuits_params: target_params,
         };
         cib.handle_block(eth_block, geth_traces)?;

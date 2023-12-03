@@ -124,7 +124,7 @@ mod stop;
 mod swap;
 
 use self::{
-    begin_chunk::BeginChunkGadget, block_ctx::BlockCtxGadget, end_cxhunk::EndChunkGadget,
+    begin_chunk::BeginChunkGadget, block_ctx::BlockCtxGadget, end_chunk::EndChunkGadget,
     sha3::Sha3Gadget,
 };
 use add_sub::AddSubGadget;
@@ -353,7 +353,7 @@ impl<F: Field> ExecutionConfig<F> {
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
         chunkctx_table: &dyn LookupTable<F>,
-        is_firstchunk: &IsZeroConfig<F>,
+        is_first_chunk: &IsZeroConfig<F>,
         is_lastchunk: &IsZeroConfig<F>,
     ) -> Self {
         let mut instrument = Instrument::default();
@@ -406,7 +406,7 @@ impl<F: Field> ExecutionConfig<F> {
                     .execution_state_selector(execute_state_first_step_whitelist.iter().cloned());
                 iter::once((
                     "First step first chunk should be BeginTx or EndBlock or BeginChunk",
-                    (1.expr() - is_firstchunk.expr())
+                    (1.expr() - is_first_chunk.expr())
                         * q_step_first.clone()
                         * (1.expr() - exestates),
                 ))
@@ -417,7 +417,7 @@ impl<F: Field> ExecutionConfig<F> {
                     step_curr.execution_state_selector([ExecutionState::BeginChunk]);
                 iter::once((
                     "First step (non first chunk) should be BeginChunk",
-                    (1.expr() - is_firstchunk.expr())
+                    (1.expr() - is_first_chunk.expr())
                         * q_step_first
                         * (1.expr() - beginchunk_selector),
                 ))
@@ -1069,7 +1069,7 @@ impl<F: Field> ExecutionConfig<F> {
                 let mut steps =
                     // attach `BeginChunk` step in first step non first chunk
                     std::iter::once((&dummy_tx, &prevchunk_last_call, beginchunk))
-                        .take(if chunk.chunk_context.is_firstchunk() {0} else {1})
+                        .take(if chunk.chunk_context.is_first_chunk() {0} else {1})
                         .chain(block.txs.iter().flat_map(|tx| {
                             tx.steps()
                                 .iter()

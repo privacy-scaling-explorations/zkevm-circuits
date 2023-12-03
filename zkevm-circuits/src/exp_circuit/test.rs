@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::witness::{block_convert, Block},
     exp_circuit::ExpCircuit,
-    util::{unusable_rows, SubCircuit},
+    util::{unusable_rows, SubCircuit}, witness::{chunk_convert, Chunk},
 };
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, FixedCParams},
@@ -20,7 +20,7 @@ fn exp_circuit_unusable_rows() {
 }
 
 /// Test exponentiation circuit with the provided block witness
-pub fn test_exp_circuit<F: Field>(k: u32, block: Block<F>) {
+pub fn test_exp_circuit<F: Field>(k: u32, block: Block<F>, chunk: Chunk<F>) {
     let circuit = ExpCircuit::<F>::new(
         block.exp_events.clone(),
         chunk.fixed_param.max_exp_steps,
@@ -72,14 +72,16 @@ fn test_ok(base: Word, exponent: Word, k: Option<u32>) {
     let code = gen_code_single(base, exponent);
     let builder = gen_data(code, false);
     let block = block_convert::<Fr>(&builder).unwrap();
-    test_exp_circuit(k.unwrap_or(18), block);
+    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    test_exp_circuit(k.unwrap_or(18), block, chunk);
 }
 
 fn test_ok_multiple(args: Vec<(Word, Word)>) {
     let code = gen_code_multiple(args);
     let builder = gen_data(code, false);
     let block = block_convert::<Fr>(&builder).unwrap();
-    test_exp_circuit(20, block);
+    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    test_exp_circuit(20, block, chunk);
 }
 
 #[test]
@@ -130,6 +132,7 @@ fn variadic_size_check() {
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
     let block = block_convert::<Fr>(&builder).unwrap();
+    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
     let circuit = ExpCircuit::<Fr>::new(
         block.exp_events.clone(),
         chunk.fixed_param.max_exp_steps,
@@ -148,6 +151,7 @@ fn variadic_size_check() {
     };
     let builder = gen_data(code, true);
     let block = block_convert::<Fr>(&builder).unwrap();
+    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
     let circuit = ExpCircuit::<Fr>::new(
         block.exp_events.clone(),
         chunk.fixed_param.max_exp_steps,

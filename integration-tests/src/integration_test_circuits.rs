@@ -67,7 +67,7 @@ const MAX_EXP_STEPS: usize = 1000;
 const MAX_KECCAK_ROWS: usize = 38000;
 
 const CIRCUITS_PARAMS: FixedCParams = FixedCParams {
-    totalchunks: TOTAL_CHUNKS,
+    total_chunks: TOTAL_CHUNKS,
     max_rws: MAX_RWS,
     max_txs: MAX_TXS,
     max_calldata: MAX_CALLDATA,

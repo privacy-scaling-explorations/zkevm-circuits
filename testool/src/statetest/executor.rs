@@ -310,7 +310,7 @@ pub fn run_test(
 
     if !circuits_config.super_circuit {
         let circuits_params = FixedCParams {
-            totalchunks: 1,
+            total_chunks: 1,
             max_txs: 1,
             max_rws: 55000,
             max_calldata: 5000,
@@ -335,7 +335,7 @@ pub fn run_test(
         geth_data.sign(&wallets);
 
         let circuits_params = FixedCParams {
-            totalchunks: 1,
+            total_chunks: 1,
             max_txs: 1,
             max_calldata: 32,
             max_rws: 256,

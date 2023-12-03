@@ -73,7 +73,7 @@ const NUM_BLINDING_ROWS: usize = 64;
 /// .unwrap();
 ///
 /// CircuitTestBuilder::new_from_test_ctx(ctx)
-///     .block_modifier(Box::new(|block| chunk.fixed_param.max_evm_rows = (1 << 18) - 100))
+///     .modifier(Box::new(|block| chunk.fixed_param.max_evm_rows = (1 << 18) - 100))
 ///     .state_checks(Box::new(|prover, evm_rows, lookup_rows| assert!(prover.verify_at_rows_par(evm_rows.iter().cloned(), lookup_rows.iter().cloned()).is_err())))
 ///     .run();
 /// ```
@@ -84,7 +84,7 @@ pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     chunk: Option<Chunk<Fr>>,
     evm_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
     state_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
-    block_modifiers: Vec<Box<dyn Fn(&mut Block<Fr>)>>,
+    modifiers: Vec<Box<dyn Fn(&mut Block<Fr>, &mut Chunk<Fr>)>>,
 }
 
 impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
@@ -107,7 +107,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                     lookup_rows.iter().cloned(),
                 )
             }),
-            block_modifiers: vec![],
+            modifiers: vec![],
         }
     }
 
@@ -170,43 +170,43 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     }
 
     #[allow(clippy::type_complexity)]
-    /// Allows to provide modifier functions for the [`Block`] that will be
+    /// Allows to provide modifier functions for the [`Block`] and [`Chunk`] that will be
     /// generated within this builder.
     ///
     /// That removes the need in a lot of tests to build the block outside of
     /// the builder because they need to modify something particular.
-    pub fn block_modifier(mut self, modifier: Box<dyn Fn(&mut Block<Fr>)>) -> Self {
-        self.block_modifiers.push(modifier);
+    pub fn modifier(mut self, modifier: Box<dyn Fn(&mut Block<Fr>, &mut Chunk<Fr>)>) -> Self {
+        self.modifiers.push(modifier);
         self
     }
 }
 
 impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// Triggers the `CircuitTestBuilder` to convert the [`TestContext`] if any,
-    /// into a [`Block`] and apply the default or provided block_modifiers or
+    /// into a [`Block`] and apply the default or provided modifiers or
     /// circuit checks to the provers generated for the State and EVM circuits.
     pub fn run(mut self) {
         self.run_with_chunk(1, 0);
     }
     
     ///
-    pub fn run_with_chunk(mut self, totalchunk: usize, chunk_index: usize) {
+    pub fn run_with_chunk(mut self, total_chunk: usize, chunk_index: usize) {
         let (block, chunk) = if self.block.is_some() && self.chunk.is_some() {
             (self.block.unwrap(), self.chunk.unwrap())
         } else if self.test_ctx.is_some() {
             let block: GethData = self.test_ctx.unwrap().into();
             let builder =
-                BlockData::new_from_geth_datachunked(block.clone(), totalchunk).new_circuit_input_builder();
+                BlockData::new_from_geth_datachunked(block.clone(), total_chunk).new_circuit_input_builder();
             let builder = builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
             println!("chunks: {:?}", builder.chunks);
             // Build a witness block from trace result.
             let mut block = crate::witness::block_convert(&builder).unwrap();
-            let chunk = crate::witness::chunk_convert(&builder, chunk_index).unwrap();
+            let mut chunk = crate::witness::chunk_convert(&builder, chunk_index).unwrap();
 
-            for modifier_fn in self.block_modifiers {
-                modifier_fn.as_ref()(&mut block);
+            for modifier_fn in self.modifiers {
+                modifier_fn.as_ref()(&mut block, &mut chunk);
             }
             (block, chunk)
         } else {
@@ -221,7 +221,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block, &chunk);
 
             let circuit =
-                EvmCircuitCached::get_test_circuit_from_block(block.clone(), Some(chunk.clone()));
+                EvmCircuitCached::get_test_circuit_from_block(block.clone(), chunk.clone());
             let instance = circuit.instance();
             let prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
 

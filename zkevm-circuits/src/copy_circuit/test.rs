@@ -2,7 +2,7 @@ use crate::{
     copy_circuit::*,
     evm_circuit::{test::rand_bytes, witness::block_convert},
     util::unusable_rows,
-    witness::Block,
+    witness::{Block, chunk_convert},
 };
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, FixedCParams},
@@ -43,6 +43,7 @@ pub fn test_copy_circuit<F: Field>(
 pub fn test_copy_circuit_from_block<F: Field>(
     k: u32,
     block: Block<F>,
+    chunk: Chunk<F>,
 ) -> Result<(), Vec<VerifyFailure>> {
     test_copy_circuit::<F>(
         k,
@@ -176,35 +177,40 @@ fn gen_tx_log_data() -> CircuitInputBuilder<FixedCParams> {
 fn copy_circuit_valid_calldatacopy() {
     let builder = gen_calldatacopy_data();
     let block = block_convert::<Fr>(&builder).unwrap();
-    assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
+    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    assert_eq!(test_copy_circuit_from_block(14, block, chunk), Ok(()));
 }
 
 #[test]
 fn copy_circuit_valid_codecopy() {
     let builder = gen_codecopy_data();
     let block = block_convert::<Fr>(&builder).unwrap();
-    assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
+    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    assert_eq!(test_copy_circuit_from_block(10, block, chunk), Ok(()));
 }
 
 #[test]
 fn copy_circuit_valid_extcodecopy() {
     let builder = gen_extcodecopy_data();
     let block = block_convert::<Fr>(&builder).unwrap();
-    assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
+    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    assert_eq!(test_copy_circuit_from_block(14, block, chunk), Ok(()));
 }
 
 #[test]
 fn copy_circuit_valid_sha3() {
     let builder = gen_sha3_data();
     let block = block_convert::<Fr>(&builder).unwrap();
-    assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
+    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    assert_eq!(test_copy_circuit_from_block(14, block, chunk), Ok(()));
 }
 
 #[test]
 fn copy_circuit_valid_tx_log() {
     let builder = gen_tx_log_data();
     let block = block_convert::<Fr>(&builder).unwrap();
-    assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
+    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    assert_eq!(test_copy_circuit_from_block(10, block, chunk), Ok(()));
 }
 
 #[test]
@@ -216,9 +222,10 @@ fn copy_circuit_invalid_calldatacopy() {
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
     let block = block_convert::<Fr>(&builder).unwrap();
+    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
 
     assert_error_matches(
-        test_copy_circuit_from_block(14, block),
+        test_copy_circuit_from_block(14, block, chunk),
         vec!["Memory lookup", "Tx calldata lookup"],
     );
 }
@@ -232,9 +239,10 @@ fn copy_circuit_invalid_codecopy() {
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
     let block = block_convert::<Fr>(&builder).unwrap();
+    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
 
     assert_error_matches(
-        test_copy_circuit_from_block(10, block),
+        test_copy_circuit_from_block(10, block, chunk),
         vec!["Memory lookup", "Bytecode lookup"],
     );
 }
@@ -248,9 +256,10 @@ fn copy_circuit_invalid_extcodecopy() {
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
     let block = block_convert::<Fr>(&builder).unwrap();
+    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
 
     assert_error_matches(
-        test_copy_circuit_from_block(14, block),
+        test_copy_circuit_from_block(14, block, chunk),
         vec!["Memory lookup", "Bytecode lookup"],
     );
 }
@@ -264,9 +273,10 @@ fn copy_circuit_invalid_sha3() {
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
     let block = block_convert::<Fr>(&builder).unwrap();
+    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
 
     assert_error_matches(
-        test_copy_circuit_from_block(14, block),
+        test_copy_circuit_from_block(14, block, chunk),
         vec!["Memory lookup"],
     );
 }
@@ -280,9 +290,10 @@ fn copy_circuit_invalid_tx_log() {
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
     let block = block_convert::<Fr>(&builder).unwrap();
+    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
 
     assert_error_matches(
-        test_copy_circuit_from_block(10, block),
+        test_copy_circuit_from_block(10, block, chunk),
         vec!["Memory lookup", "TxLog lookup"],
     );
 }

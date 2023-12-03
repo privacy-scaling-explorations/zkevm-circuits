@@ -25,11 +25,11 @@ use super::Challenges;
 pub struct ChunkContextConfig<F> {
     chunk_index: Column<Advice>,
     chunk_index_next: Column<Advice>,
-    totalchunks: Column<Advice>,
+    total_chunks: Column<Advice>,
     qchunk_context: Selector,
 
-    /// is_firstchunk config
-    pub is_firstchunk: IsZeroConfig<F>,
+    /// is_first_chunk config
+    pub is_first_chunk: IsZeroConfig<F>,
     /// is_lastchunk config
     pub is_lastchunk: IsZeroConfig<F>,
 
@@ -49,7 +49,7 @@ impl<F: Field> ChunkContextConfig<F> {
         let chunk_index_inv = meta.advice_column();
         let chunk_index_next = meta.advice_column();
         let chunk_diff = meta.advice_column();
-        let totalchunks = meta.advice_column();
+        let total_chunks = meta.advice_column();
 
         let pi_prechunkctx = meta.instance_column();
         let pi_nextchunkctx = meta.instance_column();
@@ -62,7 +62,7 @@ impl<F: Field> ChunkContextConfig<F> {
         [
             (ChunkCtxFieldTag::CurrentChunkIndex.expr(), chunk_index),
             (ChunkCtxFieldTag::NextChunkIndex.expr(), chunk_index_next),
-            (ChunkCtxFieldTag::TotalChunks.expr(), totalchunks),
+            (ChunkCtxFieldTag::TotalChunks.expr(), total_chunks),
         ]
         .iter()
         .for_each(|(tag_expr, value_col)| {
@@ -81,7 +81,7 @@ impl<F: Field> ChunkContextConfig<F> {
             });
         });
 
-        let is_firstchunk = IsZeroChip::configure(
+        let is_first_chunk = IsZeroChip::configure(
             meta,
             |meta| meta.query_selector(qchunk_context),
             |meta| meta.query_advice(chunk_index, Rotation::cur()),
@@ -93,9 +93,9 @@ impl<F: Field> ChunkContextConfig<F> {
             |meta| meta.query_selector(qchunk_context),
             |meta| {
                 let chunk_index = meta.query_advice(chunk_index, Rotation::cur());
-                let totalchunks = meta.query_advice(totalchunks, Rotation::cur());
+                let total_chunks = meta.query_advice(total_chunks, Rotation::cur());
 
-                totalchunks - chunk_index - 1.expr()
+                total_chunks - chunk_index - 1.expr()
             },
             chunk_diff,
         );
@@ -104,8 +104,8 @@ impl<F: Field> ChunkContextConfig<F> {
             qchunk_context,
             chunk_index,
             chunk_index_next,
-            totalchunks,
-            is_firstchunk,
+            total_chunks,
+            is_first_chunk,
             is_lastchunk,
             chunkctx_table,
             pi_prechunkctx,
@@ -128,18 +128,18 @@ impl<F: Field> ChunkContextConfig<F> {
             end_rwc_cell,
         ) = self.chunkctx_table.load(layouter, chunk_context)?;
 
-        let is_firstchunk = IsZeroChip::construct(self.is_firstchunk.clone());
+        let is_first_chunk = IsZeroChip::construct(self.is_first_chunk.clone());
         let is_lastchunk = IsZeroChip::construct(self.is_lastchunk.clone());
         layouter.assign_region(
             || "chunk context",
             |mut region| {
                 region.name_column(|| "chunk_index", self.chunk_index);
                 region.name_column(|| "chunk_index_next", self.chunk_index_next);
-                region.name_column(|| "totalchunks", self.totalchunks);
+                region.name_column(|| "total_chunks", self.total_chunks);
                 region.name_column(|| "pi_prechunkctx", self.pi_prechunkctx);
                 region.name_column(|| "pi_nextchunkctx", self.pi_nextchunkctx);
-                self.is_firstchunk
-                    .annotate_columns_in_region(&mut region, "is_firstchunk");
+                self.is_first_chunk
+                    .annotate_columns_in_region(&mut region, "is_first_chunk");
                 self.is_lastchunk
                     .annotate_columns_in_region(&mut region, "is_lastchunk");
                 self.chunkctx_table.annotate_columns_in_region(&mut region);
@@ -162,13 +162,13 @@ impl<F: Field> ChunkContextConfig<F> {
                     )?;
 
                     region.assign_advice(
-                        || "totalchunks",
-                        self.totalchunks,
+                        || "total_chunks",
+                        self.total_chunks,
                         offset,
-                        || Value::known(F::from(chunk_context.totalchunks as u64)),
+                        || Value::known(F::from(chunk_context.total_chunks as u64)),
                     )?;
 
-                    is_firstchunk.assign(
+                    is_first_chunk.assign(
                         &mut region,
                         offset,
                         Value::known(F::from(chunk_context.chunk_index as u64)),
@@ -177,7 +177,7 @@ impl<F: Field> ChunkContextConfig<F> {
                         &mut region,
                         offset,
                         Value::known(F::from(
-                            (chunk_context.totalchunks - chunk_context.chunk_index - 1) as u64,
+                            (chunk_context.total_chunks - chunk_context.chunk_index - 1) as u64,
                         )),
                     )?;
                 }

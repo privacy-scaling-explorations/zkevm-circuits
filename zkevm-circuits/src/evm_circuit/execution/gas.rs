@@ -140,7 +140,7 @@ mod test {
         .unwrap();
 
         CircuitTestBuilder::<2, 1>::new_from_test_ctx(ctx)
-            .block_modifier(Box::new(|block| {
+            .modifier(Box::new(|block, chunk| {
                 // The above block has 2 steps (GAS and STOP). We forcefully assign a
                 // wrong `gas_left` value for the second step, to assert that
                 // the circuit verification fails for this scenario.

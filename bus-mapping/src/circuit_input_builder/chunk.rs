@@ -39,7 +39,7 @@ pub struct ChunkContext {
     /// Contains the next available value.
     pub rwc: RWCounter,
     /// number of chunks
-    pub totalchunks: usize,
+    pub total_chunks: usize,
     /// initial rw counter
     pub initial_rwc: usize,
     /// end rw counter
@@ -56,11 +56,11 @@ impl Default for ChunkContext {
 
 impl ChunkContext {
     /// Create a new Self
-    pub fn new(cur_idx: usize, totalchunks: usize, is_dynamic: bool) -> Self {
+    pub fn new(cur_idx: usize, total_chunks: usize, is_dynamic: bool) -> Self {
         Self {
             rwc: RWCounter::new(),
             idx: cur_idx,
-            totalchunks,
+            total_chunks,
             initial_rwc: 1, // rw counter start from 1
             end_rwc: 0,     // end_rwc should be set in later phase
             is_dynamic,
@@ -72,7 +72,7 @@ impl ChunkContext {
         Self {
             rwc: RWCounter::new(),
             idx: 0,
-            totalchunks: 1,
+            total_chunks: 1,
             initial_rwc: 1, // rw counter start from 1
             end_rwc: 0,     // end_rwc should be set in later phase
             is_dynamic: false
@@ -81,19 +81,19 @@ impl ChunkContext {
 
     ///
     pub fn next(&mut self, initial_rwc: usize) {
-        assert!(self.idx + 1 < self.totalchunks, "Exceed total chunks");
+        assert!(self.idx + 1 < self.total_chunks, "Exceed total chunks");
         self.idx += 1;
         self.initial_rwc = initial_rwc;
         self.end_rwc = 0;
     }
 
     /// is first chunk
-    pub fn is_firstchunk(&self) -> bool {
+    pub fn is_first_chunk(&self) -> bool {
         self.idx == 0
     }
 
     /// is last chunk
     pub fn is_lastchunk(&self) -> bool {
-        self.totalchunks - self.idx - 1 == 0
+        self.total_chunks - self.idx - 1 == 0
     }
 }
