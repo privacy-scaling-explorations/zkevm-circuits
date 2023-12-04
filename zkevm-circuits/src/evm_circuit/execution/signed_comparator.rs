@@ -5,15 +5,15 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes,
             math_gadget::{ComparisonGadget, IsEqualGadget, LtGadget},
-            select, CachedRegion, Cell,
+            select, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
+        from_bytes,
         word::{Word, Word32Cell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};

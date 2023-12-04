@@ -10,14 +10,14 @@ use crate::{
                 Transition::Delta,
             },
             math_gadget::{IsEqualWordGadget, IsZeroWordGadget, LtGadget},
-            not, CachedRegion, Cell, U64Cell,
+            not, Cell, U64Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::{
         word::{Word, Word32Cell, WordCell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 

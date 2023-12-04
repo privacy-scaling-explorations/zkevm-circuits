@@ -9,13 +9,12 @@ use crate::{
                 Transition::Delta,
             },
             math_gadget::{IsZeroWordGadget, LtWordGadget, MulAddWordsGadget},
-            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
         word::{Word, Word32Cell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use bus_mapping::evm::OpcodeId;

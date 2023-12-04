@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod test {
-    use eth_types::address;
     use ethers::{prelude::*, types::transaction::eip2930::AccessList};
     use eyre::Result;
     use halo2_proofs::halo2curves::bn256::Fr;
@@ -51,6 +50,7 @@ mod test {
         let circuit = InitialStateCircuit::new(witness, degree, max_proof_count)?;
 
         circuit.assert_satisfied();
+        circuit.clone().assert_real_prover()?;
 
         Ok(circuit)
     }

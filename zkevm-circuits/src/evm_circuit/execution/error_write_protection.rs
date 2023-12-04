@@ -6,14 +6,14 @@ use crate::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{IsZeroGadget, IsZeroWordGadget},
-            AccountAddress, CachedRegion, Cell,
+            AccountAddress, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::{
         word::{Word, WordCell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use eth_types::{evm_types::OpcodeId, Field, ToAddress, U256};

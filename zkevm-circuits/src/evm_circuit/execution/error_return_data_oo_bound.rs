@@ -6,16 +6,16 @@ use crate::{
         util::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            from_bytes,
             math_gadget::{AddWordsGadget, IsZeroGadget, LtGadget},
-            not, or, sum, CachedRegion, Cell, U64Cell,
+            not, or, sum, Cell, U64Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::{
+        from_bytes,
         word::{Word, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, ToScalar};

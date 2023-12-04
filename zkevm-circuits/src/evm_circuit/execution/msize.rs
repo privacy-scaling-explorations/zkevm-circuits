@@ -9,11 +9,11 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::Delta,
             },
-            CachedRegion, Cell,
+            Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::{word::Word, Expr},
+    util::{word::Word, CachedRegion, Expr},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;

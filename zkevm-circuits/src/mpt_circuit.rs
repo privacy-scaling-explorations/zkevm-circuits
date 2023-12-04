@@ -9,6 +9,7 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
+use serde::{Serialize, Deserialize};
 
 use std::{convert::TryInto, env::var, marker::PhantomData};
 
@@ -643,7 +644,7 @@ impl<F: Field> MPTConfig<F> {
 }
 
 /// MPT Circuit for proving the storage modification is valid.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct MPTCircuit<F: Field> {
     /// MPT nodes
     pub nodes: Vec<Node>,
@@ -659,7 +660,7 @@ pub struct MPTCircuit<F: Field> {
 }
 
 /// MPT Circuit configuration parameters
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct MPTCircuitParams {
     ///
     pub degree: usize,

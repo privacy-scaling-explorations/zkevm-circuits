@@ -15,7 +15,7 @@ use crate::{
                 ConstantDivisionGadget, ContractCreateGadget, IsEqualWordGadget, IsZeroWordGadget,
                 MulWordByU64Gadget, RangeCheckGadget,
             },
-            not, or, select, AccountAddress, CachedRegion, Cell, StepRws,
+            not, or, select, AccountAddress, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -24,7 +24,7 @@ use crate::{
     },
     util::{
         word::{Word, Word32Cell, WordCell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use bus_mapping::state_db::CodeDB;

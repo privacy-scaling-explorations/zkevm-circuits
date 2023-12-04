@@ -1,8 +1,13 @@
 use crate::{
-    evm_circuit::witness::Rw,
     table::{AccountFieldTag, MPTProofType},
     util::word,
 };
+
+#[cfg(not(feature = "js"))]
+use crate::{
+    evm_circuit::witness::Rw,
+};
+
 use eth_types::{Address, Field, ToScalar, Word};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
@@ -58,10 +63,12 @@ impl MptUpdates {
         self.old_root
     }
 
+    #[cfg(not(feature = "js"))]
     pub(crate) fn get(&self, row: &Rw) -> Option<MptUpdate> {
         key(row).map(|key| *self.updates.get(&key).expect("missing key in mpt updates"))
     }
 
+    #[cfg(not(feature = "js"))]
     pub(crate) fn mock_from(rows: &[Rw]) -> Self {
         let mock_old_root = Word::from(0xcafeu64);
         let map: BTreeMap<_, _> = rows
@@ -203,6 +210,7 @@ impl<F: Clone> MptUpdateRow<F> {
     }
 }
 
+#[cfg(not(feature = "js"))]
 fn key(row: &Rw) -> Option<Key> {
     match row {
         Rw::Account {
@@ -228,6 +236,7 @@ fn key(row: &Rw) -> Option<Key> {
     }
 }
 
+#[cfg(not(feature = "js"))]
 fn value(row: &Rw) -> Word {
     match row {
         Rw::Account { value, .. } => *value,
@@ -236,6 +245,7 @@ fn value(row: &Rw) -> Word {
     }
 }
 
+#[cfg(not(feature = "js"))]
 fn value_prev(row: &Rw) -> Word {
     match row {
         Rw::Account { value_prev, .. } => *value_prev,

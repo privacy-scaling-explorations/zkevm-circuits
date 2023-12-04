@@ -2,9 +2,9 @@ use eth_types::Field;
 use gadgets::util::{and, not};
 use halo2_proofs::plonk::Expression;
 
+mod countdown;
 mod equal_words;
 mod fixed_rlc;
-mod countdown;
 
 pub use equal_words::EqualWordsConfig;
 pub use fixed_rlc::FixedRlcConfig;

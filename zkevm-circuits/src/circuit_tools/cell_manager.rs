@@ -2,9 +2,8 @@
 use super::constraint_builder::ConstraintBuilder;
 use crate::{
     circuit_tools::cached_region::CachedRegion,
-    evm_circuit::util::rlc,
     table::LookupTable,
-    util::{query_expression, word::Word, Expr},
+    util::{query_expression, rlc, word::Word, Expr},
 };
 use eth_types::Field;
 use halo2_proofs::{

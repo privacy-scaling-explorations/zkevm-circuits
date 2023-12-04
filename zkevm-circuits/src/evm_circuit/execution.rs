@@ -5,25 +5,22 @@ use super::{
         N_U8_LOOKUPS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
     step::HasExecutionState,
-    util::{instrumentation::Instrument, CachedRegion, StoredExpression},
+    util::instrumentation::Instrument,
 };
 use crate::{
+    Table,
     evm_circuit::{
         param::{EVM_LOOKUP_COLS, MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
         step::{ExecutionState, Step},
-        table::Table,
-        util::{
-            constraint_builder::{
-                BaseConstraintBuilder, ConstrainBuilderCommon, EVMConstraintBuilder,
-            },
-            evaluate_expression, rlc,
+        util::constraint_builder::{
+            BaseConstraintBuilder, ConstrainBuilderCommon, EVMConstraintBuilder,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::LookupTable,
     util::{
         cell_manager::{CMFixedWidthStrategy, CellManager, CellType},
-        Challenges, Expr,
+        evaluate_expression, rlc, CachedRegion, Challenges, Expr, StoredExpression,
     },
 };
 use bus_mapping::operation::Target;
@@ -319,9 +316,9 @@ pub struct ExecutionConfig<F> {
     error_oog_code_store: Box<ErrorCodeStoreGadget<F>>,
     error_invalid_jump: Box<ErrorInvalidJumpGadget<F>>,
     error_invalid_opcode: Box<ErrorInvalidOpcodeGadget<F>>,
-    #[allow(dead_code, reason = "under active development")]
+    #[allow(dead_code)]
     error_depth: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>>,
-    #[allow(dead_code, reason = "under active development")]
+    #[allow(dead_code)]
     error_contract_address_collision:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>>,
     error_invalid_creation_code: Box<ErrorInvalidCreationCodeGadget<F>>,

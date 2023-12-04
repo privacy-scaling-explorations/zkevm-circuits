@@ -5,14 +5,14 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Cell,
+            Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
     util::{
         word::{WordCell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use bus_mapping::evm::OpcodeId;

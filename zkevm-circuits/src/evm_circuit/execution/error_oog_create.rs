@@ -11,10 +11,10 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryExpandedAddressGadget, MemoryExpansionGadget,
                 MemoryWordSizeGadget,
             },
-            or, select, CachedRegion, Cell, WordExpr,
+            or, select,  Cell, WordExpr,
         },
     },
-    util::{word::Word32Cell, Expr},
+    util::{word::Word32Cell, Expr, CachedRegion},
     witness::{Block, Call, ExecStep, Transaction},
 };
 use eth_types::{

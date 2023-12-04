@@ -2,15 +2,20 @@
 pub mod int_decomposition;
 pub mod word;
 
-use bus_mapping::evm::OpcodeId;
 use halo2_proofs::{
-    circuit::{Layouter, Value},
+    circuit::{AssignedCell, Layouter, Region, Value},
     plonk::{
-        Challenge, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, VirtualCells,
+        Advice, Assigned, Challenge, Column, ConstraintSystem, Error, Expression, FirstPhase,
+        SecondPhase, VirtualCells,
     },
+    poly::Rotation,
 };
+use itertools::Itertools;
 
-use crate::{table::TxLogFieldTag, witness};
+#[cfg(not(feature = "js"))]
+use crate::{table::TxLogFieldTag};
+
+use crate::{witness};
 use eth_types::{keccak256, Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
@@ -19,6 +24,8 @@ pub use gadgets::util::Expr;
 pub mod cell_manager;
 /// Cell Placement strategies
 pub mod cell_placement_strategy;
+
+use std::hash::{Hash, Hasher};
 
 /// Steal the expression from gate
 pub fn query_expression<F: Field, T>(
@@ -124,6 +131,7 @@ impl<F: Field> Challenges<Expression<F>> {
     }
 }
 
+#[cfg(not(feature = "js"))]
 pub(crate) fn build_tx_log_address(index: u64, field_tag: TxLogFieldTag, log_id: u64) -> Address {
     (U256::from(index) + (U256::from(field_tag as u64) << 32) + (U256::from(log_id) << 48))
         .to_address()
@@ -151,6 +159,7 @@ pub trait SubCircuit<F: Field> {
     fn unusable_rows() -> usize;
 
     /// Create a new SubCircuit from a witness Block
+    #[cfg(not(feature = "js"))]
     fn new_from_block(block: &witness::Block<F>) -> Self;
 
     /// Returns the instance columns required for this circuit.
@@ -170,6 +179,7 @@ pub trait SubCircuit<F: Field> {
 
     /// Return the minimum number of rows required to prove the block.
     /// Row numbers without/with padding are both returned.
+    #[cfg(not(feature = "js"))]
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize);
 }
 
@@ -191,20 +201,324 @@ pub(crate) fn keccak(msg: &[u8]) -> Word {
     Word::from_big_endian(keccak256(msg).as_slice())
 }
 
-pub(crate) fn is_push_with_data(byte: u8) -> bool {
-    OpcodeId::from(byte).is_push_with_data()
+
+
+
+/// Returns 2**by as Field
+pub(crate) fn pow_of_two<F: Field>(by: usize) -> F {
+    F::from(2).pow([by as u64, 0, 0, 0])
 }
 
-pub(crate) fn get_push_size(byte: u8) -> u64 {
-    if is_push_with_data(byte) {
-        byte as u64 - OpcodeId::PUSH0.as_u64()
-    } else {
-        0u64
+/// Returns 2**by as Expression
+pub(crate) fn pow_of_two_expr<F: Field>(by: usize) -> Expression<F> {
+    Expression::Constant(pow_of_two(by))
+}
+
+/// Returns tuple consists of low and high part of U256
+pub(crate) fn split_u256(value: &U256) -> (U256, U256) {
+    (
+        U256([value.0[0], value.0[1], 0, 0]),
+        U256([value.0[2], value.0[3], 0, 0]),
+    )
+}
+
+/// Split a U256 value into 4 64-bit limbs stored in U256 values.
+pub(crate) fn split_u256_limb64(value: &U256) -> [U256; 4] {
+    [
+        U256([value.0[0], 0, 0, 0]),
+        U256([value.0[1], 0, 0, 0]),
+        U256([value.0[2], 0, 0, 0]),
+        U256([value.0[3], 0, 0, 0]),
+    ]
+}
+
+/// Transposes an `Value` of a [`Result`] into a [`Result`] of an `Value`.
+pub(crate) fn transpose_val_ret<F, E>(value: Value<Result<F, E>>) -> Result<Value<F>, E> {
+    let mut ret = Ok(Value::unknown());
+    value.map(|value| {
+        ret = value.map(Value::known);
+    });
+    ret
+}
+
+/// Returns the random linear combination of the inputs.
+/// Encoding is done as follows: v_0 * R^0 + v_1 * R^1 + ...
+pub(crate) mod rlc {
+    use std::ops::{Add, Mul};
+
+    use crate::util::Expr;
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
+
+    pub(crate) fn expr<F: Field, E: Expr<F>>(expressions: &[E], randomness: E) -> Expression<F> {
+        if !expressions.is_empty() {
+            generic(expressions.iter().map(|e| e.expr()), randomness.expr())
+        } else {
+            0.expr()
+        }
+    }
+
+    pub(crate) fn value<'a, F: Field, I>(values: I, randomness: F) -> F
+    where
+        I: IntoIterator<Item = &'a u8>,
+        <I as IntoIterator>::IntoIter: DoubleEndedIterator,
+    {
+        let values = values
+            .into_iter()
+            .map(|v| F::from(*v as u64))
+            .collect::<Vec<F>>();
+        if !values.is_empty() {
+            generic(values, randomness)
+        } else {
+            F::ZERO
+        }
+    }
+
+    fn generic<V, I>(values: I, randomness: V) -> V
+    where
+        I: IntoIterator<Item = V>,
+        <I as IntoIterator>::IntoIter: DoubleEndedIterator,
+        V: Clone + Add<Output = V> + Mul<Output = V>,
+    {
+        let mut values = values.into_iter().rev();
+        let init = values.next().expect("values should not be empty");
+
+        values.fold(init, |acc, value| acc * randomness.clone() + value)
+    }
+}
+
+/// Decodes a field element from its byte representation in little endian order
+pub(crate) mod from_bytes {
+    use crate::util::Expr;
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
+
+    const MAX_N_BYTES_INTEGER: usize = 31;
+
+    pub(crate) fn expr<F: Field, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
+        debug_assert!(
+            bytes.len() <= MAX_N_BYTES_INTEGER,
+            "Too many bytes to compose an integer in field"
+        );
+        let mut value = 0.expr();
+        let mut multiplier = F::ONE;
+        for byte in bytes.iter() {
+            value = value + byte.expr() * multiplier;
+            multiplier *= F::from(256);
+        }
+        value
+    }
+
+    pub(crate) fn value<F: Field>(bytes: &[u8]) -> F {
+        debug_assert!(
+            bytes.len() <= MAX_N_BYTES_INTEGER,
+            "Too many bytes to compose an integer in field"
+        );
+        let mut value = F::ZERO;
+        let mut multiplier = F::ONE;
+        for byte in bytes.iter() {
+            value += F::from(*byte as u64) * multiplier;
+            multiplier *= F::from(256);
+        }
+        value
+    }
+}
+
+///
+pub struct CachedRegion<'r, 'b, F: Field> {
+    region: &'r mut Region<'b, F>,
+    advice: Vec<Vec<F>>,
+    challenges: &'r Challenges<Value<F>>,
+    advice_columns: Vec<Column<Advice>>,
+    width_start: usize,
+    height_start: usize,
+}
+
+impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
+    /// New cached region
+    pub(crate) fn new(
+        region: &'r mut Region<'b, F>,
+        challenges: &'r Challenges<Value<F>>,
+        advice_columns: Vec<Column<Advice>>,
+        height: usize,
+        height_start: usize,
+    ) -> Self {
+        Self {
+            region,
+            advice: vec![vec![F::ZERO; height]; advice_columns.len()],
+            challenges,
+            width_start: advice_columns[0].index(),
+            height_start,
+            advice_columns,
+        }
+    }
+
+    /// This method replicates the assignment of 1 row at height_start (which
+    /// must be already assigned via the CachedRegion) into a range of rows
+    /// indicated by offset_begin, offset_end. It can be used as a "quick"
+    /// path for assignment for repeated padding rows.
+    pub fn replicate_assignment_for_range<A, AR>(
+        &mut self,
+        annotation: A,
+        offset_begin: usize,
+        offset_end: usize,
+    ) -> Result<(), Error>
+    where
+        A: Fn() -> AR,
+        AR: Into<String>,
+    {
+        for (v, column) in self
+            .advice
+            .iter()
+            .map(|values| values[0])
+            .zip_eq(self.advice_columns.iter())
+        {
+            if v.is_zero_vartime() {
+                continue;
+            }
+            let annotation: &String = &annotation().into();
+            for offset in offset_begin..offset_end {
+                self.region
+                    .assign_advice(|| annotation, *column, offset, || Value::known(v))?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Assign an advice column value (witness).
+    pub fn assign_advice<'v, V, VR, A, AR>(
+        &'v mut self,
+        annotation: A,
+        column: Column<Advice>,
+        offset: usize,
+        to: V,
+    ) -> Result<AssignedCell<VR, F>, Error>
+    where
+        V: Fn() -> Value<VR> + 'v,
+        for<'vr> Assigned<F>: From<&'vr VR>,
+        A: Fn() -> AR,
+        AR: Into<String>,
+    {
+        // Actually set the value
+        let res = self.region.assign_advice(annotation, column, offset, &to);
+        // Cache the value
+        // Note that the `value_field` in `AssignedCell` might be `Value::unkonwn` if
+        // the column has different phase than current one, so we call to `to`
+        // again here to cache the value.
+        if res.is_ok() {
+            to().map(|f| {
+                self.advice[column.index() - self.width_start][offset - self.height_start] =
+                    Assigned::from(&f).evaluate();
+            });
+        }
+        res
+    }
+
+
+    pub(crate) fn get_fixed(&self, _row_index: usize, _column_index: usize, _rotation: Rotation) -> F {
+        unimplemented!("fixed column");
+    }
+
+    pub(crate) fn get_advice(&self, row_index: usize, column_index: usize, rotation: Rotation) -> F {
+        self.advice[column_index - self.width_start]
+            [(((row_index - self.height_start) as i32) + rotation.0) as usize]
+    }
+
+    pub(crate) fn challenges(&self) -> &Challenges<Value<F>> {
+        self.challenges
+    }
+
+    pub(crate) fn keccak_rlc(&self, le_bytes: &[u8]) -> Value<F> {
+        self.challenges
+            .keccak_input()
+            .map(|r| rlc::value(le_bytes, r))
+    }
+
+    pub(crate) fn code_hash(&self, n: U256) -> word::Word<Value<F>> {
+        word::Word::from(n).into_value()
+    }
+
+    /// Constrains a cell to have a constant value.
+    ///
+    /// Returns an error if the cell is in a column where equality has not been
+    /// enabled.
+    pub fn constrain_constant<VR>(
+        &mut self,
+        cell: AssignedCell<F, F>,
+        constant: VR,
+    ) -> Result<(), Error>
+    where
+        VR: Into<Assigned<F>>,
+    {
+        self.region.constrain_constant(cell.cell(), constant.into())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct StoredExpression<F> {
+    pub(crate) name: String,
+    pub(crate) cell: Cell<F>,
+    pub(crate) cell_type: CellType,
+    pub(crate) expr: Expression<F>,
+    pub(crate) expr_id: String,
+}
+
+impl<F> Hash for StoredExpression<F> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.expr_id.hash(state);
+        self.cell_type.hash(state);
+    }
+}
+
+/// Evaluate an expression using a `CachedRegion` at `offset`.
+pub(crate) fn evaluate_expression<F: Field>(
+    expr: &Expression<F>,
+    region: &CachedRegion<'_, '_, F>,
+    offset: usize,
+) -> Value<F> {
+    expr.evaluate(
+        &|scalar| Value::known(scalar),
+        &|_| unimplemented!("selector column"),
+        &|fixed_query| {
+            Value::known(region.get_fixed(
+                offset,
+                fixed_query.column_index(),
+                fixed_query.rotation(),
+            ))
+        },
+        &|advice_query| {
+            Value::known(region.get_advice(
+                offset,
+                advice_query.column_index(),
+                advice_query.rotation(),
+            ))
+        },
+        &|_| unimplemented!("instance column"),
+        &|challenge| *region.challenges().indexed()[challenge.index()],
+        &|a| -a,
+        &|a, b| a + b,
+        &|a, b| a * b,
+        &|a, scalar| a * Value::known(scalar),
+    )
+}
+
+impl<F: Field> StoredExpression<F> {
+    pub fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+    ) -> Result<Value<F>, Error> {
+        let value = evaluate_expression(&self.expr, region, offset);
+        self.cell.assign(region, offset, value)?;
+        Ok(value)
     }
 }
 
 #[cfg(test)]
 use halo2_proofs::plonk::Circuit;
+
+use self::cell_manager::{Cell, CellType};
 
 #[cfg(test)]
 /// Returns number of unusable rows of the Circuit.

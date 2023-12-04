@@ -3,10 +3,11 @@ use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
 use crate::{
+    Table,
     evm_circuit::{
         param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
         step::{ExecutionState, Step},
-        table::{FixedTableTag, Table},
+        table::{FixedTableTag},
         util::{
             constraint_builder::EVMConstraintBuilder, rlc, CachedRegion, StoredExpression,
             LOOKUP_CONFIG,

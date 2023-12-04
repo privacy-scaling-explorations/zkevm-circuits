@@ -7,13 +7,13 @@ use crate::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{ByteSizeGadget, LtGadget},
-            CachedRegion, Cell,
+            Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
         word::{Word32Cell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use eth_types::{

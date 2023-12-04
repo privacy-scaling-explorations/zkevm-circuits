@@ -1,5 +1,5 @@
 //! Constants and parameters for the EVM circuit
-use super::table::Table;
+use crate::Table;
 use crate::evm_circuit::{step::ExecutionState, EvmCircuit};
 use halo2_proofs::{
     halo2curves::bn256::Fr,

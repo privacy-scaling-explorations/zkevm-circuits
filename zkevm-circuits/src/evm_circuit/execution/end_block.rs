@@ -7,12 +7,12 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition::Same,
             },
             math_gadget::{IsEqualGadget, IsZeroGadget},
-            not, CachedRegion, Cell,
+            not, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
-    util::{word::Word, Expr},
+    util::{word::Word, CachedRegion, Expr},
 };
 use eth_types::Field;
 use gadgets::util::select;

@@ -13,14 +13,14 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
                 MemoryExpansionGadget,
             },
-            not, select, CachedRegion, Cell,
+            not, select, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::{
         word::{Word, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};

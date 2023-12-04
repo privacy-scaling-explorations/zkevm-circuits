@@ -10,11 +10,11 @@ use crate::{
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
             },
-            CachedRegion, Cell, U64Cell,
+            Cell, U64Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::{word::WordExpr, Expr},
+    util::{word::WordExpr, CachedRegion, Expr},
 };
 
 use super::ExecutionGadget;

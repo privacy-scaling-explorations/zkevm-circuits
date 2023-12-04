@@ -19,7 +19,7 @@ impl CMFixedWidthStrategyDistribution {
         }
     }
 
-    #[allow(dead_code, reason = "this method will be used outside tests")]
+    #[allow(dead_code)]
     pub(crate) fn get(&self, cell_type: CellType) -> Option<&Vec<Column<Advice>>> {
         self.0.get(&cell_type)
     }

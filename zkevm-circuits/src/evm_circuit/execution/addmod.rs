@@ -12,13 +12,13 @@ use crate::{
                 AddWordsGadget, CmpWordsGadget, IsZeroWordGadget, MulAddWords512Gadget,
                 MulAddWordsGadget,
             },
-            not, CachedRegion,
+            not,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
         word::{Word, Word32Cell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 

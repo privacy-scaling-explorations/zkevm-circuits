@@ -7,11 +7,11 @@ use crate::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::LtGadget,
-            CachedRegion, Cell,
+            Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{CachedRegion, Expr},
 };
 use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};

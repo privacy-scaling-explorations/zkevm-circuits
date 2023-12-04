@@ -7,13 +7,13 @@ use crate::{
             common_gadget::{CommonErrorGadget, WordByteCapGadget},
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{IsEqualGadget, IsZeroWordGadget},
-            CachedRegion, Cell,
+            Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
         word::{Word, WordCell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use eth_types::{evm_types::OpcodeId, Field, U256};

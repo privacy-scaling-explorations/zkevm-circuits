@@ -1,3 +1,9 @@
+// Number of bytes an EVM word has.
+pub(crate) const N_BYTES_WORD: usize = 32;
+
+// Number of bytes an half EVM word has.
+pub(crate) const N_BYTES_HALF_WORD: usize = N_BYTES_WORD / 2;
+
 use crate::{
     assign, circuit,
     circuit_tools::{
@@ -9,10 +15,6 @@ use crate::{
         gadgets::{IsEqualGadget, IsEqualWordGadget, LtGadget},
         memory::MemoryBank,
     },
-    evm_circuit::{
-        param::{N_BYTES_HALF_WORD, N_BYTES_WORD},
-        util::from_bytes,
-    },
     matchw,
     mpt_circuit::{
         param::{
@@ -23,6 +25,7 @@ use crate::{
     },
     table::LookupTable,
     util::{
+        from_bytes,
         word::{self, Word},
         Challenges, Expr,
     },

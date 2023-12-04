@@ -5,12 +5,12 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::BlockContextFieldTag,
     util::{
+        CachedRegion,
         word::{WordCell, WordExpr},
         Expr,
     },

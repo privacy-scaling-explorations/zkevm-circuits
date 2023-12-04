@@ -11,14 +11,14 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryCopierGasGadget, MemoryExpandedAddressGadget,
                 MemoryExpansionGadget,
             },
-            or, select, AccountAddress, CachedRegion, Cell,
+            or, select, AccountAddress, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::{
         word::{Word, WordCell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use eth_types::{

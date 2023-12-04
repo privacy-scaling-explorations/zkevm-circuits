@@ -18,7 +18,6 @@ use crate::{
         constraint_builder::{RLCChainableRev, RLCable},
         gadgets::IsEqualGadget,
     },
-    evm_circuit::util::from_bytes,
     mpt_circuit::{
         helpers::{
             key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, Indexable,
@@ -29,7 +28,10 @@ use crate::{
         MPTConfig, MPTContext, MptMemory, RlpItemType,
     },
     table::MPTProofType,
-    util::word::{self, Word},
+    util::{
+        from_bytes,
+        word::{self, Word},
+    },
     witness::MptUpdateRow,
 };
 

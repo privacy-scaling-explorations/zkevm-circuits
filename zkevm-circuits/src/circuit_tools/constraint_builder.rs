@@ -7,9 +7,8 @@ use std::{
 };
 
 use crate::{
-    evm_circuit::util::rlc,
     table::LookupTable,
-    util::{query_expression, word::Word, Expr},
+    util::{query_expression, rlc, word::Word, Expr},
 };
 use eth_types::Field;
 use gadgets::util::{and, sum, Scalar};

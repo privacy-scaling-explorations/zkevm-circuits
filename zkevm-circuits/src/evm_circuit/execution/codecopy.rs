@@ -15,13 +15,13 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
                 MemoryExpansionGadget,
             },
-            not, select, CachedRegion, Cell,
+            not, select, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
         word::{Word, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 

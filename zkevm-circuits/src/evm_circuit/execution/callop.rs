@@ -14,10 +14,13 @@ use crate::{
                 ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget,
             },
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
-            not, or, select, CachedRegion, Cell, StepRws,
+            not, or, select, Cell, StepRws,
         },
     },
-    util::word::{Word, WordCell, WordExpr},
+    util::{
+        word::{Word, WordCell, WordExpr},
+        CachedRegion,
+    },
 };
 
 use crate::{

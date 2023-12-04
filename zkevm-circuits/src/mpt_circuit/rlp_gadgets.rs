@@ -5,14 +5,13 @@ use crate::{
         cell_manager::Cell,
         constraint_builder::{ConstraintBuilder, RLCable, RLCableValue},
     },
-    evm_circuit::util::from_bytes,
     matchw,
     mpt_circuit::{
         helpers::FIXED,
         param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT},
         FixedTableTag,
     },
-    util::{word, Expr},
+    util::{from_bytes, word, Expr},
 };
 use eth_types::Field;
 use gadgets::util::{not, pow, Scalar};

@@ -10,9 +10,10 @@ use crate::{
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryExpandedAddressGadget, MemoryExpansionGadget,
             },
-            CachedRegion, Cell,
+            Cell,
         },
     },
+    util::CachedRegion,
     witness::{Block, Call, ExecStep, Transaction},
 };
 use eth_types::{evm_types::OpcodeId, Field};

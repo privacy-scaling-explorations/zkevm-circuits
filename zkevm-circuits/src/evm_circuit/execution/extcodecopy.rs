@@ -13,12 +13,15 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
                 MemoryExpansionGadget,
             },
-            not, select, AccountAddress, CachedRegion, Cell,
+            not, select, AccountAddress, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
-    util::word::{Word, Word32Cell, WordExpr},
+    util::{
+        word::{Word, Word32Cell, WordExpr},
+        CachedRegion,
+    },
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{evm_types::GasCost, Field, ToScalar};

@@ -3,7 +3,7 @@
 use crate::{
     evm_circuit::step::{ExecutionState, ResponsibleOp},
     impl_expr,
-    util::word::Word,
+    util::word::Word, Table,
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
@@ -139,31 +139,6 @@ impl FixedTableTag {
             ),
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
-/// Each item represents the lookup table to query
-pub enum Table {
-    /// The range check table for u8
-    U8,
-    /// The range check table for u16
-    U16,
-    /// The rest of the fixed table. See [`FixedTableTag`]
-    Fixed,
-    /// Lookup for transactions
-    Tx,
-    /// Lookup for read write operations
-    Rw,
-    /// Lookup for bytecode table
-    Bytecode,
-    /// Lookup for block constants
-    Block,
-    /// Lookup for copy table
-    Copy,
-    /// Lookup for keccak table
-    Keccak,
-    /// Lookup for exp table
-    Exp,
 }
 
 #[derive(Clone, Debug)]

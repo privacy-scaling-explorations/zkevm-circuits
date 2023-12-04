@@ -10,14 +10,14 @@ use crate::{
                 Transition::{Delta, Same},
             },
             math_gadget::ComparisonGadget,
-            CachedRegion, Cell,
+            Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::{
         word::{Word, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use bus_mapping::evm::OpcodeId;

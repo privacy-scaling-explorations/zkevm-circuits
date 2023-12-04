@@ -11,13 +11,13 @@ use crate::{
             },
             math_gadget::IsEqualGadget,
             memory_gadget::MemoryExpansionGadget,
-            not, CachedRegion, MemoryAddress,
+            not, MemoryAddress,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
         word::{Word32Cell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use eth_types::{evm_types::OpcodeId, Field};

@@ -10,14 +10,14 @@ use crate::{
                 Transition::Delta,
             },
             math_gadget::IsZeroWordGadget,
-            not, select, AccountAddress, CachedRegion, Cell, U64Cell,
+            not, select, AccountAddress, Cell, U64Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
         word::{Word, Word32Cell, WordCell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use eth_types::{evm_types::GasCost, Field};

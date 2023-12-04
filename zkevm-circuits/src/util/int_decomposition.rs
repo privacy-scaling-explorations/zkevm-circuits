@@ -7,7 +7,7 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 
-use crate::evm_circuit::{
+use crate::{
     param::{MAX_N_BYTES_INTEGER, N_BYTES_HALF_WORD},
     util::{rlc, CachedRegion, Cell},
 };

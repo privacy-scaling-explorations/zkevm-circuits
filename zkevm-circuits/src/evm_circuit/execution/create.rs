@@ -1,3 +1,5 @@
+#![feature(adt_const_params)]
+
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -19,14 +21,14 @@ use crate::{
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
             },
-            not, AccountAddress, CachedRegion, Cell, Word, WordExpr,
+            not, AccountAddress, Cell, Word, WordExpr,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
         word::{Word32Cell, WordCell},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, state_db::CodeDB};

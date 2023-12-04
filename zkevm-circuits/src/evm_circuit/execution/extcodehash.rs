@@ -8,14 +8,14 @@ use crate::{
             constraint_builder::{
                 EVMConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
-            select, AccountAddress, CachedRegion, Cell,
+            select, AccountAddress, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
         word::{Word32Cell, WordCell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use eth_types::{evm_types::GasCost, Field};

@@ -1,8 +1,9 @@
 use crate::{
+    Table,
     evm_circuit::{
         param::STACK_CAPACITY,
         step::{ExecutionState, Step},
-        table::{FixedTableTag, Lookup, RwValues, Table},
+        table::{FixedTableTag, Lookup, RwValues},
         util::{Cell, RandomLinearCombination},
     },
     table::{

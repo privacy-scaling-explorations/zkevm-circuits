@@ -5,12 +5,12 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            AccountAddress, CachedRegion, Cell,
+            AccountAddress, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
-    util::{word::WordExpr, Expr},
+    util::{word::WordExpr, CachedRegion, Expr},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;

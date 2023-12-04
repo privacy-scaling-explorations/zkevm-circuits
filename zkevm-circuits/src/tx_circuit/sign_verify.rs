@@ -5,12 +5,9 @@
 // - *_le: Little-Endian bytes
 
 use crate::{
-    evm_circuit::{
-        param::N_BYTES_ACCOUNT_ADDRESS,
-        util::{from_bytes, not, rlc},
-    },
+    evm_circuit::{param::N_BYTES_ACCOUNT_ADDRESS, util::not},
     table::KeccakTable,
-    util::{word::Word, Challenges, Expr},
+    util::{from_bytes, rlc, word::Word, Challenges, Expr},
 };
 use ecc::{maingate, EccConfig, GeneralEccChip};
 use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};

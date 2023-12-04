@@ -5,7 +5,7 @@
 
 use super::{
     param::MAX_STEP_HEIGHT,
-    util::{evm_cm_distribute_advice, CachedRegion, Cell, CellType},
+    util::{evm_cm_distribute_advice, Cell, CellType},
 };
 use crate::{
     evm_circuit::{
@@ -15,7 +15,7 @@ use crate::{
     util::{
         cell_manager::{CMFixedWidthStrategy, CellManager},
         word::{Word, WordCell},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use bus_mapping::{
@@ -31,8 +31,9 @@ use halo2_proofs::{
 use std::{fmt::Display, iter};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
+use crate::Table;
 
-#[allow(missing_docs, reason = "some docs here are tedious and not helpful")]
+#[allow(missing_docs)]
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
 /// All the possible execution states that the computation of EVM can arrive.

@@ -16,14 +16,14 @@ use crate::{
     },
     table::{BytecodeFieldTag, BytecodeTable, KeccakTable, LookupTable},
     util::{
-        self, get_push_size,
-        word::{empty_code_hash_word_value, Word, Word32, WordExpr},
+        self,
+        word::{Word, Word32, WordExpr},
         Challenges, Expr, SubCircuit, SubCircuitConfig,
     },
     witness::{self},
 };
 use bus_mapping::state_db::{CodeDB, EMPTY_CODE_HASH_LE};
-use eth_types::{Bytecode, Field};
+use eth_types::{Bytecode, Field, evm_types::OpcodeId};
 use gadgets::is_zero::{IsZeroChip, IsZeroInstruction};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -36,6 +36,23 @@ use itertools::Itertools;
 use std::{iter, ops::Deref, vec};
 
 const PUSH_TABLE_WIDTH: usize = 2;
+
+/// Return the hash of the empty code as a `Word<Value<F>>` in little-endian.
+pub fn empty_code_hash_word_value<F: Field>() -> Word<Value<F>> {
+    Word::from(CodeDB::empty_code_hash()).into_value()
+}
+
+pub(crate) fn is_push_with_data(byte: u8) -> bool {
+    OpcodeId::from(byte).is_push_with_data()
+}
+
+pub(crate) fn get_push_size(byte: u8) -> u64 {
+    if is_push_with_data(byte) {
+        byte as u64 - OpcodeId::PUSH0.as_u64()
+    } else {
+        0u64
+    }
+}
 
 #[derive(Debug, Clone, Default)]
 /// Row for assignment

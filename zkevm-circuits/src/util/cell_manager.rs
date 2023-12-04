@@ -9,7 +9,8 @@ use halo2_proofs::{
 };
 
 use crate::{
-    evm_circuit::{table::Table, util::CachedRegion},
+    Table,
+    util::CachedRegion,
     util::query_expression,
 };
 
@@ -291,7 +292,6 @@ impl CellManagerColumns {
         self.columns_list.clone()
     }
 
-    #[allow(dead_code, reason = "under active development")]
     /// Returns the number of columns.
     pub fn get_width(&self) -> usize {
         self.columns_list.len()
@@ -392,7 +392,6 @@ impl<Stats, S: CellPlacementStrategy<Stats = Stats>> CellManager<S> {
         self.columns.columns()
     }
 
-    #[allow(dead_code, reason = "under active development")]
     /// Returns the number of columns managed by this Cell Manager.
     pub fn get_width(&self) -> usize {
         self.columns.get_width()

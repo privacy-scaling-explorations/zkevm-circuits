@@ -5,11 +5,10 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{CachedRegion, Expr},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;

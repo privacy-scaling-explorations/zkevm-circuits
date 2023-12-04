@@ -7,14 +7,14 @@ use crate::{
             constraint_builder::{
                 EVMConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
-            CachedRegion, Cell,
+            Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::{
         word::{Word, WordCell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use eth_types::Field;

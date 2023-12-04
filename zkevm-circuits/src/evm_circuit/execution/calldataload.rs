@@ -17,14 +17,14 @@ use crate::{
                 Transition::Delta,
             },
             memory_gadget::BufferReaderGadget,
-            not, select, CachedRegion, Cell,
+            not, select, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
     util::{
         word::{Word, Word32, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 

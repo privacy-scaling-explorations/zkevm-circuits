@@ -12,8 +12,7 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::Fr,
     plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance, SecondPhase,
-        Selector,
+        Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance, SecondPhase, Selector,
     },
     poly::Rotation,
 };
@@ -151,7 +150,7 @@ pub struct InitialStateCircuitConfig<F: Field> {
 }
 
 /// MPT Circuit for proving the storage modification is valid.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct InitialStateCircuit<F: Field> {
     pub transforms: Transforms,
     #[cfg(not(feature = "disable-keccak"))]
@@ -644,7 +643,7 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                         values.push(old_root_lo.clone());
                         values.push(old_root_hi.clone());
                         values.push(old_root_lo); // dummy values, to be replaced at the end
-                        values.push(old_root_hi);
+                        values.push(old_root_hi); // dummy value, to be replaced at the end
                     }
 
                     values.append(&mut vec![typ,addr,value_lo,value_hi, key_lo, key_hi]);

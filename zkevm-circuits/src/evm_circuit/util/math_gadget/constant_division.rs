@@ -59,7 +59,6 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
     pub(crate) fn quotient(&self) -> Expression<F> {
         self.quotient.expr()
     }
-    #[allow(dead_code, reason = "remainder is a valid API but only used in tests")]
     pub(crate) fn remainder(&self) -> Expression<F> {
         self.remainder.expr()
     }

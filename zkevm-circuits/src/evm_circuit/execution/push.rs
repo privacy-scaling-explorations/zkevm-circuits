@@ -11,13 +11,13 @@ use crate::{
                 Transition::Delta,
             },
             math_gadget::{IsZeroGadget, LtGadget},
-            not, or, select, sum, CachedRegion, Cell,
+            not, or, select, sum, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
         word::{Word32Cell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use array_init::array_init;

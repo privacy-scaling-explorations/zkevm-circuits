@@ -22,10 +22,7 @@ use crate::{
             N_BYTES_BLOCK, N_BYTES_EXTRA_VALUE, N_BYTES_HALF_WORD, N_BYTES_TX, N_BYTES_U64,
             N_BYTES_WITHDRAWAL, N_BYTES_WORD,
         },
-        util::{
-            constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-            from_bytes,
-        },
+        util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     },
     instance::{
         public_data_convert, BlockValues, ExtraValues, PublicData, TxValues, NONZERO_BYTE_GAS_COST,
@@ -33,7 +30,7 @@ use crate::{
     },
     table::{BlockTable, KeccakTable, LookupTable, TxFieldTag, TxTable, WdTable},
     tx_circuit::TX_LEN,
-    util::{word::Word, Challenges, SubCircuit, SubCircuitConfig},
+    util::{from_bytes, word::Word, Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
 use gadgets::{

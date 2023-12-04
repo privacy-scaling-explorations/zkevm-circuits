@@ -10,12 +10,12 @@ use crate::{
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryExpandedAddressGadget, MemoryExpansionGadget,
             },
-            or, CachedRegion, Cell,
+            or, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{CachedRegion, Expr},
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},

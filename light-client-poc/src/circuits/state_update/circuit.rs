@@ -11,9 +11,7 @@ use gadgets::{
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::Fr,
-    plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance, Selector,
-    },
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance, Selector},
     poly::Rotation,
 };
 

@@ -8,12 +8,12 @@ use crate::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::LtGadget,
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
-            CachedRegion, Cell,
+            Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::{word::WordExpr, Expr},
+    util::{word::WordExpr, CachedRegion, Expr},
 };
 
 use eth_types::{

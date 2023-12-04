@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 use std::collections::HashMap;
 
 use eth_types::Field;
@@ -12,9 +14,9 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use super::{xnif, countdown::Countdown};
+use super::{countdown::Countdown, xnif};
 
-///*
+/// *
 ///  This circuit takes a list of values and their lengths
 ///  and returns
 ///     - an AssignedCell with the rlc of the first `values_to_accumulate` values
@@ -23,7 +25,7 @@ use super::{xnif, countdown::Countdown};
 ///  Some restrictions
 ///     - the length of the values must be fixed per circuit
 ///
-///*
+/// *
 
 #[derive(Clone)]
 pub struct FixedRlcConfig<F: Field> {
@@ -42,7 +44,7 @@ pub struct FixedRlcConfig<F: Field> {
     rlc_check_config: HashMap<usize, IsZeroConfig<F>>,
 
     // count
-    countdown: Countdown<F>
+    countdown: Countdown<F>,
 }
 
 impl<F: Field> FixedRlcConfig<F> {
@@ -188,16 +190,16 @@ impl<F: Field> FixedRlcConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         values: Vec<(F, usize)>,
-        values_to_accumulate: usize, // we only accoumulate the row values
+        length: usize, // we only accoumulate the row values
         rlc_r: Value<F>,
     ) -> Result<(AssignedCell<F, F>, Vec<AssignedCell<F, F>>), Error> {
         let ret = layouter.assign_region(
             || "rlc checker",
             |mut region| {
-
                 // name columns
 
-                self.countdown.annotate_columns_in_region(&mut region, "rlc");
+                self.countdown
+                    .annotate_columns_in_region(&mut region, "rlc");
 
                 region.name_column(|| "RLC_len", self.len_col);
                 region.name_column(|| "RLC_value", self.value_col);
@@ -211,8 +213,7 @@ impl<F: Field> FixedRlcConfig<F> {
 
                 let mut value_cells = Vec::new();
 
-
-                let mut count = F::from(values_to_accumulate as u64);
+                let mut count = F::from(length as u64);
                 let mut rlc_acc = Value::known(F::ZERO);
                 let mut last_rlc_acc_cell = None;
                 let rlc_acc_propagate = IsZeroChip::construct(self.rlc_acc_propagate.clone());
@@ -301,7 +302,13 @@ impl<F: Field> FixedRlcConfig<F> {
                         }
                         count -= F::ONE;
                     }
-                    self.countdown.assign(&mut region, offset, count_prev, count, offset == values.len() -1 )?;
+                    self.countdown.assign(
+                        &mut region,
+                        offset,
+                        count_prev,
+                        count,
+                        offset == values.len() - 1,
+                    )?;
 
                     rlc_acc_propagate.assign(&mut region, offset, rlc_acc_prev - rlc_acc)?;
 
@@ -369,9 +376,7 @@ mod test {
             unreachable!()
         }
 
-        fn params(&self) -> Self::Params {
-            ()
-        }
+        fn params(&self) -> Self::Params {}
 
         fn configure_with_params(
             meta: &mut ConstraintSystem<F>,
@@ -399,12 +404,12 @@ mod test {
                 (address, 20),
                 (word_hi, 16),
             ];
-            let values_to_accumulate = 3;
+            let length = 3;
 
             let (rlc_acc_cell, _) = config.fixed_rlc.assign(
                 &mut layouter,
                 values.clone(),
-                values_to_accumulate,
+                length,
                 challenges.keccak_input(),
             )?;
 
@@ -412,7 +417,7 @@ mod test {
 
             let expected_rlc_acc_value = values
                 .iter()
-                .take(values_to_accumulate)
+                .take(length)
                 .flat_map(|(f, n)| f.to_repr()[0..*n].to_vec())
                 .fold(Value::known(F::ZERO), |acc, b| {
                     acc * challenges.keccak_input() + Value::known(F::from(b as u64))
@@ -436,5 +441,4 @@ mod test {
         let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
         prover.assert_satisfied_par()
     }
-
 }

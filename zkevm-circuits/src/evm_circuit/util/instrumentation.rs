@@ -1,9 +1,12 @@
 use crate::{
     evm_circuit::{
-        step::ExecutionState, table::Table, util::constraint_builder::EVMConstraintBuilder,
+        step::ExecutionState, util::constraint_builder::EVMConstraintBuilder,
     },
     util::cell_manager::CellType,
 };
+
+use crate::Table;
+
 use eth_types::Field;
 use itertools::Itertools;
 

@@ -10,13 +10,13 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::IsZeroWordGadget,
-            select, CachedRegion,
+            select,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
         word::{Word, WordCell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use eth_types::{evm_types::OpcodeId, Field};

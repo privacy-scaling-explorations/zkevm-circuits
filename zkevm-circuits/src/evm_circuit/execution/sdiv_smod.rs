@@ -11,13 +11,12 @@ use crate::{
             math_gadget::{
                 AbsWordGadget, IsZeroWordGadget, LtGadget, LtWordGadget, MulAddWordsGadget,
             },
-            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
         word::{Word, Word32Cell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use bus_mapping::evm::OpcodeId;

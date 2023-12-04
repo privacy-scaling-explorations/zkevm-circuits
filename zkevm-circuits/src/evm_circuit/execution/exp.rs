@@ -15,11 +15,14 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
             },
             math_gadget::{ByteSizeGadget, IsEqualGadget, IsZeroGadget},
-            CachedRegion, Cell,
+            Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::word::{Word32Cell, Word4, WordExpr},
+    util::{
+        word::{Word32Cell, Word4, WordExpr},
+        CachedRegion,
+    },
 };
 
 use super::ExecutionGadget;

@@ -11,11 +11,11 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryCopierGasGadget, MemoryExpandedAddressGadget,
                 MemoryExpansionGadget,
             },
-            or, CachedRegion, Cell,
+            or, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{CachedRegion, Expr},
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},

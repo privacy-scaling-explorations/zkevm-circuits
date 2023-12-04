@@ -10,11 +10,11 @@ use crate::{
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryExpandedAddressGadget, MemoryExpansionGadget,
             },
-            select, CachedRegion, Cell,
+            select, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::{word::Word, Expr},
+    util::{word::Word, CachedRegion, Expr},
 };
 use eth_types::{evm_types::OpcodeId, Field, ToWord};
 use gadgets::util::or;

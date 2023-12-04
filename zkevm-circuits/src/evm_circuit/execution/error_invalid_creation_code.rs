@@ -7,11 +7,11 @@ use crate::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::IsEqualGadget,
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
-            CachedRegion, Cell,
+            Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::{word::WordExpr, Expr},
+    util::{word::WordExpr, CachedRegion, Expr},
 };
 use eth_types::{evm_types::INVALID_INIT_CODE_FIRST_BYTE, Field};
 use halo2_proofs::{circuit::Value, plonk::Error};

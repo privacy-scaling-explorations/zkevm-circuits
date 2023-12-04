@@ -6,13 +6,13 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{CmpWordsGadget, IsEqualGadget},
-            select, CachedRegion, Cell,
+            select, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
         word::{Word, WordCell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use eth_types::{evm_types::OpcodeId, Field};

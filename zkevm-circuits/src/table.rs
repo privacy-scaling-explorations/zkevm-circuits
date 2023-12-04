@@ -1,19 +1,34 @@
 //! Table definitions used cross-circuits
 
 use crate::{
-    copy_circuit::util::number_or_hash_to_word,
-    evm_circuit::util::rlc,
     impl_expr,
     util::{
-        build_tx_log_address, keccak,
+        keccak, rlc,
         word::{self, Word},
         Challenges,
     },
-    witness::{Block, BlockContext, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction},
+    witness::{MptUpdateRow, MptUpdates},
 };
+
+#[cfg(not(feature = "js"))]
+use crate::{
+    util::{
+        build_tx_log_address,
+    }
+};
+
+#[cfg(not(feature = "js"))]
+use crate::{
+    copy_circuit::util::number_or_hash_to_word,
+    witness::{Block, BlockContext, Rw, RwMap, RwRow, Transaction},
+};
+
+#[cfg(not(feature = "js"))]
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep};
 use core::iter::once;
 use eth_types::{Field, ToScalar, U256};
+
+#[cfg(not(feature = "js"))]
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     util::{split_u256, split_u256_limb64},
@@ -28,38 +43,71 @@ use std::array;
 use strum_macros::{EnumCount, EnumIter};
 
 /// block table
+#[cfg(not(feature = "js"))]
 pub(crate) mod block_table;
+
 /// bytecode table
+#[cfg(not(feature = "js"))]
 pub(crate) mod bytecode_table;
+
 /// copy Table
+#[cfg(not(feature = "js"))]
 pub(crate) mod copy_table;
+
 /// exp(exponentiation) table
+#[cfg(not(feature = "js"))]
 pub(crate) mod exp_table;
+
 /// keccak table
 pub(crate) mod keccak_table;
+
 /// mpt table
 pub mod mpt_table;
+
 /// rw table
+#[cfg(not(feature = "js"))]
 pub(crate) mod rw_table;
+
 /// tx table
+#[cfg(not(feature = "js"))]
 pub(crate) mod tx_table;
+
 /// ux table
+#[cfg(not(feature = "js"))]
 pub(crate) mod ux_table;
+
 /// withdrawal table
+#[cfg(not(feature = "js"))]
 pub(crate) mod wd_table;
 
+#[cfg(not(feature = "js"))]
 pub(crate) use block_table::{BlockContextFieldTag, BlockTable};
+
+#[cfg(not(feature = "js"))]
 pub(crate) use bytecode_table::{BytecodeFieldTag, BytecodeTable};
+
+#[cfg(not(feature = "js"))]
 pub(crate) use copy_table::CopyTable;
+
+#[cfg(not(feature = "js"))]
 pub(crate) use exp_table::ExpTable;
+
 pub use keccak_table::KeccakTable;
+
+#[cfg(not(feature = "js"))]
 pub(crate) use ux_table::UXTable;
 
 pub use mpt_table::{MPTProofType, MptTable};
+
+#[cfg(not(feature = "js"))]
 pub(crate) use rw_table::RwTable;
+
+#[cfg(not(feature = "js"))]
 pub(crate) use tx_table::{
     TxContextFieldTag, TxFieldTag, TxLogFieldTag, TxReceiptFieldTag, TxTable,
 };
+
+#[cfg(not(feature = "js"))]
 pub(crate) use wd_table::WdTable;
 
 /// Trait used to define lookup tables

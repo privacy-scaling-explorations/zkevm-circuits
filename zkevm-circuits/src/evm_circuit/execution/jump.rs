@@ -8,11 +8,11 @@ use crate::{
                 EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
-            CachedRegion, U64Cell,
+            U64Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::{word::WordExpr, Expr},
+    util::{word::WordExpr, CachedRegion, Expr},
 };
 use eth_types::{evm_types::OpcodeId, Field};
 use halo2_proofs::plonk::Error;

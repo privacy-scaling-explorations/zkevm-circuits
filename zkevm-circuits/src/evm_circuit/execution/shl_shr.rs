@@ -10,13 +10,13 @@ use crate::{
                 Transition::Delta,
             },
             math_gadget::{IsZeroGadget, IsZeroWordGadget, LtWordGadget, MulAddWordsGadget},
-            sum, CachedRegion, Cell,
+            sum, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
         word::{Word, Word32Cell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use bus_mapping::evm::OpcodeId;

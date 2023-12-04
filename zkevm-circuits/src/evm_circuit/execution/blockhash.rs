@@ -11,12 +11,12 @@ use crate::{
                 Transition::Delta,
             },
             math_gadget::LtGadget,
-            CachedRegion, Cell, Word,
+            Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::BlockContextFieldTag,
-    util::word::WordExpr,
+    util::{word::WordExpr, CachedRegion},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToScalar};

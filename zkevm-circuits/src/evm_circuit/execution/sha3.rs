@@ -16,11 +16,15 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
                 MemoryExpansionGadget,
             },
-            rlc, CachedRegion, Cell,
+            Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::word::{Word, WordCell, WordExpr},
+    util::{
+        rlc,
+        word::{Word, WordCell, WordExpr},
+        CachedRegion,
+    },
 };
 
 use super::ExecutionGadget;

@@ -6,13 +6,13 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{IsEqualGadget, IsZeroGadget},
-            sum, CachedRegion,
+            sum,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
         word::{Word, Word32Cell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use array_init::array_init;

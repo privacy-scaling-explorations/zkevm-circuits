@@ -3,13 +3,10 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         table::{FixedTableTag, Lookup},
-        util::{
-            common_gadget::CommonErrorGadget, constraint_builder::EVMConstraintBuilder,
-            CachedRegion, Cell,
-        },
+        util::{common_gadget::CommonErrorGadget, constraint_builder::EVMConstraintBuilder, Cell},
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{CachedRegion, Expr},
 };
 use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};

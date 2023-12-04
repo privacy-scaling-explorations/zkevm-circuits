@@ -3,7 +3,6 @@
 // - Limbs: An EVN word is 256 bits. Limbs N means split 256 into N limb. For example, N = 4, each
 //   limb is 256/4 = 64 bits
 
-use bus_mapping::state_db::CodeDB;
 use eth_types::{Field, ToLittleEndian, H160, H256};
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
@@ -13,7 +12,7 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 
-use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell};
+use crate::util::{from_bytes, CachedRegion, Cell};
 
 /// evm word 32 bytes, half word 16 bytes
 const N_BYTES_HALF_WORD: usize = 16;
@@ -445,9 +444,7 @@ impl<F: Field, const N1: usize> WordExpr<F> for WordLimbs<Expression<F>, N1> {
     }
 }
 
-/// Return the hash of the empty code as a `Word<Value<F>>` in little-endian.
-pub fn empty_code_hash_word_value<F: Field>() -> Word<Value<F>> {
-    Word::from(CodeDB::empty_code_hash()).into_value()
-}
+
+
 
 // TODO unittest

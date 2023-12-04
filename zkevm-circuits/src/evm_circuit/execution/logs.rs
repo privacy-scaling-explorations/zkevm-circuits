@@ -12,7 +12,7 @@ use crate::{
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
             },
-            not, sum, CachedRegion, Cell,
+            not, sum, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -20,7 +20,7 @@ use crate::{
     util::{
         build_tx_log_expression,
         word::{Word, Word32Cell, WordCell, WordExpr},
-        Expr,
+        CachedRegion, Expr,
     },
 };
 use array_init::array_init;

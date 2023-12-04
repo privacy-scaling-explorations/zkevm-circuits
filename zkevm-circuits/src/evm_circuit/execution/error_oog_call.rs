@@ -8,11 +8,11 @@ use crate::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{IsZeroGadget, LtGadget},
             memory_gadget::MemoryExpandedAddressGadget,
-            or, CachedRegion, Cell,
+            or, Cell,
         },
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{CachedRegion, Expr},
     witness::{Block, Call, ExecStep, Transaction},
 };
 use bus_mapping::evm::OpcodeId;
