@@ -1,5 +1,5 @@
 ///
-use super::{rw::ToVec, ExecStep, RwMap};
+use super::{rw::ToVec, ExecStep, RwMap, Rw};
 use crate::{util::unwrap_value, witness::Block};
 use bus_mapping::{
     circuit_input_builder::{self, ChunkContext, FixedCParams},
@@ -15,11 +15,13 @@ use halo2_proofs::circuit::Value;
 #[derive(Debug, Clone, Default)]
 pub struct Chunk<F> {
     /// BeginChunk step to propagate State
-    pub beginchunk: ExecStep,
+    pub begin_chunk: Option<ExecStep>,
     /// EndChunk step that appears in the last EVM row for all the chunks other than the last.
-    pub endchunk: Option<ExecStep>,
+    pub end_chunk: Option<ExecStep>,
     /// chunk context
     pub chunk_context: ChunkContext,
+    /// Read write events in the RwTable
+    pub rws: RwMap,
     /// permutation challenge alpha
     pub permu_alpha: F,
     /// permutation challenge gamma
@@ -34,7 +36,7 @@ pub struct Chunk<F> {
     pub chrono_rw_fingerprint: F,
     /// fixed param for the chunk
     pub fixed_param: FixedCParams,
-    /// prevchunk_last_call
+    /// prev_chunk_last_call
     pub prev_block: Box<Option<Block<F>>>,
 }
 
@@ -44,18 +46,19 @@ pub fn chunk_convert<F: Field>(
     idx: usize
 ) -> Result<Chunk<F>, Error> {
     let block = &builder.block;
-    let chunk = builder.getchunk(idx);
+    let chunk = builder.get_chunk(idx);
     let _code_db = &builder.code_db;
-    let rws = RwMap::from(&block.container);
+    let rws = RwMap::from_chunked(&block.container, chunk.ctx.initial_rwc, chunk.ctx.end_rwc);
+    rws.check_value();
 
-    println!("{:?}", chunk.fixed_param);
     println!("| {:?} ... {:?} |", chunk.ctx.initial_rwc, chunk.ctx.end_rwc);
+    
 
     // Get prev fingerprint if it exists, otherwise start with 1
     let (rw_prev_fingerprint, chrono_rw_prev_fingerprint) = if chunk.ctx.is_first_chunk() {
         (F::from(1), F::from(1))
     } else {
-        let lastchunk = builder.prevchunk();
+        let lastchunk = builder.prev_chunk();
         (
             lastchunk.rw_fingerprint.to_scalar().unwrap(),
             lastchunk.chrono_rw_fingerprint.to_scalar().unwrap(),
@@ -96,7 +99,7 @@ pub fn chunk_convert<F: Field>(
         })
         .collect::<Vec<F>>();
 
-    // Todo(Cecilia): should set prev data from builder.prevchunk()
+    // Todo(Cecilia): should set prev data from builder.prev_chunk()
     let chunck = Chunk {
         permu_alpha,
         permu_gamma,
@@ -104,12 +107,20 @@ pub fn chunk_convert<F: Field>(
         rw_fingerprint: rw_fingerprints[0],
         chrono_rw_prev_fingerprint,
         chrono_rw_fingerprint: rw_fingerprints[1],
-        beginchunk: chunk.beginchunk.clone(),
-        endchunk: chunk.endchunk.clone(),
+        begin_chunk: chunk.begin_chunk.clone(),
+        end_chunk: chunk.end_chunk.clone(),
         chunk_context: chunk.ctx.clone(),
+        rws,
         fixed_param: chunk.fixed_param.clone(),
         prev_block: Box::new(None),
     };
 
     Ok(chunck)
+}
+
+impl<F: Field> Chunk<F> {
+    /// Get a read-write record
+    pub(crate) fn get_rws(&self, step: &ExecStep, index: usize) -> Rw {
+        self.rws[step.rw_index(index)]
+    }
 }

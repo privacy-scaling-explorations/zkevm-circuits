@@ -64,7 +64,7 @@ mod test {
     }
 
     #[test]
-    fn beginchunk_test() {
+    fn begin_chunk_test() {
         let bytecode = bytecode! {
             STOP
         };

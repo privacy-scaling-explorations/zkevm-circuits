@@ -11,23 +11,14 @@ pub struct Chunk {
     /// fixed param for the chunk
     pub fixed_param: FixedCParams,
     /// Begin op of a chunk
-    pub beginchunk: ExecStep,
+    pub begin_chunk: Option<ExecStep>,
     /// End op of a chunk
-    pub endchunk: Option<ExecStep>,
+    pub end_chunk: Option<ExecStep>,
     // Set in chunk_convert, used when converting the next chunk
     /// rw_table permutation fingerprint for this chunk
     pub rw_fingerprint: Word,
     /// rw_table permutation fingerprint for this chunk
     pub chrono_rw_fingerprint: Word,
-}
-
-/// Block-wise execution steps that don't belong to any Transaction.
-#[derive(Debug, Default)]
-pub struct ChunkSteps {
-    /// Begin op of a chunk
-    pub beginchunk: ExecStep,
-    /// End op of a chunk
-    pub endchunk: Option<ExecStep>,
 }
 
 /// Context of a [`ChunkContext`].
@@ -68,7 +59,7 @@ impl ChunkContext {
     }
 
     /// new Self with one chunk
-    pub fn new_onechunk() -> Self {
+    pub fn new_one_chunk() -> Self {
         Self {
             rwc: RWCounter::new(),
             idx: 0,
@@ -83,6 +74,7 @@ impl ChunkContext {
     pub fn next(&mut self, initial_rwc: usize) {
         assert!(self.idx + 1 < self.total_chunks, "Exceed total chunks");
         self.idx += 1;
+        self.rwc = RWCounter::new();
         self.initial_rwc = initial_rwc;
         self.end_rwc = 0;
     }

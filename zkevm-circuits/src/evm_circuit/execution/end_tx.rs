@@ -304,7 +304,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         } else {
             // first transaction needs TxReceiptFieldTag::COUNT(3) lookups to tx receipt,
             // while later transactions need 4 (with one extra cumulative gas read) lookups
-            let rw = &block.rws[(
+            let rw = &chunk.rws[(
                 Target::TxReceipt,
                 (tx.id as usize - 2) * (TxReceiptFieldTag::COUNT + 1) + 2,
             )];

@@ -512,7 +512,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
 
     fn new_from_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> Self {
         Self::new(
-            block.rws.clone(),
+            chunk.rws.clone(),
             chunk.fixed_param.max_rws,
             chunk,
         )
@@ -527,7 +527,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> (usize, usize) {
         (
-            block.rws.0.values().flatten().count() + 1,
+            chunk.rws.0.values().flatten().count() + 1,
             chunk.fixed_param.max_rws,
         )
     }

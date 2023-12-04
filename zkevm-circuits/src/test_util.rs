@@ -200,10 +200,23 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let builder = builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
-            println!("chunks: {:?}", builder.chunks);
+
+            builder.chunks
+                .iter()
+                .for_each(
+                    |c| {
+                        println!("{:?}\n{:?}\n\n{:?}\n\n{:?}\n\nfingerprint: {:?} {:?}\n", 
+                            c.ctx, c.fixed_param, c.begin_chunk, c.end_chunk, c.rw_fingerprint, c.chrono_rw_fingerprint);
+                        println!("----------");
+                    }
+                );
+            println!("block rwc = {:?}", builder.block_ctx.rwc);
+
             // Build a witness block from trace result.
             let mut block = crate::witness::block_convert(&builder).unwrap();
             let mut chunk = crate::witness::chunk_convert(&builder, chunk_index).unwrap();
+
+
 
             for modifier_fn in self.modifiers {
                 modifier_fn.as_ref()(&mut block, &mut chunk);
@@ -235,7 +248,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block, &chunk).1;
             let k = cmp::max(log2_ceil(rows_needed + NUM_BLINDING_ROWS), 18);
             let state_circuit = StateCircuit::<Fr>::new(
-                block.rws,
+                chunk.rws.clone(),
                 params.max_rws,
                 &chunk,
             );

@@ -87,7 +87,7 @@ mod test {
 
     #[test]
     #[ignore] // still under development and testing
-    fn test_intermediate_singlechunk() {
+    fn test_intermediate_single_chunk() {
         let bytecode = bytecode! {
             STOP
         };
@@ -99,16 +99,16 @@ mod test {
 
             // TODO FIXME padding start as a workaround. The practical should be last chunk last row
             // rws
-            if let Some(a) = block.rws.0.get_mut(&Target::Start) {
+            if let Some(a) = chunk.rws.0.get_mut(&Target::Start) {
                 a.push(Rw::Start { rw_counter: 1 });
             }
         }))
-        .run_with_chunk(3, 1);
+        .run_with_chunk(2, 0);
     }
 
     #[test]
     #[ignore] // still under development and testing
-    fn test_singlechunk() {
+    fn test_single_chunk() {
         let bytecode = bytecode! {
             STOP
         };
@@ -120,7 +120,7 @@ mod test {
 
             // TODO FIXME padding start as a workaround. The practical should be last chunk last row
             // rws
-            if let Some(a) = block.rws.0.get_mut(&Target::Start) {
+            if let Some(a) = chunk.rws.0.get_mut(&Target::Start) {
                 a.push(Rw::Start { rw_counter: 1 });
             }
         }))

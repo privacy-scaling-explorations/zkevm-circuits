@@ -13,7 +13,7 @@ mod transaction;
 
 use self::{
     access::gen_state_access_trace,
-    chunk::{Chunk, ChunkSteps},
+    chunk::{Chunk},
 };
 use crate::{
     error::Error,
@@ -277,7 +277,13 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<(), Error> {
         if !self.chunk_ctx.is_first_chunk() {
-            self.set_beginchunk();
+            // Last step of previous chunk contains the same transition witness
+            // needed for current begin_chunk step
+            let last_step = &self
+                .prev_chunk()
+                .end_chunk
+                .expect("Last chunk is incomplete");
+            self.set_begin_chunk(last_step);
         }
 
         // accumulates gas across all txs in the block
@@ -309,7 +315,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         eth_tx: &eth_types::Transaction,
         geth_trace: &GethExecTrace,
         is_last_tx: bool,
-        ischunked: bool,
+        is_chunked: bool,
         tx_index: u64,
     ) -> Result<(), Error> {
         let mut tx = self.new_tx(tx_index, eth_tx, !geth_trace.failed)?;
@@ -333,18 +339,19 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             tx.steps_mut().extend(exec_steps);
             
             // Generate EndChunk and proceed to the next if it's not the last chunk 
-            if ischunked 
+            if is_chunked 
                 && !self.chunk_ctx.is_last_chunk() 
                 && self.chunk_ctx.rwc.0 >= self.circuits_params.max_rws() 
                 {
                     // Update param accordding to number of rws actually generated
                     // the initial self.circuits_params function as a chunking thresholded but not constrain
                     if self.chunk_ctx.is_dynamic {
-                        self.curchunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
+                        self.cur_chunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
                     }
-                    self.set_endchunk();
-                    self.commitchunk(true);
-                    self.set_beginchunk();
+
+                    self.set_end_chunk(&tx.last_step());
+                    self.commit_chunk(true);
+                    self.set_begin_chunk(&tx.last_step());
                 }
         }
         // Generate EndTx step
@@ -360,7 +367,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
 
     // TODO Fix this, for current logic on processing `call` is incorrect
     // TODO re-design `genchunk_associated_steps` to separate RW
-    fn genchunk_associated_steps(&mut self, step: &mut ExecStep, rw: RW) {
+    fn gen_chunk_associated_steps(&mut self, step: &mut ExecStep, rw: RW) {
         let STEP_STATE_LEN = 10;
         let mut dummy_tx = Transaction::default();
         let mut dummy_tx_ctx = TransactionContext::default();
@@ -428,32 +435,28 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             });
     }
 
-    fn set_beginchunk(&mut self) {
-        let mut beginchunk = ExecStep { 
-            exec_state: ExecState::BeginChunk, 
-            ..Default::default()
-        };
-        self.genchunk_associated_steps(&mut beginchunk, RW::READ);
-        self.chunks[self.chunk_ctx.idx].beginchunk = beginchunk;
+    fn set_begin_chunk(&mut self, last_step: &ExecStep) {
+        let mut begin_chunk = last_step.clone();
+        begin_chunk.exec_state = ExecState::BeginChunk;
+        self.gen_chunk_associated_steps(&mut begin_chunk, RW::READ);
+        self.chunks[self.chunk_ctx.idx].begin_chunk = Some(begin_chunk);
     }
 
-    fn set_endchunk(&mut self) {
-        let mut endchunk = ExecStep { 
-            exec_state: ExecState::EndChunk, 
-            ..Default::default()
-        };
-        endchunk.rwc = self.block_ctx.rwc;
-        endchunk.rwc_inner_chunk = self.chunk_ctx.rwc;
-        self.genchunk_associated_steps(&mut endchunk, RW::WRITE);
-        self.genchunk_padding(&mut endchunk);
-        self.chunks[self.chunk_ctx.idx].endchunk = Some(endchunk);
+    fn set_end_chunk(&mut self, last_step: &ExecStep) {
+        let mut end_chunk = last_step.clone();
+        end_chunk.exec_state = ExecState::EndChunk;
+        end_chunk.rwc = self.block_ctx.rwc;
+        end_chunk.rwc_inner_chunk = self.chunk_ctx.rwc;
+        self.gen_chunk_associated_steps(&mut end_chunk, RW::WRITE);
+        self.gen_chunk_padding(&mut end_chunk);
+        self.chunks[self.chunk_ctx.idx].end_chunk = Some(end_chunk);
     }
 
-    fn genchunk_padding(&mut self, step: &mut ExecStep) {
+    fn gen_chunk_padding(&mut self, step: &mut ExecStep) {
         // rwc index start from 1
         let end_rwc = self.chunk_ctx.rwc.0;
         let total_rws = end_rwc - 1;
-        let max_rws = self.curchunk().fixed_param.max_rws;
+        let max_rws = self.cur_chunk().fixed_param.max_rws;
 
         // We need at least 1 extra row at offset 0 for chunk continuous
         #[allow(clippy::int_plus_one)]
@@ -500,30 +503,30 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
 
 
     ///
-    pub fn getchunk(&self, i: usize) -> Chunk {
+    pub fn get_chunk(&self, i: usize) -> Chunk {
         self.chunks.get(i)
             .expect("Chunk does not exist")
             .clone()
     }
 
     ///
-    pub fn curchunk(&self) -> Chunk {
+    pub fn cur_chunk(&self) -> Chunk {
         self.chunks[self.chunk_ctx.idx].clone()
     }
 
     ///
-    pub fn curchunk_mut(&mut self) -> &mut Chunk {
+    pub fn cur_chunk_mut(&mut self) -> &mut Chunk {
         &mut self.chunks[self.chunk_ctx.idx]
     }
 
     ///
-    pub fn prevchunk(&self) -> Chunk {
+    pub fn prev_chunk(&self) -> Chunk {
         self.chunks[self.chunk_ctx.idx - 1].clone()
     }
 
     ///
-    pub fn commitchunk(&mut self, to_next: bool) {
-        self.chunk_ctx.end_rwc = self.chunk_ctx.rwc.0;
+    pub fn commit_chunk(&mut self, to_next: bool) {
+        self.chunk_ctx.end_rwc = self.chunk_ctx.rwc.0 - 1;
         self.chunks[self.chunk_ctx.idx].ctx = self.chunk_ctx.clone();
         if to_next {
             self.chunk_ctx.next(self.block_ctx.rwc.0);
@@ -540,19 +543,19 @@ impl CircuitInputBuilder<FixedCParams> {
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<&CircuitInputBuilder<FixedCParams>, Error> {
         // accumulates gas across all txs in the block
-        // when total_chunks == 1, will skip set_beginchunk & set_endchunk
+        // when total_chunks == 1, will skip set_begin_chunk & set_end_chunk
         self.begin_handle_block(eth_block, geth_traces)?;
         self.set_end_block();
-        self.commitchunk(false);
+        self.commit_chunk(false);
 
         // Truncate chunks to the actual used amount & correct ctx.total_chunks
-        let mut usedchunks = self.chunks.clone();
+        let mut used_chunks = self.chunks.clone();
         // Set length to the actual used amont of chunks
-        usedchunks.truncate(self.chunk_ctx.idx + 1);
-        usedchunks.iter_mut().for_each(|chunk| {
+        used_chunks.truncate(self.chunk_ctx.idx + 1);
+        used_chunks.iter_mut().for_each(|chunk| {
             chunk.ctx.total_chunks = self.chunk_ctx.idx + 1;
         });
-        self.chunks = usedchunks;
+        self.chunks = used_chunks;
 
         Ok(self)
     }
@@ -579,7 +582,7 @@ impl CircuitInputBuilder<FixedCParams> {
             );
         }
 
-        self.genchunk_padding(&mut end_block_last);
+        self.gen_chunk_padding(&mut end_block_last);
         self.block.block_steps.end_block_not_last = end_block_not_last;
         self.block.block_steps.end_block_last = end_block_last;
     }
@@ -632,7 +635,7 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
                 1
                 // end_block -> CallContextFieldTag::TxId lookup
                 + if self.chunk_ctx.is_last_chunk() && rws_before_end_block_orchunk > 0 { 1 } else { 0 }
-                // endchunk -> stepstate lookups
+                // end_chunk -> stepstate lookups
                 + if !self.chunk_ctx.is_last_chunk() { 10  } else {0}
             };
         // Computing the number of rows for the EVM circuit requires the size of ExecStep,

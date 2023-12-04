@@ -13,7 +13,7 @@ use std::collections::HashMap;
 pub struct BlockContext {
     /// Used to track the global counter in every operation in the block.
     /// Contains the next available value.
-    pub(crate) rwc: RWCounter,
+    pub rwc: RWCounter,
     /// Map call_id to (tx_index, call_index) (where tx_index is the index used
     /// in Block.txs and call_index is the index used in Transaction.
     /// calls).
@@ -49,9 +49,9 @@ pub struct BlockSteps {
     pub end_block_last: ExecStep,
     // /// TODO Define and move chunk related step to Chunk struct
     // /// Begin op of a chunk
-    // pub beginchunk: ExecStep,
+    // pub begin_chunk: ExecStep,
     // /// End op of a chunk
-    // pub endchunk: Option<ExecStep>,
+    // pub end_chunk: Option<ExecStep>,
 }
 
 // TODO: Remove fields that are duplicated in`eth_block`
@@ -130,7 +130,7 @@ impl Block {
             container: OperationContainer::new(),
             txs: Vec::new(),
             block_steps: BlockSteps {
-                // beginchunk: ExecStep {
+                // begin_chunk: ExecStep {
                 //     exec_state: ExecState::BeginChunk,
                 //     ..ExecStep::default()
                 // },
@@ -142,7 +142,7 @@ impl Block {
                     exec_state: ExecState::EndBlock,
                     ..ExecStep::default()
                 },
-                // endchunk: Some(ExecStep {
+                // end_chunk: Some(ExecStep {
                 //     exec_state: ExecState::EndChunk,
                 //     ..ExecStep::default()
                 // }),

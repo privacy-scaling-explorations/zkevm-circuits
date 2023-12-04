@@ -465,11 +465,11 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
             .execution
             .assign_block(layouter, block, chunk, challenges)?;
 
-        let (prevchunk_index, nextchunk_index_next, total_chunks, initial_rwc, end_rwc) =
+        let (prev_chunk_index, nextchunk_index_next, total_chunks, initial_rwc, end_rwc) =
             config.assign_chunk_context(layouter, &chunk.chunk_context, max_offset_index)?;
 
         let (rw_rows_padding, _) = RwMap::table_assignments_padding(
-            &block.rws.table_assignments(true),
+            &chunk.rws.table_assignments(true),
             chunk.fixed_param.max_rws,
             chunk.chunk_context.is_first_chunk(),
         );
@@ -490,7 +490,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                 config.rw_table.load_with_region(
                     &mut region,
                     // pass non-padding rws to `load_with_region` since it will be padding inside
-                    &block.rws.table_assignments(true),
+                    &chunk.rws.table_assignments(true),
                     // align with state circuit to padding to same max_rws
                     chunk.fixed_param.max_rws,
                     chunk.chunk_context.is_first_chunk(),
@@ -517,7 +517,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         // constraints prev,next fingerprints
         [vec![
             prev_continuous_fingerprint_cell,
-            prevchunk_index,
+            prev_chunk_index,
             total_chunks.clone(),
             initial_rwc,
         ]]
@@ -717,7 +717,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             chunk.fixed_param.max_txs,
             chunk.fixed_param.max_calldata,
         )?;
-        block.rws.check_rw_counter_sanity();
+        chunk.rws.check_rw_counter_sanity();
         config
             .bytecode_table
             .load(&mut layouter, block.bytecodes.clone())?;

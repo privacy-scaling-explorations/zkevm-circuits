@@ -249,7 +249,7 @@ pub struct ExecutionConfig<F> {
     end_block_gadget: Box<EndBlockGadget<F>>,
     end_tx_gadget: Box<EndTxGadget<F>>,
     begin_chunk_gadget: Box<BeginChunkGadget<F>>,
-    endchunk_gadget: Box<EndChunkGadget<F>>,
+    end_chunk_gadget: Box<EndChunkGadget<F>>,
     // opcode gadgets
     add_sub_gadget: Box<AddSubGadget<F>>,
     addmod_gadget: Box<AddModGadget<F>>,
@@ -413,13 +413,13 @@ impl<F: Field> ExecutionConfig<F> {
             };
 
             let first_step_non_firstchunk_check = {
-                let beginchunk_selector =
+                let begin_chunk_selector =
                     step_curr.execution_state_selector([ExecutionState::BeginChunk]);
                 iter::once((
                     "First step (non first chunk) should be BeginChunk",
                     (1.expr() - is_first_chunk.expr())
                         * q_step_first
-                        * (1.expr() - beginchunk_selector),
+                        * (1.expr() - begin_chunk_selector),
                 ))
             };
 
@@ -433,13 +433,13 @@ impl<F: Field> ExecutionConfig<F> {
             };
 
             let last_step_non_lastchunk_check = {
-                let endchunk_selector =
+                let end_chunk_selector =
                     step_curr.execution_state_selector([ExecutionState::EndChunk]);
                 iter::once((
                     "Last step (non last chunk) should be EndChunk",
                     (1.expr() - is_last_chunk.expr())
                         * q_step_last
-                        * (1.expr() - endchunk_selector),
+                        * (1.expr() - end_chunk_selector),
                 ))
             };
 
@@ -556,7 +556,7 @@ impl<F: Field> ExecutionConfig<F> {
             end_block_gadget: configure_gadget!(),
             end_tx_gadget: configure_gadget!(),
             begin_chunk_gadget: configure_gadget!(),
-            endchunk_gadget: configure_gadget!(),
+            end_chunk_gadget: configure_gadget!(),
             // opcode gadgets
             add_sub_gadget: configure_gadget!(),
             addmod_gadget: configure_gadget!(),
@@ -1052,7 +1052,14 @@ impl<F: Field> ExecutionConfig<F> {
                     .last()
                     .map(|tx| tx.calls()[0].clone())
                     .unwrap_or_else(Call::default);
-                let prevchunk_last_call = chunk
+                
+                // Block steps
+                let end_block_not_last = &block.end_block_not_last;
+                let end_block_last = &block.end_block_last;
+                
+                // Chunk steps
+                // If it's the very first chunk in a block set last call & begin_chunk to default
+                let prev_chunk_last_call = chunk
                     .prev_block
                     .clone()
                     .unwrap_or_default()
@@ -1060,15 +1067,12 @@ impl<F: Field> ExecutionConfig<F> {
                     .last()
                     .map(|tx| tx.calls()[0].clone())
                     .unwrap_or_else(Call::default);
-
-                let end_block_not_last = &block.end_block_not_last;
-                let end_block_last = &block.end_block_last;
-                let beginchunk = &chunk.beginchunk;
-                let endchunk = &chunk.endchunk;
+                let begin_chunk = &chunk.begin_chunk.clone().unwrap_or_default();
+                let end_chunk = &chunk.end_chunk;
                 // Collect all steps
                 let mut steps =
                     // attach `BeginChunk` step in first step non first chunk
-                    std::iter::once((&dummy_tx, &prevchunk_last_call, beginchunk))
+                    std::iter::once((&dummy_tx, &prev_chunk_last_call, begin_chunk))
                         .take(if chunk.chunk_context.is_first_chunk() {0} else {1})
                         .chain(block.txs.iter().flat_map(|tx| {
                             tx.steps()
@@ -1181,7 +1185,7 @@ impl<F: Field> ExecutionConfig<F> {
                         chunk,
                         &dummy_tx,
                         &last_call,
-                        &endchunk.clone().unwrap(),
+                        &end_chunk.clone().unwrap(),
                         height,
                         None,
                         challenges,
@@ -1400,7 +1404,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
             ExecutionState::BeginChunk => assign_exec_step!(self.begin_chunk_gadget),
-            ExecutionState::EndChunk => assign_exec_step!(self.endchunk_gadget),
+            ExecutionState::EndChunk => assign_exec_step!(self.end_chunk_gadget),
             // opcode
             ExecutionState::ADD_SUB => assign_exec_step!(self.add_sub_gadget),
             ExecutionState::ADDMOD => assign_exec_step!(self.addmod_gadget),
@@ -1552,6 +1556,7 @@ impl<F: Field> ExecutionConfig<F> {
                         &assigned_stored_expressions,
                         step,
                         block,
+                        chunk,
                         region.challenges(),
                     );
                 }
@@ -1609,6 +1614,7 @@ impl<F: Field> ExecutionConfig<F> {
         assigned_stored_expressions: &[(String, F)],
         step: &ExecStep,
         block: &Block<F>,
+        chunk: &Chunk<F>,
         challenges: &Challenges<Value<F>>,
     ) {
         let mut lookup_randomness = F::ZERO;
