@@ -96,10 +96,8 @@ impl<const NACC: usize, const NTX: usize, const NWD: usize> TestContext2<NACC, N
                 .iter()
                 .find_position(|acc| acc.address == tx.from.address())
             {
-                if tx.forced_nonce.is_none() {
+                if tx.nonce.is_none() {
                     tx.nonce(from_acc.nonce + acc_tx_count[pos]);
-                } else {
-                    tx.nonce(tx.forced_nonce.unwrap());
                 }
                 if !tx.invalid {
                     acc_tx_count[pos] += 1;

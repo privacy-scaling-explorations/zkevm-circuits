@@ -49,7 +49,7 @@ impl<F: Field> ExecutionGadget<F> for InvalidTxGadget<F> {
         );
         let is_nonce_match = IsEqualGadget::construct(cb, account_nonce.expr(), tx.nonce.expr());
 
-        // Check if the gas limit is larger or queal to the intrinsic gas cost
+        // Check if the gas limit is larger or equal to the intrinsic gas cost
         let insufficient_gas_limit =
             LtGadget::<F, N_BYTES_GAS>::construct(cb, tx.gas.expr(), tx.intrinsic_gas());
 
@@ -158,8 +158,8 @@ mod test {
                 accs[1].address(from).balance(eth(1)).nonce(1);
             },
             |mut txs, _| {
-                txs[0].to(to).from(from).invalid().force_nonce(5);
-                txs[1].to(to).from(from).invalid().force_nonce(0);
+                txs[0].to(to).from(from).invalid().set_nonce(5);
+                txs[1].to(to).from(from).invalid().set_nonce(0);
             },
             |block, _| block,
         )
@@ -242,7 +242,7 @@ mod test {
                         txs[i].to(to).from(from);
                         // For invalid txs, just set the nonce to a wrong value
                         if !tx_states[i] {
-                            txs[i].invalid().force_nonce(99);
+                            txs[i].invalid().set_nonce(99);
                         }
                     }
                 },

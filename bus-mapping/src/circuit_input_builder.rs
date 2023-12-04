@@ -190,7 +190,6 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         id: u64,
         eth_tx: &eth_types::Transaction,
         is_success: bool,
-        is_invalid: bool,
     ) -> Result<Transaction, Error> {
         let call_id = self.block_ctx.rwc.0;
 
@@ -204,9 +203,6 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
                 0,
             ),
         );
-        if is_invalid {
-            self.block_ctx.num_invalid_tx += 1;
-        }
 
         Transaction::new(
             id,
@@ -215,7 +211,6 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             &mut self.code_db,
             eth_tx,
             is_success,
-            is_invalid,
         )
     }
 
@@ -252,10 +247,10 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         is_last_tx: bool,
         tx_index: u64,
     ) -> Result<(), Error> {
-        let mut tx = self.new_tx(tx_index, eth_tx, !geth_trace.failed, geth_trace.invalid)?;
+        let mut tx = self.new_tx(tx_index, eth_tx, !geth_trace.failed)?;
         let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
 
-        if !tx.invalid {
+        if !geth_trace.invalid {
             // Generate BeginTx step
             let begin_tx_step = gen_associated_steps(
                 &mut self.state_ref(&mut tx, &mut tx_ctx),

@@ -38,7 +38,7 @@ impl CircuitInputBuilderTx {
         let block = crate::mock::BlockData::new_from_geth_data(geth_data.clone());
         let mut builder = block.new_circuit_input_builder();
         let tx = builder
-            .new_tx(0, &block.eth_block.transactions[0], true, false)
+            .new_tx(0, &block.eth_block.transactions[0], true)
             .unwrap();
         let tx_ctx = TransactionContext::new(
             &block.eth_block.transactions[0],
@@ -363,7 +363,7 @@ fn tracer_invalid_tx_invalid_nonce() {
                 .to(accs[0].address)
                 .from(accs[1].address)
                 .invalid()
-                .force_nonce(1);
+                .set_nonce(1);
         },
         |block, _tx| block.number(0xcafeu64),
     )

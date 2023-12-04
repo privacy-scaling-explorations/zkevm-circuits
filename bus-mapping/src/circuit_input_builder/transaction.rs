@@ -183,8 +183,6 @@ pub struct Transaction {
     pub id: u64,
     /// The raw transaction fields
     tx: geth_types::Transaction,
-    /// Invalid tx
-    pub invalid: bool,
     /// Calls made in the transaction
     pub(crate) calls: Vec<Call>,
     /// Execution steps
@@ -200,7 +198,6 @@ impl Transaction {
         code_db: &mut CodeDB,
         eth_tx: &eth_types::Transaction,
         is_success: bool,
-        is_invalid: bool,
     ) -> Result<Self, Error> {
         let (found, _) = sdb.get_account(&eth_tx.from);
         if !found {
@@ -252,7 +249,6 @@ impl Transaction {
         Ok(Self {
             id,
             tx: eth_tx.into(),
-            invalid: is_invalid,
             calls: vec![call],
             steps: Vec::new(),
         })

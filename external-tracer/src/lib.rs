@@ -74,14 +74,13 @@ pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
         serde_json::from_str(&trace_string).map_err(Error::SerdeError)?;
     // Don't throw only for specific invalid transactions we support.
     for trace in trace.iter() {
-        let allowed_cases = trace.return_value.starts_with("nonce too low")
-            || trace.return_value.starts_with("nonce too high")
+        let error = &trace.return_value;
+        let allowed_cases = error.starts_with("nonce too low")
+            || error.starts_with("nonce too high")
             || trace.return_value.starts_with("intrinsic gas too low")
-            || trace
-                .return_value
-                .starts_with("insufficient funds for gas * price + value");
+            || error.starts_with("insufficient funds for gas * price + value");
         if trace.invalid && !allowed_cases {
-            return Err(Error::TracingError(trace.return_value.clone()));
+            return Err(Error::TracingError(error.clone()));
         }
     }
     Ok(trace)
