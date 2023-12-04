@@ -136,6 +136,8 @@ pub struct MockTransaction {
     pub max_priority_fee_per_gas: Word,
     pub max_fee_per_gas: Word,
     pub chain_id: Word,
+    pub invalid: bool,
+    pub forced_nonce: Option<u64>,
 }
 
 impl Default for MockTransaction {
@@ -160,6 +162,8 @@ impl Default for MockTransaction {
             max_priority_fee_per_gas: Word::zero(),
             max_fee_per_gas: Word::zero(),
             chain_id: *MOCK_CHAIN_ID,
+            invalid: false,
+            forced_nonce: None,
         }
     }
 }
@@ -341,5 +345,19 @@ impl MockTransaction {
         }
 
         self.to_owned()
+    }
+
+    /// Mark the transaction as invalid.
+    pub fn invalid(&mut self) -> &mut Self {
+        self.invalid = true;
+        self
+    }
+
+    /// Force the nonce field for the MockTransaction.
+    /// Can only be used for invalid transactions.
+    pub fn force_nonce(&mut self, nonce: u64) -> &mut Self {
+        assert!(self.invalid);
+        self.forced_nonce = Some(nonce);
+        self
     }
 }

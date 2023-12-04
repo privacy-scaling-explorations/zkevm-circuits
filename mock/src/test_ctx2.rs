@@ -96,8 +96,14 @@ impl<const NACC: usize, const NTX: usize, const NWD: usize> TestContext2<NACC, N
                 .iter()
                 .find_position(|acc| acc.address == tx.from.address())
             {
-                tx.nonce(from_acc.nonce + acc_tx_count[pos]);
-                acc_tx_count[pos] += 1;
+                if tx.forced_nonce.is_none() {
+                    tx.nonce(from_acc.nonce + acc_tx_count[pos]);
+                } else {
+                    tx.nonce(tx.forced_nonce.unwrap());
+                }
+                if !tx.invalid {
+                    acc_tx_count[pos] += 1;
+                }
             }
         });
 
@@ -108,7 +114,7 @@ impl<const NACC: usize, const NTX: usize, const NWD: usize> TestContext2<NACC, N
         let mut block = MockBlock::default();
         block.transactions.extend_from_slice(&transactions);
         block.withdrawals.extend_from_slice(&withdrawals);
-        func_block(&mut block, transactions).build();
+        func_block(&mut block, transactions.clone()).build();
 
         let chain_id = block.chain_id;
         let block = Block::<Transaction>::from(block);
@@ -136,6 +142,22 @@ impl<const NACC: usize, const NTX: usize, const NWD: usize> TestContext2<NACC, N
             history_hashes.clone(),
             logger_config,
         )?;
+
+        // Don't allow invalid transactions unless explicitely allowed to avoid unrelated tests from
+        // passing simply because the test transaction was incorrectly set up.
+        for (tx, geth_trace) in transactions.iter().zip(geth_traces.iter()) {
+            if !tx.invalid && geth_trace.invalid {
+                panic!(
+                    "{:?}",
+                    Error::TracingError(geth_trace.return_value.clone()).to_string()
+                )
+            }
+            assert_eq!(
+                tx.invalid, geth_trace.invalid,
+                "tx has unexpected invalid status: {}",
+                geth_trace.return_value
+            );
+        }
 
         Ok(Self {
             chain_id,
