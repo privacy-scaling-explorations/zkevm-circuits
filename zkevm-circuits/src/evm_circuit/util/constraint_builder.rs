@@ -6,7 +6,7 @@ use crate::{
         util::{Cell, RandomLinearCombination},
     },
     table::{
-        chunkctx_table::ChunkCtxFieldTag, AccountFieldTag, BytecodeFieldTag, CallContextFieldTag,
+        chunk_ctx_table::ChunkCtxFieldTag, AccountFieldTag, BytecodeFieldTag, CallContextFieldTag,
         StepStateFieldTag, TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
     },
     util::{

@@ -174,10 +174,9 @@ impl RwMap {
     /// Build Rws for assignment
     pub fn table_assignments(&self, keep_chronological_order: bool) -> Vec<Rw> {
         let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();
-        println!("RwRows {:?}", rows.len());
+        println!("RwRows table_assignments {:?}", rows.len());
         if keep_chronological_order {
             rows.sort_by_key(|row|{
-                print!("{} ", row.rw_counter());
                  (row.rw_counter(), row.tag() as u64)
                 });
         } else {

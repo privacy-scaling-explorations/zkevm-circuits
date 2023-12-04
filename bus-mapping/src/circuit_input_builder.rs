@@ -526,7 +526,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
 
     ///
     pub fn commit_chunk(&mut self, to_next: bool) {
-        self.chunk_ctx.end_rwc = self.block_ctx.rwc.0 - 1;
+        self.chunk_ctx.end_rwc = self.block_ctx.rwc.0;
         self.chunks[self.chunk_ctx.idx].ctx = self.chunk_ctx.clone();
         if to_next {
             self.chunk_ctx.next(self.block_ctx.rwc.0);

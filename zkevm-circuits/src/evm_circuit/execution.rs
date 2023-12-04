@@ -20,7 +20,7 @@ use crate::{
         },
         witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
-    table::{chunkctx_table::ChunkCtxFieldTag, LookupTable},
+    table::{chunk_ctx_table::ChunkCtxFieldTag, LookupTable},
     util::{
         cell_manager::{CMFixedWidthStrategy, CellManager, CellType},
         Challenges, Expr,
@@ -352,7 +352,7 @@ impl<F: Field> ExecutionConfig<F> {
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
-        chunkctx_table: &dyn LookupTable<F>,
+        chunk_ctx_table: &dyn LookupTable<F>,
         is_first_chunk: &IsZeroConfig<F>,
         is_last_chunk: &IsZeroConfig<F>,
     ) -> Self {
@@ -423,7 +423,7 @@ impl<F: Field> ExecutionConfig<F> {
                 ))
             };
 
-            let last_step_lastchunk_check = {
+            let last_step_last_chunk_check = {
                 let end_block_selector =
                     step_curr.execution_state_selector([ExecutionState::EndBlock]);
                 iter::once((
@@ -432,7 +432,7 @@ impl<F: Field> ExecutionConfig<F> {
                 ))
             };
 
-            let last_step_non_lastchunk_check = {
+            let last_step_non_last_chunk_check = {
                 let end_chunk_selector =
                     step_curr.execution_state_selector([ExecutionState::EndChunk]);
                 iter::once((
@@ -448,8 +448,8 @@ impl<F: Field> ExecutionConfig<F> {
                 .map(move |(name, poly)| (name, q_usable.clone() * q_step.clone() * poly))
                 .chain(first_step_firstchunk_check)
                 .chain(first_step_non_firstchunk_check)
-                .chain(last_step_lastchunk_check)
-                .chain(last_step_non_lastchunk_check)
+                .chain(last_step_last_chunk_check)
+                .chain(last_step_non_last_chunk_check)
         });
 
         meta.create_gate("q_step", |meta| {
@@ -528,7 +528,7 @@ impl<F: Field> ExecutionConfig<F> {
                         q_step_first,
                         q_step_last,
                         &step_curr,
-                        chunkctx_table,
+                        chunk_ctx_table,
                         &execute_state_first_step_whitelist,
                         &execute_state_last_step_whitelist,
                         &mut height_map,
@@ -657,7 +657,7 @@ impl<F: Field> ExecutionConfig<F> {
             copy_table,
             keccak_table,
             exp_table,
-            chunkctx_table,
+            chunk_ctx_table,
             &challenges,
             &cell_manager,
         );
@@ -679,7 +679,7 @@ impl<F: Field> ExecutionConfig<F> {
         q_step_first: Selector,
         q_step_last: Selector,
         step_curr: &Step<F>,
-        chunkctx_table: &dyn LookupTable<F>,
+        chunk_ctx_table: &dyn LookupTable<F>,
         execute_state_first_step_whitelist: &HashSet<ExecutionState>,
         execute_state_last_step_whitelist: &HashSet<ExecutionState>,
         height_map: &mut HashMap<ExecutionState, usize>,
@@ -734,7 +734,7 @@ impl<F: Field> ExecutionConfig<F> {
             G::EXECUTION_STATE,
             height,
             cb,
-            chunkctx_table,
+            chunk_ctx_table,
             challenges,
         );
 
@@ -760,7 +760,7 @@ impl<F: Field> ExecutionConfig<F> {
         execution_state: ExecutionState,
         height: usize,
         mut cb: EVMConstraintBuilder<F>,
-        chunkctx_table: &dyn LookupTable<F>,
+        chunk_ctx_table: &dyn LookupTable<F>,
         challenges: &Challenges<Expression<F>>,
     ) {
         // Enforce the step height for this opcode
@@ -819,7 +819,7 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
-        // constraint global rw counter value at first/last step via chunkctx_table lookup
+        // constraint global rw counter value at first/last step via chunk_ctx_table lookup
         // we can't do it inside constraint_builder(cb)
         // because lookup expression in constraint builder DONOT support apply conditional
         // `step_first/step_last` selector at lookup cell.
@@ -840,7 +840,7 @@ impl<F: Field> ExecutionConfig<F> {
                             ],
                             challenges.lookup_input(),
                         ),
-                    rlc::expr(&chunkctx_table.table_exprs(meta), challenges.lookup_input()),
+                    rlc::expr(&chunk_ctx_table.table_exprs(meta), challenges.lookup_input()),
                 )]
             });
         }
@@ -861,7 +861,7 @@ impl<F: Field> ExecutionConfig<F> {
                             ],
                             challenges.lookup_input(),
                         ),
-                    rlc::expr(&chunkctx_table.table_exprs(meta), challenges.lookup_input()),
+                    rlc::expr(&chunk_ctx_table.table_exprs(meta), challenges.lookup_input()),
                 )]
             });
         }
@@ -954,7 +954,7 @@ impl<F: Field> ExecutionConfig<F> {
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
-        chunkctx_table: &dyn LookupTable<F>,
+        chunk_ctx_table: &dyn LookupTable<F>,
         challenges: &Challenges<Expression<F>>,
         cell_manager: &CellManager<CMFixedWidthStrategy>,
     ) {
@@ -974,7 +974,7 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Copy => copy_table,
                         Table::Keccak => keccak_table,
                         Table::Exp => exp_table,
-                        Table::ChunkCtx => chunkctx_table,
+                        Table::ChunkCtx => chunk_ctx_table,
                     }
                     .table_exprs(meta);
                     vec![(

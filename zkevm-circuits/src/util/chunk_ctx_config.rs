@@ -12,7 +12,7 @@ use halo2_proofs::{
 use crate::{
     evm_circuit::util::rlc,
     table::{
-        chunkctx_table::{ChunkCtxFieldTag, ChunkCtxTable},
+        chunk_ctx_table::{ChunkCtxFieldTag, ChunkCtxTable},
         LookupTable,
     },
 };
@@ -34,7 +34,7 @@ pub struct ChunkContextConfig<F> {
     pub is_last_chunk: IsZeroConfig<F>,
 
     /// ChunkCtxTable
-    pub chunkctx_table: ChunkCtxTable,
+    pub chunk_ctx_table: ChunkCtxTable,
     /// instance column for prev chunk context
     pub pi_pre_chunk_ctx: Column<Instance>,
     /// instance column for next chunk context
@@ -56,8 +56,8 @@ impl<F: Field> ChunkContextConfig<F> {
         meta.enable_equality(pi_pre_chunk_ctx);
         meta.enable_equality(pi_next_chunk_ctx);
 
-        let chunkctx_table = ChunkCtxTable::construct(meta);
-        chunkctx_table.annotate_columns(meta);
+        let chunk_ctx_table = ChunkCtxTable::construct(meta);
+        chunk_ctx_table.annotate_columns(meta);
 
         [
             (ChunkCtxFieldTag::CurrentChunkIndex.expr(), chunk_index),
@@ -76,7 +76,7 @@ impl<F: Field> ChunkContextConfig<F> {
                             &[tag_expr.clone(), value_col_expr],
                             challenges.lookup_input(),
                         ),
-                    rlc::expr(&chunkctx_table.table_exprs(meta), challenges.lookup_input()),
+                    rlc::expr(&chunk_ctx_table.table_exprs(meta), challenges.lookup_input()),
                 )]
             });
         });
@@ -107,7 +107,7 @@ impl<F: Field> ChunkContextConfig<F> {
             total_chunks,
             is_first_chunk,
             is_last_chunk,
-            chunkctx_table,
+            chunk_ctx_table,
             pi_pre_chunk_ctx,
             pi_next_chunk_ctx,
         }
@@ -126,7 +126,7 @@ impl<F: Field> ChunkContextConfig<F> {
             total_chunk_cell,
             initial_rwc_cell,
             end_rwc_cell,
-        ) = self.chunkctx_table.load(layouter, chunk_context)?;
+        ) = self.chunk_ctx_table.load(layouter, chunk_context)?;
 
         let is_first_chunk = IsZeroChip::construct(self.is_first_chunk.clone());
         let is_last_chunk = IsZeroChip::construct(self.is_last_chunk.clone());
@@ -142,7 +142,7 @@ impl<F: Field> ChunkContextConfig<F> {
                     .annotate_columns_in_region(&mut region, "is_first_chunk");
                 self.is_last_chunk
                     .annotate_columns_in_region(&mut region, "is_last_chunk");
-                self.chunkctx_table.annotate_columns_in_region(&mut region);
+                self.chunk_ctx_table.annotate_columns_in_region(&mut region);
 
                 for offset in 0..max_offset_index + 1 {
                     self.q_chunk_context.enable(&mut region, offset)?;

@@ -30,7 +30,7 @@ use crate::{
         util::rlc,
     },
     table::{
-        chunkctx_table::{ChunkCtxFieldTag, ChunkCtxTable},
+        chunk_ctx_table::{ChunkCtxFieldTag, ChunkCtxTable},
         BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable, TxTable,
         UXTable,
     },
@@ -61,7 +61,7 @@ pub struct EvmCircuitConfig<F> {
     copy_table: CopyTable,
     keccak_table: KeccakTable,
     exp_table: ExpTable,
-    chunkctx_table: ChunkCtxTable,
+    chunk_ctx_table: ChunkCtxTable,
 
     // rw permutation config
     rw_permutation_config: PermutationChipConfig<F>,
@@ -134,7 +134,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         let q_chunk_context = meta.complex_selector();
 
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
-        let chunkctx_table = ChunkCtxTable::construct(meta);
+        let chunk_ctx_table = ChunkCtxTable::construct(meta);
 
         [
             (ChunkCtxFieldTag::CurrentChunkIndex.expr(), chunk_index),
@@ -153,7 +153,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
                             &[tag_expr.clone(), value_col_expr],
                             challenges.lookup_input(),
                         ),
-                    rlc::expr(&chunkctx_table.table_exprs(meta), challenges.lookup_input()),
+                    rlc::expr(&chunk_ctx_table.table_exprs(meta), challenges.lookup_input()),
                 )]
             });
         });
@@ -190,7 +190,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &copy_table,
             &keccak_table,
             &exp_table,
-            &chunkctx_table,
+            &chunk_ctx_table,
             &is_first_chunk,
             &is_last_chunk,
         ));
@@ -207,7 +207,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         exp_table.annotate_columns(meta);
         u8_table.annotate_columns(meta);
         u16_table.annotate_columns(meta);
-        chunkctx_table.annotate_columns(meta);
+        chunk_ctx_table.annotate_columns(meta);
 
         let rw_permutation_config = PermutationChip::configure(
             meta,
@@ -237,7 +237,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             copy_table,
             keccak_table,
             exp_table,
-            chunkctx_table,
+            chunk_ctx_table,
             rw_permutation_config,
             pi_pre_continuity,
             pi_next_continuity,
@@ -298,7 +298,7 @@ impl<F: Field> EvmCircuitConfig<F> {
             total_chunk_cell,
             initial_rwc_cell,
             end_rwc_cell,
-        ) = self.chunkctx_table.load(layouter, chunk_ctx)?;
+        ) = self.chunk_ctx_table.load(layouter, chunk_ctx)?;
 
         let is_first_chunk = IsZeroChip::construct(self.is_first_chunk.clone());
         let is_last_chunk = IsZeroChip::construct(self.is_last_chunk.clone());

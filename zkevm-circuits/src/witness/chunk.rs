@@ -58,12 +58,13 @@ pub fn chunk_convert<F: Field>(
     let (rw_prev_fingerprint, chrono_rw_prev_fingerprint) = if chunk.ctx.is_first_chunk() {
         (F::from(1), F::from(1))
     } else {
-        let lastchunk = builder.prev_chunk();
+        let last_chunk = builder.prev_chunk();
         (
-            lastchunk.rw_fingerprint.to_scalar().unwrap(),
-            lastchunk.chrono_rw_fingerprint.to_scalar().unwrap(),
+            last_chunk.rw_fingerprint.to_scalar().unwrap(),
+            last_chunk.chrono_rw_fingerprint.to_scalar().unwrap(),
         )
     };
+    println!("chunk_convert rws_rows");
     // Compute fingerprint of this chunk from rw tables
     let (rws_rows, _) = RwMap::table_assignments_padding(
         &rws.table_assignments(false),

@@ -20,7 +20,7 @@ use crate::{
             not, or, Cell,
         },
     },
-    table::{chunkctx_table::ChunkCtxFieldTag, AccountFieldTag, CallContextFieldTag},
+    table::{chunk_ctx_table::ChunkCtxFieldTag, AccountFieldTag, CallContextFieldTag},
     util::{
         word::{Word, Word32, Word32Cell, WordCell, WordExpr},
         Expr,
