@@ -52,6 +52,7 @@ pub struct StateCircuitConfig<F> {
     // Figure out why you get errors when this is Selector.
     selector: Column<Fixed>,
     // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/407
+    /// rw table
     pub rw_table: RwTable,
     sort_keys: SortKeysConfig,
     // Assigned value at the start of the block. For Rw::Account and

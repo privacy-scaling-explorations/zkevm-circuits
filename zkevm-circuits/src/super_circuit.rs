@@ -78,7 +78,7 @@ use bus_mapping::{
 use eth_types::{geth_types::GethData, Field};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Advice, Any, Circuit, Column, ConstraintSystem, Error, Expression},
+    plonk::{Any, Circuit, Column, ConstraintSystem, Error, Expression},
 };
 
 use std::array;

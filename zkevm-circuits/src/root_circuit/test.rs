@@ -73,6 +73,7 @@ fn test_root_circuit() {
         &protocol,
         Value::known(&instance),
         Value::known(&proof),
+        rwtable_columns,
     )
     .unwrap();
     assert_eq!(

@@ -135,17 +135,11 @@ where
     ) -> Result<(), Error> {
         config.load_table(&mut layouter)?;
         let (instances, accumulator_limbs) =
-            config.aggregate::<M, As>(&mut layouter, &self.svk, self.snarks.clone())?;
+            config.aggregate::<M, As>(&mut layouter, &self.svk, self.snarks.clone(), vec![])?;
 
         // Constrain equality to instance values
         let main_gate = config.main_gate();
-        for (row, limb) in instances
-            .into_iter()
-            .flatten()
-            .flatten()
-            .chain(accumulator_limbs)
-            .enumerate()
-        {
+        for (row, limb) in instances.into_iter().chain(accumulator_limbs).enumerate() {
             main_gate.expose_public(layouter.namespace(|| ""), limb, row)?;
         }
 

@@ -71,6 +71,7 @@ where
 {
     /// Create a `RootCircuit` with accumulator computed given a `SuperCircuit`
     /// proof and its instance. Returns `None` if given proof is invalid.
+    /// TODO support multiple snark proof aggregation
     pub fn new(
         params: &ParamsKZG<M>,
         super_circuit_protocol: &'a PlonkProtocol<M::G1Affine>,
@@ -176,18 +177,16 @@ where
         mut layouter: impl Layouter<M::Scalar>,
     ) -> Result<(), Error> {
         config.load_table(&mut layouter)?;
-        let (instance, accumulator_limbs) =
-            config.aggregate::<M, As>(&mut layouter, &self.svk, [self.snark])?;
+        let (instance, accumulator_limbs) = config.aggregate::<M, As>(
+            &mut layouter,
+            &self.svk,
+            [self.snark],
+            self.rwtable_columns.clone(),
+        )?;
 
         // Constrain equality to instance values
         let main_gate = config.main_gate();
-        for (row, limb) in instance
-            .into_iter()
-            .flatten()
-            .flatten()
-            .chain(accumulator_limbs)
-            .enumerate()
-        {
+        for (row, limb) in instance.into_iter().chain(accumulator_limbs).enumerate() {
             main_gate.expose_public(layouter.namespace(|| ""), limb, row)?;
         }
 
