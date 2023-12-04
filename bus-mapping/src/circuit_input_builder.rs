@@ -526,7 +526,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
 
     ///
     pub fn commit_chunk(&mut self, to_next: bool) {
-        self.chunk_ctx.end_rwc = self.chunk_ctx.rwc.0 - 1;
+        self.chunk_ctx.end_rwc = self.block_ctx.rwc.0 - 1;
         self.chunks[self.chunk_ctx.idx].ctx = self.chunk_ctx.clone();
         if to_next {
             self.chunk_ctx.next(self.block_ctx.rwc.0);
@@ -545,6 +545,10 @@ impl CircuitInputBuilder<FixedCParams> {
         // accumulates gas across all txs in the block
         // when total_chunks == 1, will skip set_begin_chunk & set_end_chunk
         self.begin_handle_block(eth_block, geth_traces)?;
+        // At the last chunk need to recompute the fixed param
+        if self.chunk_ctx.is_dynamic {
+            self.cur_chunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
+        }
         self.set_end_block();
         self.commit_chunk(false);
 
