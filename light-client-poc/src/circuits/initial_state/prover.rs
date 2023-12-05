@@ -1,4 +1,4 @@
-use std::{fs::File, io::Write, time::Instant};
+use std::{fs::File, io::Write, time::Instant, collections::HashMap};
 
 use eyre::{eyre, Result};
 use halo2_proofs::{
@@ -20,9 +20,9 @@ use halo2_proofs::{
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de};
 use zkevm_circuits::mpt_circuit::MPTCircuitParams;
-
+use itertools::Itertools;
 use super::{circuit::STMHelper, InitialStateCircuit};
 
 pub struct VerifierInput {
@@ -46,20 +46,20 @@ impl VerifierInput {
     fn serialize(&self) -> Result<String> {
         let mut verifier_params = Vec::new();
         self.verifier_params
-            .write_custom(&mut verifier_params, SerdeFormat::RawBytes)?;
+            .write_custom(&mut verifier_params, SerdeFormat::Processed)?;
 
         let mut vk = Vec::new();
-        self.vk.write(&mut vk, SerdeFormat::RawBytes)?;
+        self.vk.write(&mut vk, SerdeFormat::Processed)?;
 
         println!("verifier_params.len()={}", verifier_params.len());
         println!("vk.len()={}", vk.len());
         println!("proof.len()={}", self.proof.len());
 
         let serialized = SerializedVerifierInput {
+            proof: hex::encode(self.proof.clone()),
             circuit_params: self.circuit_params.clone(),
             verifier_params: hex::encode(verifier_params),
             vk: hex::encode(vk),
-            proof: hex::encode(self.proof.clone()),
             public_inputs: self
                 .public_inputs
                 .iter()
@@ -72,17 +72,17 @@ impl VerifierInput {
         Ok(serialized)
     }
 
-    fn deserialize(serialized: String) -> Result<Self> {
+    fn deserialize(serialized: &str) -> Result<Self> {
         let input: SerializedVerifierInput = serde_json::from_str(&serialized)?;
 
         let verifier_params = ParamsVerifierKZG::<Bn256>::read_custom(
             &mut &hex::decode(input.verifier_params)?[..],
-            SerdeFormat::RawBytes,
+            SerdeFormat::Processed,
         )?;
 
         let vk = VerifyingKey::<G1Affine>::read::<_, InitialStateCircuit<Fr>>(
             &mut &hex::decode(input.vk)?[..],
-            SerdeFormat::RawBytes,
+            SerdeFormat::Processed,
             input.circuit_params,
         )?;
         let proof = hex::decode(input.proof)?;
@@ -90,8 +90,7 @@ impl VerifierInput {
             .public_inputs
             .iter()
             .map(|fr| {
-                let bytes = hex::decode(fr).unwrap();
-                let bytes = bytes.try_into().unwrap();
+                let bytes = hex::decode(fr).unwrap().try_into().unwrap();
                 Fr::from_bytes(&bytes).unwrap()
             })
             .collect();
@@ -208,12 +207,13 @@ impl InitialStateCircuit<Fr> {
         Ok(result.is_ok())
     }
 
+    // Sense keccak: Proof: 147k
+    // Amb keccak: Proof: 250k
+
     pub fn assert_real_prover(self) -> Result<()> {
         let input = self.gen_pk_and_prove()?;
-
-        dbg!(&input.public_inputs);
-
         let serialized = input.serialize()?;
+
         let result = Self::verify(input)?;
         if !result {
             return Err(eyre!("proof verification failed"));
@@ -222,8 +222,7 @@ impl InitialStateCircuit<Fr> {
         }
 
         File::create("./serialized_verifier_input.json")?.write_all(serialized.as_bytes())?;
-        let deserialized = VerifierInput::deserialize(serialized)?;
-        dbg!(&deserialized.public_inputs);
+        let deserialized = VerifierInput::deserialize(&serialized)?;
 
         let result = Self::verify(deserialized)?;
         if !result {

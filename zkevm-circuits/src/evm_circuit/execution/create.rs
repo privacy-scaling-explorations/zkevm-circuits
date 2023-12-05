@@ -1,5 +1,3 @@
-#![feature(adt_const_params)]
-
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
