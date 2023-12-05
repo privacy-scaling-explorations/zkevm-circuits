@@ -77,7 +77,7 @@ pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
         let error = &trace.return_value;
         let allowed_cases = error.starts_with("nonce too low")
             || error.starts_with("nonce too high")
-            || trace.return_value.starts_with("intrinsic gas too low")
+            || error.starts_with("intrinsic gas too low")
             || error.starts_with("insufficient funds for gas * price + value");
         if trace.invalid && !allowed_cases {
             return Err(Error::TracingError(error.clone()));
