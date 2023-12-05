@@ -8,10 +8,13 @@ use halo2_proofs::{
     self,
     circuit::Value,
     dev::{CellValue, MockProver},
-    halo2curves::bn256::{Bn256, Fr, G1Affine},
+    halo2curves::{
+        bn256::{Bn256, Fr, G1Affine},
+        pairing::Engine,
+    },
     plonk::{
         create_proof, keygen_pk, keygen_vk, permutation::Assembly, verify_proof, Circuit,
-        ProvingKey,
+        ConstraintSystem, ProvingKey,
     },
     poly::{
         commitment::ParamsProver,
@@ -317,6 +320,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                     &protocol,
                     Value::unknown(),
                     Value::unknown(),
+                    vec![],
                 )
                 .unwrap();
 
@@ -426,6 +430,11 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                     .with_num_instance(instance.iter().map(|instance| instance.len()).collect()),
             );
 
+            // get chronological_rwtable and byaddr_rwtable columns index
+            let mut cs = ConstraintSystem::<<Bn256 as Engine>::Scalar>::default();
+            let config = SuperCircuit::configure(&mut cs);
+            let rwtable_columns = config.get_rwtable_columns();
+
             let proof = {
                 let mut proof_cache = PROOF_CACHE.lock().await;
                 if let Some(proof) = proof_cache.get(&proof_name) {
@@ -446,6 +455,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                 &protocol,
                 Value::known(&instance),
                 Value::known(&proof),
+                rwtable_columns,
             )
             .unwrap();
 

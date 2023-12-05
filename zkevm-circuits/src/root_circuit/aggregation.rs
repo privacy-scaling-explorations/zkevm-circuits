@@ -32,6 +32,8 @@ use snark_verifier::{
 };
 use std::{io, iter, rc::Rc};
 
+use crate::util::unwrap_value;
+
 /// Number of limbs to decompose a elliptic curve base field element into.
 pub const LIMBS: usize = 4;
 /// Number of bits of each decomposed limb.
@@ -65,7 +67,7 @@ pub type PoseidonTranscript<C, S> =
     transcript::halo2::PoseidonTranscript<C, NativeLoader, S, T, RATE, R_F, R_P>;
 
 /// SuperCircuitInstance is to demystifying supercircuit instance to meaningful name.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct SuperCircuitInstance<T> {
     pub chunk_index: T,
     pub total_chunk: T,
@@ -84,32 +86,39 @@ pub struct SuperCircuitInstance<T> {
     pub ec_permu_gamma: T,
     pub ec_rwtable_prev_fingerprint: T,
     pub ec_rwtable_next_fingerprint: T,
+
+    raw_instances: Vec<T>,
 }
 
 impl<T: Clone + Copy> SuperCircuitInstance<T> {
     /// Construct `SnarkInstance` with vector
     pub fn new(instances: impl IntoIterator<Item = T>) -> Self {
-        let instances = instances.into_iter().collect_vec();
-        assert_eq!(instances.len(), 16);
+        let raw_instances = instances.into_iter().collect_vec();
+        assert_eq!(raw_instances.len(), 16);
         Self {
-            chunk_index: instances[0],
-            total_chunk: instances[1],
-            initial_rwc: instances[2],
-            chunk_index_next: instances[3],
+            chunk_index: raw_instances[0],
+            total_chunk: raw_instances[1],
+            initial_rwc: raw_instances[2],
+            chunk_index_next: raw_instances[3],
             // TODO remove total_chunk_2
-            total_chunk_2: instances[4],
-            end_rwc: instances[5],
-            pi_digest_lo: instances[6],
-            pi_digest_hi: instances[7],
-            sc_permu_alpha: instances[8],
-            sc_permu_gamma: instances[9],
-            sc_rwtable_prev_fingerprint: instances[10],
-            sc_rwtable_next_fingerprint: instances[11],
-            ec_permu_alpha: instances[12],
-            ec_permu_gamma: instances[13],
-            ec_rwtable_prev_fingerprint: instances[14],
-            ec_rwtable_next_fingerprint: instances[15],
+            total_chunk_2: raw_instances[4],
+            end_rwc: raw_instances[5],
+            pi_digest_lo: raw_instances[6],
+            pi_digest_hi: raw_instances[7],
+            sc_permu_alpha: raw_instances[8],
+            sc_permu_gamma: raw_instances[9],
+            sc_rwtable_prev_fingerprint: raw_instances[10],
+            sc_rwtable_next_fingerprint: raw_instances[11],
+            ec_permu_alpha: raw_instances[12],
+            ec_permu_gamma: raw_instances[13],
+            ec_rwtable_prev_fingerprint: raw_instances[14],
+            ec_rwtable_next_fingerprint: raw_instances[15],
+            raw_instances,
         }
+    }
+
+    fn raw_instances(&self) -> &Vec<T> {
+        &self.raw_instances
     }
 }
 /// Snark contains the minimal information for verification
@@ -347,7 +356,124 @@ impl AggregationConfig {
                     .map(|x| SuperCircuitInstance::new(x.0.iter().flatten().collect::<Vec<_>>()))
                     .collect::<Vec<SuperCircuitInstance<_>>>();
 
+                // get all column commitment loaded ec points (witness of rw_table from all
+                // snark proof, then absorb them into fresh transcript to squeeze to
+                // get challenge alpha', following by absorb alpha' and squeeze to get challenge
+                // gamma'. At the end, constraint alpha', gamma' field value equal to alpha,
+                // gamma appear at public input instances by simply invoke loaded field value
+                // equality: `alpha' - alpha = 0` and `gamma' - gamma = 0`
+                // collect rwtable witness
+                let rwtable_witness = instance_witnesses
+                    .iter()
+                    .map(|x| x.1.clone())
+                    .flatten()
+                    .collect::<Vec<_>>();
+                let empty_proof = Vec::new();
+                let mut transcript =
+                    PoseidonTranscript::new(&loader, Value::known(empty_proof.as_slice()));
+                rwtable_witness.iter().for_each(|rwtable_col_ec_point| {
+                    transcript.common_ec_point(rwtable_col_ec_point).unwrap();
+                });
+                // derive challenge alpha and gamma
+                let alpha = transcript.squeeze_challenge();
+                let gamma = transcript.squeeze_challenge();
+
                 // constraint first and last chunk
+                let instances = supercircuit_instances
+                    .first()
+                    .zip(supercircuit_instances.last())
+                    .map(|(first, _last)| {
+                        // last chunk instances will be constrainted in chunk continuity
+                        // the only exception is permutation fingerprint, which will be check inside
+                        // supercircuit when `chunk_index == total_chunk`
+                        // Thus, no specific constraint on last chunk
+                        let zero_const = loader
+                            .scalar_chip()
+                            .assign_constant(&mut loader.ctx_mut(), M::Scalar::from(0))
+                            .unwrap();
+                        let one_const = loader
+                            .scalar_chip()
+                            .assign_constant(&mut loader.ctx_mut(), M::Scalar::from(1))
+                            .unwrap();
+                        let total_chunk_const = loader
+                            .scalar_chip()
+                            .assign_constant(&mut loader.ctx_mut(), M::Scalar::from(1))
+                            .unwrap();
+                        let sc_initial_fingerprint = loader
+                            .scalar_chip()
+                            .assign_constant(
+                                &mut loader.ctx_mut(),
+                                unwrap_value(
+                                    first
+                                        .sc_rwtable_prev_fingerprint
+                                        .assigned()
+                                        .to_owned()
+                                        .value()
+                                        .map(|v| v.clone()),
+                                ),
+                            )
+                            .unwrap();
+                        let ec_initial_fingerprint = loader
+                            .scalar_chip()
+                            .assign_constant(
+                                &mut loader.ctx_mut(),
+                                unwrap_value(
+                                    first
+                                        .ec_rwtable_prev_fingerprint
+                                        .assigned()
+                                        .to_owned()
+                                        .value()
+                                        .map(|v| v.clone()),
+                                ),
+                            )
+                            .unwrap();
+                        // TODO add sc_prev_row_fingerprint && ec_prev_row_fingerprint
+                        vec![
+                            // chunk ctx
+                            (first.chunk_index.assigned().to_owned(), zero_const),
+                            (first.total_chunk.assigned().to_owned(), total_chunk_const),
+                            // rwc
+                            (first.initial_rwc.assigned().to_owned(), one_const),
+                            // constraint permutation fingerprint
+                            // challenge: alpha
+                            (
+                                first.sc_permu_alpha.assigned().to_owned(),
+                                alpha.assigned().to_owned(),
+                            ),
+                            (
+                                first.ec_permu_alpha.assigned().to_owned(),
+                                alpha.assigned().to_owned(),
+                            ),
+                            // challenge: gamma
+                            (
+                                first.sc_permu_gamma.assigned().to_owned(),
+                                gamma.assigned().to_owned(),
+                            ),
+                            (
+                                first.ec_permu_gamma.assigned().to_owned(),
+                                gamma.assigned().to_owned(),
+                            ),
+                            // fingerprint
+                            (
+                                first.ec_rwtable_prev_fingerprint.assigned().to_owned(),
+                                ec_initial_fingerprint,
+                            ),
+                            (
+                                first.sc_rwtable_prev_fingerprint.assigned().to_owned(),
+                                sc_initial_fingerprint,
+                            ),
+                        ]
+                        .iter()
+                        .for_each(|(a, b)| {
+                            loader
+                                .scalar_chip()
+                                .assert_equal(&mut loader.ctx_mut(), &a, &b)
+                                .unwrap();
+                        });
+
+                        first
+                    })
+                    .expect("error");
 
                 // constraint consistency between chunk
                 let _ = supercircuit_instances.iter().tuple_windows().inspect(
@@ -421,39 +547,6 @@ impl AggregationConfig {
                     },
                 );
 
-                // TODO 1. process raw instances from all snarks into 2 collections: {public input
-                // instances} and {chunk consistency instances} 1st snark {public
-                // input instance} and last snark {public input instance} should be concat into
-                // final instances, whereas {chunk consistency instances} will be
-                // converted to witness, and constraints it equality between i and i+1 snark.
-                // since they are loaded field, consistency can encoded into circuit by simply
-                // taking 2 loaded field a, b and then `a - b = 0`, which will be
-                // reflected into the plonk circuit
-                // supercircuit_instances.iter().
-
-                // TODO 2. get all column commitment loaded ec points (witness of rw_table from all
-                // snark proof, then absorb them into fresh transcript to squeeze to
-                // get challenge alpha', following by absorb alpha' and squeeze to get challenge
-                // gamma'. At the end, constraint alpha', gamma' field value equal to alpha,
-                // gamma appear at public input instances by simply invoke loaded field value
-                // equality: `alpha' - alpha = 0` and `gamma' - gamma = 0`
-                // collect rwtable witness
-                let rwtable_witness = instance_witnesses
-                    .iter()
-                    .map(|x| x.1.clone())
-                    .flatten()
-                    .collect::<Vec<_>>();
-                let empty_proof = Vec::new();
-                let mut transcript =
-                    PoseidonTranscript::new(&loader, Value::known(empty_proof.as_slice()));
-                rwtable_witness.iter().for_each(|rwtable_col_ec_point| {
-                    transcript.common_ec_point(rwtable_col_ec_point).unwrap();
-                });
-                // derive challenge alpha and gamma
-                let alpha = transcript.squeeze_challenge();
-                let gamma = transcript.squeeze_challenge();
-                // TODO assert alpha = instance.alpha and gamma = instance.gamma
-
                 // Verify proof for accumulation of all accumulators into new one.
                 let accumulator = {
                     let as_vk = Default::default();
@@ -470,24 +563,10 @@ impl AggregationConfig {
                     <As as AccumulationScheme<_, _>>::verify(&as_vk, &accumulators, &proof).unwrap()
                 };
 
-                let instances = instance_witnesses
+                let instances = instances
+                    .raw_instances()
                     .iter()
-                    .map(|instances| {
-                        instances
-                            .0
-                            .iter()
-                            .map(|instances| {
-                                instances
-                                    .iter()
-                                    .map(|instance| instance.assigned().to_owned())
-                                    .collect_vec()
-                            })
-                            .collect_vec()
-                    })
-                    .collect_vec()
-                    .into_iter()
-                    .flatten()
-                    .flatten()
+                    .map(|instance| instance.assigned().to_owned())
                     .collect();
 
                 let accumulator_limbs = [accumulator.lhs, accumulator.rhs]

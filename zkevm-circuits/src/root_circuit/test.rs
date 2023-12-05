@@ -36,7 +36,7 @@ fn test_root_circuit() {
             SuperCircuit::<_>::build(block_1tx(), circuits_params, TEST_MOCK_RANDOMNESS.into())
                 .unwrap();
 
-        // get bytime_rwtable and by_addr_rwtable columns index
+        // get chronological_rwtable and byaddr_rwtable columns index
         let mut cs = ConstraintSystem::default();
         let config = SuperCircuit::configure_with_params(&mut cs, circuit.params());
         let rwtable_columns = config.get_rwtable_columns();
