@@ -70,11 +70,9 @@ pub type PoseidonTranscript<C, S> =
 #[derive(Clone)]
 pub struct SuperCircuitInstance<T> {
     pub chunk_index: T,
+    pub chunk_index_next: T,
     pub total_chunk: T,
     pub initial_rwc: T,
-    pub chunk_index_next: T,
-    // TODO remove total_chunk_2
-    pub total_chunk_2: T,
     pub end_rwc: T,
     pub pi_digest_lo: T,
     pub pi_digest_hi: T,
@@ -102,29 +100,27 @@ impl<T: Clone + Copy> SuperCircuitInstance<T> {
     /// Construct `SnarkInstance` with vector
     pub fn new(instances: impl IntoIterator<Item = T>) -> Self {
         let raw_instances = instances.into_iter().collect_vec();
-        assert_eq!(raw_instances.len(), 20);
+        assert_eq!(raw_instances.len(), 19);
         Self {
             chunk_index: raw_instances[0],
             total_chunk: raw_instances[1],
             initial_rwc: raw_instances[2],
             chunk_index_next: raw_instances[3],
-            // TODO remove total_chunk_2
-            total_chunk_2: raw_instances[4],
-            end_rwc: raw_instances[5],
-            pi_digest_lo: raw_instances[6],
-            pi_digest_hi: raw_instances[7],
-            sc_permu_alpha: raw_instances[8],
-            sc_permu_gamma: raw_instances[9],
-            sc_rwtable_row_prev_fingerprint: raw_instances[10],
-            sc_rwtable_row_next_fingerprint: raw_instances[11],
-            sc_rwtable_prev_fingerprint: raw_instances[12],
-            sc_rwtable_next_fingerprint: raw_instances[13],
-            ec_permu_alpha: raw_instances[14],
-            ec_permu_gamma: raw_instances[15],
-            ec_rwtable_row_prev_fingerprint: raw_instances[16],
-            ec_rwtable_row_next_fingerprint: raw_instances[17],
-            ec_rwtable_prev_fingerprint: raw_instances[18],
-            ec_rwtable_next_fingerprint: raw_instances[19],
+            end_rwc: raw_instances[4],
+            pi_digest_lo: raw_instances[5],
+            pi_digest_hi: raw_instances[6],
+            sc_permu_alpha: raw_instances[7],
+            sc_permu_gamma: raw_instances[8],
+            sc_rwtable_row_prev_fingerprint: raw_instances[9],
+            sc_rwtable_row_next_fingerprint: raw_instances[10],
+            sc_rwtable_prev_fingerprint: raw_instances[11],
+            sc_rwtable_next_fingerprint: raw_instances[12],
+            ec_permu_alpha: raw_instances[13],
+            ec_permu_gamma: raw_instances[14],
+            ec_rwtable_row_prev_fingerprint: raw_instances[15],
+            ec_rwtable_row_next_fingerprint: raw_instances[16],
+            ec_rwtable_prev_fingerprint: raw_instances[17],
+            ec_rwtable_next_fingerprint: raw_instances[18],
             raw_instances,
         }
     }
@@ -501,11 +497,6 @@ impl AggregationConfig {
                             (
                                 instance_i.total_chunk.assigned().to_owned(),
                                 instance_i_plus_one.total_chunk.assigned().to_owned(),
-                            ),
-                            (
-                                // TODO remove me
-                                instance_i.total_chunk_2.assigned().to_owned(),
-                                instance_i_plus_one.total_chunk_2.assigned().to_owned(),
                             ),
                             (
                                 instance_i.end_rwc.assigned().to_owned(),

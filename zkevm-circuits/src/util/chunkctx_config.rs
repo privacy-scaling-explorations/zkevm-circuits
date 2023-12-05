@@ -35,10 +35,8 @@ pub struct ChunkContextConfig<F> {
 
     /// ChunkCtxTable
     pub chunkctx_table: ChunkCtxTable,
-    /// instance column for prev chunk context
-    pub pi_pre_chunkctx: Column<Instance>,
-    /// instance column for next chunk context
-    pub pi_next_chunkctx: Column<Instance>,
+    /// instance column for chunk context
+    pub pi_chunkctx: Column<Instance>,
 }
 
 impl<F: Field> ChunkContextConfig<F> {
@@ -51,10 +49,8 @@ impl<F: Field> ChunkContextConfig<F> {
         let chunk_diff = meta.advice_column();
         let total_chunks = meta.advice_column();
 
-        let pi_pre_chunkctx = meta.instance_column();
-        let pi_next_chunkctx = meta.instance_column();
-        meta.enable_equality(pi_pre_chunkctx);
-        meta.enable_equality(pi_next_chunkctx);
+        let pi_chunkctx = meta.instance_column();
+        meta.enable_equality(pi_chunkctx);
 
         let chunkctx_table = ChunkCtxTable::construct(meta);
         chunkctx_table.annotate_columns(meta);
@@ -108,8 +104,7 @@ impl<F: Field> ChunkContextConfig<F> {
             is_first_chunk,
             is_last_chunk,
             chunkctx_table,
-            pi_pre_chunkctx,
-            pi_next_chunkctx,
+            pi_chunkctx,
         }
     }
 
@@ -136,8 +131,7 @@ impl<F: Field> ChunkContextConfig<F> {
                 region.name_column(|| "chunk_index", self.chunk_index);
                 region.name_column(|| "chunk_index_next", self.chunk_index_next);
                 region.name_column(|| "total_chunks", self.total_chunks);
-                region.name_column(|| "pi_pre_chunkctx", self.pi_pre_chunkctx);
-                region.name_column(|| "pi_next_chunkctx", self.pi_next_chunkctx);
+                region.name_column(|| "pi_chunkctx", self.pi_chunkctx);
                 self.is_first_chunk
                     .annotate_columns_in_region(&mut region, "is_first_chunk");
                 self.is_last_chunk
@@ -185,19 +179,16 @@ impl<F: Field> ChunkContextConfig<F> {
             },
         )?;
 
-        vec![chunk_index_cell, total_chunk_cell.clone(), initial_rwc_cell]
-            .iter()
-            .enumerate()
-            .try_for_each(|(i, cell)| {
-                layouter.constrain_instance(cell.cell(), self.pi_pre_chunkctx, i)
-            })?;
-        [chunk_index_next_cell, total_chunk_cell, end_rwc_cell]
-            .iter()
-            .enumerate()
-            .try_for_each(|(i, cell)| {
-                layouter.constrain_instance(cell.cell(), self.pi_next_chunkctx, i)
-            })?;
-
+        vec![
+            chunk_index_cell,
+            chunk_index_next_cell,
+            total_chunk_cell,
+            initial_rwc_cell,
+            end_rwc_cell,
+        ]
+        .iter()
+        .enumerate()
+        .try_for_each(|(i, cell)| layouter.constrain_instance(cell.cell(), self.pi_chunkctx, i))?;
         Ok(())
     }
 }

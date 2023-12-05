@@ -396,18 +396,13 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
 
         let block = self.block.as_ref().unwrap();
 
-        instance.extend_from_slice(&[
-            vec![
-                F::from(block.chunk_context.chunk_index as u64),
-                F::from(block.chunk_context.total_chunks as u64),
-                F::from(block.chunk_context.initial_rwc as u64),
-            ],
-            vec![
-                F::from(block.chunk_context.chunk_index as u64) + F::ONE,
-                F::from(block.chunk_context.total_chunks as u64),
-                F::from(block.chunk_context.end_rwc as u64),
-            ],
-        ]);
+        instance.extend_from_slice(&[vec![
+            F::from(block.chunk_context.chunk_index as u64),
+            F::from(block.chunk_context.chunk_index as u64) + F::ONE,
+            F::from(block.chunk_context.total_chunks as u64),
+            F::from(block.chunk_context.initial_rwc as u64),
+            F::from(block.chunk_context.end_rwc as u64),
+        ]]);
 
         instance.extend_from_slice(&self.keccak_circuit.instance());
         instance.extend_from_slice(&self.pi_circuit.instance());
