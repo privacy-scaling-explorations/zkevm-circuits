@@ -76,6 +76,7 @@ use bus_mapping::{
     mock::BlockData,
 };
 use eth_types::{geth_types::GethData, Field};
+use gadgets::util::Expr;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Any, Circuit, Column, ConstraintSystem, Error, Expression},
@@ -259,6 +260,31 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                         * q_row_last
                         * (chronological_rwtable_acc_fingerprint
                             - by_address_rwtable_acc_fingerprint),
+                ]
+            },
+        );
+
+        // constraint chronological/by address rwtable row fingerprint must be the same in first
+        // chunk first row.
+        meta.create_gate(
+            "chronological rwtable row fingerprint == by address rwtable row fingerprint",
+            |meta| {
+                let is_first_chunk = chunkctx_config.is_first_chunk.expr();
+                let chronological_rwtable_row_fingerprint = evm_circuit
+                    .rw_permutation_config
+                    .row_fingerprints_cur_expr();
+                let by_address_rwtable_row_fingerprint = state_circuit
+                    .rw_permutation_config
+                    .row_fingerprints_cur_expr();
+
+                let q_row_first = 1.expr()
+                    - meta.query_selector(evm_circuit.rw_permutation_config.q_row_non_first);
+
+                vec![
+                    is_first_chunk
+                        * q_row_first
+                        * (chronological_rwtable_row_fingerprint
+                            - by_address_rwtable_row_fingerprint),
                 ]
             },
         );

@@ -78,12 +78,20 @@ pub struct SuperCircuitInstance<T> {
     pub end_rwc: T,
     pub pi_digest_lo: T,
     pub pi_digest_hi: T,
+
+    // state circuit
     pub sc_permu_alpha: T,
     pub sc_permu_gamma: T,
+    pub sc_rwtable_row_prev_fingerprint: T,
+    pub sc_rwtable_row_next_fingerprint: T,
     pub sc_rwtable_prev_fingerprint: T,
     pub sc_rwtable_next_fingerprint: T,
+
+    // evm circuit
     pub ec_permu_alpha: T,
     pub ec_permu_gamma: T,
+    pub ec_rwtable_row_prev_fingerprint: T,
+    pub ec_rwtable_row_next_fingerprint: T,
     pub ec_rwtable_prev_fingerprint: T,
     pub ec_rwtable_next_fingerprint: T,
 
@@ -94,7 +102,7 @@ impl<T: Clone + Copy> SuperCircuitInstance<T> {
     /// Construct `SnarkInstance` with vector
     pub fn new(instances: impl IntoIterator<Item = T>) -> Self {
         let raw_instances = instances.into_iter().collect_vec();
-        assert_eq!(raw_instances.len(), 16);
+        assert_eq!(raw_instances.len(), 20);
         Self {
             chunk_index: raw_instances[0],
             total_chunk: raw_instances[1],
@@ -107,12 +115,16 @@ impl<T: Clone + Copy> SuperCircuitInstance<T> {
             pi_digest_hi: raw_instances[7],
             sc_permu_alpha: raw_instances[8],
             sc_permu_gamma: raw_instances[9],
-            sc_rwtable_prev_fingerprint: raw_instances[10],
-            sc_rwtable_next_fingerprint: raw_instances[11],
-            ec_permu_alpha: raw_instances[12],
-            ec_permu_gamma: raw_instances[13],
-            ec_rwtable_prev_fingerprint: raw_instances[14],
-            ec_rwtable_next_fingerprint: raw_instances[15],
+            sc_rwtable_row_prev_fingerprint: raw_instances[10],
+            sc_rwtable_row_next_fingerprint: raw_instances[11],
+            sc_rwtable_prev_fingerprint: raw_instances[12],
+            sc_rwtable_next_fingerprint: raw_instances[13],
+            ec_permu_alpha: raw_instances[14],
+            ec_permu_gamma: raw_instances[15],
+            ec_rwtable_row_prev_fingerprint: raw_instances[16],
+            ec_rwtable_row_next_fingerprint: raw_instances[17],
+            ec_rwtable_prev_fingerprint: raw_instances[18],
+            ec_rwtable_next_fingerprint: raw_instances[19],
             raw_instances,
         }
     }
@@ -365,8 +377,7 @@ impl AggregationConfig {
                 // collect rwtable witness
                 let rwtable_witness = instance_witnesses
                     .iter()
-                    .map(|x| x.1.clone())
-                    .flatten()
+                    .flat_map(|x| x.1.clone())
                     .collect::<Vec<_>>();
                 let empty_proof = Vec::new();
                 let mut transcript =
@@ -383,10 +394,12 @@ impl AggregationConfig {
                     .first()
                     .zip(supercircuit_instances.last())
                     .map(|(first, _last)| {
-                        // last chunk instances will be constrainted in chunk continuity
-                        // the only exception is permutation fingerprint, which will be check inside
-                        // supercircuit when `chunk_index == total_chunk`
-                        // Thus, no specific constraint on last chunk
+                        // `last.sc_rwtable_next_fingerprint ==
+                        // last.ec_rwtable_next_fingerprint` will be checked inside super circuit so
+                        // here no need to checked
+                        // Other field in last instances already be checked in below chunk
+                        // continuity
+
                         let zero_const = loader
                             .scalar_chip()
                             .assign_constant(&mut loader.ctx_mut(), M::Scalar::from(0))
@@ -409,7 +422,7 @@ impl AggregationConfig {
                                         .assigned()
                                         .to_owned()
                                         .value()
-                                        .map(|v| v.clone()),
+                                        .map(|v| *v),
                                 ),
                             )
                             .unwrap();
@@ -423,11 +436,13 @@ impl AggregationConfig {
                                         .assigned()
                                         .to_owned()
                                         .value()
-                                        .map(|v| v.clone()),
+                                        .map(|v| *v),
                                 ),
                             )
                             .unwrap();
-                        // TODO add sc_prev_row_fingerprint && ec_prev_row_fingerprint
+
+                        // `first.sc_rwtable_row_prev_fingerprint ==
+                        // first.ec_rwtable_row_prev_fingerprint` will be checked inside circuit
                         vec![
                             // chunk ctx
                             (first.chunk_index.assigned().to_owned(), zero_const),
@@ -467,7 +482,7 @@ impl AggregationConfig {
                         .for_each(|(a, b)| {
                             loader
                                 .scalar_chip()
-                                .assert_equal(&mut loader.ctx_mut(), &a, &b)
+                                .assert_equal(&mut loader.ctx_mut(), a, b)
                                 .unwrap();
                         });
 
@@ -514,6 +529,16 @@ impl AggregationConfig {
                                 instance_i_plus_one.sc_permu_gamma.assigned().to_owned(),
                             ),
                             (
+                                instance_i
+                                    .sc_rwtable_row_next_fingerprint
+                                    .assigned()
+                                    .to_owned(),
+                                instance_i_plus_one
+                                    .sc_rwtable_row_prev_fingerprint
+                                    .assigned()
+                                    .to_owned(),
+                            ),
+                            (
                                 instance_i.sc_rwtable_next_fingerprint.assigned().to_owned(),
                                 instance_i_plus_one
                                     .sc_rwtable_prev_fingerprint
@@ -536,12 +561,22 @@ impl AggregationConfig {
                                     .assigned()
                                     .to_owned(),
                             ),
+                            (
+                                instance_i
+                                    .ec_rwtable_row_next_fingerprint
+                                    .assigned()
+                                    .to_owned(),
+                                instance_i_plus_one
+                                    .ec_rwtable_row_prev_fingerprint
+                                    .assigned()
+                                    .to_owned(),
+                            ),
                         ]
                         .iter()
                         .for_each(|(a, b)| {
                             loader
                                 .scalar_chip()
-                                .assert_equal(&mut loader.ctx_mut(), &a, &b)
+                                .assert_equal(&mut loader.ctx_mut(), a, b)
                                 .unwrap();
                         });
                     },

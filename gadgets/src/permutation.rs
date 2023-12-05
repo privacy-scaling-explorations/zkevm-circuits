@@ -28,14 +28,15 @@ pub struct PermutationChipConfig<F> {
     row_fingerprints: Column<Advice>,
     alpha: Column<Advice>,
     power_of_gamma: Vec<Column<Advice>>,
-    // selector
-    q_row_non_first: Selector, // 1 between (first, end], exclude first
-    q_row_enable: Selector,    // 1 for all rows (including first)
+    /// q_row_non_first
+    pub q_row_non_first: Selector, // 1 between (first, end], exclude first
+    q_row_enable: Selector, // 1 for all rows (including first)
     /// q_row_last
     pub q_row_last: Selector, // 1 in the last row
 
     _phantom: PhantomData<F>,
 
+    row_fingerprints_cur_expr: Expression<F>,
     acc_fingerprints_cur_expr: Expression<F>,
 }
 
@@ -180,6 +181,11 @@ impl<F: Field> PermutationChipConfig<F> {
     pub fn acc_fingerprints_cur_expr(&self) -> Expression<F> {
         self.acc_fingerprints_cur_expr.clone()
     }
+
+    /// row_fingerprints_cur_expr
+    pub fn row_fingerprints_cur_expr(&self) -> Expression<F> {
+        self.row_fingerprints_cur_expr.clone()
+    }
 }
 
 /// permutation fingerprint gadget
@@ -213,6 +219,7 @@ impl<F: Field> PermutationChip<F> {
         meta.enable_equality(power_of_gamma[0]);
 
         let mut acc_fingerprints_cur_expr: Expression<F> = 0.expr();
+        let mut row_fingerprints_cur_expr: Expression<F> = 0.expr();
 
         meta.create_gate(
             "acc_fingerprints_cur = acc_fingerprints_prev * row_fingerprints_cur",
@@ -234,6 +241,9 @@ impl<F: Field> PermutationChip<F> {
             |meta| {
                 let alpha = meta.query_advice(alpha, Rotation::cur());
                 let row_fingerprints_cur = meta.query_advice(row_fingerprints, Rotation::cur());
+
+                row_fingerprints_cur_expr = row_fingerprints_cur.clone();
+
                 let power_of_gamma = iter::once(1.expr())
                     .chain(
                         power_of_gamma
@@ -294,6 +304,7 @@ impl<F: Field> PermutationChip<F> {
             acc_fingerprints,
             acc_fingerprints_cur_expr,
             row_fingerprints,
+            row_fingerprints_cur_expr,
             q_row_non_first,
             q_row_enable,
             q_row_last,

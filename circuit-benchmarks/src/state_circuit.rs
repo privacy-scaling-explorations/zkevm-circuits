@@ -23,6 +23,7 @@ mod tests {
     use std::env::var;
     use zkevm_circuits::{
         evm_circuit::witness::RwMap, state_circuit::StateCircuit, util::SubCircuit,
+        witness::rw::RwTablePermutationFingerprints,
     };
 
     #[cfg_attr(not(feature = "benches"), ignore)]
@@ -44,8 +45,7 @@ mod tests {
             1 << 16,
             Fr::from(1),
             Fr::from(1),
-            Fr::from(1),
-            Fr::from(1),
+            RwTablePermutationFingerprints::new(Fr::from(1), Fr::from(1), Fr::from(1), Fr::from(1)),
             0,
         );
 
