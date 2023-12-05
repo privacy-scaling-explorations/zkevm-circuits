@@ -332,15 +332,18 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         let (
             alpha_cell,
             gamma_cell,
-            prev_continuous_fingerprint_cell,
-            next_continuous_fingerprint_cell,
+            row_fingerprints_prev_cell,
+            row_fingerprints_next_cell,
+            acc_fingerprints_prev_cell,
+            acc_fingerprints_next_cell,
         ) = layouter.assign_region(
             || "evm circuit",
             |mut region| {
                 region.name_column(|| "EVM_pi_chunk_continuity", config.pi_chunk_continuity);
                 config.rw_table.load_with_region(
                     &mut region,
-                    // pass non-padding rws to `load_with_region` since it will be padding inside
+                    // pass non-padding rws to `load_with_region` since it will be padding
+                    // inside
                     &block.rws.table_assignments(true),
                     // align with state circuit to padding to same max_rws
                     block.circuits_params.max_rws,
@@ -350,7 +353,11 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                     &mut region,
                     Value::known(block.permu_alpha),
                     Value::known(block.permu_gamma),
-                    Value::known(block.permu_chronological_rwtable_prev_continuous_fingerprint),
+                    Value::known(
+                        block
+                            .permu_chronological_rwtable_fingerprints
+                            .acc_prev_fingerprints,
+                    ),
                     &rw_rows_padding.to2dvec(),
                     "evm_circuit-rw_permutation",
                 )?;
@@ -362,8 +369,10 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         [
             alpha_cell,
             gamma_cell,
-            prev_continuous_fingerprint_cell,
-            next_continuous_fingerprint_cell,
+            row_fingerprints_prev_cell,
+            row_fingerprints_next_cell,
+            acc_fingerprints_prev_cell,
+            acc_fingerprints_next_cell,
         ]
         .iter()
         .enumerate()
@@ -380,8 +389,18 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         vec![vec![
             block.permu_alpha,
             block.permu_gamma,
-            block.permu_chronological_rwtable_prev_continuous_fingerprint,
-            block.permu_chronological_rwtable_next_continuous_fingerprint,
+            block
+                .permu_chronological_rwtable_fingerprints
+                .row_pre_fingerprints,
+            block
+                .permu_chronological_rwtable_fingerprints
+                .row_pre_fingerprints,
+            block
+                .permu_chronological_rwtable_fingerprints
+                .acc_prev_fingerprints,
+            block
+                .permu_chronological_rwtable_fingerprints
+                .acc_next_fingerprints,
         ]]
     }
 }

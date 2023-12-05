@@ -20,7 +20,11 @@ use self::{
 use crate::{
     table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable, UXTable},
     util::{word, Challenges, Expr, SubCircuit, SubCircuitConfig},
-    witness::{self, rw::ToVec, MptUpdates, Rw, RwMap},
+    witness::{
+        self,
+        rw::{RwTablePermutationFingerprints, ToVec},
+        MptUpdates, Rw, RwMap,
+    },
 };
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field, Word};
@@ -457,8 +461,7 @@ pub struct StateCircuit<F> {
     /// permutation challenge
     permu_alpha: F,
     permu_gamma: F,
-    permu_prev_continuous_fingerprint: F,
-    permu_next_continuous_fingerprint: F,
+    rw_table_permu_fingerprints: RwTablePermutationFingerprints<F>,
 
     // current chunk index
     rw_table_chunked_index: usize,
@@ -473,8 +476,7 @@ impl<F: Field> StateCircuit<F> {
         n_rows: usize,
         permu_alpha: F,
         permu_gamma: F,
-        permu_prev_continuous_fingerprint: F,
-        permu_next_continuous_fingerprint: F,
+        rw_table_permu_fingerprints: RwTablePermutationFingerprints<F>,
         rw_table_chunked_index: usize,
     ) -> Self {
         let rows = rw_map.table_assignments(false); // address sorted
@@ -489,8 +491,7 @@ impl<F: Field> StateCircuit<F> {
             overrides: HashMap::new(),
             permu_alpha,
             permu_gamma,
-            permu_prev_continuous_fingerprint,
-            permu_next_continuous_fingerprint,
+            rw_table_permu_fingerprints,
             rw_table_chunked_index,
             _marker: PhantomData::default(),
         }
@@ -506,8 +507,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
             block.circuits_params.max_rws,
             block.permu_alpha,
             block.permu_gamma,
-            block.permu_rwtable_prev_continuous_fingerprint,
-            block.permu_rwtable_next_continuous_fingerprint,
+            block.permu_chronological_rwtable_fingerprints.clone(),
             block.chunk_context.chunk_index,
         )
     }
@@ -541,8 +541,10 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         let (
             alpha_cell,
             gamma_cell,
-            prev_continuous_fingerprint_cell,
-            next_continuous_fingerprint_cell,
+            row_fingerprints_prev_cell,
+            row_fingerprints_next_cell,
+            acc_fingerprints_prev_cell,
+            acc_fingerprints_next_cell,
         ) = layouter.assign_region(
             || "state circuit",
             |mut region| {
@@ -594,7 +596,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     &mut region,
                     Value::known(self.permu_alpha),
                     Value::known(self.permu_gamma),
-                    Value::known(self.permu_prev_continuous_fingerprint),
+                    Value::known(self.rw_table_permu_fingerprints.acc_prev_fingerprints),
                     &rows,
                     "state_circuit-rw_permutation",
                 )?;
@@ -626,8 +628,10 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         [
             alpha_cell,
             gamma_cell,
-            prev_continuous_fingerprint_cell,
-            next_continuous_fingerprint_cell,
+            row_fingerprints_prev_cell,
+            row_fingerprints_next_cell,
+            acc_fingerprints_prev_cell,
+            acc_fingerprints_next_cell,
         ]
         .iter()
         .enumerate()
@@ -641,8 +645,10 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         vec![vec![
             self.permu_alpha,
             self.permu_gamma,
-            self.permu_prev_continuous_fingerprint,
-            self.permu_next_continuous_fingerprint,
+            self.rw_table_permu_fingerprints.row_pre_fingerprints,
+            self.rw_table_permu_fingerprints.row_next_fingerprints,
+            self.rw_table_permu_fingerprints.acc_prev_fingerprints,
+            self.rw_table_permu_fingerprints.acc_next_fingerprints,
         ]]
     }
 }

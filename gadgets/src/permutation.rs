@@ -39,8 +39,11 @@ pub struct PermutationChipConfig<F> {
     acc_fingerprints_cur_expr: Expression<F>,
 }
 
-/// (alpha, gamma, prev_acc_fingerprints, next_acc_fingerprints)
+/// (alpha, gamma, row_fingerprints_prev_cell, row_fingerprints_next_cell, prev_acc_fingerprints,
+/// next_acc_fingerprints)
 type PermutationAssignedCells<F> = (
+    AssignedCell<F, F>,
+    AssignedCell<F, F>,
     AssignedCell<F, F>,
     AssignedCell<F, F>,
     AssignedCell<F, F>,
@@ -72,10 +75,14 @@ impl<F: Field> PermutationChipConfig<F> {
                 .collect::<Vec<Value<F>>>()
         };
 
-        let mut last_fingerprint_cell = None;
         let mut alpha_first_cell = None;
         let mut gamma_first_cell = None;
         let mut acc_fingerprints_prev_cell = None;
+        let mut acc_fingerprints_next_cell = None;
+
+        let mut row_fingerprints_prev_cell = None;
+        let mut row_fingerprints_next_cell = None;
+
         for (offset, (row_acc_fingerprints, row_fingerprints)) in fingerprints.iter().enumerate() {
             // skip first fingerprint for its prev_fingerprint
             if offset != 0 {
@@ -91,7 +98,7 @@ impl<F: Field> PermutationChipConfig<F> {
                 || *row_acc_fingerprints,
             )?;
 
-            region.assign_advice(
+            let row_fingerprints_cell = region.assign_advice(
                 || format!("row_fingerprints at index {}", offset),
                 self.row_fingerprints,
                 offset,
@@ -122,19 +129,23 @@ impl<F: Field> PermutationChipConfig<F> {
                 alpha_first_cell = Some(alpha_cell);
                 gamma_first_cell = Some(gamma_cells[0].clone());
                 acc_fingerprints_prev_cell = Some(row_acc_fingerprint_cell.clone());
+                row_fingerprints_prev_cell = Some(row_fingerprints_cell.clone())
             }
             // last offset
             if offset == fingerprints.len() - 1 {
-                last_fingerprint_cell = Some(row_acc_fingerprint_cell);
                 self.q_row_last.enable(region, offset)?;
+                acc_fingerprints_next_cell = Some(row_acc_fingerprint_cell);
+                row_fingerprints_next_cell = Some(row_fingerprints_cell)
             }
         }
 
         Ok((
             alpha_first_cell.unwrap(),
             gamma_first_cell.unwrap(),
+            row_fingerprints_prev_cell.unwrap(),
+            row_fingerprints_next_cell.unwrap(),
             acc_fingerprints_prev_cell.unwrap(),
-            last_fingerprint_cell.unwrap(),
+            acc_fingerprints_next_cell.unwrap(),
         ))
     }
 
