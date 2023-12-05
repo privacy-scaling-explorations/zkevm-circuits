@@ -263,18 +263,13 @@ impl<F: Field> EvmCircuit<F> {
             block.chunk_context.total_chunks,
         );
 
-        let mut instance = vec![
-            vec![
-                F::from(rw_table_chunked_index as u64),
-                F::from(rw_table_total_chunks as u64),
-                F::from(block.chunk_context.initial_rwc as u64),
-            ],
-            vec![
-                F::from(rw_table_chunked_index as u64) + F::ONE,
-                F::from(rw_table_total_chunks as u64),
-                F::from(block.chunk_context.end_rwc as u64),
-            ],
-        ];
+        let mut instance = vec![vec![
+            F::from(rw_table_chunked_index as u64),
+            F::from(rw_table_chunked_index as u64) + F::ONE,
+            F::from(rw_table_total_chunks as u64),
+            F::from(block.chunk_context.initial_rwc as u64),
+            F::from(block.chunk_context.end_rwc as u64),
+        ]];
 
         instance.extend(self.instance());
 

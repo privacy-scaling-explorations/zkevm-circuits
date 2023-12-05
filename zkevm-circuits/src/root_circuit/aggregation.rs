@@ -32,8 +32,6 @@ use snark_verifier::{
 };
 use std::{io, iter, rc::Rc};
 
-use crate::util::unwrap_value;
-
 /// Number of limbs to decompose a elliptic curve base field element into.
 pub const LIMBS: usize = 4;
 /// Number of bits of each decomposed limb.
@@ -69,11 +67,14 @@ pub type PoseidonTranscript<C, S> =
 /// SuperCircuitInstance is to demystifying supercircuit instance to meaningful name.
 #[derive(Clone)]
 pub struct SuperCircuitInstance<T> {
+    // chunk_ctx
     pub chunk_index: T,
     pub chunk_index_next: T,
     pub total_chunk: T,
     pub initial_rwc: T,
     pub end_rwc: T,
+
+    // pi circuit
     pub pi_digest_lo: T,
     pub pi_digest_hi: T,
 
@@ -408,71 +409,25 @@ impl AggregationConfig {
                             .scalar_chip()
                             .assign_constant(&mut loader.ctx_mut(), M::Scalar::from(1))
                             .unwrap();
-                        let sc_initial_fingerprint = loader
-                            .scalar_chip()
-                            .assign_constant(
-                                &mut loader.ctx_mut(),
-                                unwrap_value(
-                                    first
-                                        .sc_rwtable_prev_fingerprint
-                                        .assigned()
-                                        .to_owned()
-                                        .value()
-                                        .map(|v| *v),
-                                ),
-                            )
-                            .unwrap();
-                        let ec_initial_fingerprint = loader
-                            .scalar_chip()
-                            .assign_constant(
-                                &mut loader.ctx_mut(),
-                                unwrap_value(
-                                    first
-                                        .ec_rwtable_prev_fingerprint
-                                        .assigned()
-                                        .to_owned()
-                                        .value()
-                                        .map(|v| *v),
-                                ),
-                            )
-                            .unwrap();
 
                         // `first.sc_rwtable_row_prev_fingerprint ==
                         // first.ec_rwtable_row_prev_fingerprint` will be checked inside circuit
                         vec![
                             // chunk ctx
-                            (first.chunk_index.assigned().to_owned(), zero_const),
-                            (first.total_chunk.assigned().to_owned(), total_chunk_const),
+                            (first.chunk_index.assigned(), &zero_const),
+                            (first.total_chunk.assigned(), &total_chunk_const),
                             // rwc
-                            (first.initial_rwc.assigned().to_owned(), one_const),
+                            (first.initial_rwc.assigned(), &one_const),
                             // constraint permutation fingerprint
                             // challenge: alpha
-                            (
-                                first.sc_permu_alpha.assigned().to_owned(),
-                                alpha.assigned().to_owned(),
-                            ),
-                            (
-                                first.ec_permu_alpha.assigned().to_owned(),
-                                alpha.assigned().to_owned(),
-                            ),
+                            (first.sc_permu_alpha.assigned(), &alpha.assigned()),
+                            (first.ec_permu_alpha.assigned(), &alpha.assigned()),
                             // challenge: gamma
-                            (
-                                first.sc_permu_gamma.assigned().to_owned(),
-                                gamma.assigned().to_owned(),
-                            ),
-                            (
-                                first.ec_permu_gamma.assigned().to_owned(),
-                                gamma.assigned().to_owned(),
-                            ),
+                            (first.sc_permu_gamma.assigned(), &gamma.assigned()),
+                            (first.ec_permu_gamma.assigned(), &gamma.assigned()),
                             // fingerprint
-                            (
-                                first.ec_rwtable_prev_fingerprint.assigned().to_owned(),
-                                ec_initial_fingerprint,
-                            ),
-                            (
-                                first.sc_rwtable_prev_fingerprint.assigned().to_owned(),
-                                sc_initial_fingerprint,
-                            ),
+                            (first.ec_rwtable_prev_fingerprint.assigned(), &one_const),
+                            (first.sc_rwtable_prev_fingerprint.assigned(), &one_const),
                         ]
                         .iter()
                         .for_each(|(a, b)| {
@@ -491,76 +446,62 @@ impl AggregationConfig {
                     |(instance_i, instance_i_plus_one)| {
                         vec![
                             (
-                                instance_i.chunk_index_next.assigned().to_owned(),
-                                instance_i_plus_one.chunk_index.assigned().to_owned(),
+                                instance_i.chunk_index_next.assigned(),
+                                instance_i_plus_one.chunk_index.assigned(),
                             ),
                             (
-                                instance_i.total_chunk.assigned().to_owned(),
-                                instance_i_plus_one.total_chunk.assigned().to_owned(),
+                                instance_i.total_chunk.assigned(),
+                                instance_i_plus_one.total_chunk.assigned(),
                             ),
                             (
-                                instance_i.end_rwc.assigned().to_owned(),
-                                instance_i_plus_one.initial_rwc.assigned().to_owned(),
+                                instance_i.end_rwc.assigned(),
+                                instance_i_plus_one.initial_rwc.assigned(),
                             ),
                             (
-                                instance_i.pi_digest_lo.assigned().to_owned(),
-                                instance_i_plus_one.pi_digest_lo.assigned().to_owned(),
+                                instance_i.pi_digest_lo.assigned(),
+                                instance_i_plus_one.pi_digest_lo.assigned(),
                             ),
                             (
-                                instance_i.pi_digest_hi.assigned().to_owned(),
-                                instance_i_plus_one.pi_digest_hi.assigned().to_owned(),
+                                instance_i.pi_digest_hi.assigned(),
+                                instance_i_plus_one.pi_digest_hi.assigned(),
                             ),
                             // state circuit
                             (
-                                instance_i.sc_permu_alpha.assigned().to_owned(),
-                                instance_i_plus_one.sc_permu_alpha.assigned().to_owned(),
+                                instance_i.sc_permu_alpha.assigned(),
+                                instance_i_plus_one.sc_permu_alpha.assigned(),
                             ),
                             (
-                                instance_i.sc_permu_gamma.assigned().to_owned(),
-                                instance_i_plus_one.sc_permu_gamma.assigned().to_owned(),
+                                instance_i.sc_permu_gamma.assigned(),
+                                instance_i_plus_one.sc_permu_gamma.assigned(),
                             ),
                             (
-                                instance_i
-                                    .sc_rwtable_row_next_fingerprint
-                                    .assigned()
-                                    .to_owned(),
+                                instance_i.sc_rwtable_row_next_fingerprint.assigned(),
                                 instance_i_plus_one
                                     .sc_rwtable_row_prev_fingerprint
-                                    .assigned()
-                                    .to_owned(),
+                                    .assigned(),
                             ),
                             (
-                                instance_i.sc_rwtable_next_fingerprint.assigned().to_owned(),
-                                instance_i_plus_one
-                                    .sc_rwtable_prev_fingerprint
-                                    .assigned()
-                                    .to_owned(),
+                                instance_i.sc_rwtable_next_fingerprint.assigned(),
+                                instance_i_plus_one.sc_rwtable_prev_fingerprint.assigned(),
                             ),
                             // evm circuit
                             (
-                                instance_i.ec_permu_alpha.assigned().to_owned(),
-                                instance_i_plus_one.ec_permu_alpha.assigned().to_owned(),
+                                instance_i.ec_permu_alpha.assigned(),
+                                instance_i_plus_one.ec_permu_alpha.assigned(),
                             ),
                             (
-                                instance_i.ec_permu_gamma.assigned().to_owned(),
-                                instance_i_plus_one.ec_permu_gamma.assigned().to_owned(),
+                                instance_i.ec_permu_gamma.assigned(),
+                                instance_i_plus_one.ec_permu_gamma.assigned(),
                             ),
                             (
-                                instance_i.ec_rwtable_next_fingerprint.assigned().to_owned(),
-                                instance_i_plus_one
-                                    .ec_rwtable_prev_fingerprint
-                                    .assigned()
-                                    .to_owned(),
+                                instance_i.ec_rwtable_next_fingerprint.assigned(),
+                                instance_i_plus_one.ec_rwtable_prev_fingerprint.assigned(),
                             ),
                             (
-                                instance_i
-                                    .ec_rwtable_row_next_fingerprint
-                                    .assigned()
-                                    .to_owned(),
+                                instance_i.ec_rwtable_row_next_fingerprint.assigned(),
                                 instance_i_plus_one
                                     .ec_rwtable_row_prev_fingerprint
-                                    .assigned()
-                                    .to_owned(),
+                                    .assigned(),
                             ),
                         ]
                         .iter()
