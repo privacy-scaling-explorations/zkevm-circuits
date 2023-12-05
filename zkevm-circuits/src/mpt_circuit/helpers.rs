@@ -39,7 +39,7 @@ use super::{
     rlp_gadgets::{
         get_ext_odd_nibble_value, RLPItemGadget, RLPItemWitness, RLPListGadget, RLPListWitness,
     },
-    FixedTableTag, MPTCircuitParams, RlpItemType,
+    FixedTableTag, MPTCircuitParams, RlpItemType, account_leaf::ProofX,
 };
 
 impl<F: Field> ChallengeSet<F> for crate::util::Challenges<Value<F>> {
@@ -1128,14 +1128,9 @@ impl<F: Field> DriftedGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut MPTConstraintBuilder<F>,
-        value_list_num_bytes: &[Expression<F>],
-        parent_data: &[ParentData<F>],
-        key_data: &[KeyData<F>],
-        expected_key_rlc: &[Expression<F>],
-        leaf_no_key_rlc: &[Expression<F>],
-        leaf_no_key_rlc_mult: &[Expression<F>],
+        proofS: ProofX<F>,
+        proofC: ProofX<F>,
         drifted_item: &RLPItemView<F>,
-        is_mod_extension: &[Cell<F>; 2],
         r: &Expression<F>,
     ) -> Self {
         let mut config = DriftedGadget::default();
