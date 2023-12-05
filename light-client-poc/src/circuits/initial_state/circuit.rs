@@ -26,7 +26,7 @@ use zkevm_circuits::{
     },
 };
 
-use crate::circuits::witness::{
+use crate::witness::{
     SingleTrieModification, SingleTrieModifications, Transforms, Witness,
 };
 

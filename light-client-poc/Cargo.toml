@@ -4,38 +4,51 @@ version = "0.1.0"
 edition = "2021"
 resolver = "2"
 
+[[bin]]
+name = "web3_cache"
+path = "bin/web3_cache/main.rs"
+
+[[bin]]
+name = "test_mainnet"
+path = "bin/test_mainnet/main.rs"
+
+[[bin]]
+name = "test_local"
+path = "bin/test_local/main.rs"
+
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["arbitrary_precision"] }
-zkevm-circuits = { path = "../zkevm-circuits", features=["test-circuits"]}
-halo2_proofs = { path = "/Users/adria0/w/ef/light_client/halo2/halo2_proofs"}
 eyre = { version  = "0.6.8" }
 hex = "0.4.3"
 num_enum = "0.6.1"
-reqwest = "0.11.18"
-tokio = { version= "1.28.2", features = ["macros", "rt-multi-thread"]  }
-mpt-witness-generator = { path = "../mpt-witness-generator/rustlib" }
-ethers ={ version = "2.0.10", features = ["abigen", "rustls", "ws", "ethers-solc"] }
 eth-types = { path = "../eth-types" }
 gadgets = { path = "../gadgets" }
 rand_chacha = "0.3.1"
 rand = "0.8.5"
 ark-std = "0.4.0"
-env_logger = "0.9"
-hyper = { version = "0.14.27", features= ["full"]}
-futures-util = "0.3.28"
-hyper-rustls = "0.24.1"
-futures = "0.3.28"
 lazy_static = "1.4.0"
 flate2 = "1.0.28"
 base64 = "0.21.4"
-revm = "3.5.0"
-
-halo2_solidity_verifier = { git ="https://github.com/privacy-scaling-explorations/halo2-solidity-verifier", features=["evm"] }
 itertools = "0.12.0"
 
-[dev-dependencies]
-ctor = "0.1.22"
+[target.'cfg(wasm)'.dependencies]
+zkevm-circuits = { path = "../zkevm-circuits", default-features=false, features=["test-circuits","js"]}
+halo2_proofs = { path = "/Users/adria0/w/ef/light_client/halo2/halo2_proofs", default-features=false, features=["circuit-params"]}
+
+[target.'cfg(unix)'.dependencies]
+zkevm-circuits = { path = "../zkevm-circuits", features=["test-circuits"]}
+halo2_proofs = { path = "/Users/adria0/w/ef/light_client/halo2/halo2_proofs", features=["circuit-params"]}
+mpt-witness-generator = { path = "../mpt-witness-generator/rustlib" }
+reqwest = { version ="0.11.18" }
+tokio = { version= "1.28.2", features = ["macros", "rt-multi-thread"] }
+hyper = { version = "0.14.27", features= ["full"] }
+futures-util = { version ="0.3.28" }
+hyper-rustls = { version ="0.24.1"}
+futures = { version ="0.3.28" }
+env_logger = { version ="0.9" }
+ethers ={ version = "2.0.10", features = ["abigen", "rustls", "ws", "ethers-solc"]}
 
 [features]
 disable-keccak = []
+

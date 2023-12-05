@@ -1,0 +1,36 @@
+[package]
+name = "hello_world"
+version = "0.1.0"
+authors = ["The wasm-bindgen Developers"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = { version = "0.2.74", features = ["serde-serialize"]  }
+js-sys = "0.3.51"
+wasm-bindgen-futures = "0.4.24"
+revm = { version = "3.5.0", default-features = false }
+serde = { version = "1.0.80", features = ["derive"] }
+serde_derive = "^1.0.59"
+eyre = { version="0.6.9", default-features=false }
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2", default-features=false, features=["circuit-params"]}
+zkevm-circuits = { path  = "../light_client/zkevm-circuits/zkevm-circuits", default-features=false, features=["js"]}
+light-client-poc = { path = "../light_client/zkevm-circuits/light-client-poc", default-features=false}
+hex = "0.4.3"
+serde_json = "1.0.108"
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
+[dependencies.web-sys]
+version = "0.3.4"
+features = [
+  'Headers',
+  'Request',
+  'RequestInit',
+  'RequestMode',
+  'Response',
+  'Window',
+]

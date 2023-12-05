@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": "../light_client/zkevm-circuits"
+		},
+		{
+			"path": "../light_client/halo2"
+		}
+	],
+	"settings": {
+		"rust-analyzer.linkedProjects": [
+			"./Cargo.toml"
+		]
+	}
+}

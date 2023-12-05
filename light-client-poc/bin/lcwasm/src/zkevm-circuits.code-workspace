@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../revm"
+		},
+		{
+			"path": "../../light_client/halo2"
+		}
+	],
+	"settings": {}
+}

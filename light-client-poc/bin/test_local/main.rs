@@ -1,14 +1,15 @@
-#[cfg(test)]
-mod tests {
     use ethers::prelude::*;
     use eyre::Result;
     use halo2_proofs::halo2curves::bn256::Fr;
     use std::sync::Arc;
 
-    use crate::{
-        circuits::{initial_state::InitialStateCircuit, Witness},
-        utils::{new_eth_signer_client, MM},
+    use light_client_poc::{
+        circuits::initial_state::InitialStateCircuit,
+        witness::{new_eth_signer_client, MM, Witness},
     };
+
+
+mod contract;
 
     const PVK: &str = "7ccb34dc5fd31fd0aa7860de89a4adc37ccb34dc5fd31fd0aa7860de89a4adc3";
     const PROVIDER_URL: &str = "http://localhost:8545";
@@ -42,7 +43,7 @@ mod tests {
         let client = new_eth_signer_client(PROVIDER_URL, PVK).await?;
 
         // test contract creation
-        let contract = crate::tests::contract::Contract::deploy(client.clone()).await?;
+        let contract = contract::Contract::deploy(client.clone()).await?;
         local_test_proof(
             "contract creation",
             &client,
@@ -62,9 +63,7 @@ mod tests {
         Ok(())
     }
 
-    #[ignore]
-    #[tokio::test]
-    async fn test_local() {
+    #[tokio::main]
+    async fn main() {
         run_localnode_test().await.unwrap();
     }
-}

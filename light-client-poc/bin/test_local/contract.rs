@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use crate::utils::MM;
+use light_client_poc::witness::MM;
+
 use ethers::{
     core::types::transaction::eip2930::AccessList,
     middleware::SignerMiddleware,

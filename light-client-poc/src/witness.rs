@@ -1,4 +1,4 @@
-use std::{collections::HashSet, ops::Deref, sync::Arc};
+use std::{collections::HashSet, ops::Deref, sync::Arc, time::Duration};
 
 use eth_types::{Field, ToScalar};
 use ethers::{
@@ -9,7 +9,7 @@ use ethers::{
     types::{
         transaction::eip2930::{AccessList, AccessListItem},
         BlockId, BlockNumber, H256, U256, U64,
-    },
+    }, utils::format_units,
 };
 use eyre::Result;
 
@@ -19,6 +19,8 @@ use zkevm_circuits::{
     table::mpt_table::MPTProofType,
     util::word::{self, Word},
 };
+
+pub type MM = SignerMiddleware<Provider<Http>, Wallet<SigningKey>>;
 
 #[derive(Default, Debug, Clone)]
 pub struct Transforms {
@@ -351,4 +353,25 @@ impl<F: Field> Witness<F> {
 
         Ok((nodes, SingleTrieModifications(lc_proofs)))
     }
+}
+
+pub async fn new_eth_signer_client(provider_url: &str, pvk: &str) -> Result<Arc<MM>> {
+    let provider: Provider<Http> =
+        Provider::<Http>::try_from(provider_url)?.interval(Duration::from_millis(10u64));
+    let chain_id = provider.get_chainid().await?.as_u64();
+
+    let wallet = pvk.parse::<LocalWallet>()?;
+    let client = Arc::new(SignerMiddleware::new(
+        provider,
+        wallet.with_chain_id(chain_id),
+    ));
+    let balance = client.get_balance(client.address(), None).await?;
+
+    println!(
+        "address {:?} , balance {}ETH",
+        client.address(),
+        format_units(balance, "ether")?
+    );
+
+    Ok(client)
 }

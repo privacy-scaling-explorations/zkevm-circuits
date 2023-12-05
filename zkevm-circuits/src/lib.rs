@@ -36,7 +36,6 @@ pub mod exp_circuit;
 #[cfg(not(feature = "js"))]
 pub mod keccak_circuit;
 
-#[allow(dead_code)]
 pub mod mpt_circuit;
 
 #[cfg(not(feature = "js"))]

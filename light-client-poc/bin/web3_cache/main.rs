@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate lazy_static;
+
 use base64::{engine::general_purpose, Engine};
 use eth_types::keccak256;
 use eyre::{ensure, Result};
@@ -136,7 +139,8 @@ async fn web3_proxy(req: Request<Body>) -> Result<Response<Body>> {
     Ok(response)
 }
 
-pub async fn run() -> Result<()> {
+#[tokio::main]
+pub async fn main() -> Result<()> {
     if let Ok(mut f) = File::open(CACHE_PATH) {
         let mut buf = String::new();
         f.read_to_string(&mut buf)?;

@@ -21,7 +21,7 @@ use zkevm_circuits::{
     util::{word, Challenges},
 };
 
-use crate::circuits::witness::{
+use crate::witness::{
     SingleTrieModification, SingleTrieModifications, Transforms, Witness,
 };
 
