@@ -489,7 +489,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			node := prepareLeafAndPlaceholderNode(addr, addrh, proof1, proof2, storage_key, key, nonExistingAccountProof, isAccountProof, false, false)
 			nodes = append(nodes, node)
 		}
-	} else if isBranch(proof2[len(proof2)-1]) {
+	} else if (len(proof1) == 0 && len(proof2) == 0) || isBranch(proof2[len(proof2)-1]) {
 		// Account proof has drifted leaf as the last row, storage proof has non-existing-storage row
 		// as the last row.
 		// When non existing proof and only the branches are returned, we add a placeholder leaf.
