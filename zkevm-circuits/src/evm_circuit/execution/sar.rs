@@ -368,20 +368,18 @@ mod test {
     use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, U256};
     use ethers_core::types::I256;
-    use lazy_static::lazy_static;
     use mock::TestContext;
     use rand::Rng;
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        // Maximum negative word value of i256 (integer value of -1)
-        static ref MAX_NEG: U256 = U256::MAX;
+    // Maximum negative word value of i256 (integer value of -1)
+    static MAX_NEG: U256 = U256::MAX;
 
-        // Maximum positive word value of i256
-        static ref MAX_POS: U256 = U256::try_from(I256::MAX).unwrap();
+    // Maximum positive word value of i256
+    static MAX_POS: U256 = I256::MAX.into_raw();
 
-        // Negative sign (the highest bit is 1)
-        static ref NEG_SIGN: U256 = MAX_POS.checked_add(1.into()).unwrap();
-    }
+    // Negative sign (the highest bit is 1)
+    static NEG_SIGN: LazyLock<U256> = LazyLock::new(|| MAX_POS.checked_add(1.into()).unwrap());
 
     #[test]
     fn test_sar_gadget_with_positive_a() {
@@ -414,16 +412,16 @@ mod test {
     #[test]
     fn test_sar_gadget_with_max_values() {
         // Test either (or both) `a` or `shift` is a maximum word.
-        test_ok(8.into(), *MAX_NEG);
-        test_ok(129.into(), *MAX_NEG);
-        test_ok(300.into(), *MAX_NEG);
-        test_ok(8.into(), *MAX_POS);
-        test_ok(129.into(), *MAX_POS);
-        test_ok(300.into(), *MAX_POS);
-        test_ok(*MAX_NEG, *MAX_NEG);
-        test_ok(*MAX_NEG, *MAX_POS);
-        test_ok(*MAX_POS, *MAX_NEG);
-        test_ok(*MAX_POS, *MAX_POS);
+        test_ok(8.into(), MAX_NEG);
+        test_ok(129.into(), MAX_NEG);
+        test_ok(300.into(), MAX_NEG);
+        test_ok(8.into(), MAX_POS);
+        test_ok(129.into(), MAX_POS);
+        test_ok(300.into(), MAX_POS);
+        test_ok(MAX_NEG, MAX_NEG);
+        test_ok(MAX_NEG, MAX_POS);
+        test_ok(MAX_POS, MAX_NEG);
+        test_ok(MAX_POS, MAX_POS);
     }
 
     #[test]
@@ -445,15 +443,15 @@ mod test {
         test_ok(0xFF.into(), *NEG_SIGN);
         test_ok(0x100.into(), *NEG_SIGN);
         test_ok(0x101.into(), *NEG_SIGN);
-        test_ok(0.into(), *MAX_NEG);
-        test_ok(1.into(), *MAX_NEG);
-        test_ok(0xFF.into(), *MAX_NEG);
-        test_ok(0x100.into(), *MAX_NEG);
+        test_ok(0.into(), MAX_NEG);
+        test_ok(1.into(), MAX_NEG);
+        test_ok(0xFF.into(), MAX_NEG);
+        test_ok(0x100.into(), MAX_NEG);
         test_ok(0xFE.into(), U256::from(2).checked_pow(254.into()).unwrap());
-        test_ok(0xF8.into(), *MAX_POS);
-        test_ok(0xFE.into(), *MAX_POS);
-        test_ok(0xFF.into(), *MAX_POS);
-        test_ok(0x100.into(), *MAX_POS);
+        test_ok(0xF8.into(), MAX_POS);
+        test_ok(0xFE.into(), MAX_POS);
+        test_ok(0xFF.into(), MAX_POS);
+        test_ok(0x100.into(), MAX_POS);
     }
 
     fn test_ok(shift: U256, a: U256) {

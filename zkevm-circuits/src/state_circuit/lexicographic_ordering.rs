@@ -315,7 +315,7 @@ fn rlc_limb_differences<F: Field>(
 ) -> Vec<Expression<F>> {
     let mut result = vec![];
     let mut partial_sum = 0u64.expr();
-    let powers_of_randomness = once(1.expr()).chain(powers_of_randomness.into_iter());
+    let powers_of_randomness = once(1.expr()).chain(powers_of_randomness);
     for ((cur_limb, prev_limb), power_of_randomness) in cur
         .be_limbs()
         .iter()

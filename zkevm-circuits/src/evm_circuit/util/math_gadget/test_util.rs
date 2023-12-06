@@ -54,7 +54,7 @@ pub(crate) const WORD_SIGNED_MAX: Word = U256([u64::MAX, u64::MAX, u64::MAX, i64
 pub(crate) const WORD_SIGNED_MIN: Word = U256([0, 0, 0, i64::MIN as _]);
 
 pub(crate) fn generate_power_of_randomness<F: Field>(randomness: F) -> Vec<F> {
-    (1..32).map(|exp| randomness.pow(&[exp, 0, 0, 0])).collect()
+    (1..32).map(|exp| randomness.pow([exp, 0, 0, 0])).collect()
 }
 
 pub(crate) trait MathGadgetContainer<F: Field>: Clone {

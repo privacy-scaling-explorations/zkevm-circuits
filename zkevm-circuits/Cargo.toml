@@ -26,7 +26,6 @@ strum_macros.workspace = true
 rand_xorshift.workspace = true
 rand.workspace = true
 itertools.workspace = true
-lazy_static.workspace = true
 mpt-zktrie = { path = "../zktrie" }
 keccak256 = { path = "../keccak256"}
 log.workspace = true
@@ -45,7 +44,6 @@ snark-verifier.workspace = true
 snark-verifier-sdk.workspace = true
 hex.workspace = true
 rayon.workspace = true
-once_cell.workspace = true
 
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }

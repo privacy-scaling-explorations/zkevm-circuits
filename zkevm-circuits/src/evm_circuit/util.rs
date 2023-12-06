@@ -682,7 +682,7 @@ pub(crate) mod rlc {
 
 /// Returns 2**by as Field
 pub(crate) fn pow_of_two<F: Field>(by: usize) -> F {
-    F::from(2).pow(&[by as u64, 0, 0, 0])
+    F::from(2).pow([by as u64, 0, 0, 0])
 }
 
 /// Returns 2**by as Expression

@@ -1815,13 +1815,11 @@ pub(crate) fn get_copy_bytes(
 ) -> Vec<u8> {
     // read real copy bytes from padded memory words
     let padded_bytes: Vec<u8> = (0..copy_rwc_inc)
-        .map(|_| {
+        .flat_map(|_| {
             let mut bytes = rws.next().memory_word_pair().0.to_le_bytes();
             bytes.reverse();
             bytes
         })
-        .into_iter()
-        .flatten()
         .collect();
     let values: Vec<u8> = if copy_size == 0 {
         vec![0; 0]

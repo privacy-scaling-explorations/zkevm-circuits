@@ -922,7 +922,7 @@ pub fn multi_keccak<F: Field>(
         .par_iter()
         .flat_map_iter(|bytes| keccak_rows(bytes, challenges))
         .collect();
-    rows.extend(real_rows.into_iter());
+    rows.extend(real_rows);
     debug!("keccak rows len without padding: {}", rows.len());
     if let Some(capacity) = capacity {
         let padding_rows = {

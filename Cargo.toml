@@ -38,13 +38,11 @@ halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", branch = "devel
 halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "develop", default-features=false, features=["halo2-pse","display"] }
 hex = "0.4"
 itertools = "0.11"
-lazy_static = "1.4"
 libsecp256k1 = "0.7"
 log = "0.4"
 num = "0.4"
 num-bigint = "0.4"
 num-traits = "0.2"
-once_cell = "1.17"
 pretty_assertions = "1.0"
 rand = "0.8"
 rand_chacha = "0.3"

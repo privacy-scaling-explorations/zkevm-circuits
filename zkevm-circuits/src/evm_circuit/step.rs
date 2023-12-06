@@ -1,5 +1,3 @@
-use std::marker::ConstParamTy;
-
 use super::util::{CachedRegion, CellManager, CellType};
 use crate::{
     evm_circuit::{
@@ -16,7 +14,7 @@ use halo2_proofs::{
     circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
 };
-use std::{fmt::Display, iter};
+use std::{fmt::Display, iter, marker::ConstParamTy};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 

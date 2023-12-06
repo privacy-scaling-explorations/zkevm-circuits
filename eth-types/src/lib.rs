@@ -6,13 +6,16 @@
 #![allow(incomplete_features)]
 // We want to have UPPERCASE idents sometimes.
 #![allow(non_snake_case)]
+#![allow(incomplete_features)]
 // Catch documentation errors caused by code changes.
 #![deny(rustdoc::broken_intra_doc_links)]
+// GasCost is used as type parameter
+#![feature(adt_const_params)]
+#![feature(lazy_cell)]
 #![deny(missing_docs)]
 //#![deny(unsafe_code)] Allowed now until we find a
 // better way to handle downcasting from Operation into it's variants.
 #![allow(clippy::upper_case_acronyms)] // Too pedantic
-#![feature(adt_const_params)]
 
 #[macro_use]
 pub mod macros;
@@ -39,13 +42,13 @@ pub use ethers_core::{
         Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
     },
 };
-use once_cell::sync::Lazy;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use std::{
     collections::HashMap,
     fmt,
     fmt::{Display, Formatter},
     str::FromStr,
+    sync::LazyLock,
 };
 
 #[cfg(feature = "enable-memory")]
@@ -313,11 +316,11 @@ impl<F: Field> ToScalar<F> for usize {
 
 /// Code hash related
 /// the empty keccak code hash
-pub static KECCAK_CODE_HASH_EMPTY: Lazy<Hash> = Lazy::new(|| {
+pub static KECCAK_CODE_HASH_EMPTY: LazyLock<Hash> = LazyLock::new(|| {
     Hash::from_str("0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470").unwrap()
 });
 /// the empty poseidon code hash
-pub static POSEIDON_CODE_HASH_EMPTY: Lazy<Hash> = Lazy::new(|| {
+pub static POSEIDON_CODE_HASH_EMPTY: LazyLock<Hash> = LazyLock::new(|| {
     Hash::from_str("0x2098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864").unwrap()
 });
 /// Struct used to define the storage proof
@@ -518,10 +521,10 @@ impl<'de> Deserialize<'de> for GethExecError {
     {
         struct GethExecErrorVisitor;
 
-        static STACK_UNDERFLOW_RE: Lazy<regex::Regex> =
-            Lazy::new(|| regex::Regex::new(r"^stack underflow \((\d+) <=> (\d+)\)$").unwrap());
-        static STACK_OVERFLOW_RE: Lazy<regex::Regex> =
-            Lazy::new(|| regex::Regex::new(r"^stack limit reached (\d+) \((\d+)\)$").unwrap());
+        static STACK_UNDERFLOW_RE: LazyLock<regex::Regex> =
+            LazyLock::new(|| regex::Regex::new(r"^stack underflow \((\d+) <=> (\d+)\)$").unwrap());
+        static STACK_OVERFLOW_RE: LazyLock<regex::Regex> =
+            LazyLock::new(|| regex::Regex::new(r"^stack limit reached (\d+) \((\d+)\)$").unwrap());
 
         impl<'de> de::Visitor<'de> for GethExecErrorVisitor {
             type Value = GethExecError;
