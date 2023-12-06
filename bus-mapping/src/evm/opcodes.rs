@@ -28,6 +28,7 @@ mod extcodecopy;
 mod extcodehash;
 mod extcodesize;
 mod gasprice;
+mod invalid_tx;
 mod logs;
 mod mload;
 mod mstore;
@@ -60,7 +61,7 @@ mod error_write_protection;
 #[cfg(test)]
 mod memory_expansion_test;
 
-use self::sha3::Sha3;
+use self::{invalid_tx::InvalidTx, sha3::Sha3};
 use address::Address;
 use balance::Balance;
 use begin_end_tx::BeginEndTx;
@@ -408,6 +409,7 @@ pub fn gen_associated_steps(
 ) -> Result<ExecStep, Error> {
     let fn_gen_associated_steps = match execution_step {
         ExecState::BeginTx | ExecState::EndTx => BeginEndTx::gen_associated_steps,
+        ExecState::InvalidTx => InvalidTx::gen_associated_steps,
         _ => {
             unreachable!()
         }

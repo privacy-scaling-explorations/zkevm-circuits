@@ -224,7 +224,7 @@ mod tests {
                 txs[1].from(accs[0].address);
                 txs[2].from(accs[1].address);
                 txs[3].from(accs[1].address);
-                txs[4].from(accs[1].address).nonce(12345); // set nonce here is ignored
+                txs[4].from(accs[1].address);
             },
             |block, _tx| block.number(0xcafeu64),
         )
