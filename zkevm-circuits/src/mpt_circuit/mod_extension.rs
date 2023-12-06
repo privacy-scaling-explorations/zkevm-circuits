@@ -15,7 +15,7 @@ use crate::{
         cached_region::CachedRegion,
         cell_manager::Cell,
         constraint_builder::RLCChainableRev,
-        gadgets::{IsZeroGadget, LtGadget},
+        gadgets::{IsEqualGadget, LtGadget},
     },
     mpt_circuit::{
         helpers::{ext_key_rlc_expr, Indexable, ParentData, FIXED, KECCAK},
@@ -29,7 +29,7 @@ use crate::{
 pub(crate) struct ModExtensionGadget<F> {
     rlp_key: [ListKeyGadget<F>; 2],
     is_not_hashed: [LtGadget<F, 2>; 2],
-    is_short_branch: IsZeroGadget<F>,
+    is_short_branch: IsEqualGadget<F>,
     is_key_part_odd: [Cell<F>; 2], // Whether the number of nibbles is odd or not.
     mult_key: Cell<F>,
 }
@@ -90,14 +90,12 @@ impl<F: Field> ModExtensionGadget<F> {
 
             let is_insert = parent_data[0].is_placeholder.expr(); // insert or delete
 
-            let lo_s = is_insert.clone() * parent_data[0].hash.lo().expr()
-                + (1.expr() - is_insert.clone()) * parent_data[1].hash.lo().expr();
-            let hi_s = is_insert.clone() * parent_data[0].hash.hi().expr()
-                + (1.expr() - is_insert.clone()) * parent_data[1].hash.hi().expr();
-            let lo_c = is_insert.clone() * parent_data[0].drifted_parent_hash.lo().expr()
-                + (1.expr() - is_insert.clone()) * parent_data[1].drifted_parent_hash.lo().expr();
-            let hi_c = is_insert.clone() * parent_data[0].drifted_parent_hash.hi().expr()
-                + (1.expr() - is_insert.clone()) * parent_data[1].drifted_parent_hash.hi().expr();
+            let (lo_s, hi_s, lo_c, hi_c) = ifx! {parent_data[0].is_placeholder => {
+            (parent_data[0].hash.lo().expr(), parent_data[0].hash.hi().expr(), parent_data[0].drifted_parent_hash.lo().expr(), parent_data[0].drifted_parent_hash.hi().expr())
+            } elsex {
+            (parent_data[1].hash.lo().expr(), parent_data[1].hash.hi().expr(), parent_data[1].drifted_parent_hash.lo().expr(), parent_data[1].drifted_parent_hash.hi().expr())
+            }};
+
             let parent_data_lo = vec![lo_s, lo_c];
             let parent_data_hi = vec![hi_s, hi_c];
             let parent_data_rlc = is_insert.clone() * parent_data[0].rlc.expr()
@@ -146,7 +144,7 @@ impl<F: Field> ModExtensionGadget<F> {
             }
 
             config.is_short_branch =
-                IsZeroGadget::construct(&mut cb.base, key_rlc[0].expr() - key_rlc[1].expr());
+                IsEqualGadget::construct(&mut cb.base, key_rlc[0].expr(), key_rlc[1].expr());
 
             for is_s in [true, false] {
                 let first_byte = matchx! {(
@@ -320,7 +318,7 @@ impl<F: Field> ModExtensionGadget<F> {
         }
 
         self.is_short_branch
-            .assign(region, offset, key_rlc[0] - key_rlc[1])?;
+            .assign(region, offset, key_rlc[0], key_rlc[1])?;
 
         Ok(())
     }

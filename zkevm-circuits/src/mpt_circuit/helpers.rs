@@ -28,7 +28,7 @@ use crate::{
     },
 };
 use eth_types::{Field, Word as U256};
-use gadgets::util::{not, or, pow, Scalar};
+use gadgets::util::{not, or, pow, xor, Scalar};
 use halo2_proofs::{
     circuit::Value,
     plonk::{ConstraintSystem, Error, Expression, VirtualCells},
@@ -245,7 +245,7 @@ pub(crate) fn ext_key_rlc_expr<F: Field>(
             )
         };
         matchx! {(
-            and::expr(&[is_long.expr(), or::expr(&[and::expr(&[is_key_odd.expr(), not!(is_key_part_odd.expr())]), and::expr(&[not!(is_key_odd.expr()), is_key_part_odd.expr()])])]) => {
+            and::expr(&[is_long.expr(), xor::expr(is_key_odd.expr(), is_key_part_odd.expr())]) => {
                 // Here we need to multiply nibbles over bytes with different r's so we need to rlc over separate nibbles.
                 // Note that there can be at max 31 key bytes because 32 same bytes would mean
                 // the two keys being the same - update operation, not splitting into extension node.
