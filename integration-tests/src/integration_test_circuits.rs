@@ -40,6 +40,7 @@ use zkevm_circuits::{
     pi_circuit::TestPiCircuit,
     root_circuit::{
         compile, Config, EvmTranscript, NativeLoader, PoseidonTranscript, RootCircuit, Shplonk,
+        UserChallenge,
     },
     state_circuit::TestStateCircuit,
     super_circuit::SuperCircuit,
@@ -320,7 +321,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                     &protocol,
                     Value::unknown(),
                     Value::unknown(),
-                    vec![],
+                    None,
                 )
                 .unwrap();
 
@@ -450,12 +451,16 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             };
 
             log::info!("root circuit new");
+            let user_challenge = &UserChallenge {
+                column_indexes: rwtable_columns,
+                num_challenges: 2, // alpha, gamma
+            };
             let root_circuit = RootCircuit::<Bn256, Shplonk<_>>::new(
                 &params,
                 &protocol,
                 Value::known(&instance),
                 Value::known(&proof),
-                rwtable_columns,
+                Some(user_challenge),
             )
             .unwrap();
 

@@ -8,7 +8,7 @@ use halo2_proofs::{
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use itertools::Itertools;
-use maingate::MainGateInstructions;
+use maingate::{MainGateInstructions, RegionCtx};
 
 use snark_verifier::{
     pcs::{
@@ -27,6 +27,7 @@ mod aggregation;
 mod dev;
 #[cfg(test)]
 mod test;
+
 #[cfg(feature = "test-circuits")]
 pub use self::RootCircuit as TestRootCircuit;
 
@@ -42,13 +43,80 @@ pub use snark_verifier::{
     system::halo2::{compile, transcript::evm::EvmTranscript, Config},
 };
 
+/// SuperCircuitInstance is to demystifying supercircuit instance to meaningful name.
+#[derive(Clone)]
+struct SuperCircuitInstance<T> {
+    // chunk_ctx
+    pub chunk_index: T,
+    pub chunk_index_next: T,
+    pub total_chunk: T,
+    pub initial_rwc: T,
+    pub end_rwc: T,
+
+    // pi circuit
+    pub pi_digest_lo: T,
+    pub pi_digest_hi: T,
+
+    // state circuit
+    pub sc_permu_alpha: T,
+    pub sc_permu_gamma: T,
+    pub sc_rwtable_row_prev_fingerprint: T,
+    pub sc_rwtable_row_next_fingerprint: T,
+    pub sc_rwtable_prev_fingerprint: T,
+    pub sc_rwtable_next_fingerprint: T,
+
+    // evm circuit
+    pub ec_permu_alpha: T,
+    pub ec_permu_gamma: T,
+    pub ec_rwtable_row_prev_fingerprint: T,
+    pub ec_rwtable_row_next_fingerprint: T,
+    pub ec_rwtable_prev_fingerprint: T,
+    pub ec_rwtable_next_fingerprint: T,
+}
+
+impl<T: Clone + Copy> SuperCircuitInstance<T> {
+    /// Construct `SnarkInstance` with vector
+    pub fn new(instances: impl IntoIterator<Item = T>) -> Self {
+        let raw_instances = instances.into_iter().collect_vec();
+        assert_eq!(raw_instances.len(), 19);
+        Self {
+            chunk_index: raw_instances[0],
+            total_chunk: raw_instances[1],
+            initial_rwc: raw_instances[2],
+            chunk_index_next: raw_instances[3],
+            end_rwc: raw_instances[4],
+            pi_digest_lo: raw_instances[5],
+            pi_digest_hi: raw_instances[6],
+            sc_permu_alpha: raw_instances[7],
+            sc_permu_gamma: raw_instances[8],
+            sc_rwtable_row_prev_fingerprint: raw_instances[9],
+            sc_rwtable_row_next_fingerprint: raw_instances[10],
+            sc_rwtable_prev_fingerprint: raw_instances[11],
+            sc_rwtable_next_fingerprint: raw_instances[12],
+            ec_permu_alpha: raw_instances[13],
+            ec_permu_gamma: raw_instances[14],
+            ec_rwtable_row_prev_fingerprint: raw_instances[15],
+            ec_rwtable_row_next_fingerprint: raw_instances[16],
+            ec_rwtable_prev_fingerprint: raw_instances[17],
+            ec_rwtable_next_fingerprint: raw_instances[18],
+        }
+    }
+}
+
+/// UserChallange
+pub struct UserChallenge {
+    /// column_indexes
+    pub column_indexes: Vec<Column<Any>>,
+    /// num_challenges
+    pub num_challenges: usize,
+}
+
 /// RootCircuit for aggregating SuperCircuit into a much smaller proof.
 #[derive(Clone)]
 pub struct RootCircuit<'a, M: MultiMillerLoop, As> {
     svk: KzgSvk<M>,
     snark: SnarkWitness<'a, M::G1Affine>,
     instance: Vec<M::Scalar>,
-    rwtable_columns: Vec<Column<Any>>,
     _marker: PhantomData<As>,
 }
 
@@ -77,7 +145,7 @@ where
         super_circuit_protocol: &'a PlonkProtocol<M::G1Affine>,
         super_circuit_instances: Value<&'a Vec<Vec<M::Scalar>>>,
         super_circuit_proof: Value<&'a [u8]>,
-        rwtable_columns: Vec<Column<Any>>,
+        user_challenges: Option<&'a UserChallenge>,
     ) -> Result<Self, snark_verifier::Error> {
         let num_instances = super_circuit_protocol.num_instance.iter().sum::<usize>() + 4 * LIMBS;
 
@@ -111,10 +179,10 @@ where
             snark: SnarkWitness::new(
                 super_circuit_protocol,
                 super_circuit_instances,
+                user_challenges,
                 super_circuit_proof,
             ),
             instance,
-            rwtable_columns,
             _marker: PhantomData,
         })
     }
@@ -161,7 +229,6 @@ where
         Self {
             svk: self.svk,
             snark: self.snark.without_witnesses(),
-            rwtable_columns: self.rwtable_columns.clone(),
             instance: vec![M::Scalar::ZERO; self.instance.len()],
             _marker: PhantomData,
         }
@@ -177,16 +244,183 @@ where
         mut layouter: impl Layouter<M::Scalar>,
     ) -> Result<(), Error> {
         config.load_table(&mut layouter)?;
-        let (instance, accumulator_limbs) = config.aggregate::<M, As>(
-            &mut layouter,
-            &self.svk,
-            [self.snark],
-            self.rwtable_columns.clone(),
+        let key = &self.svk;
+        let (instances, accumulator_limbs) = layouter.assign_region(
+            || "Aggregate snarks",
+            |mut region| {
+                config.named_column_in_region(&mut region);
+                let ctx = RegionCtx::new(region, 0);
+                let (loaded_instances, accumulator_limbs, loader, proofs) =
+                    config.aggregate::<M, As>(ctx, &key.clone(), [self.snark])?;
+
+                // aggregate user challenge for rwtable permutation challenge
+                let (alpha, gamma) = {
+                    let mut challenges = config.aggregate_user_challenges::<M, As>(
+                        loader.clone(),
+                        self.snark.user_challenges(),
+                        proofs,
+                    )?;
+                    (challenges.remove(0), challenges.remove(0))
+                };
+
+                // convert vector instances SuperCircuitInstance struct
+                let supercircuit_instances = loaded_instances
+                    .iter()
+                    .map(SuperCircuitInstance::new)
+                    .collect::<Vec<SuperCircuitInstance<_>>>();
+
+                // constraint first and last chunk
+                let _ = supercircuit_instances
+                    .first()
+                    .zip(supercircuit_instances.last())
+                    .map(|(first_chunk, _last)| {
+                        // `last.sc_rwtable_next_fingerprint ==
+                        // last.ec_rwtable_next_fingerprint` will be checked inside super circuit so
+                        // here no need to checked
+                        // Other field in last instances already be checked in below chunk
+                        // continuity
+
+                        // define 0, 1, total_chunk as constant
+                        let (zero_const, one_const, total_chunk_const) = {
+                            let zero_const = loader
+                                .scalar_chip()
+                                .assign_constant(&mut loader.ctx_mut(), M::Scalar::from(0))
+                                .unwrap();
+                            let one_const = loader
+                                .scalar_chip()
+                                .assign_constant(&mut loader.ctx_mut(), M::Scalar::from(1))
+                                .unwrap();
+                            let total_chunk_const = loader
+                                .scalar_chip()
+                                .assign_constant(&mut loader.ctx_mut(), M::Scalar::from(1))
+                                .unwrap();
+                            (zero_const, one_const, total_chunk_const)
+                        };
+
+                        // `first.sc_rwtable_row_prev_fingerprint ==
+                        // first.ec_rwtable_row_prev_fingerprint` will be checked inside circuit
+                        vec![
+                            // chunk ctx
+                            (first_chunk.chunk_index.assigned(), &zero_const),
+                            (first_chunk.total_chunk.assigned(), &total_chunk_const),
+                            // rwc
+                            (first_chunk.initial_rwc.assigned(), &one_const),
+                            // constraint permutation fingerprint
+                            // challenge: alpha
+                            (first_chunk.sc_permu_alpha.assigned(), &alpha.assigned()),
+                            (first_chunk.ec_permu_alpha.assigned(), &alpha.assigned()),
+                            // challenge: gamma
+                            (first_chunk.sc_permu_gamma.assigned(), &gamma.assigned()),
+                            (first_chunk.ec_permu_gamma.assigned(), &gamma.assigned()),
+                            // fingerprint
+                            (
+                                first_chunk.ec_rwtable_prev_fingerprint.assigned(),
+                                &one_const,
+                            ),
+                            (
+                                first_chunk.sc_rwtable_prev_fingerprint.assigned(),
+                                &one_const,
+                            ),
+                        ]
+                        .iter()
+                        .for_each(|(a, b)| {
+                            loader
+                                .scalar_chip()
+                                .assert_equal(&mut loader.ctx_mut(), a, b)
+                                .unwrap();
+                        });
+
+                        first_chunk
+                    })
+                    .expect("error");
+
+                // constraint consistency between chunk
+                let _ = supercircuit_instances.iter().tuple_windows().inspect(
+                    |(instance_i, instance_i_plus_one)| {
+                        vec![
+                            (
+                                instance_i.chunk_index_next.assigned(),
+                                instance_i_plus_one.chunk_index.assigned(),
+                            ),
+                            (
+                                instance_i.total_chunk.assigned(),
+                                instance_i_plus_one.total_chunk.assigned(),
+                            ),
+                            (
+                                instance_i.end_rwc.assigned(),
+                                instance_i_plus_one.initial_rwc.assigned(),
+                            ),
+                            (
+                                instance_i.pi_digest_lo.assigned(),
+                                instance_i_plus_one.pi_digest_lo.assigned(),
+                            ),
+                            (
+                                instance_i.pi_digest_hi.assigned(),
+                                instance_i_plus_one.pi_digest_hi.assigned(),
+                            ),
+                            // state circuit
+                            (
+                                instance_i.sc_permu_alpha.assigned(),
+                                instance_i_plus_one.sc_permu_alpha.assigned(),
+                            ),
+                            (
+                                instance_i.sc_permu_gamma.assigned(),
+                                instance_i_plus_one.sc_permu_gamma.assigned(),
+                            ),
+                            (
+                                instance_i.sc_rwtable_row_next_fingerprint.assigned(),
+                                instance_i_plus_one
+                                    .sc_rwtable_row_prev_fingerprint
+                                    .assigned(),
+                            ),
+                            (
+                                instance_i.sc_rwtable_next_fingerprint.assigned(),
+                                instance_i_plus_one.sc_rwtable_prev_fingerprint.assigned(),
+                            ),
+                            // evm circuit
+                            (
+                                instance_i.ec_permu_alpha.assigned(),
+                                instance_i_plus_one.ec_permu_alpha.assigned(),
+                            ),
+                            (
+                                instance_i.ec_permu_gamma.assigned(),
+                                instance_i_plus_one.ec_permu_gamma.assigned(),
+                            ),
+                            (
+                                instance_i.ec_rwtable_next_fingerprint.assigned(),
+                                instance_i_plus_one.ec_rwtable_prev_fingerprint.assigned(),
+                            ),
+                            (
+                                instance_i.ec_rwtable_row_next_fingerprint.assigned(),
+                                instance_i_plus_one
+                                    .ec_rwtable_row_prev_fingerprint
+                                    .assigned(),
+                            ),
+                        ]
+                        .iter()
+                        .for_each(|(a, b)| {
+                            loader
+                                .scalar_chip()
+                                .assert_equal(&mut loader.ctx_mut(), a, b)
+                                .unwrap();
+                        });
+                    },
+                );
+
+                let instances = loaded_instances
+                    .first()
+                    .unwrap()
+                    .iter()
+                    .map(|instance| instance.assigned().to_owned())
+                    .collect_vec();
+
+                Ok((instances, accumulator_limbs))
+            },
         )?;
 
         // Constrain equality to instance values
         let main_gate = config.main_gate();
-        for (row, limb) in instance.into_iter().chain(accumulator_limbs).enumerate() {
+        for (row, limb) in instances.into_iter().chain(accumulator_limbs).enumerate() {
             main_gate.expose_public(layouter.namespace(|| ""), limb, row)?;
         }
 

@@ -1,5 +1,5 @@
 use crate::{
-    root_circuit::{compile, Config, Gwc, PoseidonTranscript, RootCircuit},
+    root_circuit::{compile, Config, Gwc, PoseidonTranscript, RootCircuit, UserChallenge},
     super_circuit::{test::block_1tx, SuperCircuit},
 };
 use bus_mapping::circuit_input_builder::FixedCParams;
@@ -68,12 +68,16 @@ fn test_root_circuit() {
         (params, protocol, proof, instance, rwtable_columns)
     };
 
+    let user_challenge = UserChallenge {
+        column_indexes: rwtable_columns,
+        num_challenges: 2, // alpha, gamma
+    };
     let root_circuit = RootCircuit::<Bn256, Gwc<_>>::new(
         &params,
         &protocol,
         Value::known(&instance),
         Value::known(&proof),
-        rwtable_columns,
+        Some(&user_challenge),
     )
     .unwrap();
     assert_eq!(

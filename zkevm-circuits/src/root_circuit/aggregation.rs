@@ -1,5 +1,5 @@
 use eth_types::Field;
-use halo2::plonk::{Any, Column};
+use halo2::circuit::Region;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
     halo2curves::{
@@ -28,9 +28,15 @@ use snark_verifier::{
         arithmetic::{fe_to_limbs, MultiMillerLoop},
         transcript::Transcript,
     },
-    verifier::{self, plonk::PlonkProtocol, SnarkVerifier},
+    verifier::{
+        self,
+        plonk::{PlonkProof, PlonkProtocol},
+        SnarkVerifier,
+    },
 };
 use std::{io, iter, rc::Rc};
+
+use super::UserChallenge;
 
 /// Number of limbs to decompose a elliptic curve base field element into.
 pub const LIMBS: usize = 4;
@@ -60,76 +66,12 @@ const R_P: usize = 60;
 pub type EccChip<C> = halo2_wrong_ecc::BaseFieldEccChip<C, LIMBS, BITS>;
 /// `Halo2Loader` with hardcoded `EccChip`.
 pub type Halo2Loader<'a, C> = loader::halo2::Halo2Loader<'a, C, EccChip<C>>;
+/// `LoaderedScalar` with hardcoded `EccChip`.
+pub type LoaderedScalar<'a, C> = Scalar<'a, C, EccChip<C>>;
 /// `PoseidonTranscript` with hardcoded parameter with 128-bits security.
 pub type PoseidonTranscript<C, S> =
     transcript::halo2::PoseidonTranscript<C, NativeLoader, S, T, RATE, R_F, R_P>;
 
-/// SuperCircuitInstance is to demystifying supercircuit instance to meaningful name.
-#[derive(Clone)]
-pub struct SuperCircuitInstance<T> {
-    // chunk_ctx
-    pub chunk_index: T,
-    pub chunk_index_next: T,
-    pub total_chunk: T,
-    pub initial_rwc: T,
-    pub end_rwc: T,
-
-    // pi circuit
-    pub pi_digest_lo: T,
-    pub pi_digest_hi: T,
-
-    // state circuit
-    pub sc_permu_alpha: T,
-    pub sc_permu_gamma: T,
-    pub sc_rwtable_row_prev_fingerprint: T,
-    pub sc_rwtable_row_next_fingerprint: T,
-    pub sc_rwtable_prev_fingerprint: T,
-    pub sc_rwtable_next_fingerprint: T,
-
-    // evm circuit
-    pub ec_permu_alpha: T,
-    pub ec_permu_gamma: T,
-    pub ec_rwtable_row_prev_fingerprint: T,
-    pub ec_rwtable_row_next_fingerprint: T,
-    pub ec_rwtable_prev_fingerprint: T,
-    pub ec_rwtable_next_fingerprint: T,
-
-    raw_instances: Vec<T>,
-}
-
-impl<T: Clone + Copy> SuperCircuitInstance<T> {
-    /// Construct `SnarkInstance` with vector
-    pub fn new(instances: impl IntoIterator<Item = T>) -> Self {
-        let raw_instances = instances.into_iter().collect_vec();
-        assert_eq!(raw_instances.len(), 19);
-        Self {
-            chunk_index: raw_instances[0],
-            total_chunk: raw_instances[1],
-            initial_rwc: raw_instances[2],
-            chunk_index_next: raw_instances[3],
-            end_rwc: raw_instances[4],
-            pi_digest_lo: raw_instances[5],
-            pi_digest_hi: raw_instances[6],
-            sc_permu_alpha: raw_instances[7],
-            sc_permu_gamma: raw_instances[8],
-            sc_rwtable_row_prev_fingerprint: raw_instances[9],
-            sc_rwtable_row_next_fingerprint: raw_instances[10],
-            sc_rwtable_prev_fingerprint: raw_instances[11],
-            sc_rwtable_next_fingerprint: raw_instances[12],
-            ec_permu_alpha: raw_instances[13],
-            ec_permu_gamma: raw_instances[14],
-            ec_rwtable_row_prev_fingerprint: raw_instances[15],
-            ec_rwtable_row_next_fingerprint: raw_instances[16],
-            ec_rwtable_prev_fingerprint: raw_instances[17],
-            ec_rwtable_next_fingerprint: raw_instances[18],
-            raw_instances,
-        }
-    }
-
-    fn raw_instances(&self) -> &Vec<T> {
-        &self.raw_instances
-    }
-}
 /// Snark contains the minimal information for verification
 #[derive(Clone, Copy)]
 pub struct Snark<'a, C: CurveAffine> {
@@ -159,6 +101,7 @@ impl<'a, C: CurveAffine> From<Snark<'a, C>> for SnarkWitness<'a, C> {
             protocol: snark.protocol,
             instances: Value::known(snark.instances),
             proof: Value::known(snark.proof),
+            user_challenges: None,
         }
     }
 }
@@ -168,6 +111,7 @@ impl<'a, C: CurveAffine> From<Snark<'a, C>> for SnarkWitness<'a, C> {
 pub struct SnarkWitness<'a, C: CurveAffine> {
     protocol: &'a PlonkProtocol<C>,
     instances: Value<&'a Vec<Vec<C::Scalar>>>,
+    user_challenges: Option<&'a UserChallenge>,
     proof: Value<&'a [u8]>,
 }
 
@@ -176,11 +120,13 @@ impl<'a, C: CurveAffine> SnarkWitness<'a, C> {
     pub fn new(
         protocol: &'a PlonkProtocol<C>,
         instances: Value<&'a Vec<Vec<C::Scalar>>>,
+        user_challenges: Option<&'a UserChallenge>,
         proof: Value<&'a [u8]>,
     ) -> Self {
         Self {
             protocol,
             instances,
+            user_challenges,
             proof,
         }
     }
@@ -190,6 +136,7 @@ impl<'a, C: CurveAffine> SnarkWitness<'a, C> {
         SnarkWitness {
             protocol: self.protocol,
             instances: Value::unknown(),
+            user_challenges: self.user_challenges,
             proof: Value::unknown(),
         }
     }
@@ -202,6 +149,11 @@ impl<'a, C: CurveAffine> SnarkWitness<'a, C> {
     /// Returns proof as reference.
     pub fn proof(&self) -> Value<&[u8]> {
         self.proof
+    }
+
+    /// Returns user_challenges as option.
+    pub fn user_challenges(&self) -> Option<&'a UserChallenge> {
+        self.user_challenges
     }
 
     fn loaded_instances<'b>(
@@ -272,24 +224,23 @@ impl AggregationConfig {
         self.range_chip().load_table(layouter)
     }
 
-    /// Aggregate snarks into a single accumulator and decompose it into
-    /// `4 * LIMBS` limbs.
-    /// Returns assigned instances of snarks and aggregated accumulator limbs.
-    /// TODO Fine tune or generalize design to avoid hacky pass rwtable_columns
+    /// named columns in region
+    pub fn named_column_in_region<F: Field>(&self, region: &mut Region<'_, F>) {
+        // annotate advices columns of `main_gate`. We can't annotate fixed_columns of
+        // `main_gate` bcs there is no methods exported.
+        for (i, col) in self.main_gate_config.advices().iter().enumerate() {
+            region.name_column(|| format!("ROOT_main_gate_{}", i), *col);
+        }
+    }
+
+    /// Aggregate witnesses into challenge and return
     #[allow(clippy::type_complexity)]
-    pub fn aggregate<'a, M, As>(
+    pub fn aggregate_user_challenges<'c, M, As>(
         &self,
-        layouter: &mut impl Layouter<M::Scalar>,
-        svk: &KzgSvk<M>,
-        snarks: impl IntoIterator<Item = SnarkWitness<'a, M::G1Affine>>,
-        rwtable_columns: Vec<Column<Any>>,
-    ) -> Result<
-        (
-            Vec<AssignedCell<M::Scalar, M::Scalar>>,
-            Vec<AssignedCell<M::Scalar, M::Scalar>>,
-        ),
-        Error,
-    >
+        loader: Rc<Halo2Loader<'c, M::G1Affine>>,
+        user_challenges: Option<&UserChallenge>,
+        proofs: Vec<PlonkProof<M::G1Affine, Rc<Halo2Loader<'c, M::G1Affine>>, As>>,
+    ) -> Result<Vec<LoaderedScalar<'c, M::G1Affine>>, Error>
     where
         M: MultiMillerLoop,
         M::Scalar: Field,
@@ -308,249 +259,149 @@ impl AggregationConfig {
         type PoseidonTranscript<'a, C, S> =
             transcript::halo2::PoseidonTranscript<C, Rc<Halo2Loader<'a, C>>, S, T, RATE, R_F, R_P>;
 
-        // get rwtable witness column index
-        let rwtable_witness_colindex = rwtable_columns
+        // Verify the cheap part and get accumulator (left-hand and right-hand side of
+        // pairing) of individual proof.
+        let witnesses = proofs
             .iter()
-            .map(|col| col.index())
-            .collect::<Vec<usize>>();
+            .flat_map(|proof| {
+                user_challenges
+                    .map(|user_challenges| {
+                        user_challenges
+                            .column_indexes
+                            .iter()
+                            .map(|col| &proof.witnesses[col.index()])
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default()
+            })
+            .collect_vec();
+
+        let empty_proof = Vec::new();
+        let mut transcript = PoseidonTranscript::new(&loader, Value::known(empty_proof.as_slice()));
+        witnesses.iter().for_each(|rwtable_col_ec_point| {
+            transcript.common_ec_point(rwtable_col_ec_point).unwrap();
+        });
+        let num_challenges = user_challenges
+            .map(|user_challenges| user_challenges.num_challenges)
+            .unwrap_or_default();
+
+        Ok((0..num_challenges)
+            .map(|_| transcript.squeeze_challenge())
+            .collect_vec())
+    }
+
+    /// Aggregate snarks into a single accumulator and decompose it into
+    /// `4 * LIMBS` limbs.
+    /// Returns assigned instances of snarks and aggregated accumulator limbs.
+    #[allow(clippy::type_complexity)]
+    pub fn aggregate<'a, 'c, M, As>(
+        &self,
+        ctx: RegionCtx<'c, M::Scalar>,
+        svk: &KzgSvk<M>,
+        snarks: impl IntoIterator<Item = SnarkWitness<'a, M::G1Affine>>,
+    ) -> Result<
+        (
+            Vec<Vec<Scalar<'c, M::G1Affine, EccChip<M::G1Affine>>>>,
+            Vec<AssignedCell<M::Scalar, M::Scalar>>,
+            Rc<Halo2Loader<'c, M::G1Affine>>,
+            Vec<PlonkProof<M::G1Affine, Rc<Halo2Loader<'c, M::G1Affine>>, As>>,
+        ),
+        Error,
+    >
+    where
+        M: MultiMillerLoop,
+        M::Scalar: Field,
+        for<'b> As: PolynomialCommitmentScheme<
+                M::G1Affine,
+                Rc<Halo2Loader<'b, M::G1Affine>>,
+                VerifyingKey = KzgSvk<M>,
+                Output = KzgAccumulator<M::G1Affine, Rc<Halo2Loader<'b, M::G1Affine>>>,
+            > + AccumulationScheme<
+                M::G1Affine,
+                Rc<Halo2Loader<'b, M::G1Affine>>,
+                Accumulator = KzgAccumulator<M::G1Affine, Rc<Halo2Loader<'b, M::G1Affine>>>,
+                VerifyingKey = KzgAsVerifyingKey,
+            >,
+    {
+        let ecc_chip = self.ecc_chip::<M::G1Affine>();
+        let loader = Halo2Loader::<'c, _>::new(ecc_chip, ctx);
+
+        type PoseidonTranscript<'a, C, S> =
+            transcript::halo2::PoseidonTranscript<C, Rc<Halo2Loader<'a, C>>, S, T, RATE, R_F, R_P>;
 
         let snarks = snarks.into_iter().collect_vec();
-        layouter.assign_region(
-            || "Aggregate snarks",
-            |mut region| {
-                // annotate advices columns of `main_gate`. We can't annotate fixed_columns of
-                // `main_gate` bcs there is no methods exported.
-                for (i, col) in self.main_gate_config.advices().iter().enumerate() {
-                    region.name_column(|| format!("ROOT_main_gate_{}", i), *col);
-                }
 
-                let ctx = RegionCtx::new(region, 0);
+        let mut plonk_svp = vec![];
+        // Verify the cheap part and get accumulator (left-hand and right-hand side of
+        // pairing) of individual proof.
+        // Verify the cheap part and get accumulator (left-hand and right-hand side of
+        // pairing) of individual proof.
+        let (instances, accumulators) = snarks
+            .iter()
+            .map(|snark| {
+                let protocol = snark.protocol.loaded(&loader);
+                let instances = snark.loaded_instances(&loader);
+                let mut transcript = PoseidonTranscript::new(&loader, snark.proof());
+                let proof = PlonkSuccinctVerifier::<As>::read_proof(
+                    svk,
+                    &protocol,
+                    &instances,
+                    &mut transcript,
+                )
+                .unwrap();
+                let accumulators =
+                    PlonkSuccinctVerifier::verify(svk, &protocol, &instances, &proof).unwrap();
+                plonk_svp.push(proof);
+                (instances, accumulators)
+            })
+            .collect_vec()
+            .into_iter()
+            .unzip::<_, _, Vec<_>, Vec<_>>();
 
-                let ecc_chip = self.ecc_chip::<M::G1Affine>();
-                let loader = Halo2Loader::new(ecc_chip, ctx);
+        // Verify proof for accumulation of all accumulators into new one.
+        let accumulator = {
+            let as_vk = Default::default();
+            let as_proof = Vec::new();
+            let accumulators = accumulators.into_iter().flatten().collect_vec();
+            let mut transcript =
+                PoseidonTranscript::new(&loader, Value::known(as_proof.as_slice()));
+            let proof = <As as AccumulationScheme<_, _>>::read_proof(
+                &as_vk,
+                &accumulators,
+                &mut transcript,
+            )
+            .unwrap();
+            <As as AccumulationScheme<_, _>>::verify(&as_vk, &accumulators, &proof).unwrap()
+        };
 
-                // Verify the cheap part and get accumulator (left-hand and right-hand side of
-                // pairing) of individual proof.
-                let (instance_witnesses, accumulators) = snarks
+        let instances = instances
+            .iter()
+            .map(|instances| {
+                instances
                     .iter()
-                    .map(|snark| {
-                        let protocol = snark.protocol.loaded(&loader);
-                        let instances = snark.loaded_instances(&loader);
-                        let mut transcript = PoseidonTranscript::new(&loader, snark.proof());
-                        let proof = PlonkSuccinctVerifier::<As>::read_proof(
-                            svk,
-                            &protocol,
-                            &instances,
-                            &mut transcript,
-                        )
-                        .unwrap();
-
-                        let rwtable_col_witness = rwtable_witness_colindex
+                    .flat_map(|instances| {
+                        instances
                             .iter()
-                            .map(|col_index| proof.witnesses[*col_index].clone())
-                            .collect::<Vec<_>>();
-
-                        let accumulators =
-                            PlonkSuccinctVerifier::verify(svk, &protocol, &instances, &proof)
-                                .unwrap();
-                        ((instances, rwtable_col_witness), accumulators)
+                            .map(|instance| instance.to_owned())
+                            .collect_vec()
                     })
                     .collect_vec()
-                    .into_iter()
-                    .unzip::<_, _, Vec<_>, Vec<_>>();
+            })
+            .collect_vec();
 
-                // convert vector instances SuperCircuitInstance struct
-                let supercircuit_instances = instance_witnesses
-                    .iter()
-                    .map(|x| SuperCircuitInstance::new(x.0.iter().flatten().collect::<Vec<_>>()))
-                    .collect::<Vec<SuperCircuitInstance<_>>>();
+        let accumulator_limbs = [accumulator.lhs, accumulator.rhs]
+            .iter()
+            .map(|ec_point| {
+                loader
+                    .ecc_chip()
+                    .assign_ec_point_to_limbs(&mut loader.ctx_mut(), ec_point.assigned())
+            })
+            .collect::<Result<Vec<_>, Error>>()?
+            .into_iter()
+            .flatten()
+            .collect();
 
-                // get all column commitment loaded ec points (witness of rw_table from all
-                // snark proof, then absorb them into fresh transcript to squeeze to
-                // get challenge alpha', following by absorb alpha' and squeeze to get challenge
-                // gamma'. At the end, constraint alpha', gamma' field value equal to alpha,
-                // gamma appear at public input instances by simply invoke loaded field value
-                // equality: `alpha' - alpha = 0` and `gamma' - gamma = 0`
-                // collect rwtable witness
-                let rwtable_witness = instance_witnesses
-                    .iter()
-                    .flat_map(|x| x.1.clone())
-                    .collect::<Vec<_>>();
-                let empty_proof = Vec::new();
-                let mut transcript =
-                    PoseidonTranscript::new(&loader, Value::known(empty_proof.as_slice()));
-                rwtable_witness.iter().for_each(|rwtable_col_ec_point| {
-                    transcript.common_ec_point(rwtable_col_ec_point).unwrap();
-                });
-                // derive challenge alpha and gamma
-                let alpha = transcript.squeeze_challenge();
-                let gamma = transcript.squeeze_challenge();
-
-                // constraint first and last chunk
-                let instances = supercircuit_instances
-                    .first()
-                    .zip(supercircuit_instances.last())
-                    .map(|(first, _last)| {
-                        // `last.sc_rwtable_next_fingerprint ==
-                        // last.ec_rwtable_next_fingerprint` will be checked inside super circuit so
-                        // here no need to checked
-                        // Other field in last instances already be checked in below chunk
-                        // continuity
-
-                        let zero_const = loader
-                            .scalar_chip()
-                            .assign_constant(&mut loader.ctx_mut(), M::Scalar::from(0))
-                            .unwrap();
-                        let one_const = loader
-                            .scalar_chip()
-                            .assign_constant(&mut loader.ctx_mut(), M::Scalar::from(1))
-                            .unwrap();
-                        let total_chunk_const = loader
-                            .scalar_chip()
-                            .assign_constant(&mut loader.ctx_mut(), M::Scalar::from(1))
-                            .unwrap();
-
-                        // `first.sc_rwtable_row_prev_fingerprint ==
-                        // first.ec_rwtable_row_prev_fingerprint` will be checked inside circuit
-                        vec![
-                            // chunk ctx
-                            (first.chunk_index.assigned(), &zero_const),
-                            (first.total_chunk.assigned(), &total_chunk_const),
-                            // rwc
-                            (first.initial_rwc.assigned(), &one_const),
-                            // constraint permutation fingerprint
-                            // challenge: alpha
-                            (first.sc_permu_alpha.assigned(), &alpha.assigned()),
-                            (first.ec_permu_alpha.assigned(), &alpha.assigned()),
-                            // challenge: gamma
-                            (first.sc_permu_gamma.assigned(), &gamma.assigned()),
-                            (first.ec_permu_gamma.assigned(), &gamma.assigned()),
-                            // fingerprint
-                            (first.ec_rwtable_prev_fingerprint.assigned(), &one_const),
-                            (first.sc_rwtable_prev_fingerprint.assigned(), &one_const),
-                        ]
-                        .iter()
-                        .for_each(|(a, b)| {
-                            loader
-                                .scalar_chip()
-                                .assert_equal(&mut loader.ctx_mut(), a, b)
-                                .unwrap();
-                        });
-
-                        first
-                    })
-                    .expect("error");
-
-                // constraint consistency between chunk
-                let _ = supercircuit_instances.iter().tuple_windows().inspect(
-                    |(instance_i, instance_i_plus_one)| {
-                        vec![
-                            (
-                                instance_i.chunk_index_next.assigned(),
-                                instance_i_plus_one.chunk_index.assigned(),
-                            ),
-                            (
-                                instance_i.total_chunk.assigned(),
-                                instance_i_plus_one.total_chunk.assigned(),
-                            ),
-                            (
-                                instance_i.end_rwc.assigned(),
-                                instance_i_plus_one.initial_rwc.assigned(),
-                            ),
-                            (
-                                instance_i.pi_digest_lo.assigned(),
-                                instance_i_plus_one.pi_digest_lo.assigned(),
-                            ),
-                            (
-                                instance_i.pi_digest_hi.assigned(),
-                                instance_i_plus_one.pi_digest_hi.assigned(),
-                            ),
-                            // state circuit
-                            (
-                                instance_i.sc_permu_alpha.assigned(),
-                                instance_i_plus_one.sc_permu_alpha.assigned(),
-                            ),
-                            (
-                                instance_i.sc_permu_gamma.assigned(),
-                                instance_i_plus_one.sc_permu_gamma.assigned(),
-                            ),
-                            (
-                                instance_i.sc_rwtable_row_next_fingerprint.assigned(),
-                                instance_i_plus_one
-                                    .sc_rwtable_row_prev_fingerprint
-                                    .assigned(),
-                            ),
-                            (
-                                instance_i.sc_rwtable_next_fingerprint.assigned(),
-                                instance_i_plus_one.sc_rwtable_prev_fingerprint.assigned(),
-                            ),
-                            // evm circuit
-                            (
-                                instance_i.ec_permu_alpha.assigned(),
-                                instance_i_plus_one.ec_permu_alpha.assigned(),
-                            ),
-                            (
-                                instance_i.ec_permu_gamma.assigned(),
-                                instance_i_plus_one.ec_permu_gamma.assigned(),
-                            ),
-                            (
-                                instance_i.ec_rwtable_next_fingerprint.assigned(),
-                                instance_i_plus_one.ec_rwtable_prev_fingerprint.assigned(),
-                            ),
-                            (
-                                instance_i.ec_rwtable_row_next_fingerprint.assigned(),
-                                instance_i_plus_one
-                                    .ec_rwtable_row_prev_fingerprint
-                                    .assigned(),
-                            ),
-                        ]
-                        .iter()
-                        .for_each(|(a, b)| {
-                            loader
-                                .scalar_chip()
-                                .assert_equal(&mut loader.ctx_mut(), a, b)
-                                .unwrap();
-                        });
-                    },
-                );
-
-                // Verify proof for accumulation of all accumulators into new one.
-                let accumulator = {
-                    let as_vk = Default::default();
-                    let as_proof = Vec::new();
-                    let accumulators = accumulators.into_iter().flatten().collect_vec();
-                    let mut transcript =
-                        PoseidonTranscript::new(&loader, Value::known(as_proof.as_slice()));
-                    let proof = <As as AccumulationScheme<_, _>>::read_proof(
-                        &as_vk,
-                        &accumulators,
-                        &mut transcript,
-                    )
-                    .unwrap();
-                    <As as AccumulationScheme<_, _>>::verify(&as_vk, &accumulators, &proof).unwrap()
-                };
-
-                let instances = instances
-                    .raw_instances()
-                    .iter()
-                    .map(|instance| instance.assigned().to_owned())
-                    .collect();
-
-                let accumulator_limbs = [accumulator.lhs, accumulator.rhs]
-                    .iter()
-                    .map(|ec_point| {
-                        loader
-                            .ecc_chip()
-                            .assign_ec_point_to_limbs(&mut loader.ctx_mut(), ec_point.assigned())
-                    })
-                    .collect::<Result<Vec<_>, Error>>()?
-                    .into_iter()
-                    .flatten()
-                    .collect();
-
-                Ok((instances, accumulator_limbs))
-            },
-        )
+        Ok((instances, accumulator_limbs, loader, plonk_svp))
     }
 }
 
