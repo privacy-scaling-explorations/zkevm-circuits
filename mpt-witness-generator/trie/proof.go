@@ -463,7 +463,7 @@ func unset(parent Node, child Node, key []byte, pos int, removeLeft bool) error 
 			if removeLeft {
 				if bytes.Compare(cld.Key, key[pos:]) < 0 {
 					// The key of fork shortnode is less than the path
-					// (it belongs to the range), unset the entrie
+					// (it belongs to the range), unset the entry
 					// branch. The parent must be a fullnode.
 					fn := parent.(*FullNode)
 					fn.Children[key[pos-1]] = nil
@@ -475,7 +475,7 @@ func unset(parent Node, child Node, key []byte, pos int, removeLeft bool) error 
 			} else {
 				if bytes.Compare(cld.Key, key[pos:]) > 0 {
 					// The key of fork shortnode is greater than the
-					// path(it belongs to the range), unset the entrie
+					// path(it belongs to the range), unset the entry
 					// branch. The parent must be a fullnode.
 					fn := parent.(*FullNode)
 					fn.Children[key[pos-1]] = nil
