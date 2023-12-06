@@ -8,6 +8,7 @@ use std::cmp::max;
 
 use super::*;
 use crate::{
+    sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
     tx_circuit::{dev::TxCircuitTester, get_sign_data},
     util::{log2_ceil, unusable_rows},
 };

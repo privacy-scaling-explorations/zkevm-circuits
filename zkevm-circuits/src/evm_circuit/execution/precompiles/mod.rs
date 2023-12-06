@@ -1,4 +1,6 @@
 use bus_mapping::precompile::PrecompileAuxData;
+use std::marker::ConstParamTy;
+
 use eth_types::{Field, ToScalar};
 use gadgets::util::{select, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};

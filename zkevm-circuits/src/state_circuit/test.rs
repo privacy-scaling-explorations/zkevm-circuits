@@ -1107,5 +1107,8 @@ fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
         VerifyFailure::CellNotAssigned { .. } => panic!(),
         VerifyFailure::ConstraintPoisoned { .. } => panic!(),
         VerifyFailure::Permutation { .. } => panic!(),
+        // FIXME
+        // &VerifyFailure::InstanceCellNotAssigned { .. } | &VerifyFailure::Shuffle { .. } =>
+        // todo!(),
     }
 }

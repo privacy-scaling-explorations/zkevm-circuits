@@ -275,7 +275,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         self.b.assign(region, offset, Some(b.to_le_bytes()))?;
 
         let is_neg = 127 < a.to_le_bytes()[31];
-        let shf0 = u128::from(shift.to_le_bytes()[0]);
+        let shf0 = u64::from(shift.to_le_bytes()[0]);
         let shf_div64 = shf0 / 64;
         let shf_mod64 = shf0 % 64;
         let p_lo = 1 << shf_mod64;
@@ -288,7 +288,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         let shf_lt256 = shift
             .to_le_bytes()
             .iter()
-            .fold(0, |acc, val| acc + u128::from(*val))
+            .fold(0, |acc, val| acc + u64::from(*val))
             - shf0;
         let a64s = a.0;
         let mut a64s_lo = [0; 4];
@@ -320,9 +320,9 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
             .map(|(c, v)| c.assign(region, offset, Value::known(F::from_u128(v))))
             .collect::<Result<Vec<_>, _>>()?;
         self.shf_div64
-            .assign(region, offset, Value::known(F::from_u128(shf_div64)))?;
+            .assign(region, offset, Value::known(F::from(shf_div64)))?;
         self.shf_mod64
-            .assign(region, offset, Value::known(F::from_u128(shf_mod64)))?;
+            .assign(region, offset, Value::known(F::from(shf_mod64)))?;
         self.p_lo
             .assign(region, offset, Value::known(F::from_u128(p_lo)))?;
         self.p_hi
@@ -336,19 +336,18 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
             u64::from(a.to_le_bytes()[31]).into(),
         )?;
         self.shf_div64_lt_4
-            .assign(region, offset, F::from_u128(shf_div64), 4.into())?;
+            .assign(region, offset, F::from(shf_div64), 4.into())?;
         self.shf_mod64_lt_64
-            .assign(region, offset, F::from_u128(shf_mod64), 64.into())?;
-        self.shf_lt256
-            .assign(region, offset, F::from_u128(shf_lt256))?;
+            .assign(region, offset, F::from(shf_mod64), 64.into())?;
+        self.shf_lt256.assign(region, offset, F::from(shf_lt256))?;
         self.shf_lo_div64_eq0
-            .assign(region, offset, F::from_u128(shf_div64))?;
+            .assign(region, offset, F::from(shf_div64))?;
         self.shf_lo_div64_eq1
-            .assign(region, offset, F::from_u128(shf_div64), F::from(1))?;
+            .assign(region, offset, F::from(shf_div64), F::from(1))?;
         self.shf_lo_div64_eq2
-            .assign(region, offset, F::from_u128(shf_div64), F::from(2))?;
+            .assign(region, offset, F::from(shf_div64), F::from(2))?;
         self.shf_lo_div64_eq3
-            .assign(region, offset, F::from_u128(shf_div64), F::from(3))?;
+            .assign(region, offset, F::from(shf_div64), F::from(3))?;
         self.a64s_lo_lt_p_lo
             .iter()
             .zip(a64s_lo.into_iter())

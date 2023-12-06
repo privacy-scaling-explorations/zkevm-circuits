@@ -28,7 +28,6 @@ use bus_mapping::util::read_env_var;
 use eth_types::{Field, ToLittleEndian};
 use gadgets::util::not;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Layouter, Region, Value},
     plonk::{
         Advice, Assigned, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, Selector,
@@ -227,7 +226,7 @@ use sstore::SstoreGadget;
 use stop::StopGadget;
 use swap::SwapGadget;
 
-pub(crate) trait ExecutionGadget<F: FieldExt> {
+pub(crate) trait ExecutionGadget<F: Field> {
     const NAME: &'static str;
 
     const EXECUTION_STATE: ExecutionState;
@@ -1063,9 +1062,8 @@ impl<F: Field> ExecutionConfig<F> {
 
         // There should be 3 group of regions
         // 1. real steps
-        // 2. padding EndBlocks.
-        //    For the ease of implementation, even for `no_padding` case,
-        //     we will still pad 1 end_block_not_last.
+        // 2. padding EndBlocks. For the ease of implementation, even for `no_padding` case, we will
+        //    still pad 1 end_block_not_last.
         // 3. final EndBlock
         let region1_height = self.get_num_rows_required_no_padding(block);
         let region3_height = 2; // EndBlock, plus a dummy "next" row used for Rotation
