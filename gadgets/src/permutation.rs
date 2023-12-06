@@ -215,6 +215,7 @@ impl<F: Field> PermutationChip<F> {
         let q_row_last = meta.selector();
 
         meta.enable_equality(acc_fingerprints);
+        meta.enable_equality(row_fingerprints);
         meta.enable_equality(alpha);
         meta.enable_equality(power_of_gamma[0]);
 

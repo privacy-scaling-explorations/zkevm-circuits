@@ -389,7 +389,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                 .row_pre_fingerprints,
             block
                 .permu_chronological_rwtable_fingerprints
-                .row_pre_fingerprints,
+                .row_next_fingerprints,
             block
                 .permu_chronological_rwtable_fingerprints
                 .acc_prev_fingerprints,
