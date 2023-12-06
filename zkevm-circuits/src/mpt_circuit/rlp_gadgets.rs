@@ -9,7 +9,7 @@ use crate::{
     matchw,
     mpt_circuit::{
         helpers::FIXED,
-        param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT},
+        param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_LONG, RLP_SHORT},
         FixedTableTag,
     },
     util::{word, Expr},
@@ -17,43 +17,60 @@ use crate::{
 use eth_types::Field;
 use gadgets::util::{not, pow, Scalar};
 use halo2_proofs::plonk::{Error, Expression, VirtualCells};
+use std::ops::Deref;
 
 use super::{
     helpers::MPTConstraintBuilder,
-    param::{KEY_PREFIX_ODD, KEY_TERMINAL_PREFIX_ODD, RLP_LONG},
+    param::{KEY_PREFIX_ODD, KEY_TERMINAL_PREFIX_ODD},
 };
 
-// Decodes the first byte of an RLP data stream to return (is_list, is_short, is_long, is_very_long)
-pub(crate) fn decode_rlp(byte: u8) -> (bool, bool, bool, bool) {
-    if byte < RLP_LIST_SHORT {
-        const RLP_SHORT_INCLUSIVE: u8 = RLP_SHORT - 1;
-        const RLP_LONG_EXCLUSIVE: u8 = RLP_LONG + 1;
-        const RLP_VALUE_MAX: u8 = RLP_LIST_SHORT - 1;
+#[derive(Debug, Clone, Default)]
+pub(crate) enum RLPHeader {
+    #[default]
+    Short,
+    Long,
+    VeryLong,
+    ShortList,
+    LongList,
+}
 
-        let mut is_short = false;
-        let mut is_long = false;
-        let mut is_very_long = false;
-        match byte {
-            0..=RLP_SHORT_INCLUSIVE => is_short = true,
-            RLP_SHORT..=RLP_LONG => is_long = true,
-            RLP_LONG_EXCLUSIVE..=RLP_VALUE_MAX => is_very_long = true,
-            _ => unreachable!(),
-        }
-        (false, is_short, is_long, is_very_long)
-    } else {
-        const RLP_LIST_LONG_1: u8 = RLP_LIST_LONG + 1;
-        const RLP_LIST_LONG_2: u8 = RLP_LIST_LONG + 2;
+impl RLPHeader {
+    pub(crate) fn is_string(&self) -> bool {
+        matches!(self, Self::Short | Self::Long | Self::VeryLong)
+    }
+    pub(crate) fn is_short(&self) -> bool {
+        matches!(self, Self::Short)
+    }
+    pub(crate) fn is_long(&self) -> bool {
+        matches!(self, Self::Long)
+    }
+    pub(crate) fn is_very_long(&self) -> bool {
+        matches!(self, Self::VeryLong)
+    }
+    pub(crate) fn is_list(&self) -> bool {
+        matches!(self, Self::ShortList | Self::LongList)
+    }
 
-        let mut is_short = false;
-        let mut is_long = false;
-        let mut is_very_long = false;
-        match byte {
-            RLP_LIST_SHORT..=RLP_LIST_LONG => is_short = true,
-            RLP_LIST_LONG_1 => is_long = true,
-            RLP_LIST_LONG_2 => is_very_long = true,
-            _ => (),
+    pub(crate) fn num_rlp_bytes(&self) -> usize {
+        match self {
+            RLPHeader::Short => 1,
+            RLPHeader::Long => 2,
+            RLPHeader::VeryLong => 3,
+            RLPHeader::ShortList => todo!(),
+            RLPHeader::LongList => todo!(),
         }
-        (true, is_short, is_long, is_very_long)
+    }
+}
+
+impl From<u8> for RLPHeader {
+    fn from(byte: u8) -> Self {
+        match byte {
+            0..RLP_SHORT => RLPHeader::Short,
+            RLP_SHORT..RLP_LONG => RLPHeader::Long,
+            RLP_LONG..RLP_LIST_SHORT => RLPHeader::VeryLong,
+            RLP_LIST_SHORT..RLP_LIST_LONG => RLPHeader::ShortList,
+            RLP_LIST_LONG..=u8::MAX => RLPHeader::LongList,
+        }
     }
 }
 
@@ -68,10 +85,7 @@ pub(crate) struct RLPListGadget<F> {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RLPListWitness {
-    pub(crate) is_short: bool,
-    pub(crate) is_long: bool,
-    pub(crate) is_very_long: bool,
-    pub(crate) is_string: bool,
+    pub(crate) header: RLPHeader,
     pub(crate) bytes: Vec<u8>,
 }
 
@@ -110,20 +124,19 @@ impl<F: Field> RLPListGadget<F> {
         offset: usize,
         bytes: &[u8],
     ) -> Result<RLPListWitness, Error> {
-        let (is_list, is_short, is_long, is_very_long) = decode_rlp(bytes[0]);
-        let is_string = !is_list;
+        let header = RLPHeader::from(bytes[0]);
 
-        self.is_short.assign(region, offset, is_short.scalar())?;
-        self.is_long.assign(region, offset, is_long.scalar())?;
+        self.is_short
+            .assign(region, offset, header.is_short().scalar())?;
+        self.is_long
+            .assign(region, offset, header.is_long().scalar())?;
         self.is_very_long
-            .assign(region, offset, is_very_long.scalar())?;
-        self.is_string.assign(region, offset, is_string.scalar())?;
+            .assign(region, offset, header.is_very_long().scalar())?;
+        self.is_string
+            .assign(region, offset, header.is_string().scalar())?;
 
         Ok(RLPListWitness {
-            is_short,
-            is_long,
-            is_very_long,
-            is_string,
+            header,
             bytes: bytes.to_vec(),
         })
     }
@@ -216,22 +229,22 @@ impl<F: Field> RLPListGadget<F> {
 
 impl RLPListWitness {
     pub(crate) fn is_list(&self) -> bool {
-        !self.is_string
+        !self.header.is_string()
     }
 
     // Single RLP byte, length at most 55 bytes
     pub(crate) fn is_short(&self) -> bool {
-        self.is_short
+        self.header.is_short()
     }
 
     // RLP byte followed by the number of bytes in length, followed by the length
     pub(crate) fn is_long(&self) -> bool {
-        self.is_long
+        self.header.is_long()
     }
 
     // RLP byte followed by the number of bytes in length, followed by the length
     pub(crate) fn is_very_long(&self) -> bool {
-        self.is_very_long
+        self.header.is_very_long()
     }
 
     /// Number of RLP bytes
@@ -246,9 +259,9 @@ impl RLPListWitness {
     /// Returns the total length of the list (including RLP bytes)
     pub(crate) fn num_bytes(&self) -> usize {
         matchw! {
-            self.is_short => get_num_bytes_list_short::value(self.bytes[0]),
-            self.is_long => 2 + (self.bytes[1] as usize),
-            self.is_very_long => 3 + (self.bytes[1] as usize) * 256 + (self.bytes[2] as usize),
+            self.is_short() => get_num_bytes_list_short::value(self.bytes[0]),
+            self.is_long() => 2 + (self.bytes[1] as usize),
+            self.is_very_long() => 3 + (self.bytes[1] as usize) * 256 + (self.bytes[2] as usize),
         }
     }
 
@@ -326,11 +339,15 @@ pub(crate) struct RLPValueGadget<F> {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RLPValueWitness {
-    pub(crate) is_short: bool,
-    pub(crate) is_long: bool,
-    pub(crate) is_very_long: bool,
-    pub(crate) is_list: bool,
+    pub(crate) header: RLPHeader,
     pub(crate) bytes: Vec<u8>,
+}
+
+impl Deref for RLPValueWitness {
+    type Target = RLPHeader;
+    fn deref(&self) -> &Self::Target {
+        &self.header
+    }
 }
 
 impl<F: Field> RLPValueGadget<F> {
@@ -368,19 +385,19 @@ impl<F: Field> RLPValueGadget<F> {
         offset: usize,
         bytes: &[u8],
     ) -> Result<RLPValueWitness, Error> {
-        let (is_list, is_short, is_long, is_very_long) = decode_rlp(bytes[0]);
+        let header = RLPHeader::from(bytes[0]);
 
-        self.is_short.assign(region, offset, is_short.scalar())?;
-        self.is_long.assign(region, offset, is_long.scalar())?;
+        self.is_short
+            .assign(region, offset, header.is_short().scalar())?;
+        self.is_long
+            .assign(region, offset, header.is_long().scalar())?;
         self.is_very_long
-            .assign(region, offset, is_very_long.scalar())?;
-        self.is_list.assign(region, offset, is_list.scalar())?;
+            .assign(region, offset, header.is_very_long().scalar())?;
+        self.is_list
+            .assign(region, offset, header.is_list().scalar())?;
 
         Ok(RLPValueWitness {
-            is_short,
-            is_long,
-            is_very_long,
-            is_list,
+            header,
             bytes: bytes.to_vec(),
         })
     }
@@ -493,35 +510,6 @@ impl<F: Field> RLPValueGadget<F> {
 }
 
 impl RLPValueWitness {
-    pub(crate) fn is_string(&self) -> bool {
-        !self.is_list
-    }
-
-    // Single RLP byte containing the byte value
-    pub(crate) fn is_short(&self) -> bool {
-        self.is_short
-    }
-
-    // Single RLP byte containing the length of the value
-    pub(crate) fn is_long(&self) -> bool {
-        self.is_long
-    }
-
-    // RLP byte containing the length of the length,
-    // followed by the length, followed by the actual data
-    pub(crate) fn is_very_long(&self) -> bool {
-        self.is_very_long
-    }
-
-    /// Number of RLP bytes
-    pub(crate) fn num_rlp_bytes(&self) -> usize {
-        matchw! {
-            self.is_short() => 0,
-            self.is_long() => 1,
-            self.is_very_long() => 2,
-        }
-    }
-
     /// Number of bytes in total (including RLP bytes)
     pub(crate) fn num_bytes(&self) -> usize {
         matchw! {

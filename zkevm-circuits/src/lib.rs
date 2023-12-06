@@ -5,6 +5,8 @@
 #![allow(incomplete_features)]
 // Needed by DummyGadget in evm circuit
 #![feature(adt_const_params)]
+// Use in RLP
+#![feature(exclusive_range_pattern)]
 // Required for adding reasons in allow(dead_code)
 #![feature(lint_reasons)]
 // Needed by some builder patterns in testing modules.

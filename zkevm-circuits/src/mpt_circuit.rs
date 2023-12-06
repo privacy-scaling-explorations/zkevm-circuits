@@ -30,7 +30,7 @@ use self::{
     account_leaf::AccountLeafConfig,
     helpers::RLPItemView,
     param::RLP_UNIT_NUM_BYTES,
-    rlp_gadgets::decode_rlp,
+    rlp_gadgets::RLPHeader,
     witness_row::{
         AccountRowType, ExtensionBranchRowType, Node, StartRowType, StorageRowType,
         NODE_RLP_TYPES_ACCOUNT, NODE_RLP_TYPES_BRANCH, NODE_RLP_TYPES_START,
@@ -604,13 +604,13 @@ impl<F: Field> MPTConfig<F> {
 
                 // RLP
                 for byte in 0..255 {
-                    let (is_list, is_short, is_long, is_very_long) = decode_rlp(byte);
+                    let header = RLPHeader::from(byte);
                     assignf!(region, (self.fixed_table[0], offset) => FixedTableTag::RLP.scalar())?;
                     assignf!(region, (self.fixed_table[1], offset) => byte.scalar())?;
-                    assignf!(region, (self.fixed_table[2], offset) => is_list.scalar())?;
-                    assignf!(region, (self.fixed_table[3], offset) => is_short.scalar())?;
-                    assignf!(region, (self.fixed_table[4], offset) => is_long.scalar())?;
-                    assignf!(region, (self.fixed_table[5], offset) => is_very_long.scalar())?;
+                    assignf!(region, (self.fixed_table[2], offset) => header.is_list().scalar())?;
+                    assignf!(region, (self.fixed_table[3], offset) => header.is_short().scalar())?;
+                    assignf!(region, (self.fixed_table[4], offset) => header.is_long().scalar())?;
+                    assignf!(region, (self.fixed_table[5], offset) => header.is_very_long().scalar())?;
                     offset += 1;
                 }
 
