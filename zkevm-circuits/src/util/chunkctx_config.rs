@@ -40,9 +40,8 @@ pub struct ChunkContextConfig<F> {
     /// instance column for chunk context
     pub pi_chunkctx: Column<Instance>,
 
-    /// Lt chip to check: src_addr < src_addr_end.
-    /// Since `src_addr` and `src_addr_end` are u64, 8 bytes are sufficient for
-    /// the Lt chip.
+    /// Lt chip to check: chunk_index < total_chunks.
+    /// Assume `total_chunks` < 2**8 = 256
     pub is_chunk_index_lt_total_chunks: LtConfig<F, 1>,
 }
 

@@ -144,8 +144,11 @@ where
                     config.aggregate::<M, As>(ctx, &self.svk, self.snarks.clone())?;
                 let instances = instances
                     .iter()
-                    .flatten()
-                    .map(|instance| instance.assigned().to_owned())
+                    .flat_map(|instances| {
+                        instances
+                            .iter()
+                            .map(|instance| instance.assigned().to_owned())
+                    })
                     .collect_vec();
                 Ok((instances, accumulator_limbs))
             },
