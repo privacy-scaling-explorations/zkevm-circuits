@@ -330,8 +330,6 @@ fn get_rwtable_fingerprints<F: Field>(
     prev_continuous_fingerprint: F,
     rows: &Vec<Rw>,
 ) -> RwTablePermutationFingerprints<F> {
-    // &<dyn ToVec<Value<F>>>::to2dvec(&chronological_rws_rows)
-
     let x = rows.to2dvec();
     let fingerprints = get_permutation_fingerprints(
         &x,

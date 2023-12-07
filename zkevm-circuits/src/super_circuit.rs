@@ -264,8 +264,12 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             },
         );
 
-        // constraint chronological/by address rwtable row fingerprint must be the same in first
+        // constraint chronological/by address rwtable `row fingerprint` must be the same in first
         // chunk first row.
+        // `row fingerprint` is not a constant so root circuit can NOT constraint it.
+        // so we constraints here by gate
+        // Furthermore, first row in rw_table should be `Rw::Start`, which will be lookup by
+        // `BeginChunk` at first chunk
         meta.create_gate(
             "chronological rwtable row fingerprint == by address rwtable row fingerprint",
             |meta| {

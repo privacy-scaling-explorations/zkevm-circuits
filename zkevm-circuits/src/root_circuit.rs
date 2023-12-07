@@ -277,7 +277,7 @@ where
                         // `last.sc_rwtable_next_fingerprint ==
                         // last.ec_rwtable_next_fingerprint` will be checked inside super circuit so
                         // here no need to checked
-                        // Other field in last instances already be checked in below chunk
+                        // Other field in last instances already be checked in chunk
                         // continuity
 
                         // define 0, 1, total_chunk as constant
@@ -335,7 +335,7 @@ where
                     .expect("error");
 
                 // constraint consistency between chunk
-                let _ = supercircuit_instances.iter().tuple_windows().inspect(
+                supercircuit_instances.iter().tuple_windows().for_each(
                     |(instance_i, instance_i_plus_one)| {
                         vec![
                             (
