@@ -210,7 +210,7 @@ impl<F: Field> PermutationChip<F> {
             .map(|_| meta.advice_column())
             .collect::<Vec<Column<Advice>>>(); // first element is gamma**1
 
-        let q_row_non_first = meta.selector();
+        let q_row_non_first = meta.complex_selector();
         let q_row_enable = meta.selector();
         let q_row_last = meta.selector();
 
