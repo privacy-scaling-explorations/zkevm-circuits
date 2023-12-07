@@ -93,7 +93,8 @@ impl<F: Field> ChunkContextConfig<F> {
         );
 
         meta.create_gate("chunk_index < total_chunks", |meta| {
-            [1.expr() - is_chunk_index_lt_total_chunks.is_lt(meta, None)]
+            [meta.query_selector(q_chunk_context)
+                * (1.expr() - is_chunk_index_lt_total_chunks.is_lt(meta, None))]
         });
 
         let is_first_chunk = IsZeroChip::configure(
@@ -135,8 +136,8 @@ impl<F: Field> ChunkContextConfig<F> {
         chunk_context: &ChunkContext,
         max_offset_index: usize,
     ) -> Result<(), Error> {
-        let lt_chip = LtChip::construct(self.is_chunk_index_lt_total_chunks);
-        lt_chip.load(layouter)?;
+        let is_chunk_index_lt_total_chunks = LtChip::construct(self.is_chunk_index_lt_total_chunks);
+        is_chunk_index_lt_total_chunks.load(layouter)?;
 
         let (
             chunk_index_cell,
@@ -196,6 +197,12 @@ impl<F: Field> ChunkContextConfig<F> {
                         Value::known(F::from(
                             (chunk_context.total_chunks - chunk_context.chunk_index - 1) as u64,
                         )),
+                    )?;
+                    is_chunk_index_lt_total_chunks.assign(
+                        &mut region,
+                        offset,
+                        Value::known(F::from(chunk_context.chunk_index as u64)),
+                        Value::known(F::from(chunk_context.total_chunks as u64)),
                     )?;
                 }
                 Ok(())

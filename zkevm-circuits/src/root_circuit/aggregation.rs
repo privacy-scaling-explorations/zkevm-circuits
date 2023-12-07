@@ -66,8 +66,8 @@ const R_P: usize = 60;
 pub type EccChip<C> = halo2_wrong_ecc::BaseFieldEccChip<C, LIMBS, BITS>;
 /// `Halo2Loader` with hardcoded `EccChip`.
 pub type Halo2Loader<'a, C> = loader::halo2::Halo2Loader<'a, C, EccChip<C>>;
-/// `LoaderedScalar` with hardcoded `EccChip`.
-pub type LoaderedScalar<'a, C> = Scalar<'a, C, EccChip<C>>;
+/// `LoadedScalar` with hardcoded `EccChip`.
+pub type LoadedScalar<'a, C> = Scalar<'a, C, EccChip<C>>;
 /// `PoseidonTranscript` with hardcoded parameter with 128-bits security.
 pub type PoseidonTranscript<C, S> =
     transcript::halo2::PoseidonTranscript<C, NativeLoader, S, T, RATE, R_F, R_P>;
@@ -240,7 +240,7 @@ impl AggregationConfig {
         loader: Rc<Halo2Loader<'c, M::G1Affine>>,
         user_challenges: Option<&UserChallenge>,
         proofs: Vec<PlonkProof<M::G1Affine, Rc<Halo2Loader<'c, M::G1Affine>>, As>>,
-    ) -> Result<Vec<LoaderedScalar<'c, M::G1Affine>>, Error>
+    ) -> Result<Vec<LoadedScalar<'c, M::G1Affine>>, Error>
     where
         M: MultiMillerLoop,
         M::Scalar: Field,
