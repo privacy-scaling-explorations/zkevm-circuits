@@ -284,9 +284,13 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 let q_row_first = 1.expr()
                     - meta.query_selector(evm_circuit.rw_permutation_config.q_row_non_first);
 
+                let q_row_enable =
+                    meta.query_selector(evm_circuit.rw_permutation_config.q_row_enable);
+
                 vec![
                     is_first_chunk
                         * q_row_first
+                        * q_row_enable
                         * (chronological_rwtable_row_fingerprint
                             - by_address_rwtable_row_fingerprint),
                 ]

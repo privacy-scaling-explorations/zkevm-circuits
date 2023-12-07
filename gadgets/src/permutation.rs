@@ -30,7 +30,8 @@ pub struct PermutationChipConfig<F> {
     power_of_gamma: Vec<Column<Advice>>,
     /// q_row_non_first
     pub q_row_non_first: Selector, // 1 between (first, end], exclude first
-    q_row_enable: Selector, // 1 for all rows (including first)
+    /// q_row_enable
+    pub q_row_enable: Selector, // 1 for all rows (including first)
     /// q_row_last
     pub q_row_last: Selector, // 1 in the last row
 
@@ -211,7 +212,7 @@ impl<F: Field> PermutationChip<F> {
             .collect::<Vec<Column<Advice>>>(); // first element is gamma**1
 
         let q_row_non_first = meta.complex_selector();
-        let q_row_enable = meta.selector();
+        let q_row_enable = meta.complex_selector();
         let q_row_last = meta.selector();
 
         meta.enable_equality(acc_fingerprints);
