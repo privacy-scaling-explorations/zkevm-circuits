@@ -1,6 +1,7 @@
 use bus_mapping::circuit_input_builder::ChunkContext;
 use gadgets::{
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
+    less_than::{LtChip, LtConfig},
     util::Expr,
 };
 use halo2_proofs::{
@@ -17,6 +18,7 @@ use crate::{
     },
 };
 use eth_types::Field;
+use gadgets::less_than::LtInstruction;
 
 use super::Challenges;
 
@@ -37,6 +39,11 @@ pub struct ChunkContextConfig<F> {
     pub chunkctx_table: ChunkCtxTable,
     /// instance column for chunk context
     pub pi_chunkctx: Column<Instance>,
+
+    /// Lt chip to check: src_addr < src_addr_end.
+    /// Since `src_addr` and `src_addr_end` are u64, 8 bytes are sufficient for
+    /// the Lt chip.
+    pub is_chunk_index_lt_total_chunks: LtConfig<F, 1>,
 }
 
 impl<F: Field> ChunkContextConfig<F> {
@@ -77,6 +84,18 @@ impl<F: Field> ChunkContextConfig<F> {
             });
         });
 
+        // assume max total_chunks < 2^8
+        let is_chunk_index_lt_total_chunks = LtChip::<_, 1>::configure(
+            meta,
+            |meta| meta.query_selector(q_chunk_context),
+            |meta| meta.query_advice(chunk_index, Rotation::cur()),
+            |meta| meta.query_advice(total_chunks, Rotation::cur()),
+        );
+
+        meta.create_gate("chunk_index < total_chunks", |meta| {
+            [1.expr() - is_chunk_index_lt_total_chunks.is_lt(meta, None)]
+        });
+
         let is_first_chunk = IsZeroChip::configure(
             meta,
             |meta| meta.query_selector(q_chunk_context),
@@ -105,6 +124,7 @@ impl<F: Field> ChunkContextConfig<F> {
             is_last_chunk,
             chunkctx_table,
             pi_chunkctx,
+            is_chunk_index_lt_total_chunks,
         }
     }
 
@@ -115,6 +135,9 @@ impl<F: Field> ChunkContextConfig<F> {
         chunk_context: &ChunkContext,
         max_offset_index: usize,
     ) -> Result<(), Error> {
+        let lt_chip = LtChip::construct(self.is_chunk_index_lt_total_chunks);
+        lt_chip.load(layouter)?;
+
         let (
             chunk_index_cell,
             chunk_index_next_cell,
