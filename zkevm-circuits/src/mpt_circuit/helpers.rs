@@ -293,7 +293,7 @@ pub(crate) fn ext_key_rlc_calc_value<F: Field>(
         )
     };
     matchw! {
-        is_long && ((is_key_odd && !is_key_part_odd) || (!is_key_odd && is_key_part_odd)) => {
+        is_long && (is_key_odd != is_key_part_odd) => {
             // Here we need to multiply nibbles over bytes with different r's so we need to rlc over separate nibbles.
             // Note that there can be at max 31 key bytes because 32 same bytes would mean
             // the two keys being the same - update operation, not splitting into extension node.
@@ -307,7 +307,7 @@ pub(crate) fn ext_key_rlc_calc_value<F: Field>(
             }).collect::<Vec<_>>());
             calc_rlc(&key_bytes, 1.scalar())
         },
-        is_long && ((!is_key_odd && !is_key_part_odd) || (is_key_odd && is_key_part_odd)) => {
+        is_long && (is_key_odd == is_key_part_odd) => {
             let additional_mult = if is_key_part_odd { r } else { 1.scalar() };
             calc_rlc(&data[0][1..].iter().map(|byte| byte.scalar()).collect::<Vec<_>>(), additional_mult)
         },
