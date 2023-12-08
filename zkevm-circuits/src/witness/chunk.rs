@@ -94,7 +94,7 @@ pub fn chunk_convert<F: Field>(
                         &<dyn ToVec<Value<F>>>::to2dvec(rows),
                         Value::known(alpha),
                         Value::known(gamma),
-                        Value::known(prev.clone()),
+                        Value::known(*prev),
                     )
                     .last()
                     .cloned()
@@ -120,7 +120,7 @@ pub fn chunk_convert<F: Field>(
         end_chunk: chunk.end_chunk.clone(),
         chunk_context: chunk.ctx.clone(),
         rws,
-        fixed_param: chunk.fixed_param.clone(),
+        fixed_param: chunk.fixed_param,
         prev_block: Box::new(None),
     };
 

@@ -346,9 +346,9 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
                     self.cur_chunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
                 }
 
-                self.set_end_chunk(&tx.last_step());
+                self.set_end_chunk(tx.last_step());
                 self.commit_chunk(true);
-                self.set_begin_chunk(&tx.last_step());
+                self.set_begin_chunk(tx.last_step());
             }
         }
         // Generate EndTx step
@@ -458,7 +458,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         // We need at least 1 extra row at offset 0 for chunk continuous
         #[allow(clippy::int_plus_one)]
         assert!(
-            total_rws + 1 <= max_rws,
+            total_rws < max_rws,
             "total_inner_rws + 1 <= max_rws, total_inner_rws={}, max_rws={}",
             total_rws,
             max_rws
@@ -715,7 +715,7 @@ impl CircuitInputBuilder<DynamicCParams> {
             chunk_ctx: ChunkContext::new(0, total_chunks, true),
             circuits_params: target_params,
         };
-        Ok(cib.handle_block(eth_block, geth_traces)?)
+        cib.handle_block(eth_block, geth_traces)
     }
 }
 
@@ -993,7 +993,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     ) -> Result<CircuitInputBuilder<FixedCParams>, Error> {
         let block = Block::new(self.chain_id, history_hashes, prev_state_root, eth_block)?;
         let builder = CircuitInputBuilder::new(sdb, code_db, block, self.circuits_params);
-        Ok(builder.handle_block(eth_block, geth_traces)?)
+        builder.handle_block(eth_block, geth_traces)
     }
 
     /// Perform all the steps to generate the circuit inputs

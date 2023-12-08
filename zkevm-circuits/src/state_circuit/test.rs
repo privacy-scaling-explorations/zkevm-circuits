@@ -93,7 +93,7 @@ fn verifying_key_independent_of_rw_length() {
         ..Default::default()
     };
 
-    let no_rows = StateCircuit::<Fr>::new(RwMap::default(), N_ROWS, &chunk.clone());
+    let no_rows = StateCircuit::<Fr>::new(RwMap::default(), N_ROWS, &chunk);
 
     chunk.rw_fingerprint = get_permutation_fingerprint_of_rwmap(
         &RwMap::from(&OperationContainer {

@@ -164,12 +164,11 @@ fn gen_tx_log_data() -> CircuitInputBuilder<FixedCParams> {
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
     // Needs default params for variadic check
-    let builder =
-        BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
+    
+    BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
             .new_circuit_input_builder()
             .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-    builder
+            .unwrap()
 }
 
 #[test]
