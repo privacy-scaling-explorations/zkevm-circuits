@@ -19,7 +19,7 @@ use snark_verifier::{
     util::arithmetic::MultiMillerLoop,
     verifier::plonk::PlonkProtocol,
 };
-use std::{iter, marker::PhantomData, rc::Rc};
+use std::{marker::PhantomData, rc::Rc};
 
 mod aggregation;
 
@@ -147,11 +147,14 @@ where
         super_circuit_proof: Value<&'a [u8]>,
         user_challenges: Option<&'a UserChallenge>,
     ) -> Result<Self, snark_verifier::Error> {
-        let num_instances = super_circuit_protocol.num_instance.iter().sum::<usize>() + 4 * LIMBS;
+        let num_instances = super_circuit_protocol.num_instance.iter().sum::<usize>();
 
         // compute real instance value
-        let instance = {
-            let mut instance = Ok(vec![M::Scalar::ZERO; num_instances]);
+        let (flatten_super_circuit_instances, accumulator_limbs) = {
+            let (mut instance, mut accumulator_limbs) = (
+                vec![M::Scalar::ZERO; num_instances],
+                Ok(vec![M::Scalar::ZERO; 4 * LIMBS]),
+            );
             super_circuit_instances
                 .as_ref()
                 .zip(super_circuit_proof.as_ref())
@@ -161,18 +164,21 @@ where
                         super_circuit_instances,
                         super_circuit_proof,
                     );
-                    instance = aggregate::<M, As>(params, [snark]).map(|accumulator_limbs| {
-                        iter::empty()
-                            // Propagate `SuperCircuit`'s instance
-                            .chain(super_circuit_instances.iter().flatten().cloned())
-                            // Output aggregated accumulator limbs
-                            .chain(accumulator_limbs)
-                            .collect_vec()
-                    });
+                    accumulator_limbs = aggregate::<M, As>(params, [snark])
+                        .map(|accumulator_limbs| accumulator_limbs.to_vec());
+                    instance = super_circuit_instances
+                        .iter()
+                        .flatten()
+                        .cloned()
+                        .collect_vec()
                 });
-            instance?
+            (instance, accumulator_limbs?)
         };
-        debug_assert_eq!(instance.len(), num_instances);
+
+        debug_assert_eq!(flatten_super_circuit_instances.len(), num_instances);
+        let mut flatten_instance =
+            exposed_instances(&SuperCircuitInstance::new(flatten_super_circuit_instances));
+        flatten_instance.extend(accumulator_limbs);
 
         Ok(Self {
             svk: KzgSvk::<M>::new(params.get_g()[0]),
@@ -182,7 +188,7 @@ where
                 user_challenges,
                 super_circuit_proof,
             ),
-            instance,
+            instance: flatten_instance,
             _marker: PhantomData,
         })
     }
@@ -270,7 +276,7 @@ where
                     .collect::<Vec<SuperCircuitInstance<_>>>();
 
                 // constraint first and last chunk
-                let _ = supercircuit_instances
+                supercircuit_instances
                     .first()
                     .zip(supercircuit_instances.last())
                     .map(|(first_chunk, _last)| {
@@ -407,14 +413,13 @@ where
                     },
                 );
 
-                let instances = loaded_instances
-                    .first()
-                    .unwrap()
-                    .iter()
-                    .map(|instance| instance.assigned().to_owned())
-                    .collect_vec();
-
-                Ok((instances, accumulator_limbs))
+                Ok((
+                    exposed_instances(supercircuit_instances.first().unwrap())
+                        .iter()
+                        .map(|instance| instance.assigned().to_owned())
+                        .collect_vec(),
+                    accumulator_limbs,
+                ))
             },
         )?;
 
@@ -426,4 +431,13 @@ where
 
         Ok(())
     }
+}
+
+/// get instances to expose
+fn exposed_instances<T: Copy>(supercircuit_instances: &SuperCircuitInstance<T>) -> Vec<T> {
+    vec![
+        // pi circuit
+        supercircuit_instances.pi_digest_lo,
+        supercircuit_instances.pi_digest_hi,
+    ]
 }
