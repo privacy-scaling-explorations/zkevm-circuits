@@ -1,6 +1,3 @@
-
-
-
 use super::{CircuitsParams, ExecStep, FixedCParams};
 use crate::operation::RWCounter;
 

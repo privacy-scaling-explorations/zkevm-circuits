@@ -164,11 +164,11 @@ fn gen_tx_log_data() -> CircuitInputBuilder<FixedCParams> {
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
     // Needs default params for variadic check
-    
+
     BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
-            .new_circuit_input_builder()
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap()
+        .new_circuit_input_builder()
+        .handle_block(&block.eth_block, &block.geth_traces)
+        .unwrap()
 }
 
 #[test]
@@ -304,11 +304,10 @@ fn variadic_size_check() {
     let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
         .unwrap()
         .into();
-    let builder =
-        BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
-            .new_circuit_input_builder()
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
+    let builder = BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
+        .new_circuit_input_builder()
+        .handle_block(&block.eth_block, &block.geth_traces)
+        .unwrap();
     let block2 = block_convert::<Fr>(&builder).unwrap();
 
     let circuit = CopyCircuit::<Fr>::new(block1.copy_events, block1.circuits_params.max_copy_rows);

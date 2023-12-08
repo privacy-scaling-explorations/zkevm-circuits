@@ -73,11 +73,8 @@ impl<F: Field> ExecutionGadget<F> for EndChunkGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{test_util::CircuitTestBuilder};
-    use bus_mapping::{
-        circuit_input_builder::{FixedCParams},
-        operation::Target,
-    };
+    use crate::test_util::CircuitTestBuilder;
+    use bus_mapping::{circuit_input_builder::FixedCParams, operation::Target};
     use eth_types::bytecode;
     use mock::TestContext;
 

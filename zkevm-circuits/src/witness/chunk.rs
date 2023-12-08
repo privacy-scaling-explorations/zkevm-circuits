@@ -5,7 +5,7 @@ use bus_mapping::{
     circuit_input_builder::{self, ChunkContext, FixedCParams},
     Error,
 };
-use eth_types::{Field};
+use eth_types::Field;
 use gadgets::permutation::get_permutation_fingerprints;
 use halo2_proofs::circuit::Value;
 
@@ -46,7 +46,7 @@ pub fn chunk_convert<F: Field>(
 ) -> Result<Chunk<F>, Error> {
     let block = &builder.block;
     let chunk = builder.get_chunk(idx);
-    let mut rws = RwMap::default();
+    let rws = RwMap::default();
 
     // FIXME(Cecilia): debug
     println!(

@@ -87,7 +87,7 @@ impl BlockData<FixedCParams> {
 }
 
 impl BlockData<DynamicCParams> {
-    /// Create a new block with one chunk 
+    /// Create a new block with one chunk
     /// from the given Geth data with default CircuitsParams.
     pub fn new_from_geth_data(geth_data: GethData) -> Self {
         Self::new_from_geth_data_chunked(geth_data, 1)

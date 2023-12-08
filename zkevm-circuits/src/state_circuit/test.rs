@@ -4,8 +4,8 @@ use crate::{
     util::{unusable_rows, SubCircuit},
     witness::{MptUpdates, Rw, RwMap},
 };
-use bus_mapping::{
-    operation::{MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW},
+use bus_mapping::operation::{
+    MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
 };
 use eth_types::{
     address,

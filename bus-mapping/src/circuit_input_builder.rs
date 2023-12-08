@@ -162,7 +162,7 @@ impl Default for FixedCParams {
 /// the block. 2. For each [`eth_types::Transaction`] in the block, take the
 /// [`eth_types::GethExecTrace`] to build the circuit input associated with
 /// each transaction, and the bus-mapping operations associated with each
-/// [`eth_types::GethExecStep`] in the [`eth_types::GethExecTrace`]. 3. If `Rw`s 
+/// [`eth_types::GethExecStep`] in the [`eth_types::GethExecTrace`]. 3. If `Rw`s
 /// generated during Transactions exceed the `max_rws` threshold, seperate witness
 /// into multiple chunks.
 ///
@@ -210,7 +210,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
 
     /// Set the total number of chunks for existing CircuitInputBuilder,
     /// API for chunking the existing tests then run with a specific chunk
-    pub fn set_total_chunk(&mut self, total_chunks: usize){
+    pub fn set_total_chunk(&mut self, total_chunks: usize) {
         self.circuits_params.set_total_chunk(total_chunks);
         self.chunks = vec![Chunk::default(); total_chunks];
         self.chunk_ctx.total_chunks = total_chunks;
@@ -713,7 +713,7 @@ impl CircuitInputBuilder<DynamicCParams> {
 
     /// Handle a block by handling each transaction to generate all the
     /// associated operations. Dry run the block to determind the target
-    /// [`FixedCParams`] from to total number of chunks. 
+    /// [`FixedCParams`] from to total number of chunks.
     pub fn handle_block(
         self,
         eth_block: &EthBlock,

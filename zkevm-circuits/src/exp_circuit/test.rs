@@ -49,7 +49,7 @@ fn gen_data(code: Bytecode, default_params: bool) -> CircuitInputBuilder<FixedCP
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
     // Needs default parameters for variadic size test
-    
+
     if default_params {
         BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
             .new_circuit_input_builder()
@@ -120,11 +120,10 @@ fn variadic_size_check() {
     let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
         .unwrap()
         .into();
-    let builder =
-        BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
-            .new_circuit_input_builder()
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
+    let builder = BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
+        .new_circuit_input_builder()
+        .handle_block(&block.eth_block, &block.geth_traces)
+        .unwrap();
     let block = block_convert::<Fr>(&builder).unwrap();
     let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
     let circuit = ExpCircuit::<Fr>::new(block.exp_events, chunk.fixed_param.max_exp_steps);
