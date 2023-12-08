@@ -90,6 +90,8 @@ pub struct DynamicCParams {
 pub trait CircuitsParams: Debug + Copy {
     /// Return the total number of chunks
     fn total_chunks(&self) -> usize;
+    /// Set total number of chunks
+    fn set_total_chunk(&mut self, total_chunks: usize);
     /// Return the maximun Rw
     fn max_rws(&self) -> usize;
     /// Return whether the parameters are dynamic.
@@ -102,6 +104,9 @@ impl CircuitsParams for FixedCParams {
     fn total_chunks(&self) -> usize {
         self.total_chunks
     }
+    fn set_total_chunk(&mut self, total_chunks: usize) {
+        self.total_chunks = total_chunks;
+    }
     fn max_rws(&self) -> usize {
         self.max_rws
     }
@@ -112,6 +117,9 @@ impl CircuitsParams for FixedCParams {
 impl CircuitsParams for DynamicCParams {
     fn total_chunks(&self) -> usize {
         self.total_chunks
+    }
+    fn set_total_chunk(&mut self, total_chunks: usize) {
+        self.total_chunks = total_chunks;
     }
     fn max_rws(&self) -> usize {
         unreachable!()
@@ -198,6 +206,14 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             chunk_ctx: ChunkContext::new(0, total_chunks, params.is_dynamic()),
             circuits_params: params,
         }
+    }
+
+    /// Set the total number of chunks for existing CircuitInputBuilder,
+    /// API for chunking the existing tests then run with a specific chunk
+    pub fn set_total_chunk(&mut self, total_chunks: usize){
+        self.circuits_params.set_total_chunk(total_chunks);
+        self.chunks = vec![Chunk::default(); total_chunks];
+        self.chunk_ctx.total_chunks = total_chunks;
     }
 
     /// Obtain a mutable reference to the state that the `CircuitInputBuilder`
@@ -342,7 +358,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             .map(|_| self.block_ctx.rwc.inc_pre())
             .collect::<Vec<RWCounter>>();
         // just bump rwc in chunk_ctx as block_ctx rwc to assure same delta apply
-        let rw_counters_innerchunk = (0..STEP_STATE_LEN)
+        let rw_counters_inner_chunk = (0..STEP_STATE_LEN)
             .map(|_| self.chunk_ctx.rwc.inc_pre())
             .collect::<Vec<RWCounter>>();
 
@@ -385,7 +401,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
 
         tags.iter()
             .zip_eq(rw_counters)
-            .zip_eq(rw_counters_innerchunk)
+            .zip_eq(rw_counters_inner_chunk)
             .for_each(|(((tag, value), rw_counter), inner_rw_counter)| {
                 push_op(
                     &mut state.block.container,
