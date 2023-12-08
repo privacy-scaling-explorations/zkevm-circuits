@@ -283,7 +283,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        chunk: &Chunk<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         call: &Call,
         step: &ExecStep,

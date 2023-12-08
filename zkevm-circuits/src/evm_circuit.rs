@@ -779,7 +779,7 @@ mod evm_circuit_stats {
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b).unwrap(),
         )
-        .modifier(Box::new(|block, chunk| {
+        .modifier(Box::new(|_block, chunk| {
             chunk.fixed_param.max_evm_rows = (1 << 18) - 100
         }))
         .run();
@@ -795,7 +795,7 @@ mod evm_circuit_stats {
         let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
             .unwrap()
             .into();
-        let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
+        let builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
             .new_circuit_input_builder()
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
@@ -818,7 +818,7 @@ mod evm_circuit_stats {
         )
         .unwrap()
         .into();
-        let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
+        let builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
             .new_circuit_input_builder()
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();

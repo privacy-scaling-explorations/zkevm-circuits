@@ -115,7 +115,7 @@ fn test_1tx_1maxtx() {
     wallets.insert(wallet_a.address(), wallet_a);
 
     let mut block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data_with_params(
+    let builder = BlockData::new_from_geth_data_with_params(
         block.clone(),
         FixedCParams {
             max_txs: MAX_TXS,

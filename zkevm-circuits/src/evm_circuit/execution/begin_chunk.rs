@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for BeginChunkGadget<F> {
         _region: &mut CachedRegion<'_, '_, F>,
         _offset: usize,
         _block: &Block<F>,
-        chunk: &Chunk<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         _step: &ExecStep,

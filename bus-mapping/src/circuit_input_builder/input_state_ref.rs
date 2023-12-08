@@ -9,8 +9,7 @@ use crate::{
     error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError},
     exec_trace::OperationRef,
     operation::{
-        AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
-        RWCounter, StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField,
+        AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation, StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField,
         TxReceiptOp, RW,
     },
     state_db::{CodeDB, StateDB},

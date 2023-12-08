@@ -1309,7 +1309,7 @@ impl<F: Field> RwTablePaddingGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        _block: &Block<F>,
         chunk: &Chunk<F>,
         inner_rws_before_padding: u64,
         step: &ExecStep,

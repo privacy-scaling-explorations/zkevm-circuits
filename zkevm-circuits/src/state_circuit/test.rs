@@ -5,7 +5,6 @@ use crate::{
     witness::{MptUpdates, Rw, RwMap},
 };
 use bus_mapping::{
-    circuit_input_builder::ChunkContext,
     operation::{MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW},
 };
 use eth_types::{

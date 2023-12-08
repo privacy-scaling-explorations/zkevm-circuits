@@ -7,7 +7,7 @@ use crate::{
     witness::{Block, Chunk, Rw},
 };
 use bus_mapping::{
-    circuit_input_builder::{ChunkContext, FixedCParams},
+    circuit_input_builder::{FixedCParams},
     mock::BlockData,
 };
 use eth_types::geth_types::GethData;
@@ -185,13 +185,16 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// Triggers the `CircuitTestBuilder` to convert the [`TestContext`] if any,
     /// into a [`Block`] and apply the default or provided modifiers or
     /// circuit checks to the provers generated for the State and EVM circuits.
-    pub fn run(mut self){
+    pub fn run(self) {
         self.run_chunk(0)
     }
-    
+
     ///
-    pub fn run_chunk(mut self, chunk_index: usize) {
-        let total_chunk = self.circuits_params.expect("Fixed param not specified").total_chunks;
+    pub fn run_chunk(self, chunk_index: usize) {
+        let total_chunk = self
+            .circuits_params
+            .expect("Fixed param not specified")
+            .total_chunks;
         self.run_dynamic_chunk(total_chunk, chunk_index);
     }
 
@@ -250,13 +253,13 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         {
             let k = block.get_test_degree(&chunk);
 
-            let (active_gate_rows, active_lookup_rows) =
+            let (_active_gate_rows, _active_lookup_rows) =
                 EvmCircuit::<Fr>::get_active_rows(&block, &chunk);
 
             let circuit =
                 EvmCircuitCached::get_test_circuit_from_block(block.clone(), chunk.clone());
             let instance = circuit.instance();
-            let prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
+            let _prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
 
             // self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows)
         }
@@ -269,14 +272,14 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let k = cmp::max(log2_ceil(rows_needed + NUM_BLINDING_ROWS), 18);
             let state_circuit = StateCircuit::<Fr>::new(chunk.rws.clone(), params.max_rws, &chunk);
             let instance = state_circuit.instance();
-            let prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();
+            let _prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();
             // Skip verification of Start rows to accelerate testing
             let non_start_rows_len = state_circuit
                 .rows
                 .iter()
                 .filter(|rw| !matches!(rw, Rw::Padding { .. }))
                 .count();
-            let rows: Vec<usize> = (params.max_rws - non_start_rows_len..params.max_rws).collect();
+            let _rows: Vec<usize> = (params.max_rws - non_start_rows_len..params.max_rws).collect();
 
             // self.state_checks.as_ref()(prover, &rows, &rows);
         }

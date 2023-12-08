@@ -1,5 +1,5 @@
-use eth_types::{Word, U256};
-use halo2_proofs::circuit;
+
+
 
 use super::{CircuitsParams, ExecStep, FixedCParams};
 use crate::operation::RWCounter;

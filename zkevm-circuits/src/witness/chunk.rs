@@ -5,7 +5,7 @@ use bus_mapping::{
     circuit_input_builder::{self, ChunkContext, FixedCParams},
     Error,
 };
-use eth_types::{Field, ToScalar};
+use eth_types::{Field};
 use gadgets::permutation::get_permutation_fingerprints;
 use halo2_proofs::circuit::Value;
 

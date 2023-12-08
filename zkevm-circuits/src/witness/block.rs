@@ -1,4 +1,4 @@
-use super::{chunk, ExecStep, Rw, RwMap, Transaction};
+use super::{ExecStep, Rw, RwMap, Transaction};
 use crate::{
     evm_circuit::{detect_fixed_table_tags, EvmCircuit},
     exp_circuit::param::OFFSET_INCREMENT,

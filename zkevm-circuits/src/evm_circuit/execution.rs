@@ -1620,7 +1620,7 @@ impl<F: Field> ExecutionConfig<F> {
         assigned_stored_expressions: &[(String, F)],
         step: &ExecStep,
         block: &Block<F>,
-        chunk: &Chunk<F>,
+        _chunk: &Chunk<F>,
         challenges: &Challenges<Value<F>>,
     ) {
         let mut lookup_randomness = F::ZERO;

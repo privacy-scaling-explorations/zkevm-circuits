@@ -73,8 +73,11 @@ impl<F: Field> ExecutionGadget<F> for EndChunkGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{test_util::CircuitTestBuilder, util::word, witness::Rw};
-    use bus_mapping::{circuit_input_builder::{ChunkContext, FixedCParams}, operation::Target};
+    use crate::{test_util::CircuitTestBuilder};
+    use bus_mapping::{
+        circuit_input_builder::{FixedCParams},
+        operation::Target,
+    };
     use eth_types::bytecode;
     use mock::TestContext;
 
@@ -102,7 +105,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
         )
-        .modifier(Box::new(move |block, chunk| {
+        .modifier(Box::new(move |_block, chunk| {
             // TODO FIXME padding start as a workaround. The practical should be last chunk last row
             // rws
             // if let Some(a) = chunk.rws.0.get_mut(&Target::Start) {
@@ -134,13 +137,11 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
         )
-        .params(
-            FixedCParams {
-                total_chunks: 2,
-                max_rws: 60,
-                ..Default::default()
-            }
-        )
+        .params(FixedCParams {
+            total_chunks: 2,
+            max_rws: 60,
+            ..Default::default()
+        })
         .run_chunk(1);
     }
 
