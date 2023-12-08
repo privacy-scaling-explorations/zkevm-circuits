@@ -174,11 +174,8 @@ impl RwMap {
     /// Build Rws for assignment
     pub fn table_assignments(&self, keep_chronological_order: bool) -> Vec<Rw> {
         let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();
-        println!("RwRows table_assignments {:?}", rows.len());
         if keep_chronological_order {
-            rows.sort_by_key(|row|{
-                 (row.rw_counter(), row.tag() as u64)
-                });
+            rows.sort_by_key(|row| (row.rw_counter(), row.tag() as u64));
         } else {
             rows.sort_by_key(|row| {
                 (
@@ -196,7 +193,11 @@ impl RwMap {
     }
 
     /// Get RwMap for a chunk
-    pub fn from_chunked(container: &operation::OperationContainer, start: usize, end: usize) -> Self {
+    pub fn from_chunked(
+        container: &operation::OperationContainer,
+        start: usize,
+        end: usize,
+    ) -> Self {
         let mut rws = HashMap::default();
 
         rws.insert(
@@ -456,12 +457,10 @@ impl RwMap {
                 })
                 .collect(),
         );
-        let rows: Vec<Rw> = rws.values().flatten().cloned().collect();
-        println!("RwRows {:?}", rows);
+
         Self(rws)
     }
 }
-
 
 #[allow(
     missing_docs,

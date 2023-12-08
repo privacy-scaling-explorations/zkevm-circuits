@@ -1,12 +1,12 @@
 use eth_types::{Word, U256};
 use halo2_proofs::circuit;
 
-use super::{ExecStep, FixedCParams, CircuitsParams};
+use super::{CircuitsParams, ExecStep, FixedCParams};
 use crate::operation::RWCounter;
 
 #[derive(Debug, Default, Clone)]
 pub struct Chunk {
-    /// current context 
+    /// current context
     pub ctx: ChunkContext,
     /// fixed param for the chunk
     pub fixed_param: FixedCParams,
@@ -14,11 +14,6 @@ pub struct Chunk {
     pub begin_chunk: Option<ExecStep>,
     /// End op of a chunk
     pub end_chunk: Option<ExecStep>,
-    // Set in chunk_convert, used when converting the next chunk
-    /// rw_table permutation fingerprint for this chunk
-    pub rw_fingerprint: Word,
-    /// rw_table permutation fingerprint for this chunk
-    pub chrono_rw_fingerprint: Word,
 }
 
 /// Context of a [`ChunkContext`].
@@ -66,7 +61,7 @@ impl ChunkContext {
             total_chunks: 1,
             initial_rwc: 1, // rw counter start from 1
             end_rwc: 0,     // end_rwc should be set in later phase
-            is_dynamic: false
+            is_dynamic: false,
         }
     }
 

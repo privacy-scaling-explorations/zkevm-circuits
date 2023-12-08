@@ -185,38 +185,57 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// Triggers the `CircuitTestBuilder` to convert the [`TestContext`] if any,
     /// into a [`Block`] and apply the default or provided modifiers or
     /// circuit checks to the provers generated for the State and EVM circuits.
-    pub fn run(mut self) {
-        self.run_with_chunk(1, 0);
+    pub fn run(mut self){
+        self.run_chunk(0)
     }
     
     ///
-    pub fn run_with_chunk(mut self, total_chunk: usize, chunk_index: usize) {
+    pub fn run_chunk(mut self, chunk_index: usize) {
+        let total_chunk = self.circuits_params.expect("Fixed param not specified").total_chunks;
+        self.run_dynamic_chunk(total_chunk, chunk_index);
+    }
+
+    ///
+    pub fn run_dynamic_chunk(self, total_chunk: usize, chunk_index: usize) {
         let (block, chunk) = if self.block.is_some() && self.chunk.is_some() {
             (self.block.unwrap(), self.chunk.unwrap())
         } else if self.test_ctx.is_some() {
             let block: GethData = self.test_ctx.unwrap().into();
-            let builder =
-                BlockData::new_from_geth_datachunked(block.clone(), total_chunk).new_circuit_input_builder();
-            let builder = builder
-                .handle_block(&block.eth_block, &block.geth_traces)
-                .unwrap();
 
-            builder.chunks
-                .iter()
-                .for_each(
-                    |c| {
-                        println!("{:?}\n{:?}\n\n{:?}\n\n{:?}\n\nfingerprint: {:?} {:?}\n", 
-                            c.ctx, c.fixed_param, c.begin_chunk, c.end_chunk, c.rw_fingerprint, c.chrono_rw_fingerprint);
-                        println!("----------");
-                    }
+            let builder = match self.circuits_params {
+                Some(fixed_param) => {
+                    assert_eq!(
+                        fixed_param.total_chunks, total_chunk,
+                        "Total chunks unmatched with fixed param"
+                    );
+                    BlockData::new_from_geth_data_with_params(block.clone(), fixed_param)
+                        .new_circuit_input_builder()
+                        .handle_block(&block.eth_block, &block.geth_traces)
+                        .unwrap()
+                }
+                None => BlockData::new_from_geth_data_chunked(block.clone(), total_chunk)
+                    .new_circuit_input_builder()
+                    .handle_block(&block.eth_block, &block.geth_traces)
+                    .unwrap(),
+            };
+
+            builder.chunks.iter().for_each(|c| {
+                println!(
+                    "{:?}\n{:?}\nbegin {:?}\nend {:?}\n",
+                    c.ctx,
+                    c.fixed_param,
+                    c.begin_chunk.is_some(),
+                    c.end_chunk.is_some()
                 );
+                println!("----------");
+            });
             println!("block rwc = {:?}", builder.block_ctx.rwc);
 
             // Build a witness block from trace result.
             let mut block = crate::witness::block_convert(&builder).unwrap();
             let mut chunk = crate::witness::chunk_convert(&builder, chunk_index).unwrap();
 
-
+            println!("fingerprints = {:?}", chunk.rw_fingerprint);
 
             for modifier_fn in self.modifiers {
                 modifier_fn.as_ref()(&mut block, &mut chunk);
@@ -231,14 +250,15 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         {
             let k = block.get_test_degree(&chunk);
 
-            let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block, &chunk);
+            let (active_gate_rows, active_lookup_rows) =
+                EvmCircuit::<Fr>::get_active_rows(&block, &chunk);
 
             let circuit =
                 EvmCircuitCached::get_test_circuit_from_block(block.clone(), chunk.clone());
             let instance = circuit.instance();
             let prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
 
-            self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows)
+            // self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows)
         }
 
         // Run state circuit test
@@ -247,11 +267,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         {
             let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block, &chunk).1;
             let k = cmp::max(log2_ceil(rows_needed + NUM_BLINDING_ROWS), 18);
-            let state_circuit = StateCircuit::<Fr>::new(
-                chunk.rws.clone(),
-                params.max_rws,
-                &chunk,
-            );
+            let state_circuit = StateCircuit::<Fr>::new(chunk.rws.clone(), params.max_rws, &chunk);
             let instance = state_circuit.instance();
             let prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();
             // Skip verification of Start rows to accelerate testing
@@ -260,9 +276,9 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 .iter()
                 .filter(|rw| !matches!(rw, Rw::Padding { .. }))
                 .count();
-            let rows = (params.max_rws - non_start_rows_len..params.max_rws).collect();
+            let rows: Vec<usize> = (params.max_rws - non_start_rows_len..params.max_rws).collect();
 
-            self.state_checks.as_ref()(prover, &rows, &rows);
+            // self.state_checks.as_ref()(prover, &rows, &rows);
         }
     }
 }

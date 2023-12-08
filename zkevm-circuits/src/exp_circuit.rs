@@ -524,10 +524,7 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
     fn new_from_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> Self {
         // Hardcoded to pass unit tests for now. In the future, insert:
         // "chunk.fixed_param.max_exp_rows"
-        Self::new(
-            block.exp_events.clone(),
-            chunk.fixed_param.max_exp_steps,
-        )
+        Self::new(block.exp_events.clone(), chunk.fixed_param.max_exp_steps)
     }
 
     /// Return the minimum number of rows required to prove the block

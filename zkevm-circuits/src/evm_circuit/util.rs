@@ -11,7 +11,7 @@ use crate::{
         table::Table,
     },
     util::{cell_manager::CMFixedWidthStrategyDistribution, int_decomposition::IntDecomposition},
-    witness::{Block, ExecStep, Rw, RwMap, Chunk},
+    witness::{Block, Chunk, ExecStep, Rw, RwMap},
 };
 use eth_types::{Address, Field, U256};
 use halo2_proofs::{

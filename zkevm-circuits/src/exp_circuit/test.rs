@@ -1,7 +1,8 @@
 use crate::{
     evm_circuit::witness::{block_convert, Block},
     exp_circuit::ExpCircuit,
-    util::{unusable_rows, SubCircuit}, witness::{chunk_convert, Chunk},
+    util::{unusable_rows, SubCircuit},
+    witness::{chunk_convert, Chunk},
 };
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, FixedCParams},
@@ -21,10 +22,7 @@ fn exp_circuit_unusable_rows() {
 
 /// Test exponentiation circuit with the provided block witness
 pub fn test_exp_circuit<F: Field>(k: u32, block: Block<F>, chunk: Chunk<F>) {
-    let circuit = ExpCircuit::<F>::new(
-        block.exp_events.clone(),
-        chunk.fixed_param.max_exp_steps,
-    );
+    let circuit = ExpCircuit::<F>::new(block.exp_events.clone(), chunk.fixed_param.max_exp_steps);
     let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
     prover.assert_satisfied_par()
 }
@@ -52,16 +50,13 @@ fn gen_data(code: Bytecode, default_params: bool) -> CircuitInputBuilder<FixedCP
     let block: GethData = test_ctx.into();
     // Needs default parameters for variadic size test
     let builder = if default_params {
-        let mut builder =
-            BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
-                .new_circuit_input_builder();
-        builder
+        BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
+            .new_circuit_input_builder()
             .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-        builder
+            .unwrap()
     } else {
-        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
+        BlockData::new_from_geth_data(block.clone())
+            .new_circuit_input_builder()
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap()
     };
@@ -127,16 +122,12 @@ fn variadic_size_check() {
         .into();
     let mut builder =
         BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
-            .new_circuit_input_builder();
-    builder
-        .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
+            .new_circuit_input_builder()
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
     let block = block_convert::<Fr>(&builder).unwrap();
     let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
-    let circuit = ExpCircuit::<Fr>::new(
-        block.exp_events.clone(),
-        chunk.fixed_param.max_exp_steps,
-    );
+    let circuit = ExpCircuit::<Fr>::new(block.exp_events.clone(), chunk.fixed_param.max_exp_steps);
     let prover1 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
     // Non-empty
@@ -152,10 +143,7 @@ fn variadic_size_check() {
     let builder = gen_data(code, true);
     let block = block_convert::<Fr>(&builder).unwrap();
     let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
-    let circuit = ExpCircuit::<Fr>::new(
-        block.exp_events.clone(),
-        chunk.fixed_param.max_exp_steps,
-    );
+    let circuit = ExpCircuit::<Fr>::new(block.exp_events.clone(), chunk.fixed_param.max_exp_steps);
     let prover2 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
     assert_eq!(prover1.fixed(), prover2.fixed());

@@ -4,9 +4,10 @@ use crate::{
     util::{unusable_rows, SubCircuit},
     witness::{MptUpdates, Rw, RwMap},
 };
-use bus_mapping::{operation::{
-    MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
-}, circuit_input_builder::ChunkContext};
+use bus_mapping::{
+    circuit_input_builder::ChunkContext,
+    operation::{MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW},
+};
 use eth_types::{
     address,
     evm_types::{MemoryAddress, StackAddress},
@@ -60,12 +61,8 @@ fn test_state_circuit_ok(
         rw_fingerprint: next_permutation_fingerprints,
         ..Default::default()
     };
-    
-    let circuit = StateCircuit::<Fr>::new(
-        rw_map,
-        N_ROWS,
-        &chunk,
-    );
+
+    let circuit = StateCircuit::<Fr>::new(rw_map, N_ROWS, &chunk);
     let instance = circuit.instance();
 
     let prover = MockProver::<Fr>::run(19, &circuit, instance).unwrap();
@@ -96,12 +93,8 @@ fn verifying_key_independent_of_rw_length() {
         ),
         ..Default::default()
     };
-    
-    let no_rows = StateCircuit::<Fr>::new(
-        RwMap::default(),
-        N_ROWS,
-        &chunk.clone(),
-    );
+
+    let no_rows = StateCircuit::<Fr>::new(RwMap::default(), N_ROWS, &chunk.clone());
 
     chunk.rw_fingerprint = get_permutation_fingerprint_of_rwmap(
         &RwMap::from(&OperationContainer {
@@ -130,7 +123,7 @@ fn verifying_key_independent_of_rw_length() {
             ..Default::default()
         }),
         N_ROWS,
-        &chunk
+        &chunk,
     );
 
     let vk_no_rows = keygen_vk(&params, &no_rows).unwrap();

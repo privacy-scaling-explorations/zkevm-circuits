@@ -487,9 +487,8 @@ fn new_empty_blockchunk() -> (Block<Fr>, Chunk<Fr>) {
     let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
         .unwrap()
         .into();
-    let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), CIRCUITS_PARAMS)
-        .new_circuit_input_builder();
-    builder
+    let builder = BlockData::new_from_geth_data_with_params(block.clone(), CIRCUITS_PARAMS)
+        .new_circuit_input_builder()
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
     (

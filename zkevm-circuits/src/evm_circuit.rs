@@ -153,7 +153,10 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
                             &[tag_expr.clone(), value_col_expr],
                             challenges.lookup_input(),
                         ),
-                    rlc::expr(&chunk_ctx_table.table_exprs(meta), challenges.lookup_input()),
+                    rlc::expr(
+                        &chunk_ctx_table.table_exprs(meta),
+                        challenges.lookup_input(),
+                    ),
                 )]
             });
         });
@@ -365,7 +368,7 @@ pub struct EvmCircuit<F: Field> {
 
 impl<F: Field> EvmCircuit<F> {
     /// Return a new EvmCircuit
-    pub fn new(block: Block<F>, chunk:Chunk<F>) -> Self {
+    pub fn new(block: Block<F>, chunk: Chunk<F>) -> Self {
         Self {
             block: Some(block),
             chunk: Some(chunk),
@@ -409,7 +412,9 @@ impl<F: Field> EvmCircuit<F> {
         let mut num_rows = 0;
         for transaction in &block.txs {
             for step in transaction.steps() {
-                if chunk.chunk_context.initial_rwc <= step.rwc.0 || step.rwc.0 <= chunk.chunk_context.end_rwc {
+                if chunk.chunk_context.initial_rwc <= step.rwc.0
+                    || step.rwc.0 <= chunk.chunk_context.end_rwc
+                {
                     num_rows += step.execution_state().get_step_height();
                 }
             }
@@ -435,7 +440,8 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> (usize, usize) {
-        let num_rows_required_for_execution_steps: usize = Self::get_num_rows_required(block, chunk);
+        let num_rows_required_for_execution_steps: usize =
+            Self::get_num_rows_required(block, chunk);
         let num_rows_required_for_fixed_table: usize = detect_fixed_table_tags(block)
             .iter()
             .map(|tag| tag.build::<F>().count())
@@ -643,10 +649,7 @@ pub(crate) mod cached {
     }
 
     impl EvmCircuitCached {
-        pub(crate) fn get_test_circuit_from_block(
-            block: Block<Fr>,
-            chunk: Chunk<Fr>,
-        ) -> Self {
+        pub(crate) fn get_test_circuit_from_block(block: Block<Fr>, chunk: Chunk<Fr>) -> Self {
             Self(EvmCircuit::<Fr>::get_test_circuit_from_block(block, chunk))
         }
 
@@ -722,7 +725,9 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             .bytecode_table
             .load(&mut layouter, block.bytecodes.clone())?;
         config.block_table.load(&mut layouter, &block.context)?;
-        config.copy_table.load(&mut layouter, block, chunk, &challenges)?;
+        config
+            .copy_table
+            .load(&mut layouter, block, chunk, &challenges)?;
         config
             .keccak_table
             .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;
@@ -791,8 +796,7 @@ mod evm_circuit_stats {
             .unwrap()
             .into();
         let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
-            .new_circuit_input_builder();
-        builder
+            .new_circuit_input_builder()
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert::<Fr>(&builder).unwrap();
@@ -815,8 +819,7 @@ mod evm_circuit_stats {
         .unwrap()
         .into();
         let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
-            .new_circuit_input_builder();
-        builder
+            .new_circuit_input_builder()
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert::<Fr>(&builder).unwrap();

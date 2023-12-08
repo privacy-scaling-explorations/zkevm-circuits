@@ -73,8 +73,8 @@ impl<F: Field> ExecutionGadget<F> for EndChunkGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{test_util::CircuitTestBuilder, witness::Rw};
-    use bus_mapping::{circuit_input_builder::ChunkContext, operation::Target};
+    use crate::{test_util::CircuitTestBuilder, util::word, witness::Rw};
+    use bus_mapping::{circuit_input_builder::{ChunkContext, FixedCParams}, operation::Target};
     use eth_types::bytecode;
     use mock::TestContext;
 
@@ -89,21 +89,59 @@ mod test {
     #[ignore] // still under development and testing
     fn test_intermediate_single_chunk() {
         let bytecode = bytecode! {
-            STOP
+            PUSH1(0x0) // retLength
+            PUSH1(0x0) // retOffset
+            PUSH1(0x0) // argsLength
+            PUSH1(0x0) // argsOffset
+            PUSH1(0x0) // value
+            PUSH32(0x10_0000) // addr
+            PUSH32(0x10_0000) // gas
+            CALL
+            PUSH2(0xaa)
         };
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
         )
         .modifier(Box::new(move |block, chunk| {
-            chunk.fixed_param.max_evm_rows = 0; // auto padding
-
             // TODO FIXME padding start as a workaround. The practical should be last chunk last row
             // rws
-            if let Some(a) = chunk.rws.0.get_mut(&Target::Start) {
-                a.push(Rw::Start { rw_counter: 1 });
-            }
+            // if let Some(a) = chunk.rws.0.get_mut(&Target::Start) {
+            //     a.push(Rw::Start { rw_counter: 1 });
+            // }
+            // Should be FIXED?
+            println!(
+                "chunk.rws.0.get_mut(&Target::Start) {:?}",
+                chunk.rws.0.get_mut(&Target::Start)
+            );
         }))
-        .run_with_chunk(2, 0);
+        .run_dynamic_chunk(4, 2);
+    }
+
+    #[test]
+    #[ignore] // still under development and testing
+    fn test_intermediate_single_chunk_fixed() {
+        let bytecode = bytecode! {
+            PUSH1(0x0) // retLength
+            PUSH1(0x0) // retOffset
+            PUSH1(0x0) // argsLength
+            PUSH1(0x0) // argsOffset
+            PUSH1(0x0) // value
+            PUSH32(0x10_0000) // addr
+            PUSH32(0x10_0000) // gas
+            CALL
+            PUSH2(0xaa)
+        };
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .params(
+            FixedCParams {
+                total_chunks: 2,
+                max_rws: 60,
+                ..Default::default()
+            }
+        )
+        .run_chunk(1);
     }
 
     #[test]
@@ -115,15 +153,6 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
         )
-        // .modifier(Box::new(move |block, chunk| {
-        //     chunk.fixed_param.max_evm_rows = 0; // auto padding
-
-        //     // TODO FIXME padding start as a workaround. The practical should be last chunk last row
-        //     // rws
-        //     if let Some(a) = chunk.rws.0.get_mut(&Target::Start) {
-        //         a.push(Rw::Start { rw_counter: 1 });
-        //     }
-        // }))
-        .run_with_chunk(1, 0);
+        .run();
     }
 }

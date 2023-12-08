@@ -831,10 +831,7 @@ impl<F: Field> CopyCircuit<F> {
     /// used by the SuperCircuit, which already assigns the external lookup
     /// tables.
     pub fn new_from_block_no_external(block: &witness::Block<F>, chunk: &Chunk<F>) -> Self {
-        Self::new(
-            block.copy_events.clone(),
-            chunk.fixed_param.max_copy_rows,
-        )
+        Self::new(block.copy_events.clone(), chunk.fixed_param.max_copy_rows)
     }
 }
 

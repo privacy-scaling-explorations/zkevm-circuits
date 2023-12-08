@@ -1,10 +1,11 @@
-use super::{ExecStep, Rw, RwMap, Transaction, chunk};
+use super::{chunk, ExecStep, Rw, RwMap, Transaction};
 use crate::{
     evm_circuit::{detect_fixed_table_tags, EvmCircuit},
     exp_circuit::param::OFFSET_INCREMENT,
     instance::public_data_convert,
     table::BlockContextFieldTag,
-    util::{log2_ceil, word, SubCircuit}, witness::Chunk,
+    util::{log2_ceil, word, SubCircuit},
+    witness::Chunk,
 };
 use bus_mapping::{
     circuit_input_builder::{self, CopyEvent, ExpEvent, FixedCParams},
@@ -261,7 +262,7 @@ pub fn block_convert<F: Field>(
     };
     let public_data = public_data_convert(&block);
 
-    // We can use params from block 
+    // We can use params from block
     // because max_txs and max_calldata are independent from Chunk
     let rpi_bytes = public_data.get_pi_bytes(
         block.circuits_params.max_txs,

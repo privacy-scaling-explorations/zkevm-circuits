@@ -461,8 +461,8 @@ impl<F: Field> SuperCircuit<F> {
     {
         let block_data =
             BlockData::new_from_geth_data_with_params(geth_data.clone(), circuits_params);
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
+        let builder = block_data
+            .new_circuit_input_builder()
             .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
             .expect("could not handle block tx");
 

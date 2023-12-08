@@ -319,10 +319,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
                 block.txs.len(),
                 block.txs.iter().map(|tx| tx.call_data.len()).sum(),
             ),
-            Self::min_num_rows(
-                chunk.fixed_param.max_txs,
-                chunk.fixed_param.max_calldata,
-            ),
+            Self::min_num_rows(chunk.fixed_param.max_txs, chunk.fixed_param.max_calldata),
         )
     }
 

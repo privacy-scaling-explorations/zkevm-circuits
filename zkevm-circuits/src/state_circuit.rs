@@ -482,11 +482,7 @@ pub struct StateCircuit<F> {
 
 impl<F: Field> StateCircuit<F> {
     /// make a new state circuit from an RwMap
-    pub fn new(
-        rw_map: RwMap,
-        n_rows: usize,
-        chunk: &Chunk<F>,
-    ) -> Self {
+    pub fn new(rw_map: RwMap, n_rows: usize, chunk: &Chunk<F>) -> Self {
         let rows = rw_map.table_assignments(false); // address sorted
         let updates = MptUpdates::mock_from(&rows);
         Self {
@@ -511,11 +507,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     type Config = StateCircuitConfig<F>;
 
     fn new_from_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> Self {
-        Self::new(
-            chunk.rws.clone(),
-            chunk.fixed_param.max_rws,
-            chunk,
-        )
+        Self::new(chunk.rws.clone(), chunk.fixed_param.max_rws, chunk)
     }
 
     fn unusable_rows() -> usize {
@@ -568,11 +560,8 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     self.chunk_idx,
                 )?;
 
-                let (rows, _) = RwMap::table_assignments_padding(
-                    &self.rows,
-                    self.n_rows,
-                    self.chunk_idx == 0,
-                );
+                let (rows, _) =
+                    RwMap::table_assignments_padding(&self.rows, self.n_rows, self.chunk_idx == 0);
 
                 // permu_next_continuous_fingerprint and rows override for negative-test
                 #[allow(unused_assignments, unused_mut)]

@@ -89,11 +89,11 @@ impl BlockData<FixedCParams> {
 impl BlockData<DynamicCParams> {
     /// Create a new block from the given Geth data with default CircuitsParams.
     pub fn new_from_geth_data(geth_data: GethData) -> Self {
-        Self::new_from_geth_datachunked(geth_data, 1)
+        Self::new_from_geth_data_chunked(geth_data, 1)
     }
 
     /// Create a new block from the given Geth data with default CircuitsParams.
-    pub fn new_from_geth_datachunked(geth_data: GethData, total_chunks: usize) -> Self {
+    pub fn new_from_geth_data_chunked(geth_data: GethData, total_chunks: usize) -> Self {
         let (sdb, code_db) = Self::init_dbs(&geth_data);
 
         Self {

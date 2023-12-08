@@ -2,7 +2,7 @@ use crate::{
     copy_circuit::*,
     evm_circuit::{test::rand_bytes, witness::block_convert},
     util::unusable_rows,
-    witness::{Block, chunk_convert},
+    witness::{chunk_convert, Block},
 };
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, FixedCParams},
@@ -166,10 +166,9 @@ fn gen_tx_log_data() -> CircuitInputBuilder<FixedCParams> {
     // Needs default params for variadic check
     let mut builder =
         BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
-            .new_circuit_input_builder();
-    builder
-        .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
+            .new_circuit_input_builder()
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
     builder
 }
 
@@ -308,10 +307,9 @@ fn variadic_size_check() {
         .into();
     let mut builder =
         BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
-            .new_circuit_input_builder();
-    builder
-        .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
+            .new_circuit_input_builder()
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
     let block2 = block_convert::<Fr>(&builder).unwrap();
 
     let circuit = CopyCircuit::<Fr>::new(block1.copy_events, block1.circuits_params.max_copy_rows);

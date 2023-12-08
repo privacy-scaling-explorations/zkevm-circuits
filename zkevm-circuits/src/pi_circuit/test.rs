@@ -124,14 +124,11 @@ fn test_1tx_1maxtx() {
             ..Default::default()
         },
     )
-    .new_circuit_input_builder();
+    .new_circuit_input_builder()
+    .handle_block(&block.eth_block, &block.geth_traces)
+    .unwrap();
 
     block.sign(&wallets);
-
-    builder
-        .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
-
     let block = block_convert(&builder).unwrap();
     let chunk = chunk_convert(&builder, 0).unwrap();
     // MAX_TXS, MAX_TXS align with `CircuitsParams`

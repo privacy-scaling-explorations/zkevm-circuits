@@ -306,7 +306,7 @@ pub fn run_test(
         eth_block: eth_block.clone(),
     };
 
-    let mut builder;
+    let builder;
 
     if !circuits_config.super_circuit {
         let circuits_params = FixedCParams {
@@ -322,8 +322,8 @@ pub fn run_test(
         };
         let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
 
-        builder = block_data.new_circuit_input_builder();
-        builder
+        builder = block_data
+            .new_circuit_input_builder()
             .handle_block(&eth_block, &geth_traces)
             .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 

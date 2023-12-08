@@ -840,7 +840,10 @@ impl<F: Field> ExecutionConfig<F> {
                             ],
                             challenges.lookup_input(),
                         ),
-                    rlc::expr(&chunk_ctx_table.table_exprs(meta), challenges.lookup_input()),
+                    rlc::expr(
+                        &chunk_ctx_table.table_exprs(meta),
+                        challenges.lookup_input(),
+                    ),
                 )]
             });
         }
@@ -861,7 +864,10 @@ impl<F: Field> ExecutionConfig<F> {
                             ],
                             challenges.lookup_input(),
                         ),
-                    rlc::expr(&chunk_ctx_table.table_exprs(meta), challenges.lookup_input()),
+                    rlc::expr(
+                        &chunk_ctx_table.table_exprs(meta),
+                        challenges.lookup_input(),
+                    ),
                 )]
             });
         }
@@ -1052,11 +1058,11 @@ impl<F: Field> ExecutionConfig<F> {
                     .last()
                     .map(|tx| tx.calls()[0].clone())
                     .unwrap_or_else(Call::default);
-                
+
                 // Block steps
                 let end_block_not_last = &block.end_block_not_last;
                 let end_block_last = &block.end_block_last;
-                
+
                 // Chunk steps
                 // If it's the very first chunk in a block set last call & begin_chunk to default
                 let prev_chunk_last_call = chunk
