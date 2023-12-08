@@ -282,7 +282,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         match self.key.clone() {
             Some(key) => key,
             None => {
-                let (block, chunk) = new_empty_blockchunk();
+                let (block, chunk) = new_empty_block_chunk();
                 let circuit = C::new_from_block(&block, &chunk);
                 let general_params = get_general_params(self.degree);
 
@@ -303,7 +303,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                 let params = get_general_params(self.degree);
                 let pk = self.get_key();
 
-                let (block, chunk) = new_empty_blockchunk();
+                let (block, chunk) = new_empty_block_chunk();
                 let circuit = C::new_from_block(&block, &chunk);
                 let instance = circuit.instance();
 
@@ -483,7 +483,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
     }
 }
 
-fn new_empty_blockchunk() -> (Block<Fr>, Chunk<Fr>) {
+fn new_empty_block_chunk() -> (Block<Fr>, Chunk<Fr>) {
     let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
         .unwrap()
         .into();

@@ -192,7 +192,7 @@ impl RwMap {
         rows
     }
 
-    /// Get RwMap for a chunk
+    /// Get RwMap for a chunk specified by start and end
     pub fn from_chunked(
         container: &operation::OperationContainer,
         start: usize,

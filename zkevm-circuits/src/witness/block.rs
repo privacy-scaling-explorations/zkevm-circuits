@@ -16,8 +16,8 @@ use eth_types::{Address, Field, ToScalar, Word};
 use halo2_proofs::circuit::Value;
 
 // TODO: Remove fields that are duplicated in`eth_block`
-/// Block is the struct used by all circuits, which contains all the needed
-/// data for witness generation.
+/// [`Block`] is the struct used by all circuits, which contains blockwise
+/// data for witness generation. Used with [`Chunk`] for the i-th chunck witness.
 #[derive(Debug, Clone, Default)]
 pub struct Block<F> {
     /// The randomness for random linear combination

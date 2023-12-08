@@ -83,16 +83,18 @@ pub struct FixedCParams {
 /// A new [`FixedCParams`] will be computed from the generated circuit witness.
 #[derive(Debug, Clone, Copy)]
 pub struct DynamicCParams {
-    ///
+    /// Toatal number of chunks
     pub total_chunks: usize,
 }
 /// Circuit Setup Parameters. These can be fixed/concrete or unset/dynamic.
 pub trait CircuitsParams: Debug + Copy {
-    /// Return the best number of chunks given circuit params
+    /// Return the total number of chunks
     fn total_chunks(&self) -> usize;
-    ///
+    /// Return the maximun Rw
     fn max_rws(&self) -> usize;
-    ///
+    /// Return whether the parameters are dynamic.
+    /// If true, the `total_chunks` and `max_rws` will serve as a target value for chunking  
+    /// and [`FixedCParam`] will be recomputed from each generated chunk witness.
     fn is_dynamic(&self) -> bool;
 }
 
@@ -152,7 +154,9 @@ impl Default for FixedCParams {
 /// the block. 2. For each [`eth_types::Transaction`] in the block, take the
 /// [`eth_types::GethExecTrace`] to build the circuit input associated with
 /// each transaction, and the bus-mapping operations associated with each
-/// [`eth_types::GethExecStep`] in the [`eth_types::GethExecTrace`].
+/// [`eth_types::GethExecStep`] in the [`eth_types::GethExecTrace`]. 3. If `Rw`s 
+/// generated during Transactions exceed the `max_rws` threshold, seperate witness
+/// into multiple chunks.
 ///
 /// The generated bus-mapping operations are:
 /// [`StackOp`](crate::operation::StackOp)s,
@@ -175,7 +179,7 @@ pub struct CircuitInputBuilder<C: CircuitsParams> {
     pub block_ctx: BlockContext,
     /// Chunk Context
     pub chunk_ctx: ChunkContext,
-    /// Circuit Params
+    /// Circuit Params before chunking
     pub circuits_params: C,
 }
 
@@ -266,41 +270,6 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         }
     }
 
-    /// First part of handle_block, common for dynamic and static circuit parameters.
-    pub fn begin_handle_block(
-        &mut self,
-        eth_block: &EthBlock,
-        geth_traces: &[eth_types::GethExecTrace],
-    ) -> Result<(), Error> {
-        if !self.chunk_ctx.is_first_chunk() {
-            // Last step of previous chunk contains the same transition witness
-            // needed for current begin_chunk step
-            let last_step = &self
-                .prev_chunk()
-                .end_chunk
-                .expect("Last chunk is incomplete");
-            self.set_begin_chunk(last_step);
-        }
-
-        // accumulates gas across all txs in the block
-        for (idx, tx) in eth_block.transactions.iter().enumerate() {
-            let geth_trace = &geth_traces[idx];
-            // Transaction index starts from 1
-            let tx_id = idx + 1;
-            self.handle_tx(
-                tx,
-                geth_trace,
-                tx_id == eth_block.transactions.len(),
-                true,
-                tx_id as u64,
-            )?;
-        }
-        // set eth_block
-        self.block.eth_block = eth_block.clone();
-        self.set_value_ops_call_context_rwc_eor();
-        Ok(())
-    }
-
     /// Handle a transaction with its corresponding execution trace to generate
     /// all the associated operations.  Each operation is registered in
     /// `self.block.container`, and each step stores the
@@ -363,7 +332,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     }
 
     // TODO Fix this, for current logic on processing `call` is incorrect
-    // TODO re-design `genchunk_associated_steps` to separate RW
+    // TODO re-design `ge_nchunk_associated_steps` to separate RW
     fn gen_chunk_associated_steps(&mut self, step: &mut ExecStep, rw: RW) {
         let STEP_STATE_LEN = 10;
         let mut dummy_tx = Transaction::default();
@@ -498,33 +467,35 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         }
     }
 
-    ///
-    pub fn get_chunk(&self, i: usize) -> Chunk {
-        self.chunks.get(i).expect("Chunk does not exist").clone()
-    }
-
-    ///
-    pub fn cur_chunk(&self) -> Chunk {
-        self.chunks[self.chunk_ctx.idx].clone()
-    }
-
-    ///
-    pub fn cur_chunk_mut(&mut self) -> &mut Chunk {
-        &mut self.chunks[self.chunk_ctx.idx]
-    }
-
-    ///
-    pub fn prev_chunk(&self) -> Chunk {
-        self.chunks[self.chunk_ctx.idx - 1].clone()
-    }
-
-    ///
+    /// Set the end status of a chunk including the current globle rwc
+    /// and commit the current chunk context, proceed to the next chunk
+    /// if needed
     pub fn commit_chunk(&mut self, to_next: bool) {
         self.chunk_ctx.end_rwc = self.block_ctx.rwc.0;
         self.chunks[self.chunk_ctx.idx].ctx = self.chunk_ctx.clone();
         if to_next {
             self.chunk_ctx.next(self.block_ctx.rwc.0);
         }
+    }
+
+    /// Get the i-th chunk
+    pub fn get_chunk(&self, i: usize) -> Chunk {
+        self.chunks.get(i).expect("Chunk does not exist").clone()
+    }
+
+    /// Get the current chunk
+    pub fn cur_chunk(&self) -> Chunk {
+        self.chunks[self.chunk_ctx.idx].clone()
+    }
+
+    /// Get a mutable reference of current chunk
+    pub fn cur_chunk_mut(&mut self) -> &mut Chunk {
+        &mut self.chunks[self.chunk_ctx.idx]
+    }
+
+    /// Get the previous chunk
+    pub fn prev_chunk(&self) -> Chunk {
+        self.chunks[self.chunk_ctx.idx - 1].clone()
     }
 }
 
@@ -539,7 +510,7 @@ impl CircuitInputBuilder<FixedCParams> {
         // accumulates gas across all txs in the block
         // when total_chunks == 1, will skip set_begin_chunk & set_end_chunk
         self.begin_handle_block(eth_block, geth_traces)?;
-        // At the last chunk need to recompute the fixed param
+        // At the last chunk fixed param also need to be updated
         if self.chunk_ctx.is_dynamic {
             self.cur_chunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
         }
@@ -559,7 +530,6 @@ impl CircuitInputBuilder<FixedCParams> {
     }
 
     fn set_end_block(&mut self) {
-        // set end block
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
         end_block_not_last.rwc = self.block_ctx.rwc;
@@ -580,6 +550,7 @@ impl CircuitInputBuilder<FixedCParams> {
             );
         }
 
+        // EndBlock step should also be padded to max_rws similar to EndChunk
         self.gen_chunk_padding(&mut end_block_last);
         self.block.block_steps.end_block_not_last = end_block_not_last;
         self.block.block_steps.end_block_last = end_block_last;
@@ -599,6 +570,41 @@ fn push_op<T: Op>(
 }
 
 impl<C: CircuitsParams> CircuitInputBuilder<C> {
+    /// First part of handle_block, common for dynamic and static circuit parameters.
+    pub fn begin_handle_block(
+        &mut self,
+        eth_block: &EthBlock,
+        geth_traces: &[eth_types::GethExecTrace],
+    ) -> Result<(), Error> {
+        if !self.chunk_ctx.is_first_chunk() {
+            // Last step of previous chunk contains the same transition witness
+            // needed for current begin_chunk step
+            let last_step = &self
+                .prev_chunk()
+                .end_chunk
+                .expect("Last chunk is incomplete");
+            self.set_begin_chunk(last_step);
+        }
+
+        // accumulates gas across all txs in the block
+        for (idx, tx) in eth_block.transactions.iter().enumerate() {
+            let geth_trace = &geth_traces[idx];
+            // Transaction index starts from 1
+            let tx_id = idx + 1;
+            self.handle_tx(
+                tx,
+                geth_trace,
+                tx_id == eth_block.transactions.len(),
+                true,
+                tx_id as u64,
+            )?;
+        }
+        // set eth_block
+        self.block.eth_block = eth_block.clone();
+        self.set_value_ops_call_context_rwc_eor();
+        Ok(())
+    }
+
     fn compute_param(&self, eth_block: &EthBlock) -> FixedCParams {
         let max_txs = eth_block.transactions.len();
         let max_bytecode = self.code_db.num_rows_required_for_bytecode_table();
@@ -690,22 +696,26 @@ impl CircuitInputBuilder<DynamicCParams> {
     }
 
     /// Handle a block by handling each transaction to generate all the
-    /// associated operations. From these operations, the optimal circuit parameters
-    /// are derived and set.
+    /// associated operations. Dry run the block to determind the target
+    /// [`FixedCParams`] from to total number of chunks. 
     pub fn handle_block(
         self,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<CircuitInputBuilder<FixedCParams>, Error> {
+        // Run the block without chunking and compute the blockwise params
         let mut target_params = self
             .dry_run(eth_block, geth_traces)
             .expect("Dry run failure")
             .compute_param(eth_block);
 
+        // Calculate the chunkwise params from total number of chunks
         let total_chunks = self.circuits_params.total_chunks;
         target_params.total_chunks = total_chunks;
         target_params.max_rws = (target_params.max_rws + 1) / total_chunks;
 
+        // Use a new builder with targeted params to handle the block
+        // chunking context is set to dynamic so for the actual param is update per chunk
         let cib = CircuitInputBuilder::<FixedCParams> {
             sdb: self.sdb,
             code_db: self.code_db,

@@ -16,21 +16,22 @@ pub struct Chunk {
     pub end_chunk: Option<ExecStep>,
 }
 
-/// Context of a [`ChunkContext`].
+/// Context of chunking, used to track the current chunk index and inner rw counter
+/// also the global rw counter from start to end.
 #[derive(Debug, Clone)]
 pub struct ChunkContext {
-    /// index of current chunk, start from 0
+    /// Index of current chunk, start from 0
     pub idx: usize,
     /// Used to track the inner chunk counter in every operation in the chunk.
     /// Contains the next available value.
     pub rwc: RWCounter,
-    /// number of chunks
+    /// Number of chunks
     pub total_chunks: usize,
-    /// initial rw counter
+    /// Initial global rw counter
     pub initial_rwc: usize,
-    /// end rw counter
+    /// End global rw counter
     pub end_rwc: usize,
-    ///
+    /// If this block is chunked dynamically
     pub is_dynamic: bool,
 }
 
@@ -53,7 +54,7 @@ impl ChunkContext {
         }
     }
 
-    /// new Self with one chunk
+    /// New chunking context with one chunk
     pub fn new_one_chunk() -> Self {
         Self {
             rwc: RWCounter::new(),
@@ -65,7 +66,8 @@ impl ChunkContext {
         }
     }
 
-    ///
+    /// Proceed the context to next chunk, record the initial rw counter
+    /// update the chunk idx and reset the inner rw counter
     pub fn next(&mut self, initial_rwc: usize) {
         assert!(self.idx + 1 < self.total_chunks, "Exceed total chunks");
         self.idx += 1;
@@ -74,12 +76,12 @@ impl ChunkContext {
         self.end_rwc = 0;
     }
 
-    /// is first chunk
+    /// Is first chunk
     pub fn is_first_chunk(&self) -> bool {
         self.idx == 0
     }
 
-    /// is last chunk
+    /// Is last chunk
     pub fn is_last_chunk(&self) -> bool {
         self.total_chunks - self.idx - 1 == 0
     }

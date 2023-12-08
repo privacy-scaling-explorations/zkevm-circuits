@@ -81,13 +81,6 @@ mod test {
     use eth_types::bytecode;
     use mock::TestContext;
 
-    // fn test_ok(bytecode: bytecode::Bytecode) {
-    //     CircuitTestBuilder::new_from_test_ctx(
-    //         TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-    //     )
-    //     .run()
-    // }
-
     #[test]
     #[ignore] // still under development and testing
     fn test_intermediate_single_chunk() {
@@ -111,9 +104,8 @@ mod test {
             // if let Some(a) = chunk.rws.0.get_mut(&Target::Start) {
             //     a.push(Rw::Start { rw_counter: 1 });
             // }
-            // Should be FIXED?
             println!(
-                "chunk.rws.0.get_mut(&Target::Start) {:?}",
+                "=> FIXME is fixed? {:?}",
                 chunk.rws.0.get_mut(&Target::Start)
             );
         }))

@@ -108,7 +108,6 @@ pub struct SuperCircuitConfigArgs<F: Field> {
     /// Mock randomness
     pub mock_randomness: F,
 }
-
 impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
     type ConfigArgs = SuperCircuitConfigArgs<F>;
 
