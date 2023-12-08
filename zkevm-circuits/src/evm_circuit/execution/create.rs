@@ -456,7 +456,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        chunk: &Chunk<F>,
+        _chunk: &Chunk<F>,
         tx: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -659,7 +659,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             } else if init_code_length.as_usize() == 0 {
                 F::ONE
             } else {
-                chunk
+                block
                     .get_rws(step, 18 + rw_offset + copy_rw_increase - transfer_offset)
                     .call_context_value()
                     .to_scalar()

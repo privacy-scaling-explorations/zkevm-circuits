@@ -1,4 +1,4 @@
-use super::{CircuitsParams, ExecStep, FixedCParams};
+use super::{ExecStep, FixedCParams};
 use crate::operation::RWCounter;
 
 #[derive(Debug, Default, Clone)]

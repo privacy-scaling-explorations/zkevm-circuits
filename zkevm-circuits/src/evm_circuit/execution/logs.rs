@@ -195,7 +195,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        chunk: &Chunk<F>,
+        _chunk: &Chunk<F>,
         tx: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -222,7 +222,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             // It takes 6 + is_persistent reads or writes to reach the topic stack write section.
             // Each topic takes at least 1 stack read. They take an additional tx log write if the
             // call is persistent.
-            chunk
+            block
                 .get_rws(step, 6 + is_persistent + topic * (1 + is_persistent))
                 .stack_value()
         });

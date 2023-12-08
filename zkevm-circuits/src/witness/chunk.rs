@@ -1,5 +1,5 @@
 ///
-use super::{rw::ToVec, ExecStep, Rw, RwMap};
+use super::{rw::ToVec, ExecStep, RwMap};
 use crate::{util::unwrap_value, witness::Block};
 use bus_mapping::{
     circuit_input_builder::{self, ChunkContext, FixedCParams},
@@ -123,11 +123,4 @@ pub fn chunk_convert<F: Field>(
     };
 
     Ok(chunck)
-}
-
-impl<F: Field> Chunk<F> {
-    /// Get the Rws for the indexed operation in given [`ExecStep`]
-    pub(crate) fn get_rws(&self, step: &ExecStep, index: usize) -> Rw {
-        self.rws[step.rw_index(index)]
-    }
 }

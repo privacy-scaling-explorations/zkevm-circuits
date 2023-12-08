@@ -209,6 +209,7 @@ pub(crate) trait ExecutionGadget<F: Field> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self;
 
+    #[allow(clippy::too_many_arguments)]
     fn assign_exec_step(
         &self,
         region: &mut CachedRegion<'_, '_, F>,

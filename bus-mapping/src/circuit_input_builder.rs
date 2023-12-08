@@ -443,8 +443,8 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         // We need at least 1 extra row at offset 0 for chunk continuous
         #[allow(clippy::int_plus_one)]
         assert!(
-            total_rws < max_rws,
-            "total_inner_rws + 1 <= max_rws, total_inner_rws={}, max_rws={}",
+            total_rws + 1 < max_rws,
+            "total_rws + 1 <= max_rws, total_rws={}, max_rws={}",
             total_rws,
             max_rws
         );
