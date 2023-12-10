@@ -1,4 +1,7 @@
-use super::{ExecStep, Rw, RwMap, Transaction};
+use super::{
+    rw::{RwTablePermutationFingerprints, ToVec},
+    ExecStep, Rw, RwMap, Transaction,
+};
 use crate::{
     evm_circuit::{detect_fixed_table_tags, EvmCircuit},
     exp_circuit::param::OFFSET_INCREMENT,
@@ -272,4 +275,32 @@ pub fn block_convert<F: Field>(
     block.keccak_inputs.extend_from_slice(&[rpi_bytes]);
 
     Ok(block)
+}
+
+fn get_rwtable_fingerprints<F: Field>(
+    alpha: F,
+    gamma: F,
+    prev_continuous_fingerprint: F,
+    rows: &Vec<Rw>,
+) -> RwTablePermutationFingerprints<F> {
+    let x = rows.to2dvec();
+    let fingerprints = get_permutation_fingerprints(
+        &x,
+        Value::known(alpha),
+        Value::known(gamma),
+        Value::known(prev_continuous_fingerprint),
+    );
+
+    fingerprints
+        .first()
+        .zip(fingerprints.last())
+        .map(|((first_acc, first_row), (last_acc, last_row))| {
+            RwTablePermutationFingerprints::new(
+                unwrap_value(*first_row),
+                unwrap_value(*last_row),
+                unwrap_value(*first_acc),
+                unwrap_value(*last_acc),
+            )
+        })
+        .unwrap_or_default()
 }

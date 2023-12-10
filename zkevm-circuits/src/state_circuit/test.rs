@@ -46,7 +46,7 @@ fn test_state_circuit_ok(
         ..Default::default()
     });
 
-    let next_permutation_fingerprints = get_permutation_fingerprint_of_rwmap(
+    let rwtable_fingerprints = get_permutation_fingerprint_of_rwmap(
         &rw_map,
         N_ROWS,
         Fr::from(1),
@@ -106,7 +106,6 @@ fn verifying_key_independent_of_rw_length() {
             ..Default::default()
         }),
         N_ROWS,
-        Fr::from(1),
         Fr::from(1),
         Fr::from(1),
     );
@@ -998,8 +997,7 @@ fn variadic_size_check() {
         n_rows: N_ROWS,
         permu_alpha: Fr::from(1),
         permu_gamma: Fr::from(1),
-        rw_prev_fingerprint: Fr::from(1),
-        rw_cur_fingerprint: get_permutation_fingerprint_of_rwvec(
+        rw_table_permu_fingerprints: get_permutation_fingerprint_of_rwvec(
             &rows,
             N_ROWS,
             Fr::from(1),
@@ -1030,7 +1028,7 @@ fn variadic_size_check() {
     ]);
 
     let updates = MptUpdates::mock_from(&rows);
-    let permu_next_continuous_fingerprint =
+    let rwtable_fingerprints =
         get_permutation_fingerprint_of_rwvec(&rows, N_ROWS, Fr::from(1), Fr::from(1), Fr::from(1));
 
     let circuit = StateCircuit::<Fr> {
@@ -1041,9 +1039,8 @@ fn variadic_size_check() {
         n_rows: N_ROWS,
         permu_alpha: Fr::from(1),
         permu_gamma: Fr::from(1),
-        rw_prev_fingerprint: Fr::from(1),
-        rw_cur_fingerprint: permu_next_continuous_fingerprint,
-        chunk_idx: 0,
+        rw_table_permu_fingerprints: rwtable_fingerprints,
+        rw_table_chunked_index: 0,
         _marker: std::marker::PhantomData::default(),
     };
     let power_of_randomness = circuit.instance();
@@ -1083,7 +1080,7 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
     let (rw_rows, _) = RwMap::table_assignments_padding(&rows, N_ROWS, true);
     let rw_rows: Vec<witness::RwRow<Value<Fr>>> =
         rw_overrides_skip_first_padding(&rw_rows, &overrides);
-    let permu_next_continuous_fingerprint =
+    let rwtable_fingerprints =
         get_permutation_fingerprint_of_rwrowvec(&rw_rows, N_ROWS, Fr::ONE, Fr::ONE, Fr::ONE);
     let row_padding_and_overridess = rw_rows.to2dvec();
 
@@ -1096,9 +1093,8 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
         n_rows: N_ROWS,
         permu_alpha: Fr::from(1),
         permu_gamma: Fr::from(1),
-        rw_prev_fingerprint: Fr::from(1),
-        rw_cur_fingerprint: permu_next_continuous_fingerprint,
-        chunk_idx: 0,
+        rw_table_permu_fingerprints: rwtable_fingerprints,
+        rw_table_chunked_index: 0,
         _marker: std::marker::PhantomData::default(),
     };
     let instance = circuit.instance();

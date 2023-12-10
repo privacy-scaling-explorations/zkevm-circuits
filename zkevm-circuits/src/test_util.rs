@@ -281,7 +281,14 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         {
             let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block, &chunk).1;
             let k = cmp::max(log2_ceil(rows_needed + NUM_BLINDING_ROWS), 18);
-            let state_circuit = StateCircuit::<Fr>::new(chunk.rws.clone(), params.max_rws, &chunk);
+            let state_circuit = StateCircuit::<Fr>::new(
+                block.rws,
+                params.max_rws,
+                block.permu_alpha,
+                block.permu_gamma,
+                block.permu_rwtable_fingerprints,
+                block.chunk_context.chunk_index,
+            );
             let instance = state_circuit.instance();
             let _prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();
             // Skip verification of Start rows to accelerate testing

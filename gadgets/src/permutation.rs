@@ -28,19 +28,24 @@ pub struct PermutationChipConfig<F> {
     row_fingerprints: Column<Advice>,
     alpha: Column<Advice>,
     power_of_gamma: Vec<Column<Advice>>,
-    // selector
-    q_row_non_first: Selector, // 1 between (first, end], exclude first
-    q_row_enable: Selector,    // 1 for all rows (including first)
+    /// q_row_non_first
+    pub q_row_non_first: Selector, // 1 between (first, end], exclude first
+    /// q_row_enable
+    pub q_row_enable: Selector, // 1 for all rows (including first)
     /// q_row_last
     pub q_row_last: Selector, // 1 in the last row
 
     _phantom: PhantomData<F>,
 
+    row_fingerprints_cur_expr: Expression<F>,
     acc_fingerprints_cur_expr: Expression<F>,
 }
 
-/// (alpha, gamma, prev_acc_fingerprints, next_acc_fingerprints)
+/// (alpha, gamma, row_fingerprints_prev_cell, row_fingerprints_next_cell, prev_acc_fingerprints,
+/// next_acc_fingerprints)
 type PermutationAssignedCells<F> = (
+    AssignedCell<F, F>,
+    AssignedCell<F, F>,
     AssignedCell<F, F>,
     AssignedCell<F, F>,
     AssignedCell<F, F>,
@@ -72,10 +77,14 @@ impl<F: Field> PermutationChipConfig<F> {
                 .collect::<Vec<Value<F>>>()
         };
 
-        let mut last_fingerprint_cell = None;
         let mut alpha_first_cell = None;
         let mut gamma_first_cell = None;
         let mut acc_fingerprints_prev_cell = None;
+        let mut acc_fingerprints_next_cell = None;
+
+        let mut row_fingerprints_prev_cell = None;
+        let mut row_fingerprints_next_cell = None;
+
         for (offset, (row_acc_fingerprints, row_fingerprints)) in fingerprints.iter().enumerate() {
             // skip first fingerprint for its prev_fingerprint
             if offset != 0 {
@@ -91,7 +100,7 @@ impl<F: Field> PermutationChipConfig<F> {
                 || *row_acc_fingerprints,
             )?;
 
-            region.assign_advice(
+            let row_fingerprints_cell = region.assign_advice(
                 || format!("row_fingerprints at index {}", offset),
                 self.row_fingerprints,
                 offset,
@@ -122,19 +131,23 @@ impl<F: Field> PermutationChipConfig<F> {
                 alpha_first_cell = Some(alpha_cell);
                 gamma_first_cell = Some(gamma_cells[0].clone());
                 acc_fingerprints_prev_cell = Some(row_acc_fingerprint_cell.clone());
+                row_fingerprints_prev_cell = Some(row_fingerprints_cell.clone())
             }
             // last offset
             if offset == fingerprints.len() - 1 {
-                last_fingerprint_cell = Some(row_acc_fingerprint_cell);
                 self.q_row_last.enable(region, offset)?;
+                acc_fingerprints_next_cell = Some(row_acc_fingerprint_cell);
+                row_fingerprints_next_cell = Some(row_fingerprints_cell)
             }
         }
 
         Ok((
             alpha_first_cell.unwrap(),
             gamma_first_cell.unwrap(),
+            row_fingerprints_prev_cell.unwrap(),
+            row_fingerprints_next_cell.unwrap(),
             acc_fingerprints_prev_cell.unwrap(),
-            last_fingerprint_cell.unwrap(),
+            acc_fingerprints_next_cell.unwrap(),
         ))
     }
 
@@ -169,6 +182,11 @@ impl<F: Field> PermutationChipConfig<F> {
     pub fn acc_fingerprints_cur_expr(&self) -> Expression<F> {
         self.acc_fingerprints_cur_expr.clone()
     }
+
+    /// row_fingerprints_cur_expr
+    pub fn row_fingerprints_cur_expr(&self) -> Expression<F> {
+        self.row_fingerprints_cur_expr.clone()
+    }
 }
 
 /// permutation fingerprint gadget
@@ -193,15 +211,17 @@ impl<F: Field> PermutationChip<F> {
             .map(|_| meta.advice_column())
             .collect::<Vec<Column<Advice>>>(); // first element is gamma**1
 
-        let q_row_non_first = meta.selector();
-        let q_row_enable = meta.selector();
+        let q_row_non_first = meta.complex_selector();
+        let q_row_enable = meta.complex_selector();
         let q_row_last = meta.selector();
 
         meta.enable_equality(acc_fingerprints);
+        meta.enable_equality(row_fingerprints);
         meta.enable_equality(alpha);
         meta.enable_equality(power_of_gamma[0]);
 
         let mut acc_fingerprints_cur_expr: Expression<F> = 0.expr();
+        let mut row_fingerprints_cur_expr: Expression<F> = 0.expr();
 
         meta.create_gate(
             "acc_fingerprints_cur = acc_fingerprints_prev * row_fingerprints_cur",
@@ -223,6 +243,9 @@ impl<F: Field> PermutationChip<F> {
             |meta| {
                 let alpha = meta.query_advice(alpha, Rotation::cur());
                 let row_fingerprints_cur = meta.query_advice(row_fingerprints, Rotation::cur());
+
+                row_fingerprints_cur_expr = row_fingerprints_cur.clone();
+
                 let power_of_gamma = iter::once(1.expr())
                     .chain(
                         power_of_gamma
@@ -283,6 +306,7 @@ impl<F: Field> PermutationChip<F> {
             acc_fingerprints,
             acc_fingerprints_cur_expr,
             row_fingerprints,
+            row_fingerprints_cur_expr,
             q_row_non_first,
             q_row_enable,
             q_row_last,

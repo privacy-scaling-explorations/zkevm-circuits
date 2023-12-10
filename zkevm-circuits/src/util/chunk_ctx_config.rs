@@ -1,6 +1,7 @@
 use bus_mapping::circuit_input_builder::ChunkContext;
 use gadgets::{
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
+    less_than::{LtChip, LtConfig},
     util::Expr,
 };
 use halo2_proofs::{
@@ -17,6 +18,7 @@ use crate::{
     },
 };
 use eth_types::Field;
+use gadgets::less_than::LtInstruction;
 
 use super::Challenges;
 
@@ -34,11 +36,13 @@ pub struct ChunkContextConfig<F> {
     pub is_last_chunk: IsZeroConfig<F>,
 
     /// ChunkCtxTable
-    pub chunk_ctx_table: ChunkCtxTable,
-    /// instance column for prev chunk context
-    pub pi_pre_chunk_ctx: Column<Instance>,
-    /// instance column for next chunk context
-    pub pi_next_chunk_ctx: Column<Instance>,
+    pub chunkctx_table: ChunkCtxTable,
+    /// instance column for chunk context
+    pub pi_chunkctx: Column<Instance>,
+
+    /// Lt chip to check: chunk_index < total_chunks.
+    /// Assume `total_chunks` < 2**8 = 256
+    pub is_chunk_index_lt_total_chunks: LtConfig<F, 1>,
 }
 
 impl<F: Field> ChunkContextConfig<F> {
@@ -51,10 +55,8 @@ impl<F: Field> ChunkContextConfig<F> {
         let chunk_diff = meta.advice_column();
         let total_chunks = meta.advice_column();
 
-        let pi_pre_chunk_ctx = meta.instance_column();
-        let pi_next_chunk_ctx = meta.instance_column();
-        meta.enable_equality(pi_pre_chunk_ctx);
-        meta.enable_equality(pi_next_chunk_ctx);
+        let pi_chunkctx = meta.instance_column();
+        meta.enable_equality(pi_chunkctx);
 
         let chunk_ctx_table = ChunkCtxTable::construct(meta);
         chunk_ctx_table.annotate_columns(meta);
@@ -79,6 +81,19 @@ impl<F: Field> ChunkContextConfig<F> {
                     rlc::expr(&chunk_ctx_table.table_exprs(meta), challenges.lookup_input()),
                 )]
             });
+        });
+
+        // assume max total_chunks < 2^8
+        let is_chunk_index_lt_total_chunks = LtChip::<_, 1>::configure(
+            meta,
+            |meta| meta.query_selector(q_chunk_context),
+            |meta| meta.query_advice(chunk_index, Rotation::cur()),
+            |meta| meta.query_advice(total_chunks, Rotation::cur()),
+        );
+
+        meta.create_gate("chunk_index < total_chunks", |meta| {
+            [meta.query_selector(q_chunk_context)
+                * (1.expr() - is_chunk_index_lt_total_chunks.is_lt(meta, None))]
         });
 
         let is_first_chunk = IsZeroChip::configure(
@@ -107,9 +122,9 @@ impl<F: Field> ChunkContextConfig<F> {
             total_chunks,
             is_first_chunk,
             is_last_chunk,
-            chunk_ctx_table,
-            pi_pre_chunk_ctx,
-            pi_next_chunk_ctx,
+            chunkctx_table,
+            pi_chunkctx,
+            is_chunk_index_lt_total_chunks,
         }
     }
 
@@ -120,6 +135,9 @@ impl<F: Field> ChunkContextConfig<F> {
         chunk_context: &ChunkContext,
         max_offset_index: usize,
     ) -> Result<(), Error> {
+        let is_chunk_index_lt_total_chunks = LtChip::construct(self.is_chunk_index_lt_total_chunks);
+        is_chunk_index_lt_total_chunks.load(layouter)?;
+
         let (
             chunk_index_cell,
             chunk_index_next_cell,
@@ -136,8 +154,7 @@ impl<F: Field> ChunkContextConfig<F> {
                 region.name_column(|| "chunk_index", self.chunk_index);
                 region.name_column(|| "chunk_index_next", self.chunk_index_next);
                 region.name_column(|| "total_chunks", self.total_chunks);
-                region.name_column(|| "pi_pre_chunk_ctx", self.pi_pre_chunk_ctx);
-                region.name_column(|| "pi_next_chunk_ctx", self.pi_next_chunk_ctx);
+                region.name_column(|| "pi_chunkctx", self.pi_chunkctx);
                 self.is_first_chunk
                     .annotate_columns_in_region(&mut region, "is_first_chunk");
                 self.is_last_chunk
@@ -180,24 +197,27 @@ impl<F: Field> ChunkContextConfig<F> {
                             (chunk_context.total_chunks - chunk_context.chunk_index - 1) as u64,
                         )),
                     )?;
+                    is_chunk_index_lt_total_chunks.assign(
+                        &mut region,
+                        offset,
+                        Value::known(F::from(chunk_context.chunk_index as u64)),
+                        Value::known(F::from(chunk_context.total_chunks as u64)),
+                    )?;
                 }
                 Ok(())
             },
         )?;
 
-        vec![chunk_index_cell, total_chunk_cell.clone(), initial_rwc_cell]
-            .iter()
-            .enumerate()
-            .try_for_each(|(i, cell)| {
-                layouter.constrain_instance(cell.cell(), self.pi_pre_chunk_ctx, i)
-            })?;
-        [chunk_index_next_cell, total_chunk_cell, end_rwc_cell]
-            .iter()
-            .enumerate()
-            .try_for_each(|(i, cell)| {
-                layouter.constrain_instance(cell.cell(), self.pi_next_chunk_ctx, i)
-            })?;
-
+        vec![
+            chunk_index_cell,
+            chunk_index_next_cell,
+            total_chunk_cell,
+            initial_rwc_cell,
+            end_rwc_cell,
+        ]
+        .iter()
+        .enumerate()
+        .try_for_each(|(i, cell)| layouter.constrain_instance(cell.cell(), self.pi_chunkctx, i))?;
         Ok(())
     }
 }

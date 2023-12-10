@@ -66,7 +66,7 @@ use crate::util::word::Word;
 #[cfg(test)]
 use crate::state_circuit::HashMap;
 #[cfg(test)]
-use crate::witness::{rw::ToVec, Rw, RwMap, RwRow};
+use crate::witness::{rw::RwTablePermutationFingerprints, rw::ToVec, Rw, RwMap, RwRow};
 #[cfg(test)]
 use gadgets::permutation::get_permutation_fingerprints;
 #[cfg(test)]
@@ -202,7 +202,7 @@ pub(crate) fn get_permutation_fingerprint_of_rwmap<F: Field>(
     alpha: F,
     gamma: F,
     prev_continuous_fingerprint: F,
-) -> F {
+) -> RwTablePermutationFingerprints<F> {
     get_permutation_fingerprint_of_rwvec(
         &rwmap.table_assignments(false),
         max_row,
@@ -219,7 +219,7 @@ pub(crate) fn get_permutation_fingerprint_of_rwvec<F: Field>(
     alpha: F,
     gamma: F,
     prev_continuous_fingerprint: F,
-) -> F {
+) -> RwTablePermutationFingerprints<F> {
     get_permutation_fingerprint_of_rwrowvec(
         &rwvec
             .iter()
@@ -239,21 +239,28 @@ pub(crate) fn get_permutation_fingerprint_of_rwrowvec<F: Field>(
     alpha: F,
     gamma: F,
     prev_continuous_fingerprint: F,
-) -> F {
+) -> RwTablePermutationFingerprints<F> {
     use crate::util::unwrap_value;
 
     let (rows, _) = RwRow::padding(rwrowvec, max_row, true);
     let x = rows.to2dvec();
-    unwrap_value(
-        get_permutation_fingerprints(
-            &x,
-            Value::known(alpha),
-            Value::known(gamma),
-            Value::known(prev_continuous_fingerprint),
-        )
-        .last()
-        .cloned()
-        .unwrap()
-        .0,
-    )
+    let fingerprints = get_permutation_fingerprints(
+        &x,
+        Value::known(alpha),
+        Value::known(gamma),
+        Value::known(prev_continuous_fingerprint),
+    );
+
+    fingerprints
+        .first()
+        .zip(fingerprints.last())
+        .map(|((first_acc, first_row), (last_acc, last_row))| {
+            RwTablePermutationFingerprints::new(
+                unwrap_value(*first_row),
+                unwrap_value(*last_row),
+                unwrap_value(*first_acc),
+                unwrap_value(*last_acc),
+            )
+        })
+        .unwrap_or_default()
 }
