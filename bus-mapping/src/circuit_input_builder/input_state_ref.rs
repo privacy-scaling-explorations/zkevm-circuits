@@ -250,12 +250,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(*byte)
     }
 
-    /// Push a read type [`MemoryOp`] into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter) and `caller_id`, and then
-    /// adds a reference to the stored operation ([`OperationRef`]) inside
-    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
-    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    /// Almost the same as [`memory_read`], but read from the caller's context instead.
     pub fn memory_read_caller(
         &mut self,
         step: &mut ExecStep,
@@ -289,12 +284,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(value_prev)
     }
 
-    /// Push a write type [`MemoryOp`] into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter) and `caller_id`, and then
-    /// adds a reference to the stored operation ([`OperationRef`]) inside
-    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
-    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    /// Almost the same as [`memory_write`], but write to the caller's context instead.
     pub fn memory_write_caller(
         &mut self,
         step: &mut ExecStep,
