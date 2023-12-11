@@ -59,6 +59,16 @@ impl<'a> CircuitInputStateRef<'a> {
         ))
     }
 
+    /// Create a new InvalidTx step
+    pub fn new_invalid_tx_step(&self) -> ExecStep {
+        ExecStep {
+            exec_state: ExecState::InvalidTx,
+            gas_left: self.tx.gas(),
+            rwc: self.block_ctx.rwc,
+            ..Default::default()
+        }
+    }
+
     /// Create a new BeginTx step
     pub fn new_begin_tx_step(&self) -> ExecStep {
         ExecStep {

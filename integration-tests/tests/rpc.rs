@@ -41,7 +41,7 @@ async fn test_get_block_by_number_by_hash() {
 
 #[tokio::test]
 async fn test_trace_block_by_number_by_hash() {
-    let block_num = GEN_DATA.deployments.get("Greeter").unwrap().0;
+    let block_num = GEN_DATA.deployments.get("greeter").unwrap().0;
 
     let cli = get_client();
     let block = cli.get_block_by_number(block_num.into()).await.unwrap();
@@ -53,8 +53,8 @@ async fn test_trace_block_by_number_by_hash() {
 
 #[tokio::test]
 async fn test_get_contract_code() {
-    let contract_name = "Greeter";
-    let contract_path_json = "greeter/Greeter.json";
+    let contract_name = "greeter";
+    let contract_path_json = "Greeter.json";
 
     let (block_num, address) = GEN_DATA.deployments.get(contract_name).unwrap();
     let path_json = Path::new(CONTRACTS_PATH).join(contract_path_json);
@@ -69,7 +69,7 @@ async fn test_get_contract_code() {
 
 #[tokio::test]
 async fn test_get_proof() {
-    let (block_num, address) = GEN_DATA.deployments.get("Greeter").unwrap();
+    let (block_num, address) = GEN_DATA.deployments.get("greeter").unwrap();
     // Key 0 corresponds to `Greeter.number`, which is initialized with 0x2a.
     let expected_storage_proof_json = r#"{
          "key": "0x0",

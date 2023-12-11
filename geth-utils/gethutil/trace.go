@@ -22,6 +22,7 @@ import (
 type ExecutionResult struct {
 	Gas         uint64         `json:"gas"`
 	Failed      bool           `json:"failed"`
+	Invalid     bool           `json:"invalid"`
 	ReturnValue string         `json:"returnValue"`
 	StructLogs  []StructLogRes `json:"structLogs"`
 }
@@ -236,15 +237,23 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 
 		result, err := core.ApplyMessage(evm, &message, new(core.GasPool).AddGas(message.GasLimit))
 		if err != nil {
-			return nil, fmt.Errorf("Failed to apply config.Transactions[%d]: %w", i, err)
-		}
-		stateDB.Finalise(true)
+			executionResults[i] = &ExecutionResult{
+				Gas:         0,
+				Failed:      true,
+				Invalid:     true,
+				ReturnValue: fmt.Sprintf("%v", err),
+				StructLogs:  []StructLogRes{},
+			}
+		} else {
+			stateDB.Finalise(true)
 
-		executionResults[i] = &ExecutionResult{
-			Gas:         result.UsedGas,
-			Failed:      result.Failed(),
-			ReturnValue: fmt.Sprintf("%x", result.ReturnData),
-			StructLogs:  FormatLogs(tracer.StructLogs()),
+			executionResults[i] = &ExecutionResult{
+				Gas:         result.UsedGas,
+				Failed:      result.Failed(),
+				Invalid:     false,
+				ReturnValue: fmt.Sprintf("%x", result.ReturnData),
+				StructLogs:  FormatLogs(tracer.StructLogs()),
+			}
 		}
 	}
 

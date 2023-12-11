@@ -139,6 +139,7 @@
 //! let geth_trace = GethExecTrace {
 //!     return_value: "".to_string(),
 //!     gas: block.eth_block.transactions[0].gas.as_u64(),
+//!     invalid: false,
 //!     failed: false,
 //!     struct_logs: geth_steps,
 //! };

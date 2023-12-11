@@ -146,6 +146,8 @@ pub enum ExecState {
     EndTx,
     /// Virtual step End Block
     EndBlock,
+    /// Invalid Tx
+    InvalidTx,
 }
 
 impl Default for ExecState {

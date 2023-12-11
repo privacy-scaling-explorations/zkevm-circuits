@@ -93,6 +93,7 @@ mod extcodehash;
 mod extcodesize;
 mod gas;
 mod gasprice;
+mod invalid_tx;
 mod is_zero;
 mod jump;
 mod jumpdest;
@@ -173,6 +174,7 @@ use extcodehash::ExtcodehashGadget;
 use extcodesize::ExtcodesizeGadget;
 use gas::GasGadget;
 use gasprice::GasPriceGadget;
+use invalid_tx::InvalidTxGadget;
 use is_zero::IsZeroGadget;
 use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
@@ -335,8 +337,8 @@ pub struct ExecutionConfig<F> {
     error_invalid_creation_code: Box<ErrorInvalidCreationCodeGadget<F>>,
     error_precompile_failed: Box<ErrorPrecompileFailedGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
-    // precompile calls
     precompile_identity_gadget: Box<IdentityGadget<F>>,
+    invalid_tx: Box<InvalidTxGadget<F>>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -395,11 +397,14 @@ impl<F: Field> ExecutionConfig<F> {
 
             // NEW: Enabled, this will break hand crafted tests, maybe we can remove them?
             let first_step_check = {
-                let begin_tx_end_block_selector = step_curr
-                    .execution_state_selector([ExecutionState::BeginTx, ExecutionState::EndBlock]);
+                let begin_tx_invalid_tx_end_block_selector = step_curr.execution_state_selector([
+                    ExecutionState::BeginTx,
+                    ExecutionState::InvalidTx,
+                    ExecutionState::EndBlock,
+                ]);
                 iter::once((
-                    "First step should be BeginTx or EndBlock",
-                    q_step_first * (1.expr() - begin_tx_end_block_selector),
+                    "First step should be BeginTx, InvalidTx or EndBlock",
+                    q_step_first * (1.expr() - begin_tx_invalid_tx_end_block_selector),
                 ))
             };
 
@@ -519,6 +524,7 @@ impl<F: Field> ExecutionConfig<F> {
             begin_tx_gadget: configure_gadget!(),
             end_block_gadget: configure_gadget!(),
             end_tx_gadget: configure_gadget!(),
+            invalid_tx: configure_gadget!(),
             // opcode gadgets
             add_sub_gadget: configure_gadget!(),
             addmod_gadget: configure_gadget!(),
@@ -781,9 +787,13 @@ impl<F: Field> ExecutionConfig<F> {
                 .chain(
                     IntoIterator::into_iter([
                         (
-                            "EndTx can only transit to BeginTx or EndBlock",
+                            "EndTx can only transit to BeginTx, InvalidTx or EndBlock",
                             ExecutionState::EndTx,
-                            vec![ExecutionState::BeginTx, ExecutionState::EndBlock],
+                            vec![
+                                ExecutionState::BeginTx,
+                                ExecutionState::InvalidTx,
+                                ExecutionState::EndBlock,
+                            ],
                         ),
                         (
                             "EndBlock can only transit to EndBlock",
@@ -797,9 +807,14 @@ impl<F: Field> ExecutionConfig<F> {
                 .chain(
                     IntoIterator::into_iter([
                         (
-                            "Only EndTx can transit to BeginTx",
+                            "Only EndTx and InvalidTx can transit to InvalidTx",
+                            ExecutionState::InvalidTx,
+                            vec![ExecutionState::EndTx, ExecutionState::InvalidTx],
+                        ),
+                        (
+                            "Only EndTx and InvalidTx can transit to BeginTx",
                             ExecutionState::BeginTx,
-                            vec![ExecutionState::EndTx],
+                            vec![ExecutionState::EndTx, ExecutionState::InvalidTx],
                         ),
                         (
                             "Only ExecutionState which halts or BeginTx can transit to EndTx",
@@ -810,9 +825,13 @@ impl<F: Field> ExecutionConfig<F> {
                                 .collect(),
                         ),
                         (
-                            "Only EndTx or EndBlock can transit to EndBlock",
+                            "Only EndTx, InvalidTx or EndBlock can transit to EndBlock",
                             ExecutionState::EndBlock,
-                            vec![ExecutionState::EndTx, ExecutionState::EndBlock],
+                            vec![
+                                ExecutionState::EndTx,
+                                ExecutionState::InvalidTx,
+                                ExecutionState::EndBlock,
+                            ],
                         ),
                     ])
                     .filter(move |(_, _, from)| !from.contains(&execution_state))
@@ -1240,6 +1259,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
+            ExecutionState::InvalidTx => assign_exec_step!(self.invalid_tx),
             // opcode
             ExecutionState::ADD_SUB => assign_exec_step!(self.add_sub_gadget),
             ExecutionState::ADDMOD => assign_exec_step!(self.addmod_gadget),

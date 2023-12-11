@@ -1,6 +1,7 @@
 //! Types needed for generating Ethereum traces
 
 use crate::{
+    evm_types::{self, GasCost},
     keccak256,
     sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
     AccessList, Address, Block, Bytecode, Bytes, Error, GethExecTrace, Hash, ToBigEndian,
@@ -287,6 +288,17 @@ impl Transaction {
         self.call_data
             .iter()
             .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 })
+    }
+
+    /// Compute the intrinsic gas cost
+    pub fn intrinsic_gas_cost(&self) -> u64 {
+        let is_create = self.is_create() as u64;
+        // Calculate gas cost of init code for EIP-3860.
+        let init_code_gas_cost =
+            ((self.call_data.len() as u64 + 31) / 32) * evm_types::INIT_CODE_WORD_GAS;
+        is_create * (GasCost::CREATION_TX + init_code_gas_cost)
+            + (1 - is_create) * GasCost::TX
+            + self.call_data_gas_cost()
     }
 
     /// Get the "to" address. If `to` is None then zero address

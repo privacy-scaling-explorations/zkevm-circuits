@@ -1,6 +1,6 @@
 use super::TxExecSteps;
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep},
+    circuit_input_builder::{Call, CircuitInputStateRef, ExecState, ExecStep},
     operation::{AccountField, AccountOp, CallContextField, TxReceiptField, TxRefundOp, RW},
     state_db::CodeDB,
     Error,
@@ -33,8 +33,9 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     let mut exec_step = state.new_begin_tx_step();
     let call = state.call()?.clone();
 
+    begin_tx(state, &mut exec_step, &call)?;
+
     for (field, value) in [
-        (CallContextField::TxId, state.tx_ctx.id().into()),
         (
             CallContextField::RwCounterEndOfReversion,
             call.rw_counter_end_of_reversion.into(),
@@ -314,17 +315,62 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
         false,
     )?;
 
+    end_tx(state, &mut exec_step, &call)?;
+
+    Ok(exec_step)
+}
+
+pub(crate) fn begin_tx(
+    state: &mut CircuitInputStateRef,
+    exec_step: &mut ExecStep,
+    call: &Call,
+) -> Result<(), Error> {
+    // Write the transaction id
+    state.call_context_write(
+        exec_step,
+        call.call_id,
+        CallContextField::TxId,
+        state.tx_ctx.id().into(),
+    )?;
+    Ok(())
+}
+
+pub(crate) fn end_tx(
+    state: &mut CircuitInputStateRef,
+    exec_step: &mut ExecStep,
+    call: &Call,
+) -> Result<(), Error> {
+    // Write the tx receipt
+    write_tx_receipt(state, exec_step, call.is_persistent)?;
+
+    // Write the next transaction id if we're not at the last tx
+    if !state.tx_ctx.is_last_tx() {
+        state.call_context_write(
+            exec_step,
+            state.block_ctx.rwc.0 + 1,
+            CallContextField::TxId,
+            (state.tx_ctx.id() + 1).into(),
+        )?;
+    }
+    Ok(())
+}
+
+fn write_tx_receipt(
+    state: &mut CircuitInputStateRef,
+    exec_step: &mut ExecStep,
+    is_persistent: bool,
+) -> Result<(), Error> {
     // handle tx receipt tag
     state.tx_receipt_write(
-        &mut exec_step,
+        exec_step,
         state.tx_ctx.id(),
         TxReceiptField::PostStateOrStatus,
-        call.is_persistent as u64,
+        is_persistent as u64,
     )?;
 
     let log_id = exec_step.log_id;
     state.tx_receipt_write(
-        &mut exec_step,
+        exec_step,
         state.tx_ctx.id(),
         TxReceiptField::LogLength,
         log_id as u64,
@@ -333,7 +379,7 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
     if state.tx_ctx.id() > 1 {
         // query pre tx cumulative gas
         state.tx_receipt_read(
-            &mut exec_step,
+            exec_step,
             state.tx_ctx.id() - 1,
             TxReceiptField::CumulativeGasUsed,
             state.block_ctx.cumulative_gas_used,
@@ -342,20 +388,11 @@ fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error>
 
     state.block_ctx.cumulative_gas_used += state.tx.gas() - exec_step.gas_left;
     state.tx_receipt_write(
-        &mut exec_step,
+        exec_step,
         state.tx_ctx.id(),
         TxReceiptField::CumulativeGasUsed,
         state.block_ctx.cumulative_gas_used,
     )?;
 
-    if !state.tx_ctx.is_last_tx() {
-        state.call_context_write(
-            &mut exec_step,
-            state.block_ctx.rwc.0 + 1,
-            CallContextField::TxId,
-            (state.tx_ctx.id() + 1).into(),
-        )?;
-    }
-
-    Ok(exec_step)
+    Ok(())
 }

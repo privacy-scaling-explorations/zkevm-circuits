@@ -43,9 +43,7 @@ pub const CONTRACTS: &[(&str, &str)] = &[
         "ERC20/OpenZeppelinERC20TestToken.sol",
     ),
     // Contracts to test worst-case usage of opcodes.
-    ("CheckMload", "MLOAD/MLOAD.sol"),
-    ("CheckExtCodeSize100", "EXTCODESIZE/EXTCODESIZE100.sol"),
-    ("CheckSdiv", "SDIV/SDIV.sol"),
+    ("Benchmarks", "BENCHMARKS.sol"),
 ];
 /// Path to gen_blockchain_data output file
 pub const GENDATA_OUTPUT_PATH: &str = "gendata_output.json";
@@ -151,5 +149,14 @@ pub struct CompiledContract {
     pub bin_runtime: Bytes,
 }
 
+#[allow(missing_docs)]
+#[allow(clippy::all)]
+pub mod bindings_benchmarks;
+#[allow(missing_docs)]
+#[allow(clippy::all)]
+pub mod bindings_greeter;
+#[allow(missing_docs)]
+#[allow(clippy::all)]
+pub mod bindings_openzeppelinerc20testtoken;
 /// Common code for integration tests of circuits.
 pub mod integration_test_circuits;
