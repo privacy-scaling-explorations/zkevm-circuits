@@ -1619,7 +1619,7 @@ impl<'a> CircuitInputStateRef<'a> {
                         | PrecompileCalls::Bn128Mul
                         | PrecompileCalls::Bn128Pairing
                         | PrecompileCalls::Modexp => {
-                            // Log the precompile address and gas left. 
+                            // Log the precompile address and gas left.
                             // Failure due to precompile being unsupported.
                             // Failure cases are routed to `PrecompileFailed` dummy gadget.
                             log::trace!(

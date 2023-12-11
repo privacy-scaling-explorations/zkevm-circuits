@@ -1,8 +1,8 @@
 //! precompile helpers
 
 use eth_types::{
-    evm_types::{GasCost, OpcodeId}, 
-    Bytecode, Address, Word
+    evm_types::{GasCost, OpcodeId},
+    Address, Bytecode, Word,
 };
 use revm_precompile::{Precompile, PrecompileError, Precompiles};
 

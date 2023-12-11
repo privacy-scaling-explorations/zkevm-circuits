@@ -77,13 +77,12 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             is_success.expr(),
             gas_cost.expr(),
             0.expr(),
-            0x00.expr(),             // ReturnDataOffset
-
-            // note: In the case of `Identity` precompile, the only failure is in the case of insufficient
-            // gas for the call, which is diverted to `ErrorOogPrecompile` gadget.
-            // Therefore, `call_data_length` can be safely put here without conditionals.
+            0x00.expr(), // ReturnDataOffset
+            // note: In the case of `Identity` precompile, the only failure is in the case of
+            // insufficient gas for the call, which is diverted to `ErrorOogPrecompile`
+            // gadget. Therefore, `call_data_length` can be safely put here without
+            // conditionals.
             call_data_length.expr(), // ReturnDataLength
-
             0.expr(),
             0.expr(),
         );

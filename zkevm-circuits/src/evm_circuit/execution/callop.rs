@@ -1492,10 +1492,7 @@ mod test {
 
     #[test]
     fn test_precompiled_call() {
-        use bus_mapping::{
-            mock::BlockData,
-            precompile::PrecompileCallArgs,
-        };
+        use bus_mapping::{mock::BlockData, precompile::PrecompileCallArgs};
         use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, word, Word};
         use mock::{
             test_ctx::{
