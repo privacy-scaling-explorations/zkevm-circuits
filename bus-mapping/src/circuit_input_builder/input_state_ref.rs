@@ -1131,7 +1131,7 @@ impl<'a> CircuitInputStateRef<'a> {
             if !self.call()?.is_root {
                 let (offset, length) = match step.op {
                     OpcodeId::RETURN | OpcodeId::REVERT => {
-                        let exec_step = current_exec_steps[current_exec_steps.len() - 1].clone();
+                        let exec_step = current_exec_steps.last_mut().expect("last exists").clone();
                         let (offset, length) = if exec_step.error.is_some()
                             || (self.call()?.is_create() && self.call()?.is_success)
                         {
