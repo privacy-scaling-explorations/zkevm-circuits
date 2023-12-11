@@ -19,7 +19,7 @@ pub(crate) fn execute_precompiled(
         .get(address.as_fixed_bytes())  else {
         panic!("calling non-exist precompiled contract address")
     };
-    let (return_data, gas_cost, is_oog, _is_ok) = match precompile_fn(input, gas) {
+    let (return_data, gas_cost, is_oog, is_ok) = match precompile_fn(input, gas) {
         Ok((gas_cost, return_value)) => {
             // Some Revm behavior for invalid inputs might be overridden.
             (return_value, gas_cost, false, true)
@@ -32,6 +32,7 @@ pub(crate) fn execute_precompiled(
             }
         },
     };
+    log::trace!("called precompile with is_ok {is_ok} is_oog {is_oog}, gas_cost {gas_cost}, return_data len {}", return_data.len());
     (return_data, gas_cost, is_oog)
 }
 
