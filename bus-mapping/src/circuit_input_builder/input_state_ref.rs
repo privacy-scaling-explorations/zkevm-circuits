@@ -1619,8 +1619,8 @@ impl<'a> CircuitInputStateRef<'a> {
                         | PrecompileCalls::Bn128Mul
                         | PrecompileCalls::Bn128Pairing
                         | PrecompileCalls::Modexp => {
-                            // Log the precompile address and gas left. Since this failure is mainly
-                            // caused by out of gas.
+                            // Log the precompile address and gas left. 
+                            // Failure is either due to precompile being unsupported or the call being out of gas.
                             log::trace!(
                                 "Precompile failed: code_address = {}, step.gas = {}",
                                 code_address,
