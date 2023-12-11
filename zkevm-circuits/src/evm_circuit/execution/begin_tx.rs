@@ -70,16 +70,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         let tx = TxDataGadget::configure(cb, tx_id.expr(), false);
 
-        // precompile_debug
-        // let tx_id = cb.query_cell(); // already constrain `if step_first && tx_id = 1` and `tx_id += 1` at EndTx
-        // cb.debug_expression("tx_id", tx_id.expr());
-
-        // cb.call_context_lookup_write(
-        //     Some(call_id.expr()),
-        //     CallContextFieldTag::TxId,
-        //     Word::from_lo_unchecked(tx_id.expr()),
-        // ); // rwc_delta += 1
-        
         let mut reversion_info = cb.reversion_info_write_unchecked(None); // rwc_delta += 2
         cb.call_context_lookup_write(
             Some(call_id.expr()),
