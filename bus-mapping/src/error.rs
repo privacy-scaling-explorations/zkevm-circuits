@@ -95,7 +95,7 @@ pub enum OogError {
     /// Out of Gas for CALL, CALLCODE, DELEGATECALL and STATICCALL
     Call,
     /// Out of Gas for Precompile.
-    /// ecrecover/ecadd/ecmul/ecpairing/identity oog can should be handled by this.
+    /// ecrecover/ecadd/ecmul/ecpairing/identity oog should be handled by this.
     /// modexp oog is handled inside modexp gadget.
     /// disabled precompiles are handled by PrecompileFailedGadget.
     Precompile,
@@ -199,7 +199,7 @@ pub enum ExecError {
     /// For RETURN in a CREATE, CREATE2
     MaxCodeSizeExceeded,
     /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
-    PrecompileFailed,
+    UnimplementedPrecompiles,
     /// For CREATE, CREATE2
     NonceUintOverflow(NonceUintOverflowError),
 }

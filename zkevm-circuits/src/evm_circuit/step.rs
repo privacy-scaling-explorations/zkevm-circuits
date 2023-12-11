@@ -209,7 +209,7 @@ impl From<&ExecError> for ExecutionState {
             ExecError::CodeStoreOutOfGas | ExecError::MaxCodeSizeExceeded => {
                 ExecutionState::ErrorCodeStore
             }
-            ExecError::PrecompileFailed => ExecutionState::ErrorPrecompileFailed,
+            ExecError::UnimplementedPrecompiles => ExecutionState::ErrorPrecompileFailed,
             ExecError::OutOfGas(oog_error) => match oog_error {
                 OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
                 OogError::StaticMemoryExpansion => {

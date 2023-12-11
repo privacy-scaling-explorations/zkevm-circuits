@@ -23,7 +23,7 @@ impl Opcode for PrecompileFailed {
         };
 
         let mut exec_step = state.new_step(geth_step)?;
-        exec_step.error = Some(ExecError::PrecompileFailed);
+        exec_step.error = Some(ExecError::UnimplementedPrecompiles);
 
         let args_offset = geth_step.stack.nth_last(stack_input_num - 4)?.as_usize();
         let args_length = geth_step.stack.nth_last(stack_input_num - 3)?.as_usize();

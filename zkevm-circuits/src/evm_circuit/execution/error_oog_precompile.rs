@@ -68,7 +68,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
             //     addr_bits.value_equals(PrecompileCalls::ECRecover),
             //     GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
             // ),
-            // These are handled in PrecompileFailedGadget
             // addr_bits.value_equals(PrecompileCalls::Sha256),
             // addr_bits.value_equals(PrecompileCalls::Ripemd160),
             // addr_bits.value_equals(PrecompileCalls::Blake2F),
