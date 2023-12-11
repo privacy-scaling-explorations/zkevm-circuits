@@ -1621,6 +1621,7 @@ impl<'a> CircuitInputStateRef<'a> {
                         | PrecompileCalls::Modexp => {
                             // Log the precompile address and gas left. 
                             // Failure is either due to precompile being unsupported or the call being out of gas.
+                            // Failure cases are routed to `PrecompileFailed` dummy gadget.
                             log::trace!(
                                 "Precompile failed: code_address = {}, step.gas = {}",
                                 code_address,
