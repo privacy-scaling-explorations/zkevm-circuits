@@ -1,6 +1,9 @@
 //! precompile helpers
 
-use eth_types::{evm_types::GasCost, Address};
+use eth_types::{
+    evm_types::{GasCost, OpcodeId}, 
+    Bytecode, Address, Word
+};
 use revm_precompile::{Precompile, PrecompileError, Precompiles};
 
 /// Check if address is a precompiled or not.
@@ -124,5 +127,77 @@ impl PrecompileCalls {
             Self::Bn128Mul => Some(96),
             _ => None,
         }
+    }
+}
+
+/// Precompile call args
+pub struct PrecompileCallArgs {
+    /// description for the instance of a precompile call.
+    pub name: &'static str,
+    /// the bytecode that when call can produce the desired precompile call.
+    pub setup_code: Bytecode,
+    /// the call's return data size.
+    pub ret_size: Word,
+    /// the call's return data offset.
+    pub ret_offset: Word,
+    /// the call's calldata offset.
+    pub call_data_offset: Word,
+    /// the call's calldata length.
+    pub call_data_length: Word,
+    /// the address to which the call is made, i.e. callee address.
+    pub address: Word,
+    /// the optional value sent along with the call.
+    pub value: Word,
+    /// the gas limit for the call.
+    pub gas: Word,
+    /// stack values during the call.
+    pub stack_value: Vec<(Word, Word)>,
+    /// maximum number of RW entries for the call.
+    pub max_rws: usize,
+}
+
+impl Default for PrecompileCallArgs {
+    fn default() -> Self {
+        PrecompileCallArgs {
+            name: "precompiled call",
+            setup_code: Bytecode::default(),
+            ret_size: Word::zero(),
+            ret_offset: Word::zero(),
+            call_data_offset: Word::zero(),
+            call_data_length: Word::zero(),
+            address: Word::zero(),
+            value: Word::zero(),
+            gas: Word::from(0xFFFFFFF),
+            stack_value: vec![],
+            max_rws: 1000,
+        }
+    }
+}
+
+impl PrecompileCallArgs {
+    /// Get the setup bytecode for call to a precompiled contract.
+    pub fn with_call_op(&self, call_op: OpcodeId) -> Bytecode {
+        assert!(
+            call_op.is_call(),
+            "invalid setup, {:?} is not a call op",
+            call_op
+        );
+        let mut code = self.setup_code.clone();
+        code.push(32, self.ret_size)
+            .push(32, self.ret_offset)
+            .push(32, self.call_data_length)
+            .push(32, self.call_data_offset);
+        if call_op == OpcodeId::CALL || call_op == OpcodeId::CALLCODE {
+            code.push(32, self.value);
+        }
+        code.push(32, self.address)
+            .push(32, self.gas)
+            .write_op(call_op)
+            .write_op(OpcodeId::POP);
+        for (offset, _) in self.stack_value.iter().rev() {
+            code.push(32, *offset).write_op(OpcodeId::MLOAD);
+        }
+
+        code
     }
 }

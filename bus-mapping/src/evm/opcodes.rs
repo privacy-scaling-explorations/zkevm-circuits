@@ -111,7 +111,7 @@ use stop::Stop;
 use swap::Swap;
 
 #[cfg(feature = "test")]
-pub use callop::tests::PrecompileCallArgs;
+pub use crate::precompile::PrecompileCallArgs;
 
 /// Generic opcode trait which defines the logic of the
 /// [`Operation`](crate::operation::Operation) that should be generated for one
