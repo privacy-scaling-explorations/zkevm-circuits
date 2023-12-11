@@ -245,7 +245,7 @@ where $\verb#input#[i]$ is the (sparse-word-representation) bit value of `input`
 
 The module splits a $64$-bit word in sparse-word-representation into `parts` according to a given `part_size` using `Word_Parts` with `uniform=true`. 
 
-When this module is called, it will use `CellManager` to allocate a region to store the `input_parts`, which are to be the partition returned by `WordParts`. It then merges the splitted `part_size` interval that contains 0 into one part with size `part_size` in the `output_parts`, while stores the original splitted `input_parts` that are divided by 0 as two separate parts.
+When this module is called, it will use `CellManager` to allocate a region to store the `input_parts`, which are to be the partition returned by `WordParts`. It then merges the split `part_size` interval that contains 0 into one part with size `part_size` in the `output_parts`, while stores the original split `input_parts` that are divided by 0 as two separate parts.
 
 The returned parts from this module are the `output_parts`, which are used for inputs in uniform lookup to check relations constrained by Keccak-permutation operations that involve rotations, such as $\rho/\pi/\chi$ steps.
 
