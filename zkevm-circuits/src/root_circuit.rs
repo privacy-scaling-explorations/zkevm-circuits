@@ -43,6 +43,8 @@ pub use snark_verifier::{
     system::halo2::{compile, transcript::evm::EvmTranscript, Config},
 };
 
+const NUM_OF_SUPERCIRCUIT_INSTANCES: usize = 2;
+
 /// SuperCircuitInstance is to demystifying supercircuit instance to meaningful name.
 #[derive(Clone)]
 struct SuperCircuitInstance<T> {
@@ -77,28 +79,27 @@ struct SuperCircuitInstance<T> {
 impl<T: Clone + Copy> SuperCircuitInstance<T> {
     /// Construct `SnarkInstance` with vector
     pub fn new(instances: impl IntoIterator<Item = T>) -> Self {
-        let raw_instances = instances.into_iter().collect_vec();
-        assert_eq!(raw_instances.len(), 19);
+        let mut iter_instances = instances.into_iter();
         Self {
-            chunk_index: raw_instances[0],
-            total_chunk: raw_instances[1],
-            initial_rwc: raw_instances[2],
-            chunk_index_next: raw_instances[3],
-            end_rwc: raw_instances[4],
-            pi_digest_lo: raw_instances[5],
-            pi_digest_hi: raw_instances[6],
-            sc_permu_alpha: raw_instances[7],
-            sc_permu_gamma: raw_instances[8],
-            sc_rwtable_row_prev_fingerprint: raw_instances[9],
-            sc_rwtable_row_next_fingerprint: raw_instances[10],
-            sc_rwtable_prev_fingerprint: raw_instances[11],
-            sc_rwtable_next_fingerprint: raw_instances[12],
-            ec_permu_alpha: raw_instances[13],
-            ec_permu_gamma: raw_instances[14],
-            ec_rwtable_row_prev_fingerprint: raw_instances[15],
-            ec_rwtable_row_next_fingerprint: raw_instances[16],
-            ec_rwtable_prev_fingerprint: raw_instances[17],
-            ec_rwtable_next_fingerprint: raw_instances[18],
+            chunk_index: iter_instances.next().unwrap(),
+            total_chunk: iter_instances.next().unwrap(),
+            initial_rwc: iter_instances.next().unwrap(),
+            chunk_index_next: iter_instances.next().unwrap(),
+            end_rwc: iter_instances.next().unwrap(),
+            pi_digest_lo: iter_instances.next().unwrap(),
+            pi_digest_hi: iter_instances.next().unwrap(),
+            sc_permu_alpha: iter_instances.next().unwrap(),
+            sc_permu_gamma: iter_instances.next().unwrap(),
+            sc_rwtable_row_prev_fingerprint: iter_instances.next().unwrap(),
+            sc_rwtable_row_next_fingerprint: iter_instances.next().unwrap(),
+            sc_rwtable_prev_fingerprint: iter_instances.next().unwrap(),
+            sc_rwtable_next_fingerprint: iter_instances.next().unwrap(),
+            ec_permu_alpha: iter_instances.next().unwrap(),
+            ec_permu_gamma: iter_instances.next().unwrap(),
+            ec_rwtable_row_prev_fingerprint: iter_instances.next().unwrap(),
+            ec_rwtable_row_next_fingerprint: iter_instances.next().unwrap(),
+            ec_rwtable_prev_fingerprint: iter_instances.next().unwrap(),
+            ec_rwtable_next_fingerprint: iter_instances.next().unwrap(),
         }
     }
 }
@@ -207,8 +208,10 @@ where
     /// Returns accumulator indices in instance columns, which will be in
     /// the last `4 * LIMBS` rows of instance column in `MainGate`.
     pub fn accumulator_indices(&self) -> Vec<(usize, usize)> {
-        let offset = self.protocol.num_instance.iter().sum::<usize>();
-        (offset..).map(|idx| (0, idx)).take(4 * LIMBS).collect()
+        (NUM_OF_SUPERCIRCUIT_INSTANCES..)
+            .map(|idx| (0, idx))
+            .take(4 * LIMBS)
+            .collect()
     }
 
     /// Returns number of instance
@@ -452,9 +455,11 @@ where
 
 /// get instances to expose
 fn exposed_instances<T: Copy>(supercircuit_instances: &SuperCircuitInstance<T>) -> Vec<T> {
-    vec![
+    let instances = vec![
         // pi circuit
         supercircuit_instances.pi_digest_lo,
         supercircuit_instances.pi_digest_hi,
-    ]
+    ];
+    assert_eq!(NUM_OF_SUPERCIRCUIT_INSTANCES, instances.len());
+    instances
 }
