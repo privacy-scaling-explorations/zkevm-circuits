@@ -655,7 +655,6 @@ pub mod tests {
     #[test]
     fn test_precompiled_call() {
         use crate::mock::BlockData;
-        // use crate::circuit_input_builder::CircuitsParams;
         use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, word, Word};
         use mock::{
             test_ctx::{
