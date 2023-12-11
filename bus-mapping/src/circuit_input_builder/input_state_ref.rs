@@ -1121,7 +1121,7 @@ impl<'a> CircuitInputStateRef<'a> {
             }
 
             self.handle_restore_context(
-                current_exec_steps[current_exec_steps.len() - 1],
+                current_exec_steps.last_mut().expect("last exists"),
                 geth_steps,
             )?;
         }
