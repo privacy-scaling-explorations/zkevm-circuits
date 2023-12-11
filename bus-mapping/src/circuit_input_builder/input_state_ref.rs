@@ -250,7 +250,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(*byte)
     }
 
-    /// Almost the same as [`memory_read`], but read from the caller's context instead.
+    /// Almost the same as above memory_read, but read from the caller's context instead.
     pub fn memory_read_caller(
         &mut self,
         step: &mut ExecStep,
@@ -284,7 +284,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(value_prev)
     }
 
-    /// Almost the same as [`memory_write`], but write to the caller's context instead.
+    /// Almost the same as above memory_write, but write to the caller's context instead.
     pub fn memory_write_caller(
         &mut self,
         step: &mut ExecStep,
