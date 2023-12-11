@@ -115,8 +115,10 @@ pub struct UserChallenge {
 #[derive(Clone)]
 pub struct RootCircuit<'a, M: MultiMillerLoop, As> {
     svk: KzgSvk<M>,
-    snark: SnarkWitness<'a, M::G1Affine>,
+    protocol: &'a PlonkProtocol<M::G1Affine>,
+    snark_witnesses: Vec<SnarkWitness<'a, M::G1Affine>>,
     instance: Vec<M::Scalar>,
+    user_challenges: Option<&'a UserChallenge>,
     _marker: PhantomData<As>,
 }
 
@@ -139,56 +141,65 @@ where
 {
     /// Create a `RootCircuit` with accumulator computed given a `SuperCircuit`
     /// proof and its instance. Returns `None` if given proof is invalid.
-    /// TODO support multiple snark proof aggregation
     pub fn new(
         params: &ParamsKZG<M>,
-        super_circuit_protocol: &'a PlonkProtocol<M::G1Affine>,
-        super_circuit_instances: Value<&'a Vec<Vec<M::Scalar>>>,
-        super_circuit_proof: Value<&'a [u8]>,
+        protocol: &'a PlonkProtocol<M::G1Affine>,
+        snark_witnesses: Vec<SnarkWitness<'a, M::G1Affine>>,
         user_challenges: Option<&'a UserChallenge>,
     ) -> Result<Self, snark_verifier::Error> {
-        let num_instances = super_circuit_protocol.num_instance.iter().sum::<usize>();
+        let num_raw_instances = protocol.num_instance.iter().sum::<usize>();
 
         // compute real instance value
-        let (flatten_super_circuit_instances, accumulator_limbs) = {
+        let (flatten_first_chunk_instances, accumulator_limbs) = {
             let (mut instance, mut accumulator_limbs) = (
-                vec![M::Scalar::ZERO; num_instances],
+                vec![M::Scalar::ZERO; num_raw_instances],
                 Ok(vec![M::Scalar::ZERO; 4 * LIMBS]),
             );
-            super_circuit_instances
-                .as_ref()
-                .zip(super_circuit_proof.as_ref())
-                .map(|(super_circuit_instances, super_circuit_proof)| {
-                    let snark = Snark::new(
-                        super_circuit_protocol,
-                        super_circuit_instances,
-                        super_circuit_proof,
-                    );
-                    accumulator_limbs = aggregate::<M, As>(params, [snark])
-                        .map(|accumulator_limbs| accumulator_limbs.to_vec());
-                    instance = super_circuit_instances
-                        .iter()
-                        .flatten()
-                        .cloned()
-                        .collect_vec()
+            // compute aggregate_limbs
+            snark_witnesses
+                .iter()
+                .fold(Value::known(vec![]), |acc_snark, snark_witness| {
+                    snark_witness
+                        .instances
+                        .as_ref()
+                        .zip(snark_witness.proof.as_ref())
+                        .map(|(super_circuit_instances, super_circuit_proof)| {
+                            Snark::new(protocol, super_circuit_instances, super_circuit_proof)
+                        })
+                        .zip(acc_snark)
+                        .map(|(snark, mut acc_snark)| {
+                            acc_snark.push(snark);
+                            acc_snark
+                        })
+                })
+                .map(|snarks| {
+                    if !snarks.is_empty() {
+                        accumulator_limbs = aggregate::<M, As>(params, snarks)
+                            .map(|accumulator_limbs| accumulator_limbs.to_vec());
+                    }
                 });
+
+            // retrieve first instance
+            if let Some(snark_witness) = snark_witnesses.first() {
+                snark_witness
+                    .instances
+                    .map(|instances| instance = instances.iter().flatten().cloned().collect_vec());
+            }
+
             (instance, accumulator_limbs?)
         };
 
-        debug_assert_eq!(flatten_super_circuit_instances.len(), num_instances);
+        debug_assert_eq!(flatten_first_chunk_instances.len(), num_raw_instances);
         let mut flatten_instance =
-            exposed_instances(&SuperCircuitInstance::new(flatten_super_circuit_instances));
+            exposed_instances(&SuperCircuitInstance::new(flatten_first_chunk_instances));
         flatten_instance.extend(accumulator_limbs);
 
         Ok(Self {
             svk: KzgSvk::<M>::new(params.get_g()[0]),
-            snark: SnarkWitness::new(
-                super_circuit_protocol,
-                super_circuit_instances,
-                user_challenges,
-                super_circuit_proof,
-            ),
+            protocol,
+            snark_witnesses,
             instance: flatten_instance,
+            user_challenges,
             _marker: PhantomData,
         })
     }
@@ -196,13 +207,13 @@ where
     /// Returns accumulator indices in instance columns, which will be in
     /// the last `4 * LIMBS` rows of instance column in `MainGate`.
     pub fn accumulator_indices(&self) -> Vec<(usize, usize)> {
-        let offset = self.snark.protocol().num_instance.iter().sum::<usize>();
+        let offset = self.protocol.num_instance.iter().sum::<usize>();
         (offset..).map(|idx| (0, idx)).take(4 * LIMBS).collect()
     }
 
     /// Returns number of instance
     pub fn num_instance(&self) -> Vec<usize> {
-        vec![self.snark.protocol().num_instance.iter().sum::<usize>() + 4 * LIMBS]
+        vec![self.instance.len()]
     }
 
     /// Returns instance
@@ -234,7 +245,13 @@ where
     fn without_witnesses(&self) -> Self {
         Self {
             svk: self.svk,
-            snark: self.snark.without_witnesses(),
+            protocol: self.protocol,
+            snark_witnesses: self
+                .snark_witnesses
+                .iter()
+                .map(|snark_witness| snark_witness.without_witnesses())
+                .collect_vec(),
+            user_challenges: self.user_challenges,
             instance: vec![M::Scalar::ZERO; self.instance.len()],
             _marker: PhantomData,
         }
@@ -257,13 +274,13 @@ where
                 config.named_column_in_region(&mut region);
                 let ctx = RegionCtx::new(region, 0);
                 let (loaded_instances, accumulator_limbs, loader, proofs) =
-                    config.aggregate::<M, As>(ctx, &key.clone(), [self.snark])?;
+                    config.aggregate::<M, As>(ctx, &key.clone(), &self.snark_witnesses)?;
 
                 // aggregate user challenge for rwtable permutation challenge
                 let (alpha, gamma) = {
                     let mut challenges = config.aggregate_user_challenges::<M, As>(
                         loader.clone(),
-                        self.snark.user_challenges(),
+                        self.user_challenges,
                         proofs,
                     )?;
                     (challenges.remove(0), challenges.remove(0))

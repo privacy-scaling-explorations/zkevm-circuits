@@ -141,7 +141,7 @@ where
                 config.named_column_in_region(&mut region);
                 let ctx = RegionCtx::new(region, 0);
                 let (instances, accumulator_limbs, _, _) =
-                    config.aggregate::<M, As>(ctx, &self.svk, self.snarks.clone())?;
+                    config.aggregate::<M, As>(ctx, &self.svk, &self.snarks)?;
                 let instances = instances
                     .iter()
                     .flat_map(|instances| {

@@ -101,7 +101,6 @@ impl<'a, C: CurveAffine> From<Snark<'a, C>> for SnarkWitness<'a, C> {
             protocol: snark.protocol,
             instances: Value::known(snark.instances),
             proof: Value::known(snark.proof),
-            user_challenges: None,
         }
     }
 }
@@ -109,10 +108,12 @@ impl<'a, C: CurveAffine> From<Snark<'a, C>> for SnarkWitness<'a, C> {
 /// SnarkWitness
 #[derive(Clone, Copy)]
 pub struct SnarkWitness<'a, C: CurveAffine> {
-    protocol: &'a PlonkProtocol<C>,
-    instances: Value<&'a Vec<Vec<C::Scalar>>>,
-    user_challenges: Option<&'a UserChallenge>,
-    proof: Value<&'a [u8]>,
+    /// protocol
+    pub protocol: &'a PlonkProtocol<C>,
+    /// instance
+    pub instances: Value<&'a Vec<Vec<C::Scalar>>>,
+    /// proof
+    pub proof: Value<&'a [u8]>,
 }
 
 impl<'a, C: CurveAffine> SnarkWitness<'a, C> {
@@ -120,13 +121,11 @@ impl<'a, C: CurveAffine> SnarkWitness<'a, C> {
     pub fn new(
         protocol: &'a PlonkProtocol<C>,
         instances: Value<&'a Vec<Vec<C::Scalar>>>,
-        user_challenges: Option<&'a UserChallenge>,
         proof: Value<&'a [u8]>,
     ) -> Self {
         Self {
             protocol,
             instances,
-            user_challenges,
             proof,
         }
     }
@@ -136,7 +135,6 @@ impl<'a, C: CurveAffine> SnarkWitness<'a, C> {
         SnarkWitness {
             protocol: self.protocol,
             instances: Value::unknown(),
-            user_challenges: self.user_challenges,
             proof: Value::unknown(),
         }
     }
@@ -149,11 +147,6 @@ impl<'a, C: CurveAffine> SnarkWitness<'a, C> {
     /// Returns proof as reference.
     pub fn proof(&self) -> Value<&[u8]> {
         self.proof
-    }
-
-    /// Returns user_challenges as option.
-    pub fn user_challenges(&self) -> Option<&'a UserChallenge> {
-        self.user_challenges
     }
 
     fn loaded_instances<'b>(
@@ -298,7 +291,7 @@ impl AggregationConfig {
         &self,
         ctx: RegionCtx<'c, M::Scalar>,
         svk: &KzgSvk<M>,
-        snarks: impl IntoIterator<Item = SnarkWitness<'a, M::G1Affine>>,
+        snarks: &[SnarkWitness<'a, M::G1Affine>],
     ) -> Result<
         (
             Vec<Vec<Scalar<'c, M::G1Affine, EccChip<M::G1Affine>>>>,
@@ -328,8 +321,6 @@ impl AggregationConfig {
 
         type PoseidonTranscript<'a, C, S> =
             transcript::halo2::PoseidonTranscript<C, Rc<Halo2Loader<'a, C>>, S, T, RATE, R_F, R_P>;
-
-        let snarks = snarks.into_iter().collect_vec();
 
         let mut plonk_svp = vec![];
         // Verify the cheap part and get accumulator (left-hand and right-hand side of
