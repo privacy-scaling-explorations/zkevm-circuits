@@ -1,5 +1,7 @@
 use crate::{
-    root_circuit::{compile, Config, Gwc, PoseidonTranscript, RootCircuit, UserChallenge},
+    root_circuit::{
+        compile, Config, Gwc, PoseidonTranscript, RootCircuit, SnarkWitness, UserChallenge,
+    },
     super_circuit::{test::block_1tx, SuperCircuit},
 };
 use bus_mapping::circuit_input_builder::FixedCParams;
@@ -76,8 +78,11 @@ fn test_root_circuit() {
     let root_circuit = RootCircuit::<Bn256, Gwc<_>>::new(
         &params,
         &protocol,
-        Value::known(&instance),
-        Value::known(&proof),
+        vec![SnarkWitness::new(
+            &protocol,
+            Value::known(&instance),
+            Value::known(&proof),
+        )],
         Some(&user_challenge),
     )
     .unwrap();
