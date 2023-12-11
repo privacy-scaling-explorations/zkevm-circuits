@@ -28,7 +28,7 @@ impl Opcode for ErrorCreationCode {
 
         // Read the first byte of init code and check it must be 0xef for this error.
         let init_code_first_byte = state.call_ctx()?.memory.0[offset.as_usize()];
-        state.memory_read(&mut exec_step, offset.try_into()?, init_code_first_byte)?;
+        state.memory_read(&mut exec_step, offset.try_into()?)?;
         assert_eq!(init_code_first_byte, INVALID_INIT_CODE_FIRST_BYTE);
 
         state.handle_return(&mut [&mut exec_step], geth_steps, true)?;

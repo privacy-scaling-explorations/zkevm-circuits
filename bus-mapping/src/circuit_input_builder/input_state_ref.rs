@@ -243,7 +243,6 @@ impl<'a> CircuitInputStateRef<'a> {
         &mut self,
         step: &mut ExecStep,
         address: MemoryAddress,
-        _value: u8,
     ) -> Result<u8, Error> {
         let byte = &self.call_ctx()?.memory.read_chunk(address, 1.into())[0];
         let call_id = self.call()?.call_id;
@@ -1763,7 +1762,7 @@ impl<'a> CircuitInputStateRef<'a> {
             let mut dst_byte_index: usize = dst_addr.into().0;
 
             for (src_byte_index, b) in result.iter().take(copy_length).enumerate() {
-                self.memory_read(exec_step, src_byte_index.into(), 0)?;
+                self.memory_read(exec_step, src_byte_index.into())?;
                 self.memory_write_caller(exec_step, dst_byte_index.into(), *b)?;
                 dst_byte_index += 1;
 

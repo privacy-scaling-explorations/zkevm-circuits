@@ -41,7 +41,7 @@ impl Opcode for Mload {
         // First mem read -> 32 MemoryOp generated.
         //
         for byte in mem_read_value.to_be_bytes() {
-            state.memory_read(&mut exec_step, mem_read_addr, byte)?;
+            state.memory_read(&mut exec_step, mem_read_addr)?;
 
             // Update mem_read_addr to next byte's one
             mem_read_addr += MemoryAddress::from(1);
