@@ -58,6 +58,7 @@ use crate::{
     copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs},
     evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs},
     exp_circuit::{ExpCircuit, ExpCircuitConfig},
+    util::chunk_ctx::ChunkContextConfig,
     keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
     pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
@@ -98,7 +99,7 @@ pub struct SuperCircuitConfig<F: Field> {
     keccak_circuit: KeccakCircuitConfig<F>,
     pi_circuit: PiCircuitConfig<F>,
     exp_circuit: ExpCircuitConfig<F>,
-    chunkctx_config: ChunkContextConfig<F>,
+    chunk_ctx_config: ChunkContextConfig<F>,
 }
 
 /// Circuit configuration arguments
@@ -111,17 +112,6 @@ pub struct SuperCircuitConfigArgs<F: Field> {
     pub mock_randomness: F,
 }
 
-impl<F: Field> SuperCircuitConfig<F> {
-    /// get chronological_rwtable and byaddr_rwtable advice columns
-    pub fn get_rwtable_columns(&self) -> Vec<Column<Any>> {
-        // concat rw_table columns: [chronological_rwtable] ++ [byaddr_rwtable]
-        let mut columns = <RwTable as LookupTable<F>>::columns(&self.evm_circuit.rw_table);
-        columns.append(&mut <RwTable as LookupTable<F>>::columns(
-            &self.state_circuit.rw_table,
-        ));
-        columns
-    }
-}
 
 impl<F: Field> SuperCircuitConfig<F> {
     /// get chronological_rwtable and byaddr_rwtable advice columns
@@ -173,7 +163,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             power_of_randomness[0].clone(),
         );
 
-        let chunkctx_config = ChunkContextConfig::new(meta, &challenges);
+        let chunk_ctx_config = ChunkContextConfig::new(meta, &challenges);
 
         let keccak_circuit = KeccakCircuitConfig::new(
             meta,
@@ -246,7 +236,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 exp_table,
                 u8_table,
                 u16_table,
-                chunkctx_config: chunkctx_config.clone(),
+                chunk_ctx_config: chunk_ctx_config.clone(),
             },
         );
 
@@ -259,7 +249,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         meta.create_gate(
             "chronological rwtable row fingerprint == by address rwtable row fingerprint",
             |meta| {
-                let is_first_chunk = chunkctx_config.is_first_chunk.expr();
+                let is_first_chunk = chunk_ctx_config.is_first_chunk.expr();
                 let chronological_rwtable_row_fingerprint = evm_circuit
                     .rw_permutation_config
                     .row_fingerprints_cur_expr();
@@ -297,6 +287,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             keccak_circuit,
             pi_circuit,
             exp_circuit,
+            chunk_ctx_config,
         }
     }
 }
@@ -390,8 +381,8 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
         let chunk = self.chunk.as_ref().unwrap();
 
         instance.extend_from_slice(&[vec![
-            F::from(chunk.chunk_context.chunk_index as u64),
-            F::from(chunk.chunk_context.chunk_index as u64) + F::ONE,
+            F::from(chunk.chunk_context.idx as u64),
+            F::from(chunk.chunk_context.idx as u64) + F::ONE,
             F::from(chunk.chunk_context.total_chunks as u64),
             F::from(chunk.chunk_context.initial_rwc as u64),
             F::from(chunk.chunk_context.end_rwc as u64),
@@ -437,10 +428,10 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
                 // synthesize chunk context
-        config.chunkctx_config.assign_chunk_context(
+        config.chunk_ctx_config.assign_chunk_context(
             layouter,
-            &self.block.as_ref().unwrap().chunk_context,
-            self.block.as_ref().unwrap().circuits_params.max_rws - 1,
+            &self.chunk.as_ref().unwrap().chunk_context,
+            self.chunk.as_ref().unwrap().fixed_param.max_rws - 1,
         )?;
         self.keccak_circuit
             .synthesize_sub(&config.keccak_circuit, challenges, layouter)?;

@@ -165,7 +165,7 @@ pub enum Table {
     /// Lookup for exp table
     Exp,
     /// Lookup for chunk context
-    ChunkCtx,
+    chunk_ctx,
 }
 
 #[derive(Clone, Debug)]
@@ -335,7 +335,7 @@ pub(crate) enum Lookup<F> {
         exponentiation_lo_hi: [Expression<F>; 2],
     },
     /// Lookup to block table, which contains constants of this block.
-    ChunkCtx {
+    chunk_ctx {
         /// Tag to specify which field to read.
         field_tag: Expression<F>,
         /// value
@@ -353,7 +353,7 @@ impl<F: Field> Lookup<F> {
     pub(crate) fn table(&self) -> Table {
         match self {
             Self::Fixed { .. } => Table::Fixed,
-            Self::ChunkCtx { .. } => Table::ChunkCtx,
+            Self::chunk_ctx { .. } => Table::chunk_ctx,
             Self::Tx { .. } => Table::Tx,
             Self::Rw { .. } => Table::Rw,
             Self::Bytecode { .. } => Table::Bytecode,
@@ -479,7 +479,7 @@ impl<F: Field> Lookup<F> {
                 exponentiation_lo_hi[0].clone(),
                 exponentiation_lo_hi[1].clone(),
             ],
-            Self::ChunkCtx { field_tag, value } => {
+            Self::chunk_ctx { field_tag, value } => {
                 vec![field_tag.clone(), value.clone()]
             }
             Self::Conditional(condition, lookup) => lookup

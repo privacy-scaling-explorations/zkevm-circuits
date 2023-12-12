@@ -54,7 +54,7 @@ pub const LOOKUP_CONFIG: &[(Table, usize)] = &[
     (Table::Copy, COPY_TABLE_LOOKUPS),
     (Table::Keccak, KECCAK_TABLE_LOOKUPS),
     (Table::Exp, EXP_TABLE_LOOKUPS),
-    (Table::ChunkCtx, CHUNK_CTX_TABLE_LOOKUPS),
+    (Table::chunk_ctx, CHUNK_CTX_TABLE_LOOKUPS),
 ];
 
 /// Fixed Table lookups done in EVMCircuit
@@ -81,7 +81,7 @@ pub const KECCAK_TABLE_LOOKUPS: usize = 1;
 /// Exp Table lookups done in EVMCircuit
 pub const EXP_TABLE_LOOKUPS: usize = 1;
 
-/// ChunkCtx Table lookups done in EVMCircuit
+/// chunk_ctx Table lookups done in EVMCircuit
 pub const CHUNK_CTX_TABLE_LOOKUPS: usize = 1;
 
 /// Maximum number of bytes that an integer can fit in field without wrapping

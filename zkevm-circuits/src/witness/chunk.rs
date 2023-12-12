@@ -1,5 +1,5 @@
 ///
-use super::{rw::ToVec, ExecStep, RwMap};
+use super::{rw::{ToVec, RwFingerprints}, ExecStep, RwMap, Rw};
 use crate::{util::unwrap_value, witness::Block};
 use bus_mapping::{
     circuit_input_builder::{self, ChunkContext, FixedCParams},
@@ -25,14 +25,12 @@ pub struct Chunk<F> {
     pub permu_alpha: F,
     /// Permutation challenge gamma
     pub permu_gamma: F,
-    /// Previous rw_table permutation fingerprint
-    pub rw_prev_fingerprint: F,
+
     /// Current rw_table permutation fingerprint
-    pub rw_fingerprint: F,
-    /// Previous chronological rw_table permutation fingerprint
-    pub chrono_rw_prev_fingerprint: F,
+    pub rw_fingerprints: RwFingerprints<F>,
     /// Current chronological rw_table permutation fingerprint
-    pub chrono_rw_fingerprint: F,
+    pub chrono_rw_fingerprints: RwFingerprints<F>,
+
     /// Fixed param for the chunk
     pub fixed_param: FixedCParams,
     /// [`Block`] to store prev_chunk_last_call
@@ -55,10 +53,9 @@ pub fn chunk_convert<F: Field>(
     );
 
     // Compute fingerprints of all chunks
-    let mut permu_rand = Vec::with_capacity(builder.chunks.len());
-    let mut fingerprints = Vec::with_capacity(builder.chunks.len() + 1);
-    // Initialize the first dummy fingerprints before the first chunk as 1
-    fingerprints.push(vec![F::from(1), F::from(1)]);
+    let mut alpha_gamas = Vec::with_capacity(builder.chunks.len());
+    let mut rw_fingerprints: Vec<RwFingerprints<F>> = Vec::with_capacity(builder.chunks.len());
+    let mut chrono_rw_fingerprints: Vec<RwFingerprints<F>> = Vec::with_capacity(builder.chunks.len());
 
     for (i, chunk) in builder.chunks.iter().enumerate() {
         // Get the Rws in the i-th chunk
@@ -83,37 +80,31 @@ pub fn chunk_convert<F: Field>(
         let gamma = F::from(101);
 
         // Comupute cur fingerprints from last fingerprints and current Rw rows
-        let cur_fingerprints = fingerprints[i]
-            .iter()
-            .zip([rws_rows, chrono_rws_rows].iter())
-            .map(|(prev, rows)| {
-                unwrap_value(
-                    get_permutation_fingerprints(
-                        &<dyn ToVec<Value<F>>>::to2dvec(rows),
-                        Value::known(alpha),
-                        Value::known(gamma),
-                        Value::known(*prev),
-                    )
-                    .last()
-                    .cloned()
-                    .unwrap()
-                    .0,
-                )
-            })
-            .collect::<Vec<F>>();
+        let cur_fingerprints = get_rwtable_fingerprints(
+            alpha, 
+            gamma, 
+            if i == 0 { F::from(1) } else { rw_fingerprints[i-1].acc_next_fingerprints}, 
+            &rws_rows
+        );
+        let cur_chrono_fingerprints = get_rwtable_fingerprints(
+            alpha, 
+            gamma, 
+            if i == 0 { F::from(1) } else { chrono_rw_fingerprints[i-1].acc_next_fingerprints}, 
+            &chrono_rws_rows
+        );
 
-        permu_rand.push(vec![alpha, gamma]);
-        fingerprints.push(cur_fingerprints);
+
+        alpha_gamas.push(vec![alpha, gamma]);
+        rw_fingerprints.push(cur_fingerprints);
+        chrono_rw_fingerprints.push(cur_chrono_fingerprints);
     }
 
     // TODO(Cecilia): if we chunk across blocks then need to store the prev_block
     let chunck = Chunk {
-        permu_alpha: permu_rand[idx][0],
-        permu_gamma: permu_rand[idx][1],
-        rw_prev_fingerprint: fingerprints[idx][0],
-        rw_fingerprint: fingerprints[idx + 1][0],
-        chrono_rw_prev_fingerprint: fingerprints[idx][1],
-        chrono_rw_fingerprint: fingerprints[idx + 1][1],
+        permu_alpha: alpha_gamas[idx][0],
+        permu_gamma: alpha_gamas[idx][1],
+        rw_fingerprints: rw_fingerprints[idx].clone(),
+        chrono_rw_fingerprints: chrono_rw_fingerprints[idx].clone(),
         begin_chunk: chunk.begin_chunk.clone(),
         end_chunk: chunk.end_chunk.clone(),
         chunk_context: chunk.ctx.clone(),
@@ -123,4 +114,33 @@ pub fn chunk_convert<F: Field>(
     };
 
     Ok(chunck)
+}
+
+
+fn get_rwtable_fingerprints<F: Field>(
+    alpha: F,
+    gamma: F,
+    prev_continuous_fingerprint: F,
+    rows: &Vec<Rw>,
+) -> RwFingerprints<F> {
+    let x = rows.to2dvec();
+    let fingerprints = get_permutation_fingerprints(
+        &x,
+        Value::known(alpha),
+        Value::known(gamma),
+        Value::known(prev_continuous_fingerprint),
+    );
+
+    fingerprints
+        .first()
+        .zip(fingerprints.last())
+        .map(|((first_acc, first_row), (last_acc, last_row))| {
+            RwFingerprints::new(
+                unwrap_value(*first_row),
+                unwrap_value(*last_row),
+                unwrap_value(*first_acc),
+                unwrap_value(*last_acc),
+            )
+        })
+        .unwrap_or_default()
 }

@@ -1094,9 +1094,9 @@ impl From<&operation::OperationContainer> for RwMap {
     }
 }
 
-/// RwTablePermutationFingerprints
+/// RwFingerprints
 #[derive(Debug, Default, Clone)]
-pub struct RwTablePermutationFingerprints<F> {
+pub struct RwFingerprints<F> {
     /// acc_prev_fingerprints
     pub acc_prev_fingerprints: F,
     /// acc_next_fingerprints
@@ -1107,7 +1107,7 @@ pub struct RwTablePermutationFingerprints<F> {
     pub row_next_fingerprints: F,
 }
 
-impl<F: Field> RwTablePermutationFingerprints<F> {
+impl<F: Field> RwFingerprints<F> {
     /// new by value
     pub fn new(row_prev: F, row_next: F, acc_pref: F, acc_next: F) -> Self {
         Self {

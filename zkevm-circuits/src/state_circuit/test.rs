@@ -997,7 +997,7 @@ fn variadic_size_check() {
         n_rows: N_ROWS,
         permu_alpha: Fr::from(1),
         permu_gamma: Fr::from(1),
-        rw_table_permu_fingerprints: get_permutation_fingerprint_of_rwvec(
+        rw_fingerprints: get_permutation_fingerprint_of_rwvec(
             &rows,
             N_ROWS,
             Fr::from(1),
@@ -1039,7 +1039,7 @@ fn variadic_size_check() {
         n_rows: N_ROWS,
         permu_alpha: Fr::from(1),
         permu_gamma: Fr::from(1),
-        rw_table_permu_fingerprints: rwtable_fingerprints,
+        rw_fingerprints: rwtable_fingerprints,
         rw_table_chunked_index: 0,
         _marker: std::marker::PhantomData::default(),
     };
@@ -1093,7 +1093,7 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
         n_rows: N_ROWS,
         permu_alpha: Fr::from(1),
         permu_gamma: Fr::from(1),
-        rw_table_permu_fingerprints: rwtable_fingerprints,
+        rw_fingerprints: rwtable_fingerprints,
         rw_table_chunked_index: 0,
         _marker: std::marker::PhantomData::default(),
     };

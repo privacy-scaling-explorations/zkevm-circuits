@@ -20,7 +20,7 @@ use crate::{
         },
         witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
-    table::{chunk_ctx_table::ChunkCtxFieldTag, LookupTable},
+    table::{chunk_ctx_table::chunk_ctxFieldTag, LookupTable},
     util::{
         cell_manager::{CMFixedWidthStrategy, CellManager, CellType},
         Challenges, Expr,
@@ -836,7 +836,7 @@ impl<F: Field> ExecutionConfig<F> {
                         * execute_state_selector
                         * rlc::expr(
                             &[
-                                ChunkCtxFieldTag::InitialRWC.expr(),
+                                chunk_ctxFieldTag::InitialRWC.expr(),
                                 step_curr.state.rw_counter.expr(),
                             ],
                             challenges.lookup_input(),
@@ -860,7 +860,7 @@ impl<F: Field> ExecutionConfig<F> {
                         * execute_state_selector
                         * rlc::expr(
                             &[
-                                ChunkCtxFieldTag::EndRWC.expr(),
+                                chunk_ctxFieldTag::EndRWC.expr(),
                                 step_curr_rw_counter.expr() + step_curr_rw_counter_offset.clone(),
                             ],
                             challenges.lookup_input(),
@@ -981,7 +981,7 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Copy => copy_table,
                         Table::Keccak => keccak_table,
                         Table::Exp => exp_table,
-                        Table::ChunkCtx => chunk_ctx_table,
+                        Table::chunk_ctx => chunk_ctx_table,
                     }
                     .table_exprs(meta);
                     vec![(
@@ -1237,7 +1237,7 @@ impl<F: Field> ExecutionConfig<F> {
             ("EVM_lookup_copy", COPY_TABLE_LOOKUPS),
             ("EVM_lookup_keccak", KECCAK_TABLE_LOOKUPS),
             ("EVM_lookup_exp", EXP_TABLE_LOOKUPS),
-            ("EVM_lookupchunkctx", CHUNK_CTX_TABLE_LOOKUPS),
+            ("EVM_lookupchunk_ctx", CHUNK_CTX_TABLE_LOOKUPS),
             ("EVM_adv_phase2", N_PHASE2_COLUMNS),
             ("EVM_copy", N_COPY_COLUMNS),
             ("EVM_lookup_u8", N_U8_LOOKUPS),

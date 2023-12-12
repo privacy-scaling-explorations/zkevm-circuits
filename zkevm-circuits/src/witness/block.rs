@@ -1,5 +1,5 @@
 use super::{
-    rw::{RwTablePermutationFingerprints, ToVec},
+    rw::{RwFingerprints, ToVec},
     ExecStep, Rw, RwMap, Transaction,
 };
 use crate::{
@@ -7,7 +7,7 @@ use crate::{
     exp_circuit::param::OFFSET_INCREMENT,
     instance::public_data_convert,
     table::BlockContextFieldTag,
-    util::{log2_ceil, word, SubCircuit},
+    util::{log2_ceil, word, SubCircuit, unwrap_value},
     witness::Chunk,
 };
 use bus_mapping::{
@@ -16,6 +16,7 @@ use bus_mapping::{
     Error,
 };
 use eth_types::{Address, Field, ToScalar, Word};
+use gadgets::permutation::get_permutation_fingerprints;
 use halo2_proofs::circuit::Value;
 
 // TODO: Remove fields that are duplicated in`eth_block`
@@ -275,32 +276,4 @@ pub fn block_convert<F: Field>(
     block.keccak_inputs.extend_from_slice(&[rpi_bytes]);
 
     Ok(block)
-}
-
-fn get_rwtable_fingerprints<F: Field>(
-    alpha: F,
-    gamma: F,
-    prev_continuous_fingerprint: F,
-    rows: &Vec<Rw>,
-) -> RwTablePermutationFingerprints<F> {
-    let x = rows.to2dvec();
-    let fingerprints = get_permutation_fingerprints(
-        &x,
-        Value::known(alpha),
-        Value::known(gamma),
-        Value::known(prev_continuous_fingerprint),
-    );
-
-    fingerprints
-        .first()
-        .zip(fingerprints.last())
-        .map(|((first_acc, first_row), (last_acc, last_row))| {
-            RwTablePermutationFingerprints::new(
-                unwrap_value(*first_row),
-                unwrap_value(*last_row),
-                unwrap_value(*first_acc),
-                unwrap_value(*last_acc),
-            )
-        })
-        .unwrap_or_default()
 }
