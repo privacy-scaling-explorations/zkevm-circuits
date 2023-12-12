@@ -7,7 +7,7 @@ use halo2_proofs::{
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use itertools::Itertools;
-use maingate::MainGateInstructions;
+use maingate::{MainGateInstructions, RegionCtx};
 use snark_verifier::{
     loader::native::NativeLoader,
     pcs::{
@@ -134,18 +134,29 @@ where
         mut layouter: impl Layouter<M::Scalar>,
     ) -> Result<(), Error> {
         config.load_table(&mut layouter)?;
-        let (instances, accumulator_limbs) =
-            config.aggregate::<M, As>(&mut layouter, &self.svk, self.snarks.clone())?;
+
+        let (instances, accumulator_limbs) = layouter.assign_region(
+            || "Aggregate snarks",
+            |mut region| {
+                config.named_column_in_region(&mut region);
+                let ctx = RegionCtx::new(region, 0);
+                let (instances, accumulator_limbs, _, _) =
+                    config.aggregate::<M, As>(ctx, &self.svk, &self.snarks)?;
+                let instances = instances
+                    .iter()
+                    .flat_map(|instances| {
+                        instances
+                            .iter()
+                            .map(|instance| instance.assigned().to_owned())
+                    })
+                    .collect_vec();
+                Ok((instances, accumulator_limbs))
+            },
+        )?;
 
         // Constrain equality to instance values
         let main_gate = config.main_gate();
-        for (row, limb) in instances
-            .into_iter()
-            .flatten()
-            .flatten()
-            .chain(accumulator_limbs)
-            .enumerate()
-        {
+        for (row, limb) in instances.into_iter().chain(accumulator_limbs).enumerate() {
             main_gate.expose_public(layouter.namespace(|| ""), limb, row)?;
         }
 

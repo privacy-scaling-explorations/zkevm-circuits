@@ -46,7 +46,7 @@ pub struct EvmCircuitConfig<F> {
     pub execution: Box<ExecutionConfig<F>>,
     // External tables
     tx_table: TxTable,
-    rw_table: RwTable,
+    pub(crate) rw_table: RwTable,
     bytecode_table: BytecodeTable,
     block_table: BlockTable,
     copy_table: CopyTable,
@@ -55,12 +55,8 @@ pub struct EvmCircuitConfig<F> {
     /// rw permutation config
     pub rw_permutation_config: PermutationChipConfig<F>,
 
-    // pi for carry over previous chunk context
-    pi_pre_continuity: Column<Instance>,
-    // pi for carry over chunk context to the next chunk
-    pi_next_continuity: Column<Instance>,
-    // pi for permutation challenge
-    pi_permutation_challenges: Column<Instance>,
+    // pi for chunk context continuity
+    pi_chunk_continuity: Column<Instance>,
 
     // chunkctx_config
     chunkctx_config: ChunkContextConfig<F>,
@@ -151,13 +147,8 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             <RwTable as LookupTable<F>>::advice_columns(&rw_table),
         );
 
-        let pi_pre_continuity = meta.instance_column();
-        let pi_next_continuity = meta.instance_column();
-        let pi_permutation_challenges = meta.instance_column();
-
-        meta.enable_equality(pi_pre_continuity);
-        meta.enable_equality(pi_next_continuity);
-        meta.enable_equality(pi_permutation_challenges);
+        let pi_chunk_continuity = meta.instance_column();
+        meta.enable_equality(pi_chunk_continuity);
 
         Self {
             fixed_table,
@@ -173,9 +164,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             exp_table,
             rw_permutation_config,
             chunkctx_config,
-            pi_pre_continuity,
-            pi_next_continuity,
-            pi_permutation_challenges,
+            pi_chunk_continuity,
         }
     }
 }
@@ -274,18 +263,13 @@ impl<F: Field> EvmCircuit<F> {
             block.chunk_context.total_chunks,
         );
 
-        let mut instance = vec![
-            vec![
-                F::from(rw_table_chunked_index as u64),
-                F::from(rw_table_total_chunks as u64),
-                F::from(block.chunk_context.initial_rwc as u64),
-            ],
-            vec![
-                F::from(rw_table_chunked_index as u64) + F::ONE,
-                F::from(rw_table_total_chunks as u64),
-                F::from(block.chunk_context.end_rwc as u64),
-            ],
-        ];
+        let mut instance = vec![vec![
+            F::from(rw_table_chunked_index as u64),
+            F::from(rw_table_chunked_index as u64) + F::ONE,
+            F::from(rw_table_total_chunks as u64),
+            F::from(block.chunk_context.initial_rwc as u64),
+            F::from(block.chunk_context.end_rwc as u64),
+        ]];
 
         instance.extend(self.instance());
 
@@ -343,20 +327,18 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         let (
             alpha_cell,
             gamma_cell,
-            prev_continuous_fingerprint_cell,
-            next_continuous_fingerprint_cell,
+            row_fingerprints_prev_cell,
+            row_fingerprints_next_cell,
+            acc_fingerprints_prev_cell,
+            acc_fingerprints_next_cell,
         ) = layouter.assign_region(
             || "evm circuit",
             |mut region| {
-                region.name_column(|| "EVM_pi_pre_continuity", config.pi_pre_continuity);
-                region.name_column(|| "EVM_pi_next_continuity", config.pi_next_continuity);
-                region.name_column(
-                    || "EVM_pi_permutation_challenges",
-                    config.pi_permutation_challenges,
-                );
+                region.name_column(|| "EVM_pi_chunk_continuity", config.pi_chunk_continuity);
                 config.rw_table.load_with_region(
                     &mut region,
-                    // pass non-padding rws to `load_with_region` since it will be padding inside
+                    // pass non-padding rws to `load_with_region` since it will be padding
+                    // inside
                     &block.rws.table_assignments(true),
                     // align with state circuit to padding to same max_rws
                     block.circuits_params.max_rws,
@@ -366,7 +348,11 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                     &mut region,
                     Value::known(block.permu_alpha),
                     Value::known(block.permu_gamma),
-                    Value::known(block.permu_chronological_rwtable_prev_continuous_fingerprint),
+                    Value::known(
+                        block
+                            .permu_chronological_rwtable_fingerprints
+                            .acc_prev_fingerprints,
+                    ),
                     &rw_rows_padding.to2dvec(),
                     "evm_circuit-rw_permutation",
                 )?;
@@ -374,24 +360,20 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
             },
         )?;
 
-        // constrain permutation challenges
-        [alpha_cell, gamma_cell]
-            .iter()
-            .enumerate()
-            .try_for_each(|(i, cell)| {
-                layouter.constrain_instance(cell.cell(), config.pi_permutation_challenges, i)
-            })?;
-        // constraints prev,next fingerprints
-        layouter.constrain_instance(
-            prev_continuous_fingerprint_cell.cell(),
-            config.pi_pre_continuity,
-            0,
-        )?;
-        layouter.constrain_instance(
-            next_continuous_fingerprint_cell.cell(),
-            config.pi_next_continuity,
-            0,
-        )?;
+        // constrain fields related to proof chunk in public input
+        [
+            alpha_cell,
+            gamma_cell,
+            row_fingerprints_prev_cell,
+            row_fingerprints_next_cell,
+            acc_fingerprints_prev_cell,
+            acc_fingerprints_next_cell,
+        ]
+        .iter()
+        .enumerate()
+        .try_for_each(|(i, cell)| {
+            layouter.constrain_instance(cell.cell(), config.pi_chunk_continuity, i)
+        })?;
         Ok(())
     }
 
@@ -399,11 +381,22 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     fn instance(&self) -> Vec<Vec<F>> {
         let block = self.block.as_ref().unwrap();
 
-        vec![
-            vec![block.permu_chronological_rwtable_prev_continuous_fingerprint],
-            vec![block.permu_chronological_rwtable_next_continuous_fingerprint],
-            vec![block.permu_alpha, block.permu_gamma],
-        ]
+        vec![vec![
+            block.permu_alpha,
+            block.permu_gamma,
+            block
+                .permu_chronological_rwtable_fingerprints
+                .row_pre_fingerprints,
+            block
+                .permu_chronological_rwtable_fingerprints
+                .row_next_fingerprints,
+            block
+                .permu_chronological_rwtable_fingerprints
+                .acc_prev_fingerprints,
+            block
+                .permu_chronological_rwtable_fingerprints
+                .acc_next_fingerprints,
+        ]]
     }
 }
 

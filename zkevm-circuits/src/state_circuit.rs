@@ -20,7 +20,11 @@ use self::{
 use crate::{
     table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable, UXTable},
     util::{word, Challenges, Expr, SubCircuit, SubCircuitConfig},
-    witness::{self, rw::ToVec, MptUpdates, Rw, RwMap},
+    witness::{
+        self,
+        rw::{RwTablePermutationFingerprints, ToVec},
+        MptUpdates, Rw, RwMap,
+    },
 };
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field, Word};
@@ -52,7 +56,8 @@ pub struct StateCircuitConfig<F> {
     // Figure out why you get errors when this is Selector.
     selector: Column<Fixed>,
     // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/407
-    rw_table: RwTable,
+    /// rw table
+    pub rw_table: RwTable,
     sort_keys: SortKeysConfig,
     // Assigned value at the start of the block. For Rw::Account and
     // Rw::AccountStorage rows this is the committed value in the MPT, for
@@ -74,12 +79,9 @@ pub struct StateCircuitConfig<F> {
     /// rw permutation config
     pub rw_permutation_config: PermutationChipConfig<F>,
 
-    // pi for carry over previous chunk context
-    pi_pre_continuity: Column<Instance>,
-    // pi for carry over chunk context to the next chunk
-    pi_next_continuity: Column<Instance>,
-    // pi for permutation challenge
-    pi_permutation_challenges: Column<Instance>,
+    // pi for chunk context continuity
+    pi_chunk_continuity: Column<Instance>,
+
     _marker: PhantomData<F>,
 }
 
@@ -172,13 +174,8 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         u10_table.annotate_columns(meta);
         u16_table.annotate_columns(meta);
 
-        let pi_pre_continuity = meta.instance_column();
-        let pi_next_continuity = meta.instance_column();
-        let pi_permutation_challenges = meta.instance_column();
-
-        meta.enable_equality(pi_pre_continuity);
-        meta.enable_equality(pi_next_continuity);
-        meta.enable_equality(pi_permutation_challenges);
+        let pi_chunk_continuity = meta.instance_column();
+        meta.enable_equality(pi_chunk_continuity);
 
         let config = Self {
             selector,
@@ -193,9 +190,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             rw_table,
             mpt_table,
             rw_permutation_config,
-            pi_pre_continuity,
-            pi_next_continuity,
-            pi_permutation_challenges,
+            pi_chunk_continuity,
             _marker: PhantomData::default(),
         };
 
@@ -424,12 +419,7 @@ impl<F: Field> StateCircuitConfig<F> {
         region.name_column(|| "STATE_mpt_proof_type", self.mpt_proof_type);
         region.name_column(|| "STATE_state_root lo", self.state_root.lo());
         region.name_column(|| "STATE_state_root hi", self.state_root.hi());
-        region.name_column(|| "STATE_pi_pre_continuity", self.pi_pre_continuity);
-        region.name_column(|| "STATE_pi_next_continuity", self.pi_next_continuity);
-        region.name_column(
-            || "STATE_pi_permutation_challenges",
-            self.pi_permutation_challenges,
-        );
+        region.name_column(|| "STATE_pi_chunk_continuity", self.pi_chunk_continuity);
     }
 }
 
@@ -471,8 +461,7 @@ pub struct StateCircuit<F> {
     /// permutation challenge
     permu_alpha: F,
     permu_gamma: F,
-    permu_prev_continuous_fingerprint: F,
-    permu_next_continuous_fingerprint: F,
+    rw_table_permu_fingerprints: RwTablePermutationFingerprints<F>,
 
     // current chunk index
     rw_table_chunked_index: usize,
@@ -487,8 +476,7 @@ impl<F: Field> StateCircuit<F> {
         n_rows: usize,
         permu_alpha: F,
         permu_gamma: F,
-        permu_prev_continuous_fingerprint: F,
-        permu_next_continuous_fingerprint: F,
+        rw_table_permu_fingerprints: RwTablePermutationFingerprints<F>,
         rw_table_chunked_index: usize,
     ) -> Self {
         let rows = rw_map.table_assignments(false); // address sorted
@@ -503,8 +491,7 @@ impl<F: Field> StateCircuit<F> {
             overrides: HashMap::new(),
             permu_alpha,
             permu_gamma,
-            permu_prev_continuous_fingerprint,
-            permu_next_continuous_fingerprint,
+            rw_table_permu_fingerprints,
             rw_table_chunked_index,
             _marker: PhantomData::default(),
         }
@@ -520,8 +507,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
             block.circuits_params.max_rws,
             block.permu_alpha,
             block.permu_gamma,
-            block.permu_rwtable_prev_continuous_fingerprint,
-            block.permu_rwtable_next_continuous_fingerprint,
+            block.permu_chronological_rwtable_fingerprints.clone(),
             block.chunk_context.chunk_index,
         )
     }
@@ -555,8 +541,10 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         let (
             alpha_cell,
             gamma_cell,
-            prev_continuous_fingerprint_cell,
-            next_continuous_fingerprint_cell,
+            row_fingerprints_prev_cell,
+            row_fingerprints_next_cell,
+            acc_fingerprints_prev_cell,
+            acc_fingerprints_next_cell,
         ) = layouter.assign_region(
             || "state circuit",
             |mut region| {
@@ -608,7 +596,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     &mut region,
                     Value::known(self.permu_alpha),
                     Value::known(self.permu_gamma),
-                    Value::known(self.permu_prev_continuous_fingerprint),
+                    Value::known(self.rw_table_permu_fingerprints.acc_prev_fingerprints),
                     &rows,
                     "state_circuit-rw_permutation",
                 )?;
@@ -637,32 +625,31 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
             },
         )?;
         // constrain permutation challenges
-        [alpha_cell, gamma_cell]
-            .iter()
-            .enumerate()
-            .try_for_each(|(i, cell)| {
-                layouter.constrain_instance(cell.cell(), config.pi_permutation_challenges, i)
-            })?;
-        // constraints prev,next fingerprints
-        layouter.constrain_instance(
-            prev_continuous_fingerprint_cell.cell(),
-            config.pi_pre_continuity,
-            0,
-        )?;
-        layouter.constrain_instance(
-            next_continuous_fingerprint_cell.cell(),
-            config.pi_next_continuity,
-            0,
-        )?;
+        [
+            alpha_cell,
+            gamma_cell,
+            row_fingerprints_prev_cell,
+            row_fingerprints_next_cell,
+            acc_fingerprints_prev_cell,
+            acc_fingerprints_next_cell,
+        ]
+        .iter()
+        .enumerate()
+        .try_for_each(|(i, cell)| {
+            layouter.constrain_instance(cell.cell(), config.pi_chunk_continuity, i)
+        })?;
         Ok(())
     }
 
     fn instance(&self) -> Vec<Vec<F>> {
-        vec![
-            vec![self.permu_prev_continuous_fingerprint],
-            vec![self.permu_next_continuous_fingerprint],
-            vec![self.permu_alpha, self.permu_gamma],
-        ]
+        vec![vec![
+            self.permu_alpha,
+            self.permu_gamma,
+            self.rw_table_permu_fingerprints.row_pre_fingerprints,
+            self.rw_table_permu_fingerprints.row_next_fingerprints,
+            self.rw_table_permu_fingerprints.acc_prev_fingerprints,
+            self.rw_table_permu_fingerprints.acc_next_fingerprints,
+        ]]
     }
 }
 

@@ -1071,3 +1071,28 @@ impl From<&operation::OperationContainer> for RwMap {
         Self(rws)
     }
 }
+
+/// RwTablePermutationFingerprints
+#[derive(Debug, Default, Clone)]
+pub struct RwTablePermutationFingerprints<F> {
+    /// acc_prev_fingerprints
+    pub acc_prev_fingerprints: F,
+    /// acc_next_fingerprints
+    pub acc_next_fingerprints: F,
+    /// row_pre_fingerprints
+    pub row_pre_fingerprints: F,
+    /// row_next_fingerprints
+    pub row_next_fingerprints: F,
+}
+
+impl<F: Field> RwTablePermutationFingerprints<F> {
+    /// new by value
+    pub fn new(row_prev: F, row_next: F, acc_pref: F, acc_next: F) -> Self {
+        Self {
+            acc_prev_fingerprints: acc_pref,
+            acc_next_fingerprints: acc_next,
+            row_pre_fingerprints: row_prev,
+            row_next_fingerprints: row_next,
+        }
+    }
+}

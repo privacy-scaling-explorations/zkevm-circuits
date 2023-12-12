@@ -62,8 +62,8 @@ use crate::{
     pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
-        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RwTable, TxTable,
-        UXTable,
+        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, MptTable,
+        RwTable, TxTable, UXTable,
     },
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{
@@ -76,9 +76,10 @@ use bus_mapping::{
     mock::BlockData,
 };
 use eth_types::{geth_types::GethData, Field};
+use gadgets::util::Expr;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error, Expression},
+    plonk::{Any, Circuit, Column, ConstraintSystem, Error, Expression},
 };
 
 use std::array;
@@ -111,6 +112,19 @@ pub struct SuperCircuitConfigArgs<F: Field> {
     /// Mock randomness
     pub mock_randomness: F,
 }
+
+impl<F: Field> SuperCircuitConfig<F> {
+    /// get chronological_rwtable and byaddr_rwtable advice columns
+    pub fn get_rwtable_columns(&self) -> Vec<Column<Any>> {
+        // concat rw_table columns: [chronological_rwtable] ++ [byaddr_rwtable]
+        let mut columns = <RwTable as LookupTable<F>>::columns(&self.evm_circuit.rw_table);
+        columns.append(&mut <RwTable as LookupTable<F>>::columns(
+            &self.state_circuit.rw_table,
+        ));
+        columns
+    }
+}
+
 impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
     type ConfigArgs = SuperCircuitConfigArgs<F>;
 
@@ -250,6 +264,39 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             },
         );
 
+        // constraint chronological/by address rwtable `row fingerprint` must be the same in first
+        // chunk first row.
+        // `row fingerprint` is not a constant so root circuit can NOT constraint it.
+        // so we constraints here by gate
+        // Furthermore, first row in rw_table should be `Rw::Start`, which will be lookup by
+        // `BeginChunk` at first chunk
+        meta.create_gate(
+            "chronological rwtable row fingerprint == by address rwtable row fingerprint",
+            |meta| {
+                let is_first_chunk = chunkctx_config.is_first_chunk.expr();
+                let chronological_rwtable_row_fingerprint = evm_circuit
+                    .rw_permutation_config
+                    .row_fingerprints_cur_expr();
+                let by_address_rwtable_row_fingerprint = state_circuit
+                    .rw_permutation_config
+                    .row_fingerprints_cur_expr();
+
+                let q_row_first = 1.expr()
+                    - meta.query_selector(evm_circuit.rw_permutation_config.q_row_non_first);
+
+                let q_row_enable =
+                    meta.query_selector(evm_circuit.rw_permutation_config.q_row_enable);
+
+                vec![
+                    is_first_chunk
+                        * q_row_first
+                        * q_row_enable
+                        * (chronological_rwtable_row_fingerprint
+                            - by_address_rwtable_row_fingerprint),
+                ]
+            },
+        );
+
         Self {
             block_table,
             mpt_table,
@@ -357,18 +404,13 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
 
         let block = self.block.as_ref().unwrap();
 
-        instance.extend_from_slice(&[
-            vec![
-                F::from(block.chunk_context.chunk_index as u64),
-                F::from(block.chunk_context.total_chunks as u64),
-                F::from(block.chunk_context.initial_rwc as u64),
-            ],
-            vec![
-                F::from(block.chunk_context.chunk_index as u64) + F::ONE,
-                F::from(block.chunk_context.total_chunks as u64),
-                F::from(block.chunk_context.end_rwc as u64),
-            ],
-        ]);
+        instance.extend_from_slice(&[vec![
+            F::from(block.chunk_context.chunk_index as u64),
+            F::from(block.chunk_context.chunk_index as u64) + F::ONE,
+            F::from(block.chunk_context.total_chunks as u64),
+            F::from(block.chunk_context.initial_rwc as u64),
+            F::from(block.chunk_context.end_rwc as u64),
+        ]]);
 
         instance.extend_from_slice(&self.keccak_circuit.instance());
         instance.extend_from_slice(&self.pi_circuit.instance());

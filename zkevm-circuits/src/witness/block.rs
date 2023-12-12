@@ -1,4 +1,7 @@
-use super::{rw::ToVec, ExecStep, Rw, RwMap, Transaction};
+use super::{
+    rw::{RwTablePermutationFingerprints, ToVec},
+    ExecStep, Rw, RwMap, Transaction,
+};
 use crate::{
     evm_circuit::{detect_fixed_table_tags, EvmCircuit},
     exp_circuit::param::OFFSET_INCREMENT,
@@ -62,14 +65,10 @@ pub struct Block<F> {
     pub permu_alpha: F,
     /// permutation challenge gamma
     pub permu_gamma: F,
-    /// pre rw_table permutation fingerprint
-    pub permu_rwtable_prev_continuous_fingerprint: F,
-    /// next rw_table permutation fingerprint
-    pub permu_rwtable_next_continuous_fingerprint: F,
-    /// pre chronological rw_table permutation fingerprint
-    pub permu_chronological_rwtable_prev_continuous_fingerprint: F,
-    /// next chronological rw_table permutation fingerprint
-    pub permu_chronological_rwtable_next_continuous_fingerprint: F,
+    /// rw_table fingerprints
+    pub permu_rwtable_fingerprints: RwTablePermutationFingerprints<F>,
+    /// chronological rw_table fingerprints
+    pub permu_chronological_rwtable_fingerprints: RwTablePermutationFingerprints<F>,
 
     /// prev_chunk_last_call
     pub prev_block: Box<Option<Block<F>>>,
@@ -283,10 +282,6 @@ pub fn block_convert<F: Field>(
         // TODO get permutation fingerprint & challenges
         permu_alpha: F::from(103),
         permu_gamma: F::from(101),
-        permu_rwtable_prev_continuous_fingerprint: F::from(1),
-        permu_rwtable_next_continuous_fingerprint: F::from(1),
-        permu_chronological_rwtable_prev_continuous_fingerprint: F::from(1),
-        permu_chronological_rwtable_next_continuous_fingerprint: F::from(1),
         end_block_not_last: block.block_steps.end_block_not_last.clone(),
         end_block_last: block.block_steps.end_block_last.clone(),
         // TODO refactor chunk related field to chunk structure
@@ -297,6 +292,7 @@ pub fn block_convert<F: Field>(
             .clone()
             .unwrap_or_else(ChunkContext::new_one_chunk),
         prev_block: Box::new(None),
+        ..Default::default()
     };
     let public_data = public_data_convert(&block);
     let rpi_bytes = public_data.get_pi_bytes(
@@ -317,29 +313,41 @@ pub fn block_convert<F: Field>(
         block.circuits_params.max_rws,
         block.chunk_context.is_first_chunk(),
     );
-    block.permu_rwtable_next_continuous_fingerprint = unwrap_value(
-        get_permutation_fingerprints(
-            &<dyn ToVec<Value<F>>>::to2dvec(&rws_rows),
-            Value::known(block.permu_alpha),
-            Value::known(block.permu_gamma),
-            Value::known(block.permu_rwtable_prev_continuous_fingerprint),
-        )
-        .last()
-        .cloned()
-        .unwrap()
-        .0,
-    );
-    block.permu_chronological_rwtable_next_continuous_fingerprint = unwrap_value(
-        get_permutation_fingerprints(
-            &<dyn ToVec<Value<F>>>::to2dvec(&chronological_rws_rows),
-            Value::known(block.permu_alpha),
-            Value::known(block.permu_gamma),
-            Value::known(block.permu_chronological_rwtable_prev_continuous_fingerprint),
-        )
-        .last()
-        .cloned()
-        .unwrap()
-        .0,
+    block.permu_rwtable_fingerprints =
+        get_rwtable_fingerprints(block.permu_alpha, block.permu_gamma, F::from(1), &rws_rows);
+    block.permu_chronological_rwtable_fingerprints = get_rwtable_fingerprints(
+        block.permu_alpha,
+        block.permu_gamma,
+        F::from(1),
+        &chronological_rws_rows,
     );
     Ok(block)
+}
+
+fn get_rwtable_fingerprints<F: Field>(
+    alpha: F,
+    gamma: F,
+    prev_continuous_fingerprint: F,
+    rows: &Vec<Rw>,
+) -> RwTablePermutationFingerprints<F> {
+    let x = rows.to2dvec();
+    let fingerprints = get_permutation_fingerprints(
+        &x,
+        Value::known(alpha),
+        Value::known(gamma),
+        Value::known(prev_continuous_fingerprint),
+    );
+
+    fingerprints
+        .first()
+        .zip(fingerprints.last())
+        .map(|((first_acc, first_row), (last_acc, last_row))| {
+            RwTablePermutationFingerprints::new(
+                unwrap_value(*first_row),
+                unwrap_value(*last_row),
+                unwrap_value(*first_acc),
+                unwrap_value(*last_acc),
+            )
+        })
+        .unwrap_or_default()
 }

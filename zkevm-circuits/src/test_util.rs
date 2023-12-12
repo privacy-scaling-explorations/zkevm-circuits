@@ -237,8 +237,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 params.max_rws,
                 block.permu_alpha,
                 block.permu_gamma,
-                block.permu_rwtable_prev_continuous_fingerprint,
-                block.permu_rwtable_next_continuous_fingerprint,
+                block.permu_rwtable_fingerprints,
                 block.chunk_context.chunk_index,
             );
             let instance = state_circuit.instance();

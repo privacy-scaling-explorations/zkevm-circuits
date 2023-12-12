@@ -8,10 +8,13 @@ use halo2_proofs::{
     self,
     circuit::Value,
     dev::{CellValue, MockProver},
-    halo2curves::bn256::{Bn256, Fr, G1Affine},
+    halo2curves::{
+        bn256::{Bn256, Fr, G1Affine},
+        pairing::Engine,
+    },
     plonk::{
         create_proof, keygen_pk, keygen_vk, permutation::Assembly, verify_proof, Circuit,
-        ProvingKey,
+        ConstraintSystem, ProvingKey,
     },
     poly::{
         commitment::ParamsProver,
@@ -37,6 +40,7 @@ use zkevm_circuits::{
     pi_circuit::TestPiCircuit,
     root_circuit::{
         compile, Config, EvmTranscript, NativeLoader, PoseidonTranscript, RootCircuit, Shplonk,
+        SnarkWitness, UserChallenge,
     },
     state_circuit::TestStateCircuit,
     super_circuit::SuperCircuit,
@@ -315,8 +319,12 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                 let circuit = RootCircuit::<Bn256, Shplonk<_>>::new(
                     &params,
                     &protocol,
-                    Value::unknown(),
-                    Value::unknown(),
+                    vec![SnarkWitness::new(
+                        &protocol,
+                        Value::unknown(),
+                        Value::unknown(),
+                    )],
+                    None,
                 )
                 .unwrap();
 
@@ -426,6 +434,11 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                     .with_num_instance(instance.iter().map(|instance| instance.len()).collect()),
             );
 
+            // get chronological_rwtable and byaddr_rwtable columns index
+            let mut cs = ConstraintSystem::<<Bn256 as Engine>::Scalar>::default();
+            let config = SuperCircuit::configure(&mut cs);
+            let rwtable_columns = config.get_rwtable_columns();
+
             let proof = {
                 let mut proof_cache = PROOF_CACHE.lock().await;
                 if let Some(proof) = proof_cache.get(&proof_name) {
@@ -441,11 +454,19 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             };
 
             log::info!("root circuit new");
+            let user_challenge = &UserChallenge {
+                column_indexes: rwtable_columns,
+                num_challenges: 2, // alpha, gamma
+            };
             let root_circuit = RootCircuit::<Bn256, Shplonk<_>>::new(
                 &params,
                 &protocol,
-                Value::known(&instance),
-                Value::known(&proof),
+                vec![SnarkWitness::new(
+                    &protocol,
+                    Value::known(&instance),
+                    Value::known(&proof),
+                )],
+                Some(user_challenge),
             )
             .unwrap();
 
