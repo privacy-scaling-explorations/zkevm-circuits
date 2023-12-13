@@ -42,7 +42,7 @@ impl Opcode for ErrorCodeStore {
         // create context check
         assert!(state.call()?.is_create());
 
-        state.handle_return(&mut exec_step, geth_steps, true)?;
+        state.handle_return(&mut [&mut exec_step], geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

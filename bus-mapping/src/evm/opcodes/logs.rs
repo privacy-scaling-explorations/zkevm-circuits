@@ -146,7 +146,7 @@ fn gen_copy_steps(
         let addr = src_addr + idx as u64;
 
         // Read memory
-        state.memory_read(exec_step, (addr as usize).into(), *byte)?;
+        state.memory_read(exec_step, (addr as usize).into())?;
 
         copy_steps.push((*byte, false));
 

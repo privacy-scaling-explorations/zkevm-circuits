@@ -117,6 +117,30 @@ impl<F: Field> RestoreContextGadget<F> {
         memory_expansion_cost: Expression<F>,
         reversible_write_counter_increase: Expression<F>,
     ) -> Self {
+        Self::construct2(
+            cb,
+            is_success,
+            0.expr(),
+            subsequent_rw_lookups,
+            return_data_offset,
+            return_data_length,
+            memory_expansion_cost,
+            reversible_write_counter_increase,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn construct2(
+        cb: &mut EVMConstraintBuilder<F>,
+        is_success: Expression<F>,
+        gas_cost: Expression<F>,
+        // Expression for the number of rw lookups that occur after this gadget is constructed.
+        subsequent_rw_lookups: Expression<F>,
+        return_data_offset: Expression<F>,
+        return_data_length: Expression<F>,
+        memory_expansion_cost: Expression<F>,
+        reversible_write_counter_increase: Expression<F>,
+    ) -> Self {
         // Read caller's context for restore
         let caller_id = cb.call_context(None, CallContextFieldTag::CallerId);
         let [caller_is_root, caller_is_create] =
@@ -176,6 +200,8 @@ impl<F: Field> RestoreContextGadget<F> {
 
         let gas_refund = if cb.execution_state().halts_in_exception() {
             0.expr() // no gas refund if call halts in exception
+        } else if cb.execution_state().is_precompiled() {
+            cb.curr.state.gas_left.expr() - gas_cost.expr()
         } else {
             cb.curr.state.gas_left.expr() - memory_expansion_cost - code_deposit_cost
         };
@@ -586,6 +612,7 @@ impl<F: Field> TransferGadget<F> {
         receiver_address: Word<Expression<F>>,
         receiver_exists: Expression<F>,
         must_create: Expression<F>,
+        // _prev_code_hash: Word<Expression<F>>,
         value: Word32Cell<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
@@ -661,6 +688,11 @@ impl<F: Field> TransferGadget<F> {
             .assign_value(region, offset, Value::known(Word::from(value)))?;
         Ok(())
     }
+
+    pub(crate) fn rw_delta(&self) -> Expression<F> {
+        // +1 Write Account (sender) Balance
+        not::expr(self.value_is_zero.expr()) + self.receiver.rw_delta()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -681,6 +713,12 @@ pub(crate) struct CommonCallGadget<F, MemAddrGadget, const IS_SUCCESS_CALL: bool
     pub is_empty_code_hash: IsEqualWordGadget<F, WordCell<F>, Word<Expression<F>>>,
 
     pub callee_not_exists: IsZeroWordGadget<F, WordCell<F>>,
+
+    // save information
+    is_call: Expression<F>,
+    is_callcode: Expression<F>,
+    _is_delegatecall: Expression<F>,
+    _is_staticcall: Expression<F>,
 }
 
 impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CALL: bool>
@@ -719,7 +757,9 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         cb.stack_pop(callee_address.to_word());
 
         // `CALL` and `CALLCODE` opcodes have an additional stack pop `value`.
-        cb.condition(is_call + is_callcode, |cb| cb.stack_pop(value.to_word()));
+        cb.condition(is_call.clone() + is_callcode.clone(), |cb| {
+            cb.stack_pop(value.to_word())
+        });
         cb.stack_pop(cd_address.offset_word());
         cb.stack_pop(cd_address.length_word());
         cb.stack_pop(rd_address.offset_word());
@@ -767,6 +807,10 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
             callee_code_hash,
             is_empty_code_hash,
             callee_not_exists,
+            is_call,
+            is_callcode,
+            _is_delegatecall: is_delegatecall,
+            _is_staticcall: is_staticcall,
         }
     }
 
@@ -879,6 +923,12 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         } + memory_expansion_gas_cost;
 
         Ok(gas_cost)
+    }
+
+    pub(crate) fn rw_delta(&self) -> Expression<F> {
+        6.expr() + self.is_call.expr() + self.is_callcode.expr() + // 6 + (is_call + is_callcode) stack pop
+        1.expr() + // 1 stack push
+        1.expr() // 1 Read Account (callee) CodeHash
     }
 }
 
