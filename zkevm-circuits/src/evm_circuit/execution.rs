@@ -79,9 +79,11 @@ mod error_oog_dynamic_memory;
 mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_memory_copy;
+mod error_oog_precompile;
 mod error_oog_sha3;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
+mod error_precompile_failed;
 mod error_return_data_oo_bound;
 mod error_stack;
 mod error_write_protection;
@@ -106,6 +108,7 @@ mod opcode_not;
 mod origin;
 mod pc;
 mod pop;
+mod precompiles;
 mod push;
 mod return_revert;
 mod returndatacopy;
@@ -161,6 +164,7 @@ use error_oog_memory_copy::ErrorOOGMemoryCopyGadget;
 use error_oog_sha3::ErrorOOGSha3Gadget;
 use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
 use error_oog_static_memory::ErrorOOGStaticMemoryGadget;
+use error_precompile_failed::ErrorPrecompileFailedGadget;
 use error_return_data_oo_bound::ErrorReturnDataOutOfBoundGadget;
 use error_stack::ErrorStackGadget;
 use error_write_protection::ErrorWriteProtectionGadget;
@@ -176,6 +180,8 @@ use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
 use logs::LogGadget;
+
+use crate::evm_circuit::execution::error_oog_precompile::ErrorOOGPrecompileGadget;
 use memory::MemoryGadget;
 use msize::MsizeGadget;
 use mul_div_mod::MulDivModGadget;
@@ -184,6 +190,7 @@ use opcode_not::NotGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
+use precompiles::IdentityGadget;
 use push::PushGadget;
 use return_revert::ReturnRevertGadget;
 use returndatacopy::ReturnDataCopyGadget;
@@ -303,6 +310,7 @@ pub struct ExecutionConfig<F> {
     block_ctx_gadget: Box<BlockCtxGadget<F>>,
     // error gadgets
     error_oog_call: Box<ErrorOOGCallGadget<F>>,
+    error_oog_precompile: Box<ErrorOOGPrecompileGadget<F>>,
     error_oog_constant: Box<ErrorOOGConstantGadget<F>>,
     error_oog_exp: Box<ErrorOOGExpGadget<F>>,
     error_oog_memory_copy: Box<ErrorOOGMemoryCopyGadget<F>>,
@@ -327,7 +335,9 @@ pub struct ExecutionConfig<F> {
     error_contract_address_collision:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>>,
     error_invalid_creation_code: Box<ErrorInvalidCreationCodeGadget<F>>,
+    error_precompile_failed: Box<ErrorPrecompileFailedGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
+    precompile_identity_gadget: Box<IdentityGadget<F>>,
     invalid_tx: Box<InvalidTxGadget<F>>,
 }
 
@@ -580,6 +590,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_log: configure_gadget!(),
             error_oog_sload_sstore: configure_gadget!(),
             error_oog_call: configure_gadget!(),
+            error_oog_precompile: configure_gadget!(),
             error_oog_memory_copy: configure_gadget!(),
             error_oog_account_access: configure_gadget!(),
             error_oog_sha3: configure_gadget!(),
@@ -594,7 +605,10 @@ impl<F: Field> ExecutionConfig<F> {
             error_depth: configure_gadget!(),
             error_contract_address_collision: configure_gadget!(),
             error_invalid_creation_code: configure_gadget!(),
+            error_precompile_failed: configure_gadget!(),
             error_return_data_out_of_bound: configure_gadget!(),
+            // precompile calls
+            precompile_identity_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -1315,6 +1329,9 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorOutOfGasCall => {
                 assign_exec_step!(self.error_oog_call)
             }
+            ExecutionState::ErrorOutOfGasPrecompile => {
+                assign_exec_step!(self.error_oog_precompile)
+            }
             ExecutionState::ErrorOutOfGasDynamicMemoryExpansion => {
                 assign_exec_step!(self.error_oog_dynamic_memory_gadget)
             }
@@ -1367,6 +1384,13 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorReturnDataOutOfBound => {
                 assign_exec_step!(self.error_return_data_out_of_bound)
+            }
+            ExecutionState::ErrorPrecompileFailed => {
+                assign_exec_step!(self.error_precompile_failed)
+            }
+            // precompile calls
+            ExecutionState::PrecompileIdentity => {
+                assign_exec_step!(self.precompile_identity_gadget)
             }
 
             unimpl_state => evm_unimplemented!("unimplemented ExecutionState: {:?}", unimpl_state),

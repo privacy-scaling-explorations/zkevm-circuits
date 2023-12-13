@@ -76,7 +76,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             CallContextFieldTag::IsSuccess,
             Word::from_lo_unchecked(reversion_info.is_persistent()),
         ); // rwc_delta += 1
-        cb.debug_expression(format!("call_id {}", 3), call_id.expr());
 
         // Check gas_left is sufficient
         let gas_left = tx.gas.expr() - tx.intrinsic_gas();

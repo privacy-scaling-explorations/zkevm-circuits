@@ -48,7 +48,7 @@ impl Opcode for ReturnRevert {
         if call.is_create() && call.is_success && length > 0 {
             // Read the first byte of init code and check it must not be 0xef (EIP-3541).
             let init_code_first_byte = state.call_ctx()?.memory.0[offset];
-            state.memory_read(&mut exec_step, offset.into(), init_code_first_byte)?;
+            state.memory_read(&mut exec_step, offset.into())?;
             assert_ne!(init_code_first_byte, INVALID_INIT_CODE_FIRST_BYTE);
 
             // Note: handle_return updates state.code_db. All we need to do here is push the
@@ -138,7 +138,7 @@ impl Opcode for ReturnRevert {
             }
         }
 
-        state.handle_return(&mut exec_step, steps, false)?;
+        state.handle_return(&mut [&mut exec_step], steps, false)?;
         Ok(vec![exec_step])
     }
 }
