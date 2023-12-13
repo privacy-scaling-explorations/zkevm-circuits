@@ -210,14 +210,31 @@ impl<F: Field> StorageLeafConfig<F> {
                             // Non-hashed branch hash in parent branch
                             require!(leaf_rlc => parent_data[is_s.idx()].rlc.expr());
                         }}
-                    } elsex {
-                        // For NonExistingStorageProof we need to prove that there is nil in the parent branch
-                        // at the `modified_pos` position.
-                        // Note that this does not hold when there is NonExistingStorageProof wrong leaf scenario,
-                        // in this case there is a non-nil leaf. However, in this case the leaf is not a placeholder,
-                        // so the check below is not triggered.
+                    } elsex { 
+                        // For NonExistingStorageProof prove there is no leaf.
+
+                        // When there is only one leaf in the trie, `getProof` will always return this leaf - so we will have
+                        // either the required leaf or the wrong leaf, so for NonExistingStorageProof we don't handle this
+                        // case here (handled by WrongLeaf gadget).
+
                         ifx! {config.is_non_existing_storage_proof.expr() => {
-                            require!(parent_data[is_s.idx()].rlc.expr() => 128.expr());
+                            ifx! {parent_data[is_s.idx()].is_root.expr() => {
+                                // If leaf is placeholder and the parent is root (no branch above leaf) and the proof is NonExistingStorageProof,
+                                // the trie needs to be empty.
+
+                                // TODO
+                                // let l: Vec<Expression<F>> = vec![197.expr(), 210.expr(), 70.expr(), 1.expr(), 134.expr(), 247.expr(), 35.expr(), 60.expr(), 146.expr(), 126.expr(), 125.expr(), 178.expr(), 220.expr(), 199.expr(), 3.expr(), 192.expr(), 229.expr(), 0.expr(), 182.expr(), 83.expr(), 202.expr(), 130.expr(), 39.expr(), 59.expr(), 123.expr(), 250.expr(), 216.expr(), 4.expr(), 93.expr(), 133.expr(), 164.expr(), 112.expr()];
+                                let l: Vec<Expression<F>> = vec![86.expr(), 232.expr(), 31.expr(), 23.expr(), 27.expr(), 204.expr(), 85.expr().expr(), 166.expr(), 255.expr(), 131.expr(), 69.expr(), 230.expr(), 146.expr(), 192.expr(), 248.expr(), 110.expr(), 91.expr(), 72.expr(), 224.expr(), 27.expr(), 153.expr(), 108.expr(), 173.expr(), 192.expr(), 1.expr(), 98.expr(), 47.expr(), 181.expr(), 227.expr(), 99.expr(), 180.expr(), 33.expr(), 0.expr()];
+                                require!(parent_data[is_s.idx()].rlc => l.rlc(&cb.keccak_r));
+                            } elsex {
+                                // For NonExistingStorageProof we need to prove that there is nil in the parent branch
+                                // at the `modified_pos` position.
+                                // Note that this does not hold when there is NonExistingStorageProof wrong leaf scenario,
+                                // in this case there is a non-nil leaf. However, in this case the leaf is not a placeholder,
+                                // so the check below is not triggered.
+                                require!(parent_data[is_s.idx()].rlc.expr() => 128.expr());
+                            }}
+
                         }}
                     }}
                 }};
