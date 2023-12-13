@@ -1,13 +1,25 @@
+use crate::{table::rw_table::get_rwtable_cols_commitment, witness::RwMap};
+
 pub use super::*;
+use bus_mapping::operation::OperationContainer;
+use eth_types::{address, bytecode, geth_types::GethData, Word};
 use ethers_signers::{LocalWallet, Signer};
-use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use halo2_proofs::{
+    dev::MockProver,
+    halo2curves::{
+        bn256::{Bn256, Fr},
+        ff::WithSmallOrderMulGroup,
+    },
+    poly::{
+        commitment::CommitmentScheme,
+        kzg::commitment::{KZGCommitmentScheme, ParamsKZG},
+    },
+};
 use log::error;
 use mock::{TestContext, MOCK_CHAIN_ID};
 use rand::SeedableRng;
-use rand_chacha::ChaCha20Rng;
+use rand_chacha::{rand_core::OsRng, ChaCha20Rng};
 use std::collections::HashMap;
-
-use eth_types::{address, bytecode, geth_types::GethData, Word};
 
 #[test]
 fn super_circuit_degree() {
@@ -171,4 +183,55 @@ fn serial_test_super_circuit_2tx_2max_tx() {
         max_keccak_rows: 0,
     };
     test_super_circuit(block, circuits_params, Fr::from(TEST_MOCK_RANDOMNESS));
+}
+
+#[ignore]
+#[test]
+fn test_rw_table_commitment() {
+    let k = 18;
+    let params = ParamsKZG::<Bn256>::setup(k, OsRng);
+    rw_table_commitment::<KZGCommitmentScheme<_>>(&params);
+}
+
+fn rw_table_commitment<'params, Scheme: CommitmentScheme>(params: &'params Scheme::ParamsProver)
+where
+    <Scheme as CommitmentScheme>::Scalar: WithSmallOrderMulGroup<3> + eth_types::Field,
+{
+    let circuits_params = FixedCParams {
+        max_txs: 1,
+        max_calldata: 32,
+        max_rws: 256,
+        max_copy_rows: 256,
+        max_exp_steps: 256,
+        max_bytecode: 512,
+        max_evm_rows: 0,
+        max_keccak_rows: 0,
+    };
+    let rw_map = RwMap::from(&OperationContainer {
+        ..Default::default()
+    });
+    let rows = rw_map.table_assignments(false);
+
+    const TEST_MOCK_RANDOMNESS: u64 = 0x100;
+
+    // synthesize to get degree
+    let mut cs = ConstraintSystem::<<Scheme as CommitmentScheme>::Scalar>::default();
+    let config = SuperCircuit::configure_with_params(
+        &mut cs,
+        SuperCircuitParams {
+            max_txs: circuits_params.max_txs,
+            max_calldata: circuits_params.max_calldata,
+            mock_randomness: TEST_MOCK_RANDOMNESS.into(),
+        },
+    );
+    let degree = cs.degree();
+
+    let advice_commitments = get_rwtable_cols_commitment::<Scheme>(
+        degree,
+        &rows,
+        circuits_params.max_rws,
+        params,
+        false,
+    );
+    println!("advice_commitments {:?}", advice_commitments[0]);
 }
