@@ -34,16 +34,16 @@ pub struct ChunkContext {
 
 impl Default for ChunkContext {
     fn default() -> Self {
-        Self::new(0, 1, false)
+        Self::new(1, false)
     }
 }
 
 impl ChunkContext {
     /// Create a new Self
-    pub fn new(cur_idx: usize, total_chunks: usize, is_dynamic: bool) -> Self {
+    pub fn new(total_chunks: usize, is_dynamic: bool) -> Self {
         Self {
             rwc: RWCounter::new(),
-            idx: cur_idx,
+            idx: 0,
             total_chunks,
             initial_rwc: 1, // rw counter start from 1
             end_rwc: 0,     // end_rwc should be set in later phase
@@ -65,7 +65,7 @@ impl ChunkContext {
 
     /// Proceed the context to next chunk, record the initial rw counter
     /// update the chunk idx and reset the inner rw counter
-    pub fn next(&mut self, initial_rwc: usize) {
+    pub fn bump(&mut self, initial_rwc: usize) {
         assert!(self.idx + 1 < self.total_chunks, "Exceed total chunks");
         self.idx += 1;
         self.rwc = RWCounter::new();
