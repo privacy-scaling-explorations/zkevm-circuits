@@ -1,4 +1,4 @@
-use crate::circuits::witness::SingleTrieModifications;
+use crate::witness::SingleTrieModifications;
 use eth_types::Field;
 use std::ops::Deref;
 

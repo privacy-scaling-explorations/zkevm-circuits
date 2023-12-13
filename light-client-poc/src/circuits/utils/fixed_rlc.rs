@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use eth_types::Field;
 use eyre::Result;
@@ -30,8 +30,8 @@ pub struct FixedRlcConfig<F: Field> {
     q_enable: Selector,
 
     // encoding
-    is_lens_config: HashMap<usize, IsZeroConfig<F>>,
-    eq_values_config: HashMap<usize, IsZeroConfig<F>>,
+    is_lens_config: BTreeMap<usize, IsZeroConfig<F>>,
+    eq_values_config: BTreeMap<usize, IsZeroConfig<F>>,
     value_col: Column<Advice>,
     len_col: Column<Fixed>,
     bytes_cols: Vec<Column<Advice>>,
@@ -39,7 +39,7 @@ pub struct FixedRlcConfig<F: Field> {
     // rlc
     rlc_acc: Column<Advice>,
     rlc_acc_propagate: IsZeroConfig<F>,
-    rlc_check_config: HashMap<usize, IsZeroConfig<F>>,
+    rlc_check_config: BTreeMap<usize, IsZeroConfig<F>>,
 
     // count
     countdown: Countdown<F>
@@ -65,7 +65,7 @@ impl<F: Field> FixedRlcConfig<F> {
 
         // byte encoding constraints
 
-        let is_lens_config: HashMap<_, _> = allowed_lens
+        let is_lens_config: BTreeMap<_, _> = allowed_lens
             .iter()
             .map(|len| {
                 let inv = meta.advice_column();
@@ -79,7 +79,7 @@ impl<F: Field> FixedRlcConfig<F> {
             })
             .collect();
 
-        let eq_values_config: HashMap<_, _> = allowed_lens
+        let eq_values_config: BTreeMap<_, _> = allowed_lens
             .iter()
             .map(|len| {
                 let inv = meta.advice_column();
@@ -125,7 +125,7 @@ impl<F: Field> FixedRlcConfig<F> {
             rlc_acc_propagate_inv,
         );
 
-        let rlc_check_config: HashMap<_, _> = allowed_lens
+        let rlc_check_config: BTreeMap<_, _> = allowed_lens
             .iter()
             .map(|len| {
                 let inv = meta.advice_column_in(SecondPhase);
