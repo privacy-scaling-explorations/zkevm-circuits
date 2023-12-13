@@ -423,6 +423,33 @@ impl<F: Field> EvmCircuit<F> {
         // It must have one row for EndBlock and at least one unused one
         num_rows + 2
     }
+
+    /// Compute the public inputs for this circuit.
+    fn instance_extend_chunk_ctx(&self) -> Vec<Vec<F>> {
+        let chunk = self.chunk.as_ref().unwrap();
+
+        let (rw_table_chunked_index, rw_table_total_chunks) = (
+            chunk.chunk_context.idx,
+            chunk.chunk_context.total_chunks,
+        );
+
+        let mut instance = vec![
+            vec![
+                F::from(rw_table_chunked_index as u64),
+                F::from(rw_table_total_chunks as u64),
+                F::from(chunk.chunk_context.initial_rwc as u64),
+            ],
+            vec![
+                F::from(rw_table_chunked_index as u64) + F::ONE,
+                F::from(rw_table_total_chunks as u64),
+                F::from(chunk.chunk_context.end_rwc as u64),
+            ],
+        ];
+
+        instance.extend(self.instance());
+
+        instance
+    }
 }
 
 impl<F: Field> SubCircuit<F> for EvmCircuit<F> {

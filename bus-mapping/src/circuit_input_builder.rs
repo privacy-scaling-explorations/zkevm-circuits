@@ -203,7 +203,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             block,
             chunks,
             block_ctx: BlockContext::new(),
-            chunk_ctx: ChunkContext::new(0, total_chunks, params.is_dynamic()),
+            chunk_ctx: ChunkContext::new(total_chunks, params.is_dynamic()),
             circuits_params: params,
         }
     }
@@ -320,10 +320,9 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             tx.steps_mut().extend(exec_steps);
 
             // Generate EndChunk and proceed to the next if it's not the last chunk
-            if is_chunked
-                && !self.chunk_ctx.is_last_chunk()
-                && self.chunk_ctx.rwc.0 >= self.circuits_params.max_rws()
+            if is_chunked && self.chunk_ctx.rwc.0 >= self.circuits_params.max_rws()
             {
+                assert!(self.chunk_ctx.is_last_chunk(), "Fixed max rws is ");
                 // Update param accordding to number of rws actually generated
                 // the initial self.circuits_params function as a chunking thresholded but not
                 // constrain
@@ -491,7 +490,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         self.chunk_ctx.end_rwc = self.block_ctx.rwc.0;
         self.chunks[self.chunk_ctx.idx].ctx = self.chunk_ctx.clone();
         if to_next {
-            self.chunk_ctx.next(self.block_ctx.rwc.0);
+            self.chunk_ctx.bump(self.block_ctx.rwc.0);
         }
     }
 
@@ -739,7 +738,7 @@ impl CircuitInputBuilder<DynamicCParams> {
             block: self.block,
             chunks: self.chunks,
             block_ctx: self.block_ctx,
-            chunk_ctx: ChunkContext::new(0, total_chunks, true),
+            chunk_ctx: ChunkContext::new(total_chunks, true),
             circuits_params: target_params,
         };
         cib.handle_block(eth_block, geth_traces)
