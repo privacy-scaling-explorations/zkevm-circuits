@@ -116,6 +116,18 @@ impl<F: Field> StorageLeafConfig<F> {
             key_data[0] = KeyData::load(cb, &mut ctx.memory[key_memory(true)], 0.expr());
             key_data[1] = KeyData::load(cb, &mut ctx.memory[key_memory(false)], 0.expr());
 
+            // Proof types
+            config.is_storage_mod_proof = IsEqualGadget::construct(
+                &mut cb.base,
+                config.main_data.proof_type.expr(),
+                MPTProofType::StorageChanged.expr(),
+            );
+            config.is_non_existing_storage_proof = IsEqualGadget::construct(
+                &mut cb.base,
+                config.main_data.proof_type.expr(),
+                MPTProofType::StorageDoesNotExist.expr(),
+            );
+
             for is_s in [true, false] {
                 ifx! {not!(config.is_mod_extension[is_s.idx()].expr()) => {
                     // Placeholder leaf checks
@@ -186,7 +198,7 @@ impl<F: Field> StorageLeafConfig<F> {
                     // storage = [key, "value"]
                     require!(rlp_key.rlp_list.len() => key_items[is_s.idx()].num_bytes() + config.rlp_value[is_s.idx()].num_bytes());
 
-                    // Check if the account is in its parent.
+                    // Check if the leaf is in its parent.
                     // Check is skipped for placeholder leaves which are dummy leaves
                     ifx! {not!(is_placeholder_leaf) => {
                         config.is_not_hashed[is_s.idx()] = LtGadget::construct(&mut cb.base, rlp_key.rlp_list.num_bytes(), 32.expr());
@@ -197,6 +209,15 @@ impl<F: Field> StorageLeafConfig<F> {
                         } elsex {
                             // Non-hashed branch hash in parent branch
                             require!(leaf_rlc => parent_data[is_s.idx()].rlc.expr());
+                        }}
+                    } elsex {
+                        // For NonExistingStorageProof we need to prove that there is nil in the parent branch
+                        // at the `modified_pos` position.
+                        // Note that this does not hold when there is NonExistingStorageProof wrong leaf scenario,
+                        // in this case there is a non-nil leaf. However, in this case the leaf is not a placeholder,
+                        // so the check below is not triggered.
+                        ifx! {config.is_non_existing_storage_proof.expr() => {
+                            require!(parent_data[is_s.idx()].rlc.expr() => 128.expr());
                         }}
                     }}
                 }};
@@ -224,18 +245,6 @@ impl<F: Field> StorageLeafConfig<F> {
                     key_data,
                 );
             }};
-
-            // Proof types
-            config.is_storage_mod_proof = IsEqualGadget::construct(
-                &mut cb.base,
-                config.main_data.proof_type.expr(),
-                MPTProofType::StorageChanged.expr(),
-            );
-            config.is_non_existing_storage_proof = IsEqualGadget::construct(
-                &mut cb.base,
-                config.main_data.proof_type.expr(),
-                MPTProofType::StorageDoesNotExist.expr(),
-            );
 
             // Drifted leaf handling
             config.drifted = DriftedGadget::construct(
