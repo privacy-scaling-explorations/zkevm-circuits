@@ -766,10 +766,37 @@ pub fn load_proof_from_file(path: &str) -> Vec<Node> {
 mod tests {
     use super::*;
     use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-    use std::{fs, ops::Deref};
+    use std::{fs, ops::Deref, path::PathBuf};
 
     #[test]
     fn test_mpt() {
+        let degree = 15;
+        get_witnesses()
+            .enumerate()
+            .for_each(|(idx, (path, num_rows, circuit))| {
+                println!("{} {:?}", idx, path);
+                let prover = MockProver::<Fr>::run(degree, &circuit, vec![]).unwrap();
+                assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
+                // assert_eq!(prover.verify_par(), Ok(()));
+                // prover.assert_satisfied();
+            });
+    }
+
+    #[test]
+    fn variadic_size_check() {
+        let mut circuits = get_witnesses();
+        let first = circuits.next().unwrap().2;
+        let second = circuits.next().unwrap().2;
+
+        let degree = 15;
+        let prover_1 = MockProver::<Fr>::run(degree, &first, vec![]).unwrap();
+        let prover_2 = MockProver::<Fr>::run(degree, &second, vec![]).unwrap();
+
+        assert_eq!(prover_1.fixed(), prover_2.fixed());
+        assert_eq!(prover_1.permutation(), prover_2.permutation());
+    }
+
+    fn get_witnesses() -> impl Iterator<Item = (PathBuf, usize, MPTCircuit<Fr>)> {
         let path = "src/mpt_circuit/tests";
         let files = fs::read_dir(path).unwrap();
         files
@@ -781,8 +808,7 @@ mod tests {
                     false
                 }
             })
-            .enumerate()
-            .for_each(|(idx, f)| {
+            .map(|f| {
                 let path = f.path();
                 let mut parts = path.to_str().unwrap().split('-');
                 parts.next();
@@ -796,24 +822,21 @@ mod tests {
                         keccak_data.push(k.deref().clone());
                     }
                 }
-
                 let disable_preimage_check = nodes[0].start.clone().unwrap().disable_preimage_check;
                 let degree = 15;
                 let max_nodes = 520;
-                let circuit = MPTCircuit::<Fr> {
-                    nodes,
-                    keccak_data,
-                    degree,
-                    max_nodes,
-                    disable_preimage_check,
-                    _marker: PhantomData,
-                };
-
-                println!("{} {:?}", idx, path);
-                let prover = MockProver::<Fr>::run(degree as u32, &circuit, vec![]).unwrap();
-                assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
-                // assert_eq!(prover.verify(), Ok(()));
-                // prover.assert_satisfied();
-            });
+                (
+                    path,
+                    num_rows,
+                    MPTCircuit::<Fr> {
+                        nodes,
+                        keccak_data,
+                        degree,
+                        max_nodes,
+                        disable_preimage_check,
+                        _marker: PhantomData,
+                    },
+                )
+            })
     }
 }
