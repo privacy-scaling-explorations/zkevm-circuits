@@ -16,6 +16,7 @@ async fn test_circuit_input_builder_block(block_num: u64) {
     let cli = BuilderClient::new(
         cli,
         FixedCParams {
+            total_chunks: 1,
             max_rws: 16384,
             max_txs: 1,
             max_calldata: 4000,

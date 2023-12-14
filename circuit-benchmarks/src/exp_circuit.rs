@@ -26,7 +26,9 @@ mod tests {
     use rand_xorshift::XorShiftRng;
     use std::env::var;
     use zkevm_circuits::{
-        evm_circuit::witness::{block_convert, Block},
+        evm_circuit::witness::{
+            block_convert, Block, chunk_convert, Chunk
+        },
         exp_circuit::TestExpCircuit,
     };
 
@@ -49,7 +51,7 @@ mod tests {
 
         let base = Word::from(132);
         let exponent = Word::from(27);
-        let block = generate_full_events_block(degree, base, exponent);
+        let (block, chunk) = generate_full_events_block(degree, base, exponent);
         let circuit =
             TestExpCircuit::<Fr>::new(block.exp_events.clone(), chunk.fixed_param.max_exp_steps);
 
@@ -119,7 +121,11 @@ mod tests {
         end_timer!(start3);
     }
 
-    fn generate_full_events_block(degree: u32, base: Word, exponent: Word) -> Block<Fr> {
+    fn generate_full_events_block(
+        degree: u32, 
+        base: Word, 
+        exponent: Word
+    ) -> (Block<Fr>, Chunk<Fr>) {
         let code = bytecode! {
             PUSH32(exponent)
             PUSH32(base)
@@ -143,9 +149,12 @@ mod tests {
             },
         )
         .new_circuit_input_builder();
-        builder
+        let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        block_convert(&builder).unwrap()
+        (
+            block_convert(&builder).unwrap(),
+            chunk_convert(&builder, 0).unwrap()
+        )
     }
 }

@@ -832,283 +832,364 @@ impl Rw {
     }
 }
 
+impl From<Vec<Rw>> for RwMap{
+    fn from(rws: Vec<Rw>) -> Self {
+        let mut rw_map = HashMap::<Target, Vec<Rw>>::default();
+        for rw in rws {
+            match rw {
+                Rw::Account { .. } => if let Some(vrw) = rw_map.get_mut(&Target::Account) {
+                    vrw.push(rw)
+                } else {
+                    rw_map.insert(Target::Account, Vec::new()).map(|_| ()).unwrap()
+                },
+                Rw::AccountStorage { .. } => if let Some(vrw) = rw_map.get_mut(&Target::Storage) {
+                    vrw.push(rw)
+                } else {
+                    rw_map.insert(Target::Storage, Vec::new()).map(|_| ()).unwrap()
+                },
+                Rw::TxAccessListAccount { .. } => if let Some(vrw) = rw_map.get_mut(&Target::TxAccessListAccount) {
+                    vrw.push(rw)
+                } else {
+                    rw_map.insert(Target::TxAccessListAccount, Vec::new()).map(|_| ()).unwrap()
+                },
+                Rw::TxAccessListAccountStorage { .. } => if let Some(vrw) = rw_map.get_mut(&Target::TxAccessListAccountStorage) {
+                    vrw.push(rw)
+                } else {
+                    rw_map.insert(Target::TxAccessListAccountStorage, Vec::new()).map(|_| ()).unwrap()
+                },
+                Rw::Padding { .. } => if let Some(vrw) = rw_map.get_mut(&Target::Padding) {
+                    vrw.push(rw)
+                } else {
+                    rw_map.insert(Target::Padding, Vec::new()).map(|_| ()).unwrap()
+                },
+                Rw::Start { .. } => if let Some(vrw) = rw_map.get_mut(&Target::Start) {
+                    vrw.push(rw)
+                } else {
+                    rw_map.insert(Target::Start, Vec::new()).map(|_| ()).unwrap()
+                },
+                Rw::Stack { .. } => if let Some(vrw) = rw_map.get_mut(&Target::Stack) {
+                    vrw.push(rw)
+                } else {
+                    rw_map.insert(Target::Stack, Vec::new()).map(|_| ()).unwrap()
+                },
+                Rw::Memory { .. } => if let Some(vrw) = rw_map.get_mut(&Target::Memory) {
+                    vrw.push(rw)
+                } else {
+                    rw_map.insert(Target::Memory, Vec::new()).map(|_| ()).unwrap()
+                },
+                Rw::CallContext { .. } => if let Some(vrw) = rw_map.get_mut(&Target::CallContext) {
+                    vrw.push(rw)
+                } else {
+                    rw_map.insert(Target::CallContext, Vec::new()).map(|_| ()).unwrap()
+                },
+                Rw::TxLog { .. } => if let Some(vrw) = rw_map.get_mut(&Target::TxLog) {
+                    vrw.push(rw)
+                } else {
+                    rw_map.insert(Target::TxLog, Vec::new()).map(|_| ()).unwrap()
+                },
+                Rw::TxReceipt { .. } => if let Some(vrw) = rw_map.get_mut(&Target::TxReceipt) {
+                    vrw.push(rw)
+                } else {
+                    rw_map.insert(Target::TxReceipt, Vec::new()).map(|_| ()).unwrap()
+                },
+                Rw::TxRefund { .. } => if let Some(vrw) = rw_map.get_mut(&Target::TxRefund) {
+                    vrw.push(rw)
+                } else {
+                    rw_map.insert(Target::TxRefund, Vec::new()).map(|_| ()).unwrap()
+                },
+                Rw::StepState { .. } => if let Some(vrw) = rw_map.get_mut(&Target::StepState) {
+                    vrw.push(rw)
+                } else {
+                    rw_map.insert(Target::StepState, Vec::new()).map(|_| ()).unwrap()
+                },
+            };
+        }
+        Self(rw_map)
+    }
+}
+
 impl From<&operation::OperationContainer> for RwMap {
     fn from(container: &operation::OperationContainer) -> Self {
         // Get rws raning all indices from the whole container
-        {
-            let mut rws = HashMap::<Target, Vec<Rw>>::default();
-    
-            rws.insert(
-                Target::Padding,
-                container
-                    .padding
-                    .iter()
-                    .map(|op| Rw::Padding {
-                        rw_counter: op.rwc().into(),
-                    })
-                    .collect(),
-            );
-            rws.insert(
-                Target::Start,
-                container
-                    .start
-                    .iter()
-                    .map(|op| Rw::Start {
-                        rw_counter: op.rwc().into(),
-                    })
-                    .collect(),
-            );
-            rws.insert(
-                Target::TxAccessListAccount,
-                container
-                    .tx_access_list_account
-                    .iter()
-                    .map(|op| Rw::TxAccessListAccount {
-                        rw_counter: op.rwc().into(),
-                        is_write: op.rw().is_write(),
-                        tx_id: op.op().tx_id,
-                        account_address: op.op().address,
-                        is_warm: op.op().is_warm,
-                        is_warm_prev: op.op().is_warm_prev,
-                    })
-                    .collect(),
-            );
-            rws.insert(
-                Target::TxAccessListAccountStorage,
-                container
-                    .tx_access_list_account_storage
-                    .iter()
-                    .map(|op| Rw::TxAccessListAccountStorage {
-                        rw_counter: op.rwc().into(),
-                        is_write: op.rw().is_write(),
-                        tx_id: op.op().tx_id,
-                        account_address: op.op().address,
-                        storage_key: op.op().key,
-                        is_warm: op.op().is_warm,
-                        is_warm_prev: op.op().is_warm_prev,
-                    })
-                    .collect(),
-            );
-            rws.insert(
-                Target::TxRefund,
-                container
-                    .tx_refund
-                    .iter()
-                    .map(|op| Rw::TxRefund {
-                        rw_counter: op.rwc().into(),
-                        is_write: op.rw().is_write(),
-                        tx_id: op.op().tx_id,
-                        value: op.op().value,
-                        value_prev: op.op().value_prev,
-                    })
-                    .collect(),
-            );
-            rws.insert(
-                Target::Account,
-                container
-                    .account
-                    .iter()
-                    .map(|op| Rw::Account {
-                        rw_counter: op.rwc().into(),
-                        is_write: op.rw().is_write(),
-                        account_address: op.op().address,
-                        field_tag: match op.op().field {
-                            AccountField::Nonce => AccountFieldTag::Nonce,
-                            AccountField::Balance => AccountFieldTag::Balance,
-                            AccountField::CodeHash => AccountFieldTag::CodeHash,
-                        },
-                        value: op.op().value,
-                        value_prev: op.op().value_prev,
-                    })
-                    .collect(),
-            );
-            rws.insert(
-                Target::Storage,
-                container
-                    .storage
-                    .iter()
-                    .map(|op| Rw::AccountStorage {
-                        rw_counter: op.rwc().into(),
-                        is_write: op.rw().is_write(),
-                        account_address: op.op().address,
-                        storage_key: op.op().key,
-                        value: op.op().value,
-                        value_prev: op.op().value_prev,
-                        tx_id: op.op().tx_id,
-                        committed_value: op.op().committed_value,
-                    })
-                    .collect(),
-            );
-            rws.insert(
-                Target::CallContext,
-                container
-                    .call_context
-                    .iter()
-                    .map(|op| Rw::CallContext {
-                        rw_counter: op.rwc().into(),
-                        is_write: op.rw().is_write(),
-                        call_id: op.op().call_id,
-                        field_tag: match op.op().field {
-                            CallContextField::RwCounterEndOfReversion => {
-                                CallContextFieldTag::RwCounterEndOfReversion
-                            }
-                            CallContextField::CallerId => CallContextFieldTag::CallerId,
-                            CallContextField::TxId => CallContextFieldTag::TxId,
-                            CallContextField::Depth => CallContextFieldTag::Depth,
-                            CallContextField::CallerAddress => CallContextFieldTag::CallerAddress,
-                            CallContextField::CalleeAddress => CallContextFieldTag::CalleeAddress,
-                            CallContextField::CallDataOffset => CallContextFieldTag::CallDataOffset,
-                            CallContextField::CallDataLength => CallContextFieldTag::CallDataLength,
-                            CallContextField::ReturnDataOffset => CallContextFieldTag::ReturnDataOffset,
-                            CallContextField::ReturnDataLength => CallContextFieldTag::ReturnDataLength,
-                            CallContextField::Value => CallContextFieldTag::Value,
-                            CallContextField::IsSuccess => CallContextFieldTag::IsSuccess,
-                            CallContextField::IsPersistent => CallContextFieldTag::IsPersistent,
-                            CallContextField::IsStatic => CallContextFieldTag::IsStatic,
-                            CallContextField::LastCalleeId => CallContextFieldTag::LastCalleeId,
-                            CallContextField::LastCalleeReturnDataOffset => {
-                                CallContextFieldTag::LastCalleeReturnDataOffset
-                            }
-                            CallContextField::LastCalleeReturnDataLength => {
-                                CallContextFieldTag::LastCalleeReturnDataLength
-                            }
-                            CallContextField::IsRoot => CallContextFieldTag::IsRoot,
-                            CallContextField::IsCreate => CallContextFieldTag::IsCreate,
-                            CallContextField::CodeHash => CallContextFieldTag::CodeHash,
-                            CallContextField::ProgramCounter => CallContextFieldTag::ProgramCounter,
-                            CallContextField::StackPointer => CallContextFieldTag::StackPointer,
-                            CallContextField::GasLeft => CallContextFieldTag::GasLeft,
-                            CallContextField::MemorySize => CallContextFieldTag::MemorySize,
-                            CallContextField::ReversibleWriteCounter => {
-                                CallContextFieldTag::ReversibleWriteCounter
-                            }
-                        },
-                        value: op.op().value,
-                    })
-                    .collect(),
-            );
-            rws.insert(
-                Target::Stack,
-                container
-                    .stack
-                    .iter()
-                    .map(|op| Rw::Stack {
-                        rw_counter: op.rwc().into(),
-                        is_write: op.rw().is_write(),
-                        call_id: op.op().call_id(),
-                        stack_pointer: usize::from(*op.op().address()),
-                        value: *op.op().value(),
-                    })
-                    .collect(),
-            );
-            rws.insert(
-                Target::Memory,
-                container
-                    .memory
-                    .iter()
-                    .map(|op| Rw::Memory {
-                        rw_counter: op.rwc().into(),
-                        is_write: op.rw().is_write(),
-                        call_id: op.op().call_id(),
-                        memory_address: u64::from_le_bytes(
-                            op.op().address().to_le_bytes()[..U64_BYTES]
-                                .try_into()
-                                .unwrap(),
-                        ),
-                        byte: op.op().value(),
-                    })
-                    .collect(),
-            );
-            rws.insert(
-                Target::TxLog,
-                container
-                    .tx_log
-                    .iter()
-                    .map(|op| Rw::TxLog {
-                        rw_counter: op.rwc().into(),
-                        is_write: op.rw().is_write(),
-                        tx_id: op.op().tx_id,
-                        log_id: op.op().log_id as u64,
-                        field_tag: match op.op().field {
-                            TxLogField::Address => TxLogFieldTag::Address,
-                            TxLogField::Topic => TxLogFieldTag::Topic,
-                            TxLogField::Data => TxLogFieldTag::Data,
-                        },
-                        index: op.op().index,
-                        value: op.op().value,
-                    })
-                    .collect(),
-            );
-            rws.insert(
-                Target::TxReceipt,
-                container
-                    .tx_receipt
-                    .iter()
-                    .map(|op| Rw::TxReceipt {
-                        rw_counter: op.rwc().into(),
-                        is_write: op.rw().is_write(),
-                        tx_id: op.op().tx_id,
-                        field_tag: match op.op().field {
-                            TxReceiptField::PostStateOrStatus => TxReceiptFieldTag::PostStateOrStatus,
-                            TxReceiptField::LogLength => TxReceiptFieldTag::LogLength,
-                            TxReceiptField::CumulativeGasUsed => TxReceiptFieldTag::CumulativeGasUsed,
-                        },
-                        value: op.op().value,
-                    })
-                    .collect(),
-            );
-            rws.insert(
-                Target::StepState,
-                container
-                    .step_state
-                    .iter()
-                    .map(|op| Rw::StepState {
-                        rw_counter: op.rwc().into(),
-                        is_write: op.rw().is_write(),
-                        field_tag: match op.op().field {
-                            StepStateField::CallID => StepStateFieldTag::CallID,
-                            StepStateField::IsRoot => StepStateFieldTag::IsRoot,
-                            StepStateField::IsCreate => StepStateFieldTag::IsCreate,
-                            StepStateField::CodeHash => StepStateFieldTag::CodeHash,
-                            StepStateField::ProgramCounter => StepStateFieldTag::ProgramCounter,
-                            StepStateField::StackPointer => StepStateFieldTag::StackPointer,
-                            StepStateField::GasLeft => StepStateFieldTag::GasLeft,
-                            StepStateField::MemoryWordSize => StepStateFieldTag::MemoryWordSize,
-                            StepStateField::ReversibleWriteCounter => {
-                                StepStateFieldTag::ReversibleWriteCounter
-                            }
-                            StepStateField::LogID => StepStateFieldTag::LogID,
-                        },
-                        value: op.op().value,
-                    })
-                    .collect(),
-            );
-            Self(rws)
-        }
+        let mut rws = HashMap::<Target, Vec<Rw>>::default();
+
+        rws.insert(
+            Target::Padding,
+            container
+                .padding
+                .iter()
+                .map(|op| Rw::Padding {
+                    rw_counter: op.rwc().into(),
+                })
+                .collect(),
+        );
+        rws.insert(
+            Target::Start,
+            container
+                .start
+                .iter()
+                .map(|op| Rw::Start {
+                    rw_counter: op.rwc().into(),
+                })
+                .collect(),
+        );
+        rws.insert(
+            Target::TxAccessListAccount,
+            container
+                .tx_access_list_account
+                .iter()
+                .map(|op| Rw::TxAccessListAccount {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    tx_id: op.op().tx_id,
+                    account_address: op.op().address,
+                    is_warm: op.op().is_warm,
+                    is_warm_prev: op.op().is_warm_prev,
+                })
+                .collect(),
+        );
+        rws.insert(
+            Target::TxAccessListAccountStorage,
+            container
+                .tx_access_list_account_storage
+                .iter()
+                .map(|op| Rw::TxAccessListAccountStorage {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    tx_id: op.op().tx_id,
+                    account_address: op.op().address,
+                    storage_key: op.op().key,
+                    is_warm: op.op().is_warm,
+                    is_warm_prev: op.op().is_warm_prev,
+                })
+                .collect(),
+        );
+        rws.insert(
+            Target::TxRefund,
+            container
+                .tx_refund
+                .iter()
+                .map(|op| Rw::TxRefund {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    tx_id: op.op().tx_id,
+                    value: op.op().value,
+                    value_prev: op.op().value_prev,
+                })
+                .collect(),
+        );
+        rws.insert(
+            Target::Account,
+            container
+                .account
+                .iter()
+                .map(|op| Rw::Account {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    account_address: op.op().address,
+                    field_tag: match op.op().field {
+                        AccountField::Nonce => AccountFieldTag::Nonce,
+                        AccountField::Balance => AccountFieldTag::Balance,
+                        AccountField::CodeHash => AccountFieldTag::CodeHash,
+                    },
+                    value: op.op().value,
+                    value_prev: op.op().value_prev,
+                })
+                .collect(),
+        );
+        rws.insert(
+            Target::Storage,
+            container
+                .storage
+                .iter()
+                .map(|op| Rw::AccountStorage {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    account_address: op.op().address,
+                    storage_key: op.op().key,
+                    value: op.op().value,
+                    value_prev: op.op().value_prev,
+                    tx_id: op.op().tx_id,
+                    committed_value: op.op().committed_value,
+                })
+                .collect(),
+        );
+        rws.insert(
+            Target::CallContext,
+            container
+                .call_context
+                .iter()
+                .map(|op| Rw::CallContext {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    call_id: op.op().call_id,
+                    field_tag: match op.op().field {
+                        CallContextField::RwCounterEndOfReversion => {
+                            CallContextFieldTag::RwCounterEndOfReversion
+                        }
+                        CallContextField::CallerId => CallContextFieldTag::CallerId,
+                        CallContextField::TxId => CallContextFieldTag::TxId,
+                        CallContextField::Depth => CallContextFieldTag::Depth,
+                        CallContextField::CallerAddress => CallContextFieldTag::CallerAddress,
+                        CallContextField::CalleeAddress => CallContextFieldTag::CalleeAddress,
+                        CallContextField::CallDataOffset => CallContextFieldTag::CallDataOffset,
+                        CallContextField::CallDataLength => CallContextFieldTag::CallDataLength,
+                        CallContextField::ReturnDataOffset => CallContextFieldTag::ReturnDataOffset,
+                        CallContextField::ReturnDataLength => CallContextFieldTag::ReturnDataLength,
+                        CallContextField::Value => CallContextFieldTag::Value,
+                        CallContextField::IsSuccess => CallContextFieldTag::IsSuccess,
+                        CallContextField::IsPersistent => CallContextFieldTag::IsPersistent,
+                        CallContextField::IsStatic => CallContextFieldTag::IsStatic,
+                        CallContextField::LastCalleeId => CallContextFieldTag::LastCalleeId,
+                        CallContextField::LastCalleeReturnDataOffset => {
+                            CallContextFieldTag::LastCalleeReturnDataOffset
+                        }
+                        CallContextField::LastCalleeReturnDataLength => {
+                            CallContextFieldTag::LastCalleeReturnDataLength
+                        }
+                        CallContextField::IsRoot => CallContextFieldTag::IsRoot,
+                        CallContextField::IsCreate => CallContextFieldTag::IsCreate,
+                        CallContextField::CodeHash => CallContextFieldTag::CodeHash,
+                        CallContextField::ProgramCounter => CallContextFieldTag::ProgramCounter,
+                        CallContextField::StackPointer => CallContextFieldTag::StackPointer,
+                        CallContextField::GasLeft => CallContextFieldTag::GasLeft,
+                        CallContextField::MemorySize => CallContextFieldTag::MemorySize,
+                        CallContextField::ReversibleWriteCounter => {
+                            CallContextFieldTag::ReversibleWriteCounter
+                        }
+                    },
+                    value: op.op().value,
+                })
+                .collect(),
+        );
+        rws.insert(
+            Target::Stack,
+            container
+                .stack
+                .iter()
+                .map(|op| Rw::Stack {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    call_id: op.op().call_id(),
+                    stack_pointer: usize::from(*op.op().address()),
+                    value: *op.op().value(),
+                })
+                .collect(),
+        );
+        rws.insert(
+            Target::Memory,
+            container
+                .memory
+                .iter()
+                .map(|op| Rw::Memory {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    call_id: op.op().call_id(),
+                    memory_address: u64::from_le_bytes(
+                        op.op().address().to_le_bytes()[..U64_BYTES]
+                            .try_into()
+                            .unwrap(),
+                    ),
+                    byte: op.op().value(),
+                })
+                .collect(),
+        );
+        rws.insert(
+            Target::TxLog,
+            container
+                .tx_log
+                .iter()
+                .map(|op| Rw::TxLog {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    tx_id: op.op().tx_id,
+                    log_id: op.op().log_id as u64,
+                    field_tag: match op.op().field {
+                        TxLogField::Address => TxLogFieldTag::Address,
+                        TxLogField::Topic => TxLogFieldTag::Topic,
+                        TxLogField::Data => TxLogFieldTag::Data,
+                    },
+                    index: op.op().index,
+                    value: op.op().value,
+                })
+                .collect(),
+        );
+        rws.insert(
+            Target::TxReceipt,
+            container
+                .tx_receipt
+                .iter()
+                .map(|op| Rw::TxReceipt {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    tx_id: op.op().tx_id,
+                    field_tag: match op.op().field {
+                        TxReceiptField::PostStateOrStatus => TxReceiptFieldTag::PostStateOrStatus,
+                        TxReceiptField::LogLength => TxReceiptFieldTag::LogLength,
+                        TxReceiptField::CumulativeGasUsed => TxReceiptFieldTag::CumulativeGasUsed,
+                    },
+                    value: op.op().value,
+                })
+                .collect(),
+        );
+        rws.insert(
+            Target::StepState,
+            container
+                .step_state
+                .iter()
+                .map(|op| Rw::StepState {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    field_tag: match op.op().field {
+                        StepStateField::CallID => StepStateFieldTag::CallID,
+                        StepStateField::IsRoot => StepStateFieldTag::IsRoot,
+                        StepStateField::IsCreate => StepStateFieldTag::IsCreate,
+                        StepStateField::CodeHash => StepStateFieldTag::CodeHash,
+                        StepStateField::ProgramCounter => StepStateFieldTag::ProgramCounter,
+                        StepStateField::StackPointer => StepStateFieldTag::StackPointer,
+                        StepStateField::GasLeft => StepStateFieldTag::GasLeft,
+                        StepStateField::MemoryWordSize => StepStateFieldTag::MemoryWordSize,
+                        StepStateField::ReversibleWriteCounter => {
+                            StepStateFieldTag::ReversibleWriteCounter
+                        }
+                        StepStateField::LogID => StepStateFieldTag::LogID,
+                    },
+                    value: op.op().value,
+                })
+                .collect(),
+        );
+        Self(rws)
+        
     }
 }
 
 /// RwFingerprints
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct RwFingerprints<F> {
-    /// acc_prev_fingerprints
-    pub acc_prev_fingerprints: F,
-    /// acc_next_fingerprints
-    pub acc_next_fingerprints: F,
-    /// row_pre_fingerprints
-    pub row_pre_fingerprints: F,
-    /// row_next_fingerprints
-    pub row_next_fingerprints: F,
+    /// last chunk fingerprint = row0 * row1 * ... rowi
+    pub prev_mul_acc: F,
+    /// cur chunk fingerprint 
+    pub mul_acc: F,
+    /// last chunk last row = alpha - (gamma^1 x1 + gamma^2 x2 + ...)
+    pub prev_ending_row: F,
+    /// cur chunk last row 
+    pub ending_row: F,
 }
 
 impl<F: Field> RwFingerprints<F> {
     /// new by value
-    pub fn new(row_prev: F, row_next: F, acc_pref: F, acc_next: F) -> Self {
+    pub fn new(row_prev: F, row: F, acc_prev: F, acc: F) -> Self {
         Self {
-            acc_prev_fingerprints: acc_pref,
-            acc_next_fingerprints: acc_next,
-            row_pre_fingerprints: row_prev,
-            row_next_fingerprints: row_next,
+            prev_mul_acc: acc_prev,
+            mul_acc: acc,
+            prev_ending_row: row_prev,
+            ending_row: row,
         }
+    }
+}
+
+impl<F: Field> Default for RwFingerprints<F> {
+    fn default() -> Self {
+        Self::new(F::from(0), F::from(0), F::from(1), F::from(1))
     }
 }

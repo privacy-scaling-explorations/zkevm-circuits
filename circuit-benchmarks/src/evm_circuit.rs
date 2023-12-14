@@ -24,7 +24,7 @@ mod evm_circ_benches {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::evm_circuit::{witness::block_convert, TestEvmCircuit};
+    use zkevm_circuits::evm_circuit::{witness::{block_convert, chunk_convert}, TestEvmCircuit};
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -48,13 +48,14 @@ mod evm_circ_benches {
             BlockData::new_from_geth_data_with_params(empty_data.clone(), FixedCParams::default())
                 .new_circuit_input_builder();
 
-        builder
+        let builder = builder
             .handle_block(&empty_data.eth_block, &empty_data.geth_traces)
             .unwrap();
 
         let block = block_convert(&builder).unwrap();
+        let chunk = chunk_convert(&builder, 0).unwrap();
 
-        let circuit = TestEvmCircuit::<Fr>::new(block);
+        let circuit = TestEvmCircuit::<Fr>::new(block, chunk);
         let mut rng = XorShiftRng::from_seed([
             0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
             0xbc, 0xe5,

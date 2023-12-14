@@ -373,7 +373,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                     Value::known(
                         chunk
                             .chrono_rw_fingerprints
-                            .acc_prev_fingerprints,
+                            .prev_mul_acc,
                     ),
                     &rw_rows_padding.to2dvec(),
                     "evm circuit",
@@ -412,16 +412,16 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
             chunk.permu_gamma,
             chunk
                 .chrono_rw_fingerprints
-                .row_pre_fingerprints,
+                .prev_mul_acc,
             chunk
                 .chrono_rw_fingerprints
-                .row_next_fingerprints,
+                .mul_acc,
             chunk
                 .chrono_rw_fingerprints
-                .acc_prev_fingerprints,
+                .prev_mul_acc,
             chunk
                 .chrono_rw_fingerprints
-                .acc_next_fingerprints,
+                .mul_acc,
         ]]
     }
 }

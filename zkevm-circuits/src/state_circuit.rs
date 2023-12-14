@@ -448,7 +448,7 @@ impl SortKeysConfig {
 
 /// State Circuit for proving RwTable is valid
 #[derive(Default, Clone, Debug)]
-pub struct StateCircuit<F> {
+pub struct StateCircuit<F: Field> {
     /// Rw rows
     pub rows: Vec<Rw>,
     #[cfg(test)]
@@ -579,7 +579,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     &mut region,
                     Value::known(self.permu_alpha),
                     Value::known(self.permu_gamma),
-                    Value::known(self.rw_fingerprints.acc_prev_fingerprints),
+                    Value::known(self.rw_fingerprints.prev_mul_acc),
                     &rows,
                     "state_circuit",
                 )?;
@@ -628,10 +628,10 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         vec![vec![
             self.permu_alpha,
             self.permu_gamma,
-            self.rw_fingerprints.row_pre_fingerprints,
-            self.rw_fingerprints.row_next_fingerprints,
-            self.rw_fingerprints.acc_prev_fingerprints,
-            self.rw_fingerprints.acc_next_fingerprints,
+            self.rw_fingerprints.prev_ending_row,
+            self.rw_fingerprints.ending_row,
+            self.rw_fingerprints.prev_mul_acc,
+            self.rw_fingerprints.mul_acc,
         ]]
     }
 }
