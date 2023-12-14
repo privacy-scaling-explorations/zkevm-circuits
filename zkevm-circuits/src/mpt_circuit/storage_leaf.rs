@@ -25,7 +25,7 @@ use crate::{
     },
     table::MPTProofType,
     util::word::{self, Word},
-    witness::MptUpdateRow,
+    witness::MptUpdateRow, evm_circuit::util::from_bytes,
 };
 
 use super::{
@@ -222,10 +222,28 @@ impl<F: Field> StorageLeafConfig<F> {
                                 // If leaf is placeholder and the parent is root (no branch above leaf) and the proof is NonExistingStorageProof,
                                 // the trie needs to be empty.
 
-                                // TODO
-                                // let l: Vec<Expression<F>> = vec![197.expr(), 210.expr(), 70.expr(), 1.expr(), 134.expr(), 247.expr(), 35.expr(), 60.expr(), 146.expr(), 126.expr(), 125.expr(), 178.expr(), 220.expr(), 199.expr(), 3.expr(), 192.expr(), 229.expr(), 0.expr(), 182.expr(), 83.expr(), 202.expr(), 130.expr(), 39.expr(), 59.expr(), 123.expr(), 250.expr(), 216.expr(), 4.expr(), 93.expr(), 133.expr(), 164.expr(), 112.expr()];
-                                let l: Vec<Expression<F>> = vec![86.expr(), 232.expr(), 31.expr(), 23.expr(), 27.expr(), 204.expr(), 85.expr().expr(), 166.expr(), 255.expr(), 131.expr(), 69.expr(), 230.expr(), 146.expr(), 192.expr(), 248.expr(), 110.expr(), 91.expr(), 72.expr(), 224.expr(), 27.expr(), 153.expr(), 108.expr(), 173.expr(), 192.expr(), 1.expr(), 98.expr(), 47.expr(), 181.expr(), 227.expr(), 99.expr(), 180.expr(), 33.expr(), 0.expr()];
-                                require!(parent_data[is_s.idx()].rlc => l.rlc(&cb.keccak_r));
+                                // empty trie hash:
+                                let bytes: Vec<u8> = [86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72, 224, 27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33].to_vec();
+                                let lo: Expression<F> = from_bytes::expr(
+                                    bytes[16..32]
+                                        .iter()
+                                        .cloned()
+                                        .rev()
+                                        .collect::<Vec<u8>>()
+                                        .as_slice(),
+                                );
+                                let hi: Expression<F> = from_bytes::expr(
+                                    bytes[0..16]
+                                        .iter()
+                                        .cloned()
+                                        .rev()
+                                        .collect::<Vec<u8>>()
+                                        .as_slice(),
+                                );
+
+                                let hash = parent_data[is_s.idx()].hash.expr();
+                                require!(hash.lo() => lo);
+                                require!(hash.hi() => hi);
                             } elsex {
                                 // For NonExistingStorageProof we need to prove that there is nil in the parent branch
                                 // at the `modified_pos` position.
