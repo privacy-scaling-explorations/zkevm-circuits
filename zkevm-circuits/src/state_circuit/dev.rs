@@ -66,9 +66,8 @@ use crate::util::word::Word;
 #[cfg(test)]
 use crate::state_circuit::HashMap;
 #[cfg(test)]
-use crate::witness::{rw::RwFingerprints, rw::ToVec, Rw, RwMap, RwRow};
-#[cfg(test)]
-use gadgets::permutation::get_permutation_fingerprints;
+use crate::witness::{Rw, RwRow};
+
 #[cfg(test)]
 use halo2_proofs::{
     circuit::Value,

@@ -58,7 +58,6 @@ use crate::{
     copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs},
     evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs},
     exp_circuit::{ExpCircuit, ExpCircuitConfig},
-    util::chunk_ctx::ChunkContextConfig,
     keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
     pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
@@ -67,7 +66,7 @@ use crate::{
         RwTable, TxTable, UXTable,
     },
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
-    util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
+    util::{chunk_ctx::ChunkContextConfig, log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
     witness::{block_convert, chunk_convert, Block, Chunk, MptUpdates},
 };
 use bus_mapping::{
@@ -111,7 +110,6 @@ pub struct SuperCircuitConfigArgs<F: Field> {
     /// Mock randomness
     pub mock_randomness: F,
 }
-
 
 impl<F: Field> SuperCircuitConfig<F> {
     /// get chronological_rwtable and byaddr_rwtable advice columns
@@ -427,7 +425,7 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
         challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-                // synthesize chunk context
+        // synthesize chunk context
         config.chunk_ctx_config.assign_chunk_context(
             layouter,
             &self.chunk.as_ref().unwrap().chunk_context,

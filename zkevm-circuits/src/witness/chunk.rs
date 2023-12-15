@@ -1,5 +1,8 @@
 ///
-use super::{rw::{ToVec, RwFingerprints}, ExecStep, RwMap, Rw, RwRow};
+use super::{
+    rw::{RwFingerprints, ToVec},
+    ExecStep, Rw, RwMap, RwRow,
+};
 use crate::{util::unwrap_value, witness::Block};
 use bus_mapping::{
     circuit_input_builder::{self, ChunkContext, FixedCParams},
@@ -8,7 +11,6 @@ use bus_mapping::{
 use eth_types::Field;
 use gadgets::permutation::get_permutation_fingerprints;
 use halo2_proofs::circuit::Value;
-use rand::distributions::Alphanumeric;
 
 /// [`Chunk`]` is the struct used by all circuits, which contains chunkwise
 /// data for witness generation. Used with [`Block`] for blockwise witness.
@@ -40,12 +42,19 @@ pub struct Chunk<F> {
 
 impl<F: Field> Default for Chunk<F> {
     fn default() -> Self {
-        // One fixed param chunk with randomness = 1 
+        // One fixed param chunk with randomness = 1
         // RwFingerprints rw acc starts with 0 and fingerprints = 1
         Self {
+            begin_chunk: None,
+            end_chunk: None,
+            chunk_context: ChunkContext::default(),
+            rws: RwMap::default(),
             permu_alpha: F::from(1),
             permu_gamma: F::from(1),
-            ..Default::default()
+            rw_fingerprints: RwFingerprints::default(),
+            chrono_rw_fingerprints: RwFingerprints::default(),
+            fixed_param: FixedCParams::default(),
+            prev_block: Box::new(None),
         }
     }
 }
@@ -55,19 +64,19 @@ impl<F: Field> Chunk<F> {
         let (alpha, gamma) = get_permutation_randomness();
         let mut chunk = Chunk::default();
         let rw_fingerprints = get_permutation_fingerprint_of_rwmap(
-            &rws,
+            rws,
             chunk.fixed_param.max_rws,
             alpha, // TODO
             gamma,
-            F::from(1), 
+            F::from(1),
             false,
         );
         let chrono_rw_fingerprints = get_permutation_fingerprint_of_rwmap(
-            &rws,
+            rws,
             chunk.fixed_param.max_rws,
             alpha,
             gamma,
-            F::from(1), 
+            F::from(1),
             true,
         );
         chunk.rws = rws.clone();
@@ -95,7 +104,8 @@ pub fn chunk_convert<F: Field>(
     // Compute fingerprints of all chunks
     let mut alpha_gamas = Vec::with_capacity(builder.chunks.len());
     let mut rw_fingerprints: Vec<RwFingerprints<F>> = Vec::with_capacity(builder.chunks.len());
-    let mut chrono_rw_fingerprints: Vec<RwFingerprints<F>> = Vec::with_capacity(builder.chunks.len());
+    let mut chrono_rw_fingerprints: Vec<RwFingerprints<F>> =
+        Vec::with_capacity(builder.chunks.len());
 
     for (i, chunk) in builder.chunks.iter().enumerate() {
         // Get the Rws in the i-th chunk
@@ -113,7 +123,11 @@ pub fn chunk_convert<F: Field>(
             chunk.fixed_param.max_rws,
             alpha,
             gamma,
-            if i == 0 { F::from(1) } else { rw_fingerprints[i-1].mul_acc}, 
+            if i == 0 {
+                F::from(1)
+            } else {
+                rw_fingerprints[i - 1].mul_acc
+            },
             false,
         );
         let cur_chrono_fingerprints = get_permutation_fingerprint_of_rwmap(
@@ -121,10 +135,13 @@ pub fn chunk_convert<F: Field>(
             chunk.fixed_param.max_rws,
             alpha,
             gamma,
-            if i == 0 { F::from(1) } else { chrono_rw_fingerprints[i-1].mul_acc}, 
-            true
+            if i == 0 {
+                F::from(1)
+            } else {
+                chrono_rw_fingerprints[i - 1].mul_acc
+            },
+            true,
         );
-
 
         alpha_gamas.push(vec![alpha, gamma]);
         rw_fingerprints.push(cur_fingerprints);
@@ -184,7 +201,7 @@ pub fn get_permutation_fingerprint_of_rwmap<F: Field>(
     alpha: F,
     gamma: F,
     prev_continuous_fingerprint: F,
-    is_chrono: bool
+    is_chrono: bool,
 ) -> RwFingerprints<F> {
     get_permutation_fingerprint_of_rwvec(
         &rwmap.table_assignments(is_chrono),

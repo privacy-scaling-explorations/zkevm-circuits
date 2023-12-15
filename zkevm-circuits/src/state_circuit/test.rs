@@ -2,8 +2,7 @@ pub use super::{dev::*, *};
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, TxLogFieldTag, TxReceiptFieldTag},
     util::{unusable_rows, SubCircuit},
-    witness::{MptUpdates, Rw, RwMap},
-    witness::chunk::*,
+    witness::{chunk::*, MptUpdates, Rw, RwMap},
 };
 use bus_mapping::operation::{
     MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
@@ -70,17 +69,15 @@ fn verifying_key_independent_of_rw_length() {
 
     let no_rows = StateCircuit::<Fr>::new(&chunk);
 
-    chunk = Chunk::new_from_rw_map(
-        &RwMap::from(&OperationContainer {
-            memory: vec![Operation::new(
-                RWCounter::from(1),
-                RWCounter::from(1),
-                RW::WRITE,
-                MemoryOp::new(1, MemoryAddress::from(0), 32),
-            )],
-            ..Default::default()
-        })
-    );
+    chunk = Chunk::new_from_rw_map(&RwMap::from(&OperationContainer {
+        memory: vec![Operation::new(
+            RWCounter::from(1),
+            RWCounter::from(1),
+            RW::WRITE,
+            MemoryOp::new(1, MemoryAddress::from(0), 32),
+        )],
+        ..Default::default()
+    }));
     let one_row = StateCircuit::<Fr>::new(&chunk);
 
     let vk_no_rows = keygen_vk(&params, &no_rows).unwrap();

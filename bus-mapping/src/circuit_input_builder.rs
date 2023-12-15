@@ -96,7 +96,7 @@ pub trait CircuitsParams: Debug + Copy {
     fn max_rws(&self) -> usize;
     /// Return whether the parameters are dynamic.
     /// If true, the `total_chunks` and `max_rws` will serve as a target value for chunking  
-    /// and [`FixedCParam`] will be recomputed from each generated chunk witness.
+    /// and [`FixedCParams`] will be recomputed from each generated chunk witness.
     fn is_dynamic(&self) -> bool;
 }
 
@@ -320,8 +320,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             tx.steps_mut().extend(exec_steps);
 
             // Generate EndChunk and proceed to the next if it's not the last chunk
-            if is_chunked && self.chunk_ctx.rwc.0 >= self.circuits_params.max_rws()
-            {
+            if is_chunked && self.chunk_ctx.rwc.0 >= self.circuits_params.max_rws() {
                 assert!(self.chunk_ctx.is_last_chunk(), "Fixed max rws is ");
                 // Update param accordding to number of rws actually generated
                 // the initial self.circuits_params function as a chunking thresholded but not
@@ -441,7 +440,6 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
 
         // We need at least 1 extra row at offset 0 for chunk continuous
         // FIXME(Cecilia): adding + 1 fail some tests
-        #[allow(clippy::int_plus_one)]
         assert!(
             total_rws < max_rws,
             "total_rws <= max_rws, total_rws={}, max_rws={}",

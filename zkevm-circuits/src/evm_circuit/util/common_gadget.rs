@@ -20,7 +20,7 @@ use crate::{
             not, or, Cell,
         },
     },
-    table::{chunk_ctx_table::chunk_ctxFieldTag, AccountFieldTag, CallContextFieldTag},
+    table::{chunk_ctx_table::ChunkCtxFieldTag, AccountFieldTag, CallContextFieldTag},
     util::{
         word::{Word, Word32, Word32Cell, WordCell, WordExpr},
         Expr,
@@ -1269,7 +1269,7 @@ impl<F: Field> RwTablePaddingGadget<F> {
         let is_empty_rwc =
             IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
 
-        cb.chunk_context_lookup(chunk_ctxFieldTag::CurrentChunkIndex, chunk_index.expr());
+        cb.chunk_context_lookup(ChunkCtxFieldTag::CurrentChunkIndex, chunk_index.expr());
         let is_first_chunk = IsZeroGadget::construct(cb, chunk_index.expr());
 
         // Verify rw_counter counts to the same number of meaningful rows in

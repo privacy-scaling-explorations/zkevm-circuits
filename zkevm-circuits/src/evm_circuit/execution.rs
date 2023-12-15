@@ -20,7 +20,7 @@ use crate::{
         },
         witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
-    table::{chunk_ctx_table::chunk_ctxFieldTag, LookupTable},
+    table::{chunk_ctx_table::ChunkCtxFieldTag, LookupTable},
     util::{
         cell_manager::{CMFixedWidthStrategy, CellManager, CellType},
         Challenges, Expr,
@@ -836,7 +836,7 @@ impl<F: Field> ExecutionConfig<F> {
                         * execute_state_selector
                         * rlc::expr(
                             &[
-                                chunk_ctxFieldTag::InitialRWC.expr(),
+                                ChunkCtxFieldTag::InitialRWC.expr(),
                                 step_curr.state.rw_counter.expr(),
                             ],
                             challenges.lookup_input(),
@@ -860,7 +860,7 @@ impl<F: Field> ExecutionConfig<F> {
                         * execute_state_selector
                         * rlc::expr(
                             &[
-                                chunk_ctxFieldTag::EndRWC.expr(),
+                                ChunkCtxFieldTag::EndRWC.expr(),
                                 step_curr_rw_counter.expr() + step_curr_rw_counter_offset.clone(),
                             ],
                             challenges.lookup_input(),
@@ -981,7 +981,7 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Copy => copy_table,
                         Table::Keccak => keccak_table,
                         Table::Exp => exp_table,
-                        Table::chunk_ctx => chunk_ctx_table,
+                        Table::ChunkCtx => chunk_ctx_table,
                     }
                     .table_exprs(meta);
                     vec![(

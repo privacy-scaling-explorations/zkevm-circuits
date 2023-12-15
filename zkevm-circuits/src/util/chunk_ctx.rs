@@ -13,7 +13,7 @@ use halo2_proofs::{
 use crate::{
     evm_circuit::util::rlc,
     table::{
-        chunk_ctx_table::{chunk_ctxFieldTag, chunk_ctxTable},
+        chunk_ctx_table::{ChunkCtxFieldTag, ChunkCtxTable},
         LookupTable,
     },
 };
@@ -35,8 +35,8 @@ pub struct ChunkContextConfig<F> {
     /// is_last_chunk config
     pub is_last_chunk: IsZeroConfig<F>,
 
-    /// chunk_ctxTable
-    pub chunk_ctx_table: chunk_ctxTable,
+    /// ChunkCtxTable
+    pub chunk_ctx_table: ChunkCtxTable,
     /// instance column for chunk context
     pub pi_chunk_ctx: Column<Instance>,
 
@@ -58,13 +58,13 @@ impl<F: Field> ChunkContextConfig<F> {
         let pi_chunk_ctx = meta.instance_column();
         meta.enable_equality(pi_chunk_ctx);
 
-        let chunk_ctx_table = chunk_ctxTable::construct(meta);
+        let chunk_ctx_table = ChunkCtxTable::construct(meta);
         chunk_ctx_table.annotate_columns(meta);
 
         [
-            (chunk_ctxFieldTag::CurrentChunkIndex.expr(), chunk_index),
-            (chunk_ctxFieldTag::NextChunkIndex.expr(), chunk_index_next),
-            (chunk_ctxFieldTag::TotalChunks.expr(), total_chunks),
+            (ChunkCtxFieldTag::CurrentChunkIndex.expr(), chunk_index),
+            (ChunkCtxFieldTag::NextChunkIndex.expr(), chunk_index_next),
+            (ChunkCtxFieldTag::TotalChunks.expr(), total_chunks),
         ]
         .iter()
         .for_each(|(tag_expr, value_col)| {
@@ -78,7 +78,10 @@ impl<F: Field> ChunkContextConfig<F> {
                             &[tag_expr.clone(), value_col_expr],
                             challenges.lookup_input(),
                         ),
-                    rlc::expr(&chunk_ctx_table.table_exprs(meta), challenges.lookup_input()),
+                    rlc::expr(
+                        &chunk_ctx_table.table_exprs(meta),
+                        challenges.lookup_input(),
+                    ),
                 )]
             });
         });

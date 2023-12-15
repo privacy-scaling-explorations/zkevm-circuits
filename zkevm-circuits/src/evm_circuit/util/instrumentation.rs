@@ -104,7 +104,7 @@ impl Instrument {
                     CellType::Lookup(Table::Exp) => {
                         report.exp_table = data_entry;
                     }
-                    CellType::Lookup(Table::chunk_ctx) => {
+                    CellType::Lookup(Table::ChunkCtx) => {
                         report.chunk_ctx_table = data_entry;
                     }
                 }

@@ -21,11 +21,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::{
-        evm_circuit::witness::RwMap, state_circuit::StateCircuit, util::SubCircuit,
-        witness::rw::RwFingerprints,
-    };
-    use zkevm_circuits::witness::Chunk;
+    use zkevm_circuits::{state_circuit::StateCircuit, util::SubCircuit, witness::Chunk};
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]

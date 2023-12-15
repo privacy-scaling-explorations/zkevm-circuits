@@ -7,7 +7,7 @@ use super::*;
 /// Tag to identify the field in a Chunk Context row
 // Keep the sequence consistent with OpcodeId for scalar
 #[derive(Clone, Copy, Debug)]
-pub enum chunk_ctxFieldTag {
+pub enum ChunkCtxFieldTag {
     /// Coinbase field
     CurrentChunkIndex = 1,
     /// NextChunk field
@@ -19,11 +19,11 @@ pub enum chunk_ctxFieldTag {
     /// end rw counter
     EndRWC,
 }
-impl_expr!(chunk_ctxFieldTag);
+impl_expr!(ChunkCtxFieldTag);
 
 /// Table with Chunk context fields
 #[derive(Clone, Debug)]
-pub struct chunk_ctxTable {
+pub struct ChunkCtxTable {
     q_enable: Selector,
     /// Tag
     pub tag: Column<Fixed>,
@@ -31,7 +31,7 @@ pub struct chunk_ctxTable {
     pub value: Column<Advice>,
 }
 
-type chunk_ctxTableAssignedCells<F> = (
+type ChunkCtxTableAssignedCells<F> = (
     AssignedCell<F, F>,
     AssignedCell<F, F>,
     AssignedCell<F, F>,
@@ -39,8 +39,8 @@ type chunk_ctxTableAssignedCells<F> = (
     AssignedCell<F, F>,
 );
 
-impl chunk_ctxTable {
-    /// Construct a new chunk_ctxTable
+impl ChunkCtxTable {
+    /// Construct a new ChunkCtxTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         let (q_enable, tag, value) = (meta.selector(), meta.fixed_column(), meta.advice_column());
 
@@ -61,12 +61,12 @@ impl chunk_ctxTable {
         }
     }
 
-    /// Assign the `chunk_ctxTable` from a `BlockContext`.
+    /// Assign the `ChunkCtxTable` from a `BlockContext`.
     pub fn load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         chunk_ctx: &ChunkContext,
-    ) -> Result<chunk_ctxTableAssignedCells<F>, Error> {
+    ) -> Result<ChunkCtxTableAssignedCells<F>, Error> {
         layouter.assign_region(
             || "chunk_ctx table",
             |mut region| {
@@ -77,27 +77,27 @@ impl chunk_ctxTable {
                 let assigned_cells = [
                     // CurrentChunkIndex
                     (
-                        F::from(chunk_ctxFieldTag::CurrentChunkIndex as u64),
+                        F::from(ChunkCtxFieldTag::CurrentChunkIndex as u64),
                         F::from(chunk_ctx.idx as u64),
                     ),
                     // NextChunkIndex
                     (
-                        F::from(chunk_ctxFieldTag::NextChunkIndex as u64),
+                        F::from(ChunkCtxFieldTag::NextChunkIndex as u64),
                         F::from(chunk_ctx.idx as u64 + 1u64),
                     ),
                     // TotalChunks
                     (
-                        F::from(chunk_ctxFieldTag::TotalChunks as u64),
+                        F::from(ChunkCtxFieldTag::TotalChunks as u64),
                         F::from(chunk_ctx.total_chunks as u64),
                     ),
                     // InitialRWC
                     (
-                        F::from(chunk_ctxFieldTag::InitialRWC as u64),
+                        F::from(ChunkCtxFieldTag::InitialRWC as u64),
                         F::from(chunk_ctx.initial_rwc as u64),
                     ),
                     // EndRWC
                     (
-                        F::from(chunk_ctxFieldTag::EndRWC as u64),
+                        F::from(ChunkCtxFieldTag::EndRWC as u64),
                         F::from(chunk_ctx.end_rwc as u64),
                     ),
                     // Empty row for disable lookup
@@ -134,7 +134,7 @@ impl chunk_ctxTable {
     }
 }
 
-impl<F: Field> LookupTable<F> for chunk_ctxTable {
+impl<F: Field> LookupTable<F> for ChunkCtxTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![self.tag.into(), self.value.into()]
     }

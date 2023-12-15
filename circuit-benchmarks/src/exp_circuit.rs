@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use ark_std::{end_timer, start_timer};
-    use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
+    use bus_mapping::mock::BlockData;
     use env_logger::Env;
     use eth_types::{bytecode, geth_types::GethData, Word};
     use halo2_proofs::{
@@ -26,9 +26,7 @@ mod tests {
     use rand_xorshift::XorShiftRng;
     use std::env::var;
     use zkevm_circuits::{
-        evm_circuit::witness::{
-            block_convert, Block, chunk_convert, Chunk
-        },
+        evm_circuit::witness::{block_convert, chunk_convert, Block, Chunk},
         exp_circuit::TestExpCircuit,
     };
 
@@ -52,8 +50,7 @@ mod tests {
         let base = Word::from(132);
         let exponent = Word::from(27);
         let (block, chunk) = generate_full_events_block(degree, base, exponent);
-        let circuit =
-            TestExpCircuit::<Fr>::new(block.exp_events.clone(), chunk.fixed_param.max_exp_steps);
+        let circuit = TestExpCircuit::<Fr>::new(block.exp_events, chunk.fixed_param.max_exp_steps);
 
         // Initialize the polynomial commitment parameters
         let mut rng = XorShiftRng::from_seed([
@@ -122,9 +119,9 @@ mod tests {
     }
 
     fn generate_full_events_block(
-        degree: u32, 
-        base: Word, 
-        exponent: Word
+        _degree: u32,
+        base: Word,
+        exponent: Word,
     ) -> (Block<Fr>, Chunk<Fr>) {
         let code = bytecode! {
             PUSH32(exponent)
@@ -148,13 +145,13 @@ mod tests {
         //         ..Default::default()
         //     },
         // )
-        let mut builder = BlockData::new_from_geth_data(block.clone())
+        let builder = BlockData::new_from_geth_data(block.clone())
             .new_circuit_input_builder()
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         (
             block_convert(&builder).unwrap(),
-            chunk_convert(&builder, 0).unwrap()
+            chunk_convert(&builder, 0).unwrap(),
         )
     }
 }

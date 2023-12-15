@@ -1,13 +1,10 @@
-use super::{
-    rw::{RwFingerprints, ToVec},
-    ExecStep, Rw, RwMap, Transaction,
-};
+use super::{ExecStep, Rw, RwMap, Transaction};
 use crate::{
     evm_circuit::{detect_fixed_table_tags, EvmCircuit},
     exp_circuit::param::OFFSET_INCREMENT,
     instance::public_data_convert,
     table::BlockContextFieldTag,
-    util::{log2_ceil, word, SubCircuit, unwrap_value},
+    util::{log2_ceil, word, SubCircuit},
     witness::Chunk,
 };
 use bus_mapping::{
@@ -16,7 +13,7 @@ use bus_mapping::{
     Error,
 };
 use eth_types::{Address, Field, ToScalar, Word};
-use gadgets::permutation::get_permutation_fingerprints;
+
 use halo2_proofs::circuit::Value;
 
 // TODO: Remove fields that are duplicated in`eth_block`

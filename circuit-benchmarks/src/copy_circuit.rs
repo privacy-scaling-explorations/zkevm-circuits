@@ -26,7 +26,7 @@ mod tests {
     use std::env::var;
     use zkevm_circuits::{
         copy_circuit::TestCopyCircuit,
-        evm_circuit::witness::{block_convert, Block, chunk_convert, Chunk},
+        evm_circuit::witness::{block_convert, chunk_convert, Block, Chunk},
         util::SubCircuit,
     };
 
@@ -143,16 +143,16 @@ mod tests {
         )
         .unwrap();
         let block: GethData = test_ctx.into();
-        let mut builder = BlockData::new_from_geth_data_with_params(
-                block.clone(),
-                FixedCParams {
-                    max_rws: 1 << (degree - 1),
-                    ..Default::default()
-                },
-            )
-            .new_circuit_input_builder()
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
+        let builder = BlockData::new_from_geth_data_with_params(
+            block.clone(),
+            FixedCParams {
+                max_rws: 1 << (degree - 1),
+                ..Default::default()
+            },
+        )
+        .new_circuit_input_builder()
+        .handle_block(&block.eth_block, &block.geth_traces)
+        .unwrap();
         let block = block_convert(&builder).unwrap();
         let chunk = chunk_convert(&builder, 0).unwrap();
         assert_eq!(block.copy_events.len(), copy_event_num);

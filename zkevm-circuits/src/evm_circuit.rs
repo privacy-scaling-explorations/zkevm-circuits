@@ -1,14 +1,11 @@
 //! The EVM circuit implementation.
 
 use gadgets::{
-    is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
     permutation::{PermutationChip, PermutationChipConfig},
-    util::Expr,
 };
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, SimpleFloorPlanner, Value},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::*,
-    poly::Rotation,
 };
 
 mod execution;
@@ -25,19 +22,15 @@ use self::{step::HasExecutionState, witness::rw::ToVec};
 
 pub use crate::witness;
 use crate::{
-    evm_circuit::{
-        param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
-        util::rlc,
-    },
+    evm_circuit::param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
     table::{
-        chunk_ctx_table::{chunk_ctxFieldTag, chunk_ctxTable},
         BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable, TxTable,
         UXTable,
     },
-    util::{Challenges, SubCircuit, SubCircuitConfig, chunk_ctx::{ChunkContextConfig}},
+    util::{chunk_ctx::ChunkContextConfig, Challenges, SubCircuit, SubCircuitConfig},
     witness::{Chunk, RwMap},
 };
-use bus_mapping::{circuit_input_builder::ChunkContext, evm::OpcodeId};
+use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use execution::ExecutionConfig;
 use itertools::Itertools;
@@ -95,7 +88,6 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub u16_table: UXTable<16>,
     /// chunk_ctx config
     pub chunk_ctx_config: ChunkContextConfig<F>,
-    
 }
 
 impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
@@ -202,7 +194,7 @@ impl<F: Field> EvmCircuitConfig<F> {
             },
         )
     }
-  }
+}
 
 /// Tx Circuit for verifying transaction signatures
 #[derive(Clone, Default, Debug)]
@@ -276,10 +268,8 @@ impl<F: Field> EvmCircuit<F> {
     fn instance_extend_chunk_ctx(&self) -> Vec<Vec<F>> {
         let chunk = self.chunk.as_ref().unwrap();
 
-        let (rw_table_chunked_index, rw_table_total_chunks) = (
-            chunk.chunk_context.idx,
-            chunk.chunk_context.total_chunks,
-        );
+        let (rw_table_chunked_index, rw_table_total_chunks) =
+            (chunk.chunk_context.idx, chunk.chunk_context.total_chunks);
 
         let mut instance = vec![vec![
             F::from(rw_table_chunked_index as u64),
@@ -337,7 +327,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
 
         config.load_fixed_table(layouter, self.fixed_table_tags.clone())?;
 
-        let max_offset_index = config
+        let _max_offset_index = config
             .execution
             .assign_block(layouter, block, chunk, challenges)?;
 
@@ -370,11 +360,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                     Value::known(chunk.permu_alpha),
                     Value::known(chunk.permu_gamma),
                     // Value::known(chunk.chrono_rw_prev_fingerprint),
-                    Value::known(
-                        chunk
-                            .chrono_rw_fingerprints
-                            .prev_mul_acc,
-                    ),
+                    Value::known(chunk.chrono_rw_fingerprints.prev_mul_acc),
                     &rw_rows_padding.to2dvec(),
                     "evm circuit",
                 )?;
@@ -404,24 +390,16 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         let _block = self.block.as_ref().unwrap();
         let chunk = self.chunk.as_ref().unwrap();
 
-        let (rw_table_chunked_index, rw_table_total_chunks) =
+        let (_rw_table_chunked_index, _rw_table_total_chunks) =
             (chunk.chunk_context.idx, chunk.chunk_context.total_chunks);
 
         vec![vec![
             chunk.permu_alpha,
             chunk.permu_gamma,
-            chunk
-                .chrono_rw_fingerprints
-                .prev_mul_acc,
-            chunk
-                .chrono_rw_fingerprints
-                .mul_acc,
-            chunk
-                .chrono_rw_fingerprints
-                .prev_mul_acc,
-            chunk
-                .chrono_rw_fingerprints
-                .mul_acc,
+            chunk.chrono_rw_fingerprints.prev_mul_acc,
+            chunk.chrono_rw_fingerprints.mul_acc,
+            chunk.chrono_rw_fingerprints.prev_mul_acc,
+            chunk.chrono_rw_fingerprints.mul_acc,
         ]]
     }
 }

@@ -6,7 +6,7 @@ use crate::{
         util::{Cell, RandomLinearCombination},
     },
     table::{
-        chunk_ctx_table::chunk_ctxFieldTag, AccountFieldTag, BytecodeFieldTag, CallContextFieldTag,
+        chunk_ctx_table::ChunkCtxFieldTag, AccountFieldTag, BytecodeFieldTag, CallContextFieldTag,
         StepStateFieldTag, TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
     },
     util::{
@@ -1329,12 +1329,12 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     pub(crate) fn chunk_context_lookup(
         &mut self,
-        field_tag: chunk_ctxFieldTag,
+        field_tag: ChunkCtxFieldTag,
         value: Expression<F>,
     ) {
         self.add_lookup(
             "chunk_ctx lookup",
-            Lookup::chunk_ctx {
+            Lookup::ChunkCtx {
                 field_tag: field_tag.expr(),
                 value,
             },
