@@ -68,7 +68,6 @@ impl InitialStateCircuit<Fr> {
         println!("proof generation time: {:?}", start.elapsed());
 
         Ok((FullVerifierKey {
-            circuit_params,
             verifier_params,
             vk}, proof, public_inputs
         ))
@@ -86,7 +85,7 @@ impl InitialStateCircuit<Fr> {
         std::fs::File::create("./prover.proof")?.write_all(proof_s.as_bytes())?;
         std::fs::File::create("./prover.pi")?.write_all(pi_s.as_bytes())?;
 
-        let result = crate::verifier::wasm_verify(fk_s, proof_s, pi_s);
+        let result = crate::verifier::wasm_verify(&fk_s, &proof_s, &pi_s);
         panic!("{}", result);
 
         let result = crate::verifier::verify(&fk, &proof, &pi)?;
