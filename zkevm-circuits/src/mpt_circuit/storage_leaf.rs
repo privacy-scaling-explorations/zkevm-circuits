@@ -18,7 +18,7 @@ use crate::{
         helpers::{
             key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget,
             IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, MainData, ParentData,
-            ParentDataWitness, KECCAK,
+            ParentDataWitness, KECCAK, empty_trie_word,
         },
         param::KEY_LEN_IN_NIBBLES,
         MPTConfig, MPTContext, MptMemory, RlpItemType,
@@ -199,15 +199,18 @@ impl<F: Field> StorageLeafConfig<F> {
                     require!(rlp_key.rlp_list.len() => key_items[is_s.idx()].num_bytes() + config.rlp_value[is_s.idx()].num_bytes());
 
                     // Check if the leaf is in its parent.
-                    // Check is skipped for placeholder leaves which are dummy leaves
+                    // Check is skipped for placeholder leaves which are dummy leaves.
+                    // Note that the constraint works for the case when there is the placeholder branch above
+                    // the leaf too - in this case `parent_data.hash` contains the hash of the node above the placeholder
+                    // branch.
                     ifx! {not!(is_placeholder_leaf) => {
                         config.is_not_hashed[is_s.idx()] = LtGadget::construct(&mut cb.base, rlp_key.rlp_list.num_bytes(), 32.expr());
                         ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(config.is_not_hashed[is_s.idx()])]) => {
-                            // Hashed branch hash in parent branch
+                            // Hashed leaf in parent branch
                             let hash = parent_data[is_s.idx()].hash.expr();
                             require!((1.expr(), leaf_rlc.expr(), rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
                         } elsex {
-                            // Non-hashed branch hash in parent branch
+                            // Non-hashed leaf in parent branch
                             require!(leaf_rlc => parent_data[is_s.idx()].rlc.expr());
                         }}
                     } elsex { 
@@ -216,31 +219,11 @@ impl<F: Field> StorageLeafConfig<F> {
                         // When there is only one leaf in the trie, `getProof` will always return this leaf - so we will have
                         // either the required leaf or the wrong leaf, so for NonExistingStorageProof we don't handle this
                         // case here (handled by WrongLeaf gadget).
-
                         ifx! {config.is_non_existing_storage_proof.expr() => {
                             ifx! {parent_data[is_s.idx()].is_root.expr() => {
                                 // If leaf is placeholder and the parent is root (no branch above leaf) and the proof is NonExistingStorageProof,
                                 // the trie needs to be empty.
-
-                                // empty trie hash:
-                                let bytes: Vec<u8> = [86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72, 224, 27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33].to_vec();
-                                let lo: Expression<F> = from_bytes::expr(
-                                    bytes[16..32]
-                                        .iter()
-                                        .cloned()
-                                        .rev()
-                                        .collect::<Vec<u8>>()
-                                        .as_slice(),
-                                );
-                                let hi: Expression<F> = from_bytes::expr(
-                                    bytes[0..16]
-                                        .iter()
-                                        .cloned()
-                                        .rev()
-                                        .collect::<Vec<u8>>()
-                                        .as_slice(),
-                                );
-
+                                let (lo, hi) = empty_trie_word(); 
                                 let hash = parent_data[is_s.idx()].hash.expr();
                                 require!(hash.lo() => lo);
                                 require!(hash.hi() => hi);

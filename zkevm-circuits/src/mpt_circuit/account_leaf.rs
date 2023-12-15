@@ -24,7 +24,7 @@ use crate::{
         helpers::{
             key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, Indexable,
             IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, ParentData, WrongGadget,
-            KECCAK,
+            KECCAK, empty_trie_word,
         },
         param::{KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
         MPTConfig, MPTContext, MptMemory, RlpItemType,
@@ -164,6 +164,38 @@ impl<F: Field> AccountLeafConfig<F> {
             key_data[0] = KeyData::load(cb, &mut ctx.memory[key_memory(true)], 0.expr());
             key_data[1] = KeyData::load(cb, &mut ctx.memory[key_memory(false)], 0.expr());
 
+            // Proof types
+            config.is_non_existing_account_proof = IsEqualGadget::construct(
+                &mut cb.base,
+                config.main_data.proof_type.expr(),
+                MPTProofType::AccountDoesNotExist.expr(),
+            );
+            config.is_account_delete_mod = IsEqualGadget::construct(
+                &mut cb.base,
+                config.main_data.proof_type.expr(),
+                MPTProofType::AccountDestructed.expr(),
+            );
+            config.is_nonce_mod = IsEqualGadget::construct(
+                &mut cb.base,
+                config.main_data.proof_type.expr(),
+                MPTProofType::NonceChanged.expr(),
+            );
+            config.is_balance_mod = IsEqualGadget::construct(
+                &mut cb.base,
+                config.main_data.proof_type.expr(),
+                MPTProofType::BalanceChanged.expr(),
+            );
+            config.is_storage_mod = IsEqualGadget::construct(
+                &mut cb.base,
+                config.main_data.proof_type.expr(),
+                MPTProofType::StorageChanged.expr(),
+            );
+            config.is_codehash_mod = IsEqualGadget::construct(
+                &mut cb.base,
+                config.main_data.proof_type.expr(),
+                MPTProofType::CodeHashChanged.expr(),
+            );
+
             for is_s in [true, false] {
                 ifx! {not!(config.is_mod_extension[is_s.idx()].expr()) => {
                     // Placeholder leaf checks
@@ -233,11 +265,39 @@ impl<F: Field> AccountLeafConfig<F> {
                         num_nibbles::expr(rlp_key.key_value.len(), key_data[is_s.idx()].is_odd.expr());
                     require!(key_data[is_s.idx()].num_nibbles.expr() + num_nibbles.expr() => KEY_LEN_IN_NIBBLES);
 
-                    // Check if the account is in its parent.
-                    // Check is skipped for placeholder leaves which are dummy leaves
-                    ifx! {not!(and::expr(&[not!(parent_data[is_s.idx()].is_placeholder), config.is_placeholder_leaf[is_s.idx()].expr()])) => {
+                    // Check if the leaf is in its parent.
+                    // Check is skipped for placeholder leaves which are dummy leaves.
+                    // Contrary to the storage leaf, the account leaf is always hashed since its length
+                    // is always greater than 32.
+                    // Note that the constraint works for the case when there is the placeholder branch above
+                    // the leaf too - in this case `parent_data.hash` contains the hash of the node above the placeholder
+                    // branch.
+                    ifx! {not!(config.is_placeholder_leaf[is_s.idx()]) => {
                         let hash = parent_data[is_s.idx()].hash.expr();
                         require!((1.expr(), leaf_rlc, rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
+                    } elsex { 
+                        // For NonExistingAccountProof prove there is no leaf.
+
+                        // When there is only one leaf in the trie, `getProof` will always return this leaf - so we will have
+                        // either the required leaf or the wrong leaf, so for NonExistingAccountProof we don't handle this
+                        // case here (handled by WrongLeaf gadget).
+                        ifx! {config.is_non_existing_account_proof.expr() => {
+                            ifx! {parent_data[is_s.idx()].is_root.expr() => {
+                                // If leaf is placeholder and the parent is root (no branch above leaf) and the proof is NonExistingStorageProof,
+                                // the trie needs to be empty.
+                                let (lo, hi) = empty_trie_word(); 
+                                let hash = parent_data[is_s.idx()].hash.expr();
+                                require!(hash.lo() => lo);
+                                require!(hash.hi() => hi);
+                            } elsex {
+                                // For NonExistingAccountProof we need to prove that there is nil in the parent branch
+                                // at the `modified_pos` position.
+                                // Note that this does not hold when there is NonExistingAccountProof wrong leaf scenario,
+                                // in this case there is a non-nil leaf. However, in this case the leaf is not a placeholder,
+                                // so the check below is not triggered.
+                                require!(parent_data[is_s.idx()].rlc.expr() => 128.expr());
+                            }}
+                        }}
                     }}
 
                     // Check the RLP encoding consistency.
@@ -281,38 +341,6 @@ impl<F: Field> AccountLeafConfig<F> {
                     key_data,
                 );
             }};
-
-            // Proof types
-            config.is_non_existing_account_proof = IsEqualGadget::construct(
-                &mut cb.base,
-                config.main_data.proof_type.expr(),
-                MPTProofType::AccountDoesNotExist.expr(),
-            );
-            config.is_account_delete_mod = IsEqualGadget::construct(
-                &mut cb.base,
-                config.main_data.proof_type.expr(),
-                MPTProofType::AccountDestructed.expr(),
-            );
-            config.is_nonce_mod = IsEqualGadget::construct(
-                &mut cb.base,
-                config.main_data.proof_type.expr(),
-                MPTProofType::NonceChanged.expr(),
-            );
-            config.is_balance_mod = IsEqualGadget::construct(
-                &mut cb.base,
-                config.main_data.proof_type.expr(),
-                MPTProofType::BalanceChanged.expr(),
-            );
-            config.is_storage_mod = IsEqualGadget::construct(
-                &mut cb.base,
-                config.main_data.proof_type.expr(),
-                MPTProofType::StorageChanged.expr(),
-            );
-            config.is_codehash_mod = IsEqualGadget::construct(
-                &mut cb.base,
-                config.main_data.proof_type.expr(),
-                MPTProofType::CodeHashChanged.expr(),
-            );
 
             // Drifted leaf handling
             config.drifted = DriftedGadget::construct(

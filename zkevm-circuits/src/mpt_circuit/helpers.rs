@@ -1693,3 +1693,26 @@ impl<F: Field> RLPItemView<F> {
         self.word.clone().unwrap()
     }
 }
+
+pub(crate) fn empty_trie_word<F: Field>() -> (Expression<F>, Expression<F>) {
+    // empty trie hash:
+    let bytes: Vec<u8> = [86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72, 224, 27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33].to_vec();
+    let lo: Expression<F> = from_bytes::expr(
+        bytes[16..32]
+            .iter()
+            .cloned()
+            .rev()
+            .collect::<Vec<u8>>()
+            .as_slice(),
+    );
+    let hi: Expression<F> = from_bytes::expr(
+        bytes[0..16]
+            .iter()
+            .cloned()
+            .rev()
+            .collect::<Vec<u8>>()
+            .as_slice(),
+    );
+    
+    (lo, hi)
+}
