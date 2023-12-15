@@ -98,22 +98,35 @@ impl<F: Field> ModExtensionGadget<F> {
 
             let parent_data_lo = vec![lo_s, lo_c];
             let parent_data_hi = vec![hi_s, hi_c];
-            let parent_data_rlc = is_insert.clone() * parent_data[0].rlc.expr()
-                + (1.expr() - is_insert.clone()) * parent_data[1].rlc.expr();
-
-            let key_rlc_before = key_data[0].rlc.expr() * is_insert.clone()
-                + (1.expr() - is_insert.clone()) * key_data[1].rlc.expr();
-            let key_mult_before = key_data[0].mult.expr() * is_insert.clone()
-                + (1.expr() - is_insert.clone()) * key_data[1].mult.expr();
-            let key_is_odd_before = key_data[0].is_odd.expr() * is_insert.clone()
-                + (1.expr() - is_insert.clone()) * key_data[1].is_odd.expr();
-
-            let middle_key_rlc = key_data[1].drifted_rlc.expr() * is_insert.clone()
-                + (1.expr() - is_insert.clone()) * key_data[0].drifted_rlc.expr();
-            let middle_key_mult = key_data[1].mult.expr() * is_insert.clone()
-                + (1.expr() - is_insert.clone()) * key_data[0].mult.expr();
-            let middle_key_is_odd = key_data[1].is_odd.expr() * is_insert.clone()
-                + (1.expr() - is_insert) * key_data[0].is_odd.expr();
+            let (
+                parent_data_rlc,
+                key_rlc_before,
+                key_mult_before,
+                key_is_odd_before,
+                middle_key_rlc,
+                middle_key_mult,
+                middle_key_is_odd,
+            ) = ifx! {is_insert => {
+                (
+                    parent_data[0].rlc.expr(),
+                    key_data[0].rlc.expr(),
+                    key_data[0].mult.expr(),
+                    key_data[0].is_odd.expr(),
+                    key_data[1].drifted_rlc.expr(),
+                    key_data[1].mult.expr(),
+                    key_data[1].is_odd.expr(),
+                 )
+            } elsex {
+                (
+                    parent_data[1].rlc.expr(),
+                    key_data[1].rlc.expr(),
+                    key_data[1].mult.expr(),
+                    key_data[1].is_odd.expr(),
+                    key_data[0].drifted_rlc.expr(),
+                    key_data[0].mult.expr(),
+                    key_data[0].is_odd.expr(),
+                )
+            }};
 
             config.rlp_key[0] = ListKeyGadget::construct(cb, &key_items[0]);
             config.rlp_key[1] = ListKeyGadget::construct(cb, &key_items[1]);
