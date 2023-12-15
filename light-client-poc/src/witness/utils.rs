@@ -1,15 +1,32 @@
-use ethers::{
-    middleware::SignerMiddleware,
-    prelude::{k256::ecdsa::SigningKey, *},
-    providers::{Http, Middleware, Provider},
-    signers::{LocalWallet, Signer},
-    utils::format_units,
-};
-use eyre::Result;
-use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use std::{sync::Arc, time::Duration};
 
-use std::{convert::TryFrom, sync::Arc, time::Duration};
-use zkevm_circuits::mpt_circuit::witness_row::*;
+use ethers::{middleware::SignerMiddleware, providers::{Provider, Http, Middleware}, signers::{Wallet, LocalWallet, Signer}, core::k256::ecdsa::SigningKey, utils::format_units};
+use eyre::Result;
+use zkevm_circuits::mpt_circuit::witness_row::Node;
+
+pub type MM = SignerMiddleware<Provider<Http>, Wallet<SigningKey>>;
+
+
+pub async fn new_eth_signer_client(provider_url: &str, pvk: &str) -> Result<Arc<MM>> {
+    let provider: Provider<Http> =
+        Provider::<Http>::try_from(provider_url)?.interval(Duration::from_millis(10u64));
+    let chain_id = provider.get_chainid().await?.as_u64();
+
+    let wallet = pvk.parse::<LocalWallet>()?;
+    let client = Arc::new(SignerMiddleware::new(
+        provider,
+        wallet.with_chain_id(chain_id),
+    ));
+    let balance = client.get_balance(client.address(), None).await?;
+
+    println!(
+        "address {:?} , balance {}ETH",
+        client.address(),
+        format_units(balance, "ether")?
+    );
+
+    Ok(client)
+}
 
 pub fn print_nodes(node: &[Node]) {
     for n in node {

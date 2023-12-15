@@ -13,6 +13,7 @@ use ethers::{
 };
 use eyre::Result;
 
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use mpt_witness_generator::{ProofType, TrieModification};
 use zkevm_circuits::{
     mpt_circuit::witness_row::Node,
@@ -20,7 +21,7 @@ use zkevm_circuits::{
     util::word::{self, Word},
 };
 
-pub type MM = SignerMiddleware<Provider<Http>, Wallet<SigningKey>>;
+pub mod utils;
 
 #[derive(Default, Debug, Clone)]
 pub struct Transforms {
@@ -353,25 +354,4 @@ impl<F: Field> Witness<F> {
 
         Ok((nodes, SingleTrieModifications(lc_proofs)))
     }
-}
-
-pub async fn new_eth_signer_client(provider_url: &str, pvk: &str) -> Result<Arc<MM>> {
-    let provider: Provider<Http> =
-        Provider::<Http>::try_from(provider_url)?.interval(Duration::from_millis(10u64));
-    let chain_id = provider.get_chainid().await?.as_u64();
-
-    let wallet = pvk.parse::<LocalWallet>()?;
-    let client = Arc::new(SignerMiddleware::new(
-        provider,
-        wallet.with_chain_id(chain_id),
-    ));
-    let balance = client.get_balance(client.address(), None).await?;
-
-    println!(
-        "address {:?} , balance {}ETH",
-        client.address(),
-        format_units(balance, "ether")?
-    );
-
-    Ok(client)
 }

@@ -6,7 +6,7 @@ use halo2_proofs::halo2curves::bn256::Fr;
 
 use light_client_poc::{
     circuits::initial_state::InitialStateCircuit,
-    witness::{new_eth_signer_client, Witness},
+    witness::{utils::new_eth_signer_client, Witness},
 };
 
 pub const CACHE_URL: &str = "http://localhost:3000";

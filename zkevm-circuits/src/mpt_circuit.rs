@@ -9,6 +9,7 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
+use serde::{Deserialize, Serialize};
 
 use std::{convert::TryInto, env::var, marker::PhantomData};
 
@@ -659,7 +660,7 @@ pub struct MPTCircuit<F: Field> {
 }
 
 /// MPT Circuit configuration parameters
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct MPTCircuitParams {
     ///
     pub degree: usize,
