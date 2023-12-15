@@ -46,11 +46,9 @@ mod evm_circ_benches {
 
         let mut builder =
             BlockData::new_from_geth_data_with_params(empty_data.clone(), FixedCParams::default())
-                .new_circuit_input_builder();
-
-        let builder = builder
-            .handle_block(&empty_data.eth_block, &empty_data.geth_traces)
-            .unwrap();
+                .new_circuit_input_builder()
+                .handle_block(&empty_data.eth_block, &empty_data.geth_traces)
+                .unwrap();
 
         let block = block_convert(&builder).unwrap();
         let chunk = chunk_convert(&builder, 0).unwrap();

@@ -144,14 +144,13 @@ mod tests {
         .unwrap();
         let block: GethData = test_ctx.into();
         let mut builder = BlockData::new_from_geth_data_with_params(
-            block.clone(),
-            FixedCParams {
-                max_rws: 1 << (degree - 1),
-                ..Default::default()
-            },
-        )
-        .new_circuit_input_builder();
-        let builder = builder
+                block.clone(),
+                FixedCParams {
+                    max_rws: 1 << (degree - 1),
+                    ..Default::default()
+                },
+            )
+            .new_circuit_input_builder()
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert(&builder).unwrap();
