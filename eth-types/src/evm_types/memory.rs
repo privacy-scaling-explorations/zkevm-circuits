@@ -293,7 +293,7 @@ impl Memory {
     }
 
     /// Reads an entire [`Word`] which starts at the provided [`MemoryAddress`]
-    /// `addr` and finnishes at `addr + 32`.
+    /// `addr` and finishes at `addr + 32`.
     pub fn read_word(&self, addr: MemoryAddress) -> Word {
         Word::from_big_endian(&self.read_chunk(addr, MemoryAddress::from(32)))
     }
@@ -359,7 +359,7 @@ impl Memory {
 
     /// Copy source data to memory. Used in (ext)codecopy/calldatacopy.
     pub fn copy_from(&mut self, dst_offset: Word, src_offset: Word, length: Word, data: &[u8]) {
-        // Reference go-ethereum `opCallDataCopy` function for defails.
+        // Reference go-ethereum `opCallDataCopy` function for details.
         // https://github.com/ethereum/go-ethereum/blob/bb4ac2d396de254898a5f44b1ea2086bfe5bd193/core/vm/instructions.go#L299
 
         // `length` should be checked for overflow during gas cost calculation.

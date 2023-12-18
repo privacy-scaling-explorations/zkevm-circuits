@@ -36,7 +36,7 @@ pub fn sign(
     let mut x_bytes = [0u8; 64];
     x_bytes[..32].copy_from_slice(&x_repr[..]);
 
-    let sig_r = secp256k1::Fq::from_uniform_bytes(&x_bytes); // get x cordinate (E::Base) on E::Scalar
+    let sig_r = secp256k1::Fq::from_uniform_bytes(&x_bytes); // get x coordinate (E::Base) on E::Scalar
     let sig_s = randomness_inv * (msg_hash + sig_r * sk);
     (sig_r, sig_s)
 }
