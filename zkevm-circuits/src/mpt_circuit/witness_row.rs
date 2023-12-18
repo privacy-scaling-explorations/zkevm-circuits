@@ -39,14 +39,14 @@ pub(crate) enum AccountRowType {
     CodehashC,
     Drifted,
     Wrong,
-    LongExtNodeKey,
-    LongExtNodeNibbles,
-    LongExtNodeValue,
-    ShortExtNodeKey,
-    ShortExtNodeNibbles,
-    ShortExtNodeValue,
-    Address,
-    Key,
+    LongExtNodeKey, // only used when extension node nibbles are modified
+    LongExtNodeNibbles, // only used when extension node nibbles are modified
+    LongExtNodeValue, // only used when extension node nibbles are modified
+    ShortExtNodeKey, // only used when extension node nibbles are modified
+    ShortExtNodeNibbles, // only used when extension node nibbles are modified
+    ShortExtNodeValue, // only used when extension node nibbles are modified
+    Address, // account address
+    Key, // hashed account address
     Count,
 }
 
@@ -150,61 +150,73 @@ pub struct ExtensionBranchNode {
 /// MPT account node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AccountNode {
-    /// TODO Doc.
+    /// Account address.
     pub address: Hex,
-    /// TODO Doc.
+    /// Hashed account address.
     pub key: Hex,
-    /// TODO Doc.
+    /// RLP bytes denoting the length of the whole account leaf stream.
     pub list_rlp_bytes: [Hex; 2],
-    /// TODO Doc.
+    /// RLP bytes denoting the length of the RLP list denoting the value stream (containing nonce, balance
+    /// storage, codehash).
     pub value_rlp_bytes: [Hex; 2],
-    /// TODO Doc.
+    /// RLP bytes denoting the length of the RLP of the value stream.
     pub value_list_rlp_bytes: [Hex; 2],
-    /// TODO Doc.
+    /// RLP bytes denoting the length of the RLP stream of the drifted leaf (neighbour leaf).
+    /// This is only needed in the case when a new branch is created which replaces the existing leaf in the trie
+    /// and this leaf drifts down into newly created branch.
     pub drifted_rlp_bytes: Hex,
-    /// TODO Doc.
+    /// RLP bytes denoting the length of the RLP stream of the (wrong) leaf that has been returned by `getProof`
+    /// which has the same address up to a certain nibble as the required leaf. This is only needed for some special
+    /// cases of the AccountDoesNotExist proof.
     pub wrong_rlp_bytes: Hex,
-    /// TODO Doc.
+    /// Denotes whether the extension node nibbles have been modified in either `S` or `C` proof.
+    /// In these special cases, an additional extension node is inserted (deleted).
     pub(crate) is_mod_extension: [bool; 2],
-    /// TODO Doc.
+    /// RLP bytes denoting the length of the RLP of the long and short modified extension node.
     pub(crate) mod_list_rlp_bytes: [Hex; 2],
 }
 
 /// MPT storage node
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StorageNode {
-    /// TODO Doc.
+    /// Storage key.
     pub address: Hex,
-    /// TODO Doc.
+    /// Hashed storage key.
     pub key: Hex,
-    /// TODO Doc.
+    /// RLP bytes denoting the length of the whole storage leaf stream.
     pub list_rlp_bytes: [Hex; 2],
-    /// TODO Doc.
+    /// RLP bytes denoting the length of the value stream.
     pub value_rlp_bytes: [Hex; 2],
-    /// TODO Doc.
+    /// RLP bytes denoting the length of the RLP stream of the drifted leaf (neighbour leaf).
+    /// This is only needed in the case when a new branch is created which replaces the existing leaf in the trie
+    /// and this leaf drifts down into newly created branch.
     pub drifted_rlp_bytes: Hex,
-    /// TODO Doc.
+    /// RLP bytes denoting the length of the RLP stream of the (wrong) leaf that has been returned by `getProof`
+    /// which has the same address up to a certain nibble as the required leaf. This is only needed for some special
+    /// cases of the StorageDoesNotExist proof.
     pub wrong_rlp_bytes: Hex,
-    /// TODO Doc.
+    /// Denotes whether the extension node nibbles have been modified in either `S` or `C` proof.
+    /// In these special cases, an additional extension node is inserted (deleted).
     pub(crate) is_mod_extension: [bool; 2],
-    /// TODO Doc.
+    /// RLP bytes denoting the length of the RLP of the long and short modified extension node.
     pub(crate) mod_list_rlp_bytes: [Hex; 2],
 }
 
 /// MPT node
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Node {
-    /// TODO Doc.
+    /// A node denoting the start / end of the proof.
     pub start: Option<StartNode>,
-    /// TODO Doc.
+    /// A node as an abstraction of extension node and branch.
     pub extension_branch: Option<ExtensionBranchNode>,
-    /// TODO Doc.
+    /// An account leaf node.
     pub account: Option<AccountNode>,
-    /// TODO Doc.
+    /// A storage leaf node.
     pub storage: Option<StorageNode>,
-    /// MPT node values
+    /// RLP substreams of the node (for example for account leaf it contains substreams for key, nonce, balance, storage,
+    /// codehash, drifted key, wrong key...)
     pub values: Vec<Hex>,
-    /// MPT keccak data
+    /// Streams to be hashed and verified by Keccak circuit.
     pub keccak_data: Vec<Hex>,
 }
 
