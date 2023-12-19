@@ -345,12 +345,7 @@ pub(crate) fn end_tx(
 
     // Write the next transaction id if we're not at the last tx
     if !state.tx_ctx.is_last_tx() {
-        state.call_context_write(
-            exec_step,
-            state.block_ctx.rwc.0 + 1,
-            CallContextField::TxId,
-            (state.tx_ctx.id() + 1).into(),
-        )?;
+        // do nothing. as the txid lookup will share the same rwc and txid with next step
     }
     Ok(())
 }

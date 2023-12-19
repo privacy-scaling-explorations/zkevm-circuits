@@ -239,9 +239,11 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::CircuitTestBuilder;
-    use bus_mapping::circuit_input_builder::FixedCParams;
+
+    use crate::{table::CallContextFieldTag, test_util::CircuitTestBuilder};
+    use bus_mapping::{circuit_input_builder::FixedCParams, operation::Target};
     use eth_types::{self, bytecode, Word};
+    use itertools::Itertools;
     use mock::{
         eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
     };
@@ -418,6 +420,57 @@ mod test {
             )
             .unwrap(),
         );
+    }
+
+    #[test]
+    fn end_tx_consistent_tx_id_write() {
+        // check there is no consecutive txid write with same txid in rw_table
+
+        let block = CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 3>::new(
+                None,
+                account_0_code_account_1_no_code(bytecode! { STOP }),
+                |mut txs, accs| {
+                    txs[0]
+                        .to(accs[0].address)
+                        .from(accs[1].address)
+                        .value(eth(1));
+                    txs[1]
+                        .to(accs[0].address)
+                        .from(accs[1].address)
+                        .value(eth(1));
+                    txs[2]
+                        .to(accs[0].address)
+                        .from(accs[1].address)
+                        .value(eth(1));
+                },
+                |block, _tx| block.number(0xcafeu64),
+            )
+            .unwrap(),
+        )
+        .params(FixedCParams {
+            max_txs: 5,
+            ..Default::default()
+        })
+        .build_block()
+        .unwrap();
+
+        block.rws.0[&Target::CallContext]
+            .iter()
+            .filter(|rw| {
+                // filter all txid write operation
+                rw.is_write()
+                    && rw
+                        .field_tag()
+                        .is_some_and(|tag| tag == CallContextFieldTag::TxId as u64)
+            })
+            .sorted_by_key(|a| a.rw_counter())
+            .tuple_windows()
+            .for_each(|(a, b)| {
+                // chech there is no consecutive write with same txid value
+                assert!(a.rw_counter() != b.rw_counter());
+                assert!(a.value_assignment() != b.value_assignment());
+            })
     }
 
     #[test]

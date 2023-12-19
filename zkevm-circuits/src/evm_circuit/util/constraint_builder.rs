@@ -1132,6 +1132,30 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
+    pub(crate) fn call_context_lookup_write_with_counter(
+        &mut self,
+        rw_counter: Expression<F>,
+        call_id: Option<Expression<F>>,
+        field_tag: CallContextFieldTag,
+        value: Word<Expression<F>>,
+    ) {
+        self.rw_lookup_with_counter(
+            "CallContext lookup",
+            rw_counter,
+            1.expr(),
+            Target::CallContext,
+            RwValues::new(
+                call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
+                0.expr(),
+                field_tag.expr(),
+                Word::zero(),
+                value,
+                Word::zero(),
+                Word::zero(),
+            ),
+        );
+    }
+
     pub(crate) fn call_context_lookup_write(
         &mut self,
         call_id: Option<Expression<F>>,
