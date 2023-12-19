@@ -1,4 +1,4 @@
-use eth_types::{keccak256, Field, H256, U256, Address};
+use eth_types::{keccak256, Address, Field, H256, U256};
 use eyre::Result;
 use gadgets::{
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
@@ -12,12 +12,12 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::Fr,
     plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance, SecondPhase,
-        Selector,
+        Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance, SecondPhase, Selector,
     },
     poly::Rotation,
 };
 
+use crate::witness::{FieldTrieModification, FieldTrieModifications, Transforms, Witness};
 use zkevm_circuits::{
     mpt_circuit::{MPTCircuit, MPTCircuitParams, MPTConfig},
     table::{KeccakTable, MptTable},
@@ -26,11 +26,8 @@ use zkevm_circuits::{
         Challenges,
     },
 };
-use crate::witness::{
-    FieldTrieModification, Transforms, Witness, FieldTrieModifications ,
-};
 
-use  crate::verifier::InitialStateCircuitVerifierData;
+use crate::verifier::InitialStateCircuitVerifierData;
 
 #[cfg(not(feature = "disable-keccak"))]
 use zkevm_circuits::{
@@ -42,7 +39,6 @@ pub const DEFAULT_MAX_PROOF_COUNT: usize = 20;
 pub const DEFAULT_CIRCUIT_DEGREE: usize = 14;
 
 use crate::circuits::utils::{xif, xnif, EqualWordsConfig, FixedRlcConfig};
-
 
 pub trait InitialCircuitHelper<F: Field> {
     fn get_padded_values(&self, max_proof_count: usize) -> Vec<(F, usize)>;
@@ -58,7 +54,12 @@ pub trait InitialCircuitHelper<F: Field> {
 fn wf_to_h<F: Field>(value: Word<F>) -> H256 {
     let lo = &value.lo().to_repr()[0..16];
     let hi = &value.hi().to_repr()[0..16];
-    let lo_hi = lo.iter().chain(hi.iter()).rev().copied().collect::<Vec<_>>();
+    let lo_hi = lo
+        .iter()
+        .chain(hi.iter())
+        .rev()
+        .copied()
+        .collect::<Vec<_>>();
     H256::from_slice(&lo_hi[..])
 }
 
@@ -115,13 +116,12 @@ impl<F: Field> InitialCircuitHelper<F> for FieldTrieModifications<F> {
     }
 
     fn number_of_unchanged_entries(&self) -> usize {
-
-    self.0
-    .iter()
-    .enumerate()
-    .find(|(_, t)| t.old_root != t.new_root)
-    .unwrap()
-    .0
+        self.0
+            .iter()
+            .enumerate()
+            .find(|(_, t)| t.old_root != t.new_root)
+            .unwrap()
+            .0
     }
 
     fn initial_values_len(&self) -> usize {

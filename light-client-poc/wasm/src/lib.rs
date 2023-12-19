@@ -1,7 +1,8 @@
 use std::convert::TryFrom;
 
 use light_client_poc::verifier;
-use revm::{primitives::{Address, address, Bytecode, AccountInfo, ruint::Uint, TransactTo, Bytes, U256}, db::{CacheDB, EmptyDB}, EVM};
+//use revm::{primitives::{Address, address, Bytecode, AccountInfo, ruint::Uint, TransactTo, Bytes, U256}, db::{CacheDB, EmptyDB}, EVM};
+use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 
 use crate::rpc::get_block;
@@ -53,8 +54,11 @@ async fn test() {
 #[wasm_bindgen]
 pub fn verify_proof() -> String {
     let fk = include_str!("../../prover.fk");
-    let pi = include_str!("../../prover.pi");
     let proof = include_str!("../../prover.proof");
+    let data = include_str!("../../prover.data");
 
-    verifier::wasm_verify_serialized(fk, proof, pi)
+    let v:  verifier::InitialStateCircuitVerifierData = serde_json::from_str(data).unwrap();
+    let h = v.hash();
+
+    verifier::wasm_verify_serialized(data, fk, proof)
 }

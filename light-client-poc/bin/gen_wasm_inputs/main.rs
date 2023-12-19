@@ -4,6 +4,7 @@ use eth_types::{ Field};
 use ethers::{prelude::*, types::transaction::eip2930::AccessList};
 use eyre::Result;
 use halo2_proofs::halo2curves::bn256::Fr;
+use halo2curves::ff::PrimeField;
 use zkevm_circuits::util::word::Word;
 
 use light_client_poc::{
@@ -72,7 +73,6 @@ fn a_to_vf<F: Field>(value: Address) -> Vec<F> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-
     let bytes : Vec<u8> = std::iter::successors(Some(0u8), |n| Some(n+1)).take(32).collect();
 
     let h1 = H256::from_slice(&bytes[..]);
@@ -111,23 +111,23 @@ async fn main() -> Result<()> {
     .await?
     .unwrap();
 
-    let serial = serde_json::to_string_pretty(&witness.lc_witness.verifier_data())?;
-
-    println!("{}",serial);
+    let verifier_data = witness.lc_witness.verifier_data();
+    let data = serde_json::to_string(&verifier_data)?;
 
     let circuit = InitialStateCircuit::new(witness, degree, max_proof_count)?;
     circuit.assert_satisfied();
 
+
     println!("Creating key & verifing...");
 
-    let (fk, proof, pi) = circuit.assert_real_prover()?;
+    let (fk, proof, _pi) = circuit.assert_real_prover()?;
+    let (fk_s, proof_s) = light_client_poc::verifier::wasm_serialize(&fk, &proof)?;
 
-    let (fk_s, proof_s, pi_s) = light_client_poc::verifier::wasm_serialize(&fk, &proof, &pi)?;
     std::fs::File::create("./prover.fk")?.write_all(fk_s.as_bytes())?;
     std::fs::File::create("./prover.proof")?.write_all(proof_s.as_bytes())?;
-    std::fs::File::create("./prover.pi")?.write_all(pi_s.as_bytes())?;
+    std::fs::File::create("./prover.data")?.write_all(data.as_bytes())?;
 
-    let result = light_client_poc::verifier::wasm_verify_serialized(&fk_s, &proof_s, &pi_s);
+    let result = light_client_poc::verifier::wasm_verify_serialized(&data, &fk_s, &proof_s);
     println!("{}", result);
 
     Ok(())

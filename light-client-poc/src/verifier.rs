@@ -1,6 +1,5 @@
-use eth_types::ToLittleEndian;
-use ethers::types::{H256, U256, Address, U64};
-use eyre::{eyre, Result};
+use ethers::types::{H256, U256, Address};
+use eyre::Result;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr, G1Affine},
     plonk::{verify_proof, VerifyingKey},
@@ -68,34 +67,32 @@ pub fn verify(fk: &FullVerifierKey, proof: &[u8], public_inputs: &[Fr]) -> Resul
     Ok(result.is_ok())
 }
 
-pub fn wasm_serialize(fk: &FullVerifierKey, proof: &[u8], pi: &[Fr]) -> Result<(String, String, String)> {
+pub fn wasm_serialize(fk: &FullVerifierKey, proof: &[u8]) -> Result<(String, String)> {
 
     let fk = BASE64_STANDARD_NO_PAD.encode(fk.serialize()?);
     let proof = BASE64_STANDARD_NO_PAD.encode(proof);
-    let pi = pi.iter().map(|x| hex::encode(x.to_bytes())).collect::<Vec<_>>().join(",");
 
-    Ok((fk, proof, pi))
+    Ok((fk, proof))
 }
 
-pub fn wasm_verify_serialized(fk: &str, proof: &str, pi: &str) -> String {
+pub fn wasm_verify_serialized(data: &str, fk: &str, proof: &str) -> String {
 
-    fn str_to_fr(x: &str) -> Result<Fr> {
-        let bytes = hex::decode(x)?;
-        let bytes: [u8;32] = bytes.try_into().map_err(|_| eyre!("invalid fr"))?;
-        let fr = Fr::from_bytes(&bytes);
-        if fr.is_some().into() {
-            Ok(fr.unwrap())
-        } else {
-            Err(eyre!("invalid fr"))
-        }
-    }
-    fn inner(fk: &str, proof: &str, pi: Vec<&str>) -> Result<bool> {
+    fn inner(data: &str, fk: &str, proof: &str) -> Result<bool> {
+        let data = serde_json::from_str::<InitialStateCircuitVerifierData>(data)?;
         let fk = FullVerifierKey::deserialize(BASE64_STANDARD_NO_PAD.decode(fk)?)?;
         let proof = BASE64_STANDARD_NO_PAD.decode(proof)?;
-        let pi = pi.into_iter().map(str_to_fr).collect::<Result<Vec<Fr>>>()?;
+
+        let mut data_hash = data.hash().to_fixed_bytes();
+        data_hash.reverse();
+        let mut lo = [0u8;32];
+        let mut hi = [0u8;32];
+        hi[0..16].copy_from_slice(&data_hash[16..32]);
+        lo[0..16].copy_from_slice(&data_hash[0..16]);
+        let pi = vec![Fr::from_repr(lo).unwrap(), Fr::from_repr(hi).unwrap()];
+
         verify(&fk, &proof, &pi)
     }
-    match inner(fk, proof, pi.split(',').collect()) {
+    match inner(data, fk, proof) {
         Ok(result) => format!("success:{}", result),
         Err(err) => format!("error:{}", err),
     }
@@ -131,45 +128,6 @@ pub struct TrieModification {
     pub key: H256,
 }
 
-
-fn h_to_vf(value: H256) -> Vec<Fr> {
-    let mut bytes = value.as_bytes().to_vec();
-    bytes.reverse();
-
-    let mut lo = [0u8; 32];
-    let mut hi = [0u8; 32];
-    lo[0..16].copy_from_slice(&bytes[..16]);
-    hi[0..16].copy_from_slice(&bytes[16..]);
-
-    let lo = Fr::from_repr(lo).unwrap();
-    let hi = Fr::from_repr(hi).unwrap();
-
-    vec![lo, hi]
-}
-
-fn u_to_vf(value: U256) -> Vec<Fr> {
-    let mut bytes = [0u8;32];
-
-    value.to_little_endian(&mut bytes);
-
-    let mut lo = [0u8; 32];
-    let mut hi = [0u8; 32];
-    lo[0..16].copy_from_slice(&bytes[..16]);
-    hi[0..16].copy_from_slice(&bytes[16..]);
-
-    let lo = Fr::from_repr(lo).unwrap();
-    let hi = Fr::from_repr(hi).unwrap();
-
-    vec![lo, hi]
-}
-
-fn a_to_vf(value: Address) -> Fr {
-    let mut f = [0u8; 32];
-    f[0..20].copy_from_slice(value.as_bytes());
-
-    Fr::from_repr(f).unwrap()
-}
-
 impl InitialStateCircuitVerifierData {
     pub fn hash(&self) -> H256 {
 
@@ -187,8 +145,6 @@ impl InitialStateCircuitVerifierData {
             bytes.append(&mut u(m.value));
             bytes.append(&mut h(m.key));
         }
-
-        println!("i: {}", hex::encode(&bytes));
 
         let hash = ethers::utils::keccak256(bytes);
 
