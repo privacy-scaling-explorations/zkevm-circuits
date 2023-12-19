@@ -18,6 +18,11 @@ name = "test_local"
 path = "bin/test_local/main.rs"
 required-features = [ "prover", "disable-keccak" ]
 
+[[bin]]
+name = "gen_wasm_inputs"
+path = "bin/gen_wasm_inputs/main.rs"
+required-features = [ "prover", "disable-keccak" ]
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 zkevm-circuits = { path = "../zkevm-circuits", features=["test-circuits"] }
 reqwest = { version = "0.11.18" }
@@ -33,6 +38,7 @@ hyper = { version = "0.14.27", features= ["full"]}
 futures-util = "0.3.28"
 hyper-rustls = { version = "0.24.1"}
 halo2_proofs = { path = "/Users/adria0/w/ef/light_client/halo2/halo2_proofs", features = ["circuit-params"]}
+halo2curves = { git = 'https://github.com/privacy-scaling-explorations/halo2curves', tag = "0.3.2", features=["derive_serde"]}
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 halo2_proofs= { path = "/Users/adria0/w/ef/light_client/halo2/halo2_proofs", default-features=false}

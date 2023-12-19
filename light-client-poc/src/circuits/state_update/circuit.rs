@@ -24,7 +24,7 @@ use zkevm_circuits::{
 };
 
 use crate::witness::{
-    SingleTrieModification, SingleTrieModifications, Transforms, Witness,
+    FieldTrieModification, FieldTrieModifications, Transforms, Witness,
 };
 
 #[cfg(not(feature = "disable-keccak"))]
@@ -68,7 +68,7 @@ pub struct StateUpdateCircuit<F: Field> {
     #[cfg(not(feature = "disable-keccak"))]
     pub keccak_circuit: KeccakCircuit<F>,
     pub mpt_circuit: MPTCircuit<F>,
-    pub lc_witness: SingleTrieModifications<F>,
+    pub lc_witness: FieldTrieModifications<F>,
     pub degree: usize,
     pub max_proof_count: usize,
 }
@@ -373,11 +373,11 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
                     // assign set the value for entries to do the lookup propagating ending root in padding
                     // and collect cells for checking public inputs.
 
-                    let stm = self.lc_witness.get(offset).cloned().unwrap_or(SingleTrieModification {
+                    let stm = self.lc_witness.get(offset).cloned().unwrap_or(FieldTrieModification {
                         new_root: self.lc_witness.last().cloned().unwrap_or_default().new_root,
                         ..Default::default()
                     });
-                    let stm_next = self.lc_witness.get(offset+1).cloned().unwrap_or(SingleTrieModification {
+                    let stm_next = self.lc_witness.get(offset+1).cloned().unwrap_or(FieldTrieModification {
                         new_root: self.lc_witness.last().cloned().unwrap_or_default().new_root,
                         ..Default::default()
                     });

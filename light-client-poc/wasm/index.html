@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8" />
+    <title>hello-wasm example</title>
+  </head>
+  <body>
+    <script type="module">
+      import init, { verify_proof } from "./pkg/hello_wasm.js";
+      init().then(() => {
+        const start = Date.now();
+        let result = verify_proof();
+        const end = Date.now();
+        console.log(result);
+        alert("result is "+result+" execution time=" + (end - start) + "ms");
+      });
+    </script>
+  </body>
+</html>

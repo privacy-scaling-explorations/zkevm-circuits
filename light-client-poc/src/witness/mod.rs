@@ -1,4 +1,4 @@
-use std::{collections::HashSet, ops::Deref, sync::Arc, time::Duration};
+use std::{collections::HashSet, ops::Deref, sync::Arc};
 
 use eth_types::{Field, ToScalar};
 use ethers::{
@@ -9,17 +9,37 @@ use ethers::{
     types::{
         transaction::eip2930::{AccessList, AccessListItem},
         BlockId, BlockNumber, H256, U256, U64,
-    }, utils::format_units,
+    },
 };
 use eyre::Result;
 
-use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use mpt_witness_generator::{ProofType, TrieModification};
 use zkevm_circuits::{
     mpt_circuit::witness_row::Node,
     table::mpt_table::MPTProofType,
-    util::word::{self, Word},
+    util::word::Word,
 };
+
+#[derive(Default, Clone)]
+pub struct FieldTrieModification<F: Field> {
+    pub typ: F,
+    pub address: F,
+    pub value: Word<F>,
+    pub key: Word<F>,
+    pub old_root: Word<F>,
+    pub new_root: Word<F>,
+}
+
+#[derive(Default, Clone)]
+pub struct FieldTrieModifications<F: Field>(pub Vec<FieldTrieModification<F>>);
+
+impl<F: Field> Deref for FieldTrieModifications<F> {
+    type Target = Vec<FieldTrieModification<F>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 pub mod utils;
 
@@ -77,30 +97,10 @@ impl TrieModificationBuilder for TrieModification {
 #[derive(Default)]
 pub struct Witness<F: Field> {
     pub transforms: Transforms,
-    pub lc_witness: SingleTrieModifications<F>,
+    pub lc_witness: FieldTrieModifications<F>,
     pub mpt_witness: Vec<Node>,
 }
 
-#[derive(Default, Clone)]
-pub struct SingleTrieModification<F: Field> {
-    pub typ: F,
-    pub address: F,
-    pub value: word::Word<F>,
-    pub key: word::Word<F>,
-    pub old_root: word::Word<F>,
-    pub new_root: word::Word<F>,
-}
-
-#[derive(Default, Clone)]
-pub struct SingleTrieModifications<F: Field>(pub Vec<SingleTrieModification<F>>);
-
-impl<F: Field> Deref for SingleTrieModifications<F> {
-    type Target = Vec<SingleTrieModification<F>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
 
 impl<F: Field> Witness<F> {
     pub async fn build(
@@ -260,7 +260,7 @@ impl<F: Field> Witness<F> {
     fn mpt_witness(
         trns: &Transforms,
         provider: &str,
-    ) -> Result<(Vec<Node>, SingleTrieModifications<F>)> {
+    ) -> Result<(Vec<Node>, FieldTrieModifications<F>)> {
         let nodes = mpt_witness_generator::get_witness(
             trns.block_no.as_u64() - 1,
             &trns.trie_modifications,
@@ -340,7 +340,7 @@ impl<F: Field> Witness<F> {
             };
 
             for (proof_type, address, value, key) in changes {
-                let lc_proof = SingleTrieModification::<F> {
+                let lc_proof = FieldTrieModification::<F> {
                     typ: F::from(proof_type as u64),
                     address: address.to_scalar().unwrap(),
                     value: Word::<F>::from(value),
@@ -352,6 +352,6 @@ impl<F: Field> Witness<F> {
             }
         }
 
-        Ok((nodes, SingleTrieModifications(lc_proofs)))
+        Ok((nodes, FieldTrieModifications(lc_proofs)))
     }
 }

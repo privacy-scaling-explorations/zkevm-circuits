@@ -1,11 +1,11 @@
-use std::{time::Instant, io::Write};
+use std::time::Instant;
 
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::{Fr, G1Affine, Bn256}, transcript::{Blake2bWrite, Challenge255, TranscriptWriterBuffer, Blake2bRead, TranscriptReadBuffer}, poly::{kzg::{commitment::{KZGCommitmentScheme, ParamsVerifierKZG, ParamsKZG}, multiopen::{ProverSHPLONK, VerifierSHPLONK}, strategy::SingleStrategy}, commitment::{ParamsProver, Params}}, plonk::{create_proof, VerifyingKey, keygen_vk, keygen_pk, Circuit, verify_proof, ProvingKey}};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use crate::verifier::FullVerifierKey;
+use crate::{verifier::FullVerifierKey};
 
-use super::{InitialStateCircuit, circuit::STMHelper };
+use super::{InitialStateCircuit, circuit::InitialCircuitHelper};
 use eyre::{eyre, Result};
 
 impl InitialStateCircuit<Fr> {
@@ -44,8 +44,6 @@ impl InitialStateCircuit<Fr> {
         let hash = self.lc_witness.initial_values_hash();
         let public_inputs = vec![hash.lo(), hash.hi()];
 
-        let circuit_params = self.params().clone();
-
         // Bench proof generation time
         let start = Instant::now();
         create_proof::<
@@ -76,22 +74,13 @@ impl InitialStateCircuit<Fr> {
     // Sense keccak: Proof: 147k
     // Amb keccak: Proof: 250k
 
-    pub fn assert_real_prover(self) -> Result<()> {
+    pub fn assert_real_prover(self) -> Result<(FullVerifierKey, Vec<u8>, Vec<Fr> )> {
         let (fk,proof,pi) = self.gen_pk_and_prove()?;
-        std::fs::File::create("./prover.fk.raw")?.write_all(&fk.serialize()?)?;
-
-        let (fk_s, proof_s, pi_s) = crate::verifier::wasm_prepare(&fk, &proof, &pi)?;
-        std::fs::File::create("./prover.fk")?.write_all(fk_s.as_bytes())?;
-        std::fs::File::create("./prover.proof")?.write_all(proof_s.as_bytes())?;
-        std::fs::File::create("./prover.pi")?.write_all(pi_s.as_bytes())?;
-
-        let result = crate::verifier::wasm_verify(&fk_s, &proof_s, &pi_s);
-        panic!("{}", result);
 
         let result = crate::verifier::verify(&fk, &proof, &pi)?;
         if !result {
             return Err(eyre!("proof verification failed"));
         }
-        Ok(())
+        Ok((fk, proof, pi))
     }
 }

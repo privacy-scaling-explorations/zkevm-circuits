@@ -1,4 +1,4 @@
-use crate::witness::SingleTrieModifications;
+use crate::witness::FieldTrieModifications;
 use eth_types::Field;
 use std::ops::Deref;
 
@@ -11,8 +11,8 @@ impl<F: Field> Deref for PublicInputs<F> {
     }
 }
 
-impl<F: Field> From<&SingleTrieModifications<F>> for PublicInputs<F> {
-    fn from(stm: &SingleTrieModifications<F>) -> Self {
+impl<F: Field> From<&FieldTrieModifications<F>> for PublicInputs<F> {
+    fn from(stm: &FieldTrieModifications<F>) -> Self {
         let mut inputs = vec![
             stm.0[0].old_root.lo(),
             stm.0[0].old_root.hi(),

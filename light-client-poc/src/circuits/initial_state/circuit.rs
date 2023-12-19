@@ -1,4 +1,4 @@
-use eth_types::{keccak256, Field, H256};
+use eth_types::{keccak256, Field, H256, U256, Address};
 use eyre::Result;
 use gadgets::{
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
@@ -26,10 +26,11 @@ use zkevm_circuits::{
         Challenges,
     },
 };
-
 use crate::witness::{
-    SingleTrieModification, SingleTrieModifications, Transforms, Witness,
+    FieldTrieModification, Transforms, Witness, FieldTrieModifications ,
 };
+
+use  crate::verifier::InitialStateCircuitVerifierData;
 
 #[cfg(not(feature = "disable-keccak"))]
 use zkevm_circuits::{
@@ -42,16 +43,37 @@ pub const DEFAULT_CIRCUIT_DEGREE: usize = 14;
 
 use crate::circuits::utils::{xif, xnif, EqualWordsConfig, FixedRlcConfig};
 
-pub trait STMHelper<F> {
+
+pub trait InitialCircuitHelper<F: Field> {
     fn get_padded_values(&self, max_proof_count: usize) -> Vec<(F, usize)>;
     fn first_root(&self) -> Word<F>;
     fn last_root(&self) -> Word<F>;
+    fn number_of_unchanged_entries(&self) -> usize;
     fn initial_values_len(&self) -> usize;
     fn initial_values_bytes(&self) -> Vec<u8>;
     fn initial_values_hash(&self) -> Word<F>;
+    fn verifier_data(&self) -> crate::verifier::InitialStateCircuitVerifierData;
 }
 
-impl<F: Field> STMHelper<F> for SingleTrieModifications<F> {
+fn wf_to_h<F: Field>(value: Word<F>) -> H256 {
+    let lo = &value.lo().to_repr()[0..16];
+    let hi = &value.hi().to_repr()[0..16];
+    let lo_hi = lo.iter().chain(hi.iter()).rev().copied().collect::<Vec<_>>();
+    H256::from_slice(&lo_hi[..])
+}
+
+fn wf_to_u<F: Field>(value: Word<F>) -> U256 {
+    let lo = &value.lo().to_repr()[0..16];
+    let hi = &value.hi().to_repr()[0..16];
+    let lo_hi = lo.iter().chain(hi.iter()).copied().collect::<Vec<_>>();
+    U256::from_little_endian(&lo_hi[..])
+}
+
+fn wf_to_a<F: Field>(value: F) -> Address {
+    Address::from_slice(&value.to_repr()[0..20])
+}
+
+impl<F: Field> InitialCircuitHelper<F> for FieldTrieModifications<F> {
     fn first_root(&self) -> Word<F> {
         self.0.first().cloned().unwrap().old_root
     }
@@ -92,13 +114,18 @@ impl<F: Field> STMHelper<F> for SingleTrieModifications<F> {
         rlc_values
     }
 
+    fn number_of_unchanged_entries(&self) -> usize {
+
+    self.0
+    .iter()
+    .enumerate()
+    .find(|(_, t)| t.old_root != t.new_root)
+    .unwrap()
+    .0
+    }
+
     fn initial_values_len(&self) -> usize {
-        self.0
-            .iter()
-            .enumerate()
-            .find(|(_, t)| t.old_root != t.new_root)
-            .unwrap()
-            .0
+        4 + self.number_of_unchanged_entries() * 6
     }
 
     fn initial_values_bytes(&self) -> Vec<u8> {
@@ -115,6 +142,30 @@ impl<F: Field> STMHelper<F> for SingleTrieModifications<F> {
         let initial_values_bytes = self.initial_values_bytes();
         let initial_values_hash = keccak256(&initial_values_bytes);
         Word::from(H256(initial_values_hash))
+    }
+
+    fn verifier_data(&self) -> InitialStateCircuitVerifierData {
+        let data = InitialStateCircuitVerifierData {
+            prev_hash: wf_to_h(self.first_root()),
+            next_hash: wf_to_h(self.last_root()),
+            trie_modifications: self
+                .0
+                .iter()
+                .take(self.number_of_unchanged_entries())
+                .map(|t| crate::verifier::TrieModification {
+                    typ: t.typ.get_lower_32() as u64,
+                    address: wf_to_a(t.address),
+                    value: wf_to_u(t.value),
+                    key: wf_to_h(t.key),
+                })
+                .collect(),
+        };
+
+        let initial_values_bytes = self.initial_values_bytes();
+        let initial_values_hash = keccak256(&initial_values_bytes);
+        assert_eq!(data.hash(), H256(initial_values_hash));
+
+        data
     }
 }
 
@@ -157,7 +208,7 @@ pub struct InitialStateCircuit<F: Field> {
     #[cfg(not(feature = "disable-keccak"))]
     pub keccak_circuit: KeccakCircuit<F>,
     pub mpt_circuit: MPTCircuit<F>,
-    pub lc_witness: SingleTrieModifications<F>,
+    pub lc_witness: FieldTrieModifications<F>,
     pub degree: usize,
     pub max_proof_count: usize,
 }
@@ -574,11 +625,11 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                     // assign set the value for entries to do the lookup propagating ending root in padding
                     // and collect cells for checking public inputs.
 
-                    let stm = self.lc_witness.get(offset).cloned().unwrap_or(SingleTrieModification {
+                    let stm = self.lc_witness.get(offset).cloned().unwrap_or(FieldTrieModification {
                         new_root: self.lc_witness.last().cloned().unwrap_or_default().new_root,
                         ..Default::default()
                     });
-                    let stm_next = self.lc_witness.get(offset+1).cloned().unwrap_or(SingleTrieModification {
+                    let stm_next = self.lc_witness.get(offset+1).cloned().unwrap_or(FieldTrieModification {
                         new_root: self.lc_witness.last().cloned().unwrap_or_default().new_root,
                         ..Default::default()
                     });
