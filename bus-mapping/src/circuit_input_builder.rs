@@ -371,20 +371,27 @@ impl CircuitInputBuilder<FixedCParams> {
             self.set_end_chunk(max_rws);
             return;
         }
+        // set padding
+        let last_step = self
+            .block
+            .txs()
+            .last()
+            .map(|tx| tx.last_step())
+            .unwrap_or_else(|| &self.block.block_steps.padding);
+        let mut padding = last_step.clone(); // padding step need to keep transition context
+        padding.bus_mapping_instance = vec![]; // there is no rw in padding step
+        padding.exec_state = ExecState::Padding;
+        padding.rwc = self.block_ctx.rwc;
+        padding.rwc_inner_chunk = self
+            .chunk_ctx
+            .as_ref()
+            .map_or_else(RWCounter::new, |chunk_ctx| chunk_ctx.rwc);
+        // TODO automatially assign all field
 
         // set end block
-        let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
-        let mut end_block_last = self.block.block_steps.end_block_last.clone();
-        end_block_not_last.rwc = self.block_ctx.rwc;
-        end_block_last.rwc = self.block_ctx.rwc;
-        end_block_not_last.rwc_inner_chunk = self
-            .chunk_ctx
-            .as_ref()
-            .map_or_else(RWCounter::new, |chunk_ctx| chunk_ctx.rwc);
-        end_block_last.rwc_inner_chunk = self
-            .chunk_ctx
-            .as_ref()
-            .map_or_else(RWCounter::new, |chunk_ctx| chunk_ctx.rwc);
+        let mut end_block = padding.clone();
+        end_block.exec_state = ExecState::EndBlock;
+
         let is_first_chunk = self
             .chunk_ctx
             .as_ref()
@@ -395,7 +402,7 @@ impl CircuitInputBuilder<FixedCParams> {
 
         if let Some(call_id) = state.block.txs.last().map(|tx| tx.calls[0].call_id) {
             state.call_context_read(
-                &mut end_block_last,
+                &mut end_block,
                 call_id,
                 CallContextField::TxId,
                 Word::from(state.block.txs.len() as u64),
@@ -421,7 +428,7 @@ impl CircuitInputBuilder<FixedCParams> {
         if is_first_chunk {
             push_op(
                 &mut state.block.container,
-                &mut end_block_last,
+                &mut end_block,
                 RWCounter(1),
                 RWCounter(1),
                 RW::READ,
@@ -433,7 +440,7 @@ impl CircuitInputBuilder<FixedCParams> {
             let (padding_start, padding_end) = (total_rws + 1, max_rws - 1);
             push_op(
                 &mut state.block.container,
-                &mut end_block_last,
+                &mut end_block,
                 RWCounter(padding_start),
                 RWCounter(padding_start),
                 RW::READ,
@@ -442,7 +449,7 @@ impl CircuitInputBuilder<FixedCParams> {
             if padding_end != padding_start {
                 push_op(
                     &mut state.block.container,
-                    &mut end_block_last,
+                    &mut end_block,
                     RWCounter(padding_end),
                     RWCounter(padding_end),
                     RW::READ,
@@ -451,8 +458,8 @@ impl CircuitInputBuilder<FixedCParams> {
             }
         }
 
-        self.block.block_steps.end_block_not_last = end_block_not_last;
-        self.block.block_steps.end_block_last = end_block_last;
+        self.block.block_steps.padding = padding;
+        self.block.block_steps.end_block = end_block;
 
         // set final rwc value to chunkctx
         if let Some(chunk_ctx) = self.chunk_ctx.as_mut() {

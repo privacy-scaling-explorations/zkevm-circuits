@@ -105,6 +105,7 @@ mod mulmod;
 #[path = "execution/not.rs"]
 mod opcode_not;
 mod origin;
+mod padding;
 mod pc;
 mod pop;
 mod push;
@@ -185,6 +186,7 @@ use mul_div_mod::MulDivModGadget;
 use mulmod::MulModGadget;
 use opcode_not::NotGadget;
 use origin::OriginGadget;
+use padding::PaddingGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
@@ -246,6 +248,7 @@ pub struct ExecutionConfig<F> {
     // internal state gadgets
     begin_tx_gadget: Box<BeginTxGadget<F>>,
     end_block_gadget: Box<EndBlockGadget<F>>,
+    padding_gadget: Box<PaddingGadget<F>>,
     end_tx_gadget: Box<EndTxGadget<F>>,
     begin_chunk_gadget: Box<BeginChunkGadget<F>>,
     end_chunk_gadget: Box<EndChunkGadget<F>>,
@@ -386,7 +389,7 @@ impl<F: Field> ExecutionConfig<F> {
         let (execute_state_first_step_whitelist, execute_state_last_step_whitelist) = (
             HashSet::from([
                 ExecutionState::BeginTx,
-                ExecutionState::EndBlock,
+                ExecutionState::Padding,
                 ExecutionState::BeginChunk,
             ]),
             HashSet::from([ExecutionState::EndBlock, ExecutionState::EndChunk]),
@@ -553,6 +556,7 @@ impl<F: Field> ExecutionConfig<F> {
             // internal states
             begin_tx_gadget: configure_gadget!(),
             end_block_gadget: configure_gadget!(),
+            padding_gadget: configure_gadget!(),
             end_tx_gadget: configure_gadget!(),
             begin_chunk_gadget: configure_gadget!(),
             end_chunk_gadget: configure_gadget!(),
@@ -876,11 +880,12 @@ impl<F: Field> ExecutionConfig<F> {
                 .chain(
                     IntoIterator::into_iter([
                         (
-                            "EndTx can only transit to BeginTx or EndBlock or EndChunk",
+                            "EndTx can only transit to BeginTx or Padding or EndBlock or EndChunk",
                             ExecutionState::EndTx,
                             vec![
                                 ExecutionState::BeginTx,
                                 ExecutionState::EndBlock,
+                                ExecutionState::Padding,
                                 ExecutionState::EndChunk,
                             ],
                         ),
@@ -888,6 +893,15 @@ impl<F: Field> ExecutionConfig<F> {
                             "EndChunk can only transit to EndChunk",
                             ExecutionState::EndChunk,
                             vec![ExecutionState::EndChunk],
+                        ),
+                        (
+                            "Padding can only transit to Padding or EndBlock or EndChunk",
+                            ExecutionState::Padding,
+                            vec![
+                                ExecutionState::Padding,
+                                ExecutionState::EndBlock,
+                                ExecutionState::EndChunk,
+                            ],
                         ),
                         (
                             "EndBlock can only transit to EndBlock",
@@ -914,9 +928,13 @@ impl<F: Field> ExecutionConfig<F> {
                                 .collect(),
                         ),
                         (
-                            "Only EndTx or EndBlock can transit to EndBlock",
+                            "Only EndTx or EndBlock or Padding can transit to EndBlock",
                             ExecutionState::EndBlock,
-                            vec![ExecutionState::EndTx, ExecutionState::EndBlock],
+                            vec![
+                                ExecutionState::EndTx,
+                                ExecutionState::EndBlock,
+                                ExecutionState::Padding,
+                            ],
                         ),
                         (
                             "Only BeginChunk can transit to BeginChunk",
@@ -1063,8 +1081,8 @@ impl<F: Field> ExecutionConfig<F> {
                 let is_last_chunk =
                     block.chunk_context.chunk_index == block.chunk_context.total_chunks - 1;
 
-                let end_block_not_last = &block.end_block_not_last;
-                let end_block_last = &block.end_block_last;
+                let padding = &block.padding;
+                let end_block = &block.end_block;
                 let begin_chunk = &block.begin_chunk;
                 let end_chunk = &block.end_chunk;
                 // Collect all steps
@@ -1077,7 +1095,7 @@ impl<F: Field> ExecutionConfig<F> {
                                 .map(move |step| (tx, &tx.calls()[step.call_index], step))
                         }))
                         // add last dummy step just to satisfy below logic, which will not be assigned and count as real step
-                        .chain(std::iter::once((&dummy_tx, &last_call, end_block_not_last)))
+                        .chain(std::iter::once((&dummy_tx, &last_call, padding)))
                         .peekable();
 
                 let evm_rows = block.circuits_params.max_evm_rows;
@@ -1112,7 +1130,7 @@ impl<F: Field> ExecutionConfig<F> {
                     offset += height;
                 }
 
-                // part2: assign non-last EndBlock steps when padding needed
+                // part2: assign Padding steps when padding needed
                 if !no_padding {
                     if offset >= evm_rows {
                         log::error!(
@@ -1122,11 +1140,11 @@ impl<F: Field> ExecutionConfig<F> {
                         );
                         return Err(Error::Synthesis);
                     }
-                    let height = ExecutionState::EndBlock.get_step_height();
+                    let height = ExecutionState::Padding.get_step_height();
                     debug_assert_eq!(height, 1);
                     let last_row = evm_rows - 1;
                     log::trace!(
-                        "assign non-last EndBlock in range [{},{})",
+                        "assign Padding in range [{},{})",
                         offset,
                         last_row
                     );
@@ -1137,7 +1155,7 @@ impl<F: Field> ExecutionConfig<F> {
                         block,
                         &dummy_tx,
                         &last_call,
-                        end_block_not_last,
+                        padding,
                         height,
                         challenges,
                         assign_pass,
@@ -1160,7 +1178,7 @@ impl<F: Field> ExecutionConfig<F> {
                         block,
                         &dummy_tx,
                         &last_call,
-                        end_block_last,
+                        end_block,
                         height,
                         None,
                         challenges,
@@ -1268,7 +1286,7 @@ impl<F: Field> ExecutionConfig<F> {
         }
         assert_eq!(height, 1);
         assert!(step.rw_indices_len() == 0);
-        assert!(matches!(step.execution_state(), ExecutionState::EndBlock));
+        assert!(matches!(step.execution_state(), ExecutionState::Padding));
 
         // Disable access to next step deliberately for "repeatable" step
         let region = &mut CachedRegion::<'_, '_, F>::new(
@@ -1312,7 +1330,7 @@ impl<F: Field> ExecutionConfig<F> {
         challenges: &Challenges<Value<F>>,
         assign_pass: usize,
     ) -> Result<(), Error> {
-        if !matches!(step.execution_state(), ExecutionState::EndBlock) {
+        if !matches!(step.execution_state(), ExecutionState::Padding) {
             log::trace!(
                 "assign_exec_step offset: {} state {:?} step: {:?} call: {:?}",
                 offset,
@@ -1390,6 +1408,7 @@ impl<F: Field> ExecutionConfig<F> {
             // internal states
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
+            ExecutionState::Padding => assign_exec_step!(self.padding_gadget),
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
             ExecutionState::BeginChunk => assign_exec_step!(self.begin_chunk_gadget),
             ExecutionState::EndChunk => assign_exec_step!(self.end_chunk_gadget),
@@ -1536,8 +1555,7 @@ impl<F: Field> ExecutionConfig<F> {
 
             // enable with `RUST_LOG=debug`
             if log::log_enabled!(log::Level::Debug) {
-                let is_padding_step = matches!(step.execution_state(), ExecutionState::EndBlock)
-                    && step.rw_indices_len() == 0;
+                let is_padding_step = matches!(step.execution_state(), ExecutionState::Padding);
                 if !is_padding_step {
                     // expensive function call
                     Self::check_rw_lookup(

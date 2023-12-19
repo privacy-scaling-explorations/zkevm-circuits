@@ -42,6 +42,7 @@ pub enum ExecutionState {
     BeginTx,
     EndTx,
     EndBlock,
+    Padding,
     BeginChunk,
     EndChunk,
     // Opcode successful cases
@@ -302,6 +303,7 @@ impl From<&ExecStep> for ExecutionState {
             }
             ExecState::BeginTx => ExecutionState::BeginTx,
             ExecState::EndTx => ExecutionState::EndTx,
+            ExecState::Padding => ExecutionState::Padding,
             ExecState::EndBlock => ExecutionState::EndBlock,
             ExecState::BeginChunk => ExecutionState::BeginChunk,
             ExecState::EndChunk => ExecutionState::EndChunk,

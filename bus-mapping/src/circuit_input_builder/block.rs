@@ -45,11 +45,11 @@ impl BlockContext {
 /// Block-wise execution steps that don't belong to any Transaction.
 #[derive(Debug)]
 pub struct BlockSteps {
-    /// EndBlock step that is repeated after the last transaction and before
+    /// Padding step that is repeated after the last transaction and before
     /// reaching the last EVM row.
-    pub end_block_not_last: ExecStep,
-    /// Last EndBlock step that appears in the last EVM row.
-    pub end_block_last: ExecStep,
+    pub padding: ExecStep,
+    /// EndBlock step that appears in the last chunk last EVM row.
+    pub end_block: ExecStep,
     /// TODO Define and move chunk related step to Chunk struct
     /// Begin op of a chunk
     pub begin_chunk: ExecStep,
@@ -136,11 +136,11 @@ impl Block {
                     exec_state: ExecState::BeginChunk,
                     ..ExecStep::default()
                 },
-                end_block_not_last: ExecStep {
-                    exec_state: ExecState::EndBlock,
+                padding: ExecStep {
+                    exec_state: ExecState::Padding,
                     ..ExecStep::default()
                 },
-                end_block_last: ExecStep {
+                end_block: ExecStep {
                     exec_state: ExecState::EndBlock,
                     ..ExecStep::default()
                 },

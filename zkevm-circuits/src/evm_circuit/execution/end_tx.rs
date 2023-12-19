@@ -180,7 +180,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         );
 
         cb.condition(
-            cb.next.execution_state_selector([ExecutionState::EndBlock]),
+            cb.next
+                .execution_state_selector([ExecutionState::EndBlock, ExecutionState::Padding]),
             |cb| {
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(9.expr() - is_first_tx.expr() + coinbase_reward.rw_delta()),
