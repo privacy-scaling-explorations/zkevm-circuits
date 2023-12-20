@@ -25,7 +25,7 @@ use crate::{
     },
     table::MPTProofType,
     util::word::{self, Word},
-    witness::MptUpdateRow, evm_circuit::util::from_bytes,
+    witness::MptUpdateRow,
 };
 
 use super::{
@@ -338,19 +338,55 @@ impl<F: Field> StorageLeafConfig<F> {
                 }
             }};
 
+            ifx! {not!(config.is_non_existing_storage_proof) => {
+                let key_rlc = ifx!{not!(config.parent_data[true.idx()].is_placeholder) => {
+                    key_rlc[true.idx()].expr()
+                } elsex {
+                    key_rlc[false.idx()].expr()
+                }};
+                // Check that the key item contains the correct key for the path that was taken
+                require!(key_item.hash_rlc() => key_rlc);
+                // Check if the key is correct for the given address
+                if ctx.params.is_preimage_check_enabled() {
+                    let key = key_item.word();
+                    require!((1.expr(), address_item.bytes_le()[1..33].rlc(&cb.keccak_r), 32.expr(), key.lo(), key.hi()) =>> @KECCAK);
+                }
+            }};
+
             ifx! {not!(config.parent_data[false.idx()].is_placeholder) => {
-                ctx.mpt_table.constrain(
-                    meta,
-                    &mut cb.base,
-                    config.main_data.address.expr(),
-                    proof_type.clone(),
-                    address_item.word(),
-                    config.main_data.new_root.expr(),
-                    config.main_data.old_root.expr(),
-                    value_word[false.idx()].clone(),
-                    value_word[true.idx()].clone(),
-                );
+                ifx! {not!(config.is_non_existing_storage_proof) => {
+                    ctx.mpt_table.constrain(
+                        meta,
+                        &mut cb.base,
+                        config.main_data.address.expr(),
+                        proof_type.clone(),
+                        address_item.word(),
+                        config.main_data.new_root.expr(),
+                        config.main_data.old_root.expr(),
+                        value_word[false.idx()].clone(),
+                        value_word[true.idx()].clone(),
+                    );
+                } elsex {
+                    // Non-existing proof doesn't have the value set to 0 in the case of a wrong leaf - we set it to 0
+                    // below to enable lookups with the value set to 0 (as in the case of a non-wrong non-existing proof).
+                    ctx.mpt_table.constrain(
+                        meta,
+                        &mut cb.base,
+                        config.main_data.address.expr(),
+                        proof_type.clone(),
+                        address_item.word(),
+                        config.main_data.new_root.expr(),
+                        config.main_data.old_root.expr(),
+                        Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                        Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    );
+                }};
             } elsex {
+                // When the value is set to 0, the leaf is deleted, and if there were only two leaves in the branch,
+                // the neighbour leaf moves one level up and replaces the branch. When the lookup is executed with
+                // the new value set to 0, the lookup fails (without the code below), because the leaf that is returned
+                // is the neighbour node that moved up (because the branch and the old leaf doesn’t exist anymore),
+                // but this leaf doesn’t have the zero value.
                 ctx.mpt_table.constrain(
                     meta,
                     &mut cb.base,
@@ -558,8 +594,12 @@ impl<F: Field> StorageLeafConfig<F> {
         }
 
         let mut new_value = value_word[false.idx()];
+        let mut old_value = value_word[true.idx()];
         if parent_data[false.idx()].is_placeholder {
             new_value = word::Word::<F>::new([0.scalar(), 0.scalar()]);
+        } else if is_non_existing_proof {
+            new_value = word::Word::<F>::new([0.scalar(), 0.scalar()]);
+            old_value = word::Word::<F>::new([0.scalar(), 0.scalar()]);
         }
         mpt_config.mpt_table.assign_cached(
             region,
@@ -571,7 +611,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 new_root: main_data.new_root.into_value(),
                 old_root: main_data.old_root.into_value(),
                 new_value: new_value.into_value(),
-                old_value: value_word[true.idx()].into_value(),
+                old_value: old_value.into_value(),
             },
         )?;
 

@@ -457,19 +457,40 @@ impl<F: Field> AccountLeafConfig<F> {
             let hi = address_item.word().hi() * to_hi;
             let address = lo + hi;
 
-            ifx! {not!(config.parent_data[false.idx()].is_placeholder) => {
-                ctx.mpt_table.constrain(
-                    meta,
-                    &mut cb.base,
-                    address.clone(),
-                    proof_type.clone(),
-                    Word::<Expression<F>>::new([0.expr(), 0.expr()]),
-                    config.main_data.new_root.expr(),
-                    config.main_data.old_root.expr(),
-                    Word::<Expression<F>>::new([new_value_lo, new_value_hi]),
-                    Word::<Expression<F>>::new([old_value_lo.clone(), old_value_hi.clone()]),
-                );
+            ifx! {not!(config.parent_data[false.idx()].is_placeholder) => { 
+                ifx! {not!(config.is_non_existing_account_proof) => {
+                    ctx.mpt_table.constrain(
+                        meta,
+                        &mut cb.base,
+                        address.clone(),
+                        proof_type.clone(),
+                        Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                        config.main_data.new_root.expr(),
+                        config.main_data.old_root.expr(),
+                        Word::<Expression<F>>::new([new_value_lo, new_value_hi]),
+                        Word::<Expression<F>>::new([old_value_lo.clone(), old_value_hi.clone()]),
+                    );
+                } elsex {
+                    // Non-existing proof doesn't have the value set to 0 in the case of a wrong leaf - we set it to 0
+                    // below to enable lookups with the value set to 0 (as in the case of a non-wrong non-existing proof).
+                    ctx.mpt_table.constrain(
+                        meta,
+                        &mut cb.base,
+                        address.clone(),
+                        proof_type.clone(),
+                        Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                        config.main_data.new_root.expr(),
+                        config.main_data.old_root.expr(),
+                        Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                        Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    );
+                }};
             } elsex {
+                // When the value is set to 0, the leaf is deleted, and if there were only two leaves in the branch,
+                // the neighbour leaf moves one level up and replaces the branch. When the lookup is executed with
+                // the new value set to 0, the lookup fails (without the code below), because the leaf that is returned
+                // is the neighbour node that moved up (because the branch and the old leaf doesn’t exist anymore),
+                // but this leaf doesn’t have the zero value.
                 ctx.mpt_table.constrain(
                     meta,
                     &mut cb.base,
@@ -732,8 +753,12 @@ impl<F: Field> AccountLeafConfig<F> {
         }
 
         let mut new_value = value[false.idx()];
+        let mut old_value = value[true.idx()];
         if parent_data[false.idx()].is_placeholder {
             new_value = word::Word::<F>::new([0.scalar(), 0.scalar()]);
+        } else if is_non_existing_proof {
+            new_value = word::Word::<F>::new([0.scalar(), 0.scalar()]);
+            old_value = word::Word::<F>::new([0.scalar(), 0.scalar()]);
         }
         mpt_config.mpt_table.assign_cached(
             region,
@@ -747,7 +772,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 new_root: main_data.new_root.into_value(),
                 old_root: main_data.old_root.into_value(),
                 new_value: new_value.into_value(),
-                old_value: value[true.idx()].into_value(),
+                old_value: old_value.into_value(),
             },
         )?;
 

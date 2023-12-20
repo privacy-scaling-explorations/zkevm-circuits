@@ -307,7 +307,7 @@ func prepareAccountLeafNode(addr common.Address, addrh []byte, leafS, leafC, nei
 
 // prepareLeafAndPlaceholderNode prepares a leaf node and its placeholder counterpart
 // (used when one of the proofs does not have a leaf).
-func prepareLeafAndPlaceholderNode(addr common.Address, addrh []byte, proof1, proof2 [][]byte, storage_key common.Hash, key []byte, nonExistingAccountProof, isAccountProof, isSModExtension, isCModExtension bool) Node {
+func prepareLeafAndPlaceholderNode(addr common.Address, addrh []byte, proof1, proof2 [][]byte, storage_key common.Hash, key []byte, isAccountProof, isSModExtension, isCModExtension bool) Node {
 	len1 := len(proof1)
 	len2 := len(proof2)
 
