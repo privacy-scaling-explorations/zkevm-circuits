@@ -26,8 +26,9 @@ use crate::{
 };
 /// Validity conditions for ModExtensionGadget:
 /// 1. Both the long and short extension nodes are in the parent node.
-/// 2. Both the branches of the short extension node’s and the long extension node’s must be the same
-/// 3. The concatenation of the middle extension node and short ext node must equal the long ext node
+/// 2. Both the branches of the short extension node’s and the long extension node’s must be the
+/// same 3. The concatenation of the middle extension node and short ext node must equal the long
+/// ext node
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ModExtensionGadget<F> {
     rlp_key: [ListKeyGadget<F>; 2],
