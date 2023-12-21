@@ -265,7 +265,7 @@ pub(crate) fn ext_key_rlc_expr<F: Field>(
                     let additional_mult = ifx! {is_key_part_odd => { r.expr() } elsex { 1.expr() }};
                     calc_rlc(cb, &data[0][1..], additional_mult)
                 }}
-            }, 
+            },
             is_short => {
                 calc_rlc(cb, &data[0][..1], 1.expr())
             },
@@ -312,7 +312,7 @@ pub(crate) fn ext_key_rlc_calc_value<F: Field>(
                 let additional_mult = if is_key_part_odd { r } else { 1.scalar() };
                 calc_rlc(&data[0][1..].iter().map(|byte| byte.scalar()).collect::<Vec<_>>(), additional_mult)
             }
-        }, 
+        },
         is_short => {
             calc_rlc(&data[0][..1].iter().map(|byte| byte.scalar()).collect::<Vec<_>>(), 1.scalar())
         },
