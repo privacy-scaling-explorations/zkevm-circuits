@@ -16,13 +16,15 @@ mod account_leaf;
 mod branch;
 mod extension;
 mod extension_branch;
-mod helpers;
+pub mod helpers;
 mod param;
 mod rlp_gadgets;
 mod start;
 mod storage_leaf;
 /// MPT witness row
 pub mod witness_row;
+
+pub use helpers::MainRLPGadget;
 
 use self::{
     account_leaf::AccountLeafConfig,
@@ -43,7 +45,7 @@ use crate::{
         memory::{Memory, RwBank},
     },
     mpt_circuit::{
-        helpers::{MPTConstraintBuilder, MainRLPGadget, MptCellType, MptTableType},
+        helpers::{MPTConstraintBuilder, MptCellType, MptTableType},
         start::StartConfig,
         storage_leaf::StorageLeafConfig,
     },
