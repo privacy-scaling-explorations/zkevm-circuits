@@ -321,7 +321,6 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
 
             // Generate EndChunk and proceed to the next if it's not the last chunk
             if is_chunked && self.chunk_ctx.rwc.0 >= self.circuits_params.max_rws() {
-                assert!(self.chunk_ctx.is_last_chunk(), "Fixed max rws is ");
                 // Update param accordding to number of rws actually generated
                 // the initial self.circuits_params function as a chunking thresholded but not
                 // constrain
@@ -437,7 +436,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         let end_rwc = self.chunk_ctx.rwc.0;
         let total_rws = end_rwc - 1;
         let max_rws = self.cur_chunk().fixed_param.max_rws;
-
+    
         // We need at least 1 extra row at offset 0 for chunk continuous
         // FIXME(Cecilia): adding + 1 fail some tests
         assert!(
@@ -446,6 +445,10 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             total_rws,
             max_rws
         );
+
+        let mut padding = step.clone();
+        padding.exec_state = ExecState::Padding;
+        padding.bus_mapping_instance = vec![]; // there is no rw in padding step
 
         if self.chunk_ctx.is_first_chunk() {
             push_op(
@@ -479,6 +482,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
                 );
             }
         }
+        self.chunks[self.chunk_ctx.idx].padding = Some(padding);
     }
 
     /// Set the end status of a chunk including the current globle rwc
@@ -544,12 +548,9 @@ impl CircuitInputBuilder<FixedCParams> {
     }
 
     fn set_end_block(&mut self) {
-        let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
-        let mut end_block_last = self.block.block_steps.end_block_last.clone();
-        end_block_not_last.rwc = self.block_ctx.rwc;
-        end_block_last.rwc = self.block_ctx.rwc;
-        end_block_not_last.rwc_inner_chunk = self.chunk_ctx.rwc;
-        end_block_last.rwc_inner_chunk = self.chunk_ctx.rwc;
+        let mut end_block = self.block.block_steps.end_block.clone();
+        end_block.rwc = self.block_ctx.rwc;
+        end_block.rwc_inner_chunk = self.chunk_ctx.rwc;
 
         let mut dummy_tx = Transaction::default();
         let mut dummy_tx_ctx = TransactionContext::default();
@@ -557,7 +558,7 @@ impl CircuitInputBuilder<FixedCParams> {
 
         if let Some(call_id) = state.block.txs.last().map(|tx| tx.calls[0].call_id) {
             state.call_context_read(
-                &mut end_block_last,
+                &mut end_block,
                 call_id,
                 CallContextField::TxId,
                 Word::from(state.block.txs.len() as u64),
@@ -565,9 +566,8 @@ impl CircuitInputBuilder<FixedCParams> {
         }
 
         // EndBlock step should also be padded to max_rws similar to EndChunk
-        self.gen_chunk_padding(&mut end_block_last);
-        self.block.block_steps.end_block_not_last = end_block_not_last;
-        self.block.block_steps.end_block_last = end_block_last;
+        self.gen_chunk_padding(&mut end_block);
+        self.block.block_steps.end_block = end_block;
     }
 }
 

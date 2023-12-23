@@ -20,6 +20,8 @@ pub struct Chunk<F> {
     pub begin_chunk: Option<ExecStep>,
     /// EndChunk step that appears in the last EVM row for all the chunks other than the last.
     pub end_chunk: Option<ExecStep>,
+    /// Padding step that is repeated before max_rws is reached 
+    pub padding: Option<ExecStep>,
     /// Chunk context
     pub chunk_context: ChunkContext,
     /// Read write events in the RwTable
@@ -47,6 +49,7 @@ impl<F: Field> Default for Chunk<F> {
         Self {
             begin_chunk: None,
             end_chunk: None,
+            padding: None,
             chunk_context: ChunkContext::default(),
             rws: RwMap::default(),
             permu_alpha: F::from(1),
@@ -156,6 +159,7 @@ pub fn chunk_convert<F: Field>(
         chrono_rw_fingerprints: chrono_rw_fingerprints[idx].clone(),
         begin_chunk: chunk.begin_chunk.clone(),
         end_chunk: chunk.end_chunk.clone(),
+        padding: chunk.padding.clone(),
         chunk_context: chunk.ctx.clone(),
         rws,
         fixed_param: chunk.fixed_param,

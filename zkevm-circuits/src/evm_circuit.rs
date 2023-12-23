@@ -49,7 +49,6 @@ pub struct EvmCircuitConfig<F> {
     // External tables
     tx_table: TxTable,
     pub(crate) rw_table: RwTable,
-    pub(crate) rw_table: RwTable,
     bytecode_table: BytecodeTable,
     block_table: BlockTable,
     copy_table: CopyTable,

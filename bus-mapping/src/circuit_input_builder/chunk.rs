@@ -1,5 +1,5 @@
 use super::{ExecStep, FixedCParams};
-use crate::operation::RWCounter;
+use crate::operation::{RWCounter, Op};
 
 #[derive(Debug, Default, Clone)]
 pub struct Chunk {
@@ -11,6 +11,9 @@ pub struct Chunk {
     pub begin_chunk: Option<ExecStep>,
     /// End op of a chunk
     pub end_chunk: Option<ExecStep>,
+    /// Padding step that is repeated after the last transaction and before
+    /// reaching the last EVM row.
+    pub padding: Option<ExecStep>,
 }
 
 /// Context of chunking, used to track the current chunk index and inner rw counter

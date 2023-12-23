@@ -1,10 +1,10 @@
-use super::{ExecStep, Rw, RwMap, Transaction};
+use super::{ExecStep, Rw, RwMap, Transaction, rw::{RwFingerprints, ToVec}};
 use crate::{
     evm_circuit::{detect_fixed_table_tags, EvmCircuit},
     exp_circuit::param::OFFSET_INCREMENT,
     instance::public_data_convert,
     table::BlockContextFieldTag,
-    util::{log2_ceil, word, SubCircuit},
+    util::{log2_ceil, word, SubCircuit, unwrap_value},
     witness::Chunk,
 };
 use bus_mapping::{
@@ -14,6 +14,7 @@ use bus_mapping::{
 };
 use eth_types::{Address, Field, ToScalar, Word};
 
+use gadgets::permutation::get_permutation_fingerprints;
 use halo2_proofs::circuit::Value;
 
 // TODO: Remove fields that are duplicated in`eth_block`
@@ -27,13 +28,7 @@ pub struct Block<F> {
     pub txs: Vec<Transaction>,
     /// Padding step that is repeated after the last transaction and before
     /// reaching the last EVM row.
-    pub padding: ExecStep,
-    /// EndBlock step that appears in the last chunk last EVM row.
     pub end_block: ExecStep,
-    /// BeginChunk step to propagate State
-    pub begin_chunk: ExecStep,
-    /// EndChunk step that appears in the last EVM row for all the chunks other than the last.
-    pub end_chunk: Option<ExecStep>,
     /// Read write events in the RwTable
     pub rws: RwMap,
     /// Bytecode used in the block
@@ -262,11 +257,8 @@ pub fn block_convert<F: Field>(
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         eth_block: block.eth_block.clone(),
-        padding: block.block_steps.padding.clone(),
         end_block: block.block_steps.end_block.clone(),
         // TODO refactor chunk related field to chunk structure
-        begin_chunk: block.block_steps.begin_chunk.clone(),
-        end_chunk: block.block_steps.end_chunk.clone(),
         ..Default::default()
     };
     let public_data = public_data_convert(&block);
@@ -288,7 +280,7 @@ fn get_rwtable_fingerprints<F: Field>(
     gamma: F,
     prev_continuous_fingerprint: F,
     rows: &Vec<Rw>,
-) -> RwTablePermutationFingerprints<F> {
+) -> RwFingerprints<F> {
     let x = rows.to2dvec();
     let fingerprints = get_permutation_fingerprints(
         &x,
@@ -301,7 +293,7 @@ fn get_rwtable_fingerprints<F: Field>(
         .first()
         .zip(fingerprints.last())
         .map(|((first_acc, first_row), (last_acc, last_row))| {
-            RwTablePermutationFingerprints::new(
+            RwFingerprints::new(
                 unwrap_value(*first_row),
                 unwrap_value(*last_row),
                 unwrap_value(*first_acc),

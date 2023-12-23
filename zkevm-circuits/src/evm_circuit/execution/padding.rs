@@ -7,7 +7,7 @@ use crate::evm_circuit::{
         constraint_builder::{EVMConstraintBuilder, StepStateTransition},
         CachedRegion,
     },
-    witness::{Block, Call, ExecStep, Transaction},
+    witness::{Block, Chunk, Call, ExecStep, Transaction},
 };
 use eth_types::Field;
 use halo2_proofs::plonk::Error;
@@ -37,6 +37,7 @@ impl<F: Field> ExecutionGadget<F> for PaddingGadget<F> {
         _region: &mut CachedRegion<'_, '_, F>,
         _offset: usize,
         _block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         _step: &ExecStep,
