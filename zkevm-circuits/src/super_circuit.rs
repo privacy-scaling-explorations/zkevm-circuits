@@ -238,6 +238,35 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             },
         );
 
+        // constraint chronological/by address rwtable fingerprint must be the same in last chunk
+        // last row.
+        meta.create_gate(
+            "chronological rwtable fingerprint == by address rwtable fingerprint",
+            |meta| {
+                let is_last_chunk = chunkctx_config.is_last_chunk.expr();
+                let chronological_rwtable_acc_fingerprint = evm_circuit
+                    .rw_permutation_config
+                    .row_fingerprints_cur_expr();
+                let by_address_rwtable_row_fingerprint = state_circuit
+                    .rw_permutation_config
+                    .row_fingerprints_cur_expr();
+
+                let q_row_first = 1.expr()
+                    - meta.query_selector(evm_circuit.rw_permutation_config.q_row_non_first);
+
+                let q_row_enable =
+                    meta.query_selector(evm_circuit.rw_permutation_config.q_row_enable);
+
+                vec![
+                    is_first_chunk
+                        * q_row_first
+                        * q_row_enable
+                        * (chronological_rwtable_row_fingerprint
+                            - by_address_rwtable_row_fingerprint),
+                ]
+            },
+        );
+
         // constraint chronological/by address rwtable `row fingerprint` must be the same in first
         // chunk first row.
         // `row fingerprint` is not a constant so root circuit can NOT constraint it.
@@ -247,7 +276,40 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         meta.create_gate(
             "chronological rwtable row fingerprint == by address rwtable row fingerprint",
             |meta| {
-                let is_first_chunk = chunk_ctx_config.is_first_chunk.expr();
+                let is_first_chunk = chunkctx_config.is_first_chunk.expr();
+                let chronological_rwtable_row_fingerprint = evm_circuit
+                    .rw_permutation_config
+                    .row_fingerprints_cur_expr();
+                let by_address_rwtable_row_fingerprint = state_circuit
+                    .rw_permutation_config
+                    .row_fingerprints_cur_expr();
+
+                let q_row_first = 1.expr()
+                    - meta.query_selector(evm_circuit.rw_permutation_config.q_row_non_first);
+
+                let q_row_enable =
+                    meta.query_selector(evm_circuit.rw_permutation_config.q_row_enable);
+
+                vec![
+                    is_first_chunk
+                        * q_row_first
+                        * q_row_enable
+                        * (chronological_rwtable_row_fingerprint
+                            - by_address_rwtable_row_fingerprint),
+                ]
+            },
+        );
+
+        // constraint chronological/by address rwtable `row fingerprint` must be the same in first
+        // chunk first row.
+        // `row fingerprint` is not a constant so root circuit can NOT constraint it.
+        // so we constraints here by gate
+        // Furthermore, first row in rw_table should be `Rw::Start`, which will be lookup by
+        // `BeginChunk` at first chunk
+        meta.create_gate(
+            "chronological rwtable row fingerprint == by address rwtable row fingerprint",
+            |meta| {
+                let is_first_chunk = chunkctx_config.is_first_chunk.expr();
                 let chronological_rwtable_row_fingerprint = evm_circuit
                     .rw_permutation_config
                     .row_fingerprints_cur_expr();

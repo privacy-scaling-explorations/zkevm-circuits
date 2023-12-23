@@ -42,11 +42,16 @@ impl BlockContext {
 /// Block-wise execution steps that don't belong to any Transaction.
 #[derive(Debug, Clone)]
 pub struct BlockSteps {
-    /// EndBlock step that is repeated after the last transaction and before
+    /// Padding step that is repeated after the last transaction and before
     /// reaching the last EVM row.
-    pub end_block_not_last: ExecStep,
-    /// Last EndBlock step that appears in the last EVM row.
-    pub end_block_last: ExecStep,
+    pub padding: ExecStep,
+    /// EndBlock step that appears in the last chunk last EVM row.
+    pub end_block: ExecStep,
+    /// TODO Define and move chunk related step to Chunk struct
+    /// Begin op of a chunk
+    pub begin_chunk: ExecStep,
+    /// End op of a chunk
+    pub end_chunk: Option<ExecStep>,
 }
 
 // TODO: Remove fields that are duplicated in`eth_block`
@@ -125,11 +130,15 @@ impl Block {
             container: OperationContainer::new(),
             txs: Vec::new(),
             block_steps: BlockSteps {
-                end_block_not_last: ExecStep {
-                    exec_state: ExecState::EndBlock,
+                begin_chunk: ExecStep {
+                    exec_state: ExecState::BeginChunk,
                     ..ExecStep::default()
                 },
-                end_block_last: ExecStep {
+                padding: ExecStep {
+                    exec_state: ExecState::Padding,
+                    ..ExecStep::default()
+                },
+                end_block: ExecStep {
                     exec_state: ExecState::EndBlock,
                     ..ExecStep::default()
                 },

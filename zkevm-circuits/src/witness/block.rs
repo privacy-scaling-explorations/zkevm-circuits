@@ -25,11 +25,15 @@ pub struct Block<F> {
     pub randomness: F,
     /// Transactions in the block
     pub txs: Vec<Transaction>,
-    /// EndBlock step that is repeated after the last transaction and before
+    /// Padding step that is repeated after the last transaction and before
     /// reaching the last EVM row.
-    pub end_block_not_last: ExecStep,
-    /// Last EndBlock step that appears in the last EVM row.
-    pub end_block_last: ExecStep,
+    pub padding: ExecStep,
+    /// EndBlock step that appears in the last chunk last EVM row.
+    pub end_block: ExecStep,
+    /// BeginChunk step to propagate State
+    pub begin_chunk: ExecStep,
+    /// EndChunk step that appears in the last EVM row for all the chunks other than the last.
+    pub end_chunk: Option<ExecStep>,
     /// Read write events in the RwTable
     pub rws: RwMap,
     /// Bytecode used in the block
@@ -257,9 +261,13 @@ pub fn block_convert<F: Field>(
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
-        end_block_not_last: block.block_steps.end_block_not_last.clone(),
-        end_block_last: block.block_steps.end_block_last.clone(),
         eth_block: block.eth_block.clone(),
+        padding: block.block_steps.padding.clone(),
+        end_block: block.block_steps.end_block.clone(),
+        // TODO refactor chunk related field to chunk structure
+        begin_chunk: block.block_steps.begin_chunk.clone(),
+        end_chunk: block.block_steps.end_chunk.clone(),
+        ..Default::default()
     };
     let public_data = public_data_convert(&block);
 
@@ -273,4 +281,32 @@ pub fn block_convert<F: Field>(
     block.keccak_inputs.extend_from_slice(&[rpi_bytes]);
 
     Ok(block)
+}
+
+fn get_rwtable_fingerprints<F: Field>(
+    alpha: F,
+    gamma: F,
+    prev_continuous_fingerprint: F,
+    rows: &Vec<Rw>,
+) -> RwTablePermutationFingerprints<F> {
+    let x = rows.to2dvec();
+    let fingerprints = get_permutation_fingerprints(
+        &x,
+        Value::known(alpha),
+        Value::known(gamma),
+        Value::known(prev_continuous_fingerprint),
+    );
+
+    fingerprints
+        .first()
+        .zip(fingerprints.last())
+        .map(|((first_acc, first_row), (last_acc, last_row))| {
+            RwTablePermutationFingerprints::new(
+                unwrap_value(*first_row),
+                unwrap_value(*last_row),
+                unwrap_value(*first_acc),
+                unwrap_value(*last_acc),
+            )
+        })
+        .unwrap_or_default()
 }

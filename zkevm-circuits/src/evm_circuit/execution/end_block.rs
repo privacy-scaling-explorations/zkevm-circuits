@@ -178,17 +178,9 @@ mod test {
             .run();
     }
 
-    // Test where the EVM circuit contains an exact number of rows corresponding to
-    // the trace steps + 1 EndBlock
+    // Test steps + 1 EndBlock without padding
     #[test]
-    fn end_block_exact() {
+    fn end_block_no_padding() {
         test_circuit(0);
-    }
-
-    // Test where the EVM circuit has a fixed size and contains several padding
-    // EndBlocks at the end after the trace steps
-    #[test]
-    fn end_block_padding() {
-        test_circuit(50);
     }
 }

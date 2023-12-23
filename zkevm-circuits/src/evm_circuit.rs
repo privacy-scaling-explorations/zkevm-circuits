@@ -49,6 +49,7 @@ pub struct EvmCircuitConfig<F> {
     // External tables
     tx_table: TxTable,
     pub(crate) rw_table: RwTable,
+    pub(crate) rw_table: RwTable,
     bytecode_table: BytecodeTable,
     block_table: BlockTable,
     copy_table: CopyTable,
@@ -349,7 +350,8 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                 region.name_column(|| "EVM_pi_chunk_continuity", config.pi_chunk_continuity);
                 config.rw_table.load_with_region(
                     &mut region,
-                    // pass non-padding rws to `load_with_region` since it will be padding inside
+                    // pass non-padding rws to `load_with_region` since it will be padding
+                    // inside
                     &chunk.rws.table_assignments(true),
                     // align with state circuit to padding to same max_rws
                     chunk.fixed_param.max_rws,

@@ -134,6 +134,8 @@ pub enum ExecState {
     BeginTx,
     /// Virtual step End Tx
     EndTx,
+    /// Virtual step Padding
+    Padding,
     /// Virtual step End Block
     EndBlock,
     /// Virtual step End Chunk
