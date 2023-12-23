@@ -39,13 +39,6 @@ impl BlockContext {
     }
 }
 
-/// Block-wise execution steps that don't belong to any Transaction.
-#[derive(Debug, Clone)]
-pub struct BlockSteps {
-    /// EndBlock step that appears in the last chunk last EVM row.
-    pub end_block: ExecStep,
-}
-
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Circuit Input related to a block.
 #[derive(Debug, Clone)]
@@ -73,8 +66,8 @@ pub struct Block {
     pub container: OperationContainer,
     /// Transactions contained in the block
     pub txs: Vec<Transaction>,
-    /// Block-wise steps
-    pub block_steps: BlockSteps,
+    /// End block step
+    pub end_block: ExecStep,
 
     // /// Chunk context
     // pub chunk_context: ChunkContext,
@@ -121,11 +114,9 @@ impl Block {
             prev_state_root,
             container: OperationContainer::new(),
             txs: Vec::new(),
-            block_steps: BlockSteps {
-                end_block: ExecStep {
-                    exec_state: ExecState::EndBlock,
-                    ..ExecStep::default()
-                },
+            end_block: ExecStep {
+                exec_state: ExecState::EndBlock,
+                ..ExecStep::default()
             },
             copy_events: Vec::new(),
             exp_events: Vec::new(),

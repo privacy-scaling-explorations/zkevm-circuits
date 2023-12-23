@@ -257,7 +257,7 @@ pub fn block_convert<F: Field>(
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         eth_block: block.eth_block.clone(),
-        end_block: block.block_steps.end_block.clone(),
+        end_block: block.end_block.clone(),
         // TODO refactor chunk related field to chunk structure
         ..Default::default()
     };

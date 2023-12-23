@@ -548,7 +548,7 @@ impl CircuitInputBuilder<FixedCParams> {
     }
 
     fn set_end_block(&mut self) {
-        let mut end_block = self.block.block_steps.end_block.clone();
+        let mut end_block = self.block.end_block.clone();
         end_block.rwc = self.block_ctx.rwc;
         end_block.rwc_inner_chunk = self.chunk_ctx.rwc;
 
@@ -567,7 +567,7 @@ impl CircuitInputBuilder<FixedCParams> {
 
         // EndBlock step should also be padded to max_rws similar to EndChunk
         self.gen_chunk_padding(&mut end_block);
-        self.block.block_steps.end_block = end_block;
+        self.block.end_block = end_block;
     }
 }
 
