@@ -1,5 +1,5 @@
 use super::{ExecStep, FixedCParams};
-use crate::operation::{RWCounter, Op};
+use crate::operation::RWCounter;
 
 #[derive(Debug, Default, Clone)]
 pub struct Chunk {

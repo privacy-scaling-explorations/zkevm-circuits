@@ -20,7 +20,7 @@ pub struct Chunk<F> {
     pub begin_chunk: Option<ExecStep>,
     /// EndChunk step that appears in the last EVM row for all the chunks other than the last.
     pub end_chunk: Option<ExecStep>,
-    /// Padding step that is repeated before max_rws is reached 
+    /// Padding step that is repeated before max_rws is reached
     pub padding: Option<ExecStep>,
     /// Chunk context
     pub chunk_context: ChunkContext,

@@ -1,8 +1,6 @@
 //! The EVM circuit implementation.
 
-use gadgets::{
-    permutation::{PermutationChip, PermutationChipConfig},
-};
+use gadgets::permutation::{PermutationChip, PermutationChipConfig};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::*,

@@ -293,7 +293,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                             - by_address_rwtable_row_fingerprint),
                 ]
             },
-        );  
+        );
 
         Self {
             block_table,

@@ -310,20 +310,12 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         tx.steps_mut().push(begin_tx_step);
 
         let mut trace = geth_trace.struct_logs.iter().enumerate().peekable();
-        loop {
-            let (i, geth_step) = match trace.next() {
-                Some((index, geth_step)) => (index, geth_step),
-                None => break,
-            };
-
+        while let Some((i, geth_step)) = trace.next() {
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
             log::trace!("handle {}th opcode {:?} ", i, geth_step.op);
-            
-            let exec_steps = gen_associated_ops(
-                &geth_step.op,
-                &mut state_ref,
-                &geth_trace.struct_logs[i..],
-            )?;
+
+            let exec_steps =
+                gen_associated_ops(&geth_step.op, &mut state_ref, &geth_trace.struct_logs[i..])?;
             tx.steps_mut().extend(exec_steps);
 
             if let Some((next_i, next_step)) = trace.peek() {
@@ -335,20 +327,19 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
                         &geth_trace.struct_logs[*next_i..],
                     )?;
                     let param = cib.compute_param(&self.block.eth_block);
-                    
+
                     // Generate EndChunk and proceed to the next if it's not the last chunk
                     if param.max_rws >= self.circuits_params.max_rws() {
                         // Dynamic: update param accordding to number of rws actually generated
                         if self.chunk_ctx.is_dynamic {
-                            self.cur_chunk_mut().fixed_param =  self.compute_param(&self.block.eth_block);
+                            self.cur_chunk_mut().fixed_param =
+                                self.compute_param(&self.block.eth_block);
                         }
                         self.set_end_chunk(tx.last_step());
                         self.commit_chunk(true);
                         self.set_begin_chunk(tx.last_step());
-                    } 
+                    }
                 }
-            } else {
-                break;
             }
         }
         // Generate EndTx step
@@ -432,7 +423,6 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             });
     }
 
-
     /// Set the end status of a chunk including the current globle rwc
     /// and commit the current chunk context, proceed to the next chunk
     /// if needed
@@ -466,7 +456,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         let end_rwc = self.chunk_ctx.rwc.0;
         let total_rws = end_rwc - 1;
         let max_rws = self.cur_chunk().fixed_param.max_rws;
-    
+
         // We need at least 1 extra row at offset 0 for chunk continuous
         // FIXME(Cecilia): adding + 1 fail some tests
         assert!(
@@ -553,9 +543,12 @@ impl CircuitInputBuilder<FixedCParams> {
         self.set_end_block();
         self.commit_chunk(false);
 
-        let mut used_chunks = self.chunk_ctx.idx + 1;
-        assert!(used_chunks <= self.circuits_params.total_chunks(), "Used more chunks than given total_chunks");
-        
+        let used_chunks = self.chunk_ctx.idx + 1;
+        assert!(
+            used_chunks <= self.circuits_params.total_chunks(),
+            "Used more chunks than given total_chunks"
+        );
+
         // Truncate chunks to the actual used amount & correct ctx.total_chunks
         // Set length to the actual used amount of chunks
         self.chunks.truncate(self.chunk_ctx.idx + 1);
@@ -563,7 +556,7 @@ impl CircuitInputBuilder<FixedCParams> {
             chunk.ctx.total_chunks = used_chunks;
             if !self.chunk_ctx.is_dynamic {
                 // For static chunking, all chunks have the same fixed param
-                chunk.fixed_param = self.circuits_params.clone();
+                chunk.fixed_param = self.circuits_params;
             }
         });
 

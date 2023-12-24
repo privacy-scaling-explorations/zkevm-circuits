@@ -1091,71 +1091,85 @@ impl<F: Field> ExecutionConfig<F> {
 
                 let end_block = &block.end_block;
 
-                let mut steps = block.txs.iter().flat_map(|tx| {
-                    tx.steps()
-                        .iter()
-                        .map(move |step| (tx, &tx.calls()[step.call_index], step))
-                }).peekable();
+                let mut steps = block
+                    .txs
+                    .iter()
+                    .flat_map(|tx| {
+                        tx.steps()
+                            .iter()
+                            .map(move |step| (tx, &tx.calls()[step.call_index], step))
+                    })
+                    .peekable();
 
                 let evm_rows = chunk.fixed_param.max_evm_rows;
-                let no_padding = evm_rows == 0;
+                let _no_padding = evm_rows == 0;
 
                 type TxCallStep<'a> = (&'a Transaction, &'a Call, &'a ExecStep);
-                let mut assign_exec_q_step = 
-                    |cur_tx_call_step: TxCallStep, next_tx_call_step: Option<TxCallStep>, padding_end: Option<usize>| -> Result<usize, Error> {
-                        let (tx, call, step) = cur_tx_call_step;
-                        let height = step.execution_state().get_step_height();
-                        let initial_offset = offset;
+                let mut assign_exec_q_step = |cur_tx_call_step: TxCallStep,
+                                              next_tx_call_step: Option<TxCallStep>,
+                                              padding_end: Option<usize>|
+                 -> Result<usize, Error> {
+                    let (tx, call, step) = cur_tx_call_step;
+                    let height = step.execution_state().get_step_height();
+                    let initial_offset = offset;
 
-                        // If this step is Padding then we assign the step witness till offset reaches padding_end
-                        // Otherwise just assign it once
-                        if let Some(padding_end) = padding_end {
-                            if offset >= padding_end {
-                                log::error!("evm circuit offset larger than padding: {} > {}", offset, padding_end);
-                                return Err(Error::Synthesis);
-                            }
-                            log::trace!("assign Padding in range [{},{})", offset, padding_end);
-                            self.assign_same_exec_step_in_range(
-                                &mut region,
+                    // If this step is Padding then we assign the step witness till offset reaches
+                    // padding_end Otherwise just assign it once
+                    if let Some(padding_end) = padding_end {
+                        if offset >= padding_end {
+                            log::error!(
+                                "evm circuit offset larger than padding: {} > {}",
                                 offset,
-                                padding_end,
-                                block,
-                                chunk,
-                                &dummy_tx,
-                                call,
-                                step,
-                                height,
-                                challenges,
-                                assign_pass,
-                            )?;
-                            for row_idx in offset..padding_end {
-                                self.assign_q_step(&mut region, row_idx, height)?;
-                                offset += height;
-                            }
-                        } else {
-                            self.assign_exec_step(
-                                &mut region,
-                                offset,
-                                block,
-                                chunk,
-                                tx,
-                                call,
-                                step,
-                                height,
-                                next_tx_call_step,
-                                challenges,
-                                assign_pass,
-                            )?;
-                            self.assign_q_step(&mut region, offset, height)?;
+                                padding_end
+                            );
+                            return Err(Error::Synthesis);
+                        }
+                        log::trace!("assign Padding in range [{},{})", offset, padding_end);
+                        self.assign_same_exec_step_in_range(
+                            &mut region,
+                            offset,
+                            padding_end,
+                            block,
+                            chunk,
+                            &dummy_tx,
+                            call,
+                            step,
+                            height,
+                            challenges,
+                            assign_pass,
+                        )?;
+                        for row_idx in offset..padding_end {
+                            self.assign_q_step(&mut region, row_idx, height)?;
                             offset += height;
                         }
-                        
-                        Ok(offset - initial_offset)
-                    };
+                    } else {
+                        self.assign_exec_step(
+                            &mut region,
+                            offset,
+                            block,
+                            chunk,
+                            tx,
+                            call,
+                            step,
+                            height,
+                            next_tx_call_step,
+                            challenges,
+                            assign_pass,
+                        )?;
+                        self.assign_q_step(&mut region, offset, height)?;
+                        offset += height;
+                    }
+
+                    Ok(offset - initial_offset)
+                };
 
                 // part0: assign begin chunk
                 if let Some(begin_chunk) = &chunk.begin_chunk {
-                    assign_exec_q_step((&dummy_tx, &prev_chunk_last_call, begin_chunk), steps.peek().copied(), None)?;
+                    assign_exec_q_step(
+                        (&dummy_tx, &prev_chunk_last_call, begin_chunk),
+                        steps.peek().copied(),
+                        None,
+                    )?;
                 }
                 // part1: assign real steps
                 loop {
@@ -1172,14 +1186,17 @@ impl<F: Field> ExecutionConfig<F> {
                 }
                 // part3: assign end chunk or end block
                 let height = match &chunk.end_chunk {
-                    Some(end_chunk) => {                         
+                    Some(end_chunk) => {
                         debug_assert_eq!(ExecutionState::EndChunk.get_step_height(), 1);
                         assign_exec_q_step((&dummy_tx, &last_call, end_chunk), None, None)?
-                    },
+                    }
                     None => {
-                        assert!(chunk.chunk_context.is_last_chunk(), "If not end_chunk, must be end_block at last chunk");
+                        assert!(
+                            chunk.chunk_context.is_last_chunk(),
+                            "If not end_chunk, must be end_block at last chunk"
+                        );
                         assign_exec_q_step((&dummy_tx, &last_call, end_block), None, None)?
-                    },
+                    }
                 };
 
                 // enable q_step_last

@@ -7,7 +7,7 @@ use crate::evm_circuit::{
         constraint_builder::{EVMConstraintBuilder, StepStateTransition},
         CachedRegion,
     },
-    witness::{Block, Chunk, Call, ExecStep, Transaction},
+    witness::{Block, Call, Chunk, ExecStep, Transaction},
 };
 use eth_types::Field;
 use halo2_proofs::plonk::Error;
@@ -64,7 +64,7 @@ mod test {
 
         // finish required tests using this witness block
         CircuitTestBuilder::<2, 1>::new_from_test_ctx(ctx)
-            .modifier(Box::new(move |block, chunk| {
+            .modifier(Box::new(move |block, _chunk| {
                 block.circuits_params.max_evm_rows = evm_circuit_pad_to
             }))
             .run();

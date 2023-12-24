@@ -1,10 +1,13 @@
-use super::{ExecStep, Rw, RwMap, Transaction, rw::{RwFingerprints, ToVec}};
+use super::{
+    rw::{RwFingerprints, ToVec},
+    ExecStep, Rw, RwMap, Transaction,
+};
 use crate::{
     evm_circuit::{detect_fixed_table_tags, EvmCircuit},
     exp_circuit::param::OFFSET_INCREMENT,
     instance::public_data_convert,
     table::BlockContextFieldTag,
-    util::{log2_ceil, word, SubCircuit, unwrap_value},
+    util::{log2_ceil, unwrap_value, word, SubCircuit},
     witness::Chunk,
 };
 use bus_mapping::{
@@ -258,8 +261,6 @@ pub fn block_convert<F: Field>(
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         eth_block: block.eth_block.clone(),
         end_block: block.end_block.clone(),
-        // TODO refactor chunk related field to chunk structure
-        ..Default::default()
     };
     let public_data = public_data_convert(&block);
 
