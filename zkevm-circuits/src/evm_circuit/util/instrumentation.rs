@@ -127,6 +127,8 @@ pub(crate) struct ExecStateReport {
     pub(crate) storage_2: StateReportRow,
     pub(crate) storage_perm: StateReportRow,
     pub(crate) storage_perm_2: StateReportRow,
+    pub(crate) u8_lookup: StateReportRow,
+    pub(crate) u16_lookup: StateReportRow,
     pub(crate) byte_lookup: StateReportRow,
     pub(crate) fixed_table: StateReportRow,
     pub(crate) tx_table: StateReportRow,

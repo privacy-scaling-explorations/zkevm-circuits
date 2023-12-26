@@ -141,7 +141,7 @@ impl FixedTableTag {
             ),
             Self::PrecompileInfo => Box::new(
                 vec![
-                    PrecompileCalls::ECRecover,
+                    PrecompileCalls::Ecrecover,
                     PrecompileCalls::Sha256,
                     PrecompileCalls::Ripemd160,
                     PrecompileCalls::Identity,

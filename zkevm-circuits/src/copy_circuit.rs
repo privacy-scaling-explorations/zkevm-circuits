@@ -143,63 +143,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             |meta| meta.query_advice(src_addr_end, Rotation::cur()),
         );
 
-        meta.create_gate("is precompile", |meta| {
-            let enabled = meta.query_fixed(q_enable, Rotation::cur());
-            let is_precompile = meta.query_advice(is_precompiled, Rotation::cur());
-            let is_tx_calldata = meta.query_advice(is_tx_calldata, Rotation::cur());
-            let is_bytecode = meta.query_advice(is_bytecode, Rotation::cur());
-            let is_memory = meta.query_advice(is_memory, Rotation::cur());
-            let precompiles = sum::expr([
-                tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::Ecrecover),
-                    Rotation::cur(),
-                )(meta),
-                tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::Sha256),
-                    Rotation::cur(),
-                )(meta),
-                tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::Ripemd160),
-                    Rotation::cur(),
-                )(meta),
-                tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::Identity),
-                    Rotation::cur(),
-                )(meta),
-                tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::Modexp),
-                    Rotation::cur(),
-                )(meta),
-                tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::Bn128Add),
-                    Rotation::cur(),
-                )(meta),
-                tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::Bn128Mul),
-                    Rotation::cur(),
-                )(meta),
-                tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::Bn128Pairing),
-                    Rotation::cur(),
-                )(meta),
-                tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::Blake2F),
-                    Rotation::cur(),
-                )(meta),
-            ]);
-            vec![
-                enabled.expr() * (is_precompile - precompiles),
-                enabled.expr()
-                    * (is_tx_calldata
-                        - tag.value_equals(CopyDataType::TxCalldata, Rotation::cur())(meta)),
-                enabled.expr()
-                    * (is_bytecode
-                        - tag.value_equals(CopyDataType::Bytecode, Rotation::cur())(meta)),
-                enabled.expr()
-                    * (is_memory - tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta)),
-            ]
-        });
-
         meta.create_gate("verify row", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 

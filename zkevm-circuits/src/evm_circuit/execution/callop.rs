@@ -1011,32 +1011,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             } else {
                 cd_length.as_usize()
             };
-            let (input_bytes_start, input_bytes_end) =
-                (33usize + rw_offset, 33usize + rw_offset + input_len);
-            let [output_bytes_start, output_bytes_end, return_bytes_start, return_bytes_end] =
-                if input_len > 0 {
-                    let (output_start, output_end) = (
-                        input_bytes_end,
-                        input_bytes_end + precompile_return_length.as_usize(),
-                    );
-                    [
-                        output_start,
-                        output_end,
-                        output_end,
-                        output_end + rd_length.min(precompile_return_length).as_usize(),
-                    ]
-                } else {
-                    [input_bytes_end; 4]
-                };
-            let input_bytes: Vec<u8> = (input_bytes_start..input_bytes_end)
-                .map(|i| block.rws[step.rw_indices[i]].memory_value())
-                .collect();
-            let output_bytes: Vec<u8> = (output_bytes_start..output_bytes_end)
-                .map(|i| block.rws[step.rw_indices[i]].memory_value())
-                .collect();
-            let return_bytes: Vec<u8> = (return_bytes_start..return_bytes_end)
-                .map(|i| block.rws[step.rw_indices[i]].memory_value())
-                .collect();
 
             let input_bytes = (0..input_len)
                 .map(|_| rws.next().memory_value())
@@ -1074,6 +1048,17 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 return_bytes_rlc,
                 input_rws,
                 output_rws,
+                return_rws,
+            )
+        } else {
+            (
+                0,
+                Value::known(F::ZERO),
+                Value::known(F::ZERO),
+                Value::known(F::ZERO),
+                0u64,
+                0u64,
+                0u64,
             )
         };
 

@@ -5,10 +5,8 @@ use ethers_core::{types::Address, utils::keccak256};
 use halo2_proofs::{
     arithmetic::{CurveAffine, Field},
     halo2curves::{
-        group::{
-            ff::{FromUniformBytes, PrimeField},
-            Curve,
-        },
+        ff::FromUniformBytes,
+        group::{ff::PrimeField, prime::PrimeCurveAffine, Curve},
         secp256k1::{self, Secp256k1Affine},
         Coordinates,
     },

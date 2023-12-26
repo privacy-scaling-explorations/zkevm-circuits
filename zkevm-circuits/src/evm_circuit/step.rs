@@ -330,7 +330,7 @@ impl From<&ExecStep> for ExecutionState {
                 }
             }
             ExecState::Precompile(precompile) => match precompile {
-                PrecompileCalls::ECRecover => ExecutionState::PrecompileEcRecover,
+                PrecompileCalls::Ecrecover => ExecutionState::PrecompileEcrecover,
                 PrecompileCalls::Sha256 => ExecutionState::PrecompileSha256,
                 PrecompileCalls::Ripemd160 => ExecutionState::PrecompileRipemd160,
                 PrecompileCalls::Identity => ExecutionState::PrecompileIdentity,

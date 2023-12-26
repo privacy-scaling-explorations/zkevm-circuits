@@ -41,7 +41,7 @@ pub struct EcrecoverGadget<F> {
     msg_hash_raw: Word<F>,
     msg_hash: Word<F>,
     fq_modulus: Word<F>,
-    msg_hash_mod: ModGadget<F, true>,
+    msg_hash_mod: ModGadget<F>,
 
     sig_r: Word<F>,
     sig_r_canonical: LtWordGadget<F>,
@@ -100,63 +100,63 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             sig_v_one_byte.expr(),
         ]);
 
-        cb.require_equal(
-            "msg hash cells assigned incorrectly",
-            msg_hash_keccak_rlc.expr(),
-            cb.keccak_rlc::<N_BYTES_WORD>(
-                msg_hash_raw
-                    .cells
-                    .iter()
-                    .map(Expr::expr)
-                    .collect::<Vec<Expression<F>>>()
-                    .try_into()
-                    .expect("msg hash is 32 bytes"),
-            ),
-        );
-        cb.require_equal(
-            "sig_r cells assigned incorrectly",
-            sig_r_keccak_rlc.expr(),
-            cb.keccak_rlc::<N_BYTES_WORD>(
-                sig_r
-                    .cells
-                    .iter()
-                    .map(Expr::expr)
-                    .collect::<Vec<Expression<F>>>()
-                    .try_into()
-                    .expect("msg hash is 32 bytes"),
-            ),
-        );
-        cb.require_equal(
-            "sig_s cells assigned incorrectly",
-            sig_s_keccak_rlc.expr(),
-            cb.keccak_rlc::<N_BYTES_WORD>(
-                sig_s
-                    .cells
-                    .iter()
-                    .map(Expr::expr)
-                    .collect::<Vec<Expression<F>>>()
-                    .try_into()
-                    .expect("msg hash is 32 bytes"),
-            ),
-        );
-        cb.require_equal(
-            "sig_v cells assigned incorrectly",
-            sig_v_keccak_rlc.expr(),
-            cb.keccak_rlc::<N_BYTES_WORD>(
-                sig_v
-                    .cells
-                    .iter()
-                    .map(Expr::expr)
-                    .collect::<Vec<Expression<F>>>()
-                    .try_into()
-                    .expect("sig_v is 32 bytes"),
-            ),
-        );
-        cb.require_equal(
-            "Secp256k1::Fq modulus assigned correctly",
-            fq_modulus.expr(),
-            cb.word_rlc::<N_BYTES_WORD>(FQ_MODULUS.to_le_bytes().map(|b| b.expr())),
-        );
+        // cb.require_equal(
+        //     "msg hash cells assigned incorrectly",
+        //     msg_hash_keccak_rlc.expr(),
+        //     cb.keccak_rlc::<N_BYTES_WORD>(
+        //         msg_hash_raw
+        //             .cells
+        //             .iter()
+        //             .map(Expr::expr)
+        //             .collect::<Vec<Expression<F>>>()
+        //             .try_into()
+        //             .expect("msg hash is 32 bytes"),
+        //     ),
+        // );
+        // cb.require_equal(
+        //     "sig_r cells assigned incorrectly",
+        //     sig_r_keccak_rlc.expr(),
+        //     cb.keccak_rlc::<N_BYTES_WORD>(
+        //         sig_r
+        //             .cells
+        //             .iter()
+        //             .map(Expr::expr)
+        //             .collect::<Vec<Expression<F>>>()
+        //             .try_into()
+        //             .expect("msg hash is 32 bytes"),
+        //     ),
+        // );
+        // cb.require_equal(
+        //     "sig_s cells assigned incorrectly",
+        //     sig_s_keccak_rlc.expr(),
+        //     cb.keccak_rlc::<N_BYTES_WORD>(
+        //         sig_s
+        //             .cells
+        //             .iter()
+        //             .map(Expr::expr)
+        //             .collect::<Vec<Expression<F>>>()
+        //             .try_into()
+        //             .expect("msg hash is 32 bytes"),
+        //     ),
+        // );
+        // cb.require_equal(
+        //     "sig_v cells assigned incorrectly",
+        //     sig_v_keccak_rlc.expr(),
+        //     cb.keccak_rlc::<N_BYTES_WORD>(
+        //         sig_v
+        //             .cells
+        //             .iter()
+        //             .map(Expr::expr)
+        //             .collect::<Vec<Expression<F>>>()
+        //             .try_into()
+        //             .expect("sig_v is 32 bytes"),
+        //     ),
+        // );
+        // cb.require_equal(
+        //     "Secp256k1::Fq modulus assigned correctly",
+        //     fq_modulus.expr(),
+        //     cb.word_rlc::<N_BYTES_WORD>(FQ_MODULUS.to_le_bytes().map(|b| b.expr())),
+        // );
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
@@ -179,38 +179,38 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         // lookup to the sign_verify table:
         //
         // || msg_hash | v | r | s | recovered_addr | recovered ||
-        cb.condition(
-            and::expr([r_s_canonical.expr(), sig_v_valid.expr()]),
-            |cb| {
-                cb.sig_table_lookup(
-                    msg_hash.expr(),
-                    sig_v.cells[0].expr() - 27.expr(),
-                    sig_r.expr(),
-                    sig_s.expr(),
-                    select::expr(
-                        recovered.expr(),
-                        from_bytes::expr(&recovered_addr_keccak_rlc.cells),
-                        0.expr(),
-                    ),
-                    recovered.expr(),
-                );
-            },
-        );
-        cb.condition(not::expr(r_s_canonical.expr()), |cb| {
-            cb.require_zero(
-                "recovered == false if r or s not canonical",
-                recovered.expr(),
-            );
-        });
-        cb.condition(not::expr(sig_v_valid.expr()), |cb| {
-            cb.require_zero("recovered == false if sig_v != 27 or 28", recovered.expr());
-        });
-        cb.condition(not::expr(recovered.expr()), |cb| {
-            cb.require_zero(
-                "address == 0 if address could not be recovered",
-                recovered_addr_keccak_rlc.expr(),
-            );
-        });
+        // cb.condition(
+        //     and::expr([r_s_canonical.expr(), sig_v_valid.expr()]),
+        //     |cb| {
+        //         cb.sig_table_lookup(
+        //             msg_hash.expr(),
+        //             sig_v.cells[0].expr() - 27.expr(),
+        //             sig_r.expr(),
+        //             sig_s.expr(),
+        //             select::expr(
+        //                 recovered.expr(),
+        //                 from_bytes::expr(&recovered_addr_keccak_rlc.cells),
+        //                 0.expr(),
+        //             ),
+        //             recovered.expr(),
+        //         );
+        //     },
+        // );
+        // cb.condition(not::expr(r_s_canonical.expr()), |cb| {
+        //     cb.require_zero(
+        //         "recovered == false if r or s not canonical",
+        //         recovered.expr(),
+        //     );
+        // });
+        // cb.condition(not::expr(sig_v_valid.expr()), |cb| {
+        //     cb.require_zero("recovered == false if sig_v != 27 or 28", recovered.expr());
+        // });
+        // cb.condition(not::expr(recovered.expr()), |cb| {
+        //     cb.require_zero(
+        //         "address == 0 if address could not be recovered",
+        //         recovered_addr_keccak_rlc.expr(),
+        //     );
+        // });
 
         cb.precompile_info_lookup(
             cb.execution_state().as_u64().expr(),

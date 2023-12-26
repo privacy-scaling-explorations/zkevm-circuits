@@ -2,15 +2,12 @@
 
 use crate::{
     circuit_input_builder::CallContext,
-    error::ExecError,
+    error::{ExecError, OogError},
     exec_trace::OperationRef,
     operation::RWCounter,
     precompile::{PrecompileAuxData, PrecompileCalls},
 };
-use eth_types::{
-    evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
-    GethExecStep, Word, H256,
-};
+use eth_types::{evm_types::OpcodeId, GethExecStep, Word, H256};
 use gadgets::impl_expr;
 use halo2_proofs::plonk::Expression;
 use strum_macros::EnumIter;
@@ -139,29 +136,6 @@ impl ExecStep {
     }
 }
 
-impl Default for ExecStep {
-    fn default() -> Self {
-        Self {
-            exec_state: ExecState::Op(OpcodeId::INVALID(0)),
-            pc: ProgramCounter(0),
-            stack_size: 0,
-            memory_size: 0,
-            gas_left: Gas(0),
-            gas_cost: GasCost(0),
-            gas_refund: Gas(0),
-            call_index: 0,
-            rwc: RWCounter(0),
-            reversible_write_counter: 0,
-            reversible_write_counter_delta: 0,
-            log_id: 0,
-            bus_mapping_instance: Vec::new(),
-            copy_rw_counter_delta: 0,
-            error: None,
-            aux_data: None,
-        }
-    }
-}
-
 /// Execution state
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExecState {
@@ -241,94 +215,6 @@ pub enum CopyDataType {
     /// scenario where we wish to accumulate the value (RLC) over all rows.
     /// This is used for Copy Lookup from SHA3 opcode verification.
     RlcAcc,
-    /// When the source of the copy is a call to a precompiled contract.
-    Precompile(PrecompileCalls),
-}
-impl CopyDataType {
-    /// Get variants that represent a precompile call.
-    pub fn precompile_types() -> Vec<Self> {
-        PrecompileCalls::iter().map(Self::Precompile).collect()
-    }
-}
-const NUM_COPY_DATA_TYPES: usize = 15usize;
-pub struct CopyDataTypeIter {
-    idx: usize,
-    back_idx: usize,
-    marker: PhantomData<()>,
-}
-impl CopyDataTypeIter {
-    fn get(&self, idx: usize) -> Option<CopyDataType> {
-        match idx {
-            0usize => Some(CopyDataType::Padding),
-            1usize => Some(CopyDataType::Bytecode),
-            2usize => Some(CopyDataType::Memory),
-            3usize => Some(CopyDataType::TxCalldata),
-            4usize => Some(CopyDataType::TxLog),
-            5usize => Some(CopyDataType::RlcAcc),
-            6usize => Some(CopyDataType::Precompile(PrecompileCalls::Ecrecover)),
-            7usize => Some(CopyDataType::Precompile(PrecompileCalls::Sha256)),
-            8usize => Some(CopyDataType::Precompile(PrecompileCalls::Ripemd160)),
-            9usize => Some(CopyDataType::Precompile(PrecompileCalls::Identity)),
-            10usize => Some(CopyDataType::Precompile(PrecompileCalls::Modexp)),
-            11usize => Some(CopyDataType::Precompile(PrecompileCalls::Bn128Add)),
-            12usize => Some(CopyDataType::Precompile(PrecompileCalls::Bn128Mul)),
-            13usize => Some(CopyDataType::Precompile(PrecompileCalls::Bn128Pairing)),
-            14usize => Some(CopyDataType::Precompile(PrecompileCalls::Blake2F)),
-            _ => None,
-        }
-    }
-}
-impl strum::IntoEnumIterator for CopyDataType {
-    type Iterator = CopyDataTypeIter;
-    fn iter() -> CopyDataTypeIter {
-        CopyDataTypeIter {
-            idx: 0,
-            back_idx: 0,
-            marker: PhantomData,
-        }
-    }
-}
-impl Iterator for CopyDataTypeIter {
-    type Item = CopyDataType;
-    fn next(&mut self) -> Option<<Self as Iterator>::Item> {
-        #[allow(clippy::iter_nth_zero)]
-        self.nth(0)
-    }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let t = if self.idx + self.back_idx >= NUM_COPY_DATA_TYPES {
-            0
-        } else {
-            NUM_COPY_DATA_TYPES - self.idx - self.back_idx
-        };
-        (t, Some(t))
-    }
-    fn nth(&mut self, n: usize) -> Option<<Self as Iterator>::Item> {
-        let idx = self.idx + n + 1;
-        if idx + self.back_idx > NUM_COPY_DATA_TYPES {
-            self.idx = NUM_COPY_DATA_TYPES;
-            None
-        } else {
-            self.idx = idx;
-            self.get(idx - 1)
-        }
-    }
-}
-impl ExactSizeIterator for CopyDataTypeIter {
-    fn len(&self) -> usize {
-        self.size_hint().0
-    }
-}
-impl DoubleEndedIterator for CopyDataTypeIter {
-    fn next_back(&mut self) -> Option<<Self as Iterator>::Item> {
-        let back_idx = self.back_idx + 1;
-        if self.idx + back_idx > NUM_COPY_DATA_TYPES {
-            self.back_idx = NUM_COPY_DATA_TYPES;
-            None
-        } else {
-            self.back_idx = back_idx;
-            self.get(NUM_COPY_DATA_TYPES - self.back_idx)
-        }
-    }
 }
 
 impl From<CopyDataType> for usize {
@@ -481,3 +367,10 @@ impl Default for ExpEvent {
         }
     }
 }
+
+/// The number of pairing inputs per pairing operation. If the inputs provided to the precompile
+/// call are < 4, we append (G1::infinity, G2::generator) until we have the required no. of inputs.
+pub const N_PAIRING_PER_OP: usize = 4;
+
+/// The number of bytes taken to represent a pair (G1, G2).
+pub const N_BYTES_PER_PAIR: usize = 192;

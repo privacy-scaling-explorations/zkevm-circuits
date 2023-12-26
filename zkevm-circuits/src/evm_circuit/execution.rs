@@ -1,8 +1,8 @@
 use super::{
     param::{
         BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, EXP_TABLE_LOOKUPS,
-        FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
-        N_PHASE1_COLUMNS, POW_OF_RAND_TABLE_LOOKUPS, RW_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS,
+        FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_U16_LOOKUPS,
+        N_U8_LOOKUPS, POW_OF_RAND_TABLE_LOOKUPS, RW_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS,
         TX_TABLE_LOOKUPS,
     },
     step::HasExecutionState,
@@ -340,8 +340,6 @@ pub struct ExecutionConfig<F> {
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
     // precompile calls
     precompile_ecrecover_gadget: Box<EcrecoverGadget<F>>,
-    precompile_sha2_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileSha256 }>>,
-    precompile_ripemd_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileRipemd160 }>>,
     precompile_identity_gadget: Box<IdentityGadget<F>>,
     invalid_tx: Box<InvalidTxGadget<F>>,
 }
@@ -616,6 +614,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_return_data_out_of_bound: configure_gadget!(),
             // precompile calls
             precompile_identity_gadget: configure_gadget!(),
+            precompile_ecrecover_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,

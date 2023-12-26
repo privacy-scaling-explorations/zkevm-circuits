@@ -39,8 +39,12 @@ pub(crate) mod exp_table;
 pub(crate) mod keccak_table;
 /// mpt table
 pub mod mpt_table;
+/// power of random table
+pub(crate) mod pow_of_rand_table;
 /// rw table
 pub(crate) mod rw_table;
+/// signature table
+pub(crate) mod sig_table;
 /// tx table
 pub(crate) mod tx_table;
 /// ux table
@@ -56,7 +60,9 @@ pub use keccak_table::KeccakTable;
 pub(crate) use ux_table::UXTable;
 
 pub use mpt_table::{MPTProofType, MptTable};
+pub(crate) use pow_of_rand_table::PowOfRandTable;
 pub(crate) use rw_table::RwTable;
+pub(crate) use sig_table::SigTable;
 pub(crate) use tx_table::{
     TxContextFieldTag, TxFieldTag, TxLogFieldTag, TxReceiptFieldTag, TxTable,
 };

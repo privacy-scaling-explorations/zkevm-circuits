@@ -21,7 +21,6 @@ use eth_types::{
     evm_types::{
         gas_utils::memory_expansion_gas_cost, GasCost, MemoryAddress, OpcodeId, StackAddress,
     },
-    sign_types::SignData,
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
@@ -1405,11 +1404,6 @@ impl<'a> CircuitInputStateRef<'a> {
         self.block.add_exp_event(event)
     }
 
-    /// Push an ecrecover event to the state.
-    pub fn push_ecrecover(&mut self, event: SignData) {
-        self.block.add_ecrecover_event(event)
-    }
-
     pub(crate) fn get_step_err(
         &self,
         step: &GethExecStep,
@@ -1620,7 +1614,7 @@ impl<'a> CircuitInputStateRef<'a> {
                         PrecompileCalls::Sha256
                         | PrecompileCalls::Ripemd160
                         | PrecompileCalls::Blake2F
-                        | PrecompileCalls::ECRecover
+                        | PrecompileCalls::Ecrecover
                         | PrecompileCalls::Bn128Add
                         | PrecompileCalls::Bn128Mul
                         | PrecompileCalls::Bn128Pairing
