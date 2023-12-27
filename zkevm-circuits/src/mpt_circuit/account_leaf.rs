@@ -748,15 +748,8 @@ mod tests {
         }
 
         impl<F: Field> InnerConfig<F> {
-            fn configure(meta: &mut ConstraintSystem<F>, cb: &mut MPTConstraintBuilder<F>) -> Self {
-                // meta.create_gate("foo", |meta| vec![100.expr()]);
-                meta.create_gate("main", |meta| {
-                    circuit!([meta, cb], {
-                        cb.require_equal("definitely fail", true.expr(), false.expr());
-                    });
-                    cb.base.build_constraints()
-                });
-
+            fn configure(meta: &mut VirtualCells<'_, F>, cb: &mut MPTConstraintBuilder<F>) -> Self {
+                cb.require_equal("definitely fail", true.expr(), false.expr());
                 Self::default()
             }
         }
@@ -783,7 +776,22 @@ mod tests {
                 let challenges = Challenges::construct(meta);
                 let challenges_expr = challenges.exprs(meta);
                 let mut cb = MPTConstraintBuilder::new(5, Some(challenges_expr), None);
-                let config = InnerConfig::configure(meta, &mut cb);
+                let mut config = InnerConfig::default();
+                meta.create_gate("main", |meta: &mut VirtualCells<'_, F>| {
+                    circuit!([meta, cb], {
+                        ifx! {true.expr() =>{
+                                // Question 1: Will code here executed?
+                                println!("The println! runs in the ifx!");
+                                // Question 2: Can the constraints inside ifx activated?
+                                config = InnerConfig::configure(meta, &mut cb);
+                            } elsex {
+                                println!("The println! runs in elsex");
+                            }
+                        };
+                    });
+                    cb.base.build_constraints()
+                });
+
                 (config, challenges)
             }
 
