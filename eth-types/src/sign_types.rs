@@ -44,10 +44,13 @@ pub fn sign(
 /// signature.
 #[derive(Clone, Debug)]
 pub struct SignData {
-    /// Secp256k1 signature point
-    pub signature: (secp256k1::Fq, secp256k1::Fq),
+    /// Secp256k1 signature point (r, s, v)
+    /// v must be 0 or 1
+    pub signature: (secp256k1::Fq, secp256k1::Fq, u8),
     /// Secp256k1 public key
     pub pk: Secp256k1Affine,
+    /// Message being hashed before signing.
+    // pub msg: Bytes,
     /// Hash of the message that is being signed
     pub msg_hash: secp256k1::Fq,
 }
@@ -78,7 +81,7 @@ lazy_static! {
         let (sig_r, sig_s) = sign(randomness, sk, msg_hash);
 
         SignData {
-            signature: (sig_r, sig_s),
+            signature: (sig_r, sig_s, 28),
             pk,
             msg_hash,
         }

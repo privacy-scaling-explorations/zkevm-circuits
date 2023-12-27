@@ -1423,22 +1423,22 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     pub(crate) fn sig_table_lookup(
         &mut self,
-        msg_hash_rlc: Expression<F>,
+        msg_hash: Word<Expression<F>>,
         sig_v: Expression<F>,
-        sig_r_rlc: Expression<F>,
-        sig_s_rlc: Expression<F>,
+        sig_r: Word<Expression<F>>,
+        sig_s: Word<Expression<F>>,
         recovered_addr: Expression<F>,
         is_valid: Expression<F>,
     ) {
         self.add_lookup(
             "sig table",
             Lookup::SigTable {
-                msg_hash_rlc: msg_hash_rlc.expr(),
-                sig_v: sig_v.expr(),
-                sig_r_rlc: sig_r_rlc.expr(),
-                sig_s_rlc: sig_s_rlc.expr(),
-                recovered_addr: recovered_addr.expr(),
-                is_valid: is_valid.expr(),
+                msg_hash,
+                sig_v,
+                sig_r,
+                sig_s,
+                recovered_addr,
+                is_valid,
             },
         );
     }

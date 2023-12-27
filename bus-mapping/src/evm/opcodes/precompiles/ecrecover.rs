@@ -1,10 +1,9 @@
 use eth_types::{
     sign_types::{biguint_to_32bytes_le, recover_pk, SignData, SECP256K1_Q},
-    Bytes, ToBigEndian, ToLittleEndian,
+    ToBigEndian, ToLittleEndian,
 };
-use ethers_core::k256::elliptic_curve::PrimeField;
 use halo2_proofs::halo2curves::{
-    group::prime::PrimeCurveAffine,
+    group::{ff::PrimeField, prime::PrimeCurveAffine},
     secp256k1::{Fq, Secp256k1Affine},
 };
 use num::{BigUint, Integer};
@@ -15,18 +14,11 @@ use crate::{
 };
 
 pub(crate) fn opt_data(
-    input_bytes: Option<Vec<u8>>,
-    output_bytes: Option<Vec<u8>>,
+    input_bytes: &[u8],
+    output_bytes: &[u8],
+    return_bytes: &[u8],
 ) -> (Option<PrecompileEvent>, Option<PrecompileAuxData>) {
-    let input_bytes = input_bytes.map_or(vec![0u8; 128], |mut bytes| {
-        bytes.resize(128, 0u8);
-        bytes
-    });
-    let output_bytes = output_bytes.map_or(vec![0u8; 32], |mut bytes| {
-        bytes.resize(32, 0u8);
-        bytes
-    });
-    let aux_data = EcrecoverAuxData::new(input_bytes, output_bytes);
+    let aux_data = EcrecoverAuxData::new(input_bytes, output_bytes, return_bytes);
 
     // We skip the validation through sig circuit if r or s was not in canonical form.
     let opt_sig_r: Option<Fq> = Fq::from_bytes(&aux_data.sig_r.to_le_bytes()).into();
@@ -50,7 +42,7 @@ pub(crate) fn opt_data(
                 sig_v,
             ),
             pk: recovered_pk,
-            msg: Bytes::default(),
+            // msg: Bytes::default(),
             msg_hash: {
                 let msg_hash = BigUint::from_bytes_be(&aux_data.msg_hash.to_be_bytes());
                 let msg_hash = msg_hash.mod_floor(&*SECP256K1_Q);

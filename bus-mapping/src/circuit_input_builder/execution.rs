@@ -7,7 +7,7 @@ use crate::{
     operation::RWCounter,
     precompile::{PrecompileAuxData, PrecompileCalls},
 };
-use eth_types::{evm_types::OpcodeId, GethExecStep, Word, H256};
+use eth_types::{evm_types::OpcodeId, sign_types::SignData, GethExecStep, Word, H256};
 use gadgets::impl_expr;
 use halo2_proofs::plonk::Expression;
 use strum_macros::EnumIter;
@@ -365,6 +365,43 @@ impl Default for ExpEvent {
                 d: 4.into(),
             }],
         }
+    }
+}
+
+/// I/Os from all precompiled contract calls in a block.
+#[derive(Clone, Debug, Default)]
+pub struct PrecompileEvents {
+    /// All events.
+    pub events: Vec<PrecompileEvent>,
+}
+
+impl PrecompileEvents {
+    /// Get all ecrecover events.
+    pub fn get_ecrecover_events(&self) -> Vec<SignData> {
+        self.events
+            .iter()
+            .filter_map(|e| {
+                if let PrecompileEvent::Ecrecover(sign_data) = e {
+                    Some(sign_data)
+                } else {
+                    None
+                }
+            })
+            .cloned()
+            .collect()
+    }
+}
+
+/// I/O from a precompiled contract call.
+#[derive(Clone, Debug)]
+pub enum PrecompileEvent {
+    /// Represents the I/O from Ecrecover call.
+    Ecrecover(SignData),
+}
+
+impl Default for PrecompileEvent {
+    fn default() -> Self {
+        Self::Ecrecover(SignData::default())
     }
 }
 

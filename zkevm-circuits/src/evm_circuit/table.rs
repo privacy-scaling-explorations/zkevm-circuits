@@ -191,7 +191,9 @@ pub enum Table {
     Keccak,
     /// Lookup for exp table
     Exp,
+    /// Lookup for sig table
     Sig,
+    /// Lookup for power of randomness table
     PowOfRand,
 }
 
@@ -362,10 +364,10 @@ pub(crate) enum Lookup<F> {
         exponentiation_lo_hi: [Expression<F>; 2],
     },
     SigTable {
-        msg_hash_rlc: Expression<F>,
+        msg_hash: Word<Expression<F>>,
         sig_v: Expression<F>,
-        sig_r_rlc: Expression<F>,
-        sig_s_rlc: Expression<F>,
+        sig_r: Word<Expression<F>>,
+        sig_s: Word<Expression<F>>,
         recovered_addr: Expression<F>,
         is_valid: Expression<F>,
     },
@@ -513,18 +515,21 @@ impl<F: Field> Lookup<F> {
                 exponentiation_lo_hi[1].clone(),
             ],
             Self::SigTable {
-                msg_hash_rlc,
+                msg_hash,
                 sig_v,
-                sig_r_rlc,
-                sig_s_rlc,
+                sig_r,
+                sig_s,
                 recovered_addr,
                 is_valid,
             } => vec![
                 1.expr(), // q_enable
-                msg_hash_rlc.clone(),
+                msg_hash.lo(),
+                msg_hash.hi(),
                 sig_v.clone(),
-                sig_r_rlc.clone(),
-                sig_s_rlc.clone(),
+                sig_r.lo(),
+                sig_r.hi(),
+                sig_s.lo(),
+                sig_s.hi(),
                 recovered_addr.clone(),
                 is_valid.clone(),
             ],

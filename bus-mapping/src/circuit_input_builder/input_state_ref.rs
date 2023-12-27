@@ -2,7 +2,7 @@
 
 use super::{
     get_call_memory_offset_length, get_create_init_code, Block, BlockContext, Call, CallContext,
-    CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, Transaction,
+    CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, PrecompileEvent, Transaction,
     TransactionContext,
 };
 use crate::{
@@ -1402,6 +1402,11 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Push a exponentiation event to the state.
     pub fn push_exponentiation(&mut self, event: ExpEvent) {
         self.block.add_exp_event(event)
+    }
+
+    /// Push an event representing auxiliary data for a precompile call to the state.
+    pub fn push_precompile_event(&mut self, event: PrecompileEvent) {
+        self.block.add_precompile_event(event)
     }
 
     pub(crate) fn get_step_err(

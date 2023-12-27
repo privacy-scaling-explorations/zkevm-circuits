@@ -240,24 +240,35 @@ pub struct EcrecoverAuxData {
     pub sig_s: Word,
     /// Address that was recovered.
     pub recovered_addr: Address,
+    /// Input bytes to the ecrecover call.
+    pub input_bytes: Vec<u8>,
+    /// Output bytes from the ecrecover call.
+    pub output_bytes: Vec<u8>,
+    /// Bytes returned to the caller from the ecrecover call.
+    pub return_bytes: Vec<u8>,
 }
 
 impl EcrecoverAuxData {
     /// Create a new instance of ecrecover auxiliary data.
-    pub fn new(input: Vec<u8>, output: Vec<u8>) -> Self {
-        assert_eq!(input.len(), 128);
-        assert_eq!(output.len(), 32);
+    pub fn new(input: &[u8], output: &[u8], return_bytes: &[u8]) -> Self {
+        let mut resized_input = input.to_vec();
+        resized_input.resize(128, 0u8);
+        let mut resized_output = output.to_vec();
+        resized_output.resize(32, 0u8);
 
         // assert that recovered address is 20 bytes.
-        assert!(output[0x00..0x0c].iter().all(|&b| b == 0));
-        let recovered_addr = Address::from_slice(&output[0x0c..0x20]);
+        assert!(resized_output[0x00..0x0c].iter().all(|&b| b == 0));
+        let recovered_addr = Address::from_slice(&resized_output[0x0c..0x20]);
 
         Self {
-            msg_hash: Word::from_big_endian(&input[0x00..0x20]),
-            sig_v: Word::from_big_endian(&input[0x20..0x40]),
-            sig_r: Word::from_big_endian(&input[0x40..0x60]),
-            sig_s: Word::from_big_endian(&input[0x60..0x80]),
+            msg_hash: Word::from_big_endian(&resized_input[0x00..0x20]),
+            sig_v: Word::from_big_endian(&resized_input[0x20..0x40]),
+            sig_r: Word::from_big_endian(&resized_input[0x40..0x60]),
+            sig_s: Word::from_big_endian(&resized_input[0x60..0x80]),
             recovered_addr,
+            input_bytes: input.to_vec(),
+            output_bytes: output.to_vec(),
+            return_bytes: return_bytes.to_vec(),
         }
     }
 
@@ -276,6 +287,15 @@ impl EcrecoverAuxData {
 /// Auxiliary data attached to an internal state for precompile verification.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PrecompileAuxData {
+    /// Base precompile (used for Identity, SHA256, RIPEMD-160 and BLAKE2F).
+    Base {
+        /// input bytes to the identity call.
+        input_bytes: Vec<u8>,
+        /// output bytes from the identity call.
+        output_bytes: Vec<u8>,
+        /// bytes returned back to the caller from the identity call.
+        return_bytes: Vec<u8>,
+    },
     /// Ecrecover.
     Ecrecover(EcrecoverAuxData),
 }

@@ -31,7 +31,7 @@ use eth_types::{
 use ethers_providers::JsonRpcClient;
 pub use execution::{
     CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
-    N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
+    PrecompileEvent, PrecompileEvents, N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
 };
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;

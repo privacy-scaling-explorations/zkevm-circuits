@@ -78,7 +78,7 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub u16_table: UXTable<16>,
     /// SigTable
     pub sig_table: SigTable,
-    // Power of Randomness Table.
+    /// Power of Randomness Table.
     pub pow_of_rand_table: PowOfRandTable,
 }
 
@@ -449,9 +449,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
 
         config.u8_table.load(&mut layouter)?;
         config.u16_table.load(&mut layouter)?;
-        config
-            .sig_table
-            .dev_load(&mut layouter, block, &challenges)?;
+        config.sig_table.dev_load(&mut layouter, block)?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }

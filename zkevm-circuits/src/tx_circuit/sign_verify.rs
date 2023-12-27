@@ -352,7 +352,7 @@ impl<F: Field> SignVerifyChip<F> {
             pk,
             msg_hash,
         } = sign_data;
-        let (sig_r, sig_s) = signature;
+        let (sig_r, sig_s, _) = signature;
 
         let ChipsRef {
             main_gate: _,

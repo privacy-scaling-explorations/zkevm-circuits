@@ -121,25 +121,24 @@ impl Instrument {
 /// Struct which contains a Cost/ColumnType report for a particular EVM
 /// `ExecutionStep`.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct ExecStateReport {
-    pub(crate) state: ExecutionState,
-    pub(crate) storage_1: StateReportRow,
-    pub(crate) storage_2: StateReportRow,
-    pub(crate) storage_perm: StateReportRow,
-    pub(crate) storage_perm_2: StateReportRow,
-    pub(crate) u8_lookup: StateReportRow,
-    pub(crate) u16_lookup: StateReportRow,
-    pub(crate) byte_lookup: StateReportRow,
-    pub(crate) fixed_table: StateReportRow,
-    pub(crate) tx_table: StateReportRow,
-    pub(crate) rw_table: StateReportRow,
-    pub(crate) bytecode_table: StateReportRow,
-    pub(crate) block_table: StateReportRow,
-    pub(crate) copy_table: StateReportRow,
-    pub(crate) keccak_table: StateReportRow,
-    pub(crate) exp_table: StateReportRow,
-    pub(crate) sig_table: StateReportRow,
-    pub(crate) pow_of_rand_table: StateReportRow,
+pub struct ExecStateReport {
+    pub state: ExecutionState,
+    pub storage_1: StateReportRow,
+    pub storage_2: StateReportRow,
+    pub storage_perm: StateReportRow,
+    pub u8_lookup: StateReportRow,
+    pub u16_lookup: StateReportRow,
+    pub byte_lookup: StateReportRow,
+    pub fixed_table: StateReportRow,
+    pub tx_table: StateReportRow,
+    pub rw_table: StateReportRow,
+    pub bytecode_table: StateReportRow,
+    pub block_table: StateReportRow,
+    pub copy_table: StateReportRow,
+    pub keccak_table: StateReportRow,
+    pub exp_table: StateReportRow,
+    pub sig_table: StateReportRow,
+    pub pow_of_rand_table: StateReportRow,
 }
 
 impl From<ExecutionState> for ExecStateReport {
