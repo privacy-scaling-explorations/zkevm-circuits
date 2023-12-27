@@ -17,6 +17,8 @@ mod branch;
 mod extension;
 mod extension_branch;
 mod helpers;
+/// Gadget for modified extension nodes
+pub mod mod_extension;
 mod param;
 mod rlp_gadgets;
 mod start;
@@ -139,7 +141,7 @@ pub struct MPTContext<F: Field> {
 }
 
 /// RLP item type
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum RlpItemType {
     /// Node (string with len == 0 or 32, OR list with len <= 31)
     Node,

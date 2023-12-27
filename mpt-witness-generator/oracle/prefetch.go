@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"math/big"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -88,7 +88,7 @@ func toFilename(key string) string {
 }
 
 func cacheRead(key string) []byte {
-	dat, err := ioutil.ReadFile(toFilename(key))
+	dat, err := os.ReadFile(toFilename(key))
 	if err == nil {
 		return dat
 	}
@@ -101,19 +101,27 @@ func cacheExists(key string) bool {
 }
 
 func cacheWrite(key string, value []byte) {
-	ioutil.WriteFile(toFilename(key), value, 0644)
+	os.WriteFile(toFilename(key), value, 0644)
 }
 
 func getAPI(jsonData []byte) io.Reader {
 	key := hexutil.Encode(crypto.Keccak256(jsonData))
-	/* Note: switching between two testnets (to prepare tests with account in the first level)
-	if cacheExists(key) {
-		return bytes.NewReader(cacheRead(key))
+	var (
+		err     error
+		resp    *http.Response
+		retries int = 3
+	)
+	for retries > 0 {
+		resp, err = http.Post(NodeUrl, "application/json", bytes.NewBuffer(jsonData))
+		if err != nil {
+			retries -= 1
+			time.Sleep(1000)
+		} else {
+			break
+		}
 	}
-	*/
-	resp, _ := http.Post(NodeUrl, "application/json", bytes.NewBuffer(jsonData))
 	defer resp.Body.Close()
-	ret, _ := ioutil.ReadAll(resp.Body)
+	ret, _ := io.ReadAll(resp.Body)
 	cacheWrite(key, ret)
 	return bytes.NewReader(ret)
 }
@@ -239,13 +247,8 @@ func PrefetchBlock(blockNumber *big.Int, startBlock bool, hasher types.TrieHashe
 	r.Params[1] = true
 	jsonData, _ := json.Marshal(r)
 
-	/*dat, _ := ioutil.ReadAll(getAPI(jsonData))
-	fmt.Println(string(dat))*/
-
 	jr := jsonrespt{}
 	check(json.NewDecoder(getAPI(jsonData)).Decode(&jr))
-	//fmt.Println(jr.Result)
-	// blockHeader := types.Header(jr.Result)
 	blockHeader := jr.Result.ToHeader()
 
 	// put in the start block header
@@ -277,7 +280,7 @@ func PrefetchBlock(blockNumber *big.Int, startBlock bool, hasher types.TrieHashe
 		saveinput = append(saveinput, inputs[i].Bytes()[:]...)
 	}
 	key := fmt.Sprintf("/tmp/eth/%d", blockNumber.Uint64()-1)
-	ioutil.WriteFile(key, saveinput, 0644)
+	os.WriteFile(key, saveinput, 0644)
 
 	// save the txs
 	txs := make([]*types.Transaction, len(jr.Result.Transactions))
@@ -308,7 +311,11 @@ func getProofAccount(blockNumber *big.Int, addr common.Address, skey common.Hash
 	json.NewDecoder(getAPI(jsonData)).Decode(&jr)
 
 	if storage {
-		return jr.Result.StorageProof[0].Proof
+		if len(jr.Result.StorageProof) != 0 {
+			return jr.Result.StorageProof[0].Proof
+		} else {
+			return []string{}
+		}
 	} else {
 		return jr.Result.AccountProof
 	}
