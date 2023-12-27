@@ -726,3 +726,84 @@ impl<F: Field> AccountLeafConfig<F> {
         Ok(())
     }
 }
+
+mod tests {
+    use std::marker::PhantomData;
+
+    use crate::util::Challenges;
+
+    use super::*;
+    use gadgets::util::Expr;
+    use halo2_proofs::{
+        circuit::SimpleFloorPlanner,
+        dev::MockProver,
+        halo2curves::bn256::Fr,
+        plonk::{Circuit, ConstraintSystem},
+    };
+    #[test]
+    fn test_ifx() {
+        #[derive(Clone, Default)]
+        struct InnerConfig<F: Field> {
+            _marker: PhantomData<F>,
+        }
+
+        impl<F: Field> InnerConfig<F> {
+            fn configure(meta: &mut ConstraintSystem<F>, cb: &mut MPTConstraintBuilder<F>) -> Self {
+                // meta.create_gate("foo", |meta| vec![100.expr()]);
+                meta.create_gate("main", |meta| {
+                    circuit!([meta, cb], {
+                        cb.require_equal("definitely fail", true.expr(), false.expr());
+                    });
+                    cb.base.build_constraints()
+                });
+
+                Self::default()
+            }
+        }
+        #[derive(Default)]
+        struct DummyParam {}
+
+        #[derive(Default)]
+        struct OutterCircuit<F: Field> {
+            _marker: PhantomData<F>,
+        }
+
+        impl<F: Field> Circuit<F> for OutterCircuit<F> {
+            type Config = (InnerConfig<F>, Challenges);
+
+            type FloorPlanner = SimpleFloorPlanner;
+
+            type Params = DummyParam;
+
+            fn without_witnesses(&self) -> Self {
+                Self::default()
+            }
+
+            fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+                let challenges = Challenges::construct(meta);
+                let challenges_expr = challenges.exprs(meta);
+                let mut cb = MPTConstraintBuilder::new(5, Some(challenges_expr), None);
+                let config = InnerConfig::configure(meta, &mut cb);
+                (config, challenges)
+            }
+
+            fn synthesize(
+                &self,
+                config: Self::Config,
+                layouter: impl halo2_proofs::circuit::Layouter<F>,
+            ) -> Result<(), Error> {
+                Ok(())
+            }
+        }
+
+        let k = 10;
+        let circuit = OutterCircuit::<Fr>::default();
+
+        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+
+        // Question 1: Can the config inside ifx be confugured?
+        assert!(prover.verify().is_err());
+
+        // Question 2: Can the constraints inside ifx activated?
+    }
+}
