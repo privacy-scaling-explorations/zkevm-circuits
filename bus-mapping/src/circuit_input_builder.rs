@@ -378,7 +378,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     }
 
     // TODO Fix this, for current logic on processing `call` is incorrect
-    // TODO re-design `ge_nchunk_associated_steps` to separate RW
+    // TODO re-design `gen_chunk_associated_steps` to separate RW
     fn gen_chunk_associated_steps(&mut self, step: &mut ExecStep, rw: RW) {
         let STEP_STATE_LEN = 10;
         let mut dummy_tx = Transaction::default();
