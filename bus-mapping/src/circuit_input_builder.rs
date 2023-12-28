@@ -191,7 +191,7 @@ pub struct CircuitInputBuilder<C: CircuitsParams> {
     pub circuits_params: C,
 }
 
-impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {    
+impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     /// Create a new CircuitInputBuilder from the given `eth_block` and
     /// `constants`.
     pub fn new(sdb: StateDB, code_db: CodeDB, block: Block, params: C) -> Self {
@@ -292,14 +292,14 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         tx: &'a mut Transaction,
         tx_ctx: &'a mut TransactionContext,
         i_step: Option<(usize, &GethExecStep)>,
-    ) -> Result<(), Error>{
+    ) -> Result<(), Error> {
         // for padding window, consider:
         // | BeginTx Step1 Step2  ...   Stepn  EndTx BeginTx EndChunk | BeginChunk ...
         //          ^     ^     ^ ... ^      ^ _____________
-        //                 checked             not checked 
-        // must reserve padding_window > 10 for begin_tx   
+        //                 checked             not checked
+        // must reserve padding_window > 10 for begin_tx
         if self.chunk_rws() >= self.circuits_params.max_rws() - self.rws_reserve(10) {
-            let mut cib = self.clone(); 
+            let mut cib = self.clone();
             let ops = if let Some((i, step)) = i_step {
                 log::trace!("chunk at {}th opcode {:?} ", i, step.op);
                 gen_associated_ops(
@@ -310,12 +310,12 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             } else {
                 log::trace!("chunk at EndTx");
                 let end_tx_step =
-                   gen_associated_steps(&mut self.state_ref(tx, tx_ctx), ExecState::EndTx)?;
+                    gen_associated_steps(&mut self.state_ref(tx, tx_ctx), ExecState::EndTx)?;
                 vec![end_tx_step]
             };
-            
-           // Dynamic: update param accordding to number of rws actually generated
-           if self.chunk_ctx.is_dynamic {
+
+            // Dynamic: update param accordding to number of rws actually generated
+            if self.chunk_ctx.is_dynamic {
                 self.cur_chunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
             }
             // Generate EndChunk and proceed to the next if it's not the last chunk
@@ -342,7 +342,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     ) -> Result<(), Error> {
         let mut tx = self.new_tx(tx_index, eth_tx, !geth_trace.failed)?;
         let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
-        
+
         // Generate BeginTx step
         let begin_tx_step = gen_associated_steps(
             &mut self.state_ref(&mut tx, &mut tx_ctx),
@@ -350,9 +350,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         )?;
         tx.steps_mut().push(begin_tx_step);
 
-        let mut trace = geth_trace.struct_logs.iter().enumerate().peekable();
-        while let Some((i, geth_step)) = trace.next() {
-
+        for (i, geth_step) in geth_trace.struct_logs.iter().enumerate() {
             if !dry_run {
                 self.check_and_chunk(geth_trace, &mut tx, &mut tx_ctx, Some((i, geth_step)))?;
             }
@@ -363,7 +361,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
                 gen_associated_ops(&geth_step.op, &mut state_ref, &geth_trace.struct_logs[i..])?;
             tx.steps_mut().extend(exec_steps);
         }
-        
+
         if !dry_run {
             self.check_and_chunk(geth_trace, &mut tx, &mut tx_ctx, None)?;
         }
@@ -461,14 +459,14 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     }
 
     fn set_begin_chunk(&mut self, last_step: &ExecStep) {
-                let mut begin_chunk = last_step.clone();
+        let mut begin_chunk = last_step.clone();
         begin_chunk.exec_state = ExecState::BeginChunk;
         self.gen_chunk_associated_steps(&mut begin_chunk, RW::READ);
         self.chunks[self.chunk_ctx.idx].begin_chunk = Some(begin_chunk);
     }
 
     fn set_end_chunk(&mut self, last_step: &ExecStep) {
-                let mut end_chunk = last_step.clone();
+        let mut end_chunk = last_step.clone();
         end_chunk.exec_state = ExecState::EndChunk;
         end_chunk.rwc = self.block_ctx.rwc;
         end_chunk.rwc_inner_chunk = self.chunk_ctx.rwc;
@@ -666,7 +664,7 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
         Ok(())
     }
 
-    fn rws_reserve(&self, padding_window: usize) -> usize {   
+    fn rws_reserve(&self, padding_window: usize) -> usize {
         let end_block_rws = if self.chunk_ctx.is_last_chunk() && self.chunk_rws() > 0 { 1 } else { 0 };
         let end_chunk_rws = if !self.chunk_ctx.is_last_chunk() { 10  } else { 0 };
         padding_window + end_block_rws + end_chunk_rws + 1
@@ -697,7 +695,7 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
             * 2
             + 4; // disabled and unused rows.
 
-        let max_rws = self.chunk_rws() + self.rws_reserve(0); 
+        let max_rws = self.chunk_rws() + self.rws_reserve(0);
 
         // Computing the number of rows for the EVM circuit requires the size of ExecStep,
         // which is determined in the code of zkevm-circuits and cannot be imported here.
