@@ -42,6 +42,16 @@ use std::{
 pub use transaction::{Transaction, TransactionContext};
 pub use withdrawal::{Withdrawal, WithdrawalContext};
 
+
+/// Runtime Config
+#[derive(Debug, Clone, Copy)]
+pub struct FeatureConfig {
+    zero_difficulty: bool,
+    free_first_tx: bool,
+    enable_eip1559: bool,
+    invalid_tx: bool,
+}
+
 /// Circuit Setup Parameters
 #[derive(Debug, Clone, Copy)]
 pub struct FixedCParams {
