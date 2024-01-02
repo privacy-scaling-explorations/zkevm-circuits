@@ -86,9 +86,13 @@ struct Row {
     opcode: OpcodeId,
     #[table(title = "Height", justify = "Justify::Right")]
     height: usize,
-    #[table(title = "Gas Cost", justify = "Justify::Right")]
+    #[table(title = "Const Gas Cost", justify = "Justify::Right")]
     gas_cost: u64,
-    #[table(title = "Height per Gas", justify = "Justify::Right")]
+    #[table(title = "Dynamic Gas Cost", justify = "Justify::Right")]
+    dynamic_gas_cost: u64,
+    #[table(title = "Height per dynamic Gas", justify = "Justify::Right")]
+    height_per_dynamic_gas: PrettyF64,
+    #[table(title = "Height per const Gas", justify = "Justify::Right")]
     height_per_gas: PrettyF64,
 }
 
@@ -213,13 +217,17 @@ pub(crate) fn print_circuit_stats_by_states(
             // in the geth trace.
             let geth_step = &block.geth_traces[0].struct_logs[step_index - 1];
             assert_eq!(opcode, geth_step.op);
-            let gas_cost = geth_step.gas_cost;
+
+            let dynamic_gas_cost = geth_step.gas_cost;
+            let gas_cost = opcode.constant_gas_cost();
             rows.push(Row {
                 state,
                 opcode,
                 height,
+                dynamic_gas_cost,
                 gas_cost,
                 height_per_gas: (height as f64 / gas_cost as f64).into(),
+                height_per_dynamic_gas: (height as f64 / dynamic_gas_cost as f64).into(),
             });
         }
     }
