@@ -145,7 +145,8 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 }
 
 impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
-    fn build_block(&self) -> Result<Block<Fr>, CircuitTestError> {
+    /// build block
+    pub fn build_block(&self) -> Result<Block<Fr>, CircuitTestError> {
         if let Some(block) = &self.block {
             // If a block is specified, no need to modify the block
             return Ok(block.clone());

@@ -1081,7 +1081,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // Call context
-
     pub(crate) fn call_context(
         &mut self,
         call_id: Option<Expression<F>>,
@@ -1119,6 +1118,32 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_lookup(
             "CallContext lookup",
             0.expr(),
+            Target::CallContext,
+            RwValues::new(
+                call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
+                0.expr(),
+                field_tag.expr(),
+                Word::zero(),
+                value,
+                Word::zero(),
+                Word::zero(),
+            ),
+        );
+    }
+
+    // same as call_context_lookup_write with bypassing external rwc
+    // Note: will not bumping internal rwc
+    pub(crate) fn call_context_lookup_write_with_counter(
+        &mut self,
+        rw_counter: Expression<F>,
+        call_id: Option<Expression<F>>,
+        field_tag: CallContextFieldTag,
+        value: Word<Expression<F>>,
+    ) {
+        self.rw_lookup_with_counter(
+            "CallContext lookup",
+            rw_counter,
+            1.expr(),
             Target::CallContext,
             RwValues::new(
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
