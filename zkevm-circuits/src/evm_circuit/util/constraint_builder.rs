@@ -1081,7 +1081,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // Call context
-
     pub(crate) fn call_context(
         &mut self,
         call_id: Option<Expression<F>>,
@@ -1132,6 +1131,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
+    // same as call_context_lookup_write with bypassing external rwc
+    // Note: will not bumping internal rwc
     pub(crate) fn call_context_lookup_write_with_counter(
         &mut self,
         rw_counter: Expression<F>,

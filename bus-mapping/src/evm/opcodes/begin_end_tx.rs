@@ -343,10 +343,6 @@ pub(crate) fn end_tx(
     // Write the tx receipt
     write_tx_receipt(state, exec_step, call.is_persistent)?;
 
-    // Write the next transaction id if we're not at the last tx
-    if !state.tx_ctx.is_last_tx() {
-        // do nothing. as the txid lookup will share the same rwc and txid with next step
-    }
     Ok(())
 }
 
