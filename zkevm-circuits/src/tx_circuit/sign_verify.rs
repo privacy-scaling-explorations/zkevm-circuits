@@ -841,7 +841,7 @@ mod sign_verify_tests {
         rng: impl RngCore,
         sk: secp256k1::Fq,
         msg_hash: secp256k1::Fq,
-    ) -> (secp256k1::Fq, secp256k1::Fq) {
+    ) -> (secp256k1::Fq, secp256k1::Fq, u8) {
         let randomness = secp256k1::Fq::random(rng);
         sign(randomness, sk, msg_hash)
     }

@@ -214,6 +214,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // whether the call is to a precompiled contract.
         // precompile contracts are stored from address 0x01 to 0x09.
         let is_code_address_zero = IsZeroGadget::construct(cb, call_gadget.callee_address.expr());
+        // FIXME try to remove 0x0A
         let is_precompile_lt =
             LtGadget::construct(cb, call_gadget.callee_address.expr(), 0x0A.expr());
         let is_precompile = and::expr([

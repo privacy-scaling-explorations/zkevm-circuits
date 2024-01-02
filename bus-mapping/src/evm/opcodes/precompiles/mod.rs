@@ -28,6 +28,14 @@ pub fn gen_associated_ops(
 
     let (opt_event, aux_data) = match precompile {
         PrecompileCalls::Ecrecover => opt_data_ecrecover(input_bytes, output_bytes, return_bytes),
+        PrecompileCalls::Identity => (
+            None,
+            Some(PrecompileAuxData::Base {
+                input_bytes: input_bytes.to_vec(),
+                output_bytes: output_bytes.to_vec(),
+                return_bytes: return_bytes.to_vec(),
+            }),
+        ),
         _ => {
             log::warn!("precompile {:?} unsupported in circuits", precompile);
             (

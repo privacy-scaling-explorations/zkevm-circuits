@@ -42,7 +42,6 @@ pub(crate) fn opt_data(
                 sig_v,
             ),
             pk: recovered_pk,
-            // msg: Bytes::default(),
             msg_hash: {
                 let msg_hash = BigUint::from_bytes_be(&aux_data.msg_hash.to_be_bytes());
                 let msg_hash = msg_hash.mod_floor(&*SECP256K1_Q);

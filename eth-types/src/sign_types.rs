@@ -20,7 +20,7 @@ pub fn sign(
     randomness: secp256k1::Fq,
     sk: secp256k1::Fq,
     msg_hash: secp256k1::Fq,
-) -> (secp256k1::Fq, secp256k1::Fq) {
+) -> (secp256k1::Fq, secp256k1::Fq, u8) {
     let randomness_inv =
         Option::<secp256k1::Fq>::from(randomness.invert()).expect("cannot invert randomness");
     let generator = Secp256k1Affine::generator();
@@ -37,7 +37,8 @@ pub fn sign(
 
     let sig_r = secp256k1::Fq::from_uniform_bytes(&x_bytes); // get x coordinate (E::Base) on E::Scalar
     let sig_s = randomness_inv * (msg_hash + sig_r * sk);
-    (sig_r, sig_s)
+    let sig_v = sig_point.to_affine().y.is_odd().unwrap_u8();
+    (sig_r, sig_s, sig_v)
 }
 
 /// Signature data required by the SignVerify Chip as input to verify a
@@ -49,8 +50,6 @@ pub struct SignData {
     pub signature: (secp256k1::Fq, secp256k1::Fq, u8),
     /// Secp256k1 public key
     pub pk: Secp256k1Affine,
-    /// Message being hashed before signing.
-    // pub msg: Bytes,
     /// Hash of the message that is being signed
     pub msg_hash: secp256k1::Fq,
 }
@@ -61,12 +60,8 @@ impl SignData {
         if self.pk == Secp256k1Affine::identity() {
             return Address::zero();
         }
-        let pk_le = pk_bytes_le(&self.pk);
-        let pk_be = pk_bytes_swap_endianness(&pk_le);
-        let pk_hash = keccak256(pk_be);
-        let mut addr_bytes = [0u8; 20];
-        addr_bytes.copy_from_slice(&pk_hash[12..]);
-        Address::from_slice(&addr_bytes)
+        let pk_hash = keccak256(pk_bytes_swap_endianness(&pk_bytes_le(&self.pk)));
+        Address::from_slice(&pk_hash[12..])
     }
 }
 
@@ -78,10 +73,10 @@ lazy_static! {
         let pk = pk.to_affine();
         let msg_hash = secp256k1::Fq::ONE;
         let randomness = secp256k1::Fq::ONE;
-        let (sig_r, sig_s) = sign(randomness, sk, msg_hash);
+        let (sig_r, sig_s, sig_v) = sign(randomness, sk, msg_hash);
 
         SignData {
-            signature: (sig_r, sig_s, 28),
+            signature: (sig_r, sig_s, sig_v),
             pk,
             msg_hash,
         }

@@ -1419,8 +1419,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
-    // Sig Table
-
+    /// Sig Table
     pub(crate) fn sig_table_lookup(
         &mut self,
         msg_hash: Word<Expression<F>>,
