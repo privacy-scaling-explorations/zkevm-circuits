@@ -42,9 +42,9 @@ futures = "0.3.28"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", features=["circuit-params"], branch = "feat/serde_vk", default-features=false }
-ethers-core = { version = "2.0.7", default-features = false }
 
 [dependencies]
+ethers-core = { version = "2.0.7", default-features = false }
 halo2curves = { git = 'https://github.com/privacy-scaling-explorations/halo2curves', tag = "0.3.2", features=["derive_serde"]}
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["arbitrary_precision"] }

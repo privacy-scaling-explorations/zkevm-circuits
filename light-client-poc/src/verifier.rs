@@ -1,5 +1,5 @@
 use base64::prelude::*;
-use ethers::types::{Address, H256, U256};
+use ethers_core::types::{Address, H256, U256};
 use eyre::Result;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr, G1Affine},
@@ -149,7 +149,7 @@ impl InitialStateCircuitVerifierData {
             bytes.append(&mut h(m.key));
         }
 
-        let hash = ethers::utils::keccak256(bytes);
+        let hash = ethers_core::utils::keccak256(bytes);
 
         H256::from_slice(&hash)
     }
