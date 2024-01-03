@@ -12,12 +12,12 @@ use crate::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             from_bytes,
-            math_gadget::{IsEqualGadget, IsZeroGadget, IsZeroWordGadget, LtWordGadget},
+            math_gadget::{IsEqualGadget, IsZeroGadget, IsZeroWordGadget, LtWordGadget, ModGadget},
             CachedRegion, Cell,
         },
     },
     table::CallContextFieldTag,
-    util::word::{Word, WordCell, WordExpr},
+    util::word::{Word, Word32Cell, WordCell, WordExpr, WordLimbs},
     witness::{Block, Call, ExecStep, Transaction},
 };
 
@@ -26,16 +26,18 @@ pub struct EcrecoverGadget<F> {
     is_recovered: Cell<F>,
     recovered_addr: Cell<F>,
 
-    fq_modulus: WordCell<F>,
-    msg_hash: WordCell<F>,
-    sig_r: WordCell<F>,
-    sig_s: WordCell<F>,
+    fq_modulus: Word32Cell<F>,
+    msg_hash: Word32Cell<F>,
+    msg_hash_raw: Word32Cell<F>,
+    msg_hash_mod: ModGadget<F>,
+    sig_r: Word32Cell<F>,
+    sig_s: Word32Cell<F>,
     sig_v: WordCell<F>,
 
     sig_r_canonical: LtWordGadget<F>,
     sig_s_canonical: LtWordGadget<F>,
-    is_zero_sig_r: IsZeroWordGadget<F, WordCell<F>>,
-    is_zero_sig_s: IsZeroWordGadget<F, WordCell<F>>,
+    is_zero_sig_r: IsZeroWordGadget<F, Word32Cell<F>>,
+    is_zero_sig_s: IsZeroWordGadget<F, Word32Cell<F>>,
 
     is_zero_sig_v_hi: IsZeroGadget<F>,
     is_sig_v_27: IsEqualGadget<F>,
@@ -44,10 +46,6 @@ pub struct EcrecoverGadget<F> {
     is_success: Cell<F>,
     callee_address: Cell<F>,
     caller_id: Cell<F>,
-    // call_data_offset: Cell<F>,
-    // call_data_length: Cell<F>,
-    // return_data_offset: Cell<F>,
-    // return_data_length: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 }
 
@@ -59,16 +57,31 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         let is_recovered = cb.query_bool();
         let recovered_addr = cb.query_cell();
 
-        let fq_modulus = cb.query_word_unchecked();
-        let msg_hash = cb.query_word_unchecked();
-        let sig_r = cb.query_word_unchecked();
-        let sig_s = cb.query_word_unchecked();
+        let fq_modulus = cb.query_word32();
+        let msg_hash = cb.query_word32();
+        let msg_hash_raw = cb.query_word32();
+        let sig_r = cb.query_word32();
+        let sig_s = cb.query_word32();
         let sig_v = cb.query_word_unchecked();
+
+        let msg_hash_mod = ModGadget::construct(cb, [&msg_hash_raw, &fq_modulus, &msg_hash]);
 
         // verify sig_r and sig_s
         // the range is 0 < sig_r/sig_s < Fq::MODULUS
-        let sig_r_canonical = LtWordGadget::construct(cb, &sig_r.to_word(), &fq_modulus.to_word());
-        let sig_s_canonical = LtWordGadget::construct(cb, &sig_s.to_word(), &fq_modulus.to_word());
+        let mut sig_r_be = sig_r.limbs.clone();
+        let mut sig_s_be = sig_s.limbs.clone();
+        sig_r_be.reverse();
+        sig_s_be.reverse();
+        let sig_r_canonical = LtWordGadget::construct(
+            cb,
+            &WordLimbs::new(sig_r_be.clone()).to_word(),
+            &fq_modulus.to_word(),
+        );
+        let sig_s_canonical = LtWordGadget::construct(
+            cb,
+            &WordLimbs::new(sig_s_be.clone()).to_word(),
+            &fq_modulus.to_word(),
+        );
         let is_zero_sig_r = IsZeroWordGadget::construct(cb, &sig_r);
         let is_zero_sig_s = IsZeroWordGadget::construct(cb, &sig_s);
         let is_valid_r_s = and::expr([
@@ -96,10 +109,13 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         for (field_tag, value) in [
             (CallContextFieldTag::CallDataOffset, 0.expr()),
             (CallContextFieldTag::CallDataLength, 128.expr()),
-            (CallContextFieldTag::ReturnDataOffset, 128.expr()),
+            (
+                CallContextFieldTag::ReturnDataOffset,
+                select::expr(is_recovered.expr(), 128.expr(), 0.expr()),
+            ),
             (
                 CallContextFieldTag::ReturnDataLength,
-                select::expr(is_success.expr(), 32.expr(), 0.expr()),
+                select::expr(is_recovered.expr(), 32.expr(), 0.expr()),
             ),
         ] {
             cb.call_context_lookup_read(None, field_tag, Word::from_lo_unchecked(value));
@@ -113,10 +129,13 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
 
         // lookup to the sign_verify table:
         let is_valid_sig = and::expr([is_valid_r_s.expr(), is_valid_sig_v.expr()]);
+        let mut msg_hash_le = msg_hash.limbs.clone();
+        msg_hash_le.reverse();
+
         cb.condition(is_valid_sig.expr(), |cb| {
             cb.sig_table_lookup(
-                msg_hash.to_word(),
-                sig_v.limbs[0].expr() - 27.expr(),
+                WordLimbs::new(msg_hash_le).to_word(),
+                sig_v.lo().expr() - 27.expr(),
                 sig_r.to_word(),
                 sig_s.to_word(),
                 select::expr(is_recovered.expr(), recovered_addr.expr(), 0.expr()),
@@ -149,7 +168,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             gas_cost.expr(),
             0.expr(),
             0.expr(),
-            select::expr(is_success.expr(), 32.expr(), 0.expr()),
+            select::expr(is_recovered.expr(), 32.expr(), 0.expr()),
             0.expr(),
             0.expr(),
         );
@@ -160,6 +179,8 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             fq_modulus,
 
             msg_hash,
+            msg_hash_raw,
+            msg_hash_mod,
             sig_r,
             sig_s,
             sig_v,
@@ -175,10 +196,6 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             is_success,
             callee_address,
             caller_id,
-            // call_data_offset,
-            // call_data_length,
-            // return_data_offset,
-            // return_data_length,
             restore_context,
         }
     }
@@ -203,42 +220,45 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                 offset,
                 Value::known(from_bytes::value(&recovered_addr)),
             )?;
+            self.fq_modulus
+                .assign_u256(region, offset, word!(Fq::MODULUS))?;
 
             let sig_r = U256::from(aux_data.sig_r.to_le_bytes());
             let sig_s = U256::from(aux_data.sig_s.to_le_bytes());
-            let msg_hash = U256::from(aux_data.msg_hash.to_le_bytes());
-            self.msg_hash.assign_u256(region, offset, msg_hash)?;
             self.sig_v.assign_u256(region, offset, aux_data.sig_v)?;
             self.sig_r.assign_u256(region, offset, sig_r)?;
             self.sig_s.assign_u256(region, offset, sig_s)?;
 
-            self.fq_modulus
-                .assign_u256(region, offset, word!(Fq::MODULUS))?;
+            // println!("*** {:?}", hex::encode(aux_data.msg_hash.to_le_bytes()));
+            // let msg_hash = U256::from(aux_data.msg_hash.to_le_bytes());
+            let (quotient, remainder) = aux_data.msg_hash.div_mod(word!(Fq::MODULUS));
+
+            self.msg_hash_raw
+                .assign_u256(region, offset, aux_data.msg_hash)?;
+            self.msg_hash.assign_u256(region, offset, remainder)?;
+            self.msg_hash_mod.assign(
+                region,
+                offset,
+                aux_data.msg_hash,
+                word!(Fq::MODULUS),
+                remainder,
+                quotient,
+            )?;
 
             self.sig_r_canonical
-                .assign(region, offset, sig_r, word!(Fq::MODULUS))?;
+                .assign(region, offset, aux_data.sig_r, word!(Fq::MODULUS))?;
             self.sig_s_canonical
-                .assign(region, offset, sig_s, word!(Fq::MODULUS))?;
+                .assign(region, offset, aux_data.sig_s, word!(Fq::MODULUS))?;
             self.is_zero_sig_r.assign_u256(region, offset, sig_r)?;
             self.is_zero_sig_s.assign_u256(region, offset, sig_s)?;
 
-            self.is_zero_sig_v_hi.assign(
-                region,
-                offset,
-                from_bytes::value(&aux_data.sig_v.to_le_bytes()[16..31]),
-            )?;
-            self.is_sig_v_27.assign(
-                region,
-                offset,
-                F::from(aux_data.sig_v.to_le_bytes()[0] as u64),
-                F::from(27),
-            )?;
-            self.is_sig_v_28.assign(
-                region,
-                offset,
-                F::from(aux_data.sig_v.to_le_bytes()[0] as u64),
-                F::from(28),
-            )?;
+            let sig_v_bytes = aux_data.sig_v.to_le_bytes();
+            self.is_zero_sig_v_hi
+                .assign(region, offset, from_bytes::value(&sig_v_bytes[16..]))?;
+            self.is_sig_v_27
+                .assign(region, offset, F::from(sig_v_bytes[0] as u64), F::from(27))?;
+            self.is_sig_v_28
+                .assign(region, offset, F::from(sig_v_bytes[0] as u64), F::from(28))?;
         }
 
         self.is_success.assign(
@@ -256,26 +276,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         )?;
         self.caller_id
             .assign(region, offset, Value::known(F::from(call.caller_id as u64)))?;
-        // self.call_data_offset.assign(
-        //     region,
-        //     offset,
-        //     Value::known(F::from(call.call_data_offset)),
-        // )?;
-        // self.call_data_length.assign(
-        //     region,
-        //     offset,
-        //     Value::known(F::from(call.call_data_length)),
-        // )?;
-        // self.return_data_offset.assign(
-        //     region,
-        //     offset,
-        //     Value::known(F::from(call.return_data_offset)),
-        // )?;
-        // self.return_data_length.assign(
-        //     region,
-        //     offset,
-        //     Value::known(F::from(call.return_data_length)),
-        // )?;
+
         self.restore_context
             .assign(region, offset, block, call, step, 7)
     }
@@ -296,37 +297,6 @@ mod test {
     lazy_static::lazy_static! {
         static ref TEST_VECTOR: Vec<PrecompileCallArgs> = {
             vec![
-                // PrecompileCallArgs {
-                //     name: "ecrecover (padded bytes, addr recovered)",
-                //     setup_code: bytecode! {
-                //         // msg hash from 0x00
-                //         PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
-                //         PUSH1(0x00)
-                //         MSTORE
-                //         // signature v from 0x20
-                //         PUSH1(28)
-                //         PUSH1(0x20)
-                //         MSTORE
-                //         // signature r from 0x40
-                //         PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"))
-                //         PUSH1(0x40)
-                //         MSTORE
-                //         // signature s from 0x60
-                //         PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
-                //         PUSH1(0x60)
-                //         MSTORE
-                //     },
-                //     // copy 101 bytes from memory addr 0. This should be sufficient to recover an
-                //     // address, but the signature is invalid (ecrecover does not care about this
-                //     // though)
-                //     call_data_offset: 0x00.into(),
-                //     call_data_length: 0x65.into(),
-                //     // return 32 bytes and write from memory addr 128
-                //     ret_offset: 0x80.into(),
-                //     ret_size: 0x20.into(),
-                //     address: PrecompileCalls::Ecrecover.address().to_word(),
-                //     ..Default::default()
-                // },
                 PrecompileCallArgs {
                     name: "ecrecover (valid sig, addr recovered)",
                     setup_code: bytecode! {
@@ -357,37 +327,7 @@ mod test {
                     address: PrecompileCalls::Ecrecover.address().to_word(),
                     ..Default::default()
                 },
-                /*
-                PrecompileCallArgs {
-                    name: "ecrecover (valid sig, addr recovered, extra input bytes)",
-                    setup_code: bytecode! {
-                        // msg hash from 0x00
-                        PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
-                        PUSH1(0x00)
-                        MSTORE
-                        // signature v from 0x20
-                        PUSH1(28)
-                        PUSH1(0x20)
-                        MSTORE
-                        // signature r from 0x40
-                        PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"))
-                        PUSH1(0x40)
-                        MSTORE
-                        // signature s from 0x60
-                        PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
-                        PUSH1(0x60)
-                        MSTORE
-                    },
-                    // copy 133 bytes from memory addr 0. Address is recovered and the signature is
-                    // valid. The 5 bytes after the first 128 bytes are ignored.
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x85.into(),
-                    // return 32 bytes and write from memory addr 128
-                    ret_offset: 0x80.into(),
-                    ret_size: 0x20.into(),
-                    address: PrecompileCalls::Ecrecover.address().to_word(),
-                    ..Default::default()
-                },
+
                 PrecompileCallArgs {
                     name: "ecrecover (overflowing msg_hash)",
                     setup_code: bytecode! {
@@ -415,8 +355,9 @@ mod test {
                     address: PrecompileCalls::Ecrecover.address().to_word(),
                     ..Default::default()
                 },
+
                 PrecompileCallArgs {
-                    name: "ecrecover (overflowing sig_r)",
+                    name: "ecrecover (invalid overflowing sig_r)",
                     setup_code: bytecode! {
                         // msg hash from 0x00
                         PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
@@ -437,13 +378,14 @@ mod test {
                     },
                     call_data_offset: 0x00.into(),
                     call_data_length: 0x80.into(),
-                    ret_offset: 0x80.into(),
-                    ret_size: 0x20.into(),
+                    ret_offset: 0x00.into(),
+                    ret_size: 0x00.into(),
                     address: PrecompileCalls::Ecrecover.address().to_word(),
                     ..Default::default()
                 },
+
                 PrecompileCallArgs {
-                    name: "ecrecover (overflowing sig_s)",
+                    name: "ecrecover (invalid overflowing sig_s)",
                     setup_code: bytecode! {
                         // msg hash from 0x00
                         PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
@@ -464,11 +406,12 @@ mod test {
                     },
                     call_data_offset: 0x00.into(),
                     call_data_length: 0x80.into(),
-                    ret_offset: 0x80.into(),
-                    ret_size: 0x20.into(),
+                    ret_offset: 0x00.into(),
+                    ret_size: 0x00.into(),
                     address: PrecompileCalls::Ecrecover.address().to_word(),
                     ..Default::default()
                 },
+
                 PrecompileCallArgs {
                     name: "ecrecover (invalid v > 28, single byte)",
                     setup_code: bytecode! {
@@ -491,11 +434,12 @@ mod test {
                     },
                     call_data_offset: 0x00.into(),
                     call_data_length: 0x80.into(),
-                    ret_offset: 0x80.into(),
-                    ret_size: 0x20.into(),
+                    ret_offset: 0x00.into(),
+                    ret_size: 0x00.into(),
                     address: PrecompileCalls::Ecrecover.address().to_word(),
                     ..Default::default()
                 },
+
                 PrecompileCallArgs {
                     name: "ecrecover (invalid v < 27, single byte)",
                     setup_code: bytecode! {
@@ -518,8 +462,8 @@ mod test {
                     },
                     call_data_offset: 0x00.into(),
                     call_data_length: 0x80.into(),
-                    ret_offset: 0x80.into(),
-                    ret_size: 0x20.into(),
+                    ret_offset: 0x00.into(),
+                    ret_size: 0x00.into(),
                     address: PrecompileCalls::Ecrecover.address().to_word(),
                     ..Default::default()
                 },
@@ -545,39 +489,13 @@ mod test {
                     },
                     call_data_offset: 0x00.into(),
                     call_data_length: 0x80.into(),
-                    ret_offset: 0x80.into(),
-                    ret_size: 0x20.into(),
+                    ret_offset: 0x00.into(),
+                    ret_size: 0x00.into(),
                     address: PrecompileCalls::Ecrecover.address().to_word(),
                     ..Default::default()
                 },
-                PrecompileCallArgs {
-                    name: "ecrecover (v == 1)",
-                    setup_code: bytecode! {
-                        // msg hash from 0x00
-                        PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
-                        PUSH1(0x00)
-                        MSTORE
-                        // signature v from 0x20
-                        PUSH1(0x01)
-                        PUSH1(0x20)
-                        MSTORE
-                        // signature r from 0x40
-                        PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"))
-                        PUSH1(0x40)
-                        MSTORE
-                        // signature s from 0x60
-                        PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
-                        PUSH1(0x60)
-                        MSTORE
-                    },
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x80.into(),
-                    ret_offset: 0x80.into(),
-                    ret_size: 0x20.into(),
-                    address: PrecompileCalls::Ecrecover.address().to_word(),
-                    ..Default::default()
-                },
-                */
+
+
             ]
         };
     }
