@@ -11,9 +11,7 @@ use gadgets::{
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::Fr,
-    plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance, Selector,
-    },
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance, Selector},
     poly::Rotation,
 };
 
@@ -23,9 +21,7 @@ use zkevm_circuits::{
     util::{word, Challenges},
 };
 
-use crate::witness::{
-    FieldTrieModification, FieldTrieModifications, Transforms, Witness,
-};
+use crate::witness::{FieldTrieModification, FieldTrieModifications, Transforms, Witness};
 
 #[cfg(not(feature = "disable-keccak"))]
 use zkevm_circuits::{

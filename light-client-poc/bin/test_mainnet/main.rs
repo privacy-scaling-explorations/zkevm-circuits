@@ -1,4 +1,4 @@
-use std::{process::Command, thread, time::Duration, net::TcpListener};
+use std::{net::TcpListener, process::Command, thread, time::Duration};
 
 use ethers::{prelude::*, types::transaction::eip2930::AccessList};
 use eyre::Result;
@@ -43,13 +43,7 @@ async fn mock_prove(
 
 async fn run_107() -> Result<()> {
     let max_proof_count = 30;
-    let circuit = mock_prove(
-        107,
-        include_str!("al/107.json"),
-        16,
-        max_proof_count,
-    )
-    .await?;
+    let circuit = mock_prove(107, include_str!("al/107.json"), 16, max_proof_count).await?;
 
     circuit.assert_real_prover()?;
 
@@ -58,20 +52,8 @@ async fn run_107() -> Result<()> {
 
 async fn run_tests() -> Result<()> {
     let max_proof_count = 30;
-    mock_prove(
-        436875,
-        include_str!("al/436875.json"),
-        16,
-        max_proof_count,
-    )
-    .await?;
-    mock_prove(
-        107,
-        include_str!("al/107.json"),
-        16,
-        max_proof_count,
-    )
-    .await?;
+    mock_prove(436875, include_str!("al/436875.json"), 16, max_proof_count).await?;
+    mock_prove(107, include_str!("al/107.json"), 16, max_proof_count).await?;
     mock_prove(
         2000007,
         include_str!("al/2000007.json"),
@@ -133,7 +115,6 @@ async fn run_tests() -> Result<()> {
 }
 
 async fn start_web3_proxy() -> Result<()> {
-
     let result = Command::new("cargo")
         .arg("build")
         .arg("--bin")
@@ -156,7 +137,6 @@ async fn start_web3_proxy() -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-
     match TcpListener::bind(("127.0.0.1", 3000)) {
         Ok(_) => (),
         Err(_) => start_web3_proxy().await?,
@@ -164,7 +144,7 @@ async fn main() -> Result<()> {
 
     run_107().await?;
 
-    return Ok(());
+    // return Ok(());
 
     run_tests().await.unwrap();
 

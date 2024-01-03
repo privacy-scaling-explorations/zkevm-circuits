@@ -13,7 +13,7 @@ use halo2_proofs::{
 #[derive(Clone, Debug)]
 pub struct Countdown<F: Field> {
     count: Column<Advice>,
-    is_zero_expr : Expression<F>,
+    is_zero_expr: Expression<F>,
     count_is_zero: IsZeroChip<F>,
     count_propagate: IsZeroChip<F>,
     count_decrement: IsZeroChip<F>,
@@ -70,18 +70,21 @@ impl<F: Field> Countdown<F> {
 
         Self {
             count,
-            is_zero_expr : count_is_zero.expr(),
-            count_is_zero : IsZeroChip::construct(count_is_zero),
-            count_propagate : IsZeroChip::construct(count_propagate),
-            count_decrement : IsZeroChip::construct(count_decrement),
+            is_zero_expr: count_is_zero.expr(),
+            count_is_zero: IsZeroChip::construct(count_is_zero),
+            count_propagate: IsZeroChip::construct(count_propagate),
+            count_decrement: IsZeroChip::construct(count_decrement),
         }
     }
 
     pub fn annotate_columns_in_region(&self, region: &mut Region<'_, F>, prefix: &str) {
         region.name_column(|| format!("{}_countdown", prefix), self.count);
-        self.count_is_zero.annotate_columns_in_region(region, "count_is_zero");
-        self.count_propagate.annotate_columns_in_region(region, "count_propagate");
-        self.count_decrement.annotate_columns_in_region(region, "count_decrement");
+        self.count_is_zero
+            .annotate_columns_in_region(region, "count_is_zero");
+        self.count_propagate
+            .annotate_columns_in_region(region, "count_propagate");
+        self.count_decrement
+            .annotate_columns_in_region(region, "count_decrement");
     }
 
     pub fn is_zero(&self) -> Expression<F> {
@@ -96,11 +99,12 @@ impl<F: Field> Countdown<F> {
         next_count: F,
         last: bool,
     ) -> Result<(), Error> {
-
         region.assign_advice(|| "count", self.count, offset, || Value::known(curr_count))?;
 
-        self.count_is_zero.assign(region, offset, Value::known(curr_count))?;
-        self.count_propagate.assign(region, offset, Value::known(curr_count - next_count))?;
+        self.count_is_zero
+            .assign(region, offset, Value::known(curr_count))?;
+        self.count_propagate
+            .assign(region, offset, Value::known(curr_count - next_count))?;
         self.count_decrement.assign(
             region,
             offset,
@@ -108,10 +112,14 @@ impl<F: Field> Countdown<F> {
         )?;
 
         if last {
-            region.assign_advice(|| "count", self.count, offset+1, || Value::known(next_count))?;
+            region.assign_advice(
+                || "count",
+                self.count,
+                offset + 1,
+                || Value::known(next_count),
+            )?;
         }
 
         Ok(())
     }
-
 }

@@ -15,7 +15,7 @@ use std::{
     collections::HashMap,
     convert::Infallible,
     fs::File,
-    io::{prelude::*, Read, Write},
+    io::{Read, Write},
 };
 
 pub const CACHE_URL: &str = "http://localhost:3000";

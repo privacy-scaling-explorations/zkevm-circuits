@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 use std::collections::BTreeMap;
 
 use eth_types::Field;
@@ -12,9 +14,9 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use super::{xnif, countdown::Countdown};
+use super::{countdown::Countdown, xnif};
 
-///*
+/// *
 ///  This circuit takes a list of values and their lengths
 ///  and returns
 ///     - an AssignedCell with the rlc of the first `values_to_accumulate` values
@@ -23,7 +25,7 @@ use super::{xnif, countdown::Countdown};
 ///  Some restrictions
 ///     - the length of the values must be fixed per circuit
 ///
-///*
+/// *
 
 #[derive(Clone)]
 pub struct FixedRlcConfig<F: Field> {
@@ -42,7 +44,7 @@ pub struct FixedRlcConfig<F: Field> {
     rlc_check_config: BTreeMap<usize, IsZeroConfig<F>>,
 
     // count
-    countdown: Countdown<F>
+    countdown: Countdown<F>,
 }
 
 impl<F: Field> FixedRlcConfig<F> {
@@ -194,10 +196,10 @@ impl<F: Field> FixedRlcConfig<F> {
         let ret = layouter.assign_region(
             || "rlc checker",
             |mut region| {
-
                 // name columns
 
-                self.countdown.annotate_columns_in_region(&mut region, "rlc");
+                self.countdown
+                    .annotate_columns_in_region(&mut region, "rlc");
 
                 region.name_column(|| "RLC_len", self.len_col);
                 region.name_column(|| "RLC_value", self.value_col);
@@ -210,7 +212,6 @@ impl<F: Field> FixedRlcConfig<F> {
                 }
 
                 let mut value_cells = Vec::new();
-
 
                 let mut count = F::from(values_to_accumulate as u64);
                 let mut rlc_acc = Value::known(F::ZERO);
@@ -301,7 +302,13 @@ impl<F: Field> FixedRlcConfig<F> {
                         }
                         count -= F::ONE;
                     }
-                    self.countdown.assign(&mut region, offset, count_prev, count, offset == values.len() -1 )?;
+                    self.countdown.assign(
+                        &mut region,
+                        offset,
+                        count_prev,
+                        count,
+                        offset == values.len() - 1,
+                    )?;
 
                     rlc_acc_propagate.assign(&mut region, offset, rlc_acc_prev - rlc_acc)?;
 
@@ -369,9 +376,7 @@ mod test {
             unreachable!()
         }
 
-        fn params(&self) -> Self::Params {
-            ()
-        }
+        fn params(&self) -> Self::Params {}
 
         fn configure_with_params(
             meta: &mut ConstraintSystem<F>,
@@ -436,5 +441,4 @@ mod test {
         let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
         prover.assert_satisfied_par()
     }
-
 }

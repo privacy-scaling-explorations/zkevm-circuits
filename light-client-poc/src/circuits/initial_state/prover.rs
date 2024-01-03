@@ -1,11 +1,23 @@
 use std::time::Instant;
 
-use halo2_proofs::{dev::MockProver, halo2curves::bn256::{Fr, G1Affine, Bn256}, transcript::{Blake2bWrite, Challenge255, TranscriptWriterBuffer, Blake2bRead, TranscriptReadBuffer}, poly::{kzg::{commitment::{KZGCommitmentScheme, ParamsVerifierKZG, ParamsKZG}, multiopen::{ProverSHPLONK, VerifierSHPLONK}, strategy::SingleStrategy}, commitment::{ParamsProver, Params}}, plonk::{create_proof, VerifyingKey, keygen_vk, keygen_pk, Circuit, verify_proof, ProvingKey}};
+use crate::verifier::FullVerifierKey;
+use halo2_proofs::{
+    dev::MockProver,
+    halo2curves::bn256::{Bn256, Fr, G1Affine},
+    plonk::{create_proof, keygen_pk, keygen_vk, VerifyingKey},
+    poly::{
+        commitment::ParamsProver,
+        kzg::{
+            commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG},
+            multiopen::ProverSHPLONK,
+        },
+    },
+    transcript::{Blake2bWrite, Challenge255, TranscriptWriterBuffer},
+};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use crate::{verifier::FullVerifierKey};
 
-use super::{InitialStateCircuit, circuit::InitialCircuitHelper};
+use super::{circuit::InitialCircuitHelper, InitialStateCircuit};
 use eyre::{eyre, Result};
 
 impl InitialStateCircuit<Fr> {
@@ -19,7 +31,8 @@ impl InitialStateCircuit<Fr> {
 
         let hash = self.lc_witness.initial_values_hash();
         let prover =
-            MockProver::<Fr>::run(self.degree as u32, self, vec![vec![hash.lo(), hash.hi()]]).unwrap();
+            MockProver::<Fr>::run(self.degree as u32, self, vec![vec![hash.lo(), hash.hi()]])
+                .unwrap();
         prover.assert_satisfied_at_rows_par(0..num_rows, 0..num_rows);
     }
     pub fn gen_pk_and_prove(self) -> Result<(FullVerifierKey, Vec<u8>, Vec<Fr>)> {
@@ -31,7 +44,8 @@ impl InitialStateCircuit<Fr> {
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
 
         // Initialize the proving key
-        let vk: VerifyingKey<G1Affine> = keygen_vk(&general_params, &self).expect("keygen_vk should not fail");
+        let vk: VerifyingKey<G1Affine> =
+            keygen_vk(&general_params, &self).expect("keygen_vk should not fail");
         let pk = keygen_pk(&general_params, vk.clone(), &self).expect("keygen_pk should not fail");
 
         println!("key generation time: {:?}", start.elapsed());
@@ -65,17 +79,21 @@ impl InitialStateCircuit<Fr> {
         let proof = transcript.finalize();
         println!("proof generation time: {:?}", start.elapsed());
 
-        Ok((FullVerifierKey {
-            verifier_params,
-            vk}, proof, public_inputs
+        Ok((
+            FullVerifierKey {
+                verifier_params,
+                vk,
+            },
+            proof,
+            public_inputs,
         ))
     }
 
     // Sense keccak: Proof: 147k
     // Amb keccak: Proof: 250k
 
-    pub fn assert_real_prover(self) -> Result<(FullVerifierKey, Vec<u8>, Vec<Fr> )> {
-        let (fk,proof,pi) = self.gen_pk_and_prove()?;
+    pub fn assert_real_prover(self) -> Result<(FullVerifierKey, Vec<u8>, Vec<Fr>)> {
+        let (fk, proof, pi) = self.gen_pk_and_prove()?;
 
         let result = crate::verifier::verify(&fk, &proof, &pi)?;
         if !result {

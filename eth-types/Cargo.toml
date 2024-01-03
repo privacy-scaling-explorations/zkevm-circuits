@@ -10,7 +10,7 @@ ethers-core = "2.0.7"
 ethers-signers = "2.0.7"
 hex = "0.4"
 lazy_static = "1.4"
-halo2_proofs = { path = "/Users/adria0/w/ef/light_client/halo2/halo2_proofs"}
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", features=["circuit-params"], branch = "feat/serde_vk" }
 regex = "1.5.4"
 serde = {version = "1.0.130", features = ["derive"] }
 serde_json = "1.0.66"

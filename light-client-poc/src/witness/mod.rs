@@ -15,9 +15,7 @@ use eyre::Result;
 
 use mpt_witness_generator::{ProofType, TrieModification};
 use zkevm_circuits::{
-    mpt_circuit::witness_row::Node,
-    table::mpt_table::MPTProofType,
-    util::word::Word,
+    mpt_circuit::witness_row::Node, table::mpt_table::MPTProofType, util::word::Word,
 };
 
 #[derive(Default, Clone)]
@@ -100,7 +98,6 @@ pub struct Witness<F: Field> {
     pub lc_witness: FieldTrieModifications<F>,
     pub mpt_witness: Vec<Node>,
 }
-
 
 impl<F: Field> Witness<F> {
     pub async fn build(

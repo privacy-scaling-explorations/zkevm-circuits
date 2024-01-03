@@ -12,7 +12,7 @@ mock = { path = "../mock", optional = true }
 
 ethers-core = "2.0.7"
 ethers-providers = "2.0.7"
-halo2_proofs = { path = "/Users/adria0/w/ef/light_client/halo2/halo2_proofs"}
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", features=["circuit-params"], branch = "feat/serde_vk" }
 itertools = "0.10"
 lazy_static = "1.4"
 log = "0.4.14"

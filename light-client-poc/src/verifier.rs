@@ -1,4 +1,5 @@
-use ethers::types::{H256, U256, Address};
+use base64::prelude::*;
+use ethers::types::{Address, H256, U256};
 use eyre::Result;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr, G1Affine},
@@ -13,10 +14,9 @@ use halo2_proofs::{
     },
     transcript::{Blake2bRead, Challenge255, TranscriptReadBuffer},
 };
-use base64::prelude::*;
 use halo2curves::ff::PrimeField;
 use num_enum::IntoPrimitive;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 pub struct FullVerifierKey {
     pub verifier_params: ParamsVerifierKZG<Bn256>,
@@ -25,8 +25,7 @@ pub struct FullVerifierKey {
 
 impl FullVerifierKey {
     pub fn serialize(&self) -> Result<Vec<u8>> {
-        let mut vk = self.vk.clone();
-        vk.remove_debug_info();
+        let vk = self.vk.clone().strip();
 
         let vk_ser: Vec<u8> = bincode::serialize(&vk)?;
         let mut verifier_params_ser: Vec<u8> = Vec::new();
@@ -38,8 +37,7 @@ impl FullVerifierKey {
         Ok(encoded)
     }
     pub fn deserialize(encoded: Vec<u8>) -> Result<Self> {
-        let (verifier_params_ser, vk_ser): (Vec<u8>, Vec<u8>) =
-            bincode::deserialize(&encoded[..])?;
+        let (verifier_params_ser, vk_ser): (Vec<u8>, Vec<u8>) = bincode::deserialize(&encoded[..])?;
         Ok(Self {
             vk: bincode::deserialize(&vk_ser[..])?,
             verifier_params: ParamsVerifierKZG::<Bn256>::read(&mut &verifier_params_ser[..])?,
@@ -68,7 +66,6 @@ pub fn verify(fk: &FullVerifierKey, proof: &[u8], public_inputs: &[Fr]) -> Resul
 }
 
 pub fn wasm_serialize(fk: &FullVerifierKey, proof: &[u8]) -> Result<(String, String)> {
-
     let fk = BASE64_STANDARD_NO_PAD.encode(fk.serialize()?);
     let proof = BASE64_STANDARD_NO_PAD.encode(proof);
 
@@ -76,7 +73,6 @@ pub fn wasm_serialize(fk: &FullVerifierKey, proof: &[u8]) -> Result<(String, Str
 }
 
 pub fn wasm_verify_serialized(data: &str, fk: &str, proof: &str) -> String {
-
     fn inner(data: &str, fk: &str, proof: &str) -> Result<bool> {
         let data = serde_json::from_str::<InitialStateCircuitVerifierData>(data)?;
         let fk = FullVerifierKey::deserialize(BASE64_STANDARD_NO_PAD.decode(fk)?)?;
@@ -84,8 +80,8 @@ pub fn wasm_verify_serialized(data: &str, fk: &str, proof: &str) -> String {
 
         let mut data_hash = data.hash().to_fixed_bytes();
         data_hash.reverse();
-        let mut lo = [0u8;32];
-        let mut hi = [0u8;32];
+        let mut lo = [0u8; 32];
+        let mut hi = [0u8; 32];
         hi[0..16].copy_from_slice(&data_hash[16..32]);
         lo[0..16].copy_from_slice(&data_hash[0..16]);
         let pi = vec![Fr::from_repr(lo).unwrap(), Fr::from_repr(hi).unwrap()];
@@ -115,9 +111,9 @@ pub enum ProofType {
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct InitialStateCircuitVerifierData {
-    pub prev_hash : H256,
-    pub next_hash : H256,
-    pub trie_modifications : Vec<TrieModification>,
+    pub prev_hash: H256,
+    pub next_hash: H256,
+    pub trie_modifications: Vec<TrieModification>,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -130,10 +126,17 @@ pub struct TrieModification {
 
 impl InitialStateCircuitVerifierData {
     pub fn hash(&self) -> H256 {
-
-        let h =| x : H256 | { let mut v = x.as_bytes().to_vec(); v.reverse(); v };
-        let u =| x : U256 | { let mut v = [0u8;32]; x.to_little_endian(&mut v);  v.to_vec() };
-        let a =| x : Address | { x.as_bytes().to_vec() };
+        let h = |x: H256| {
+            let mut v = x.as_bytes().to_vec();
+            v.reverse();
+            v
+        };
+        let u = |x: U256| {
+            let mut v = [0u8; 32];
+            x.to_little_endian(&mut v);
+            v.to_vec()
+        };
+        let a = |x: Address| x.as_bytes().to_vec();
 
         let mut bytes = Vec::new();
         bytes.append(&mut h(self.prev_hash));

@@ -5,9 +5,11 @@ use std::sync::Arc;
 
 use light_client_poc::{
     circuits::initial_state::InitialStateCircuit,
-    witness::{utils::{new_eth_signer_client, MM}, Witness},
+    witness::{
+        utils::{new_eth_signer_client, MM},
+        Witness,
+    },
 };
-
 
 mod contract;
 

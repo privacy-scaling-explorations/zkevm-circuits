@@ -1,15 +1,15 @@
 use eth_types::Field;
 use gadgets::util::{and, not};
-use halo2_proofs::{plonk::Expression, dev::MockProver, halo2curves::bn256::Fr};
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr, plonk::Expression};
 
+mod countdown;
 mod equal_words;
 mod fixed_rlc;
-mod countdown;
 
 pub use equal_words::EqualWordsConfig;
+use eyre::Result;
 pub use fixed_rlc::FixedRlcConfig;
 use zkevm_circuits::mpt_circuit::witness_row::Node;
-use eyre::Result;
 
 // negated A=>B  eq ~(A & ~B) (it is not the case that A is true and B is false)
 pub fn xnif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
@@ -21,6 +21,7 @@ pub fn xif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
     not::expr(and::expr([a, not::expr(b)]))
 }
 
+#[allow(unused)]
 pub fn verify_mpt_witness(nodes: Vec<Node>) -> Result<()> {
     // get the number of rows in the witness
     let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();

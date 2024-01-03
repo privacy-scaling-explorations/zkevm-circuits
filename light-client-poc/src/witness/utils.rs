@@ -1,11 +1,16 @@
 use std::{sync::Arc, time::Duration};
 
-use ethers::{middleware::SignerMiddleware, providers::{Provider, Http, Middleware}, signers::{Wallet, LocalWallet, Signer}, core::k256::ecdsa::SigningKey, utils::format_units};
+use ethers::{
+    core::k256::ecdsa::SigningKey,
+    middleware::SignerMiddleware,
+    providers::{Http, Middleware, Provider},
+    signers::{LocalWallet, Signer, Wallet},
+    utils::format_units,
+};
 use eyre::Result;
 use zkevm_circuits::mpt_circuit::witness_row::Node;
 
 pub type MM = SignerMiddleware<Provider<Http>, Wallet<SigningKey>>;
-
 
 pub async fn new_eth_signer_client(provider_url: &str, pvk: &str) -> Result<Arc<MM>> {
     let provider: Provider<Http> =
@@ -147,5 +152,3 @@ pub fn print_nodes(node: &[Node]) {
         }
     }
 }
-
-

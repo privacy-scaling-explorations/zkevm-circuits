@@ -1,4 +1,3 @@
-
 use eth_types::Field;
 use eyre::Result;
 use gadgets::{
@@ -7,10 +6,7 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Region, Value},
-    plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression,
-        Selector,
-    },
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use zkevm_circuits::util::word::Word;

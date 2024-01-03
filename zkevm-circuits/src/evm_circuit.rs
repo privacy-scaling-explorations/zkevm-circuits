@@ -184,6 +184,7 @@ impl<F: Field> EvmCircuit<F> {
         }
     }
     #[cfg(any(test, feature = "test-circuits"))]
+    #[allow(unused)]
     /// Construct the EvmCircuit with only subset of Fixed table tags required by tests to save
     /// testing time
     pub(crate) fn get_test_circuit_from_block(block: Block<F>) -> Self {
@@ -194,6 +195,7 @@ impl<F: Field> EvmCircuit<F> {
         }
     }
     #[cfg(any(test, feature = "test-circuits"))]
+    #[allow(unused)]
     /// Calculate which rows are "actually" used in the circuit
     pub(crate) fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
         let max_offset = Self::get_num_rows_required(block);
