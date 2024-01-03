@@ -28,7 +28,7 @@ use crate::{
     },
 };
 use eth_types::{Field, Word as U256};
-use gadgets::util::{not, or, pow, Scalar};
+use gadgets::util::{not, or, pow, xor, Scalar};
 use halo2_proofs::{
     circuit::Value,
     plonk::{ConstraintSystem, Error, Expression, VirtualCells},
@@ -230,7 +230,7 @@ pub(crate) fn ext_key_rlc_expr<F: Field>(
 ) -> Expression<F> {
     circuit!([meta, cb.base], {
         let (is_short, is_long) = (key_value.is_short(), key_value.is_long());
-        let mult_first_odd = ifx! {is_key_odd => { 1.expr() } elsex { 16.expr() }};
+        let mult_first_odd = ifx! {is_key_odd.expr() => { 1.expr() } elsex { 16.expr() }};
         let calc_rlc = |cb: &mut MPTConstraintBuilder<F>,
                         bytes: &[Expression<F>],
                         key_mult_first_even: Expression<F>| {
@@ -245,25 +245,26 @@ pub(crate) fn ext_key_rlc_expr<F: Field>(
             )
         };
         matchx! {(
-            and::expr(&[is_long.expr(), not!(is_key_odd)]) => {
-                // Here we need to multiply nibbles over bytes with different r's so we need to rlc over separate nibbles.
-                // Note that there can be at max 31 key bytes because 32 same bytes would mean
-                // the two keys being the same - update operation, not splitting into extension node.
-                // So, we do not need to look further than `s_main.bytes` even if `s_main.bytes[0]`
-                // is not used (when even number of nibbles).
-                let mut key_bytes = vec![data[0][1].expr()];
-                key_bytes.append(&mut data[0][1..].iter().skip(1).zip(data[1][2..].iter()).map(|(byte, nibble_hi)| {
-                    let nibble_lo = (byte.expr() - nibble_hi.expr()) * invert!(16);
-                    // Check that `nibble_hi` is correct.
-                    require!(byte => nibble_lo.expr() * 16.expr() + nibble_hi.expr());
-                    // Collect bytes
-                    (nibble_hi.expr() * 16.expr() * r.expr()) + nibble_lo.expr()
-                }).collect::<Vec<_>>());
-                calc_rlc(cb, &key_bytes, 1.expr())
-            },
-            and::expr(&[is_long.expr(), is_key_odd.expr()]) => {
-                let additional_mult = ifx! {is_key_part_odd => { r.expr() } elsex { 1.expr() }};
-                calc_rlc(cb, &data[0][1..], additional_mult)
+            is_long => {
+                ifx! {xor::expr(is_key_odd.expr(), is_key_part_odd.expr()) => {
+                    // Here we need to multiply nibbles over bytes with different r's so we need to rlc over separate nibbles.
+                    // Note that there can be at max 31 key bytes because 32 same bytes would mean
+                    // the two keys being the same - update operation, not splitting into extension node.
+                    // So, we do not need to look further than `s_main.bytes` even if `s_main.bytes[0]`
+                    // is not used (when even number of nibbles).
+                    let mut key_bytes = vec![data[0][1].expr()];
+                    key_bytes.append(&mut data[0][1..].iter().skip(1).zip(data[1][2..].iter()).map(|(byte, nibble_hi)| {
+                        let nibble_lo = (byte.expr() - nibble_hi.expr()) * invert!(16);
+                        // Check that `nibble_hi` is correct.
+                        require!(byte => nibble_lo.expr() * 16.expr() + nibble_hi.expr());
+                        // Collect bytes
+                        (nibble_hi.expr() * 16.expr() * r.expr()) + nibble_lo.expr()
+                    }).collect::<Vec<_>>());
+                    calc_rlc(cb, &key_bytes, 1.expr())
+                } elsex {
+                    let additional_mult = ifx! {is_key_part_odd => { r.expr() } elsex { 1.expr() }};
+                    calc_rlc(cb, &data[0][1..], additional_mult)
+                }}
             },
             is_short => {
                 calc_rlc(cb, &data[0][..1], 1.expr())
@@ -293,23 +294,24 @@ pub(crate) fn ext_key_rlc_calc_value<F: Field>(
         )
     };
     matchw! {
-        is_long && !is_key_odd => {
-            // Here we need to multiply nibbles over bytes with different r's so we need to rlc over separate nibbles.
-            // Note that there can be at max 31 key bytes because 32 same bytes would mean
-            // the two keys being the same - update operation, not splitting into extension node.
-            let mut key_bytes = vec![data[0][1].scalar()];
-            key_bytes.append(&mut data[0][1..].iter().skip(1).zip(data[1][2..].iter()).map(|(byte, nibble_hi)| {
-                let nibble_lo = (byte - nibble_hi) >> 4;
-                // Check that `nibble_hi` is correct.
-                assert!(*byte == nibble_lo * 16 + nibble_hi);
-                // Collect bytes
-                (F::from(*nibble_hi as u64) * F::from(16_u64) * r) + F::from(nibble_lo as u64)
-            }).collect::<Vec<_>>());
-            calc_rlc(&key_bytes, 1.scalar())
-        },
-        is_long && is_key_odd => {
-            let additional_mult = if is_key_part_odd { r } else { 1.scalar() };
-            calc_rlc(&data[0][1..].iter().map(|byte| byte.scalar()).collect::<Vec<_>>(), additional_mult)
+        is_long => {
+            if is_key_odd != is_key_part_odd {
+                // Here we need to multiply nibbles over bytes with different r's so we need to rlc over separate nibbles.
+                // Note that there can be at max 31 key bytes because 32 same bytes would mean
+                // the two keys being the same - update operation, not splitting into extension node.
+                let mut key_bytes = vec![data[0][1].scalar()];
+                key_bytes.append(&mut data[0][1..].iter().skip(1).zip(data[1][2..].iter()).map(|(byte, nibble_hi)| {
+                    let nibble_lo = (byte - nibble_hi) >> 4;
+                    // Check that `nibble_hi` is correct.
+                    assert!(*byte == nibble_lo * 16 + nibble_hi);
+                    // Collect bytes
+                    (F::from(*nibble_hi as u64) * F::from(16_u64) * r) + F::from(nibble_lo as u64)
+                }).collect::<Vec<_>>());
+                calc_rlc(&key_bytes, 1.scalar())
+            } else {
+                let additional_mult = if is_key_part_odd { r } else { 1.scalar() };
+                calc_rlc(&data[0][1..].iter().map(|byte| byte.scalar()).collect::<Vec<_>>(), additional_mult)
+            }
         },
         is_short => {
             calc_rlc(&data[0][..1].iter().map(|byte| byte.scalar()).collect::<Vec<_>>(), 1.scalar())
@@ -1135,6 +1137,7 @@ impl<F: Field> DriftedGadget<F> {
         leaf_no_key_rlc: &[Expression<F>],
         leaf_no_key_rlc_mult: &[Expression<F>],
         drifted_item: &RLPItemView<F>,
+        is_mod_extension: &[Cell<F>; 2],
         r: &Expression<F>,
     ) -> Self {
         let mut config = DriftedGadget::default();
@@ -1142,45 +1145,47 @@ impl<F: Field> DriftedGadget<F> {
             ifx! {parent_data[true.idx()].is_placeholder.expr() + parent_data[false.idx()].is_placeholder.expr() => {
                 config.drifted_rlp_key = ListKeyGadget::construct(cb, drifted_item);
                 for is_s in [true, false] {
-                    ifx! {parent_data[is_s.idx()].is_placeholder.expr() => {
-                        // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
+                    ifx! {and::expr(&[parent_data[is_s.idx()].is_placeholder.expr(), not!(is_mod_extension[is_s.idx()].expr())]) => {
+                        ifx! {parent_data[is_s.idx()].is_placeholder.expr() => {
+                            // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
 
-                        // Make sure the RLP is still consistent with the new key part
-                        require!(
-                            config.drifted_rlp_key.rlp_list.len()
-                                => config.drifted_rlp_key.key_value.num_bytes() + value_list_num_bytes[is_s.idx()].clone()
+                            // Make sure the RLP is still consistent with the new key part
+                            require!(
+                                config.drifted_rlp_key.rlp_list.len()
+                                    => config.drifted_rlp_key.key_value.num_bytes() + value_list_num_bytes[is_s.idx()].clone()
+                                );
+
+                            // Calculate the drifted key RLC
+                            // Get the key RLC for the drifted branch
+                            let (key_rlc, key_mult, key_num_nibbles, is_key_odd) = (
+                                key_data[is_s.idx()].drifted_rlc.expr(),
+                                key_data[is_s.idx()].drifted_mult.expr(),
+                                key_data[is_s.idx()].drifted_num_nibbles.expr(),
+                                key_data[is_s.idx()].drifted_is_odd.expr(),
                             );
+                            let key_rlc = key_rlc.expr() + config.drifted_rlp_key.key.expr(
+                                cb,
+                                config.drifted_rlp_key.key_value.clone(),
+                                key_mult.expr(),
+                                is_key_odd.expr(),
+                                r
+                            );
+                            // The key of the drifted leaf needs to match the key of the leaf
+                            require!(key_rlc => expected_key_rlc[is_s.idx()]);
 
-                        // Calculate the drifted key RLC
-                        // Get the key RLC for the drifted branch
-                        let (key_rlc, key_mult, key_num_nibbles, is_key_odd) = (
-                            key_data[is_s.idx()].drifted_rlc.expr(),
-                            key_data[is_s.idx()].drifted_mult.expr(),
-                            key_data[is_s.idx()].drifted_num_nibbles.expr(),
-                            key_data[is_s.idx()].drifted_is_odd.expr(),
-                        );
-                        let key_rlc = key_rlc.expr() + config.drifted_rlp_key.key.expr(
-                            cb,
-                            config.drifted_rlp_key.key_value.clone(),
-                            key_mult.expr(),
-                            is_key_odd.expr(),
-                            r
-                        );
-                        // The key of the drifted leaf needs to match the key of the leaf
-                        require!(key_rlc => expected_key_rlc[is_s.idx()]);
+                            // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES
+                            // (RLC encoding could be the same for addresses with zero's at the end)
+                            let num_nibbles = num_nibbles::expr(config.drifted_rlp_key.key_value.len(), is_key_odd.expr());
+                            require!(key_num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
 
-                        // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES
-                        // (RLC encoding could be the same for addresses with zero's at the end)
-                        let num_nibbles = num_nibbles::expr(config.drifted_rlp_key.key_value.len(), is_key_odd.expr());
-                        require!(key_num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
-
-                        // Complete the drifted leaf rlc by adding the bytes on the value row
-                        //let leaf_rlc = (config.drifted_rlp_key.rlc(be_r), mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
-                        let leaf_rlc = config.drifted_rlp_key.rlc2(&cb.keccak_r).rlc_chain_rev((leaf_no_key_rlc[is_s.idx()].expr(), leaf_no_key_rlc_mult[is_s.idx()].expr()));
-                        // The drifted leaf needs to be stored in the branch at `drifted_index`.
-                        let hash = parent_data[is_s.idx()].drifted_parent_hash.expr();
-                        require!((1.expr(), leaf_rlc.expr(), config.drifted_rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
-                    }
+                            // Complete the drifted leaf rlc by adding the bytes on the value row
+                            //let leaf_rlc = (config.drifted_rlp_key.rlc(be_r), mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
+                            let leaf_rlc = config.drifted_rlp_key.rlc2(&cb.keccak_r).rlc_chain_rev((leaf_no_key_rlc[is_s.idx()].expr(), leaf_no_key_rlc_mult[is_s.idx()].expr()));
+                            // The drifted leaf needs to be stored in the branch at `drifted_index`.
+                            let hash = parent_data[is_s.idx()].drifted_parent_hash.expr();
+                            require!((1.expr(), leaf_rlc.expr(), config.drifted_rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
+                        }
+                    }}
                 }}
             }}
             config
@@ -1446,7 +1451,7 @@ impl<F: Field> MainRLPGadget<F> {
         let rlp = self.rlp.assign(region, offset, &bytes)?;
 
         // Depending on the RLP item type, we store the data in little endian or big endian.
-        // Little endian makes it much easer to decode the lo/hi split representation.
+        // Little endian makes it much easier to decode the lo/hi split representation.
         let mut value_bytes = bytes[1..].to_vec();
         let mut len: usize = rlp.len();
         while len < 33 {

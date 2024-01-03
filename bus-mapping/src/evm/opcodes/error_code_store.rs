@@ -38,11 +38,11 @@ impl Opcode for ErrorCodeStore {
             state.call()?.call_id,
             CallContextField::IsStatic,
             Word::from(state.call()?.is_static as u8),
-        );
+        )?;
         // create context check
         assert!(state.call()?.is_create());
 
-        state.handle_return(&mut exec_step, geth_steps, true)?;
+        state.handle_return(&mut [&mut exec_step], geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

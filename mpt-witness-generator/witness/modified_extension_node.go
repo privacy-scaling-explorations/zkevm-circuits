@@ -6,11 +6,11 @@ import (
 	"github.com/privacy-scaling-explorations/mpt-witness-generator/trie"
 )
 
-// prepareModExtensionNode adds rows for a modified extension node before and after modification.
+// equipLeafWithModExtensionNode adds rows for a modified extension node before and after modification.
 // These rows are added only when an existing extension node gets shortened or elongated (in terms
 // of the extension node nibbles) because of another extension node being added or deleted.
 // The rows added are somewhat exceptional as otherwise they do not appear.
-func prepareModExtensionNode(statedb *state.StateDB, addr common.Address, rows *[][]byte, proof1, proof2,
+func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr common.Address, proof1, proof2,
 	extNibblesS, extNibblesC [][]byte,
 	key, neighbourNode []byte,
 	keyIndex, extensionNodeInd, numberOfNibbles int,
@@ -33,23 +33,7 @@ func prepareModExtensionNode(statedb *state.StateDB, addr common.Address, rows *
 		extNibbles = extNibblesS
 	}
 
-	numberOfNibbles0, extensionRowS, extensionRowC :=
-		prepareExtensionRows(extNibbles, extensionNodeInd, longExtNode, longExtNode, true, false)
-
-	extNodeSelectors := make([]byte, rowLen)
-	setExtNodeSelectors(extNodeSelectors, longExtNode, int(numberOfNibbles0), branchC16)
-	extNodeSelectors = append(extNodeSelectors, 24)
-
 	_, extListRlpBytesS, extValuesS := prepareExtensions(extNibbles, extensionNodeInd, longExtNode, longExtNode)
-
-	var extRows [][]byte
-	// We need to prove the old extension node is in S proof (when ext. node inserted).
-	extRows = append(extRows, extNodeSelectors)
-	extRows = append(extRows, extensionRowS)
-	extRows = append(extRows, extensionRowC)
-
-	*rows = append(*rows, extRows...)
-	// addForHashing(longExtNode, toBeHashed)
 
 	// Get nibbles of the extension node that gets shortened because of the newly insertd
 	// extension node:
@@ -80,9 +64,6 @@ func prepareModExtensionNode(statedb *state.StateDB, addr common.Address, rows *
 	// There is no short extension node when `len(longNibbles) - numberOfNibbles = 1`, in this case there
 	// is simply a branch instead.
 	shortExtNodeIsBranch := len(longNibbles)-numberOfNibbles == 1
-	if shortExtNodeIsBranch {
-		(*rows)[len(*rows)-branchRows-9][isShortExtNodeBranch] = 1
-	}
 
 	var shortExtNode []byte
 	var extListRlpBytesC []byte
@@ -104,9 +85,6 @@ func prepareModExtensionNode(statedb *state.StateDB, addr common.Address, rows *
 				shortExtNode = proof[len(proof)-3]
 			}
 		} else {
-			// Needed only for len1 > len2
-			(*rows)[len(*rows)-branchRows-9][driftedPos] = longNibbles[numberOfNibbles]
-
 			shortNibbles := longNibbles[numberOfNibbles+1:]
 			compact := trie.HexToCompact(shortNibbles)
 			longStartBranch := 2 + (longExtNode[1] - 128) // cannot be "short" in terms of having the length at position 0; TODO: extension with length at position 2 not supported (the probability very small)
@@ -129,17 +107,23 @@ func prepareModExtensionNode(statedb *state.StateDB, addr common.Address, rows *
 		extNibbles = append(extNibbles, nibbles)
 
 		_, extListRlpBytesC, extValuesC = prepareExtensions(extNibbles, extensionNodeInd+1, shortExtNode, shortExtNode)
+	} else {
+		// When the short node is a branch (and not an extension node), we have nothing to be put in
+		// the C extension node witness (as a short node). We copy the long node (S extension node) to let
+		// the circuit know that the short node is a branch (the circuit checks whether long node RLC == short node RLC).
+		extValuesC = append(extValuesC, make([]byte, valueLen))
+		extValuesC = append(extValuesC, make([]byte, valueLen))
+		extValuesC = append(extValuesC, make([]byte, valueLen))
+		extValuesC = append(extValuesC, make([]byte, valueLen))
+		copy(extValuesC[0], extValuesS[0])
+		copy(extValuesC[1], extValuesS[1])
+		copy(extValuesC[2], extValuesS[2])
+		copy(extValuesC[3], extValuesS[3])
 
+		extListRlpBytesC = extListRlpBytesS
 	}
-
-	// The shortened extension node is needed as a witness to be able to check in a circuit
-	// that the shortened extension node and newly added leaf (that causes newly inserted
-	// extension node) are the only nodes in the newly inserted extension node.
 
 	listRlpBytes := [2][]byte{extListRlpBytesS, extListRlpBytesC}
-	modExtensionNode := ModExtensionNode{
-		ListRlpBytes: listRlpBytes,
-	}
 
 	var values [][]byte
 	extValuesS = append(extValuesS[:1], extValuesS[2:]...)
@@ -151,9 +135,21 @@ func prepareModExtensionNode(statedb *state.StateDB, addr common.Address, rows *
 	keccakData = append(keccakData, longExtNode)
 	keccakData = append(keccakData, shortExtNode)
 
-	return Node{
-		ModExtension: &modExtensionNode,
-		Values:       values,
-		KeccakData:   keccakData,
+	if leafNode.Account == nil {
+		leafNode.Storage.ModListRlpBytes = listRlpBytes
+	} else {
+		leafNode.Account.ModListRlpBytes = listRlpBytes
 	}
+
+	l := len(leafNode.Values)
+	// We put the information about the long and short extension node in the last rows of the leaf
+	// An alternative would be to add this information into extension node rows (which are in the branch rows),
+	// but this would significantly increase the space needed for every branch.
+	for i := 0; i < modifiedExtensionNodeRowLen; i++ {
+		leafNode.Values[l-modifiedExtensionNodeRowLen+i] = values[i]
+	}
+
+	leafNode.KeccakData = append(leafNode.KeccakData, keccakData...)
+
+	return leafNode
 }

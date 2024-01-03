@@ -16,6 +16,7 @@ use eth_types::{
 };
 use lazy_static::lazy_static;
 use mock::{
+    eth,
     test_ctx::{helpers::*, LoggerConfig, TestContext},
     MOCK_COINBASE,
 };
@@ -44,6 +45,7 @@ impl CircuitInputBuilderTx {
             &GethExecTrace {
                 gas: 0,
                 failed: false,
+                invalid: false,
                 return_value: "".to_owned(),
                 struct_logs: vec![geth_step.clone()],
             },
@@ -337,6 +339,90 @@ fn tracer_call_success() {
     let error = builder.state_ref().get_step_err(step, next_step);
     // expects no errors detected
     assert_eq!(error.unwrap(), None);
+}
+
+#[test]
+fn tracer_invalid_tx_invalid_nonce() {
+    let code_a = bytecode! {
+        PUSH1(0x0)
+    };
+
+    // Get the execution steps from the external tracer
+    let block: GethData = TestContext::<3, 1>::new(
+        None,
+        |accs| {
+            accs[0]
+                .address(address!("0x0000000000000000000000000000000000000000"))
+                .code(code_a);
+            accs[1]
+                .address(address!("0x000000000000000000000000000000000cafe001"))
+                .nonce(3);
+        },
+        |mut txs, accs| {
+            txs[0]
+                .to(accs[0].address)
+                .from(accs[1].address)
+                .invalid()
+                .set_nonce(1);
+        },
+        |block, _tx| block.number(0xcafeu64),
+    )
+    .unwrap()
+    .into();
+
+    assert!(block.geth_traces[0].invalid);
+}
+
+#[test]
+fn tracer_invalid_tx_insufficient_gas() {
+    // Get the execution steps from the external tracer
+    let block: GethData = TestContext::<3, 1>::new(
+        None,
+        |accs| {
+            accs[0].address(address!("0x0000000000000000000000000000000000000000"));
+            accs[1]
+                .address(address!("0x000000000000000000000000000000000cafe001"))
+                .balance(eth(1));
+        },
+        |mut txs, accs| {
+            txs[0]
+                .to(accs[0].address)
+                .from(accs[1].address)
+                .gas(Word::from(20_000))
+                .invalid();
+        },
+        |block, _tx| block.number(0xcafeu64),
+    )
+    .unwrap()
+    .into();
+
+    assert!(block.geth_traces[0].invalid);
+}
+
+#[test]
+fn tracer_invalid_tx_insufficient_balance() {
+    // Get the execution steps from the external tracer
+    let block: GethData = TestContext::<3, 1>::new(
+        None,
+        |accs| {
+            accs[0].address(address!("0x0000000000000000000000000000000000000000"));
+            accs[1]
+                .address(address!("0x000000000000000000000000000000000cafe001"))
+                .balance(Word::from(1));
+        },
+        |mut txs, accs| {
+            txs[0]
+                .to(accs[0].address)
+                .from(accs[1].address)
+                .value(100.into())
+                .invalid();
+        },
+        |block, _tx| block.number(0xcafeu64),
+    )
+    .unwrap()
+    .into();
+
+    assert!(block.geth_traces[0].invalid);
 }
 
 #[test]

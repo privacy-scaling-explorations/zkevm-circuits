@@ -17,7 +17,7 @@ use crate::{
 };
 use bus_mapping::{operation::Target, state_db::EMPTY_CODE_HASH_LE};
 use eth_types::Field;
-use gadgets::util::not;
+use gadgets::util::{not, sum};
 use halo2_proofs::{
     circuit::Value,
     plonk::{
@@ -146,6 +146,13 @@ impl<F: Field> ReversionInfo<F> {
         self.is_persistent
             .assign(region, offset, Value::known(F::from(is_persistent as u64)))?;
         Ok(())
+    }
+
+    pub(crate) fn rw_delta(&self) -> Expression<F> {
+        // From definition, rws include:
+        // Field [`CallContextFieldTag::RwCounterEndOfReversion`] read from call context.
+        // Field [`CallContextFieldTag::IsPersistent`] read from call context.
+        2.expr()
     }
 }
 
@@ -320,6 +327,8 @@ impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
         self.push_constraint(name, constraint);
     }
 }
+
+pub(crate) type BoxedClosure<'a, F> = Box<dyn FnOnce(&mut EVMConstraintBuilder<F>) + 'a>;
 
 impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn new(
@@ -589,6 +598,22 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 values: [value, 0.expr(), 0.expr()],
             },
         );
+    }
+
+    // precompiled contract information
+    pub(crate) fn precompile_info_lookup(
+        &mut self,
+        execution_state: Expression<F>,
+        address: Expression<F>,
+        base_gas_cost: Expression<F>,
+    ) {
+        self.add_lookup(
+            "precompiles info",
+            Lookup::Fixed {
+                tag: FixedTableTag::PrecompileInfo.expr(),
+                values: [execution_state, address, base_gas_cost],
+            },
+        )
     }
 
     // constant gas
@@ -1056,7 +1081,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // Call context
-
     pub(crate) fn call_context(
         &mut self,
         call_id: Option<Expression<F>>,
@@ -1094,6 +1118,32 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_lookup(
             "CallContext lookup",
             0.expr(),
+            Target::CallContext,
+            RwValues::new(
+                call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
+                0.expr(),
+                field_tag.expr(),
+                Word::zero(),
+                value,
+                Word::zero(),
+                Word::zero(),
+            ),
+        );
+    }
+
+    // same as call_context_lookup_write with bypassing external rwc
+    // Note: will not bumping internal rwc
+    pub(crate) fn call_context_lookup_write_with_counter(
+        &mut self,
+        rw_counter: Expression<F>,
+        call_id: Option<Expression<F>>,
+        field_tag: CallContextFieldTag,
+        value: Word<Expression<F>>,
+    ) {
+        self.rw_lookup_with_counter(
+            "CallContext lookup",
+            rw_counter,
+            1.expr(),
             Target::CallContext,
             RwValues::new(
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
@@ -1411,6 +1461,64 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.conditions.push(condition);
         let ret = constraint(self);
         self.conditions.pop();
+        ret
+    }
+
+    /// Constrain the next step, given mutually exclusive conditions to determine the next state
+    /// and constrain it using the provided respective constraint. This mechanism is specifically
+    /// used for constraining the internal states for precompile calls. Each precompile call
+    /// expects a different cell layout, but since the next state can be at the most one precompile
+    /// state, we can re-use cells assgined across all thos conditions.
+    pub(crate) fn constrain_mutually_exclusive_next_step(
+        &mut self,
+        conditions: Vec<Expression<F>>,
+        next_states: Vec<ExecutionState>,
+        constraints: Vec<BoxedClosure<F>>,
+    ) {
+        assert_eq!(conditions.len(), constraints.len());
+        assert_eq!(conditions.len(), next_states.len());
+
+        self.require_boolean(
+            "at the most one condition is true from mutually exclusive conditions",
+            sum::expr(&conditions),
+        );
+
+        // TODO: constraining the same cells repeatedly requires a height-resetting mechanism
+        // on the cell manager. In this case, since only identity precompile is added
+        // this height management maneuver is temporarily left out.
+        for ((&next_state, condition), constraint) in next_states
+            .iter()
+            .zip(conditions.into_iter())
+            .zip(constraints.into_iter())
+        {
+            // constrain the next step.
+            self.constrain_next_step(next_state, Some(condition), constraint);
+        }
+    }
+
+    /// This function needs to be used with extra precaution. You need to make
+    /// sure the layout is the same as the gadget for `next_step_state`.
+    /// `query_cell` will return cells in the next step in the `constraint`
+    /// function.
+    pub(crate) fn constrain_next_step<R>(
+        &mut self,
+        next_step_state: ExecutionState,
+        condition: Option<Expression<F>>,
+        constraint: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        assert!(!self.in_next_step, "Already in the next step");
+        self.in_next_step = true;
+        let ret = match condition {
+            None => {
+                self.require_next_state(next_step_state);
+                constraint(self)
+            }
+            Some(cond) => self.condition(cond, |cb| {
+                cb.require_next_state(next_step_state);
+                constraint(cb)
+            }),
+        };
+        self.in_next_step = false;
         ret
     }
 

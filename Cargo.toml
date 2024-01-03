@@ -11,7 +11,7 @@ members = [
     "mock",
     "testool",
     "mpt-witness-generator/rustlib",
-    "light-client-poc",
+    "light-client-poc"
 ]
 
 [patch.crates-io]

@@ -37,7 +37,7 @@ mod tests {
         let proof_gen_prfx = crate::constants::PROOFGEN_PREFIX;
         let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;
         let degree: u32 = var("DEGREE")
-            .unwrap_or_else(|_| "14".to_string())
+            .unwrap_or("14".to_string())
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
@@ -51,9 +51,10 @@ mod tests {
         ]);
 
         // Create the circuit
-        let block = generate_full_events_block(degree);
+        let mut block = generate_full_events_block(degree);
+        block.circuits_params.max_rws = 10_000;
+        block.circuits_params.max_copy_rows = 10_000;
         let circuit = TestCopyCircuit::<Fr>::new_from_block(&block);
-
         // Bench setup generation
         let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
         let start1 = start_timer!(|| setup_message);

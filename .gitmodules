@@ -7,9 +7,7 @@
 	update = none
 	path = integration-tests/contracts/vendor/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
-[submodule "light-client-poc/go-ethereum"]
-	path = light-client-poc/go-ethereum
-	url = https://github.com/adria0/go-ethereum
+
 [submodule "light-client-poc/bin/test_local/go-ethereum"]
 	path = light-client-poc/bin/test_local/go-ethereum
 	url = https://github.com/adria0/go-ethereum

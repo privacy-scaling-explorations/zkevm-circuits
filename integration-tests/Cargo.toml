@@ -25,6 +25,8 @@ paste = "1.0"
 rand_xorshift = "0.3.0"
 rand_core = "0.6.4"
 mock = { path = "../mock" }
+this = "0.3.0"
+error = "0.1.9"
 
 [dev-dependencies]
 pretty_assertions = "1.0.0"
@@ -35,3 +37,14 @@ rpc = []
 circuit_input_builder = []
 circuits = []
 mock_prover = []
+
+[build-dependencies]
+env = "0.0.0"
+ethers = "2.0.7"
+ethers-contract-abigen = "2.0.8"
+glob = "0.3.1"
+log = "0.4.14"
+serde = "1.0.130"
+serde_json = "1.0.66"
+uneval = "0.2.4"
+thiserror = "1.0.49"

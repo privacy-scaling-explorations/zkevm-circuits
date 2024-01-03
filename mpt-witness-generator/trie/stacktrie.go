@@ -525,7 +525,7 @@ func (st *StackTrie) Hash() (h common.Hash) {
 	return common.BytesToHash(st.val)
 }
 
-// Commit will firstly hash the entrie trie if it's still not hashed
+// Commit will firstly hash the entry trie if it's still not hashed
 // and then commit all nodes to the associated database. Actually most
 // of the trie nodes MAY have been committed already. The main purpose
 // here is to commit the root node.

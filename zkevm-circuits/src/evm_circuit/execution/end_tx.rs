@@ -5,31 +5,24 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::{TransferToGadget, UpdateBalanceGadget},
-            constraint_builder::{
-                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
-                Transition::{Delta, Same},
-            },
+            constraint_builder::EVMConstraintBuilder,
             math_gadget::{
-                AddWordsGadget, ConstantDivisionGadget, IsEqualGadget, IsZeroWordGadget,
-                MinMaxGadget, MulWordByU64Gadget,
+                AddWordsGadget, ConstantDivisionGadget, IsZeroWordGadget, MinMaxGadget,
+                MulWordByU64Gadget,
             },
+            tx::EndTxHelperGadget,
             CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{
-        AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag,
-        TxReceiptFieldTag,
-    },
+    table::{AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag},
     util::{
         word::{Word, WordCell, WordExpr},
         Expr,
     },
 };
-use bus_mapping::operation::Target;
 use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field};
 use halo2_proofs::{circuit::Value, plonk::Error};
-use strum::EnumCount;
 
 #[derive(Clone, Debug)]
 pub(crate) struct EndTxGadget<F> {
@@ -47,9 +40,8 @@ pub(crate) struct EndTxGadget<F> {
     coinbase_code_hash: WordCell<F>,
     coinbase_code_hash_is_zero: IsZeroWordGadget<F, WordCell<F>>,
     coinbase_reward: TransferToGadget<F>,
-    current_cumulative_gas_used: Cell<F>,
-    is_first_tx: IsEqualGadget<F>,
     is_persistent: Cell<F>,
+    end_tx: EndTxHelperGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
@@ -122,74 +114,12 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             true,
         );
 
-        // constrain tx receipt fields
-        cb.tx_receipt_lookup(
-            1.expr(),
+        let end_tx = EndTxHelperGadget::construct(
+            cb,
             tx_id.expr(),
-            TxReceiptFieldTag::PostStateOrStatus,
             is_persistent.expr(),
-        );
-        cb.tx_receipt_lookup(
-            1.expr(),
-            tx_id.expr(),
-            TxReceiptFieldTag::LogLength,
-            cb.curr.state.log_id.expr(),
-        );
-
-        let is_first_tx = IsEqualGadget::construct(cb, tx_id.expr(), 1.expr());
-
-        let current_cumulative_gas_used = cb.query_cell();
-        cb.condition(is_first_tx.expr(), |cb| {
-            cb.require_zero(
-                "current_cumulative_gas_used is zero when tx is first tx",
-                current_cumulative_gas_used.expr(),
-            );
-        });
-
-        cb.condition(1.expr() - is_first_tx.expr(), |cb| {
-            cb.tx_receipt_lookup(
-                0.expr(),
-                tx_id.expr() - 1.expr(),
-                TxReceiptFieldTag::CumulativeGasUsed,
-                current_cumulative_gas_used.expr(),
-            );
-        });
-
-        cb.tx_receipt_lookup(
-            1.expr(),
-            tx_id.expr(),
-            TxReceiptFieldTag::CumulativeGasUsed,
-            gas_used + current_cumulative_gas_used.expr(),
-        );
-
-        cb.condition(
-            cb.next.execution_state_selector([ExecutionState::BeginTx]),
-            |cb| {
-                cb.call_context_lookup_write(
-                    Some(cb.next.state.rw_counter.expr()),
-                    CallContextFieldTag::TxId,
-                    // tx_id has been lookup and range_check above
-                    Word::from_lo_unchecked(tx_id.expr() + 1.expr()),
-                );
-
-                cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(10.expr() - is_first_tx.expr() + coinbase_reward.rw_delta()),
-                    ..StepStateTransition::any()
-                });
-            },
-        );
-
-        cb.condition(
-            cb.next.execution_state_selector([ExecutionState::EndBlock]),
-            |cb| {
-                cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(9.expr() - is_first_tx.expr() + coinbase_reward.rw_delta()),
-                    // We propagate call_id so that EndBlock can get the last tx_id
-                    // in order to count processed txs.
-                    call_id: Same,
-                    ..StepStateTransition::any()
-                });
-            },
+            gas_used,
+            10.expr() + coinbase_reward.rw_delta(),
         );
 
         Self {
@@ -207,9 +137,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             coinbase_code_hash,
             coinbase_code_hash_is_zero,
             coinbase_reward,
-            current_cumulative_gas_used,
-            is_first_tx,
             is_persistent,
+            end_tx,
         }
     }
 
@@ -297,31 +226,12 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                 effective_tip * gas_used,
             )?;
         }
-
-        let current_cumulative_gas_used: u64 = if tx.id == 1 {
-            0
-        } else {
-            // first transaction needs TxReceiptFieldTag::COUNT(3) lookups to tx receipt,
-            // while later transactions need 4 (with one extra cumulative gas read) lookups
-            let rw = &block.rws[(
-                Target::TxReceipt,
-                (tx.id as usize - 2) * (TxReceiptFieldTag::COUNT + 1) + 2,
-            )];
-            rw.receipt_value()
-        };
-
-        self.current_cumulative_gas_used.assign(
-            region,
-            offset,
-            Value::known(F::from(current_cumulative_gas_used)),
-        )?;
-        self.is_first_tx
-            .assign(region, offset, F::from(tx.id), F::ONE)?;
         self.is_persistent.assign(
             region,
             offset,
             Value::known(F::from(call.is_persistent as u64)),
         )?;
+        self.end_tx.assign(region, offset, block, tx)?;
 
         Ok(())
     }
@@ -329,9 +239,11 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::CircuitTestBuilder;
-    use bus_mapping::circuit_input_builder::FixedCParams;
+
+    use crate::{table::CallContextFieldTag, test_util::CircuitTestBuilder};
+    use bus_mapping::{circuit_input_builder::FixedCParams, operation::Target};
     use eth_types::{self, bytecode, Word};
+    use itertools::Itertools;
     use mock::{
         eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
     };
@@ -508,6 +420,57 @@ mod test {
             )
             .unwrap(),
         );
+    }
+
+    #[test]
+    fn end_tx_consistent_tx_id_write() {
+        // check there is no consecutive txid write with same txid in rw_table
+
+        let block = CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 3>::new(
+                None,
+                account_0_code_account_1_no_code(bytecode! { STOP }),
+                |mut txs, accs| {
+                    txs[0]
+                        .to(accs[0].address)
+                        .from(accs[1].address)
+                        .value(eth(1));
+                    txs[1]
+                        .to(accs[0].address)
+                        .from(accs[1].address)
+                        .value(eth(1));
+                    txs[2]
+                        .to(accs[0].address)
+                        .from(accs[1].address)
+                        .value(eth(1));
+                },
+                |block, _tx| block.number(0xcafeu64),
+            )
+            .unwrap(),
+        )
+        .params(FixedCParams {
+            max_txs: 5,
+            ..Default::default()
+        })
+        .build_block()
+        .unwrap();
+
+        block.rws.0[&Target::CallContext]
+            .iter()
+            .filter(|rw| {
+                // filter all txid write operation
+                rw.is_write()
+                    && rw
+                        .field_tag()
+                        .is_some_and(|tag| tag == CallContextFieldTag::TxId as u64)
+            })
+            .sorted_by_key(|a| a.rw_counter())
+            .tuple_windows()
+            .for_each(|(a, b)| {
+                // chech there is no consecutive write with same txid value
+                assert!(a.rw_counter() != b.rw_counter());
+                assert!(a.value_assignment() != b.value_assignment());
+            })
     }
 
     #[test]

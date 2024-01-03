@@ -1,8 +1,11 @@
 //! Execution step related module.
 
 use crate::{
-    circuit_input_builder::CallContext, error::ExecError, exec_trace::OperationRef,
+    circuit_input_builder::CallContext,
+    error::{ExecError, OogError},
+    exec_trace::OperationRef,
     operation::RWCounter,
+    precompile::PrecompileCalls,
 };
 use eth_types::{evm_types::OpcodeId, GethExecStep, Word, H256};
 use gadgets::impl_expr;
@@ -60,6 +63,7 @@ impl ExecStep {
         ExecStep {
             exec_state: ExecState::Op(step.op),
             pc: step.pc,
+
             stack_size: step.stack.0.len(),
             memory_size: call_ctx.memory.len(),
             gas_left: step.gas,
@@ -117,6 +121,16 @@ impl ExecStep {
         assert_eq!(memory_size % n_bytes_word, 0);
         memory_size / n_bytes_word
     }
+
+    /// Returns `true` if this is an execution step of Precompile.
+    pub fn is_precompiled(&self) -> bool {
+        matches!(self.exec_state, ExecState::Precompile(_))
+    }
+
+    /// Returns `true` if `error` is oog in precompile calls
+    pub fn is_precompile_oog_err(&self) -> bool {
+        matches!(self.error, Some(ExecError::OutOfGas(OogError::Precompile)))
+    }
 }
 
 /// Execution state
@@ -124,12 +138,16 @@ impl ExecStep {
 pub enum ExecState {
     /// EVM Opcode ID
     Op(OpcodeId),
+    /// Precompile call
+    Precompile(PrecompileCalls),
     /// Virtual step Begin Tx
     BeginTx,
     /// Virtual step End Tx
     EndTx,
     /// Virtual step End Block
     EndBlock,
+    /// Invalid Tx
+    InvalidTx,
 }
 
 impl Default for ExecState {
@@ -277,14 +295,14 @@ impl CopyEvent {
     // increase in rw counter from the start of the copy event to step index
     fn rw_counter_increase(&self, step_index: usize) -> u64 {
         let source_rw_increase = match self.src_type {
-            CopyDataType::Bytecode | CopyDataType::TxCalldata => 0,
+            CopyDataType::Bytecode | CopyDataType::TxCalldata | CopyDataType::RlcAcc => 0,
             CopyDataType::Memory => std::cmp::min(
                 u64::try_from(step_index + 1).unwrap() / 2,
                 self.src_addr_end
                     .checked_sub(self.src_addr)
                     .unwrap_or_default(),
             ),
-            CopyDataType::RlcAcc | CopyDataType::TxLog | CopyDataType::Padding => unreachable!(),
+            CopyDataType::TxLog | CopyDataType::Padding => unreachable!(),
         };
         let destination_rw_increase = match self.dst_type {
             CopyDataType::RlcAcc | CopyDataType::Bytecode => 0,

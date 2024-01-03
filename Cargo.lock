@@ -1238,6 +1238,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "env"
+version = "0.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "876927d21ef1ae98001c8c35a1d8dfd682136914b23ef04276820fa6d43c3630"
+
+[[package]]
 name = "env_logger"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1264,6 +1270,16 @@ checksum = "a258e46cdc063eb8519c00b9fc845fc47bcfca4130e2f08e88665ceda8474245"
 dependencies = [
  "libc",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "error"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6e606f14042bb87cc02ef6a14db6c90ab92ed6f62d87e69377bc759fd7987cc"
+dependencies = [
+ "traitobject",
+ "typeable",
 ]
 
 [[package]]
@@ -1881,8 +1897,11 @@ name = "geth-utils"
 version = "0.1.0"
 dependencies = [
  "env_logger",
+ "eth-types",
  "gobuild",
  "log",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2344,9 +2363,13 @@ name = "integration-tests"
 version = "0.1.0"
 dependencies = [
  "bus-mapping",
+ "env",
  "env_logger",
+ "error",
  "eth-types",
  "ethers",
+ "ethers-contract-abigen",
+ "glob",
  "halo2_proofs",
  "lazy_static",
  "log",
@@ -2358,7 +2381,10 @@ dependencies = [
  "rand_xorshift",
  "serde",
  "serde_json",
+ "this",
+ "thiserror",
  "tokio",
+ "uneval",
  "url",
  "zkevm-circuits",
 ]
@@ -4581,6 +4607,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "222a222a5bfe1bba4a77b45ec488a741b3cb8872e5e499451fd7d0129c9c7c3d"
 
 [[package]]
+name = "this"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e044516ef2cdfc2f4426e8f7c4d115a77a2235700b918411482bba13d528d518"
+
+[[package]]
 name = "thiserror"
 version = "1.0.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4841,6 +4873,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "traitobject"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efd1f82c56340fdf16f2a953d7bda4f8fdffba13d93b00844c25572110b26079"
+
+[[package]]
 name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4865,6 +4903,12 @@ dependencies = [
  "url",
  "utf-8",
 ]
+
+[[package]]
+name = "typeable"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1410f6f91f21d1612654e7cc69193b0334f909dcf2c790c4826254fbb86f8887"
 
 [[package]]
 name = "typenum"
@@ -4895,6 +4939,16 @@ name = "unarray"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94"
+
+[[package]]
+name = "uneval"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63cc5d2fd8648d7e2be86098f60c9ece7045cc710b3c1e226910e2f37d11dc73"
+dependencies = [
+ "serde",
+ "thiserror",
+]
 
 [[package]]
 name = "unicode-bidi"

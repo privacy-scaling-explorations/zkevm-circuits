@@ -22,7 +22,7 @@ impl Opcode for ErrorSimple {
         let next_step = geth_steps.get(1);
         exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
 
-        state.handle_return(&mut exec_step, geth_steps, true)?;
+        state.handle_return(&mut [&mut exec_step], geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

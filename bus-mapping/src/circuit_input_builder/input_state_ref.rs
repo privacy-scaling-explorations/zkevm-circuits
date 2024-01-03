@@ -13,6 +13,7 @@ use crate::{
         StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField, TxReceiptOp,
         RW,
     },
+    precompile::{is_precompiled, PrecompileCalls},
     state_db::{CodeDB, StateDB},
     Error,
 };
@@ -40,6 +41,8 @@ pub struct CircuitInputStateRef<'a> {
     pub tx: &'a mut Transaction,
     /// Transaction Context
     pub tx_ctx: &'a mut TransactionContext,
+    /// Max rw number limit
+    pub max_rws: Option<usize>,
 }
 
 impl<'a> CircuitInputStateRef<'a> {
@@ -54,6 +57,16 @@ impl<'a> CircuitInputStateRef<'a> {
             call_ctx.reversible_write_counter,
             self.tx_ctx.log_id,
         ))
+    }
+
+    /// Create a new InvalidTx step
+    pub fn new_invalid_tx_step(&self) -> ExecStep {
+        ExecStep {
+            exec_state: ExecState::InvalidTx,
+            gas_left: self.tx.gas(),
+            rwc: self.block_ctx.rwc,
+            ..Default::default()
+        }
     }
 
     /// Create a new BeginTx step
@@ -114,7 +127,7 @@ impl<'a> CircuitInputStateRef<'a> {
     /// reference to the stored operation ([`OperationRef`]) inside the
     /// bus-mapping instance of the current [`ExecStep`].  Then increase the
     /// block_ctx [`RWCounter`](crate::operation::RWCounter) by one.
-    pub fn push_op<T: Op>(&mut self, step: &mut ExecStep, rw: RW, op: T) {
+    pub fn push_op<T: Op>(&mut self, step: &mut ExecStep, rw: RW, op: T) -> Result<(), Error> {
         if let OpEnum::Account(op) = op.clone().into_enum() {
             self.check_update_sdb_account(rw, &op)
         }
@@ -123,6 +136,20 @@ impl<'a> CircuitInputStateRef<'a> {
                 .container
                 .insert(Operation::new(self.block_ctx.rwc.inc_pre(), rw, op));
         step.bus_mapping_instance.push(op_ref);
+        self.check_rw_num_limit()
+    }
+
+    /// Check whether rws will overflow circuit limit.
+    pub fn check_rw_num_limit(&self) -> Result<(), Error> {
+        if let Some(max_rws) = self.max_rws {
+            let rwc = self.block_ctx.rwc.0;
+            if rwc > max_rws {
+                log::error!("rwc > max_rws, rwc={}, max_rws={}", rwc, max_rws);
+                return Err(Error::RwsNotEnough(max_rws, rwc));
+            };
+        }
+
+        Ok(())
     }
 
     /// Push a read type [`CallContextOp`] into the
@@ -137,14 +164,14 @@ impl<'a> CircuitInputStateRef<'a> {
         call_id: usize,
         field: CallContextField,
         value: Word,
-    ) {
+    ) -> Result<(), Error> {
         let op = CallContextOp {
             call_id,
             field,
             value,
         };
 
-        self.push_op(step, RW::READ, op);
+        self.push_op(step, RW::READ, op)
     }
 
     /// Push a write type [`CallContextOp`] into the
@@ -159,14 +186,14 @@ impl<'a> CircuitInputStateRef<'a> {
         call_id: usize,
         field: CallContextField,
         value: Word,
-    ) {
+    ) -> Result<(), Error> {
         let op = CallContextOp {
             call_id,
             field,
             value,
         };
 
-        self.push_op(step, RW::WRITE, op);
+        self.push_op(step, RW::WRITE, op)
     }
 
     /// Push an [`Operation`](crate::operation::Operation) with reversible to be
@@ -203,7 +230,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 .push((self.tx.steps().len(), op_ref));
         }
 
-        Ok(())
+        self.check_rw_num_limit()
     }
 
     /// Push a read type [`MemoryOp`] into the
@@ -216,11 +243,23 @@ impl<'a> CircuitInputStateRef<'a> {
         &mut self,
         step: &mut ExecStep,
         address: MemoryAddress,
-        value: u8,
-    ) -> Result<(), Error> {
+    ) -> Result<u8, Error> {
+        let byte = &self.call_ctx()?.memory.read_chunk(address, 1.into())[0];
         let call_id = self.call()?.call_id;
-        self.push_op(step, RW::READ, MemoryOp::new(call_id, address, value));
-        Ok(())
+        self.push_op(step, RW::READ, MemoryOp::new(call_id, address, *byte))?;
+        Ok(*byte)
+    }
+
+    /// Almost the same as above memory_read, but read from the caller's context instead.
+    pub fn memory_read_caller(
+        &mut self,
+        step: &mut ExecStep,
+        address: MemoryAddress, // Caution: make sure this address = slot passing
+    ) -> Result<u8, Error> {
+        let byte = &self.caller_ctx()?.memory.read_chunk(address, 1.into())[0];
+        let call_id = self.call()?.caller_id;
+        self.push_op(step, RW::READ, MemoryOp::new(call_id, address, *byte))?;
+        Ok(*byte)
     }
 
     /// Push a write type [`MemoryOp`] into the
@@ -234,10 +273,32 @@ impl<'a> CircuitInputStateRef<'a> {
         step: &mut ExecStep,
         address: MemoryAddress,
         value: u8,
-    ) -> Result<(), Error> {
+    ) -> Result<u8, Error> {
         let call_id = self.call()?.call_id;
-        self.push_op(step, RW::WRITE, MemoryOp::new(call_id, address, value));
-        Ok(())
+
+        let mem = &mut self.call_ctx_mut()?.memory;
+        let value_prev = mem.read_chunk(address, 1.into())[0];
+        mem.write_chunk(address, &[value]);
+
+        self.push_op(step, RW::WRITE, MemoryOp::new(call_id, address, value))?;
+        Ok(value_prev)
+    }
+
+    /// Almost the same as above memory_write, but write to the caller's context instead.
+    pub fn memory_write_caller(
+        &mut self,
+        step: &mut ExecStep,
+        address: MemoryAddress, // Caution: make sure this address = slot passing
+        value: u8,
+    ) -> Result<u8, Error> {
+        let call_id = self.call()?.caller_id;
+
+        let mem = &mut self.caller_ctx_mut()?.memory;
+        let value_prev = mem.read_chunk(address, 1.into())[0];
+        mem.write_chunk(address, &[value_prev]);
+
+        self.push_op(step, RW::WRITE, MemoryOp::new(call_id, address, value))?;
+        Ok(value_prev)
     }
 
     /// Push a write type [`StackOp`] into the
@@ -253,7 +314,7 @@ impl<'a> CircuitInputStateRef<'a> {
         value: Word,
     ) -> Result<(), Error> {
         let call_id = self.call()?.call_id;
-        self.push_op(step, RW::WRITE, StackOp::new(call_id, address, value));
+        self.push_op(step, RW::WRITE, StackOp::new(call_id, address, value))?;
         Ok(())
     }
 
@@ -270,7 +331,7 @@ impl<'a> CircuitInputStateRef<'a> {
         value: Word,
     ) -> Result<(), Error> {
         let call_id = self.call()?.call_id;
-        self.push_op(step, RW::READ, StackOp::new(call_id, address, value));
+        self.push_op(step, RW::READ, StackOp::new(call_id, address, value))?;
         Ok(())
     }
 
@@ -352,9 +413,9 @@ impl<'a> CircuitInputStateRef<'a> {
         address: Address,
         field: AccountField,
         value: Word,
-    ) {
+    ) -> Result<(), Error> {
         let op = AccountOp::new(address, field, value, value);
-        self.push_op(step, RW::READ, op);
+        self.push_op(step, RW::READ, op)
     }
 
     /// Push a write type [`AccountOp`] into the
@@ -376,7 +437,7 @@ impl<'a> CircuitInputStateRef<'a> {
         if reversible {
             self.push_op_reversible(step, op)?;
         } else {
-            self.push_op(step, RW::WRITE, op);
+            self.push_op(step, RW::WRITE, op)?;
         }
         Ok(())
     }
@@ -400,8 +461,7 @@ impl<'a> CircuitInputStateRef<'a> {
             step,
             RW::WRITE,
             TxLogOp::new(tx_id, log_id, field, index, value),
-        );
-        Ok(())
+        )
     }
 
     /// Push a read type [`TxReceiptOp`] into the
@@ -425,8 +485,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 field,
                 value,
             },
-        );
-        Ok(())
+        )
     }
 
     /// Push a write type [`TxReceiptOp`] into the
@@ -450,8 +509,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 field,
                 value,
             },
-        );
-        Ok(())
+        )
     }
 
     /// Push a write type [`TxAccessListAccountOp`] into the
@@ -477,8 +535,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 is_warm,
                 is_warm_prev,
             },
-        );
-        Ok(())
+        )
     }
 
     /// Add address to access list for the current transaction.
@@ -542,7 +599,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     value: sender_balance,
                     value_prev: sender_balance_prev,
                 },
-            );
+            )?;
             sender_balance_prev = sender_balance;
         }
         let sender_balance = sender_balance_prev - value;
@@ -766,7 +823,11 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// read reversion info
-    pub(crate) fn reversion_info_read(&mut self, step: &mut ExecStep, call: &Call) {
+    pub(crate) fn reversion_info_read(
+        &mut self,
+        step: &mut ExecStep,
+        call: &Call,
+    ) -> Result<(), Error> {
         for (field, value) in [
             (
                 CallContextField::RwCounterEndOfReversion,
@@ -774,12 +835,17 @@ impl<'a> CircuitInputStateRef<'a> {
             ),
             (CallContextField::IsPersistent, call.is_persistent.to_word()),
         ] {
-            self.call_context_read(step, call.call_id, field, value);
+            self.call_context_read(step, call.call_id, field, value)?;
         }
+        Ok(())
     }
 
     /// write reversion info
-    pub(crate) fn reversion_info_write(&mut self, step: &mut ExecStep, call: &Call) {
+    pub(crate) fn reversion_info_write(
+        &mut self,
+        step: &mut ExecStep,
+        call: &Call,
+    ) -> Result<(), Error> {
         for (field, value) in [
             (
                 CallContextField::RwCounterEndOfReversion,
@@ -787,8 +853,9 @@ impl<'a> CircuitInputStateRef<'a> {
             ),
             (CallContextField::IsPersistent, call.is_persistent.to_word()),
         ] {
-            self.call_context_write(step, call.call_id, field, value);
+            self.call_context_write(step, call.call_id, field, value)?;
         }
+        Ok(())
     }
 
     /// Check if address is a precompiled or not.
@@ -973,7 +1040,11 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Handle a reversion group
-    fn handle_reversion(&mut self) {
+    pub fn handle_reversion(&mut self, current_exec_steps: &mut [&mut ExecStep]) {
+        // We already know that the call has reverted. Only the precompile failure case must be
+        // handled differently as the ExecSteps associated with those calls haven't yet been pushed
+        // to the tx's steps.
+
         let reversion_group = self
             .tx_ctx
             .reversion_groups
@@ -990,9 +1061,15 @@ impl<'a> CircuitInputStateRef<'a> {
                     false,
                     op,
                 );
-                self.tx.steps_mut()[step_index]
-                    .bus_mapping_instance
-                    .push(rev_op_ref);
+
+                let step: &mut ExecStep = if step_index >= self.tx.steps_mut().len() {
+                    // the `current_exec_steps` will be appended after self.tx.steps
+                    // So here we do an index-mapping
+                    current_exec_steps[step_index - self.tx.steps_mut().len()]
+                } else {
+                    &mut self.tx.steps_mut()[step_index]
+                };
+                step.bus_mapping_instance.push(rev_op_ref);
             }
         }
 
@@ -1008,21 +1085,54 @@ impl<'a> CircuitInputStateRef<'a> {
     /// previous call context.
     pub fn handle_return(
         &mut self,
-        exec_step: &mut ExecStep,
+        current_exec_steps: &mut [&mut ExecStep],
         geth_steps: &[GethExecStep],
         need_restore: bool,
     ) -> Result<(), Error> {
+        let step = &geth_steps[0];
+
+        // For these 6 opcodes, the return data should be handled in opcodes respectively.
+        // For other opcodes/states, return data must be empty.
+        if !matches!(
+            step.op,
+            OpcodeId::RETURN
+                | OpcodeId::REVERT
+                | OpcodeId::CALL
+                | OpcodeId::CALLCODE
+                | OpcodeId::DELEGATECALL
+                | OpcodeId::STATICCALL
+        ) || current_exec_steps[0].error.is_some()
+        {
+            if let Ok(caller) = self.caller_ctx_mut() {
+                caller.return_data.clear();
+            }
+        }
         if need_restore {
-            self.handle_restore_context(exec_step, geth_steps)?;
+            // The only case where `current_exec_steps` are more than 1 is for precompiled contract
+            // calls. In this case, we have: [..., CALLOP, PRECOMPILE_EXEC_STEP]
+            // as the current execution steps. And in case of return, we
+            // restore context from the internal precompile execution
+            // step to the `CALLOP` step.
+            if current_exec_steps.len() > 1 {
+                debug_assert!(
+                    current_exec_steps[1].is_precompiled()
+                        || current_exec_steps[1].is_precompile_oog_err()
+                );
+            }
+
+            self.handle_restore_context(
+                current_exec_steps.last_mut().expect("last exists"),
+                geth_steps,
+            )?;
         }
 
-        let step = &geth_steps[0];
         // handle return_data
         let (return_data_offset, return_data_length) = {
             if !self.call()?.is_root {
                 let (offset, length) = match step.op {
                     OpcodeId::RETURN | OpcodeId::REVERT => {
-                        let (offset, length) = if step.error.is_some()
+                        let exec_step = current_exec_steps.last_mut().expect("last exists").clone();
+                        let (offset, length) = if exec_step.error.is_some()
                             || (self.call()?.is_create() && self.call()?.is_success)
                         {
                             (0, 0)
@@ -1078,7 +1188,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Handle reversion if this call doesn't end successfully
         if !call.is_success {
-            self.handle_reversion();
+            self.handle_reversion(current_exec_steps);
         }
 
         // If current call has caller.
@@ -1121,14 +1231,18 @@ impl<'a> CircuitInputStateRef<'a> {
             || geth_step.op == OpcodeId::RETURN)
             && exec_step.error.is_none();
 
-        if !is_revert_or_return_call_success && !call.is_success {
+        if !is_revert_or_return_call_success
+            && !call.is_success
+            && !exec_step.is_precompiled()
+            && !exec_step.is_precompile_oog_err()
+        {
             // add call failure ops for exception cases
             self.call_context_read(
                 exec_step,
                 call.call_id,
                 CallContextField::IsSuccess,
                 0u64.into(),
-            );
+            )?;
 
             // Even call.rw_counter_end_of_reversion is zero for now, it will set in
             // set_value_ops_call_context_rwc_eor later
@@ -1139,7 +1253,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 call.call_id,
                 CallContextField::RwCounterEndOfReversion,
                 call.rw_counter_end_of_reversion.into(),
-            );
+            )?;
 
             if call.is_root {
                 return Ok(());
@@ -1155,26 +1269,45 @@ impl<'a> CircuitInputStateRef<'a> {
             call.call_id,
             CallContextField::CallerId,
             caller.call_id.into(),
-        );
+        )?;
 
-        let [last_callee_return_data_offset, last_callee_return_data_length] = match geth_step.op {
-            OpcodeId::STOP => [Word::zero(); 2],
-            OpcodeId::REVERT | OpcodeId::RETURN => {
-                let offset = geth_step.stack.nth_last(0)?;
-                let length = geth_step.stack.nth_last(1)?;
-                // This is the convention we are using for memory addresses so that there is no
-                // memory expansion cost when the length is 0.
-                if length.is_zero() {
-                    [Word::zero(); 2]
-                } else {
-                    [offset, length]
+        let [last_callee_return_data_offset, last_callee_return_data_length] =
+            if exec_step.error.is_some() {
+                [Word::zero(); 2]
+            } else {
+                match geth_step.op {
+                    OpcodeId::STOP => [Word::zero(); 2],
+                    OpcodeId::CALL
+                    | OpcodeId::CALLCODE
+                    | OpcodeId::STATICCALL
+                    | OpcodeId::DELEGATECALL => {
+                        let return_data_length = match exec_step.exec_state {
+                            ExecState::Precompile(_) => {
+                                // successful precompile call
+                                self.caller_ctx()?.return_data.len().into()
+                            }
+                            _ => Word::zero(),
+                        };
+                        [Word::zero(), return_data_length]
+                    }
+                    OpcodeId::REVERT | OpcodeId::RETURN => {
+                        let offset = geth_step.stack.nth_last(0)?;
+                        let length = geth_step.stack.nth_last(1)?;
+                        // This is the convention we are using for memory addresses so that there is
+                        // no memory expansion cost when the length is 0.
+                        if length.is_zero() {
+                            [Word::zero(); 2]
+                        } else {
+                            [offset, length]
+                        }
+                    }
+                    _ => [Word::zero(), Word::zero()],
                 }
-            }
-            _ => [Word::zero(), Word::zero()],
-        };
-
+            };
         let gas_refund = if exec_step.error.is_some() {
             0
+        } else if exec_step.is_precompiled() {
+            exec_step.gas_left - exec_step.gas_cost
         } else {
             let curr_memory_word_size = (exec_step.memory_size as u64) / 32;
             let next_memory_word_size = if !last_callee_return_data_length.is_zero() {
@@ -1201,11 +1334,11 @@ impl<'a> CircuitInputStateRef<'a> {
             geth_step.gas - memory_expansion_gas_cost - code_deposit_cost - constant_step_gas
         };
 
-        let caller_gas_left = if is_revert_or_return_call_success || call.is_success {
-            geth_step_next.gas - gas_refund
-        } else {
-            geth_step_next.gas
-        };
+        let caller_gas_left = geth_step_next.gas.checked_sub(gas_refund).unwrap_or_else (
+            || {
+                panic!("caller_gas_left underflow geth_step_next {geth_step_next:?}, gas_refund {gas_refund:?}, exec_step {exec_step:?}, geth_step {geth_step:?}");
+            }
+        );
 
         for (field, value) in [
             (CallContextField::IsRoot, (caller.is_root as u64).into()),
@@ -1229,7 +1362,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 self.caller_ctx()?.reversible_write_counter.into(),
             ),
         ] {
-            self.call_context_read(exec_step, caller.call_id, field, value);
+            self.call_context_read(exec_step, caller.call_id, field, value)?;
         }
 
         // EIP-211: CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
@@ -1254,7 +1387,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 },
             ),
         ] {
-            self.call_context_write(exec_step, caller.call_id, field, value);
+            self.call_context_write(exec_step, caller.call_id, field, value)?;
         }
 
         Ok(())
@@ -1262,7 +1395,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Push a copy event to the state.
     pub fn push_copy(&mut self, step: &mut ExecStep, event: CopyEvent) {
-        step.copy_rw_counter_delta = event.rw_counter_delta();
+        step.copy_rw_counter_delta += event.rw_counter_delta();
         self.block.add_copy_event(event);
     }
 
@@ -1465,6 +1598,49 @@ impl<'a> CircuitInputStateRef<'a> {
                 }
             }
 
+            // Precompile call failures.
+            if matches!(
+                step.op,
+                OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL
+            ) {
+                let code_address = step.stack.nth_last(1)?.to_address();
+                // NOTE: we do not know the amount of gas that precompile got here
+                //   because the callGasTemp might probably be smaller than the gas
+                //   on top of the stack (step.stack.last())
+                // Therefore we postpone the oog handling to the implementor of callop.
+                if is_precompiled(&code_address) {
+                    let precompile_call: PrecompileCalls = code_address[19].into();
+                    match precompile_call {
+                        PrecompileCalls::Sha256
+                        | PrecompileCalls::Ripemd160
+                        | PrecompileCalls::Blake2F
+                        | PrecompileCalls::ECRecover
+                        | PrecompileCalls::Bn128Add
+                        | PrecompileCalls::Bn128Mul
+                        | PrecompileCalls::Bn128Pairing
+                        | PrecompileCalls::Modexp => {
+                            // Log the precompile address and gas left.
+                            // Failure due to precompile being unsupported.
+                            // Failure cases are routed to `PrecompileFailed` dummy gadget.
+                            log::trace!(
+                                "Precompile failed: code_address = {}, step.gas = {}",
+                                code_address,
+                                step.gas,
+                            );
+                            return Ok(Some(ExecError::UnimplementedPrecompiles));
+                        }
+                        pre_call => {
+                            log::trace!(
+                                "Precompile call failed: addr={:?}, step.gas={:?}",
+                                pre_call,
+                                step.gas
+                            );
+                            return Ok(None);
+                        }
+                    }
+                }
+            }
+
             return Err(Error::UnexpectedExecStepError(
                 "*CALL*/CREATE* code not executed",
                 Box::new(step.clone()),
@@ -1523,6 +1699,70 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(copy_steps)
     }
 
+    pub(crate) fn gen_copy_steps_for_precompile_calldata(
+        &mut self,
+        exec_step: &mut ExecStep,
+        src_addr: u64,
+        copy_length: u64,
+    ) -> Result<Vec<u8>, Error> {
+        let mut input_bytes: Vec<u8> = vec![];
+
+        if copy_length != 0 {
+            let start_byte_index = src_addr;
+            for i in 0..copy_length {
+                let b = self.memory_read_caller(exec_step, (start_byte_index + i).into())?;
+                input_bytes.push(b);
+            }
+        }
+
+        Ok(input_bytes)
+    }
+
+    pub(crate) fn gen_copy_steps_for_precompile_callee_memory(
+        &mut self,
+        exec_step: &mut ExecStep,
+        result: &[u8],
+    ) -> Result<(Vec<u8>, Vec<u8>), Error> {
+        if result.is_empty() {
+            Ok((vec![], vec![]))
+        } else {
+            let mut prev_bytes = vec![];
+            for (byte_index, byte) in result.iter().enumerate() {
+                let prev_byte = self.memory_write(exec_step, byte_index.into(), *byte)?;
+                prev_bytes.push(prev_byte);
+            }
+
+            Ok((result.into(), prev_bytes))
+        }
+    }
+
+    pub(crate) fn gen_copy_steps_for_precompile_returndata(
+        &mut self,
+        exec_step: &mut ExecStep,
+        dst_addr: impl Into<MemoryAddress>,
+        copy_length: impl Into<MemoryAddress>,
+        result: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        let copy_length = copy_length.into().0;
+        let mut return_bytes: Vec<u8> = vec![];
+
+        if copy_length != 0 {
+            assert!(copy_length <= result.len());
+
+            let mut dst_byte_index: usize = dst_addr.into().0;
+
+            for (src_byte_index, b) in result.iter().take(copy_length).enumerate() {
+                self.memory_read(exec_step, src_byte_index.into())?;
+                self.memory_write_caller(exec_step, dst_byte_index.into(), *b)?;
+                dst_byte_index += 1;
+
+                return_bytes.push(*b);
+            }
+        }
+
+        Ok(return_bytes)
+    }
+
     /// Generate copy steps for call data.
     pub(crate) fn gen_copy_steps_for_call_data(
         &mut self,
@@ -1543,7 +1783,7 @@ impl<'a> CircuitInputStateRef<'a> {
                         exec_step,
                         RW::READ,
                         MemoryOp::new(self.call()?.caller_id, addr.into(), byte),
-                    );
+                    )?;
                 }
                 byte
             } else {

@@ -1172,7 +1172,6 @@ func TestExtensionAddedInFirstStorageLevelOneKeyByte(t *testing.T) {
 	statedb.SetState(addr, key1, val1)
 
 	toBeModified := common.HexToHash("0x1")
-	// statedb.SetState(addr, toBeModified, val1)
 	statedb.IntermediateRoot(false)
 	val := common.BigToHash(big.NewInt(int64(17)))
 	trieMod := TrieModification{
@@ -1370,9 +1369,6 @@ func TestExtensionThreeKeyBytes(t *testing.T) {
 		val1 := common.BigToHash(big.NewInt(int64(1)))
 		statedb.SetState(addr, key2, val1)
 		statedb.IntermediateRoot(false)
-
-		// v := common.Hash{} // empty value deletes the key
-		// statedb.SetState(addr, key2, v)
 	}
 
 	toBeModified := common.HexToHash("0x333")
@@ -1399,21 +1395,13 @@ func TestOnlyLeafInStorageProof(t *testing.T) {
 
 	h := fmt.Sprintf("0x%d", 0)
 	addr := common.HexToAddress(h)
-	// statedb.IntermediateRoot(false)
 	statedb.CreateAccount(addr)
-
-	accountProof, _, _, _, _, err := statedb.GetProof(addr)
-	fmt.Println(len(accountProof))
-	check(err)
 
 	h = fmt.Sprintf("0x2111d%d", 0)
 	key2 := common.HexToHash(h)
 	val1 := common.BigToHash(big.NewInt(int64(1)))
 	statedb.SetState(addr, key2, val1)
 	statedb.IntermediateRoot(false)
-
-	// storageProof, _, _, _, err := statedb.GetStorageProof(addr, key2)
-	// check(err)
 
 	val := common.BigToHash(big.NewInt(int64(17)))
 	trieMod := TrieModification{
@@ -1438,21 +1426,13 @@ func TestStorageLeafInFirstLevelAfterPlaceholder(t *testing.T) {
 
 	h := fmt.Sprintf("0x%d", 0)
 	addr := common.HexToAddress(h)
-	// statedb.IntermediateRoot(false)
 	statedb.CreateAccount(addr)
-
-	accountProof, _, _, _, _, err := statedb.GetProof(addr)
-	fmt.Println(len(accountProof))
-	check(err)
 
 	h1 := fmt.Sprintf("0x2111d%d", 0)
 	key1 := common.HexToHash(h1)
 	val1 := common.BigToHash(big.NewInt(int64(1)))
 	statedb.SetState(addr, key1, val1)
 	statedb.IntermediateRoot(false)
-
-	// storageProof, _, _, _, err := statedb.GetStorageProof(addr, key2)
-	// check(err)
 
 	h2 := fmt.Sprintf("0x2111%d", 0)
 	key2 := common.HexToHash(h2)
@@ -1480,24 +1460,11 @@ func TestLeafAddedToEmptyTrie(t *testing.T) {
 
 	h := fmt.Sprintf("0x%d", 0)
 	addr := common.HexToAddress(h)
-	// statedb.IntermediateRoot(false)
 	statedb.CreateAccount(addr)
-
-	accountProof, _, _, _, _, err := statedb.GetProof(addr)
-	fmt.Println(len(accountProof))
-	check(err)
-
-	// emptyTrieHash := statedb.StorageTrie(addr).Hash()
-	// fmt.Println(emptyTrieHash.Bytes())
 
 	h = fmt.Sprintf("0x2111d%d", 0)
 	key2 := common.HexToHash(h)
-	// val1 := common.BigToHash(big.NewInt(int64(1)))
-	// statedb.SetState(addr, key2, val1)
 	statedb.IntermediateRoot(false)
-
-	// storageProof, _, _, _, err := statedb.GetStorageProof(addr, key2)
-	// check(err)
 
 	val := common.BigToHash(big.NewInt(int64(17)))
 	trieMod := TrieModification{
@@ -1522,21 +1489,13 @@ func TestDeleteToEmptyTrie(t *testing.T) {
 
 	h := fmt.Sprintf("0x%d", 0)
 	addr := common.HexToAddress(h)
-	// statedb.IntermediateRoot(false)
 	statedb.CreateAccount(addr)
-
-	accountProof, _, _, _, _, err := statedb.GetProof(addr)
-	fmt.Println(len(accountProof))
-	check(err)
 
 	h = fmt.Sprintf("0x2111d%d", 0)
 	key2 := common.HexToHash(h)
 	val1 := common.BigToHash(big.NewInt(int64(1)))
 	statedb.SetState(addr, key2, val1)
 	statedb.IntermediateRoot(false)
-
-	// storageProof, _, _, _, err := statedb.GetStorageProof(addr, key2)
-	// check(err)
 
 	val := common.Hash{} // empty value deletes the key
 	trieMod := TrieModification{
@@ -1967,11 +1926,6 @@ func TestLeafInLastLevel(t *testing.T) {
 		key2 = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3]
 	*/
 
-	storageProof, _, _, _, _, err := statedb.GetStorageProof(addr, key1)
-	check(err)
-
-	fmt.Println(storageProof[0])
-
 	val := common.BigToHash(big.NewInt(int64(17)))
 	trieMod := TrieModification{
 		Type:    StorageChanged,
@@ -2008,11 +1962,6 @@ func TestLeafWithOneNibble(t *testing.T) {
 	key2 := common.HexToHash("0x30")
 	statedb.SetState(addr, key2, val1)
 	statedb.IntermediateRoot(false)
-
-	storageProof, _, _, _, _, err := statedb.GetStorageProof(addr, key1)
-	check(err)
-
-	fmt.Println(storageProof[0])
 
 	val := common.BigToHash(big.NewInt(int64(17)))
 	trieMod := TrieModification{
@@ -2063,11 +2012,6 @@ func TestLeafWithMoreNibbles(t *testing.T) {
 	statedb.SetState(addr, key2, val1)
 	statedb.IntermediateRoot(false)
 
-	storageProof, _, _, _, _, err := statedb.GetStorageProof(addr, key1)
-	check(err)
-
-	fmt.Println(storageProof[0])
-
 	val := common.BigToHash(big.NewInt(int64(17)))
 	trieMod := TrieModification{
 		Type:    StorageChanged,
@@ -2105,18 +2049,13 @@ func TestBranchAfterExtNode(t *testing.T) {
 	val2 := common.BigToHash(big.NewInt(int64(222)))
 
 	statedb.SetState(addr, key1, val1)
-	fmt.Println(key1)
-
 	statedb.SetState(addr, key2, val2)
-	fmt.Println(key2)
 
 	statedb.IntermediateRoot(false)
 
 	key1Hex += "1"
 	key3 := common.HexToHash(key1Hex)
 	statedb.SetState(addr, key3, val2)
-	fmt.Println(key3)
-
 	statedb.IntermediateRoot(false)
 
 	val := common.BigToHash(big.NewInt(int64(17)))

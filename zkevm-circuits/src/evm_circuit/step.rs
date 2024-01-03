@@ -22,6 +22,7 @@ use bus_mapping::{
     circuit_input_builder::ExecState,
     error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
     evm::OpcodeId,
+    precompile::PrecompileCalls,
 };
 use eth_types::{evm_unimplemented, Field, ToWord};
 use halo2_proofs::{
@@ -32,8 +33,23 @@ use std::{fmt::Display, iter};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
-#[allow(missing_docs, reason = "some docs here are tedious and not helpful")]
-#[allow(non_camel_case_types)]
+impl From<PrecompileCalls> for ExecutionState {
+    fn from(value: PrecompileCalls) -> Self {
+        match value {
+            PrecompileCalls::ECRecover => ExecutionState::PrecompileEcRecover,
+            PrecompileCalls::Sha256 => ExecutionState::PrecompileSha256,
+            PrecompileCalls::Ripemd160 => ExecutionState::PrecompileRipemd160,
+            PrecompileCalls::Identity => ExecutionState::PrecompileIdentity,
+            PrecompileCalls::Modexp => ExecutionState::PrecompileBigModExp,
+            PrecompileCalls::Bn128Add => ExecutionState::PrecompileBn256Add,
+            PrecompileCalls::Bn128Mul => ExecutionState::PrecompileBn256ScalarMul,
+            PrecompileCalls::Bn128Pairing => ExecutionState::PrecompileBn256Pairing,
+            PrecompileCalls::Blake2F => ExecutionState::PrecompileBlake2f,
+        }
+    }
+}
+
+#[allow(non_camel_case_types, missing_docs)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
 /// All the possible execution states that the computation of EVM can arrive.
 /// Some states are shared by multiple opcodes.
@@ -42,6 +58,7 @@ pub enum ExecutionState {
     BeginTx,
     EndTx,
     EndBlock,
+    InvalidTx,
     // Opcode successful cases
     STOP,
     /// ADD and SUB opcodes share this state
@@ -124,6 +141,7 @@ pub enum ExecutionState {
     ErrorCodeStore, // combine ErrorMaxCodeSizeExceeded and ErrorOutOfGasCodeStore
     ErrorInvalidJump,
     ErrorReturnDataOutOfBound,
+    ErrorPrecompileFailed,
     ErrorOutOfGasConstant,
     ErrorOutOfGasStaticMemoryExpansion,
     ErrorOutOfGasDynamicMemoryExpansion,
@@ -135,9 +153,20 @@ pub enum ExecutionState {
     ErrorOutOfGasSHA3,
     ErrorOutOfGasEXTCODECOPY,
     ErrorOutOfGasCall,
+    ErrorOutOfGasPrecompile,
     ErrorOutOfGasSloadSstore,
     ErrorOutOfGasCREATE,
     ErrorOutOfGasSELFDESTRUCT,
+    // Precompiles
+    PrecompileEcRecover,
+    PrecompileSha256,
+    PrecompileRipemd160,
+    PrecompileIdentity,
+    PrecompileBigModExp,
+    PrecompileBn256Add,
+    PrecompileBn256ScalarMul,
+    PrecompileBn256Pairing,
+    PrecompileBlake2f,
 }
 
 impl Default for ExecutionState {
@@ -180,6 +209,7 @@ impl From<&ExecError> for ExecutionState {
             ExecError::CodeStoreOutOfGas | ExecError::MaxCodeSizeExceeded => {
                 ExecutionState::ErrorCodeStore
             }
+            ExecError::UnimplementedPrecompiles => ExecutionState::ErrorPrecompileFailed,
             ExecError::OutOfGas(oog_error) => match oog_error {
                 OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
                 OogError::StaticMemoryExpansion => {
@@ -195,6 +225,7 @@ impl From<&ExecError> for ExecutionState {
                 OogError::Exp => ExecutionState::ErrorOutOfGasEXP,
                 OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
                 OogError::Call => ExecutionState::ErrorOutOfGasCall,
+                OogError::Precompile => ExecutionState::ErrorOutOfGasPrecompile,
                 OogError::SloadSstore => ExecutionState::ErrorOutOfGasSloadSstore,
                 OogError::Create => ExecutionState::ErrorOutOfGasCREATE,
                 OogError::SelfDestruct => ExecutionState::ErrorOutOfGasSELFDESTRUCT,
@@ -298,9 +329,21 @@ impl From<&ExecStep> for ExecutionState {
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
+            ExecState::Precompile(precompile) => match precompile {
+                PrecompileCalls::ECRecover => ExecutionState::PrecompileEcRecover,
+                PrecompileCalls::Sha256 => ExecutionState::PrecompileSha256,
+                PrecompileCalls::Ripemd160 => ExecutionState::PrecompileRipemd160,
+                PrecompileCalls::Identity => ExecutionState::PrecompileIdentity,
+                PrecompileCalls::Modexp => ExecutionState::PrecompileBigModExp,
+                PrecompileCalls::Bn128Add => ExecutionState::PrecompileBn256Add,
+                PrecompileCalls::Bn128Mul => ExecutionState::PrecompileBn256ScalarMul,
+                PrecompileCalls::Bn128Pairing => ExecutionState::PrecompileBn256Pairing,
+                PrecompileCalls::Blake2F => ExecutionState::PrecompileBlake2f,
+            },
             ExecState::BeginTx => ExecutionState::BeginTx,
             ExecState::EndTx => ExecutionState::EndTx,
             ExecState::EndBlock => ExecutionState::EndBlock,
+            ExecState::InvalidTx => ExecutionState::InvalidTx,
         }
     }
 }
@@ -324,6 +367,37 @@ impl ExecutionState {
         Self::iter().count()
     }
 
+    pub(crate) fn is_precompiled(&self) -> bool {
+        matches!(
+            self,
+            Self::PrecompileEcRecover
+                | Self::PrecompileSha256
+                | Self::PrecompileRipemd160
+                | Self::PrecompileIdentity
+                | Self::PrecompileBigModExp
+                | Self::PrecompileBn256Add
+                | Self::PrecompileBn256ScalarMul
+                | Self::PrecompileBn256Pairing
+                | Self::PrecompileBlake2f
+        )
+    }
+
+    pub(crate) fn precompile_base_gas_cost(&self) -> u64 {
+        (match self {
+            Self::PrecompileEcRecover => PrecompileCalls::ECRecover,
+            Self::PrecompileSha256 => PrecompileCalls::Sha256,
+            Self::PrecompileRipemd160 => PrecompileCalls::Ripemd160,
+            Self::PrecompileIdentity => PrecompileCalls::Identity,
+            Self::PrecompileBigModExp => PrecompileCalls::Modexp,
+            Self::PrecompileBn256Add => PrecompileCalls::Bn128Add,
+            Self::PrecompileBn256ScalarMul => PrecompileCalls::Bn128Mul,
+            Self::PrecompileBn256Pairing => PrecompileCalls::Bn128Pairing,
+            Self::PrecompileBlake2f => PrecompileCalls::Blake2F,
+            _ => return 0,
+        })
+        .base_gas_cost()
+    }
+
     pub(crate) fn halts_in_exception(&self) -> bool {
         matches!(
             self,
@@ -344,6 +418,7 @@ impl ExecutionState {
                 | Self::ErrorOutOfGasSHA3
                 | Self::ErrorOutOfGasEXTCODECOPY
                 | Self::ErrorOutOfGasCall
+                | Self::ErrorOutOfGasPrecompile
                 | Self::ErrorOutOfGasSloadSstore
                 | Self::ErrorOutOfGasCREATE
                 | Self::ErrorOutOfGasSELFDESTRUCT

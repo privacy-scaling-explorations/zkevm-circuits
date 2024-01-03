@@ -146,7 +146,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         branch.key_mult_post_branch.expr(),
                         branch.num_nibbles.expr(),
                         branch.is_key_odd.expr(),
-                        0.expr(),
+                        branch.key_rlc_post_drifted.expr(),
                         0.expr(),
                         0.expr(),
                         false.expr(),
@@ -275,7 +275,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     key_rlc_post_branch,
                     key_mult_post_branch,
                     num_nibbles,
-                    0.scalar(),
+                    key_rlc_post_drifted,
                     0.scalar(),
                     0,
                 )?;

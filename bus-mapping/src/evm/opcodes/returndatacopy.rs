@@ -83,7 +83,7 @@ fn gen_returndatacopy_step(
             return_data.len().into(),
         ),
     ] {
-        state.call_context_read(&mut exec_step, call_id, field, value);
+        state.call_context_read(&mut exec_step, call_id, field, value)?;
     }
     Ok(exec_step)
 }
@@ -110,7 +110,7 @@ fn gen_copy_steps(
             exec_step,
             RW::READ,
             MemoryOp::new(state.call()?.last_callee_id, addr.into(), value),
-        );
+        )?;
 
         // Write
         copy_steps.push((value, false));

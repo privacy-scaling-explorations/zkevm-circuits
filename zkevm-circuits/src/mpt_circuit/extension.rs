@@ -71,7 +71,7 @@ impl<F: Field> ExtensionGadget<F> {
                 ctx.rlp_item(
                     meta,
                     cb,
-                    ExtensionBranchRowType::KeyC as usize,
+                    ExtensionBranchRowType::Nibbles as usize,
                     RlpItemType::Nibbles,
                 ),
             ];
@@ -136,10 +136,10 @@ impl<F: Field> ExtensionGadget<F> {
                 };
                 ifx! {not!(is_placeholder[is_s.idx()]) => {
                     ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(is_not_hashed)]) => {
-                        // Hashed branch hash in parent branch
+                        // Hashed extension node in parent branch
                         require!((1.expr(), rlc.expr(), num_bytes.expr(), parent_data[is_s.idx()].hash.lo().expr(), parent_data[is_s.idx()].hash.hi().expr()) =>> @KECCAK);
                     } elsex {
-                        // Non-hashed branch hash in parent branch
+                        // Non-hashed extension node in parent branch
                         require!(rlc => parent_data[is_s.idx()].rlc);
                     }}
                 }}
@@ -152,14 +152,6 @@ impl<F: Field> ExtensionGadget<F> {
             // Make sure the nibble counter is updated correctly
             let num_nibbles = key_data.num_nibbles.expr() + num_nibbles.expr();
 
-            // The parity alternates when there's an even number of nibbles, remains the
-            // same otherwise
-            let is_key_odd = ifx! {config.is_key_part_odd => {
-                not!(key_data.is_odd)
-            } elsex {
-                key_data.is_odd.expr()
-            }};
-
             // Calculate the extension node key RLC when in an extension node
             // Currently, the extension node S and extension node C both have the same key
             // RLC - however, sometimes extension node can be replaced by a
@@ -171,7 +163,7 @@ impl<F: Field> ExtensionGadget<F> {
                     config.rlp_key.key_value.clone(),
                     key_data.mult.expr(),
                     config.is_key_part_odd.expr(),
-                    not!(is_key_odd),
+                    key_data.is_odd.expr(),
                     key_items
                         .iter()
                         .map(|item| item.bytes_be())
@@ -180,6 +172,14 @@ impl<F: Field> ExtensionGadget<F> {
                         .unwrap(),
                     &cb.key_r.expr(),
                 );
+
+            // The parity alternates when there's an even number of nibbles, remains the
+            // same otherwise
+            let is_key_odd = ifx! {config.is_key_part_odd => {
+                not!(key_data.is_odd)
+            } elsex {
+                key_data.is_odd.expr()
+            }};
 
             // Get the length of the key
             // Unless both parts of the key are odd, subtract 1 from the key length.
@@ -228,7 +228,7 @@ impl<F: Field> ExtensionGadget<F> {
         // Data
         let key_items = [
             rlp_values[ExtensionBranchRowType::KeyS as usize].clone(),
-            rlp_values[ExtensionBranchRowType::KeyC as usize].clone(),
+            rlp_values[ExtensionBranchRowType::Nibbles as usize].clone(),
         ];
         let _value_bytes = [
             rlp_values[ExtensionBranchRowType::ValueS as usize].clone(),
@@ -268,19 +268,12 @@ impl<F: Field> ExtensionGadget<F> {
         // Update number of nibbles
         *num_nibbles += num_nibbles::value(rlp_key.key_item.len(), is_key_part_odd);
 
-        // Update parity
-        *is_key_odd = if is_key_part_odd {
-            !*is_key_odd
-        } else {
-            *is_key_odd
-        };
-
         // Key RLC
         let (key_rlc_ext, _) = ext_key_rlc_calc_value(
             rlp_key.key_item,
             key_data.mult,
             is_key_part_odd,
-            !*is_key_odd,
+            *is_key_odd,
             key_items
                 .iter()
                 .map(|item| item.bytes.clone())
@@ -290,6 +283,13 @@ impl<F: Field> ExtensionGadget<F> {
             region.key_r,
         );
         *key_rlc = key_data.rlc + key_rlc_ext;
+
+        // Update parity
+        *is_key_odd = if is_key_part_odd {
+            !*is_key_odd
+        } else {
+            *is_key_odd
+        };
 
         // Key mult
         let mult_key = pow::value(region.key_r, key_len_mult);
