@@ -1916,7 +1916,7 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/privacy-scaling-explorations//halo2.git?branch=feat/serde_vk#b6ee16816f883f3af8e3033006ca1ba87b5dd3e1"
+source = "git+https://github.com/privacy-scaling-explorations//halo2.git?branch=feat/serde_vk#32e32e8cf819c751003a8488ba32ab4c0b07b7ca"
 dependencies = [
  "blake2b_simd",
  "ff",
@@ -5344,4 +5344,4 @@ dependencies = [
 [[patch.unused]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2.git?branch=feat/serde_vk#b6ee16816f883f3af8e3033006ca1ba87b5dd3e1"
+source = "git+https://github.com/privacy-scaling-explorations/halo2.git?branch=feat/serde_vk#32e32e8cf819c751003a8488ba32ab4c0b07b7ca"
