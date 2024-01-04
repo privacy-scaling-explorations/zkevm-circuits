@@ -1,5 +1,5 @@
 use bus_mapping::precompile::PrecompileAuxData;
-use eth_types::{evm_types::GasCost, word, Field, ToLittleEndian, U256};
+use eth_types::{evm_types::GasCost, word, Field, ToLittleEndian, ToScalar, ToWord, U256};
 use ethers_core::k256::elliptic_curve::PrimeField;
 use gadgets::util::{and, not, or, select, sum, Expr};
 use halo2_proofs::{circuit::Value, halo2curves::secp256k1::Fq, plonk::Error};
@@ -225,14 +225,11 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
 
             let sig_r = U256::from(aux_data.sig_r.to_le_bytes());
             let sig_s = U256::from(aux_data.sig_s.to_le_bytes());
-            self.sig_v.assign_u256(region, offset, aux_data.sig_v)?;
             self.sig_r.assign_u256(region, offset, sig_r)?;
             self.sig_s.assign_u256(region, offset, sig_s)?;
+            self.sig_v.assign_u256(region, offset, aux_data.sig_v)?;
 
-            // println!("*** {:?}", hex::encode(aux_data.msg_hash.to_le_bytes()));
-            // let msg_hash = U256::from(aux_data.msg_hash.to_le_bytes());
             let (quotient, remainder) = aux_data.msg_hash.div_mod(word!(Fq::MODULUS));
-
             self.msg_hash_raw
                 .assign_u256(region, offset, aux_data.msg_hash)?;
             self.msg_hash.assign_u256(region, offset, remainder)?;
@@ -270,9 +267,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         self.callee_address.assign(
             region,
             offset,
-            Value::known(from_bytes::value(
-                &call.address.to_low_u64_be().to_le_bytes(),
-            )),
+            Value::known(call.code_address().unwrap().to_scalar().unwrap()),
         )?;
         self.caller_id
             .assign(region, offset, Value::known(F::from(call.caller_id as u64)))?;
@@ -494,8 +489,6 @@ mod test {
                     address: PrecompileCalls::Ecrecover.address().to_word(),
                     ..Default::default()
                 },
-
-
             ]
         };
     }
@@ -541,9 +534,9 @@ mod test {
     fn precompile_ecrecover_test() {
         let call_kinds = vec![
             OpcodeId::CALL,
-            // OpcodeId::STATICCALL,
-            // OpcodeId::DELEGATECALL,
-            // OpcodeId::CALLCODE,
+            OpcodeId::STATICCALL,
+            OpcodeId::DELEGATECALL,
+            OpcodeId::CALLCODE,
         ];
 
         TEST_VECTOR.iter().for_each(|test_vector| {
