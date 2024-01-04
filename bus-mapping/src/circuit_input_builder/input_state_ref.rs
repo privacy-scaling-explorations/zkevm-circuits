@@ -1619,7 +1619,6 @@ impl<'a> CircuitInputStateRef<'a> {
                         PrecompileCalls::Sha256
                         | PrecompileCalls::Ripemd160
                         | PrecompileCalls::Blake2F
-                        | PrecompileCalls::Ecrecover
                         | PrecompileCalls::Bn128Add
                         | PrecompileCalls::Bn128Mul
                         | PrecompileCalls::Bn128Pairing

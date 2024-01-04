@@ -1,7 +1,7 @@
-use bus_mapping::precompile::PrecompileAuxData;
-use eth_types::{evm_types::GasCost, word, Field, ToLittleEndian, ToScalar, ToWord, U256};
+use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
+use eth_types::{evm_types::GasCost, word, Field, ToLittleEndian, ToScalar, U256};
 use ethers_core::k256::elliptic_curve::PrimeField;
-use gadgets::util::{and, not, or, select, sum, Expr};
+use gadgets::util::{and, not, or, select, Expr};
 use halo2_proofs::{circuit::Value, halo2curves::secp256k1::Fq, plonk::Error};
 
 use crate::{
@@ -106,12 +106,13 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         ]
         .map(|tag| cb.call_context(None, tag));
 
+        let input_len = PrecompileCalls::Ecrecover.input_len().unwrap();
         for (field_tag, value) in [
             (CallContextFieldTag::CallDataOffset, 0.expr()),
-            (CallContextFieldTag::CallDataLength, 128.expr()),
+            (CallContextFieldTag::CallDataLength, input_len.expr()),
             (
                 CallContextFieldTag::ReturnDataOffset,
-                select::expr(is_recovered.expr(), 128.expr(), 0.expr()),
+                select::expr(is_recovered.expr(), input_len.expr(), 0.expr()),
             ),
             (
                 CallContextFieldTag::ReturnDataLength,
@@ -129,10 +130,9 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
 
         // lookup to the sign_verify table:
         let is_valid_sig = and::expr([is_valid_r_s.expr(), is_valid_sig_v.expr()]);
-        let mut msg_hash_le = msg_hash.limbs.clone();
-        msg_hash_le.reverse();
-
         cb.condition(is_valid_sig.expr(), |cb| {
+            let mut msg_hash_le = msg_hash.limbs.clone();
+            msg_hash_le.reverse();
             cb.sig_table_lookup(
                 WordLimbs::new(msg_hash_le).to_word(),
                 sig_v.lo().expr() - 27.expr(),
@@ -142,6 +142,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                 is_recovered.expr(),
             );
         });
+
         cb.condition(not::expr(is_valid_sig.expr()), |cb| {
             cb.require_zero(
                 "is_recovered == false if r, s or v not canonical",

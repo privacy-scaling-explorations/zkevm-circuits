@@ -64,10 +64,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
 
         // calculate required gas for precompile
         let precompiles_required_gas = vec![
-            // (
-            //     addr_bits.value_equals(PrecompileCalls::Ecrecover),
-            //     GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
-            // ),
+            (
+                addr_bits.value_equals(PrecompileCalls::Ecrecover),
+                GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
+            ),
             // addr_bits.value_equals(PrecompileCalls::Sha256),
             // addr_bits.value_equals(PrecompileCalls::Ripemd160),
             // addr_bits.value_equals(PrecompileCalls::Blake2F),
@@ -182,6 +182,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         // required_gas
         let precompile_call: PrecompileCalls = precompile_addr.to_fixed_bytes()[19].into();
         let required_gas = match precompile_call {
+            PrecompileCalls::Ecrecover => precompile_call.base_gas_cost(),
             // PrecompileCalls::Bn128Pairing => {
             //     precompile_call.base_gas_cost()
             //         + n_pairs * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR
