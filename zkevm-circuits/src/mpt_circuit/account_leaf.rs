@@ -142,9 +142,10 @@ impl<F: Field> AccountLeafConfig<F> {
                 config.is_mod_extension[is_s.idx()] = cb.query_bool();
             }
 
+            // Constraint 1
             config.main_data = MainData::load(cb, &mut ctx.memory[main_memory()], 0.expr());
 
-            // Don't allow an account node to follow an account node
+            // Constraint 2: Don't allow an account node to follow another account node
             require!(config.main_data.is_below_account => false);
 
             let mut key_rlc = vec![0.expr(); 2];
@@ -157,13 +158,19 @@ impl<F: Field> AccountLeafConfig<F> {
             let mut value_list_num_bytes = vec![0.expr(); 2];
 
             let parent_data = &mut config.parent_data;
+
+            // Constraint 3:
             parent_data[0] = ParentData::load(cb, &mut ctx.memory[parent_memory(true)], 0.expr());
+            // Constraint 4:
             parent_data[1] = ParentData::load(cb, &mut ctx.memory[parent_memory(false)], 0.expr());
 
             let key_data = &mut config.key_data;
+            // Constraint 5:
             key_data[0] = KeyData::load(cb, &mut ctx.memory[key_memory(true)], 0.expr());
+            // Constraint 6:
             key_data[1] = KeyData::load(cb, &mut ctx.memory[key_memory(false)], 0.expr());
 
+            // Constraint 7: IsEqualGadget using IsZeroGadget to determine the proof type
             // Proof types
             config.is_non_existing_account_proof = IsEqualGadget::construct(
                 &mut cb.base,
