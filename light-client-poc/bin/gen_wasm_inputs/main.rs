@@ -112,9 +112,9 @@ async fn main() -> Result<()> {
     let (fk, proof, _pi) = circuit.assert_real_prover()?;
     let (fk_s, proof_s) = light_client_poc::verifier::wasm_serialize(&fk, &proof)?;
 
-    std::fs::File::create("./prover.fk")?.write_all(fk_s.as_bytes())?;
-    std::fs::File::create("./prover.proof")?.write_all(proof_s.as_bytes())?;
-    std::fs::File::create("./prover.data")?.write_all(data.as_bytes())?;
+    std::fs::File::create(format!("./block-{}.fk", block_no))?.write_all(fk_s.as_bytes())?;
+    std::fs::File::create(format!("./block-{}.proof", block_no))?.write_all(proof_s.as_bytes())?;
+    std::fs::File::create(format!("./block-{}.data", block_no))?.write_all(data.as_bytes())?;
 
     let result = light_client_poc::verifier::wasm_verify_serialized(&data, &fk_s, &proof_s);
     println!("{}", result);

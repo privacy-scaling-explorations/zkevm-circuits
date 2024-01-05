@@ -2,6 +2,8 @@
 
 use std::convert::TryFrom;
 
+use ethers::abi::Address;
+use ethers::utils::hex;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
@@ -99,4 +101,12 @@ pub async fn web3_rpc<'a, T : DeserializeOwned>(method: &str, params: &str) -> R
 pub(crate) async fn get_block(block_no: u64) -> Result<RpcBlock>{
     let params = format!(r#"["0x{:x}",true]"#, block_no);
     web3_rpc("eth_getBlockByNumber",&params).await
+}
+
+pub(crate) async fn get_code(address: Address, block_no: u64) -> Result<Vec<u8>>{
+    let params = format!(r#"["{:?}","0x{:x}"]"#, address, block_no);
+    super::externs::alert(&params);
+    let response: String = web3_rpc("eth_getCode",&params).await?;
+    let bytes = hex::decode(response)?;
+    Ok(bytes)
 }

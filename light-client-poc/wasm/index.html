@@ -7,12 +7,16 @@
   <body>
     <script type="module">
       import init, { verify_proof } from "./pkg/hello_wasm.js";
-      init().then(() => {
+
+      async function call_verify_proof() {
         const start = Date.now();
-        let result = verify_proof();
+        const result = await verify_proof();
         const end = Date.now();
-        console.log(result);
-        alert("result is "+result+" execution time=" + (end - start) + "ms");
+        alert("result is '"+result+"'' execution time=" + (end - start) + "ms");
+      }
+
+      init().then(() => {
+        call_verify_proof();
       });
     </script>
   </body>

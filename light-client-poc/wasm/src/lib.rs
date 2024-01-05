@@ -1,62 +1,119 @@
-use std::convert::TryFrom;
+use std::collections::HashMap;
 
-use light_client_poc::verifier;
-use revm::{primitives::{Address, address, Bytecode, AccountInfo, ruint::Uint, TransactTo, Bytes, U256}, db::{CacheDB, EmptyDB}, EVM};
+use ethers::utils::hex::FromHex;
+use light_client_poc::verifier::{self, ProofType, TrieModification};
+use revm::{
+    db::{CacheDB, EmptyDB},
+    primitives::{
+        ruint::Uint, AccountInfo, Address, Bytecode, Bytes, CreateScheme, TransactTo, U256,
+    },
+    EVM,
+};
 use wasm_bindgen::prelude::*;
 
-use crate::rpc::get_block;
+use crate::rpc::{get_block, get_code};
+use eyre::{eyre, Result};
 
 mod rpc;
+mod externs;
 
-#[wasm_bindgen]
-extern "C" {
-    pub fn alert(s: &str);
-}
-/*
-async fn test() {
-    let encoded = include_str!(
-        "../../light_client/zkevm-circuits/light-client-poc/serialized_verifier_input.json"
-    );
+// Pending stuff
+// - At this moment we are not able to guarantee that the inital state in the proof
+//   contains all entries requiered by the EVM. So the EVM should check if
+//   accounts used pre-exists in the db.
+// - EVM does not process the coinbase
 
-    const CONTRACT_ADDR: Address = address!("0d4a11d5EEaaC28EC3F61d100daF4d40471f1852");
-    let bytecode = Bytecode::new_raw([0x60, 0x01, 0x00].into());
-    let account = AccountInfo::new(Uint::from(10), 0, bytecode.hash_slow(), bytecode);
+async fn exec_block(block_no: u64, initial_state: Vec<TrieModification>) -> Result<()> {
+    // populate database
+
     let mut db = CacheDB::new(EmptyDB::default());
-    db.insert_account_info(CONTRACT_ADDR, account);
+    let mut accounts = HashMap::<Address, AccountInfo>::new();
+
+    for entry in initial_state {
+        let address = Address::from_slice(entry.address.as_fixed_bytes());
+        let mut account_info = accounts.entry(address).or_insert(AccountInfo::default());
+
+        let mut value_bytes = [0u8; 32];
+        entry.value.to_little_endian(&mut value_bytes);
+        let value = U256::from_le_bytes(value_bytes);
+
+        let slot = U256::from_le_bytes(*entry.key.as_fixed_bytes());
+
+        let balance_changed: u8 = ProofType::BalanceChanged.into();
+        let nonce_changed: u8 = ProofType::NonceChanged.into();
+        let code_hash_changed: u8 = ProofType::CodeHashChanged.into();
+        let storage_changed: u8 = ProofType::StorageChanged.into();
+
+        if entry.typ as u8 == balance_changed {
+            account_info.balance = value;
+        } else if entry.typ as u8 == nonce_changed {
+            account_info.nonce = value.into_limbs()[0];
+        } else if entry.typ as u8 == code_hash_changed {
+            let code = get_code(entry.address, block_no).await?;
+            account_info.code_hash = value.into();
+            account_info.code = Some(Bytecode::new_raw(code.into()));
+        } else if entry.typ as u8 == storage_changed {
+            db.insert_account_storage(address, slot, value)?;
+        } else {
+            return Err(eyre!("Unknown proof type: {}", entry.typ as u8));
+        }
+    }
+
+    for (address, account_info) in accounts {
+        db.insert_account_info(address, account_info);
+    }
+
     let mut evm: EVM<CacheDB<EmptyDB>> = EVM::new();
     evm.database(db);
 
-    // fill in missing bits of env struc
-    // change that to whatever caller you want to be
-    evm.env.tx.caller = Address::from_slice(&[0; 20]);
-    // account you want to transact with
-    evm.env.tx.transact_to = TransactTo::Call(CONTRACT_ADDR);
-    // calldata formed via abigen
-    evm.env.tx.data = Bytes::new();
-    // transaction value in wei
-    evm.env.tx.value = U256::try_from(0).unwrap();
+    // get block
 
-    let _result = evm.transact().unwrap();
+    let block = get_block(block_no).await?;
 
-    match get_block(2000007).await {
-        Ok(block) => alert(&format!(
-            "State root: {}, txcount2:{}",
-            block.stateRoot,
-            block.transactions.len()
-        )),
-        Err(err) => alert(&format!("{:?}", err)),
+    for tx in block.transactions {
+        let from: Address = tx.from.parse()?;
+        let to = if tx.to.is_empty() {
+            TransactTo::Create(CreateScheme::Create)
+        } else {
+            TransactTo::Call(tx.to.parse()?)
+        };
+
+        // fill in missing bits of env struct
+        // change that to whatever caller you want to be
+        evm.env.tx.caller = from;
+        // account you want to transact with
+        evm.env.tx.transact_to = to;
+        // calldata formed via abigen
+        evm.env.tx.data = Bytes::from_hex(tx.input)?;
+        // transaction value in wei
+        evm.env.tx.value = match Uint::<256, 4>::from_str_radix(&tx.value, 16) {
+            Ok(v) => v,
+            Err(err) => return Err(eyre!("Error parsing tx value: {}", err)),
+        };
+        evm.env.tx.gas_limit = tx.gas.parse()?;
+        evm.env.tx.gas_price = match Uint::<256, 4>::from_str_radix(&tx.gasPrice, 16) {
+            Ok(v) => v,
+            Err(err) => return Err(eyre!("Error parsing tx gas price: {}", err)),
+        };
+        let _result = evm.transact().unwrap();
     }
+
+    Ok(())
 }
-*/
-// alert(&format!("Gas used yeah: {}", result.result.gas_used()));
 
 #[wasm_bindgen]
-pub fn verify_proof() -> String {
+pub async fn verify_proof() -> String {
+    let block_no = 107;
     let fk = include_str!("../prover.fk");
     let proof = include_str!("../prover.proof");
     let data = include_str!("../prover.data");
 
-    let v:  verifier::InitialStateCircuitVerifierData = serde_json::from_str(data).unwrap();
+    let verifier_data: verifier::InitialStateCircuitVerifierData =
+        serde_json::from_str(data).unwrap();
+
+    if let Err(err) = exec_block(block_no, verifier_data.trie_modifications).await {
+        return format!("error:{}",err);
+    }
 
     verifier::wasm_verify_serialized(data, fk, proof)
 }
