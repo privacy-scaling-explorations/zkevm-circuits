@@ -1,5 +1,2 @@
 web3_rpc_cache
-prover.data
-prover.fk
-prover.pi
-prover.proof
+block-*.*

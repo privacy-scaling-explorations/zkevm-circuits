@@ -2,12 +2,9 @@
 
 use std::convert::TryFrom;
 
-use ethers::abi::Address;
-use ethers::utils::hex;
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
-use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
+use ethers::{abi::Address, utils::hex};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use wasm_bindgen::{prelude::*, JsCast};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 
@@ -68,11 +65,11 @@ pub fn js2err(err: JsValue) -> eyre::Report {
     eyre!("js error: {:?}", err)
 }
 
-pub async fn web3_rpc<'a, T : DeserializeOwned>(method: &str, params: &str) -> Result<T> {
+pub async fn web3_rpc<'a, T: DeserializeOwned>(method: &str, params: &str) -> Result<T> {
     // https://rustwasm.github.io/docs/wasm-bindgen/examples/fetch.html
     // https://stackoverflow.com/questions/72521659/how-to-make-post-request-with-json-body-using-web-sys-in-webassembly
 
-    const WEB3_PROVIDER : &str = env!("PROVIDER_URL");
+    const WEB3_PROVIDER: &str = env!("PROVIDER_URL");
     let request = format!(r#"{{"method":"{method}","params":{params},"id":1,"jsonrpc":"2.0"}}"#);
 
     let mut opts = RequestInit::new();
@@ -84,13 +81,18 @@ pub async fn web3_rpc<'a, T : DeserializeOwned>(method: &str, params: &str) -> R
 
     request
         .headers()
-        .set("Content-Type","application/json").map_err(js2err)?;
+        .set("Content-Type", "application/json")
+        .map_err(js2err)?;
 
     let window = web_sys::window().ok_or_else(|| eyre!("web_sys::window()"))?;
-    let resp_value = JsFuture::from(window.fetch_with_request(&request)).await.map_err(js2err)?;
+    let resp_value = JsFuture::from(window.fetch_with_request(&request))
+        .await
+        .map_err(js2err)?;
     assert!(resp_value.is_instance_of::<Response>());
     let resp: Response = resp_value.dyn_into().map_err(js2err)?;
-    let json = JsFuture::from(resp.json().map_err(js2err)?).await.map_err(js2err)?;
+    let json = JsFuture::from(resp.json().map_err(js2err)?)
+        .await
+        .map_err(js2err)?;
 
     // Use serde to parse the JSON into a struct.
     let value: RpcResponse<T> = json.into_serde()?;
@@ -98,15 +100,15 @@ pub async fn web3_rpc<'a, T : DeserializeOwned>(method: &str, params: &str) -> R
     Ok(value.result)
 }
 
-pub(crate) async fn get_block(block_no: u64) -> Result<RpcBlock>{
+pub(crate) async fn get_block(block_no: u64) -> Result<RpcBlock> {
     let params = format!(r#"["0x{:x}",true]"#, block_no);
-    web3_rpc("eth_getBlockByNumber",&params).await
+    web3_rpc("eth_getBlockByNumber", &params).await
 }
 
-pub(crate) async fn get_code(address: Address, block_no: u64) -> Result<Vec<u8>>{
+pub(crate) async fn get_code(address: Address, block_no: u64) -> Result<Vec<u8>> {
     let params = format!(r#"["{:?}","0x{:x}"]"#, address, block_no);
     super::externs::alert(&params);
-    let response: String = web3_rpc("eth_getCode",&params).await?;
+    let response: String = web3_rpc("eth_getCode", &params).await?;
     let bytes = hex::decode(response)?;
     Ok(bytes)
 }

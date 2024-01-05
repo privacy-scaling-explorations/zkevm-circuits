@@ -14,13 +14,12 @@ use wasm_bindgen::prelude::*;
 use crate::rpc::{get_block, get_code};
 use eyre::{eyre, Result};
 
-mod rpc;
 mod externs;
+mod rpc;
 
 // Pending stuff
-// - At this moment we are not able to guarantee that the inital state in the proof
-//   contains all entries requiered by the EVM. So the EVM should check if
-//   accounts used pre-exists in the db.
+// - At this moment we are not able to guarantee that the inital state in the proof contains all
+//   entries requiered by the EVM. So the EVM should check if accounts used pre-exists in the db.
 // - EVM does not process the coinbase
 
 async fn exec_block(block_no: u64, initial_state: Vec<TrieModification>) -> Result<()> {
@@ -66,7 +65,7 @@ async fn exec_block(block_no: u64, initial_state: Vec<TrieModification>) -> Resu
     let mut evm: EVM<CacheDB<EmptyDB>> = EVM::new();
     evm.database(db);
 
-    // get block
+    // get block and execute transactions
 
     let block = get_block(block_no).await?;
 
@@ -104,15 +103,15 @@ async fn exec_block(block_no: u64, initial_state: Vec<TrieModification>) -> Resu
 #[wasm_bindgen]
 pub async fn verify_proof() -> String {
     let block_no = 107;
-    let fk = include_str!("../prover.fk");
-    let proof = include_str!("../prover.proof");
-    let data = include_str!("../prover.data");
+    let fk = include_str!("../../block-107.fk");
+    let proof = include_str!("../../block-107.proof");
+    let data = include_str!("../../block-107.data");
 
     let verifier_data: verifier::InitialStateCircuitVerifierData =
         serde_json::from_str(data).unwrap();
 
     if let Err(err) = exec_block(block_no, verifier_data.trie_modifications).await {
-        return format!("error:{}",err);
+        return format!("error:{}", err);
     }
 
     verifier::wasm_verify_serialized(data, fk, proof)
