@@ -79,7 +79,7 @@ mod test {
     use mock::TestContext;
 
     #[test]
-    #[ignore] // still under development and testing
+    // #[ignore] // still under development and testing
     fn test_intermediate_single_chunk() {
         let bytecode = bytecode! {
             PUSH1(0x0) // retLength
@@ -106,7 +106,7 @@ mod test {
                 chunk.rws.0.get_mut(&Target::Start)
             );
         }))
-        .run_dynamic_chunk(4, 2);
+        .run_dynamic_chunk(4, 1);
     }
 
     #[test]

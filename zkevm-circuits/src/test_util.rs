@@ -6,7 +6,7 @@ use crate::{
     util::SubCircuit,
     witness::{Block, Chunk, Rw},
 };
-use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
+use bus_mapping::{circuit_input_builder::{FixedCParams, CircuitsParams}, mock::BlockData};
 use eth_types::geth_types::GethData;
 use std::cmp;
 
@@ -214,7 +214,6 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             (self.block.unwrap(), self.chunk.unwrap())
         } else if self.test_ctx.is_some() {
             let block: GethData = self.test_ctx.unwrap().into();
-
             let builder = match self.circuits_params {
                 Some(fixed_param) => {
                     assert_eq!(
@@ -231,8 +230,8 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                     .handle_block(&block.eth_block, &block.geth_traces)
                     .unwrap(),
             };
-
             // FIXME(Cecilia): debug
+            println!("----after-handle-block-----");
             builder.chunks.iter().for_each(|c| {
                 println!(
                     "{:?}\n{:?}\nbegin {:?}\nend {:?}\n",

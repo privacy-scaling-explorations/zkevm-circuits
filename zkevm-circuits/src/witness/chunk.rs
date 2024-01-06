@@ -100,7 +100,7 @@ pub fn chunk_convert<F: Field>(
 
     // FIXME(Cecilia): debug
     println!(
-        "| {:?} ... {:?} |",
+        "| {:?} ... {:?} | @chunk_convert",
         chunk.ctx.initial_rwc, chunk.ctx.end_rwc
     );
 
