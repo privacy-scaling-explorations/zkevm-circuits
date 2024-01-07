@@ -28,6 +28,7 @@ use crate::{
 };
 use bus_mapping::operation::Target;
 use eth_types::{evm_unimplemented, Field};
+use ethers_core::types::transaction;
 use gadgets::{is_zero::IsZeroConfig, util::not};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -339,6 +340,8 @@ pub struct ExecutionConfig<F> {
     error_invalid_creation_code: Box<ErrorInvalidCreationCodeGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
 }
+
+type TxCallStep<'a> = (&'a Transaction, &'a Call, &'a ExecStep);
 
 impl<F: Field> ExecutionConfig<F> {
     #[allow(clippy::too_many_arguments)]
@@ -1071,28 +1074,20 @@ impl<F: Field> ExecutionConfig<F> {
 
                 self.q_step_first.enable(&mut region, offset)?;
 
+
                 let dummy_tx = Transaction::default();
-                let last_call = block
-                    .txs
+                let chunk_txs = block.txs
+                    .get(chunk.chunk_context.initial_tx - 1 .. chunk.chunk_context.end_tx)
+                    .unwrap_or_default();
+
+                let last_call = chunk_txs
                     .last()
                     .map(|tx| tx.calls()[0].clone())
                     .unwrap_or_else(Call::default);
-
-                // Chunk steps
                 // If it's the very first chunk in a block set last call & begin_chunk to default
-                let prev_chunk_last_call = chunk
-                    .prev_block
-                    .clone()
-                    .unwrap_or_default()
-                    .txs
-                    .last()
-                    .map(|tx| tx.calls()[0].clone())
-                    .unwrap_or_else(Call::default);
+                let prev_last_call = chunk.prev_last_call.clone().unwrap_or_default();
 
-                let end_block = &block.end_block;
-
-                let mut steps = block
-                    .txs
+                let mut tx_call_steps = chunk_txs
                     .iter()
                     .flat_map(|tx| {
                         tx.steps()
@@ -1102,100 +1097,95 @@ impl<F: Field> ExecutionConfig<F> {
                     .peekable();
 
                 let evm_rows = chunk.fixed_param.max_evm_rows;
-                let _no_padding = evm_rows == 0;
 
-                type TxCallStep<'a> = (&'a Transaction, &'a Call, &'a ExecStep);
-                let mut assign_exec_q_step = |cur_tx_call_step: TxCallStep,
-                                              next_tx_call_step: Option<TxCallStep>,
-                                              padding_end: Option<usize>|
-                 -> Result<usize, Error> {
-                    let (tx, call, step) = cur_tx_call_step;
-                    let height = step.execution_state().get_step_height();
-                    let initial_offset = offset;
+                let mut assign_padding_or_step = 
+                    |cur_tx_call_step: TxCallStep, next_tx_call_step: Option<TxCallStep>, padding_end: Option<usize>| -> Result<usize, Error> {
+                        let (tx, call, step) = cur_tx_call_step;
+                        let height = step.execution_state().get_step_height();
+                        let initial_offset = offset; // start with 0
 
-                    // If this step is Padding then we assign the step witness till offset reaches
-                    // padding_end Otherwise just assign it once
-                    if let Some(padding_end) = padding_end {
-                        if offset >= padding_end {
-                            log::error!(
-                                "evm circuit offset larger than padding: {} > {}",
+                        // If padding, assign padding range with (dummy_tx, call, step)
+                        // otherwise, assign one row with cur (tx, call, step), with next (tx, call, step) to lookahead
+                        if let Some(padding_end) = padding_end {
+                            // padding_end is the absolute position over all rows,
+                            // must be greater then current offset
+                            if offset >= padding_end {
+                                log::error!(
+                                    "evm circuit offset larger than padding: {} > {}",
+                                    offset,
+                                    padding_end
+                                );
+                                return Err(Error::Synthesis);
+                            }
+                            log::trace!("assign Padding in range [{},{})", offset, padding_end);
+                            self.assign_same_exec_step_in_range(
+                                &mut region,
                                 offset,
-                                padding_end
-                            );
-                            return Err(Error::Synthesis);
-                        }
-                        log::trace!("assign Padding in range [{},{})", offset, padding_end);
-                        self.assign_same_exec_step_in_range(
-                            &mut region,
-                            offset,
-                            padding_end,
-                            block,
-                            chunk,
-                            &dummy_tx,
-                            call,
-                            step,
-                            height,
-                            challenges,
-                            assign_pass,
-                        )?;
-                        for row_idx in offset..padding_end {
-                            self.assign_q_step(&mut region, row_idx, height)?;
+                                padding_end,
+                                block,
+                                chunk,
+                                (&dummy_tx, call, step),
+                                height,
+                                challenges,
+                                assign_pass,
+                            )?;
+                            for row_idx in offset..padding_end {
+                                self.assign_q_step(&mut region, row_idx, height)?;
+                                offset += height;
+                            }
+                        } else {
+                            self.assign_exec_step(
+                                &mut region,
+                                offset,
+                                block,
+                                chunk,
+                                cur_tx_call_step,
+                                height,
+                                next_tx_call_step,
+                                challenges,
+                                assign_pass,
+                            )?;
+                            self.assign_q_step(&mut region, offset, height)?;
                             offset += height;
                         }
-                    } else {
-                        self.assign_exec_step(
-                            &mut region,
-                            offset,
-                            block,
-                            chunk,
-                            tx,
-                            call,
-                            step,
-                            height,
-                            next_tx_call_step,
-                            challenges,
-                            assign_pass,
-                        )?;
-                        self.assign_q_step(&mut region, offset, height)?;
-                        offset += height;
-                    }
 
-                    Ok(offset - initial_offset)
+                        Ok(offset - initial_offset)
                 };
 
                 // part0: assign begin chunk
                 if let Some(begin_chunk) = &chunk.begin_chunk {
-                    assign_exec_q_step(
-                        (&dummy_tx, &prev_chunk_last_call, begin_chunk),
-                        steps.peek().copied(),
+                    assign_padding_or_step(
+                        (&dummy_tx, &prev_last_call, begin_chunk),
+                        tx_call_steps.peek().copied(),
                         None,
                     )?;
                 }
                 // part1: assign real steps
-                loop {
-                    let (transaction, call, step) = steps.next().expect("should not be empty");
-                    let next = steps.peek();
+                while let Some(cur) = tx_call_steps.next() {
+                    let next = tx_call_steps.peek();
+                    assign_padding_or_step(cur, next.copied(), None)?;
                     if next.is_none() {
                         break;
                     }
-                    assign_exec_q_step((transaction, call, step), next.copied(), None)?;
                 }
                 // part2: assign padding
                 if let Some(padding) = &chunk.padding {
-                    assign_exec_q_step((&dummy_tx, &last_call, padding), None, Some(evm_rows - 1))?;
+                    if evm_rows > 0 {
+                        assign_padding_or_step((&dummy_tx, &last_call, padding), None, Some(evm_rows - 1))?;
+                    }
                 }
                 // part3: assign end chunk or end block
                 let height = match &chunk.end_chunk {
                     Some(end_chunk) => {
                         debug_assert_eq!(ExecutionState::EndChunk.get_step_height(), 1);
-                        assign_exec_q_step((&dummy_tx, &last_call, end_chunk), None, None)?
+                        assign_padding_or_step((&dummy_tx, &last_call, end_chunk), None, None)?
                     }
                     None => {
                         assert!(
                             chunk.chunk_context.is_last_chunk(),
                             "If not end_chunk, must be end_block at last chunk"
                         );
-                        assign_exec_q_step((&dummy_tx, &last_call, end_block), None, None)?
+                        assign_padding_or_step((&dummy_tx, &last_call, &block.end_block), None, None)?
                     }
                 };
 
@@ -1267,9 +1257,7 @@ impl<F: Field> ExecutionConfig<F> {
         offset_end: usize,
         block: &Block<F>,
         chunk: &Chunk<F>,
-        transaction: &Transaction,
-        call: &Call,
-        step: &ExecStep,
+        cur_step: TxCallStep,
         height: usize,
         challenges: &Challenges<Value<F>>,
         assign_pass: usize,
@@ -1277,6 +1265,7 @@ impl<F: Field> ExecutionConfig<F> {
         if offset_end <= offset_begin {
             return Ok(());
         }
+        let (_, _, step) = cur_step;
         assert_eq!(height, 1);
         assert!(step.rw_indices_len() == 0);
         assert!(matches!(step.execution_state(), ExecutionState::Padding));
@@ -1294,9 +1283,7 @@ impl<F: Field> ExecutionConfig<F> {
             offset_begin,
             block,
             chunk,
-            transaction,
-            call,
-            step,
+            cur_step,
             false,
             assign_pass,
         )?;
@@ -1317,14 +1304,13 @@ impl<F: Field> ExecutionConfig<F> {
         offset: usize,
         block: &Block<F>,
         chunk: &Chunk<F>,
-        transaction: &Transaction,
-        call: &Call,
-        step: &ExecStep,
+        cur_step: TxCallStep,
         height: usize,
-        next: Option<(&Transaction, &Call, &ExecStep)>,
+        next_step: Option<TxCallStep>,
         challenges: &Challenges<Value<F>>,
         assign_pass: usize,
     ) -> Result<(), Error> {
+        let (transaction, call, step) = cur_step;
         if !matches!(step.execution_state(), ExecutionState::Padding) {
             log::trace!(
                 "assign_exec_step offset: {} state {:?} step: {:?} call: {:?}",
@@ -1349,15 +1335,13 @@ impl<F: Field> ExecutionConfig<F> {
         // These may be used in stored expressions and
         // so their witness values need to be known to be able
         // to correctly calculate the intermediate value.
-        if let Some((transaction_next, call_next, step_next)) = next {
+        if let Some(next_step) = next_step {
             self.assign_exec_step_int(
                 region,
                 offset + height,
                 block,
                 chunk,
-                transaction_next,
-                call_next,
-                step_next,
+                next_step,
                 true,
                 assign_pass,
             )?;
@@ -1368,9 +1352,7 @@ impl<F: Field> ExecutionConfig<F> {
             offset,
             block,
             chunk,
-            transaction,
-            call,
-            step,
+            cur_step,
             false,
             assign_pass,
         )
@@ -1383,9 +1365,7 @@ impl<F: Field> ExecutionConfig<F> {
         offset: usize,
         block: &Block<F>,
         chunk: &Chunk<F>,
-        transaction: &Transaction,
-        call: &Call,
-        step: &ExecStep,
+        tx_call_step: TxCallStep,
         // Set to true when we're assigning the next step before the current step to have
         // next step assignments for evaluation of the stored expressions in current step that
         // depend on the next step.
@@ -1393,6 +1373,7 @@ impl<F: Field> ExecutionConfig<F> {
         // Layouter assignment pass
         assign_pass: usize,
     ) -> Result<(), Error> {
+        let (transaction, call, step) = tx_call_step;
         self.step
             .assign_exec_step(region, offset, block, call, step)?;
 

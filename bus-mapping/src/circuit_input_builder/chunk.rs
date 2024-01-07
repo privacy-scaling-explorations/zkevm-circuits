@@ -1,4 +1,4 @@
-use super::{ExecStep, FixedCParams};
+use super::{ExecStep, FixedCParams, Call};
 use crate::operation::RWCounter;
 
 #[derive(Debug, Default, Clone)]
@@ -14,6 +14,8 @@ pub struct Chunk {
     /// Padding step that is repeated after the last transaction and before
     /// reaching the last EVM row.
     pub padding: Option<ExecStep>,
+    ///
+    pub prev_last_call: Option<Call>,
 }
 
 /// Context of chunking, used to track the current chunk index and inner rw counter
@@ -31,8 +33,14 @@ pub struct ChunkContext {
     pub initial_rwc: usize,
     /// End global rw counter
     pub end_rwc: usize,
+
+    ///
+    pub initial_tx: usize,
+    ///
+    pub end_tx: usize,
+
     /// If this block is chunked dynamically, update the param
-    pub update_param: bool,
+    pub dynamic_update: bool,
     /// Druing dry run, chuncking is desabled
     pub enable: bool,
 }
@@ -45,14 +53,16 @@ impl Default for ChunkContext {
 
 impl ChunkContext {
     /// Create a new Self
-    pub fn new(total_chunks: usize, update_param: bool) -> Self {
+    pub fn new(total_chunks: usize, dynamic_update: bool) -> Self {
         Self {
             rwc: RWCounter::new(),
             idx: 0,
             total_chunks,
             initial_rwc: 1, // rw counter start from 1
             end_rwc: 0,     // end_rwc should be set in later phase
-            update_param,
+            initial_tx: 1,
+            end_tx: 0,
+            dynamic_update,
             enable: true
         }
     }
@@ -65,19 +75,23 @@ impl ChunkContext {
             total_chunks: 1,
             initial_rwc: 1, // rw counter start from 1
             end_rwc: 0,     // end_rwc should be set in later phase
-            update_param: false,
+            initial_tx: 1,
+            end_tx: 0,
+            dynamic_update: false,
             enable: true
         }
     }
 
     /// Proceed the context to next chunk, record the initial rw counter
     /// update the chunk idx and reset the inner rw counter
-    pub fn bump(&mut self, initial_rwc: usize) {
+    pub fn bump(&mut self, initial_rwc: usize, initial_tx: usize) {
         assert!(self.idx + 1 < self.total_chunks, "Exceed total chunks");
         self.idx += 1;
         self.rwc = RWCounter::new();
         self.initial_rwc = initial_rwc;
+        self.initial_tx = initial_tx;
         self.end_rwc = 0;
+        self.end_tx = 0;
     }
 
     /// Is first chunk

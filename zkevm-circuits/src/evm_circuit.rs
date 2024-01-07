@@ -483,7 +483,7 @@ pub(crate) mod cached {
         }
 
         pub(crate) fn instance(&self) -> Vec<Vec<Fr>> {
-            self.0.instance()
+            self.0.instance_extend_chunk_ctx()
         }
     }
 }
@@ -567,6 +567,13 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         config.u8_table.load(&mut layouter)?;
         config.u16_table.load(&mut layouter)?;
 
+        // synthesize chunk context
+        config.chunk_ctx_config.assign_chunk_context(
+            &mut layouter,
+            &chunk.chunk_context,
+            Self::get_num_rows_required(block, chunk) - 1,
+        )?;
+
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
@@ -635,7 +642,7 @@ mod evm_circuit_stats {
         let k = block.get_test_degree(&chunk);
 
         let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block, chunk);
-        let instance = circuit.instance();
+        let instance = circuit.instance_extend_chunk_ctx();
         let prover1 = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
 
         let code = bytecode! {
@@ -657,7 +664,7 @@ mod evm_circuit_stats {
         let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
         let k = block.get_test_degree(&chunk);
         let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block, chunk);
-        let instance = circuit.instance();
+        let instance = circuit.instance_extend_chunk_ctx();
         let prover2 = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
 
         assert_eq!(prover1.fixed().len(), prover2.fixed().len());

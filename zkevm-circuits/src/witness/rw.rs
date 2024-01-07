@@ -83,13 +83,13 @@ impl RwMap {
                 let value = row.value_assignment();
                 if is_first {
                     // value == init_value
-                    let init_value = updates
+                    if let Some(init_value) = updates
                         .get(row)
-                        .map(|u| u.value_assignments().1)
-                        .unwrap_or_default();
-                    if value != init_value {
-                        errs.push((idx, err_msg_first, *row, *prev_row));
-                    }
+                        .map(|u| u.value_assignments().1) {
+                            if value != init_value {
+                                errs.push((idx, err_msg_first, *row, *prev_row));
+                            }
+                        }
                 } else {
                     // value == prev_value
                     let prev_value = prev_row.value_assignment();

@@ -3,9 +3,9 @@ use super::{
     rw::{RwFingerprints, ToVec},
     ExecStep, Rw, RwMap, RwRow,
 };
-use crate::{util::unwrap_value, witness::Block};
+use crate::{util::unwrap_value};
 use bus_mapping::{
-    circuit_input_builder::{self, ChunkContext, FixedCParams},
+    circuit_input_builder::{self, ChunkContext, FixedCParams, Call},
     Error,
 };
 use eth_types::Field;
@@ -38,8 +38,9 @@ pub struct Chunk<F> {
 
     /// Fixed param for the chunk
     pub fixed_param: FixedCParams,
-    /// [`Block`] to store prev_chunk_last_call
-    pub prev_block: Box<Option<Block<F>>>,
+
+    /// The last call of previous chunk if any, used for assigning continuation
+    pub prev_last_call: Option<Call>,
 }
 
 impl<F: Field> Default for Chunk<F> {
@@ -57,7 +58,7 @@ impl<F: Field> Default for Chunk<F> {
             rw_fingerprints: RwFingerprints::default(),
             chrono_rw_fingerprints: RwFingerprints::default(),
             fixed_param: FixedCParams::default(),
-            prev_block: Box::new(None),
+            prev_last_call: None,
         }
     }
 }
@@ -163,7 +164,7 @@ pub fn chunk_convert<F: Field>(
         chunk_context: chunk.ctx.clone(),
         rws,
         fixed_param: chunk.fixed_param,
-        prev_block: Box::new(None),
+        prev_last_call: None,
     };
 
     Ok(chunck)
