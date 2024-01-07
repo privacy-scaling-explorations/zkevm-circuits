@@ -28,7 +28,7 @@ use crate::{
 };
 use bus_mapping::operation::Target;
 use eth_types::{evm_unimplemented, Field};
-use ethers_core::types::transaction;
+
 use gadgets::{is_zero::IsZeroConfig, util::not};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -1074,10 +1074,10 @@ impl<F: Field> ExecutionConfig<F> {
 
                 self.q_step_first.enable(&mut region, offset)?;
 
-
                 let dummy_tx = Transaction::default();
-                let chunk_txs = block.txs
-                    .get(chunk.chunk_context.initial_tx - 1 .. chunk.chunk_context.end_tx)
+                let chunk_txs = block
+                    .txs
+                    .get(chunk.chunk_context.initial_tx - 1..chunk.chunk_context.end_tx)
                     .unwrap_or_default();
 
                 let last_call = chunk_txs
@@ -1098,58 +1098,61 @@ impl<F: Field> ExecutionConfig<F> {
 
                 let evm_rows = chunk.fixed_param.max_evm_rows;
 
-                let mut assign_padding_or_step = 
-                    |cur_tx_call_step: TxCallStep, next_tx_call_step: Option<TxCallStep>, padding_end: Option<usize>| -> Result<usize, Error> {
-                        let (tx, call, step) = cur_tx_call_step;
-                        let height = step.execution_state().get_step_height();
-                        let initial_offset = offset; // start with 0
+                let mut assign_padding_or_step = |cur_tx_call_step: TxCallStep,
+                                                  next_tx_call_step: Option<TxCallStep>,
+                                                  padding_end: Option<usize>|
+                 -> Result<usize, Error> {
+                    let (_tx, call, step) = cur_tx_call_step;
+                    let height = step.execution_state().get_step_height();
+                    let initial_offset = offset; // start with 0
 
-                        // If padding, assign padding range with (dummy_tx, call, step)
-                        // otherwise, assign one row with cur (tx, call, step), with next (tx, call, step) to lookahead
-                        if let Some(padding_end) = padding_end {
-                            // padding_end is the absolute position over all rows,
-                            // must be greater then current offset
-                            if offset >= padding_end {
-                                log::error!(
-                                    "evm circuit offset larger than padding: {} > {}",
-                                    offset,
-                                    padding_end
-                                );
-                                return Err(Error::Synthesis);
-                            }
-                            log::trace!("assign Padding in range [{},{})", offset, padding_end);
-                            self.assign_same_exec_step_in_range(
-                                &mut region,
+                    // If padding, assign padding range with (dummy_tx, call, step)
+                    // otherwise, assign one row with cur (tx, call, step), with next (tx, call,
+                    // step) to lookahead
+                    if let Some(padding_end) = padding_end {
+                        // padding_end is the absolute position over all rows,
+                        // must be greater then current offset
+                        if offset >= padding_end {
+                            log::error!(
+                                "evm circuit offset larger than padding: {} > {}",
                                 offset,
-                                padding_end,
-                                block,
-                                chunk,
-                                (&dummy_tx, call, step),
-                                height,
-                                challenges,
-                                assign_pass,
-                            )?;
-                            for row_idx in offset..padding_end {
-                                self.assign_q_step(&mut region, row_idx, height)?;
-                                offset += height;
-                            }
-                        } else {
-                            self.assign_exec_step(
-                                &mut region,
-                                offset,
-                                block,
-                                chunk,
-                                cur_tx_call_step,
-                                height,
-                                next_tx_call_step,
-                                challenges,
-                                assign_pass,
-                            )?;
-                            self.assign_q_step(&mut region, offset, height)?;
+                                padding_end
+                            );
+                            return Err(Error::Synthesis);
+                        }
+                        log::trace!("assign Padding in range [{},{})", offset, padding_end);
+                        self.assign_same_exec_step_in_range(
+                            &mut region,
+                            offset,
+                            padding_end,
+                            block,
+                            chunk,
+                            (&dummy_tx, call, step),
+                            height,
+                            challenges,
+                            assign_pass,
+                        )?;
+                        for row_idx in offset..padding_end {
+                            self.assign_q_step(&mut region, row_idx, height)?;
                             offset += height;
                         }
+                    } else {
+                        self.assign_exec_step(
+                            &mut region,
+                            offset,
+                            block,
+                            chunk,
+                            cur_tx_call_step,
+                            height,
+                            next_tx_call_step,
+                            challenges,
+                            assign_pass,
+                        )?;
+                        self.assign_q_step(&mut region, offset, height)?;
+                        offset += height;
+                    }
 
-                        Ok(offset - initial_offset)
+                    Ok(offset - initial_offset)
                 };
 
                 // part0: assign begin chunk
@@ -1171,7 +1174,11 @@ impl<F: Field> ExecutionConfig<F> {
                 // part2: assign padding
                 if let Some(padding) = &chunk.padding {
                     if evm_rows > 0 {
-                        assign_padding_or_step((&dummy_tx, &last_call, padding), None, Some(evm_rows - 1))?;
+                        assign_padding_or_step(
+                            (&dummy_tx, &last_call, padding),
+                            None,
+                            Some(evm_rows - 1),
+                        )?;
                     }
                 }
                 // part3: assign end chunk or end block
@@ -1185,7 +1192,11 @@ impl<F: Field> ExecutionConfig<F> {
                             chunk.chunk_context.is_last_chunk(),
                             "If not end_chunk, must be end_block at last chunk"
                         );
-                        assign_padding_or_step((&dummy_tx, &last_call, &block.end_block), None, None)?
+                        assign_padding_or_step(
+                            (&dummy_tx, &last_call, &block.end_block),
+                            None,
+                            None,
+                        )?
                     }
                 };
 
@@ -1310,7 +1321,7 @@ impl<F: Field> ExecutionConfig<F> {
         challenges: &Challenges<Value<F>>,
         assign_pass: usize,
     ) -> Result<(), Error> {
-        let (transaction, call, step) = cur_step;
+        let (_transaction, call, step) = cur_step;
         if !matches!(step.execution_state(), ExecutionState::Padding) {
             log::trace!(
                 "assign_exec_step offset: {} state {:?} step: {:?} call: {:?}",
@@ -1347,15 +1358,7 @@ impl<F: Field> ExecutionConfig<F> {
             )?;
         }
 
-        self.assign_exec_step_int(
-            region,
-            offset,
-            block,
-            chunk,
-            cur_step,
-            false,
-            assign_pass,
-        )
+        self.assign_exec_step_int(region, offset, block, chunk, cur_step, false, assign_pass)
     }
 
     #[allow(clippy::too_many_arguments)]

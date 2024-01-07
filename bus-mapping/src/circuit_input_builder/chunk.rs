@@ -1,4 +1,4 @@
-use super::{ExecStep, FixedCParams, Call};
+use super::{Call, ExecStep, FixedCParams};
 use crate::operation::RWCounter;
 
 #[derive(Debug, Default, Clone)]
@@ -63,7 +63,7 @@ impl ChunkContext {
             initial_tx: 1,
             end_tx: 0,
             dynamic_update,
-            enable: true
+            enable: true,
         }
     }
 
@@ -78,7 +78,7 @@ impl ChunkContext {
             initial_tx: 1,
             end_tx: 0,
             dynamic_update: false,
-            enable: true
+            enable: true,
         }
     }
 

@@ -3,9 +3,9 @@ use super::{
     rw::{RwFingerprints, ToVec},
     ExecStep, Rw, RwMap, RwRow,
 };
-use crate::{util::unwrap_value};
+use crate::util::unwrap_value;
 use bus_mapping::{
-    circuit_input_builder::{self, ChunkContext, FixedCParams, Call},
+    circuit_input_builder::{self, Call, ChunkContext, FixedCParams},
     Error,
 };
 use eth_types::Field;

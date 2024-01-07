@@ -6,7 +6,7 @@ use crate::{
     util::SubCircuit,
     witness::{Block, Chunk, Rw},
 };
-use bus_mapping::{circuit_input_builder::{FixedCParams, CircuitsParams}, mock::BlockData};
+use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
 use eth_types::geth_types::GethData;
 use std::cmp;
 

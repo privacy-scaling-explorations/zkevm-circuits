@@ -193,8 +193,6 @@ pub struct CircuitInputBuilder<C: CircuitsParams> {
 }
 
 impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
-    
-
     /// Create a new CircuitInputBuilder from the given `eth_block` and
     /// `constants`.
     pub fn new(sdb: StateDB, code_db: CodeDB, block: Block, params: C) -> Self {
@@ -294,30 +292,26 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         geth_trace: &GethExecTrace,
         tx: &'a mut Transaction,
         tx_ctx: &'a mut TransactionContext,
-        i_step: Option<(usize, &GethExecStep)>,
-        last_call: Option<Call>
+        geth_steps: Option<(usize, &GethExecStep)>,
+        last_call: Option<Call>,
     ) -> Result<(), Error> {
         if !self.chunk_ctx.enable {
             return Ok(());
         }
         let dynamic = self.chunk_ctx.dynamic_update;
-        let mut gen_chunk = 
-            // No lookahead, if exceed just chunk then update param
+        let mut gen_chunk =
+            // No lookahead, if chunk_rws exceed max just chunk then update param
             (dynamic && self.chunk_rws() > self.circuits_params.max_rws() - self.rws_reserve())
-            // Lookahead, never exceed, never update param
+            // Lookahead, chunk_rws should never exceed, never update param
             || (!dynamic && self.chunk_rws() + RW_BUFFER >= self.circuits_params.max_rws() - self.rws_reserve());
 
         if gen_chunk {
             // Optain the first op of the next GethExecStep, for fixed case also lookahead
             let (mut cib, mut tx, mut tx_ctx_) = (self.clone(), tx.clone(), tx_ctx.clone());
             let mut cib_ref = cib.state_ref(&mut tx, &mut tx_ctx_);
-            let ops = if let Some((i, step)) = i_step {
+            let ops = if let Some((i, step)) = geth_steps {
                 log::trace!("chunk at {}th opcode {:?} ", i, step.op);
-                gen_associated_ops(
-                    &step.op,
-                    &mut cib_ref,
-                    &geth_trace.struct_logs[i..],
-                )?
+                gen_associated_ops(&step.op, &mut cib_ref, &geth_trace.struct_logs[i..])?
             } else {
                 log::trace!("chunk at EndTx");
                 let end_tx_step = gen_associated_steps(&mut cib_ref, ExecState::EndTx)?;
@@ -332,7 +326,8 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             // Check again, 1) if dynamic keep chunking 2) if fixed chunk when lookahead exceed
             // 3) gen chunk steps there're more chunks after
             gen_chunk = !self.chunk_ctx.is_last_chunk()
-                && (dynamic || cib.chunk_rws() > self.circuits_params.max_rws() - cib.rws_reserve());
+                && (dynamic
+                    || cib.chunk_rws() > self.circuits_params.max_rws() - cib.rws_reserve());
             if dynamic {
                 self.cur_chunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
             }
@@ -351,7 +346,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     /// all the associated operations.  Each operation is registered in
     /// `self.block.container`, and each step stores the
     /// [`OperationRef`](crate::exec_trace::OperationRef) to each of the
-    /// generated operations. 
+    /// generated operations.
     /// When dynamic builder handles Tx with is_chuncked = false, we don't chunk
     /// When fixed builder handles Tx with is_chuncked = true, we chunk
     fn handle_tx(
@@ -376,16 +371,29 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         let mut trace = geth_trace.struct_logs.iter().enumerate().peekable();
         while let Some((peek_i, peek_step)) = trace.peek() {
             // Check the peek_sted and chunk if needed
-            self.check_and_chunk(geth_trace, &mut tx, &mut tx_ctx, Some((*peek_i, peek_step)), last_call.clone())?;
+            self.check_and_chunk(
+                geth_trace,
+                &mut tx,
+                &mut tx_ctx,
+                Some((*peek_i, peek_step)),
+                last_call.clone(),
+            )?;
             // Proceed to the next step
             let (i, step) = trace.next().expect("Peeked step should exist");
-            log::trace!("handle {}th opcode {:?} rws = {:?}", i, step.op, self.chunk_rws());
+            log::trace!(
+                "handle {}th opcode {:?} rws = {:?}",
+                i,
+                step.op,
+                self.chunk_rws()
+            );
             let exec_steps = gen_associated_ops(
-                &step.op, 
-                &mut self.state_ref(&mut tx, &mut tx_ctx), 
-                &geth_trace.struct_logs[i..]
+                &step.op,
+                &mut self.state_ref(&mut tx, &mut tx_ctx),
+                &geth_trace.struct_logs[i..],
             )?;
-            last_call = exec_steps.last().map(|s| tx.calls().get(s.call_index).unwrap().clone());
+            last_call = exec_steps
+                .last()
+                .map(|s| tx.calls().get(s.call_index).unwrap().clone());
             tx.steps_mut().extend(exec_steps);
         }
         // Peek the end_tx_step
@@ -591,13 +599,13 @@ impl CircuitInputBuilder<FixedCParams> {
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<CircuitInputBuilder<FixedCParams>, Error> {
         // accumulates gas across all txs in the block
-        let last_call =self.begin_handle_block(eth_block, geth_traces)?;
+        let last_call = self.begin_handle_block(eth_block, geth_traces)?;
         // At the last chunk fixed param also need to be updated
         if self.chunk_ctx.dynamic_update {
             self.cur_chunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
         }
         self.set_end_block();
-        self.commit_chunk(false,  eth_block.transactions.len(), last_call);
+        self.commit_chunk(false, eth_block.transactions.len(), last_call);
 
         let used_chunks = self.chunk_ctx.idx + 1;
         assert!(
@@ -699,9 +707,17 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
     ///
     pub fn rws_reserve(&self) -> usize {
         // This is the last chunk of a block, reserve for EndBlock, not EndChunk
-        let end_block_rws = if self.chunk_ctx.is_last_chunk() && self.chunk_rws() > 0 { 1 } else { 0 };
+        let end_block_rws = if self.chunk_ctx.is_last_chunk() && self.chunk_rws() > 0 {
+            1
+        } else {
+            0
+        };
         // This is not the last chunk, reserve for EndChunk
-        let end_chunk_rws = if !self.chunk_ctx.is_last_chunk() { 10  } else { 0 };
+        let end_chunk_rws = if !self.chunk_ctx.is_last_chunk() {
+            10
+        } else {
+            0
+        };
         end_block_rws + end_chunk_rws + 1
     }
 
