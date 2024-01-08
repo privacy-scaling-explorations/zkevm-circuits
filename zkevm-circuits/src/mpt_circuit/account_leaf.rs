@@ -1,4 +1,4 @@
-use eth_types::Field;
+use eth_types::{Field, U256};
 use gadgets::util::{pow, Scalar};
 use halo2_proofs::{
     circuit::Value,
@@ -24,9 +24,9 @@ use crate::{
         helpers::{
             key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, Indexable,
             IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, ParentData, WrongGadget,
-            KECCAK, empty_trie_word,
+            KECCAK,
         },
-        param::{KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
+        param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
         MPTConfig, MPTContext, MptMemory, RlpItemType,
     },
     table::MPTProofType,
@@ -282,7 +282,7 @@ impl<F: Field> AccountLeafConfig<F> {
                     ifx! {not!(config.is_placeholder_leaf[is_s.idx()]) => {
                         let hash = parent_data[is_s.idx()].hash.expr();
                         require!((1.expr(), leaf_rlc, rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
-                    } elsex { 
+                    } elsex {
                         // For NonExistingAccountProof prove there is no leaf.
 
                         // When there is only one leaf in the trie, `getProof` will always return this leaf - so we will have
@@ -292,10 +292,10 @@ impl<F: Field> AccountLeafConfig<F> {
                             ifx! {parent_data[is_s.idx()].is_root.expr() => {
                                 // If leaf is placeholder and the parent is root (no branch above leaf) and the proof is NonExistingStorageProof,
                                 // the trie needs to be empty.
-                                let (lo, hi) = empty_trie_word(); 
+                                let empty_hash = Word::<F>::from(U256::from_big_endian(&EMPTY_TRIE_HASH));
                                 let hash = parent_data[is_s.idx()].hash.expr();
-                                require!(hash.lo() => lo);
-                                require!(hash.hi() => hi);
+                                require!(hash.lo() => Expression::Constant(empty_hash.lo()));
+                                require!(hash.hi() => Expression::Constant(empty_hash.hi()));
                             } elsex {
                                 // For NonExistingAccountProof we need to prove that there is nil in the parent branch
                                 // at the `modified_pos` position.
@@ -464,7 +464,7 @@ impl<F: Field> AccountLeafConfig<F> {
             let hi = address_item.word().hi() * to_hi;
             let address = lo + hi;
 
-            ifx! {not!(config.parent_data[false.idx()].is_placeholder) => { 
+            ifx! {not!(config.parent_data[false.idx()].is_placeholder) => {
                 ifx! {not!(config.is_non_existing_account_proof) => {
                     ctx.mpt_table.constrain(
                         meta,
