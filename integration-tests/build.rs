@@ -27,6 +27,9 @@ pub struct CompiledContract {
 
 #[derive(Error, Debug)]
 enum BuildError {
+    /// Failed to pull OZ submodule from github
+    #[error("FailedToPullSubmodule({0:})")]
+    FailedToPullSubmodule(String),
     /// Failed to detect solidity compiler or compiler version.
     #[error("FailedToGetSolidity({0:})")]
     FailedToGetSolidity(String),
@@ -99,6 +102,19 @@ const BINDINGS_DR: &str = "src";
 
 fn main() -> Result<(), BuildError> {
     println!("cargo:rerun-if-changed=build.rs");
+
+    std::process::Command::new("git")
+        .args([
+            "submodule",
+            "update",
+            "--init",
+            "--recursive",
+            "--checkout",
+            "contracts/vendor",
+        ])
+        .spawn()
+        .and_then(|mut child| child.wait())
+        .map_err(|err| BuildError::FailedToPullSubmodule(err.to_string()))?;
 
     let solc: Solc = Solc::default();
     let _solc_version = solc
