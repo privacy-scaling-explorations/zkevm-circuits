@@ -4,7 +4,7 @@ use crate::{
     evm_circuit::{cached::EvmCircuitCached, EvmCircuit},
     state_circuit::StateCircuit,
     util::SubCircuit,
-    witness::{Block, Chunk, Rw},
+    witness::{Block, Chunk, Rw, chunk},
 };
 use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
 use eth_types::geth_types::GethData;
@@ -116,8 +116,8 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
     /// Generates a CTBC from a [`Block`] passed with all the other fields
     /// set to [`Default`].
-    pub fn new_from_block(block: Block<Fr>) -> Self {
-        Self::empty().block(block)
+    pub fn new_from_block(block: Block<Fr>, chunk: Chunk<Fr>) -> Self {
+        Self::empty().block_chunk(block, chunk)
     }
 
     /// Allows to produce a [`TestContext`] which will serve as the generator of
@@ -139,8 +139,9 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     }
 
     /// Allows to pass a [`Block`] already built to the constructor.
-    pub fn block(mut self, block: Block<Fr>) -> Self {
+    pub fn block_chunk(mut self, block: Block<Fr>, chunk: Chunk<Fr>) -> Self {
         self.block = Some(block);
+        self.chunk = Some(chunk);
         self
     }
 
