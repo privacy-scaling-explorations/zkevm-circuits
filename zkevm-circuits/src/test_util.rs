@@ -36,7 +36,7 @@ const NUM_BLINDING_ROWS: usize = 64;
 /// builder pattern provides functions that allow to pass different functions
 /// that the prover should execute when verifying the CTB correctness.
 ///
-/// The CTB also includes a mechanism to recieve calls that will modify the
+/// The CTB also includes a mechanism to receive calls that will modify the
 /// block produced from the [`TestContext`] and apply them before starting to
 /// compute the proof.
 ///

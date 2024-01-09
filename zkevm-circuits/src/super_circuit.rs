@@ -138,7 +138,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         let u10_table = UXTable::construct(meta);
         let u16_table = UXTable::construct(meta);
 
-        // Use a mock randomness instead of the randomness derived from the challange
+        // Use a mock randomness instead of the randomness derived from the challenge
         // (either from mock or real prover) to help debugging assignments.
         let power_of_randomness: [Expression<F>; 31] =
             array::from_fn(|i| Expression::Constant(mock_randomness.pow([1 + i as u64, 0, 0, 0])));

@@ -63,7 +63,7 @@ impl<F: Field> SignVerifyChip<F> {
     pub fn new(max_verif: usize) -> Self {
         // TODO: Investigate if it is safe to use a random point as aux generator that
         // is chosen by the prover.  If this is unsafe, we will need to update the
-        // EccChip to calculate an aux generator using the challange API.
+        // EccChip to calculate an aux generator using the challenge API.
         // https://github.com/privacy-scaling-explorations/halo2wrong/issues/53
         let mut rng = ChaCha20Rng::seed_from_u64(0);
         let aux_generator =
