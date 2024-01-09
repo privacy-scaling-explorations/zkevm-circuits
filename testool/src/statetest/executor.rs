@@ -14,7 +14,11 @@ use external_tracer::TraceConfig;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
-use zkevm_circuits::{super_circuit::SuperCircuit, test_util::CircuitTestBuilder, witness::{Block, Chunk}};
+use zkevm_circuits::{
+    super_circuit::SuperCircuit,
+    test_util::CircuitTestBuilder,
+    witness::{Block, Chunk},
+};
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {

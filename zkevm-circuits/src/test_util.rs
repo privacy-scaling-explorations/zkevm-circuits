@@ -4,7 +4,7 @@ use crate::{
     evm_circuit::{cached::EvmCircuitCached, EvmCircuit},
     state_circuit::StateCircuit,
     util::SubCircuit,
-    witness::{Block, Chunk, Rw, chunk},
+    witness::{Block, Chunk, Rw},
 };
 use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
 use eth_types::geth_types::GethData;

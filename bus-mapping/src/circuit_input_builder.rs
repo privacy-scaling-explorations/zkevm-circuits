@@ -484,7 +484,13 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     /// Set the end status of a chunk including the current globle rwc
     /// and commit the current chunk context, proceed to the next chunk
     /// if needed
-    pub fn commit_chunk(&mut self, to_next: bool, end_tx: usize, end_copy: usize, last_call: Option<Call>) {
+    pub fn commit_chunk(
+        &mut self,
+        to_next: bool,
+        end_tx: usize,
+        end_copy: usize,
+        last_call: Option<Call>,
+    ) {
         self.chunk_ctx.end_rwc = self.block_ctx.rwc.0;
         self.chunk_ctx.end_tx = end_tx;
         self.chunk_ctx.end_copy = end_copy;
