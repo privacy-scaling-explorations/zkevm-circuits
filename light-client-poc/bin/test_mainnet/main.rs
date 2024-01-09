@@ -65,7 +65,7 @@ async fn run_tests() -> Result<()> {
         2000004,
         include_str!("al/2000004.json"),
         16,
-        max_proof_count,
+        70,
     )
     .await?;
     mock_prove(

@@ -58,6 +58,7 @@ trait TrieModificationBuilder {
     fn nonce(address: Address, nonce: U64) -> Self;
     fn codehash(address: Address, code_hash: H256) -> Self;
     fn storage(address: Address, key: H256, value: U256) -> Self;
+    fn storage_does_not_exist(address: Address, key: H256, value: U256) -> Self;
 }
 
 impl TrieModificationBuilder for TrieModification {
@@ -88,6 +89,15 @@ impl TrieModificationBuilder for TrieModification {
     fn storage(address: Address, key: H256, value: U256) -> Self {
         Self {
             typ: ProofType::StorageChanged,
+            address,
+            key,
+            value,
+            ..Default::default()
+        }
+    }
+    fn storage_does_not_exist(address: Address, key: H256, value: U256) -> Self {
+        Self {
+            typ: ProofType::StorageDoesNotExist,
             address,
             key,
             value,
@@ -243,7 +253,13 @@ impl<F: Field> Witness<F> {
 
                 for key in storage_keys.iter() {
                     let old = old.storage_proof.iter().find(|p| p.key == *key).unwrap();
-                    initial_values.push(TrieModification::storage(address, *key, old.value));
+                    if old.value == U256::zero() {
+                        initial_values.push(TrieModification::storage_does_not_exist(
+                            address, *key, old.value,
+                        ));
+                    } else {
+                        initial_values.push(TrieModification::storage(address, *key, old.value));
+                    }
                 }
             }
 
@@ -353,6 +369,9 @@ impl<F: Field> Witness<F> {
                         U256::from_big_endian(&m.code_hash.0),
                         H256::zero(),
                     )]
+                }
+                ProofType::StorageDoesNotExist => {
+                    vec![(ProofType::StorageDoesNotExist, m.address, m.value, m.key)]
                 }
                 _ => {
                     println!("type unimplemented: {:?}", m.typ);
