@@ -45,9 +45,12 @@ pub fn test_copy_circuit_from_block<F: Field>(
     block: Block<F>,
     chunk: Chunk<F>,
 ) -> Result<(), Vec<VerifyFailure>> {
+    let chunked_copy_events = block
+        .copy_events.get(chunk.chunk_context.initial_copy..chunk.chunk_context.end_copy)
+        .unwrap_or_default();
     test_copy_circuit::<F>(
         k,
-        block.copy_events,
+        chunked_copy_events.to_owned(),
         chunk.fixed_param.max_copy_rows,
         ExternalData {
             max_txs: chunk.fixed_param.max_txs,

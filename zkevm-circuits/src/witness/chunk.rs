@@ -97,7 +97,7 @@ pub fn chunk_convert<F: Field>(
 ) -> Result<Chunk<F>, Error> {
     let block = &builder.block;
     let chunk = builder.get_chunk(idx);
-    let rws = RwMap::default();
+    let mut rws = RwMap::default();
 
     // FIXME(Cecilia): debug
     println!(
@@ -150,6 +150,9 @@ pub fn chunk_convert<F: Field>(
         alpha_gamas.push(vec![alpha, gamma]);
         rw_fingerprints.push(cur_fingerprints);
         chrono_rw_fingerprints.push(cur_chrono_fingerprints);
+        if i == idx {
+            rws = cur_rws;
+        }
     }
 
     // TODO(Cecilia): if we chunk across blocks then need to store the prev_block

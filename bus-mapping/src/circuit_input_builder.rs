@@ -332,10 +332,11 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
                 self.cur_chunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
             }
             if gen_chunk {
+                let last_copy = self.block.copy_events.len();
                 // Generate EndChunk and proceed to the next if it's not the last chunk
                 // Set next step pre-state as end_chunk state
                 self.set_end_chunk(&ops[0]);
-                self.commit_chunk(true, tx.id as usize, last_call);
+                self.commit_chunk(true, tx.id as usize, last_copy, last_call);
                 self.set_begin_chunk(&ops[0]);
             }
         }
@@ -483,12 +484,13 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     /// Set the end status of a chunk including the current globle rwc
     /// and commit the current chunk context, proceed to the next chunk
     /// if needed
-    pub fn commit_chunk(&mut self, to_next: bool, end_tx: usize, last_call: Option<Call>) {
+    pub fn commit_chunk(&mut self, to_next: bool, end_tx: usize, end_copy: usize, last_call: Option<Call>) {
         self.chunk_ctx.end_rwc = self.block_ctx.rwc.0;
         self.chunk_ctx.end_tx = end_tx;
+        self.chunk_ctx.end_copy = end_copy;
         self.chunks[self.chunk_ctx.idx].ctx = self.chunk_ctx.clone();
         if to_next {
-            self.chunk_ctx.bump(self.block_ctx.rwc.0, end_tx);
+            self.chunk_ctx.bump(self.block_ctx.rwc.0, end_tx, end_copy);
             self.cur_chunk_mut().prev_last_call = last_call;
         }
     }
@@ -605,7 +607,8 @@ impl CircuitInputBuilder<FixedCParams> {
             self.cur_chunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
         }
         self.set_end_block();
-        self.commit_chunk(false, eth_block.transactions.len(), last_call);
+        let last_copy = self.block.copy_events.len();
+        self.commit_chunk(false, eth_block.transactions.len(), last_copy, last_call);
 
         let used_chunks = self.chunk_ctx.idx + 1;
         assert!(

@@ -38,6 +38,10 @@ pub struct ChunkContext {
     pub initial_tx: usize,
     ///
     pub end_tx: usize,
+    ///
+    pub initial_copy: usize,
+    ///
+    pub end_copy: usize,
 
     /// If this block is chunked dynamically, update the param
     pub dynamic_update: bool,
@@ -62,6 +66,8 @@ impl ChunkContext {
             end_rwc: 0,     // end_rwc should be set in later phase
             initial_tx: 1,
             end_tx: 0,
+            initial_copy: 0,
+            end_copy: 0,
             dynamic_update,
             enable: true,
         }
@@ -77,6 +83,8 @@ impl ChunkContext {
             end_rwc: 0,     // end_rwc should be set in later phase
             initial_tx: 1,
             end_tx: 0,
+            initial_copy: 0,
+            end_copy: 0,
             dynamic_update: false,
             enable: true,
         }
@@ -84,14 +92,16 @@ impl ChunkContext {
 
     /// Proceed the context to next chunk, record the initial rw counter
     /// update the chunk idx and reset the inner rw counter
-    pub fn bump(&mut self, initial_rwc: usize, initial_tx: usize) {
+    pub fn bump(&mut self, initial_rwc: usize, initial_tx: usize, initial_copy: usize) {
         assert!(self.idx + 1 < self.total_chunks, "Exceed total chunks");
         self.idx += 1;
         self.rwc = RWCounter::new();
         self.initial_rwc = initial_rwc;
         self.initial_tx = initial_tx;
+        self.initial_copy = initial_copy;
         self.end_rwc = 0;
         self.end_tx = 0;
+        self.end_copy = 0;
     }
 
     /// Is first chunk
