@@ -143,7 +143,7 @@ impl RwMap {
             .collect();
         let padding_length = {
             let length = Self::padding_len(rows_trimmed.len(), target_len);
-            if prev_chunk_last_rw.is_some() {
+            if prev_chunk_last_rw.is_none() {
                 length.saturating_sub(1)
             } else {
                 length
