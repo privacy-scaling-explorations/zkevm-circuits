@@ -943,8 +943,8 @@ fn variadic_size_check() {
             value: U256::from(394500u64),
         },
     ];
-
-    let circuit = StateCircuit::new(&Chunk::new_from_rw_map(&rows.clone().into()));
+    // let rw_map: RwMap = rows.clone().into();
+    let circuit = StateCircuit::new(&Chunk::new_from_rw_map(&RwMap::from(rows.clone())));
     let power_of_randomness = circuit.instance();
     let prover1 = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
 

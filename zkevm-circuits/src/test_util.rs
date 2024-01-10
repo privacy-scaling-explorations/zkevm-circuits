@@ -222,7 +222,6 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                         fixed_param.total_chunks, total_chunk,
                         "Total chunks unmatched with fixed param"
                     );
-                    println!("--------------{:?}", fixed_param);
                     BlockData::new_from_geth_data_with_params(block.clone(), fixed_param)
                         .new_circuit_input_builder()
                         .handle_block(&block.eth_block, &block.geth_traces)

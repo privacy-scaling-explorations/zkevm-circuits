@@ -394,7 +394,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             )?;
             last_call = exec_steps
                 .last()
-                .map(|s| tx.calls().get(s.call_index).unwrap().clone());
+                .map(|step| tx.calls().get(step.call_index).unwrap().clone());
             tx.steps_mut().extend(exec_steps);
         }
         // Peek the end_tx_step

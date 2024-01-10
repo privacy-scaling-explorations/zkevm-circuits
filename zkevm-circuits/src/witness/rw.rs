@@ -858,10 +858,7 @@ impl From<Vec<Rw>> for RwMap {
                     if let Some(vrw) = rw_map.get_mut(&Target::Account) {
                         vrw.push(rw)
                     } else {
-                        rw_map
-                            .insert(Target::Account, Vec::new())
-                            .map(|_| ())
-                            .unwrap()
+                        rw_map.insert(Target::Account, vec![rw]);
                     }
                 }
                 Rw::AccountStorage { .. } => {
@@ -869,119 +866,84 @@ impl From<Vec<Rw>> for RwMap {
                         vrw.push(rw)
                     } else {
                         rw_map
-                            .insert(Target::Storage, Vec::new())
-                            .map(|_| ())
-                            .unwrap()
+                            .insert(Target::Storage, vec![rw]);
                     }
                 }
                 Rw::TxAccessListAccount { .. } => {
                     if let Some(vrw) = rw_map.get_mut(&Target::TxAccessListAccount) {
                         vrw.push(rw)
                     } else {
-                        rw_map
-                            .insert(Target::TxAccessListAccount, Vec::new())
-                            .map(|_| ())
-                            .unwrap()
+                        rw_map.insert(Target::TxAccessListAccount, vec![rw]);
                     }
                 }
                 Rw::TxAccessListAccountStorage { .. } => {
                     if let Some(vrw) = rw_map.get_mut(&Target::TxAccessListAccountStorage) {
                         vrw.push(rw)
                     } else {
-                        rw_map
-                            .insert(Target::TxAccessListAccountStorage, Vec::new())
-                            .map(|_| ())
-                            .unwrap()
+                        rw_map.insert(Target::TxAccessListAccountStorage, vec![rw]);
                     }
                 }
                 Rw::Padding { .. } => {
                     if let Some(vrw) = rw_map.get_mut(&Target::Padding) {
                         vrw.push(rw)
                     } else {
-                        rw_map
-                            .insert(Target::Padding, Vec::new())
-                            .map(|_| ())
-                            .unwrap()
+                        rw_map.insert(Target::Padding, vec![rw]);
                     }
                 }
                 Rw::Start { .. } => {
                     if let Some(vrw) = rw_map.get_mut(&Target::Start) {
                         vrw.push(rw)
                     } else {
-                        rw_map
-                            .insert(Target::Start, Vec::new())
-                            .map(|_| ())
-                            .unwrap()
+                        rw_map.insert(Target::Start, vec![rw]);
                     }
                 }
                 Rw::Stack { .. } => {
                     if let Some(vrw) = rw_map.get_mut(&Target::Stack) {
                         vrw.push(rw)
                     } else {
-                        rw_map
-                            .insert(Target::Stack, Vec::new())
-                            .map(|_| ())
-                            .unwrap()
+                        rw_map.insert(Target::Stack, vec![rw]);
                     }
                 }
                 Rw::Memory { .. } => {
                     if let Some(vrw) = rw_map.get_mut(&Target::Memory) {
                         vrw.push(rw)
                     } else {
-                        rw_map
-                            .insert(Target::Memory, Vec::new())
-                            .map(|_| ())
-                            .unwrap()
+                        rw_map.insert(Target::Memory, vec![rw]);
                     }
                 }
                 Rw::CallContext { .. } => {
                     if let Some(vrw) = rw_map.get_mut(&Target::CallContext) {
                         vrw.push(rw)
                     } else {
-                        rw_map
-                            .insert(Target::CallContext, Vec::new())
-                            .map(|_| ())
-                            .unwrap()
+                        rw_map.insert(Target::CallContext, vec![rw]);
                     }
                 }
                 Rw::TxLog { .. } => {
                     if let Some(vrw) = rw_map.get_mut(&Target::TxLog) {
                         vrw.push(rw)
                     } else {
-                        rw_map
-                            .insert(Target::TxLog, Vec::new())
-                            .map(|_| ())
-                            .unwrap()
+                        rw_map.insert(Target::TxLog, vec![rw]);
                     }
                 }
                 Rw::TxReceipt { .. } => {
                     if let Some(vrw) = rw_map.get_mut(&Target::TxReceipt) {
                         vrw.push(rw)
                     } else {
-                        rw_map
-                            .insert(Target::TxReceipt, Vec::new())
-                            .map(|_| ())
-                            .unwrap()
+                        rw_map.insert(Target::TxReceipt, vec![rw]);
                     }
                 }
                 Rw::TxRefund { .. } => {
                     if let Some(vrw) = rw_map.get_mut(&Target::TxRefund) {
                         vrw.push(rw)
                     } else {
-                        rw_map
-                            .insert(Target::TxRefund, Vec::new())
-                            .map(|_| ())
-                            .unwrap()
+                        rw_map.insert(Target::TxRefund, vec![rw]);
                     }
                 }
                 Rw::StepState { .. } => {
                     if let Some(vrw) = rw_map.get_mut(&Target::StepState) {
                         vrw.push(rw)
                     } else {
-                        rw_map
-                            .insert(Target::StepState, Vec::new())
-                            .map(|_| ())
-                            .unwrap()
+                        rw_map.insert(Target::StepState, vec![rw]);
                     }
                 }
             };
