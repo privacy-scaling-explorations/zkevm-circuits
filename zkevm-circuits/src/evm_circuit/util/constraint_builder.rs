@@ -313,6 +313,7 @@ pub(crate) struct EVMConstraintBuilder<'a, F: Field> {
     stored_expressions: Vec<StoredExpression<F>>,
     pub(crate) debug_expressions: Vec<(String, Expression<F>)>,
     meta: &'a mut ConstraintSystem<F>,
+    feature_config: FeatureConfig,
 }
 
 impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
@@ -337,6 +338,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         next: Step<F>,
         challenges: &'a Challenges<Expression<F>>,
         execution_state: ExecutionState,
+        feature_config: FeatureConfig,
     ) -> Self {
         Self {
             curr,
@@ -358,6 +360,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             stored_expressions: Vec::new(),
             meta,
             debug_expressions: Vec::new(),
+            feature_config,
         }
     }
 

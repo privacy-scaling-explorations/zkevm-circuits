@@ -74,6 +74,7 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub u8_table: UXTable<8>,
     /// U16Table
     pub u16_table: UXTable<16>,
+    pub feature_config: FeatureConfig,
 }
 
 impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
@@ -93,6 +94,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             exp_table,
             u8_table,
             u16_table,
+            feature_config,
         }: Self::ConfigArgs,
     ) -> Self {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
@@ -109,6 +111,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &copy_table,
             &keccak_table,
             &exp_table,
+            feature_config,
         ));
 
         u8_table.annotate_columns(meta);
@@ -356,44 +359,51 @@ pub(crate) mod cached {
 impl<F: Field> Circuit<F> for EvmCircuit<F> {
     type Config = (EvmCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
-    type Params = ();
+    type Params = FeatureConfig;
 
     fn without_witnesses(&self) -> Self {
         Self::default()
     }
 
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let tx_table = TxTable::construct(meta);
-        let rw_table = RwTable::construct(meta);
-        let bytecode_table = BytecodeTable::construct(meta);
-        let block_table = BlockTable::construct(meta);
-        let q_copy_table = meta.fixed_column();
-        let copy_table = CopyTable::construct(meta, q_copy_table);
-        let keccak_table = KeccakTable::construct(meta);
-        let exp_table = ExpTable::construct(meta);
-        let u8_table = UXTable::construct(meta);
-        let u16_table = UXTable::construct(meta);
-        let challenges = Challenges::construct(meta);
-        let challenges_expr = challenges.exprs(meta);
+    fn configure_with_params(
+            meta: &mut ConstraintSystem<F>,
+            params: Self::Params,
+        ) -> Self::Config {
+            let tx_table = TxTable::construct(meta);
+            let rw_table = RwTable::construct(meta);
+            let bytecode_table = BytecodeTable::construct(meta);
+            let block_table = BlockTable::construct(meta);
+            let q_copy_table = meta.fixed_column();
+            let copy_table = CopyTable::construct(meta, q_copy_table);
+            let keccak_table = KeccakTable::construct(meta);
+            let exp_table = ExpTable::construct(meta);
+            let u8_table = UXTable::construct(meta);
+            let u16_table = UXTable::construct(meta);
+            let challenges = Challenges::construct(meta);
+            let challenges_expr = challenges.exprs(meta);
+    
+            (
+                EvmCircuitConfig::new(
+                    meta,
+                    EvmCircuitConfigArgs {
+                        challenges: challenges_expr,
+                        tx_table,
+                        rw_table,
+                        bytecode_table,
+                        block_table,
+                        copy_table,
+                        keccak_table,
+                        exp_table,
+                        u8_table,
+                        u16_table,
+                    },
+                ),
+                challenges,
+            )
+    }
 
-        (
-            EvmCircuitConfig::new(
-                meta,
-                EvmCircuitConfigArgs {
-                    challenges: challenges_expr,
-                    tx_table,
-                    rw_table,
-                    bytecode_table,
-                    block_table,
-                    copy_table,
-                    keccak_table,
-                    exp_table,
-                    u8_table,
-                    u16_table,
-                },
-            ),
-            challenges,
-        )
+    fn configure(_meta: &mut ConstraintSystem<F>) -> Self::Config {
+        unreachable!()
     }
 
     fn synthesize(

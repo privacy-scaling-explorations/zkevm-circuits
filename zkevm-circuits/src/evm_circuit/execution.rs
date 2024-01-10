@@ -357,6 +357,7 @@ impl<F: Field> ExecutionConfig<F> {
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
+        feature_config: FeatureConfig,
     ) -> Self {
         let mut instrument = Instrument::default();
         let q_usable = meta.complex_selector();
@@ -395,6 +396,7 @@ impl<F: Field> ExecutionConfig<F> {
 
             let execution_state_selector_constraints = step_curr.state.execution_state.configure();
 
+            // TODO: Change logic depending on feature_config.invalid_tx
             // NEW: Enabled, this will break hand crafted tests, maybe we can remove them?
             let first_step_check = {
                 let begin_tx_invalid_tx_end_block_selector = step_curr.execution_state_selector([
@@ -504,6 +506,7 @@ impl<F: Field> ExecutionConfig<F> {
                         &mut stored_expressions_map,
                         &mut debug_expressions_map,
                         &mut instrument,
+                        feature_config.clone(),
                     ))
                 })()
             };
@@ -654,6 +657,7 @@ impl<F: Field> ExecutionConfig<F> {
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
         debug_expressions_map: &mut HashMap<ExecutionState, Vec<(String, Expression<F>)>>,
         instrument: &mut Instrument,
+        feature_config: FeatureConfig,
     ) -> G {
         // Configure the gadget with the max height first so we can find out the actual
         // height
@@ -665,6 +669,7 @@ impl<F: Field> ExecutionConfig<F> {
                 dummy_step_next,
                 challenges,
                 G::EXECUTION_STATE,
+                feature_config,
             );
             G::configure(&mut cb);
             let (_, _, height, _) = cb.build();
@@ -782,6 +787,7 @@ impl<F: Field> ExecutionConfig<F> {
             let q_step = meta.query_advice(q_step, Rotation::cur());
             let q_step_last = meta.query_selector(q_step_last);
 
+            // TODO: diable InvalidTx
             // ExecutionState transition should be correct.
             iter::empty()
                 .chain(

@@ -42,14 +42,26 @@ use std::{
 pub use transaction::{Transaction, TransactionContext};
 pub use withdrawal::{Withdrawal, WithdrawalContext};
 
-
 /// Runtime Config
+///
+/// Default to mainnet block
 #[derive(Debug, Clone, Copy)]
 pub struct FeatureConfig {
     zero_difficulty: bool,
     free_first_tx: bool,
     enable_eip1559: bool,
     invalid_tx: bool,
+}
+
+impl Default for FeatureConfig {
+    fn default() -> Self {
+        Self {
+            zero_difficulty: true,
+            free_first_tx: false,
+            enable_eip1559: true,
+            invalid_tx: false,
+        }
+    }
 }
 
 /// Circuit Setup Parameters
@@ -160,18 +172,26 @@ pub struct CircuitInputBuilder<C: CircuitsParams> {
     pub circuits_params: C,
     /// Block Context
     pub block_ctx: BlockContext,
+    pub feature_config: FeatureConfig,
 }
 
 impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     /// Create a new CircuitInputBuilder from the given `eth_block` and
     /// `constants`.
-    pub fn new(sdb: StateDB, code_db: CodeDB, block: Block, params: C) -> Self {
+    pub fn new(
+        sdb: StateDB,
+        code_db: CodeDB,
+        block: Block,
+        params: C,
+        feature_config: FeatureConfig,
+    ) -> Self {
         Self {
             sdb,
             code_db,
             block,
             circuits_params: params,
             block_ctx: BlockContext::new(),
+            feature_config,
         }
     }
 
@@ -283,13 +303,15 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             let end_tx_step =
                 gen_associated_steps(&mut self.state_ref(&mut tx, &mut tx_ctx), ExecState::EndTx)?;
             tx.steps_mut().push(end_tx_step);
-        } else {
+        } else if self.feature_config.invalid_tx {
             // Generate InvalidTx step
             let invalid_tx_step = gen_associated_steps(
                 &mut self.state_ref(&mut tx, &mut tx_ctx),
                 ExecState::InvalidTx,
             )?;
             tx.steps_mut().push(invalid_tx_step);
+        }else {
+            panic!("invalid tx support not enabled")
         }
 
         self.sdb.commit_tx();
