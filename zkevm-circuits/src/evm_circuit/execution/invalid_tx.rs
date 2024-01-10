@@ -252,7 +252,7 @@ mod test {
             CircuitTestBuilder::new_from_test_ctx(ctx).run();
         }
 
-        // Check diferent permutations to make sure all transitions work correctly
+        // Check different permutations to make sure all transitions work correctly
         test_ok([false]);
         test_ok([true]);
         test_ok([false, false]);

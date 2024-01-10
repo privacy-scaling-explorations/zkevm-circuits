@@ -308,7 +308,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         // multiple rows with lookups in a way that doesn't require any
         // extra additional cells or selectors we have to put all `s[i]`'s on the same
         // row. This isn't that strong of a requirement actually because we the
-        // words are split into multipe parts, and so only the parts at the same
+        // words are split into multiple parts, and so only the parts at the same
         // position of those words need to be on the same row.
         let target_word_sizes = target_part_sizes(part_size);
         let num_word_parts = target_word_sizes.len();
