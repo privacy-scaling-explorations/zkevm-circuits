@@ -31,7 +31,7 @@ use std::{marker::PhantomData, ops::Deref};
 /// Number of static fields per tx: [nonce, gas, gas_price,
 /// caller_address, callee_address, is_create, value, call_data_length,
 /// call_data_gas_cost, tx_sign_hash].
-/// Note that call data bytes are layed out in the TxTable after all the static
+/// Note that call data bytes are laid out in the TxTable after all the static
 /// fields arranged by txs.
 pub(crate) const TX_LEN: usize = 10;
 
