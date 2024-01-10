@@ -71,9 +71,13 @@ pub struct SigCircuitConfigArgs<F: Field> {
 
 /// SignVerify Configuration
 #[derive(Debug, Clone)]
-pub struct SigCircuitConfig<F: Field> {
+pub struct SigCircuitConfig<F>
+where
+    F: Field + halo2_base::utils::ScalarField,
+{
     /// ECDSA
     ecdsa_config: FpChip<F>,
+    // ecdsa_config: FpConfig<F, Fp>,
     /// An advice column to store RLC witnesses
     rlc_column: Column<Advice>,
     /// selector for keccak lookup table
@@ -84,7 +88,10 @@ pub struct SigCircuitConfig<F: Field> {
     sig_table: SigTable,
 }
 
-impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
+impl<F> SubCircuitConfig<F> for SigCircuitConfig<F>
+where
+    F: Field + halo2_base::utils::ScalarField,
+{
     type ConfigArgs = SigCircuitConfigArgs<F>;
 
     /// Return a new SigConfig
@@ -199,7 +206,7 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
     }
 }
 
-impl<F: Field> SigCircuitConfig<F> {
+impl<F: Field + halo2_base::utils::ScalarField> SigCircuitConfig<F> {
     pub(crate) fn load_range(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         self.ecdsa_config.range.load_lookup_table(layouter)
     }
@@ -217,7 +224,7 @@ pub struct SigCircuit<F: Field> {
     pub _marker: PhantomData<F>,
 }
 
-impl<F: Field> SubCircuit<F> for SigCircuit<F> {
+impl<F: Field + halo2_base::utils::ScalarField> SubCircuit<F> for SigCircuit<F> {
     type Config = SigCircuitConfig<F>;
 
     fn new_from_block(block: &crate::witness::Block<F>) -> Self {
@@ -313,7 +320,7 @@ impl<F: Field> SigCircuit<F> {
     }
 }
 
-impl<F: Field> SigCircuit<F> {
+impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
     /// Verifies the ecdsa relationship. I.e., prove that the signature
     /// is (in)valid or not under the given public key and the message hash in
     /// the circuit. Does not enforce the signature is valid.

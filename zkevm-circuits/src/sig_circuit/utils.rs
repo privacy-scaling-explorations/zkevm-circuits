@@ -65,7 +65,7 @@ pub(super) type FqChip<F> = FpConfig<F, Fq>;
 /// Chip to handle ECDSA::Fp, the base field
 pub(super) type FpChip<F> = FpConfig<F, Fp>;
 
-pub(crate) struct AssignedECDSA<F: Field, FC: FieldChip<F>> {
+pub(crate) struct AssignedECDSA<F: Field + halo2_base::utils::ScalarField, FC: FieldChip<F>> {
     pub(super) pk: EcPoint<F, FC::FieldPoint>,
     pub(super) pk_is_zero: AssignedValue<F>,
     pub(super) msg_hash: CRTInteger<F>,
@@ -76,7 +76,7 @@ pub(crate) struct AssignedECDSA<F: Field, FC: FieldChip<F>> {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct AssignedSignatureVerify<F: Field> {
+pub(crate) struct AssignedSignatureVerify<F: Field + halo2_base::utils::ScalarField> {
     pub(crate) address: AssignedValue<F>,
     pub(crate) msg_len: usize,
     pub(crate) msg_rlc: Value<F>,
@@ -87,7 +87,7 @@ pub(crate) struct AssignedSignatureVerify<F: Field> {
     pub(crate) sig_is_valid: AssignedValue<F>,
 }
 
-pub(super) struct SignDataDecomposed<F: Field> {
+pub(super) struct SignDataDecomposed<F: Field + halo2_base::utils::ScalarField> {
     pub(super) pk_hash_cells: Vec<QuantumCell<F>>,
     pub(super) msg_hash_cells: Vec<QuantumCell<F>>,
     pub(super) pk_cells: Vec<QuantumCell<F>>,
@@ -95,5 +95,5 @@ pub(super) struct SignDataDecomposed<F: Field> {
     pub(super) is_address_zero: AssignedValue<F>,
     pub(super) r_cells: Vec<QuantumCell<F>>,
     pub(super) s_cells: Vec<QuantumCell<F>>,
-    //v:  AssignedValue<'v, F>, // bool
+    // v:  AssignedValue<'v, F>, // bool
 }

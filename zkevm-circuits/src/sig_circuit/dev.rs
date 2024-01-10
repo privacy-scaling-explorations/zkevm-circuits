@@ -7,12 +7,12 @@ use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// SigCircuitTesterConfig
 #[derive(Clone, Debug)]
-pub struct SigCircuitTesterConfig<F: Field> {
+pub struct SigCircuitTesterConfig<F: Field + halo2_base::utils::ScalarField> {
     sign_verify: SigCircuitConfig<F>,
     challenges: crate::util::Challenges,
 }
 
-impl<F: Field> SigCircuitTesterConfig<F> {
+impl<F: Field + halo2_base::utils::ScalarField> SigCircuitTesterConfig<F> {
     pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
         let keccak_table = KeccakTable::construct(meta);
         let sig_table = SigTable::construct(meta);
@@ -34,7 +34,7 @@ impl<F: Field> SigCircuitTesterConfig<F> {
     }
 }
 
-impl<F: Field> Circuit<F> for SigCircuit<F> {
+impl<F: Field + halo2_base::utils::ScalarField> Circuit<F> for SigCircuit<F> {
     type Config = SigCircuitTesterConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
     type Params = ();

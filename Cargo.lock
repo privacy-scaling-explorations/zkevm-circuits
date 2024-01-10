@@ -33,7 +33,7 @@ version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac1f845298e95f983ff1944b728ae08b8cebab80d684f0a832ed0fc74dfa27e2"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if",
  "cipher",
  "cpufeatures",
 ]
@@ -44,7 +44,11 @@ version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91429305e9f0a25f6205c5b8e0d2db09e0708a7a6df0f42212bb56c32c8ac97a"
 dependencies = [
+<<<<<<< HEAD
  "cfg-if 1.0.0",
+=======
+ "cfg-if",
+>>>>>>> 0e7d8a19e (fix: build error due to importing halo2_ecc and halo2_base)
  "getrandom",
  "once_cell",
  "version_check",
@@ -207,7 +211,7 @@ checksum = "2089b7e3f35b9dd2d0ed921ead4f6d318c27680d4a5bd167b3ee120edb105837"
 dependencies = [
  "addr2line",
  "cc",
- "cfg-if 1.0.0",
+ "cfg-if",
  "libc",
  "miniz_oxide",
  "object",
@@ -228,9 +232,15 @@ checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
 
 [[package]]
 name = "base64"
+<<<<<<< HEAD
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
+=======
+version = "0.21.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c79fed4cdb43e993fcdadc7e58a09fd0e3e649c4436fa11da71c9f1f3ee7feb9"
+>>>>>>> 0e7d8a19e (fix: build error due to importing halo2_ecc and halo2_base)
 
 [[package]]
 name = "base64ct"
@@ -353,7 +363,7 @@ dependencies = [
  "ethers-core",
  "ethers-providers",
  "gadgets",
- "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
+ "halo2_proofs",
  "hex",
  "itertools 0.10.5",
  "lazy_static",
@@ -463,12 +473,6 @@ dependencies = [
 
 [[package]]
 name = "cfg-if"
-version = "0.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
-
-[[package]]
-name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
@@ -501,7 +505,7 @@ dependencies = [
  "env_logger",
  "eth-types",
  "ethers-signers",
- "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
+ "halo2_proofs",
  "itertools 0.10.5",
  "mock",
  "rand",
@@ -612,7 +616,11 @@ version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5286a0843c21f8367f7be734f89df9b822e0321d8bcce8d6e735aadff7d74979"
 dependencies = [
+<<<<<<< HEAD
  "base64 0.21.7",
+=======
+ "base64 0.21.6",
+>>>>>>> 0e7d8a19e (fix: build error due to importing halo2_ecc and halo2_base)
  "bech32",
  "bs58",
  "digest 0.10.7",
@@ -642,7 +650,7 @@ version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a5104de16b218eddf8e34ffe2f86f74bfa4e61e95a1b89732fccf6325efd0557"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if",
  "cpufeatures",
  "hex",
  "proptest",
@@ -704,6 +712,7 @@ version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b540bd8bc810d3885c6ea91e2018302f68baba2129ab3e88f32389ee9370880d"
 dependencies = [
+<<<<<<< HEAD
  "cfg-if 1.0.0",
 ]
 
@@ -728,6 +737,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "176dc175b78f56c0f321911d9c8eb2b77a78a4860b9c19db83835fea1a46649b"
 dependencies = [
  "crossbeam-utils",
+=======
+ "cfg-if",
+>>>>>>> 0e7d8a19e (fix: build error due to importing halo2_ecc and halo2_base)
 ]
 
 [[package]]
@@ -746,6 +758,7 @@ version = "0.9.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b82ac4a3c2ca9c3460964f020e1402edd5753411d7737aa39c3714ad1b5420e"
 dependencies = [
+<<<<<<< HEAD
  "crossbeam-utils",
 ]
 
@@ -756,6 +769,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1cfb3ea8a53f37c40dea2c7bedcbd88bdfae54f5e2175d6ecaff1c988353add"
 dependencies = [
  "cfg-if 1.0.0",
+=======
+>>>>>>> 0e7d8a19e (fix: build error due to importing halo2_ecc and halo2_base)
  "crossbeam-utils",
 ]
 
@@ -967,7 +982,7 @@ version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b98cf8ebf19c3d1b223e151f99a4f9f0690dca41414773390fc824184ac833e1"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if",
  "dirs-sys-next",
 ]
 
@@ -1086,7 +1101,7 @@ version = "0.8.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7268b386296a025e474d5140678f75d6de9493ae55a5d709eeb9dd08149945e1"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if",
 ]
 
 [[package]]
@@ -1095,7 +1110,11 @@ version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe81b5c06ecfdbc71dd845216f225f53b62a10cb8a16c946836a3467f701d05b"
 dependencies = [
+<<<<<<< HEAD
  "base64 0.21.7",
+=======
+ "base64 0.21.6",
+>>>>>>> 0e7d8a19e (fix: build error due to importing halo2_ecc and halo2_base)
  "bytes",
  "hex",
  "k256",
@@ -1181,7 +1200,7 @@ version = "0.1.0"
 dependencies = [
  "ethers-core",
  "ethers-signers",
- "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
+ "halo2_proofs",
  "hex",
  "itertools 0.10.5",
  "lazy_static",
@@ -1414,7 +1433,11 @@ checksum = "6838fa110e57d572336178b7c79e94ff88ef976306852d8cb87d9e5b1fc7c0b5"
 dependencies = [
  "async-trait",
  "auto_impl",
+<<<<<<< HEAD
  "base64 0.21.7",
+=======
+ "base64 0.21.6",
+>>>>>>> 0e7d8a19e (fix: build error due to importing halo2_ecc and halo2_base)
  "bytes",
  "const-hex",
  "enr",
@@ -1469,7 +1492,7 @@ version = "2.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "de34e484e7ae3cab99fbfd013d6c5dc7f9013676a4e0e414d8b12e1213e8b3ba"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if",
  "const-hex",
  "dirs",
  "dunce",
@@ -1730,7 +1753,7 @@ version = "0.1.0"
 dependencies = [
  "digest 0.7.6",
  "eth-types",
- "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
+ "halo2_proofs",
  "rand",
  "sha3 0.7.3",
  "strum 0.24.1",
@@ -1772,8 +1795,7 @@ version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "190092ea657667030ac6a35e305e62fc4dd69fd98ac98631e5d3a2b1575a12b5"
 dependencies = [
- "cfg-if 1.0.0",
- "js-sys",
+ "cfg-if",
  "libc",
  "wasi",
  "wasm-bindgen",
@@ -1825,9 +1847,15 @@ dependencies = [
 
 [[package]]
 name = "h2"
+<<<<<<< HEAD
 version = "0.3.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb2c4422095b67ee78da96fbb51a4cc413b3b25883c7717ff7ca1ab31022c9c9"
+=======
+version = "0.3.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b553656127a00601c8ae5590fcfdc118e4083a7924b6cf4ffc1ea4b99dc429d7"
+>>>>>>> 0e7d8a19e (fix: build error due to importing halo2_ecc and halo2_base)
 dependencies = [
  "bytes",
  "fnv",
@@ -1848,7 +1876,7 @@ version = "0.2.2"
 source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#40ba7e3bbf013b55c59283534c9489701f9212d0"
 dependencies = [
  "ff",
- "halo2_proofs 0.2.0 (git+https://github.com/scroll-tech/halo2.git?branch=v1.1)",
+ "halo2_proofs",
  "itertools 0.10.5",
  "num-bigint",
  "num-integer",
@@ -1884,7 +1912,7 @@ dependencies = [
  "blake2b_simd",
  "ff",
  "group",
- "halo2curves 0.3.2",
+ "halo2curves",
  "rand_chacha",
  "rand_core",
  "rayon",
@@ -1893,6 +1921,7 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "halo2_proofs"
 version = "0.2.0"
 source = "git+https://github.com/scroll-tech/halo2.git?branch=v1.1#84003a202d6b9185c952ec91ea793dbbd6c5b200"
@@ -1916,32 +1945,14 @@ dependencies = [
 ]
 
 [[package]]
+=======
+>>>>>>> 0e7d8a19e (fix: build error due to importing halo2_ecc and halo2_base)
 name = "halo2curves"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6b1142bd1059aacde1b477e0c80c142910f1ceae67fc619311d6a17428007ab"
 dependencies = [
  "blake2b_simd",
- "ff",
- "group",
- "lazy_static",
- "num-bigint",
- "num-traits",
- "pasta_curves",
- "paste",
- "rand",
- "rand_core",
- "serde",
- "serde_arrays",
- "static_assertions",
- "subtle",
-]
-
-[[package]]
-name = "halo2curves"
-version = "0.3.2"
-source = "git+https://github.com/privacy-scaling-explorations/halo2curves?tag=0.3.2#9f5c50810bbefe779ee5cf1d852b2fe85dc35d5e"
-dependencies = [
  "ff",
  "group",
  "lazy_static",
@@ -1960,7 +1971,7 @@ name = "halo2wrong"
 version = "0.1.0"
 source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20#f72db265aa3cebe297c9b9816e940d0e1d400886"
 dependencies = [
- "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
+ "halo2_proofs",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -2275,7 +2286,7 @@ version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a5bbe824c507c5da5956355e86a746d82e0e1464f65d862cc5e71da70e94b2c"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if",
 ]
 
 [[package]]
@@ -2302,7 +2313,7 @@ dependencies = [
  "ethers",
  "ethers-contract-abigen",
  "glob",
- "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
+ "halo2_proofs",
  "lazy_static",
  "log",
  "mock",
@@ -2384,7 +2395,11 @@ version = "8.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6971da4d9c3aa03c3d8f3ff0f4155b534aad021292003895a469716b2a230378"
 dependencies = [
+<<<<<<< HEAD
  "base64 0.21.7",
+=======
+ "base64 0.21.6",
+>>>>>>> 0e7d8a19e (fix: build error due to importing halo2_ecc and halo2_base)
  "pem",
  "ring 0.16.20",
  "serde",
@@ -2398,7 +2413,11 @@ version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "956ff9b67e26e1a6a866cb758f12c6f8746208489e3e4a4b5580802f2f0a587b"
 dependencies = [
+<<<<<<< HEAD
  "cfg-if 1.0.0",
+=======
+ "cfg-if",
+>>>>>>> 0e7d8a19e (fix: build error due to importing halo2_ecc and halo2_base)
  "ecdsa 0.16.9",
  "elliptic-curve",
  "once_cell",
@@ -2534,7 +2553,7 @@ dependencies = [
  "ethers",
  "eyre",
  "gadgets",
- "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
+ "halo2_proofs",
  "hex",
  "mpt-witness-generator",
  "num_enum 0.6.1",
@@ -2886,8 +2905,13 @@ version = "0.10.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "15c9d69dd87a29568d4d017cfe8ec518706046a05184e5aea92d0af890b803c8"
 dependencies = [
+<<<<<<< HEAD
  "bitflags 2.4.2",
  "cfg-if 1.0.0",
+=======
+ "bitflags 2.4.1",
+ "cfg-if",
+>>>>>>> 0e7d8a19e (fix: build error due to importing halo2_ecc and halo2_base)
  "foreign-types",
  "libc",
  "once_cell",
@@ -2978,7 +3002,7 @@ version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c42a9226546d68acdd9c0a280d17ce19bfe27a46bf68784e4066115788d008e"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if",
  "libc",
  "redox_syscall",
  "smallvec",
@@ -3229,16 +3253,7 @@ name = "poseidon"
 version = "0.2.0"
 source = "git+https://github.com/privacy-scaling-explorations/poseidon.git?tag=v2023_04_20#807f8f555313f726ca03bdf941f798098f488ba4"
 dependencies = [
- "halo2curves 0.3.2",
- "subtle",
-]
-
-[[package]]
-name = "poseidon"
-version = "0.2.0"
-source = "git+https://github.com/scroll-tech/poseidon.git?branch=main#5787dd3d2ce7a9e9601a035c396ac0c03449b54d"
-dependencies = [
- "halo2curves 0.1.0",
+ "halo2curves",
  "subtle",
 ]
 
@@ -3520,7 +3535,11 @@ version = "0.11.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37b1ae8d9ac08420c66222fb9096fc5de435c3c48542bc5336c51892cffafb41"
 dependencies = [
+<<<<<<< HEAD
  "base64 0.21.7",
+=======
+ "base64 0.21.6",
+>>>>>>> 0e7d8a19e (fix: build error due to importing halo2_ecc and halo2_base)
  "bytes",
  "encoding_rs",
  "futures-core",
@@ -3772,7 +3791,11 @@ version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c74cae0a4cf6ccbbf5f359f08efdf8ee7e1dc532573bf0db71968cb56b1448c"
 dependencies = [
+<<<<<<< HEAD
  "base64 0.21.7",
+=======
+ "base64 0.21.6",
+>>>>>>> 0e7d8a19e (fix: build error due to importing halo2_ecc and halo2_base)
 ]
 
 [[package]]
@@ -3821,7 +3844,7 @@ version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f7d66a1128282b7ef025a8ead62a4a9fcf017382ec53b8ffbf4d7bf77bd3c60"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if",
  "derive_more",
  "parity-scale-codec",
  "scale-info-derive",
@@ -3962,6 +3985,7 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "serde_arrays"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3971,6 +3995,8 @@ dependencies = [
 ]
 
 [[package]]
+=======
+>>>>>>> 0e7d8a19e (fix: build error due to importing halo2_ecc and halo2_base)
 name = "serde_derive"
 version = "1.0.195"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4041,7 +4067,7 @@ version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if",
  "cpufeatures",
  "digest 0.10.7",
 ]
@@ -4053,7 +4079,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4d58a1e1bf39749807d89cf2d98ac2dfa0ff1cb3faa38fbb64dd88ac8013d800"
 dependencies = [
  "block-buffer 0.9.0",
- "cfg-if 1.0.0",
+ "cfg-if",
  "cpufeatures",
  "digest 0.9.0",
  "opaque-debug",
@@ -4065,7 +4091,7 @@ version = "0.10.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "793db75ad2bcafc3ffa7c68b215fee268f537982cd901d132f89c6343f3a3dc8"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if",
  "cpufeatures",
  "digest 0.10.7",
 ]
@@ -4154,15 +4180,15 @@ source = "git+https://github.com/privacy-scaling-explorations/snark-verifier?tag
 dependencies = [
  "bytes",
  "ecc",
- "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
- "halo2curves 0.3.2",
+ "halo2_proofs",
+ "halo2curves",
  "hex",
  "itertools 0.10.5",
  "lazy_static",
  "num-bigint",
  "num-integer",
  "num-traits",
- "poseidon 0.2.0 (git+https://github.com/privacy-scaling-explorations/poseidon.git?tag=v2023_04_20)",
+ "poseidon",
  "primitive-types",
  "rand",
  "revm",
@@ -4376,7 +4402,7 @@ version = "3.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "01ce4141aa927a6d1bd34a041795abd0db1cccba5d5f24b009f694bdf3a1f3fa"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if",
  "fastrand",
  "redox_syscall",
  "rustix",
@@ -4416,7 +4442,7 @@ dependencies = [
  "ethers-signers",
  "external-tracer",
  "glob",
- "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
+ "halo2_proofs",
  "handlebars",
  "hex",
  "log",
@@ -4889,7 +4915,7 @@ version = "0.2.90"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1223296a201415c7fad14792dbefaace9bd52b62d33453ade1c5b5f07555406"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if",
  "wasm-bindgen-macro",
 ]
 
@@ -4914,7 +4940,7 @@ version = "0.4.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bde2032aeb86bdfaecc8b261eef3cba735cc426c1f3a3416d1e0791be95fc461"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if",
  "js-sys",
  "wasm-bindgen",
  "web-sys",
@@ -5143,7 +5169,11 @@ version = "0.50.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "524e57b2c537c0f9b1e69f1965311ec12182b4122e45035b1508cd24d2adadb1"
 dependencies = [
+<<<<<<< HEAD
  "cfg-if 1.0.0",
+=======
+ "cfg-if",
+>>>>>>> 0e7d8a19e (fix: build error due to importing halo2_ecc and halo2_base)
  "windows-sys 0.48.0",
 ]
 
@@ -5254,7 +5284,7 @@ dependencies = [
  "getrandom",
  "halo2-base",
  "halo2-ecc",
- "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
+ "halo2_proofs",
  "hex",
  "integer",
  "itertools 0.10.5",
