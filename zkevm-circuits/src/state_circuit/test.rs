@@ -1000,7 +1000,7 @@ fn bad_initial_tx_receipt_value() {
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
     // permu_next_continuous_fingerprint and rows override for negative-test
     #[allow(unused_assignments, unused_mut)]
-    let (rw_rows, _) = RwMap::table_assignments_padding(&rows, N_ROWS, true);
+    let (rw_rows, _) = RwMap::table_assignments_padding(&rows, N_ROWS, None);
     let rw_rows: Vec<witness::RwRow<Value<Fr>>> =
         rw_overrides_skip_first_padding(&rw_rows, &overrides);
     let rwtable_fingerprints =
@@ -1018,6 +1018,7 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
         permu_gamma: Fr::from(1),
         rw_fingerprints: rwtable_fingerprints,
         chunk_idx: 0,
+        prev_chunk_last_rw: None,
         _marker: std::marker::PhantomData::default(),
     };
     let instance = circuit.instance();

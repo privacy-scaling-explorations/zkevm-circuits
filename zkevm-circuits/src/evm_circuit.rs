@@ -332,7 +332,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         let (rw_rows_padding, _) = RwMap::table_assignments_padding(
             &chunk.rws.table_assignments(true),
             chunk.fixed_param.max_rws,
-            chunk.chunk_context.is_first_chunk(),
+            chunk.prev_chunk_last_rw,
         );
         let (
             alpha_cell,
@@ -352,7 +352,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                     &chunk.rws.table_assignments(true),
                     // align with state circuit to padding to same max_rws
                     chunk.fixed_param.max_rws,
-                    chunk.chunk_context.is_first_chunk(),
+                    chunk.prev_chunk_last_rw,
                 )?;
                 let permutation_cells = config.rw_permutation_config.assign(
                     &mut region,

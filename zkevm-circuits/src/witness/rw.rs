@@ -88,6 +88,9 @@ impl RwMap {
                             errs.push((idx, err_msg_first, *row, *prev_row));
                         }
                     }
+                    if row.tag() == Target::CallContext {
+                        println!("call context value: {:?}", row);
+                    }
                 } else {
                     // value == prev_value
                     let prev_value = prev_row.value_assignment();
@@ -130,7 +133,7 @@ impl RwMap {
     pub fn table_assignments_padding(
         rows: &[Rw],
         target_len: usize,
-        is_first_row_padding: bool,
+        prev_chunk_last_rw: Option<Rw>,
     ) -> (Vec<Rw>, usize) {
         // Remove Start/Padding rows as we will add them from scratch.
         let rows_trimmed: Vec<Rw> = rows
@@ -140,7 +143,7 @@ impl RwMap {
             .collect();
         let padding_length = {
             let length = Self::padding_len(rows_trimmed.len(), target_len);
-            if is_first_row_padding {
+            if prev_chunk_last_rw.is_some() {
                 length.saturating_sub(1)
             } else {
                 length
@@ -158,11 +161,12 @@ impl RwMap {
             .max()
             .unwrap_or(1)
             + 1;
+            
         let padding = (start_padding_rw_counter..start_padding_rw_counter + padding_length)
             .map(|rw_counter| Rw::Padding { rw_counter });
         (
             iter::empty()
-                .chain(is_first_row_padding.then_some(Rw::Start { rw_counter: 1 }))
+                .chain([prev_chunk_last_rw.unwrap_or(Rw::Start { rw_counter: 1 })])
                 .chain(rows_trimmed.into_iter())
                 .chain(padding.into_iter())
                 .collect(),
@@ -202,8 +206,24 @@ impl RwMap {
         }
         rws
     }
-}
 
+    /// Get one Rw for a chunk specified by index
+    pub fn get_rw(
+        container: &operation::OperationContainer,
+        counter: usize,
+    ) -> Option<Rw> {
+        let rws: Self = container.into();
+        for rwv in rws.0.values() {
+            for rw in rwv {
+                if rw.rw_counter() == counter {
+                    return Some(*rw);
+                }
+            }
+        }
+        None
+    }
+
+}
 #[allow(
     missing_docs,
     reason = "Some of the docs are tedious and can be found at https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/tables.md"

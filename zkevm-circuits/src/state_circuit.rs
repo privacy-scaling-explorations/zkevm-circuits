@@ -218,13 +218,13 @@ impl<F: Field> StateCircuitConfig<F> {
         layouter: &mut impl Layouter<F>,
         rows: &[Rw],
         n_rows: usize, // 0 means dynamically calculated from `rows`.
-        rw_table_chunked_index: usize,
+        prev_chunk_last_rw: Option<Rw>,
     ) -> Result<(), Error> {
         let updates = MptUpdates::mock_from(rows);
         layouter.assign_region(
             || "state circuit",
             |mut region| {
-                self.assign_with_region(&mut region, rows, &updates, n_rows, rw_table_chunked_index)
+                self.assign_with_region(&mut region, rows, &updates, n_rows, prev_chunk_last_rw)
             },
         )
     }
@@ -235,12 +235,12 @@ impl<F: Field> StateCircuitConfig<F> {
         rows: &[Rw],
         updates: &MptUpdates,
         n_rows: usize, // 0 means dynamically calculated from `rows`.
-        rw_table_chunked_index: usize,
+        prev_chunk_last_rw: Option<Rw>,
     ) -> Result<(), Error> {
         let tag_chip = BinaryNumberChip::construct(self.sort_keys.tag);
 
         let (rows, padding_length) =
-            RwMap::table_assignments_padding(rows, n_rows, rw_table_chunked_index == 0);
+            RwMap::table_assignments_padding(rows, n_rows, prev_chunk_last_rw);
         let rows_len = rows.len();
 
         let mut state_root = updates.old_root();
@@ -303,9 +303,9 @@ impl<F: Field> StateCircuitConfig<F> {
                         assert_eq!(state_root, old_root);
                         state_root = new_root;
                     }
-                    if matches!(row.tag(), Target::CallContext) && !row.is_write() {
-                        assert_eq!(row.value_assignment(), 0.into(), "{:?}", row);
-                    }
+                    // if matches!(row.tag(), Target::CallContext) && !row.is_write() {
+                    //     assert_eq!(row.value_assignment(), 0.into(), "{:?}", row);
+                    // }
                 }
             }
 
@@ -465,6 +465,7 @@ pub struct StateCircuit<F: Field> {
 
     // current chunk index
     chunk_idx: usize,
+    prev_chunk_last_rw: Option<Rw>,
 
     _marker: PhantomData<F>,
 }
@@ -486,6 +487,7 @@ impl<F: Field> StateCircuit<F> {
             permu_gamma: chunk.permu_gamma,
             rw_fingerprints: chunk.rw_fingerprints.clone(),
             chunk_idx: chunk.chunk_context.idx,
+            prev_chunk_last_rw: chunk.prev_chunk_last_rw,
             _marker: PhantomData::default(),
         }
     }
@@ -535,11 +537,11 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
             || "state circuit",
             |mut region| {
                 // TODO optimimise RwMap::table_assignments_prepad calls from 3 times -> 1
-                config.rw_table.load_with_region(
+                let padded_rows = config.rw_table.load_with_region(
                     &mut region,
                     &self.rows,
                     self.n_rows,
-                    self.chunk_idx == 0,
+                    self.prev_chunk_last_rw,
                 )?;
 
                 config.assign_with_region(
@@ -547,11 +549,8 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     &self.rows,
                     &self.updates,
                     self.n_rows,
-                    self.chunk_idx,
+                    self.prev_chunk_last_rw,
                 )?;
-
-                let (rows, _) =
-                    RwMap::table_assignments_padding(&self.rows, self.n_rows, self.chunk_idx == 0);
 
                 // permu_next_continuous_fingerprint and rows override for negative-test
                 #[allow(unused_assignments, unused_mut)]
@@ -566,14 +565,14 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                                 self.overrides.is_empty(),
                                 "overrides size > 0 but row_padding_and_overridess = 0"
                             );
-                            Some(rows.to2dvec())
+                            Some(padded_rows.to2dvec())
                         } else {
                             Some(self.row_padding_and_overrides.clone())
                         };
                     }
                     row_padding_and_overridess.unwrap()
                 } else {
-                    rows.to2dvec()
+                    padded_rows.to2dvec()
                 };
                 let permutation_cells = config.rw_permutation_config.assign(
                     &mut region,

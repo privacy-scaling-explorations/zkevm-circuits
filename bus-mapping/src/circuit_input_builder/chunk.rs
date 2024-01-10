@@ -33,7 +33,6 @@ pub struct ChunkContext {
     pub initial_rwc: usize,
     /// End global rw counter
     pub end_rwc: usize,
-
     ///
     pub initial_tx: usize,
     ///
@@ -42,7 +41,6 @@ pub struct ChunkContext {
     pub initial_copy: usize,
     ///
     pub end_copy: usize,
-
     /// If this block is chunked dynamically, update the param
     pub dynamic_update: bool,
     /// Druing dry run, chuncking is desabled

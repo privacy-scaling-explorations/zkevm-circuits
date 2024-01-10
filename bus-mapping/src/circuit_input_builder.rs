@@ -588,8 +588,11 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     }
 
     /// Get the previous chunk
-    pub fn prev_chunk(&self) -> Chunk {
-        self.chunks[self.chunk_ctx.idx - 1].clone()
+    pub fn prev_chunk(&self) -> Option<Chunk> {
+        if self.chunk_ctx.idx == 0 {
+            return None;
+        }
+        self.chunks.get(self.chunk_ctx.idx - 1).cloned()
     }
 
     /// Total Rw in this chunk
@@ -606,11 +609,14 @@ impl CircuitInputBuilder<FixedCParams> {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<CircuitInputBuilder<FixedCParams>, Error> {
+        println!("--------------{:?}", self.circuits_params);
         // accumulates gas across all txs in the block
         let last_call = self.begin_handle_block(eth_block, geth_traces)?;
         // At the last chunk fixed param also need to be updated
         if self.chunk_ctx.dynamic_update {
             self.cur_chunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
+        } else {
+            self.cur_chunk_mut().fixed_param = self.circuits_params;
         }
         self.set_end_block();
         let last_copy = self.block.copy_events.len();
@@ -625,13 +631,9 @@ impl CircuitInputBuilder<FixedCParams> {
         // Truncate chunks to the actual used amount & correct ctx.total_chunks
         // Set length to the actual used amount of chunks
         self.chunks.truncate(self.chunk_ctx.idx + 1);
-        self.chunks.iter_mut().for_each(|chunk| {
-            chunk.ctx.total_chunks = used_chunks;
-            if !self.chunk_ctx.dynamic_update {
-                // For static chunking, all chunks have the same fixed param
-                chunk.fixed_param = self.circuits_params;
-            }
-        });
+        self.chunks
+            .iter_mut()
+            .for_each(|chunk| {chunk.ctx.total_chunks = used_chunks;});
 
         Ok(self)
     }
@@ -689,6 +691,7 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
             // needed for current begin_chunk step
             let last_step = &self
                 .prev_chunk()
+                .unwrap()
                 .end_chunk
                 .expect("Last chunk is incomplete");
             self.set_begin_chunk(last_step);

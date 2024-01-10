@@ -18,7 +18,7 @@ use crate::{
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
-    witness::{Chunk, RwMap, Transaction},
+    witness::{Chunk, RwMap, Transaction, Rw},
 };
 use bus_mapping::{
     circuit_input_builder::{CopyDataType, CopyEvent},
@@ -785,6 +785,8 @@ pub struct ExternalData {
     pub max_rws: usize,
     /// StateCircuit -> rws
     pub rws: RwMap,
+    /// Prev chunk last Rw
+    pub prev_chunk_last_rw: Option<Rw>,
     /// BytecodeCircuit -> bytecodes
     pub bytecodes: CodeDB,
 }
@@ -858,6 +860,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
                 txs: block.txs.clone(),
                 max_rws: chunk.fixed_param.max_rws,
                 rws: chunk.rws.clone(),
+                prev_chunk_last_rw: chunk.prev_chunk_last_rw.clone(),
                 bytecodes: block.bytecodes.clone(),
             },
         )

@@ -59,6 +59,7 @@ pub fn test_copy_circuit_from_block<F: Field>(
             txs: block.txs,
             max_rws: chunk.fixed_param.max_rws,
             rws: chunk.rws,
+            prev_chunk_last_rw: chunk.prev_chunk_last_rw,
             bytecodes: block.bytecodes,
         },
     )
