@@ -70,7 +70,7 @@ use crate::{
     witness::{block_convert, Block, MptUpdates},
 };
 use bus_mapping::{
-    circuit_input_builder::{CircuitInputBuilder, FixedCParams},
+    circuit_input_builder::{CircuitInputBuilder, FeatureConfig, FixedCParams},
     mock::BlockData,
 };
 use eth_types::{geth_types::GethData, Field};
@@ -221,6 +221,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 exp_table,
                 u8_table,
                 u16_table,
+                feature_config: FeatureConfig::default(),
             },
         );
 

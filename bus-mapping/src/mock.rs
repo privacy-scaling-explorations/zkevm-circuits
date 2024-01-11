@@ -3,7 +3,7 @@
 use crate::{
     circuit_input_builder::{
         get_state_accesses, Block, CircuitInputBuilder, CircuitsParams, DynamicCParams,
-        FixedCParams,
+        FeatureConfig, FixedCParams,
     },
     state_db::{self, CodeDB, StateDB},
 };
@@ -45,6 +45,7 @@ impl<C: CircuitsParams> BlockData<C> {
             )
             .unwrap(),
             self.circuits_params,
+            FeatureConfig::default(),
         )
     }
 

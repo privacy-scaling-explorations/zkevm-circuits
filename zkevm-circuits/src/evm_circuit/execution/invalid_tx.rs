@@ -69,7 +69,7 @@ impl<F: Field> ExecutionGadget<F> for InvalidTxGadget<F> {
             insufficient_gas_limit.expr(),
             insufficient_balance.expr(),
         ]);
-        cb.require_equal("Tx needs to be invalid", invalid_tx.expr(), 1.expr());
+        cb.require_true("Tx needs to be invalid", invalid_tx.expr());
 
         let end_tx = EndTxHelperGadget::construct(
             cb,

@@ -47,10 +47,18 @@ pub use withdrawal::{Withdrawal, WithdrawalContext};
 /// Default to mainnet block
 #[derive(Debug, Clone, Copy)]
 pub struct FeatureConfig {
-    zero_difficulty: bool,
-    free_first_tx: bool,
-    enable_eip1559: bool,
-    invalid_tx: bool,
+    /// Zero difficulty
+    pub zero_difficulty: bool,
+    /// Free first transaction
+    pub free_first_tx: bool,
+    /// Enable EIP1559
+    pub enable_eip1559: bool,
+    /// Allow invalid transactions to be included in a block
+    ///
+    /// Transactions with mismatched nonce, insufficient gas limit, or insufficient balance
+    /// shouldn't be included in a mainnet block. However, rollup developers might want to
+    /// include invalid tx in the L2 block to support forced exit feature.
+    pub invalid_tx: bool,
 }
 
 impl Default for FeatureConfig {
@@ -172,6 +180,7 @@ pub struct CircuitInputBuilder<C: CircuitsParams> {
     pub circuits_params: C,
     /// Block Context
     pub block_ctx: BlockContext,
+    /// Feature config
     pub feature_config: FeatureConfig,
 }
 
@@ -310,7 +319,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
                 ExecState::InvalidTx,
             )?;
             tx.steps_mut().push(invalid_tx_step);
-        }else {
+        } else {
             panic!("invalid tx support not enabled")
         }
 
@@ -489,6 +498,7 @@ impl CircuitInputBuilder<DynamicCParams> {
             block: self.block,
             circuits_params: c_params,
             block_ctx: self.block_ctx,
+            feature_config: self.feature_config,
         };
 
         cib.set_end_block(c_params.max_rws)?;
@@ -773,7 +783,13 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         prev_state_root: Word,
     ) -> Result<CircuitInputBuilder<FixedCParams>, Error> {
         let block = Block::new(self.chain_id, history_hashes, prev_state_root, eth_block)?;
-        let mut builder = CircuitInputBuilder::new(sdb, code_db, block, self.circuits_params);
+        let mut builder = CircuitInputBuilder::new(
+            sdb,
+            code_db,
+            block,
+            self.circuits_params,
+            FeatureConfig::default(),
+        );
         builder.handle_block(eth_block, geth_traces)?;
         Ok(builder)
     }

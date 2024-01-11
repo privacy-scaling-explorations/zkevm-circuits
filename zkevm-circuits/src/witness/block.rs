@@ -7,7 +7,7 @@ use crate::{
     util::{log2_ceil, word, SubCircuit},
 };
 use bus_mapping::{
-    circuit_input_builder::{self, CopyEvent, ExpEvent, FixedCParams, Withdrawal, FeatureConfig},
+    circuit_input_builder::{self, CopyEvent, ExpEvent, FeatureConfig, FixedCParams, Withdrawal},
     state_db::CodeDB,
     Error,
 };
@@ -43,6 +43,7 @@ pub struct Block<F> {
     pub exp_circuit_pad_to: usize,
     /// Circuit Setup Parameters
     pub circuits_params: FixedCParams,
+    /// Feature Config
     pub feature_config: FeatureConfig,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,

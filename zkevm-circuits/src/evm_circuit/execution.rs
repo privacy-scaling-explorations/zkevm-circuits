@@ -26,7 +26,7 @@ use crate::{
         Challenges, Expr,
     },
 };
-use bus_mapping::operation::Target;
+use bus_mapping::{circuit_input_builder::FeatureConfig, operation::Target};
 use eth_types::{evm_unimplemented, Field};
 use gadgets::util::not;
 use halo2_proofs::{
@@ -338,7 +338,7 @@ pub struct ExecutionConfig<F> {
     error_precompile_failed: Box<ErrorPrecompileFailedGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
     precompile_identity_gadget: Box<IdentityGadget<F>>,
-    invalid_tx: Box<InvalidTxGadget<F>>,
+    invalid_tx: Option<Box<InvalidTxGadget<F>>>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -527,7 +527,7 @@ impl<F: Field> ExecutionConfig<F> {
             begin_tx_gadget: configure_gadget!(),
             end_block_gadget: configure_gadget!(),
             end_tx_gadget: configure_gadget!(),
-            invalid_tx: configure_gadget!(),
+            invalid_tx: feature_config.invalid_tx.then(|| configure_gadget!()),
             // opcode gadgets
             add_sub_gadget: configure_gadget!(),
             addmod_gadget: configure_gadget!(),
@@ -684,6 +684,7 @@ impl<F: Field> ExecutionConfig<F> {
             step_next.clone(),
             challenges,
             G::EXECUTION_STATE,
+            feature_config,
         );
 
         let gadget = G::configure(&mut cb);
@@ -1265,7 +1266,11 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
-            ExecutionState::InvalidTx => assign_exec_step!(self.invalid_tx),
+            ExecutionState::InvalidTx => {
+                if let Some(invalid_tx) = &self.invalid_tx {
+                    assign_exec_step!(invalid_tx)
+                }
+            }
             // opcode
             ExecutionState::ADD_SUB => assign_exec_step!(self.add_sub_gadget),
             ExecutionState::ADDMOD => assign_exec_step!(self.addmod_gadget),
