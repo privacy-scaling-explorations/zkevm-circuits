@@ -130,11 +130,14 @@ impl RwTable {
         layouter: &mut impl Layouter<F>,
         rws: &[Rw],
         n_rows: usize,
-        prev_chunk_last_rw: Option<Rw>
+        prev_chunk_last_rw: Option<Rw>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "rw table",
-            |mut region| self.load_with_region(&mut region, rws, n_rows, prev_chunk_last_rw).map(|_|()),
+            |mut region| {
+                self.load_with_region(&mut region, rws, n_rows, prev_chunk_last_rw)
+                    .map(|_| ())
+            },
         )
     }
 
@@ -143,7 +146,7 @@ impl RwTable {
         region: &mut Region<'_, F>,
         rws: &[Rw],
         n_rows: usize,
-        prev_chunk_last_rw: Option<Rw>
+        prev_chunk_last_rw: Option<Rw>,
     ) -> Result<Vec<Rw>, Error> {
         let (rows, _) = RwMap::table_assignments_padding(rws, n_rows, prev_chunk_last_rw);
         for (offset, row) in rows.iter().enumerate() {

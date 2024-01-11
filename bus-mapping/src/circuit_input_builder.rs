@@ -631,9 +631,9 @@ impl CircuitInputBuilder<FixedCParams> {
         // Truncate chunks to the actual used amount & correct ctx.total_chunks
         // Set length to the actual used amount of chunks
         self.chunks.truncate(self.chunk_ctx.idx + 1);
-        self.chunks
-            .iter_mut()
-            .for_each(|chunk| {chunk.ctx.total_chunks = used_chunks;});
+        self.chunks.iter_mut().for_each(|chunk| {
+            chunk.ctx.total_chunks = used_chunks;
+        });
 
         Ok(self)
     }

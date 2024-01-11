@@ -70,7 +70,7 @@ const NUM_BLINDING_ROWS: usize = 64;
 /// .unwrap();
 ///
 /// CircuitTestBuilder::new_from_test_ctx(ctx)
-///     .modifier(Box::new(|block| chunk.fixed_param.max_evm_rows = (1 << 18) - 100))
+///     .modifier(Box::new(|block, chunk| chunk.fixed_param.max_evm_rows = (1 << 18) - 100))
 ///     .state_checks(Box::new(|prover, evm_rows, lookup_rows| assert!(prover.verify_at_rows_par(evm_rows.iter().cloned(), lookup_rows.iter().cloned()).is_err())))
 ///     .run();
 /// ```

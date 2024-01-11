@@ -161,7 +161,7 @@ impl RwMap {
             .max()
             .unwrap_or(1)
             + 1;
-            
+
         let padding = (start_padding_rw_counter..start_padding_rw_counter + padding_length)
             .map(|rw_counter| Rw::Padding { rw_counter });
         (
@@ -208,10 +208,7 @@ impl RwMap {
     }
 
     /// Get one Rw for a chunk specified by index
-    pub fn get_rw(
-        container: &operation::OperationContainer,
-        counter: usize,
-    ) -> Option<Rw> {
+    pub fn get_rw(container: &operation::OperationContainer, counter: usize) -> Option<Rw> {
         let rws: Self = container.into();
         for rwv in rws.0.values() {
             for rw in rwv {
@@ -222,7 +219,6 @@ impl RwMap {
         }
         None
     }
-
 }
 #[allow(
     missing_docs,
@@ -865,8 +861,7 @@ impl From<Vec<Rw>> for RwMap {
                     if let Some(vrw) = rw_map.get_mut(&Target::Storage) {
                         vrw.push(rw)
                     } else {
-                        rw_map
-                            .insert(Target::Storage, vec![rw]);
+                        rw_map.insert(Target::Storage, vec![rw]);
                     }
                 }
                 Rw::TxAccessListAccount { .. } => {

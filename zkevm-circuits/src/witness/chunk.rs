@@ -41,7 +41,7 @@ pub struct Chunk<F> {
 
     /// The last call of previous chunk if any, used for assigning continuation
     pub prev_last_call: Option<Call>,
-    /// 
+    ///
     pub prev_chunk_last_rw: Option<Rw>,
 }
 
@@ -61,7 +61,7 @@ impl<F: Field> Default for Chunk<F> {
             chrono_rw_fingerprints: RwFingerprints::default(),
             fixed_param: FixedCParams::default(),
             prev_last_call: None,
-            prev_chunk_last_rw: None
+            prev_chunk_last_rw: None,
         }
     }
 }
@@ -101,9 +101,9 @@ pub fn chunk_convert<F: Field>(
     let block = &builder.block;
     let chunk = builder.get_chunk(idx);
     let mut rws = RwMap::default();
-    let prev_chunk_last_rw = builder
-        .prev_chunk()
-        .map(|chunk| RwMap::get_rw(&block.container, chunk.ctx.end_rwc).expect("Rw does not exist"));
+    let prev_chunk_last_rw = builder.prev_chunk().map(|chunk| {
+        RwMap::get_rw(&block.container, chunk.ctx.end_rwc).expect("Rw does not exist")
+    });
 
     // FIXME(Cecilia): debug
     println!(
@@ -173,7 +173,7 @@ pub fn chunk_convert<F: Field>(
         chunk_context: chunk.ctx.clone(),
         rws,
         fixed_param: chunk.fixed_param,
-        prev_last_call: chunk.prev_last_call.clone(),
+        prev_last_call: chunk.prev_last_call,
         prev_chunk_last_rw,
     };
 
