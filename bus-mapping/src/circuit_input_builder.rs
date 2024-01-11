@@ -399,7 +399,13 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             tx.steps_mut().extend(exec_steps);
         }
         // Peek the end_tx_step
-        self.check_and_chunk(geth_trace, tx.clone(), tx_ctx.clone(), None, last_call.clone())?;
+        self.check_and_chunk(
+            geth_trace,
+            tx.clone(),
+            tx_ctx.clone(),
+            None,
+            last_call.clone(),
+        )?;
 
         // Generate EndTx step
         let end_tx_step =
