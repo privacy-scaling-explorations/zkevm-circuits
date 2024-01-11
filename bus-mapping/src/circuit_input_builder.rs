@@ -290,8 +290,8 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     fn check_and_chunk(
         &mut self,
         geth_trace: &GethExecTrace,
-        mut tx: Transaction,
-        mut tx_ctx: TransactionContext,
+        tx: Transaction,
+        tx_ctx: TransactionContext,
         geth_steps: Option<(usize, &GethExecStep)>,
         last_call: Option<Call>,
     ) -> Result<(), Error> {
@@ -308,7 +308,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
 
         if gen_chunk {
             // Optain the first op of the next GethExecStep, for fixed case also lookahead
-            let (mut cib, mut tx, mut tx_ctx_) = (self.clone(), tx.clone(), tx_ctx.clone());
+            let (mut cib, mut tx, mut tx_ctx_) = (self.clone(), tx, tx_ctx);
             let mut cib_ref = cib.state_ref(&mut tx, &mut tx_ctx_);
             let ops = if let Some((i, step)) = geth_steps {
                 log::trace!("chunk at {}th opcode {:?} ", i, step.op);
