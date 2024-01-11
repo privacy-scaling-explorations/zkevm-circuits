@@ -276,6 +276,7 @@ pub fn block_convert<F: Field>(
     Ok(block)
 }
 
+#[allow(dead_code)]
 fn get_rwtable_fingerprints<F: Field>(
     alpha: F,
     gamma: F,

@@ -463,8 +463,6 @@ pub struct StateCircuit<F: Field> {
     permu_gamma: F,
     rw_fingerprints: RwFingerprints<F>,
 
-    // current chunk index
-    chunk_idx: usize,
     prev_chunk_last_rw: Option<Rw>,
 
     _marker: PhantomData<F>,
@@ -486,7 +484,6 @@ impl<F: Field> StateCircuit<F> {
             permu_alpha: chunk.permu_alpha,
             permu_gamma: chunk.permu_gamma,
             rw_fingerprints: chunk.rw_fingerprints.clone(),
-            chunk_idx: chunk.chunk_context.idx,
             prev_chunk_last_rw: chunk.prev_chunk_last_rw,
             _marker: PhantomData::default(),
         }

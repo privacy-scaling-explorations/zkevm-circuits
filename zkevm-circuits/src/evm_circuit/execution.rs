@@ -1132,7 +1132,8 @@ impl<F: Field> ExecutionConfig<F> {
                             challenges,
                             assign_pass,
                         )?;
-                        for row_idx in offset..padding_end {
+                        let padding_start = offset;
+                        for row_idx in padding_start..padding_end {
                             self.assign_q_step(&mut region, row_idx, height)?;
                             offset += height;
                         }

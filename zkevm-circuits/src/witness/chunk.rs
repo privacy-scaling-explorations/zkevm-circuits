@@ -67,6 +67,7 @@ impl<F: Field> Default for Chunk<F> {
 }
 
 impl<F: Field> Chunk<F> {
+    #[allow(dead_code)]
     pub(crate) fn new_from_rw_map(rws: &RwMap) -> Self {
         let (alpha, gamma) = get_permutation_randomness();
         let mut chunk = Chunk::default();
