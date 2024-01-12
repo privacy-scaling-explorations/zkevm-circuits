@@ -14,7 +14,7 @@ func prepareEmptyNonExistingStorageRow() []byte {
 	return nonExistingStorageRow
 }
 
-func prepareNonExistingStorageRow(leafC, keyNibbles []byte, noLeaf bool) ([]byte, []byte) {
+func prepareNonExistingStorageRow(leafC, keyNibbles []byte) ([]byte, []byte) {
 	// nonExistingStorageRow is used only for proof that nothing is stored at a particular storage key
 	nonExistingStorageRow := prepareEmptyNonExistingStorageRow()
 
@@ -538,8 +538,7 @@ func prepareStorageLeafNode(leafS, leafC, neighbourNode []byte, storage_key comm
 	var nonExistingStorageRow []byte
 	var wrongRlpBytes []byte
 	if nonExistingStorageProof {
-		noLeaf := false
-		wrongRlpBytes, nonExistingStorageRow = prepareNonExistingStorageRow(leafC, key, noLeaf)
+		wrongRlpBytes, nonExistingStorageRow = prepareNonExistingStorageRow(leafC, key)
 	} else {
 		nonExistingStorageRow = prepareEmptyNonExistingStorageRow()
 	}

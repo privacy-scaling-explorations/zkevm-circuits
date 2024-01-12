@@ -373,7 +373,12 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 	branchC1 := byte(1)
 	for i := 0; i < upTo; i++ {
 		if !isBranch(proof1[i]) {
-			if i != len1-1 { // extension node
+			isNonExisting := (isAccountProof && nonExistingAccountProof) || (!isAccountProof && nonExistingStorageProof) 
+			isExt := len(extNibblesS) != 0 || len(extNibblesC) != 0
+			// If i < upTo-1, it means it's not a leaf, so it's an extension node.
+			// For non-existing proof, the last node in the proof could be an extension node (we have
+			// nil in the branch; for the wrong leaf case we don't need to worry because it appears in i = upTo-1).
+			if (i != upTo-1) || (isExt && isNonExisting) { // extension node
 				var numberOfNibbles byte
 				isExtension = true
 				numberOfNibbles, extListRlpBytes, extValues = prepareExtensions(extNibblesS, extensionNodeInd, proof1[i], proof2[i])
@@ -387,7 +392,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			var node Node
 			if isAccountProof {
 				node = prepareAccountLeafNode(addr, addrh, proof1[l-1], proof2[l-1], nil, key, false, false, false)
-			} else {
+			} else {	
 				node = prepareStorageLeafNode(proof1[l-1], proof2[l-1], nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
 			}
 
