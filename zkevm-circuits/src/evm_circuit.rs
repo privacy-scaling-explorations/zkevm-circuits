@@ -588,7 +588,7 @@ mod evm_circuit_stats {
     };
     use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
 
-    use eth_types::{bytecode, geth_types::GethData};
+    use eth_types::{address, bytecode, geth_types::GethData, Word};
     use halo2_proofs::{self, dev::MockProver, halo2curves::bn256::Fr};
 
     use mock::test_ctx::{
@@ -623,6 +623,62 @@ mod evm_circuit_stats {
         .run();
     }
 
+    #[test]
+    fn reproduce_heavytest_error() {
+        let bytecode = bytecode! {
+            GAS
+            STOP
+        };
+
+        let addr_a = address!("0x000000000000000000000000000000000000AAAA");
+        let addr_b = address!("0x000000000000000000000000000000000000BBBB");
+
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(addr_b)
+                    .balance(Word::from(1u64 << 20))
+                    .code(bytecode);
+                accs[1].address(addr_a).balance(Word::from(1u64 << 20));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[1].address)
+                    .to(accs[0].address)
+                    .gas(Word::from(1_000_000u64));
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        let circuits_params = FixedCParams {
+            total_chunks: 1,
+            max_txs: 1,
+            max_calldata: 32,
+            max_rws: 256,
+            max_copy_rows: 256,
+            max_exp_steps: 256,
+            max_bytecode: 512,
+            max_evm_rows: 0,
+            max_keccak_rows: 0,
+        };
+        let builder = BlockData::new_from_geth_data_with_params(block.clone(), circuits_params)
+            .new_circuit_input_builder()
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        let block = block_convert::<Fr>(&builder).unwrap();
+        let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+        let k = block.get_test_degree(&chunk);
+        let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block, chunk);
+        let instance = circuit.instance_extend_chunk_ctx();
+        let prover1 = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
+        let res = prover1.verify_par();
+        if let Err(err) = res {
+            panic!("Failed verification {:?}", err);
+        }
+    }
     #[test]
     fn variadic_size_check() {
         let params = FixedCParams {
