@@ -1,4 +1,4 @@
-//! Mock types and functions to generate Test enviroments for ZKEVM tests
+//! Mock types and functions to generate Test environments for ZKEVM tests
 
 use crate::{withdrawal::MockWithdrawal, MockAccount, MockBlock, MockTransaction};
 use eth_types::{
@@ -141,7 +141,7 @@ impl<const NACC: usize, const NTX: usize, const NWD: usize> TestContext2<NACC, N
             logger_config,
         )?;
 
-        // Don't allow invalid transactions unless explicitely allowed to avoid unrelated tests from
+        // Don't allow invalid transactions unless explicitly allowed to avoid unrelated tests from
         // passing simply because the test transaction was incorrectly set up.
         for (tx, geth_trace) in transactions.iter().zip(geth_traces.iter()) {
             if !tx.invalid && geth_trace.invalid {
