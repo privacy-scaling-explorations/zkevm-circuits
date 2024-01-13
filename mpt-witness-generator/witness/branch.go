@@ -248,14 +248,14 @@ func addBranchAndPlaceholder(proof1, proof2,
 		Now we want to add a leaf at position n1 n2 n3 n4 n5 m1 where m1 != n6.
 		The adding algorithm walks through the trie, but it bumps into an extension node where
 		it should put this leaf. So a new extension node is added at position n1 n2 n3 n4 which only
-		has one nibble: n5. So at n1 n2 n3 n4 n5 we have a branch now. In this brach, at position m we
+		has one nibble: n5. So at n1 n2 n3 n4 n5 we have a branch now. In this branch, at position m we
 		have a leaf, while at position n6 we have another extension node with one extension nibble: n7.
 		At this position (n7) we have the branch from the original extension node.
 
 		When an extension node is inserted because of the added key, C proof will contain this new
 		extension node and the underlying branch. However, S proof will stop at the old extension node.
 		This old extension node is not part of the C proof, but we need to ensure that it is in the C trie.
-		We need to take into accout that in the C trie the old extension node has a shortened extension.
+		We need to take into account that in the C trie the old extension node has a shortened extension.
 
 		The problem is where to store the old extension node. Note that in the above code the new
 		extension node and the underlying branch rows are prepared. For example, when len2 > len1 we

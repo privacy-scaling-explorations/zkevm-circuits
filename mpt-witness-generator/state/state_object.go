@@ -357,7 +357,7 @@ func (s *stateObject) updateTrie(db Database) Trie {
 		var v []byte
 		if (value == common.Hash{}) {
 			//fmt.Println("delete", s.address, key)
-			// Get absense proof of key in case the deletion needs the sister node.
+			// Get absence proof of key in case the deletion needs the sister node.
 
 			// Note: commented for now because of `ExtNodeDeleted`
 			oracle.PrefetchStorage(big.NewInt(db.BlockNumber.Int64()+1), s.address, key, trie.GenPossibleShortNodePreimage)
