@@ -111,13 +111,16 @@ impl<F: Field> KeccakRegion<F> {
     }
 
     pub(crate) fn assign(&mut self, column: usize, offset: usize, value: F) {
-        while offset >= self.rows.len() {
-            self.rows.push(Vec::new());
+        // allocate missing rows if needed
+        if offset >= self.rows.len() {
+            self.rows.resize(offset + 1, Vec::new());
         }
         let row = &mut self.rows[offset];
-        while column >= row.len() {
-            row.push(F::ZERO);
+        // allocate missing columns if needed
+        if column >= row.len() {
+            row.resize(column + 1, F::ZERO);
         }
+
         row[column] = value;
     }
 }
@@ -168,8 +171,8 @@ pub(crate) mod split {
         rot: usize,
         target_part_size: usize,
     ) -> Vec<Part<F>> {
-        let mut parts = Vec::new();
         let word = WordParts::new(target_part_size, rot, false);
+        let mut parts = Vec::with_capacity(word.parts.len());
         for word_part in word.parts {
             let cell = cell_manager.query_cell(meta, DEFAULT_CELL_TYPE);
             parts.push(Part {
@@ -192,8 +195,8 @@ pub(crate) mod split {
     ) -> Vec<PartValue<F>> {
         let input_bits = unpack(input);
         debug_assert_eq!(pack::<F>(&input_bits), input);
-        let mut parts = Vec::new();
         let word = WordParts::new(target_part_size, rot, false);
+        let mut parts = Vec::with_capacity(word.parts.len());
         for word_part in word.parts {
             let value = pack_part(&input_bits, &word_part);
             let cell: Cell<F> = cell_manager.query_cell_value(DEFAULT_CELL_TYPE);
@@ -316,11 +319,14 @@ pub(crate) mod split_uniform {
         let input_bits = unpack(input);
         debug_assert_eq!(pack::<F>(&input_bits), input);
 
-        let mut input_parts = Vec::new();
-        let mut output_parts = Vec::new();
         let word = WordParts::new(target_part_size, rot, true);
-
         let word = rotate(word.parts, rot, target_part_size);
+
+        // we have either 1 or 2 inputs per word. Allocate for worst case
+        // to avoid re-allocs. With plain pushes it would likely end up allocating
+        // more anyway.
+        let mut input_parts = Vec::with_capacity(word.len() * 2);
+        let mut output_parts = Vec::with_capacity(word.len());
 
         let target_sizes = target_part_sizes(target_part_size);
         let mut word_iter = word.iter();
@@ -406,7 +412,7 @@ pub(crate) mod transform {
         transform_table: [TableColumn; 2],
         uniform_lookup: bool,
     ) -> Vec<Part<F>> {
-        let mut cells = Vec::new();
+        let mut cells = Vec::with_capacity(input.len());
         for input_part in input.iter() {
             cells.push(if uniform_lookup {
                 cell_manager.query_cell_with_affinity(
@@ -437,7 +443,7 @@ pub(crate) mod transform {
         f: fn(&u8) -> u8,
         uniform_lookup: bool,
     ) -> Vec<PartValue<F>> {
-        let mut cells = Vec::new();
+        let mut cells = Vec::with_capacity(input.len());
         for input_part in input.iter() {
             cells.push(if uniform_lookup {
                 cell_manager
@@ -470,7 +476,7 @@ pub(crate) mod transform_to {
         transform_table: [TableColumn; 2],
         uniform_lookup: bool,
     ) -> Vec<Part<F>> {
-        let mut output = Vec::new();
+        let mut output = Vec::with_capacity(input.len());
         for (idx, input_part) in input.iter().enumerate() {
             let output_part = cells[idx].clone();
             if !uniform_lookup || input_part.cell.get_rotation() == 0 {
@@ -498,7 +504,7 @@ pub(crate) mod transform_to {
         do_packing: bool,
         f: fn(&u8) -> u8,
     ) -> Vec<PartValue<F>> {
-        let mut output = Vec::new();
+        let mut output = Vec::with_capacity(input.len());
         for (idx, input_part) in input.iter().enumerate() {
             let input_bits = &unpack(input_part.value)[0..input_part.num_bits];
             let output_bits = input_bits.iter().map(f).collect::<Vec<_>>();
@@ -531,11 +537,12 @@ pub(crate) fn keccak<F: Field>(
     let two = F::from(2u64);
 
     // Padding
-    bits.push(1);
-    while (bits.len() + 1) % RATE_IN_BITS != 0 {
-        bits.push(0);
-    }
-    bits.push(1);
+    // (bits_len + 2 /*for surrounding '1's*/).ceil_div(RATE_IN_BITS) * RATE_IN_BITS
+    let new_length = (bits.len() + 2 + RATE_IN_BITS - 1) / RATE_IN_BITS * RATE_IN_BITS;
+    let old_length = bits.len();
+    bits.resize(new_length, 0);
+    bits[old_length] = 1;
+    bits[new_length - 1] = 1;
 
     let mut length = 0usize;
     let mut data_rlc = Value::known(F::ZERO);
@@ -544,7 +551,7 @@ pub(crate) fn keccak<F: Field>(
     for (idx, chunk) in chunks.enumerate() {
         let is_final_block = idx == num_chunks - 1;
 
-        let mut absorb_rows = Vec::new();
+        let mut absorb_rows = Vec::with_capacity(absorb_positions.len());
         // Absorb
         for (idx, &(i, j)) in absorb_positions.iter().enumerate() {
             let absorb = pack(&chunk[idx * 64..(idx + 1) * 64]);
@@ -559,12 +566,12 @@ pub(crate) fn keccak<F: Field>(
 
         let mut hash_words: Vec<F> = Vec::new();
 
-        let mut cell_managers = Vec::new();
-        let mut regions = Vec::new();
+        let mut cell_managers = Vec::with_capacity(NUM_ROUNDS + 1);
+        let mut regions = Vec::with_capacity(NUM_ROUNDS + 1);
 
         let mut hash = Word::default();
-        let mut round_lengths = Vec::new();
-        let mut round_data_rlcs = Vec::new();
+        let mut round_lengths = Vec::with_capacity(NUM_ROUNDS + 1);
+        let mut round_data_rlcs = Vec::with_capacity(NUM_ROUNDS + 1);
         for round in 0..NUM_ROUNDS + 1 {
             let mut cell_manager = CellManager::new(CMFixedHeightStrategy::new(
                 get_num_rows_per_round(),
@@ -617,13 +624,13 @@ pub(crate) fn keccak<F: Field>(
             let input_bytes =
                 transform::value(&mut cell_manager, &mut region, packed, false, |v| *v, true);
             cell_manager.get_strategy().start_region();
-            let mut is_paddings: Vec<Cell<F>> = Vec::new();
             let mut data_rlcs = vec![Value::known(F::ZERO); get_num_rows_per_round()];
-            for _ in input_bytes.iter() {
-                is_paddings.push(cell_manager.query_cell_value(DEFAULT_CELL_TYPE));
-            }
+            let mut is_paddings: Vec<Cell<F>> = input_bytes
+                .iter()
+                .map(|_| cell_manager.query_cell_value(DEFAULT_CELL_TYPE))
+                .collect();
             if round < NUM_WORDS_TO_ABSORB {
-                let mut paddings = Vec::new();
+                let mut paddings = Vec::with_capacity(is_paddings.len());
                 for (padding_idx, is_padding) in is_paddings.iter_mut().enumerate() {
                     let byte_idx = round * 8 + padding_idx;
                     let padding = if is_final_block && byte_idx >= num_bytes_in_last_block {
@@ -656,14 +663,14 @@ pub(crate) fn keccak<F: Field>(
             if round != NUM_ROUNDS {
                 // Theta
                 let part_size = get_num_bits_per_theta_c_lookup();
-                let mut bcf = Vec::new();
+                let mut bcf = Vec::with_capacity(s.len());
                 for s in &s {
                     let c = s[0] + s[1] + s[2] + s[3] + s[4];
                     let bc_fat = split::value(&mut cell_manager, &mut region, c, 1, part_size);
                     bcf.push(bc_fat);
                 }
                 cell_manager.get_strategy().start_region();
-                let mut bc = Vec::new();
+                let mut bc = Vec::with_capacity(bcf.len());
                 for bc_fat in bcf {
                     let bc_norm = transform::value(
                         &mut cell_manager,
@@ -693,7 +700,9 @@ pub(crate) fn keccak<F: Field>(
                 let num_word_parts = target_word_sizes.len();
                 let mut rho_pi_chi_cells: [[[Vec<Cell<F>>; 5]; 5]; 3] =
                     array_init::array_init(|_| {
-                        array_init::array_init(|_| array_init::array_init(|_| Vec::new()))
+                        array_init::array_init(|_| {
+                            array_init::array_init(|_| Vec::with_capacity(num_word_parts))
+                        })
                     });
                 let mut column_starts = [0usize; 3];
                 for p in 0..3 {
@@ -743,7 +752,7 @@ pub(crate) fn keccak<F: Field>(
                 let mut os = [[F::ZERO; 5]; 5];
                 for j in 0..5 {
                     for i in 0..5 {
-                        let mut s_parts = Vec::new();
+                        let mut s_parts = Vec::with_capacity(os_parts[i][j].len());
                         for ((part_a, part_b), part_c) in os_parts[i][j]
                             .iter()
                             .zip(os_parts[(i + 1) % 5][j].iter())
@@ -873,10 +882,11 @@ pub(crate) fn multi_keccak<F: Field>(
     challenges: Challenges<Value<F>>,
     capacity: Option<usize>,
 ) -> Result<Vec<KeccakRow<F>>, Error> {
-    let mut rows: Vec<KeccakRow<F>> = Vec::new();
+    let num_rows_per_round = get_num_rows_per_round();
+    let mut rows: Vec<KeccakRow<F>> = Vec::with_capacity(num_rows_per_round);
     // Dummy first row so that the initial data is absorbed
     // The initial data doesn't really matter, `is_final` just needs to be disabled.
-    for idx in 0..get_num_rows_per_round() {
+    for idx in 0..num_rows_per_round {
         rows.push(KeccakRow {
             q_enable: idx == 0,
             q_round: false,
