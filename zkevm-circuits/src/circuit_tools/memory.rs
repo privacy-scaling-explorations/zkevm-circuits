@@ -68,10 +68,10 @@ impl<F: Field, C: CellType, MB: MemoryBank<F, C>> Memory<F, C, MB> {
     }
 
     pub(crate) fn get_columns(&self) -> Vec<Column<Advice>> {
-        self.banks.values().fold(Vec::new(), |mut acc, bank| {
-            acc.extend(bank.columns().iter());
-            acc
-        })
+        self.banks
+            .values()
+            .flat_map(|bank| bank.columns())
+            .collect()
     }
 
     pub(crate) fn build_constraints(
@@ -152,7 +152,7 @@ impl<F: Field, C: CellType> RwBank<F, C> {
         self.cur.expr()
     }
     pub(crate) fn prepend_key(&self, values: &[Expression<F>]) -> Vec<Expression<F>> {
-        [&[self.cur.expr() + 1.expr()], values].concat().to_vec()
+        [&[self.cur.expr() + 1.expr()], values].concat()
     }
 
     pub(crate) fn prepend_offset(
@@ -160,7 +160,7 @@ impl<F: Field, C: CellType> RwBank<F, C> {
         values: &[Expression<F>],
         offset: Expression<F>,
     ) -> Vec<Expression<F>> {
-        [&[self.cur.expr() - offset], values].concat().to_vec()
+        [&[self.cur.expr() - offset], values].concat()
     }
 }
 
