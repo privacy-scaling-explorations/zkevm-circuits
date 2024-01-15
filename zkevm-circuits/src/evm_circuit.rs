@@ -452,7 +452,10 @@ mod evm_circuit_stats {
         util::{unusable_rows, SubCircuit},
         witness::block_convert,
     };
-    use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
+    use bus_mapping::{
+        circuit_input_builder::{FeatureConfig, FixedCParams},
+        mock::BlockData,
+    };
 
     use eth_types::{bytecode, geth_types::GethData};
     use halo2_proofs::{self, dev::MockProver, halo2curves::bn256::Fr};
@@ -466,7 +469,7 @@ mod evm_circuit_stats {
     fn evm_circuit_unusable_rows() {
         assert_eq!(
             EvmCircuit::<Fr>::unusable_rows(),
-            unusable_rows::<Fr, EvmCircuit::<Fr>>(()),
+            unusable_rows::<Fr, EvmCircuit::<Fr>>(FeatureConfig::default()),
         )
     }
 
