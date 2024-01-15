@@ -396,14 +396,17 @@ impl<F: Field> ExecutionConfig<F> {
 
             let execution_state_selector_constraints = step_curr.state.execution_state.configure();
 
-            // TODO: Change logic depending on feature_config.invalid_tx
             // NEW: Enabled, this will break hand crafted tests, maybe we can remove them?
             let first_step_check = {
-                let begin_tx_invalid_tx_end_block_selector = step_curr.execution_state_selector([
-                    ExecutionState::BeginTx,
-                    ExecutionState::InvalidTx,
-                    ExecutionState::EndBlock,
-                ]);
+                let begin_tx_invalid_tx_end_block_selector = step_curr.execution_state_selector(
+                    [ExecutionState::BeginTx, ExecutionState::EndBlock]
+                        .into_iter()
+                        .chain(
+                            feature_config
+                                .invalid_tx
+                                .then_some(ExecutionState::InvalidTx),
+                        ),
+                );
                 iter::once((
                     "First step should be BeginTx, InvalidTx or EndBlock",
                     q_step_first * (1.expr() - begin_tx_invalid_tx_end_block_selector),
