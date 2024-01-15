@@ -740,6 +740,10 @@ impl<F: Field> ExecutionConfig<F> {
         instrument.on_gadget_built(execution_state, &cb);
 
         let debug_expressions = cb.debug_expressions.clone();
+
+        // Extract feature config here before cb is built.
+        let enable_invalid_tx = cb.feature_config.invalid_tx;
+
         let (constraints, stored_expressions, _, meta) = cb.build();
         debug_assert!(
             !height_map.contains_key(&execution_state),
@@ -788,40 +792,36 @@ impl<F: Field> ExecutionConfig<F> {
             let q_step = meta.query_advice(q_step, Rotation::cur());
             let q_step_last = meta.query_selector(q_step_last);
 
-            // TODO: diable InvalidTx
             // ExecutionState transition should be correct.
             iter::empty()
                 .chain(
-                    IntoIterator::into_iter([
+                    [
                         (
                             "EndTx can only transit to BeginTx, InvalidTx or EndBlock",
                             ExecutionState::EndTx,
-                            vec![
-                                ExecutionState::BeginTx,
-                                ExecutionState::InvalidTx,
-                                ExecutionState::EndBlock,
-                            ],
+                            vec![ExecutionState::BeginTx, ExecutionState::EndBlock]
+                                .into_iter()
+                                .chain(enable_invalid_tx.then_some(ExecutionState::InvalidTx))
+                                .collect(),
                         ),
                         (
                             "EndBlock can only transit to EndBlock",
                             ExecutionState::EndBlock,
                             vec![ExecutionState::EndBlock],
                         ),
-                    ])
+                    ]
+                    .into_iter()
                     .filter(move |(_, from, _)| *from == execution_state)
                     .map(|(_, _, to)| 1.expr() - step_next.execution_state_selector(to)),
                 )
                 .chain(
-                    IntoIterator::into_iter([
-                        (
-                            "Only EndTx and InvalidTx can transit to InvalidTx",
-                            ExecutionState::InvalidTx,
-                            vec![ExecutionState::EndTx, ExecutionState::InvalidTx],
-                        ),
+                    [
                         (
                             "Only EndTx and InvalidTx can transit to BeginTx",
                             ExecutionState::BeginTx,
-                            vec![ExecutionState::EndTx, ExecutionState::InvalidTx],
+                            iter::once(ExecutionState::EndTx)
+                                .chain(enable_invalid_tx.then_some(ExecutionState::InvalidTx))
+                                .collect(),
                         ),
                         (
                             "Only ExecutionState which halts or BeginTx can transit to EndTx",
@@ -834,13 +834,20 @@ impl<F: Field> ExecutionConfig<F> {
                         (
                             "Only EndTx, InvalidTx or EndBlock can transit to EndBlock",
                             ExecutionState::EndBlock,
-                            vec![
-                                ExecutionState::EndTx,
-                                ExecutionState::InvalidTx,
-                                ExecutionState::EndBlock,
-                            ],
+                            vec![ExecutionState::EndTx, ExecutionState::EndBlock]
+                                .into_iter()
+                                .chain(enable_invalid_tx.then_some(ExecutionState::InvalidTx))
+                                .collect(),
                         ),
-                    ])
+                    ]
+                    .into_iter()
+                    .chain(enable_invalid_tx.then(|| {
+                        (
+                            "Only EndTx and InvalidTx can transit to InvalidTx",
+                            ExecutionState::InvalidTx,
+                            vec![ExecutionState::EndTx, ExecutionState::InvalidTx],
+                        )
+                    }))
                     .filter(move |(_, _, from)| !from.contains(&execution_state))
                     .map(|(_, to, _)| step_next.execution_state_selector([to])),
                 )

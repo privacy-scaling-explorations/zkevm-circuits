@@ -315,7 +315,7 @@ pub(crate) struct EVMConstraintBuilder<'a, F: Field> {
     stored_expressions: Vec<StoredExpression<F>>,
     pub(crate) debug_expressions: Vec<(String, Expression<F>)>,
     meta: &'a mut ConstraintSystem<F>,
-    feature_config: FeatureConfig,
+    pub(crate) feature_config: FeatureConfig,
 }
 
 impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
