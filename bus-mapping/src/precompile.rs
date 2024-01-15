@@ -4,13 +4,18 @@ use eth_types::{
     evm_types::{GasCost, OpcodeId},
     Address, Bytecode, Word,
 };
+#[cfg(not(target_arch = "wasm32"))]
 use revm_precompile::{Precompile, PrecompileError, Precompiles};
 
+#[allow(unused_variables)]
 /// Check if address is a precompiled or not.
 pub fn is_precompiled(address: &Address) -> bool {
-    Precompiles::berlin()
+    #[cfg(not(target_arch = "wasm32"))]
+    return Precompiles::berlin()
         .get(address.as_fixed_bytes())
-        .is_some()
+        .is_some();
+    #[cfg(target_arch = "wasm32")]
+    unreachable!()
 }
 
 pub(crate) fn execute_precompiled(
@@ -18,25 +23,31 @@ pub(crate) fn execute_precompiled(
     input: &[u8],
     gas: u64,
 ) -> (Vec<u8>, u64, bool) {
-    let Some(Precompile::Standard(precompile_fn)) = Precompiles::berlin()
+    #[cfg(target_arch = "wasm32")]
+    return (vec![], 0, false);
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let Some(Precompile::Standard(precompile_fn)) = Precompiles::berlin()
         .get(address.as_fixed_bytes())  else {
-        panic!("calling non-exist precompiled contract address")
-    };
-    let (return_data, gas_cost, is_oog, is_ok) = match precompile_fn(input, gas) {
-        Ok((gas_cost, return_value)) => {
-            // Some Revm behavior for invalid inputs might be overridden.
-            (return_value, gas_cost, false, true)
-        }
-        Err(err) => match err {
-            PrecompileError::OutOfGas => (vec![], gas, true, false),
-            _ => {
-                log::warn!("unknown precompile err {err:?}");
-                (vec![], gas, false, false)
+            panic!("calling non-exist precompiled contract address")
+        };
+        let (return_data, gas_cost, is_oog, is_ok) = match precompile_fn(input, gas) {
+            Ok((gas_cost, return_value)) => {
+                // Some Revm behavior for invalid inputs might be overridden.
+                (return_value, gas_cost, false, true)
             }
-        },
-    };
-    log::trace!("called precompile with is_ok {is_ok} is_oog {is_oog}, gas_cost {gas_cost}, return_data len {}", return_data.len());
-    (return_data, gas_cost, is_oog)
+            Err(err) => match err {
+                PrecompileError::OutOfGas => (vec![], gas, true, false),
+                _ => {
+                    log::warn!("unknown precompile err {err:?}");
+                    (vec![], gas, false, false)
+                }
+            },
+        };
+        log::trace!("called precompile with is_ok {is_ok} is_oog {is_oog}, gas_cost {gas_cost}, return_data len {}", return_data.len());
+        (return_data, gas_cost, is_oog)
+    }
 }
 
 /// Addresses of the precompiled contracts.

@@ -223,6 +223,16 @@
 #![allow(clippy::upper_case_acronyms)] // Too pedantic
 #![feature(type_changing_struct_update)]
 
+#[cfg(all(target_arch = "wasm32", not(feature = "wasm")))]
+compile_error!("bus-mapping: wasm feature must be enabled on wasm arch");
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "notwasm")))]
+compile_error!("bus-mapping: notwasm feature must be enabled when target arch is not wasm");
+
+#[cfg(all(feature = "wasm", feature = "notwasm"))]
+compile_error!("bus-mapping: both wasm & notwasm are enabled, just one of them must be enabled");
+#[cfg(all(not(feature = "wasm"), not(feature = "notwasm")))]
+compile_error!("bus-mapping: none of wasm & notwasm are enabled, one of them must be enabled");
+
 extern crate alloc;
 extern crate core;
 
