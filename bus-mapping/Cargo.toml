@@ -31,6 +31,5 @@ mock = { path = "../mock" }
 
 [features]
 default = ["notwasm"]
-wasm = []
 notwasm = ["revm-precompile"]
 test = ["mock"]

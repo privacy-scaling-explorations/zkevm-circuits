@@ -54,7 +54,6 @@ pretty_assertions = "1.0.0"
 
 [features]
 default = ["notwasm"]
-wasm = ["bus-mapping/wasm"]
 notwasm = [ "bus-mapping/notwasm", "snark-verifier"]
 # We export some test circuits for other crates to consume
 test-circuits = []

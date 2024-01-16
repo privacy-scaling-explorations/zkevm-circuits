@@ -17,15 +17,10 @@
 #![deny(unsafe_code)]
 #![deny(clippy::debug_assert_with_mut_call)]
 
-#[cfg(all(target_arch = "wasm32", not(feature = "wasm")))]
-compile_error!("bus-mapping: wasm feature must be enabled on wasm arch");
+#[cfg(all(target_arch = "wasm32", feature = "notwasm"))]
+compile_error!("bus-mapping: notwasm feature must be disabled when target arch is wasm");
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "notwasm")))]
 compile_error!("bus-mapping: notwasm feature must be enabled when target arch is not wasm");
-
-#[cfg(all(feature = "wasm", feature = "notwasm"))]
-compile_error!("zkevm-circuits: both wasm & notwasm are enabled, just one of them must be enabled");
-#[cfg(all(not(feature = "wasm"), not(feature = "notwasm")))]
-compile_error!("zkevm-circuits: none of wasm & notwasm are enabled, one of them must be enabled");
 
 pub mod bytecode_circuit;
 #[allow(dead_code, reason = "under active development")]
