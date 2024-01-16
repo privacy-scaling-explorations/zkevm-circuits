@@ -23,7 +23,7 @@ func Preimage(hash common.Hash) ([]byte, error) {
 	return val, nil
 }
 
-// TODO: Maybe we will want to have a seperate preimages for next block's preimages?
+// TODO: Maybe we will want to have a separate preimages for next block's preimages?
 func Preimages() map[common.Hash][]byte {
 	return preimages
 }
