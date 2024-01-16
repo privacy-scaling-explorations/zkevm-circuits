@@ -45,6 +45,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           override: false
+          components: rust-src
       - name: Cargo cache
         uses: actions/cache@v3
         with:
