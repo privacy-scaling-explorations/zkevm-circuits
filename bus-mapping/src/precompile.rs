@@ -10,21 +10,23 @@ use revm_precompile::{Precompile, PrecompileError, Precompiles};
 #[allow(unused_variables)]
 /// Check if address is a precompiled or not.
 pub fn is_precompiled(address: &Address) -> bool {
-    #[cfg(not(target_arch = "wasm32"))]
-    return Precompiles::berlin()
-        .get(address.as_fixed_bytes())
-        .is_some();
     #[cfg(target_arch = "wasm32")]
-    unreachable!()
+    unreachable!();
+
+    #[cfg(not(target_arch = "wasm32"))]
+    Precompiles::berlin()
+        .get(address.as_fixed_bytes())
+        .is_some()
 }
 
+#[allow(unused_variables)]
 pub(crate) fn execute_precompiled(
     address: &Address,
     input: &[u8],
     gas: u64,
 ) -> (Vec<u8>, u64, bool) {
     #[cfg(target_arch = "wasm32")]
-    return (vec![], 0, false);
+    unreachable!();
 
     #[cfg(not(target_arch = "wasm32"))]
     {
