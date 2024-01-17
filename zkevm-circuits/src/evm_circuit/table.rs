@@ -280,7 +280,7 @@ pub(crate) enum Lookup<F> {
         /// A boolean value to specify if the access record is a read or write.
         is_write: Expression<F>,
         /// Tag to specify which read-write data to access, see RwTableTag for
-        /// all tags.
+        /// all tags. RwTableTag is bus_mapping::operation::Target (PR#1406)
         tag: Expression<F>,
         /// Values corresponding to the tag.
         values: RwValues<F>,
