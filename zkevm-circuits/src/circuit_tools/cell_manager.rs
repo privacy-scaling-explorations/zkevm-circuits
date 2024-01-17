@@ -93,13 +93,13 @@ impl<F: Field> Cell<F> {
 
 impl<F: Field> Expr<F> for Cell<F> {
     fn expr(&self) -> Expression<F> {
-        self.expression.as_ref().unwrap().clone()
+        self.expression.clone().unwrap()
     }
 }
 
 impl<F: Field> Expr<F> for &Cell<F> {
     fn expr(&self) -> Expression<F> {
-        self.expression.as_ref().unwrap().clone()
+        self.expression.clone().unwrap()
     }
 }
 
@@ -284,11 +284,14 @@ impl<F: Field, C: CellType> CellManager<F, C> {
         permutable: bool,
         num_columns: usize,
     ) {
+        self.columns.reserve(num_columns);
+        self.configs.reserve(num_columns);
+
         for _ in 0..num_columns {
             // Add a column of the specified type
             let config = CellConfig::new(cell_type, phase, permutable);
             let col = config.init_column(meta);
-            let mut cells = Vec::new();
+            let mut cells = Vec::with_capacity(self.height_limit);
             for r in 0..self.height_limit {
                 query_expression(meta, |meta| {
                     cells.push(Cell::new(meta, col, self.offset + r));
@@ -394,13 +397,11 @@ impl<F: Field, C: CellType> CellManager<F, C> {
     }
 
     pub(crate) fn get_typed_columns(&self, cell_type: C) -> Vec<CellColumn<F, C>> {
-        let mut columns = Vec::new();
-        for column in self.columns.iter() {
-            if column.cell_type == cell_type {
-                columns.push(column.clone());
-            }
-        }
-        columns
+        self.columns
+            .iter()
+            .filter(|column| column.cell_type == cell_type)
+            .cloned()
+            .collect()
     }
 }
 
