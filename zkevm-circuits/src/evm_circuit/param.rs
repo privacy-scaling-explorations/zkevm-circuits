@@ -1,6 +1,7 @@
 //! Constants and parameters for the EVM circuit
 use super::table::Table;
 use crate::evm_circuit::{step::ExecutionState, EvmCircuit};
+use bus_mapping::circuit_input_builder::FeatureConfig;
 use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem},
@@ -173,7 +174,11 @@ lazy_static::lazy_static! {
 }
 fn get_step_height_map() -> HashMap<ExecutionState, usize> {
     let mut meta = ConstraintSystem::<Fr>::default();
-    let circuit = EvmCircuit::configure(&mut meta);
+    let circuit = EvmCircuit::configure_with_params(&mut meta, FeatureConfig{
+        // Enable invalid_tx to get ExecutionState height
+        invalid_tx: true,
+        ..Default::default()
+    });
 
     circuit.0.execution.height_map
 }

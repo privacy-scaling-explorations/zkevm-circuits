@@ -34,6 +34,14 @@ impl<C: CircuitsParams> BlockData<C> {
     /// Generate a new CircuitInputBuilder initialized with the context of the
     /// BlockData.
     pub fn new_circuit_input_builder(&self) -> CircuitInputBuilder<C> {
+        self.new_circuit_input_builder_with_feature(FeatureConfig::default())
+    }
+    /// Generate a new CircuitInputBuilder initialized with the context of the
+    /// BlockData.
+    pub fn new_circuit_input_builder_with_feature(
+        &self,
+        feature_config: FeatureConfig,
+    ) -> CircuitInputBuilder<C> {
         CircuitInputBuilder::new(
             self.sdb.clone(),
             self.code_db.clone(),
@@ -45,7 +53,7 @@ impl<C: CircuitsParams> BlockData<C> {
             )
             .unwrap(),
             self.circuits_params,
-            FeatureConfig::default(),
+            feature_config,
         )
     }
 

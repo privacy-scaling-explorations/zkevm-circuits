@@ -314,6 +314,7 @@ pub(crate) mod cached {
         /// Circuit configuration.  These values are calculated just once.
         static ref CACHE: Cache = {
             let mut meta = ConstraintSystem::<Fr>::default();
+            // Cached EVM circuit is configured with Mainnet FeatureConfig
             let config = EvmCircuit::<Fr>::configure(&mut meta);
             Cache { cs: meta, config }
         };
@@ -364,6 +365,14 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
 
     fn without_witnesses(&self) -> Self {
         Self::default()
+    }
+
+    /// Try to get the [`FeatureConfig`] from the block or fallback to default
+    fn params(&self) -> Self::Params {
+        self.block
+            .as_ref()
+            .map(|block| block.feature_config)
+            .unwrap_or_default()
     }
 
     fn configure_with_params(meta: &mut ConstraintSystem<F>, params: Self::Params) -> Self::Config {

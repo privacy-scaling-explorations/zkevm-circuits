@@ -168,7 +168,8 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             .as_ref()
             .ok_or(CircuitTestError::NotEnoughAttributes)?;
         let block: GethData = block.clone().into();
-        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = BlockData::new_from_geth_data(block.clone())
+            .new_circuit_input_builder_with_feature(self.feature_config.unwrap_or_default());
         let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .map_err(|err| CircuitTestError::CannotHandleBlock(err.to_string()))?;
@@ -187,12 +188,19 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
         let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
-        let circuit = EvmCircuitCached::get_test_circuit_from_block(block);
-        let prover = MockProver::<Fr>::run(k, &circuit, vec![]).map_err(|err| {
-            CircuitTestError::SynthesisFailure {
-                circuit: Circuit::EVM,
-                reason: err,
-            }
+        // Mainnet EVM circuit constraints can be cached for test performance.
+        // No cache for EVM circuit with customized features
+        let prover = if block.feature_config.is_mainnet() {
+            let circuit = EvmCircuitCached::get_test_circuit_from_block(block);
+            MockProver::<Fr>::run(k, &circuit, vec![])
+        } else {
+            let circuit = EvmCircuit::new(block);
+            MockProver::<Fr>::run(k, &circuit, vec![])
+        };
+
+        let prover = prover.map_err(|err| CircuitTestError::SynthesisFailure {
+            circuit: Circuit::EVM,
+            reason: err,
         })?;
 
         prover

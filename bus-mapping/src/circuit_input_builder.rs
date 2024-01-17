@@ -72,6 +72,13 @@ impl Default for FeatureConfig {
     }
 }
 
+impl FeatureConfig {
+    /// Check if we are mainnet config
+    pub fn is_mainnet(&self) -> bool {
+        self.zero_difficulty && !self.free_first_tx && self.enable_eip1559 && !self.invalid_tx
+    }
+}
+
 /// Circuit Setup Parameters
 #[derive(Debug, Clone, Copy)]
 pub struct FixedCParams {
