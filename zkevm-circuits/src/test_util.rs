@@ -6,7 +6,10 @@ use crate::{
     util::SubCircuit,
     witness::{Block, Rw},
 };
-use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
+use bus_mapping::{
+    circuit_input_builder::{FeatureConfig, FixedCParams},
+    mock::BlockData,
+};
 use eth_types::geth_types::GethData;
 use itertools::all;
 use std::cmp;
@@ -81,6 +84,7 @@ const NUM_BLINDING_ROWS: usize = 64;
 pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     test_ctx: Option<TestContext<NACC, NTX>>,
     circuits_params: Option<FixedCParams>,
+    feature_config: Option<FeatureConfig>,
     block: Option<Block<Fr>>,
     block_modifiers: Vec<Box<dyn Fn(&mut Block<Fr>)>>,
 }
@@ -91,6 +95,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         CircuitTestBuilder {
             test_ctx: None,
             circuits_params: None,
+            feature_config: None,
             block: None,
             block_modifiers: vec![],
         }
@@ -123,6 +128,13 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             "circuit_params already provided in the block"
         );
         self.circuits_params = Some(params);
+        self
+    }
+
+    /// Configure [`FeatureConfig`]
+    pub fn feature(mut self, feature_config: FeatureConfig) -> Self {
+        assert!(self.feature_config.is_none(), "Already configured");
+        self.feature_config = Some(feature_config);
         self
     }
 
