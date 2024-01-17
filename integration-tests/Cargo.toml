@@ -40,7 +40,7 @@ mock_prover = []
 
 [build-dependencies]
 env = "0.0.0"
-ethers = "=2.0.10"
+ethers = { version = "=2.0.10", features = ["ethers-solc"] }
 ethers-contract-abigen = "=2.0.10"
 glob = "0.3.1"
 log = "0.4.14"
