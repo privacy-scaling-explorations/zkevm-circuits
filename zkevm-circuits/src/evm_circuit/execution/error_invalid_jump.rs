@@ -49,7 +49,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         let condition = cb.query_word_unchecked();
 
         cb.require_in_set(
-            "ErrorInvalidJump only happend in JUMP or JUMPI",
+            "ErrorInvalidJump only happened in JUMP or JUMPI",
             opcode.expr(),
             vec![OpcodeId::JUMP.expr(), OpcodeId::JUMPI.expr()],
         );
