@@ -11,7 +11,12 @@ use revm_precompile::{Precompile, PrecompileError, Precompiles};
 /// Check if address is a precompiled or not.
 pub fn is_precompiled(address: &Address) -> bool {
     #[cfg(target_arch = "wasm32")]
-    unreachable!();
+    if address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19]) {
+        // TODO add support for precompiles in WASM
+        panic!("Precompile {address} is currently not supported in WASM");
+    } else {
+        return false;
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     Precompiles::berlin()
@@ -26,7 +31,8 @@ pub(crate) fn execute_precompiled(
     gas: u64,
 ) -> (Vec<u8>, u64, bool) {
     #[cfg(target_arch = "wasm32")]
-    unreachable!();
+    // TODO add support for precompiles in WASM
+    panic!("Running precompile {address} is currently not supported in WASM");
 
     #[cfg(not(target_arch = "wasm32"))]
     {
