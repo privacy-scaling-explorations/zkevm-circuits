@@ -359,8 +359,6 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
             vec![q_enable * xnif(is_last_or_padding.expr(), new_root_propagation.expr())]
         });
 
-        /*
-        Note: when there is a non-existing-proof, the state doesn't change
         meta.create_gate(
             "if not last or padding, if state changed in cur row, next row must change state also",
             |meta| {
@@ -380,7 +378,6 @@ impl<F: Field> Circuit<F> for InitialStateCircuit<F> {
                 ]
             },
         );
-        */
 
         meta.create_gate(
             "if not padding and not last row, roots should be chained",

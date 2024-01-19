@@ -270,7 +270,12 @@ impl<F: Field> Witness<F> {
             if old.balance != new.balance {
                 changed_values.push(TrieModification::balance(address, new.balance));
             }
-            if old.code_hash != new.code_hash {
+            // If the account has been implicitly created before this code_hash modification
+            // and if this code_hash modification sets it to the default value (which have been
+            // already set implicitly), omit it.
+            let default_code_hash = "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470";
+            let is_default = new.code_hash == H256::from_str(default_code_hash).unwrap();
+            if old.code_hash != new.code_hash && !is_default {
                 changed_values.push(TrieModification::codehash(address, new.code_hash));
             }
 
