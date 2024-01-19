@@ -91,6 +91,7 @@ impl RWCounter {
 }
 
 /// Enum used to differenciate between EVM Stack, Memory and Storage operations.
+/// This is also used as the RwTableTag for the RwTable.
 #[derive(Debug, Clone, PartialEq, Eq, Copy, EnumIter, Hash)]
 pub enum Target {
     /// Start is a padding operation.

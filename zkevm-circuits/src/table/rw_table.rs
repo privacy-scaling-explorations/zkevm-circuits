@@ -8,7 +8,7 @@ pub struct RwTable {
     pub rw_counter: Column<Advice>,
     /// Is Write
     pub is_write: Column<Advice>,
-    /// Tag
+    /// Tag (bus_mapping::operation::Target)
     pub tag: Column<Advice>,
     /// Key1 (Id)
     pub id: Column<Advice>,
