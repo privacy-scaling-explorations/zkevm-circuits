@@ -194,7 +194,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let circuit = EvmCircuitCached::get_test_circuit_from_block(block);
             MockProver::<Fr>::run(k, &circuit, vec![])
         } else {
-            let circuit = EvmCircuit::new(block);
+            let circuit = EvmCircuit::get_test_circuit_from_block(block);
             MockProver::<Fr>::run(k, &circuit, vec![])
         };
 
