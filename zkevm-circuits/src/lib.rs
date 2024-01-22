@@ -17,6 +17,11 @@
 #![deny(unsafe_code)]
 #![deny(clippy::debug_assert_with_mut_call)]
 
+#[cfg(all(target_arch = "wasm32", feature = "notwasm"))]
+compile_error!("bus-mapping: notwasm feature must be disabled when target arch is wasm");
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "notwasm")))]
+compile_error!("bus-mapping: notwasm feature must be enabled when target arch is not wasm");
+
 pub mod bytecode_circuit;
 #[allow(dead_code, reason = "under active development")]
 pub mod circuit_tools;
@@ -27,12 +32,14 @@ pub mod keccak_circuit;
 #[allow(dead_code, reason = "under active development")]
 pub mod mpt_circuit;
 pub mod pi_circuit;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod root_circuit;
 pub mod state_circuit;
 pub mod super_circuit;
 pub mod table;
 
 #[cfg(any(test, feature = "test-util"))]
+#[cfg(not(target_arch = "wasm32"))]
 pub mod test_util;
 
 pub mod instance;
