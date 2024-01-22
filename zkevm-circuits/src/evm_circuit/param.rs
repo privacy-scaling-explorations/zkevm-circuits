@@ -174,11 +174,14 @@ lazy_static::lazy_static! {
 }
 fn get_step_height_map() -> HashMap<ExecutionState, usize> {
     let mut meta = ConstraintSystem::<Fr>::default();
-    let circuit = EvmCircuit::configure_with_params(&mut meta, FeatureConfig{
-        // Enable invalid_tx to get ExecutionState height
-        invalid_tx: true,
-        ..Default::default()
-    });
+    let circuit = EvmCircuit::configure_with_params(
+        &mut meta,
+        FeatureConfig {
+            // Enable invalid_tx to get ExecutionState height
+            invalid_tx: true,
+            ..Default::default()
+        },
+    );
 
     circuit.0.execution.height_map
 }
