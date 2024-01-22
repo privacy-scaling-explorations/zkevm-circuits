@@ -1,5 +1,4 @@
 pub use crate::util::{
-    query_expression,
     word::{Word, WordExpr},
     Challenges, Expr,
 };

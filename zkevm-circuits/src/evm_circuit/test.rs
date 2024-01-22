@@ -1,5 +1,3 @@
-pub use super::EvmCircuit;
-
 use eth_types::Word;
 use rand::{
     distributions::uniform::{SampleRange, SampleUniform},

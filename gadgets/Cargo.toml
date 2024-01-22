@@ -13,5 +13,4 @@ digest = "0.7.6"
 strum = "0.24"
 
 [dev-dependencies]
-rand_xorshift = "0.3"
 rand = "0.8"
