@@ -1,6 +1,10 @@
-use std::{collections::HashSet, ops::Deref, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Deref,
+    sync::Arc,
+};
 
-use eth_types::{Field, ToScalar};
+use eth_types::{keccak, Field, ToScalar};
 use ethers::{
     abi::Address,
     prelude::{k256::ecdsa::SigningKey, SignerMiddleware, *},
@@ -110,6 +114,8 @@ impl<F: Field> Witness<F> {
         let transforms =
             Self::get_transforms(client, block_no, access_list, include_unchanged).await?;
 
+        dbg!("transforms: {:#?}", &transforms);
+
         if transforms.prev_state_root == transforms.curr_state_root {
             Ok(None)
         } else {
@@ -158,6 +164,24 @@ impl<F: Field> Witness<F> {
                 )
                 .await?
         };
+
+        // sanitize access_list
+        let mut access_list_map = HashMap::new();
+        for item in access_list.0.iter_mut() {
+            let entry = access_list_map.entry(item.address).or_insert_with(HashSet::new);
+            for key in item.storage_keys.iter() {
+                entry.insert(*key);
+            }
+        }
+        let mut access_list = AccessList(
+            access_list_map
+                .into_iter()
+                .map(|(address, storage_keys)| AccessListItem {
+                    address,
+                    storage_keys: storage_keys.into_iter().collect(),
+                })
+                .collect(),
+        );
 
         // add coinbase to the access list
         let mut extra_addrs = HashSet::from([curr_block.author.unwrap()]);
