@@ -9,9 +9,9 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 lazy_static = "1.4"
 ethers = { version = "2.0.7", features = ["ethers-solc"] }
-serde_json = { version = "1.0.66", features = ["unbounded_depth"]}
+serde_json = { version = "1.0.66", features = ["unbounded_depth"] }
 serde = { version = "1.0.130", features = ["derive"] }
-bus-mapping = { path = "../bus-mapping" , features = ["test"] }
+bus-mapping = { path = "../bus-mapping", features = ["test"] }
 eth-types = { path = "../eth-types" }
 zkevm-circuits = { path = "../zkevm-circuits", features = ["test-circuits"] }
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
@@ -25,8 +25,6 @@ paste = "1.0"
 rand_xorshift = "0.3.0"
 rand_core = "0.6.4"
 mock = { path = "../mock" }
-this = "0.3.0"
-error = "0.1.9"
 
 [dev-dependencies]
 pretty_assertions = "1.0.0"
@@ -46,5 +44,4 @@ glob = "0.3.1"
 log = "0.4.14"
 serde = "1.0.130"
 serde_json = "1.0.66"
-uneval = "0.2.4"
 thiserror = "1.0.49"

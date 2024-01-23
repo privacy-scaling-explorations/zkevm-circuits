@@ -413,7 +413,7 @@ mod test {
     use super::*;
     use crate::{
         config::TestSuite,
-        statetest::{run_test, CircuitsConfig, StateTestError},
+        statetest::{executor::StateTestError, run_test, CircuitsConfig},
     };
     use eth_types::address;
 
