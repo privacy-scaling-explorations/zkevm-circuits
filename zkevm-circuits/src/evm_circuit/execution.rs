@@ -1183,27 +1183,18 @@ impl<F: Field> ExecutionConfig<F> {
                     }
                 }
                 // part3: assign end chunk or end block
-                let height = match &chunk.end_chunk {
-                    Some(end_chunk) => {
-                        debug_assert_eq!(ExecutionState::EndChunk.get_step_height(), 1);
-                        assign_padding_or_step((&dummy_tx, &last_call, end_chunk), None, None)?
-                    }
-                    None => {
-                        assert!(
-                            chunk.chunk_context.is_last_chunk(),
-                            "If not end_chunk, must be end_block at last chunk"
-                        );
-                        assign_padding_or_step(
-                            (&dummy_tx, &last_call, &block.end_block),
-                            None,
-                            None,
-                        )?
-                    }
-                };
-
-                // enable q_step_last
-                self.q_step_last.enable(&mut region, offset)?;
-                offset += height;
+                if let Some(end_chunk) = &chunk.end_chunk {
+                    debug_assert_eq!(ExecutionState::EndChunk.get_step_height(), 1);
+                    assign_padding_or_step((&dummy_tx, &last_call, end_chunk), None, None)?;
+                } else {
+                    assert!(
+                        chunk.chunk_context.is_last_chunk(),
+                        "If not end_chunk, must be end_block at last chunk"
+                    );
+                    debug_assert_eq!(ExecutionState::EndBlock.get_step_height(), 1);
+                    assign_padding_or_step((&dummy_tx, &last_call, &block.end_block), None, None)?;
+                }
+                self.q_step_last.enable(&mut region, offset - 1)?; // offset - 1 is the last row
 
                 // part4:
                 // These are still referenced (but not used) in next rows

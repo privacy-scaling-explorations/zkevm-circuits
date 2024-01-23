@@ -251,14 +251,14 @@ impl<F: Field> EvmCircuit<F> {
         for transaction in &block.txs {
             for step in transaction.steps() {
                 if chunk.chunk_context.initial_rwc <= step.rwc.0
-                    || step.rwc.0 <= chunk.chunk_context.end_rwc
+                    || step.rwc.0 < chunk.chunk_context.end_rwc
                 {
                     num_rows += step.execution_state().get_step_height();
                 }
             }
         }
 
-        // It must have one row for EndBlock and at least one unused one
+        // It must have one row for EndBlock/EndChunk and at least one unused one
         num_rows + 2
     }
 
@@ -674,7 +674,7 @@ mod evm_circuit_stats {
         let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block, chunk);
         let instance = circuit.instance_extend_chunk_ctx();
         let prover1 = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
-        let res = prover1.verify_par();
+        let res = prover1.verify();
         if let Err(err) = res {
             panic!("Failed verification {:?}", err);
         }
