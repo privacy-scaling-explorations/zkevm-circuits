@@ -395,8 +395,8 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         vec![vec![
             chunk.permu_alpha,
             chunk.permu_gamma,
-            chunk.chrono_rw_fingerprints.prev_mul_acc,
-            chunk.chrono_rw_fingerprints.mul_acc,
+            chunk.chrono_rw_fingerprints.prev_ending_row,
+            chunk.chrono_rw_fingerprints.ending_row,
             chunk.chrono_rw_fingerprints.prev_mul_acc,
             chunk.chrono_rw_fingerprints.mul_acc,
         ]]
