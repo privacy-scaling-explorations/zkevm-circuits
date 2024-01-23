@@ -1087,24 +1087,35 @@ impl<F: Field> ExecutionConfig<F> {
                 // If it's the very first chunk in a block set last call & begin_chunk to default
                 let prev_last_call = chunk.prev_last_call.clone().unwrap_or_default();
 
-                let mut tx_call_steps = chunk_txs
-                    .iter()
-                    .flat_map(|tx| {
+                // conditionally adding first step as begin chunk
+                let maybe_begin_chunk = {
+                    if let Some(begin_chunk) = &chunk.begin_chunk {
+                        vec![(&dummy_tx, &prev_last_call, begin_chunk)]
+                    } else {
+                        vec![]
+                    }
+                };
+
+                let mut tx_call_steps = maybe_begin_chunk
+                    .into_iter()
+                    .chain(chunk_txs.iter().flat_map(|tx| {
                         tx.steps()
                             .iter()
                             .map(move |step| (tx, &tx.calls()[step.call_index], step))
-                    })
+                    }))
+                    // this dummy step is just for real step assignment proceed to `second last`
+                    .chain(std::iter::once((&dummy_tx, &last_call, &block.end_block)))
                     .peekable();
 
                 let evm_rows = chunk.fixed_param.max_evm_rows;
 
                 let mut assign_padding_or_step = |cur_tx_call_step: TxCallStep,
+                                                  mut offset: usize,
                                                   next_tx_call_step: Option<TxCallStep>,
                                                   padding_end: Option<usize>|
                  -> Result<usize, Error> {
                     let (_tx, call, step) = cur_tx_call_step;
                     let height = step.execution_state().get_step_height();
-                    let initial_offset = offset; // start with 0
 
                     // If padding, assign padding range with (dummy_tx, call, step)
                     // otherwise, assign one row with cur (tx, call, step), with next (tx, call,
@@ -1153,30 +1164,34 @@ impl<F: Field> ExecutionConfig<F> {
                         offset += height;
                     }
 
-                    Ok(offset - initial_offset)
+                    Ok(offset) // return latest offset
                 };
 
-                // part0: assign begin chunk
-                if let Some(begin_chunk) = &chunk.begin_chunk {
-                    assign_padding_or_step(
-                        (&dummy_tx, &prev_last_call, begin_chunk),
-                        tx_call_steps.peek().copied(),
-                        None,
-                    )?;
-                }
+                let mut second_last_real_step = None;
+
                 // part1: assign real steps
                 while let Some(cur) = tx_call_steps.next() {
                     let next = tx_call_steps.peek();
-                    assign_padding_or_step(cur, next.copied(), None)?;
                     if next.is_none() {
                         break;
                     }
+                    second_last_real_step = Some(cur);
+                    offset = assign_padding_or_step(cur, offset, next.copied(), None)?;
                 }
+                let second_last_real_step_offset = offset;
+
+                // next step priority: padding > end_chunk > end_block
+                let mut next_step_after_real_step = None;
+
                 // part2: assign padding
                 if let Some(padding) = &chunk.padding {
                     if evm_rows > 0 {
-                        assign_padding_or_step(
+                        if next_step_after_real_step.is_none() {
+                            next_step_after_real_step = Some(padding.clone());
+                        }
+                        offset = assign_padding_or_step(
                             (&dummy_tx, &last_call, padding),
+                            offset,
                             None,
                             Some(evm_rows - 1),
                         )?;
@@ -1185,18 +1200,49 @@ impl<F: Field> ExecutionConfig<F> {
                 // part3: assign end chunk or end block
                 if let Some(end_chunk) = &chunk.end_chunk {
                     debug_assert_eq!(ExecutionState::EndChunk.get_step_height(), 1);
-                    assign_padding_or_step((&dummy_tx, &last_call, end_chunk), None, None)?;
+                    offset = assign_padding_or_step(
+                        (&dummy_tx, &last_call, end_chunk),
+                        offset,
+                        None,
+                        None,
+                    )?;
+                    if next_step_after_real_step.is_none() {
+                        next_step_after_real_step = Some(end_chunk.clone());
+                    }
                 } else {
                     assert!(
                         chunk.chunk_context.is_last_chunk(),
                         "If not end_chunk, must be end_block at last chunk"
                     );
                     debug_assert_eq!(ExecutionState::EndBlock.get_step_height(), 1);
-                    assign_padding_or_step((&dummy_tx, &last_call, &block.end_block), None, None)?;
+                    offset = assign_padding_or_step(
+                        (&dummy_tx, &last_call, &block.end_block),
+                        offset,
+                        None,
+                        None,
+                    )?;
+                    if next_step_after_real_step.is_none() {
+                        next_step_after_real_step = Some(block.end_block.clone());
+                    }
                 }
-                self.q_step_last.enable(&mut region, offset - 1)?; // offset - 1 is the last row
 
                 // part4:
+                // re-assigned real second last step, because we know next_step_after_real_step now
+                assert!(next_step_after_real_step.is_some());
+                if let Some(last_real_step) = second_last_real_step {
+                    _ = assign_padding_or_step(
+                        last_real_step,
+                        second_last_real_step_offset,
+                        Some((&dummy_tx, &last_call, &next_step_after_real_step.unwrap())),
+                        None,
+                    )?;
+                }
+
+                // part5:
+                // enable last row
+                self.q_step_last.enable(&mut region, offset - 1)?; // offset - 1 is the last row
+
+                // part6:
                 // These are still referenced (but not used) in next rows
                 region.assign_advice(
                     || "step height",
