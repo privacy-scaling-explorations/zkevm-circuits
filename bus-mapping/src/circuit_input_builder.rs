@@ -96,7 +96,7 @@ pub trait CircuitsParams: Debug + Copy {
     /// Return the maximun Rw
     fn max_rws(&self) -> usize;
     /// Return whether the parameters are dynamic.
-    /// If true, the `total_chunks` and `max_rws` will serve as a target value for chunking  
+    /// If true, the `total_chunks` and `max_rws` will serve as a target value for chunking
     /// and [`FixedCParams`] will be recomputed from each generated chunk witness.
     fn dynamic_update(&self) -> bool;
 }
