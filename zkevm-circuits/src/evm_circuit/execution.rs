@@ -1087,6 +1087,8 @@ impl<F: Field> ExecutionConfig<F> {
                 // If it's the very first chunk in a block set last call & begin_chunk to default
                 let prev_last_call = chunk.prev_last_call.clone().unwrap_or_default();
 
+                let padding = chunk.padding.as_ref().expect("padding can't be None");
+
                 // conditionally adding first step as begin chunk
                 let maybe_begin_chunk = {
                     if let Some(begin_chunk) = &chunk.begin_chunk {
@@ -1104,7 +1106,7 @@ impl<F: Field> ExecutionConfig<F> {
                             .map(move |step| (tx, &tx.calls()[step.call_index], step))
                     }))
                     // this dummy step is just for real step assignment proceed to `second last`
-                    .chain(std::iter::once((&dummy_tx, &last_call, &block.end_block)))
+                    .chain(std::iter::once((&dummy_tx, &last_call, padding)))
                     .peekable();
 
                 let evm_rows = chunk.fixed_param.max_evm_rows;
@@ -1168,6 +1170,7 @@ impl<F: Field> ExecutionConfig<F> {
                 };
 
                 let mut second_last_real_step = None;
+                let mut second_last_real_step_offset = 0;
 
                 // part1: assign real steps
                 while let Some(cur) = tx_call_steps.next() {
@@ -1176,27 +1179,27 @@ impl<F: Field> ExecutionConfig<F> {
                         break;
                     }
                     second_last_real_step = Some(cur);
+                    // record offset of current step before assignment
+                    second_last_real_step_offset = offset;
                     offset = assign_padding_or_step(cur, offset, next.copied(), None)?;
                 }
-                let second_last_real_step_offset = offset;
 
                 // next step priority: padding > end_chunk > end_block
                 let mut next_step_after_real_step = None;
 
                 // part2: assign padding
-                if let Some(padding) = &chunk.padding {
-                    if evm_rows > 0 {
-                        if next_step_after_real_step.is_none() {
-                            next_step_after_real_step = Some(padding.clone());
-                        }
-                        offset = assign_padding_or_step(
-                            (&dummy_tx, &last_call, padding),
-                            offset,
-                            None,
-                            Some(evm_rows - 1),
-                        )?;
+                if evm_rows > 0 {
+                    if next_step_after_real_step.is_none() {
+                        next_step_after_real_step = Some(padding.clone());
                     }
+                    offset = assign_padding_or_step(
+                        (&dummy_tx, &last_call, padding),
+                        offset,
+                        None,
+                        Some(evm_rows - 1),
+                    )?;
                 }
+
                 // part3: assign end chunk or end block
                 if let Some(end_chunk) = &chunk.end_chunk {
                     debug_assert_eq!(ExecutionState::EndChunk.get_step_height(), 1);

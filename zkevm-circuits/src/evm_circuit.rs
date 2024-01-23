@@ -732,7 +732,9 @@ mod evm_circuit_stats {
             .for_each(|(i, (f1, f2))| {
                 assert_eq!(
                     f1, f2,
-                    "at index {}. Usually it happened when mismatch constant constraint, e.g. region.constrain_constant() are calling in-consisntent", i
+                    "at index {}. Usually it happened when mismatch constant constraint, e.g.
+                    region.constrain_constant() are calling in-consisntent",
+                    i
                 )
             });
         assert_eq!(prover1.fixed(), prover2.fixed());
