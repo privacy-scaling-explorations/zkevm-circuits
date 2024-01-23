@@ -133,10 +133,8 @@ impl<F: Field> EndTxHelperGadget<F> {
                     // tx_id has been lookup and range_check above
                     Word::from_lo_unchecked(tx_id.expr() + 1.expr()),
                 );
-                // minus 1.expr() because `call_context_lookup_write_with_counter` do not bump
-                // rwc
                 cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(rw_counter_offset.clone() - 1.expr()),
+                    rw_counter: Delta(rw_counter_offset.clone()),
                     ..StepStateTransition::any()
                 });
             },
@@ -145,7 +143,7 @@ impl<F: Field> EndTxHelperGadget<F> {
             cb.next.execution_state_selector([ExecutionState::EndBlock]),
             |cb| {
                 cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(rw_counter_offset.expr() - 1.expr()),
+                    rw_counter: Delta(rw_counter_offset.expr()),
                     // We propagate call_id so that EndBlock can get the last tx_id
                     // in order to count processed txs.
                     call_id: Same,

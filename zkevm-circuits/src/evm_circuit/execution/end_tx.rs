@@ -119,7 +119,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             tx_id.expr(),
             is_persistent.expr(),
             gas_used,
-            10.expr() + coinbase_reward.rw_delta(),
+            9.expr() + coinbase_reward.rw_delta(),
         );
 
         Self {

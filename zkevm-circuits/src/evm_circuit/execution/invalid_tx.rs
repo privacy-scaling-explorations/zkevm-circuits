@@ -76,7 +76,7 @@ impl<F: Field> ExecutionGadget<F> for InvalidTxGadget<F> {
             begin_tx.tx_id.expr(),
             false.expr(),
             0.expr(),
-            8.expr(),
+            7.expr(),
         );
 
         Self {
