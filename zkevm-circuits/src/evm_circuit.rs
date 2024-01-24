@@ -410,8 +410,8 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         )
     }
 
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        Self::configure_with_params(meta, Default::default())
+    fn configure(_meta: &mut ConstraintSystem<F>) -> Self::Config {
+        unreachable!();
     }
 
     fn synthesize(
