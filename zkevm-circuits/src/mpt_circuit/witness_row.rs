@@ -39,14 +39,14 @@ pub(crate) enum AccountRowType {
     CodehashC,
     Drifted,
     Wrong,
-    LongExtNodeKey, // only used when extension node nibbles are modified
-    LongExtNodeNibbles, // only used when extension node nibbles are modified
-    LongExtNodeValue, // only used when extension node nibbles are modified
-    ShortExtNodeKey, // only used when extension node nibbles are modified
+    LongExtNodeKey,      // only used when extension node nibbles are modified
+    LongExtNodeNibbles,  // only used when extension node nibbles are modified
+    LongExtNodeValue,    // only used when extension node nibbles are modified
+    ShortExtNodeKey,     // only used when extension node nibbles are modified
     ShortExtNodeNibbles, // only used when extension node nibbles are modified
-    ShortExtNodeValue, // only used when extension node nibbles are modified
-    Address, // account address
-    Key, // hashed account address
+    ShortExtNodeValue,   // only used when extension node nibbles are modified
+    Address,             // account address
+    Key,                 // hashed account address
     Count,
 }
 
@@ -156,18 +156,18 @@ pub struct AccountNode {
     pub key: Hex,
     /// RLP bytes denoting the length of the whole account leaf stream.
     pub list_rlp_bytes: [Hex; 2],
-    /// RLP bytes denoting the length of the RLP list denoting the value stream (containing nonce, balance
-    /// storage, codehash).
+    /// RLP bytes denoting the length of the RLP list denoting the value stream (containing nonce,
+    /// balance storage, codehash).
     pub value_rlp_bytes: [Hex; 2],
     /// RLP bytes denoting the length of the RLP of the value stream.
     pub value_list_rlp_bytes: [Hex; 2],
     /// RLP bytes denoting the length of the RLP stream of the drifted leaf (neighbour leaf).
-    /// This is only needed in the case when a new branch is created which replaces the existing leaf in the trie
-    /// and this leaf drifts down into newly created branch.
+    /// This is only needed in the case when a new branch is created which replaces the existing
+    /// leaf in the trie and this leaf drifts down into newly created branch.
     pub drifted_rlp_bytes: Hex,
-    /// RLP bytes denoting the length of the RLP stream of the (wrong) leaf that has been returned by `getProof`
-    /// which has the same address up to a certain nibble as the required leaf. This is only needed for some special
-    /// cases of the AccountDoesNotExist proof.
+    /// RLP bytes denoting the length of the RLP stream of the (wrong) leaf that has been returned
+    /// by `getProof` which has the same address up to a certain nibble as the required leaf.
+    /// This is only needed for some special cases of the AccountDoesNotExist proof.
     pub wrong_rlp_bytes: Hex,
     /// Denotes whether the extension node nibbles have been modified in either `S` or `C` proof.
     /// In these special cases, an additional extension node is inserted (deleted).
@@ -188,12 +188,12 @@ pub struct StorageNode {
     /// RLP bytes denoting the length of the value stream.
     pub value_rlp_bytes: [Hex; 2],
     /// RLP bytes denoting the length of the RLP stream of the drifted leaf (neighbour leaf).
-    /// This is only needed in the case when a new branch is created which replaces the existing leaf in the trie
-    /// and this leaf drifts down into newly created branch.
+    /// This is only needed in the case when a new branch is created which replaces the existing
+    /// leaf in the trie and this leaf drifts down into newly created branch.
     pub drifted_rlp_bytes: Hex,
-    /// RLP bytes denoting the length of the RLP stream of the (wrong) leaf that has been returned by `getProof`
-    /// which has the same address up to a certain nibble as the required leaf. This is only needed for some special
-    /// cases of the StorageDoesNotExist proof.
+    /// RLP bytes denoting the length of the RLP stream of the (wrong) leaf that has been returned
+    /// by `getProof` which has the same address up to a certain nibble as the required leaf.
+    /// This is only needed for some special cases of the StorageDoesNotExist proof.
     pub wrong_rlp_bytes: Hex,
     /// Denotes whether the extension node nibbles have been modified in either `S` or `C` proof.
     /// In these special cases, an additional extension node is inserted (deleted).
@@ -213,8 +213,8 @@ pub struct Node {
     pub account: Option<AccountNode>,
     /// A storage leaf node.
     pub storage: Option<StorageNode>,
-    /// RLP substreams of the node (for example for account leaf it contains substreams for key, nonce, balance, storage,
-    /// codehash, drifted key, wrong key...)
+    /// RLP substreams of the node (for example for account leaf it contains substreams for key,
+    /// nonce, balance, storage, codehash, drifted key, wrong key...)
     pub values: Vec<Hex>,
     /// Streams to be hashed and verified by Keccak circuit.
     pub keccak_data: Vec<Hex>,
