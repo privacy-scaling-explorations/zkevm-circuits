@@ -214,6 +214,46 @@ impl<F: Field> Witness<F> {
         let mut initial_values = Vec::new();
         let mut changed_values = Vec::new();
 
+        // Put the read proofs first:
+        if include_initial_values {
+            for entry in access_list.clone().0 {
+                let AccessListItem {
+                    address,
+                    storage_keys,
+                } = entry;
+
+                let old = client
+                    .get_proof(
+                        address,
+                        storage_keys.clone(),
+                        Some(BlockId::Number(BlockNumber::Number(block_no - 1))),
+                    )
+                    .await?;
+
+                // Skip if the account doesn't exist in the old block.
+                if old.balance.is_zero() && old.code_hash.is_zero()
+                    && old.nonce.is_zero() && old.storage_hash.is_zero()
+                {
+                    continue;
+                }
+
+                initial_values.push(TrieModification::balance(address, old.balance));
+                initial_values.push(TrieModification::nonce(address, old.nonce));
+                initial_values.push(TrieModification::codehash(address, old.code_hash));
+
+                for key in storage_keys.iter() {
+                    let old = old.storage_proof.iter().find(|p| p.key == *key).unwrap();
+                    if old.value == U256::zero() {
+                        initial_values.push(TrieModification::storage_does_not_exist(
+                            address, *key, old.value,
+                        ));
+                    } else {
+                        initial_values.push(TrieModification::storage(address, *key, old.value));
+                    }
+                }
+            }
+        }
+
         for entry in access_list.0 {
             let AccessListItem {
                 address,
@@ -246,23 +286,6 @@ impl<F: Field> Witness<F> {
                 continue;
             }
 
-            if include_initial_values {
-                initial_values.push(TrieModification::balance(address, old.balance));
-                initial_values.push(TrieModification::nonce(address, old.nonce));
-                initial_values.push(TrieModification::codehash(address, old.code_hash));
-
-                for key in storage_keys.iter() {
-                    let old = old.storage_proof.iter().find(|p| p.key == *key).unwrap();
-                    if old.value == U256::zero() {
-                        initial_values.push(TrieModification::storage_does_not_exist(
-                            address, *key, old.value,
-                        ));
-                    } else {
-                        initial_values.push(TrieModification::storage(address, *key, old.value));
-                    }
-                }
-            }
-
             // check for this address changes
             if old.nonce != new.nonce {
                 changed_values.push(TrieModification::nonce(address, new.nonce));
@@ -270,9 +293,10 @@ impl<F: Field> Witness<F> {
             if old.balance != new.balance {
                 changed_values.push(TrieModification::balance(address, new.balance));
             }
-            // If the account has been implicitly created before this code_hash modification
-            // and if this code_hash modification sets it to the default value (which have been
-            // already set implicitly), omit it.
+            
+            // Prevent state change constraint failure (if there was a change in the previous
+            // row, it has to be in the next too) when the account has been created by nonce or
+            // balance modification and the codehash has been set to the default value already then.
             let default_code_hash = "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470";
             let is_default = new.code_hash == H256::from_str(default_code_hash).unwrap();
             if old.code_hash != new.code_hash && !is_default {
@@ -283,7 +307,7 @@ impl<F: Field> Witness<F> {
                 let new = new.storage_proof.iter().find(|p| p.key == key).unwrap();
                 changed_values.push(TrieModification::storage(address, key, new.value));
             }
-        }
+        }        
 
         println!("initial_values.len(): {}", initial_values.len());
         println!("changed_values.len(): {}", changed_values.len());
