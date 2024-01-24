@@ -616,6 +616,7 @@ pub struct BuilderClient<P: JsonRpcClient> {
     cli: GethClient<P>,
     chain_id: Word,
     circuits_params: FixedCParams,
+    feature_config: FeatureConfig,
 }
 
 /// Get State Accesses from TxExecTraces
@@ -679,6 +680,23 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             cli: client,
             chain_id: chain_id.into(),
             circuits_params,
+            feature_config: FeatureConfig::default(),
+        })
+    }
+
+    /// Create a new BuilderClient
+    pub async fn new_with_features(
+        client: GethClient<P>,
+        circuits_params: FixedCParams,
+        feature_config: FeatureConfig,
+    ) -> Result<Self, Error> {
+        let chain_id = client.get_chain_id().await?;
+
+        Ok(Self {
+            cli: client,
+            chain_id: chain_id.into(),
+            circuits_params,
+            feature_config,
         })
     }
 
@@ -795,7 +813,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             code_db,
             block,
             self.circuits_params,
-            FeatureConfig::default(),
+            self.feature_config,
         );
         builder.handle_block(eth_block, geth_traces)?;
         Ok(builder)
