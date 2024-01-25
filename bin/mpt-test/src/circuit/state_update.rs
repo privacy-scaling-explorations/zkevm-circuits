@@ -1,4 +1,3 @@
-use super::equal_words::EqualWordsConfig;
 use eth_types::Field;
 use eyre::Result;
 use gadgets::{
@@ -24,8 +23,9 @@ use zkevm_circuits::{
     util::{word, Challenges},
 };
 
-use super::witness::{
-    SingleTrieModification, SingleTrieModifications, StateUpdateWitness, Transforms,
+use crate::circuit::{
+    equal_words::EqualWordsConfig,
+    witness::{FieldTrieModification, FieldTrieModifications, Transforms, Witness},
 };
 
 #[cfg(not(feature = "disable-keccak"))]
@@ -34,11 +34,8 @@ use zkevm_circuits::{
     util::{SubCircuit, SubCircuitConfig},
 };
 
-pub const DEFAULT_MAX_PROOF_COUNT: usize = 20;
-pub const DEFAULT_CIRCUIT_DEGREE: usize = 14;
-
-// A=>B  eq ~(A & ~B) (it is not the case that A is true and B is false)
-fn xif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
+// negated A=>B  eq ~(A & ~B) (it is not the case that A is true and B is false)
+pub fn xnif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
     and::expr([a, not::expr(b)])
 }
 
@@ -72,7 +69,7 @@ pub struct StateUpdateCircuit<F: Field> {
     #[cfg(not(feature = "disable-keccak"))]
     pub keccak_circuit: KeccakCircuit<F>,
     pub mpt_circuit: MPTCircuit<F>,
-    pub lc_witness: SingleTrieModifications<F>,
+    pub lc_witness: FieldTrieModifications<F>,
     pub degree: usize,
     pub max_proof_count: usize,
 }
@@ -189,13 +186,13 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
 
         meta.create_gate("if not padding, count decreases monotonically", |meta| {
             let q_enable = meta.query_selector(q_enable);
-            vec![q_enable * xif(not::expr(is_padding.expr()), count_decrement.expr())]
+            vec![q_enable * xnif(not::expr(is_padding.expr()), count_decrement.expr())]
         });
 
         meta.create_gate("if last or padding, new_root is propagated ", |meta| {
             let q_enable = meta.query_selector(q_enable);
             let is_last_or_padding = or::expr([is_padding.expr(), is_last.expr()]);
-            vec![q_enable * xif(is_last_or_padding.expr(), new_root_propagation.expr())]
+            vec![q_enable * xnif(is_last_or_padding.expr(), new_root_propagation.expr())]
         });
 
         meta.create_gate(
@@ -208,7 +205,7 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
 
                 vec![
                     q_enable
-                        * xif(
+                        * xnif(
                             not::expr(one_if_not_padding_and_not_last_rot),
                             root_chained.expr(),
                         ),
@@ -377,11 +374,11 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
                     // assign set the value for entries to do the lookup propagating ending root in padding
                     // and collect cells for checking public inputs.
 
-                    let stm = self.lc_witness.get(offset).cloned().unwrap_or(SingleTrieModification {
+                    let stm = self.lc_witness.get(offset).cloned().unwrap_or(FieldTrieModification {
                         new_root: self.lc_witness.last().cloned().unwrap_or_default().new_root,
                         ..Default::default()
                     });
-                    let stm_next = self.lc_witness.get(offset+1).cloned().unwrap_or(SingleTrieModification {
+                    let stm_next = self.lc_witness.get(offset+1).cloned().unwrap_or(FieldTrieModification {
                         new_root: self.lc_witness.last().cloned().unwrap_or_default().new_root,
                         ..Default::default()
                     });
@@ -464,11 +461,11 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
 
 impl StateUpdateCircuit<Fr> {
     pub fn new(
-        witness: StateUpdateWitness<Fr>,
+        witness: Witness<Fr>,
         degree: usize,
         max_proof_count: usize,
     ) -> Result<StateUpdateCircuit<Fr>> {
-        let StateUpdateWitness {
+        let Witness {
             mpt_witness,
             transforms,
             lc_witness,

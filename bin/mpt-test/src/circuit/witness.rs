@@ -1,11 +1,15 @@
-use std::{collections::HashSet, ops::Deref, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    ops::Deref,
+    str::FromStr,
+    time::Duration,
+};
 
 use eth_types::{Field, ToScalar};
 use ethers::{
     abi::Address,
-    prelude::{k256::ecdsa::SigningKey, SignerMiddleware, *},
+    prelude::*,
     providers::{Http, Provider},
-    signers::Wallet,
     types::{
         transaction::eip2930::{AccessList, AccessListItem},
         BlockId, BlockNumber, H256, U256, U64,
@@ -15,10 +19,35 @@ use eyre::Result;
 
 use mpt_witness_generator::{ProofType, TrieModification};
 use zkevm_circuits::{
-    mpt_circuit::witness_row::Node,
-    table::mpt_table::MPTProofType,
-    util::word::{self, Word},
+    mpt_circuit::witness_row::Node, table::mpt_table::MPTProofType, util::word::Word,
 };
+
+lazy_static! {
+    static ref DEFAULT_CODE_HASH: H256 =
+        H256::from_str("0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470")
+            .unwrap();
+}
+
+#[derive(Default, Clone)]
+pub struct FieldTrieModification<F: Field> {
+    pub typ: F,
+    pub address: F,
+    pub value: Word<F>,
+    pub key: Word<F>,
+    pub old_root: Word<F>,
+    pub new_root: Word<F>,
+}
+
+#[derive(Default, Clone)]
+pub struct FieldTrieModifications<F: Field>(pub Vec<FieldTrieModification<F>>);
+
+impl<F: Field> Deref for FieldTrieModifications<F> {
+    type Target = Vec<FieldTrieModification<F>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[derive(Default, Debug, Clone)]
 pub struct Transforms {
@@ -33,6 +62,7 @@ trait TrieModificationBuilder {
     fn nonce(address: Address, nonce: U64) -> Self;
     fn codehash(address: Address, code_hash: H256) -> Self;
     fn storage(address: Address, key: H256, value: U256) -> Self;
+    fn storage_does_not_exist(address: Address, key: H256, value: U256) -> Self;
 }
 
 impl TrieModificationBuilder for TrieModification {
@@ -69,81 +99,41 @@ impl TrieModificationBuilder for TrieModification {
             ..Default::default()
         }
     }
+    fn storage_does_not_exist(address: Address, key: H256, value: U256) -> Self {
+        Self {
+            typ: ProofType::StorageDoesNotExist,
+            address,
+            key,
+            value,
+            ..Default::default()
+        }
+    }
 }
 
 #[derive(Default)]
-pub struct StateUpdateWitness<F: Field> {
+pub struct Witness<F: Field> {
     pub transforms: Transforms,
-    pub lc_witness: SingleTrieModifications<F>,
+    pub lc_witness: FieldTrieModifications<F>,
     pub mpt_witness: Vec<Node>,
 }
 
-#[derive(Default, Clone)]
-pub struct SingleTrieModification<F: Field> {
-    pub typ: F,
-    pub address: F,
-    pub value: word::Word<F>,
-    pub key: word::Word<F>,
-    pub old_root: word::Word<F>,
-    pub new_root: word::Word<F>,
-}
-
-#[derive(Default, Clone)]
-pub struct SingleTrieModifications<F: Field>(pub Vec<SingleTrieModification<F>>);
-
-impl<F: Field> Deref for SingleTrieModifications<F> {
-    type Target = Vec<SingleTrieModification<F>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-pub struct PublicInputs<F: Field>(pub Vec<F>);
-impl<F: Field> Deref for PublicInputs<F> {
-    type Target = Vec<F>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<F: Field> From<&SingleTrieModifications<F>> for PublicInputs<F> {
-    fn from(stm: &SingleTrieModifications<F>) -> Self {
-        let mut inputs = vec![
-            stm.0[0].old_root.lo(),
-            stm.0[0].old_root.hi(),
-            stm.0.last().unwrap().new_root.lo(),
-            stm.0.last().unwrap().new_root.hi(),
-            F::from(stm.0.len() as u64),
-        ];
-
-        for proof in &stm.0 {
-            inputs.push(proof.typ);
-            inputs.push(proof.address);
-            inputs.push(proof.value.lo());
-            inputs.push(proof.value.hi());
-            inputs.push(proof.key.lo());
-            inputs.push(proof.key.hi());
-        }
-
-        PublicInputs(inputs)
-    }
-}
-
-impl<F: Field> StateUpdateWitness<F> {
+impl<F: Field> Witness<F> {
     pub async fn build(
-        client: Arc<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
-        provider: &str,
+        provider_url: &str,
         block_no: U64,
         access_list: Option<AccessList>,
+        include_unchanged: bool,
     ) -> Result<Option<Self>> {
-        let transforms = Self::get_transforms(client, block_no, access_list).await?;
-        println!("### trns : {:#?}", transforms);
+        let provider: Provider<Http> =
+            Provider::<Http>::try_from(provider_url)?.interval(Duration::from_millis(10u64));
+
+        let transforms =
+            Self::get_transforms(provider, block_no, access_list, include_unchanged).await?;
+
         if transforms.prev_state_root == transforms.curr_state_root {
             Ok(None)
         } else {
-            let (mpt_witness, lc_witness) = Self::mpt_witness(&transforms, provider)?;
+            let (mpt_witness, lc_witness) = Self::mpt_witness(&transforms, provider_url)?;
             Ok(Some(Self {
                 transforms,
                 mpt_witness,
@@ -153,18 +143,18 @@ impl<F: Field> StateUpdateWitness<F> {
     }
 
     async fn get_transforms(
-        client: Arc<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
+        provider: Provider<Http>,
         block_no: U64,
         access_list: Option<AccessList>,
+        include_initial_values: bool,
     ) -> Result<Transforms> {
-        let mut trie_modifications = Vec::new();
-
         // get previous block and this block
-        let prev_block = client
+        let prev_block: Block<TxHash> = provider
             .get_block(BlockId::Number(BlockNumber::Number(block_no - 1)))
             .await?
             .unwrap();
-        let curr_block = client
+
+        let curr_block = provider
             .get_block_with_txs(BlockId::Number(BlockNumber::Number(block_no)))
             .await?
             .unwrap();
@@ -180,8 +170,7 @@ impl<F: Field> StateUpdateWitness<F> {
         let mut access_list = if let Some(access_list) = access_list {
             access_list
         } else {
-            client
-                .provider()
+            provider
                 .request(
                     "eth_getAccessListByNumber",
                     vec![format!("0x{:x}", block_no)],
@@ -189,8 +178,28 @@ impl<F: Field> StateUpdateWitness<F> {
                 .await?
         };
 
+        // sanitize access_list
+        let mut access_list_map = BTreeMap::new();
+        for item in access_list.0.iter_mut() {
+            let entry = access_list_map
+                .entry(item.address)
+                .or_insert_with(BTreeSet::new);
+            for key in item.storage_keys.iter() {
+                entry.insert(*key);
+            }
+        }
+        let mut access_list = AccessList(
+            access_list_map
+                .into_iter()
+                .map(|(address, storage_keys)| AccessListItem {
+                    address,
+                    storage_keys: storage_keys.into_iter().collect(),
+                })
+                .collect(),
+        );
+
         // add coinbase to the access list
-        let mut extra_addrs = HashSet::from([curr_block.author.unwrap()]);
+        let mut extra_addrs = BTreeSet::from([curr_block.author.unwrap()]);
         for tx in curr_block.transactions {
             extra_addrs.insert(tx.from);
             if let Some(addr) = tx.to {
@@ -207,13 +216,16 @@ impl<F: Field> StateUpdateWitness<F> {
             }
         }
 
+        let mut initial_values = Vec::new();
+        let mut changed_values = Vec::new();
+
         for entry in access_list.0 {
             let AccessListItem {
                 address,
                 storage_keys,
             } = entry;
 
-            let old = client
+            let old = provider
                 .get_proof(
                     address,
                     storage_keys.clone(),
@@ -221,7 +233,7 @@ impl<F: Field> StateUpdateWitness<F> {
                 )
                 .await?;
 
-            let new = client
+            let new = provider
                 .get_proof(
                     address,
                     storage_keys.clone(),
@@ -229,32 +241,55 @@ impl<F: Field> StateUpdateWitness<F> {
                 )
                 .await?;
 
-            // if nothing changed, skip
+            // if nothing changed, append all values
             if old.balance == new.balance
                 && old.nonce == new.nonce
                 && old.code_hash == new.code_hash
                 && old.storage_hash == new.storage_hash
+                && !include_initial_values
             {
-                println!("Skipping {:?} as nothing changed", address);
                 continue;
+            }
+
+            if include_initial_values {
+                initial_values.push(TrieModification::balance(address, old.balance));
+                initial_values.push(TrieModification::nonce(address, old.nonce));
+                initial_values.push(TrieModification::codehash(address, old.code_hash));
+
+                for key in storage_keys.iter() {
+                    let old = old.storage_proof.iter().find(|p| p.key == *key).unwrap();
+                    if old.value == U256::zero() {
+                        initial_values.push(TrieModification::storage_does_not_exist(
+                            address, *key, old.value,
+                        ));
+                    } else {
+                        initial_values.push(TrieModification::storage(address, *key, old.value));
+                    }
+                }
             }
 
             // check for this address changes
             if old.nonce != new.nonce {
-                trie_modifications.push(TrieModification::nonce(address, new.nonce));
+                changed_values.push(TrieModification::nonce(address, new.nonce));
             }
             if old.balance != new.balance {
-                trie_modifications.push(TrieModification::balance(address, new.balance));
+                changed_values.push(TrieModification::balance(address, new.balance));
             }
-            if old.code_hash != new.code_hash {
-                trie_modifications.push(TrieModification::codehash(address, new.code_hash));
+            if old.code_hash != new.code_hash /* && new.code_hash != *DEFAULT_CODE_HASH */ {
+                changed_values.push(TrieModification::codehash(address, new.code_hash));
             }
 
             for key in storage_keys {
                 let new = new.storage_proof.iter().find(|p| p.key == key).unwrap();
-                trie_modifications.push(TrieModification::storage(address, key, new.value));
+                changed_values.push(TrieModification::storage(address, key, new.value));
             }
         }
+
+        println!("initial_values.len(): {}", initial_values.len());
+        println!("changed_values.len(): {}", changed_values.len());
+
+        let mut trie_modifications = initial_values;
+        trie_modifications.append(&mut changed_values);
 
         Ok(Transforms {
             block_no,
@@ -267,7 +302,7 @@ impl<F: Field> StateUpdateWitness<F> {
     fn mpt_witness(
         trns: &Transforms,
         provider: &str,
-    ) -> Result<(Vec<Node>, SingleTrieModifications<F>)> {
+    ) -> Result<(Vec<Node>, FieldTrieModifications<F>)> {
         let nodes = mpt_witness_generator::get_witness(
             trns.block_no.as_u64() - 1,
             &trns.trie_modifications,
@@ -282,8 +317,6 @@ impl<F: Field> StateUpdateWitness<F> {
         };
         let witness_current_state_root =
             H256::from_slice(&nodes.iter().rev().find(non_disabled_node).unwrap().values[1][1..33]);
-
-        // crate::utils::print_nodes(&nodes);
 
         // check if the roots matches
         assert_eq!(
@@ -340,6 +373,9 @@ impl<F: Field> StateUpdateWitness<F> {
                         H256::zero(),
                     )]
                 }
+                ProofType::StorageDoesNotExist => {
+                    vec![(ProofType::StorageDoesNotExist, m.address, m.value, m.key)]
+                }
                 _ => {
                     println!("type unimplemented: {:?}", m.typ);
                     unimplemented!()
@@ -347,7 +383,7 @@ impl<F: Field> StateUpdateWitness<F> {
             };
 
             for (proof_type, address, value, key) in changes {
-                let lc_proof = SingleTrieModification::<F> {
+                let lc_proof = FieldTrieModification::<F> {
                     typ: F::from(proof_type as u64),
                     address: address.to_scalar().unwrap(),
                     value: Word::<F>::from(value),
@@ -359,6 +395,6 @@ impl<F: Field> StateUpdateWitness<F> {
             }
         }
 
-        Ok((nodes, SingleTrieModifications(lc_proofs)))
+        Ok((nodes, FieldTrieModifications(lc_proofs)))
     }
 }
