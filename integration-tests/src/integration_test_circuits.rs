@@ -66,8 +66,6 @@ const MAX_EVM_ROWS: usize = 10000;
 const MAX_EXP_STEPS: usize = 1000;
 
 const MAX_KECCAK_ROWS: usize = 38000;
-/// MAX_VERTICAL_CIRCUIT_ROWS
-const MAX_VERTICAL_CIRCUIT_ROWS: usize = 0;
 
 const CIRCUITS_PARAMS: FixedCParams = FixedCParams {
     max_rws: MAX_RWS,
@@ -79,7 +77,6 @@ const CIRCUITS_PARAMS: FixedCParams = FixedCParams {
     max_evm_rows: MAX_EVM_ROWS,
     max_exp_steps: MAX_EXP_STEPS,
     max_keccak_rows: MAX_KECCAK_ROWS,
-    max_vertical_circuit_rows: MAX_VERTICAL_CIRCUIT_ROWS,
 };
 
 const EVM_CIRCUIT_DEGREE: u32 = 18;

@@ -32,7 +32,6 @@ fn test_root_circuit() {
             max_bytecode: 512,
             max_evm_rows: 0,
             max_keccak_rows: 0,
-            max_vertical_circuit_rows: 0,
         };
         let (k, circuit, instance, _) =
             SuperCircuit::<_>::build(block_1tx(), circuits_params, TEST_MOCK_RANDOMNESS.into())

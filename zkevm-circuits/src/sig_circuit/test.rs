@@ -1,113 +1,216 @@
-use super::*;
-use crate::util::Challenges;
-use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
-use eth_types::sign_types::sign;
+use eth_types::{
+    sign_types::{sign, SignData},
+    Field,
+};
 use halo2_proofs::{
     arithmetic::Field as HaloField,
-    circuit::SimpleFloorPlanner,
     dev::MockProver,
     halo2curves::{
         bn256::Fr,
-        group::{Curve, Group},
-        CurveAffine,
+        group::Curve,
+        secp256k1::{self, Secp256k1Affine},
     },
-    plonk::Circuit,
 };
-use rand::{RngCore, SeedableRng};
-use rand_xorshift::XorShiftRng;
+use rand::{Rng, RngCore};
+use std::marker::PhantomData;
 
-#[derive(Clone, Debug)]
-struct TestCircuitSignVerifyConfig<F: Field> {
-    sign_verify: SigCircuitConfig<F>,
-    challenges: Challenges,
-}
+use crate::sig_circuit::SigCircuit;
 
-impl<F: Field> TestCircuitSignVerifyConfig<F> {
-    pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
-        let keccak_table = KeccakTable::construct(meta);
-        let sig_table = SigTable::construct(meta);
-        let challenges = Challenges::construct(meta);
+#[test]
+fn test_edge_cases() {
+    use super::utils::LOG_TOTAL_NUM_ROWS;
+    use eth_types::{
+        sign_types::{biguint_to_32bytes_le, recover_pk, SECP256K1_Q},
+        word, ToBigEndian, ToLittleEndian, Word,
+    };
+    use ethers_core::k256::elliptic_curve::PrimeField;
+    use halo2_proofs::halo2curves::secp256k1::Fq;
+    use num::{BigUint, Integer};
+    use rand::SeedableRng;
+    use rand_xorshift::XorShiftRng;
+    use snark_verifier::util::arithmetic::PrimeCurveAffine;
 
-        let sign_verify = {
-            let challenges = challenges.exprs(meta);
-            SigCircuitConfig::new(
-                meta,
-                SigCircuitConfigArgs {
-                    keccak_table,
-                    sig_table,
-                    challenges,
-                },
-            )
-        };
+    let mut rng = XorShiftRng::seed_from_u64(1);
 
-        TestCircuitSignVerifyConfig {
-            sign_verify,
-            challenges,
-        }
-    }
-}
+    // helper
+    let to_sig = |(r, s, v): (Word, Word, u8)| -> (Fq, Fq, u8) {
+        (
+            Fq::from_bytes(&r.to_le_bytes()).unwrap(),
+            Fq::from_bytes(&s.to_le_bytes()).unwrap(),
+            v,
+        )
+    };
 
-#[derive(Default)]
-struct TestCircuitSignVerify<F: Field> {
-    sign_verify: SigCircuit<F>,
-}
-
-impl<F: Field> Circuit<F> for TestCircuitSignVerify<F> {
-    type Config = TestCircuitSignVerifyConfig<F>;
-    type FloorPlanner = SimpleFloorPlanner;
-    type Params = ();
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        TestCircuitSignVerifyConfig::new(meta)
-    }
-
-    fn synthesize(
-        &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        let challenges = config.challenges.values(&mut layouter);
-
-        self.sign_verify.assign(
-            &config.sign_verify,
-            &mut layouter,
-            &self.sign_verify.signatures,
-            &challenges,
-        )?;
-        config.sign_verify._keccak_table.dev_load(
-            &mut layouter,
-            &keccak_inputs_sign_verify(&self.sign_verify.signatures),
-            &challenges,
-        )?;
-        config.sign_verify.load_range(&mut layouter)?;
-        Ok(())
-    }
-}
-
-fn run<F: Field>(k: u32, max_verif: usize, signatures: Vec<SignData>) {
-    let mut rng = XorShiftRng::seed_from_u64(2);
-    let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
-
-    // SigCircuit -> ECDSAChip -> MainGate instance column
-    let circuit = TestCircuitSignVerify::<F> {
-        sign_verify: SigCircuit {
-            signatures,
-            aux_generator,
-            window_size: 4,
-            max_verif,
-            _marker: PhantomData,
+    // Vec<(msg_hash, r, s, v)>
+    //
+    // good data for ecrecover is (big-endian):
+    // - msg_hash: 0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3
+    // - r: 0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608
+    // - s: 0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada
+    // - v: 28, i.e. v == 1 for sig circuit
+    let good_ecrecover_data = (
+        word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"),
+        word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"),
+        word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"),
+        1u8,
+    );
+    let ecrecover_data = vec![
+        // 1. good data
+        good_ecrecover_data,
+        // 2. msg_hash == 0
+        (
+            Word::zero(),
+            good_ecrecover_data.1,
+            good_ecrecover_data.2,
+            good_ecrecover_data.3,
+        ),
+        // 3. r == 0
+        (
+            good_ecrecover_data.0,
+            Word::zero(),
+            good_ecrecover_data.2,
+            good_ecrecover_data.3,
+        ),
+        // 4. s == 0
+        (
+            good_ecrecover_data.0,
+            good_ecrecover_data.1,
+            Word::zero(),
+            good_ecrecover_data.3,
+        ),
+        // 5. r == 0 and s == 0
+        (
+            good_ecrecover_data.0,
+            Word::zero(),
+            Word::zero(),
+            good_ecrecover_data.3,
+        ),
+        // 6. random r and s for random msg hash
+        {
+            let mut bytes = [0u8; 32];
+            rng.fill(&mut bytes[..]);
+            let msg_hash = Word::from_big_endian(&bytes);
+            rng.fill(&mut bytes[..]);
+            let r = Word::from_big_endian(&bytes);
+            rng.fill(&mut bytes[..]);
+            let s = Word::from_big_endian(&bytes);
+            (msg_hash, r, s, 0u8)
         },
-    };
+        // 7. v == 0 when v should be 1
+        (
+            good_ecrecover_data.0,
+            good_ecrecover_data.1,
+            good_ecrecover_data.2,
+            1 - good_ecrecover_data.3,
+        ),
+        // 8. msg_hash outside FQ::MODULUS
+        (
+            Word::MAX,
+            good_ecrecover_data.1,
+            good_ecrecover_data.2,
+            good_ecrecover_data.3,
+        ),
+    ];
+    let signatures = ecrecover_data
+        .iter()
+        .map(|&(msg_hash, r, s, v)| SignData {
+            signature: to_sig((r, s, v)),
+            pk: recover_pk(v, &r, &s, &msg_hash.to_be_bytes())
+                .unwrap_or(Secp256k1Affine::identity()),
+            msg_hash: {
+                let msg_hash = BigUint::from_bytes_be(&msg_hash.to_be_bytes());
+                let msg_hash = msg_hash.mod_floor(&*SECP256K1_Q);
+                let msg_hash_le = biguint_to_32bytes_le(msg_hash);
+                secp256k1::Fq::from_repr(msg_hash_le).unwrap()
+            },
+            ..Default::default()
+        })
+        .collect();
+    log::debug!("signatures=");
+    log::debug!("{:#?}", signatures);
 
-    let prover = match MockProver::run(k, &circuit, vec![vec![]]) {
-        Ok(prover) => prover,
-        Err(e) => panic!("{:#?}", e),
-    };
-    prover.assert_satisfied_par();
+    run::<Fr>(LOG_TOTAL_NUM_ROWS as u32, 8, signatures);
+}
+
+#[test]
+fn sign_verify() {
+    use super::utils::LOG_TOTAL_NUM_ROWS;
+    use crate::sig_circuit::utils::MAX_NUM_SIG;
+    use rand::SeedableRng;
+    use rand_xorshift::XorShiftRng;
+    use sha3::{Digest, Keccak256};
+    let mut rng = XorShiftRng::seed_from_u64(1);
+
+    // msg_hash == 0
+    {
+        log::debug!("testing for msg_hash = 0");
+        let mut signatures = Vec::new();
+
+        let (sk, pk) = gen_key_pair(&mut rng);
+        let msg = gen_msg(&mut rng);
+        let msg_hash = secp256k1::Fq::zero();
+        let (r, s, v) = sign_with_rng(&mut rng, sk, msg_hash);
+        signatures.push(SignData {
+            signature: (r, s, v),
+            pk,
+            msg: msg.into(),
+            msg_hash,
+        });
+
+        let k = LOG_TOTAL_NUM_ROWS as u32;
+        run::<Fr>(k, 1, signatures);
+
+        log::debug!("end of testing for msg_hash = 0");
+    }
+    // msg_hash == 1
+    {
+        log::debug!("testing for msg_hash = 1");
+        let mut signatures = Vec::new();
+
+        let (sk, pk) = gen_key_pair(&mut rng);
+        let msg = gen_msg(&mut rng);
+        let msg_hash = secp256k1::Fq::one();
+        let (r, s, v) = sign_with_rng(&mut rng, sk, msg_hash);
+        signatures.push(SignData {
+            signature: (r, s, v),
+            pk,
+            msg: msg.into(),
+            msg_hash,
+        });
+
+        let k = LOG_TOTAL_NUM_ROWS as u32;
+        run::<Fr>(k, 1, signatures);
+
+        log::debug!("end of testing for msg_hash = 1");
+    }
+    // random msg_hash
+    let max_sigs = [1, 16, MAX_NUM_SIG];
+    for max_sig in max_sigs.iter() {
+        log::debug!("testing for {} signatures", max_sig);
+        let mut signatures = Vec::new();
+        for _ in 0..*max_sig {
+            let (sk, pk) = gen_key_pair(&mut rng);
+            let msg = gen_msg(&mut rng);
+            let msg_hash: [u8; 32] = Keccak256::digest(&msg)
+                .as_slice()
+                .to_vec()
+                .try_into()
+                .expect("hash length isn't 32 bytes");
+            let msg_hash = secp256k1::Fq::from_bytes(&msg_hash).unwrap();
+            let (r, s, v) = sign_with_rng(&mut rng, sk, msg_hash);
+            signatures.push(SignData {
+                signature: (r, s, v),
+                pk,
+                msg: msg.into(),
+                msg_hash,
+            });
+        }
+
+        let k = LOG_TOTAL_NUM_ROWS as u32;
+        run::<Fr>(k, *max_sig, signatures);
+
+        log::debug!("end of testing for {} signatures", max_sig);
+    }
 }
 
 // Generate a test key pair
@@ -126,7 +229,15 @@ fn gen_msg_hash(rng: impl RngCore) -> secp256k1::Fq {
     secp256k1::Fq::random(rng)
 }
 
-// Returns (r, s)
+// Generate a test message.
+fn gen_msg(mut rng: impl RngCore) -> Vec<u8> {
+    let msg_len: usize = rng.gen_range(0..128);
+    let mut msg = vec![0; msg_len];
+    rng.fill_bytes(&mut msg);
+    msg
+}
+
+// Returns (r, s, v)
 fn sign_with_rng(
     rng: impl RngCore,
     sk: secp256k1::Fq,
@@ -136,31 +247,17 @@ fn sign_with_rng(
     sign(randomness, sk, msg_hash)
 }
 
-#[test]
-fn sign_verify() {
-    // Vectors using `XorShiftRng::seed_from_u64(1)`
-    // sk: 0x771bd7bf6c6414b9370bb8559d46e1cedb479b1836ea3c2e59a54c343b0d0495
-    // pk: (
-    //   0x8e31a3586d4c8de89d4e0131223ecfefa4eb76215f68a691ae607757d6256ede,
-    //   0xc76fdd462294a7eeb8ff3f0f698eb470f32085ba975801dbe446ed8e0b05400b
-    // )
-    // pk_hash: d90e2e9d267cbcfd94de06fa7adbe6857c2c733025c0b8938a76beeefc85d6c7
-    // addr: 0x7adbe6857c2c733025c0b8938a76beeefc85d6c7
-    let mut rng = XorShiftRng::seed_from_u64(1);
-    const MAX_VERIF: usize = 3;
-    const NUM_SIGS: usize = 2;
-    let mut signatures = Vec::new();
-    for _ in 0..NUM_SIGS {
-        let (sk, pk) = gen_key_pair(&mut rng);
-        let msg_hash = gen_msg_hash(&mut rng);
-        let sig = sign_with_rng(&mut rng, sk, msg_hash);
-        signatures.push(SignData {
-            signature: sig,
-            pk,
-            msg_hash,
-        });
-    }
+fn run<F: Field>(k: u32, max_verif: usize, signatures: Vec<SignData>) {
+    // SignVerifyChip -> ECDSAChip -> MainGate instance column
+    let circuit = SigCircuit::<Fr> {
+        max_verif,
+        signatures,
+        _marker: PhantomData,
+    };
 
-    let k = 19;
-    run::<Fr>(k, MAX_VERIF, signatures);
+    let prover = match MockProver::run(k, &circuit, vec![]) {
+        Ok(prover) => prover,
+        Err(e) => panic!("{e:#?}"),
+    };
+    assert_eq!(prover.verify(), Ok(()));
 }
