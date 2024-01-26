@@ -23,12 +23,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"main/gethutil/mpt/types"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/privacy-scaling-explorations/mpt-witness-generator/types"
 
 	//"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"

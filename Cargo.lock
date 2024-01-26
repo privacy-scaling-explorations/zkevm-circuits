@@ -1704,7 +1704,10 @@ name = "geth-utils"
 version = "0.1.0"
 dependencies = [
  "eth-types",
+ "ethers",
+ "glob",
  "gobuild",
+ "num_enum 0.7.2",
  "serde",
  "serde_json",
 ]
@@ -2483,31 +2486,16 @@ dependencies = [
  "eyre",
  "flate2",
  "gadgets",
+ "geth-utils",
  "glob",
  "halo2_proofs",
  "hex",
  "hyper",
  "hyper-rustls",
  "lazy_static",
- "mpt-witness-generator",
  "serde",
  "serde_json",
  "tokio",
- "zkevm-circuits",
-]
-
-[[package]]
-name = "mpt-witness-generator"
-version = "0.1.0"
-dependencies = [
- "env_logger",
- "ethers",
- "glob",
- "gobuild",
- "log",
- "num_enum 0.7.2",
- "serde",
- "serde_json",
  "zkevm-circuits",
 ]
 

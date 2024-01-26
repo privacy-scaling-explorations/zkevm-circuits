@@ -5,9 +5,10 @@ import (
 	"math/big"
 	"testing"
 
+	"main/gethutil/mpt/oracle"
+	"main/gethutil/mpt/state"
+
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/privacy-scaling-explorations/mpt-witness-generator/oracle"
-	"github.com/privacy-scaling-explorations/mpt-witness-generator/state"
 )
 
 func TestUpdateOneLevel(t *testing.T) {

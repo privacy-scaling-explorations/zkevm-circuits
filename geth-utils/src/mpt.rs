@@ -1,20 +1,10 @@
 use ethers::types::{Address, H256, U64};
 use serde::Serialize;
-use std::{
-    ffi::{CStr, CString},
-    os::raw::c_char,
-};
+use std::ffi::{CStr, CString};
 
 use num_enum::IntoPrimitive;
-use zkevm_circuits::{mpt_circuit::witness_row::Node, util::U256};
-
-mod golang {
-    use super::*;
-    extern "C" {
-        pub fn GetWitness(str: *const c_char) -> *const c_char;
-        pub fn FreeString(str: *const c_char);
-    }
-}
+use eth_types::U256;
+use crate::go;
 
 #[derive(Default, Debug, IntoPrimitive, Clone, Copy)]
 #[repr(u8)]
@@ -70,7 +60,7 @@ struct GetWitnessRequest<'a> {
     node_url: &'a str,
 }
 
-pub fn get_witness(block_no: u64, mods: &[TrieModification], node_url: &str) -> Vec<Node> {
+pub fn get_witness(block_no: u64, mods: &[TrieModification], node_url: &str) -> String {
     let mods: Vec<_> = mods
         .iter()
         .map(|m| TrieModificationJson {
@@ -96,12 +86,16 @@ pub fn get_witness(block_no: u64, mods: &[TrieModification], node_url: &str) -> 
 
     let json = serde_json::to_string(&req).expect("Invalid request");
     let c_config = CString::new(json).expect("invalid config");
-    let result = unsafe { golang::GetWitness(c_config.as_ptr() as *const i8) };
+    let result = unsafe { go::GetWitness(c_config.as_ptr() as *const i8) };
     let c_str = unsafe { CStr::from_ptr(result) };
-    let json = c_str.to_str().expect("Error translating from library");
+    let json = c_str.to_str().expect("Error translating from library").to_string();
 
+    unsafe  { go::FreeString(c_str.as_ptr()) };
+
+    json
+
+    /*
     let mut nodes: Vec<Node> = serde_json::from_str(json).unwrap();
-    unsafe { golang::FreeString(c_str.as_ptr()) };
 
     // Add the address and the key to the list of values in the Account and Storage nodes
     for node in nodes.iter_mut() {
@@ -121,6 +115,7 @@ pub fn get_witness(block_no: u64, mods: &[TrieModification], node_url: &str) -> 
         }
     }
     nodes
+    */
 }
 
 #[cfg(test)]

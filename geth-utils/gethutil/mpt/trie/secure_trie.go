@@ -19,9 +19,10 @@ package trie
 import (
 	"fmt"
 
+	"main/gethutil/mpt/oracle"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/privacy-scaling-explorations/mpt-witness-generator/oracle"
 )
 
 // SecureTrie wraps a trie with key hashing. In a secure trie, all

@@ -17,7 +17,7 @@ use ethers::{
 };
 use eyre::Result;
 
-use mpt_witness_generator::{ProofType, TrieModification};
+use geth_utils::mpt::{ProofType, TrieModification};
 use zkevm_circuits::{
     mpt_circuit::witness_row::Node, table::mpt_table::MPTProofType, util::word::Word,
 };
@@ -303,11 +303,31 @@ impl<F: Field> Witness<F> {
         trns: &Transforms,
         provider: &str,
     ) -> Result<(Vec<Node>, FieldTrieModifications<F>)> {
-        let nodes = mpt_witness_generator::get_witness(
+        let json = geth_utils::get_witness(
             trns.block_no.as_u64() - 1,
             &trns.trie_modifications,
             provider,
         );
+
+        let mut nodes: Vec<Node> = serde_json::from_str(&json).unwrap();
+
+        // Add the address and the key to the list of values in the Account and Storage nodes
+        for node in nodes.iter_mut() {
+            if node.account.is_some() {
+                let account = node.account.clone().unwrap();
+                node.values
+                    .push([vec![148], account.address.to_vec()].concat().into());
+                node.values
+                    .push([vec![160], account.key.to_vec()].concat().into());
+            }
+            if node.storage.is_some() {
+                let storage = node.storage.clone().unwrap();
+                node.values
+                    .push([vec![160], storage.address.to_vec()].concat().into());
+                node.values
+                    .push([vec![160], storage.key.to_vec()].concat().into());
+            }
+        }
 
         let witness_previous_state_root = H256::from_slice(&nodes[0].values[0][1..33]);
         let non_disabled_node = |n: &&Node| {

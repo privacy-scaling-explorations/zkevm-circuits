@@ -3,11 +3,12 @@ package witness
 import (
 	"math/big"
 
+	"main/gethutil/mpt/oracle"
+	"main/gethutil/mpt/state"
+	"main/gethutil/mpt/trie"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/privacy-scaling-explorations/mpt-witness-generator/oracle"
-	"github.com/privacy-scaling-explorations/mpt-witness-generator/state"
-	"github.com/privacy-scaling-explorations/mpt-witness-generator/trie"
 )
 
 const valueLen = 34

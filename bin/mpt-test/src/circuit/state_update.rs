@@ -294,6 +294,7 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
         (config, _challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
+
         let challenges = _challenges.values(&mut layouter);
 
         // assign MPT witness

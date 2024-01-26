@@ -3,6 +3,7 @@ package trie
 import (
 	"bytes"
 	"io"
+	"main/gethutil/mpt/oracle"
 	"math/big"
 	"sync"
 
@@ -10,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/privacy-scaling-explorations/mpt-witness-generator/oracle"
 )
 
 // rawNode is a simple binary blob used to differentiate between collapsed trie

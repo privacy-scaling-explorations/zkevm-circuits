@@ -7,8 +7,8 @@ edition = "2021"
 ethers ={ version = "2.0.10", features = ["abigen", "rustls", "ws", "ethers-solc"] }
 eth-types = { path = "../../eth-types" }
 gadgets = { path = "../../gadgets" }
-mpt-witness-generator = { path = "../../mpt-witness-generator/rustlib" }
-zkevm-circuits = { path = "../../zkevm-circuits" }
+geth-utils = { path = "../../geth-utils" }
+zkevm-circuits = { path = "../../zkevm-circuits", features=["test-circuits"]}
 eyre = "0.6.11"
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_04_20" }
 serde_json = "1.0.111"

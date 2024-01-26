@@ -4,8 +4,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 
+	"main/gethutil/mpt/oracle"
+
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/privacy-scaling-explorations/mpt-witness-generator/oracle"
 )
 
 type BranchNode struct {

@@ -2,6 +2,8 @@ package witness
 
 import (
 	"fmt"
+	"main/gethutil/mpt/trie"
+	"main/gethutil/mpt/types"
 	"math/big"
 	"testing"
 
@@ -11,8 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/privacy-scaling-explorations/mpt-witness-generator/trie"
-	"github.com/privacy-scaling-explorations/mpt-witness-generator/types"
 )
 
 func TestTransactions(t *testing.T) {

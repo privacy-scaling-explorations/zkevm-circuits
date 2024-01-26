@@ -20,6 +20,8 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"main/gethutil/mpt/oracle"
+	"main/gethutil/mpt/trie"
 	"math/big"
 	"time"
 
@@ -27,8 +29,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/privacy-scaling-explorations/mpt-witness-generator/oracle"
-	"github.com/privacy-scaling-explorations/mpt-witness-generator/trie"
 )
 
 var emptyCodeHash = crypto.Keccak256(nil)

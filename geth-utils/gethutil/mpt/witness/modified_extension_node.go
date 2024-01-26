@@ -1,9 +1,10 @@
 package witness
 
 import (
+	"main/gethutil/mpt/state"
+	"main/gethutil/mpt/trie"
+
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/privacy-scaling-explorations/mpt-witness-generator/state"
-	"github.com/privacy-scaling-explorations/mpt-witness-generator/trie"
 )
 
 // equipLeafWithModExtensionNode adds rows for a modified extension node before and after modification.

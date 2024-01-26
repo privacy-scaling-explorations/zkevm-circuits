@@ -4,8 +4,6 @@ extern crate lazy_static;
 mod cache;
 mod circuit;
 
-use std::time::Duration;
-
 use ethers::{prelude::*, types::transaction::eip2930::AccessList};
 use eyre::Result;
 use halo2_proofs::halo2curves::bn256::Fr;
@@ -34,11 +32,9 @@ async fn mock_prove(block_no: u64, access_list: &str) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+
     cache::load().await?;
-
-    let _cache = tokio::task::spawn(cache::start());
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    let _handle = tokio::task::spawn(cache::start());
 
     let mut files: Vec<_> = glob::glob("access-lists/*.json")
         .unwrap()

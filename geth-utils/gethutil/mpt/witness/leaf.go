@@ -3,8 +3,9 @@ package witness
 import (
 	"math"
 
+	"main/gethutil/mpt/trie"
+
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/privacy-scaling-explorations/mpt-witness-generator/trie"
 )
 
 func prepareEmptyNonExistingStorageRow() []byte {

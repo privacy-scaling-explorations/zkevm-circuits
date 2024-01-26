@@ -6,9 +6,11 @@ import (
 	"os/exec"
 	"testing"
 
+	"main/gethutil/mpt/oracle"
+
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/privacy-scaling-explorations/mpt-witness-generator/oracle"
-	"github.com/privacy-scaling-explorations/mpt-witness-generator/state"
+
+	"main/gethutil/mpt/state"
 )
 
 func SkipIfNoGeth(t *testing.T) {
