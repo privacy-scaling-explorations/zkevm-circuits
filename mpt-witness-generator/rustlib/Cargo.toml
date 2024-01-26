@@ -11,8 +11,11 @@ env_logger = "0.9"
 glob = "0.3.1"
 
 [dependencies]
+eth-types = { path = "../../eth-types" }
 ethers = "2.0"
 num_enum = "0.7.0"
 serde = "1.0.188"
 serde_json = "1.0.105"
-zkevm-circuits = { path = "../../zkevm-circuits", features=["test-circuits"]}
+hex = {version = "0.4.3", features = ["serde"]}
+strum = "0.24"
+strum_macros = "0.24"

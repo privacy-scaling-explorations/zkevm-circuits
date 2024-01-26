@@ -1,12 +1,12 @@
-use ethers::types::{Address, H256, U64};
+use ethers::types::H256;
 use serde::Serialize;
 use std::{
     ffi::{CStr, CString},
     os::raw::c_char,
 };
 
-use num_enum::IntoPrimitive;
-use zkevm_circuits::{mpt_circuit::witness_row::Node, util::U256};
+pub use self::utils::{Node, TrieModification, TrieModificationJson};
+pub mod utils;
 
 mod golang {
     use super::*;
@@ -14,50 +14,6 @@ mod golang {
         pub fn GetWitness(str: *const c_char) -> *const c_char;
         pub fn FreeString(str: *const c_char);
     }
-}
-
-#[derive(Default, Debug, IntoPrimitive, Clone, Copy)]
-#[repr(u8)]
-pub enum ProofType {
-    #[default]
-    Disabled = 0,
-    NonceChanged = 1,
-    BalanceChanged = 2,
-    CodeHashChanged = 3,
-    AccountDestructed = 4,
-    AccountDoesNotExist = 5,
-    StorageChanged = 6,
-    StorageDoesNotExist = 7,
-    AccountCreate = 8,
-}
-
-#[derive(Default, Debug, Clone)]
-pub struct TrieModification {
-    pub typ: ProofType,
-    pub key: H256,
-    pub value: U256,
-    pub address: Address,
-    pub nonce: U64,
-    pub balance: U256,
-    pub code_hash: H256,
-}
-
-#[derive(Serialize, Debug, Clone)]
-struct TrieModificationJson {
-    #[serde(rename = "Type")]
-    typ: u8,
-    #[serde(rename = "Key")]
-    key: H256,
-    #[serde(rename = "Value")]
-    value: H256,
-    #[serde(rename = "Address")]
-    address: Address,
-    #[serde(rename = "Nonce")]
-    nonce: u64,
-    #[serde(rename = "Balance")]
-    balance: serde_json::Number,
-    #[serde(rename = "CodeHash")]
-    code_hash: Vec<u8>,
 }
 
 #[derive(Debug, Serialize)]
@@ -71,6 +27,7 @@ struct GetWitnessRequest<'a> {
 }
 
 pub fn get_witness(block_no: u64, mods: &[TrieModification], node_url: &str) -> Vec<Node> {
+    println!("get_witness called in MPT");
     let mods: Vec<_> = mods
         .iter()
         .map(|m| TrieModificationJson {
@@ -96,7 +53,9 @@ pub fn get_witness(block_no: u64, mods: &[TrieModification], node_url: &str) -> 
 
     let json = serde_json::to_string(&req).expect("Invalid request");
     let c_config = CString::new(json).expect("invalid config");
+    println!("Calling go GetWitness");
     let result = unsafe { golang::GetWitness(c_config.as_ptr() as *const i8) };
+    println!("go GetWitness called.");
     let c_str = unsafe { CStr::from_ptr(result) };
     let json = c_str.to_str().expect("Error translating from library");
 
@@ -123,21 +82,84 @@ pub fn get_witness(block_no: u64, mods: &[TrieModification], node_url: &str) -> 
     nodes
 }
 
+// pub fn recover_witness(
+//     block_no: u64,
+//     mods: &[TrieModification],
+//     node_url: &str,
+// ) -> Result<Vec<Node>, serde_json::Error> {
+//     let mods: Vec<_> = mods
+//         .iter()
+//         .map(|m| TrieModificationJson {
+//             typ: m.typ as u8,
+//             key: m.key,
+//             value: {
+//                 let mut bytes = [0u8; 32];
+//                 m.value.to_big_endian(&mut bytes);
+//                 H256::from_slice(&bytes)
+//             },
+//             address: m.address,
+//             nonce: m.nonce.as_u64(),
+//             balance: serde_json::Number::from_string_unchecked(format!("{}", m.balance)),
+//             code_hash: m.code_hash.as_bytes().to_vec(),
+//         })
+//         .collect();
+
+//     let req = GetWitnessRequest {
+//         block_no,
+//         mods,
+//         node_url,
+//     };
+
+//     let json = serde_json::to_string(&req).expect("Invalid request");
+//     let c_config = CString::new(json).expect("invalid config");
+//     println!("Calling go GetWitness");
+//     let result = unsafe { golang::GetWitness(c_config.as_ptr() as *const i8) };
+//     println!("go GetWitness called.");
+    
+//     let c_str = unsafe { CStr::from_ptr(result) };
+// // let json = c_str.to_str().expect("Error translating from library");
+// let json = String::from("hola");
+//     unsafe { golang::FreeString(c_str.as_ptr()) };
+
+//     // Add the address and the key to the list of values in the Account and Storage nodes
+//     serde_json::from_str(json).map(|mut nodes: Vec<Node>| {
+//         for node in nodes.iter_mut() {
+//             if node.account.is_some() {
+//                 let account = node.account.clone().unwrap();
+//                 node.values
+//                     .push([vec![148], account.address.to_vec()].concat().into());
+//                 node.values
+//                     .push([vec![160], account.key.to_vec()].concat().into());
+//             }
+//             if node.storage.is_some() {
+//                 let storage = node.storage.clone().unwrap();
+//                 node.values
+//                     .push([vec![160], storage.address.to_vec()].concat().into());
+//                 node.values
+//                     .push([vec![160], storage.key.to_vec()].concat().into());
+//             }
+//         }
+//         nodes
+//     })
+// }
+
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use super::*;
+    use std::str::FromStr;
 
     #[test]
     fn it_works() {
         let nodes = get_witness(
             14359865,
             &[TrieModification {
-                typ: ProofType::StorageChanged,
+                typ: utils::ProofType::StorageChanged,
                 key: H256::from_low_u64_le(0x12),
                 value: 0x1123e2.into(),
-                address: Address::from_str("0x4E5B2e1dc63F6b91cb6Cd759936495434C7e972F").unwrap(),
+                address: ethers::types::Address::from_str(
+                    "0x4E5B2e1dc63F6b91cb6Cd759936495434C7e972F",
+                )
+                .unwrap(),
                 nonce: 0.into(),
                 balance: 0.into(),
                 code_hash: H256::zero(),

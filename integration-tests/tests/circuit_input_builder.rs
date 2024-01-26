@@ -1,5 +1,7 @@
 #![cfg(feature = "circuit_input_builder")]
 
+use std::println;
+
 use bus_mapping::circuit_input_builder::{
     build_state_code_db, get_state_accesses, BuilderClient, FixedCParams,
 };
@@ -39,7 +41,10 @@ async fn test_circuit_input_builder_block(block_num: u64) {
     trace!("AccessSet: {:#?}", access_set);
 
     // 3. Query geth for all accounts, storage keys, and codes from Accesses
-    let (proofs, codes) = cli.get_state(block_num, access_set).await.unwrap();
+    println!("--- cqlling get_state");
+    let (proofs, codes, trie_modifications, trie_keccak) =
+        cli.get_state(block_num, access_set).await.unwrap();
+    println!("--- get_state cqlled");
 
     // 4. Build a partial StateDB from step 3
     let (state_db, code_db) = build_state_code_db(proofs, codes);
@@ -51,6 +56,8 @@ async fn test_circuit_input_builder_block(block_num: u64) {
         .gen_inputs_from_state(
             state_db,
             code_db,
+            trie_modifications,
+            trie_keccak,
             &eth_block,
             &geth_trace,
             history_hashes,

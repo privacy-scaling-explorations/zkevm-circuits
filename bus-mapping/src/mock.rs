@@ -34,9 +34,12 @@ impl<C: CircuitsParams> BlockData<C> {
     /// Generate a new CircuitInputBuilder initialized with the context of the
     /// BlockData.
     pub fn new_circuit_input_builder(&self) -> CircuitInputBuilder<C> {
+        // TODO do we want no MPT in the mock?
         CircuitInputBuilder::new(
             self.sdb.clone(),
             self.code_db.clone(),
+            Vec::new(),
+            Vec::new(),
             Block::new(
                 self.chain_id,
                 self.history_hashes.clone(),

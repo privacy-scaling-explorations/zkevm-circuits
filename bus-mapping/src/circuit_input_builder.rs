@@ -22,13 +22,15 @@ use crate::{
 pub use access::{Access, AccessSet, AccessValue, CodeSource};
 pub use block::{Block, BlockContext};
 pub use call::{Call, CallContext, CallKind};
+
 use core::fmt::Debug;
 use eth_types::{
     self, geth_types,
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
-    Address, GethExecStep, GethExecTrace, ToWord, Word,
+    Address, GethExecStep, GethExecTrace, ToBigEndian, ToWord, Word,
 };
 use ethers_providers::JsonRpcClient;
+
 pub use execution::{
     CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
 };
@@ -41,6 +43,8 @@ use std::{
 };
 pub use transaction::{Transaction, TransactionContext};
 pub use withdrawal::{Withdrawal, WithdrawalContext};
+
+use mpt_witness_generator::utils::{ProofType, TrieModification};
 
 /// Circuit Setup Parameters
 #[derive(Debug, Clone, Copy)]
@@ -144,6 +148,10 @@ pub struct CircuitInputBuilder<C: CircuitsParams> {
     pub sdb: StateDB,
     /// Map of account codes by code hash
     pub code_db: CodeDB,
+    /// MPT trie modifications
+    pub trie_modifications: Vec<TrieModification>,
+    /// MPT trie keccaks
+    pub trie_keccak: Vec<Vec<Vec<u8>>>,
     /// Block
     pub block: Block,
     /// Circuits Setup Paramteres
@@ -155,10 +163,19 @@ pub struct CircuitInputBuilder<C: CircuitsParams> {
 impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     /// Create a new CircuitInputBuilder from the given `eth_block` and
     /// `constants`.
-    pub fn new(sdb: StateDB, code_db: CodeDB, block: Block, params: C) -> Self {
+    pub fn new(
+        sdb: StateDB,
+        code_db: CodeDB,
+        trie_modifications: Vec<TrieModification>,
+        trie_keccak: Vec<Vec<Vec<u8>>>,
+        block: Block,
+        params: C,
+    ) -> Self {
         Self {
             sdb,
             code_db,
+            trie_modifications,
+            trie_keccak,
             block,
             circuits_params: params,
             block_ctx: BlockContext::new(),
@@ -454,6 +471,8 @@ impl CircuitInputBuilder<DynamicCParams> {
         let mut cib = CircuitInputBuilder::<FixedCParams> {
             sdb: self.sdb,
             code_db: self.code_db,
+            trie_modifications: self.trie_modifications,
+            trie_keccak: self.trie_keccak,
             block: self.block,
             circuits_params: c_params,
             block_ctx: self.block_ctx,
@@ -466,7 +485,11 @@ impl CircuitInputBuilder<DynamicCParams> {
 
 /// Return all the keccak inputs used during the processing of the current
 /// block.
-pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Error> {
+pub fn keccak_inputs(
+    block: &Block,
+    code_db: &CodeDB,
+    trie_keccak: &Vec<Vec<Vec<u8>>>,
+) -> Result<Vec<Vec<u8>>, Error> {
     let mut keccak_inputs: HashSet<Vec<u8>> = HashSet::new();
     // Tx Circuit
     let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.deref().clone()).collect();
@@ -483,6 +506,11 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
     }
     // MPT Circuit
     // TODO https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/696
+    for node in trie_keccak {
+        for hex in node {
+            keccak_inputs.insert(hex.to_vec());
+        }
+    }
     Ok(keccak_inputs.into_iter().collect_vec())
 }
 
@@ -695,20 +723,113 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         (
             Vec<eth_types::EIP1186ProofResponse>,
             HashMap<Address, Vec<u8>>,
+            Vec<TrieModification>,
+            Vec<Vec<Vec<u8>>>,
         ),
         Error,
     > {
+        fn generate_mpt_modifications(
+            address: Address,
+            keys: Vec<Word>,
+            prev_proof: eth_types::EIP1186ProofResponse,
+            curr_proof: eth_types::EIP1186ProofResponse,
+        ) -> Vec<TrieModification> {
+            let old = prev_proof;
+            let new = curr_proof;
+
+            let mut trie_modifications: Vec<TrieModification> = Vec::new();
+
+            // if nothing changed, skip
+            if old.balance == new.balance
+                && old.nonce == new.nonce
+                && old.code_hash == new.code_hash
+                && old.storage_hash == new.storage_hash
+            {
+                return trie_modifications;
+            }
+
+            // check for this address changes
+            if old.nonce != new.nonce {
+                trie_modifications.push(TrieModification {
+                    typ: ProofType::NonceChanged,
+                    address,
+                    nonce: new.nonce,
+                    ..Default::default()
+                });
+            }
+
+            if old.balance != new.balance {
+                trie_modifications.push(TrieModification {
+                    typ: ProofType::BalanceChanged,
+                    address,
+                    balance: new.balance,
+                    ..Default::default()
+                });
+            }
+
+            if old.code_hash != new.code_hash {
+                trie_modifications.push(TrieModification {
+                    typ: ProofType::CodeHashChanged,
+                    address,
+                    code_hash: new.code_hash,
+                    ..Default::default()
+                });
+            }
+
+            for key_u256 in keys {
+                let new = new
+                    .storage_proof
+                    .iter()
+                    .find(|p| p.key == key_u256)
+                    .unwrap();
+                let key = eth_types::H256::from_slice(&key_u256.to_be_bytes());
+
+                trie_modifications.push(TrieModification {
+                    typ: ProofType::StorageChanged,
+                    key,
+                    value: new.value,
+                    address,
+                    ..Default::default()
+                });
+            }
+
+            return trie_modifications;
+        }
+
+        let mut mpt_modifs: Vec<TrieModification> = Vec::new();
+
         let mut proofs = Vec::new();
         for (address, key_set) in access_set.state {
             let mut keys: Vec<Word> = key_set.iter().cloned().collect();
             keys.sort();
-            let proof = self
+            let prev_proof = self
                 .cli
-                .get_proof(address, keys, (block_num - 1).into())
+                .get_proof(address, keys.clone(), (block_num - 1).into())
                 .await
                 .unwrap();
-            proofs.push(proof);
+            let curr_proof = self
+                .cli
+                .get_proof(address, keys.clone(), block_num.into())
+                .await
+                .unwrap();
+            let mut access_modifs =
+                generate_mpt_modifications(address, keys, prev_proof.clone(), curr_proof);
+            mpt_modifs.append(&mut access_modifs);
+            proofs.push(prev_proof);
         }
+
+        // TODO change provider
+        // let _provider: &str = "http://localhost:8545";
+        let provider = "https://mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161";
+        let mpt_modifs = Vec::new();
+        let nodes_mpt: Vec<mpt_witness_generator::Node> =
+            mpt_witness_generator::get_witness(block_num - 1, &mpt_modifs, provider);
+            // let nodes_mpt: Vec<mpt_witness_generator::Node> = Vec::new();
+        let nodes_keccak: Vec<Vec<Vec<u8>>> = nodes_mpt
+            .iter()
+            .map(|n| n.keccak_data.iter().map(|h| h.to_vec()).collect())
+            .collect();
+
         let mut codes: HashMap<Address, Vec<u8>> = HashMap::new();
         for address in access_set.code {
             let code = self
@@ -718,7 +839,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
                 .unwrap();
             codes.insert(address, code);
         }
-        Ok((proofs, codes))
+        Ok((proofs, codes, mpt_modifs, nodes_keccak))
     }
 
     /// Step 4. Build a partial StateDB from step 3
@@ -735,13 +856,22 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         &self,
         sdb: StateDB,
         code_db: CodeDB,
+        trie_modifications: Vec<TrieModification>,
+        trie_keccak: Vec<Vec<Vec<u8>>>,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
         history_hashes: Vec<Word>,
         prev_state_root: Word,
     ) -> Result<CircuitInputBuilder<FixedCParams>, Error> {
         let block = Block::new(self.chain_id, history_hashes, prev_state_root, eth_block)?;
-        let mut builder = CircuitInputBuilder::new(sdb, code_db, block, self.circuits_params);
+        let mut builder = CircuitInputBuilder::new(
+            sdb,
+            code_db,
+            trie_modifications,
+            trie_keccak,
+            block,
+            self.circuits_params,
+        );
         builder.handle_block(eth_block, geth_traces)?;
         Ok(builder)
     }
@@ -760,11 +890,14 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         let (eth_block, geth_traces, history_hashes, prev_state_root) =
             self.get_block(block_num).await?;
         let access_set = Self::get_state_accesses(&eth_block, &geth_traces)?;
-        let (proofs, codes) = self.get_state(block_num, access_set).await?;
+        let (proofs, codes, trie_modifications, trie_keccak) =
+            self.get_state(block_num, access_set).await?;
         let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
         let builder = self.gen_inputs_from_state(
             state_db,
             code_db,
+            trie_modifications,
+            trie_keccak,
             &eth_block,
             &geth_traces,
             history_hashes,

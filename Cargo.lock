@@ -360,6 +360,7 @@ name = "bus-mapping"
 version = "0.1.0"
 dependencies = [
  "eth-types",
+ "ethers",
  "ethers-core",
  "ethers-providers",
  "gadgets",
@@ -369,6 +370,7 @@ dependencies = [
  "lazy_static",
  "log",
  "mock",
+ "mpt-witness-generator",
  "pretty_assertions",
  "revm-precompile",
  "serde",
@@ -2554,14 +2556,17 @@ name = "mpt-witness-generator"
 version = "0.1.0"
 dependencies = [
  "env_logger",
+ "eth-types",
  "ethers",
  "glob",
  "gobuild",
+ "hex",
  "log",
  "num_enum 0.7.2",
  "serde",
  "serde_json",
- "zkevm-circuits",
+ "strum 0.24.1",
+ "strum_macros 0.24.3",
 ]
 
 [[package]]

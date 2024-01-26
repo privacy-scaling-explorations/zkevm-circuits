@@ -273,6 +273,7 @@ pub fn block_convert<F: Field>(
 ) -> Result<Block<F>, Error> {
     let block = &builder.block;
     let code_db = &builder.code_db;
+
     let rws = RwMap::from(&block.container);
     rws.check_value();
     let mut block = Block {
@@ -290,7 +291,7 @@ pub fn block_convert<F: Field>(
         circuits_params: builder.circuits_params,
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
-        keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
+        keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db, &builder.trie_keccak)?,
         eth_block: block.eth_block.clone(),
     };
     let public_data = public_data_convert(&block);

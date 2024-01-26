@@ -13,7 +13,7 @@ use ethers::{
 };
 use eyre::Result;
 
-use mpt_witness_generator::{ProofType, TrieModification};
+use mpt_witness_generator::{utils::ProofType, TrieModification};
 use zkevm_circuits::{
     mpt_circuit::witness_row::Node,
     table::mpt_table::MPTProofType,
@@ -268,11 +268,16 @@ impl<F: Field> StateUpdateWitness<F> {
         trns: &Transforms,
         provider: &str,
     ) -> Result<(Vec<Node>, SingleTrieModifications<F>)> {
-        let nodes = mpt_witness_generator::get_witness(
+        let nodes_mpt = mpt_witness_generator::get_witness(
             trns.block_no.as_u64() - 1,
             &trns.trie_modifications,
             provider,
         );
+
+        let nodes_str = serde_json::to_string(&nodes_mpt).expect("Invalid request");
+
+        let nodes: Vec<zkevm_circuits::mpt_circuit::witness_row::Node> =
+            serde_json::from_str(&nodes_str).unwrap();
 
         let witness_previous_state_root = H256::from_slice(&nodes[0].values[0][1..33]);
         let non_disabled_node = |n: &&Node| {
