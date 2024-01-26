@@ -2,7 +2,7 @@
 
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    Address, Bytecode, Word,
+    Address, Bytecode, ToBigEndian, Word,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use revm_precompile::{Precompile, PrecompileError, Precompiles};
