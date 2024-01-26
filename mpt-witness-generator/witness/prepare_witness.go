@@ -390,7 +390,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				keyIndex += int(numberOfNibbles)
 				extensionNodeInd++
 				continue
-			}	
+			}
 
 			l := len(proof1)
 			var node Node

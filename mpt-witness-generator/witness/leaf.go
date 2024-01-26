@@ -407,7 +407,10 @@ func prepareAccountLeafPlaceholderNode(addr common.Address, addrh, key []byte, k
 }
 
 func prepareStorageLeafPlaceholderNode(storage_key common.Hash, key []byte, keyIndex int) Node {
-	leaf := make([]byte, valueLen)
+	// valueLen + 1 because the placeholder leaf in the empty trie occupies 35 bytes:
+	// [227 161 32 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
+	// 33 (33 = 161 - 128) bytes for path, as in the example above
+	leaf := make([]byte, valueLen+1)
 	setStorageLeafKeyRLP(&leaf, key, keyIndex)
 	keyLen := getLeafKeyLen(keyIndex)
 	leaf[0] = 192 + 1 + byte(keyLen) + 1
@@ -489,18 +492,7 @@ func prepareStorageLeafInfo(row []byte, valueIsZero, isPlaceholder bool) ([]byte
 		} else {
 			// [226,160,59,138,106,70,105,186,37,13,38[227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
 			keyLen = row[1] - 128
-			// The key occupies the bytes keyRlpLen:keyLen+2 (2 is the length of RLP bytes),
-			// except in the case of StorageDoesNotExist and empty trie, in this case it occupies keyRlpLen:valueLen.
-			if keyLen+2 > valueLen {
-				// This happens for StorageDoesNotExist when the trie is empty. In this case, the key
-				// occupies 33 (33 = 161 - 128) bytes, as in the example below:
-				// [227 161 32 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
-				// Currently, the length for the RLP items is set valueLen = 34, changing this to 35 would
-				// require significant changes in the circuit.
-				copy(key, row[keyRlpLen:valueLen])
-			} else {
-				copy(key, row[keyRlpLen:keyLen+2])
-			}
+			copy(key, row[keyRlpLen:keyLen+2])
 			offset = byte(2)
 		}
 	}
