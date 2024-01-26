@@ -2,9 +2,9 @@ use ethers::types::{Address, H256, U64};
 use serde::Serialize;
 use std::ffi::{CStr, CString};
 
-use num_enum::IntoPrimitive;
-use eth_types::U256;
 use crate::go;
+use eth_types::U256;
+use num_enum::IntoPrimitive;
 
 #[derive(Default, Debug, IntoPrimitive, Clone, Copy)]
 #[repr(u8)]
@@ -88,34 +88,35 @@ pub fn get_witness(block_no: u64, mods: &[TrieModification], node_url: &str) -> 
     let c_config = CString::new(json).expect("invalid config");
     let result = unsafe { go::GetWitness(c_config.as_ptr() as *const i8) };
     let c_str = unsafe { CStr::from_ptr(result) };
-    let json = c_str.to_str().expect("Error translating from library").to_string();
+    let json = c_str
+        .to_str()
+        .expect("Error translating from library")
+        .to_string();
 
-    unsafe  { go::FreeString(c_str.as_ptr()) };
+    unsafe { go::FreeString(c_str.as_ptr()) };
 
     json
 
-    /*
-    let mut nodes: Vec<Node> = serde_json::from_str(json).unwrap();
-
+    // let mut nodes: Vec<Node> = serde_json::from_str(json).unwrap();
+    //
     // Add the address and the key to the list of values in the Account and Storage nodes
-    for node in nodes.iter_mut() {
-        if node.account.is_some() {
-            let account = node.account.clone().unwrap();
-            node.values
-                .push([vec![148], account.address.to_vec()].concat().into());
-            node.values
-                .push([vec![160], account.key.to_vec()].concat().into());
-        }
-        if node.storage.is_some() {
-            let storage = node.storage.clone().unwrap();
-            node.values
-                .push([vec![160], storage.address.to_vec()].concat().into());
-            node.values
-                .push([vec![160], storage.key.to_vec()].concat().into());
-        }
-    }
-    nodes
-    */
+    // for node in nodes.iter_mut() {
+    // if node.account.is_some() {
+    // let account = node.account.clone().unwrap();
+    // node.values
+    // .push([vec![148], account.address.to_vec()].concat().into());
+    // node.values
+    // .push([vec![160], account.key.to_vec()].concat().into());
+    // }
+    // if node.storage.is_some() {
+    // let storage = node.storage.clone().unwrap();
+    // node.values
+    // .push([vec![160], storage.address.to_vec()].concat().into());
+    // node.values
+    // .push([vec![160], storage.key.to_vec()].concat().into());
+    // }
+    // }
+    // nodes
 }
 
 #[cfg(test)]

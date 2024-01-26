@@ -1,10 +1,10 @@
 //! Connection to external EVM tracer.
 
-pub mod mpt;
 pub mod block;
+pub mod mpt;
 
-pub use mpt::*;
 pub use block::*;
+pub use mpt::*;
 
 mod go {
     use std::os::raw::c_char;

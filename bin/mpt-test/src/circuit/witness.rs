@@ -275,7 +275,9 @@ impl<F: Field> Witness<F> {
             if old.balance != new.balance {
                 changed_values.push(TrieModification::balance(address, new.balance));
             }
-            if old.code_hash != new.code_hash /* && new.code_hash != *DEFAULT_CODE_HASH */ {
+            if old.code_hash != new.code_hash
+            // && new.code_hash != *DEFAULT_CODE_HASH
+            {
                 changed_values.push(TrieModification::codehash(address, new.code_hash));
             }
 

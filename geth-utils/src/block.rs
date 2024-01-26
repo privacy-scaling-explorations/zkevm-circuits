@@ -1,8 +1,8 @@
 //! Connection to external EVM tracer.
 
+use crate::go;
 use core::fmt::{Display, Formatter, Result as FmtResult};
 use std::ffi::{CStr, CString};
-use crate::go;
 
 /// Creates the trace
 pub fn trace(config: &str) -> Result<String, Error> {

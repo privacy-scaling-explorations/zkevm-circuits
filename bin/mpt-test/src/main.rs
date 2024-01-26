@@ -32,7 +32,6 @@ async fn mock_prove(block_no: u64, access_list: &str) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-
     cache::load().await?;
     let _handle = tokio::task::spawn(cache::start());
 
