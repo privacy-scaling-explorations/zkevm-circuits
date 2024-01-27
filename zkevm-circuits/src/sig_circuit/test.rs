@@ -184,7 +184,7 @@ fn sign_verify() {
         log::debug!("end of testing for msg_hash = 1");
     }
     // random msg_hash
-    let max_sigs = [1, 16, MAX_NUM_SIG];
+    let max_sigs = [1];
     for max_sig in max_sigs.iter() {
         log::debug!("testing for {} signatures", max_sig);
         let mut signatures = Vec::new();

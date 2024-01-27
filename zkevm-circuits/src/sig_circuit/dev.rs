@@ -52,7 +52,7 @@ impl<F: Field + halo2_base::utils::ScalarField> Circuit<F> for SigCircuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let challenges = config.challenges.values(&layouter);
+        let challenges = config.challenges.values(&mut layouter);
         self.synthesize_sub(&config.sign_verify, &challenges, &mut layouter)?;
         config.sign_verify.keccak_table.dev_load(
             &mut layouter,

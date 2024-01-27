@@ -84,9 +84,9 @@ where
         .or(ctx, Existing(s_is_zero), Existing(s_in_range));
 
     // load required constants
-    let zero = scalar_chip.load_constant(ctx, FpConfig::<F, SF>::fe_to_constant(SF::zero()));
-    let one = scalar_chip.load_constant(ctx, FpConfig::<F, SF>::fe_to_constant(SF::one()));
-    let neg_one = scalar_chip.load_constant(ctx, FpConfig::<F, SF>::fe_to_constant(-SF::one()));
+    let zero = scalar_chip.load_constant(ctx, FpConfig::<F, SF>::fe_to_constant(SF::ZERO));
+    let one = scalar_chip.load_constant(ctx, FpConfig::<F, SF>::fe_to_constant(SF::ONE));
+    let neg_one = scalar_chip.load_constant(ctx, FpConfig::<F, SF>::fe_to_constant(-SF::ONE));
 
     // compute u1 = m * s^{-1} mod n
     let s2 = scalar_chip.select(ctx, &one, s, &s_is_zero);
@@ -134,10 +134,10 @@ where
     let point_at_infinity = EcPoint::construct(
         ecc_chip
             .field_chip()
-            .load_constant(ctx, fe_to_biguint(&CF::zero())),
+            .load_constant(ctx, fe_to_biguint(&CF::ZERO)),
         ecc_chip
             .field_chip()
-            .load_constant(ctx, fe_to_biguint(&CF::zero())),
+            .load_constant(ctx, fe_to_biguint(&CF::ZERO)),
     );
     let u2_is_zero =
         base_chip

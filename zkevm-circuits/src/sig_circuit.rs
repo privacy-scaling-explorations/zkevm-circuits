@@ -21,7 +21,7 @@ use crate::{
     keccak_circuit::KeccakCircuit,
     sig_circuit::ecdsa::ecdsa_verify_no_pubkey_check,
     table::{KeccakTable, SigTable},
-    util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
+    util::{word::Word, Challenges, Expr, SubCircuit, SubCircuitConfig},
 };
 use eth_types::{
     self,
@@ -153,17 +153,21 @@ where
         meta.enable_equality(rlc_column);
 
         meta.enable_equality(sig_table.recovered_addr);
-        meta.enable_equality(sig_table.sig_r_rlc);
-        meta.enable_equality(sig_table.sig_s_rlc);
+        meta.enable_equality(sig_table.sig_r.lo());
+        meta.enable_equality(sig_table.sig_r.hi());
+        meta.enable_equality(sig_table.sig_s.lo());
+        meta.enable_equality(sig_table.sig_s.hi());
         meta.enable_equality(sig_table.sig_v);
         meta.enable_equality(sig_table.is_valid);
-        meta.enable_equality(sig_table.msg_hash_rlc);
+        meta.enable_equality(sig_table.msg_hash.lo());
+        meta.enable_equality(sig_table.msg_hash.hi());
 
         // Ref. spec SignVerifyChip 1. Verify that keccak(pub_key_bytes) = pub_key_hash
         // by keccak table lookup, where pub_key_bytes is built from the pub_key
         // in the ecdsa_chip.
         let q_keccak = meta.complex_selector();
 
+        // FIXME fix the layout
         meta.lookup_any("keccak lookup table", |meta| {
             // When address is 0, we disable the signature verification by using a dummy pk,
             // msg_hash and signature which is not constrained to match msg_hash_rlc nor
@@ -186,11 +190,11 @@ where
                 is_enable * meta.query_advice(rlc_column, Rotation(2)),
             ];
             let table = [
-                meta.query_fixed(keccak_table.q_enable, Rotation::cur()),
-                meta.query_advice(keccak_table.is_final, Rotation::cur()),
+                meta.query_advice(keccak_table.is_enabled, Rotation::cur()),
                 meta.query_advice(keccak_table.input_rlc, Rotation::cur()),
                 meta.query_advice(keccak_table.input_len, Rotation::cur()),
-                meta.query_advice(keccak_table.output_rlc, Rotation::cur()),
+                meta.query_advice(keccak_table.output.lo(), Rotation::cur()),
+                meta.query_advice(keccak_table.output.hi(), Rotation::cur()),
             ];
 
             input.into_iter().zip(table).collect()
@@ -270,12 +274,8 @@ impl<F: Field + halo2_base::utils::ScalarField> SubCircuit<F> for SigCircuit<F> 
             block.circuits_params.max_vertical_circuit_rows
         };
 
-        let ecdsa_verif_count = block
-            .txs
-            .iter()
-            .filter(|tx| !tx.tx_type.is_l1_msg())
-            .count()
-            + block.precompile_events.get_ecrecover_events().len();
+        let ecdsa_verif_count =
+            block.txs.iter().count() + block.precompile_events.get_ecrecover_events().len();
         // Reserve one ecdsa verification for padding tx such that the bad case in which some tx
         // calls MAX_NUM_SIG - 1 ecrecover precompile won't happen. If that case happens, the sig
         // circuit won't have more space for the padding tx's ECDSA verification. Then the
@@ -291,7 +291,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SubCircuit<F> for SigCircuit<F> 
     }
 }
 
-impl<F: Field> SigCircuit<F> {
+impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
     /// Return a new SigCircuit
     pub fn new(max_verif: usize) -> Self {
         Self {
@@ -353,7 +353,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
         let ecc_chip = EccChip::<F, FpChip<F>>::construct(ecdsa_chip.clone());
         let pk_assigned = ecc_chip.load_private(ctx, (Value::known(pk.x), Value::known(pk.y)));
         let pk_is_valid = ecc_chip.is_on_curve_or_infinity::<Secp256k1Affine>(ctx, &pk_assigned);
-        gate.assert_is_const(ctx, &pk_is_valid, F::one());
+        gate.assert_is_const(ctx, &pk_is_valid, F::ONE);
 
         // build Fq chip from Fp chip
         let fq_chip = FqChip::construct(ecdsa_chip.range.clone(), 88, 3, modulus::<Fq>());
@@ -396,7 +396,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
 
         // the last 88 bits of y
         let assigned_y_limb = &y_coord.limbs()[0];
-        let mut y_value = F::zero();
+        let mut y_value = F::ZERO;
         assigned_y_limb.value().map(|&x| y_value = x);
 
         // y_tmp = (y_value - y_last_bit)/2
@@ -443,7 +443,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
         );
 
         Ok(AssignedECDSA {
-            pk: pk_assigned,
+            _pk: pk_assigned,
             pk_is_zero,
             msg_hash,
             integer_r,
@@ -460,7 +460,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
         offset: usize,
         is_address_zero: &AssignedValue<F>,
         pk_rlc: &AssignedValue<F>,
-        pk_hash_rlc: &AssignedValue<F>,
+        pk_hash: &Word<AssignedValue<F>>,
     ) -> Result<(), Error> {
         log::trace!("keccak lookup");
 
@@ -469,7 +469,8 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
         // | -------- | --------------- |
         // |     1    | is_address_zero |
         // |          |    pk_rlc       |
-        // |          |    pk_hash_rlc  |
+        // |          |    pk_hash_lo   |
+        // |          |    pk_hash_hi   |
         config.q_keccak.enable(&mut ctx.region, offset)?;
 
         // is_address_zero
@@ -491,15 +492,23 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
         )?;
         ctx.region.constrain_equal(pk_rlc.cell, tmp_cell.cell())?;
 
-        // pk_hash_rlc
-        let tmp_cell = ctx.region.assign_advice(
-            || "pk_hash_rlc",
+        // pk_hash
+        let pk_cell_lo = ctx.region.assign_advice(
+            || "pk_hash_lo",
             config.rlc_column,
             offset + 2,
-            || pk_hash_rlc.value,
+            || pk_hash.lo().value,
         )?;
         ctx.region
-            .constrain_equal(pk_hash_rlc.cell, tmp_cell.cell())?;
+            .constrain_equal(pk_hash.lo().cell, pk_cell_lo.cell())?;
+        let pk_cell_hi = ctx.region.assign_advice(
+            || "pk_hash_hi",
+            config.rlc_column,
+            offset + 3,
+            || pk_hash.lo().value,
+        )?;
+        ctx.region
+            .constrain_equal(pk_hash.hi().cell, pk_cell_hi.cell())?;
 
         log::trace!("finished keccak lookup");
         Ok(())
@@ -522,9 +531,9 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
         // ================================================
         // step 0. powers of aux parameters
         // ================================================
-        let powers_of_256 =
-            iter::successors(Some(F::one()), |coeff| Some(F::from(256) * coeff)).take(32);
-        let powers_of_256_cells = powers_of_256
+        let word_lo_hi_powers =
+            iter::successors(Some(F::ONE), |coeff| Some(F::from(256) * coeff)).take(32);
+        let powers_of_256_cells = word_lo_hi_powers
             .map(|x| QuantumCell::Constant(x))
             .collect_vec();
 
@@ -660,42 +669,52 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
         sign_data_decomposed: &SignDataDecomposed<F>,
         challenges: &Challenges<Value<F>>,
         assigned_ecdsa: &AssignedECDSA<F, FpChip<F>>,
-    ) -> Result<([AssignedValue<F>; 3], AssignedSignatureVerify<F>), Error> {
+    ) -> Result<([AssignedValue<F>; 4], AssignedSignatureVerify<F>), Error> {
         // ================================================
         // step 0. powers of aux parameters
         // ================================================
-        let evm_challenge_powers = iter::successors(Some(Value::known(F::one())), |coeff| {
-            Some(challenges.evm_word() * coeff)
+        let word_lo_hi_powers = iter::successors(Some(Value::known(F::ONE)), |coeff| {
+            Some(Value::known(F::from(256)) * coeff)
         })
-        .take(32)
+        .take(16)
         .map(|x| QuantumCell::Witness(x))
         .collect_vec();
 
-        log::trace!("evm challenge: {:?} ", challenges.evm_word());
-
-        let keccak_challenge_powers = iter::successors(Some(Value::known(F::one())), |coeff| {
+        let keccak_challenge_powers = iter::successors(Some(Value::known(F::ONE)), |coeff| {
             Some(challenges.keccak_input() * coeff)
         })
         .take(64)
         .map(|x| QuantumCell::Witness(x))
         .collect_vec();
+
         // ================================================
-        // step 1 random linear combination of message hash
+        // step 1 message hash
         // ================================================
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
-        // with RLC encoding corresponds to msg_hash_rlc
-        let msg_hash_rlc = rlc_chip.gate.inner_product(
-            ctx,
-            sign_data_decomposed
-                .msg_hash_cells
-                .iter()
-                .take(32)
-                .cloned()
-                .collect_vec(),
-            evm_challenge_powers.clone(),
-        );
+        // corresponds to msg_hash
+        let msg_hash_cells = {
+            let msg_hash_lo_cell_bytes = &sign_data_decomposed.msg_hash_cells[..16];
+            let msg_hash_hi_cell_bytes = &sign_data_decomposed.msg_hash_cells[16..];
 
-        log::trace!("assigned msg hash rlc: {:?}", msg_hash_rlc.value());
+            let msg_hash_cell_lo = rlc_chip.gate.inner_product(
+                ctx,
+                msg_hash_lo_cell_bytes.iter().cloned().collect_vec(),
+                word_lo_hi_powers.clone(),
+            );
+            let msg_hash_cell_hi = rlc_chip.gate.inner_product(
+                ctx,
+                msg_hash_hi_cell_bytes.iter().cloned().collect_vec(),
+                word_lo_hi_powers.clone(),
+            );
+
+            Word::new([msg_hash_cell_lo, msg_hash_cell_hi])
+        };
+
+        log::trace!(
+            "assigned msg hash: ({:?}, {:?})",
+            msg_hash_cells.lo().value(),
+            msg_hash_cells.hi().value()
+        );
 
         // ================================================
         // step 2 random linear combination of pk
@@ -708,39 +727,85 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
         log::trace!("pk rlc: {:?}", pk_rlc.value());
 
         // ================================================
-        // step 3 random linear combination of pk_hash
+        // step 3 pk_hash
         // ================================================
-        let pk_hash_rlc = rlc_chip.gate.inner_product(
-            ctx,
-            sign_data_decomposed.pk_hash_cells.clone(),
-            evm_challenge_powers.clone(),
-        );
+        let pk_hash_cells = {
+            let pk_hash_lo_cell_bytes = &sign_data_decomposed.pk_hash_cells[..16];
+            let pk_hash_hi_cell_bytes = &sign_data_decomposed.pk_hash_cells[16..];
 
-        // step 4: r,s rlc
-        let r_rlc = rlc_chip.gate.inner_product(
-            ctx,
-            sign_data_decomposed.r_cells.clone(),
-            evm_challenge_powers.clone(),
-        );
-        let s_rlc = rlc_chip.gate.inner_product(
-            ctx,
-            sign_data_decomposed.s_cells.clone(),
-            evm_challenge_powers,
-        );
+            let pk_hash_cell_lo = rlc_chip.gate.inner_product(
+                ctx,
+                pk_hash_lo_cell_bytes.iter().cloned().collect_vec(),
+                word_lo_hi_powers.clone(),
+            );
+            let pk_hash_cell_hi = rlc_chip.gate.inner_product(
+                ctx,
+                pk_hash_hi_cell_bytes.iter().cloned().collect_vec(),
+                word_lo_hi_powers.clone(),
+            );
 
-        log::trace!("pk hash rlc halo2ecc: {:?}", pk_hash_rlc.value());
+            Word::new([pk_hash_cell_lo, pk_hash_cell_hi])
+        };
+
+        // step 4: r,s
+        let r_cells = {
+            let r_lo_cell_bytes = &sign_data_decomposed.r_cells[..16];
+            let r_hi_cell_bytes = &sign_data_decomposed.r_cells[16..];
+
+            let r_cell_lo = rlc_chip.gate.inner_product(
+                ctx,
+                r_lo_cell_bytes.iter().cloned().collect_vec(),
+                word_lo_hi_powers.clone(),
+            );
+            let r_cell_hi = rlc_chip.gate.inner_product(
+                ctx,
+                r_hi_cell_bytes.iter().cloned().collect_vec(),
+                word_lo_hi_powers.clone(),
+            );
+
+            Word::new([r_cell_lo, r_cell_hi])
+        };
+        let s_cells = {
+            let s_lo_cell_bytes = &sign_data_decomposed.s_cells[..16];
+            let s_hi_cell_bytes = &sign_data_decomposed.s_cells[16..];
+
+            let s_cell_lo = rlc_chip.gate.inner_product(
+                ctx,
+                s_lo_cell_bytes.iter().cloned().collect_vec(),
+                word_lo_hi_powers.clone(),
+            );
+            let s_cell_hi = rlc_chip.gate.inner_product(
+                ctx,
+                s_hi_cell_bytes.iter().cloned().collect_vec(),
+                word_lo_hi_powers.clone(),
+            );
+
+            Word::new([s_cell_lo, s_cell_hi])
+        };
+
+        log::trace!(
+            "pk hash halo2ecc: ({:?}, {:?})",
+            pk_hash_cells.lo().value(),
+            pk_hash_cells.lo().value()
+        );
         log::trace!("finished sign verify");
-        let to_be_keccak_checked = [sign_data_decomposed.is_address_zero, pk_rlc, pk_hash_rlc];
+
+        let to_be_keccak_checked = [
+            sign_data_decomposed.is_address_zero,
+            pk_rlc,
+            pk_hash_cells.lo(),
+            pk_hash_cells.hi(),
+        ];
         let assigned_sig_verif = AssignedSignatureVerify {
             address: sign_data_decomposed.address,
             msg_len: sign_data.msg.len(),
             msg_rlc: challenges
                 .keccak_input()
                 .map(|r| rlc::value(sign_data.msg.iter().rev(), r)),
-            msg_hash_rlc,
+            msg_hash: msg_hash_cells,
             sig_is_valid: assigned_ecdsa.sig_is_valid,
-            r_rlc,
-            s_rlc,
+            r: r_cells,
+            s: s_cells,
             v: assigned_ecdsa.v,
         };
         Ok((to_be_keccak_checked, assigned_sig_verif))
@@ -818,7 +883,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
                 // step 3: compute RLC of keys and messages
                 // ================================================
                 let (assigned_keccak_values, assigned_sig_values): (
-                    Vec<[AssignedValue<F>; 3]>,
+                    Vec<[AssignedValue<F>; 4]>,
                     Vec<AssignedSignatureVerify<F>>,
                 ) = signatures
                     .iter()
@@ -837,7 +902,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
                         )
                     })
                     .collect::<Result<
-                        Vec<([AssignedValue<F>; 3], AssignedSignatureVerify<F>)>,
+                        Vec<([AssignedValue<F>; 4], AssignedSignatureVerify<F>)>,
                         Error,
                     >>()?
                     .into_iter()
@@ -846,7 +911,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
                 // ================================================
                 // step 4: deferred keccak checks
                 // ================================================
-                for (i, [is_address_zero, pk_rlc, pk_hash_rlc]) in
+                for (i, [is_address_zero, pk_rlc, pk_hash_lo, pk_hash_hi]) in
                     assigned_keccak_values.iter().enumerate()
                 {
                     let offset = i * 3;
@@ -856,7 +921,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
                         offset,
                         is_address_zero,
                         pk_rlc,
-                        pk_hash_rlc,
+                        &Word::new([*pk_hash_lo, *pk_hash_hi]),
                     )?;
                 }
 
@@ -872,7 +937,6 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
             },
         )?;
 
-        // TODO: is this correct?
         layouter.assign_region(
             || "expose sig table",
             |mut region| {
@@ -882,22 +946,32 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
                         || "assign sig_table selector",
                         config.sig_table.q_enable,
                         idx,
-                        || Value::known(F::one()),
+                        || Value::known(F::ONE),
                     )?;
 
                     assigned_sig_verif
                         .v
                         .copy_advice(&mut region, config.sig_table.sig_v, idx);
 
-                    assigned_sig_verif.r_rlc.copy_advice(
+                    assigned_sig_verif.r.lo().copy_advice(
                         &mut region,
-                        config.sig_table.sig_r_rlc,
+                        config.sig_table.sig_r.lo(),
+                        idx,
+                    );
+                    assigned_sig_verif.r.hi().copy_advice(
+                        &mut region,
+                        config.sig_table.sig_r.hi(),
                         idx,
                     );
 
-                    assigned_sig_verif.s_rlc.copy_advice(
+                    assigned_sig_verif.s.lo().copy_advice(
                         &mut region,
-                        config.sig_table.sig_s_rlc,
+                        config.sig_table.sig_s.lo(),
+                        idx,
+                    );
+                    assigned_sig_verif.s.hi().copy_advice(
+                        &mut region,
+                        config.sig_table.sig_s.hi(),
                         idx,
                     );
 
@@ -913,9 +987,14 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
                         idx,
                     );
 
-                    assigned_sig_verif.msg_hash_rlc.copy_advice(
+                    assigned_sig_verif.msg_hash.lo().copy_advice(
                         &mut region,
-                        config.sig_table.msg_hash_rlc,
+                        config.sig_table.msg_hash.lo(),
+                        idx,
+                    );
+                    assigned_sig_verif.msg_hash.hi().copy_advice(
+                        &mut region,
+                        config.sig_table.msg_hash.hi(),
                         idx,
                     );
                 }
@@ -938,12 +1017,12 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
         range_chip: &RangeConfig<F>,
         crt_int: &CRTInteger<F>,
         byte_repr: &[QuantumCell<F>],
-        powers_of_256: &[QuantumCell<F>],
+        word_lo_hi_powers: &[QuantumCell<F>],
     ) -> Result<(), Error> {
         // length of byte representation is 32
         assert_eq!(byte_repr.len(), 32);
         // need to support decomposition of up to 88 bits
-        assert!(powers_of_256.len() >= 11);
+        assert!(word_lo_hi_powers.len() >= 11);
 
         let flex_gate_chip = &range_chip.gate;
 
@@ -959,17 +1038,17 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
         let limb1_recover = flex_gate_chip.inner_product(
             ctx,
             byte_repr[0..11].to_vec(),
-            powers_of_256[0..11].to_vec(),
+            word_lo_hi_powers[0..11].to_vec(),
         );
         let limb2_recover = flex_gate_chip.inner_product(
             ctx,
             byte_repr[11..22].to_vec(),
-            powers_of_256[0..11].to_vec(),
+            word_lo_hi_powers[0..11].to_vec(),
         );
         let limb3_recover = flex_gate_chip.inner_product(
             ctx,
             byte_repr[22..].to_vec(),
-            powers_of_256[0..10].to_vec(),
+            word_lo_hi_powers[0..10].to_vec(),
         );
         flex_gate_chip.assert_equal(
             ctx,

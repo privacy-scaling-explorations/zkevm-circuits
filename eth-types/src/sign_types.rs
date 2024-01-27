@@ -1,7 +1,10 @@
 //! secp256k1 signature types and helper functions.
 
 use crate::{ToBigEndian, Word};
-use ethers_core::{types::Address, utils::keccak256};
+use ethers_core::{
+    types::{Address, Bytes},
+    utils::keccak256,
+};
 use halo2_proofs::{
     arithmetic::{CurveAffine, Field},
     halo2curves::{
@@ -50,6 +53,8 @@ pub struct SignData {
     pub signature: (secp256k1::Fq, secp256k1::Fq, u8),
     /// Secp256k1 public key
     pub pk: Secp256k1Affine,
+    /// Message being hashed before signing.
+    pub msg: Bytes,
     /// Hash of the message that is being signed
     pub msg_hash: secp256k1::Fq,
 }
@@ -71,6 +76,7 @@ lazy_static! {
         let sk = secp256k1::Fq::ONE;
         let pk = generator * sk;
         let pk = pk.to_affine();
+        let msg = Bytes::new();
         let msg_hash = secp256k1::Fq::ONE;
         let randomness = secp256k1::Fq::ONE;
         let (sig_r, sig_s, sig_v) = sign(randomness, sk, msg_hash);
@@ -78,6 +84,7 @@ lazy_static! {
         SignData {
             signature: (sig_r, sig_s, sig_v),
             pk,
+            msg,
             msg_hash,
         }
     };

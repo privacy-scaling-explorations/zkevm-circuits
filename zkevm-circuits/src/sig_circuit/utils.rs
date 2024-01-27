@@ -10,6 +10,8 @@ use halo2_proofs::{
     halo2curves::secp256k1::{Fp, Fq},
 };
 
+use crate::util::word::Word;
+
 // Hard coded parameters.
 // FIXME: allow for a configurable param.
 pub(super) const MAX_NUM_SIG: usize = 128;
@@ -66,7 +68,7 @@ pub(super) type FqChip<F> = FpConfig<F, Fq>;
 pub(super) type FpChip<F> = FpConfig<F, Fp>;
 
 pub(crate) struct AssignedECDSA<F: Field + halo2_base::utils::ScalarField, FC: FieldChip<F>> {
-    pub(super) pk: EcPoint<F, FC::FieldPoint>,
+    pub(super) _pk: EcPoint<F, FC::FieldPoint>,
     pub(super) pk_is_zero: AssignedValue<F>,
     pub(super) msg_hash: CRTInteger<F>,
     pub(super) integer_r: CRTInteger<F>,
@@ -80,9 +82,9 @@ pub(crate) struct AssignedSignatureVerify<F: Field + halo2_base::utils::ScalarFi
     pub(crate) address: AssignedValue<F>,
     pub(crate) msg_len: usize,
     pub(crate) msg_rlc: Value<F>,
-    pub(crate) msg_hash_rlc: AssignedValue<F>,
-    pub(crate) r_rlc: AssignedValue<F>,
-    pub(crate) s_rlc: AssignedValue<F>,
+    pub(crate) msg_hash: Word<AssignedValue<F>>,
+    pub(crate) r: Word<AssignedValue<F>>,
+    pub(crate) s: Word<AssignedValue<F>>,
     pub(crate) v: AssignedValue<F>,
     pub(crate) sig_is_valid: AssignedValue<F>,
 }

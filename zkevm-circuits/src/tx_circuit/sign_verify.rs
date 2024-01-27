@@ -350,6 +350,7 @@ impl<F: Field> SignVerifyChip<F> {
         let SignData {
             signature,
             pk,
+            msg: _,
             msg_hash,
         } = sign_data;
         let (sig_r, sig_s, _) = signature;
@@ -717,7 +718,7 @@ mod sign_verify_tests {
     use super::*;
     use crate::util::Challenges;
     use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
-    use eth_types::sign_types::sign;
+    use eth_types::{sign_types::sign, Bytes};
     use halo2_proofs::{
         arithmetic::Field as HaloField,
         circuit::SimpleFloorPlanner,
@@ -868,6 +869,7 @@ mod sign_verify_tests {
                 signature: sig,
                 pk,
                 msg_hash,
+                msg: Bytes::new(),
             });
         }
 
