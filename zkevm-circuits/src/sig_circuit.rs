@@ -167,7 +167,6 @@ where
         // in the ecdsa_chip.
         let q_keccak = meta.complex_selector();
 
-        // FIXME fix the layout
         meta.lookup_any("keccak lookup table", |meta| {
             // When address is 0, we disable the signature verification by using a dummy pk,
             // msg_hash and signature which is not constrained to match msg_hash_rlc nor
@@ -177,17 +176,18 @@ where
             // | -------- | --------------- |
             // |     1    | is_address_zero |
             // |          |    pk_rlc       |
-            // |          |    pk_hash_rlc  |
+            // |          |    pk_hash_lo   |
+            // |          |    pk_hash_hi   |
             let q_keccak = meta.query_selector(q_keccak);
             let is_address_zero = meta.query_advice(rlc_column, Rotation::cur());
             let is_enable = q_keccak * not::expr(is_address_zero);
 
             let input = [
                 is_enable.clone(),
-                is_enable.clone(),
                 is_enable.clone() * meta.query_advice(rlc_column, Rotation(1)),
                 is_enable.clone() * 64usize.expr(),
-                is_enable * meta.query_advice(rlc_column, Rotation(2)),
+                is_enable.clone() * meta.query_advice(rlc_column, Rotation(2)),
+                is_enable * meta.query_advice(rlc_column, Rotation(3)),
             ];
             let table = [
                 meta.query_advice(keccak_table.is_enabled, Rotation::cur()),
@@ -505,7 +505,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
             || "pk_hash_hi",
             config.rlc_column,
             offset + 3,
-            || pk_hash.lo().value,
+            || pk_hash.hi().value,
         )?;
         ctx.region
             .constrain_equal(pk_hash.hi().cell, pk_cell_hi.cell())?;
@@ -914,7 +914,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
                 for (i, [is_address_zero, pk_rlc, pk_hash_lo, pk_hash_hi]) in
                     assigned_keccak_values.iter().enumerate()
                 {
-                    let offset = i * 3;
+                    let offset = i * 4;
                     self.enable_keccak_lookup(
                         config,
                         &mut ctx,
