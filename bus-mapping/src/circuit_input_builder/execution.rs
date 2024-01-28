@@ -380,12 +380,9 @@ impl PrecompileEvents {
     pub fn get_ecrecover_events(&self) -> Vec<SignData> {
         self.events
             .iter()
-            .filter_map(|e| {
-                if let PrecompileEvent::Ecrecover(sign_data) = e {
-                    Some(sign_data)
-                } else {
-                    None
-                }
+            .map(|e| {
+                let PrecompileEvent::Ecrecover(sign_data) = e;
+                sign_data
             })
             .cloned()
             .collect()

@@ -5,10 +5,7 @@ use halo2_ecc::{
     ecc::EcPoint,
     fields::{fp::FpConfig, FieldChip},
 };
-use halo2_proofs::{
-    circuit::Value,
-    halo2curves::secp256k1::{Fp, Fq},
-};
+use halo2_proofs::halo2curves::secp256k1::{Fp, Fq};
 
 use crate::util::word::Word;
 
@@ -80,8 +77,8 @@ pub(crate) struct AssignedECDSA<F: Field + halo2_base::utils::ScalarField, FC: F
 #[derive(Debug, Clone)]
 pub(crate) struct AssignedSignatureVerify<F: Field + halo2_base::utils::ScalarField> {
     pub(crate) address: AssignedValue<F>,
-    pub(crate) msg_len: usize,
-    pub(crate) msg_rlc: Value<F>,
+    // pub(crate) msg_len: usize,
+    // pub(crate) msg_rlc: Value<F>,
     pub(crate) msg_hash: Word<AssignedValue<F>>,
     pub(crate) r: Word<AssignedValue<F>>,
     pub(crate) s: Word<AssignedValue<F>>,

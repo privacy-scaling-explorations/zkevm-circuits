@@ -1,3 +1,4 @@
+use super::*;
 use eth_types::{
     sign_types::{sign, SignData},
     Field,
@@ -13,8 +14,6 @@ use halo2_proofs::{
 };
 use rand::{Rng, RngCore};
 use std::marker::PhantomData;
-
-use crate::sig_circuit::SigCircuit;
 
 use super::utils::LOG_TOTAL_NUM_ROWS;
 use crate::sig_circuit::utils::MAX_NUM_SIG;
@@ -225,11 +224,6 @@ fn gen_key_pair(rng: impl RngCore) -> (secp256k1::Fq, Secp256k1Affine) {
     let pk = pk.to_affine();
 
     (sk, pk)
-}
-
-// Generate a test message hash
-fn gen_msg_hash(rng: impl RngCore) -> secp256k1::Fq {
-    secp256k1::Fq::random(rng)
 }
 
 // Generate a test message.

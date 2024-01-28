@@ -8,16 +8,15 @@
 // - *_be: Big-Endian bytes
 // - *_le: Little-Endian bytes
 
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(any(test, feature = "test-circuits"))]
 mod dev;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+mod ecdsa;
+#[cfg(test)]
 mod test;
+mod utils;
 
 use crate::{
-    evm_circuit::{
-        util::{not, rlc},
-        EvmCircuit,
-    },
+    evm_circuit::{util::not, EvmCircuit},
     keccak_circuit::KeccakCircuit,
     sig_circuit::ecdsa::ecdsa_verify_no_pubkey_check,
     table::{KeccakTable, SigTable},
@@ -42,8 +41,6 @@ use halo2_ecc::{
     },
 };
 
-mod ecdsa;
-mod utils;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub(crate) use utils::*;
 
@@ -210,12 +207,6 @@ where
     }
 }
 
-impl<F: Field + halo2_base::utils::ScalarField> SigCircuitConfig<F> {
-    pub(crate) fn load_range(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        self.ecdsa_config.range.load_lookup_table(layouter)
-    }
-}
-
 /// Verify a message hash is signed by the public
 /// key corresponding to an Ethereum Address.
 #[derive(Clone, Debug, Default)]
@@ -275,7 +266,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SubCircuit<F> for SigCircuit<F> 
         };
 
         let ecdsa_verif_count =
-            block.txs.iter().count() + block.precompile_events.get_ecrecover_events().len();
+            block.txs.len() + block.precompile_events.get_ecrecover_events().len();
         // Reserve one ecdsa verification for padding tx such that the bad case in which some tx
         // calls MAX_NUM_SIG - 1 ecrecover precompile won't happen. If that case happens, the sig
         // circuit won't have more space for the padding tx's ECDSA verification. Then the
@@ -665,7 +656,6 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
         &self,
         ctx: &mut Context<F>,
         rlc_chip: &RangeConfig<F>,
-        sign_data: &SignData,
         sign_data_decomposed: &SignDataDecomposed<F>,
         challenges: &Challenges<Value<F>>,
         assigned_ecdsa: &AssignedECDSA<F, FpChip<F>>,
@@ -777,7 +767,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
             let s_cell_hi = rlc_chip.gate.inner_product(
                 ctx,
                 s_hi_cell_bytes.iter().cloned().collect_vec(),
-                word_lo_hi_powers.clone(),
+                word_lo_hi_powers,
             );
 
             Word::new([s_cell_lo, s_cell_hi])
@@ -798,10 +788,10 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
         ];
         let assigned_sig_verif = AssignedSignatureVerify {
             address: sign_data_decomposed.address,
-            msg_len: sign_data.msg.len(),
-            msg_rlc: challenges
-                .keccak_input()
-                .map(|r| rlc::value(sign_data.msg.iter().rev(), r)),
+            // msg_len: sign_data.msg.len(),
+            // msg_rlc: challenges
+            //     .keccak_input()
+            //     .map(|r| rlc::value(sign_data.msg.iter().rev(), r)),
             msg_hash: msg_hash_cells,
             sig_is_valid: assigned_ecdsa.sig_is_valid,
             r: r_cells,
@@ -891,11 +881,10 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
                     .take(self.max_verif)
                     .zip_eq(assigned_ecdsas.iter())
                     .zip_eq(sign_data_decomposed.iter())
-                    .map(|((sign_data, assigned_ecdsa), sign_data_decomp)| {
+                    .map(|((_, assigned_ecdsa), sign_data_decomp)| {
                         self.assign_sig_verify(
                             &mut ctx,
                             &ecdsa_chip.range,
-                            sign_data,
                             sign_data_decomp,
                             challenges,
                             assigned_ecdsa,
