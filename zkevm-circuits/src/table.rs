@@ -16,7 +16,7 @@ use core::iter::once;
 use eth_types::{Field, ToScalar, U256};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
-    util::{and, not, split_u256, split_u256_limb64, Expr},
+    util::{split_u256, split_u256_limb64},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -39,8 +39,6 @@ pub(crate) mod exp_table;
 pub(crate) mod keccak_table;
 /// mpt table
 pub mod mpt_table;
-/// power of random table
-pub(crate) mod pow_of_rand_table;
 /// rw table
 pub(crate) mod rw_table;
 /// signature table
@@ -60,7 +58,6 @@ pub use keccak_table::KeccakTable;
 pub(crate) use ux_table::UXTable;
 
 pub use mpt_table::{MPTProofType, MptTable};
-pub(crate) use pow_of_rand_table::PowOfRandTable;
 pub(crate) use rw_table::RwTable;
 pub(crate) use sig_table::SigTable;
 pub(crate) use tx_table::{

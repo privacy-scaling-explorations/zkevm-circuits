@@ -1442,21 +1442,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
-    /// Power of Randomness Table
-    pub(crate) fn pow_of_rand_lookup(
-        &mut self,
-        exponent: Expression<F>,
-        pow_of_rand: Expression<F>,
-    ) {
-        self.add_lookup(
-            "power of randomness",
-            Lookup::PowOfRandTable {
-                exponent,
-                pow_of_rand,
-            },
-        )
-    }
-
     /// Keccak Table
     pub(crate) fn keccak_table_lookup(
         &mut self,

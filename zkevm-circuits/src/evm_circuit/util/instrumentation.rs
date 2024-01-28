@@ -107,9 +107,6 @@ impl Instrument {
                     CellType::Lookup(Table::Sig) => {
                         report.sig_table = data_entry;
                     }
-                    CellType::Lookup(Table::PowOfRand) => {
-                        report.pow_of_rand_table = data_entry;
-                    }
                 }
             }
             report_collection.push(report);

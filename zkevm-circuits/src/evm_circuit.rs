@@ -21,8 +21,8 @@ pub use crate::witness;
 use crate::{
     evm_circuit::param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
     table::{
-        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, PowOfRandTable,
-        RwTable, SigTable, TxTable, UXTable,
+        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable,
+        SigTable, TxTable, UXTable,
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
@@ -51,7 +51,6 @@ pub struct EvmCircuitConfig<F> {
     keccak_table: KeccakTable,
     exp_table: ExpTable,
     sig_table: SigTable,
-    pow_of_rand_table: PowOfRandTable,
 }
 
 /// Circuit configuration arguments
@@ -78,8 +77,6 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub u16_table: UXTable<16>,
     /// SigTable
     pub sig_table: SigTable,
-    /// Power of Randomness Table.
-    pub pow_of_rand_table: PowOfRandTable,
 }
 
 impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
@@ -100,7 +97,6 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             u8_table,
             u16_table,
             sig_table,
-            pow_of_rand_table,
         }: Self::ConfigArgs,
     ) -> Self {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
@@ -118,7 +114,6 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &keccak_table,
             &exp_table,
             &sig_table,
-            &pow_of_rand_table,
         ));
 
         u8_table.annotate_columns(meta);
@@ -136,7 +131,6 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         u8_table.annotate_columns(meta);
         u16_table.annotate_columns(meta);
         sig_table.annotate_columns(meta);
-        pow_of_rand_table.annotate_columns(meta);
 
         Self {
             fixed_table,
@@ -151,7 +145,6 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             keccak_table,
             exp_table,
             sig_table,
-            pow_of_rand_table,
         }
     }
 }
@@ -281,7 +274,6 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         let block = self.block.as_ref().unwrap();
 
         config.load_fixed_table(layouter, self.fixed_table_tags.clone())?;
-        config.pow_of_rand_table.assign(layouter, &challenges)?;
         config.execution.assign_block(layouter, block, challenges)
     }
 }
@@ -392,7 +384,6 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         let challenges_expr = challenges.exprs(meta);
 
         let sig_table = SigTable::construct(meta);
-        let pow_of_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
         (
             EvmCircuitConfig::new(
                 meta,
@@ -408,7 +399,6 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
                     u8_table,
                     u16_table,
                     sig_table,
-                    pow_of_rand_table,
                 },
             ),
             challenges,

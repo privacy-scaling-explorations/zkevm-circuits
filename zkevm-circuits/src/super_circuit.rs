@@ -62,8 +62,8 @@ use crate::{
     pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
-        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, PowOfRandTable,
-        RwTable, SigTable, TxTable, UXTable, WdTable,
+        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RwTable, SigTable,
+        TxTable, UXTable, WdTable,
     },
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
@@ -148,7 +148,6 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             power_of_randomness[0].clone(),
         );
         let sig_table = SigTable::construct(meta);
-        let pow_of_rand_table = PowOfRandTable::construct(meta, &challenges.clone());
 
         let keccak_circuit = KeccakCircuitConfig::new(
             meta,
@@ -224,7 +223,6 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 u8_table,
                 u16_table,
                 sig_table,
-                pow_of_rand_table,
             },
         );
 
