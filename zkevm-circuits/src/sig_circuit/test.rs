@@ -1,8 +1,5 @@
 use super::*;
-use eth_types::{
-    sign_types::{sign, SignData},
-    Field,
-};
+use eth_types::sign_types::{sign, SignData};
 use halo2_proofs::{
     arithmetic::Field as HaloField,
     dev::MockProver,
@@ -130,7 +127,7 @@ fn test_edge_cases() {
     log::debug!("signatures=");
     log::debug!("{:#?}", signatures);
 
-    run::<Fr>(LOG_TOTAL_NUM_ROWS as u32, 8, signatures);
+    run(LOG_TOTAL_NUM_ROWS as u32, 8, signatures);
 }
 
 #[test]
@@ -152,7 +149,7 @@ fn sign_verify_zero_msg_hash() {
     });
 
     let k = LOG_TOTAL_NUM_ROWS as u32;
-    run::<Fr>(k, 1, signatures);
+    run(k, 1, signatures);
 
     log::debug!("end of testing for msg_hash = 0");
 }
@@ -176,7 +173,7 @@ fn sign_verify_nonzero_msg_hash() {
     });
 
     let k = LOG_TOTAL_NUM_ROWS as u32;
-    run::<Fr>(k, 1, signatures);
+    run(k, 1, signatures);
 
     log::debug!("end of testing for msg_hash = 1");
 }
@@ -209,7 +206,7 @@ fn sign_verify() {
         }
 
         let k = LOG_TOTAL_NUM_ROWS as u32;
-        run::<Fr>(k, *max_sig, signatures);
+        run(k, *max_sig, signatures);
 
         log::debug!("end of testing for {} signatures", max_sig);
     }
@@ -244,7 +241,7 @@ fn sign_with_rng(
     sign(randomness, sk, msg_hash)
 }
 
-fn run<F: Field>(k: u32, max_verif: usize, signatures: Vec<SignData>) {
+fn run(k: u32, max_verif: usize, signatures: Vec<SignData>) {
     // SignVerifyChip -> ECDSAChip -> MainGate instance column
     let circuit = SigCircuit::<Fr> {
         max_verif,

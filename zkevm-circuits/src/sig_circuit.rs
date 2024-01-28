@@ -18,7 +18,10 @@ mod utils;
 use crate::{
     evm_circuit::{util::not, EvmCircuit},
     keccak_circuit::KeccakCircuit,
-    sig_circuit::ecdsa::ecdsa_verify_no_pubkey_check,
+    sig_circuit::{
+        ecdsa::ecdsa_verify_no_pubkey_check,
+        utils::{calc_required_advices, FpChip},
+    },
     table::{KeccakTable, SigTable},
     util::{word::Word, Challenges, Expr, SubCircuit, SubCircuitConfig},
 };
@@ -40,8 +43,6 @@ use halo2_ecc::{
         FieldChip,
     },
 };
-
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub(crate) use utils::*;
 
 use halo2_proofs::{
