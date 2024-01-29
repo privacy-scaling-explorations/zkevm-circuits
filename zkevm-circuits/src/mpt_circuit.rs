@@ -769,8 +769,7 @@ mod tests {
 
     #[test]
     fn test_mpt() {
-        // let path = "src/mpt_circuit/tests";
-        let path = "/Users/miha/projects/2appliedzkp/variadic-main/zkevm-circuits/zkevm-circuits/src/mpt_circuit/tests";
+        let path = "src/mpt_circuit/tests";
         let files = fs::read_dir(path).unwrap();
         files
             .filter_map(Result::ok)
