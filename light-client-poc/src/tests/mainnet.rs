@@ -10,7 +10,7 @@ mod test {
 
     use crate::circuit::{
         PublicInputs, StateUpdateCircuit, StateUpdateCircuitKeys, StateUpdateWitness,
-        DEFAULT_CIRCUIT_DEGREE, DEFAULT_MAX_PROOF_COUNT,
+        DEFAULT_CIRCUIT_DEGREE, DEFAULT_MAX_NODES, DEFAULT_MAX_PROOF_COUNT,
     };
 
     #[ctor::ctor]
@@ -23,6 +23,7 @@ mod test {
         block_no: u64,
         access_list: &[(&str, Vec<&str>)],
         degree: usize,
+        max_nodes: usize,
         max_proof_count: usize,
     ) -> Result<StateUpdateCircuit<Fr>> {
         const PVK: &str = "7ccb34dc5fd31fd0aa7860de89a4adc37ccb34dc5fd31fd0aa7860de89a4adc3";
@@ -54,7 +55,7 @@ mod test {
 
         println!("trns: {:#?}", witness.transforms);
 
-        let circuit = StateUpdateCircuit::new(witness, degree, max_proof_count)?;
+        let circuit = StateUpdateCircuit::new(witness, degree, max_nodes, max_proof_count)?;
 
         circuit.assert_satisfied();
 
@@ -150,7 +151,7 @@ mod test {
     async fn test_block_436875() -> Result<()> {
         let block_no = 436875;
         let access_list = blocks().get(&block_no).unwrap().clone();
-        let _ = mock_prove(block_no, &access_list, 16, DEFAULT_MAX_PROOF_COUNT).await?;
+        let _ = mock_prove(block_no, &access_list, 16, DEFAULT_MAX_NODES, DEFAULT_MAX_PROOF_COUNT).await?;
         Ok(())
     }
 
@@ -159,7 +160,7 @@ mod test {
     async fn test_block_107() -> Result<()> {
         let block_no = 107;
         let access_list = blocks().get(&block_no).unwrap().clone();
-        let _ = mock_prove(block_no, &access_list, 15, DEFAULT_MAX_PROOF_COUNT).await?;
+        let _ = mock_prove(block_no, &access_list, 15, DEFAULT_MAX_NODES, DEFAULT_MAX_PROOF_COUNT).await?;
         Ok(())
     }
 
@@ -169,7 +170,7 @@ mod test {
         let block_no = 107;
         let access_list = blocks().get(&block_no).unwrap().clone();
 
-        let circuit = mock_prove(block_no, &access_list, 15, DEFAULT_MAX_PROOF_COUNT).await?;
+        let circuit = mock_prove(block_no, &access_list, 15, DEFAULT_MAX_NODES, DEFAULT_MAX_PROOF_COUNT).await?;
         let public_inputs: PublicInputs<Fr> = (&circuit.lc_witness).into();
 
         let keys = StateUpdateCircuitKeys::new(&circuit);
@@ -186,6 +187,7 @@ mod test {
             block_no,
             &access_list,
             DEFAULT_CIRCUIT_DEGREE,
+            DEFAULT_MAX_NODES,
             DEFAULT_MAX_PROOF_COUNT,
         )
         .await?;
@@ -214,7 +216,7 @@ mod test {
     async fn test_block_2000007() -> Result<()> {
         let block_no = 2000007;
         let access_list = blocks().get(&block_no).unwrap().clone();
-        let _ = mock_prove(block_no, &access_list, 18, DEFAULT_MAX_PROOF_COUNT).await?;
+        let _ = mock_prove(block_no, &access_list, 18, DEFAULT_MAX_NODES, DEFAULT_MAX_PROOF_COUNT).await?;
         Ok(())
     }
 
@@ -223,7 +225,7 @@ mod test {
     async fn test_block_2000004() -> Result<()> {
         let block_no = 2000004;
         let access_list = blocks().get(&block_no).unwrap().clone();
-        let _ = mock_prove(block_no, &access_list, 18, DEFAULT_MAX_PROOF_COUNT).await?;
+        let _ = mock_prove(block_no, &access_list, 18, DEFAULT_MAX_NODES, DEFAULT_MAX_PROOF_COUNT).await?;
         Ok(())
     }
 
@@ -232,7 +234,7 @@ mod test {
     async fn test_block_2000070() -> Result<()> {
         let block_no = 2000070;
         let access_list = blocks().get(&block_no).unwrap().clone();
-        let _ = mock_prove(block_no, &access_list, 18, DEFAULT_MAX_PROOF_COUNT).await?;
+        let _ = mock_prove(block_no, &access_list, 18, DEFAULT_MAX_NODES, DEFAULT_MAX_PROOF_COUNT).await?;
         Ok(())
     }
 }

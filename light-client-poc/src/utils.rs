@@ -146,10 +146,12 @@ pub fn verify_mpt_witness(nodes: Vec<Node>) -> Result<()> {
     // verify the circuit
     let disable_preimage_check = nodes[0].start.clone().unwrap().disable_preimage_check;
     let degree = 15;
+    let max_nodes = 520;
     let circuit = zkevm_circuits::mpt_circuit::MPTCircuit::<Fr> {
         nodes,
         keccak_data,
         degree,
+        max_nodes,
         disable_preimage_check,
         _marker: std::marker::PhantomData,
     };
