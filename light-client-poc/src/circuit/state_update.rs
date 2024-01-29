@@ -34,7 +34,7 @@ use zkevm_circuits::{
     util::{SubCircuit, SubCircuitConfig},
 };
 
-pub const DEFAULT_MAX_NODES: usize = 520;
+pub const DEFAULT_MAX_NODES: usize = 4000;
 pub const DEFAULT_MAX_PROOF_COUNT: usize = 20;
 pub const DEFAULT_CIRCUIT_DEGREE: usize = 14;
 

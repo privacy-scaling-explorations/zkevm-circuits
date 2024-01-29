@@ -48,10 +48,12 @@ mod tests {
             }
         }
 
+        let max_nodes = 720;
         let circuit = MPTCircuit::<Fr> {
             nodes,
             keccak_data,
             degree: degree as usize,
+            max_nodes,
             disable_preimage_check: false,
             _marker: PhantomData,
         };
