@@ -307,9 +307,11 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
             .mpt_config
             .assign(&mut layouter, &self.mpt_circuit.nodes, &challenges)?;
         config.mpt_config.load_fixed_table(&mut layouter)?;
-        config
-            .mpt_config
-            .load_mult_table(&mut layouter, &challenges, self.mpt_circuit.max_nodes)?;
+        config.mpt_config.load_mult_table(
+            &mut layouter,
+            &challenges,
+            self.mpt_circuit.max_nodes,
+        )?;
 
         #[cfg(feature = "disable-keccak")]
         config.mpt_config.keccak_table.dev_load(

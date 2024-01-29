@@ -151,7 +151,14 @@ mod test {
     async fn test_block_436875() -> Result<()> {
         let block_no = 436875;
         let access_list = blocks().get(&block_no).unwrap().clone();
-        let _ = mock_prove(block_no, &access_list, 16, DEFAULT_MAX_NODES, DEFAULT_MAX_PROOF_COUNT).await?;
+        let _ = mock_prove(
+            block_no,
+            &access_list,
+            16,
+            DEFAULT_MAX_NODES,
+            DEFAULT_MAX_PROOF_COUNT,
+        )
+        .await?;
         Ok(())
     }
 
@@ -160,7 +167,14 @@ mod test {
     async fn test_block_107() -> Result<()> {
         let block_no = 107;
         let access_list = blocks().get(&block_no).unwrap().clone();
-        let _ = mock_prove(block_no, &access_list, 15, DEFAULT_MAX_NODES, DEFAULT_MAX_PROOF_COUNT).await?;
+        let _ = mock_prove(
+            block_no,
+            &access_list,
+            15,
+            DEFAULT_MAX_NODES,
+            DEFAULT_MAX_PROOF_COUNT,
+        )
+        .await?;
         Ok(())
     }
 
@@ -170,7 +184,14 @@ mod test {
         let block_no = 107;
         let access_list = blocks().get(&block_no).unwrap().clone();
 
-        let circuit = mock_prove(block_no, &access_list, 15, DEFAULT_MAX_NODES, DEFAULT_MAX_PROOF_COUNT).await?;
+        let circuit = mock_prove(
+            block_no,
+            &access_list,
+            15,
+            DEFAULT_MAX_NODES,
+            DEFAULT_MAX_PROOF_COUNT,
+        )
+        .await?;
         let public_inputs: PublicInputs<Fr> = (&circuit.lc_witness).into();
 
         let keys = StateUpdateCircuitKeys::new(&circuit);
@@ -216,7 +237,14 @@ mod test {
     async fn test_block_2000007() -> Result<()> {
         let block_no = 2000007;
         let access_list = blocks().get(&block_no).unwrap().clone();
-        let _ = mock_prove(block_no, &access_list, 18, DEFAULT_MAX_NODES, DEFAULT_MAX_PROOF_COUNT).await?;
+        let _ = mock_prove(
+            block_no,
+            &access_list,
+            18,
+            DEFAULT_MAX_NODES,
+            DEFAULT_MAX_PROOF_COUNT,
+        )
+        .await?;
         Ok(())
     }
 
@@ -225,7 +253,14 @@ mod test {
     async fn test_block_2000004() -> Result<()> {
         let block_no = 2000004;
         let access_list = blocks().get(&block_no).unwrap().clone();
-        let _ = mock_prove(block_no, &access_list, 18, DEFAULT_MAX_NODES, DEFAULT_MAX_PROOF_COUNT).await?;
+        let _ = mock_prove(
+            block_no,
+            &access_list,
+            18,
+            DEFAULT_MAX_NODES,
+            DEFAULT_MAX_PROOF_COUNT,
+        )
+        .await?;
         Ok(())
     }
 
@@ -234,7 +269,14 @@ mod test {
     async fn test_block_2000070() -> Result<()> {
         let block_no = 2000070;
         let access_list = blocks().get(&block_no).unwrap().clone();
-        let _ = mock_prove(block_no, &access_list, 18, DEFAULT_MAX_NODES, DEFAULT_MAX_PROOF_COUNT).await?;
+        let _ = mock_prove(
+            block_no,
+            &access_list,
+            18,
+            DEFAULT_MAX_NODES,
+            DEFAULT_MAX_PROOF_COUNT,
+        )
+        .await?;
         Ok(())
     }
 }
