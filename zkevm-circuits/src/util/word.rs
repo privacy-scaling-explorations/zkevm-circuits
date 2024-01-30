@@ -343,9 +343,9 @@ impl Word<Column<Advice>> {
     }
 }
 
-impl<F: Field> WordExpr<F> for Word<Cell<F>> {
+impl<F: Field, T: Expr<F> + Clone> WordExpr<F> for Word<T> {
     fn to_word(&self) -> Word<Expression<F>> {
-        self.word_expr().to_word()
+        self.map(|limb| limb.expr())
     }
 }
 
@@ -397,12 +397,6 @@ impl<F: Field> Word<Expression<F>> {
     /// No overflow check on lo/hi limbs
     pub fn mul_unchecked(self, rhs: Self) -> Self {
         Word::new([self.lo() * rhs.lo(), self.hi() * rhs.hi()])
-    }
-}
-
-impl<F: Field> WordExpr<F> for Word<Expression<F>> {
-    fn to_word(&self) -> Word<Expression<F>> {
-        self.clone()
     }
 }
 
