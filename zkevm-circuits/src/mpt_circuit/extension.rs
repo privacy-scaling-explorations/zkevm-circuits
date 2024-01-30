@@ -100,7 +100,7 @@ impl<F: Field> ExtensionGadget<F> {
             require!((FixedTableTag::ExtOddKey.expr(), first_byte, config.is_key_part_odd.expr()) =>> @FIXED);
 
             let mut branch_rlp_rlc = vec![0.expr(); 2];
-            let mut branch_rlp_word = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
+            let mut branch_rlp_word = vec![Word::zero(); 2];
             for is_s in [true, false] {
                 // In C we have the key nibbles, we check below only for S.
                 if is_s {

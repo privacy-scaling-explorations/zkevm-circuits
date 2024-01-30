@@ -158,7 +158,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         branch.mod_rlc[is_s.idx()].expr(),
                         false.expr(),
                         false.expr(),
-                        Word::<Expression<F>>::new([0.expr(), 0.expr()])
+                        Word::zero(),
                     );
                  } elsex {
                     KeyData::store(

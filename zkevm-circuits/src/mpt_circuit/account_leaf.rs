@@ -148,10 +148,10 @@ impl<F: Field> AccountLeafConfig<F> {
             require!(config.main_data.is_below_account => false);
 
             let mut key_rlc = vec![0.expr(); 2];
-            let mut nonce = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
-            let mut balance = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
-            let mut storage = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
-            let mut codehash = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
+            let mut nonce = vec![Word::zero(); 2];
+            let mut balance = vec![Word::zero(); 2];
+            let mut storage = vec![Word::zero(); 2];
+            let mut codehash = vec![Word::zero(); 2];
             let mut leaf_no_key_rlc = vec![0.expr(); 2];
             let mut leaf_no_key_rlc_mult = vec![0.expr(); 2];
             let mut value_list_num_bytes = vec![0.expr(); 2];
@@ -435,7 +435,7 @@ impl<F: Field> AccountLeafConfig<F> {
                     &mut cb.base,
                     address.clone(),
                     proof_type.clone(),
-                    Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    Word::zero(),
                     config.main_data.new_root.expr(),
                     config.main_data.old_root.expr(),
                     Word::<Expression<F>>::new([new_value_lo, new_value_hi]),
@@ -447,10 +447,10 @@ impl<F: Field> AccountLeafConfig<F> {
                     &mut cb.base,
                     address,
                     proof_type,
-                    Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    Word::zero(),
                     config.main_data.new_root.expr(),
                     config.main_data.old_root.expr(),
-                    Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    Word::zero(),
                     Word::<Expression<F>>::new([old_value_lo, old_value_hi]),
                 );
             }};

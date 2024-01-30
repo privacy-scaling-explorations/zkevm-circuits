@@ -104,7 +104,7 @@ impl<F: Field> StorageLeafConfig<F> {
             require!(config.main_data.is_below_account => true);
 
             let mut key_rlc = vec![0.expr(); 2];
-            let mut value_word = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
+            let mut value_word = vec![Word::zero(); 2];
             let mut value_rlp_rlc = vec![0.expr(); 2];
             let mut value_rlp_rlc_mult = vec![0.expr(); 2];
 
@@ -207,11 +207,11 @@ impl<F: Field> StorageLeafConfig<F> {
                 ParentData::store(
                     cb,
                     &mut ctx.memory[parent_memory(is_s)],
-                    word::Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    word::Word::zero(),
                     0.expr(),
                     true.expr(),
                     false.expr(),
-                    word::Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    word::Word::zero(),
                 );
             }
 
@@ -332,7 +332,7 @@ impl<F: Field> StorageLeafConfig<F> {
                     address_item.word(),
                     config.main_data.new_root.expr(),
                     config.main_data.old_root.expr(),
-                    Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    Word::zero(),
                     value_word[true.idx()].clone(),
                 );
             }};
