@@ -287,7 +287,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     mod_node_hash_rlc[is_s.idx()],
                     false,
                     false,
-                    Word::<F>::new([0.scalar(), 0.scalar()]),
+                    Word::zero_f(),
                 )?;
             } else {
                 KeyData::witness_store(

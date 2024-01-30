@@ -96,7 +96,7 @@ impl<F: Field> StartConfig<F> {
         self.proof_type
             .assign(region, offset, start.proof_type.scalar())?;
 
-        let mut root = vec![Word::new([0.scalar(), 0.scalar()]); 2];
+        let mut root = vec![Word::zero_f(); 2];
         for is_s in [true, false] {
             root[is_s.idx()] = rlp_values[is_s.idx()].word();
         }
