@@ -494,20 +494,16 @@ impl<F: Field> MPTConfig<F> {
                     cached_region.assign_stored_expressions(&self.cb.base, challenges)?;
                 }
 
-                if self.params.max_nodes < (2 * HASH_WIDTH + 1) {
-                    panic!(
+                assert!( self.params.max_nodes >= (2 * HASH_WIDTH + 1),
                         "The parameter max_nodes is set too low for the mult table: {}, mult table height: {}",
                         self.params.max_nodes,
                         2 * HASH_WIDTH + 1,
                     );
-                }
-                if offset > self.params.max_nodes {
-                    panic!(
+                assert!( offset <= self.params.max_nodes,
                         "The parameter max_nodes is set too low, max_nodes: {}, offset: {}",
                         self.params.max_nodes,
                         offset,
                     );
-                }
 
                 for offset in 0..self.params.max_nodes {
                     assignf!(region, (self.q_enable, offset) => true.scalar())?;
