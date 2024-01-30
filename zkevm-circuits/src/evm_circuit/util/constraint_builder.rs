@@ -28,8 +28,7 @@ use halo2_proofs::{
 };
 
 use super::{
-    address_word_to_expr, rlc, AccountAddress, CachedRegion, CellType, MemoryAddress,
-    StoredExpression, U64Cell,
+    rlc, AccountAddress, CachedRegion, CellType, MemoryAddress, StoredExpression, U64Cell,
 };
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
@@ -859,7 +858,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Target::TxAccessListAccount,
             RwValues::new(
                 tx_id,
-                address_word_to_expr(account_address),
+                account_address.compress(),
                 0.expr(),
                 Word::zero(),
                 Word::from_lo_unchecked(value),
@@ -882,7 +881,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Target::TxAccessListAccount,
             RwValues::new(
                 tx_id,
-                address_word_to_expr(account_address),
+                account_address.compress(),
                 0.expr(),
                 Word::zero(),
                 Word::from_lo_unchecked(value.clone()),
@@ -905,7 +904,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Target::TxAccessListAccountStorage,
             RwValues::new(
                 tx_id,
-                address_word_to_expr(account_address),
+                account_address.compress(),
                 0.expr(),
                 storage_key,
                 value,
@@ -929,7 +928,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Target::TxAccessListAccountStorage,
             RwValues::new(
                 tx_id,
-                address_word_to_expr(account_address),
+                account_address.compress(),
                 0.expr(),
                 storage_key,
                 value.clone(),
@@ -994,7 +993,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Target::Account,
             RwValues::new(
                 0.expr(),
-                address_word_to_expr(account_address),
+                account_address.compress(),
                 field_tag.expr(),
                 Word::zero(),
                 value.clone(),
@@ -1017,7 +1016,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Target::Account,
             RwValues::new(
                 0.expr(),
-                address_word_to_expr(account_address),
+                account_address.compress(),
                 field_tag.expr(),
                 Word::zero(),
                 value,
@@ -1043,7 +1042,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Target::Storage,
             RwValues::new(
                 tx_id,
-                address_word_to_expr(account_address),
+                account_address.compress(),
                 0.expr(),
                 key,
                 value.clone(),
@@ -1069,7 +1068,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Target::Storage,
             RwValues::new(
                 tx_id,
-                address_word_to_expr(account_address),
+                account_address.compress(),
                 0.expr(),
                 key,
                 value,

@@ -350,8 +350,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 [
                     config.main_data.proof_type.expr(),
                     true.expr(),
-                    address_item.word().lo()
-                        + address_item.word().hi() * pow::value::<F>(256.scalar(), 16),
+                    address_item.word().compress(),
                     config.main_data.new_root.lo().expr(),
                     config.main_data.new_root.hi().expr(),
                     config.main_data.old_root.lo().expr(),
@@ -424,10 +423,7 @@ impl<F: Field> AccountLeafConfig<F> {
                     require!((1.expr(), address_item.bytes_le()[1..21].rlc(&cb.keccak_r), 20.expr(), key.lo(), key.hi()) =>> @KECCAK);
                 }
             }};
-            let to_hi = Expression::<F>::Constant(pow::value::<F>(256.scalar(), 16));
-            let lo = address_item.word().lo();
-            let hi = address_item.word().hi() * to_hi;
-            let address = lo + hi;
+            let address = address_item.word().compress();
 
             ifx! {not!(config.parent_data[false.idx()].is_placeholder) => {
                 ctx.mpt_table.constrain(
@@ -654,16 +650,13 @@ impl<F: Field> AccountLeafConfig<F> {
         )?;
 
         // Anything following this node is below the account
-        let lo = address_item.word::<F>().lo();
-        let hi: F = address_item.word::<F>().hi() * pow::value::<F>(256.scalar(), 16);
-        let address = lo + hi;
         MainData::witness_store(
             region,
             offset,
             &mut memory[main_memory()],
             main_data.proof_type,
             true,
-            address,
+            address_item.word().compress_f(),
             main_data.new_root,
             main_data.old_root,
         )?;

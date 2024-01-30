@@ -449,15 +449,6 @@ pub(crate) fn is_precompiled(address: &Address) -> bool {
     address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
 }
 
-const BASE_128_BYTES: [u8; 32] = [
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-];
-
-/// convert address (h160) to single expression.
-pub fn address_word_to_expr<F: Field>(address: Word<Expression<F>>) -> Expression<F> {
-    address.lo() + address.hi() * Expression::Constant(F::from_repr(BASE_128_BYTES).unwrap())
-}
-
 /// Helper struct to read rw operations from a step sequentially.
 pub(crate) struct StepRws<'a> {
     rws: &'a RwMap,

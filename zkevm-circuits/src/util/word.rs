@@ -18,6 +18,10 @@ use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell};
 /// evm word 32 bytes, half word 16 bytes
 const N_BYTES_HALF_WORD: usize = 16;
 
+const BASE_128_BYTES: [u8; 32] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
 /// The EVM word for witness
 #[derive(Clone, Debug, Copy)]
 pub struct WordLimbs<T, const N: usize> {
@@ -348,6 +352,7 @@ impl<F: Field, T: Expr<F> + Clone> WordExpr<F> for Word<T> {
         self.map(|limb| limb.expr())
     }
 }
+
 impl<F: Field> Word<F> {
     /// zero word
     pub fn zero_f() -> Self {
@@ -357,6 +362,12 @@ impl<F: Field> Word<F> {
     /// one word
     pub fn one_f() -> Self {
         Self::new([F::ONE, F::ZERO])
+    }
+
+    /// Convert address (h160) to single expression.
+    /// This method is Address specific
+    pub fn compress_f(&self) -> F {
+        self.lo() + self.hi() * F::from_repr(BASE_128_BYTES).unwrap()
     }
 }
 
@@ -408,6 +419,12 @@ impl<F: Field> Word<Expression<F>> {
     /// No overflow check on lo/hi limbs
     pub fn mul_unchecked(self, rhs: Self) -> Self {
         Word::new([self.lo() * rhs.lo(), self.hi() * rhs.hi()])
+    }
+
+    /// Convert address (h160) to single expression.
+    /// This method is Address specific
+    pub fn compress(&self) -> Expression<F> {
+        self.lo() + self.hi() * Expression::Constant(F::from_repr(BASE_128_BYTES).unwrap())
     }
 }
 
