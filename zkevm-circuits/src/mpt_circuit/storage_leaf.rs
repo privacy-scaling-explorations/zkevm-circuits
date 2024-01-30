@@ -179,7 +179,7 @@ impl<F: Field> StorageLeafConfig<F> {
 
                     // Placeholder leaves default to value `0`.
                     ifx! {is_placeholder_leaf => {
-                        require!(value_word[is_s.idx()] => [0.expr(), 0.expr()]);
+                        require!(value_word[is_s.idx()] => Word::zero());
                     }}
 
                     // Make sure the RLP encoding is correct.
