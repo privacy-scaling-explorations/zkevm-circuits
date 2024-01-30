@@ -364,7 +364,7 @@ impl<F: Field> Word<F> {
         Self::new([F::ONE, F::ZERO])
     }
 
-    /// Convert address (h160) to single expression.
+    /// Convert address (h160) to single field element.
     /// This method is Address specific
     pub fn compress_f(&self) -> F {
         self.lo() + self.hi() * F::from_repr(BASE_128_BYTES).unwrap()
