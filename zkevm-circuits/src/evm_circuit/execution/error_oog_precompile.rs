@@ -191,8 +191,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
                 let n_words = (call.call_data_length + 31) / 32;
                 precompile_call.base_gas_cost() + n_words * GasCost::PRECOMPILE_IDENTITY_PER_WORD
             }
-            // PrecompileCalls::Bn128Add | PrecompileCalls::Bn128Mul | PrecompileCalls::Ecrecover =>
-            // {     precompile_call.base_gas_cost()
+            // PrecompileCalls::Bn128Add | PrecompileCalls::Bn128Mul => {
+            //     precompile_call.base_gas_cost()
             // }
             _ => unreachable!(),
         };

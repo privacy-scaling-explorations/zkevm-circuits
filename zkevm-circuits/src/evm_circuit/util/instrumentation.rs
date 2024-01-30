@@ -135,7 +135,6 @@ pub struct ExecStateReport {
     pub keccak_table: StateReportRow,
     pub exp_table: StateReportRow,
     pub sig_table: StateReportRow,
-    pub pow_of_rand_table: StateReportRow,
 }
 
 impl From<ExecutionState> for ExecStateReport {

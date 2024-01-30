@@ -58,16 +58,16 @@ impl<F: Field> PrecompileGadget<F> {
                 // Identity
                 cb.require_equal(
                     "input length and precompile return length are the same",
-                    cd_length,
-                    precompile_return_length,
+                    cd_length.clone(),
+                    precompile_return_length.clone(),
                 );
-            }), // add more precompile constraint closures
+            }),
             Box::new(|cb| {
-                // Identity
+                // EcRecover
                 cb.require_equal(
-                    "ECRecover: input length and precompile return length are the same",
-                    1.expr(),
-                    1.expr(),
+                    "ECRecover: input length is 128 bytes",
+                    cd_length.clone(),
+                    128.expr(),
                 );
             }),
         ];

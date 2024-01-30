@@ -21,7 +21,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuitTesterConfig<F> {
         let sign_verify = SigCircuitConfig::new(
             meta,
             SigCircuitConfigArgs {
-                keccak_table,
+                _keccak_table: keccak_table,
                 challenges: challenges_expr,
                 sig_table,
             },
@@ -54,16 +54,11 @@ impl<F: Field + halo2_base::utils::ScalarField> Circuit<F> for SigCircuit<F> {
     ) -> Result<(), Error> {
         let challenges = config.challenges.values(&mut layouter);
         self.synthesize_sub(&config.sign_verify, &challenges, &mut layouter)?;
-        config.sign_verify.keccak_table.dev_load(
+        config.sign_verify._keccak_table.dev_load(
             &mut layouter,
             &keccak_inputs_sign_verify(&self.signatures),
             &challenges,
         )?;
-        // self.assert_sig_is_valid(
-        // &config.sign_verify,
-        // &mut layouter,
-        // assigned_sig_verifs.as_slice(),
-        // )?;
         Ok(())
     }
 }

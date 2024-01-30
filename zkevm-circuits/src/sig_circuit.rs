@@ -60,7 +60,7 @@ use std::{iter, marker::PhantomData};
 /// Circuit configuration arguments
 pub struct SigCircuitConfigArgs<F: Field> {
     /// KeccakTable
-    pub keccak_table: KeccakTable,
+    pub _keccak_table: KeccakTable,
     /// SigTable
     pub sig_table: SigTable,
     /// Challenges
@@ -81,7 +81,7 @@ where
     /// selector for keccak lookup table
     q_keccak: Selector,
     /// Used to lookup pk->pk_hash(addr)
-    keccak_table: KeccakTable,
+    _keccak_table: KeccakTable,
     /// The exposed table to be used by tx circuit and ecrecover
     sig_table: SigTable,
 }
@@ -96,7 +96,7 @@ where
     fn new(
         meta: &mut ConstraintSystem<F>,
         Self::ConfigArgs {
-            keccak_table,
+            _keccak_table,
             sig_table,
             challenges: _,
         }: Self::ConfigArgs,
@@ -188,11 +188,11 @@ where
                 is_enable * meta.query_advice(rlc_column, Rotation(3)),
             ];
             let table = [
-                meta.query_advice(keccak_table.is_enabled, Rotation::cur()),
-                meta.query_advice(keccak_table.input_rlc, Rotation::cur()),
-                meta.query_advice(keccak_table.input_len, Rotation::cur()),
-                meta.query_advice(keccak_table.output.lo(), Rotation::cur()),
-                meta.query_advice(keccak_table.output.hi(), Rotation::cur()),
+                meta.query_advice(_keccak_table.is_enabled, Rotation::cur()),
+                meta.query_advice(_keccak_table.input_rlc, Rotation::cur()),
+                meta.query_advice(_keccak_table.input_len, Rotation::cur()),
+                meta.query_advice(_keccak_table.output.lo(), Rotation::cur()),
+                meta.query_advice(_keccak_table.output.hi(), Rotation::cur()),
             ];
 
             input.into_iter().zip(table).collect()
@@ -200,7 +200,7 @@ where
 
         Self {
             ecdsa_config,
-            keccak_table,
+            _keccak_table,
             sig_table,
             q_keccak,
             rlc_column,
