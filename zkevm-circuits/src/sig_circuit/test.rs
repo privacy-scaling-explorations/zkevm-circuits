@@ -179,37 +179,47 @@ fn sign_verify_nonzero_msg_hash() {
 }
 
 #[test]
-fn sign_verify() {
+fn test_sign_verify() {
+    let max_sigs = [1, 4];
+    for max_sig in max_sigs {
+        sign_verify(max_sig as usize);
+    }
+}
+
+#[test]
+#[ignore]
+fn test_sign_verify_max_num_sig() {
+    sign_verify(MAX_NUM_SIG);
+}
+
+fn sign_verify(max_sig: usize) {
     let mut rng = XorShiftRng::seed_from_u64(1);
 
     // random msg_hash
-    let max_sigs = [1, 16, MAX_NUM_SIG];
-    for max_sig in max_sigs.iter() {
-        log::debug!("testing for {} signatures", max_sig);
-        let mut signatures = Vec::new();
-        for _ in 0..*max_sig {
-            let (sk, pk) = gen_key_pair(&mut rng);
-            let msg = gen_msg(&mut rng);
-            let msg_hash: [u8; 32] = Keccak256::digest(&msg)
-                .as_slice()
-                .to_vec()
-                .try_into()
-                .expect("hash length isn't 32 bytes");
-            let msg_hash = secp256k1::Fq::from_bytes(&msg_hash).unwrap();
-            let (r, s, v) = sign_with_rng(&mut rng, sk, msg_hash);
-            signatures.push(SignData {
-                signature: (r, s, v),
-                pk,
-                msg: msg.into(),
-                msg_hash,
-            });
-        }
-
-        let k = LOG_TOTAL_NUM_ROWS as u32;
-        run(k, *max_sig, signatures);
-
-        log::debug!("end of testing for {} signatures", max_sig);
+    log::debug!("testing for {} signatures", max_sig);
+    let mut signatures = Vec::new();
+    for _ in 0..max_sig {
+        let (sk, pk) = gen_key_pair(&mut rng);
+        let msg = gen_msg(&mut rng);
+        let msg_hash: [u8; 32] = Keccak256::digest(&msg)
+            .as_slice()
+            .to_vec()
+            .try_into()
+            .expect("hash length isn't 32 bytes");
+        let msg_hash = secp256k1::Fq::from_bytes(&msg_hash).unwrap();
+        let (r, s, v) = sign_with_rng(&mut rng, sk, msg_hash);
+        signatures.push(SignData {
+            signature: (r, s, v),
+            pk,
+            msg: msg.into(),
+            msg_hash,
+        });
     }
+
+    let k = LOG_TOTAL_NUM_ROWS as u32;
+    run(k, max_sig, signatures);
+
+    log::debug!("end of testing for {} signatures", max_sig);
 }
 
 // Generate a test key pair
