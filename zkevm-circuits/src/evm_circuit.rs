@@ -476,9 +476,20 @@ mod evm_circuit_stats {
 
     #[test]
     fn evm_circuit_unusable_rows() {
+        let computed = EvmCircuit::<Fr>::unusable_rows();
+        let mainnet_config = FeatureConfig::default();
+        let invalid_tx_config = FeatureConfig {
+            invalid_tx: true,
+            ..Default::default()
+        };
+
         assert_eq!(
-            EvmCircuit::<Fr>::unusable_rows(),
-            unusable_rows::<Fr, EvmCircuit::<Fr>>(FeatureConfig::default()),
+            computed,
+            unusable_rows::<Fr, EvmCircuit::<Fr>>(mainnet_config),
+        );
+        assert_eq!(
+            computed,
+            unusable_rows::<Fr, EvmCircuit::<Fr>>(invalid_tx_config),
         )
     }
 
