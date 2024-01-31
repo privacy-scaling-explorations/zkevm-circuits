@@ -4,7 +4,7 @@ use crate::{
     exp_circuit::param::OFFSET_INCREMENT,
     instance::public_data_convert,
     table::BlockContextFieldTag,
-    util::{log2_ceil, word, SubCircuit},
+    util::{log2_ceil, word::WordLoHi, SubCircuit},
 };
 use bus_mapping::{
     circuit_input_builder::{self, CopyEvent, ExpEvent, FeatureConfig, FixedCParams, Withdrawal},
@@ -187,8 +187,8 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::Coinbase as u64)),
                     Value::known(F::ZERO),
-                    Value::known(word::Word::from(self.coinbase).lo()),
-                    Value::known(word::Word::from(self.coinbase).hi()),
+                    Value::known(WordLoHi::from(self.coinbase).lo()),
+                    Value::known(WordLoHi::from(self.coinbase).hi()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::Timestamp as u64)),
@@ -205,8 +205,8 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
                     Value::known(F::ZERO),
-                    Value::known(word::Word::from(self.difficulty).lo()),
-                    Value::known(word::Word::from(self.difficulty).hi()),
+                    Value::known(WordLoHi::from(self.difficulty).lo()),
+                    Value::known(WordLoHi::from(self.difficulty).hi()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
@@ -217,20 +217,20 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::BaseFee as u64)),
                     Value::known(F::ZERO),
-                    Value::known(word::Word::from(self.base_fee).lo()),
-                    Value::known(word::Word::from(self.base_fee).hi()),
+                    Value::known(WordLoHi::from(self.base_fee).lo()),
+                    Value::known(WordLoHi::from(self.base_fee).hi()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
                     Value::known(F::ZERO),
-                    Value::known(word::Word::from(self.chain_id).lo()),
-                    Value::known(word::Word::from(self.chain_id).hi()),
+                    Value::known(WordLoHi::from(self.chain_id).lo()),
+                    Value::known(WordLoHi::from(self.chain_id).hi()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::WithdrawalRoot as u64)),
                     Value::known(F::ZERO),
-                    Value::known(word::Word::from(self.withdrawals_root).lo()),
-                    Value::known(word::Word::from(self.withdrawals_root).hi()),
+                    Value::known(WordLoHi::from(self.withdrawals_root).lo()),
+                    Value::known(WordLoHi::from(self.withdrawals_root).hi()),
                 ],
             ],
             {
@@ -242,8 +242,8 @@ impl BlockContext {
                         [
                             Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
                             Value::known((self.number - len_history + idx).to_scalar().unwrap()),
-                            Value::known(word::Word::from(*hash).lo()),
-                            Value::known(word::Word::from(*hash).hi()),
+                            Value::known(WordLoHi::from(*hash).lo()),
+                            Value::known(WordLoHi::from(*hash).hi()),
                         ]
                     })
                     .collect()

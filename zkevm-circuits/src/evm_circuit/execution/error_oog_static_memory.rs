@@ -14,7 +14,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::{word::Word, Expr},
+    util::{word::WordLoHi, Expr},
 };
 use eth_types::{evm_types::OpcodeId, Field, ToWord};
 use gadgets::util::or;
@@ -65,7 +65,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         cb.require_equal_word(
             "Memory length must be 32 for MLOAD and MSTORE, and 1 for MSTORE8",
             memory_address.length_word(),
-            Word::from_lo_unchecked(select::expr(is_mstore8.expr(), 1.expr(), 32.expr())),
+            WordLoHi::from_lo_unchecked(select::expr(is_mstore8.expr(), 1.expr(), 32.expr())),
         );
 
         let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);

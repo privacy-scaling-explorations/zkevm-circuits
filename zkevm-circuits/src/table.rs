@@ -4,11 +4,7 @@ use crate::{
     copy_circuit::util::number_or_hash_to_word,
     evm_circuit::util::rlc,
     impl_expr,
-    util::{
-        build_tx_log_address, keccak,
-        word::{self, Word},
-        Challenges,
-    },
+    util::{build_tx_log_address, keccak, word::WordLoHi, Challenges},
     witness::{Block, BlockContext, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction},
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep};

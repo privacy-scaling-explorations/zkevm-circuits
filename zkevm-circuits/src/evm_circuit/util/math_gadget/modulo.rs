@@ -5,7 +5,7 @@ use crate::{
         CachedRegion,
     },
     util::{
-        word::{self, Word32Cell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLoHi},
         Expr,
     },
 };
@@ -82,17 +82,17 @@ impl<F: Field> ModGadget<F> {
 
         self.k.assign_u256(region, offset, k)?;
         self.a_or_zero.assign_u256(region, offset, a_or_zero)?;
-        self.n_is_zero.assign(region, offset, word::Word::from(n))?;
+        self.n_is_zero.assign(region, offset, WordLoHi::from(n))?;
         self.a_or_is_zero
-            .assign(region, offset, word::Word::from(a_or_zero))?;
+            .assign(region, offset, WordLoHi::from(a_or_zero))?;
         self.mul_add_words
             .assign(region, offset, [k, n, r, a_or_zero])?;
         self.lt.assign(region, offset, r, n)?;
         self.eq.assign_value(
             region,
             offset,
-            Value::known(word::Word::from(a)),
-            Value::known(word::Word::from(a_or_zero)),
+            Value::known(WordLoHi::from(a)),
+            Value::known(WordLoHi::from(a_or_zero)),
         )?;
 
         Ok(())

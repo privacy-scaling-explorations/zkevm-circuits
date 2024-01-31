@@ -1,7 +1,7 @@
 use super::{param::*, util::*, DEFAULT_CELL_TYPE};
 use crate::util::{
     cell_manager::{CMFixedHeightStrategy, Cell, CellManager},
-    word::Word,
+    word::WordLoHi,
     Challenges,
 };
 use eth_types::Field;
@@ -81,7 +81,7 @@ pub(crate) struct KeccakRow<F: Field> {
     pub(crate) cell_values: Vec<F>,
     pub(crate) length: usize,
     pub(crate) data_rlc: Value<F>,
-    pub(crate) hash: Word<Value<F>>,
+    pub(crate) hash: WordLoHi<Value<F>>,
 }
 
 /// Part
@@ -562,7 +562,7 @@ pub(crate) fn keccak<F: Field>(
         let mut cell_managers = Vec::new();
         let mut regions = Vec::new();
 
-        let mut hash = Word::default();
+        let mut hash = WordLoHi::default();
         let mut round_lengths = Vec::new();
         let mut round_data_rlcs = Vec::new();
         for round in 0..NUM_ROUNDS + 1 {
@@ -795,13 +795,13 @@ pub(crate) fn keccak<F: Field>(
                     .rev()
                     .collect::<Vec<_>>();
 
-                let word: Word<Value<F>> = Word::from(eth_types::Word::from_little_endian(
+                let word: WordLoHi<Value<F>> = WordLoHi::from(eth_types::Word::from_little_endian(
                     hash_bytes_le.as_slice(),
                 ))
                 .map(Value::known);
                 word
             } else {
-                Word::default().into_value()
+                WordLoHi::default().into_value()
             };
 
             // The words to squeeze out
@@ -888,7 +888,7 @@ pub(crate) fn multi_keccak<F: Field>(
             is_final: false,
             length: 0usize,
             data_rlc: Value::known(F::ZERO),
-            hash: Word::default().into_value(),
+            hash: WordLoHi::default().into_value(),
             cell_values: Vec::new(),
         });
     }

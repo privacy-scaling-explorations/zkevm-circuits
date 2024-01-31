@@ -12,7 +12,7 @@ use crate::{
         param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT},
         FixedTableTag,
     },
-    util::{word, Expr},
+    util::{word::WordLoHi, Expr},
 };
 use eth_types::Field;
 use gadgets::util::{not, pow, Scalar};
@@ -833,8 +833,8 @@ impl RLPItemWitness {
         }
     }
 
-    pub(crate) fn word<F: Field>(&self) -> word::Word<F> {
-        // word::Word::from(Word::from_big_endian(&self.bytes[1..33]))
+    pub(crate) fn word<F: Field>(&self) -> WordLoHi<F> {
+        // WordLoHi::from(WordLoHi::from_big_endian(&self.bytes[1..33]))
         let (lo, hi) = if self.is_string() {
             if self.is_short() {
                 let lo: F = self.bytes[0].scalar();
@@ -890,6 +890,6 @@ impl RLPItemWitness {
             );
             (lo, hi)
         };
-        word::Word::new([lo, hi])
+        WordLoHi::new([lo, hi])
     }
 }

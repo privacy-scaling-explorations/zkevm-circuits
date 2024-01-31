@@ -11,7 +11,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
-        word::{Word, Word32Cell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLoHi},
         Expr,
     },
 };
@@ -70,7 +70,7 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
         // it only uses the LSB of a word.
         cb.stack_pop(index.to_word());
         cb.stack_pop(value.to_word());
-        cb.stack_push(Word::from_lo_unchecked(selected_byte));
+        cb.stack_push(WordLoHi::from_lo_unchecked(selected_byte));
 
         // State transition
         let step_state_transition = StepStateTransition {

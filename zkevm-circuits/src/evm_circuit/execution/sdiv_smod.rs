@@ -16,7 +16,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
-        word::{Word, Word32Cell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLoHi},
         Expr,
     },
 };
@@ -58,7 +58,7 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
 
         cb.stack_pop(dividend_abs.x().to_word());
         cb.stack_pop(divisor_abs.x().to_word());
-        cb.stack_push(Word::select(
+        cb.stack_push(WordLoHi::select(
             is_sdiv,
             quotient_abs
                 .x()
@@ -218,11 +218,11 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
             u64::from(dividend_abs.to_le_bytes()[31]).into(),
         )?;
         self.quotient_is_zero
-            .assign(region, offset, Word::from(quotient))?;
+            .assign(region, offset, WordLoHi::from(quotient))?;
         self.divisor_is_zero
-            .assign(region, offset, Word::from(divisor))?;
+            .assign(region, offset, WordLoHi::from(divisor))?;
         self.remainder_is_zero
-            .assign(region, offset, Word::from(remainder))?;
+            .assign(region, offset, WordLoHi::from(remainder))?;
         Ok(())
     }
 }

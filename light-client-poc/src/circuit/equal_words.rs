@@ -9,16 +9,16 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
-use zkevm_circuits::util::word::Word;
+use zkevm_circuits::util::word::WordLoHi;
 
 #[derive(Clone, Debug)]
-pub struct EqualWordsConfig<F: Field>(Word<IsZeroConfig<F>>);
+pub struct EqualWordsConfig<F: Field>(WordLoHi<IsZeroConfig<F>>);
 impl<F: Field> EqualWordsConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: Selector,
-        first: (Word<Column<Advice>>, Rotation),
-        second: (Word<Column<Advice>>, Rotation),
+        first: (WordLoHi<Column<Advice>>, Rotation),
+        second: (WordLoHi<Column<Advice>>, Rotation),
     ) -> Self {
         let lo_inv = meta.advice_column();
         let lo = IsZeroChip::configure(
@@ -42,7 +42,7 @@ impl<F: Field> EqualWordsConfig<F> {
             hi_inv,
         );
 
-        Self(Word::new([lo, hi]))
+        Self(WordLoHi::new([lo, hi]))
     }
 
     pub fn expr(&self) -> Expression<F> {
@@ -54,8 +54,8 @@ impl<F: Field> EqualWordsConfig<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         name: &str,
-        first: &Word<F>,
-        second: &Word<F>,
+        first: &WordLoHi<F>,
+        second: &WordLoHi<F>,
     ) -> Result<(), Error> {
         region.name_column(|| format!("{}_lo_inv", name), self.0.lo().value_inv);
         region.name_column(|| format!("{}_hi_inv", name), self.0.hi().value_inv);

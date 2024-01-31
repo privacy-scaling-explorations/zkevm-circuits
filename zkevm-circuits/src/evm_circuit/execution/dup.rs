@@ -10,7 +10,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
-        word::{WordCell, WordExpr},
+        word::{WordExpr, WordLoHiCell},
         Expr,
     },
 };
@@ -20,7 +20,7 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct DupGadget<F> {
     same_context: SameContextGadget<F>,
-    value: WordCell<F>,
+    value: WordLoHiCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for DupGadget<F> {

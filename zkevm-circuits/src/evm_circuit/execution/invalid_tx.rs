@@ -7,12 +7,12 @@ use crate::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{IsEqualGadget, LtGadget, LtWordGadget},
             tx::{BeginTxHelperGadget, EndTxHelperGadget, TxDataGadget},
-            CachedRegion, Cell, StepRws, Word,
+            CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::AccountFieldTag,
-    util::word::{Word32Cell, WordExpr},
+    util::word::{Word32Cell, WordExpr, WordLoHi},
 };
 use eth_types::{Field, ToScalar};
 use gadgets::util::{not, or, Expr, Scalar};
@@ -45,7 +45,7 @@ impl<F: Field> ExecutionGadget<F> for InvalidTxGadget<F> {
         cb.account_read(
             tx.caller_address.to_word(),
             AccountFieldTag::Nonce,
-            Word::from_lo_unchecked(account_nonce.expr()),
+            WordLoHi::from_lo_unchecked(account_nonce.expr()),
         );
         let is_nonce_match = IsEqualGadget::construct(cb, account_nonce.expr(), tx.nonce.expr());
 

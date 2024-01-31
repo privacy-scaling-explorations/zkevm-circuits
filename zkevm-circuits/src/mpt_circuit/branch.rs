@@ -13,7 +13,7 @@ use crate::{
     circuit,
     circuit_tools::{
         cached_region::CachedRegion,
-        cell_manager::{Cell, WordCell},
+        cell_manager::{Cell, WordLoHiCell},
         constraint_builder::RLCChainableRev,
         gadgets::LtGadget,
     },
@@ -22,7 +22,7 @@ use crate::{
         param::{HASH_WIDTH, RLP_NIL},
         MPTConfig, MptMemory, RlpItemType,
     },
-    util::word::{self, Word},
+    util::word::WordLoHi,
 };
 
 #[derive(Clone, Debug)]
@@ -33,7 +33,7 @@ pub(crate) struct BranchState<F> {
     pub(crate) key_mult_post_drifted: Expression<F>,
     pub(crate) num_nibbles: Expression<F>,
     pub(crate) is_key_odd: Expression<F>,
-    pub(crate) mod_word: [Word<Expression<F>>; 2],
+    pub(crate) mod_word: [WordLoHi<Expression<F>>; 2],
     pub(crate) mod_rlc: [Expression<F>; 2],
 }
 
@@ -42,7 +42,7 @@ pub(crate) struct BranchGadget<F> {
     rlp_list: [RLPListDataGadget<F>; 2],
     is_modified: [Cell<F>; ARITY],
     is_drifted: [Cell<F>; ARITY],
-    mod_word: [WordCell<F>; 2],
+    mod_word: [WordLoHiCell<F>; 2],
     mod_rlc: [Cell<F>; 2],
     is_not_hashed: [LtGadget<F, 2>; 2],
 
@@ -57,7 +57,7 @@ impl<F: Field> BranchGadget<F> {
         cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
         is_placeholder: &[Cell<F>; 2],
-        parent_hash: &[word::Word<Expression<F>>; 2],
+        parent_hash: &[WordLoHi<Expression<F>>; 2],
         parent_rlc: &[Expression<F>; 2],
         is_root: &[Expression<F>; 2],
         key_rlc: Expression<F>,
@@ -299,7 +299,7 @@ impl<F: Field> BranchGadget<F> {
         is_key_odd: &mut bool,
         node: &Node,
         rlp_values: &[RLPItemWitness],
-    ) -> Result<(F, F, F, [word::Word<F>; 2], [F; 2]), Error> {
+    ) -> Result<(F, F, F, [WordLoHi<F>; 2], [F; 2]), Error> {
         let branch = &node.extension_branch.clone().unwrap().branch;
 
         for is_s in [true, false] {
@@ -351,7 +351,7 @@ impl<F: Field> BranchGadget<F> {
         let key_mult_post_branch = *key_mult * mult;
 
         // Set the branch we'll take
-        let mut mod_node_hash_word = [word::Word::zero(); 2];
+        let mut mod_node_hash_word = [WordLoHi::zero(); 2];
         let mut mod_node_hash_rlc = [0.scalar(); 2];
         for is_s in [true, false] {
             (

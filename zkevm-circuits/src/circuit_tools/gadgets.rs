@@ -8,7 +8,7 @@ use halo2_proofs::{
 
 use crate::{
     evm_circuit::util::{from_bytes, pow_of_two, transpose_val_ret},
-    util::word::{Word, WordExpr},
+    util::word::{WordExpr, WordLoHi},
 };
 
 use super::{
@@ -107,8 +107,8 @@ pub struct IsEqualWordGadget<F> {
 impl<F: Field> IsEqualWordGadget<F> {
     pub(crate) fn construct<C: CellType>(
         cb: &mut ConstraintBuilder<F, C>,
-        lhs: &Word<Expression<F>>,
-        rhs: &Word<Expression<F>>,
+        lhs: &WordLoHi<Expression<F>>,
+        rhs: &WordLoHi<Expression<F>>,
     ) -> Self {
         let (lhs_lo, lhs_hi) = lhs.to_word().to_lo_hi();
         let (rhs_lo, rhs_hi) = rhs.to_word().to_lo_hi();
@@ -129,8 +129,8 @@ impl<F: Field> IsEqualWordGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        lhs: Word<F>,
-        rhs: Word<F>,
+        lhs: WordLoHi<F>,
+        rhs: WordLoHi<F>,
     ) -> Result<F, Error> {
         let (lhs_lo, lhs_hi) = lhs.to_lo_hi();
         let (rhs_lo, rhs_hi) = rhs.to_lo_hi();
@@ -143,8 +143,8 @@ impl<F: Field> IsEqualWordGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        lhs: Value<Word<F>>,
-        rhs: Value<Word<F>>,
+        lhs: Value<WordLoHi<F>>,
+        rhs: Value<WordLoHi<F>>,
     ) -> Result<Value<F>, Error> {
         transpose_val_ret(
             lhs.zip(rhs)
@@ -159,7 +159,7 @@ impl<F: Field> IsEqualWordGadget<F> {
         lhs: eth_types::Word,
         rhs: eth_types::Word,
     ) -> Result<F, Error> {
-        self.assign(region, offset, Word::from(lhs), Word::from(rhs))
+        self.assign(region, offset, WordLoHi::from(lhs), WordLoHi::from(rhs))
     }
 }
 

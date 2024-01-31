@@ -10,7 +10,7 @@ pub struct WdTable {
     /// validator id
     pub validator_id: Column<Advice>,
     /// withdrawal address
-    pub address: Word<Column<Advice>>,
+    pub address: WordLoHi<Column<Advice>>,
     /// validator withdrawal amount in Gwei
     pub amount: Column<Advice>,
 }
@@ -21,7 +21,7 @@ impl WdTable {
         Self {
             id: meta.advice_column(),
             validator_id: meta.advice_column(),
-            address: Word::new([meta.advice_column(), meta.advice_column()]),
+            address: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
             amount: meta.advice_column(),
         }
     }
@@ -78,7 +78,7 @@ impl WdTable {
                     .chain(padding_withdrawals.iter())
                     .enumerate()
                 {
-                    let address_word = Word::from(wd.address);
+                    let address_word = WordLoHi::from(wd.address);
                     let row = [
                         Value::known(F::from(wd.id)),
                         Value::known(F::from(wd.validator_id)),

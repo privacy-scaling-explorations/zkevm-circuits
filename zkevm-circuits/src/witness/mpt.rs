@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::witness::Rw,
     table::{AccountFieldTag, MPTProofType},
-    util::word,
+    util::word::WordLoHi,
 };
 use eth_types::{Address, Field, ToScalar, Word};
 use halo2_proofs::circuit::Value;
@@ -45,12 +45,12 @@ pub struct MptUpdates {
 #[derive(Default, Clone, Copy, Debug)]
 pub struct MptUpdateRow<F: Clone> {
     pub(crate) address: F,
-    pub(crate) storage_key: word::Word<F>,
+    pub(crate) storage_key: WordLoHi<F>,
     pub(crate) proof_type: F,
-    pub(crate) new_root: word::Word<F>,
-    pub(crate) old_root: word::Word<F>,
-    pub(crate) new_value: word::Word<F>,
-    pub(crate) old_value: word::Word<F>,
+    pub(crate) new_root: WordLoHi<F>,
+    pub(crate) old_root: WordLoHi<F>,
+    pub(crate) new_value: WordLoHi<F>,
+    pub(crate) old_value: WordLoHi<F>,
 }
 
 impl MptUpdates {
@@ -101,12 +101,12 @@ impl MptUpdates {
                 let (new_value, old_value) = update.value_assignments();
                 MptUpdateRow {
                     address: Value::known(update.key.address().to_scalar().unwrap()),
-                    storage_key: word::Word::<F>::from(update.key.storage_key()).into_value(),
+                    storage_key: WordLoHi::<F>::from(update.key.storage_key()).into_value(),
                     proof_type: Value::known(update.proof_type()),
-                    new_root: word::Word::<F>::from(new_root).into_value(),
-                    old_root: word::Word::<F>::from(old_root).into_value(),
-                    new_value: word::Word::<F>::from(new_value).into_value(),
-                    old_value: word::Word::<F>::from(old_value).into_value(),
+                    new_root: WordLoHi::<F>::from(new_root).into_value(),
+                    old_root: WordLoHi::<F>::from(old_root).into_value(),
+                    new_value: WordLoHi::<F>::from(new_value).into_value(),
+                    old_value: WordLoHi::<F>::from(old_value).into_value(),
                 }
             })
             .collect()

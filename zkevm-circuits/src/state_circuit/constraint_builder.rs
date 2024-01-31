@@ -11,6 +11,7 @@ use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;
 use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;
+use word::WordLoHi;
 
 #[derive(Clone)]
 pub struct RwTableQueries<F: Field> {
@@ -23,21 +24,21 @@ pub struct RwTableQueries<F: Field> {
     pub address: Expression<F>,
     pub prev_address: Expression<F>,
     pub field_tag: Expression<F>,
-    pub storage_key: word::Word<Expression<F>>,
-    pub value: word::Word<Expression<F>>,
-    pub value_prev: word::Word<Expression<F>>, // meta.query(value, Rotation::prev())
-    pub value_prev_column: word::Word<Expression<F>>, // meta.query(prev_value, Rotation::cur())
+    pub storage_key: WordLoHi<Expression<F>>,
+    pub value: WordLoHi<Expression<F>>,
+    pub value_prev: WordLoHi<Expression<F>>, // meta.query(value, Rotation::prev())
+    pub value_prev_column: WordLoHi<Expression<F>>, // meta.query(prev_value, Rotation::cur())
 }
 
 #[derive(Clone)]
 pub struct MptUpdateTableQueries<F: Field> {
     pub address: Expression<F>,
-    pub storage_key: word::Word<Expression<F>>,
+    pub storage_key: WordLoHi<Expression<F>>,
     pub proof_type: Expression<F>,
-    pub new_root: word::Word<Expression<F>>,
-    pub old_root: word::Word<Expression<F>>,
-    pub new_value: word::Word<Expression<F>>,
-    pub old_value: word::Word<Expression<F>>,
+    pub new_root: WordLoHi<Expression<F>>,
+    pub old_root: WordLoHi<Expression<F>>,
+    pub new_value: WordLoHi<Expression<F>>,
+    pub old_value: WordLoHi<Expression<F>>,
 }
 
 #[derive(Clone)]
@@ -52,16 +53,16 @@ pub struct Queries<F: Field> {
     pub is_tag_and_id_unchanged: Expression<F>,
     pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>,
     pub storage_key: MpiQueries<F, N_LIMBS_WORD>,
-    pub initial_value: word::Word<Expression<F>>,
-    pub initial_value_prev: word::Word<Expression<F>>,
+    pub initial_value: WordLoHi<Expression<F>>,
+    pub initial_value_prev: WordLoHi<Expression<F>>,
     pub is_non_exist: Expression<F>,
     pub mpt_proof_type: Expression<F>,
     pub lookups: LookupsQueries<F>,
     pub first_different_limb: [Expression<F>; 4],
     pub not_first_access: Expression<F>,
     pub last_access: Expression<F>,
-    pub state_root: word::Word<Expression<F>>,
-    pub state_root_prev: word::Word<Expression<F>>,
+    pub state_root: WordLoHi<Expression<F>>,
+    pub state_root_prev: WordLoHi<Expression<F>>,
 }
 
 type Constraint<F> = (&'static str, Expression<F>);
@@ -82,7 +83,7 @@ impl<F: Field> LookupBuilder<F> {
         self.0.push((e1.clone(), e2.clone()));
         self
     }
-    fn add_word(mut self, e1: &word::Word<Expression<F>>, e2: &word::Word<Expression<F>>) -> Self {
+    fn add_word(mut self, e1: &WordLoHi<Expression<F>>, e2: &WordLoHi<Expression<F>>) -> Self {
         self.0.push((e1.lo(), e2.lo()));
         self.0.push((e1.hi(), e2.hi()));
         self
@@ -532,7 +533,7 @@ impl<F: Field> ConstraintBuilder<F> {
         self.constraints.push((name, self.condition.clone() * e));
     }
 
-    fn require_word_zero(&mut self, name: &'static str, e: word::Word<Expression<F>>) {
+    fn require_word_zero(&mut self, name: &'static str, e: WordLoHi<Expression<F>>) {
         let (lo, hi) = e.into_lo_hi();
         self.constraints.push((name, self.condition.clone() * hi));
         self.constraints.push((name, self.condition.clone() * lo));
@@ -545,8 +546,8 @@ impl<F: Field> ConstraintBuilder<F> {
     fn require_word_equal(
         &mut self,
         name: &'static str,
-        left: word::Word<Expression<F>>,
-        right: word::Word<Expression<F>>,
+        left: WordLoHi<Expression<F>>,
+        right: WordLoHi<Expression<F>>,
     ) {
         let (left_lo, left_hi) = left.into_lo_hi();
         let (right_lo, right_hi) = right.into_lo_hi();
@@ -558,7 +559,7 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_zero(name, e.clone() * (1.expr() - e))
     }
 
-    fn require_word_boolean(&mut self, name: &'static str, e: word::Word<Expression<F>>) {
+    fn require_word_boolean(&mut self, name: &'static str, e: WordLoHi<Expression<F>>) {
         let (lo, hi) = e.into_lo_hi();
         self.require_zero(name, hi);
         self.require_zero(name, lo.clone() * (1.expr() - lo));
@@ -606,15 +607,15 @@ impl<F: Field> Queries<F> {
         self.rw_table.field_tag.clone()
     }
 
-    fn value(&self) -> word::Word<Expression<F>> {
+    fn value(&self) -> WordLoHi<Expression<F>> {
         self.rw_table.value.clone()
     }
 
-    fn initial_value(&self) -> word::Word<Expression<F>> {
+    fn initial_value(&self) -> WordLoHi<Expression<F>> {
         self.initial_value.clone()
     }
 
-    fn initial_value_prev(&self) -> word::Word<Expression<F>> {
+    fn initial_value_prev(&self) -> WordLoHi<Expression<F>> {
         self.initial_value_prev.clone()
     }
 
@@ -646,15 +647,15 @@ impl<F: Field> Queries<F> {
         self.last_access.clone()
     }
 
-    fn state_root(&self) -> word::Word<Expression<F>> {
+    fn state_root(&self) -> WordLoHi<Expression<F>> {
         self.state_root.clone()
     }
 
-    fn state_root_prev(&self) -> word::Word<Expression<F>> {
+    fn state_root_prev(&self) -> WordLoHi<Expression<F>> {
         self.state_root_prev.clone()
     }
 
-    fn value_prev_column(&self) -> word::Word<Expression<F>> {
+    fn value_prev_column(&self) -> WordLoHi<Expression<F>> {
         self.rw_table.value_prev_column.clone()
     }
 }

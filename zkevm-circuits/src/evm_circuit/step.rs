@@ -14,7 +14,7 @@ use crate::{
     },
     util::{
         cell_manager::{CMFixedWidthStrategy, CellManager},
-        word::{Word, WordCell},
+        word::{WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -751,7 +751,7 @@ pub(crate) struct StepState<F> {
     /// In the case of a contract creation internal call, this denotes the hash
     /// of the chunk of bytes from caller's memory that represent the
     /// contract init code.
-    pub(crate) code_hash: WordCell<F>,
+    pub(crate) code_hash: WordLoHiCell<F>,
     /// The program counter
     pub(crate) program_counter: Cell<F>,
     /// The stack pointer
@@ -795,7 +795,7 @@ impl<F: Field> Step<F> {
                 call_id: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 is_root: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 is_create: cell_manager.query_cell(meta, CellType::StoragePhase1),
-                code_hash: Word::new([
+                code_hash: WordLoHi::new([
                     cell_manager.query_cell(meta, CellType::StoragePhase1),
                     cell_manager.query_cell(meta, CellType::StoragePhase1),
                 ]),

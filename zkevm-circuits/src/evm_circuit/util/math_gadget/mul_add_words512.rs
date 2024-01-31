@@ -4,7 +4,7 @@ use crate::{
         from_bytes, pow_of_two_expr, split_u256, split_u256_limb64, CachedRegion, Cell,
     },
     util::{
-        word::{self, Word4, WordExpr},
+        word::{Word32Cell, Word4, WordExpr},
         Expr,
     },
 };
@@ -57,8 +57,8 @@ impl<F: Field> MulAddWords512Gadget<F> {
     /// Addend is the optional c.
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        words: [&word::Word32Cell<F>; 4],
-        addend: Option<&word::Word32Cell<F>>,
+        words: [&Word32Cell<F>; 4],
+        addend: Option<&Word32Cell<F>>,
     ) -> Self {
         let carry_0 = cb.query_bytes();
         let carry_1 = cb.query_bytes();
@@ -207,11 +207,11 @@ mod tests {
     /// MulAddWords512GadgetContainer: require(a * b + c == d * 2**256 + e)
     struct MulAddWords512GadgetContainer<F> {
         math_gadget: MulAddWords512Gadget<F>,
-        a: word::Word32Cell<F>,
-        b: word::Word32Cell<F>,
-        d: word::Word32Cell<F>,
-        e: word::Word32Cell<F>,
-        addend: word::Word32Cell<F>,
+        a: Word32Cell<F>,
+        b: Word32Cell<F>,
+        d: Word32Cell<F>,
+        e: Word32Cell<F>,
+        addend: Word32Cell<F>,
     }
 
     impl<F: Field> MathGadgetContainer<F> for MulAddWords512GadgetContainer<F> {
