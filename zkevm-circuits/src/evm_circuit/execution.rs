@@ -1277,9 +1277,10 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
             ExecutionState::InvalidTx => {
-                if let Some(invalid_tx) = &self.invalid_tx {
-                    assign_exec_step!(invalid_tx)
-                }
+                assign_exec_step!(self
+                    .invalid_tx
+                    .as_deref()
+                    .expect("invalid tx gadget must exist"))
             }
             // opcode
             ExecutionState::ADD_SUB => assign_exec_step!(self.add_sub_gadget),
