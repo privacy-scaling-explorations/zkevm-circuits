@@ -69,7 +69,7 @@ impl<F: Field> ExecutionGadget<F> for InvalidTxGadget<F> {
             insufficient_gas_limit.expr(),
             insufficient_balance.expr(),
         ]);
-        cb.require_equal("Tx needs to be invalid", invalid_tx.expr(), 1.expr());
+        cb.require_true("Tx needs to be invalid", invalid_tx.expr());
 
         let end_tx = EndTxHelperGadget::construct(
             cb,
@@ -138,8 +138,8 @@ impl<F: Field> ExecutionGadget<F> for InvalidTxGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::test_util::CircuitTestBuilder;
+    use bus_mapping::circuit_input_builder::FeatureConfig;
     use eth_types::{self, bytecode, Word};
-
     use mock::{eth, gwei, TestContext, MOCK_ACCOUNTS};
 
     #[test]
@@ -164,7 +164,12 @@ mod test {
             |block, _| block,
         )
         .unwrap();
-        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .feature(FeatureConfig {
+                invalid_tx: true,
+                ..Default::default()
+            })
+            .run();
     }
 
     #[test]
@@ -194,7 +199,12 @@ mod test {
             |block, _| block,
         )
         .unwrap();
-        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .feature(FeatureConfig {
+                invalid_tx: true,
+                ..Default::default()
+            })
+            .run();
     }
 
     #[test]
@@ -220,7 +230,12 @@ mod test {
             |block, _| block,
         )
         .unwrap();
-        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .feature(FeatureConfig {
+                invalid_tx: true,
+                ..Default::default()
+            })
+            .run();
     }
 
     #[test]
@@ -249,7 +264,12 @@ mod test {
                 |block, _| block,
             )
             .unwrap();
-            CircuitTestBuilder::new_from_test_ctx(ctx).run();
+            CircuitTestBuilder::new_from_test_ctx(ctx)
+                .feature(FeatureConfig {
+                    invalid_tx: true,
+                    ..Default::default()
+                })
+                .run();
         }
 
         // Check different permutations to make sure all transitions work correctly

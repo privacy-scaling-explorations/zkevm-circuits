@@ -70,7 +70,7 @@ use crate::{
     witness::{block_convert, Block, MptUpdates},
 };
 use bus_mapping::{
-    circuit_input_builder::{CircuitInputBuilder, FixedCParams},
+    circuit_input_builder::{CircuitInputBuilder, FeatureConfig, FixedCParams},
     mock::BlockData,
 };
 use eth_types::{geth_types::GethData, Field};
@@ -99,20 +99,8 @@ pub struct SuperCircuitConfig<F: Field> {
     exp_circuit: ExpCircuitConfig<F>,
 }
 
-/// Circuit configuration arguments
-pub struct SuperCircuitConfigArgs<F: Field> {
-    /// Max txs
-    pub max_txs: usize,
-    /// Max withdrawals
-    pub max_withdrawals: usize,
-    /// Max calldata
-    pub max_calldata: usize,
-    /// Mock randomness
-    pub mock_randomness: F,
-}
-
 impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
-    type ConfigArgs = SuperCircuitConfigArgs<F>;
+    type ConfigArgs = SuperCircuitParams<F>;
 
     /// Configure SuperCircuitConfig
     fn new(
@@ -122,6 +110,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             max_withdrawals,
             max_calldata,
             mock_randomness,
+            feature_config,
         }: Self::ConfigArgs,
     ) -> Self {
         let tx_table = TxTable::construct(meta);
@@ -221,6 +210,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 exp_table,
                 u8_table,
                 u16_table,
+                feature_config,
             },
         );
 
@@ -263,6 +253,8 @@ pub struct SuperCircuit<F: Field> {
     pub keccak_circuit: KeccakCircuit<F>,
     /// Circuits Parameters
     pub circuits_params: FixedCParams,
+    /// Feature Config
+    pub feature_config: FeatureConfig,
     /// Mock randomness
     pub mock_randomness: F,
 }
@@ -317,6 +309,7 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
             exp_circuit,
             keccak_circuit,
             circuits_params: block.circuits_params,
+            feature_config: block.feature_config,
             mock_randomness: block.randomness,
         }
     }
@@ -390,6 +383,7 @@ pub struct SuperCircuitParams<F: Field> {
     max_withdrawals: usize,
     max_calldata: usize,
     mock_randomness: F,
+    feature_config: FeatureConfig,
 }
 
 impl<F: Field> Circuit<F> for SuperCircuit<F> {
@@ -407,19 +401,12 @@ impl<F: Field> Circuit<F> for SuperCircuit<F> {
             max_withdrawals: self.circuits_params.max_withdrawals,
             max_calldata: self.circuits_params.max_calldata,
             mock_randomness: self.mock_randomness,
+            feature_config: self.feature_config,
         }
     }
 
     fn configure_with_params(meta: &mut ConstraintSystem<F>, params: Self::Params) -> Self::Config {
-        Self::Config::new(
-            meta,
-            SuperCircuitConfigArgs {
-                max_txs: params.max_txs,
-                max_withdrawals: params.max_withdrawals,
-                max_calldata: params.max_calldata,
-                mock_randomness: params.mock_randomness,
-            },
-        )
+        Self::Config::new(meta, params)
     }
 
     fn configure(_meta: &mut ConstraintSystem<F>) -> Self::Config {

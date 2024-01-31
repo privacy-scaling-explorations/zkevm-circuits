@@ -15,7 +15,9 @@ use crate::{
         Challenges, Expr,
     },
 };
-use bus_mapping::{operation::Target, state_db::EMPTY_CODE_HASH_LE};
+use bus_mapping::{
+    circuit_input_builder::FeatureConfig, operation::Target, state_db::EMPTY_CODE_HASH_LE,
+};
 use eth_types::Field;
 use gadgets::util::{not, sum};
 use halo2_proofs::{
@@ -312,6 +314,7 @@ pub(crate) struct EVMConstraintBuilder<'a, F: Field> {
     stored_expressions: Vec<StoredExpression<F>>,
     pub(crate) debug_expressions: Vec<(String, Expression<F>)>,
     meta: &'a mut ConstraintSystem<F>,
+    pub(crate) feature_config: FeatureConfig,
 }
 
 impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
@@ -336,6 +339,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         next: Step<F>,
         challenges: &'a Challenges<Expression<F>>,
         execution_state: ExecutionState,
+        feature_config: FeatureConfig,
     ) -> Self {
         Self {
             curr,
@@ -357,6 +361,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             stored_expressions: Vec::new(),
             meta,
             debug_expressions: Vec::new(),
+            feature_config,
         }
     }
 

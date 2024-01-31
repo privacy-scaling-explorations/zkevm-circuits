@@ -26,7 +26,7 @@ use crate::{
         Challenges, Expr,
     },
 };
-use bus_mapping::operation::Target;
+use bus_mapping::{circuit_input_builder::FeatureConfig, operation::Target};
 use eth_types::{evm_unimplemented, Field};
 use gadgets::util::not;
 use halo2_proofs::{
@@ -338,7 +338,7 @@ pub struct ExecutionConfig<F> {
     error_precompile_failed: Box<ErrorPrecompileFailedGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
     precompile_identity_gadget: Box<IdentityGadget<F>>,
-    invalid_tx: Box<InvalidTxGadget<F>>,
+    invalid_tx: Option<Box<InvalidTxGadget<F>>>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -357,6 +357,7 @@ impl<F: Field> ExecutionConfig<F> {
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
+        feature_config: FeatureConfig,
     ) -> Self {
         let mut instrument = Instrument::default();
         let q_usable = meta.complex_selector();
@@ -397,11 +398,15 @@ impl<F: Field> ExecutionConfig<F> {
 
             // NEW: Enabled, this will break hand crafted tests, maybe we can remove them?
             let first_step_check = {
-                let begin_tx_invalid_tx_end_block_selector = step_curr.execution_state_selector([
-                    ExecutionState::BeginTx,
-                    ExecutionState::InvalidTx,
-                    ExecutionState::EndBlock,
-                ]);
+                let begin_tx_invalid_tx_end_block_selector = step_curr.execution_state_selector(
+                    [ExecutionState::BeginTx, ExecutionState::EndBlock]
+                        .into_iter()
+                        .chain(
+                            feature_config
+                                .invalid_tx
+                                .then_some(ExecutionState::InvalidTx),
+                        ),
+                );
                 iter::once((
                     "First step should be BeginTx, InvalidTx or EndBlock",
                     q_step_first * (1.expr() - begin_tx_invalid_tx_end_block_selector),
@@ -504,6 +509,7 @@ impl<F: Field> ExecutionConfig<F> {
                         &mut stored_expressions_map,
                         &mut debug_expressions_map,
                         &mut instrument,
+                        feature_config.clone(),
                     ))
                 })()
             };
@@ -524,7 +530,7 @@ impl<F: Field> ExecutionConfig<F> {
             begin_tx_gadget: configure_gadget!(),
             end_block_gadget: configure_gadget!(),
             end_tx_gadget: configure_gadget!(),
-            invalid_tx: configure_gadget!(),
+            invalid_tx: feature_config.invalid_tx.then(|| configure_gadget!()),
             // opcode gadgets
             add_sub_gadget: configure_gadget!(),
             addmod_gadget: configure_gadget!(),
@@ -654,6 +660,7 @@ impl<F: Field> ExecutionConfig<F> {
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
         debug_expressions_map: &mut HashMap<ExecutionState, Vec<(String, Expression<F>)>>,
         instrument: &mut Instrument,
+        feature_config: FeatureConfig,
     ) -> G {
         // Configure the gadget with the max height first so we can find out the actual
         // height
@@ -665,6 +672,7 @@ impl<F: Field> ExecutionConfig<F> {
                 dummy_step_next,
                 challenges,
                 G::EXECUTION_STATE,
+                feature_config,
             );
             G::configure(&mut cb);
             let (_, _, height, _) = cb.build();
@@ -679,6 +687,7 @@ impl<F: Field> ExecutionConfig<F> {
             step_next.clone(),
             challenges,
             G::EXECUTION_STATE,
+            feature_config,
         );
 
         let gadget = G::configure(&mut cb);
@@ -734,6 +743,10 @@ impl<F: Field> ExecutionConfig<F> {
         instrument.on_gadget_built(execution_state, &cb);
 
         let debug_expressions = cb.debug_expressions.clone();
+
+        // Extract feature config here before cb is built.
+        let enable_invalid_tx = cb.feature_config.invalid_tx;
+
         let (constraints, stored_expressions, _, meta) = cb.build();
         debug_assert!(
             !height_map.contains_key(&execution_state),
@@ -785,36 +798,33 @@ impl<F: Field> ExecutionConfig<F> {
             // ExecutionState transition should be correct.
             iter::empty()
                 .chain(
-                    IntoIterator::into_iter([
+                    [
                         (
                             "EndTx can only transit to BeginTx, InvalidTx or EndBlock",
                             ExecutionState::EndTx,
-                            vec![
-                                ExecutionState::BeginTx,
-                                ExecutionState::InvalidTx,
-                                ExecutionState::EndBlock,
-                            ],
+                            vec![ExecutionState::BeginTx, ExecutionState::EndBlock]
+                                .into_iter()
+                                .chain(enable_invalid_tx.then_some(ExecutionState::InvalidTx))
+                                .collect(),
                         ),
                         (
                             "EndBlock can only transit to EndBlock",
                             ExecutionState::EndBlock,
                             vec![ExecutionState::EndBlock],
                         ),
-                    ])
+                    ]
+                    .into_iter()
                     .filter(move |(_, from, _)| *from == execution_state)
                     .map(|(_, _, to)| 1.expr() - step_next.execution_state_selector(to)),
                 )
                 .chain(
-                    IntoIterator::into_iter([
-                        (
-                            "Only EndTx and InvalidTx can transit to InvalidTx",
-                            ExecutionState::InvalidTx,
-                            vec![ExecutionState::EndTx, ExecutionState::InvalidTx],
-                        ),
+                    [
                         (
                             "Only EndTx and InvalidTx can transit to BeginTx",
                             ExecutionState::BeginTx,
-                            vec![ExecutionState::EndTx, ExecutionState::InvalidTx],
+                            iter::once(ExecutionState::EndTx)
+                                .chain(enable_invalid_tx.then_some(ExecutionState::InvalidTx))
+                                .collect(),
                         ),
                         (
                             "Only ExecutionState which halts or BeginTx can transit to EndTx",
@@ -827,13 +837,20 @@ impl<F: Field> ExecutionConfig<F> {
                         (
                             "Only EndTx, InvalidTx or EndBlock can transit to EndBlock",
                             ExecutionState::EndBlock,
-                            vec![
-                                ExecutionState::EndTx,
-                                ExecutionState::InvalidTx,
-                                ExecutionState::EndBlock,
-                            ],
+                            vec![ExecutionState::EndTx, ExecutionState::EndBlock]
+                                .into_iter()
+                                .chain(enable_invalid_tx.then_some(ExecutionState::InvalidTx))
+                                .collect(),
                         ),
-                    ])
+                    ]
+                    .into_iter()
+                    .chain(enable_invalid_tx.then(|| {
+                        (
+                            "Only EndTx and InvalidTx can transit to InvalidTx",
+                            ExecutionState::InvalidTx,
+                            vec![ExecutionState::EndTx, ExecutionState::InvalidTx],
+                        )
+                    }))
                     .filter(move |(_, _, from)| !from.contains(&execution_state))
                     .map(|(_, to, _)| step_next.execution_state_selector([to])),
                 )
@@ -1259,7 +1276,12 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
-            ExecutionState::InvalidTx => assign_exec_step!(self.invalid_tx),
+            ExecutionState::InvalidTx => {
+                assign_exec_step!(self
+                    .invalid_tx
+                    .as_deref()
+                    .expect("invalid tx gadget must exist"))
+            }
             // opcode
             ExecutionState::ADD_SUB => assign_exec_step!(self.add_sub_gadget),
             ExecutionState::ADDMOD => assign_exec_step!(self.addmod_gadget),
