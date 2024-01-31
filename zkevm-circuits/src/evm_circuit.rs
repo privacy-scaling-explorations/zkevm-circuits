@@ -315,7 +315,7 @@ pub(crate) mod cached {
         static ref CACHE: Cache = {
             let mut meta = ConstraintSystem::<Fr>::default();
             // Cached EVM circuit is configured with Mainnet FeatureConfig
-            let config = EvmCircuit::<Fr>::configure(&mut meta);
+            let config = EvmCircuit::<Fr>::configure_with_params(&mut meta, FeatureConfig::default());
             Cache { cs: meta, config }
         };
     }
