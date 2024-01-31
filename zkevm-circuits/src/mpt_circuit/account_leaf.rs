@@ -148,10 +148,10 @@ impl<F: Field> AccountLeafConfig<F> {
             require!(config.main_data.is_below_account => false);
 
             let mut key_rlc = vec![0.expr(); 2];
-            let mut nonce = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
-            let mut balance = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
-            let mut storage = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
-            let mut codehash = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
+            let mut nonce = vec![Word::zero(); 2];
+            let mut balance = vec![Word::zero(); 2];
+            let mut storage = vec![Word::zero(); 2];
+            let mut codehash = vec![Word::zero(); 2];
             let mut leaf_no_key_rlc = vec![0.expr(); 2];
             let mut leaf_no_key_rlc_mult = vec![0.expr(); 2];
             let mut value_list_num_bytes = vec![0.expr(); 2];
@@ -350,8 +350,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 [
                     config.main_data.proof_type.expr(),
                     true.expr(),
-                    address_item.word().lo()
-                        + address_item.word().hi() * pow::value::<F>(256.scalar(), 16),
+                    address_item.word().compress(),
                     config.main_data.new_root.lo().expr(),
                     config.main_data.new_root.hi().expr(),
                     config.main_data.old_root.lo().expr(),
@@ -424,10 +423,7 @@ impl<F: Field> AccountLeafConfig<F> {
                     require!((1.expr(), address_item.bytes_le()[1..21].rlc(&cb.keccak_r), 20.expr(), key.lo(), key.hi()) =>> @KECCAK);
                 }
             }};
-            let to_hi = Expression::<F>::Constant(pow::value::<F>(256.scalar(), 16));
-            let lo = address_item.word().lo();
-            let hi = address_item.word().hi() * to_hi;
-            let address = lo + hi;
+            let address = address_item.word().compress();
 
             ifx! {not!(config.parent_data[false.idx()].is_placeholder) => {
                 ctx.mpt_table.constrain(
@@ -435,7 +431,7 @@ impl<F: Field> AccountLeafConfig<F> {
                     &mut cb.base,
                     address.clone(),
                     proof_type.clone(),
-                    Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    Word::zero(),
                     config.main_data.new_root.expr(),
                     config.main_data.old_root.expr(),
                     Word::<Expression<F>>::new([new_value_lo, new_value_hi]),
@@ -447,10 +443,10 @@ impl<F: Field> AccountLeafConfig<F> {
                     &mut cb.base,
                     address,
                     proof_type,
-                    Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    Word::zero(),
                     config.main_data.new_root.expr(),
                     config.main_data.old_root.expr(),
-                    Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    Word::zero(),
                     Word::<Expression<F>>::new([old_value_lo, old_value_hi]),
                 );
             }};
@@ -502,10 +498,10 @@ impl<F: Field> AccountLeafConfig<F> {
 
         // Key
         let mut key_rlc = vec![0.scalar(); 2];
-        let mut nonce = vec![Word::<F>::new([0.scalar(), 0.scalar()]); 2];
-        let mut balance = vec![Word::<F>::new([0.scalar(), 0.scalar()]); 2];
-        let mut storage = vec![Word::<F>::new([0.scalar(), 0.scalar()]); 2];
-        let mut codehash = vec![Word::<F>::new([0.scalar(), 0.scalar()]); 2];
+        let mut nonce = vec![Word::zero_f(); 2];
+        let mut balance = vec![Word::zero_f(); 2];
+        let mut storage = vec![Word::zero_f(); 2];
+        let mut codehash = vec![Word::zero_f(); 2];
         let mut key_data = vec![KeyDataWitness::default(); 2];
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         for is_s in [true, false] {
@@ -654,16 +650,13 @@ impl<F: Field> AccountLeafConfig<F> {
         )?;
 
         // Anything following this node is below the account
-        let lo = address_item.word::<F>().lo();
-        let hi: F = address_item.word::<F>().hi() * pow::value::<F>(256.scalar(), 16);
-        let address = lo + hi;
         MainData::witness_store(
             region,
             offset,
             &mut memory[main_memory()],
             main_data.proof_type,
             true,
-            address,
+            address_item.word().compress_f(),
             main_data.new_root,
             main_data.old_root,
         )?;
@@ -678,20 +671,11 @@ impl<F: Field> AccountLeafConfig<F> {
         } else if is_codehash_mod {
             (MPTProofType::CodeHashChanged, codehash)
         } else if is_account_delete_mod {
-            (
-                MPTProofType::AccountDestructed,
-                vec![Word::<F>::new([0.scalar(), 0.scalar()]); 2],
-            )
+            (MPTProofType::AccountDestructed, vec![Word::zero_f(); 2])
         } else if is_non_existing_proof {
-            (
-                MPTProofType::AccountDoesNotExist,
-                vec![Word::<F>::new([0.scalar(), 0.scalar()]); 2],
-            )
+            (MPTProofType::AccountDoesNotExist, vec![Word::zero_f(); 2])
         } else {
-            (
-                MPTProofType::Disabled,
-                vec![Word::<F>::new([0.scalar(), 0.scalar()]); 2],
-            )
+            (MPTProofType::Disabled, vec![Word::zero_f(); 2])
         };
 
         if account.is_mod_extension[0] || account.is_mod_extension[1] {
@@ -705,7 +689,7 @@ impl<F: Field> AccountLeafConfig<F> {
 
         let mut new_value = value[false.idx()];
         if parent_data[false.idx()].is_placeholder {
-            new_value = word::Word::<F>::new([0.scalar(), 0.scalar()]);
+            new_value = word::Word::zero_f();
         }
         mpt_config.mpt_table.assign_cached(
             region,
@@ -714,7 +698,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 address: Value::known(from_bytes::value(
                     &account.address.iter().cloned().rev().collect::<Vec<_>>(),
                 )),
-                storage_key: word::Word::<F>::new([0.scalar(), 0.scalar()]).into_value(),
+                storage_key: word::Word::zero_f().into_value(),
                 proof_type: Value::known(proof_type.scalar()),
                 new_root: main_data.new_root.into_value(),
                 old_root: main_data.old_root.into_value(),

@@ -40,7 +40,7 @@ impl<F: Field> StartConfig<F> {
 
             config.proof_type = cb.query_cell();
 
-            let mut root = vec![Word::new([0.expr(), 0.expr()]); 2];
+            let mut root = vec![Word::zero(); 2];
             for is_s in [true, false] {
                 root[is_s.idx()] = root_items[is_s.idx()].word();
             }
@@ -96,7 +96,7 @@ impl<F: Field> StartConfig<F> {
         self.proof_type
             .assign(region, offset, start.proof_type.scalar())?;
 
-        let mut root = vec![Word::new([0.scalar(), 0.scalar()]); 2];
+        let mut root = vec![Word::zero_f(); 2];
         for is_s in [true, false] {
             root[is_s.idx()] = rlp_values[is_s.idx()].word();
         }
