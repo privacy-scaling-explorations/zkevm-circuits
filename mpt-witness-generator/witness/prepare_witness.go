@@ -369,8 +369,6 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 
 	var nodes []Node
 
-	branchC16 := byte(0)
-	branchC1 := byte(1)
 	for i := 0; i < upTo; i++ {
 		if !isBranch(proof1[i]) {
 			isNonExistingProof := (isAccountProof && nonExistingAccountProof) || (!isAccountProof && nonExistingStorageProof)
@@ -402,27 +400,6 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 
 			nodes = append(nodes, node)
 		} else {
-			switchC16 := true // If not extension node, switchC16 = true.
-			if isExtension {
-				keyLen := getExtensionNodeKeyLen(proof1[i-1])
-				if keyLen == 1 {
-					switchC16 = false
-				} else {
-					if proof1[i-1][2] != 0 { // If even, switch16 = true.
-						switchC16 = false
-					}
-				}
-			}
-			if switchC16 {
-				if branchC16 == 1 {
-					branchC16 = 0
-					branchC1 = 1
-				} else {
-					branchC16 = 1
-					branchC1 = 0
-				}
-			}
-
 			var extNode1 []byte = nil
 			var extNode2 []byte = nil
 			if isExtension {
@@ -431,7 +408,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			}
 
 			bNode := prepareBranchNode(proof1[i], proof2[i], extNode1, extNode2, extListRlpBytes, extValues,
-				key[keyIndex], key[keyIndex], branchC16, branchC1, false, false, isExtension)
+				key[keyIndex], key[keyIndex], false, false, isExtension)
 			nodes = append(nodes, bNode)
 
 			keyIndex += 1
@@ -447,10 +424,10 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				leafRow0 = proof2[len2-1]
 			}
 
-			isModifiedExtNode, _, numberOfNibbles, branchC16, bNode := addBranchAndPlaceholder(proof1, proof2, extNibblesS, extNibblesC,
+			isModifiedExtNode, _, numberOfNibbles, bNode := addBranchAndPlaceholder(proof1, proof2, extNibblesS, extNibblesC,
 				leafRow0, key, neighbourNode,
 				keyIndex, extensionNodeInd, additionalBranch,
-				isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf, branchC16, branchC1, &toBeHashed)
+				isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf, &toBeHashed)
 
 			nodes = append(nodes, bNode)
 
@@ -491,7 +468,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			if isModifiedExtNode {
 				leafNode = equipLeafWithModExtensionNode(statedb, leafNode, addr, proof1, proof2, extNibblesS, extNibblesC, key, neighbourNode,
 					keyIndex, extensionNodeInd, numberOfNibbles, additionalBranch,
-					isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf, branchC16, branchC1, &toBeHashed)
+					isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf, &toBeHashed)
 			}
 			nodes = append(nodes, leafNode)
 		} else {
