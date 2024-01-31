@@ -674,14 +674,7 @@ pub fn build_state_code_db(
 impl<P: JsonRpcClient> BuilderClient<P> {
     /// Create a new BuilderClient
     pub async fn new(client: GethClient<P>, circuits_params: FixedCParams) -> Result<Self, Error> {
-        let chain_id = client.get_chain_id().await?;
-
-        Ok(Self {
-            cli: client,
-            chain_id: chain_id.into(),
-            circuits_params,
-            feature_config: FeatureConfig::default(),
-        })
+        Self::new_with_features(client, circuits_params, FeatureConfig::default()).await
     }
 
     /// Create a new BuilderClient
