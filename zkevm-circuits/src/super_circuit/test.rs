@@ -29,7 +29,7 @@ fn test_super_circuit(block: GethData, circuits_params: FixedCParams, mock_rando
     let (k, circuit, instance, _) =
         SuperCircuit::<Fr>::build(block, circuits_params, mock_randomness).unwrap();
     let prover = MockProver::run(k, &circuit, instance).unwrap();
-    let res = prover.verify_par();
+    let res = prover.verify();
     if let Err(err) = res {
         error!("Verification failures: {:#?}", err);
         panic!("Failed verification");
