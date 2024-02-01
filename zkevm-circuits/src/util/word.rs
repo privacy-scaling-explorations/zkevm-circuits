@@ -355,7 +355,7 @@ impl<F: Field, T: Expr<F> + Clone> WordExpr<F> for Word<T> {
 
 impl<F: Field> Word<F> {
     /// zero word
-    pub fn zero_f() -> Self {
+    pub fn zero() -> Self {
         Self::new([F::ZERO, F::ZERO])
     }
 
