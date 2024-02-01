@@ -17,6 +17,7 @@ fn super_circuit_degree() {
         max_withdrawals: 5,
         max_calldata: 32,
         mock_randomness: Fr::from(0x100),
+        feature_config: FeatureConfig::default(),
     };
     SuperCircuit::configure_with_params(&mut cs, params);
     log::info!("super circuit degree: {}", cs.degree());

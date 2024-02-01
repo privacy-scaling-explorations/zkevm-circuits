@@ -6,7 +6,10 @@ use crate::{
     util::SubCircuit,
     witness::{Block, Rw},
 };
-use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
+use bus_mapping::{
+    circuit_input_builder::{FeatureConfig, FixedCParams},
+    mock::BlockData,
+};
 use eth_types::geth_types::GethData;
 use itertools::all;
 use std::cmp;
@@ -81,6 +84,7 @@ const NUM_BLINDING_ROWS: usize = 64;
 pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     test_ctx: Option<TestContext<NACC, NTX>>,
     circuits_params: Option<FixedCParams>,
+    feature_config: Option<FeatureConfig>,
     block: Option<Block<Fr>>,
     block_modifiers: Vec<Box<dyn Fn(&mut Block<Fr>)>>,
 }
@@ -91,6 +95,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         CircuitTestBuilder {
             test_ctx: None,
             circuits_params: None,
+            feature_config: None,
             block: None,
             block_modifiers: vec![],
         }
@@ -126,6 +131,13 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         self
     }
 
+    /// Configure [`FeatureConfig`]
+    pub fn feature(mut self, feature_config: FeatureConfig) -> Self {
+        assert!(self.feature_config.is_none(), "Already configured");
+        self.feature_config = Some(feature_config);
+        self
+    }
+
     /// Allows to pass a [`Block`] already built to the constructor.
     pub fn block(mut self, block: Block<Fr>) -> Self {
         self.block = Some(block);
@@ -156,7 +168,8 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             .as_ref()
             .ok_or(CircuitTestError::NotEnoughAttributes)?;
         let block: GethData = block.clone().into();
-        let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let builder = BlockData::new_from_geth_data(block.clone())
+            .new_circuit_input_builder_with_feature(self.feature_config.unwrap_or_default());
         let builder = builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .map_err(|err| CircuitTestError::CannotHandleBlock(err.to_string()))?;
@@ -175,12 +188,19 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
         let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
-        let circuit = EvmCircuitCached::get_test_circuit_from_block(block);
-        let prover = MockProver::<Fr>::run(k, &circuit, vec![]).map_err(|err| {
-            CircuitTestError::SynthesisFailure {
-                circuit: Circuit::EVM,
-                reason: err,
-            }
+        // Mainnet EVM circuit constraints can be cached for test performance.
+        // No cache for EVM circuit with customized features
+        let prover = if block.feature_config.is_mainnet() {
+            let circuit = EvmCircuitCached::get_test_circuit_from_block(block);
+            MockProver::<Fr>::run(k, &circuit, vec![])
+        } else {
+            let circuit = EvmCircuit::get_test_circuit_from_block(block);
+            MockProver::<Fr>::run(k, &circuit, vec![])
+        };
+
+        let prover = prover.map_err(|err| CircuitTestError::SynthesisFailure {
+            circuit: Circuit::EVM,
+            reason: err,
         })?;
 
         prover

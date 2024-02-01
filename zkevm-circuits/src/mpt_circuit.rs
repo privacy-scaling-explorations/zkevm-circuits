@@ -174,7 +174,6 @@ impl<F: Field> MPTContext<F> {
 pub struct MPTConfig<F: Field> {
     pub(crate) q_enable: Column<Fixed>,
     pub(crate) q_first: Column<Fixed>,
-    pub(crate) q_last: Column<Fixed>,
     pub(crate) memory: MptMemory<F>,
     /// MPT table
     pub mpt_table: MptTable,
@@ -219,7 +218,6 @@ impl<F: Field> MPTConfig<F> {
     ) -> Self {
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
-        let q_last = meta.fixed_column();
 
         let mpt_table = MptTable::construct(meta);
 
@@ -308,7 +306,7 @@ impl<F: Field> MPTConfig<F> {
                     // Main MPT circuit
                     // State machine
                     cb.base.set_cell_manager(state_cm.clone());
-                    ifx! {f!(q_first) + f!(q_last) => {
+                    ifx! {f!(q_first) => {
                         require!(a!(state_machine.is_start) => true);
                     }};
                     // Main state machine
@@ -370,7 +368,6 @@ impl<F: Field> MPTConfig<F> {
         MPTConfig {
             q_enable,
             q_first,
-            q_last,
             memory,
             keccak_table,
             fixed_table,
@@ -390,8 +387,7 @@ impl<F: Field> MPTConfig<F> {
         layouter: &mut impl Layouter<F>,
         nodes: &[Node],
         challenges: &Challenges<Value<F>>,
-    ) -> Result<usize, Error> {
-        let mut height = 0;
+    ) -> Result<(), Error> {
         layouter.assign_region(
             || "MPT",
             |mut region| {
@@ -497,24 +493,28 @@ impl<F: Field> MPTConfig<F> {
 
                     cached_region.assign_stored_expressions(&self.cb.base, challenges)?;
                 }
-                height = offset;
 
-                // Make sure the circuit is high enough for the mult table
-                while height < (2 * HASH_WIDTH + 1) {
-                    height += 1;
-                }
+                assert!( self.params.max_nodes >= (2 * HASH_WIDTH + 1),
+                        "The parameter max_nodes is set too low for the mult table: {}, mult table height: {}",
+                        self.params.max_nodes,
+                        2 * HASH_WIDTH + 1,
+                    );
+                assert!( offset <= self.params.max_nodes,
+                        "The parameter max_nodes is set too low, max_nodes: {}, offset: {}",
+                        self.params.max_nodes,
+                        offset,
+                    );
 
-                for offset in 0..height {
+                for offset in 0..self.params.max_nodes {
                     assignf!(region, (self.q_enable, offset) => true.scalar())?;
                     assignf!(region, (self.q_first, offset) => (offset == 0).scalar())?;
-                    assignf!(region, (self.q_last, offset) => (offset == height - 2).scalar())?;
                 }
 
                 Ok(())
             },
         )?;
 
-        Ok(height)
+        Ok(())
     }
 
     /// Loads MPT fixed table
@@ -653,6 +653,8 @@ pub struct MPTCircuit<F: Field> {
     pub keccak_data: Vec<Vec<u8>>,
     /// log2(height)
     pub degree: usize,
+    /// Maximal number of nodes MPT can prove (for example, one branch has 16 nodes)
+    pub max_nodes: usize,
     /// Can be used to test artificially created tests with keys without known their known
     /// preimage. ONLY ENABLE FOR TESTS!
     pub disable_preimage_check: bool,
@@ -667,6 +669,8 @@ pub struct MPTCircuitParams {
     pub degree: usize,
     ///
     pub disable_preimage_check: bool,
+    /// Maximal number of nodes MPT can prove (for example, one branch has 16 nodes)
+    pub max_nodes: usize,
 }
 
 impl MPTCircuitParams {
@@ -694,6 +698,7 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         MPTCircuitParams {
             degree: self.degree,
             disable_preimage_check: self.disable_preimage_check,
+            max_nodes: self.max_nodes,
         }
     }
 
@@ -717,9 +722,9 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = _challenges.values(&mut layouter);
-        let height = config.assign(&mut layouter, &self.nodes, &challenges)?;
+        config.assign(&mut layouter, &self.nodes, &challenges)?;
         config.load_fixed_table(&mut layouter)?;
-        config.load_mult_table(&mut layouter, &challenges, height)?;
+        config.load_mult_table(&mut layouter, &challenges, self.max_nodes)?;
         config
             .keccak_table
             .dev_load(&mut layouter, &self.keccak_data, &challenges)?;
@@ -789,10 +794,12 @@ mod tests {
 
                 let disable_preimage_check = nodes[0].start.clone().unwrap().disable_preimage_check;
                 let degree = 15;
+                let max_nodes = 520;
                 let circuit = MPTCircuit::<Fr> {
                     nodes,
                     keccak_data,
                     degree,
+                    max_nodes,
                     disable_preimage_check,
                     _marker: PhantomData,
                 };
