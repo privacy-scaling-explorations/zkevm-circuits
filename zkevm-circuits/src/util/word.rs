@@ -360,7 +360,7 @@ impl<F: Field> Word<F> {
     }
 
     /// one word
-    pub fn one_f() -> Self {
+    pub fn one() -> Self {
         Self::new([F::ONE, F::ZERO])
     }
 
