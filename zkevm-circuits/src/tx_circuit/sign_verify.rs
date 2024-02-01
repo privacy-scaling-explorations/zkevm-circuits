@@ -817,7 +817,7 @@ mod sign_verify_tests {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
-        prover.assert_satisfied_par();
+        prover.assert_satisfied();
     }
 
     // Generate a test key pair

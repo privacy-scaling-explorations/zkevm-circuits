@@ -25,7 +25,7 @@ impl<F: Field> BytecodeCircuit<F> {
 
     fn verify(&self, success: bool) {
         let prover = MockProver::<F>::run(log2_ceil(self.max_rows), self, Vec::new()).unwrap();
-        let result = prover.verify_par();
+        let result = prover.verify();
         if success {
             if let Err(failures) = &result {
                 for failure in failures.iter() {
