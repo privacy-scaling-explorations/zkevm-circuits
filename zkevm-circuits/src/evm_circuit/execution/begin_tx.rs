@@ -221,12 +221,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             cb.account_write(
                 call_callee_address.to_word(),
                 AccountFieldTag::Nonce,
-                Word::one(),
+                Word::one_expr(),
                 Word::zero_expr(),
                 Some(&mut reversion_info),
             );
             for (field_tag, value) in [
-                (CallContextFieldTag::Depth, Word::one()),
+                (CallContextFieldTag::Depth, Word::one_expr()),
                 (
                     CallContextFieldTag::CallerAddress,
                     tx.caller_address.to_word(),
@@ -251,8 +251,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     CallContextFieldTag::LastCalleeReturnDataLength,
                     Word::zero_expr(),
                 ),
-                (CallContextFieldTag::IsRoot, Word::one()),
-                (CallContextFieldTag::IsCreate, Word::one()),
+                (CallContextFieldTag::IsRoot, Word::one_expr()),
+                (CallContextFieldTag::IsCreate, Word::one_expr()),
                 (
                     CallContextFieldTag::CodeHash,
                     cb.curr.state.code_hash.to_word(),
@@ -349,7 +349,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             |cb| {
                 // Setup first call's context.
                 for (field_tag, value) in [
-                    (CallContextFieldTag::Depth, Word::one()),
+                    (CallContextFieldTag::Depth, Word::one_expr()),
                     (
                         CallContextFieldTag::CallerAddress,
                         tx.caller_address.to_word(),
@@ -374,7 +374,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         CallContextFieldTag::LastCalleeReturnDataLength,
                         Word::zero_expr(),
                     ),
-                    (CallContextFieldTag::IsRoot, Word::one()),
+                    (CallContextFieldTag::IsRoot, Word::one_expr()),
                     (
                         CallContextFieldTag::IsCreate,
                         Word::from_lo_unchecked(tx.is_create.expr()),

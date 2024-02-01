@@ -382,7 +382,7 @@ impl<F: Field> Word<Expression<F>> {
     }
 
     /// one word
-    pub fn one() -> Self {
+    pub fn one_expr() -> Self {
         Self::new([1.expr(), 0.expr()])
     }
 

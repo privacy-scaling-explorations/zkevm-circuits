@@ -342,7 +342,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 cb.account_write(
                     contract_addr.to_word(),
                     AccountFieldTag::Nonce,
-                    Word::one(),
+                    Word::one_expr(),
                     Word::zero_expr(),
                     Some(&mut callee_reversion_info),
                 );
