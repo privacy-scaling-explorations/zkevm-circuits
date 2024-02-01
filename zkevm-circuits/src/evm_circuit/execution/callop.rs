@@ -540,7 +540,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     CallContextFieldTag::LastCalleeReturnDataOffset,
                     CallContextFieldTag::LastCalleeReturnDataLength,
                 ] {
-                    cb.call_context_lookup_write(None, field_tag, Word::zero());
+                    cb.call_context_lookup_write(None, field_tag, Word::zero_expr());
                 }
 
                 // For CALL opcode, it has an extra stack pop `value` (+1) and if the value is
@@ -588,7 +588,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 CallContextFieldTag::LastCalleeReturnDataOffset,
                 CallContextFieldTag::LastCalleeReturnDataLength,
             ] {
-                cb.call_context_lookup_write(None, field_tag, Word::zero());
+                cb.call_context_lookup_write(None, field_tag, Word::zero_expr());
             }
 
             cb.require_step_state_transition(StepStateTransition {
@@ -689,17 +689,17 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         CallContextFieldTag::IsStatic,
                         Word::from_lo_unchecked(or::expr([is_static.expr(), is_staticcall.expr()])),
                     ),
-                    (CallContextFieldTag::LastCalleeId, Word::zero()),
+                    (CallContextFieldTag::LastCalleeId, Word::zero_expr()),
                     (
                         CallContextFieldTag::LastCalleeReturnDataOffset,
-                        Word::zero(),
+                        Word::zero_expr(),
                     ),
                     (
                         CallContextFieldTag::LastCalleeReturnDataLength,
-                        Word::zero(),
+                        Word::zero_expr(),
                     ),
-                    (CallContextFieldTag::IsRoot, Word::zero()),
-                    (CallContextFieldTag::IsCreate, Word::zero()),
+                    (CallContextFieldTag::IsRoot, Word::zero_expr()),
+                    (CallContextFieldTag::IsCreate, Word::zero_expr()),
                     (
                         CallContextFieldTag::CodeHash,
                         call_gadget.callee_code_hash.to_word(),

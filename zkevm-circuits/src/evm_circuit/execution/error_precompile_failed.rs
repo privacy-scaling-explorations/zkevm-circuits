@@ -87,7 +87,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         cb.stack_pop(cd_length.to_word());
         cb.stack_pop(rd_offset.to_word());
         cb.stack_pop(rd_length.to_word());
-        cb.stack_push(Word::zero());
+        cb.stack_push(Word::zero_expr());
 
         for (field_tag, value) in [
             (CallContextFieldTag::LastCalleeId, callee_call_id.expr()),

@@ -222,7 +222,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 call_callee_address.to_word(),
                 AccountFieldTag::Nonce,
                 Word::one(),
-                Word::zero(),
+                Word::zero_expr(),
                 Some(&mut reversion_info),
             );
             for (field_tag, value) in [
@@ -235,21 +235,21 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     CallContextFieldTag::CalleeAddress,
                     call_callee_address.to_word(),
                 ),
-                (CallContextFieldTag::CallDataOffset, Word::zero()),
+                (CallContextFieldTag::CallDataOffset, Word::zero_expr()),
                 (
                     CallContextFieldTag::CallDataLength,
                     Word::from_lo_unchecked(tx.call_data_length.expr()),
                 ),
                 (CallContextFieldTag::Value, tx.value.to_word()),
-                (CallContextFieldTag::IsStatic, Word::zero()),
-                (CallContextFieldTag::LastCalleeId, Word::zero()),
+                (CallContextFieldTag::IsStatic, Word::zero_expr()),
+                (CallContextFieldTag::LastCalleeId, Word::zero_expr()),
                 (
                     CallContextFieldTag::LastCalleeReturnDataOffset,
-                    Word::zero(),
+                    Word::zero_expr(),
                 ),
                 (
                     CallContextFieldTag::LastCalleeReturnDataLength,
-                    Word::zero(),
+                    Word::zero_expr(),
                 ),
                 (CallContextFieldTag::IsRoot, Word::one()),
                 (CallContextFieldTag::IsCreate, Word::one()),
@@ -358,21 +358,21 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         CallContextFieldTag::CalleeAddress,
                         tx.callee_address.to_word(),
                     ),
-                    (CallContextFieldTag::CallDataOffset, Word::zero()),
+                    (CallContextFieldTag::CallDataOffset, Word::zero_expr()),
                     (
                         CallContextFieldTag::CallDataLength,
                         Word::from_lo_unchecked(tx.call_data_length.expr()),
                     ),
                     (CallContextFieldTag::Value, tx.value.to_word()),
-                    (CallContextFieldTag::IsStatic, Word::zero()),
-                    (CallContextFieldTag::LastCalleeId, Word::zero()),
+                    (CallContextFieldTag::IsStatic, Word::zero_expr()),
+                    (CallContextFieldTag::LastCalleeId, Word::zero_expr()),
                     (
                         CallContextFieldTag::LastCalleeReturnDataOffset,
-                        Word::zero(),
+                        Word::zero_expr(),
                     ),
                     (
                         CallContextFieldTag::LastCalleeReturnDataLength,
-                        Word::zero(),
+                        Word::zero_expr(),
                     ),
                     (CallContextFieldTag::IsRoot, Word::one()),
                     (

@@ -377,7 +377,7 @@ impl<F: Field> Word<Expression<F>> {
         Self::new([lo, 0.expr()])
     }
     /// zero word
-    pub fn zero() -> Self {
+    pub fn zero_expr() -> Self {
         Self::new([0.expr(), 0.expr()])
     }
 

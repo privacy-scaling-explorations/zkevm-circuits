@@ -165,7 +165,7 @@ pub(crate) trait ConstrainBuilderCommon<F: Field> {
     }
 
     fn require_zero_word(&mut self, name: &'static str, word: Word<Expression<F>>) {
-        self.require_equal_word(name, word, Word::zero());
+        self.require_equal_word(name, word, Word::zero_expr());
     }
 
     fn require_equal_word(
@@ -865,10 +865,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 tx_id,
                 account_address.compress(),
                 0.expr(),
-                Word::zero(),
+                Word::zero_expr(),
                 Word::from_lo_unchecked(value),
                 Word::from_lo_unchecked(value_prev),
-                Word::zero(),
+                Word::zero_expr(),
             ),
             reversion_info,
         );
@@ -888,10 +888,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 tx_id,
                 account_address.compress(),
                 0.expr(),
-                Word::zero(),
+                Word::zero_expr(),
                 Word::from_lo_unchecked(value.clone()),
                 Word::from_lo_unchecked(value),
-                Word::zero(),
+                Word::zero_expr(),
             ),
         );
     }
@@ -914,7 +914,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 storage_key,
                 value,
                 value_prev,
-                Word::zero(),
+                Word::zero_expr(),
             ),
             reversion_info,
         );
@@ -938,7 +938,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 storage_key,
                 value.clone(),
                 value,
-                Word::zero(),
+                Word::zero_expr(),
             ),
         );
     }
@@ -954,10 +954,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 tx_id,
                 0.expr(),
                 0.expr(),
-                Word::zero(),
+                Word::zero_expr(),
                 value.clone(),
                 value,
-                Word::zero(),
+                Word::zero_expr(),
             ),
         );
     }
@@ -976,10 +976,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 tx_id,
                 0.expr(),
                 0.expr(),
-                Word::zero(),
+                Word::zero_expr(),
                 value,
                 value_prev,
-                Word::zero(),
+                Word::zero_expr(),
             ),
             reversion_info,
         );
@@ -1000,10 +1000,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 0.expr(),
                 account_address.compress(),
                 field_tag.expr(),
-                Word::zero(),
+                Word::zero_expr(),
                 value.clone(),
                 value,
-                Word::zero(),
+                Word::zero_expr(),
             ),
         );
     }
@@ -1023,10 +1023,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 0.expr(),
                 account_address.compress(),
                 field_tag.expr(),
-                Word::zero(),
+                Word::zero_expr(),
                 value,
                 value_prev,
-                Word::zero(),
+                Word::zero_expr(),
             ),
             reversion_info,
         );
@@ -1127,10 +1127,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 0.expr(),
                 field_tag.expr(),
-                Word::zero(),
+                Word::zero_expr(),
                 value,
-                Word::zero(),
-                Word::zero(),
+                Word::zero_expr(),
+                Word::zero_expr(),
             ),
         );
     }
@@ -1153,10 +1153,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 0.expr(),
                 field_tag.expr(),
-                Word::zero(),
+                Word::zero_expr(),
                 value,
-                Word::zero(),
-                Word::zero(),
+                Word::zero_expr(),
+                Word::zero_expr(),
             ),
         );
     }
@@ -1175,10 +1175,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 0.expr(),
                 field_tag.expr(),
-                Word::zero(),
+                Word::zero_expr(),
                 value,
-                Word::zero(),
-                Word::zero(),
+                Word::zero_expr(),
+                Word::zero_expr(),
             ),
         );
     }
@@ -1261,10 +1261,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 self.curr.state.call_id.expr(),
                 self.curr.state.stack_pointer.expr() + stack_pointer_offset,
                 0.expr(),
-                Word::zero(),
+                Word::zero_expr(),
                 value,
-                Word::zero(),
-                Word::zero(),
+                Word::zero_expr(),
+                Word::zero_expr(),
             ),
         );
     }
@@ -1286,11 +1286,11 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 memory_address,
                 0.expr(),
-                Word::zero(),
+                Word::zero_expr(),
                 // TODO assure range check since write=true also possible
                 Word::from_lo_unchecked(byte),
-                Word::zero(),
-                Word::zero(),
+                Word::zero_expr(),
+                Word::zero_expr(),
             ),
         );
     }
@@ -1311,10 +1311,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 tx_id,
                 build_tx_log_expression(index, field_tag.expr(), log_id),
                 0.expr(),
-                Word::zero(),
+                Word::zero_expr(),
                 value,
-                Word::zero(),
-                Word::zero(),
+                Word::zero_expr(),
+                Word::zero_expr(),
             ),
         );
     }
@@ -1335,11 +1335,11 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 tx_id,
                 0.expr(),
                 tag.expr(),
-                Word::zero(),
+                Word::zero_expr(),
                 // TODO assure range check since write=true also possible
                 Word::from_lo_unchecked(value),
-                Word::zero(),
-                Word::zero(),
+                Word::zero_expr(),
+                Word::zero_expr(),
             ),
         );
     }
@@ -1356,10 +1356,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 0.expr(),
                 0.expr(),
                 0.expr(),
-                Word::zero(),
-                Word::zero(),
-                Word::zero(),
-                Word::zero(),
+                Word::zero_expr(),
+                Word::zero_expr(),
+                Word::zero_expr(),
+                Word::zero_expr(),
             ),
         );
     }

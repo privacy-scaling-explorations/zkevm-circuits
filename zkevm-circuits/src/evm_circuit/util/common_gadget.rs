@@ -429,7 +429,7 @@ impl<F: Field> TransferToGadget<F> {
                     receiver_address.clone(),
                     AccountFieldTag::CodeHash,
                     cb.empty_code_hash(),
-                    Word::zero(),
+                    Word::zero_expr(),
                     reversion_info,
                 );
             },
@@ -767,7 +767,7 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         cb.stack_push(if IS_SUCCESS_CALL {
             Word::from_lo_unchecked(is_success.expr()) // is_success is bool
         } else {
-            Word::zero()
+            Word::zero_expr()
         });
 
         // Recomposition of random linear combination to integer
@@ -1097,7 +1097,7 @@ impl<F: Field> CommonErrorGadget<F> {
         let rw_counter_end_of_reversion = cb.query_word_unchecked(); // rw_counter_end_of_reversion just used for read lookup, therefore skip range check
 
         // current call must be failed.
-        cb.call_context_lookup_read(None, CallContextFieldTag::IsSuccess, Word::zero());
+        cb.call_context_lookup_read(None, CallContextFieldTag::IsSuccess, Word::zero_expr());
 
         cb.call_context_lookup_read(
             None,

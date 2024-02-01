@@ -104,7 +104,7 @@ impl<F: Field> StorageLeafConfig<F> {
             require!(config.main_data.is_below_account => true);
 
             let mut key_rlc = vec![0.expr(); 2];
-            let mut value_word = vec![Word::zero(); 2];
+            let mut value_word = vec![Word::zero_expr(); 2];
             let mut value_rlp_rlc = vec![0.expr(); 2];
             let mut value_rlp_rlc_mult = vec![0.expr(); 2];
 
@@ -179,7 +179,7 @@ impl<F: Field> StorageLeafConfig<F> {
 
                     // Placeholder leaves default to value `0`.
                     ifx! {is_placeholder_leaf => {
-                        require!(value_word[is_s.idx()] => Word::zero());
+                        require!(value_word[is_s.idx()] => Word::zero_expr());
                     }}
 
                     // Make sure the RLP encoding is correct.
@@ -207,11 +207,11 @@ impl<F: Field> StorageLeafConfig<F> {
                 ParentData::store(
                     cb,
                     &mut ctx.memory[parent_memory(is_s)],
-                    word::Word::zero(),
+                    word::Word::zero_expr(),
                     0.expr(),
                     true.expr(),
                     false.expr(),
-                    word::Word::zero(),
+                    word::Word::zero_expr(),
                 );
             }
 
@@ -332,7 +332,7 @@ impl<F: Field> StorageLeafConfig<F> {
                     address_item.word(),
                     config.main_data.new_root.expr(),
                     config.main_data.old_root.expr(),
-                    Word::zero(),
+                    Word::zero_expr(),
                     value_word[true.idx()].clone(),
                 );
             }};
